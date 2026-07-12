@@ -99,36 +99,33 @@ async function unitsByIsin(store: WorthlineStore): Promise<Map<string, string>> 
 }
 
 describe("parseStatementImportProposalDraft", () => {
-  test("accepts a valid plantilla draft", () => {
-    const parsed = parseStatementImportProposalDraft({
-      broker: "plantilla",
-      rawText: MULTI_ISIN_CSV,
-    });
+  test("accepts only a persisted proposal reference", () => {
+    const parsed = parseStatementImportProposalDraft({ proposalId: "proposal_123" });
 
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(parsed.draft.broker).toBe("plantilla");
-    expect(parsed.draft.rawText).toBe(MULTI_ISIN_CSV);
+    expect(parsed.draft).toEqual({ proposalId: "proposal_123" });
   });
 
-  test("rejects malformed broker or empty text", () => {
-    expect(
-      parseStatementImportProposalDraft({ broker: "nope", rawText: MULTI_ISIN_CSV }).ok,
-    ).toBe(false);
-    expect(
-      parseStatementImportProposalDraft({ broker: "plantilla", rawText: " " }).ok,
-    ).toBe(false);
+  test("rejects a missing id and never accepts raw document text", () => {
+    expect(parseStatementImportProposalDraft({}).ok).toBe(false);
+    expect(parseStatementImportProposalDraft({ proposalId: " " }).ok).toBe(false);
+    expect(parseStatementImportProposalDraft({ rawText: MULTI_ISIN_CSV }).ok).toBe(false);
   });
 });
 
 describe("buildStatementImportProposal", () => {
-  test("builds matched/new preview rows without writing", async () => {
+  test("persists typed facts and a document reference, never the raw document", async () => {
     const store = await createInMemoryStore();
     await seedMatchedFund(store);
 
     const built = await buildStatementImportProposal(
-      store.agentView,
-      { broker: "plantilla", rawText: MULTI_ISIN_CSV },
+      store,
+      {
+        broker: "plantilla",
+        documentName: "enero.csv",
+        rawText: MULTI_ISIN_CSV,
+      },
       TEST_RESOLVER,
     );
 
@@ -136,6 +133,7 @@ describe("buildStatementImportProposal", () => {
     if (!built.ok) return;
 
     expect(built.proposal.proposalType).toBe("statement_import");
+    expect(built.proposal.draft.proposalId).toEqual(expect.any(String));
     expect(built.proposal.funds).toHaveLength(4);
     expect(built.proposal.funds[0]?.bucket).toBe("matched");
     expect(built.proposal.funds[1]?.bucket).toBe("new");
@@ -143,6 +141,67 @@ describe("buildStatementImportProposal", () => {
     if (newFund?.bucket === "new") {
       expect(newFund.suggestedSymbol).toBe("BRUJULA.FAKE");
     }
+
+    expect(JSON.stringify(built.proposal)).not.toContain("rawText");
+    expect(JSON.stringify(built.proposal)).not.toContain("Fecha;Tipo de activo");
+    const persisted = await store.assistantProposals.read(
+      built.proposal.draft.proposalId,
+    );
+    expect(persisted).toMatchObject({
+      status: "draft",
+      documents: [
+        {
+          document: {
+            name: "enero.csv",
+            provenance: "agent",
+            sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(persisted)).not.toContain("Fecha;Tipo de activo");
+  });
+
+  test("a second document accumulates typed facts in the same proposal", async () => {
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+
+    const first = await buildStatementImportProposal(
+      store,
+      {
+        broker: "plantilla",
+        documentName: "enero.csv",
+        rawText: MULTI_ISIN_CSV,
+      },
+      TEST_RESOLVER,
+    );
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const secondCsv = [
+      "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+      "10/03/2024;Fondo;LU00WL000002;Compra;10,0000;500;;",
+    ].join("\r\n");
+    const second = await buildStatementImportProposal(
+      store,
+      {
+        broker: "plantilla",
+        documentName: "marzo.csv",
+        proposalId: first.proposal.draft.proposalId,
+        rawText: secondCsv,
+      },
+      TEST_RESOLVER,
+    );
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+
+    expect(second.proposal.draft).toEqual(first.proposal.draft);
+    expect(
+      second.proposal.funds.find((fund) => fund.isin === "LU00WL000002")?.executedCount,
+    ).toBe(3);
+    expect(
+      (await store.assistantProposals.read(first.proposal.draft.proposalId))?.documents,
+    ).toHaveLength(2);
   });
 });
 
@@ -168,8 +227,12 @@ describe("confirmStatementImportProposalAction regression", () => {
     await confirmManual(manualStore, manualFd);
 
     const built = await buildStatementImportProposal(
-      agentStore.agentView,
-      { broker: "plantilla", rawText: MULTI_ISIN_CSV },
+      agentStore,
+      {
+        broker: "plantilla",
+        documentName: "plantilla.csv",
+        rawText: MULTI_ISIN_CSV,
+      },
       TEST_RESOLVER,
     );
     expect(built.ok).toBe(true);
@@ -191,5 +254,83 @@ describe("confirmStatementImportProposalAction regression", () => {
 
     const agentOps = await agentStore.operations.readOperations("matched_fund");
     expect(agentOps.every((op) => op.source === "agent")).toBe(true);
+    expect(
+      await agentStore.assistantProposals.read(built.proposal.draft.proposalId),
+    ).toMatchObject({ status: "applied" });
+  });
+
+  test("confirm re-derives matching from live positions instead of the saved preview", async () => {
+    const { confirmStatementImportProposalAction } = await import(
+      "./statement-import-proposal-action"
+    );
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+
+    const csv = [
+      "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+      "10/01/2024;Fondo;LU00WL000002;Compra;12,0000;600;;",
+    ].join("\r\n");
+    const built = await buildStatementImportProposal(
+      store,
+      { broker: "plantilla", documentName: "nuevo.csv", rawText: csv },
+      TEST_RESOLVER,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.funds[0]?.bucket).toBe("new");
+
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "created_after_preview",
+      isin: "LU00WL000002",
+      liquidityTier: "market",
+      name: "Creado tras preview",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+
+    expect(
+      await confirmStatementImportProposalAction(
+        built.proposal.draft,
+        store,
+        TEST_RESOLVER,
+      ),
+    ).toEqual({ created: 0, included: 1, status: "applied" });
+    expect(await store.operations.readOperations("created_after_preview")).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe("discardStatementImportProposalAction", () => {
+  test("persists discard and prevents a later confirmation", async () => {
+    const { confirmStatementImportProposalAction, discardStatementImportProposalAction } =
+      await import("./statement-import-proposal-action");
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+    const built = await buildStatementImportProposal(
+      store,
+      {
+        broker: "plantilla",
+        documentName: "descartar.csv",
+        rawText: MULTI_ISIN_CSV,
+      },
+      TEST_RESOLVER,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+
+    expect(
+      await discardStatementImportProposalAction(built.proposal.draft, store),
+    ).toEqual({ status: "discarded" });
+    expect(
+      await store.assistantProposals.read(built.proposal.draft.proposalId),
+    ).toMatchObject({ status: "discarded" });
+    expect(
+      await confirmStatementImportProposalAction(
+        built.proposal.draft,
+        store,
+        TEST_RESOLVER,
+      ),
+    ).toEqual({ status: "error", message: "La propuesta ya está resuelta." });
   });
 });

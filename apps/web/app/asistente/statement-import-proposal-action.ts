@@ -16,7 +16,6 @@ import {
   defaultIsinSymbolResolver,
   isIsinSymbolResolver,
   readPortfolioInvestments,
-  readStatementFromText,
   statementImportPreviewReadPort,
   typeConflictMessage,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
@@ -34,6 +33,7 @@ import {
 import {
   parseStatementImportProposalDraft,
   selectionsFromPreviewFunds,
+  statementFromAssistantProposal,
 } from "./statement-import-proposals";
 
 function rowToCreateInput(
@@ -81,23 +81,30 @@ export async function confirmStatementImportProposalAction(
     return { status: "error", message: parsed.error };
   }
 
-  const read = readStatementFromText(parsed.draft.rawText, parsed.draft.broker);
-  if (!read.ok) {
-    return { status: "error", message: read.message };
-  }
-
   const today = _clock.today();
   const seed = Date.now();
 
   return runActionWithStore(async (store) => {
+    const proposal = await store.assistantProposals.read(parsed.draft.proposalId);
+    if (!proposal) {
+      return { status: "error", message: "La propuesta ya no existe." };
+    }
+    if (proposal.status !== "draft") {
+      return { status: "error", message: "La propuesta ya está resuelta." };
+    }
+    const statement = statementFromAssistantProposal(proposal);
+    if (!statement || statement.rows.length === 0) {
+      return { status: "error", message: "La propuesta no contiene movimientos." };
+    }
+
     const readPort = statementImportPreviewReadPort(store);
-    const preview = await buildStatementImportPreview(readPort, read.value, _resolver);
+    const preview = await buildStatementImportPreview(readPort, statement, _resolver);
     if (!preview.ok) {
       return { status: "error", message: preview.message };
     }
 
     const investments = await readPortfolioInvestments(readPort);
-    const buckets = resolveStatementImportBuckets(read.value, investments);
+    const buckets = resolveStatementImportBuckets(statement, investments);
     const conflict = findStatementTypeConflict(buckets);
     if (conflict) {
       return { status: "error", message: typeConflictMessage(conflict) };
@@ -180,12 +187,47 @@ export async function confirmStatementImportProposalAction(
       };
     });
 
-    await store.applyStatementImportAndRipple({ funds, today });
+    await store.applyAssistantStatementProposalAndRipple({
+      funds,
+      proposalId: proposal.id,
+      today,
+    });
 
     return {
       created: plan.included.filter((fund) => fund.kind === "new").length,
       included: plan.included.length,
       status: "applied",
     };
+  }, _store);
+}
+
+export type StatementImportProposalDiscardResult =
+  | { status: "discarded" }
+  | { status: "blocked"; message: string }
+  | { status: "error"; message: string };
+
+export async function discardStatementImportProposalAction(
+  rawDraft: unknown,
+  ..._testArgs: unknown[]
+): Promise<StatementImportProposalDiscardResult> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const target = await readStoreTarget();
+  if (target.kind === "demo") {
+    return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
+  }
+  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
+    return { status: "blocked", message: IMPERSONATION_READONLY_MESSAGE };
+  }
+  const parsed = parseStatementImportProposalDraft(rawDraft);
+  if (!parsed.ok) return { status: "error", message: parsed.error };
+
+  return runActionWithStore(async (store) => {
+    const proposal = await store.assistantProposals.read(parsed.draft.proposalId);
+    if (!proposal) return { status: "error", message: "La propuesta ya no existe." };
+    if (proposal.status !== "draft") {
+      return { status: "error", message: "La propuesta ya está resuelta." };
+    }
+    await store.assistantProposals.markDiscarded(proposal.id);
+    return { status: "discarded" };
   }, _store);
 }

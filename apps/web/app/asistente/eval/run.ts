@@ -55,7 +55,14 @@ async function askAssistant(
     prompt: question,
     tools: createChatTools({
       runWithStore: (run) =>
-        withStore((store) => run({ agentView: store.agentView }), persona),
+        withStore(
+          (store) =>
+            run({
+              agentView: store.agentView,
+              assistantProposals: store.assistantProposals,
+            }),
+          persona,
+        ),
       asOf: chatAsOf(persona),
     }),
     stopWhen: stepCountIs(MAX_STEPS),

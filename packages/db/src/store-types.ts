@@ -15,6 +15,7 @@ import type {
   UpdateAssetInput,
   UpdateValuationAnchorInput,
 } from "./asset-store";
+import type { AssistantProposalStore } from "./assistant-proposal-store";
 import type { ConnectedSourceStore, SourcePositionInput } from "./connected-source-store";
 import type { ContributionPlanStore } from "./contribution-plan-store";
 import type { ExposureProfileStore } from "./exposure-profile-store";
@@ -91,6 +92,24 @@ export interface CreateHousingHoldingCommand {
   initialValuation?: AddValuationAnchorInput;
 }
 
+export interface ApplyStatementImportParams {
+  funds: Array<
+    | {
+        kind: "matched";
+        assetId: string;
+        creates: CreateInvestmentOperationInput[];
+        overwrites: UpdateInvestmentOperationInput[];
+        deletes?: string[];
+      }
+    | {
+        kind: "new";
+        asset: CreateInvestmentAssetInput;
+        creates: CreateInvestmentOperationInput[];
+      }
+  >;
+  today?: string;
+}
+
 /**
  * The WorthlineStore is a pure composite (Slice R6, PRD #120): the five focused
  * sub-stores expose every per-domain operation, and the store itself owns only
@@ -134,6 +153,8 @@ export interface WorthlineStore {
   contributionPlan: ContributionPlanStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
+  /** Durable, explicitly resolved assistant proposals (#767). */
+  assistantProposals: AssistantProposalStore;
 
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
 
@@ -179,23 +200,11 @@ export interface WorthlineStore {
    * investments, merge operations into matched investments, and ripple the affected
    * history atomically across the confirmed selection.
    */
-  applyStatementImportAndRipple: (params: {
-    funds: Array<
-      | {
-          kind: "matched";
-          assetId: string;
-          creates: CreateInvestmentOperationInput[];
-          overwrites: UpdateInvestmentOperationInput[];
-          deletes?: string[];
-        }
-      | {
-          kind: "new";
-          asset: CreateInvestmentAssetInput;
-          creates: CreateInvestmentOperationInput[];
-        }
-    >;
-    today?: string;
-  }) => Promise<void>;
+  applyStatementImportAndRipple: (params: ApplyStatementImportParams) => Promise<void>;
+  /** Apply one durable statement proposal and resolve it in the same transaction. */
+  applyAssistantStatementProposalAndRipple: (
+    params: ApplyStatementImportParams & { proposalId: string },
+  ) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in

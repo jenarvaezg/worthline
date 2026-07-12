@@ -423,6 +423,53 @@ describe("createChatTools · list_exposure_profile_fill_targets (#707)", () => {
   });
 });
 
+describe("createChatTools · propose_statement_import (#767)", () => {
+  it("persists typed facts through the narrow proposal store and returns no raw text", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "matched_fund",
+      isin: "ES00WL000001",
+      liquidityTier: "market",
+      name: "Fondo existente",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assistantProposals: store.assistantProposals,
+        }),
+      asOf: AS_OF,
+    });
+    const rawText = [
+      "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+      "05/01/2024;Fondo;ES00WL000001;Compra;10,0000;500;;",
+    ].join("\r\n");
+
+    const result = await tools["propose_statement_import"]?.execute?.(
+      { broker: "plantilla", documentName: "enero.csv", rawText },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      proposalType: "statement_import",
+      draft: { proposalId: expect.any(String) },
+      funds: [{ bucket: "matched", isin: "ES00WL000001" }],
+    });
+    expect(JSON.stringify(result)).not.toContain(rawText);
+    const proposalId = result.draft.proposalId as string;
+    expect(await store.assistantProposals.read(proposalId)).toMatchObject({
+      status: "draft",
+      documents: [{ document: { name: "enero.csv" } }],
+    });
+  });
+});
+
 /** Minimal execution options the AI SDK passes to execute — unused by our tools. */
 function toolCallContext(): never {
   return { toolCallId: "call-1", messages: [] } as unknown as never;

@@ -31,10 +31,11 @@ import { NextResponse } from "next/server";
 
 /**
  * The assistant's chat route (#629) — the spine of PRD #627. Streams model
- * output over the AI SDK, grounded by chat tools that only ever see the
- * agent-view read store (ADR 0047; writes impossible by construction, ADR
- * 0044). Ephemeral: the client sends the whole conversation each turn and
- * nothing is persisted. Rate limit runs BEFORE any provider call (ADR 0051).
+ * output over the AI SDK, grounded by chat tools that see the agent-view read
+ * store plus the narrow persisted-proposal store (ADR 0044/0059). Conversation
+ * messages remain ephemeral; only typed proposal facts and document references
+ * survive turns, never raw file contents. Rate limiting runs BEFORE any provider
+ * call (ADR 0051).
  */
 
 export const runtime = "nodejs";
@@ -156,7 +157,14 @@ export async function POST(request: Request): Promise<Response> {
   const system = buildChatSystemPrompt(body.screenContext);
   const tools = createChatTools({
     runWithStore: (run) =>
-      withStore((store) => run({ agentView: store.agentView }), target),
+      withStore(
+        (store) =>
+          run({
+            agentView: store.agentView,
+            assistantProposals: store.assistantProposals,
+          }),
+        target,
+      ),
     asOf: chatAsOf(target),
   });
   const selected = await streamWithProviderFailover({

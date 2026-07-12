@@ -868,3 +868,60 @@ export const goalHoldings = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.goalId, table.assetId] })],
 );
+
+export type AssistantProposalKind = "statement_import";
+export type AssistantProposalStatus = "draft" | "applied" | "discarded";
+export type AssistantDocumentProvenance = "agent" | "user";
+
+/** Durable assistant work awaiting an explicit user resolution (#767). */
+export const assistantProposals = sqliteTable("assistant_proposals", {
+  id: text("id").primaryKey(),
+  kind: text("kind").$type<AssistantProposalKind>().notNull(),
+  status: text("status").$type<AssistantProposalStatus>().notNull().default("draft"),
+  resolvedAt: text("resolved_at"),
+  createdAt: timestamp("created_at"),
+  updatedAt: timestamp("updated_at"),
+});
+
+/** Document identity and parse metadata only. Raw document contents are never stored. */
+export const assistantProposalDocuments = sqliteTable(
+  "assistant_proposal_documents",
+  {
+    id: text("id").primaryKey(),
+    proposalId: text("proposal_id")
+      .notNull()
+      .references(() => assistantProposals.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    name: text("name").notNull(),
+    sha256: text("sha256").notNull(),
+    provenance: text("provenance").$type<AssistantDocumentProvenance>().notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("assistant_proposal_documents_sequence_unique").on(
+      table.proposalId,
+      table.sequence,
+    ),
+  ],
+);
+
+/** Typed, structured proposal facts derived from one document. */
+export const assistantProposalFacts = sqliteTable(
+  "assistant_proposal_facts",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => assistantProposalDocuments.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    kind: text("kind").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    uniqueIndex("assistant_proposal_facts_ordinal_unique").on(
+      table.documentId,
+      table.ordinal,
+    ),
+  ],
+);

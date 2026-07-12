@@ -5,7 +5,14 @@ import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { formatMoneyMinor } from "@worthline/domain";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   parseExposureProfileProposal,
   parseQuickActions,
@@ -19,8 +26,15 @@ import type {
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
 import { deriveScreenContext, type ScreenSection } from "./screen-context";
-import { confirmStatementImportProposalAction } from "./statement-import-proposal-action";
+import {
+  confirmStatementImportProposalAction,
+  discardStatementImportProposalAction,
+} from "./statement-import-proposal-action";
 import type { StatementImportProposal } from "./statement-import-proposals";
+import {
+  INITIAL_STATEMENT_PROPOSAL_DISCARD_STATE,
+  reduceStatementProposalDiscard,
+} from "./statement-proposal-discard-state";
 import { suggestedPrompts } from "./suggested-prompts";
 
 /** Human-readable section names for screen-reader context announcements (#633). */
@@ -115,13 +129,34 @@ function StatementProposalCard({
   mutationsDisabledMessage: string;
   proposal: StatementImportProposal;
 }) {
-  const [rejected, setRejected] = useState(false);
+  const [discardState, dispatchDiscard] = useReducer(
+    reduceStatementProposalDiscard,
+    INITIAL_STATEMENT_PROPOSAL_DISCARD_STATE,
+  );
+  const discardStatusRef = useRef<HTMLParagraphElement>(null);
+  const discardButtonRef = useRef<HTMLButtonElement>(null);
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof confirmStatementImportProposalAction>
   > | null>(null);
   const [pending, startTransition] = useTransition();
 
-  if (rejected) return null;
+  useEffect(() => {
+    if (discardState.status === "discarding" || discardState.status === "discarded") {
+      discardStatusRef.current?.focus();
+    } else if (discardState.status === "error") {
+      discardButtonRef.current?.focus();
+    }
+  }, [discardState.status]);
+
+  if (discardState.status === "discarding" || discardState.status === "discarded") {
+    return (
+      <p aria-live="polite" ref={discardStatusRef} role="status" tabIndex={-1}>
+        {discardState.status === "discarding"
+          ? "Descartando propuesta…"
+          : "Propuesta descartada."}
+      </p>
+    );
+  }
 
   const blockedMessage = mutationsDisabled ? mutationsDisabledMessage : null;
   const confirmDisabled = pending || result?.status === "applied" || mutationsDisabled;
@@ -129,6 +164,18 @@ function StatementProposalCard({
   function confirm() {
     startTransition(async () => {
       setResult(await confirmStatementImportProposalAction(proposal.draft));
+    });
+  }
+
+  function discard() {
+    dispatchDiscard({ type: "start" });
+    startTransition(async () => {
+      const discardResult = await discardStatementImportProposalAction(proposal.draft);
+      dispatchDiscard(
+        discardResult.status === "discarded"
+          ? { type: "succeed" }
+          : { type: "fail", message: discardResult.message },
+      );
     });
   }
 
@@ -160,6 +207,9 @@ function StatementProposalCard({
           </li>
         ))}
       </ul>
+      {discardState.status === "error" ? (
+        <p className="assistantError">{discardState.message}</p>
+      ) : null}
       {result ? (
         <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
           {result.status === "applied"
@@ -176,7 +226,8 @@ function StatementProposalCard({
         <button
           className="secondary"
           disabled={confirmDisabled}
-          onClick={() => setRejected(true)}
+          onClick={discard}
+          ref={discardButtonRef}
           type="button"
         >
           Descartar
