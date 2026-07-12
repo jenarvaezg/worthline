@@ -21,5 +21,15 @@ export {
   executeSetHousingValuationCadenceCommand,
   executeUpdateValuationAnchorCommand,
 } from "./housing-valuation";
+export type {
+  OwnershipSplitCommandResult,
+  OwnershipSplitViolation,
+  UpdateAssetOwnershipSplitCommand,
+  UpdateLiabilityOwnershipSplitCommand,
+} from "./ownership-split";
+export {
+  executeUpdateAssetOwnershipSplitCommand,
+  executeUpdateLiabilityOwnershipSplitCommand,
+} from "./ownership-split";
 export type { CommandResult, RipplePlan, UnitOfWork } from "./types";
 export { createUnitOfWork } from "./unit-of-work";

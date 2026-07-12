@@ -27,11 +27,15 @@ export type {
   CommandResult,
   DatedFactStep,
   DeleteValuationAnchorCommand,
+  OwnershipSplitCommandResult,
+  OwnershipSplitViolation,
   RecordHousingValuationCommand,
   RipplePlan,
   SetAnnualAppreciationRateCommand,
   SetHousingValuationCadenceCommand,
   UnitOfWork,
+  UpdateAssetOwnershipSplitCommand,
+  UpdateLiabilityOwnershipSplitCommand,
   UpdateValuationAnchorCommand,
 } from "./commands";
 export {
@@ -42,6 +46,8 @@ export {
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,
+  executeUpdateAssetOwnershipSplitCommand,
+  executeUpdateLiabilityOwnershipSplitCommand,
   executeUpdateValuationAnchorCommand,
   runCommand,
 } from "./commands";
