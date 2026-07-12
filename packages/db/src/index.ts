@@ -394,6 +394,20 @@ async function buildStore(
         await store.applyStatementImportAndRipple(params);
         await assistantProposalStore.markApplied(proposalId);
       }),
+    applyAssistantMixedProposalAndRipple: async ({ proposalId, ...params }) =>
+      ctx.transaction(async () => {
+        const proposal = await assistantProposalStore.read(proposalId);
+        if (!proposal || proposal.kind !== "mixed_document_import") {
+          throw new Error(`Assistant proposal "${proposalId}" is not a mixed import.`);
+        }
+        if (proposal.status !== "draft") {
+          throw new Error(
+            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
+          );
+        }
+        await store.applyStatementImportAndRipple(params);
+        await assistantProposalStore.markApplied(proposalId);
+      }),
     applyAssistantBalanceHistoryProposalAndRipple: async ({
       proposalId,
       liabilityId,

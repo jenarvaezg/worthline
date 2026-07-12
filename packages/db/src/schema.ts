@@ -874,7 +874,8 @@ export const goalHoldings = sqliteTable(
 export type AssistantProposalKind =
   | "statement_import"
   | "balance_history_import"
-  | "property_valuation_anchor";
+  | "property_valuation_anchor"
+  | "mixed_document_import";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 

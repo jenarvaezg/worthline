@@ -86,7 +86,8 @@ async function createProposal(
   if (
     input.kind !== "statement_import" &&
     input.kind !== "balance_history_import" &&
-    input.kind !== "property_valuation_anchor"
+    input.kind !== "property_valuation_anchor" &&
+    input.kind !== "mixed_document_import"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
