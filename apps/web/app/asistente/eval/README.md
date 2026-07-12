@@ -76,6 +76,20 @@ and the former arbitrary `WORTHLINE_CHAT_MODEL` setting cannot introduce a
 model. Entries without their declared provider credential are omitted, and no
 entries means the chat returns `assistant_unavailable` with status 503.
 
+After validation, admission is a reviewed code change: copy the machine-readable
+run into `admission-evidence.ts`, add or refresh the matching allowlist entry,
+and let the guard verify that the evidence names the same provider/model and
+passes the canonical threshold. Never add an entry from an incomplete run.
+
+Hosted chat stores pre-output provider cooldowns in the control plane, scoped
+by `WORTHLINE_CHAT_DEPLOYMENT_KEY` when set or the Vercel deployment identity.
+Explicit provider reset information wins; daily and short-window quota defaults
+are distinct. Request-too-large never persists. Diagnose rotation through the
+`Assistant provider attempt` and `Assistant provider cooldown` structured logs
+or inspect `provider_cooldowns` in the control-plane database. Expired timestamps
+are ignored automatically. Without a control plane, local development uses the
+first credential-backed entry and retains no cooldown state.
+
 The runner deliberately remains able to resolve an explicit pre-admission
 candidate. Production calls the stricter allowlisted path through that same
 resolver, so a model can be evaluated before its reviewed evidence is

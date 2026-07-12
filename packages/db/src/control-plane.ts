@@ -39,6 +39,11 @@ export interface BenchmarkPrice {
   value: string;
 }
 
+export interface ProviderCooldown {
+  provider: string;
+  cooldownUntil: string;
+}
+
 /** A workspace plus its owner's email — the oldest grant; v1 is always exactly
  * one owner per workspace. `ownerEmail` is null only for a dangling workspace
  * with no grant row (should not happen post-provisioning, but the admin
@@ -115,6 +120,14 @@ export interface ControlPlaneStore {
    * returned count against its limit, so the counter needs no policy.
    */
   recordChatRequest(rateKey: string, windowKey: string): Promise<number>;
+  /** Cooldowns shared by every serverless instance of one deployment. */
+  readProviderCooldowns(deploymentKey: string): Promise<ProviderCooldown[]>;
+  /** Monotonic upsert: concurrent failures may extend but never shorten it. */
+  recordProviderCooldown(
+    deploymentKey: string,
+    provider: string,
+    cooldownUntil: string,
+  ): Promise<void>;
   /**
    * Count one user-triggered connected-source sync for (rateKey, windowKey).
    * Same increment-then-check contract as chat usage, but kept in a separate
@@ -179,6 +192,13 @@ CREATE TABLE IF NOT EXISTS chat_usage (
   count INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (rate_key, window_key)
+);
+CREATE TABLE IF NOT EXISTS provider_cooldowns (
+  deployment_key TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  cooldown_until TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (deployment_key, provider)
 );
 CREATE TABLE IF NOT EXISTS connected_source_sync_usage (
   rate_key TEXT NOT NULL,
@@ -407,6 +427,30 @@ async function buildControlPlaneStore(
         args: [rateKey, windowKey],
       });
       return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async readProviderCooldowns(deploymentKey) {
+      const result = await client.execute({
+        sql: `SELECT provider, cooldown_until
+              FROM provider_cooldowns
+              WHERE deployment_key = ?
+              ORDER BY provider ASC`,
+        args: [deploymentKey],
+      });
+      return result.rows.map((row) => ({
+        provider: String(row["provider"]),
+        cooldownUntil: String(row["cooldown_until"]),
+      }));
+    },
+    async recordProviderCooldown(deploymentKey, provider, cooldownUntil) {
+      await client.execute({
+        sql: `INSERT INTO provider_cooldowns
+                (deployment_key, provider, cooldown_until)
+              VALUES (?, ?, ?)
+              ON CONFLICT(deployment_key, provider) DO UPDATE SET
+                cooldown_until = MAX(cooldown_until, excluded.cooldown_until),
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [deploymentKey, provider, cooldownUntil],
+      });
     },
     async recordConnectedSourceSync(rateKey, windowKey) {
       const result = await client.execute({

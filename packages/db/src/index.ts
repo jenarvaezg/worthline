@@ -61,6 +61,7 @@ export {
   type ControlPlaneWorkspaceWithOwner,
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
+  type ProviderCooldown,
 } from "./control-plane";
 export {
   ENCRYPTION_KEY_ENV,
