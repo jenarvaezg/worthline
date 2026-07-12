@@ -226,6 +226,10 @@ export interface WorthlineStore {
     anchor: AddValuationAnchorInput;
     today: string;
   }) => Promise<void>;
+  /** Apply one durable mixed proposal through the multi-domain batched seam. */
+  applyAssistantMixedProposalAndRipple: (
+    params: ApplyStatementImportParams & { proposalId: string },
+  ) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in

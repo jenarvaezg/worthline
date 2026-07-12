@@ -37,6 +37,7 @@ import {
   buildExposureProfileProposal,
   listExposureProfileFillTargets,
 } from "@web/asistente/exposure-profile-proposals";
+import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
@@ -335,6 +336,54 @@ const BALANCE_HISTORY_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["liabilityId", "rows"],
+  additionalProperties: false,
+});
+
+const MIXED_DOCUMENT_PROPOSAL_SCHEMA = jsonSchema<{
+  documentName?: string;
+  documentSha256?: string;
+  segments?: Array<Record<string, unknown>>;
+}>({
+  type: "object",
+  properties: {
+    documentName: { type: "string" },
+    documentSha256: { type: "string" },
+    segments: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: {
+            enum: ["investment_statement", "debt_balance_history", "property_valuation"],
+            type: "string",
+          },
+          confidence: { enum: ["certain", "uncertain"], type: "string" },
+          broker: { type: "string" },
+          rawText: { type: "string" },
+          liabilityId: { type: "string" },
+          assetId: { type: "string" },
+          valuationDate: { type: "string" },
+          valueMinor: { type: "number" },
+          rows: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                date: { type: "string" },
+                balanceMinor: { type: "number" },
+                annualRate: { type: "string" },
+              },
+              required: ["date", "balanceMinor"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["kind", "confidence"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["documentName", "documentSha256", "segments"],
   additionalProperties: false,
 });
 
@@ -1079,6 +1128,49 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           const built = await buildPropertyValuationProposal(
             { assistantProposals: store.assistantProposals, assets: store.assets },
             { ...args, assetId },
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_mixed_document_import: tool({
+      description:
+        "Segmenta un documento mixto y prepara UNA propuesta multi-dominio. Agrupa por tipo y activo, y usa confidence=certain solo cuando tipo, columnas y activo son inequívocos. Si cualquier segmento es dudoso, NO llames esta tool: pregunta al usuario. Usa ids públicos wl_hld_… para deuda/inmueble; la app enruta cada segmento a su extractor tipado, calcula previews y confirma todo-o-nada con un único ripple.",
+      inputSchema: MIXED_DOCUMENT_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.liabilities || !store.assets)
+            return { error: "proposal_persistence_unavailable" };
+          const segments = [];
+          for (const segment of args.segments ?? []) {
+            if (
+              (segment.kind === "debt_balance_history" ||
+                segment.kind === "property_valuation") &&
+              typeof segment[
+                segment.kind === "debt_balance_history" ? "liabilityId" : "assetId"
+              ] === "string"
+            ) {
+              const key =
+                segment.kind === "debt_balance_history" ? "liabilityId" : "assetId";
+              segments.push({
+                ...segment,
+                [key]: await resolveInternalHoldingId(
+                  store.agentView,
+                  segment[key] as string,
+                ),
+              });
+            } else {
+              segments.push(segment);
+            }
+          }
+          const built = await buildMixedDocumentProposal(
+            {
+              agentView: store.agentView,
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+            },
+            { ...args, segments },
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };

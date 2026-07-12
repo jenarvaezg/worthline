@@ -7,6 +7,11 @@ import type {
   ExposureProfileProposalPreview,
   ExposureProfileProposalPreviewProfile,
 } from "./exposure-profile-proposals";
+import type {
+  MixedDocumentProposal,
+  MixedDocumentSection,
+  MixedTrust,
+} from "./mixed-document-proposals";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
 import type { ScreenSection } from "./screen-context";
@@ -169,11 +174,31 @@ export function parseExposureProfileProposal(
   };
 }
 
+function isPositionImpact(impact: unknown): boolean {
+  if (
+    !isRecord(impact) ||
+    typeof impact.beforeUnits !== "string" ||
+    typeof impact.afterUnits !== "string" ||
+    typeof impact.beforeValueMinor !== "number" ||
+    typeof impact.afterValueMinor !== "number" ||
+    !Array.isArray(impact.flags) ||
+    !impact.flags.every((flag) => typeof flag === "string")
+  )
+    return false;
+  return true;
+}
+
 function isFundPreviewRow(value: unknown): boolean {
   if (!isRecord(value) || typeof value["isin"] !== "string") return false;
   if (typeof value["executedCount"] !== "number") return false;
-  if (!isRecord(value["positionImpact"])) return false;
-  return value["bucket"] === "matched" || value["bucket"] === "new";
+  if (!isPositionImpact(value["positionImpact"])) return false;
+  if (value["bucket"] === "matched")
+    return value.existingName === undefined || typeof value.existingName === "string";
+  return (
+    value["bucket"] === "new" &&
+    (value.suggestedName === undefined || typeof value.suggestedName === "string") &&
+    (value.suggestedSymbol === undefined || typeof value.suggestedSymbol === "string")
+  );
 }
 
 export function parseStatementImportProposal(
@@ -235,6 +260,103 @@ export function parsePropertyValuationProposal(
   )
     return null;
   return raw as unknown as PropertyValuationProposal;
+}
+
+export function parseMixedDocumentProposal(raw: unknown): MixedDocumentProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "mixed_document_import") return null;
+  if (
+    !isRecord(raw.draft) ||
+    typeof raw.draft.proposalId !== "string" ||
+    !Array.isArray(raw.sections) ||
+    !raw.sections.every(isMixedDocumentSection)
+  )
+    return null;
+  return {
+    draft: { proposalId: raw.draft.proposalId },
+    proposalType: "mixed_document_import",
+    sections: raw.sections,
+  };
+}
+
+function isMixedTrust(value: unknown): value is MixedTrust {
+  return (
+    isRecord(value) &&
+    typeof value.requiresReview === "boolean" &&
+    (value.tier === "reconciled" ||
+      value.tier === "unverified" ||
+      value.tier === "mismatch")
+  );
+}
+
+function isMoneyPoint(value: unknown, moneyKey: string): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.date === "string" &&
+    typeof value[moneyKey] === "number"
+  );
+}
+
+function isDebtPreviewPoint(value: unknown): boolean {
+  return (
+    isMoneyPoint(value, "balanceMinor") &&
+    isRecord(value) &&
+    (value.driftMinor === null || typeof value.driftMinor === "number") &&
+    (value.reason === undefined || typeof value.reason === "string") &&
+    (value.status === "accepted" ||
+      value.status === "skipped" ||
+      value.status === "excluded")
+  );
+}
+
+function isMixedDocumentSection(value: unknown): value is MixedDocumentSection {
+  if (!isRecord(value) || typeof value.assetKey !== "string" || !isRecord(value.preview))
+    return false;
+  const preview = value.preview;
+  if (!isMixedTrust(preview.trust)) return false;
+  if (value.kind === "investment_statement") {
+    return (
+      Array.isArray(preview.funds) &&
+      preview.funds.length > 0 &&
+      preview.funds.every(isFundPreviewRow) &&
+      isRecord(preview.reconciliation) &&
+      typeof preview.reconciliation.matches === "boolean" &&
+      isPositionImpact(preview.reconciliation.positionImpact)
+    );
+  }
+  if (value.kind === "debt_balance_history") {
+    return (
+      isRecord(preview.liability) &&
+      typeof preview.liability.id === "string" &&
+      typeof preview.liability.name === "string" &&
+      Array.isArray(preview.points) &&
+      preview.points.every(isDebtPreviewPoint) &&
+      Array.isArray(preview.curve) &&
+      preview.curve.every((point) => isMoneyPoint(point, "balanceMinor")) &&
+      isRecord(preview.reconciliation) &&
+      typeof preview.reconciliation.matches === "boolean" &&
+      typeof preview.reconciliation.expectedMinor === "number" &&
+      typeof preview.reconciliation.resultingMinor === "number"
+    );
+  }
+  if (value.kind === "property_valuation") {
+    return (
+      isRecord(preview.property) &&
+      typeof preview.property.id === "string" &&
+      typeof preview.property.name === "string" &&
+      Array.isArray(preview.anchors) &&
+      preview.anchors.length > 0 &&
+      preview.anchors.every(
+        (anchor) =>
+          isRecord(anchor) &&
+          typeof anchor.assetId === "string" &&
+          typeof anchor.valuationDate === "string" &&
+          typeof anchor.valueMinor === "number",
+      ) &&
+      Array.isArray(preview.curve) &&
+      preview.curve.every((point) => isMoneyPoint(point, "valueMinor"))
+    );
+  }
+  return false;
 }
 
 /** Resolve a cited internal source to its product route, or null if it has none. */

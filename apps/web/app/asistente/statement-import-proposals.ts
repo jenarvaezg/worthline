@@ -105,7 +105,8 @@ function parsedStatementFromDocuments(
 export function statementFromAssistantProposal(
   proposal: AssistantProposal,
 ): ParsedStatement | null {
-  if (proposal.kind !== "statement_import") return null;
+  if (proposal.kind !== "statement_import" && proposal.kind !== "mixed_document_import")
+    return null;
   return parsedStatementFromDocuments(proposal.documents);
 }
 
