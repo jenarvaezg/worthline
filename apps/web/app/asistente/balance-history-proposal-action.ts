@@ -14,9 +14,9 @@ import { createStableId } from "@web/intake";
 import { readStoreTarget } from "@web/read-store-target";
 import { systemClock } from "@worthline/domain";
 
+import { parseBalanceHistoryProposalDraft } from "./balance-history-proposal-contract";
 import {
   observationsFromProposal,
-  parseBalanceHistoryProposalDraft,
   projectBalanceHistoryProposal,
 } from "./balance-history-proposals";
 

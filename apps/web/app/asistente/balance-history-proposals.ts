@@ -12,40 +12,7 @@ import type {
 } from "@worthline/db";
 import { debtBalanceAtDate } from "@worthline/domain";
 
-export interface BalanceHistoryProposalDraft {
-  proposalId: string;
-}
-
-export interface BalanceHistoryProposal {
-  proposalType: "balance_history_import";
-  draft: BalanceHistoryProposalDraft;
-  liability: { id: string; name: string };
-  points: Array<{
-    date: string;
-    balanceMinor: number;
-    driftMinor: number | null;
-    status: "accepted" | "excluded" | "skipped";
-    reason?: string;
-  }>;
-  curve: Array<{ date: string; balanceMinor: number }>;
-  reconciliation: { expectedMinor: number; resultingMinor: number; matches: boolean };
-}
-
-export function balanceCurvePolyline(
-  curve: ReadonlyArray<{ balanceMinor: number }>,
-): string {
-  if (curve.length === 0) return "";
-  const values = curve.map((point) => point.balanceMinor);
-  const min = Math.min(...values);
-  const span = Math.max(1, Math.max(...values) - min);
-  return curve
-    .map((point, index) => {
-      const x = curve.length === 1 ? 50 : (index / (curve.length - 1)) * 100;
-      const y = 92 - ((point.balanceMinor - min) / span) * 84;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-}
+import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities"> & {
   assistantProposals: AssistantProposalStore;
@@ -53,13 +20,6 @@ type ProposalStore = Pick<WorthlineStore, "liabilities"> & {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-export function parseBalanceHistoryProposalDraft(raw: unknown) {
-  if (!isRecord(raw) || typeof raw.proposalId !== "string" || !raw.proposalId.trim()) {
-    return { ok: false as const, error: "Falta la referencia de la propuesta." };
-  }
-  return { ok: true as const, draft: { proposalId: raw.proposalId.trim() } };
 }
 
 export function observationsFromProposal(proposal: AssistantProposal) {

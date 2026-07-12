@@ -1,5 +1,7 @@
-import type { BalanceHistoryProposal } from "./balance-history-proposals";
-import { parseBalanceHistoryProposalDraft } from "./balance-history-proposals";
+import {
+  type BalanceHistoryProposal,
+  parseBalanceHistoryProposalDraft,
+} from "./balance-history-proposal-contract";
 import type {
   ExposureProfileProposal,
   ExposureProfileProposalPreview,

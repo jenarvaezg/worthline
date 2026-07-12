@@ -21,9 +21,9 @@ import {
   type QuickAction,
 } from "./assistant-actions";
 import AssistantMessages from "./assistant-messages";
+import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
-import type { BalanceHistoryProposal } from "./balance-history-proposals";
-import { balanceCurvePolyline } from "./balance-history-proposals";
+import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
 import type {
   ExposureProfileProposal,

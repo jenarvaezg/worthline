@@ -1,8 +1,9 @@
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
+import { balanceCurvePolyline } from "./balance-curve-polyline";
+import { parseBalanceHistoryProposalDraft } from "./balance-history-proposal-contract";
 import {
-  balanceCurvePolyline,
   buildBalanceHistoryProposal,
   observationsFromProposal,
   projectBalanceHistoryProposal,
