@@ -5,6 +5,8 @@ export type {
 export { applyDatedFactsBatch } from "./apply-dated-facts-batch";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
+export type { CommandHost } from "./host";
+export { createCommandHost } from "./host";
 export type {
   AddValuationAnchorCommand,
   DeleteValuationAnchorCommand,
@@ -21,6 +23,11 @@ export {
   executeSetHousingValuationCadenceCommand,
   executeUpdateValuationAnchorCommand,
 } from "./housing-valuation";
+export type {
+  ImportBalanceHistoryCommand,
+  ImportBalanceHistoryResult,
+} from "./import-balance-history";
+export { executeImportBalanceHistoryCommand } from "./import-balance-history";
 export type {
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
