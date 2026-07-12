@@ -29,6 +29,14 @@ import {
 } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import {
+  executeAddValuationAnchorCommand,
+  executeDeleteValuationAnchorCommand,
+  executeRecordHousingValuationCommand,
+  executeSetAnnualAppreciationRateCommand,
+  executeSetHousingValuationCadenceCommand,
+  executeUpdateValuationAnchorCommand,
+} from "@worthline/db";
+import {
   type Clock,
   checkManualValuationViolation,
   checkOwnershipSplit,
@@ -361,9 +369,10 @@ export async function updateAssetValuationAction(
 
   await runActionWithStore(async (store) => {
     if (asset?.type === "real_estate") {
-      // Full atomic seam (ADR 0020): updateAssetValuation + upsert-today-anchor
-      // + ripple all behind one transaction; from-date derived inside the seam.
-      await store.recordHousingValuationAndRipple(id, currentValue);
+      await executeRecordHousingValuationCommand(store, {
+        assetId: id,
+        currentValueMinor: currentValue,
+      });
     } else {
       await store.assets.updateAssetValuation(id, currentValue);
     }
@@ -702,9 +711,11 @@ export async function setAppreciationRateAction(
       };
     }
 
-    // The persist + from-date derivation + ripple all ride the seam (ADR 0020).
-    // The seam derives min(first anchor, earliest snapshot) behind the seam (#184).
-    await store.setAnnualAppreciationRateAndRipple(id, parsed.rate);
+    // Persist + from-date derivation + ripple ride the housing valuation command.
+    await executeSetAnnualAppreciationRateCommand(store, {
+      assetId: id,
+      rate: parsed.rate,
+    });
 
     return { ok: true };
   }, _store);
@@ -750,7 +761,7 @@ export async function addValuationAnchorAction(
     );
   }
 
-  const result = await runActionWithStore(async (store) => {
+  const result = await runDatedFactAction(async (store) => {
     const asset = await findAsset(store, id);
 
     if (!asset) {
@@ -761,8 +772,10 @@ export async function addValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    // Persist + ripple ride the valuation seam (ADR 0020), atomically.
-    await store.addValuationAnchorAndRipple(parsed.command, { today });
+    await executeAddValuationAnchorCommand(store, {
+      input: parsed.command,
+      today,
+    });
 
     return { ok: true };
   }, _store);
@@ -816,20 +829,21 @@ export async function updateValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    // Persist + ripple ride the valuation seam (ADR 0020): it reads the previous
-    // anchor, ripples from the earlier of the old/new date, and guards the
-    // future, all atomically.
-    const changes = await store.updateValuationAnchorAndRipple(
+    const commandResult = await executeUpdateValuationAnchorCommand(store, {
       anchorId,
-      {
+      input: {
         adjustsPriorCurve: parsed.command.adjustsPriorCurve,
         valuationDate: parsed.command.valuationDate,
         valueMinor: parsed.command.valueMinor,
       },
-      { today },
-    );
+      today,
+    });
 
-    if (changes === 0) {
+    if (!commandResult.ok) {
+      return commandResult;
+    }
+
+    if (commandResult.value.changes === 0) {
       return {
         ok: false,
         error: "No se encontró la tasación — puede que ya se haya eliminado.",
@@ -877,11 +891,16 @@ export async function deleteValuationAnchorAction(
       return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
     }
 
-    // Delete + ripple ride the valuation seam (ADR 0020): it captures the deleted
-    // anchor's date behind the seam and guards the future, atomically.
-    const changes = await store.deleteValuationAnchorAndRipple(anchorId, { today });
+    const commandResult = await executeDeleteValuationAnchorCommand(store, {
+      anchorId,
+      today,
+    });
 
-    if (changes === 0) {
+    if (!commandResult.ok) {
+      return commandResult;
+    }
+
+    if (commandResult.value.changes === 0) {
       return {
         ok: false,
         error: "No se encontró la tasación — puede que ya se haya eliminado.",
@@ -1062,9 +1081,11 @@ export async function setHousingValuationCadenceAction(
       };
     }
 
-    // Persist + re-ripple ride the seam (ADR 0020 / 0031): the cadence change is a
-    // parameter edit, so the seam recuts the whole appreciation curve behind it.
-    await store.setHousingValuationCadenceAndRipple(id, parsed.cadence, { today });
+    await executeSetHousingValuationCadenceCommand(store, {
+      assetId: id,
+      cadence: parsed.cadence,
+      today,
+    });
     return { ok: true };
   }, _store);
 

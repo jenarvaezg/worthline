@@ -20,6 +20,31 @@ import {
 } from "./snapshot-orchestrator";
 
 export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
+export type {
+  AddValuationAnchorCommand,
+  ApplyDatedFactsBatchParams,
+  CommandExecutor,
+  CommandResult,
+  DatedFactStep,
+  DeleteValuationAnchorCommand,
+  RecordHousingValuationCommand,
+  RipplePlan,
+  SetAnnualAppreciationRateCommand,
+  SetHousingValuationCadenceCommand,
+  UnitOfWork,
+  UpdateValuationAnchorCommand,
+} from "./commands";
+export {
+  applyDatedFactsBatch,
+  createUnitOfWork,
+  executeAddValuationAnchorCommand,
+  executeDeleteValuationAnchorCommand,
+  executeRecordHousingValuationCommand,
+  executeSetAnnualAppreciationRateCommand,
+  executeSetHousingValuationCadenceCommand,
+  executeUpdateValuationAnchorCommand,
+  runCommand,
+} from "./commands";
 export {
   type BenchmarkPrice,
   type ControlPlaneGrant,
