@@ -29,12 +29,22 @@ import {
 } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import {
+  executeAddEarlyRepaymentCommand,
+  executeAddInterestRateRevisionCommand,
   executeAddValuationAnchorCommand,
+  executeCreateAmortizationPlanCommand,
+  executeDeleteAmortizationPlanCommand,
+  executeDeleteEarlyRepaymentCommand,
+  executeDeleteInterestRateRevisionCommand,
   executeDeleteValuationAnchorCommand,
+  executeRecalibrateDebtBalanceCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,
+  executeUpdateAmortizationPlanCommand,
   executeUpdateAssetOwnershipSplitCommand,
+  executeUpdateEarlyRepaymentCommand,
+  executeUpdateInterestRateRevisionCommand,
   executeUpdateLiabilityOwnershipSplitCommand,
   executeUpdateValuationAnchorCommand,
   type OwnershipSplitCommandResult,
@@ -1328,8 +1338,9 @@ export async function recalibrateDebtBalanceAction(
       return derived;
     }
 
-    await store.addBalanceRebaselineAndRipple(
-      {
+    await executeRecalibrateDebtBalanceCommand(store, {
+      today,
+      input: {
         annualInterestRate: derived.annualInterestRate,
         baselineDate: validated.balanceDate,
         endDate: derived.endDate,
@@ -1339,8 +1350,7 @@ export async function recalibrateDebtBalanceAction(
         outstandingBalanceMinor: validated.outstandingBalanceMinor,
         startsAtBaseline: false,
       },
-      { today },
-    );
+    });
 
     return { ok: true as const };
   }, _store);
@@ -1476,22 +1486,31 @@ export async function saveAmortizationPlanAction(
 
     const existing = await store.liabilities.readAmortizationPlan(id);
 
-    // Persist + ripple ride the debt seam (ADR 0020), atomically; the
-    // amortizable-plan ripple derives its per-cuota date series behind the seam.
+    // Persist + ripple delegate to amortizable-debt commands (#970).
     if (existing) {
-      await store.updateAmortizationPlanAndRipple(
-        existing.id,
-        {
+      const updated = await executeUpdateAmortizationPlanCommand(store, {
+        liabilityId: id,
+        planId: existing.id,
+        today,
+        input: {
           annualInterestRate: parsed.command.annualInterestRate,
           disbursementDate: parsed.command.disbursementDate,
           firstPaymentDate: parsed.command.firstPaymentDate,
           initialCapitalMinor: parsed.command.initialCapitalMinor,
           termMonths: parsed.command.termMonths,
         },
-        { liabilityId: id, today },
-      );
+      });
+      if (!updated.ok) {
+        return { ok: false as const, error: updated.error };
+      }
     } else {
-      await store.createAmortizationPlanAndRipple(parsed.command, { today });
+      const created = await executeCreateAmortizationPlanCommand(store, {
+        today,
+        input: parsed.command,
+      });
+      if (!created.ok) {
+        return { ok: false as const, error: created.error };
+      }
     }
 
     return { ok: true as const };
@@ -1536,10 +1555,14 @@ export async function deleteAmortizationPlanAction(
     // now-planless curve (the amortizable-revision kind, which falls back to
     // currentBalance), all atomically. `planId` selects the row; the liability is
     // resolved from `id`.
-    const changes = await store.deleteAmortizationPlanAndRipple({
+    const deleted = await executeDeleteAmortizationPlanCommand(store, {
       liabilityId: id,
       today,
     });
+    if (!deleted.ok) {
+      return { ok: false as const, error: deleted.error };
+    }
+    const changes = deleted.value.changes;
 
     if (changes === 0) {
       return {
@@ -1596,12 +1619,14 @@ export async function addInterestRateRevisionAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020); the future guard moves
-    // behind the seam.
-    await store.addInterestRateRevisionAndRipple(parsed.command, {
+    const added = await executeAddInterestRateRevisionCommand(store, {
       liabilityId: id,
       today,
+      input: parsed.command,
     });
+    if (!added.ok) {
+      return { ok: false as const, error: added.error };
+    }
 
     return { ok: true as const };
   }, _store);
@@ -1654,17 +1679,18 @@ export async function updateInterestRateRevisionAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
-    // revision date behind the seam, ripples from the earlier of the old/new date,
-    // and guards the future. The action no longer pre-reads the row.
-    const changes = await store.updateInterestRateRevisionAndRipple(
+    const updated = await executeUpdateInterestRateRevisionCommand(store, {
       revisionId,
-      {
+      today,
+      input: {
         newAnnualInterestRate: parsed.command.newAnnualInterestRate,
         revisionDate: parsed.command.revisionDate,
       },
-      { today },
-    );
+    });
+    if (!updated.ok) {
+      return { ok: false as const, error: updated.error };
+    }
+    const changes = updated.value.changes;
 
     if (changes === 0) {
       return {
@@ -1715,12 +1741,14 @@ export async function deleteInterestRateRevisionAction(
       return guard;
     }
 
-    // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
-    // revision's date behind the seam, recalculates from it, and guards the future.
-    // The action no longer pre-reads the row.
-    const changes = await store.deleteInterestRateRevisionAndRipple(revisionId, {
+    const deleted = await executeDeleteInterestRateRevisionCommand(store, {
+      revisionId,
       today,
     });
+    if (!deleted.ok) {
+      return { ok: false as const, error: deleted.error };
+    }
+    const changes = deleted.value.changes;
 
     if (changes === 0) {
       return {
@@ -1777,10 +1805,14 @@ export async function addEarlyRepaymentAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020): a past repayment is a dated
-    // fact that generates its own snapshot (the "amortizable-repayment" kind); the
-    // future guard moves behind the seam.
-    await store.addEarlyRepaymentAndRipple(parsed.command, { liabilityId: id, today });
+    const added = await executeAddEarlyRepaymentCommand(store, {
+      liabilityId: id,
+      today,
+      input: parsed.command,
+    });
+    if (!added.ok) {
+      return { ok: false as const, error: added.error };
+    }
 
     return { ok: true as const };
   }, _store);
@@ -1833,18 +1865,19 @@ export async function updateEarlyRepaymentAction(
       return guard;
     }
 
-    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
-    // repayment date behind the seam, ripples from the earlier of the old/new date,
-    // and guards the future. The action no longer pre-reads the row.
-    const changes = await store.updateEarlyRepaymentAndRipple(
+    const updated = await executeUpdateEarlyRepaymentCommand(store, {
       repaymentId,
-      {
+      today,
+      input: {
         amountMinor: parsed.command.amountMinor,
         mode: parsed.command.mode,
         repaymentDate: parsed.command.repaymentDate,
       },
-      { today },
-    );
+    });
+    if (!updated.ok) {
+      return { ok: false as const, error: updated.error };
+    }
+    const changes = updated.value.changes;
 
     if (changes === 0) {
       return {
@@ -1895,12 +1928,14 @@ export async function deleteEarlyRepaymentAction(
       return guard;
     }
 
-    // Delete + ripple ride the debt seam (ADR 0020 / 0025): deleting a dated fact
-    // recalculates from its date forward without generating (the
-    // "amortizable-revision" kind — the curve no longer carries the repayment). The
-    // seam reads the removed repayment's date behind the seam and guards the future;
-    // the action no longer pre-reads the row.
-    const changes = await store.deleteEarlyRepaymentAndRipple(repaymentId, { today });
+    const deleted = await executeDeleteEarlyRepaymentCommand(store, {
+      repaymentId,
+      today,
+    });
+    if (!deleted.ok) {
+      return { ok: false as const, error: deleted.error };
+    }
+    const changes = deleted.value.changes;
 
     if (changes === 0) {
       return {

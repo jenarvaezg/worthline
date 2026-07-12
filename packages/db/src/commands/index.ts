@@ -1,4 +1,30 @@
 export type {
+  AddEarlyRepaymentCommand,
+  AddInterestRateRevisionCommand,
+  CreateAmortizationPlanCommand,
+  CreateCurrentStateDebtCommand,
+  DeleteAmortizationPlanCommand,
+  DeleteEarlyRepaymentCommand,
+  DeleteInterestRateRevisionCommand,
+  RecalibrateDebtBalanceCommand,
+  UpdateAmortizationPlanCommand,
+  UpdateEarlyRepaymentCommand,
+  UpdateInterestRateRevisionCommand,
+} from "./amortizable-debt";
+export {
+  executeAddEarlyRepaymentCommand,
+  executeAddInterestRateRevisionCommand,
+  executeCreateAmortizationPlanCommand,
+  executeCreateCurrentStateDebtCommand,
+  executeDeleteAmortizationPlanCommand,
+  executeDeleteEarlyRepaymentCommand,
+  executeDeleteInterestRateRevisionCommand,
+  executeRecalibrateDebtBalanceCommand,
+  executeUpdateAmortizationPlanCommand,
+  executeUpdateEarlyRepaymentCommand,
+  executeUpdateInterestRateRevisionCommand,
+} from "./amortizable-debt";
+export type {
   ApplyDatedFactsBatchParams,
   DatedFactStep,
 } from "./apply-dated-facts-batch";
