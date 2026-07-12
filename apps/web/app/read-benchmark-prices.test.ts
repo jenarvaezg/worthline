@@ -92,4 +92,27 @@ describe("readBenchmarkPricesFromControlPlane", () => {
     expect(lastUnstableCacheKeyParts).toEqual(["benchmark-prices"]);
     expect(lastUnstableCacheOptions).toEqual({ revalidate: 86_400 });
   });
+
+  test("falls back to the uncached reader when Next incremental cache is unavailable", async () => {
+    process.env.WORTHLINE_CONTROL_PLANE_DB_URL = "libsql://control-plane";
+    readBenchmarkPricesMock.mockResolvedValue([
+      { seriesId: "ipc-es", dateKey: "2024-01", value: "100" },
+    ]);
+    unstableCacheMock.mockImplementation(() => async () => {
+      throw Object.assign(
+        new Error("Invariant: incrementalCache missing in unstable_cache"),
+        {
+          __NEXT_ERROR_CODE: "E469",
+        },
+      );
+    });
+
+    const { readBenchmarkPricesFromControlPlane } = await import(
+      "./read-benchmark-prices"
+    );
+    const prices = await readBenchmarkPricesFromControlPlane("ipc-es");
+
+    expect(prices).toEqual([{ seriesId: "ipc-es", dateKey: "2024-01", value: "100" }]);
+    expect(createControlPlaneStoreMock).toHaveBeenCalledOnce();
+  });
 });
