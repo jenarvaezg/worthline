@@ -15,6 +15,7 @@ import type {
   UpdateAssetInput,
   UpdateValuationAnchorInput,
 } from "./asset-store";
+import type { CommandHost } from "./commands/host";
 import type { ConnectedSourceStore, SourcePositionInput } from "./connected-source-store";
 import type { ContributionPlanStore } from "./contribution-plan-store";
 import type { ExposureProfileStore } from "./exposure-profile-store";
@@ -134,6 +135,8 @@ export interface WorthlineStore {
   contributionPlan: ContributionPlanStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
+  /** Command-layer UnitOfWork + ripple hooks (#966). Not for direct UI use. */
+  command: CommandHost;
 
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
 

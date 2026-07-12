@@ -3,6 +3,7 @@ import type { FireScopeConfig } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
+import { createCommandHost } from "./commands/host";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
 import {
@@ -24,9 +25,12 @@ export type {
   AddValuationAnchorCommand,
   ApplyDatedFactsBatchParams,
   CommandExecutor,
+  CommandHost,
   CommandResult,
   DatedFactStep,
   DeleteValuationAnchorCommand,
+  ImportBalanceHistoryCommand,
+  ImportBalanceHistoryResult,
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
   RecordHousingValuationCommand,
@@ -40,9 +44,11 @@ export type {
 } from "./commands";
 export {
   applyDatedFactsBatch,
+  createCommandHost,
   createUnitOfWork,
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
+  executeImportBalanceHistoryCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,
@@ -311,6 +317,10 @@ async function buildStore(
       gapFillHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, today),
   });
 
+  const commandHost = createCommandHost(ctx, {
+    saveSnapshot: snapshotStore.saveSnapshot,
+  });
+
   const store: WorthlineStore = {
     snapshots: snapshotStore,
     assets: assetStore,
@@ -323,6 +333,7 @@ async function buildStore(
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,
     agentView: agentViewReadStore,
+    command: commandHost,
     // The connected-source cross-cutting seams (issue #487) — syncConnectedSource
     // and applyBinanceHistoryAndRipple — live in their own module; spread the
     // factory result onto the public store object here.
