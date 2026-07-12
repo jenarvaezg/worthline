@@ -3,6 +3,7 @@ import type { FireScopeConfig } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
+import { createAssistantProposalStore } from "./assistant-proposal-store";
 import { createCommandHost } from "./commands/host";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
@@ -102,6 +103,7 @@ export type {
 } from "./run-daily-capture";
 export { runDailyCapture } from "./run-daily-capture";
 export type {
+  ApplyStatementImportParams,
   AuditLogEntry,
   BootstrapHealthcheckOptions,
   CreateHousingHoldingCommand,
@@ -153,6 +155,15 @@ export type {
   UpdateValuationAnchorInput,
   ValuationAnchorRecord,
 } from "./asset-store";
+export type {
+  AppendAssistantProposalDocumentInput,
+  AssistantProposal,
+  AssistantProposalDocument,
+  AssistantProposalDocumentRef,
+  AssistantProposalFact,
+  AssistantProposalStore,
+  StatementOperationFact,
+} from "./assistant-proposal-store";
 export type {
   ConnectedSourceRow,
   ConnectedSourceStore,
@@ -254,6 +265,7 @@ async function buildStore(
   const exposureProfileStore = createExposureProfileStore(ctx);
   const payoutStore = createPayoutStore(ctx);
   const contributionPlanStore = createContributionPlanStore(ctx);
+  const assistantProposalStore = createAssistantProposalStore(ctx);
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
     listSourceAssetIds: connectedSourceStore.listSourceAssetIds,
@@ -333,6 +345,24 @@ async function buildStore(
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,
     agentView: agentViewReadStore,
+    assistantProposals: assistantProposalStore,
+    applyAssistantStatementProposalAndRipple: async ({ proposalId, ...params }) =>
+      ctx.transaction(async () => {
+        const proposal = await assistantProposalStore.read(proposalId);
+        if (!proposal) {
+          throw new Error(`Assistant proposal "${proposalId}" was not found.`);
+        }
+        if (proposal.kind !== "statement_import") {
+          throw new Error(`Assistant proposal "${proposalId}" has an unsupported kind.`);
+        }
+        if (proposal.status !== "draft") {
+          throw new Error(
+            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
+          );
+        }
+        await store.applyStatementImportAndRipple(params);
+        await assistantProposalStore.markApplied(proposalId);
+      }),
     command: commandHost,
     // The connected-source cross-cutting seams (issue #487) — syncConnectedSource
     // and applyBinanceHistoryAndRipple — live in their own module; spread the

@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1441,6 +1441,43 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         ON contribution_occurrence_operations(operation_id);`,
     );
     await writeSchemaVersion(client, 46);
+  }
+
+  if (version < 47) {
+    // Issue #767: durable assistant proposals store only structured facts and
+    // document identity metadata. Raw uploaded document text has no column.
+    await client.executeMultiple(`
+      CREATE TABLE IF NOT EXISTS assistant_proposals (
+        id TEXT PRIMARY KEY NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT DEFAULT 'draft' NOT NULL,
+        resolved_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS assistant_proposal_documents (
+        id TEXT PRIMARY KEY NOT NULL,
+        proposal_id TEXT NOT NULL REFERENCES assistant_proposals(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        provenance TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS assistant_proposal_documents_sequence_unique
+        ON assistant_proposal_documents(proposal_id, sequence);
+      CREATE TABLE IF NOT EXISTS assistant_proposal_facts (
+        id TEXT PRIMARY KEY NOT NULL,
+        document_id TEXT NOT NULL REFERENCES assistant_proposal_documents(id) ON DELETE CASCADE,
+        ordinal INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS assistant_proposal_facts_ordinal_unique
+        ON assistant_proposal_facts(document_id, ordinal);
+    `);
+    await writeSchemaVersion(client, 47);
   }
 
   return { ranV18Backfill, ranV33Backfill };

@@ -411,6 +411,38 @@ CREATE TABLE \`contribution_occurrence_operations\` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`contribution_occurrence_operation_unique\` ON \`contribution_occurrence_operations\` (\`operation_id\`);--> statement-breakpoint
+CREATE TABLE \`assistant_proposals\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`kind\` text NOT NULL,
+	\`status\` text DEFAULT 'draft' NOT NULL,
+	\`resolved_at\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE \`assistant_proposal_documents\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`proposal_id\` text NOT NULL,
+	\`sequence\` integer NOT NULL,
+	\`name\` text NOT NULL,
+	\`sha256\` text NOT NULL,
+	\`provenance\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`proposal_id\`) REFERENCES \`assistant_proposals\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`assistant_proposal_documents_sequence_unique\` ON \`assistant_proposal_documents\` (\`proposal_id\`,\`sequence\`);--> statement-breakpoint
+CREATE TABLE \`assistant_proposal_facts\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`document_id\` text NOT NULL,
+	\`ordinal\` integer NOT NULL,
+	\`kind\` text NOT NULL,
+	\`payload_json\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`document_id\`) REFERENCES \`assistant_proposal_documents\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`assistant_proposal_facts_ordinal_unique\` ON \`assistant_proposal_facts\` (\`document_id\`,\`ordinal\`);--> statement-breakpoint
 CREATE TABLE \`goal_holdings\` (
 	\`goal_id\` text NOT NULL,
 	\`asset_id\` text NOT NULL,

@@ -38,7 +38,7 @@ import {
 } from "@web/asistente/exposure-profile-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
-import type { AgentViewReadStore } from "@worthline/db";
+import type { AgentViewReadStore, AssistantProposalStore } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
@@ -51,8 +51,10 @@ import { jsonSchema, type ToolSet, tool } from "ai";
  * boundary. Calculation logic stays in agent-view; the model never defines its
  * own net-worth formula, only summarizes/compares what these reads return.
  *
- * Writes are impossible by construction: tools receive ONLY the read store
- * (`agentView`) — the write API never crosses this boundary (ADR 0044).
+ * Live financial-fact writes are impossible by construction: tools receive the
+ * read store (`agentView`) plus the narrow durable assistant-proposal store.
+ * The latter persists only typed draft facts and document references; applying
+ * them still requires the separate explicit-confirmation server action.
  *
  * Two chat-specific concerns wrap every read: money is pre-formatted to es-ES
  * strings so the model can't recite céntimos as euros (the #629 smoke bug),
@@ -66,10 +68,11 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 
 export interface ChatReadStore {
   agentView: AgentViewReadStore;
+  assistantProposals?: AssistantProposalStore;
 }
 
 export interface ChatToolsInput {
-  /** Runs a read against the caller's workspace (tenant already resolved). */
+  /** Runs one scoped tool operation against the caller's resolved workspace. */
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;
   /** YYYY-MM-DD valuation date — the demo clock for demo targets. */
   asOf: string;
@@ -284,11 +287,15 @@ const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
 
 const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
   broker?: string;
+  documentName?: string;
+  proposalId?: string;
   rawText?: string;
 }>({
   type: "object",
   properties: {
     broker: { type: "string" },
+    documentName: { type: "string" },
+    proposalId: { type: "string" },
     rawText: { type: "string" },
   },
   required: ["rawText"],
@@ -949,16 +956,30 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     propose_statement_import: tool({
       description:
         "Prepara una propuesta de importación de extracto de inversión (plantilla CSV). " +
-        "No escribe nada: pasa el texto del extracto tal cual (sin calcular números) y " +
-        "devuelve un preview determinista con fondos matched/new e impacto de posición. " +
-        "El usuario confirma en la app; la confirmación re-parsea y sella source: agent.",
+        "Pasa el texto y nombre del documento tal cual (sin calcular números). Se persisten " +
+        "solo los movimientos extraídos y la referencia nombre/hash; el texto se descarta. " +
+        "Para acumular otro fichero en la misma propuesta, pasa el proposalId devuelto antes. " +
+        "La confirmación re-deriva el matching vivo y sella source: agent.",
       inputSchema: STATEMENT_IMPORT_PROPOSAL_SCHEMA,
       execute: (args) =>
         input.runWithStore(async (store) => {
-          const built = await buildStatementImportProposal(store.agentView, {
-            broker: args.broker ?? "plantilla",
-            rawText: args.rawText ?? "",
-          });
+          if (!store.assistantProposals) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const built = await buildStatementImportProposal(
+            {
+              agentView: store.agentView,
+              assistantProposals: store.assistantProposals,
+            },
+            {
+              broker: args.broker ?? "plantilla",
+              ...(args.documentName === undefined
+                ? {}
+                : { documentName: args.documentName }),
+              ...(args.proposalId === undefined ? {} : { proposalId: args.proposalId }),
+              rawText: args.rawText ?? "",
+            },
+          );
           return built.ok ? built.proposal : { error: built.error };
         }),
     }),
