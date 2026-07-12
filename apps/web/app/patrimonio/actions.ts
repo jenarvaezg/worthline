@@ -1362,7 +1362,7 @@ export async function recalibrateDebtBalanceAction(
  * Import a balance-history series as a chain of re-baselines (ADR 0056, #696).
  * Consumed by #764 S5 — no UI of its own. Rows arrive as JSON in `rows`;
  * preview/validation runs in the pure module, confirm rides
- * `importBalanceHistoryAndRipple` for ONE atomic ripple from the oldest checkpoint.
+ * `executeImportBalanceHistoryCommand` for ONE atomic ripple from the oldest checkpoint.
  */
 export async function importBalanceHistoryAction(
   formData: FormData,
