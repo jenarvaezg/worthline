@@ -1,3 +1,4 @@
+import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import styles from "./landing.module.css";
 
 /**
@@ -7,12 +8,14 @@ import styles from "./landing.module.css";
  * (la prueba visual) vive absorbida en la hoja encartada del hero — decisión
  * de la crítica adversaria de #862.
  *
- * Íntegra sin JS: todo se sirve en su estado final. La hoja del hero es la
- * maqueta aprobada (aritmética reconciliada: bruto 439.814 = 9 % efectivo +
- * 30 % mercado + 6 % depósitos + 55 % vivienda; neto 291.604 = bruto −
- * 148.210) hasta que S4 (#952) la sustituya por la hoja SSG de la persona
- * demo. La isla de sesión y la orquestación de animaciones llegan en S5
- * (#953); aquí el masthead ofrece la entrada sin sesión.
+ * Íntegra sin JS: todo se sirve en su estado final. La hoja del hero ya NO es
+ * maqueta (S4, #952): sus cifras son datos reales de la persona demo «Familia»,
+ * resueltos en build por el motor y horneados en el HTML estático — la aritmética
+ * cuadra (bruto − deuda = neto) por construcción, no a mano. Ver
+ * `./hero-sheet/build-hero-sheet` para por qué eso no rompe la invariante
+ * estática (siembra en memoria solo en build, cero lecturas de DB por visita).
+ * La isla de sesión y la orquestación de animaciones llegan en S5 (#953); aquí
+ * el masthead ofrece la entrada sin sesión.
  */
 
 function DemoLink({ label = "Velo en la demo" }: { label?: string }) {
@@ -44,7 +47,7 @@ function Cover() {
         <span>worthline · libro mayor de tu patrimonio · mmxxvi</span>
       </div>
       <div className={`${styles.ghost} ${styles.num}`} aria-hidden="true">
-        291.604,37
+        {heroSheetData.netGhost}
       </div>
       <div className={styles.wrap}>
         <header className={styles.masthead}>
@@ -82,39 +85,44 @@ function Cover() {
   );
 }
 
-/** Sección 2 del outline: la prueba visual, encartada en la cubierta. */
+/**
+ * Sección 2 del outline: la prueba visual, encartada en la cubierta. Sus cifras
+ * son datos reales de la persona demo, resueltos en build (#952) — ver
+ * {@link heroSheetData}.
+ */
 function HeroSheet() {
-  const composition = [
-    { label: "Efectivo 9 %", tone: "var(--tier-cash)", width: "9%" },
-    { label: "Mercado 30 %", tone: "var(--tier-market)", width: "30%" },
-    { label: "Depósitos 6 %", tone: "var(--tier-term)", width: "6%" },
-  ];
+  const { composition, rows, sparkline } = heroSheetData;
+  const compLabel = `Composición del bruto: ${composition
+    .map((seg) => seg.label.toLowerCase())
+    .join(", ")}`;
 
   return (
     <figure className={styles.sheetFigure}>
       <span className={styles.marginalia} aria-hidden="true">
-        cerrado a 30 de junio — nada se recalcula
+        {heroSheetData.closedLabel} — nada se recalcula
       </span>
       <div className={styles.sheet}>
         <div className={styles.sheetTop}>
           <div className={styles.heroFigure}>
             <span className={styles.label}>Neto total</span>
             <span className={styles.figWrap}>
-              <span className={styles.num}>291.604 €</span>
+              <span className={styles.num}>{heroSheetData.netLabel}</span>
               <span className={styles.dblrule} />
             </span>
           </div>
           <div className={styles.sheetRight}>
-            <span className={styles.folio}>Folio 06 / 2026</span>
+            <span className={styles.folio}>{heroSheetData.folioLabel}</span>
             <br />
-            <span className={`${styles.delta} ${styles.num}`}>+3.212 € este mes</span>
+            <span className={`${styles.delta} ${styles.num}`}>
+              {heroSheetData.deltaLabel}
+            </span>
           </div>
         </div>
 
         <div className={styles.sparkWrap}>
           <div className={styles.cap}>
             <span>Últimos 12 cierres</span>
-            <span className={styles.num}>jul 25 → jun 26</span>
+            <span className={styles.num}>{heroSheetData.sparkCaption}</span>
           </div>
           <svg
             className={styles.spark}
@@ -123,69 +131,57 @@ function HeroSheet() {
             aria-hidden="true"
           >
             <polyline
-              points="0,38 25,36 50,37 75,32 100,30 125,31 150,26 175,27 200,22 225,23 250,17 275,14 297,9"
+              points={sparkline.points}
               fill="none"
               stroke="var(--ink)"
               strokeWidth="1.7"
               vectorEffect="non-scaling-stroke"
             />
-            <circle cx="297" cy="9" r="3" fill="var(--ink)" />
+            <circle cx={sparkline.last.x} cy={sparkline.last.y} r="3" fill="var(--ink)" />
           </svg>
         </div>
 
-        <div
-          className={styles.compBar}
-          role="img"
-          aria-label="Composición del bruto: efectivo 9 %, mercado 30 %, depósitos 6 %, vivienda 55 %"
-        >
+        <div className={styles.compBar} role="img" aria-label={compLabel}>
           {composition.map((seg) => (
             <span
-              key={seg.label}
-              className={styles.seg}
-              style={{ width: seg.width, background: seg.tone }}
+              key={seg.tier}
+              className={seg.housing ? `${styles.seg} ${styles.housing}` : styles.seg}
+              style={
+                seg.housing
+                  ? { width: seg.width }
+                  : { width: seg.width, background: seg.tone! }
+              }
             />
           ))}
-          <span className={`${styles.seg} ${styles.housing}`} style={{ width: "55%" }} />
         </div>
         <div className={styles.compLegend}>
           {composition.map((seg) => (
-            <span key={seg.label}>
-              <i style={{ background: seg.tone }} />
+            <span key={seg.tier}>
+              <i
+                className={seg.housing ? styles.housingSwatch : undefined}
+                style={seg.housing ? undefined : { background: seg.tone! }}
+              />
               {seg.label}
             </span>
           ))}
-          <span>
-            <i className={styles.housingSwatch} />
-            Vivienda 55 %
-          </span>
         </div>
 
         <div className={styles.sheetRows}>
-          <div className={styles.r}>
-            <span>
-              MSCI World <span className={styles.num}>· 412 part.</span>
-            </span>
-            <span className={styles.num}>
-              99.180 € <span className={styles.up}>+2,1 %</span>
-            </span>
-          </div>
-          <div className={styles.r}>
-            <span>Bitcoin</span>
-            <span className={styles.num}>
-              31.505 € <span className={styles.up}>+6,4 %</span>
-            </span>
-          </div>
-          <div className={styles.r}>
-            <span>Vivienda · Madrid</span>
-            <span className={styles.num}>240.000 €</span>
-          </div>
-          <div className={`${styles.r} ${styles.debit}`}>
-            <span>Hipoteca</span>
-            <span className={styles.num}>−148.210 €</span>
-          </div>
+          {rows.map((row) => (
+            <div
+              key={row.label}
+              className={row.debit ? `${styles.r} ${styles.debit}` : styles.r}
+            >
+              <span>
+                {row.label}
+                {row.meta ? <span className={styles.num}> · {row.meta}</span> : null}
+              </span>
+              <span className={styles.num}>{row.value}</span>
+            </div>
+          ))}
         </div>
         <div className={styles.sheetFoot}>
-          <span>Maqueta — captura real de la demo pendiente</span>
+          <span>Persona demo «Familia» · cierre {heroSheetData.closeMonthLabel}</span>
           <DemoLink />
         </div>
       </div>
@@ -608,10 +604,10 @@ function Bookend() {
           <div className={styles.code}>
             <b>mcp</b> › get_financial_context
             <br />
-            {'{ scope: "familia", asOf: "2026-06-30" }'}
-            <br />→ neto: <b className={styles.num}>291.604 €</b> · líquido:{" "}
-            <b className={styles.num}>96.410 €</b>
-            <br />→ fuente: cierre congelado 06/2026
+            {`{ scope: "familia", asOf: "${heroSheetData.asOf}" }`}
+            <br />→ neto: <b className={styles.num}>{heroSheetData.netLabel}</b> ·
+            líquido: <b className={styles.num}>{heroSheetData.liquidLabel}</b>
+            <br />→ fuente: cierre congelado {heroSheetData.closeMonthLabel}
             <br />
             <span className={styles.cm}>{"// write_*: todavía no"}</span>
           </div>

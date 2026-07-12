@@ -22,7 +22,7 @@ test("landing: the 9 sections read fully with JavaScript disabled", async ({ pag
   // La cifra también vive en el bloque MCP, así que se ancla a la hoja (figure).
   await expect(page.getByText("Neto total")).toBeVisible();
   await expect(
-    page.getByRole("figure").getByText("291.604 €", { exact: true }),
+    page.getByRole("figure").getByText("251.527 €", { exact: true }),
   ).toBeVisible();
 
   // Los asientos, en orden de lectura.
