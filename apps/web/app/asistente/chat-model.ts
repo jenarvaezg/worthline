@@ -1,6 +1,10 @@
 import type { LanguageModel } from "ai";
 
-import { resolveFirstAllowedProviderModel } from "./provider-model";
+import {
+  type ResolvedProviderModel,
+  resolveAllowedProviderModels,
+  resolveFirstAllowedProviderModel,
+} from "./provider-model";
 
 /**
  * Shared-baseline model resolution (ADR 0061): the first credential-backed
@@ -12,6 +16,13 @@ export function resolveChatModel(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): LanguageModel | null {
   return resolveFirstAllowedProviderModel(env)?.model ?? null;
+}
+
+/** The ordered production pool used by one chat request's pre-output failover. */
+export function resolveChatModels(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): readonly ResolvedProviderModel[] {
+  return resolveAllowedProviderModels(env);
 }
 
 /**

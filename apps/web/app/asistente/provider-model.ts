@@ -71,7 +71,15 @@ export function resolveProviderModel(
 export function resolveFirstAllowedProviderModel(
   env: ProviderEnvironment = process.env,
 ): ResolvedProviderModel | null {
-  const entry = availableProviderEntries(env)[0];
-  if (!entry) return null;
-  return resolveProviderModel(entry, env, { requireAdmission: true });
+  return resolveAllowedProviderModels(env)[0] ?? null;
+}
+
+/** Every credential-backed production candidate, in configured priority order. */
+export function resolveAllowedProviderModels(
+  env: ProviderEnvironment = process.env,
+): readonly ResolvedProviderModel[] {
+  return availableProviderEntries(env).flatMap((entry) => {
+    const resolved = resolveProviderModel(entry, env, { requireAdmission: true });
+    return resolved ? [resolved] : [];
+  });
 }
