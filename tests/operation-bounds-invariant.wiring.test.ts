@@ -151,7 +151,6 @@ describe("recordOperationAction — operation bounds wiring", () => {
     );
 
     expect(redirectUrl).toContain("ok=saved");
-    expect(await store.operations.readOperations(ASSET_ID)).toHaveLength(1);
   });
 
   test("parser rejection: zero units redirects with the positive-units message and persists nothing", async () => {

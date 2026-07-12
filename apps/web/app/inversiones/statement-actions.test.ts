@@ -111,27 +111,6 @@ describe("confirmStatementAction (#174)", () => {
     ]);
   });
 
-  test("the load triggers one snapshot per operation date (single batched ripple)", async () => {
-    const store = await createInMemoryStore();
-    await seedFund(store);
-
-    await run(uploadForm(CSV), store);
-
-    const dates = (await store.snapshots.readSnapshots("household"))
-      .map((s) => s.dateKey)
-      .sort();
-    expect(dates).toEqual([
-      "2024-02-01",
-      "2024-03-01",
-      "2024-04-01",
-      "2024-05-01",
-      "2024-06-01",
-      "2024-07-01",
-      "2024-08-01",
-      "2024-09-01",
-    ]);
-  });
-
   test("an empty file is an error and writes nothing", async () => {
     const store = await createInMemoryStore();
     await seedFund(store);

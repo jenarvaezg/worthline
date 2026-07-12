@@ -34,6 +34,11 @@ import {
   isEmptyExposureFields,
 } from "@web/patrimonio/[id]/editar/_surfaces/exposure-profile-form";
 import { type WorthlineStore } from "@web/store";
+import {
+  executeDeleteInvestmentOperationCommand,
+  executeMergeStatementOperationsCommand,
+  executeRecordInvestmentOperationCommand,
+} from "@worthline/db";
 import type {
   Clock,
   ExposureGeographyBucket,
@@ -180,12 +185,14 @@ export async function recordOperationAction(
     redirect(operationErrorUrl(mapDomainViolation(domainResult.violations[0])));
   }
 
-  // One seam call persists the operation AND ripples its snapshots atomically
+  // One command persists the operation AND ripples its snapshots atomically
   // (ADR 0020; backdated operation → reconstruct history, PRD #107).
-  await runActionWithStore(
-    (store) => store.recordOperationAndRipple(domainResult.value, { today }),
-    _store,
-  );
+  await runActionWithStore(async (store) => {
+    await executeRecordInvestmentOperationCommand(store, {
+      operation: domainResult.value,
+      today,
+    });
+  }, _store);
 
   redirect(successRedirectUrl(returnUrl, "saved"));
 }
@@ -358,10 +365,9 @@ export async function confirmStatementAction(
       await store.operations.readOperations(routeAssetId),
     );
 
-    // One seam call persists every create + overwrite AND runs ONE batched ripple
-    // over the dates they touch, atomically (ADR 0020 / 0018). The action no longer
-    // derives the affected-date window — the seam derives it from the operations.
-    await store.recordOperationsAndRipple({
+    // One command persists every create + overwrite AND runs ONE batched ripple
+    // over the dates they touch, atomically (ADR 0020 / 0018).
+    await executeMergeStatementOperationsCommand(store, {
       assetId: routeAssetId,
       creates: plan.toCreate.map((row, i) => ({
         assetId: routeAssetId,
@@ -486,14 +492,14 @@ export async function deleteOperationAction(
     );
   }
 
-  // One seam call deletes the operation AND ripples snapshots ≥ its date,
-  // atomically (ADR 0020; deleting a backdated operation, PRD #107). The seam
-  // derives the asset id, from-date, and `today` itself — the action passes only
-  // the operation id.
-  const deleted = await runActionWithStore(
-    (store) => store.deleteOperationAndRipple({ operationId }),
-    _store,
-  );
+  // One command deletes the operation AND ripples snapshots ≥ its date,
+  // atomically (ADR 0020; deleting a backdated operation, PRD #107).
+  const deleted = await runActionWithStore(async (store) => {
+    const result = await executeDeleteInvestmentOperationCommand(store, {
+      operationId,
+    });
+    return result.ok ? result.value : null;
+  }, _store);
 
   if (!deleted) {
     redirect(

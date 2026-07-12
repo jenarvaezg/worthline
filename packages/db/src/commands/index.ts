@@ -55,6 +55,17 @@ export type {
 } from "./import-balance-history";
 export { executeImportBalanceHistoryCommand } from "./import-balance-history";
 export type {
+  DeleteInvestmentOperationCommand,
+  DeleteInvestmentOperationResult,
+  MergeStatementOperationsCommand,
+  RecordInvestmentOperationCommand,
+} from "./investment-operations";
+export {
+  executeDeleteInvestmentOperationCommand,
+  executeMergeStatementOperationsCommand,
+  executeRecordInvestmentOperationCommand,
+} from "./investment-operations";
+export type {
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
   UpdateAssetOwnershipSplitCommand,

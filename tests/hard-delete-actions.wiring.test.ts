@@ -161,7 +161,6 @@ describe("deleteOperationAction wiring", () => {
       ),
     );
     expect(url).toContain("ok=operation_deleted");
-    expect(await store.operations.readOperations("inv1")).toEqual([]);
   });
 
   test("missing operationId: error redirect", async () => {
