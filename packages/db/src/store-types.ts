@@ -108,6 +108,11 @@ export interface ApplyStatementImportParams {
         creates: CreateInvestmentOperationInput[];
       }
   >;
+  balanceHistories?: Array<{
+    liabilityId: string;
+    rebaselines: AddBalanceRebaselineInput[];
+  }>;
+  propertyValuations?: AddValuationAnchorInput[];
   today?: string;
 }
 
@@ -199,9 +204,9 @@ export interface WorthlineStore {
     today?: string;
   }) => Promise<void>;
   /**
-   * Portfolio-level statement import seam (ADR 0055): create any included new
-   * investments, merge operations into matched investments, and ripple the affected
-   * history atomically across the confirmed selection.
+   * Multi-domain historical import seam (ADR 0055 / 0059): create any included
+   * investments, merge operations, debt rebaselines, and property valuations,
+   * then ripple the affected history once across the confirmed selection.
    */
   applyStatementImportAndRipple: (params: ApplyStatementImportParams) => Promise<void>;
   /** Apply one durable statement proposal and resolve it in the same transaction. */

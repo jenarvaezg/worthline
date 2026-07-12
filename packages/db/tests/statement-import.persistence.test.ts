@@ -241,4 +241,193 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     expect(await grossAt(store, "2024-03-01")).toBe(1 * 100_00);
     store.close();
   });
+
+  test("applies investment, debt, and housing facts atomically through one mixed ripple", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.createHousingHoldingAndRipple(
+      {
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "home",
+          id: "home_acquisition",
+          valuationDate: "2024-01-01",
+          valueMinor: 200_000_00,
+        },
+        annualAppreciationRate: null,
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 200_000_00,
+          id: "home",
+          liquidityTier: "illiquid",
+          name: "Vivienda",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+      },
+      { today: TODAY },
+    );
+    await store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+
+    await store.applyStatementImportAndRipple({
+      balanceHistories: [
+        {
+          liabilityId: "mortgage",
+          rebaselines: [
+            {
+              annualInterestRate: "0.03",
+              baselineDate: "2024-02-01",
+              endDate: "2044-01-01",
+              id: "mortgage_rebaseline",
+              liabilityId: "mortgage",
+              nextPaymentDate: "2024-03-01",
+              outstandingBalanceMinor: 150_000_00,
+              source: "agent",
+              startsAtBaseline: true,
+            },
+          ],
+        },
+      ],
+      funds: [
+        {
+          assetId: "matched_fund",
+          creates: [
+            {
+              assetId: "matched_fund",
+              currency: "EUR",
+              executedAt: "2024-02-01",
+              feesMinor: 0,
+              id: "op_mixed",
+              kind: "buy",
+              pricePerUnit: "100",
+              units: "2",
+            },
+          ],
+          kind: "matched",
+          overwrites: [],
+        },
+      ],
+      propertyValuations: [
+        {
+          adjustsPriorCurve: true,
+          assetId: "home",
+          id: "home_appraisal",
+          source: "agent",
+          valuationDate: "2024-02-01",
+          valueMinor: 240_000_00,
+        },
+      ],
+      today: TODAY,
+    });
+
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+    expect(await store.assets.readValuationAnchors("home")).toHaveLength(2);
+    expect(await store.operations.readOperations("matched_fund")).toHaveLength(2);
+    const mixed = (await store.snapshots.readSnapshots()).find(
+      ({ dateKey }) => dateKey === "2024-02-01",
+    );
+    expect(mixed).toMatchObject({
+      debts: { amountMinor: 150_000_00 },
+      grossAssets: { amountMinor: 240_000_00 + 2 * 100_00 },
+    });
+    store.close();
+  });
+
+  test("rolls back facts from every domain when a mixed confirm fails", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "home",
+      liquidityTier: "illiquid",
+      name: "Vivienda",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    const snapshotsBefore = await store.snapshots.readSnapshots();
+    const operationsBefore = await store.operations.readOperations("matched_fund");
+
+    await expect(
+      store.applyStatementImportAndRipple({
+        balanceHistories: [
+          {
+            liabilityId: "mortgage",
+            rebaselines: [
+              {
+                annualInterestRate: "0.03",
+                baselineDate: "2024-02-01",
+                endDate: "2044-01-01",
+                id: "mixed_rebaseline",
+                liabilityId: "mortgage",
+                nextPaymentDate: "2024-03-01",
+                outstandingBalanceMinor: 150_000_00,
+              },
+            ],
+          },
+        ],
+        funds: [
+          {
+            assetId: "matched_fund",
+            creates: [
+              {
+                assetId: "matched_fund",
+                currency: "EUR",
+                executedAt: "2024-02-01",
+                feesMinor: 0,
+                id: "mixed_rolled_back_operation",
+                kind: "buy",
+                pricePerUnit: "100",
+                units: "2",
+              },
+            ],
+            kind: "matched",
+            overwrites: [],
+          },
+        ],
+        propertyValuations: [
+          {
+            adjustsPriorCurve: true,
+            assetId: "home",
+            id: "duplicate_anchor",
+            valuationDate: "2024-02-01",
+            valueMinor: 220_000_00,
+          },
+          {
+            adjustsPriorCurve: true,
+            assetId: "home",
+            id: "duplicate_anchor",
+            valuationDate: "2024-03-01",
+            valueMinor: 230_000_00,
+          },
+        ],
+        today: TODAY,
+      }),
+    ).rejects.toThrow();
+
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+    expect(await store.assets.readValuationAnchors("home")).toHaveLength(0);
+    expect(await store.operations.readOperations("matched_fund")).toEqual(
+      operationsBefore,
+    );
+    expect(await store.snapshots.readSnapshots()).toEqual(snapshotsBefore);
+    store.close();
+  });
 });

@@ -66,20 +66,25 @@ function countingClient(client: Client, bump: (sql: string) => void): Client {
 async function createCountingStore(): Promise<{
   store: WorthlineStore;
   holdingReads: () => number;
+  snapshotWrites: () => number;
   reset: () => void;
 }> {
-  let count = 0;
+  let readCount = 0;
+  let writeCount = 0;
   const client = countingClient(openLibsqlClient(":memory:"), (message) => {
     if (/\bsnapshot_holdings\b/i.test(message)) {
-      if (/^\s*select/i.test(message)) count += 1;
+      if (/^\s*select/i.test(message)) readCount += 1;
     }
+    if (/^\s*insert\s+into\s+["`]?snapshots["`]?/i.test(message)) writeCount += 1;
   });
   const store = await createStoreFromSqlite(client);
   return {
-    holdingReads: () => count,
+    holdingReads: () => readCount,
     reset: () => {
-      count = 0;
+      readCount = 0;
+      writeCount = 0;
     },
+    snapshotWrites: () => writeCount,
     store,
   };
 }
@@ -230,6 +235,170 @@ describe("recordOperationsAndRipple batched statement seam (#174)", () => {
       expect(await grossAt(store, addDays(startDate, i))).toBe(seedAt(i) + fundAt(i));
     }
 
+    store.close();
+  });
+});
+
+describe("applyStatementImportAndRipple one-pass writes (#770)", () => {
+  test("investment-only import still saves each affected snapshot exactly once", async () => {
+    const { reset, snapshotWrites, store } = await createCountingStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    for (const [index, dateKey] of ["2024-01-01", "2024-02-01", "2024-03-01"].entries()) {
+      await store.recordOperationAndRipple(
+        {
+          assetId: "fund",
+          currency: "EUR",
+          executedAt: dateKey,
+          id: `seed_${index}`,
+          kind: "buy",
+          pricePerUnit: "100",
+          units: "1",
+        },
+        { today: TODAY },
+      );
+    }
+
+    reset();
+    await store.applyStatementImportAndRipple({
+      funds: [
+        {
+          assetId: "fund",
+          creates: [
+            {
+              assetId: "fund",
+              currency: "EUR",
+              executedAt: "2024-01-01",
+              id: "imported_investment",
+              kind: "buy",
+              pricePerUnit: "100",
+              units: "1",
+            },
+          ],
+          kind: "matched",
+          overwrites: [],
+        },
+      ],
+      today: TODAY,
+    });
+
+    const affected = (await store.snapshots.readSnapshots()).filter(
+      ({ dateKey }) => dateKey >= "2024-01-01",
+    );
+    expect(snapshotWrites()).toBe(affected.length);
+    store.close();
+  });
+
+  test("mixed investment, housing, and debt import saves every affected snapshot once", async () => {
+    const { reset, snapshotWrites, store } = await createCountingStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.createHousingHoldingAndRipple(
+      {
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "home",
+          id: "home_acquisition",
+          valuationDate: "2024-01-01",
+          valueMinor: 200_000_00,
+        },
+        annualAppreciationRate: null,
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 200_000_00,
+          id: "home",
+          liquidityTier: "illiquid",
+          name: "Vivienda",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+      },
+      { today: TODAY },
+    );
+    await store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+
+    reset();
+    await store.applyStatementImportAndRipple({
+      balanceHistories: [
+        {
+          liabilityId: "mortgage",
+          rebaselines: [
+            {
+              annualInterestRate: "0.03",
+              baselineDate: "2024-02-01",
+              endDate: "2024-05-01",
+              id: "mixed_rebaseline",
+              liabilityId: "mortgage",
+              nextPaymentDate: "2024-03-01",
+              outstandingBalanceMinor: 150_000_00,
+              startsAtBaseline: true,
+            },
+          ],
+        },
+      ],
+      funds: [
+        {
+          assetId: "fund",
+          creates: [
+            {
+              assetId: "fund",
+              currency: "EUR",
+              executedAt: "2024-02-01",
+              id: "mixed_operation",
+              kind: "buy",
+              pricePerUnit: "100",
+              units: "1",
+            },
+          ],
+          kind: "matched",
+          overwrites: [],
+        },
+      ],
+      propertyValuations: [
+        {
+          adjustsPriorCurve: true,
+          assetId: "home",
+          id: "mixed_appraisal",
+          valuationDate: "2024-02-01",
+          valueMinor: 220_000_00,
+        },
+      ],
+      today: TODAY,
+    });
+
+    const affected = (await store.snapshots.readSnapshots()).filter(
+      ({ dateKey }) => dateKey >= "2024-02-01",
+    );
+    expect(affected.length).toBeGreaterThan(1);
+    expect(snapshotWrites()).toBe(affected.length);
     store.close();
   });
 });

@@ -587,6 +587,196 @@ async function rippleHistoricalSnapshotsForOperations(
 }
 
 /**
+ * One-pass ripple for a mixed historical import (ADR 0059, #770). All facts are
+ * persisted before this runs. Dependencies and frozen rows are read once, every
+ * affected domain is folded in memory, and each snapshot is saved at most once.
+ */
+async function rippleHistoricalSnapshotsForMixedImport(
+  ctx: StoreContext,
+  workspace: Workspace,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
+  params: {
+    investments: ReadonlyArray<{ assetId: string; dateKeys: string[] }>;
+    debts: ReadonlyArray<{ liabilityId: string; fromDateKey: string }>;
+    housing: ReadonlyArray<{ assetId: string; fromDateKey: string }>;
+    today: string;
+  },
+): Promise<void> {
+  const requestedDates = [
+    ...params.investments.flatMap(({ dateKeys }) => dateKeys),
+    ...params.debts.map(({ fromDateKey }) => fromDateKey),
+    ...params.housing.map(({ fromDateKey }) => fromDateKey),
+  ];
+  if (requestedDates.length === 0) return;
+
+  const { db } = ctx;
+  const deps = await buildHistoricalSnapshotDeps(db, workspace);
+  const investments = (
+    await Promise.all(
+      params.investments.map(async ({ assetId, dateKeys }) => {
+        const asset = await readInvestmentIdentity(db, assetId);
+        if (!asset || dateKeys.length === 0) return null;
+        return {
+          asset,
+          dateKeys,
+          frozenIdentity: await readFrozenIdentityCaptures(db, assetId, "asset"),
+          operations: deps.operationsByAsset.get(assetId) ?? [],
+        };
+      }),
+    )
+  ).filter((entry) => entry !== null);
+  const housing = (
+    await Promise.all(
+      params.housing.map(async ({ assetId, fromDateKey }) => {
+        const asset = await readInvestmentIdentity(db, assetId);
+        const curve = deps.housingValuationByAsset.get(assetId);
+        if (!asset || !isHousingAsset(asset) || !curve) return null;
+        return {
+          asset,
+          curve,
+          fromDateKey,
+          frozenIdentity: await readFrozenIdentityCaptures(db, assetId, "asset"),
+        };
+      }),
+    )
+  ).filter((entry) => entry !== null);
+  const debts = (
+    await Promise.all(
+      params.debts.map(async ({ liabilityId, fromDateKey }) => {
+        const liability = await readLiabilityIdentity(db, liabilityId);
+        const curve = deps.debtBalanceByLiability.get(liabilityId);
+        if (!liability || !curve || curve.debtModel === null) return null;
+        return { curve, fromDateKey, liability };
+      }),
+    )
+  ).filter((entry) => entry !== null);
+
+  const generateDates = new Set<string>();
+  for (const { dateKeys } of investments) {
+    for (const dateKey of dateKeys) generateDates.add(dateKey);
+  }
+  for (const { fromDateKey } of housing) generateDates.add(fromDateKey);
+  for (const { curve, fromDateKey } of debts) {
+    for (const fact of curve.balanceRebaselines ?? []) {
+      if (fact.baselineDate < fromDateKey) continue;
+      for (const dateKey of amortizationPaymentDatesUpTo(
+        amortizationPlanFromBalanceRebaseline(fact),
+        params.today,
+      )) {
+        generateDates.add(dateKey);
+      }
+    }
+  }
+  const recalcFrom = [...generateDates, ...requestedDates].reduce((min, date) =>
+    date < min ? date : min,
+  );
+  const housingAssetIds = housingAssetIdsOf(deps.assets);
+
+  for (const scope of listScopeOptions(workspace)) {
+    const existing = await readSnapshots(db, scope.id);
+    const existingByDate = new Set(existing.map(({ dateKey }) => dateKey));
+
+    for (const dateKey of generateDates) {
+      if (dateKey >= params.today || existingByDate.has(dateKey)) continue;
+      const built = buildSnapshotAtDate({
+        assets: deps.assets,
+        capturedAt: historicalCapturedAt(dateKey),
+        coinPositionsByAsset: deps.coinPositionsByAsset,
+        costBasisAssetIds: deps.costBasisAssetIds,
+        debtBalanceByLiability: deps.debtBalanceByLiability,
+        housingValuationByAsset: deps.housingValuationByAsset,
+        id: `histsnap_${scope.id}_${dateKey}`,
+        liabilities: deps.liabilities,
+        manualValueHistory: deps.manualValueHistory,
+        operationsByAsset: deps.operationsByAsset,
+        scopeId: scope.id,
+        scopeLabel: scope.label,
+        targetDate: dateKey,
+        today: params.today,
+        workspace,
+      });
+      if (built) {
+        await saveSnapshot({
+          holdings: built.holdings,
+          replace: false,
+          snapshot: built.snapshot,
+        });
+      }
+    }
+
+    const frozenByDate = groupFrozenHoldingsByDate(
+      await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
+    );
+    for (const snap of existing) {
+      if (snap.dateKey < recalcFrom) continue;
+      const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
+      if (frozenHoldings.length === 0) continue;
+
+      let current: ValuedNetWorthSnapshot | null = {
+        holdings: frozenHoldings,
+        snapshot: snap,
+      };
+      for (const investment of investments) {
+        const fromDateKey = investment.dateKeys.reduce(
+          (min, date) => (date < min ? date : min),
+          investment.dateKeys[0]!,
+        );
+        if (snap.dateKey < fromDateKey) continue;
+        current = recalculateSnapshotForAsset({
+          asset: investment.asset,
+          frozenHoldings: current.holdings,
+          frozenIdentity: investment.frozenIdentity,
+          operations: investment.operations,
+          snapshot: current.snapshot,
+          workspace,
+        });
+        if (!current) break;
+      }
+      if (current) {
+        for (const item of housing) {
+          if (snap.dateKey < item.fromDateKey) continue;
+          current = recalculateSnapshotForHousing({
+            asset: item.asset,
+            curve: item.curve,
+            frozenHoldings: current.holdings,
+            frozenIdentity: item.frozenIdentity,
+            manualValueHistory: deps.manualValueHistory,
+            snapshot: current.snapshot,
+            today: params.today,
+            workspace,
+          });
+          if (!current) break;
+        }
+      }
+      if (current) {
+        for (const item of debts) {
+          if (snap.dateKey < item.fromDateKey) continue;
+          current = recalculateSnapshotForLiability({
+            curve: item.curve,
+            frozenHoldings: current.holdings,
+            housingAssetIds,
+            liability: item.liability,
+            snapshot: current.snapshot,
+            workspace,
+          });
+          if (!current) break;
+        }
+      }
+
+      if (current) {
+        await saveSnapshot({
+          holdings: current.holdings,
+          replace: true,
+          snapshot: current.snapshot,
+        });
+      } else {
+        await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+      }
+    }
+  }
+}
+
+/**
  * Ripple effect for housing valuation curves (PRD #108): declaring, editing, or
  * deleting a valuation anchor — or changing the appreciation rate — regenerates
  * the snapshot at the change date and recalculates the existing snapshots it
@@ -1230,6 +1420,11 @@ export interface DatedFactSeams {
           creates: CreateInvestmentOperationInput[];
         }
     >;
+    balanceHistories?: Array<{
+      liabilityId: string;
+      rebaselines: AddBalanceRebaselineInput[];
+    }>;
+    propertyValuations?: AddValuationAnchorInput[];
     today?: string;
   }) => Promise<void>;
   deleteOperationAndRipple: (params: {
@@ -1491,7 +1686,12 @@ export function createDatedFactSeams(
         );
       });
     },
-    applyStatementImportAndRipple: async ({ funds, today: todayOpt }) => {
+    applyStatementImportAndRipple: async ({
+      balanceHistories = [],
+      funds,
+      propertyValuations = [],
+      today: todayOpt,
+    }) => {
       const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       const operationDateKeysByAsset = new Map<string, string[]>();
 
@@ -1527,22 +1727,41 @@ export function createDatedFactSeams(
           }
         }
 
+        for (const history of balanceHistories) {
+          for (const rebaseline of history.rebaselines) {
+            await stores.liabilities.addBalanceRebaseline(rebaseline);
+          }
+        }
+        for (const valuation of propertyValuations) {
+          await stores.assets.addValuationAnchor(valuation);
+        }
+
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
 
-        // ONE multi-asset ripple for the whole import. Rippling once per fund
-        // re-wrote every snapshot in the band once per fund — for a real
-        // multi-ISIN statement (26 funds × ~150 snapshots × ~6 libsql round
-        // trips each) that exceeded the hosted 300s function ceiling, and all
-        // but the last pass per snapshot was redundant work.
-        await rippleHistoricalSnapshotsForOperations(
+        // ONE multi-domain ripple for the whole import. Every affected holding
+        // is folded in memory and each snapshot is reconciled/saved once.
+        await rippleHistoricalSnapshotsForMixedImport(
           ctx,
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            assets: [...operationDateKeysByAsset].map(([assetId, operationDateKeys]) => ({
+            debts: balanceHistories
+              .filter(({ rebaselines }) => rebaselines.length > 0)
+              .map(({ liabilityId, rebaselines }) => ({
+                fromDateKey: rebaselines.reduce(
+                  (min, item) => (item.baselineDate < min ? item.baselineDate : min),
+                  rebaselines[0]!.baselineDate,
+                ),
+                liabilityId,
+              })),
+            housing: propertyValuations.map(({ assetId, valuationDate }) => ({
               assetId,
-              operationDateKeys,
+              fromDateKey: valuationDate,
+            })),
+            investments: [...operationDateKeysByAsset].map(([assetId, dateKeys]) => ({
+              assetId,
+              dateKeys,
             })),
             today,
           },
