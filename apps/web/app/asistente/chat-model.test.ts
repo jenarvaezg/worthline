@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { chatModelLabel, resolveChatModel } from "./chat-model";
+import { chatModelLabel, resolveChatModel, resolveChatModels } from "./chat-model";
 
 describe("chat model resolution", () => {
   it("resolves no model or label from an empty credential pool", () => {
     expect(resolveChatModel({})).toBeNull();
+    expect(resolveChatModels({})).toEqual([]);
     expect(chatModelLabel({})).toBeNull();
+  });
+
+  it("resolves the whole ordered production pool for failover", () => {
+    expect(
+      resolveChatModels({
+        GOOGLE_GENERATIVE_AI_API_KEY: "google-key",
+        CEREBRAS_API_KEY: "cerebras-key",
+        GROQ_API_KEY: "groq-key",
+        WORTHLINE_CHAT_PROVIDER_ORDER: "cerebras,google",
+      }).map(({ provider }) => provider),
+    ).toEqual(["cerebras", "google", "groq"]);
   });
 
   it.each([

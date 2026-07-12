@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveFirstAllowedProviderModel, resolveProviderModel } from "./provider-model";
+import {
+  resolveAllowedProviderModels,
+  resolveFirstAllowedProviderModel,
+  resolveProviderModel,
+} from "./provider-model";
 import { DEFAULT_PROVIDER_ALLOWLIST } from "./provider-pool";
 
 describe("shared provider model resolution", () => {
@@ -66,5 +70,20 @@ describe("shared provider model resolution", () => {
       resolveProviderModel({ provider: "groq", modelId: "candidate" }, {}),
     ).toBeNull();
     expect(resolveFirstAllowedProviderModel({})).toBeNull();
+  });
+
+  it("resolves every credential-backed candidate in strict pool order", () => {
+    expect(
+      resolveAllowedProviderModels({
+        GOOGLE_GENERATIVE_AI_API_KEY: "google-key",
+        CEREBRAS_API_KEY: "cerebras-key",
+        GROQ_API_KEY: "groq-key",
+        WORTHLINE_CHAT_PROVIDER_ORDER: "cerebras,google",
+      }).map(({ provider, modelId }) => ({ provider, modelId })),
+    ).toEqual([
+      { provider: "cerebras", modelId: "gpt-oss-120b" },
+      { provider: "google", modelId: "gemini-3.1-flash-lite" },
+      { provider: "groq", modelId: "llama-3.3-70b-versatile" },
+    ]);
   });
 });

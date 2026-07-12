@@ -1,6 +1,10 @@
 import { chatAsOf } from "@web/asistente/chat-clock";
-import { resolveChatModel } from "@web/asistente/chat-model";
+import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
+import {
+  classifyPreOutputProviderError,
+  streamWithProviderFailover,
+} from "@web/asistente/provider-failover";
 import { chatRatePlan, chatRateWindow } from "@web/asistente/rate-limit";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { isScreenContext, type ScreenContext } from "@web/asistente/screen-context";
@@ -95,8 +99,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Config check first: a misconfigured deploy must not burn callers' quota.
-  const model = resolveChatModel();
-  if (model === null) {
+  const providers = resolveChatModels();
+  if (providers.length === 0) {
     return jsonError("assistant_unavailable", 503);
   }
 
@@ -118,24 +122,43 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("invalid_body", 400);
   }
 
-  const result = streamText({
-    model,
-    system: buildChatSystemPrompt(body.screenContext),
-    messages: modelMessages,
-    tools: createChatTools({
-      runWithStore: (run) =>
-        withStore((store) => run({ agentView: store.agentView }), target),
-      asOf: chatAsOf(target),
-    }),
-    stopWhen: isStepCount(MAX_STEPS),
+  const system = buildChatSystemPrompt(body.screenContext);
+  const tools = createChatTools({
+    runWithStore: (run) =>
+      withStore((store) => run({ agentView: store.agentView }), target),
+    asOf: chatAsOf(target),
   });
+  const selected = await streamWithProviderFailover({
+    providers,
+    startStream: (provider) =>
+      streamText({
+        model: provider.model,
+        system,
+        messages: modelMessages,
+        tools,
+        stopWhen: isStepCount(MAX_STEPS),
+        // Cross-provider failover is the retry policy for a rejected request.
+        // Retrying the same 429 first would delay request-too-large failover.
+        maxRetries: 0,
+        // AI SDK's default callback logs the complete APICallError, including
+        // requestBodyValues. Attempt and stream logs below are sanitized.
+        onError: () => undefined,
+      }).stream,
+    log: (entry) => console.info("Assistant provider attempt", entry),
+  });
+  if (selected === null) {
+    return jsonError("assistant_unavailable", 503);
+  }
 
   return createUIMessageStreamResponse({
     stream: toUIMessageStream({
-      stream: result.stream,
+      stream: selected.stream,
       onError: (error) => {
-        // Log the real cause server-side; the client gets a generic string.
-        console.error("Chat stream failed", error);
+        console.error("Chat stream failed", {
+          provider: selected.provider.provider,
+          modelId: selected.provider.modelId,
+          classification: classifyPreOutputProviderError(error) ?? "provider_error",
+        });
         return "provider_error";
       },
     }),

@@ -6,10 +6,19 @@
  * conventions as api/mcp/route.test.ts.
  */
 
-import type { LanguageModelV4StreamPart, LanguageModelV4Usage } from "@ai-sdk/provider";
+import {
+  APICallError,
+  type LanguageModelV4StreamPart,
+  type LanguageModelV4Usage,
+} from "@ai-sdk/provider";
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
-import { resolveChatModel } from "@web/asistente/chat-model";
+import { resolveChatModels } from "@web/asistente/chat-model";
+import type { ResolvedProviderModel } from "@web/asistente/provider-model";
+import type {
+  AssistantProvider,
+  ProviderCredentialEnvKey,
+} from "@web/asistente/provider-pool";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
@@ -22,11 +31,14 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "./route";
 
 vi.mock("@web/read-store-target", () => ({ readStoreTarget: vi.fn() }));
-vi.mock("@web/asistente/chat-model", () => ({ resolveChatModel: vi.fn() }));
+vi.mock("@web/asistente/chat-model", () => ({ resolveChatModels: vi.fn() }));
 vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() }));
 vi.mock("@web/store", () => ({
   withStore: <T>(run: (store: WorthlineStore) => Promise<T>) => run(currentStore),
 }));
+
+const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
+const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
 const AS_OF = "2026-06-19";
 const SEED_TIMEOUT_MS = 30_000;
@@ -81,6 +93,76 @@ function fakeChatModel() {
   });
 }
 
+function simpleAnswerModel(text: string) {
+  return new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "stream-start" as const, warnings: [] },
+          { type: "text-start" as const, id: "t1" },
+          { type: "text-delta" as const, id: "t1", delta: text },
+          { type: "text-end" as const, id: "t1" },
+          {
+            type: "finish" as const,
+            finishReason: { unified: "stop" as const, raw: undefined },
+            usage: USAGE,
+          },
+        ],
+      }),
+    }),
+  });
+}
+
+function providerError(statusCode: number, message: string) {
+  return new APICallError({
+    message,
+    url: "https://provider.invalid/chat",
+    requestBodyValues: {},
+    statusCode,
+  });
+}
+
+function rejectedModel(error: unknown) {
+  return new MockLanguageModelV4({
+    doStream: async () => {
+      throw error;
+    },
+  });
+}
+
+function partialAnswerModel(text: string, error: unknown) {
+  return new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "stream-start" as const, warnings: [] },
+          { type: "text-start" as const, id: "t1" },
+          { type: "text-delta" as const, id: "t1", delta: text },
+          { type: "error" as const, error },
+        ],
+      }),
+    }),
+  });
+}
+
+function resolvedModel(
+  provider: AssistantProvider,
+  model: MockLanguageModelV4,
+): ResolvedProviderModel {
+  const credentialEnvKeys: Record<AssistantProvider, ProviderCredentialEnvKey> = {
+    google: "GOOGLE_GENERATIVE_AI_API_KEY",
+    cerebras: "CEREBRAS_API_KEY",
+    groq: "GROQ_API_KEY",
+  };
+  return {
+    provider,
+    modelId: `${provider}-test-model`,
+    credentialEnvKey: credentialEnvKeys[provider],
+    label: `${provider} · ${provider}-test-model`,
+    model,
+  };
+}
+
 function chatRequest(body: unknown): Request {
   return new Request("http://127.0.0.1/api/chat", {
     method: "POST",
@@ -106,7 +188,9 @@ beforeEach(() => {
     now: AS_OF,
   });
   vi.mocked(countChatRequest).mockResolvedValue(1);
-  vi.mocked(resolveChatModel).mockReturnValue(fakeChatModel());
+  vi.mocked(resolveChatModels).mockReturnValue([
+    resolvedModel("google", fakeChatModel()),
+  ]);
 });
 
 describe("POST /api/chat", () => {
@@ -137,7 +221,7 @@ describe("POST /api/chat", () => {
   it("returns 429 without calling the provider when over the limit", async () => {
     vi.mocked(countChatRequest).mockResolvedValue(999);
     const model = fakeChatModel();
-    vi.mocked(resolveChatModel).mockReturnValue(model);
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
 
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
@@ -151,7 +235,7 @@ describe("POST /api/chat", () => {
   it("returns 401 for unauthenticated callers without touching the provider", async () => {
     vi.mocked(readStoreTarget).mockResolvedValue({ kind: "unauthenticated" });
     const model = fakeChatModel();
-    vi.mocked(resolveChatModel).mockReturnValue(model);
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
 
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
@@ -160,7 +244,7 @@ describe("POST /api/chat", () => {
   });
 
   it("returns 503 when no shared credential is configured", async () => {
-    vi.mocked(resolveChatModel).mockReturnValue(null);
+    vi.mocked(resolveChatModels).mockReturnValue([]);
 
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
@@ -182,6 +266,65 @@ describe("POST /api/chat", () => {
     );
     expect(notJson.status).toBe(400);
 
-    expect(vi.mocked(resolveChatModel)).not.toHaveBeenCalled();
+    expect(vi.mocked(resolveChatModels)).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits once, then rescues a pre-output provider rejection", async () => {
+    const first = rejectedModel(providerError(429, "quota exhausted"));
+    const second = simpleAnswerModel("respuesta del segundo proveedor");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("respuesta del segundo proveedor");
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(first.doStreamCalls).toHaveLength(1);
+    expect(second.doStreamCalls).toHaveLength(1);
+  });
+
+  it("returns 503 after every configured provider rejects before output", async () => {
+    const first = rejectedModel(providerError(503, "unavailable"));
+    const second = rejectedModel(providerError(401, "invalid credential"));
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "assistant_unavailable" });
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(first.doStreamCalls).toHaveLength(1);
+    expect(second.doStreamCalls).toHaveLength(1);
+  });
+
+  it("keeps the existing stream error path after output and does not fail over", async () => {
+    const first = partialAnswerModel("respuesta parcial", providerError(503, "late"));
+    const second = simpleAnswerModel("no debe aparecer");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("respuesta parcial");
+    expect(streamed).toContain("provider_error");
+    expect(first.doStreamCalls).toHaveLength(1);
+    expect(second.doStreamCalls).toHaveLength(0);
+    expect(consoleError).toHaveBeenCalledWith("Chat stream failed", {
+      provider: "google",
+      modelId: "google-test-model",
+      classification: "provider_unavailable",
+    });
+    expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain("respuesta parcial");
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("respuesta parcial");
   });
 });

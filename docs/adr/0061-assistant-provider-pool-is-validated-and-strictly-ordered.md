@@ -27,12 +27,17 @@ factories and resolution. This prevents environment configuration from
 introducing an unreviewed production model without making the admission harness
 circular.
 
-Priority is deterministic, not round-robin. Runtime failover and cooldown are a
-later slice; this decision only establishes the ordered candidates and selects
-the first usable one. Revalidation is event-driven: rerun the harness and review
-a fresh mark whenever a model ID, provider behavior, assistant system prompt,
-tool contract, golden-question contract, or admission threshold changes, and
-when production evidence suggests a material quality regression. A normally
-admitted entry that cannot be revalidated must leave the pool. The Groq
-exception must be removed or replaced by a normal mark once a complete run is
-available; it must not be copied to another provider or model.
+Priority is deterministic, not round-robin. For each request, runtime tries the
+ordered credential-backed candidates until one emits real output. A quota
+rejection, request-too-large 429, invalid credential, or 5xx before that point
+moves invisibly to the next candidate; after output starts, the existing stream
+error path remains authoritative and no provider is replayed. The user/IP rate
+limit is charged once before these attempts. Cooldown remains a later slice.
+
+Revalidation is event-driven: rerun the harness and review a fresh mark whenever
+a model ID, provider behavior, assistant system prompt, tool contract,
+golden-question contract, or admission threshold changes, and when production
+evidence suggests a material quality regression. A normally admitted entry that
+cannot be revalidated must leave the pool. The Groq exception must be removed or
+replaced by a normal mark once a complete run is available; it must not be copied
+to another provider or model.
