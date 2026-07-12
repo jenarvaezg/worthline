@@ -1,5 +1,7 @@
 import { APICallError, LoadAPIKeyError } from "ai";
 
+import { providerErrorChain, providerErrorText } from "./provider-error";
+
 export type ProviderFailureClassification =
   | "request_too_large"
   | "quota_exhausted"
@@ -22,51 +24,24 @@ export interface ProviderFailoverLog {
   classification?: ProviderFailureClassification | "non_failover";
 }
 
+export interface ProviderRejection<Provider extends FailoverProvider> {
+  provider: Provider;
+  classification: ProviderFailureClassification;
+  error: unknown;
+}
+
 interface StreamPart {
   type: string;
   error?: unknown;
-}
-
-function errorChain(error: unknown): unknown[] {
-  const chain: unknown[] = [];
-  let current = error;
-  while (current !== undefined && chain.length < 5) {
-    chain.push(current);
-    if (typeof current !== "object" || current === null || !("cause" in current)) break;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return chain;
-}
-
-function searchableErrorText(error: unknown): string {
-  return errorChain(error)
-    .flatMap((candidate) => {
-      if (typeof candidate !== "object" || candidate === null) return [];
-      const apiError = candidate as {
-        message?: unknown;
-        responseBody?: unknown;
-        data?: unknown;
-      };
-      const values = [apiError.message, apiError.responseBody];
-      if (apiError.data !== undefined) {
-        try {
-          values.push(JSON.stringify(apiError.data));
-        } catch {
-          // Classification is best-effort; provider data is never logged.
-        }
-      }
-      return values.filter((value): value is string => typeof value === "string");
-    })
-    .join(" ");
 }
 
 /** Classify only failures that are safe to retry against another admitted provider. */
 export function classifyPreOutputProviderError(
   error: unknown,
 ): ProviderFailureClassification | null {
-  const chain = errorChain(error);
+  const chain = providerErrorChain(error);
   const apiError = chain.find(APICallError.isInstance);
-  const text = searchableErrorText(error);
+  const text = providerErrorText(error);
 
   if (chain.some(LoadAPIKeyError.isInstance)) return "invalid_credential";
   if (
@@ -198,6 +173,19 @@ function logRejected(
   });
 }
 
+async function notifyRejected<Provider extends FailoverProvider>(
+  rejection: ProviderRejection<Provider>,
+  onRejected?: (rejection: ProviderRejection<Provider>) => void | Promise<void>,
+  onRejectedError?: (error: unknown) => void,
+): Promise<void> {
+  if (!onRejected) return;
+  try {
+    await onRejected(rejection);
+  } catch (error) {
+    onRejectedError?.(error);
+  }
+}
+
 export async function streamWithProviderFailover<
   Provider extends FailoverProvider,
   Part extends StreamPart,
@@ -205,10 +193,14 @@ export async function streamWithProviderFailover<
   providers,
   startStream,
   log,
+  onRejected,
+  onRejectedError,
 }: {
   providers: readonly Provider[];
   startStream: (provider: Provider) => ReadableStream<Part>;
   log: (entry: ProviderFailoverLog) => void;
+  onRejected?: (rejection: ProviderRejection<Provider>) => void | Promise<void>;
+  onRejectedError?: (error: unknown) => void;
 }): Promise<{ provider: Provider; stream: ReadableStream<Part> } | null> {
   for (const [index, provider] of providers.entries()) {
     const attempt = index + 1;
@@ -235,6 +227,11 @@ export async function streamWithProviderFailover<
         return { provider, stream: streamFromParts([sanitizedErrorPart<Part>()]) };
       }
       logRejected(log, provider, attempt, classification);
+      await notifyRejected(
+        { provider, classification, error },
+        onRejected,
+        onRejectedError,
+      );
       continue;
     }
 
@@ -261,6 +258,11 @@ export async function streamWithProviderFailover<
           };
         }
         logRejected(log, provider, attempt, classification);
+        await notifyRejected(
+          { provider, classification, error },
+          onRejected,
+          onRejectedError,
+        );
         break;
       }
       if (result.done) {
@@ -276,6 +278,11 @@ export async function streamWithProviderFailover<
         if (classification !== null) {
           await discardReader(reader);
           logRejected(log, provider, attempt, classification);
+          await notifyRejected(
+            { provider, classification, error: part.error },
+            onRejected,
+            onRejectedError,
+          );
           break;
         }
 

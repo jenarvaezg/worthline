@@ -14,6 +14,10 @@ import {
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { resolveChatModels } from "@web/asistente/chat-model";
+import {
+  readProviderCooldowns,
+  recordProviderCooldown,
+} from "@web/asistente/provider-cooldown-store";
 import type { ResolvedProviderModel } from "@web/asistente/provider-model";
 import type {
   AssistantProvider,
@@ -32,6 +36,10 @@ import { POST } from "./route";
 
 vi.mock("@web/read-store-target", () => ({ readStoreTarget: vi.fn() }));
 vi.mock("@web/asistente/chat-model", () => ({ resolveChatModels: vi.fn() }));
+vi.mock("@web/asistente/provider-cooldown-store", () => ({
+  readProviderCooldowns: vi.fn(),
+  recordProviderCooldown: vi.fn(),
+}));
 vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() }));
 vi.mock("@web/store", () => ({
   withStore: <T>(run: (store: WorthlineStore) => Promise<T>) => run(currentStore),
@@ -188,6 +196,12 @@ beforeEach(() => {
     now: AS_OF,
   });
   vi.mocked(countChatRequest).mockResolvedValue(1);
+  vi.mocked(readProviderCooldowns).mockResolvedValue({
+    mode: "hosted",
+    deploymentKey: "preview-959",
+    cooldowns: [],
+  });
+  vi.mocked(recordProviderCooldown).mockResolvedValue(true);
   vi.mocked(resolveChatModels).mockReturnValue([
     resolvedModel("google", fakeChatModel()),
   ]);
@@ -284,6 +298,108 @@ describe("POST /api/chat", () => {
     expect(countChatRequest).toHaveBeenCalledTimes(1);
     expect(first.doStreamCalls).toHaveLength(1);
     expect(second.doStreamCalls).toHaveLength(1);
+    expect(recordProviderCooldown).toHaveBeenCalledWith("google", expect.any(Date));
+  });
+
+  it("skips active cooldowns observed from another instance", async () => {
+    const first = simpleAnswerModel("no debe aparecer");
+    const second = simpleAnswerModel("respuesta después del cooldown");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+    vi.mocked(readProviderCooldowns).mockResolvedValue({
+      mode: "hosted",
+      deploymentKey: "preview-959",
+      cooldowns: [{ provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" }],
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("respuesta después del cooldown");
+    expect(first.doStreamCalls).toHaveLength(0);
+    expect(second.doStreamCalls).toHaveLength(1);
+  });
+
+  it("returns 503 without provider calls when every cooldown is active", async () => {
+    const first = simpleAnswerModel("no");
+    const second = simpleAnswerModel("tampoco");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+    vi.mocked(readProviderCooldowns).mockResolvedValue({
+      mode: "hosted",
+      deploymentKey: "production",
+      cooldowns: [
+        { provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" },
+        { provider: "cerebras", cooldownUntil: "2999-01-01T00:00:00.000Z" },
+      ],
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "assistant_unavailable" });
+    expect(first.doStreamCalls).toHaveLength(0);
+    expect(second.doStreamCalls).toHaveLength(0);
+  });
+
+  it("uses only the first credential and stays stateless without control plane", async () => {
+    const first = rejectedModel(providerError(429, "quota exhausted"));
+    const second = simpleAnswerModel("must not be attempted locally");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+    vi.mocked(readProviderCooldowns).mockResolvedValue({ mode: "local" });
+    vi.mocked(recordProviderCooldown).mockResolvedValue(false);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(503);
+    expect(first.doStreamCalls).toHaveLength(1);
+    expect(second.doStreamCalls).toHaveLength(0);
+  });
+
+  it("never persists request-too-large as a cooldown", async () => {
+    const first = rejectedModel(providerError(429, "request too large"));
+    const second = simpleAnswerModel("rescued");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("rescued");
+    expect(recordProviderCooldown).not.toHaveBeenCalled();
+  });
+
+  it("uses the full pool and logs the operational cause when storage fails", async () => {
+    const first = rejectedModel(providerError(503, "unavailable"));
+    const second = simpleAnswerModel("safe degradation");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", first),
+      resolvedModel("cerebras", second),
+    ]);
+    vi.mocked(readProviderCooldowns).mockRejectedValue(new Error("read timeout"));
+    vi.mocked(recordProviderCooldown).mockRejectedValue(new Error("write timeout"));
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("safe degradation");
+    expect(consoleError).toHaveBeenCalledWith(
+      "Assistant provider cooldown read failed",
+      expect.objectContaining({ cause: { name: "Error", message: "read timeout" } }),
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "Assistant provider cooldown write failed",
+      expect.objectContaining({ cause: { name: "Error", message: "write timeout" } }),
+    );
   });
 
   it("returns 503 after every configured provider rejects before output", async () => {

@@ -2,6 +2,14 @@ import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
 import {
+  deriveProviderCooldownUntil,
+  providersOutsideCooldown,
+} from "@web/asistente/provider-cooldown";
+import {
+  readProviderCooldowns,
+  recordProviderCooldown,
+} from "@web/asistente/provider-cooldown-store";
+import {
   classifyPreOutputProviderError,
   streamWithProviderFailover,
 } from "@web/asistente/provider-failover";
@@ -81,6 +89,12 @@ function jsonError(error: string, status: number): NextResponse {
   return NextResponse.json({ error }, { status, headers: NO_STORE });
 }
 
+function operationalCause(error: unknown): { name: string; message: string } {
+  return error instanceof Error
+    ? { name: error.name, message: error.message }
+    : { name: "UnknownError", message: String(error) };
+}
+
 export async function POST(request: Request): Promise<Response> {
   let raw: unknown;
   try {
@@ -115,6 +129,23 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  let eligibleProviders = providers;
+  try {
+    const cooldownState = await readProviderCooldowns();
+    eligibleProviders =
+      cooldownState.mode === "local"
+        ? providers.slice(0, 1)
+        : providersOutsideCooldown(providers, cooldownState.cooldowns);
+  } catch (error) {
+    console.error("Assistant provider cooldown read failed", {
+      operation: "read",
+      cause: operationalCause(error),
+    });
+  }
+  if (eligibleProviders.length === 0) {
+    return jsonError("assistant_unavailable", 503);
+  }
+
   let modelMessages;
   try {
     modelMessages = await convertToModelMessages(body.messages);
@@ -129,7 +160,7 @@ export async function POST(request: Request): Promise<Response> {
     asOf: chatAsOf(target),
   });
   const selected = await streamWithProviderFailover({
-    providers,
+    providers: eligibleProviders,
     startStream: (provider) =>
       streamText({
         model: provider.model,
@@ -145,6 +176,28 @@ export async function POST(request: Request): Promise<Response> {
         onError: () => undefined,
       }).stream,
     log: (entry) => console.info("Assistant provider attempt", entry),
+    onRejected: async ({ provider, classification, error }) => {
+      const cooldownUntil = deriveProviderCooldownUntil(error, classification);
+      if (cooldownUntil === null) return;
+      try {
+        const persisted = await recordProviderCooldown(provider.provider, cooldownUntil);
+        if (persisted) {
+          console.info("Assistant provider cooldown recorded", {
+            provider: provider.provider,
+            modelId: provider.modelId,
+            classification,
+            cooldownUntil: cooldownUntil.toISOString(),
+          });
+        }
+      } catch (storageError) {
+        console.error("Assistant provider cooldown write failed", {
+          operation: "write",
+          provider: provider.provider,
+          classification,
+          cause: operationalCause(storageError),
+        });
+      }
+    },
   });
   if (selected === null) {
     return jsonError("assistant_unavailable", 503);
