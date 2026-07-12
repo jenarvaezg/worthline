@@ -1,4 +1,5 @@
-import { type AgentViewReadStore, createControlPlaneStore } from "@worthline/db";
+import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
+import { type AgentViewReadStore } from "@worthline/db";
 import { systemClock } from "@worthline/domain";
 
 import { type AgentViewBackend, type AgentViewCatalogTool } from "./catalog";
@@ -36,24 +37,6 @@ import {
 
 const PAGE_DEFAULT = 100;
 const PAGE_MAX = 500;
-
-/** Shared benchmark-price read for financial context and holding detail. */
-export async function readBenchmarkPricesFromControlPlane(seriesId: string) {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) return [];
-
-  const controlPlane = await createControlPlaneStore({
-    url,
-    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-      : {}),
-  });
-  try {
-    return await controlPlane.readBenchmarkPrices(seriesId);
-  } finally {
-    controlPlane.close();
-  }
-}
 
 /**
  * Wrap a paginated builder result as an envelope. The builder metas are typed

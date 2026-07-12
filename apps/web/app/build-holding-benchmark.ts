@@ -1,4 +1,3 @@
-import { createControlPlaneStore } from "@worthline/db";
 import {
   type HoldingBenchmarkComparisonResult,
   holdingBenchmarkComparison,
@@ -6,25 +5,6 @@ import {
   type MonthlyCloseValue,
   resolveBenchmarkSeriesId,
 } from "@worthline/domain";
-
-export async function readBenchmarkPricesFromControlPlane(
-  seriesId: string,
-): Promise<{ dateKey: string; value: string }[]> {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) return [];
-
-  const controlPlane = await createControlPlaneStore({
-    url,
-    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-      : {}),
-  });
-  try {
-    return await controlPlane.readBenchmarkPrices(seriesId);
-  } finally {
-    controlPlane.close();
-  }
-}
 
 /**
  * Resolve a holding's tracked-index benchmark lens (ADR 0060, #626). Returns an

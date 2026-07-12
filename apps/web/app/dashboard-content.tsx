@@ -3,7 +3,6 @@ import { readDemoContext } from "@web/demo/read-demo-context";
 import { perfEnd, perfStart } from "@web/perf-log";
 import { getRequestStore } from "@web/request-store";
 import { bootstrapHealthcheck } from "@web/store";
-import { createControlPlaneStore } from "@worthline/db";
 import type {
   DrilldownKey,
   FireGlance,
@@ -56,6 +55,7 @@ import {
   parseMoversPeriod,
 } from "./movers-data";
 import PrivacyToggle from "./privacy-toggle";
+import { readBenchmarkPricesFromControlPlane } from "./read-benchmark-prices";
 import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
 
@@ -79,23 +79,6 @@ const ONBOARDING_LINKS: Record<string, string> = {
   fire: "/ajustes",
   snapshot: "/",
 };
-
-async function readBenchmarkPricesFromControlPlane(seriesId: string) {
-  const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
-  if (!url) return [];
-
-  const controlPlane = await createControlPlaneStore({
-    url,
-    ...(process.env.WORTHLINE_DB_AUTH_TOKEN
-      ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }
-      : {}),
-  });
-  try {
-    return await controlPlane.readBenchmarkPrices(seriesId);
-  } finally {
-    controlPlane.close();
-  }
-}
 
 function formatPct(pct: number): string {
   const sign = pct > 0 ? "+" : pct < 0 ? "−" : "";

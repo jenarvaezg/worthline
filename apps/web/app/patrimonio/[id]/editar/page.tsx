@@ -1,8 +1,5 @@
 import OperationsEditor from "@web/_components/operations-editor";
-import {
-  buildHoldingBenchmarkComparison,
-  readBenchmarkPricesFromControlPlane,
-} from "@web/build-holding-benchmark";
+import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import { isDemoMode } from "@web/demo/write-guard";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
 import {
@@ -41,6 +38,7 @@ import {
 } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
+import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
