@@ -1,0 +1,641 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-13T07:09:14.597Z",
+  "title": "Design System: worthline",
+  "extensions": {
+    "colorMeta": {
+      "cover": {
+        "role": "primary",
+        "displayName": "Tinta de cubierta",
+        "canonical": "#102420",
+        "tonalRamp": [
+          "oklch(15% 0.027 179.5)",
+          "oklch(27% 0.027 179.5)",
+          "oklch(39% 0.027 179.5)",
+          "oklch(51% 0.027 179.5)",
+          "oklch(63% 0.027 179.5)",
+          "oklch(75% 0.027 179.5)",
+          "oklch(87% 0.027 179.5)",
+          "oklch(95% 0.027 179.5)"
+        ]
+      },
+      "cover-depth": {
+        "role": "neutral",
+        "displayName": "Profundidad de cubierta",
+        "canonical": "#0a1916",
+        "tonalRamp": [
+          "oklch(15% 0.022 179.7)",
+          "oklch(27% 0.022 179.7)",
+          "oklch(39% 0.022 179.7)",
+          "oklch(51% 0.022 179.7)",
+          "oklch(63% 0.022 179.7)",
+          "oklch(75% 0.022 179.7)",
+          "oklch(87% 0.022 179.7)",
+          "oklch(95% 0.022 179.7)"
+        ]
+      },
+      "cover-highlight": {
+        "role": "neutral",
+        "displayName": "Luz de cubierta",
+        "canonical": "#16302a",
+        "tonalRamp": [
+          "oklch(15% 0.034 177.0)",
+          "oklch(27% 0.034 177.0)",
+          "oklch(39% 0.034 177.0)",
+          "oklch(51% 0.034 177.0)",
+          "oklch(63% 0.034 177.0)",
+          "oklch(75% 0.034 177.0)",
+          "oklch(87% 0.034 177.0)",
+          "oklch(95% 0.034 177.0)"
+        ]
+      },
+      "cover-ink": {
+        "role": "neutral",
+        "displayName": "Tinta clara de cubierta",
+        "canonical": "#ecefe1",
+        "tonalRamp": [
+          "oklch(15% 0.019 116.6)",
+          "oklch(27% 0.019 116.6)",
+          "oklch(39% 0.019 116.6)",
+          "oklch(51% 0.019 116.6)",
+          "oklch(63% 0.019 116.6)",
+          "oklch(75% 0.019 116.6)",
+          "oklch(87% 0.019 116.6)",
+          "oklch(95% 0.019 116.6)"
+        ]
+      },
+      "cover-muted": {
+        "role": "neutral",
+        "displayName": "Tinta secundaria de cubierta",
+        "canonical": "#9fb0a3",
+        "tonalRamp": [
+          "oklch(15% 0.026 152.7)",
+          "oklch(27% 0.026 152.7)",
+          "oklch(39% 0.026 152.7)",
+          "oklch(51% 0.026 152.7)",
+          "oklch(63% 0.026 152.7)",
+          "oklch(75% 0.026 152.7)",
+          "oklch(87% 0.026 152.7)",
+          "oklch(95% 0.026 152.7)"
+        ]
+      },
+      "gilt": {
+        "role": "secondary",
+        "displayName": "Oro de filete",
+        "canonical": "#c2a14e",
+        "tonalRamp": [
+          "oklch(15% 0.109 87.8)",
+          "oklch(27% 0.109 87.8)",
+          "oklch(39% 0.109 87.8)",
+          "oklch(51% 0.109 87.8)",
+          "oklch(63% 0.109 87.8)",
+          "oklch(75% 0.109 87.8)",
+          "oklch(87% 0.109 87.8)",
+          "oklch(95% 0.109 87.8)"
+        ]
+      },
+      "gilt-soft": {
+        "role": "secondary",
+        "displayName": "Oro apagado",
+        "canonical": "#8f7a45",
+        "tonalRamp": [
+          "oklch(15% 0.076 88.4)",
+          "oklch(27% 0.076 88.4)",
+          "oklch(39% 0.076 88.4)",
+          "oklch(51% 0.076 88.4)",
+          "oklch(63% 0.076 88.4)",
+          "oklch(75% 0.076 88.4)",
+          "oklch(87% 0.076 88.4)",
+          "oklch(95% 0.076 88.4)"
+        ]
+      },
+      "gilt-highlight": {
+        "role": "secondary",
+        "displayName": "Oro luminoso",
+        "canonical": "#cfa649",
+        "tonalRamp": [
+          "oklch(15% 0.120 85.1)",
+          "oklch(27% 0.120 85.1)",
+          "oklch(39% 0.120 85.1)",
+          "oklch(51% 0.120 85.1)",
+          "oklch(63% 0.120 85.1)",
+          "oklch(75% 0.120 85.1)",
+          "oklch(87% 0.120 85.1)",
+          "oklch(95% 0.120 85.1)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Papel contable",
+        "canonical": "#eef0e4",
+        "tonalRamp": [
+          "oklch(15% 0.016 114.4)",
+          "oklch(27% 0.016 114.4)",
+          "oklch(39% 0.016 114.4)",
+          "oklch(51% 0.016 114.4)",
+          "oklch(63% 0.016 114.4)",
+          "oklch(75% 0.016 114.4)",
+          "oklch(87% 0.016 114.4)",
+          "oklch(95% 0.016 114.4)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Hoja encartada",
+        "canonical": "#f7f7ee",
+        "tonalRamp": [
+          "oklch(15% 0.012 106.6)",
+          "oklch(27% 0.012 106.6)",
+          "oklch(39% 0.012 106.6)",
+          "oklch(51% 0.012 106.6)",
+          "oklch(63% 0.012 106.6)",
+          "oklch(75% 0.012 106.6)",
+          "oklch(87% 0.012 106.6)",
+          "oklch(95% 0.012 106.6)"
+        ]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Tinta estilográfica",
+        "canonical": "#1c2420",
+        "tonalRamp": [
+          "oklch(15% 0.014 163.6)",
+          "oklch(27% 0.014 163.6)",
+          "oklch(39% 0.014 163.6)",
+          "oklch(51% 0.014 163.6)",
+          "oklch(63% 0.014 163.6)",
+          "oklch(75% 0.014 163.6)",
+          "oklch(87% 0.014 163.6)",
+          "oklch(95% 0.014 163.6)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Tinta secundaria",
+        "canonical": "#4e5c54",
+        "tonalRamp": [
+          "oklch(15% 0.022 160.4)",
+          "oklch(27% 0.022 160.4)",
+          "oklch(39% 0.022 160.4)",
+          "oklch(51% 0.022 160.4)",
+          "oklch(63% 0.022 160.4)",
+          "oklch(75% 0.022 160.4)",
+          "oklch(87% 0.022 160.4)",
+          "oklch(95% 0.022 160.4)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Regla de control",
+        "canonical": "#78877f",
+        "tonalRamp": [
+          "oklch(15% 0.021 162.5)",
+          "oklch(27% 0.021 162.5)",
+          "oklch(39% 0.021 162.5)",
+          "oklch(51% 0.021 162.5)",
+          "oklch(63% 0.021 162.5)",
+          "oklch(75% 0.021 162.5)",
+          "oklch(87% 0.021 162.5)",
+          "oklch(95% 0.021 162.5)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Regla fuerte",
+        "canonical": "#5d6c66",
+        "tonalRamp": [
+          "oklch(15% 0.020 169.4)",
+          "oklch(27% 0.020 169.4)",
+          "oklch(39% 0.020 169.4)",
+          "oklch(51% 0.020 169.4)",
+          "oklch(63% 0.020 169.4)",
+          "oklch(75% 0.020 169.4)",
+          "oklch(87% 0.020 169.4)",
+          "oklch(95% 0.020 169.4)"
+        ]
+      },
+      "line-soft": {
+        "role": "neutral",
+        "displayName": "Regla impresa",
+        "canonical": "#c9cfbd",
+        "tonalRamp": [
+          "oklch(15% 0.025 122.0)",
+          "oklch(27% 0.025 122.0)",
+          "oklch(39% 0.025 122.0)",
+          "oklch(51% 0.025 122.0)",
+          "oklch(63% 0.025 122.0)",
+          "oklch(75% 0.025 122.0)",
+          "oklch(87% 0.025 122.0)",
+          "oklch(95% 0.025 122.0)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline de página",
+        "canonical": "#dde1d0",
+        "tonalRamp": [
+          "oklch(15% 0.023 117.6)",
+          "oklch(27% 0.023 117.6)",
+          "oklch(39% 0.023 117.6)",
+          "oklch(51% 0.023 117.6)",
+          "oklch(63% 0.023 117.6)",
+          "oklch(75% 0.023 117.6)",
+          "oklch(87% 0.023 117.6)",
+          "oklch(95% 0.023 117.6)"
+        ]
+      },
+      "band": {
+        "role": "neutral",
+        "displayName": "Banding de libro",
+        "canonical": "#eaedde",
+        "tonalRamp": [
+          "oklch(15% 0.020 116.0)",
+          "oklch(27% 0.020 116.0)",
+          "oklch(39% 0.020 116.0)",
+          "oklch(51% 0.020 116.0)",
+          "oklch(63% 0.020 116.0)",
+          "oklch(75% 0.020 116.0)",
+          "oklch(87% 0.020 116.0)",
+          "oklch(95% 0.020 116.0)"
+        ]
+      },
+      "band-hover": {
+        "role": "neutral",
+        "displayName": "Banding activo",
+        "canonical": "#e2e6d2",
+        "tonalRamp": [
+          "oklch(15% 0.027 116.1)",
+          "oklch(27% 0.027 116.1)",
+          "oklch(39% 0.027 116.1)",
+          "oklch(51% 0.027 116.1)",
+          "oklch(63% 0.027 116.1)",
+          "oklch(75% 0.027 116.1)",
+          "oklch(87% 0.027 116.1)",
+          "oklch(95% 0.027 116.1)"
+        ]
+      },
+      "interaction": {
+        "role": "primary",
+        "displayName": "Azul de bolígrafo",
+        "canonical": "#1f4d74",
+        "tonalRamp": [
+          "oklch(15% 0.083 247.2)",
+          "oklch(27% 0.083 247.2)",
+          "oklch(39% 0.083 247.2)",
+          "oklch(51% 0.083 247.2)",
+          "oklch(63% 0.083 247.2)",
+          "oklch(75% 0.083 247.2)",
+          "oklch(87% 0.083 247.2)",
+          "oklch(95% 0.083 247.2)"
+        ]
+      },
+      "debit-rule": {
+        "role": "secondary",
+        "displayName": "Línea del debe",
+        "canonical": "#a03a28",
+        "tonalRamp": [
+          "oklch(15% 0.139 32.2)",
+          "oklch(27% 0.139 32.2)",
+          "oklch(39% 0.139 32.2)",
+          "oklch(51% 0.139 32.2)",
+          "oklch(63% 0.139 32.2)",
+          "oklch(75% 0.139 32.2)",
+          "oklch(87% 0.139 32.2)",
+          "oklch(95% 0.139 32.2)"
+        ]
+      },
+      "positive": {
+        "role": "tertiary",
+        "displayName": "Verde de movimiento",
+        "canonical": "#006f5f",
+        "tonalRamp": [
+          "oklch(15% 0.089 178.1)",
+          "oklch(27% 0.089 178.1)",
+          "oklch(39% 0.089 178.1)",
+          "oklch(51% 0.089 178.1)",
+          "oklch(63% 0.089 178.1)",
+          "oklch(75% 0.089 178.1)",
+          "oklch(87% 0.089 178.1)",
+          "oklch(95% 0.089 178.1)"
+        ]
+      },
+      "negative": {
+        "role": "tertiary",
+        "displayName": "Rojo de movimiento",
+        "canonical": "#b9442f",
+        "tonalRamp": [
+          "oklch(15% 0.156 32.4)",
+          "oklch(27% 0.156 32.4)",
+          "oklch(39% 0.156 32.4)",
+          "oklch(51% 0.156 32.4)",
+          "oklch(63% 0.156 32.4)",
+          "oklch(75% 0.156 32.4)",
+          "oklch(87% 0.156 32.4)",
+          "oklch(95% 0.156 32.4)"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Oro de aviso",
+        "canonical": "#b3831f",
+        "tonalRamp": [
+          "oklch(15% 0.123 80.3)",
+          "oklch(27% 0.123 80.3)",
+          "oklch(39% 0.123 80.3)",
+          "oklch(51% 0.123 80.3)",
+          "oklch(63% 0.123 80.3)",
+          "oklch(75% 0.123 80.3)",
+          "oklch(87% 0.123 80.3)",
+          "oklch(95% 0.123 80.3)"
+        ]
+      },
+      "tier-housing": {
+        "role": "tertiary",
+        "displayName": "Oro de vivienda",
+        "canonical": "#b3831f",
+        "tonalRamp": [
+          "oklch(15% 0.123 80.3)",
+          "oklch(27% 0.123 80.3)",
+          "oklch(39% 0.123 80.3)",
+          "oklch(51% 0.123 80.3)",
+          "oklch(63% 0.123 80.3)",
+          "oklch(75% 0.123 80.3)",
+          "oklch(87% 0.123 80.3)",
+          "oklch(95% 0.123 80.3)"
+        ]
+      },
+      "tier-cash": {
+        "role": "tertiary",
+        "displayName": "Liquidez caja",
+        "canonical": "#0d7a64",
+        "tonalRamp": [
+          "oklch(15% 0.096 173.8)",
+          "oklch(27% 0.096 173.8)",
+          "oklch(39% 0.096 173.8)",
+          "oklch(51% 0.096 173.8)",
+          "oklch(63% 0.096 173.8)",
+          "oklch(75% 0.096 173.8)",
+          "oklch(87% 0.096 173.8)",
+          "oklch(95% 0.096 173.8)"
+        ]
+      },
+      "tier-market": {
+        "role": "tertiary",
+        "displayName": "Liquidez mercado",
+        "canonical": "#2aa188",
+        "tonalRamp": [
+          "oklch(15% 0.109 175.1)",
+          "oklch(27% 0.109 175.1)",
+          "oklch(39% 0.109 175.1)",
+          "oklch(51% 0.109 175.1)",
+          "oklch(63% 0.109 175.1)",
+          "oklch(75% 0.109 175.1)",
+          "oklch(87% 0.109 175.1)",
+          "oklch(95% 0.109 175.1)"
+        ]
+      },
+      "tier-term-locked": {
+        "role": "tertiary",
+        "displayName": "Liquidez bloqueada",
+        "canonical": "#2f5e8d",
+        "tonalRamp": [
+          "oklch(15% 0.092 250.4)",
+          "oklch(27% 0.092 250.4)",
+          "oklch(39% 0.092 250.4)",
+          "oklch(51% 0.092 250.4)",
+          "oklch(63% 0.092 250.4)",
+          "oklch(75% 0.092 250.4)",
+          "oklch(87% 0.092 250.4)",
+          "oklch(95% 0.092 250.4)"
+        ]
+      },
+      "tier-illiquid": {
+        "role": "tertiary",
+        "displayName": "Iliquidez",
+        "canonical": "#6b86a3",
+        "tonalRamp": [
+          "oklch(15% 0.054 250.5)",
+          "oklch(27% 0.054 250.5)",
+          "oklch(39% 0.054 250.5)",
+          "oklch(51% 0.054 250.5)",
+          "oklch(63% 0.054 250.5)",
+          "oklch(75% 0.054 250.5)",
+          "oklch(87% 0.054 250.5)",
+          "oklch(95% 0.054 250.5)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "cover-display": {
+        "displayName": "Cover Display",
+        "purpose": "Titular principal de la cubierta de la landing."
+      },
+      "page-title": {
+        "displayName": "Page Title",
+        "purpose": "h1 del producto propuesto."
+      },
+      "section-title": {
+        "displayName": "Section Title",
+        "purpose": "h2 que abre una sección reglada."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Lectura, labels extensos y controles."
+      },
+      "numeric": {
+        "displayName": "Numeric",
+        "purpose": "Toda cifra de valor con figuras tabulares."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Cabeceras y folios pequeños; único uppercase permitido."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "150ms ease",
+        "purpose": "Hover y respuesta breve en filas y controles."
+      },
+      {
+        "name": "cover-stage",
+        "value": "380ms ease",
+        "purpose": "Entrada progresiva de la cubierta sobre HTML ya visible."
+      },
+      {
+        "name": "draw-rule",
+        "value": "300ms ease",
+        "purpose": "Dibujo de reglas y totales con significado."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "cover-stack",
+        "value": "56rem"
+      },
+      {
+        "name": "content-single-column",
+        "value": "48rem"
+      },
+      {
+        "name": "masthead-mobile",
+        "value": "32rem"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Cover Primary Button",
+      "kind": "button",
+      "refersTo": "button-cover-primary",
+      "description": "CTA principal sobre la cubierta.",
+      "html": "<button class=\"ds-btn-cover-primary\">Empezar con mis datos</button>",
+      "css": ".ds-btn-cover-primary { background:#eef0e4; color:#102420; padding:.62rem 1.3rem; border:1px solid #eef0e4; border-radius:4px; font:650 1rem/1.55 \"Source Sans 3\",system-ui,sans-serif; cursor:pointer; transition:background .18s ease,border-color .18s ease; } .ds-btn-cover-primary:hover { background:#fff; } .ds-btn-cover-primary:focus-visible { outline:2px solid #c2a14e; outline-offset:2px; } .ds-btn-cover-primary:active { background:#ecefe1; }"
+    },
+    {
+      "name": "Cover Outline Button",
+      "kind": "button",
+      "refersTo": "button-cover-outline",
+      "description": "CTA secundario sobre cubierta, subordinado al primario.",
+      "html": "<button class=\"ds-btn-cover-outline\">Explorar la demo</button>",
+      "css": ".ds-btn-cover-outline { background:transparent; color:#ecefe1; padding:.62rem 1.3rem; border:1px solid rgba(159,176,163,.7); border-radius:4px; font:650 1rem/1.55 \"Source Sans 3\",system-ui,sans-serif; cursor:pointer; transition:border-color .18s ease; } .ds-btn-cover-outline:hover { border-color:#ecefe1; } .ds-btn-cover-outline:focus-visible { outline:2px solid #c2a14e; outline-offset:2px; } .ds-btn-cover-outline:active { color:#c2a14e; }"
+    },
+    {
+      "name": "Product Primary Button",
+      "kind": "button",
+      "refersTo": "button-product-primary",
+      "description": "Acción primaria propuesta para páginas de trabajo.",
+      "html": "<button class=\"ds-btn-product-primary\">Guardar cambios</button>",
+      "css": ".ds-btn-product-primary { background:#1c2420; color:#f7f7ee; padding:.62rem 1.3rem; border:1px solid #1c2420; border-radius:4px; font:650 1rem/1.55 \"Source Sans 3\",system-ui,sans-serif; cursor:pointer; transition:background .18s ease; } .ds-btn-product-primary:hover { background:#1f4d74; border-color:#1f4d74; } .ds-btn-product-primary:focus-visible { outline:2px solid #1f4d74; outline-offset:2px; } .ds-btn-product-primary:active { background:#102420; }"
+    },
+    {
+      "name": "Ledger Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo propuesto de fondo panel y límite accesible.",
+      "html": "<label class=\"ds-field\"><span>Valor actual</span><input value=\"291.604 €\" aria-label=\"Valor actual\"></label>",
+      "css": ".ds-field { display:grid; gap:.3rem; color:#4e5c54; font:600 .78rem/1.3 \"Source Sans 3\",system-ui,sans-serif; } .ds-field input { background:#f7f7ee; color:#1c2420; padding:.62rem .75rem; border:1px solid #5d6c66; border-radius:4px; font:400 1rem/1.55 \"Source Sans 3\",system-ui,sans-serif; } .ds-field input:hover { border-color:#1c2420; } .ds-field input:focus-visible { border-color:#1f4d74; outline:2px solid #1f4d74; outline-offset:2px; }"
+    },
+    {
+      "name": "Register Navigation",
+      "kind": "nav",
+      "description": "Pestañas de registro propuestas, sin píldoras.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Principal\"><a class=\"ds-nav-tab ds-nav-active\" href=\"#\">Resumen</a><a class=\"ds-nav-tab\" href=\"#\">Patrimonio</a><a class=\"ds-nav-tab\" href=\"#\">Histórico</a></nav>",
+      "css": ".ds-nav { display:flex; gap:1.25rem; overflow-x:auto; scrollbar-width:none; white-space:nowrap; } .ds-nav-tab { color:#4e5c54; padding:.45rem 0; border-bottom:2px solid transparent; font:650 .95rem/1.3 \"Source Sans 3\",system-ui,sans-serif; text-decoration:none; } .ds-nav-tab:hover { color:#1f4d74; } .ds-nav-tab:focus-visible { outline:2px solid #1f4d74; outline-offset:2px; } .ds-nav-active { color:#1c2420; border-bottom-color:#1c2420; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "description": "Selector rectangular propuesto para vista y rango.",
+      "html": "<div class=\"ds-segmented\" role=\"group\" aria-label=\"Vista\"><button aria-pressed=\"true\">Neto</button><button aria-pressed=\"false\">Líquido</button></div>",
+      "css": ".ds-segmented { display:inline-flex; padding:2px; border:1px solid #78877f; border-radius:4px; background:#f7f7ee; } .ds-segmented button { background:transparent; color:#4e5c54; padding:.35rem .7rem; border:0; border-radius:2px; font:650 .82rem/1.3 \"Source Sans 3\",system-ui,sans-serif; cursor:pointer; } .ds-segmented button:hover { color:#1f4d74; } .ds-segmented button:focus-visible { outline:2px solid #1f4d74; outline-offset:1px; } .ds-segmented button[aria-pressed=\"true\"] { background:#1c2420; color:#f7f7ee; }"
+    },
+    {
+      "name": "Ruled Section",
+      "kind": "card",
+      "description": "Sección propuesta que sustituye la tarjeta genérica.",
+      "html": "<section class=\"ds-section\"><h2>Qué movió tu patrimonio</h2><p>Los cambios del periodo, explicados.</p></section>",
+      "css": ".ds-section { background:transparent; color:#1c2420; padding:1rem 0 0; border-top:2px solid #1c2420; font-family:\"Source Sans 3\",system-ui,sans-serif; } .ds-section h2 { margin:0 0 .65rem; font:600 1rem/1.3 Bitter,Rockwell,Georgia,serif; } .ds-section p { margin:0; color:#4e5c54; max-width:65ch; }"
+    },
+    {
+      "name": "Ledger Hero Panel",
+      "kind": "card",
+      "refersTo": "ledger-sheet",
+      "description": "Propuesto — producto #906: única hoja encartada de una página, con total de borde doble de 3px.",
+      "html": "<section class=\"ds-hero\"><span class=\"ds-label\">Neto total</span><strong class=\"ds-total\">291.604 €</strong><div class=\"ds-row\"><span>Activos</span><span>439.814 €</span></div><div class=\"ds-row ds-debit\"><span>Deudas</span><span>−148.210 €</span></div></section>",
+      "css": ".ds-hero { background:#f7f7ee; color:#1c2420; padding:1.5rem 1.7rem; border:1px solid #c9cfbd; border-radius:6px; font-family:\"Source Sans 3\",system-ui,sans-serif; } .ds-label { display:block; color:#4e5c54; font-size:.72rem; font-weight:600; letter-spacing:.1em; text-transform:uppercase; } .ds-total { display:inline-block; margin:.2rem 0 1rem; border-bottom:3px double #1c2420; font:700 2.4rem/1.1 Iosevka,ui-monospace,monospace; } .ds-row { display:flex; justify-content:space-between; padding:.45rem .55rem; border-top:1px solid #dde1d0; } .ds-row span:last-child { font-family:Iosevka,ui-monospace,monospace; font-variant-numeric:tabular-nums; } .ds-debit { border-left:2px solid #a03a28; }"
+    },
+    {
+      "name": "Accounting Total",
+      "kind": "custom",
+      "description": "Propuesto — producto #906: borde doble de 3px reservado al total final; la landing vigente usa dos reglas de 1px con hueco.",
+      "html": "<span class=\"ds-accounting-total\">291.604 €</span>",
+      "css": ".ds-accounting-total { display:inline-block; color:#1c2420; border-bottom:3px double #1c2420; padding-bottom:4px; font:700 2.4rem/1.05 Iosevka,ui-monospace,monospace; font-variant-numeric:tabular-nums; }"
+    },
+    {
+      "name": "Debit Row",
+      "kind": "custom",
+      "description": "Propuesto — producto #906: pasivo estático en tinta, identificado por estructura.",
+      "html": "<div class=\"ds-debit-row\"><span>Hipoteca</span><strong>−148.210 €</strong></div>",
+      "css": ".ds-debit-row { display:flex; justify-content:space-between; gap:1rem; background:#eaedde; color:#1c2420; padding:.55rem .7rem; border-left:2px solid #a03a28; font-family:\"Source Sans 3\",system-ui,sans-serif; } .ds-debit-row strong { font-family:Iosevka,ui-monospace,monospace; font-variant-numeric:tabular-nums; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "El libro mayor bien encuadernado",
+    "overview": "worthline se siente como un libro de contabilidad doméstica preciso y cuidado: una cubierta de tinta profunda marca los umbrales y remates; el interior de trabajo usa papel contable claro, reglas, banding y notación financiera real. Son dos registros de una sola identidad, nunca dos temas conmutables. «La cubierta y las páginas» es la referencia vigente de la landing; «Libro mayor» es el producto propuesto en #906 y todavía pendiente de migración.",
+    "keyCharacteristics": [
+      "Cubierta para umbrales y remates; papel para todo trabajo.",
+      "Una sola superficie destacada por página; el resto se estructura con reglas y espacio.",
+      "Totales, subtotales y deudas se distinguen mediante notación contable con significado.",
+      "Cifras visibles y completas desde el servidor; el movimiento mejora el estado final, nunca lo desbloquea.",
+      "Densidad serena, formas contenidas y ningún adorno sin función."
+    ],
+    "rules": [
+      {
+        "name": "The One Identity Rule",
+        "body": "Cubierta y papel se asignan por superficie; está prohibido un selector de tema o apariencia.",
+        "section": "colors"
+      },
+      {
+        "name": "The Movement Rule",
+        "body": "Verde y rojo significan que algo subió, bajó o produjo un resultado. Un valor estático permanece en tinta.",
+        "section": "colors"
+      },
+      {
+        "name": "The Illiquidity Pattern Rule",
+        "body": "En la landing vigente solo la vivienda usa oro rayado. En el producto propuesto, cada tier ilíquido usa un patrón rayado de su propio color; lo líquido usa relleno sólido. El color nunca es la única señal.",
+        "section": "colors"
+      },
+      {
+        "name": "The Measured Number Rule",
+        "body": "Toda cifra de valor usa Iosevka con figuras tabulares; columnas numéricas se alinean a la derecha.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Heading Rule",
+        "body": "En producto, si no es h1 o h2, no usa Bitter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Quiet Label Rule",
+        "body": "Uppercase y tracking pertenecen solo a labels pequeños y reales, nunca a una ceja repetida sobre cada sección.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Shadow Rule",
+        "body": "box-shadow de elevación y el token --shadow están prohibidos en el producto futuro.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Sheet Rule",
+        "body": "Solo el hero o panel estrella puede tener fondo propio como hoja encartada; las demás agrupaciones son secciones abiertas, no tarjetas.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Printed Structure Rule",
+        "body": "Regla gruesa abre sección, hairline separa filas y doble regla cierra un total. Ninguna de ellas es adorno intercambiable.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do distinguir siempre entre Vigente — landing y Propuesto — producto (#906, pendiente de migración).",
+      "Do usar cubierta en umbrales y remates, y papel en todas las superficies de trabajo.",
+      "Do hacer explicable cada cifra mediante jerarquía, desglose, fuente y notación contable.",
+      "Do renderizar el contenido completo antes de cualquier mejora de movimiento y respetar prefers-reduced-motion.",
+      "Do mantener contraste WCAG 2.2 AA, foco visible, teclado completo y significado redundante al color.",
+      "Do diseñar labels, controles y composiciones para traducciones más largas.",
+      "Do conservar la semántica de color y la gramática de gráficas al migrar; #906 no cambia información, rutas, cálculos ni interacción."
+    ],
+    "donts": [
+      "Don't importar el sistema heredado de tarjetas crema, radios de 14px, sombras suaves y navegación en píldoras.",
+      "Don't usar sombras de elevación, radios mayores de 6px o radio 999px salvo chips de holding.",
+      "Don't crear un segundo tema, modo oscuro o selector de apariencia.",
+      "Don't usar verde o rojo para valores estáticos; la deuda se expresa con la Línea del debe.",
+      "Don't convertir la textura física, folios, números de asiento o labels editoriales de la landing en scaffold universal.",
+      "Don't usar una estética de neobanco aspiracional, terminal cripto, clon literal de una hoja de cálculo o aplicación de presupuesto doméstico con gamificación.",
+      "Don't usar tarjetas idénticas para estructurar todo, subrayar nombres de holdings como si fueran enlaces ni repetir cejas uppercase sobre cada sección.",
+      "Don't documentar «Panel de instrumentos», la alternativa oscura descartada, como parte del sistema."
+    ]
+  }
+}
