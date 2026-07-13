@@ -230,6 +230,43 @@ export default function CompositionChart({
           aria-label="Composición del patrimonio neto: activos por liquidez, deudas y patrimonio neto"
           preserveAspectRatio="none"
         >
+          {/* Illiquid tiers (Vivienda + Ilíquido) read as "not cash" via a
+              diagonal hatch of their own colour (canon §6); liquid tiers stay
+              solid. Vertical lines rotated 45° tile into an even cross-hatch. */}
+          <defs>
+            <pattern
+              height="6"
+              id="housingHatch"
+              patternTransform="rotate(45)"
+              patternUnits="userSpaceOnUse"
+              width="6"
+            >
+              <line
+                stroke="var(--tier-housing)"
+                strokeWidth="3"
+                x1="0"
+                x2="0"
+                y1="0"
+                y2="6"
+              />
+            </pattern>
+            <pattern
+              height="6"
+              id="illiquidHatch"
+              patternTransform="rotate(45)"
+              patternUnits="userSpaceOnUse"
+              width="6"
+            >
+              <line
+                stroke="var(--tier-illiquid)"
+                strokeWidth="3"
+                x1="0"
+                x2="0"
+                y1="0"
+                y2="6"
+              />
+            </pattern>
+          </defs>
           {geometry.assetBands.map((band) => {
             const href = bandHref(band.band);
             // One stacked bar rectangle per period; a zero-value period yields a

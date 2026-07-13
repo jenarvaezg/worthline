@@ -231,7 +231,7 @@ function HeroFraming({
         {presentation ? (
           <div className="headline">
             <span>{presentation.headlineLabel}</span>
-            <strong className={hasHoldings ? undefined : "emptyFigure"}>
+            <strong className={hasHoldings ? "totalRule" : "totalRule emptyFigure"}>
               {formatMoneyMinorPrivacy(presentation.headline, privacyMode)}
               {!hasHoldings ? <small>sin datos aún</small> : null}
             </strong>
@@ -527,7 +527,7 @@ export default async function DashboardContent({
         </section>
 
         {!hasHoldings ? (
-          <section className="emptyDashCta" aria-label="Empieza tu patrimonio">
+          <section className="emptyDashCta section" aria-label="Empieza tu patrimonio">
             <p>Aún no has añadido nada. Empieza por lo primero.</p>
             <Link className="primaryAction" href="/patrimonio/anadir">
               Añade algo →
@@ -535,7 +535,7 @@ export default async function DashboardContent({
           </section>
         ) : null}
 
-        <section className="liquidityPanel" aria-label="Liquidez por capa">
+        <section className="liquidityPanel section" aria-label="Liquidez por capa">
           <div className="panelHeader">
             <h2>Liquidez</h2>
             <span>Por capa · % del bruto</span>
@@ -566,7 +566,9 @@ export default async function DashboardContent({
                     <span>
                       Bruto {formatMoneyMinorPrivacy(tier.grossAssets, privacyMode)}
                     </span>
-                    <span>Deuda {formatMoneyMinorPrivacy(tier.debts, privacyMode)}</span>
+                    <span className="debitCol">
+                      Deuda {formatMoneyMinorPrivacy(tier.debts, privacyMode)}
+                    </span>
                     {tier.assets.map((asset) => (
                       <small key={asset.id}>+ {asset.name}</small>
                     ))}
@@ -581,7 +583,7 @@ export default async function DashboardContent({
         </section>
 
         <section
-          className="historyPanel"
+          className="historyPanel section"
           id="composicion"
           aria-label="Evolución del patrimonio"
         >
@@ -608,7 +610,7 @@ export default async function DashboardContent({
           <BenchmarkComparisonCard result={state.benchmarkComparison} />
         </section>
 
-        <section className="firePanel" aria-label="FIRE">
+        <section className="firePanel section" aria-label="FIRE">
           <div className="panelHeader">
             <h2>FIRE</h2>
             <span>Independencia financiera</span>
@@ -633,7 +635,7 @@ export default async function DashboardContent({
         </section>
 
         {anyStepPending ? (
-          <section className="onboardingChecklist" aria-label="Primeros pasos">
+          <section className="onboardingChecklist section" aria-label="Primeros pasos">
             <div className="panelHeader">
               <h2>Primeros pasos</h2>
               <span>Empieza aquí</span>

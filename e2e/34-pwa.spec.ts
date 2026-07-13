@@ -11,7 +11,7 @@ test.describe("PWA: manifest & service worker", () => {
     expect(manifest.start_url).toBe("/app");
     expect(manifest.display).toBe("standalone");
     expect(manifest.theme_color).toBe("#006f5f"); // --green token
-    expect(manifest.background_color).toBe("#eef2ef"); // --paper token
+    expect(manifest.background_color).toBe("#eef0e4"); // --paper token
   });
 
   test("Slice 1b: legacy start_url / still opens the dashboard", async ({ page }) => {

@@ -69,6 +69,7 @@ describe("CompositionChart", () => {
     expect(markup).toContain("Deudas");
     // Five asset bands above zero + one aggregated debt stack below.
     expect(markup).toContain("compositionBand housing");
+    expect(markup).toContain('id="housingHatch"');
     expect(markup).toContain("compositionDebt");
   });
 

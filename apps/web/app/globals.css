@@ -1,29 +1,30 @@
 :root {
   color-scheme: light;
-  --paper: #eef2ef;
-  --paper-strong: #fbfbf4;
-  /* Card surface — warmer and brighter than the page paper. */
-  --panel: #fffdf7;
-  --ink: #17201e;
-  /* Dark ink panel (hero) and its on-dark text/muted/semantic colors. */
-  --ink-panel: #1d2724;
-  --ink-panel-text: #e8ece7;
-  --ink-panel-muted: #9fb0a9;
-  --pos-on-dark: #5ad4ae;
-  --neg-on-dark: #f0907b;
-  --muted: #51605b;
+  --cover: #102420;
+  --cover-2: #0a1916;
+  --cover-3: #16302a;
+  --cover-ink: #ecefe1;
+  --cover-muted: #9fb0a3;
+  --gilt: #c2a14e;
+  --paper: #eef0e4;
+  --paper-strong: #f7f7ee;
+  --panel: #f7f7ee;
+  --ink: #1c2420;
+  --muted: #4e5c54;
   /* ≥3:1 non-text contrast vs --paper/--paper-strong (WCAG 1.4.11, see contrast.test.ts) */
   --line: #78877f;
   --line-strong: #5d6c66;
   /* Decorative card borders and row hairlines — intentionally below the WCAG
      non-text floor; never the sole boundary of a meaningful control (form
      controls and focus states keep --line-strong). */
-  --line-soft: #d9ded7;
-  --hairline: #e4e8e2;
+  --line-soft: #c9cfbd;
+  --hairline: #dde1d0;
+  --band: #eaedde;
   --green: #006f5f;
-  --blue: #245177;
+  --blue: #1f4d74;
   --red: #b9442f;
   --gold: #b3831f;
+  --debit-rule: #a03a28;
   /* Liquidity tier identity — liquid family in greens, "rest" in blues,
      housing in gold. Green/red elsewhere stay reserved for deltas and P/L. */
   --tier-cash: #0d7a64;
@@ -47,9 +48,12 @@
   --coin-steel: #8b949a;
   --coin-zinc: #aeb4b8;
   --coin-aluminium: #c2c7c9;
-  --radius: 14px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 2px rgba(23, 32, 30, 0.05), 0 10px 30px rgba(23, 32, 30, 0.06);
+  --radius: 6px;
+  --radius-sm: 4px;
+  --rule-heavy: 2px solid var(--ink);
+  --font-display: var(--font-bitter), "Rockwell", Georgia, serif;
+  --font-body: var(--font-sans), "Avenir Next", "Segoe UI", sans-serif;
+  --font-numeric: var(--font-mono), "Iosevka", ui-monospace, monospace;
   --dur-fast: 120ms;
   --dur-snappy: 140ms;
   --dur-smooth: 150ms;
@@ -60,6 +64,116 @@
   --ease-out: ease-out;
   --ease-in: ease-in;
   --ease-linear: linear;
+}
+
+/* === Catálogo canónico «Libro mayor» (#906) ============================= */
+.section {
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
+  box-shadow: none;
+  min-width: 0;
+  padding-top: 0.75rem;
+}
+
+.heroPanel {
+  background-color: var(--panel);
+  background-image: linear-gradient(
+    to bottom,
+    transparent 30px,
+    color-mix(in srgb, var(--hairline) 70%, transparent) 31px
+  );
+  background-size: 100% 31px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+.navTab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  padding: 0.45rem 0.2rem;
+  text-decoration: none;
+}
+
+.navTab[aria-current="page"],
+.navTab.active {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.segmented {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.btn {
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  font-weight: 650;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0.55rem 1rem;
+}
+
+.totalRule {
+  position: relative;
+}
+
+.totalRule::after {
+  background: linear-gradient(
+    to bottom,
+    var(--ink) 0 1px,
+    transparent 1px 3px,
+    var(--ink) 3px 4px
+  );
+  content: "";
+  display: block;
+  height: 4px;
+  margin-top: 0.3rem;
+  width: 100%;
+}
+
+.debitCol {
+  border-left: 2px solid var(--debit-rule);
+  padding-left: 0.75rem;
+}
+
+.band {
+  background: var(--band);
+}
+
+.coverSurface {
+  --ink: var(--cover-ink);
+  --muted: var(--cover-muted);
+  --paper: var(--cover);
+
+  background-color: var(--cover);
+  color: var(--cover-ink);
+}
+
+.coverMasthead {
+  background: var(--cover);
+  border-bottom: 2px solid var(--gilt);
+  color: var(--cover-ink);
+}
+
+.sessionBand {
+  background: var(--band);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.sessionBand[data-tone="warning"] {
+  background: color-mix(in srgb, var(--gold) 15%, var(--paper));
+  border-bottom-color: var(--gold);
 }
 
 /* Monthly allocation view (#557): the plan's forward capital split, forecast only. */
@@ -78,8 +192,8 @@
   font-size: 0.82rem;
 }
 .contributionAllocationMonths button[aria-pressed="true"] {
-  background: var(--ink-panel);
-  color: var(--ink-panel-text);
+  background: var(--ink);
+  color: var(--panel);
 }
 .contributionAllocationTotal {
   display: flex;
@@ -267,7 +381,7 @@
   padding: 2rem;
   background: var(--panel);
   border-left: 1px solid var(--line-strong);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .contributionDrawer:focus-visible {
   outline: 3px solid var(--blue);
@@ -360,12 +474,9 @@ body {
 }
 
 body {
-  background:
-    linear-gradient(rgba(23, 32, 30, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 32, 30, 0.016) 1px, transparent 1px), var(--paper);
-  background-size: 28px 28px;
+  background: var(--paper);
   color: var(--ink);
-  font-family: var(--font-sans), "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: var(--font-body);
   overflow-x: hidden;
 }
 
@@ -625,7 +736,7 @@ textarea {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   min-width: 0;
 }
 
@@ -648,7 +759,7 @@ textarea {
 
 .topNav a {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 650;
@@ -684,7 +795,7 @@ textarea {
 .signOutBtn {
   background: transparent;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   cursor: pointer;
   font-size: 0.82rem;
@@ -700,6 +811,7 @@ textarea {
 
 /* Demote the brand name h1 inside the topbar — smaller than the hero h1. */
 .topbar .brandName {
+  font-family: var(--font-body);
   font-size: 1.1rem;
   font-weight: 850;
   letter-spacing: 0;
@@ -710,7 +822,7 @@ textarea {
 .scopeTabBtn {
   background: transparent;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   cursor: pointer;
   font-size: 0.8rem;
@@ -764,6 +876,7 @@ p {
 }
 
 h1 {
+  font-family: var(--font-display);
   font-size: clamp(1.7rem, 4vw, 3.4rem);
   font-weight: 850;
   letter-spacing: 0;
@@ -771,6 +884,7 @@ h1 {
 }
 
 h2 {
+  font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 650;
   letter-spacing: 0;
@@ -805,7 +919,7 @@ h3 {
 
 .statusDot {
   background: var(--green);
-  box-shadow: 0 0 0 5px rgba(0, 111, 95, 0.12);
+  outline: 5px solid rgba(0, 111, 95, 0.12);
   height: 9px;
   width: 9px;
 }
@@ -975,7 +1089,7 @@ h3 {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
@@ -996,7 +1110,7 @@ h3 {
 .scopeTabs a,
 .framingTabs a {
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   font-size: 0.8rem;
   font-weight: 650;
@@ -1031,7 +1145,7 @@ h3 {
 
 .rangeTabs a {
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 650;
@@ -1237,7 +1351,7 @@ th:last-child {
 
 .statePill {
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   font-size: 0.74rem;
   font-weight: 700;
@@ -1341,7 +1455,7 @@ th:last-child {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 16px;
 }
 
@@ -1793,12 +1907,14 @@ th:last-child {
   fill: var(--tier-term-locked);
 }
 
+/* Illiquid tiers hatch (canon §6): the fill references the in-SVG <pattern>
+   so the diagonal rule reads as "not cash" while keeping the tier colour. */
 .compositionBand.illiquid {
-  fill: var(--tier-illiquid);
+  fill: url(#illiquidHatch);
 }
 
 .compositionBand.housing {
-  fill: var(--tier-housing);
+  fill: url(#housingHatch);
 }
 
 .compositionDebt {
@@ -1850,7 +1966,7 @@ svg a:hover .compositionBand {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   font-size: 0.78rem;
   min-width: 190px;
   padding: 8px 10px;
@@ -2225,7 +2341,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   min-width: 0;
   padding: 16px;
 }
@@ -2540,7 +2656,7 @@ code {
 }
 .objetivosPasivaBar {
   background: color-mix(in srgb, var(--muted) 22%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   height: 8px;
   margin-top: 12px;
   overflow: hidden;
@@ -2684,7 +2800,7 @@ code {
 }
 
 .objetivosPrio {
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -2725,14 +2841,14 @@ code {
 
 .objetivosFundedBar {
   background: var(--hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   height: 7px;
   overflow: hidden;
 }
 
 .objetivosFundedBar i {
   background: var(--blue);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: block;
   height: 100%;
 }
@@ -2880,7 +2996,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 24px;
 }
 
@@ -2953,7 +3069,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -2983,7 +3099,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   margin: 24px auto;
   max-width: 900px;
   overflow: hidden;
@@ -3185,7 +3301,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   min-width: 0;
   padding: 16px;
 }
@@ -3241,7 +3357,7 @@ code {
 /* Segmented control — CSS-only radios styled as a pill group (#423). */
 .segmented {
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   overflow: hidden;
   width: fit-content;
@@ -3339,14 +3455,14 @@ code {
 
 .fundedBar {
   background: rgba(23, 32, 30, 0.07);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   height: 6px;
   overflow: hidden;
 }
 
 .fundedBar i {
   background: var(--tier-cash);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: block;
   height: 100%;
 }
@@ -3668,7 +3784,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   margin-bottom: 0;
 }
 
@@ -3702,7 +3818,7 @@ code {
 .priceRefreshForm button {
   background: transparent;
   border: 1px solid var(--blue);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--blue);
   font-size: 0.85rem;
   font-weight: 650;
@@ -3722,7 +3838,7 @@ code {
   text-decoration: none;
   padding: 5px 12px;
   border: 1px solid var(--blue);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 .actionLink:hover {
@@ -3760,7 +3876,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 20px 24px;
   color: var(--muted);
 }
@@ -3769,7 +3885,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   /* No `overflow: hidden` here — the row ⋯ menu (.balanceMenu) is an absolutely
      positioned popover that must escape the pane; clipping it hides the only path
      to a row's actions. The composition bar clips its own corners (.balanceCompBar). */
@@ -3809,7 +3925,7 @@ code {
 .balanceCompBar {
   display: flex;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--hairline);
   margin-top: 9px;
@@ -3845,7 +3961,7 @@ code {
 .balanceDot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: 50%;
   display: inline-block;
   flex: none;
 }
@@ -3916,7 +4032,7 @@ code {
 .balanceRowBar {
   grid-column: 1 / -1;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: var(--hairline);
   margin-top: 2px;
 }
@@ -3925,7 +4041,7 @@ code {
   display: block;
   height: 100%;
   min-width: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 
 /* Row actions: a native <details> popover so the row stays calm (zero JS). */
@@ -3938,7 +4054,7 @@ code {
   list-style: none;
   cursor: pointer;
   padding: 2px 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.85rem;
@@ -3963,7 +4079,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -4020,7 +4136,7 @@ code {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 16px 20px;
 }
 
@@ -4153,7 +4269,7 @@ td.rowActions > * {
   letter-spacing: 0;
   padding: 4px 10px;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   text-decoration: none;
   color: var(--ink);
   background: transparent;
@@ -4187,7 +4303,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 20px 24px;
 }
 
@@ -4266,7 +4382,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 20px 24px;
   max-width: 640px;
 }
@@ -4502,7 +4618,7 @@ td.rowActions > * {
 
 .positionFlag {
   border: 1px solid var(--red);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--red);
   font-size: 0.72rem;
   font-weight: 800;
@@ -4581,7 +4697,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   margin-top: 24px;
   padding: 16px 24px;
 }
@@ -4702,7 +4818,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   margin-top: 24px;
   padding: 16px 24px;
 }
@@ -4905,10 +5021,7 @@ td.rowActions > * {
   }
 }
 
-/* === Rediseño «mix» (bento + denso) — dashboard y tablas ================ */
-/* Decisión: prototipo app/prototype (2026-06-12) — bento de 12 columnas con
-   hero en panel oscuro de tinta y filas de liquidez densas con barra embebida.
-   Guía completa: docs/design-system.md */
+/* === «Libro mayor» — Resumen como superficie de referencia (#906) ======== */
 
 .dashGrid {
   display: grid;
@@ -4940,6 +5053,15 @@ td.rowActions > * {
   grid-column: 1 / -1;
 }
 
+.dashGrid > .section {
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.75rem 0 0;
+}
+
 @media (max-width: 900px) {
   .dashGrid > .summaryBand,
   .dashGrid > .liquidityPanel,
@@ -4949,17 +5071,33 @@ td.rowActions > * {
   }
 }
 
-/* Hero — light card with a subtle green tint (treatment H4); it belongs with
-   the rest of the cream cards rather than reading as a dark island. */
+/* Única hoja encartada del Resumen: el pautado horizontal pertenece al hero,
+   no al papel global ni a las secciones abiertas. */
 .summaryBand.heroPanel {
-  background: linear-gradient(180deg, rgba(0, 111, 95, 0.1), rgba(0, 111, 95, 0.03));
-  border: 1px solid rgba(0, 111, 95, 0.18);
+  background-color: var(--panel);
+  background-image:
+    linear-gradient(
+      to bottom,
+      transparent 30px,
+      color-mix(in srgb, var(--hairline) 72%, transparent) 31px
+    ),
+    linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--green) 7%, transparent),
+      transparent 55%
+    );
+  background-size:
+    100% 31px,
+    100% 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: none;
   color: var(--ink);
   padding: 22px 24px;
 }
 
 .heroPanel .headline > span {
-  color: var(--green);
+  color: var(--muted);
 }
 
 .heroPanel .headline > strong {
@@ -4973,19 +5111,27 @@ td.rowActions > * {
   margin-bottom: 12px;
 }
 
-/* Vista toggle on light — segmented pill on a faint ink overlay. */
+/* Vista toggle: control rectangular, compacto y sin cromo de píldora. */
 .heroPanel .framingTabs {
-  background: rgba(23, 32, 30, 0.06);
-  border-radius: 999px;
-  gap: 2px;
-  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
 }
 
 .heroPanel .framingTabs a {
   border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
   color: var(--muted);
   font-size: 0.78rem;
-  padding: 5px 13px;
+  padding: 6px 13px;
+}
+
+.heroPanel .framingTabs a:last-child {
+  border-right: 0;
 }
 
 .heroPanel .framingTabs a.active,
@@ -5003,7 +5149,7 @@ td.rowActions > * {
 }
 
 .deltaChip {
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
@@ -5025,21 +5171,27 @@ td.rowActions > * {
   color: var(--muted);
 }
 
-/* Breakdown stats — green-tinted mini-cards under the hero figure. Auto-fit so
-   they wrap cleanly in the hero sheet's narrower main column (#661). */
+/* Stats regladas: celdas de una sola hoja, nunca mini-tarjetas. */
 .heroStats {
   display: grid;
-  gap: 12px;
+  gap: 0;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   margin-top: 16px;
+  border-bottom: 1px solid var(--hairline);
+  border-top: 1px solid var(--hairline);
 }
 
 .heroStat {
-  background: rgba(255, 253, 247, 0.6);
-  border: 1px solid rgba(0, 111, 95, 0.12);
-  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--hairline);
+  border-radius: 0;
   min-width: 0;
-  padding: 8px 12px;
+  padding: 10px 12px;
+}
+
+.heroStat:first-child {
+  border-left: 0;
 }
 
 .heroStat span {
@@ -5069,6 +5221,14 @@ td.rowActions > * {
   .heroStats {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .heroStat:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .heroStat:nth-child(n + 3) {
+    border-top: 1px solid var(--hairline);
+  }
 }
 
 /* Liquidity rows — embedded per-tier bar inside each summary. */
@@ -5076,6 +5236,17 @@ td.rowActions > * {
   grid-template-rows: auto auto;
   padding-bottom: 10px;
   padding-top: 10px;
+}
+
+.tier {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
+}
+
+.tier:nth-child(even) {
+  background: var(--band);
 }
 
 .tierBar {
@@ -5116,7 +5287,7 @@ td.rowActions > * {
   width: 120px;
 }
 
-/* FIRE — big funded percent over a thick rounded bar. */
+/* FIRE — porcentaje dominante sobre una regla de progreso contenida. */
 .fireBig {
   font-size: 1.8rem;
   font-variant-numeric: tabular-nums;
@@ -5125,7 +5296,7 @@ td.rowActions > * {
 }
 
 .firePanel .fireBar {
-  border-radius: 999px;
+  border-radius: 2px;
   height: 10px;
   margin-top: 10px;
   overflow: hidden;
@@ -5133,7 +5304,7 @@ td.rowActions > * {
 
 .firePanel .fireBar i {
   background: var(--green);
-  border-radius: 999px;
+  border-radius: 0;
 }
 
 /* Tables — financial discipline: numbers right-aligned, tabular. */
@@ -5152,7 +5323,7 @@ td.rowActions > * {
 .refreshRow button {
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--ink);
   min-height: 34px;
 }
@@ -5258,8 +5429,8 @@ td.rowActions > * {
 }
 .addHoldingChip:has(input:checked) {
   border-color: var(--ink);
+  border-left: 2px solid var(--dot, var(--ink));
   background: var(--paper-strong);
-  box-shadow: inset 2px 0 0 var(--dot, var(--ink));
 }
 .addHoldingChip:has(input:focus-visible) {
   outline: 2px solid var(--blue);
@@ -5269,7 +5440,7 @@ td.rowActions > * {
   flex: none;
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--dot, var(--line));
 }
 .addHoldingChipBody {
@@ -5324,7 +5495,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 1.4rem 1.6rem;
 }
 .addHoldingTitle {
@@ -5433,7 +5604,7 @@ td.rowActions > * {
   flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--dot, var(--line));
 }
 
@@ -5488,7 +5659,7 @@ td.rowActions > * {
 .simpleDrawerCard:hover {
   transform: translateY(-1px);
   border-color: var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .simpleDrawerCard input {
   position: absolute;
@@ -5504,9 +5675,8 @@ td.rowActions > * {
 .simpleDrawerCard:has(input:checked) {
   background: color-mix(in srgb, var(--panel) 91%, var(--dot) 9%);
   border-color: var(--ink);
-  box-shadow:
-    var(--shadow),
-    inset 0 0 0 1px var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: -2px;
 }
 .simpleDrawerCard:has(input:focus-visible) {
   outline: 2px solid var(--blue);
@@ -5538,7 +5708,7 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 1.2rem;
 }
 .simpleAddEmpty {
@@ -5796,14 +5966,14 @@ td.rowActions > * {
   background: var(--panel);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
 }
 .coinStatusPill {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   padding: 0.2rem 0.65rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
   font-size: 0.78rem;
   font-weight: 650;
@@ -5870,7 +6040,7 @@ td.rowActions > * {
   height: 26px;
   margin: 1.3rem 0 1rem;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .coinStrip > i {
@@ -6024,7 +6194,7 @@ td.rowActions > * {
   display: inline-block;
   margin-left: 0.4rem;
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 0.64rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -6096,7 +6266,7 @@ td.rowActions > * {
 
 /* Liquidity-tier dot, shared with the tier family (--tier-*). */
 .tierDot {
-  border-radius: 999px;
+  border-radius: 50%;
   display: inline-block;
   height: 8px;
   margin-right: 6px;
@@ -6195,7 +6365,7 @@ td.rowActions > * {
 .historicoMoverTag {
   background: var(--paper);
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: 0.62rem;
   font-style: normal;
@@ -6414,7 +6584,7 @@ td.rowActions > * {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   color: inherit;
   text-decoration: none;
   transition: border-color var(--dur-smooth) var(--ease-standard);
@@ -6496,7 +6666,7 @@ td.rowActions > * {
   align-items: center;
   background: rgba(23, 32, 30, 0.08);
   border: 0;
-  border-radius: 999px;
+  border-radius: 50%;
   color: var(--muted);
   cursor: help;
   display: inline-flex;
@@ -6523,7 +6693,7 @@ td.rowActions > * {
   background: var(--ink);
   border-radius: var(--radius-sm);
   bottom: calc(100% + 8px);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   color: var(--paper-strong);
   font-size: 0.72rem;
   font-weight: 500;
@@ -6587,7 +6757,7 @@ td.rowActions > * {
 
 .moversSeg {
   background: rgba(23, 32, 30, 0.06);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: inline-flex;
   gap: 2px;
   padding: 2px;
@@ -6597,7 +6767,7 @@ td.rowActions > * {
 .moversSeg a {
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   cursor: pointer;
   font-size: 0.72rem;
@@ -6681,7 +6851,7 @@ td.rowActions > * {
 
 /* tag chip — nuevo / vendido */
 .moversTag {
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -6782,7 +6952,7 @@ td.rowActions > * {
    (--tier-market / --gold / --blue). Signs live on the legend, not the bar. */
 .heroBandTrack {
   background: var(--hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   display: flex;
   gap: 2px;
   height: 8px;
@@ -7078,7 +7248,7 @@ td.rowActions > * {
   text-decoration: none;
   padding: 0.6rem 1.25rem;
   border: 1px solid var(--green);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
 }
 .primaryAction:hover {
   filter: brightness(1.08);
@@ -7144,12 +7314,12 @@ td.rowActions > * {
   z-index: 60;
   width: 52px;
   height: 52px;
-  border-radius: 999px;
+  border-radius: 50%;
   border: none;
   background: var(--ink);
   color: var(--paper);
   font-size: 1.3rem;
-  box-shadow: var(--shadow);
+  box-shadow: none;
   cursor: pointer;
 }
 .assistantFab:hover {
@@ -7167,7 +7337,7 @@ td.rowActions > * {
   flex-direction: column;
   background: var(--panel);
   border-left: 1px solid var(--line-soft);
-  box-shadow: -12px 0 32px rgba(23, 32, 30, 0.18);
+  box-shadow: none;
 }
 @media (max-width: 720px) {
   .assistantPanel {
@@ -7316,7 +7486,7 @@ td.rowActions > * {
   border: 1px solid var(--hairline);
   background: var(--paper);
   color: var(--ink);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   padding: 6px 12px;
   font-size: 0.82rem;
   cursor: pointer;
@@ -7392,7 +7562,7 @@ td.rowActions > * {
   color: var(--ink);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   font-size: 0.72rem;
   font-weight: 500;
   line-height: 1.4;
@@ -7476,9 +7646,9 @@ td.rowActions > * {
 /* ── Cobros surface (PRD #652 S1, folded from S0 variant C2) ─────────────── */
 .cobros {
   background: var(--panel);
-  color: var(--ink-panel);
+  color: var(--ink);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  box-shadow: none;
   padding: 20px;
   margin-bottom: 16px;
 }
@@ -7519,7 +7689,7 @@ td.rowActions > * {
 }
 .cobrosPasivaBar {
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--muted) 22%, transparent);
   overflow: hidden;
   margin-top: 12px;
@@ -7548,7 +7718,7 @@ td.rowActions > * {
 }
 .cobrosSegmented button {
   background: transparent;
-  color: var(--ink-panel);
+  color: var(--ink);
   border: none;
   border-radius: 0;
   padding: 7px 14px;
@@ -7604,7 +7774,7 @@ td.rowActions > * {
   min-height: 66px;
   border: 1px solid color-mix(in srgb, var(--muted) 20%, transparent);
   background: transparent;
-  color: var(--ink-panel);
+  color: var(--ink);
   cursor: pointer;
   transition: transform var(--dur-fast) var(--ease-standard);
 }
@@ -7639,7 +7809,7 @@ td.rowActions > * {
 .cobrosSplitBar {
   display: flex;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   margin-top: 6px;
   background: color-mix(in srgb, var(--muted) 18%, transparent);
@@ -7706,7 +7876,7 @@ td.rowActions > * {
   font-size: 0.72rem;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 .cobrosBadgeOneoff {

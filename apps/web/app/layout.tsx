@@ -38,6 +38,18 @@ const mono = localFont({
   variable: "--font-mono",
 });
 
+// Bitter is the restrained display voice of the bound ledger: globally
+// available, but product CSS limits it to h1/h2 (cover surfaces may opt in).
+const display = localFont({
+  display: "swap",
+  src: [
+    { path: "./fonts/bitter-latin-600-normal.woff2", style: "normal", weight: "600" },
+    { path: "./fonts/bitter-latin-700-normal.woff2", style: "normal", weight: "700" },
+    { path: "./fonts/bitter-latin-600-italic.woff2", style: "italic", weight: "600" },
+  ],
+  variable: "--font-bitter",
+});
+
 export const viewport: Viewport = {
   themeColor: "#006f5f", // matches --green design token
 };
@@ -62,7 +74,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html className={`${sans.variable} ${mono.variable}`} lang="es">
+    <html className={`${sans.variable} ${mono.variable} ${display.variable}`} lang="es">
       <body>
         {(await isDemoMode()) ? <DemoBanner /> : null}
         {(await isImpersonating()) ? <ImpersonationBanner /> : null}
