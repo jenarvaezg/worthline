@@ -38,7 +38,7 @@ export default function ReturnsByClassSection({
 
   return (
     <section
-      className="returnsByClassSection"
+      className="returnsByClassSection section"
       aria-label="Rentabilidad por clase de activo"
     >
       <div className="panelHeader">

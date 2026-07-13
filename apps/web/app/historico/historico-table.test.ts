@@ -11,7 +11,7 @@ import type { NetWorthSnapshot, SnapshotPositionRow } from "@worthline/domain";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { buildHistoricoRows, HistoricoTable } from "./historico-table";
+import { buildHistoricoRows, type HistoricoRow, HistoricoTable } from "./historico-table";
 
 function snapshot(dateKey: string, totalMinor: number): NetWorthSnapshot {
   const money = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
@@ -229,5 +229,46 @@ describe("buildHistoricoRows — per-coin second drilldown level (ADR 0035)", ()
     const mover = rows[0]!.movers.find((m) => m.holdingId === "asset_cash");
     expect(mover?.contributionMinor).toBe(500_00);
     expect(mover?.positions).toBeUndefined();
+  });
+});
+
+describe("HistoricoTable — year cuts and monthly-close subtotal (canon §5)", () => {
+  function row(
+    dateKey: string,
+    totalMinor: number,
+    opts: { isMonthlyClose?: boolean } = {},
+  ): HistoricoRow {
+    return {
+      snapshot: snapshot(dateKey, totalMinor),
+      movers: [],
+      isMonthlyClose: opts.isMonthlyClose ?? false,
+    };
+  }
+
+  test("cuts BETWEEN years only — never above the newest block (newest-first)", () => {
+    const rows = [
+      row("2026-01-15", 1_500_00),
+      row("2025-12-31", 1_400_00),
+      row("2025-06-01", 1_000_00),
+    ];
+    const markup = renderToStaticMarkup(React.createElement(HistoricoTable, { rows }));
+
+    // A single cut at the 2026 → 2025 transition; the newest (2026) block is
+    // opened by the section's own rule, so it carries no leading year rule.
+    expect(markup.match(/historicoYearRule/g) ?? []).toHaveLength(1);
+    expect(markup).toContain(">2025<");
+    expect(markup).not.toContain(">2026<");
+  });
+
+  test("a confirmed monthly close renders as a subtotal row with the folio badge", () => {
+    const markup = renderToStaticMarkup(
+      React.createElement(HistoricoTable, {
+        rows: [row("2026-01-31", 1_500_00, { isMonthlyClose: true })],
+      }),
+    );
+
+    expect(markup).toContain("historicoDrillRow monthlyClose");
+    expect(markup).toContain("monthlyCloseBadge");
+    expect(markup).toContain("Cierre de mes");
   });
 });

@@ -278,6 +278,28 @@ describe("BalanceBoard (#271)", () => {
   });
 });
 
+describe("BalanceBoard — Libro mayor notation (canon §4/§5/§6)", () => {
+  test("marks the Pasivos column with the debit rule and totals with the double rule", () => {
+    const html = render();
+    expect(html).toContain("balancePaneDebt debitCol");
+    // Both pane totals and the reconciled net carry the double-underline primitive.
+    expect(html).toContain("balancePaneTotal totalRule");
+    expect(html).toContain("balanceReconValue totalRule");
+  });
+
+  test("bands alternate rows (papel rayado)", () => {
+    // The Mercado section has two rows, so the second one bands.
+    expect(render()).toContain("balanceRow band");
+  });
+
+  test("keeps debt figures in ink — red is reserved for movement (canon §6)", () => {
+    const html = render();
+    // No inline red anywhere on the board; the debt column speaks the debit hue.
+    expect(html).not.toContain("var(--red)");
+    expect(html).toContain("var(--debit-rule)");
+  });
+});
+
 describe("BalanceBoard closed positions", () => {
   /** Two live rows plus fully-sold derived positions and a stored asset at 0. */
   function groupsWithClosed(): PortfolioGroup[] {

@@ -141,7 +141,7 @@ export default async function HistoricoPage({
       scopes={scopes}
       selectedScopeId={selectedScope?.id}
     >
-      <section className="historicoPanel" aria-label="Histórico de snapshots">
+      <section className="historicoPanel section" aria-label="Histórico de snapshots">
         <div className="panelHeader">
           <h2>Histórico</h2>
           <span>{snapshots.length} capturas</span>

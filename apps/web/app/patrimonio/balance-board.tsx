@@ -94,6 +94,16 @@ function tierVar(tier: UnifiedHolding["tier"]): string {
   return `var(--tier-${tier})`;
 }
 
+/**
+ * A bar/segment fill: the rung's identity hue for an asset, the debit hue for a
+ * pasivo (canon §6 — a debt speaks the debe colour, so red stays free for
+ * movement). One place decides it, shared by the composition bars, weight bars
+ * and subsection dots.
+ */
+function barColor(tier: UnifiedHolding["tier"], isAsset: boolean): string {
+  return isAsset ? tierVar(tier) : "var(--debit-rule)";
+}
+
 /** Ownership label for household scope ("60 %" / "100 %"), or null outside household. */
 function ownershipLabel(h: UnifiedHolding, isHousehold: boolean): string | null {
   if (!isHousehold) return null;
@@ -194,8 +204,7 @@ const sectionTotal = (rows: UnifiedHolding[]) =>
 /** Composition segments for a pane: by subsection when subdivided, else by holding. */
 function paneSegments(sections: Section[], isAsset: boolean) {
   const denom = sections.reduce((acc, s) => acc + sectionTotal(s.rows), 0) || 1;
-  const color = (tier: UnifiedHolding["tier"]) =>
-    isAsset ? tierVar(tier) : "var(--red)";
+  const color = (tier: UnifiedHolding["tier"]) => barColor(tier, isAsset);
   const segments =
     sections.length > 1
       ? sections.map((s) => ({
@@ -227,6 +236,7 @@ function HoldingRow({
   optimisticSubmit,
   returns,
   readOnly,
+  banded,
 }: {
   holding: UnifiedHolding;
   currency: Currency;
@@ -241,6 +251,8 @@ function HoldingRow({
   optimisticSubmit: OptimisticSubmit;
   returns: HoldingReturnsView | undefined;
   readOnly: boolean;
+  /** Alternate rows band (canon §5, «papel rayado»). */
+  banded: boolean;
 }) {
   const h = holding;
   const rowWarnings = isAsset
@@ -260,7 +272,7 @@ function HoldingRow({
   const deleteAction = isAsset ? deleteAssetAction : deleteLiabilityAction;
 
   return (
-    <div className="balanceRow" id={h.id}>
+    <div className={`balanceRow${banded ? " band" : ""}`} id={h.id}>
       <div className="balanceRowName">
         <Link href={h.detailHref}>{h.name}</Link>
         {rowWarnings.length > 0 ? (
@@ -337,7 +349,7 @@ function HoldingRow({
         <span
           style={{
             width: `${pct}%`,
-            background: isAsset ? tierVar(h.tier) : "var(--red)",
+            background: barColor(h.tier, isAsset),
           }}
         />
       </div>
@@ -379,13 +391,18 @@ function Pane({
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
+  // Alternate rows band down the whole pane (canon §5); the cursor runs across
+  // sections so the zebra never resets at a subsection header.
+  let bandCursor = 0;
 
   return (
-    <div className={`balancePane ${isAsset ? "balancePaneAsset" : "balancePaneDebt"}`}>
+    <div
+      className={`balancePane ${isAsset ? "balancePaneAsset" : "balancePaneDebt debitCol"}`}
+    >
       <div className="balancePaneHead">
         <div className="balancePaneTop">
           <h3>{title}</h3>
-          <span className="balancePaneTotal">
+          <span className="balancePaneTotal totalRule">
             {isAsset
               ? money(total, currency, privacyMode)
               : `− ${money(total, currency, privacyMode)}`}
@@ -421,7 +438,9 @@ function Pane({
                   <span className="balanceSubLabel">
                     <span
                       className="balanceDot"
-                      style={{ background: isAsset ? tierVar(s.tier) : "var(--red)" }}
+                      style={{
+                        background: barColor(s.tier, isAsset),
+                      }}
                     />
                     {s.label}
                   </span>
@@ -432,6 +451,7 @@ function Pane({
               ) : null}
               {s.rows.map((h) => (
                 <HoldingRow
+                  banded={bandCursor++ % 2 === 1}
                   currency={currency}
                   currentUrl={currentUrl}
                   holding={h}
@@ -459,8 +479,9 @@ function Pane({
       {closedRows.length > 0 ? (
         <details className="balanceClosed">
           <summary>Posiciones cerradas ({closedRows.length})</summary>
-          {closedRows.map((h) => (
+          {closedRows.map((h, index) => (
             <HoldingRow
+              banded={index % 2 === 1}
               currency={currency}
               currentUrl={currentUrl}
               holding={h}
@@ -685,7 +706,9 @@ export default function BalanceBoard({
           <span className="balanceReconItem balanceReconNet">
             <span className="balanceReconOp">=</span>
             <span className="balanceReconLabel">Patrimonio neto</span>
-            <span className={`balanceReconValue${net < 0 ? " balanceReconNeg" : ""}`}>
+            <span
+              className={`balanceReconValue totalRule${net < 0 ? " balanceReconNeg" : ""}`}
+            >
               {money(net, currency, privacyMode)}
             </span>
           </span>
