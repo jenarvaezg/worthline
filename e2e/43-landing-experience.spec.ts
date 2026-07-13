@@ -115,6 +115,22 @@ test("motion off is final and static, including live preference changes", async 
   expect(await semanticAnswer.innerHTML()).toBe(semanticHtml);
 });
 
+test("normal motion never hides reveal content before scrolling", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.route("**/api/auth/session", (route) =>
+    route.fulfill({ contentType: "application/json", json: {}, status: 200 }),
+  );
+  await page.goto("/landing");
+
+  const reveals = page.locator("[data-reveal]");
+  expect(await reveals.count()).toBeGreaterThan(0);
+  expect(
+    await reveals.evaluateAll((elements) =>
+      elements.map((element) => getComputedStyle(element).opacity),
+    ),
+  ).toEqual((await reveals.all()).map(() => "1"));
+});
+
 test("normal motion starts without waiting for fonts and settles without a type jump", async ({
   page,
 }) => {

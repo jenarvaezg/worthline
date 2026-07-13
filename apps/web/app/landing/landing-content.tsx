@@ -1,5 +1,5 @@
+import { THIRD_PARTY_AI_NOTICE_TEXT } from "@web/asistente/third-party-ai-notice";
 import type { CSSProperties } from "react";
-
 import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import styles from "./landing.module.css";
 import LandingExperience from "./landing-experience";
@@ -634,7 +634,9 @@ function Assistant() {
             <sup>1</sup> Fuente: tus registros de cobros ·{" "}
             <span className={styles.num}>14</span> apuntes
           </p>
-          <p className={styles.mockNote}>Maqueta — captura real del chat pendiente</p>
+          <p className={styles.mockNote}>
+            Ejemplo de respuesta — las cifras dependen de tus datos.
+          </p>
         </div>
         <div className={styles.chatAside}>
           <p>
@@ -691,9 +693,31 @@ function Bookend() {
           Trae tu foto de hoy en unos minutos — sin fórmulas, con preview en cada paso. Y
           si un día quieres irte, tus datos salen contigo en un JSON.
         </p>
+        <aside className={styles.beforeStart} aria-labelledby="before-start-title">
+          <h3 id="before-start-title">Antes de empezar</h3>
+          <ul>
+            <li>
+              worthline es un proyecto personal de código abierto, sin un SLA comercial.
+              El precio y las condiciones comerciales todavía no están publicados.
+            </li>
+            <li>
+              Cada workspace vive en su propia base de datos. Desde Ajustes puedes
+              exportar todos tus datos en JSON o eliminar el workspace completo.
+            </li>
+            <li>
+              worthline no guarda credenciales bancarias. Tú decides qué datos entran.
+            </li>
+            <li>{THIRD_PARTY_AI_NOTICE_TEXT}</li>
+          </ul>
+          <nav aria-label="Información para decidir">
+            <a href="/demo">Probar con datos ficticios</a>
+            <a href="https://github.com/jenarvaezg/worthline">Revisar el código</a>
+            <a href="https://github.com/jenarvaezg/worthline/security/policy">
+              Política de seguridad
+            </a>
+          </nav>
+        </aside>
         <Ctas />
-        {/* Pie legal (Privacidad · Condiciones, crítica #862) pendiente de que
-            existan las páginas legales — entra con el checklist del estreno (S6). */}
         <div className={styles.colophon}>
           <span className={styles.gl}>worthline · mmxxvi</span>
           <span>El libro mayor de tu patrimonio</span>

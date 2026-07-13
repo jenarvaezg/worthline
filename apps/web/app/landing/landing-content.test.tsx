@@ -1,6 +1,6 @@
+import { THIRD_PARTY_AI_NOTICE_TEXT } from "@web/asistente/third-party-ai-notice";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-
 import { heroSheetData } from "./hero-sheet/build-hero-sheet";
 import LandingContent from "./landing-content";
 
@@ -79,6 +79,28 @@ describe("landing content (#951)", () => {
     expect(html).toContain("de momento");
     // Ni una palabra de adjuntos/ingesta (decidido, sin código).
     expect(html).not.toMatch(/adjunto|ingesta/i);
+  });
+
+  test("presents the assistant illustration as an example, never as a real screenshot", () => {
+    expect(html).toContain("Ejemplo de respuesta — las cifras dependen de tus datos.");
+    expect(html).not.toMatch(/Maqueta|captura real del chat pendiente/);
+  });
+
+  test("gives honest trust context before asking for personal financial data", () => {
+    expect(html).toContain("Antes de empezar");
+    expect(html).toContain(
+      "El precio y las condiciones comerciales todavía no están publicados.",
+    );
+    expect(html).toContain(THIRD_PARTY_AI_NOTICE_TEXT);
+    expect(html).toContain('href="/demo">Probar con datos ficticios');
+    expect(html).toContain(
+      'href="https://github.com/jenarvaezg/worthline">Revisar el código',
+    );
+    expect(html).toContain(
+      'href="https://github.com/jenarvaezg/worthline/security/policy">Política de seguridad',
+    );
+    expect(html).not.toContain('href="/privacy"');
+    expect(html).not.toMatch(/gratis/i);
   });
 
   test("the SSG hero sheet renders real, reconciled demo figures (bruto − deuda = neto)", () => {

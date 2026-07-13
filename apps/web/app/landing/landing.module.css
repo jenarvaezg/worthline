@@ -306,7 +306,6 @@
   }
 
   .landing[data-motion="pending"] .reveal {
-    opacity: 0;
     transform: translateY(12px);
   }
 
@@ -758,16 +757,12 @@
 }
 
 .landing[data-motion="on"] .reveal {
-  opacity: 0;
   transform: translateY(12px);
 }
 
 .landing[data-motion="on"] .reveal:global(.seen) {
-  opacity: 1;
   transform: none;
-  transition:
-    opacity 0.55s ease var(--reveal-delay, 0s),
-    transform 0.55s ease var(--reveal-delay, 0s);
+  transition: transform 0.55s ease var(--reveal-delay, 0s);
 }
 
 /* --- díptico hoja → worthline --- */
@@ -1429,6 +1424,46 @@
   font-size: 1.1rem;
 }
 
+.beforeStart {
+  max-width: 52rem;
+  margin: 2.8rem auto 2.4rem;
+  padding: 1.5rem 0;
+  border-top: 2px solid var(--gilt);
+  border-bottom: 1px solid rgba(194, 161, 78, 0.35);
+  text-align: left;
+}
+
+.beforeStart h3 {
+  color: var(--cover-ink);
+  font-size: 1.15rem;
+}
+
+.beforeStart ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 2rem;
+  margin: 1rem 0 1.25rem;
+  padding-left: 1.2rem;
+  color: var(--cover-muted);
+}
+
+.beforeStart li {
+  padding-left: 0.2rem;
+}
+
+.beforeStart nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(194, 161, 78, 0.2);
+}
+
+.beforeStart a {
+  color: var(--cover-ink);
+  text-underline-offset: 0.2em;
+}
+
 .backcover .ctas {
   justify-content: center;
 }
@@ -1518,6 +1553,10 @@
 
   .steps .s p {
     grid-column: 2;
+  }
+
+  .beforeStart ul {
+    grid-template-columns: 1fr;
   }
 }
 
