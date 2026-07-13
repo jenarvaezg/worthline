@@ -35,7 +35,7 @@
     "typescript": "^7.0.2"
   },
   "scripts": {
-    "build": "bun ../../scripts/link-web-typescript-deps.ts && bun --bun next build",
+    "build": "bun ../../scripts/link-web-typescript-deps.ts && bun --bun next build && bun ../../scripts/emit-next-server-cjs-marker.ts",
     "dev": "bun --bun next dev --hostname 127.0.0.1",
     "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "test": "vitest run --config vitest.config.ts",

@@ -1,6 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.v2.json",
-  "globalDependencies": [".env"],
+  "globalDependencies": [
+    ".env",
+    "scripts/link-web-typescript-deps.ts",
+    "scripts/emit-next-server-cjs-marker.ts"
+  ],
   "globalPassThroughEnv": ["NODE_ENV", "CI", "FIRST_RUN_SCENARIO"],
   "tasks": {
     "build": {
