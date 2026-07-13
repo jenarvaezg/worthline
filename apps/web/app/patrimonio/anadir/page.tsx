@@ -74,7 +74,7 @@ const DRAWERS: Drawer[] = [
     id: "deuda",
     label: "Una deuda",
     hint: "Hipoteca, préstamo o tarjeta.",
-    dot: "var(--red)",
+    dot: "var(--debit-rule)",
   },
 ];
 
