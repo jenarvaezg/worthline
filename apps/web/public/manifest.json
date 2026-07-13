@@ -4,7 +4,7 @@
   "description": "Local-first net worth dashboard",
   "start_url": "/app",
   "display": "standalone",
-  "background_color": "#eef2ef",
+  "background_color": "#eef0e4",
   "theme_color": "#006f5f",
   "icons": [
     {

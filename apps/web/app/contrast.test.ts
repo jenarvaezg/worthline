@@ -47,6 +47,14 @@ function contrastRatio(foreground: string, background: string): number {
 const backgrounds = [token("--paper"), token("--paper-strong")];
 
 describe("contrast tokens (WCAG)", () => {
+  test("cover text and gilt meet ≥4.5:1 on the canonical cover", () => {
+    const cover = token("--cover");
+
+    for (const foreground of ["--cover-ink", "--cover-muted", "--gilt"]) {
+      expect(contrastRatio(token(foreground), cover)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   test("--line meets ≥3:1 non-text contrast on both papers", () => {
     for (const background of backgrounds) {
       expect(contrastRatio(token("--line"), background)).toBeGreaterThanOrEqual(3);

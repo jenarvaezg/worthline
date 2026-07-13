@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 
 import LandingContent from "./landing-content";
 
@@ -14,18 +13,6 @@ import LandingContent from "./landing-content";
  */
 export const dynamic = "force-static";
 
-// La voz de la cubierta (#862): Bitter solo para cubierta y titulares, servida
-// offline como el resto de fuentes (OFL en ./fonts/LICENSE-bitter).
-const display = localFont({
-  display: "swap",
-  src: [
-    { path: "../fonts/bitter-latin-600-normal.woff2", style: "normal", weight: "600" },
-    { path: "../fonts/bitter-latin-700-normal.woff2", style: "normal", weight: "700" },
-    { path: "../fonts/bitter-latin-600-italic.woff2", style: "italic", weight: "600" },
-  ],
-  variable: "--font-bitter",
-});
-
 // Metadatos mínimos de la superficie pública; el paquete SEO completo
 // (canonical, OG, robots, sitemap) es del estreno (S6, #954).
 export const metadata: Metadata = {
@@ -38,9 +25,5 @@ export const metadata: Metadata = {
 };
 
 export default function LandingPage() {
-  return (
-    <div className={display.variable}>
-      <LandingContent />
-    </div>
-  );
+  return <LandingContent />;
 }

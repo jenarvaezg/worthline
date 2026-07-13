@@ -9,39 +9,10 @@
    pisar esa pista. */
 
 .landing {
-  --cover: #102420;
-  --cover-2: #0a1916;
-  --cover-3: #16302a;
-  --cover-ink: #ecefe1;
-  --cover-muted: #9fb0a3;
-  --gilt: #c2a14e;
   --gilt-soft: #8f7a45;
   --gilt-2: #cfa649;
-  --paper: #eef0e4;
-  --panel: #f7f7ee;
-  --ink: #1c2420;
-  --muted: #4e5c54;
-  --line-strong: #5d6c66;
-  --line-soft: #c9cfbd;
-  --hairline: #dde1d0;
-  --band: #eaedde;
   --band-hover: #e2e6d2;
-  --blue: #1f4d74;
   --pen: #44606b;
-  --debit-rule: #a03a28;
-  --green: #006f5f;
-  --red: #b9442f;
-  --tier-cash: #0d7a64;
-  --tier-market: #2aa188;
-  --tier-term: #2f5e8d;
-  --tier-illiquid: #6b86a3;
-  --tier-housing: #b3831f;
-  --radius: 6px;
-  --radius-sm: 4px;
-  --rule-heavy: 2px solid var(--ink);
-  --font-display: var(--font-bitter, Georgia), "Rockwell", Georgia, serif;
-  --font-body: var(--font-sans, system-ui), system-ui, sans-serif;
-  --font-numeric: var(--font-mono, ui-monospace), ui-monospace, monospace;
 
   background: var(--paper);
   color: var(--ink);
