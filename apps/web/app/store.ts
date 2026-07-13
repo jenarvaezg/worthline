@@ -63,6 +63,15 @@ function demoHealthcheck(now: string): LocalPersistenceStatus {
 }
 
 /**
+ * The label the persistence footer shows for a hosted workspace. The raw libSQL
+ * URL (`libsql://wl-<workspace>.turso.io`) must NEVER reach the rendered footer:
+ * it exposes the internal database host and the workspace id on every page (PRD
+ * #877 S6, #954 — the estreno leak fix). The friendly label carries the same
+ * meaning ("your data lives in its own private database") without the plumbing.
+ */
+const WORKSPACE_DISPLAY_PATH = "tu espacio · base de datos privada";
+
+/**
  * Synthesize the persistence status for an authenticated workspace WITHOUT a DB
  * round-trip (#445). The footer only renders `displayPath` + a render-time
  * "guardado" stamp and nothing branches on a real write, so probing the remote
@@ -71,6 +80,9 @@ function demoHealthcheck(now: string): LocalPersistenceStatus {
  * workspace still surfaces: read pages fail fast at `withStore()`, and writes
  * fail at the action that writes (with a proper error) instead of the old
  * behavior where a failed probe-write threw and bricked even read-only pages.
+ *
+ * `displayPath` is the FRIENDLY label (rendered in the shell footer, #954);
+ * `databasePath` keeps the raw URL for the owner-only technical panel in Ajustes.
  */
 function workspaceHealthcheck(dbUrl: string): LocalPersistenceStatus {
   const checkedAt = new Date().toISOString();
@@ -80,7 +92,7 @@ function workspaceHealthcheck(dbUrl: string): LocalPersistenceStatus {
     checkedAt,
     checkValue: checkedAt,
     databasePath: dbUrl,
-    displayPath: dbUrl,
+    displayPath: WORKSPACE_DISPLAY_PATH,
   };
 }
 

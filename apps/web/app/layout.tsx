@@ -10,6 +10,8 @@ import { Suspense } from "react";
 
 import "./globals.css";
 
+import { SITE_URL } from "./site-url";
+
 // Editorial pairing, served offline (#44): Iosevka for numerals/mono,
 // Source Sans 3 (humanist) for body. OFL licenses live in ./fonts/.
 const sans = localFont({
@@ -55,8 +57,14 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "worthline",
-  description: "Local-first net worth dashboard",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "worthline — El libro mayor de tu patrimonio",
+    template: "%s · worthline",
+  },
+  description:
+    "Todo tu patrimonio —activos, deudas, retornos reales, FIRE— en una sola imagen cerrada, auditable y tuya.",
+  applicationName: "worthline",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -65,6 +73,14 @@ export const metadata: Metadata = {
   },
   icons: {
     apple: "/icon.svg",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "worthline",
+    locale: "es_ES",
+  },
+  twitter: {
+    card: "summary_large_image",
   },
 };
 

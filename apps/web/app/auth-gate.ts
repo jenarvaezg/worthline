@@ -7,15 +7,9 @@
 
 // Static public assets fetched before a session exists must bypass the sign-in
 // wall; otherwise PWA install/SW registration receives the login HTML.
-// /landing is the public landing page (#951, PRD #877) — S6 promotes it to `/`
-// and this entry follows it there.
-const PUBLIC_PATHS = new Set([
-  "/login",
-  "/landing",
-  "/manifest.json",
-  "/mcp-icon.svg",
-  "/sw.js",
-]);
+// The public landing now lives at `/` (estreno, #954) — see the `pathname === "/"`
+// branch below — so it no longer needs a dedicated `/landing` entry here.
+const PUBLIC_PATHS = new Set(["/login", "/manifest.json", "/mcp-icon.svg", "/sw.js"]);
 
 export function shouldRedirectToLogin(input: {
   authConfigured: boolean;
@@ -56,7 +50,7 @@ export function shouldRedirectToLogin(input: {
   ) {
     return false;
   }
-  // The provisional root (`/` → `/app`, #949), sign-in route, public demo entry,
+  // The public landing (`/`, estreno #954), sign-in route, public demo entry,
   // and Auth.js endpoints must stay reachable for a logged-out visitor.
   if (
     pathname === "/" ||

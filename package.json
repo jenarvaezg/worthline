@@ -25,6 +25,7 @@
     "test:e2e:first-run:hogar": "FIRST_RUN_SCENARIO=hogar playwright test --config playwright.first-run.config.ts",
     "test:e2e:demo": "bun run --filter @worthline/web build && playwright test --config playwright.demo.config.ts",
     "test:watch": "vitest",
+    "capture:landing": "tsx scripts/capture-landing.ts",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
     "sync:pull": "tsx scripts/sync-pull.ts",
     "sync:push": "tsx scripts/sync-push.ts",

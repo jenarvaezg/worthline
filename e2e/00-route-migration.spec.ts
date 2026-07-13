@@ -1,6 +1,8 @@
 /**
- * Route migration contract (#861, #949): dashboard at `/app`, provisional `/`
- * → `/app`, auth gate with safe `returnTo`, demo seed landing on `/app`.
+ * Route contract (#861, #949, estreno #954): the public landing at `/`, the
+ * dashboard at `/app`, the auth gate with a safe `returnTo`, and the demo seed
+ * landing on `/app`. The estreno retired the provisional `/` → `/app` 307: `/`
+ * now serves the static landing and no longer bounces visitors to the dashboard.
  *
  * Auth-gated redirects run in playwright.routing.config.ts (auth env on).
  * Redirects that work in no-auth mode run here in the main serial suite.
@@ -8,20 +10,22 @@
 import { expect, test } from "./fixtures";
 
 test.describe("route migration — no-auth mode", () => {
-  test("/ → 307 /app (provisional root redirect)", async ({ request }) => {
-    const response = await request.get("/", { maxRedirects: 0 });
-    expect(response.status()).toBe(307);
-    expect(response.headers().location).toBe("/app");
+  test("/ serves the public landing (estreno #954), not a redirect to /app", async ({
+    page,
+  }) => {
+    const response = await page.goto("/");
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(
+      "Evoluciona tu Excel",
+    );
   });
 
-  test("/ preserves query params through the provisional redirect", async ({
-    request,
-  }) => {
+  test("/ no longer redirects, even with legacy query params", async ({ request }) => {
     const response = await request.get("/?view=liquid&drill=liquid", {
       maxRedirects: 0,
     });
-    expect(response.status()).toBe(307);
-    expect(response.headers().location).toBe("/app?view=liquid&drill=liquid");
+    expect(response.status()).toBe(200);
   });
 
   test("dashboard renders at /app", async ({ page }) => {
@@ -32,12 +36,6 @@ test.describe("route migration — no-auth mode", () => {
   test("manifest start_url points at /app", async ({ request }) => {
     const manifest = await (await request.get("/manifest.json")).json();
     expect(manifest.start_url).toBe("/app");
-  });
-
-  test("legacy PWA start_url (/) opens the dashboard via redirect", async ({ page }) => {
-    await page.goto("/");
-    await expect(page).toHaveURL(/\/app/);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("worthline");
   });
 
   test("demo persona seed lands on /app", async ({ page }) => {

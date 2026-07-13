@@ -32,12 +32,11 @@ test.describe("route migration — auth gate", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test("public / is not bounced to login (provisional 307 to /app)", async ({
+  test("public / serves the landing without a login bounce (estreno #954)", async ({
     request,
   }) => {
     const response = await request.get("/", { maxRedirects: 0 });
-    expect(response.status()).toBe(307);
-    expect(response.headers().location).toBe("/app");
+    expect(response.status()).toBe(200);
   });
 
   test("public /demo stays reachable without login", async ({ page }) => {

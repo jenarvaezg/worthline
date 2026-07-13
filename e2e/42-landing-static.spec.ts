@@ -10,7 +10,7 @@ import { expect, test } from "./fixtures";
 test.use({ javaScriptEnabled: false });
 
 test("landing: the 9 sections read fully with JavaScript disabled", async ({ page }) => {
-  await page.goto("/landing");
+  await page.goto("/");
 
   // La cubierta: H1, lede y CTAs.
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
@@ -53,7 +53,7 @@ test("landing: the no-JS masthead fits at 375px with one visible Entrar", async 
   page,
 }) => {
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto("/landing");
+  await page.goto("/");
 
   const masthead = page.locator("header").first();
   const entry = masthead.getByRole("link", { name: "Entrar", exact: true });
