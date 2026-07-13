@@ -14,10 +14,14 @@ export const alt = "worthline — Evoluciona tu Excel. El libro mayor de tu patr
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-const COVER = "#102420";
-const CREAM = "#ecefe1";
-const GOLD = "#b3831f";
-const MUTED = "#9fb0a3";
+// Cover-register tokens, mirrored from globals.css (Satori cannot read CSS
+// vars). The decorative accent is the gilt filete (`--gilt`), NOT `--gold` —
+// gold is the "aviso/debe" warning ink per design-system.md §Color, so it must
+// not stand in as a cover ornament.
+const COVER = "#102420"; // --cover
+const CREAM = "#ecefe1"; // --cover-ink
+const GILT = "#c2a14e"; // --gilt (filete)
+const MUTED = "#9fb0a3"; // --cover-muted
 
 export default function OpengraphImage() {
   return new ImageResponse(
@@ -47,7 +51,7 @@ export default function OpengraphImage() {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column" }}>
-        <span style={{ fontSize: 30, letterSpacing: 1, color: GOLD, marginBottom: 20 }}>
+        <span style={{ fontSize: 30, letterSpacing: 1, color: GILT, marginBottom: 20 }}>
           El libro mayor de tu patrimonio
         </span>
         <span style={{ fontSize: 100, fontWeight: 700, lineHeight: 1.02 }}>

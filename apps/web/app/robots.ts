@@ -9,7 +9,11 @@ import { SITE_URL } from "./site-url";
  */
 export const dynamic = "force-static";
 
-/** Authenticated, private surfaces — never indexed. */
+// A denylist (not `Disallow: /` + allowlist) on purpose: Googlebot renders the
+// landing to index it, so `/_next/*` assets must stay crawlable — an allowlist
+// would starve the render. The trade-off is that this list must name every
+// authenticated top-level route; it covers all of them today (`app/*/page.tsx`
+// + `scope/route.ts`), and any new private route added later belongs here too.
 const PRIVATE_PATHS = [
   "/app",
   "/patrimonio",
@@ -17,6 +21,9 @@ const PRIVATE_PATHS = [
   "/objetivos",
   "/ajustes",
   "/admin",
+  "/empezar",
+  "/scope",
+  "/login",
   "/api/",
 ];
 
