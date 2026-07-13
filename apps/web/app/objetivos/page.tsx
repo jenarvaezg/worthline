@@ -941,7 +941,7 @@ export default async function ObjetivosPage({
                           </label>
                         ))}
                       </span>
-                      <PendingSubmit pendingLabel="Creando…">
+                      <PendingSubmit className="createGoalSubmit" pendingLabel="Creando…">
                         Crear objetivo
                       </PendingSubmit>
                     </form>

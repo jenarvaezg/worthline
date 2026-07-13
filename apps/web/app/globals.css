@@ -704,11 +704,20 @@ button:focus-visible,
 input,
 select,
 textarea {
-  background: rgba(255, 250, 240, 0.9);
+  /* Canon §5: a form control is a ruled cell of the ledger, not a floating
+     field — panel paper, a --line-strong rule, square corners. */
+  background: var(--panel);
   border-radius: var(--radius-sm);
   min-height: 38px;
   padding: 8px 10px;
   width: 100%;
+}
+
+/* Focus inks the rule blue (the pen) beneath the standard outline (§5). */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--blue);
 }
 
 textarea {
@@ -2336,14 +2345,16 @@ code {
   margin-bottom: 4px;
 }
 
-/* firePanel — proper panel chrome matching other panels. */
+/* Canon §3: /objetivos panels (FIRE, renta pasiva, goals) open as ruled chapters
+   — heavy top rule, no card. White space, not boxes, separates them. */
 .firePanel {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
   box-shadow: none;
   min-width: 0;
-  padding: 16px;
+  padding-top: 0.75rem;
 }
 
 /* Read-only FIRE metric rows. */
@@ -2560,7 +2571,8 @@ code {
 
 .objetivosPage {
   display: grid;
-  gap: 16px;
+  /* Open sections are separated by white space, not boxes (canon §3, ≥2.5rem). */
+  gap: 2.5rem;
   padding: 16px;
 }
 
@@ -3350,12 +3362,13 @@ code {
   margin-top: 14px;
 }
 
+/* Canon §3: goals read as a ruled list, not stacked cards — an open row opened
+   by a hairline, no perimeter. */
 .goalRow {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--line-soft);
   display: grid;
   gap: 10px;
-  padding: 14px;
+  padding: 14px 0 4px;
 }
 
 .goalFieldRow {
@@ -3387,14 +3400,18 @@ code {
   background: var(--green);
 }
 
+/* Canon §3: «Nuevo objetivo» opens as a ruled block below the list, not a tinted
+   card. Its primary action sits at natural width, right-aligned (canon §5, P7). */
 .createBlock {
-  background: rgba(255, 253, 247, 0.55);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+  border-top: var(--rule-heavy);
   display: grid;
   gap: 12px;
   margin-top: 18px;
-  padding: 16px;
+  padding-top: 16px;
+}
+
+.createGoalSubmit {
+  justify-self: end;
 }
 
 /* Selectable chips — native checkboxes styled as pills (#424). */
@@ -4212,12 +4229,15 @@ td.rowActions > * {
 
 /* Puesta al día ───────────────────────────────────────────────────────── */
 
+/* Canon §3: the update ledger opens as a ruled chapter, not a floating card —
+   heavy top rule pegada al título, no perimeter, inherits the paper. */
 .puestaAlDia {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
   box-shadow: none;
-  padding: 20px 24px;
+  padding-top: 0.75rem;
 }
 
 .puestaFieldset {
@@ -4292,11 +4312,12 @@ td.rowActions > * {
 /* Form pages (nuevo-activo, nueva-deuda, editar) ──────────────────────── */
 
 .formPage {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
   box-shadow: none;
-  padding: 20px 24px;
+  padding-top: 0.75rem;
   max-width: 640px;
 }
 
@@ -5397,11 +5418,12 @@ td.rowActions > * {
   }
 }
 .addHoldingMain {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
   box-shadow: none;
-  padding: 1.4rem 1.6rem;
+  padding: 0.75rem 0 0;
 }
 .addHoldingTitle {
   margin: 0 0 1.2rem;
@@ -5442,30 +5464,23 @@ td.rowActions > * {
 .addHoldingFields small {
   color: var(--muted);
 }
+/* Only the genuine deltas from the base control primitive (design-system §7 — no
+   ad-hoc re-declaration): a tighter field padding and a slightly larger figure.
+   Paper, rule, radius and the --blue focus recolor all inherit the shared rule. */
 .addHoldingFields input,
 .addHoldingFields select {
   padding: 0.5rem 0.6rem;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  font: inherit;
   font-size: 0.95rem;
-  color: var(--ink);
-  background: var(--paper-strong);
-}
-.addHoldingFields input:focus,
-.addHoldingFields select:focus {
-  outline: 2px solid var(--blue);
-  outline-offset: 1px;
-  border-color: var(--blue);
 }
 
 .addHoldingSummary {
   position: sticky;
   top: 1rem;
-  background: var(--paper-strong);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  padding: 1.1rem 1.2rem;
+  background: transparent;
+  border: 0;
+  border-top: var(--rule-heavy);
+  border-radius: 0;
+  padding: 0.75rem 0 0;
 }
 .addHoldingSummaryLabel {
   font-size: 0.7rem;
@@ -5608,13 +5623,15 @@ td.rowActions > * {
 .simpleAddPanes {
   min-height: 0;
 }
+/* Canon §3: the revealed drawer is an open ruled block. It keeps its coloured
+   --pane-accent border-top (below) as the chapter opener; no card around it. */
 .simpleAddEmpty,
 .simpleDrawerPane {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
-  padding: 1.2rem;
+  padding: 1.2rem 0 0;
 }
 .simpleAddEmpty {
   color: var(--muted);
@@ -5641,7 +5658,9 @@ td.rowActions > * {
   --pane-accent: var(--tier-illiquid);
 }
 .simpleDrawerPane[data-drawer="deuda"] {
-  --pane-accent: var(--red);
+  /* Canon §4/§6: the debt chapter opens on the structural debit rule, not --red
+     (red stays reserved for movement/P&L). */
+  --pane-accent: var(--debit-rule);
 }
 
 /* Investment drawer (#597): a single-column flow — pick the group, search, then
