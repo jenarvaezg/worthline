@@ -70,7 +70,10 @@ test("Libro mayor foundation holds at 1440×1024", async ({ page }) => {
   });
   expect(totalRule.height).toBe("4px");
   expect(totalRule.backgroundImage).toContain("linear-gradient");
-  expect(totalRule.backgroundImage.match(/rgb\(28, 36, 32\)/g)).toHaveLength(2);
+  // The double-rule uses two ink stops, each with two positions
+  // (`var(--ink) 0 1px` and `var(--ink) 3px 4px`); the browser expands every
+  // double-position stop into two, so the ink colour resolves four times.
+  expect(totalRule.backgroundImage.match(/rgb\(28, 36, 32\)/g)).toHaveLength(4);
 
   const framing = hero.getByRole("navigation", { name: "Vista de patrimonio" });
   expect(
