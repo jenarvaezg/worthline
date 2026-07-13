@@ -24,7 +24,10 @@ test("objetivos panels are open reglada chapters, not floating cards", async ({
 }) => {
   await page.goto("/objetivos");
 
-  const fire = page.getByRole("region", { name: "FIRE" });
+  // Exact match: the «Niveles FIRE» rail is also a region whose name contains
+  // "FIRE", so a substring match is ambiguous — target the panel labelled
+  // exactly "FIRE".
+  const fire = page.getByRole("region", { name: "FIRE", exact: true });
   await expect(fire).toBeVisible();
 
   const style = await fire.evaluate((el) => {
