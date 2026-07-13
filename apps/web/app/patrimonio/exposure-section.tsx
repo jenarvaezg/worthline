@@ -53,7 +53,7 @@ export default function ExposureSection({
   const currencyRisk = full.currencyRisk;
 
   return (
-    <section className="exposureSection" aria-label="Exposición">
+    <section className="exposureSection section" aria-label="Exposición">
       <div className="panelHeader">
         <h2>Exposición</h2>
         <span>Dónde está invertido de verdad</span>

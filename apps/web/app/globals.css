@@ -3095,19 +3095,20 @@ code {
 
 /* === #59 historico === */
 
+/* Open reglada section (canon §3/§5c): no card, a heavy opening rule (via the
+   shared .section primitive) and a ≤880px measure centred on the page. */
 .historicoPanel {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
-  margin: 24px auto;
-  max-width: 900px;
-  overflow: hidden;
-  padding: 0;
+  margin: 28px auto;
+  max-width: 880px;
+}
+
+.historicoPanel > .panelHeader {
+  padding-left: 24px;
+  padding-right: 24px;
 }
 
 .historicoEmpty {
-  padding: 24px;
+  padding: 8px 24px 24px;
 }
 
 .historicoBreakdownPanel {
@@ -3181,53 +3182,6 @@ code {
   margin: 12px 0 0;
 }
 
-.historicoTable {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-.historicoTable th,
-.historicoTable td {
-  padding: 10px 16px;
-  text-align: left;
-  vertical-align: middle;
-}
-
-.historicoTable thead th {
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.historicoTable tbody tr {
-  border-bottom: 1px solid var(--line);
-}
-
-.historicoTable tbody tr:last-child {
-  border-bottom: none;
-}
-
-.historicoTable tbody tr:hover {
-  background: var(--paper);
-}
-
-.historicoTable .numCol {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.historicoTable .barCol {
-  width: 120px;
-}
-
-.historicoTable td.barCol {
-  padding-left: 8px;
-  padding-right: 16px;
-}
-
 .dateCell {
   align-items: center;
   display: flex;
@@ -3239,54 +3193,16 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* A confirmed monthly close is a subtotal (canon §5a), so its marker is a small
+   folio label — not a dark chip. The darker banding + subtotal underline on the
+   row itself carry the weight (see .historicoDrillRow.monthlyClose). */
 .monthlyCloseBadge {
-  background: var(--blue);
-  border-radius: 4px;
-  color: var(--paper-strong);
-  font-size: 0.7rem;
+  color: var(--muted);
+  font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 2px 6px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.monthlyCloseRow {
-  background: color-mix(in srgb, var(--blue) 5%, var(--paper-strong));
-}
-
-.deltaBar {
-  border-radius: 2px;
-  display: block;
-  height: 10px;
-  min-width: 4%;
-}
-
-.deltaBar.pos {
-  background: var(--green);
-}
-
-.deltaBar.neg {
-  background: var(--red);
-}
-
-.historicoTable .pos {
-  color: var(--green);
-}
-
-.historicoTable .neg {
-  color: var(--red);
-}
-
-@media (max-width: 640px) {
-  .historicoTable .barCol,
-  .historicoTable th.barCol {
-    display: none;
-  }
-
-  .historicoTable .numCol {
-    font-size: 0.85rem;
-  }
 }
 
 /* === #60 ajustes === */
@@ -3775,16 +3691,15 @@ code {
 
 /* === #57 patrimonio === */
 
+/* Page masthead, not a card (canon §3): the title + actions sit on the paper. */
 .patrimonioHeader {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 16px 24px;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
+  padding: 4px 0 0;
+  background: transparent;
+  border: 0;
   margin-bottom: 0;
 }
 
@@ -3882,13 +3797,17 @@ code {
 }
 
 .balancePane {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
-  /* No `overflow: hidden` here — the row ⋯ menu (.balanceMenu) is an absolutely
-     positioned popover that must escape the pane; clipping it hides the only path
-     to a row's actions. The composition bar clips its own corners (.balanceCompBar). */
+  min-width: 0;
+  /* Open ledger column, not a card (canon §3): direction is read from the two
+     physically-separated panes and the Pasivos column's debit rule (.debitCol),
+     never a background. No `overflow: hidden` — the row ⋯ menu (.balanceMenu) is
+     an absolutely positioned popover that must escape the pane. */
+}
+
+/* The Pasivos pane's own 16px row padding already sets the debit rule off the
+   figures, so drop the .debitCol inset — keeping both panes' rows aligned. */
+.balancePaneDebt.debitCol {
+  padding-left: 0;
 }
 
 .balancePaneHead {
@@ -3914,10 +3833,6 @@ code {
 .balancePaneTotal {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-}
-
-.balancePaneDebt .balancePaneTotal {
-  color: var(--red);
 }
 
 /* Composition bar (design-system §5 bar language). A 3px floor keeps a small rung
@@ -4016,9 +3931,8 @@ code {
   white-space: nowrap;
 }
 
-.balancePaneDebt .balanceRowAmount {
-  color: var(--red);
-}
+/* A debt is a static figure, so it stays in ink (canon §6): the Pasivos column's
+   debit rule identifies it, freeing red for movement (deltas / P&L) alone. */
 
 /* Discreet marker for a derived value (ADR 0006) — replaces a repeated text label. */
 .balanceCalc {
@@ -4050,14 +3964,13 @@ code {
   justify-self: end;
 }
 
+/* Kebab (canon §5): the bare glyph, no bordered circle; muted, hover/open blue. */
 .balanceActions > summary {
   list-style: none;
   cursor: pointer;
-  padding: 2px 9px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
+  padding: 2px 6px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   line-height: 1;
 }
 
@@ -4065,8 +3978,8 @@ code {
   display: none;
 }
 
+.balanceActions > summary:hover,
 .balanceActions[open] > summary {
-  border-color: var(--blue);
   color: var(--blue);
 }
 
@@ -4688,18 +4601,14 @@ td.rowActions > * {
 
 /* === Exposure look-through section on /patrimonio (PRD #539 S3, #543) ======= */
 
-/* A standard card (mirrors .patrimonioHeader tokens). Holds the geography
+/* Open reglada section (canon §3): consumes the shared .section primitive for its
+   opening rule; only the vertical rhythm is page-specific here. Holds the geography
    breakdown behind the client lens toggle, its three-way coverage split, and the
    portfolio-level currency-risk readout. Bars reuse the .tier bar idiom but in a
    neutral hue — geography/currency are not liquidity layers, so the --tier-*
-   palette (reserved for the pyramid) must not leak here (design-system §4). */
+   palette (reserved for the pyramid) must not leak here (design-system §6). */
 .exposureSection {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
   margin-top: 24px;
-  padding: 16px 24px;
 }
 
 .exposureSection .panelHeader {
@@ -4814,13 +4723,9 @@ td.rowActions > * {
 
 /* Per-asset-class returns (#552): same panel frame as exposure; each class row
    shows its value + the three measures, gains/losses on the semantic sign hue. */
+/* Open reglada section (canon §3), same frame as the exposure section above. */
 .returnsByClassSection {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
   margin-top: 24px;
-  padding: 16px 24px;
 }
 
 .returnsByClassSection .panelHeader {
@@ -6318,6 +6223,13 @@ td.rowActions > * {
   border-bottom: 1px solid var(--hairline);
 }
 
+/* Papel rayado (canon §5): alternate drill rows band. `nth-of-type` counts only
+   the <details> rows, so the interleaved year rules (<div>) never shift the
+   alternation. Declared before :hover / .monthlyClose so both override it. */
+.historicoDrillRow:nth-of-type(even) > summary {
+  background: var(--band);
+}
+
 .historicoDrillRow > summary {
   align-items: center;
   cursor: pointer;
@@ -6332,8 +6244,31 @@ td.rowActions > * {
 .historicoDrillRow > summary:hover {
   background: var(--paper);
 }
+
+/* Cierre de mes = subtotal (canon §4/§5a): darker banding, figures at 700 and a
+   single ink underline under the net-worth cell (the 2nd span of the summary). */
 .historicoDrillRow.monthlyClose > summary {
-  background: color-mix(in srgb, var(--blue) 5%, var(--paper-strong));
+  background: color-mix(in srgb, var(--ink) 7%, var(--band));
+}
+.historicoDrillRow.monthlyClose > summary .numCol {
+  font-weight: 700;
+}
+.historicoDrillRow.monthlyClose > summary > span:nth-of-type(2) {
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 2px;
+}
+
+/* Year cut (canon §5b): a heavy opening rule carrying the year as a small folio
+   label, printed between the drill rows of two different years. */
+.historicoYearRule {
+  border-top: var(--rule-heavy);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  padding: 12px 16px 6px;
+  text-transform: uppercase;
 }
 
 .historicoDrillCue {
