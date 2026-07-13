@@ -36,3 +36,7 @@ transcript.txt
 
 # Agent worktrees (linked checkouts; each carries its own biome.json)
 .worktrees/
+.agents/
+.codex/
+.cursor/
+.gemini/
