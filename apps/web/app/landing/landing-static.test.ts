@@ -10,13 +10,20 @@ import { describe, expect, test } from "vitest";
  * cookie reads or DB access. #953 permits exactly one progressive client island
  * for session presentation and motion orchestration; this tripwire keeps that
  * exception narrow instead of letting the route drift into dynamic rendering.
+ *
+ * Estreno (#954): the route file moved to `app/page.tsx` when the landing was
+ * promoted to `/`, so the force-static assertion follows it to the root page;
+ * the landing module (this directory) keeps holding the components.
  */
 
 const landingDir = dirname(fileURLToPath(import.meta.url));
+const rootPagePath = join(landingDir, "..", "page.tsx");
 
-const sources = readdirSync(landingDir)
+const componentSources = readdirSync(landingDir)
   .filter((name) => /\.(ts|tsx|css)$/.test(name) && !name.includes(".test."))
   .map((name) => ({ name, text: readFileSync(join(landingDir, name), "utf8") }));
+
+const rootPage = { name: "../page.tsx", text: readFileSync(rootPagePath, "utf8") };
 
 /** Anything that reads the request or a store makes the route dynamic. */
 const FORBIDDEN = [
@@ -29,16 +36,14 @@ const FORBIDDEN = [
   "@web/auth",
 ];
 
-describe("landing static invariant (#951)", () => {
-  test("the page opts into static rendering explicitly", () => {
-    const page = sources.find((s) => s.name === "page.tsx");
-
-    expect(page, "app/landing/page.tsx missing").toBeDefined();
-    expect(page!.text).toContain('export const dynamic = "force-static"');
+describe("landing static invariant (#951, estreno #954)", () => {
+  test("the root page opts into static rendering explicitly", () => {
+    expect(rootPage.text).toContain('export const dynamic = "force-static"');
   });
 
-  test("no landing source can read cookies, a store, or opt into dynamic rendering", () => {
-    expect(sources.length).toBeGreaterThan(0);
+  test("neither the root page nor any landing source reads cookies, a store, or opts into dynamic rendering", () => {
+    const sources = [rootPage, ...componentSources];
+    expect(sources.length).toBeGreaterThan(1);
 
     for (const { name, text } of sources) {
       for (const marker of FORBIDDEN) {
@@ -50,7 +55,9 @@ describe("landing static invariant (#951)", () => {
   });
 
   test("allows exactly the single progressive landing experience island", () => {
-    const clientSources = sources.filter(({ text }) => text.includes('"use client"'));
+    const clientSources = componentSources.filter(({ text }) =>
+      text.includes('"use client"'),
+    );
 
     expect(clientSources.map(({ name }) => name)).toEqual(["landing-experience.tsx"]);
   });

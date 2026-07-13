@@ -11,6 +11,7 @@ node_modules/.cache/
 out/
 dist/
 coverage/
+artifacts/
 test-results/
 playwright-report/
 playwright-report-first-run/

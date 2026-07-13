@@ -4,7 +4,7 @@ import { expect, test } from "./fixtures";
 
 async function openResumen(page: Page, viewport: { height: number; width: number }) {
   await page.setViewportSize(viewport);
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page).toHaveURL(/\/app$/);
 
   const hero = page.getByRole("region", { name: "Resumen patrimonial" });

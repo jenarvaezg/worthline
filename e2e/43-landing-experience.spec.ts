@@ -27,7 +27,7 @@ test("landing CTAs work and the logged-out session state never flashes logged-in
   page,
 }) => {
   const releaseSession = await holdSessionResponse(page, {});
-  await page.goto("/landing");
+  await page.goto("/");
 
   const sessionSlot = page.locator("[data-session-slot]");
   await expect(sessionSlot.getByRole("link")).toHaveCount(0);
@@ -68,7 +68,7 @@ test("the same neutral slot resolves a logged-in Auth.js session to the panel", 
   const releaseSession = await holdSessionResponse(page, {
     user: { email: "jose@example.com", name: "Jose" },
   });
-  await page.goto("/landing");
+  await page.goto("/");
 
   const sessionSlot = page.locator("[data-session-slot]");
   await expect(sessionSlot.getByRole("link")).toHaveCount(0);
@@ -88,7 +88,7 @@ test("motion off is final and static, including live preference changes", async 
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ contentType: "application/json", json: {}, status: 200 }),
   );
-  await page.goto("/landing");
+  await page.goto("/");
 
   await expect(page.locator("[data-net-figure]")).toHaveText("251.527 €");
   await expect(page.locator("[data-chat-visual]")).toContainText(
@@ -120,7 +120,7 @@ test("normal motion never hides reveal content before scrolling", async ({ page 
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ contentType: "application/json", json: {}, status: 200 }),
   );
-  await page.goto("/landing");
+  await page.goto("/");
 
   const reveals = page.locator("[data-reveal]");
   expect(await reveals.count()).toBeGreaterThan(0);
@@ -148,7 +148,7 @@ test("normal motion starts without waiting for fonts and settles without a type 
     await route.continue();
   });
 
-  await page.goto("/landing", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   const headline = page.getByRole("heading", { name: "Evoluciona tu Excel." });
   const net = page.locator("[data-net-figure]");
   const primaryCta = page.getByRole("link", { name: "Empezar con mis datos" }).first();
