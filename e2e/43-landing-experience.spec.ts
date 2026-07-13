@@ -158,14 +158,33 @@ test("normal motion starts without waiting for fonts and settles without a type 
   const chat = page.locator("[data-chat-visual]");
   await chat.scrollIntoViewIfNeeded();
   const typedAmount = chat.locator("strong");
-  await expect(typedAmount).toHaveCount(1, { timeout: 2_000 });
-  await expect(typedAmount).toHaveText("1.847 €");
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(1);
-  const typingStyle = await typedAmount.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
-  });
-  const typingBox = await typedAmount.boundingBox();
+  let typingStyle: { fontFamily: string; fontWeight: string } | null = null;
+  let typingBox: { x: number; y: number; width: number; height: number } | null = null;
+  await expect
+    .poll(
+      async () => {
+        if ((await page.locator("[data-chat-caret]").count()) !== 1) return false;
+        const snapshot = await typedAmount.evaluate((element) => {
+          const reveal = element.closest("[data-reveal]");
+          if (reveal && Number.parseFloat(getComputedStyle(reveal).opacity) < 0.99)
+            return null;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) return null;
+          if (element.textContent !== "1.847 €") return null;
+          return {
+            box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            style: { fontFamily: style.fontFamily, fontWeight: style.fontWeight },
+          };
+        });
+        if (!snapshot) return false;
+        typingBox = snapshot.box;
+        typingStyle = snapshot.style;
+        return true;
+      },
+      { timeout: 4_000 },
+    )
+    .toBe(true);
 
   await expect(page.locator("[data-chat-caret]")).toHaveCount(0, { timeout: 3_000 });
   const finalStyle = await typedAmount.evaluate((element) => {
