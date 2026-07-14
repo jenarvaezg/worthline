@@ -170,22 +170,47 @@ describe("attachment extraction contract", () => {
 
   test("accepts every v1 attachment family at the exact size and row boundaries", () => {
     for (const input of [
-      { fileName: "broker.png", kind: "image" as const, mimeType: "", sizeBytes: 1 },
-      { fileName: "broker.jpeg", kind: "image" as const, mimeType: "", sizeBytes: 1 },
-      { fileName: "broker.webp", kind: "image" as const, mimeType: "", sizeBytes: 1 },
-      { fileName: "broker.heic", kind: "image" as const, mimeType: "", sizeBytes: 1 },
-      { fileName: "broker.heif", kind: "image" as const, mimeType: "", sizeBytes: 1 },
+      {
+        fileName: "broker.png",
+        kind: "image" as const,
+        mimeType: "image/png",
+        sizeBytes: 1,
+      },
+      {
+        fileName: "broker.jpeg",
+        kind: "image" as const,
+        mimeType: "image/jpeg",
+        sizeBytes: 1,
+      },
+      {
+        fileName: "broker.webp",
+        kind: "image" as const,
+        mimeType: "image/webp",
+        sizeBytes: 1,
+      },
+      {
+        fileName: "broker.heic",
+        kind: "image" as const,
+        mimeType: "image/heic",
+        sizeBytes: 1,
+      },
+      {
+        fileName: "broker.heif",
+        kind: "image" as const,
+        mimeType: "image/heif",
+        sizeBytes: 1,
+      },
       {
         fileName: "positions.csv",
         kind: "spreadsheet" as const,
-        mimeType: "",
+        mimeType: "text/csv",
         rowCount: ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows,
         sizeBytes: 1,
       },
       {
         fileName: "positions.xlsx",
         kind: "spreadsheet" as const,
-        mimeType: "",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         rowCount: ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows,
         sizeBytes: 1,
       },
@@ -232,7 +257,7 @@ describe("attachment extraction contract", () => {
       reason: "type",
     },
     {
-      expected: "El archivo supera el límite de 8 MB.",
+      expected: "El archivo supera el límite de 4 MB.",
       input: {
         fileName: "broker.png",
         kind: "image" as const,
@@ -270,6 +295,18 @@ describe("attachment extraction contract", () => {
       mimeType: "text/csv",
       sizeBytes: 10,
     });
+  });
+
+  test("rejects missing MIME metadata at the upload boundary", () => {
+    expect(
+      checkAttachmentLimits({
+        fileName: "positions.csv",
+        kind: "spreadsheet",
+        mimeType: "",
+        rowCount: 1,
+        sizeBytes: 10,
+      }),
+    ).toMatchObject({ reason: "type", status: "out_of_limits" });
   });
 
   test("brands parsed data so raw structural objects cannot masquerade as validated", () => {

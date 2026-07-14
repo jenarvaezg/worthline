@@ -1,3 +1,9 @@
+import {
+  type AttachmentPreviewData,
+  parseAttachmentPreviewData,
+  prepareAttachmentMessagesForModel,
+} from "@web/asistente/attachment-chat";
+import { extractPositionsFromSpreadsheet } from "@web/asistente/attachment-spreadsheet-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
@@ -21,6 +27,7 @@ import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
 import {
   convertToModelMessages,
+  createUIMessageStream,
   createUIMessageStreamResponse,
   isStepCount,
   streamText,
@@ -44,12 +51,47 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 16_000;
+const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
 /** Read tool + suggest_actions (#631) + answer, with one step of headroom. */
 const MAX_STEPS = 4;
 
 interface ChatBody {
   messages: UIMessage[];
   screenContext: ScreenContext | null;
+}
+
+interface ChatRequestInput {
+  attachment: File | null;
+  body: ChatBody;
+}
+
+function messagesSizeForLimit(messages: unknown[]): {
+  attachmentChars: number;
+  ordinaryChars: number;
+} {
+  let attachmentChars = 0;
+  const counted = messages.map((message) => {
+    if (message === null || typeof message !== "object") return message;
+    const parts = (message as { parts?: unknown }).parts;
+    if (!Array.isArray(parts)) return message;
+    return {
+      ...message,
+      parts: parts.filter((part) => {
+        if (
+          part === null ||
+          typeof part !== "object" ||
+          (part as { type?: unknown }).type !== "data-attachment-extraction"
+        ) {
+          return true;
+        }
+        const preview = parseAttachmentPreviewData((part as { data?: unknown }).data);
+        if (preview === null) return true;
+        attachmentChars += JSON.stringify(preview).length;
+        return false;
+      }),
+    };
+  });
+  return { attachmentChars, ordinaryChars: JSON.stringify(counted).length };
 }
 
 function parseChatBody(raw: unknown): ChatBody | null {
@@ -61,7 +103,13 @@ function parseChatBody(raw: unknown): ChatBody | null {
   };
   if (!Array.isArray(messages) || messages.length === 0) return null;
   if (messages.length > MAX_MESSAGES) return null;
-  if (JSON.stringify(messages).length > MAX_TOTAL_CHARS) return null;
+  const messageSizes = messagesSizeForLimit(messages);
+  if (
+    messageSizes.ordinaryChars > MAX_TOTAL_CHARS ||
+    messageSizes.attachmentChars > MAX_ATTACHMENT_HISTORY_CHARS
+  ) {
+    return null;
+  }
   const shapedLikeUIMessages = messages.every(
     (m) =>
       m !== null &&
@@ -69,11 +117,54 @@ function parseChatBody(raw: unknown): ChatBody | null {
       Array.isArray((m as { parts?: unknown }).parts),
   );
   if (!shapedLikeUIMessages) return null;
+  if (
+    messages.some((message) =>
+      (message as { parts: Array<{ type?: unknown }> }).parts.some(
+        (part) => part?.type === "file",
+      ),
+    )
+  ) {
+    return null;
+  }
 
   return {
     messages: messages as UIMessage[],
     screenContext: isScreenContext(screenContext) ? screenContext : null,
   };
+}
+
+async function readChatRequest(request: Request): Promise<ChatRequestInput | null> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  if (!contentType.startsWith("multipart/form-data")) {
+    try {
+      const body = parseChatBody(await request.json());
+      return body ? { attachment: null, body } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const form = await request.formData();
+    const messages = form.get("messages");
+    const screenContext = form.get("screenContext");
+    const attachments = form.getAll("attachment");
+    if (
+      typeof messages !== "string" ||
+      typeof screenContext !== "string" ||
+      attachments.length !== 1 ||
+      !(attachments[0] instanceof File)
+    ) {
+      return null;
+    }
+    const body = parseChatBody({
+      messages: JSON.parse(messages),
+      screenContext: JSON.parse(screenContext),
+    });
+    return body ? { attachment: attachments[0], body } : null;
+  } catch {
+    return null;
+  }
 }
 
 function clientIp(request: Request): string | null {
@@ -97,14 +188,13 @@ function operationalCause(error: unknown): { name: string; message: string } {
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return jsonError("invalid_body", 400);
-  }
-  const body = parseChatBody(raw);
-  if (!body) {
+  const isMultipart =
+    request.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .startsWith("multipart/form-data") ?? false;
+  let input = isMultipart ? null : await readChatRequest(request);
+  if (!isMultipart && !input) {
     return jsonError("invalid_body", 400);
   }
 
@@ -130,6 +220,44 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  input ??= await readChatRequest(request);
+  if (!input) {
+    return jsonError("invalid_body", 400);
+  }
+  const { attachment, body } = input;
+
+  let currentPreview: AttachmentPreviewData | null = null;
+  if (attachment) {
+    currentPreview = {
+      fileName: attachment.name,
+      result: extractPositionsFromSpreadsheet({
+        bytes: new Uint8Array(await attachment.arrayBuffer()),
+        fileName: attachment.name,
+        mimeType: attachment.type,
+      }),
+    };
+    if (currentPreview.result.status !== "valid") {
+      const preview = currentPreview;
+      const failureMessage = currentPreview.result.message;
+      const textId = "attachment-extraction-message";
+      return createUIMessageStreamResponse({
+        headers: NO_STORE,
+        stream: createUIMessageStream({
+          execute: ({ writer }) => {
+            writer.write({ type: "data-attachment-extraction", data: preview });
+            writer.write({ type: "text-start", id: textId });
+            writer.write({
+              type: "text-delta",
+              id: textId,
+              delta: failureMessage,
+            });
+            writer.write({ type: "text-end", id: textId });
+          },
+        }),
+      });
+    }
+  }
+
   let eligibleProviders = providers;
   try {
     const cooldownState = await readProviderCooldowns();
@@ -149,7 +277,9 @@ export async function POST(request: Request): Promise<Response> {
 
   let modelMessages;
   try {
-    modelMessages = await convertToModelMessages(body.messages);
+    modelMessages = await convertToModelMessages(
+      prepareAttachmentMessagesForModel(body.messages, currentPreview),
+    );
   } catch {
     return jsonError("invalid_body", 400);
   }
@@ -212,18 +342,31 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("assistant_unavailable", 503);
   }
 
+  const providerStream = toUIMessageStream({
+    stream: selected.stream,
+    onError: (error) => {
+      console.error("Chat stream failed", {
+        provider: selected.provider.provider,
+        modelId: selected.provider.modelId,
+        classification: classifyPreOutputProviderError(error) ?? "provider_error",
+      });
+      return "provider_error";
+    },
+  });
+  const stream = currentPreview
+    ? createUIMessageStream({
+        execute: ({ writer }) => {
+          writer.write({
+            type: "data-attachment-extraction",
+            data: currentPreview,
+          });
+          writer.merge(providerStream);
+        },
+      })
+    : providerStream;
+
   return createUIMessageStreamResponse({
-    stream: toUIMessageStream({
-      stream: selected.stream,
-      onError: (error) => {
-        console.error("Chat stream failed", {
-          provider: selected.provider.provider,
-          modelId: selected.provider.modelId,
-          classification: classifyPreOutputProviderError(error) ?? "provider_error",
-        });
-        return "provider_error";
-      },
-    }),
+    stream,
     headers: NO_STORE,
   });
 }

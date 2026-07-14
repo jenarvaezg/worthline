@@ -7660,11 +7660,63 @@ td.rowActions > * {
   outline-offset: 2px;
 }
 
+.assistantComposer {
+  display: grid;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--hairline);
+}
+.assistantAttachmentControl {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.assistantAttachmentControl > input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.assistantAttachmentButton,
+.assistantSelectedAttachment button {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.assistantAttachmentControl
+  > input[type="file"]:focus-visible
+  + .assistantAttachmentButton,
+.assistantAttachmentButton:hover,
+.assistantSelectedAttachment button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+  outline: none;
+}
+.assistantSelectedAttachment {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.assistantSelectedAttachment span {
+  overflow: hidden;
+  max-width: 190px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .assistantInputRow {
   display: flex;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--hairline);
 }
 .assistantInputRow input {
   flex: 1;
@@ -7687,6 +7739,73 @@ td.rowActions > * {
 .assistantInputRow button:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.assistantAttachmentPreview {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+}
+.assistantAttachmentPreview > strong {
+  font-size: 0.84rem;
+}
+.assistantAttachmentTableScroll {
+  overflow-x: auto;
+}
+.assistantAttachmentPreview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+.assistantAttachmentPreview th,
+.assistantAttachmentPreview td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+.assistantAttachmentPreview td:nth-child(2),
+.assistantAttachmentPreview td:nth-child(3),
+.assistantAttachmentPreview thead th:nth-child(2),
+.assistantAttachmentPreview thead th:nth-child(3) {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.assistantAttachmentPreview tbody th {
+  font-weight: 600;
+}
+.assistantAttachmentPreview em {
+  display: block;
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-style: normal;
+}
+.assistantAttachmentPreview tfoot th,
+.assistantAttachmentPreview tfoot td {
+  border-top: 1px solid var(--line-strong);
+  border-bottom: none;
+  font-weight: 750;
+}
+.assistantAttachmentWarnings {
+  padding-left: 8px;
+  border-left: 2px solid var(--gold);
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.assistantAttachmentWarnings span {
+  font-weight: 700;
+  color: var(--ink);
+}
+.assistantAttachmentWarnings ul {
+  margin: 3px 0 0;
+  padding-left: 16px;
 }
 
 /* ── Investment returns (#551, ADR 0040) ─────────────────────────────────────

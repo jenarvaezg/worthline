@@ -29,7 +29,10 @@ export const ATTACHMENT_EXTRACTION_LIMITS_V1 = {
       mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
     },
   ],
-  maxBytes: 8 * MEBIBYTE,
+  // Vercel Functions reject request bodies above 4.5 MB before the route runs.
+  // Four MiB leaves room for multipart framing and the text conversation while
+  // keeping every accepted upload inside the deployed transport boundary.
+  maxBytes: 4 * MEBIBYTE,
   maxRows: 500,
 } as const;
 
@@ -93,12 +96,12 @@ const extractedNumberSchema = z.preprocess(
   (value) => normalizeExtractedNumber(value) ?? value,
   z.number().finite(),
 );
-const nonEmptyStringSchema = z.string().trim().min(1);
+const nonEmptyStringSchema = z.string().trim().min(1).max(300);
 
 export const extractedPositionSchema = z
   .object({
-    ticker: nonEmptyStringSchema,
-    name: nonEmptyStringSchema,
+    ticker: z.string().trim().min(1).max(64),
+    name: z.string().trim().min(1).max(240),
     units: extractedNumberSchema,
     marketValueEur: extractedNumberSchema,
     currency: z
@@ -117,7 +120,7 @@ export const extractedPositionsSchema = z
       .min(1)
       .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
     totalEur: extractedNumberSchema.optional(),
-    warnings: z.array(nonEmptyStringSchema),
+    warnings: z.array(nonEmptyStringSchema).max(20),
   })
   .strict()
   .brand<"ValidatedExtractedPositions">();
@@ -185,7 +188,8 @@ export function checkAttachmentLimits(
   const hasCompatibleMetadata =
     acceptedType !== undefined &&
     acceptedType.kind === input.kind &&
-    (mimeType === "" || acceptedType.mimeTypes.some((accepted) => accepted === mimeType));
+    mimeType !== "" &&
+    acceptedType.mimeTypes.some((accepted) => accepted === mimeType);
 
   if (!hasCompatibleMetadata) {
     return {
@@ -196,7 +200,7 @@ export function checkAttachmentLimits(
   }
   if (input.sizeBytes > ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes) {
     return {
-      message: "El archivo supera el límite de 8 MB.",
+      message: "El archivo supera el límite de 4 MB.",
       reason: "size",
       status: "out_of_limits",
     };

@@ -4,8 +4,10 @@ import { describe, expect, test } from "vitest";
 
 import {
   isSpreadsheet,
+  MAX_SPREADSHEET_UNCOMPRESSED_BYTES,
   SpreadsheetReadError,
   spreadsheetToDelimitedText,
+  spreadsheetToRows,
 } from "./spreadsheet-text";
 
 /**
@@ -95,5 +97,31 @@ describe("spreadsheetToDelimitedText (#695)", () => {
   test("a non-workbook zip fails with the Spanish message, not a crash", () => {
     const zip = zipSync({ "hola.txt": strToU8("nada") });
     expect(() => spreadsheetToDelimitedText(zip)).toThrow(SpreadsheetReadError);
+  });
+
+  test("exposes the first worksheet as a neutral cell matrix", () => {
+    const rows = spreadsheetToRows(xlsxFixture());
+
+    expect(rows[0]).toEqual([
+      "Fecha",
+      "Tipo de activo",
+      "Identificador",
+      "Operación",
+      "Participaciones",
+      "Importe",
+      "Comisión",
+      "Nombre",
+    ]);
+    expect(rows[1]?.[7]).toBe("Cartera; la de siempre");
+  });
+
+  test("rejects a workbook whose selected parts exceed the uncompressed cap", () => {
+    const halfCap = Math.floor(MAX_SPREADSHEET_UNCOMPRESSED_BYTES / 2) + 1;
+    const oversized = zipSync({
+      "xl/sharedStrings.xml": new Uint8Array(halfCap),
+      "xl/worksheets/sheet1.xml": new Uint8Array(halfCap),
+    });
+
+    expect(() => spreadsheetToRows(oversized)).toThrow(SpreadsheetReadError);
   });
 });

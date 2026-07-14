@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { formatMoneyMinor } from "@worthline/domain";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
 import {
   useCallback,
@@ -22,7 +22,11 @@ import {
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
+import AssistantAttachmentControl from "./assistant-attachment-control";
+import { assistantChatTransport } from "./assistant-chat-transport";
 import AssistantMessages from "./assistant-messages";
+import { parseAttachmentPreviewData } from "./attachment-chat";
+import AttachmentExtractionPreview from "./attachment-extraction-preview";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
@@ -651,21 +655,6 @@ function ExposureProposalCard({
  * Styles live in globals.css (`assistant*` classes, design-system tokens).
  */
 
-const transport = new DefaultChatTransport({
-  api: "/api/chat",
-  prepareSendMessagesRequest: ({ messages }) => ({
-    // The screen context rides along at send time so "¿qué estoy viendo?"
-    // reflects the route the user is on NOW, not where the panel opened.
-    body: {
-      messages,
-      screenContext: deriveScreenContext(
-        window.location.pathname,
-        window.location.search,
-      ),
-    },
-  }),
-});
-
 export default function AssistantLayer({
   mutationsDisabled = false,
   mutationsDisabledMessage = DEMO_DISABLED_MESSAGE,
@@ -675,7 +664,10 @@ export default function AssistantLayer({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const { messages, sendMessage, status, error } = useChat({ transport });
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const { messages, sendMessage, status, error } = useChat({
+    transport: assistantChatTransport,
+  });
   const router = useRouter();
   const pathname = usePathname();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -742,9 +734,16 @@ export default function AssistantLayer({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = draft.trim();
-    if (text === "" || busy) return;
-    void sendMessage({ role: "user", parts: [{ type: "text", text }] });
+    if ((text === "" && attachment === null) || busy) return;
+    const selectedAttachment = attachment;
+    const visibleText =
+      text || (selectedAttachment ? `Adjunto: ${selectedAttachment.name}` : "");
+    void sendMessage(
+      { role: "user", parts: [{ type: "text", text: visibleText }] },
+      selectedAttachment ? { body: { attachment: selectedAttachment } } : undefined,
+    );
     setDraft("");
+    setAttachment(null);
   }
 
   if (!open) {
@@ -805,6 +804,15 @@ export default function AssistantLayer({
             {message.parts.map((part, i) => {
               if (part.type === "text") {
                 return <p key={`${message.id}-${i}`}>{part.text}</p>;
+              }
+              if (part.type === "data-attachment-extraction") {
+                const preview = parseAttachmentPreviewData(part.data);
+                return preview ? (
+                  <AttachmentExtractionPreview
+                    key={`${message.id}-${i}`}
+                    preview={preview}
+                  />
+                ) : null;
               }
               if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
                 const name =
@@ -898,17 +906,29 @@ export default function AssistantLayer({
         </div>
       ) : null}
 
-      <form className="assistantInputRow" onSubmit={submit}>
-        <input
+      <form className="assistantComposer" onSubmit={submit}>
+        <AssistantAttachmentControl
           disabled={busy}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Pregunta sobre esta pantalla…"
-          ref={inputRef}
-          value={draft}
+          file={attachment}
+          onChange={setAttachment}
+          onRemove={() => setAttachment(null)}
         />
-        <button disabled={busy || draft.trim() === ""} type="submit">
-          Enviar
-        </button>
+        <div className="assistantInputRow">
+          <input
+            aria-label="Mensaje para el asistente"
+            disabled={busy}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Pregunta sobre esta pantalla…"
+            ref={inputRef}
+            value={draft}
+          />
+          <button
+            disabled={busy || (draft.trim() === "" && attachment === null)}
+            type="submit"
+          >
+            Enviar
+          </button>
+        </div>
       </form>
     </section>
   );
