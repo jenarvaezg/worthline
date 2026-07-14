@@ -32,6 +32,11 @@ import {
   resolveOwnershipSplit,
   successRedirectUrl,
 } from "@web/intake";
+import {
+  isSpreadsheet,
+  SpreadsheetReadError,
+  spreadsheetToDelimitedText,
+} from "@web/spreadsheet-text";
 import { type WorthlineStore } from "@web/store";
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 import {
@@ -50,11 +55,6 @@ import {
   systemClock,
 } from "@worthline/domain";
 import { redirect } from "next/navigation";
-import {
-  isSpreadsheet,
-  SpreadsheetReadError,
-  spreadsheetToDelimitedText,
-} from "./spreadsheet-text";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,

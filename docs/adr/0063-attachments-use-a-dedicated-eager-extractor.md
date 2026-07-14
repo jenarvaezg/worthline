@@ -26,7 +26,9 @@ The contract is the validation boundary. Symbol and name remain separate; units,
 market value in EUR, source currency, optional total, uncertainty, and warnings are
 explicit. Type, byte-size, and row limits live with that contract. Malformed or partial
 extractor output is converted to a definitive failure and cannot be forwarded as if it
-were a valid extraction.
+were a valid extraction. The deployed request limit is 4 MiB: Vercel Functions reject
+bodies above 4.5 MB before application code runs, so the product limit leaves room for
+multipart framing and the accompanying text instead of exposing an opaque platform 413.
 
 The v1 extraction JSON deliberately carries units and EUR values as numbers in major
 units, matching the external extractor schema decided in #865. This is transport context,

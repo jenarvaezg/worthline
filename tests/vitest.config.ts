@@ -25,6 +25,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.{ts,tsx}"],
+    // The persistence-heavy wiring suite saturates the local SQLite/libSQL
+    // workers when Vitest fans out to every CPU: unrelated 5s tests then time
+    // out at random. Four workers keeps the suite parallel and deterministic.
+    maxWorkers: 4,
     coverage: vitestCoverage,
   },
 });

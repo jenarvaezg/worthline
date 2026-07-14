@@ -19,6 +19,17 @@ import { strFromU8, unzipSync } from "fflate";
 export class SpreadsheetReadError extends Error {}
 
 const UNREADABLE = "El archivo Excel no se puede leer — guarda la hoja como .xlsx.";
+const MEBIBYTE = 1024 * 1024;
+
+/** Prevent a small compressed workbook from expanding without bound in memory. */
+export const MAX_SPREADSHEET_UNCOMPRESSED_BYTES = 16 * MEBIBYTE;
+
+const METADATA_PARTS = new Set([
+  "xl/_rels/workbook.xml.rels",
+  "xl/sharedStrings.xml",
+  "xl/styles.xml",
+  "xl/workbook.xml",
+]);
 
 /** Whether the bytes look like a zip container (every .xlsx is one). */
 export function isSpreadsheet(bytes: Uint8Array): boolean {
@@ -31,23 +42,22 @@ export function isSpreadsheet(bytes: Uint8Array): boolean {
   );
 }
 
-/** First worksheet of an .xlsx → `;`-delimited lines, ready for parseStatement. */
-export function spreadsheetToDelimitedText(bytes: Uint8Array): string {
-  let files: Record<string, Uint8Array>;
-  try {
-    files = unzipSync(bytes);
-  } catch {
-    throw new SpreadsheetReadError(UNREADABLE);
-  }
+/** First worksheet of an .xlsx as a neutral matrix shared by importers. */
+export function spreadsheetToRows(bytes: Uint8Array): string[][] {
+  if (!isSpreadsheet(bytes)) throw new SpreadsheetReadError(UNREADABLE);
 
-  const sheetXml = firstSheetXml(files);
+  const budget = { used: 0 };
+  const metadata = unzipSelected(bytes, (name) => METADATA_PARTS.has(name), budget);
+  const sheetPath = firstSheetPath(metadata);
+  const sheet = unzipSelected(bytes, (name) => name === sheetPath, budget);
+  const sheetXml = part(sheet, sheetPath);
   if (!sheetXml) throw new SpreadsheetReadError(UNREADABLE);
 
-  const shared = sharedStrings(files);
-  const dateStyles = dateStyleIndexes(files);
-  const date1904 = /date1904\s*=\s*"(?:1|true)"/i.test(part(files, "xl/workbook.xml"));
+  const shared = sharedStrings(metadata);
+  const dateStyles = dateStyleIndexes(metadata);
+  const date1904 = /date1904\s*=\s*"(?:1|true)"/i.test(part(metadata, "xl/workbook.xml"));
 
-  const lines: string[] = [];
+  const rows: string[][] = [];
   for (const rowXml of sheetXml.match(/<row[\s>][\s\S]*?<\/row>/g) ?? []) {
     const cells: string[] = [];
     for (const cellXml of rowXml.match(/<c[\s>][\s\S]*?(?:<\/c>|\/>)/g) ?? []) {
@@ -55,10 +65,39 @@ export function spreadsheetToDelimitedText(bytes: Uint8Array): string {
       while (cells.length < at) cells.push("");
       cells[at] = cellText(cellXml, shared, dateStyles, date1904);
     }
-    lines.push(cells.map(escapeCell).join(";"));
+    rows.push(cells);
   }
 
-  return lines.join("\n");
+  return rows;
+}
+
+/** First worksheet of an .xlsx → `;`-delimited lines, ready for parseStatement. */
+export function spreadsheetToDelimitedText(bytes: Uint8Array): string {
+  return spreadsheetToRows(bytes)
+    .map((cells) => cells.map(escapeCell).join(";"))
+    .join("\n");
+}
+
+function unzipSelected(
+  bytes: Uint8Array,
+  include: (name: string) => boolean,
+  budget: { used: number },
+): Record<string, Uint8Array> {
+  try {
+    return unzipSync(bytes, {
+      filter: (file) => {
+        if (!include(file.name)) return false;
+        budget.used += file.originalSize;
+        if (budget.used > MAX_SPREADSHEET_UNCOMPRESSED_BYTES) {
+          throw new SpreadsheetReadError(UNREADABLE);
+        }
+        return true;
+      },
+    });
+  } catch (error) {
+    if (error instanceof SpreadsheetReadError) throw error;
+    throw new SpreadsheetReadError(UNREADABLE);
+  }
 }
 
 function part(files: Record<string, Uint8Array>, name: string): string {
@@ -66,8 +105,8 @@ function part(files: Record<string, Uint8Array>, name: string): string {
   return bytes ? strFromU8(bytes) : "";
 }
 
-/** The workbook's first sheet, resolved through workbook.xml + its rels. */
-function firstSheetXml(files: Record<string, Uint8Array>): string | null {
+/** The workbook's first sheet path, resolved through workbook.xml + its rels. */
+function firstSheetPath(files: Record<string, Uint8Array>): string {
   const workbook = part(files, "xl/workbook.xml");
   const relId = /<sheet[^>]*\br:id\s*=\s*"([^"]+)"/.exec(workbook)?.[1];
   if (relId) {
@@ -79,13 +118,11 @@ function firstSheetXml(files: Record<string, Uint8Array>): string | null {
       const path = target.startsWith("/")
         ? target.slice(1)
         : `xl/${target.replace(/^\.\//, "")}`;
-      const xml = part(files, path);
-      if (xml) return xml;
+      return path;
     }
   }
   // Fallback for writers that skip rels: the conventional first-sheet path.
-  const conventional = part(files, "xl/worksheets/sheet1.xml");
-  return conventional || null;
+  return "xl/worksheets/sheet1.xml";
 }
 
 /** sharedStrings.xml → flat string table (rich-text runs concatenated). */

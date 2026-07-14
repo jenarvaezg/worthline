@@ -179,6 +179,20 @@ function chatRequest(body: unknown): Request {
   });
 }
 
+function attachmentRequest(
+  contents: string,
+  fileName = "posiciones.csv",
+  mimeType = fileName.endsWith(".xlsx")
+    ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "text/csv",
+): Request {
+  const body = new FormData();
+  body.set("messages", JSON.stringify([userMessage("¿Qué ves en estas posiciones?")]));
+  body.set("screenContext", "null");
+  body.set("attachment", new File([contents], fileName, { type: mimeType }));
+  return new Request("http://127.0.0.1/api/chat", { method: "POST", body });
+}
+
 function userMessage(text: string) {
   return { id: "m1", role: "user", parts: [{ type: "text", text }] };
 }
@@ -266,7 +280,7 @@ describe("POST /api/chat", () => {
     expect(await response.json()).toEqual({ error: "assistant_unavailable" });
   });
 
-  it("rejects malformed bodies before doing any work", async () => {
+  it("rejects malformed ordinary bodies before consuming quota", async () => {
     const noMessages = await POST(chatRequest({}));
     expect(noMessages.status).toBe(400);
 
@@ -280,7 +294,9 @@ describe("POST /api/chat", () => {
     );
     expect(notJson.status).toBe(400);
 
-    expect(vi.mocked(resolveChatModels)).not.toHaveBeenCalled();
+    expect(resolveChatModels).not.toHaveBeenCalled();
+    expect(countChatRequest).not.toHaveBeenCalled();
+    expect(readProviderCooldowns).not.toHaveBeenCalled();
   });
 
   it("rate-limits once, then rescues a pre-output provider rejection", async () => {
@@ -442,5 +458,232 @@ describe("POST /api/chat", () => {
     });
     expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain("respuesta parcial");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("respuesta parcial");
+  });
+
+  it("extracts a CSV before streaming, emits its preview and grounds the pool", async () => {
+    const model = simpleAnswerModel("El fondo pesa todo el documento.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      attachmentRequest(
+        [
+          "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
+          'VWCE;"Fondo global";10,5;1.234,56;EUR',
+        ].join("\n"),
+      ),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(streamed).toContain("VWCE");
+    expect(streamed).toContain("El fondo pesa todo el documento.");
+    expect(JSON.stringify(model.doStreamCalls)).toContain(
+      "DATOS ESTRUCTURADOS DE ADJUNTOS",
+    );
+    expect(JSON.stringify(model.doStreamCalls)).toContain("1234.56");
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an honest nonfatal stream for unknown headers without calling the pool", async () => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(attachmentRequest("Foo;Bar\nuno;dos"));
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(streamed).toContain("No reconozco");
+    expect(model.doStreamCalls).toHaveLength(0);
+
+    const nextResponse = await POST(
+      chatRequest({ messages: [userMessage("Sigamos sin el archivo")] }),
+    );
+    expect(nextResponse.status).toBe(200);
+    expect(await nextResponse.text()).toContain("no debe llamarse");
+    expect(model.doStreamCalls).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      contents: "no es una hoja",
+      fileName: "posiciones.pdf",
+      mimeType: "application/pdf",
+      message: "Solo se admiten archivos",
+    },
+    {
+      contents: "esto no es un zip",
+      fileName: "posiciones.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      message: "no se puede leer",
+    },
+    {
+      contents: [
+        "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
+        ...Array.from(
+          { length: 501 },
+          (_, index) => `T${index};Posición ${index};1;1;EUR`,
+        ),
+      ].join("\n"),
+      fileName: "demasiadas.csv",
+      mimeType: "text/csv",
+      message: "500 filas",
+    },
+  ])("keeps the conversation usable after $fileName is rejected", async ({
+    contents,
+    fileName,
+    message,
+    mimeType,
+  }) => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(attachmentRequest(contents, fileName, mimeType));
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain(message);
+    expect(model.doStreamCalls).toHaveLength(0);
+  });
+
+  it("reuses validated structured history without accepting a file or data URL", async () => {
+    const model = simpleAnswerModel("Sigo viendo el documento estructurado.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const preview = {
+      fileName: "posiciones.csv",
+      result: {
+        data: {
+          positions: [
+            {
+              currency: "EUR",
+              marketValueEur: 50,
+              name: "Acme",
+              ticker: "ACME",
+              units: 2,
+            },
+          ],
+          totalEur: 50,
+          warnings: [],
+        },
+        status: "valid",
+      },
+    };
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("Mira este documento"),
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [{ type: "data-attachment-extraction", data: preview }],
+          },
+          { id: "u2", role: "user", parts: [{ type: "text", text: "¿Y ahora?" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Sigo viendo el documento estructurado.");
+    expect(JSON.stringify(model.doStreamCalls)).toContain("ACME");
+  });
+
+  it("bounds large validated previews separately from the ordinary 16k chat limit", async () => {
+    const model = simpleAnswerModel("Contexto grande recibido.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const positions = Array.from({ length: 300 }, (_, index) => ({
+      currency: "EUR",
+      marketValueEur: index + 1,
+      name: `Posición ${index}`,
+      ticker: `T${index}`,
+      units: 1,
+    }));
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          {
+            id: "a1",
+            role: "assistant",
+            parts: [
+              {
+                type: "data-attachment-extraction",
+                data: {
+                  fileName: "grande.csv",
+                  result: {
+                    data: { positions, warnings: [] },
+                    status: "valid",
+                  },
+                },
+              },
+            ],
+          },
+          { id: "u2", role: "user", parts: [{ type: "text", text: "Resume" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Contexto grande recibido.");
+    expect(JSON.stringify(model.doStreamCalls)).toContain("Posición 299");
+  });
+
+  it("rejects structured history beyond its dedicated context budget", async () => {
+    const positions = Array.from({ length: 500 }, (_, index) => ({
+      currency: "EUR",
+      marketValueEur: index + 1,
+      name: `Posición ${index} ${"x".repeat(200)}`,
+      ticker: `T${index}`,
+      units: 1,
+    }));
+    const previewPart = {
+      type: "data-attachment-extraction",
+      data: {
+        fileName: "grande.csv",
+        result: { data: { positions, warnings: [] }, status: "valid" },
+      },
+    };
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          { id: "a1", role: "assistant", parts: [previewPart] },
+          { id: "a2", role: "assistant", parts: [previewPart] },
+          { id: "a3", role: "assistant", parts: [previewPart] },
+          { id: "u2", role: "user", parts: [{ type: "text", text: "Resume" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(resolveChatModels).not.toHaveBeenCalled();
+    expect(countChatRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects file data URLs embedded in message history", async () => {
+    const response = await POST(
+      chatRequest({
+        messages: [
+          {
+            id: "u1",
+            role: "user",
+            parts: [
+              {
+                type: "file",
+                filename: "secreto.csv",
+                mediaType: "text/csv",
+                url: "data:text/csv;base64,U0VDUkVU",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(resolveChatModels).not.toHaveBeenCalled();
+    expect(countChatRequest).not.toHaveBeenCalled();
+    expect(readProviderCooldowns).not.toHaveBeenCalled();
   });
 });
