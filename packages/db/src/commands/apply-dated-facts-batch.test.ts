@@ -80,4 +80,46 @@ describe("applyDatedFactsBatch", () => {
     }
     expect(rippleCalls).toEqual(["2024-01-01"]);
   });
+
+  test("returns null ripple plan for an empty batch", async () => {
+    const rippleCalls: string[] = [];
+    const result = await applyDatedFactsBatch(immediateUow, {
+      today: TODAY,
+      steps: [],
+      ripple: async (fromDateKey) => {
+        rippleCalls.push(fromDateKey);
+      },
+    });
+
+    expect(result).toEqual({ ok: true, value: null });
+    expect(rippleCalls).toEqual([]);
+  });
+
+  test("surfaces persist failures as CommandResult errors", async () => {
+    const result = await applyDatedFactsBatch(immediateUow, {
+      today: TODAY,
+      steps: [
+        {
+          persist: async () => {
+            throw new Error("persist failed");
+          },
+        },
+      ],
+      ripple: async () => {},
+    });
+
+    expect(result).toEqual({ ok: false, error: "persist failed" });
+  });
+
+  test("surfaces ripple failures as CommandResult errors", async () => {
+    const result = await applyDatedFactsBatch(immediateUow, {
+      today: TODAY,
+      steps: [{ persist: async () => "2024-01-01" }],
+      ripple: async () => {
+        throw new Error("ripple failed");
+      },
+    });
+
+    expect(result).toEqual({ ok: false, error: "ripple failed" });
+  });
 });
