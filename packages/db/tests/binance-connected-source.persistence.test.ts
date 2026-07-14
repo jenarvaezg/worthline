@@ -407,7 +407,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
     const { sourceId, assetId } = await connectBinance(store);
 
     // First sync: WBETH priced cleanly (2 × 1 655 € = 3 310 €) alongside BNB.
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({
@@ -424,7 +424,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
 
     // Second sync: CoinGecko missed WBETH (null), BNB still priced. Without the
     // carry-forward this would zero WBETH; with it, the last-good price survives.
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({
@@ -453,7 +453,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
     await seed(store);
     const { sourceId, assetId } = await connectBinance(store);
 
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({ externalId: "JEX:spot", symbol: "JEX", balance: "100", unitPrice: null }),
@@ -461,7 +461,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
       ],
       syncedAt: "2026-06-21T07:00:00.000Z",
     });
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({ externalId: "JEX:spot", symbol: "JEX", balance: "100", unitPrice: null }),
@@ -484,14 +484,14 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
     await seed(store);
     const { sourceId, assetId } = await connectBinance(store);
 
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-21T07:00:00.000Z",
     });
-    await store.syncConnectedSource({
+    await store.command.syncConnectedSource({
       sourceId,
       positions: [
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "509" }),

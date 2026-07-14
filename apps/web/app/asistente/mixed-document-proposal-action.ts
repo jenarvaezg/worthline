@@ -68,7 +68,7 @@ export async function confirmMixedDocumentProposalAction(
     const seed = Date.now();
     const statement = statementFromAssistantProposal(proposal);
     const funds = [] as Parameters<
-      typeof store.applyAssistantMixedProposalAndRipple
+      typeof store.command.applyAssistantMixedProposal
     >[0]["funds"];
     if (statement && statement.rows.length > 0) {
       const readPort = statementImportPreviewReadPort(store);
@@ -164,7 +164,7 @@ export async function confirmMixedDocumentProposalAction(
     }
 
     const balanceHistories = [] as NonNullable<
-      Parameters<typeof store.applyAssistantMixedProposalAndRipple>[0]["balanceHistories"]
+      Parameters<typeof store.command.applyAssistantMixedProposal>[0]["balanceHistories"]
     >;
     const debtFacts = proposal.documents
       .flatMap((document) => document.facts)
@@ -198,7 +198,7 @@ export async function confirmMixedDocumentProposalAction(
 
     const propertyValuations = [] as NonNullable<
       Parameters<
-        typeof store.applyAssistantMixedProposalAndRipple
+        typeof store.command.applyAssistantMixedProposal
       >[0]["propertyValuations"]
     >;
     const propertyFacts = proposal.documents
@@ -227,7 +227,7 @@ export async function confirmMixedDocumentProposalAction(
       });
     }
 
-    await store.applyAssistantMixedProposalAndRipple({
+    await store.command.applyAssistantMixedProposal({
       balanceHistories,
       funds,
       propertyValuations,

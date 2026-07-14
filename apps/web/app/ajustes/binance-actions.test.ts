@@ -519,10 +519,17 @@ describe("syncBinanceAction", () => {
     const { sourceId } = await seedWithSource(store);
     const failingStore = new Proxy(store, {
       get(target, prop, receiver) {
-        if (prop === "syncConnectedSource") {
-          return async () => {
-            throw new Error("database unavailable");
-          };
+        if (prop === "command") {
+          return new Proxy(target.command, {
+            get(command, commandProp, commandReceiver) {
+              if (commandProp === "syncConnectedSource") {
+                return async () => {
+                  throw new Error("database unavailable");
+                };
+              }
+              return Reflect.get(command, commandProp, commandReceiver);
+            },
+          });
         }
         return Reflect.get(target, prop, receiver);
       },

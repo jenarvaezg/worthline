@@ -187,7 +187,7 @@ export async function confirmStatementImportProposalAction(
       };
     });
 
-    await store.applyAssistantStatementProposalAndRipple({
+    await store.command.applyAssistantStatementProposal({
       funds,
       proposalId: proposal.id,
       today,

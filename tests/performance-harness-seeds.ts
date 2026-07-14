@@ -285,7 +285,7 @@ export async function seedPerformanceWorkspace(
   await store.liabilities.setDebtModel("liability_mortgage", "amortizable");
   // The mortgage plan ripple lays down one snapshot per past cuota (ADR 0012
   // exception, PRD #109) — it rides the debt seam together with the plan persist.
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.021",
       disbursementDate: dateMonthsAgo(20),
@@ -299,7 +299,7 @@ export async function seedPerformanceWorkspace(
   );
   // A past early repayment re-derives the curve from its date forward — persist +
   // ripple ride the debt seam.
-  await store.addEarlyRepaymentAndRipple(
+  await store.command.addEarlyRepayment(
     {
       amountMinor: 5_000_00,
       id: "repayment_mortgage",
@@ -314,7 +314,7 @@ export async function seedPerformanceWorkspace(
   // The full backfill fills every other past operation/anchor date. Together with
   // the debt-seam ripples above they seed the dense history the dashboard and
   // ripple paths read.
-  await store.backfillHistoricalSnapshots(SEED_TODAY);
+  await store.command.backfillHistoricalSnapshots(SEED_TODAY);
 
   // Add a dense run of recent daily snapshots (≈ 2 months) on top of the
   // milestone history, so the dashboard read paths face a realistic row count.
@@ -326,7 +326,7 @@ export async function seedPerformanceWorkspace(
     // Generate a snapshot at this day via the valuation seam: a zero-value home
     // improvement is a dated fact that lands a fresh snapshot at `dateKey` (folding
     // the re-valued checking row) while leaving the home's curve value unchanged.
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: false,
         assetId: "asset_home",

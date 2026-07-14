@@ -180,7 +180,7 @@ describe("confirmExposureProfileProposalAction", () => {
       isin: "IE00B4L5Y983",
       name: "iShares MSCI World",
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "world",
         currency: "EUR",

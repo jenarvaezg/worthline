@@ -42,7 +42,7 @@ async function recordBuy(
   units: string,
   price: string,
 ): Promise<void> {
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "btc",
       currency: "EUR",
@@ -107,7 +107,7 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     await recordBuyNoRipple(store, "2026-02-10", "0.5", "30000");
     expect(await snapshotDates(store)).toEqual([]);
 
-    await store.backfillHistoricalSnapshots(TODAY);
+    await store.command.backfillHistoricalSnapshots(TODAY);
 
     // Both past operation dates now carry a generated (individual) snapshot, valued
     // at cost basis (no price was cached on those days).
@@ -122,11 +122,11 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     await recordBuyNoRipple(store, "2026-01-10", "0.5", "30000");
     await recordBuyNoRipple(store, "2026-02-10", "0.5", "30000");
 
-    await store.backfillHistoricalSnapshots(TODAY);
+    await store.command.backfillHistoricalSnapshots(TODAY);
     const afterFirst = await snapshotDates(store);
     expect(afterFirst).toEqual(["2026-01-10", "2026-02-10"]);
 
-    await store.backfillHistoricalSnapshots(TODAY);
+    await store.command.backfillHistoricalSnapshots(TODAY);
     expect(await snapshotDates(store)).toEqual(afterFirst);
     store.close();
   });
@@ -144,7 +144,7 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     expect(janBefore).toBeDefined();
     expect(await snapshotDates(store)).toEqual(["2026-01-10"]);
 
-    await store.backfillHistoricalSnapshots(TODAY);
+    await store.command.backfillHistoricalSnapshots(TODAY);
 
     // The February gap got filled; the pre-existing January snapshot is untouched.
     expect(await snapshotDates(store)).toEqual(["2026-01-10", "2026-02-10"]);
@@ -167,7 +167,7 @@ describe("backfillInvestmentPricesAndRipple — historical-price backfill (ADR 0
     // No 2026-02-01 / 2026-03-01 snapshot exists until the backfill creates them.
     expect(await rowAt(store, "btc", "2026-02-01")).toBeUndefined();
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: prices,
       source: "coingecko",
@@ -198,7 +198,7 @@ describe("backfillInvestmentPricesAndRipple — historical-price backfill (ADR 0
     const marBefore = await rowAt(store, "btc", "2026-03-01");
     expect(marBefore?.unitPrice).toBeUndefined(); // at cost basis
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map<string, DecimalString>([["2026-03-01", "50000"]]),
       source: "coingecko",
@@ -219,7 +219,7 @@ describe("backfillInvestmentPricesAndRipple — historical-price backfill (ADR 0
     await seedIndividual(store);
     await recordBuy(store, "2026-01-10", "0.5", "30000");
 
-    const preview = await store.backfillInvestmentPricesAndRipple({
+    const preview = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       dryRun: true,
       pricesByDate: prices,
@@ -231,7 +231,7 @@ describe("backfillInvestmentPricesAndRipple — historical-price backfill (ADR 0
     expect(await rowAt(store, "btc", "2026-02-01")).toBeUndefined();
     expect(await rowAt(store, "btc", "2026-03-01")).toBeUndefined();
 
-    const confirm = await store.backfillInvestmentPricesAndRipple({
+    const confirm = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: prices,
       source: "coingecko",

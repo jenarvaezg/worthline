@@ -61,7 +61,7 @@ describe("createCurrentStateDebtAndRipple — atomicity (#677 review H2)", () =>
   test("lands the plan, the startsAtBaseline rebaseline, and the balance sync together", async () => {
     const store = await seedAmortizableMortgage();
 
-    await store.createCurrentStateDebtAndRipple({
+    await store.command.createCurrentStateDebt({
       plan: PLAN,
       rebaseline: REBASELINE,
       today: TODAY,
@@ -107,7 +107,7 @@ describe("createCurrentStateDebtAndRipple — atomicity (#677 review H2)", () =>
     } as AddBalanceRebaselineInput;
 
     await expect(
-      store.createCurrentStateDebtAndRipple({
+      store.command.createCurrentStateDebt({
         plan: PLAN,
         rebaseline: invalidRebaseline,
         today: TODAY,

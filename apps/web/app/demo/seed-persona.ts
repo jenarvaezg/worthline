@@ -58,7 +58,7 @@ async function seedInvestment(
   });
 
   for (const op of investment.operations) {
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: investment.id,
         currency: investment.currency ?? DEFAULT_CURRENCY,
@@ -106,7 +106,7 @@ async function seedMortgage(
   }));
 
   // Persist plan + ripple per-cuota snapshots ride the debt seam together.
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       ...plan,
       id: mortgage.planId,
@@ -116,7 +116,7 @@ async function seedMortgage(
   );
 
   for (const repayment of earlyRepayments) {
-    await store.addEarlyRepaymentAndRipple(
+    await store.command.addEarlyRepayment(
       {
         amountMinor: repayment.amountMinor,
         id: repayment.id,
@@ -168,7 +168,7 @@ async function seedHousing(
     today: asOf,
   });
 
-  await store.createHousingHoldingAndRipple(
+  await store.command.createHousingHolding(
     {
       acquisitionAnchor: {
         adjustsPriorCurve: true,
@@ -193,7 +193,7 @@ async function seedHousing(
   );
 
   for (const improvement of improvementAnchors) {
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: false,
         assetId: housing.id,
@@ -229,7 +229,7 @@ async function seedLiability(
   }
 
   for (const anchor of liability.balanceAnchors ?? []) {
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: resolveRelativeDate(asOf, anchor.at),
         balanceMinor: anchor.balanceMinor,
@@ -316,7 +316,7 @@ async function applyConnectedSourceHistory(
 ): Promise<void> {
   if (seeded.spec.adapter !== "binance" || !seeded.spec.binanceHistory) return;
 
-  await store.applyBinanceHistoryAndRipple({
+  await store.command.applyBinanceHistory({
     curve: buildBinanceHistoryCurve(asOf, seeded.spec.binanceHistory),
     sourceId: seeded.sourceId,
     today: asOf,
@@ -369,7 +369,7 @@ export async function seedPersona(
 
   // Fill every gap between the milestone facts above and `asOf` so the Evolución
   // curve is a believable monthly history, not a sparse scatter (ADR 0012 backfill).
-  await store.backfillHistoricalSnapshots(asOf);
+  await store.command.backfillHistoricalSnapshots(asOf);
 
   for (const seeded of seededSources) {
     await applyConnectedSourceHistory(store, seeded, asOf);

@@ -120,7 +120,7 @@ describe("mixed document proposal router", () => {
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         disbursementDate: "2026-01-15",
@@ -262,7 +262,7 @@ describe("mixed document proposal router", () => {
       today: "2026-07-12",
     };
     await expect(
-      store.applyAssistantMixedProposalAndRipple({
+      store.command.applyAssistantMixedProposal({
         ...apply,
         propertyValuations: [
           {
@@ -281,7 +281,7 @@ describe("mixed document proposal router", () => {
       status: "draft",
     });
 
-    await store.applyAssistantMixedProposalAndRipple({
+    await store.command.applyAssistantMixedProposal({
       ...apply,
       propertyValuations: [
         {

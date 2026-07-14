@@ -1046,7 +1046,7 @@ export async function setValuationCadenceAction(
 
     // Persist + re-ripple ride the seam (ADR 0020 / 0031): the cadence change is a
     // parameter edit, so the seam recuts the whole modeled curve behind it.
-    await store.setValuationCadenceAndRipple(id, parsed.cadence, { today });
+    await store.command.setLiabilityValuationCadence(id, parsed.cadence, { today });
     return { ok: true };
   }, _store);
 
@@ -1993,7 +1993,7 @@ export async function addBalanceAnchorAction(
 
     // Persist + ripple ride the debt seam (ADR 0020), atomically; the from-date is
     // the anchor's own date.
-    await store.addBalanceAnchorAndRipple(parsed.command, { today });
+    await store.command.addBalanceAnchor(parsed.command, { today });
 
     return { ok: true as const };
   }, _store);
@@ -2048,7 +2048,7 @@ export async function updateBalanceAnchorAction(
     // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
     // anchor date behind the seam, ripples from the earlier of the old/new date,
     // and guards the future. The action no longer pre-reads the row.
-    const changes = await store.updateBalanceAnchorAndRipple(
+    const changes = await store.command.updateBalanceAnchor(
       anchorId,
       {
         anchorDate: parsed.command.anchorDate,
@@ -2108,7 +2108,7 @@ export async function deleteBalanceAnchorAction(
     // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
     // anchor's date behind the seam, recalculates from it, and guards the future.
     // The action no longer pre-reads the row.
-    const changes = await store.deleteBalanceAnchorAndRipple(anchorId, { today });
+    const changes = await store.command.deleteBalanceAnchor(anchorId, { today });
 
     if (changes === 0) {
       return {

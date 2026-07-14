@@ -36,6 +36,7 @@ interface SortedOperation {
   operation: InvestmentOperation;
   publicId: string;
   dateKey: string;
+  sortKey: string;
 }
 
 /**
@@ -79,23 +80,28 @@ export async function buildHoldingOperations(
       dateKey: dateKey(operation),
       operation,
       publicId: deriveOperationPublicId(operation.id),
+      sortKey: `${dateKey(operation)}\u0000${operation.occurredAt ?? ""}`,
     }))
-    .sort((a, b) => compareDateId(a, b, options.sort));
+    .sort((a, b) =>
+      compareDateId(
+        { dateKey: a.sortKey, publicId: a.publicId },
+        { dateKey: b.sortKey, publicId: b.publicId },
+        options.sort,
+      ),
+    );
 
   const afterCursor = options.cursor
-    ? dropAfterCursor(
-        sorted,
-        decodeCursor(options.cursor),
-        options.sort,
-        (entry) => entry,
-      )
+    ? dropAfterCursor(sorted, decodeCursor(options.cursor), options.sort, (entry) => ({
+        dateKey: entry.sortKey,
+        publicId: entry.publicId,
+      }))
     : sorted;
 
   const page = afterCursor.slice(0, options.limit);
   const hasNext = afterCursor.length > options.limit;
   const last = page[page.length - 1];
   const nextCursor =
-    hasNext && last ? encodeCursor(last.dateKey, last.publicId) : undefined;
+    hasNext && last ? encodeCursor(last.sortKey, last.publicId) : undefined;
 
   return {
     meta: {

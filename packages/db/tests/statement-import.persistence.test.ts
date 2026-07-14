@@ -18,7 +18,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     name: "Fondo existente",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "matched_fund",
       currency: "EUR",
@@ -46,7 +46,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.applyStatementImportAndRipple({
+    await store.command.applyStatementImport({
       funds: [
         {
           asset: {
@@ -111,7 +111,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.applyStatementImportAndRipple({
+    await store.command.applyStatementImport({
       funds: [
         {
           asset: {
@@ -188,7 +188,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     await seed(store);
 
     await expect(
-      store.applyStatementImportAndRipple({
+      store.command.applyStatementImport({
         funds: [
           {
             assetId: "matched_fund",
@@ -245,7 +245,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
   test("applies investment, debt, and housing facts atomically through one mixed ripple", async () => {
     const store = await createInMemoryStore();
     await seed(store);
-    await store.createHousingHoldingAndRipple(
+    await store.command.createHousingHolding(
       {
         acquisitionAnchor: {
           adjustsPriorCurve: true,
@@ -277,7 +277,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
 
-    await store.applyStatementImportAndRipple({
+    await store.command.applyStatementImport({
       balanceHistories: [
         {
           liabilityId: "mortgage",
@@ -366,7 +366,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     const operationsBefore = await store.operations.readOperations("matched_fund");
 
     await expect(
-      store.applyStatementImportAndRipple({
+      store.command.applyStatementImport({
         balanceHistories: [
           {
             liabilityId: "mortgage",

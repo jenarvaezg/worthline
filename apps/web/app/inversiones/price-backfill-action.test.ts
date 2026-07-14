@@ -38,7 +38,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     providerSymbol: "bitcoin",
   });
   // A backdated buy → cost-basis snapshots (no price cached those days).
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "btc",
       currency: "EUR",
@@ -118,7 +118,7 @@ describe("previewPriceBackfillAction (#380)", () => {
     // A second op ON the month-start so a 2026-02-01 snapshot already EXISTS at
     // cost basis before the backfill (snapshots land on operation dates) — pricing
     // it is an UPDATE, while later months are creates.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -171,7 +171,7 @@ describe("previewPriceBackfillAction (#380)", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -214,7 +214,7 @@ describe("previewPriceBackfillAction (#380)", () => {
       priceProvider: "yahoo",
       providerSymbol: "GBSE.MI",
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "gold",
         currency: "EUR",

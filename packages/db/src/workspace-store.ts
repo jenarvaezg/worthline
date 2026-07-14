@@ -899,6 +899,9 @@ async function importWorkspace(
             feesMinor: operation.feesMinor,
             id: operation.id,
             kind: operation.kind,
+            ...(operation.occurredAt === undefined
+              ? {}
+              : { occurredAt: asInstant(operation.occurredAt) }),
             pricePerUnit: operation.pricePerUnit,
             source: operation.source ?? "manual",
             units: operation.units,
@@ -1342,7 +1345,11 @@ async function buildWorkspaceExport(
   const operationRows = await db
     .select()
     .from(assetOperations)
-    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .orderBy(
+      asc(assetOperations.executedAt),
+      asc(assetOperations.occurredAt),
+      asc(assetOperations.id),
+    )
     .all();
   const operations = operationRows.map(toOperation);
 

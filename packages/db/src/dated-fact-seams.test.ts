@@ -54,7 +54,7 @@ describe("recordOperationAndRipple — operation dated fact (ADR 0020)", () => {
     // No snapshot exists at 2024-03-01 yet; the seam must generate it.
     expect(await grossAt(store, "2024-03-01")).toBeUndefined();
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -82,7 +82,7 @@ describe("addValuationAnchorAndRipple — housing valuation dated fact (ADR 0020
       mode: "individual",
     });
     // A home created at acquisition, then a later past appraisal raises its value.
-    await store.createHousingHoldingAndRipple(
+    await store.command.createHousingHolding(
       {
         asset: {
           currency: "EUR",
@@ -108,7 +108,7 @@ describe("addValuationAnchorAndRipple — housing valuation dated fact (ADR 0020
     // The acquisition anchor backfilled a snapshot at 200_000.00.
     expect(await grossAt(store, "2024-01-01")).toBe(200_000_00);
 
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "home",
@@ -151,7 +151,7 @@ describe("addBalanceAnchorAndRipple — debt dated fact (ADR 0020)", () => {
     });
     await store.liabilities.setDebtModel("card", "revolving");
 
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 3_000_00,
@@ -202,7 +202,7 @@ describe("updateLiabilityAndRippleOwnership — ownership scope-axis seam (ADR 0
     });
     await store.liabilities.setDebtModel("card", "revolving");
     // A past anchor backfills the household + per-member snapshots at 50/50.
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 10_000_00,
@@ -218,7 +218,7 @@ describe("updateLiabilityAndRippleOwnership — ownership scope-axis seam (ADR 0
     const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // One atomic call: persist the 50/50 → 70/30 split and ripple the scope axis.
-    await store.updateLiabilityAndRippleOwnership(
+    await store.command.updateLiabilityOwnership(
       "card",
       {
         ownership: [

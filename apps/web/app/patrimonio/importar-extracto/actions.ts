@@ -352,7 +352,7 @@ export async function confirmImportStatementAction(
       };
     });
 
-    await store.applyStatementImportAndRipple({ funds, today });
+    await store.command.applyStatementImport({ funds, today });
 
     return {
       includedCount: plan.included.length,

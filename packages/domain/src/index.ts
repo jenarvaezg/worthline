@@ -540,6 +540,7 @@ export type {
 } from "./portfolio-projection";
 export { projectPortfolio } from "./portfolio-projection";
 export {
+  compareInvestmentOperations,
   createInvestmentOperation,
   createInvestmentOperationSafe,
   derivePosition,

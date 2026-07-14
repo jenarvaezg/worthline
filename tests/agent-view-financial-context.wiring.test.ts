@@ -425,7 +425,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
       feesMinor = 0,
       kind = "buy",
     ) =>
-      await store.recordOperationAndRipple(
+      await store.command.recordInvestmentOperation(
         {
           assetId: "asset_fund",
           currency: "EUR",

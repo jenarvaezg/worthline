@@ -72,7 +72,7 @@ async function seedAmortizableMortgage(): Promise<WorthlineStore> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",

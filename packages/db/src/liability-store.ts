@@ -322,7 +322,10 @@ export interface LiabilityStore {
    */
   deleteEarlyRepayment: (repaymentId: string) => Promise<EarlyRepaymentWriteResult>;
   /** Add a current-state balance re-baseline to an amortizable liability. */
-  addBalanceRebaseline: (input: AddBalanceRebaselineInput) => Promise<void>;
+  addBalanceRebaseline: (
+    input: AddBalanceRebaselineInput,
+    opts?: { batchId?: string },
+  ) => Promise<void>;
   /** Read a liability's balance re-baselines, ordered ascending by baseline date. */
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
   /** Update a balance re-baseline in place. */
@@ -341,7 +344,10 @@ export interface LiabilityStore {
    */
   amortizableBalanceAtDate: (liabilityId: string, targetDate: string) => Promise<number>;
   /** Add a balance anchor to a revolving/informal liability. */
-  addBalanceAnchor: (input: AddBalanceAnchorInput) => Promise<void>;
+  addBalanceAnchor: (
+    input: AddBalanceAnchorInput,
+    opts?: { batchId?: string },
+  ) => Promise<void>;
   /** Read a liability's balance anchors, ordered ascending by date. */
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   /**
@@ -398,14 +404,14 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     updateEarlyRepayment: (repaymentId, input) =>
       updateEarlyRepayment(ctx, repaymentId, input),
     deleteEarlyRepayment: (repaymentId) => deleteEarlyRepayment(ctx, repaymentId),
-    addBalanceRebaseline: (input) => addBalanceRebaseline(ctx, input),
+    addBalanceRebaseline: (input, opts) => addBalanceRebaseline(ctx, input, opts),
     readBalanceRebaselines: (liabilityId) => readBalanceRebaselines(ctx, liabilityId),
     updateBalanceRebaseline: (rebaselineId, input) =>
       updateBalanceRebaseline(ctx, rebaselineId, input),
     deleteBalanceRebaseline: (rebaselineId) => deleteBalanceRebaseline(ctx, rebaselineId),
     amortizableBalanceAtDate: (liabilityId, targetDate) =>
       amortizableBalanceAtDateFor(ctx, liabilityId, targetDate),
-    addBalanceAnchor: (input) => addBalanceAnchor(ctx, input),
+    addBalanceAnchor: (input, opts) => addBalanceAnchor(ctx, input, opts),
     readBalanceAnchors: (liabilityId) => readBalanceAnchors(ctx, liabilityId),
     updateBalanceAnchor: (anchorId, input) => updateBalanceAnchor(ctx, anchorId, input),
     deleteBalanceAnchor: (anchorId) => deleteBalanceAnchor(ctx, anchorId),
@@ -1045,6 +1051,7 @@ function deriveRebaselineStorage(input: {
 async function addBalanceRebaseline(
   ctx: StoreContext,
   input: AddBalanceRebaselineInput,
+  opts?: { batchId?: string },
 ): Promise<void> {
   const derived = deriveRebaselineStorage(input);
 
@@ -1053,6 +1060,7 @@ async function addBalanceRebaseline(
     .values({
       annualInterestRate: derived.annualInterestRate,
       baselineDate: input.baselineDate,
+      batchId: opts?.batchId ?? null,
       endDate: input.endDate,
       id: input.id,
       inputMode: derived.inputMode,
@@ -1253,6 +1261,7 @@ async function amortizableBalanceAtDateFor(
 async function addBalanceAnchor(
   ctx: StoreContext,
   input: AddBalanceAnchorInput,
+  opts?: { batchId?: string },
 ): Promise<void> {
   if (!Number.isInteger(input.balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -1266,6 +1275,7 @@ async function addBalanceAnchor(
     .insert(liabilityBalanceAnchors)
     .values({
       anchorDate: input.anchorDate,
+      batchId: opts?.batchId ?? null,
       balanceMinor: input.balanceMinor,
       id: input.id,
       liabilityId: input.liabilityId,

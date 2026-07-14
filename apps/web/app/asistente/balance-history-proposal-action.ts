@@ -60,7 +60,7 @@ export async function confirmBalanceHistoryProposalAction(
         message: "La serie ya no reconcilia exactamente con el saldo actual de la deuda.",
       };
     }
-    await store.applyAssistantBalanceHistoryProposalAndRipple({
+    await store.command.applyAssistantBalanceHistoryProposal({
       liabilityId: observations.liabilityId,
       proposalId: proposal.id,
       rebaselines: projected.plan.composed.map((row) => ({

@@ -27,7 +27,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     priceProvider: "yahoo",
     providerSymbol: "GBSE.MI",
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "gold",
       currency: "EUR",

@@ -106,6 +106,15 @@ export const agentViewPublicIds = sqliteTable(
   ],
 );
 
+/** One application of dated facts, regardless of whether it came from UI or ingestion. */
+export const factBatches = sqliteTable("fact_batch", {
+  id: text("id").primaryKey(),
+  trigger: text("trigger").notNull(),
+  connectedSourceId: text("connected_source_id"),
+  syncRunId: text("sync_run_id"),
+  createdAt: timestamp("created_at"),
+});
+
 export const assets = sqliteTable(
   "assets",
   {
@@ -195,6 +204,7 @@ export const assetValuations = sqliteTable(
     valuationDate: text("valuation_date").notNull(),
     adjustsPriorCurve: integer("adjusts_prior_curve").notNull(),
     source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
+    batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },
   (table) => [
@@ -294,20 +304,23 @@ export const assetOperations = sqliteTable(
       .references(() => assets.id, { onDelete: "cascade" }),
     kind: text("kind").$type<OperationKind>().notNull(),
     executedAt: text("executed_at").$type<DateKey>().notNull(),
+    occurredAt: text("occurred_at").$type<Instant>(),
     units: text("units").notNull(),
     pricePerUnit: text("price_per_unit").notNull(),
     currency: text("currency").notNull(),
     feesMinor: integer("fees_minor").notNull().default(0),
     source: text("source").$type<OperationSource>().notNull().default("manual"),
+    batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },
   (table) => [
-    // Per-investment operation read (#201): WHERE asset_id ORDER BY executed_at, id.
-    // The (asset_id, executed_at, id) order matches the filter + sort exactly, so
+    // Per-investment read: WHERE asset_id ORDER BY executed_at, occurred_at, id.
+    // The index order matches the filter + canonical ledger sort exactly, so
     // the read is a pure indexed range scan with no temp-b-tree sort.
     index("asset_operations_asset_executed_idx").on(
       table.assetId,
       table.executedAt,
+      table.occurredAt,
       table.id,
     ),
   ],
@@ -465,6 +478,7 @@ export const liabilityBalanceRebaselines = sqliteTable(
       .default(false)
       .notNull(),
     source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
+    batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },
   (table) => [
@@ -494,6 +508,7 @@ export const liabilityBalanceAnchors = sqliteTable(
       .references(() => liabilities.id, { onDelete: "cascade" }),
     balanceMinor: integer("balance_minor").notNull(),
     anchorDate: text("anchor_date").notNull(),
+    batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },
   (table) => [

@@ -10,7 +10,7 @@
  */
 
 import { z } from "zod";
-
+import { asInstant } from "./dates";
 import { compareUnits } from "./decimal";
 import { createExposureProfile } from "./exposure-lookthrough";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
@@ -195,6 +195,15 @@ const operationSchema = z.object({
   assetId: nonEmptyString,
   kind: z.enum(["buy", "sell"]),
   executedAt: nonEmptyString,
+  occurredAt: nonEmptyString
+    .refine(
+      (value) =>
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
+        Number.isFinite(Date.parse(value)),
+      "occurredAt debe ser un instante UTC",
+    )
+    .transform(asInstant)
+    .optional(),
   units: nonEmptyString,
   pricePerUnit: nonEmptyString,
   currency: nonEmptyString,

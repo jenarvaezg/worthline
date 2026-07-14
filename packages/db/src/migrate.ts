@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 50;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1508,6 +1508,49 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!String(error).includes("no such table")) throw error;
     }
     await writeSchemaVersion(client, 49);
+  }
+
+  if (version < 50) {
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS fact_batch (
+      id TEXT PRIMARY KEY NOT NULL,
+      trigger TEXT NOT NULL,
+      connected_source_id TEXT,
+      sync_run_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );`);
+
+    const addColumnIfTableExists = async (table: string, definition: string) => {
+      const columns = await client.execute(`PRAGMA table_info(${table})`);
+      if (columns.rows.length === 0) return;
+      const columnName = definition.split(" ")[0]!;
+      if (!columns.rows.some((row) => row.name === columnName)) {
+        await client.execute(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+      }
+    };
+
+    for (const table of [
+      "asset_operations",
+      "asset_valuations",
+      "liability_balance_anchors",
+      "liability_balance_rebaselines",
+    ]) {
+      await addColumnIfTableExists(table, "batch_id TEXT REFERENCES fact_batch(id)");
+    }
+    await addColumnIfTableExists("asset_operations", "occurred_at TEXT");
+    const operationColumns = await client.execute("PRAGMA table_info(asset_operations)");
+    const operationColumnNames = new Set(operationColumns.rows.map((row) => row.name));
+    if (
+      ["asset_id", "executed_at", "occurred_at", "id"].every((name) =>
+        operationColumnNames.has(name),
+      )
+    ) {
+      await client.executeMultiple(
+        `DROP INDEX IF EXISTS asset_operations_asset_executed_idx;
+         CREATE INDEX IF NOT EXISTS asset_operations_asset_executed_idx
+         ON asset_operations (asset_id, executed_at, occurred_at, id);`,
+      );
+    }
+    await writeSchemaVersion(client, 50);
   }
 
   return { ranV18Backfill, ranV33Backfill };

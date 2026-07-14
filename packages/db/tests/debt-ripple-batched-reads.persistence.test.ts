@@ -135,7 +135,7 @@ async function seedBandWithMortgage(store: WorthlineStore): Promise<{
   // day, each generating that day's snapshot.
   for (let i = 0; i < BAND_SNAPSHOTS; i += 1) {
     const dateKey = addDays(BAND_START, i);
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "seedfund",
         currency: "EUR",
@@ -214,7 +214,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
     // persist runs no `snapshot_holdings` SELECT, so resetting just before the
     // seam call still counts only the ripple's reads.
     reset();
-    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+    await store.command.createAmortizationPlan(PLAN_INPUT, { today: TODAY });
 
     // BATCHED: the frozen-row reads are a small constant per scope/range, never
     // ~one per recalculated snapshot. With ~40 snapshots per scope, the old
@@ -239,7 +239,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
       expect(await grossAt(store, dateKey)).toBe(seedGrossAt(i));
     }
 
-    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+    await store.command.createAmortizationPlan(PLAN_INPUT, { today: TODAY });
 
     // Behavior check across the WHOLE band: every snapshot ≥ disbursement now
     // values the mortgage at its curve balance, and every seed asset row is
@@ -262,7 +262,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
   test("a mid-band rate revision recalculates only the dates on or after it", async () => {
     const { store } = await createCountingStore();
     const { startDate, snapshotCount } = await seedBandWithMortgage(store);
-    await store.createAmortizationPlanAndRipple(PLAN_INPUT, { today: TODAY });
+    await store.command.createAmortizationPlan(PLAN_INPUT, { today: TODAY });
 
     const revisionDate = addDays(startDate, 20);
     const beforeRevision: number[] = [];
@@ -271,7 +271,7 @@ describe("debt ripple batches frozen reads (#206)", () => {
     }
 
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addInterestRateRevisionAndRipple(
+    await store.command.addInterestRateRevision(
       {
         id: "rev1",
         newAnnualInterestRate: "0.09",

@@ -180,7 +180,11 @@ export async function syncBinanceAction(
   try {
     await runActionWithStore(
       (store) =>
-        store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
+        store.command.syncConnectedSource({
+          positions: drafts,
+          sourceId,
+          syncedAt: nowIso,
+        }),
       _store,
     );
 
@@ -212,7 +216,7 @@ export async function syncBinanceAction(
         ).then((r) => r.pricesByDate),
     });
     await runActionWithStore(
-      (store) => store.applyBinanceHistoryAndRipple({ sourceId, curve }),
+      (store) => store.command.applyBinanceHistory({ sourceId, curve }),
       _store,
     );
   } catch {

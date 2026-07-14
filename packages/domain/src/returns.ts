@@ -3,6 +3,7 @@ import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
+import { compareInvestmentOperations } from "./positions";
 import { deriveMonthlyCloses } from "./snapshot-policy";
 
 /**
@@ -164,15 +165,6 @@ export interface PortfolioTwrInput {
   monthlyCloses: readonly MonthlyCloseValue[];
 }
 
-function byExecutedAtThenId(
-  left: InvestmentOperation,
-  right: InvestmentOperation,
-): number {
-  return left.executedAt === right.executedAt
-    ? left.id.localeCompare(right.id)
-    : left.executedAt.localeCompare(right.executedAt);
-}
-
 /**
  * The operation ledger as signed, dated cashflows, oldest first: a buy is
  * −(units × price + fees), a sell is +(units × price − fees).
@@ -180,7 +172,7 @@ function byExecutedAtThenId(
 export function operationCashflows(
   operations: readonly InvestmentOperation[],
 ): DatedCashflow[] {
-  return [...operations].sort(byExecutedAtThenId).map((operation) => {
+  return [...operations].sort(compareInvestmentOperations).map((operation) => {
     const gross = multiplyToMinor(operation.units, operation.pricePerUnit);
     const amountMinor =
       operation.kind === "buy"

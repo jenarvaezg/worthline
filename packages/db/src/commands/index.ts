@@ -75,5 +75,5 @@ export {
   executeUpdateAssetOwnershipSplitCommand,
   executeUpdateLiabilityOwnershipSplitCommand,
 } from "./ownership-split";
-export type { CommandResult, RipplePlan, UnitOfWork } from "./types";
+export type { CommandResult, FactBatchInput, RipplePlan, UnitOfWork } from "./types";
 export { createUnitOfWork } from "./unit-of-work";

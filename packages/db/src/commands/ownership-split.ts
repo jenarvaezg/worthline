@@ -75,7 +75,7 @@ export async function executeUpdateAssetOwnershipSplitCommand(
   }
 
   const today = defaultToday(command.today);
-  await store.updateAssetAndRippleOwnership(command.assetId, command.patch, { today });
+  await store.command.updateAssetOwnership(command.assetId, command.patch, { today });
   return { ok: true, value: undefined };
 }
 
@@ -92,6 +92,6 @@ export async function executeUpdateLiabilityOwnershipSplitCommand(
     return validation;
   }
 
-  await store.updateLiabilityAndRippleOwnership(command.liabilityId, command.patch);
+  await store.command.updateLiabilityOwnership(command.liabilityId, command.patch);
   return { ok: true, value: undefined };
 }

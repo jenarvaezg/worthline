@@ -73,7 +73,7 @@ async function addMarketAnchor(
   valuationDate: string,
   valueMinor: number,
 ): Promise<void> {
-  await store.addValuationAnchorAndRipple(
+  await store.command.addValuationAnchor(
     {
       adjustsPriorCurve: true,
       assetId: "piso",
@@ -97,7 +97,7 @@ describe("setAppreciationRateAction — ripple range (#184)", () => {
     // Drop the 2024 appraisal: now the ONLY appraisal is 2025-01-01, so the
     // 2024-01-01 snapshot sits BEFORE the first appraisal and is valued by the
     // rate compounded backward — yet its snapshot already exists and survives.
-    await store.deleteValuationAnchorAndRipple("a0", { today: "2026-06-14" });
+    await store.command.deleteValuationAnchor("a0", { today: "2026-06-14" });
 
     const before = await grossAt(store, "2024-01-01");
     expect(before).toBeDefined();

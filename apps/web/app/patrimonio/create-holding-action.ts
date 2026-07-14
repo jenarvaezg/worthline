@@ -215,7 +215,7 @@ async function recordOpeningOperation(
     return mapDomainViolation(safe.violations[0]);
   }
 
-  await store.recordOperationAndRipple(safe.value, { today });
+  await store.command.recordInvestmentOperation(safe.value, { today });
   return null;
 }
 

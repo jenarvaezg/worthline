@@ -87,7 +87,7 @@ describe("loadDashboard — snapshot capture policy (cache-only, #895)", () => {
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("liability_mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         disbursementDate: "2026-01-15",
@@ -172,7 +172,7 @@ describe("loadDashboard — snapshot capture policy (cache-only, #895)", () => {
     const upsertPrices = vi.spyOn(store.operations, "upsertPrices");
     const saveSnapshot = vi.spyOn(store.snapshots, "saveSnapshot");
     const revaluePositions = vi.spyOn(store.connectedSources, "revaluePositions");
-    const syncConnectedSource = vi.spyOn(store, "syncConnectedSource");
+    const syncConnectedSource = vi.spyOn(store.command, "syncConnectedSource");
 
     await loadDashboard({
       store,

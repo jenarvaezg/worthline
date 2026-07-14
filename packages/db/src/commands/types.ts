@@ -20,10 +20,19 @@ export interface RipplePlan {
   today: string;
 }
 
+/** Minimal provenance retained for one application of dated facts. */
+export interface FactBatchInput {
+  trigger: string;
+  connectedSourceId?: string;
+  syncRunId?: string;
+}
+
 /**
  * Brackets a command's persist + ripple in the store's existing transaction
  * seam (`StoreContext.transaction`).
  */
 export interface UnitOfWork {
+  /** Persist one provenance row inside the same transaction as its facts. */
+  createFactBatch(input: FactBatchInput): Promise<string>;
   transaction<T>(work: () => T | Promise<T>): Promise<T>;
 }

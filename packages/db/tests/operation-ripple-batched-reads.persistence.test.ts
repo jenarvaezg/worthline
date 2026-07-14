@@ -132,7 +132,7 @@ async function seedManySnapshots(store: WorthlineStore): Promise<{
   const snapshotCount = 40;
   for (let i = 0; i < snapshotCount; i += 1) {
     const dateKey = addDays(startDate, i);
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "seedfund",
         currency: "EUR",
@@ -177,7 +177,7 @@ describe("operation ripple batches frozen reads (#205)", () => {
     // resetting just before the seam call still counts only the ripple's reads.
     const operationDateKey = startDate;
     reset();
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -209,7 +209,7 @@ describe("operation ripple batches frozen reads (#205)", () => {
 
     // Record a backdated buy at the start: every snapshot ≥ start folds 10 units
     // at the captured price 100 = 1000.00, on top of the 1000.00 cash baseline.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -239,7 +239,10 @@ describe("operation ripple batches frozen reads (#205)", () => {
     const ops = await store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === startDate)!;
     expect(
-      await store.deleteOperationAndRipple({ operationId: target.id, today: TODAY }),
+      await store.command.deleteInvestmentOperation({
+        operationId: target.id,
+        today: TODAY,
+      }),
     ).not.toBeNull();
 
     for (let i = 0; i < snapshotCount; i += 1) {
@@ -266,7 +269,7 @@ describe("operation ripple batches frozen reads (#205)", () => {
         units: "10",
       };
     });
-    await store.recordOperationsAndRipple({
+    await store.command.mergeInvestmentOperations({
       assetId: "fund",
       creates,
       overwrites: [],
@@ -278,7 +281,7 @@ describe("operation ripple batches frozen reads (#205)", () => {
     ).size;
 
     reset();
-    const deleted = await store.deleteOperationsAndRipple({
+    const deleted = await store.command.deleteInvestmentOperations({
       operationIds: creates.map((op) => op.id),
       today: TODAY,
     });

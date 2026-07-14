@@ -44,8 +44,8 @@ export async function executeImportBalanceHistoryCommand(
       });
     },
     steps: command.rebaselines.map((rebaseline) => ({
-      persist: async () => {
-        await store.liabilities.addBalanceRebaseline(rebaseline);
+      persist: async (batchId) => {
+        await store.liabilities.addBalanceRebaseline(rebaseline, { batchId });
         return rebaseline.baselineDate;
       },
     })),

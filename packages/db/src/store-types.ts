@@ -76,7 +76,7 @@ export interface TrashView {
 }
 
 /**
- * The full real_estate creation command for {@link WorthlineStore.createHousingHoldingAndRipple}.
+ * The full real_estate creation command for `store.command.createHousingHolding`.
  * The caller resolves the anchor ids (a determinism source — `createStableId`/seed
  * plumbing) and passes the acquisition anchor (and an optional initial valuation)
  * fully formed; the seam derives only the from-date (the acquisition date) and
@@ -124,7 +124,7 @@ export interface ApplyStatementImportParams {
  * the audit log, FIRE config, and the cross-domain historical-snapshot
  * machinery). All per-domain work goes through `store.<domain>.<method>`.
  */
-export interface WorthlineStore {
+interface LegacyWorthlineStore {
   createAndLinkContributionOperation: (params: {
     contributionId: string;
     occurrenceId: string;
@@ -644,3 +644,22 @@ export interface WorthlineStore {
     today?: string;
   }) => Promise<void>;
 }
+
+type CommandOwnedStoreKey = {
+  [Key in keyof LegacyWorthlineStore]: Key extends `${string}AndRipple`
+    ? Key
+    : Key extends
+          | "createAndLinkContributionOperation"
+          | "applyStoredContributionValue"
+          | "rippleHousingAfterAssetEdit"
+          | "updateAssetAndRippleOwnership"
+          | "updateLiabilityAndRippleOwnership"
+          | "backfillHistoricalSnapshots"
+          | "correctInvestmentSnapshotUnitPrice"
+          | "syncConnectedSource"
+      ? Key
+      : never;
+}[keyof LegacyWorthlineStore];
+
+/** Public store contract: mutations that couple persistence and ripple live on command. */
+export type WorthlineStore = Omit<LegacyWorthlineStore, CommandOwnedStoreKey>;

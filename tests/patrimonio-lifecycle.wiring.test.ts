@@ -321,7 +321,7 @@ describe("updateAssetValuationAction wiring", () => {
       currency: "EUR",
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "asset_fund",
         currency: "EUR",
@@ -397,7 +397,7 @@ describe("editAssetAction wiring", () => {
       liquidityTier: "housing",
       ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
     });
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "asset_home",

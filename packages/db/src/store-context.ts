@@ -245,6 +245,7 @@ export function toOperation(
     feesMinor: row.feesMinor,
     id: row.id,
     kind: row.kind,
+    ...(row.occurredAt === null ? {} : { occurredAt: row.occurredAt }),
     pricePerUnit: row.pricePerUnit,
     source: row.source,
     units: row.units,
@@ -257,7 +258,11 @@ export async function readAllOperations(
   const rows = await db
     .select()
     .from(assetOperations)
-    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .orderBy(
+      asc(assetOperations.executedAt),
+      asc(assetOperations.occurredAt),
+      asc(assetOperations.id),
+    )
     .all();
 
   return rows.reduce((byAsset, row) => {

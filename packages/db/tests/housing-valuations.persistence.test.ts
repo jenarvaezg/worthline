@@ -340,7 +340,7 @@ describe("housing step cadence re-ripple (#391, ADR 0031)", () => {
     await seed(store); // home, currentValueMinor 130_000_00, primary residence
 
     await store.assets.setAnnualAppreciationRate("home", "0.12");
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "home",
@@ -361,7 +361,7 @@ describe("housing step cadence re-ripple (#391, ADR 0031)", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -431,7 +431,7 @@ describe("housing valuation cadence — threading + re-ripple (#394, ADR 0031)",
   async function seedWithIntraMonthFact(store: WorthlineStore): Promise<void> {
     await seed(store); // home, currentValueMinor 130_000_00, primary residence
     await store.assets.setAnnualAppreciationRate("home", "0.12");
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "home",
@@ -451,7 +451,7 @@ describe("housing valuation cadence — threading + re-ripple (#394, ADR 0031)",
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -525,7 +525,7 @@ describe("housing valuation cadence — threading + re-ripple (#394, ADR 0031)",
     expect(await homeRowAt(store, "2025-03-20")).toBe(stepValue);
 
     // Flip to interpolated AND re-ripple → the snapshot drifts daily again.
-    await store.setHousingValuationCadenceAndRipple("home", "interpolated", {
+    await store.command.setHousingValuationCadence("home", "interpolated", {
       today: TODAY,
     });
     expect(await homeRowAt(store, "2025-03-20")).toBe(interpolatedValue);
@@ -533,7 +533,7 @@ describe("housing valuation cadence — threading + re-ripple (#394, ADR 0031)",
     expect(await homeRowAt(store, "2025-01-01")).toBe(100_000_00);
 
     // Flip back to step AND re-ripple → the stepped value is restored.
-    await store.setHousingValuationCadenceAndRipple("home", "step", { today: TODAY });
+    await store.command.setHousingValuationCadence("home", "step", { today: TODAY });
     expect(await homeRowAt(store, "2025-03-20")).toBe(stepValue);
     store.close();
   });
@@ -545,13 +545,13 @@ describe("housing valuation cadence — threading + re-ripple (#394, ADR 0031)",
     const stepValue = drift("2025-03-20");
     const interpolatedValue = drift("2025-03-20", "interpolated");
 
-    await store.setHousingValuationCadenceAndRipple("home", "interpolated", {
+    await store.command.setHousingValuationCadence("home", "interpolated", {
       today: TODAY,
     });
     expect(await homeRowAt(store, "2025-03-20")).toBe(interpolatedValue);
 
     // Null clears the opt-in → the snapshot returns to the stepped value.
-    await store.setHousingValuationCadenceAndRipple("home", null, { today: TODAY });
+    await store.command.setHousingValuationCadence("home", null, { today: TODAY });
     expect(await store.assets.readValuationCadence("home")).toBeNull();
     expect(await homeRowAt(store, "2025-03-20")).toBe(stepValue);
     store.close();

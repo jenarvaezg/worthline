@@ -92,7 +92,7 @@ async function seedAmortizableMortgage(): Promise<WorthlineStore> {
   // A past plan (ADR 0019): disbursed and cuota'd well before TODAY, so it
   // already has past-cuota snapshots to ripple against (prior art: the
   // debt-historical-snapshots seedAmortizable fixture).
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",

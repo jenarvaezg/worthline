@@ -1,11 +1,13 @@
-import type { CommandResult, RipplePlan, UnitOfWork } from "./types";
+import type { CommandResult, FactBatchInput, RipplePlan, UnitOfWork } from "./types";
 
 /** One dated fact to persist inside a batch — returns its date key. */
 export interface DatedFactStep {
-  persist: () => Promise<string>;
+  persist: (batchId: string) => Promise<string>;
 }
 
 export interface ApplyDatedFactsBatchParams {
+  /** Provenance for this application. Defaults to an interactive/manual command. */
+  batch?: FactBatchInput;
   today: string;
   steps: DatedFactStep[];
   /** Re-derive snapshots from the computed from-date. */
@@ -28,9 +30,10 @@ export async function applyDatedFactsBatch(
 ): Promise<CommandResult<RipplePlan | null>> {
   try {
     return await uow.transaction(async () => {
+      const batchId = await uow.createFactBatch(params.batch ?? { trigger: "manual" });
       const dateKeys: string[] = [];
       for (const step of params.steps) {
-        dateKeys.push(await step.persist());
+        dateKeys.push(await step.persist(batchId));
       }
 
       if (dateKeys.length === 0) {

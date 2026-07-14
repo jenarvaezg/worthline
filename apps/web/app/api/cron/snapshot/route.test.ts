@@ -53,7 +53,7 @@ async function seededMarketStore(): Promise<WorthlineStore> {
     priceProvider: "yahoo",
     providerSymbol: "AAPL",
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "fund",
       currency: "EUR",

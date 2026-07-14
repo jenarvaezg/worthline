@@ -201,7 +201,7 @@ async function runHarness(): Promise<Measurement[]> {
       "operationRipple",
       () => beforeOperationRipple,
       async () => {
-        await store.recordOperationAndRipple(
+        await store.command.recordInvestmentOperation(
           {
             assetId: seed.rippleInvestmentId,
             currency: "EUR",
@@ -223,7 +223,7 @@ async function runHarness(): Promise<Measurement[]> {
       "valuationRipple",
       () => beforeOperationRipple,
       async () => {
-        await store.addValuationAnchorAndRipple(
+        await store.command.addValuationAnchor(
           {
             adjustsPriorCurve: true,
             assetId: seed.rippleHousingId,
@@ -243,7 +243,7 @@ async function runHarness(): Promise<Measurement[]> {
       "debtRipple",
       () => beforeOperationRipple,
       async () => {
-        await store.addEarlyRepaymentAndRipple(
+        await store.command.addEarlyRepayment(
           {
             amountMinor: 3_000_00,
             id: "perf_extra_repayment",

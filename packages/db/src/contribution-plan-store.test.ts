@@ -157,7 +157,7 @@ describe("contribution occurrence reconciliation", () => {
       startDate: "2025-01-01",
     });
     for (const id of ["op-1", "op-2"]) {
-      await store.recordOperationAndRipple(
+      await store.command.recordInvestmentOperation(
         {
           id,
           assetId: "h1",
@@ -273,7 +273,7 @@ describe("contribution occurrence reconciliation", () => {
       startDate: "2025-01-01",
     });
     await expect(
-      store.applyStoredContributionValue({
+      store.command.applyStoredContributionValue({
         contributionId: contribution.id,
         occurrenceId: `${contribution.id}:2025-01-01`,
         assetId: "h1",
@@ -292,7 +292,7 @@ describe("contribution occurrence reconciliation", () => {
       cadence: { kind: "monthly", dayOfMonth: 1 },
       startDate: "2025-01-01",
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         id: "exported-op",
         assetId: "h1",

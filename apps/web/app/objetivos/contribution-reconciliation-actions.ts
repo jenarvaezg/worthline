@@ -105,7 +105,7 @@ export async function createAndLinkContributionOperationAction(
     requireOccurrence(contribution, occurrenceId);
     const workspace = await store.workspace.readWorkspace();
     if (!workspace) throw new Error("Workspace no inicializado.");
-    await store.createAndLinkContributionOperation({
+    await store.command.createAndLinkContributionOperation({
       contributionId,
       occurrenceId,
       operation: {
@@ -190,7 +190,7 @@ export async function applyStoredValueContributionAction(
   }
   await runActionWithStore(
     (store) =>
-      store.applyStoredContributionValue({
+      store.command.applyStoredContributionValue({
         contributionId: field(formData, "contributionId"),
         occurrenceId: field(formData, "occurrenceId"),
         assetId: field(formData, "assetId"),

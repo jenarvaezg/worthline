@@ -194,7 +194,7 @@ describe("assistant proposal store", () => {
       facts: [row],
     });
 
-    await store.applyAssistantStatementProposalAndRipple({
+    await store.command.applyAssistantStatementProposal({
       funds: [
         {
           asset: {

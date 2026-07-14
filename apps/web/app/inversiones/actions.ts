@@ -603,7 +603,7 @@ export async function previewPriceBackfillAction(
 
   const result = await runActionWithStore(
     (store) =>
-      store.backfillInvestmentPricesAndRipple({
+      store.command.backfillInvestmentPrices({
         assetId: routeAssetId,
         dryRun: true,
         pricesByDate: series.pricesByDate,
@@ -665,7 +665,7 @@ export async function confirmPriceBackfillAction(
 
   const result = await runActionWithStore(
     (store) =>
-      store.backfillInvestmentPricesAndRipple({
+      store.command.backfillInvestmentPrices({
         assetId: routeAssetId,
         pricesByDate: series.pricesByDate,
         source: series.source,
@@ -779,7 +779,7 @@ export async function previewSnapshotPriceCorrectionAction(
 
   const result = await runActionWithStore(
     (store) =>
-      store.correctInvestmentSnapshotUnitPrice({
+      store.command.correctInvestmentSnapshotUnitPrice({
         assetId: routeAssetId,
         dateKey: planned.point.dateKey,
         dryRun: true,
@@ -831,7 +831,7 @@ export async function confirmSnapshotPriceCorrectionAction(
 
   await runActionWithStore(
     (store) =>
-      store.correctInvestmentSnapshotUnitPrice({
+      store.command.correctInvestmentSnapshotUnitPrice({
         assetId: routeAssetId,
         dateKey: planned.point.dateKey,
         unitPriceDecimal: planned.point.unitPriceDecimal,
