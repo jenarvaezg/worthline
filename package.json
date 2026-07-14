@@ -20,6 +20,7 @@
     "test:related": "vitest related --run",
     "test:e2e": "playwright test",
     "eval:assistant": "bun run --filter @worthline/web eval:assistant",
+    "eval:extractor": "bun run --filter @worthline/web eval:extractor",
     "test:e2e:first-run": "bun run test:e2e:first-run:solo && bun run test:e2e:first-run:hogar",
     "test:e2e:first-run:solo": "FIRST_RUN_SCENARIO=solo playwright test --config playwright.first-run.config.ts",
     "test:e2e:first-run:hogar": "FIRST_RUN_SCENARIO=hogar playwright test --config playwright.first-run.config.ts",

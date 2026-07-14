@@ -1,0 +1,41 @@
+{
+  "positions": [
+    {
+      "ticker": "VWCE",
+      "name": "Vanguard FTSE All-World",
+      "units": 120,
+      "marketValueEur": 13450.32,
+      "currency": "EUR"
+    },
+    {
+      "ticker": "SXR8",
+      "name": "iShares Core S&P 500",
+      "units": 18,
+      "marketValueEur": 9876.5,
+      "currency": "EUR"
+    },
+    {
+      "ticker": "EUNL",
+      "name": "iShares Core MSCI World",
+      "units": 42,
+      "marketValueEur": 4512.18,
+      "currency": "EUR"
+    },
+    {
+      "ticker": "AGGH",
+      "name": "iShares Global Aggregate Bond",
+      "units": 310,
+      "marketValueEur": 1589.0,
+      "currency": "EUR"
+    },
+    {
+      "ticker": "IB01",
+      "name": "iShares $ Treasury 0-1yr",
+      "units": 7,
+      "marketValueEur": 771.05,
+      "currency": "EUR"
+    }
+  ],
+  "totalEur": 30199.05,
+  "warnings": []
+}
