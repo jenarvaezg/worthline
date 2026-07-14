@@ -12,6 +12,7 @@
 
 import type { BinanceHistoryCurve, CoinPosition, DecimalString } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
+import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 import type { SourcePositionInput, WorthlineStore } from "./index";
 import { createInMemoryStore } from "./index";
 
@@ -173,6 +174,46 @@ describe("syncConnectedSource — coin purchase-date ripple (ADR 0017)", () => {
 
     // The past snapshot stays frozen at the first-sync value (never re-rippled).
     expect(await grossAt(store, "2024-03-01")).toBe(1_000_00 + 100_00);
+    store.close();
+  });
+
+  it("adds new coins to the frozen position breakdown without wiping existing rows", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    await recordBuy(store, "2024-03-01", "10", "100");
+
+    const { sourceId, assetId } = await connectNumista(store);
+    await syncCoins(store, sourceId, [coin("c1", "2020-01-01", 100_00)]);
+    await captureDailySnapshotForWorkspace(store, "2024-03-01T20:00:00.000Z");
+
+    const before = (
+      await store.snapshots.readSnapshotHoldings({
+        from: "2024-03-01",
+        to: "2024-03-01",
+      })
+    ).find((row) => row.holdingId === assetId);
+    expect(before?.positions?.map((row) => row.positionKey)).toEqual(["c1"]);
+
+    await syncCoins(
+      store,
+      sourceId,
+      [coin("c1", "2020-01-01", 500_00), coin("c2", "2024-02-01", 200_00)],
+      "2026-06-15T11:00:00.000Z",
+    );
+
+    const after = (
+      await store.snapshots.readSnapshotHoldings({
+        from: "2024-03-01",
+        to: "2024-03-01",
+      })
+    ).find((row) => row.holdingId === assetId);
+    expect(after?.positions?.map((row) => row.positionKey).sort()).toEqual(["c1", "c2"]);
+    expect(after?.positions?.find((row) => row.positionKey === "c1")?.valueMinor).toBe(
+      100_00,
+    );
+    expect(after?.positions?.find((row) => row.positionKey === "c2")?.valueMinor).toBe(
+      200_00,
+    );
     store.close();
   });
 

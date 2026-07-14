@@ -611,21 +611,47 @@ export function createConnectedSourceStore(ctx: StoreContext): ConnectedSourceSt
           throw new Error(`Connected source "${sourceId}" not found.`);
         }
 
-        // Replace the source's positions wholesale (a removed line drops out, a
-        // new one appears), assigning each a fresh id + the source id.
-        await db.delete(positions).where(eq(positions.sourceId, sourceId)).run();
-
-        // Narrow per kind so the spread reconstructs the discriminated variant
-        // (a bare `{ ...union }` collapses to the common core and loses the
-        // coin/token fields). Both arms look alike but `position` is narrowed.
-        const inserted: SourcePosition[] = incoming.map((position) =>
-          position.kind === "coin"
-            ? { ...position, id: ctx.newId(), sourceId }
-            : { ...position, id: ctx.newId(), sourceId },
+        // Incremental mirror (ADR 0017): match on the stable `externalId`, update
+        // existing lines in place (preserving internal ids), insert genuinely new
+        // ones, and drop lines the provider no longer returns (a coin sold on
+        // Numista). Wholesale delete+insert made every line look new to anything
+        // keyed on internal id and forced unnecessary row churn.
+        const existing = await readPositionsForSource(sourceId);
+        const existingByExternal = new Map(
+          existing.map((position) => [position.externalId, position]),
+        );
+        const incomingExternalIds = new Set(
+          incoming.map((position) => position.externalId),
         );
 
-        if (inserted.length > 0) {
-          await db.insert(positions).values(inserted.map(positionInsertValues)).run();
+        for (const position of existing) {
+          if (!incomingExternalIds.has(position.externalId)) {
+            await db.delete(positions).where(eq(positions.id, position.id)).run();
+          }
+        }
+
+        const toInsert: SourcePosition[] = [];
+        for (const draft of incoming) {
+          const prior = existingByExternal.get(draft.externalId);
+          const position: SourcePosition =
+            draft.kind === "coin"
+              ? { ...draft, id: prior?.id ?? ctx.newId(), sourceId }
+              : { ...draft, id: prior?.id ?? ctx.newId(), sourceId };
+
+          if (prior) {
+            const { id: _id, ...updateSet } = positionInsertValues(position);
+            await db
+              .update(positions)
+              .set(updateSet)
+              .where(and(eq(positions.id, prior.id), eq(positions.sourceId, sourceId)))
+              .run();
+          } else {
+            toInsert.push(position);
+          }
+        }
+
+        if (toInsert.length > 0) {
+          await db.insert(positions).values(toInsert.map(positionInsertValues)).run();
         }
 
         // Re-roll EVERY rung's holding from the freshly-written positions (ADR

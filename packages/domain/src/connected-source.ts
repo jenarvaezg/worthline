@@ -20,7 +20,8 @@ import type { Instrument } from "./instrument-catalog";
 import type { LiquidityTier } from "./liquidity-ladder";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { CurrencyCode } from "./money";
-import type { SnapshotPositionInput } from "./snapshot-holdings";
+import { allocateScopedHolding } from "./scope-allocation";
+import type { SnapshotPositionInput, SnapshotPositionRow } from "./snapshot-holdings";
 import type { OwnershipShare } from "./workspace-types";
 
 /** Which external account an adapter speaks to. Numista was the first; Binance is
@@ -314,6 +315,43 @@ export function coinPositionSnapshotInput(coin: CoinPosition): SnapshotPositionI
     metal: coin.metal,
     imageUrl: coin.obverseThumbUrl,
   };
+}
+
+/**
+ * Merge live Numista coin inputs with a same-day frozen breakdown (ADR 0035).
+ * New coins pass through with their live value; removed coins drop out; coins
+ * whose scoped value is unchanged keep their frozen GLOBAL value so a same-day
+ * recapture (latest wins, ADR 0005) does not rewrite every line when only some
+ * metal spots moved. Binance stays live-valued every capture — this is Numista-
+ * only semantics (ADR 0017 acquisition-driven freeze).
+ */
+export function mergeCoinPositionSnapshotInputs(
+  live: readonly SnapshotPositionInput[],
+  frozenScoped: readonly SnapshotPositionRow[],
+  scope: { ownership: OwnershipShare[]; scopeMemberIds: Set<string> },
+): SnapshotPositionInput[] {
+  const frozenByKey = new Map(frozenScoped.map((row) => [row.positionKey, row]));
+  return live.map((coin) => {
+    const frozen = frozenByKey.get(coin.positionKey);
+    if (!frozen) {
+      return coin;
+    }
+    const liveScoped = allocateScopedHolding(coin.valueMinor, scope).ownedMinor;
+    if (
+      liveScoped === frozen.valueMinor &&
+      frozen.label === coin.label &&
+      frozen.metal === coin.metal &&
+      frozen.imageUrl === coin.imageUrl
+    ) {
+      const { totalShareBps } = allocateScopedHolding(coin.valueMinor, scope);
+      if (totalShareBps === 0) {
+        return coin;
+      }
+      const frozenGlobal = Math.round((frozen.valueMinor * 10_000) / totalShareBps);
+      return { ...coin, valueMinor: frozenGlobal };
+    }
+    return coin;
+  });
 }
 
 /**

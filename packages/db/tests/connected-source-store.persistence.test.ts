@@ -232,6 +232,46 @@ describe("connected-source store — syncPositions", () => {
     expect((await holding(store, assetId)).currentValue.amountMinor).toBe(8_000);
   });
 
+  test("re-sync preserves internal ids for unchanged external ids", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+    const { sourceId } = await connectNumista(store);
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({ catalogueId: "n1", externalId: "ext-1", purchasePriceMinor: 5_000 }),
+        position({ catalogueId: "n2", externalId: "ext-2", purchasePriceMinor: 7_500 }),
+      ],
+      "2024-06-01T10:00:00.000Z",
+    );
+    const first = await store.connectedSources.readPositions(sourceId);
+    const idByExternal = new Map(first.map((p) => [p.externalId, p.id]));
+
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        position({
+          catalogueId: "n1",
+          externalId: "ext-1",
+          purchasePriceMinor: 5_500,
+          numismaticValueMinor: 5_500,
+        }),
+        position({ catalogueId: "n2", externalId: "ext-2", purchasePriceMinor: 7_500 }),
+      ],
+      "2024-07-01T10:00:00.000Z",
+    );
+
+    const second = await store.connectedSources.readPositions(sourceId);
+    expect(second.find((p) => p.externalId === "ext-1")?.id).toBe(
+      idByExternal.get("ext-1"),
+    );
+    expect(second.find((p) => p.externalId === "ext-2")?.id).toBe(
+      idByExternal.get("ext-2"),
+    );
+    expect(second.find((p) => p.externalId === "ext-1")?.purchasePriceMinor).toBe(5_500);
+  });
+
   test("persists and round-trips the indefinite detail + numismatic fetched-at", async () => {
     const store = await createInMemoryStore();
     await seed(store);

@@ -18,6 +18,7 @@ import {
   groupPositionsByToken,
   instrumentForAdapter,
   isTokenDustValue,
+  mergeCoinPositionSnapshotInputs,
   positionValue,
   projectConnectedSource,
   tokenSymbolSnapshotInputs,
@@ -554,5 +555,98 @@ describe("coinPositionSnapshotInput (ADR 0035)", () => {
       metal: null,
       imageUrl: null,
     });
+  });
+});
+
+describe("mergeCoinPositionSnapshotInputs (ADR 0035 / ADR 0017)", () => {
+  const scope = {
+    ownership: [{ memberId: "m1", shareBps: 10_000 }],
+    scopeMemberIds: new Set(["m1"]),
+  };
+
+  test("keeps frozen global values for coins whose scoped price did not move", () => {
+    const live = [
+      {
+        positionKey: "c1",
+        label: "Coin 1",
+        valueMinor: 2_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+      {
+        positionKey: "c2",
+        label: "Coin 2",
+        valueMinor: 1_000_00,
+        metal: null,
+        imageUrl: null,
+      },
+    ];
+    const frozen = [
+      {
+        positionKey: "c1",
+        label: "Coin 1",
+        valueMinor: 2_000_00,
+        metal: "gold",
+        imageUrl: null,
+      },
+      {
+        positionKey: "c2",
+        label: "Coin 2",
+        valueMinor: 1_000_00,
+        metal: null,
+        imageUrl: null,
+      },
+    ];
+
+    expect(mergeCoinPositionSnapshotInputs(live, frozen, scope)).toEqual(live);
+  });
+
+  test("passes through price moves and new coins only", () => {
+    const frozen = [
+      {
+        positionKey: "c1",
+        label: "Coin 1",
+        valueMinor: 1_000_00,
+        metal: null,
+        imageUrl: null,
+      },
+    ];
+    const merged = mergeCoinPositionSnapshotInputs(
+      [
+        {
+          positionKey: "c1",
+          label: "Coin 1",
+          valueMinor: 1_200_00,
+          metal: null,
+          imageUrl: null,
+        },
+        {
+          positionKey: "c2",
+          label: "Coin 2",
+          valueMinor: 500_00,
+          metal: null,
+          imageUrl: null,
+        },
+      ],
+      frozen,
+      scope,
+    );
+
+    expect(merged).toEqual([
+      {
+        positionKey: "c1",
+        label: "Coin 1",
+        valueMinor: 1_200_00,
+        metal: null,
+        imageUrl: null,
+      },
+      {
+        positionKey: "c2",
+        label: "Coin 2",
+        valueMinor: 500_00,
+        metal: null,
+        imageUrl: null,
+      },
+    ]);
   });
 });

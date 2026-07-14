@@ -17,7 +17,11 @@ import type { FrozenIdentityCapture } from "./historical-snapshot";
 import { assembleRippleSnapshot, resolveFrozenIdentity } from "./historical-snapshot";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
-import type { SnapshotHoldingRow } from "./snapshot-holdings";
+import type {
+  SnapshotHoldingRow,
+  SnapshotPositionInput,
+  SnapshotPositionRow,
+} from "./snapshot-holdings";
 import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types";
 import type { ManualAsset, Workspace } from "./workspace-types";
 
@@ -43,6 +47,15 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
    * / never housing, so this is not independently triggerable). Omitted → live.
    */
   frozenIdentity?: readonly FrozenIdentityCapture[];
+  /**
+   * The newly-acquired coins rippling on this snapshot date (ADR 0035). Each
+   * trade's GLOBAL value is scope-allocated into one frozen position child row;
+   * existing position rows on the holding are preserved verbatim.
+   */
+  newTrades?: readonly {
+    purchaseDate: string;
+    position: SnapshotPositionInput;
+  }[];
 }
 
 /**
@@ -97,6 +110,34 @@ export function recalculateSnapshotForCoinAcquisition(
       },
       targetDate: input.snapshot.dateKey,
     });
+    const existingPositions = existingRow?.positions ?? [];
+    const existingPositionKeys = new Set(existingPositions.map((row) => row.positionKey));
+    const newPositionRows: SnapshotPositionRow[] = [];
+    for (const trade of input.newTrades ?? []) {
+      if (
+        trade.purchaseDate > input.snapshot.dateKey ||
+        trade.position.valueMinor <= 0 ||
+        existingPositionKeys.has(trade.position.positionKey)
+      ) {
+        continue;
+      }
+      const scoped = allocateScopedHolding(trade.position.valueMinor, {
+        ownership: input.asset.ownership,
+        scopeMemberIds,
+      });
+      if (scoped.totalShareBps === 0) {
+        continue;
+      }
+      newPositionRows.push({
+        positionKey: trade.position.positionKey,
+        label: trade.position.label,
+        valueMinor: scoped.ownedMinor,
+        metal: trade.position.metal,
+        imageUrl: trade.position.imageUrl,
+      });
+      existingPositionKeys.add(trade.position.positionKey);
+    }
+
     rows.push({
       countsAsHousing: identity.countsAsHousing,
       holdingId: input.asset.id,
@@ -105,6 +146,9 @@ export function recalculateSnapshotForCoinAcquisition(
       liquidityTier: identity.liquidityTier,
       securesHousing: identity.securesHousing,
       valueMinor: (existingRow?.valueMinor ?? 0) + (totalShareBps > 0 ? ownedMinor : 0),
+      ...(existingPositions.length > 0 || newPositionRows.length > 0
+        ? { positions: [...existingPositions, ...newPositionRows] }
+        : {}),
     });
   }
 
