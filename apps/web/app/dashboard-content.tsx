@@ -28,6 +28,7 @@ import { compositionUrl } from "./composition-url";
 import { parseMode } from "./dashboard-matrix";
 import DonutDrill, { type DonutSegment } from "./donut-drill";
 import FramingPanel, { type FramingTab } from "./framing-panel";
+import { latestFetchedAt } from "./freshness";
 import { HeroMonthlyMicroBand, HeroWeeklyBlock } from "./hero-breakdown";
 import {
   type FormattedHeroMonthly,
@@ -36,6 +37,7 @@ import {
 } from "./hero-breakdown-data";
 import type { HeroHealthView } from "./hero-data-health";
 import HeroDataHealthAlert from "./hero-data-health-alert";
+import HeroFreshness from "./hero-freshness";
 import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
 import {
   parseDrillParam,
@@ -43,6 +45,7 @@ import {
   parseViewParam,
   parseViviendaParam,
 } from "./intake";
+import { refreshPricesAction } from "./inversiones/actions";
 import { loadDashboard } from "./load-dashboard";
 import {
   buildMoversDataByPeriod,
@@ -499,6 +502,16 @@ export default async function DashboardContent({
               </span>
             </p>
           ) : null}
+          {/* Freshness stamp + soft "no pudimos actualizar" alert (#896): framing-
+            independent, so rendered once here like the returns line. The stamp is
+            always shown; the alert only when the data outran the automatic window,
+            and its action reuses the manual price refresh (#405/#406). */}
+          <HeroFreshness
+            currentUrl={returnTo}
+            now={now}
+            refreshAction={refreshPricesAction}
+            updatedAt={latestFetchedAt(state.priceCache)}
+          />
         </section>
 
         {!hasHoldings ? (
