@@ -11,8 +11,8 @@
  * corrects the ownership %.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { allocateScopedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
@@ -52,7 +52,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -117,7 +117,7 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
     // Correct the mortgage split from 50/50 to 70/30 — one atomic seam call
     // persists the patch and ripples the scope axis (previous split read behind
     // the seam).
-    await store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.command.updateLiabilityOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
@@ -149,7 +149,7 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.command.updateLiabilityOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
@@ -159,7 +159,7 @@ describe("ownership-split ripple over historical snapshots (#172)", () => {
 
     // Re-applying the now-current split is a no-op: the seam sees the stored split
     // already equals the patch, so it ripples nothing (rows already 70/30).
-    await store.updateLiabilityAndRippleOwnership("mortgage", {
+    await store.command.updateLiabilityOwnership("mortgage", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },
@@ -246,7 +246,7 @@ async function seedCoOwnedHome(store: WorthlineStore): Promise<void> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -289,7 +289,7 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
     // ownership edit rides the seam, which dispatches a real_estate asset to the
     // housing curve ripple — losslessly re-deriving the home from its flat curve
     // value (HOME_GLOBAL_MINOR), never by dividing the rounded household row (#187).
-    await store.updateAssetAndRippleOwnership("piso", {
+    await store.command.updateAssetOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
@@ -341,7 +341,7 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
       dates.flatMap((d) => [cashRow(d, "household"), cashRow(d, "mJ"), cashRow(d, "mA")]),
     );
 
-    await store.updateAssetAndRippleOwnership("piso", {
+    await store.command.updateAssetOwnership("piso", {
       ownership: [
         { memberId: "mJ", shareBps: 3_000 },
         { memberId: "mA", shareBps: 3_500 },
@@ -412,7 +412,7 @@ async function seedFundFrozenThenLedgerless(store: WorthlineStore): Promise<void
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -486,7 +486,7 @@ describe("ownership-split ripple leaves the frozen row untouched when the global
     // re-weighting the already-allocated row would reconstruct the frozen member
     // rows from a value the live ledger can no longer justify (#187 lossiness) —
     // the ripple must SKIP these dates and leave every frozen row untouched.
-    await store.updateAssetAndRippleOwnership("fondo", {
+    await store.command.updateAssetOwnership("fondo", {
       ownership: [
         { memberId: "mJ", shareBps: 7_000 },
         { memberId: "mA", shareBps: 3_000 },

@@ -62,7 +62,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
 
     // A backdated buy: 0.5 BTC at 30.000 EUR on 2026-01-10. No price was cached
     // those days, so every generated snapshot is frozen at COST BASIS.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -83,7 +83,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     expect(before?.unitPrice).toBeUndefined();
 
     // Apply the backfill with monthly historical prices.
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([
         ["2026-01-01", "29000"], // before the op → no position, skipped
@@ -121,7 +121,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -140,7 +140,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       valueMinor: r.valueMinor,
     }));
 
-    await store.backfillInvestmentPricesAndRipple({
+    await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([
         ["2026-02-01", "40000"],
@@ -168,7 +168,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -182,7 +182,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       { today: TODAY },
     );
 
-    await store.backfillInvestmentPricesAndRipple({
+    await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([
         ["2026-02-01", "40000"],
@@ -209,7 +209,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
 
     // A single op on 2026-01-10 generates a snapshot on 2026-01-10 only — there
     // is no 2026-02-01 or 2026-03-01 snapshot until the backfill creates them.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -225,7 +225,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
 
     expect(await rowAt(store, "btc", "2026-02-01")).toBeUndefined();
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([
         ["2026-02-01", "40000"],
@@ -244,7 +244,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -258,7 +258,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       { today: TODAY },
     );
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([["2026-02-01", "40000"]]), // 03-01 missing
       source: "coingecko",
@@ -284,7 +284,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     // Backdated buy on 2026-01-10. With no cached prices, every snapshot generated
     // between the op and today is frozen at COST BASIS (units, no unit price), so
     // the only re-pricing event is the day a live quote first arrives — a cliff.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -307,7 +307,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       ["2026-02-01", "40000"],
       ["2026-03-01", "50000"],
     ]);
-    await store.backfillInvestmentPricesAndRipple({
+    await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: prices,
       source: "coingecko",
@@ -333,7 +333,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -347,7 +347,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       { today: TODAY },
     );
     // Sell ALL units on 2026-02-20 → 0 held from then on.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -363,7 +363,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
 
     const marBefore = await rowAt(store, "btc", "2026-03-01");
 
-    await store.backfillInvestmentPricesAndRipple({
+    await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([
         ["2026-02-01", "40000"], // units held → priced
@@ -387,7 +387,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -404,7 +404,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     const btcBefore = await rowsFor(store, "btc");
     const cashBefore = await rowsFor(store, "cash");
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map(), // the unmapped-symbol / outage path: nothing to apply
       source: "coingecko",
@@ -428,7 +428,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
 
     // Two backdated ops, the second on 2026-03-05, so a 2026-03-01 month-start
     // snapshot already exists AT COST BASIS before any backfill runs.
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -443,7 +443,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     );
     // A second op ON the month-start so a 2026-03-01 snapshot already exists at
     // cost basis (snapshots land on operation dates; an op mid-month would not).
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -461,7 +461,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     expect(marBefore).toBeDefined();
     expect(marBefore?.unitPrice).toBeUndefined(); // at cost basis
 
-    const result = await store.backfillInvestmentPricesAndRipple({
+    const result = await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([["2026-02-01", "40000"]]), // 03-01 deliberately omitted
       source: "coingecko",
@@ -483,7 +483,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
     // The issue's own numbers: 0.259249 BTC, priced at 54979 EUR.
     const units = "0.259249";
     const price = "54979";
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -497,7 +497,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       { today: TODAY },
     );
 
-    await store.backfillInvestmentPricesAndRipple({
+    await store.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: new Map([["2026-02-01", price]]),
       source: "coingecko",
@@ -535,7 +535,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       priceProvider: "coingecko",
       providerSymbol: "bitcoin",
     });
-    await dry.recordOperationAndRipple(
+    await dry.command.recordInvestmentOperation(
       {
         assetId: "btc",
         currency: "EUR",
@@ -554,7 +554,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       ["2026-03-01", "50000"],
     ]);
 
-    const preview = await dry.backfillInvestmentPricesAndRipple({
+    const preview = await dry.command.backfillInvestmentPrices({
       assetId: "btc",
       dryRun: true,
       pricesByDate: prices,
@@ -569,7 +569,7 @@ describe("backfillInvestmentPricesAndRipple (#380)", () => {
       ).some((r) => r.dateKey === "2026-02-01"),
     ).toBe(false);
 
-    const confirm = await dry.backfillInvestmentPricesAndRipple({
+    const confirm = await dry.command.backfillInvestmentPrices({
       assetId: "btc",
       pricesByDate: prices,
       source: "coingecko",

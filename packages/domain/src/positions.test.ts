@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-
+import { asInstant } from "./dates";
 import type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
@@ -32,6 +32,27 @@ const sell = (units: string, price: string, extra: Partial<InvestmentOperation> 
   op("sell", units, price, extra);
 
 describe("derivePosition — buys", () => {
+  test("orders same-day operations by occurredAt before id", () => {
+    const position = derivePosition(
+      [
+        sell("5", "120", {
+          executedAt: "2026-01-01",
+          id: "a_sell",
+          occurredAt: asInstant("2026-01-01T10:00:00.000Z"),
+        }),
+        buy("5", "100", {
+          executedAt: "2026-01-01",
+          id: "z_buy",
+          occurredAt: asInstant("2026-01-01T09:00:00.000Z"),
+        }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.currentUnits).toBe("0");
+    expect(position.warnings).toEqual([]);
+  });
+
   test("accumulates units and cost basis from buys", () => {
     const position = derivePosition(
       [
@@ -235,6 +256,23 @@ describe("createInvestmentOperation", () => {
     expect(operation.feesMinor).toBe(0);
     expect(operation.units).toBe("1.5");
     expect(operation.kind).toBe("buy");
+  });
+
+  test("accepts and preserves a UTC occurredAt instant", () => {
+    const occurredAt = "2026-01-01T09:30:00.000Z";
+
+    expect(createInvestmentOperation({ ...base, occurredAt }).occurredAt).toBe(
+      occurredAt,
+    );
+  });
+
+  test("rejects a non-UTC occurredAt timestamp", () => {
+    expect(() =>
+      createInvestmentOperation({
+        ...base,
+        occurredAt: "2026-01-01T10:30:00.000+01:00",
+      }),
+    ).toThrow("occurredAt");
   });
 
   test("rejects non-positive units", () => {

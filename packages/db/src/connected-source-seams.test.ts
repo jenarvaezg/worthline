@@ -40,7 +40,7 @@ async function recordBuy(
   units: string,
   price: string,
 ): Promise<void> {
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "fund",
       currency: "EUR",
@@ -112,7 +112,7 @@ async function syncCoins(
   positions: SourcePositionInput[],
   syncedAt = "2026-06-15T10:00:00.000Z",
 ): Promise<void> {
-  await store.syncConnectedSource({ positions, sourceId, syncedAt });
+  await store.command.syncConnectedSource({ positions, sourceId, syncedAt });
 }
 
 /** A BTC-only curve from per-month balances + per-date prices. */
@@ -203,7 +203,7 @@ describe("applyBinanceHistoryAndRipple — monthly-history backfill (ADR 0021)",
     expect(await grossAt(store, "2026-03-31")).toBe(1_000_00);
 
     const { sourceId } = await connectBinance(store);
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1", "2026-04": "1" },
@@ -226,7 +226,7 @@ describe("applyBinanceHistoryAndRipple — monthly-history backfill (ADR 0021)",
     await seed(store);
     const { sourceId } = await connectBinance(store);
 
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -237,7 +237,7 @@ describe("applyBinanceHistoryAndRipple — monthly-history backfill (ADR 0021)",
     expect(await grossAt(store, "2026-03-31")).toBe(100_00);
 
     // Re-sync the same month at a HIGHER price → the covered date is skipped.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },

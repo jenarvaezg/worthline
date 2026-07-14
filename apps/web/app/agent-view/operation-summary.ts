@@ -1,5 +1,9 @@
 import type { InvestmentOperation } from "@worthline/domain";
-import { addUnits, multiplyToMinor } from "@worthline/domain";
+import {
+  addUnits,
+  compareInvestmentOperations,
+  multiplyToMinor,
+} from "@worthline/domain";
 
 import type { AgentViewMoney, AgentViewOperationSummary } from "./contract";
 
@@ -18,11 +22,7 @@ export function summarizeOperations(
     return undefined;
   }
 
-  const ordered = [...operations].sort((a, b) =>
-    a.executedAt === b.executedAt
-      ? a.id.localeCompare(b.id)
-      : a.executedAt.localeCompare(b.executedAt),
-  );
+  const ordered = [...operations].sort(compareInvestmentOperations);
   const first = ordered[0];
   const last = ordered[ordered.length - 1];
 

@@ -7,9 +7,9 @@
  * ripples the existing snapshots after it. Future anchors generate nothing.
  */
 
-import type { WorthlineStore } from "@db/index";
-
-import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
+import { captureDailySnapshotForWorkspace } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-12";
@@ -65,7 +65,7 @@ async function addMarketAnchor(
   valueMinor: number,
 ): Promise<void> {
   // ADR 0020: the persist-and-ripple pair rides ONE store seam method.
-  await store.addValuationAnchorAndRipple(
+  await store.command.addValuationAnchor(
     {
       adjustsPriorCurve: true,
       assetId: "piso",
@@ -135,7 +135,7 @@ describe("historical snapshots from housing anchors", () => {
     await addMarketAnchor(store, "a1", "2024-01-01", 100_000_00);
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
 
-    await store.updateValuationAnchorAndRipple(
+    await store.command.updateValuationAnchor(
       "a1",
       { valueMinor: 110_000_00 },
       { today: TODAY },
@@ -155,7 +155,7 @@ describe("historical snapshots from housing anchors", () => {
 
     // Delete the 2024-01-01 anchor. Now the only appraisal is 2025-01-01 at 120k,
     // with no rate → flat back-extrapolation: 2024-01-01 is worth 120k too.
-    await store.deleteValuationAnchorAndRipple("a1", { today: TODAY });
+    await store.command.deleteValuationAnchor("a1", { today: TODAY });
 
     expect(await grossAt(store, "2024-01-01")).toBe(120_000_00);
     store.close();
@@ -171,7 +171,7 @@ describe("historical snapshots from housing anchors", () => {
     expect(await grossAt(store, "2025-01-01")).toBe(100_000_00);
 
     // Declare a 3% rate; ripple from the first anchor date forward (seam derives it).
-    await store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
+    await store.command.setAnnualAppreciationRate("piso", "0.03", { today: TODAY });
 
     // 2024-01-01 is the (only/first) appraisal at 100k still; 2025-01-01 is the
     // second appraisal and stays its own truth (100k) regardless of rate.
@@ -184,7 +184,7 @@ describe("historical snapshots from housing anchors", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -255,7 +255,7 @@ describe("housing historical snapshots — household scope weighting", () => {
       type: "real_estate",
     });
 
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -291,7 +291,7 @@ describe("housing historical snapshots — no curve regression", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -339,7 +339,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     await store.assets.updateAssetValuation("piso", 170_000_00);
 
     // Declare a market anchor at 2024-01-01 = 100k → generates a snapshot.
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -352,7 +352,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
 
     // Now delete the only anchor (and ripple). The curve becomes empty.
-    await store.deleteValuationAnchorAndRipple("a1", { today: TODAY });
+    await store.command.deleteValuationAnchor("a1", { today: TODAY });
     // Update current valuation to 200k (so the flat-currentValue bug would return 200k).
     await store.assets.updateAssetValuation("piso", 200_000_00);
 
@@ -367,7 +367,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     // buildSnapshotAtDate: both use currentValue when no history reaches back.
     // The value edit is a non-dated metadata change → the housing-after-edit seam
     // re-derives history; its from-date resolves to the surviving 2024-01-01 snapshot.
-    await store.rippleHousingAfterAssetEdit("piso", { today: TODAY });
+    await store.command.rippleHousingAfterAssetEdit("piso", { today: TODAY });
 
     // In the test environment all audit entries are timestamped "now" (TODAY),
     // which is after the snapshot date 2024-01-01. So lastKnownValueAtDate
@@ -404,7 +404,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     // written at the current clock time (which in tests resolves to a real clock
     // call). We drive the fromDateKey far ahead of the audit-entry date so that
     // lastKnownValueAtDate will find the history entry.
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -417,7 +417,7 @@ describe("housing historical snapshots — empty-curve basis consistency (fix 1)
     expect(await grossAt(store, "2028-01-01")).toBe(100_000_00);
 
     // Delete the anchor (and ripple) → empty curve.
-    await store.deleteValuationAnchorAndRipple("a1", { today: FUTURE_TODAY });
+    await store.command.deleteValuationAnchor("a1", { today: FUTURE_TODAY });
 
     // With empty curve and no history reaching back to 2028-01-01 (the
     // updateAssetValuation audit entry, if any, was made at real-clock "now"
@@ -439,7 +439,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
 
     expect(await housingRowAt(store, TODAY)).toBe(130_000_00);
 
-    await store.recordHousingValuationAndRipple("piso", 260_000_00, { today: TODAY });
+    await store.command.recordHousingValuation("piso", 260_000_00, { today: TODAY });
 
     expect(await housingRowAt(store, TODAY)).toBe(260_000_00);
     expect(await grossAt(store, TODAY)).toBe(260_000_00);
@@ -452,7 +452,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     await seed(store);
 
     // Create a past anchor so the from-date = 2024-01-01 (first past anchor).
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -465,7 +465,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
 
     // Update current value via the full seam: upserts a today-anchor and ripples.
-    await store.recordHousingValuationAndRipple("piso", 150_000_00, { today: TODAY });
+    await store.command.recordHousingValuation("piso", 150_000_00, { today: TODAY });
 
     // The 2024-01-01 snapshot must be re-derived (curve now has 150k today + 100k at 2024).
     // With two market anchors the 2024 snapshot stays 100k (it IS the appraisal).
@@ -482,7 +482,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     await seed(store);
 
     // Manually create a past snapshot by adding+deleting an anchor (empty curve).
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -492,11 +492,11 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    await store.deleteValuationAnchorAndRipple("tmp", { today: TODAY });
+    await store.command.deleteValuationAnchor("tmp", { today: TODAY });
     // Now we have a snapshot at 2024-01-01 but no anchors.
 
     // recordHousingValuationAndRipple: no past anchors → ripples from earliest snapshot.
-    await store.recordHousingValuationAndRipple("piso", 200_000_00, { today: TODAY });
+    await store.command.recordHousingValuation("piso", 200_000_00, { today: TODAY });
 
     // The today anchor was upserted.
     const anchors = await store.assets.readValuationAnchors("piso");
@@ -509,7 +509,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     await seed(store);
 
     // Add a past anchor so there's a snapshot to ripple.
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -529,7 +529,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
       isPrimaryResidence: false,
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.rippleHousingAfterAssetEdit("piso", { today: TODAY });
+    await store.command.rippleHousingAfterAssetEdit("piso", { today: TODAY });
 
     // Snapshot still reflects the curve correctly after metadata edit.
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
@@ -541,7 +541,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     await seed(store);
 
     // Two anchors: 2024-01-01 and 2025-01-01.
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -551,7 +551,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -564,7 +564,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     expect(await grossAt(store, "2025-01-01")).toBe(120_000_00);
 
     // Setting 3% rate via the no-arg seam ripples from first anchor (2024-01-01).
-    await store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
+    await store.command.setAnnualAppreciationRate("piso", "0.03", { today: TODAY });
 
     // Both anchor snapshots stay at their appraisal values (market truth wins).
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
@@ -577,7 +577,7 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
     await seed(store);
 
     // Create a snapshot via add+delete (empty curve, but snapshot exists).
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -587,11 +587,11 @@ describe("housing fully-behind-seam methods (ADR 0020)", () => {
       },
       { today: TODAY },
     );
-    await store.deleteValuationAnchorAndRipple("tmp", { today: TODAY });
+    await store.command.deleteValuationAnchor("tmp", { today: TODAY });
 
     // No anchors remain, but snapshot at 2024-01-01 exists.
     // Setting a rate must still ripple from the earliest snapshot.
-    await store.setAnnualAppreciationRateAndRipple("piso", "0.03", { today: TODAY });
+    await store.command.setAnnualAppreciationRate("piso", "0.03", { today: TODAY });
 
     // Snapshot should still exist (re-derived from currentValue fallback + rate).
     expect(await grossAt(store, "2024-01-01")).toBeDefined();

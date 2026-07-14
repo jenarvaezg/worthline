@@ -108,7 +108,7 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
     ownership: owner,
     providerSymbol: "IWDA.AS",
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "asset_msci",
       currency: "EUR",

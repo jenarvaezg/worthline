@@ -53,7 +53,7 @@ export async function executeAddValuationAnchorCommand(
   command: AddValuationAnchorCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.addValuationAnchorAndRipple(command.input, { today });
+  await store.command.addValuationAnchor(command.input, { today });
   return { ok: true, value: undefined };
 }
 
@@ -62,7 +62,7 @@ export async function executeUpdateValuationAnchorCommand(
   command: UpdateValuationAnchorCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.updateValuationAnchorAndRipple(
+  const changes = await store.command.updateValuationAnchor(
     command.anchorId,
     command.input,
     { today },
@@ -75,7 +75,7 @@ export async function executeDeleteValuationAnchorCommand(
   command: DeleteValuationAnchorCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.deleteValuationAnchorAndRipple(command.anchorId, {
+  const changes = await store.command.deleteValuationAnchor(command.anchorId, {
     today,
   });
   return { ok: true, value: { changes } };
@@ -86,7 +86,7 @@ export async function executeSetAnnualAppreciationRateCommand(
   command: SetAnnualAppreciationRateCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.setAnnualAppreciationRateAndRipple(command.assetId, command.rate, {
+  await store.command.setAnnualAppreciationRate(command.assetId, command.rate, {
     today,
   });
   return { ok: true, value: undefined };
@@ -97,7 +97,7 @@ export async function executeSetHousingValuationCadenceCommand(
   command: SetHousingValuationCadenceCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.setHousingValuationCadenceAndRipple(command.assetId, command.cadence, {
+  await store.command.setHousingValuationCadence(command.assetId, command.cadence, {
     today,
   });
   return { ok: true, value: undefined };
@@ -108,10 +108,8 @@ export async function executeRecordHousingValuationCommand(
   command: RecordHousingValuationCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.recordHousingValuationAndRipple(
-    command.assetId,
-    command.currentValueMinor,
-    { today },
-  );
+  await store.command.recordHousingValuation(command.assetId, command.currentValueMinor, {
+    today,
+  });
   return { ok: true, value: undefined };
 }

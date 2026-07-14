@@ -40,6 +40,44 @@ import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
 import type { WorkspaceStore } from "./workspace-store";
 
+type PublicAssetStore = Omit<
+  AssetStore,
+  | "addValuationAnchor"
+  | "deleteValuationAnchor"
+  | "setAnnualAppreciationRate"
+  | "setValuationCadence"
+  | "updateAsset"
+  | "updateValuationAnchor"
+>;
+
+type PublicLiabilityStore = Omit<
+  LiabilityStore,
+  | "addBalanceAnchor"
+  | "addBalanceRebaseline"
+  | "addEarlyRepayment"
+  | "addInterestRateRevision"
+  | "createAmortizationPlan"
+  | "deleteAmortizationPlan"
+  | "deleteBalanceAnchor"
+  | "deleteBalanceRebaseline"
+  | "deleteEarlyRepayment"
+  | "deleteInterestRateRevision"
+  | "setValuationCadence"
+  | "updateAmortizationPlan"
+  | "updateBalanceAnchor"
+  | "updateBalanceRebaseline"
+  | "updateEarlyRepayment"
+  | "updateInterestRateRevision"
+  | "updateLiability"
+>;
+
+type PublicOperationsStore = Omit<
+  OperationsStore,
+  "deleteOperation" | "recordOperation" | "updateOperation"
+>;
+
+type PublicConnectedSourceStore = Omit<ConnectedSourceStore, "syncPositions">;
+
 export interface WorthlineStoreOptions {
   databasePath?: string;
   dataDir?: string;
@@ -76,7 +114,7 @@ export interface TrashView {
 }
 
 /**
- * The full real_estate creation command for {@link WorthlineStore.createHousingHoldingAndRipple}.
+ * The full real_estate creation command for `store.command.createHousingHolding`.
  * The caller resolves the anchor ids (a determinism source — `createStableId`/seed
  * plumbing) and passes the acquisition anchor (and an optional initial valuation)
  * fully formed; the seam derives only the from-date (the acquisition date) and
@@ -124,7 +162,7 @@ export interface ApplyStatementImportParams {
  * the audit log, FIRE config, and the cross-domain historical-snapshot
  * machinery). All per-domain work goes through `store.<domain>.<method>`.
  */
-export interface WorthlineStore {
+interface LegacyWorthlineStore {
   createAndLinkContributionOperation: (params: {
     contributionId: string;
     occurrenceId: string;
@@ -141,15 +179,15 @@ export interface WorthlineStore {
   /** Focused snapshot & position store (Slice R1). */
   snapshots: SnapshotStore;
   /** Focused asset store (Slice R2). */
-  assets: AssetStore;
+  assets: PublicAssetStore;
   /** Focused liability store (Slice R3). */
-  liabilities: LiabilityStore;
+  liabilities: PublicLiabilityStore;
   /** Focused operations & price-cache store (Slice R4). */
-  operations: OperationsStore;
+  operations: PublicOperationsStore;
   /** Focused workspace lifecycle & member store (Slice R5). */
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
-  connectedSources: ConnectedSourceStore;
+  connectedSources: PublicConnectedSourceStore;
   /** Intermediate goals + their assigned holdings (PRD #421, #424). */
   goals: GoalStore;
   /** Hand-entered exposure profiles keyed by security identity (PRD #539, ADR 0039). */
@@ -161,7 +199,7 @@ export interface WorthlineStore {
   agentView: AgentViewReadStore;
   /** Durable, explicitly resolved assistant proposals (#767). */
   assistantProposals: AssistantProposalStore;
-  /** Command-layer UnitOfWork + ripple hooks (#966). Not for direct UI use. */
+  /** Intent-level mutation boundary; UnitOfWork and ripple hooks remain private. */
   command: CommandHost;
 
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────
@@ -644,3 +682,22 @@ export interface WorthlineStore {
     today?: string;
   }) => Promise<void>;
 }
+
+type CommandOwnedStoreKey = {
+  [Key in keyof LegacyWorthlineStore]: Key extends `${string}AndRipple`
+    ? Key
+    : Key extends
+          | "createAndLinkContributionOperation"
+          | "applyStoredContributionValue"
+          | "rippleHousingAfterAssetEdit"
+          | "updateAssetAndRippleOwnership"
+          | "updateLiabilityAndRippleOwnership"
+          | "backfillHistoricalSnapshots"
+          | "correctInvestmentSnapshotUnitPrice"
+          | "syncConnectedSource"
+      ? Key
+      : never;
+}[keyof LegacyWorthlineStore];
+
+/** Public store contract: mutations that couple persistence and ripple live on command. */
+export type WorthlineStore = Omit<LegacyWorthlineStore, CommandOwnedStoreKey>;

@@ -63,7 +63,11 @@ export async function runBinanceRefresh(
       });
     },
     persistFresh: async (sourceId, drafts) => {
-      await store.syncConnectedSource({ sourceId, positions: drafts, syncedAt: nowIso });
+      await store.command.syncConnectedSource({
+        sourceId,
+        positions: drafts,
+        syncedAt: nowIso,
+      });
       await store.connectedSources.revaluePositions(sourceId, [], {
         fetchedAt: nowIso,
         freshnessState: "fresh",

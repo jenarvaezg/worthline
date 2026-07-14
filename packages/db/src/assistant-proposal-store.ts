@@ -141,6 +141,7 @@ function normalizeFact(
       kind: row.kind,
       pricePerUnit: row.pricePerUnit,
       units: row.units,
+      ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
       ...(row.instrument === undefined ? {} : { instrument: row.instrument }),
       ...(row.name === undefined ? {} : { name: row.name }),
     },

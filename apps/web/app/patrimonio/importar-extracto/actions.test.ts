@@ -6,8 +6,8 @@
  * builds on).
  */
 import { readFileSync } from "node:fs";
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { parseStatement } from "@worthline/domain";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
@@ -342,6 +342,9 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
     const matchedOps = await store.operations.readOperations("matched_fund");
     expect(matchedOps).toHaveLength(2);
+    expect(matchedOps.every((operation) => operation.occurredAt === undefined)).toBe(
+      true,
+    );
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     const created = metas.find((meta) => meta.isin === "LU00WL000002");

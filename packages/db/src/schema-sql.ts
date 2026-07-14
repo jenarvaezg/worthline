@@ -132,21 +132,32 @@ CREATE TABLE \`workspace\` (
 	CONSTRAINT "workspace_mode_enum" CHECK("workspace"."mode" IN ('individual', 'household'))
 );
 --> statement-breakpoint
+CREATE TABLE \`fact_batch\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`trigger\` text NOT NULL,
+	\`connected_source_id\` text,
+	\`sync_run_id\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE \`asset_operations\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`asset_id\` text NOT NULL,
 	\`kind\` text NOT NULL,
 	\`executed_at\` text NOT NULL,
+	\`occurred_at\` text,
 	\`units\` text NOT NULL,
 	\`price_per_unit\` text NOT NULL,
 	\`currency\` text NOT NULL,
 	\`fees_minor\` integer DEFAULT 0 NOT NULL,
 	\`source\` text DEFAULT 'manual' NOT NULL,
+	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`batch_id\`) REFERENCES \`fact_batch\`(\`id\`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE INDEX \`asset_operations_asset_executed_idx\` ON \`asset_operations\` (\`asset_id\`,\`executed_at\`,\`id\`);--> statement-breakpoint
+CREATE INDEX \`asset_operations_asset_executed_idx\` ON \`asset_operations\` (\`asset_id\`,\`executed_at\`,\`occurred_at\`,\`id\`);--> statement-breakpoint
 CREATE TABLE \`investment_assets\` (
 	\`asset_id\` text PRIMARY KEY NOT NULL,
 	\`unit_symbol\` text,
@@ -258,8 +269,10 @@ CREATE TABLE \`asset_valuations\` (
 	\`valuation_date\` text NOT NULL,
 	\`adjusts_prior_curve\` integer NOT NULL,
 	\`source\` text DEFAULT 'manual' NOT NULL,
+	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`batch_id\`) REFERENCES \`fact_batch\`(\`id\`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`asset_valuations_asset_date_unique\` ON \`asset_valuations\` (\`asset_id\`,\`valuation_date\`);--> statement-breakpoint
@@ -292,8 +305,10 @@ CREATE TABLE \`liability_balance_anchors\` (
 	\`liability_id\` text NOT NULL,
 	\`balance_minor\` integer NOT NULL,
 	\`anchor_date\` text NOT NULL,
+	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`batch_id\`) REFERENCES \`fact_batch\`(\`id\`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`liability_balance_anchors_liability_date_unique\` ON \`liability_balance_anchors\` (\`liability_id\`,\`anchor_date\`);--> statement-breakpoint
@@ -320,8 +335,10 @@ CREATE TABLE \`liability_balance_rebaselines\` (
 	\`input_mode\` text NOT NULL,
 	\`starts_at_baseline\` integer DEFAULT 0 NOT NULL,
 	\`source\` text DEFAULT 'manual' NOT NULL,
+	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
-	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (\`liability_id\`) REFERENCES \`liabilities\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`batch_id\`) REFERENCES \`fact_batch\`(\`id\`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX \`liability_balance_rebaselines_liability_date_unique\` ON \`liability_balance_rebaselines\` (\`liability_id\`,\`baseline_date\`);--> statement-breakpoint

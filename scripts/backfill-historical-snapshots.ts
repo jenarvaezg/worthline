@@ -30,7 +30,7 @@ withStore((store) => {
   const before = store.snapshots.readSnapshots();
   console.log(`Snapshots before backfill: ${before.length}`);
 
-  store.backfillHistoricalSnapshots(today);
+  store.command.backfillHistoricalSnapshots(today);
 
   const after = store.snapshots.readSnapshots();
   const created = after.length - before.length;

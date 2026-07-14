@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import type { InvestmentOperation } from "@worthline/domain";
-import { multiplyToMinor } from "@worthline/domain";
+import { compareInvestmentOperations, multiplyToMinor } from "@worthline/domain";
 
 import {
   AgentViewHttpError,
@@ -9,7 +9,7 @@ import {
   type AgentViewOperationPage,
   type AgentViewOperationSort,
 } from "./contract";
-import { compareDateId, decodeCursor, dropAfterCursor, encodeCursor } from "./cursor";
+import { decodeCursor, encodeCursor } from "./cursor";
 import { derivePublicId } from "./derived-id";
 import { resolveInternalHoldingId } from "./scope-resolution";
 
@@ -36,6 +36,7 @@ interface SortedOperation {
   operation: InvestmentOperation;
   publicId: string;
   dateKey: string;
+  sortKey: string;
 }
 
 /**
@@ -79,23 +80,21 @@ export async function buildHoldingOperations(
       dateKey: dateKey(operation),
       operation,
       publicId: deriveOperationPublicId(operation.id),
+      sortKey: `${dateKey(operation)}\u0000${operation.occurredAt ?? ""}`,
     }))
-    .sort((a, b) => compareDateId(a, b, options.sort));
+    .sort((a, b) =>
+      compareOperationsForAgentView(a.operation, b.operation, options.sort),
+    );
 
   const afterCursor = options.cursor
-    ? dropAfterCursor(
-        sorted,
-        decodeCursor(options.cursor),
-        options.sort,
-        (entry) => entry,
-      )
+    ? dropOperationsAfterCursor(sorted, decodeCursor(options.cursor))
     : sorted;
 
   const page = afterCursor.slice(0, options.limit);
   const hasNext = afterCursor.length > options.limit;
   const last = page[page.length - 1];
   const nextCursor =
-    hasNext && last ? encodeCursor(last.dateKey, last.publicId) : undefined;
+    hasNext && last ? encodeCursor(last.sortKey, last.publicId) : undefined;
 
   return {
     meta: {
@@ -105,6 +104,36 @@ export async function buildHoldingOperations(
     },
     operations: page.map((entry) => toOperation(entry, currency)),
   };
+}
+
+/** Canonical date → occurredAt → internal-id ordering; direction reverses all keys. */
+export function compareOperationsForAgentView(
+  a: InvestmentOperation,
+  b: InvestmentOperation,
+  sort: AgentViewOperationSort,
+): number {
+  const ascending = compareInvestmentOperations(a, b);
+  return sort === "-date" ? -ascending : ascending;
+}
+
+function dropOperationsAfterCursor(
+  sorted: SortedOperation[],
+  cursor: { date: string; id: string },
+): SortedOperation[] {
+  // The reversible cursor contains only the composite date key and opaque public
+  // id. Resolve that identity back to the server-held row, then slice the already
+  // canonical internal-id order without ever exposing the internal id.
+  const index = sorted.findIndex(
+    (entry) => entry.sortKey === cursor.date && entry.publicId === cursor.id,
+  );
+  if (index < 0) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      message: "Invalid cursor.",
+      status: 400,
+    });
+  }
+  return sorted.slice(index + 1);
 }
 
 function toOperation(entry: SortedOperation, currency: string): AgentViewOperation {

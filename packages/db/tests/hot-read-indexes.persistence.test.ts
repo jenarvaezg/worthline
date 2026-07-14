@@ -8,7 +8,8 @@
  * the migration / runtime schema declare those indexes consistently.
  *
  * The queries below are copied to match exactly what the stores execute:
- *   - operations-store.readOperations:  asset_operations WHERE asset_id ORDER BY executed_at, id
+ *   - operations-store.readOperations: asset_operations WHERE asset_id
+ *     ORDER BY executed_at, occurred_at, id
  *   - index.readAuditLog (by entity):   audit_log WHERE entity_id ORDER BY created_at
  *   - index.readTrash (assets):         assets WHERE deleted_at IS NOT NULL ORDER BY name
  *   - index.readTrash (liabilities):    liabilities WHERE deleted_at IS NOT NULL ORDER BY name
@@ -89,7 +90,7 @@ describe("hot-read indexes (#201)", () => {
     try {
       const plan = await queryPlan(
         client,
-        "SELECT * FROM asset_operations WHERE asset_id = ? ORDER BY executed_at, id",
+        "SELECT * FROM asset_operations WHERE asset_id = ? ORDER BY executed_at, occurred_at, id",
         "asset_x",
       );
       expect(plan).toContain("USING INDEX asset_operations_asset_executed_idx");

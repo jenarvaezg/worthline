@@ -54,7 +54,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "gold",
         currency: "EUR",
@@ -72,7 +72,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     expect(before?.valueMinor).toBe(multiplyToMinor("3", "10"));
     expect(before?.unitPrice).toBeUndefined();
 
-    const result = await store.correctInvestmentSnapshotUnitPrice({
+    const result = await store.command.correctInvestmentSnapshotUnitPrice({
       assetId: "gold",
       dateKey: "2026-07-09",
       unitPriceDecimal: "12.5",
@@ -93,7 +93,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "gold",
         currency: "EUR",
@@ -112,7 +112,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
       valueMinor: r.valueMinor,
     }));
 
-    const result = await store.correctInvestmentSnapshotUnitPrice({
+    const result = await store.command.correctInvestmentSnapshotUnitPrice({
       assetId: "gold",
       dateKey: "2026-07-09",
       unitPriceDecimal: "12.5",
@@ -139,7 +139,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "gold",
         currency: "EUR",
@@ -153,7 +153,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
       { today: TODAY },
     );
 
-    await store.correctInvestmentSnapshotUnitPrice({
+    await store.command.correctInvestmentSnapshotUnitPrice({
       assetId: "gold",
       dateKey: "2026-07-09",
       unitPriceDecimal: "12.5",
@@ -173,7 +173,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     const store = await createInMemoryStore();
     await seed(store);
 
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "gold",
         currency: "EUR",
@@ -187,7 +187,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
       { today: TODAY },
     );
 
-    const preview = await store.correctInvestmentSnapshotUnitPrice({
+    const preview = await store.command.correctInvestmentSnapshotUnitPrice({
       assetId: "gold",
       dateKey: "2026-07-09",
       dryRun: true,
@@ -198,7 +198,7 @@ describe("correctInvestmentSnapshotUnitPrice (#926)", () => {
     const beforeConfirm = await rowAt(store, "gold", "2026-07-09");
     expect(beforeConfirm?.valueMinor).toBe(multiplyToMinor("3", "10"));
 
-    const confirm = await store.correctInvestmentSnapshotUnitPrice({
+    const confirm = await store.command.correctInvestmentSnapshotUnitPrice({
       assetId: "gold",
       dateKey: "2026-07-09",
       unitPriceDecimal: "12.5",

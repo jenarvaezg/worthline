@@ -10,8 +10,8 @@
  * in a past snapshot subtracts the REAL historical mortgage balance.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
@@ -89,7 +89,7 @@ describe("historical snapshots from amortizable plans", () => {
     await seedAmortizable(store);
 
     // ADR 0020: persist-and-ripple ride ONE store seam (kind derived behind it).
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -133,7 +133,7 @@ describe("historical snapshots from amortizable plans", () => {
       initialCapitalMinor: 150_000_00,
       termMonths: 240,
     } as const;
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       { ...PLAN, id: "plan1", liabilityId: "mortgage" },
       { today: TODAY },
     );
@@ -150,7 +150,7 @@ describe("historical snapshots from amortizable plans", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -189,7 +189,7 @@ describe("historical snapshots from amortizable plans", () => {
   test("a rate revision recalculates snapshots on or after the revision", async () => {
     const store = await createInMemoryStore();
     await seedAmortizable(store);
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -206,7 +206,7 @@ describe("historical snapshots from amortizable plans", () => {
 
     const beforeRevision = (await debtsAt(store, "2026-02-15"))!;
 
-    await store.addInterestRateRevisionAndRipple(
+    await store.command.addInterestRateRevision(
       {
         id: "rev1",
         newAnnualInterestRate: "0.06",
@@ -229,7 +229,7 @@ describe("historical snapshots from amortizable plans", () => {
   test("a past early repayment overwrites its snapshot and recalculates after it", async () => {
     const store = await createInMemoryStore();
     await seedAmortizable(store);
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -246,7 +246,7 @@ describe("historical snapshots from amortizable plans", () => {
 
     const beforeRepayment = (await debtsAt(store, "2026-02-15"))!;
 
-    await store.addEarlyRepaymentAndRipple(
+    await store.command.addEarlyRepayment(
       {
         amountMinor: 20_000_00,
         id: "erp1",
@@ -276,7 +276,7 @@ describe("historical snapshots from amortizable plans", () => {
   test("future plan generates nothing", async () => {
     const store = await createInMemoryStore();
     await seedAmortizable(store);
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -324,7 +324,7 @@ describe("historical snapshots from current-state re-baselines", () => {
     const store = await createInMemoryStore();
     await seedCurrentStateDebt(store);
 
-    await store.addBalanceRebaselineAndRipple(
+    await store.command.addBalanceRebaseline(
       {
         annualInterestRate: "0",
         baselineDate: "2026-03-10",
@@ -346,7 +346,7 @@ describe("historical snapshots from current-state re-baselines", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -370,7 +370,7 @@ describe("historical snapshots from current-state re-baselines", () => {
     const store = await createInMemoryStore();
     await seedCurrentStateDebt(store);
 
-    await store.addBalanceRebaselineAndRipple(
+    await store.command.addBalanceRebaseline(
       {
         annualInterestRate: "0",
         baselineDate: "2026-03-10",
@@ -391,7 +391,7 @@ describe("historical snapshots from current-state re-baselines", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -405,7 +405,7 @@ describe("historical snapshots from current-state re-baselines", () => {
     );
     const beforeBaselineSnapshot = await debtsAt(store, "2026-02-01");
 
-    const changes = await store.updateBalanceRebaselineAndRipple(
+    const changes = await store.command.updateBalanceRebaseline(
       "base1",
       { outstandingBalanceMinor: 120_000_00 },
       { today: TODAY },
@@ -422,7 +422,7 @@ describe("historical snapshots from current-state re-baselines", () => {
     const store = await createInMemoryStore();
     await seedCurrentStateDebt(store);
 
-    await store.addBalanceRebaselineAndRipple(
+    await store.command.addBalanceRebaseline(
       {
         annualInterestRate: "0",
         baselineDate: "2026-03-10",
@@ -441,7 +441,7 @@ describe("historical snapshots from current-state re-baselines", () => {
     // debtBalanceAtDate with nothing to derive from — refuse instead of silently
     // flattening the curve.
     await expect(
-      store.deleteBalanceRebaselineAndRipple("base1", { today: TODAY }),
+      store.command.deleteBalanceRebaseline("base1", { today: TODAY }),
     ).rejects.toThrow(/amortization plan/i);
 
     const remaining = await store.liabilities.readBalanceRebaselines("mortgage");
@@ -483,7 +483,7 @@ describe("historical snapshots from balance anchors", () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
 
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 3_000_00,
@@ -502,7 +502,7 @@ describe("historical snapshots from balance anchors", () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
 
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 10_000_00,
@@ -511,7 +511,7 @@ describe("historical snapshots from balance anchors", () => {
       },
       { today: TODAY },
     );
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-07-01",
         balanceMinor: 4_000_00,
@@ -531,7 +531,7 @@ describe("historical snapshots from balance anchors", () => {
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -578,7 +578,7 @@ describe("historical snapshots from balance anchors", () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
 
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-06-01",
         balanceMinor: 5_000_00,
@@ -592,7 +592,7 @@ describe("historical snapshots from balance anchors", () => {
     // A backdated anchor at 2025-01-01 with a lower balance: its own snapshot is
     // generated, and the 2025-06-01 one (now between two anchors) stays its
     // anchor truth (5_000_00).
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 2_000_00,
@@ -609,7 +609,7 @@ describe("historical snapshots from balance anchors", () => {
   test("editing an anchor recalculates the affected snapshot", async () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 3_000_00,
@@ -620,7 +620,7 @@ describe("historical snapshots from balance anchors", () => {
     );
     expect(await debtsAt(store, "2025-01-01")).toBe(3_000_00);
 
-    await store.updateBalanceAnchorAndRipple(
+    await store.command.updateBalanceAnchor(
       "an1",
       { balanceMinor: 3_500_00 },
       { today: TODAY },
@@ -634,7 +634,7 @@ describe("historical snapshots from balance anchors", () => {
     await seedRevolving(store);
     // Earlier anchor (3_000_00) and a later one (8_000_00). The 2025-01-01 snapshot
     // is pinned to its own anchor (3_000_00) while an1 sits on that date.
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 3_000_00,
@@ -643,7 +643,7 @@ describe("historical snapshots from balance anchors", () => {
       },
       { today: TODAY },
     );
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-06-01",
         balanceMinor: 8_000_00,
@@ -660,7 +660,7 @@ describe("historical snapshots from balance anchors", () => {
     // earliest anchor is now an2 (8_000_00), and "before the first anchor is flat at
     // the first balance" → the 2025-01-01 snapshot must flip 3_000_00 → 8_000_00. If
     // the seam wrongly rippled from the NEW date (2025-09-01), it would stay stale.
-    const changes = await store.updateBalanceAnchorAndRipple(
+    const changes = await store.command.updateBalanceAnchor(
       "an1",
       { anchorDate: "2025-09-01" },
       { today: TODAY },
@@ -674,7 +674,7 @@ describe("historical snapshots from balance anchors", () => {
   test("future anchor generates nothing", async () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2030-01-01",
         balanceMinor: 9_000_00,
@@ -717,7 +717,7 @@ describe("historical housing equity from a real mortgage curve", () => {
 
     // Housing curve: an appraisal anchor in the past. The anchor persist + ripple
     // ride the valuation seam (generates the 2025-01-01 snapshot).
-    await store.addValuationAnchorAndRipple(
+    await store.command.addValuationAnchor(
       {
         adjustsPriorCurve: true,
         assetId: "piso",
@@ -729,7 +729,7 @@ describe("historical housing equity from a real mortgage curve", () => {
     );
     // Mortgage amortization plan starting in the past — the plan persist + ripple
     // ride the debt seam, re-valuing the debt on the 2025-01-01 snapshot too.
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -804,7 +804,7 @@ describe("multi-member ownership", () => {
       type: "debt",
     });
     await store.liabilities.setDebtModel("card", "revolving");
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 4_000_00,
@@ -847,7 +847,7 @@ describe("plan deletion recalculates snapshots to currentBalance basis", () => {
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -908,7 +908,7 @@ describe("plan deletion recalculates snapshots to currentBalance basis", () => {
 
     // The seam captures the plan's disbursement date, deletes, then ripples the
     // planless curve (amortizable-revision recalc from start) — all atomically.
-    await store.deleteAmortizationPlanAndRipple({
+    await store.command.deleteAmortizationPlan({
       liabilityId: "mortgage",
       today: TODAY,
     });
@@ -962,7 +962,7 @@ describe("no regression", () => {
       type: "debt",
     });
     await store.liabilities.setDebtModel("card", "revolving");
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 2_000_00,
@@ -1004,7 +1004,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",
@@ -1048,7 +1048,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
 
-    const changes = await store.updateAmortizationPlanAndRipple(
+    const changes = await store.command.updateAmortizationPlan(
       planId,
       { initialCapitalMinor: 120_000_00 },
       { liabilityId: "mortgage", today: TODAY },
@@ -1068,7 +1068,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addInterestRateRevisionAndRipple(
+    await store.command.addInterestRateRevision(
       { id: "rev1", newAnnualInterestRate: "0.06", planId, revisionDate: "2026-04-15" },
       { liabilityId: "mortgage", today: TODAY },
     );
@@ -1077,7 +1077,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
 
     // Move the revision earlier (04-15 → 03-15): the seam ripples from the earlier
     // date, so the new-rate curve now applies from 03-15 forward.
-    const changes = await store.updateInterestRateRevisionAndRipple(
+    const changes = await store.command.updateInterestRateRevision(
       "rev1",
       { revisionDate: "2026-03-15" },
       { today: TODAY },
@@ -1100,7 +1100,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addInterestRateRevisionAndRipple(
+    await store.command.addInterestRateRevision(
       { id: "rev1", newAnnualInterestRate: "0.06", planId, revisionDate: "2026-04-15" },
       { liabilityId: "mortgage", today: TODAY },
     );
@@ -1112,7 +1112,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     // 04-15 snapshot recomputes too; if the seam wrongly rippled only from the new
     // date it would still recalc 04-15 here, so we also assert 05-15 moves (the
     // new-rate curve now bites a month earlier across the window).
-    const changes = await store.updateInterestRateRevisionAndRipple(
+    const changes = await store.command.updateInterestRateRevision(
       "rev1",
       { revisionDate: "2026-03-15" },
       { today: TODAY },
@@ -1132,7 +1132,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addEarlyRepaymentAndRipple(
+    await store.command.addEarlyRepayment(
       {
         amountMinor: 20_000_00,
         id: "erp1",
@@ -1147,7 +1147,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     // Move the repayment EARLIER (04-15 → 03-15) WITHOUT telling the seam the old
     // date. The from-date must be min(old, new) = the OLD date (2026-04-15), so the
     // window from 03-15 forward recomputes against the moved-repayment curve.
-    const changes = await store.updateEarlyRepaymentAndRipple(
+    const changes = await store.command.updateEarlyRepayment(
       "erp1",
       { repaymentDate: "2026-03-15" },
       { today: TODAY },
@@ -1167,12 +1167,12 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addInterestRateRevisionAndRipple(
+    await store.command.addInterestRateRevision(
       { id: "rev1", newAnnualInterestRate: "0.06", planId, revisionDate: "2026-03-15" },
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    const changes = await store.deleteInterestRateRevisionAndRipple("rev1", {
+    const changes = await store.command.deleteInterestRateRevision("rev1", {
       today: TODAY,
     });
 
@@ -1190,7 +1190,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addEarlyRepaymentAndRipple(
+    await store.command.addEarlyRepayment(
       {
         amountMinor: 20_000_00,
         id: "erp1",
@@ -1201,7 +1201,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    const changes = await store.updateEarlyRepaymentAndRipple(
+    const changes = await store.command.updateEarlyRepayment(
       "erp1",
       { repaymentDate: "2026-03-15" },
       { today: TODAY },
@@ -1218,7 +1218,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const store = await createInMemoryStore();
     await seedAmortizable(store);
     const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
-    await store.addEarlyRepaymentAndRipple(
+    await store.command.addEarlyRepayment(
       {
         amountMinor: 20_000_00,
         id: "erp1",
@@ -1229,7 +1229,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    const changes = await store.deleteEarlyRepaymentAndRipple("erp1", { today: TODAY });
+    const changes = await store.command.deleteEarlyRepayment("erp1", { today: TODAY });
 
     expect(changes).toBe(1);
     for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {
@@ -1243,7 +1243,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
   test("deleteBalanceAnchorAndRipple recalculates the affected snapshots", async () => {
     const store = await createInMemoryStore();
     await seedRevolving(store);
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 3_000_00,
@@ -1252,7 +1252,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
       },
       { today: TODAY },
     );
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-06-01",
         balanceMinor: 6_000_00,
@@ -1265,7 +1265,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
 
     // Deleting the earlier anchor: 2025-01-01 now back-extrapolates from the only
     // remaining anchor (6_000_00 flat, no curve).
-    const changes = await store.deleteBalanceAnchorAndRipple("an1", { today: TODAY });
+    const changes = await store.command.deleteBalanceAnchor("an1", { today: TODAY });
 
     expect(changes).toBe(1);
     expect(await debtsAt(store, "2025-01-01")).toBe(6_000_00);
@@ -1278,7 +1278,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
 
     const beforeRebaseline = (await debtsAt(store, "2026-03-15"))!;
 
-    await store.addBalanceRebaselineAndRipple(
+    await store.command.addBalanceRebaseline(
       {
         annualInterestRate: "0.03",
         baselineDate: "2026-04-15",
@@ -1294,7 +1294,7 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     const rebaselinedAt0515 = (await debtsAt(store, "2026-05-15"))!;
     expect(rebaselinedAt0415).toBe(140_000_00);
 
-    const changes = await store.deleteBalanceRebaselineAndRipple("base1", {
+    const changes = await store.command.deleteBalanceRebaseline("base1", {
       today: TODAY,
     });
 

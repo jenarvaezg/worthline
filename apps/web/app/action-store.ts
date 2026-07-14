@@ -104,7 +104,7 @@ function isUniqueConstraintError(error: unknown): boolean {
  * SQL error that would otherwise bubble to a 500. This translates that ONE error
  * class into the action's own `{ ok: false }` result — one guard for every
  * dated-fact action instead of a per-action try/catch. The transactional seam
- * (dated-fact-seams) rolls the failed insert back, so no partial write survives.
+ * dated-fact command rolls the failed insert back, so no partial write survives.
  * Any other throw is re-raised unchanged.
  */
 export async function runDatedFactAction<T extends { ok: boolean; error?: string }>(

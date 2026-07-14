@@ -53,7 +53,7 @@ async function recordBuy(
   units: string,
   price: string,
 ): Promise<void> {
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "fund",
       currency: "EUR",
@@ -104,7 +104,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     const { sourceId } = await connectBinance(store);
 
     // 1 BTC at month-end through 2026-03 and 2026-04, priced 100 (× 100 minor).
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1", "2026-04": "1" },
@@ -128,7 +128,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     expect(await grossAt(store, "2026-03-31")).toBe(1_000_00);
 
     const { sourceId } = await connectBinance(store);
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -148,7 +148,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     const { sourceId } = await connectBinance(store);
 
     // 2026-06 is TODAY's month → not a completed month → never an anchor.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-05": "1", "2026-06": "1" },
@@ -168,7 +168,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     const { sourceId } = await connectBinance(store);
 
     // First sync covers 2026-03 only.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -179,7 +179,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     expect(await grossAt(store, "2026-03-31")).toBe(100_00);
 
     // Second sync: 2026-03 at a HIGHER value (a later price move) + a new 2026-04.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1", "2026-04": "1" },
@@ -217,7 +217,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       dailyPrices: { "2026-04-30": "100" },
     });
 
-    await store.applyBinanceHistoryAndRipple({ sourceId, curve, today: TODAY });
+    await store.command.applyBinanceHistory({ sourceId, curve, today: TODAY });
 
     // The earlier month-end keeps ONLY the fund value — no binance row was frozen
     // there (it sits below `start`), so its gross is unchanged.
@@ -252,7 +252,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     expect(await grossAt(store, "2026-03-15")).toBe(1_000_00);
 
     const { sourceId } = await connectBinance(store);
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -273,7 +273,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
     const { sourceId } = await connectBinance(store);
 
     // A curve with balances but no prices values nothing → start null.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },
@@ -306,7 +306,7 @@ describe("applyBinanceHistoryAndRipple backfills monthly history into snapshots"
       ],
     });
 
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: curveOf({
         monthEndBalances: { "2026-03": "1" },

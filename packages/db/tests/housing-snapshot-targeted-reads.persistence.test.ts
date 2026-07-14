@@ -124,7 +124,7 @@ async function seedManyUnrelatedRows(store: WorthlineStore): Promise<void> {
 
   // pisoB's earliest snapshot is BEFORE pisoA's, so if the read leaked pisoB rows
   // the earliest date would be wrong (EARLIEST_B, not EARLIEST_A).
-  await store.addValuationAnchorAndRipple(
+  await store.command.addValuationAnchor(
     {
       adjustsPriorCurve: true,
       assetId: "pisoB",
@@ -139,7 +139,7 @@ async function seedManyUnrelatedRows(store: WorthlineStore): Promise<void> {
   // earliest is also before pisoA — more unrelated noise the read must ignore.
   for (let i = 0; i < BAND; i += 1) {
     const dateKey = addDays(EARLIEST_B, i);
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -154,7 +154,7 @@ async function seedManyUnrelatedRows(store: WorthlineStore): Promise<void> {
   }
 
   // The TARGET asset's earliest appraisal — later than all the noise above.
-  await store.addValuationAnchorAndRipple(
+  await store.command.addValuationAnchor(
     {
       adjustsPriorCurve: true,
       assetId: "pisoA",

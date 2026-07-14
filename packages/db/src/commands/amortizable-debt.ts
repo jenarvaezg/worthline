@@ -86,7 +86,7 @@ export async function executeCreateAmortizationPlanCommand(
   command: CreateAmortizationPlanCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.createAmortizationPlanAndRipple(command.input, { today });
+  await store.command.createAmortizationPlan(command.input, { today });
   return { ok: true, value: undefined };
 }
 
@@ -95,7 +95,7 @@ export async function executeUpdateAmortizationPlanCommand(
   command: UpdateAmortizationPlanCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.updateAmortizationPlanAndRipple(
+  const changes = await store.command.updateAmortizationPlan(
     command.planId,
     command.input,
     { liabilityId: command.liabilityId, today },
@@ -108,7 +108,7 @@ export async function executeDeleteAmortizationPlanCommand(
   command: DeleteAmortizationPlanCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.deleteAmortizationPlanAndRipple({
+  const changes = await store.command.deleteAmortizationPlan({
     liabilityId: command.liabilityId,
     today,
   });
@@ -120,7 +120,7 @@ export async function executeAddInterestRateRevisionCommand(
   command: AddInterestRateRevisionCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.addInterestRateRevisionAndRipple(command.input, {
+  await store.command.addInterestRateRevision(command.input, {
     liabilityId: command.liabilityId,
     today,
   });
@@ -132,7 +132,7 @@ export async function executeUpdateInterestRateRevisionCommand(
   command: UpdateInterestRateRevisionCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.updateInterestRateRevisionAndRipple(
+  const changes = await store.command.updateInterestRateRevision(
     command.revisionId,
     command.input,
     { today },
@@ -145,7 +145,7 @@ export async function executeDeleteInterestRateRevisionCommand(
   command: DeleteInterestRateRevisionCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.deleteInterestRateRevisionAndRipple(command.revisionId, {
+  const changes = await store.command.deleteInterestRateRevision(command.revisionId, {
     today,
   });
   return { ok: true, value: { changes } };
@@ -156,7 +156,7 @@ export async function executeAddEarlyRepaymentCommand(
   command: AddEarlyRepaymentCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.addEarlyRepaymentAndRipple(command.input, {
+  await store.command.addEarlyRepayment(command.input, {
     liabilityId: command.liabilityId,
     today,
   });
@@ -168,7 +168,7 @@ export async function executeUpdateEarlyRepaymentCommand(
   command: UpdateEarlyRepaymentCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.updateEarlyRepaymentAndRipple(
+  const changes = await store.command.updateEarlyRepayment(
     command.repaymentId,
     command.input,
     { today },
@@ -181,7 +181,7 @@ export async function executeDeleteEarlyRepaymentCommand(
   command: DeleteEarlyRepaymentCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
-  const changes = await store.deleteEarlyRepaymentAndRipple(command.repaymentId, {
+  const changes = await store.command.deleteEarlyRepayment(command.repaymentId, {
     today,
   });
   return { ok: true, value: { changes } };
@@ -192,7 +192,7 @@ export async function executeCreateCurrentStateDebtCommand(
   command: CreateCurrentStateDebtCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.createCurrentStateDebtAndRipple({
+  await store.command.createCurrentStateDebt({
     plan: command.plan,
     rebaseline: command.rebaseline,
     today,
@@ -205,6 +205,6 @@ export async function executeRecalibrateDebtBalanceCommand(
   command: RecalibrateDebtBalanceCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.addBalanceRebaselineAndRipple(command.input, { today });
+  await store.command.addBalanceRebaseline(command.input, { today });
   return { ok: true, value: undefined };
 }

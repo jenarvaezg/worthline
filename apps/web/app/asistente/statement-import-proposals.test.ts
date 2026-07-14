@@ -6,7 +6,7 @@ import {
 } from "@web/patrimonio/importar-extracto/actions";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
-import { derivePosition } from "@worthline/domain";
+import { asInstant, derivePosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -206,6 +206,41 @@ describe("buildStatementImportProposal", () => {
 });
 
 describe("confirmStatementImportProposalAction regression", () => {
+  test("persists the source instant carried by a proposed statement row", async () => {
+    const { confirmStatementImportProposalAction } = await import(
+      "./statement-import-proposal-action"
+    );
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+    const proposal = await store.assistantProposals.create({ kind: "statement_import" });
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: {
+        name: "timed.csv",
+        provenance: "agent",
+        sha256: "8".repeat(64),
+      },
+      facts: [
+        {
+          currency: "EUR",
+          dateKey: "2024-04-10",
+          feesMinor: 0,
+          isin: "ES00WL000001",
+          kind: "buy",
+          occurredAt: asInstant("2024-04-10T11:25:00.000Z"),
+          pricePerUnit: "10",
+          units: "2",
+        },
+      ],
+    });
+
+    expect(
+      await confirmStatementImportProposalAction({ proposalId: proposal.id }, store),
+    ).toEqual({ created: 0, included: 1, status: "applied" });
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { occurredAt: "2024-04-10T11:25:00.000Z" },
+    ]);
+  });
+
   test("agent confirm matches manual import positions for the same CSV and resolver", async () => {
     const { confirmStatementImportProposalAction } = await import(
       "./statement-import-proposal-action"

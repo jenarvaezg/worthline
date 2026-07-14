@@ -116,7 +116,7 @@ async function seedExposure(): Promise<void> {
     providerSymbol: "CSPX.L",
   });
   // Value the ETF via a single opening BUY (10 units @ 200.00 = 2_000_00).
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "asset_etf",
       currency: "EUR",
@@ -147,7 +147,7 @@ async function seedExposure(): Promise<void> {
     ownership: owner,
     providerSymbol: "bitcoin",
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "asset_btc",
       currency: "EUR",

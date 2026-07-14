@@ -153,6 +153,7 @@ describe("schema migrations v38/v41", () => {
       "starts_at_baseline",
       "created_at",
       "source",
+      "batch_id",
     ]);
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),

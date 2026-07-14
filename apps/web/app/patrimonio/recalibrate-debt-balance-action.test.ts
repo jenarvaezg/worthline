@@ -13,8 +13,8 @@
  */
 
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { type Clock, fixedClock } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { recalibrateDebtBalanceAction } from "./actions";
@@ -92,7 +92,7 @@ async function seedAmortizableMortgage(): Promise<WorthlineStore> {
   // A past plan (ADR 0019): disbursed and cuota'd well before TODAY, so it
   // already has past-cuota snapshots to ripple against (prior art: the
   // debt-historical-snapshots seedAmortizable fixture).
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { asInstant } from "./dates";
 import {
   getStatementBrokerAdapter,
   isStatementBroker,
@@ -75,6 +76,7 @@ const fakeAdapter: StatementBrokerAdapter<{ isin: number; tag: number }> = {
           dateKey: "2024-01-01",
           feesMinor: 0,
           kind: "buy",
+          occurredAt: asInstant("2024-01-01T08:15:30.000Z"),
           pricePerUnit: "1",
           units: "1",
         },
@@ -106,6 +108,7 @@ describe("parseStatementWithAdapter — generic core (fake adapter)", () => {
     expect(result.value.rows).toHaveLength(2);
     expect(result.value.skipped).toHaveLength(1);
     expect(result.value.isin).toBe("AAA");
+    expect(result.value.rows[0]?.occurredAt).toBe("2024-01-01T08:15:30.000Z");
   });
 
   test("a row-level error aborts the whole load (all-or-nothing)", () => {

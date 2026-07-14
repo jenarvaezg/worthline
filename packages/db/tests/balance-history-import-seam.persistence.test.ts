@@ -37,7 +37,7 @@ async function seedAmortizableMortgage(): Promise<WorthlineStore> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",
@@ -58,7 +58,7 @@ describe("importBalanceHistoryAndRipple — batched re-baseline seam (#696)", ()
     const beforeOldest = await debtsAt(store, "2026-03-15");
     expect(beforeOldest).toBeDefined();
 
-    await store.importBalanceHistoryAndRipple({
+    await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -99,7 +99,7 @@ describe("importBalanceHistoryAndRipple — batched re-baseline seam (#696)", ()
   test("audit-trails each created re-baseline", async () => {
     const store = await seedAmortizableMortgage();
 
-    await store.importBalanceHistoryAndRipple({
+    await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -138,7 +138,7 @@ describe("importBalanceHistoryAndRipple — batched re-baseline seam (#696)", ()
     const store = await seedAmortizableMortgage();
     const before = await debtsAt(store, "2026-03-15");
 
-    const created = await store.importBalanceHistoryAndRipple({
+    const created = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [],
       today: TODAY,
@@ -154,7 +154,7 @@ describe("importBalanceHistoryAndRipple — batched re-baseline seam (#696)", ()
     const store = await seedAmortizableMortgage();
 
     await expect(
-      store.importBalanceHistoryAndRipple({
+      store.command.importBalanceHistory({
         liabilityId: "mortgage",
         rebaselines: [
           {

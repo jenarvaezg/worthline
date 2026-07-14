@@ -53,7 +53,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -115,7 +115,7 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // One atomic call: persist the 50/50 → 70/30 split and ripple the scope axis.
-    await store.updateLiabilityAndRippleOwnership(
+    await store.command.updateLiabilityOwnership(
       "mortgage",
       {
         ownership: [
@@ -151,7 +151,7 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     const before = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
 
     // Rename only — the split is unchanged, so the seam must NOT ripple.
-    await store.updateLiabilityAndRippleOwnership(
+    await store.command.updateLiabilityOwnership(
       "mortgage",
       {
         name: "Hipoteca renombrada",
@@ -212,7 +212,7 @@ async function seedCoOwnedHome(store: WorthlineStore): Promise<void> {
     ],
     type: "real_estate",
   });
-  await store.addValuationAnchorAndRipple(
+  await store.command.addValuationAnchor(
     {
       adjustsPriorCurve: true,
       assetId: "piso",
@@ -234,7 +234,7 @@ async function seedCoOwnedHome(store: WorthlineStore): Promise<void> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.0317",
       id: "plan1",
@@ -269,7 +269,7 @@ describe("updateAssetAndRippleOwnership for a real_estate holding (ADR 0020)", (
     expect(dates.length).toBeGreaterThan(2);
 
     // Correct the INTERNAL member split (40/25 → 30/35); household stays 65%.
-    await store.updateAssetAndRippleOwnership(
+    await store.command.updateAssetOwnership(
       "piso",
       {
         ownership: [
@@ -319,7 +319,7 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
         { memberId: "mA", shareBps: 4_000 },
       ],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fondo",
         currency: "EUR",
@@ -344,7 +344,7 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.0317",
         id: "plan1",
@@ -375,7 +375,7 @@ describe("updateAssetAndRippleOwnership for a non-real_estate holding (ADR 0020)
     expect(dates.length).toBeGreaterThan(0);
     const globalCost = 10 * 100_00; // cost basis, #183
 
-    await store.updateAssetAndRippleOwnership(
+    await store.command.updateAssetOwnership(
       "fondo",
       {
         ownership: [

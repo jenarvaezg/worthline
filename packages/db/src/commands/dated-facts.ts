@@ -1,3 +1,61 @@
+import {
+  type AddValuationAnchorInput,
+  type AssetStore,
+  type CreateInvestmentAssetInput,
+  type UpdateAssetInput,
+  type UpdateValuationAnchorInput,
+} from "@db/asset-store";
+import type { ContributionPlanStore } from "@db/contribution-plan-store";
+import {
+  BACKFILL_SNAPSHOT_ID_PREFIX,
+  buildHistoricalSnapshotDeps,
+  groupFrozenHoldingsByDate,
+  type HistoricalSnapshotDeps,
+  readFrozenIdentityCaptures,
+  readInvestmentIdentity,
+} from "@db/historical-snapshot-deps";
+import {
+  type AddBalanceAnchorInput,
+  type AddBalanceRebaselineInput,
+  type AddEarlyRepaymentInput,
+  type AddInterestRateRevisionInput,
+  type CreateAmortizationPlanInput,
+  type LiabilityStore,
+  type UpdateAmortizationPlanInput,
+  type UpdateBalanceAnchorInput,
+  type UpdateBalanceRebaselineInput,
+  type UpdateEarlyRepaymentInput,
+  type UpdateInterestRateRevisionInput,
+  type UpdateLiabilityInput,
+} from "@db/liability-store";
+import type { MigrateResult } from "@db/migrate";
+import {
+  type OperationsStore,
+  type UpdateInvestmentOperationInput,
+} from "@db/operations-store";
+import {
+  amortizationPlans,
+  assetOperations,
+  assetValuations,
+  connectedSources,
+  earlyRepayments,
+  interestRateRevisions,
+  liabilities,
+  liabilityBalanceAnchors,
+  liabilityBalanceRebaselines,
+  liabilityOwnerships,
+  positions,
+  snapshots,
+} from "@db/schema";
+import {
+  readSnapshotHoldings,
+  readSnapshots,
+  type SaveSnapshotInput,
+  type SnapshotHoldingRecord,
+  type SnapshotStore,
+} from "@db/snapshot-store";
+import { readAllOperations, type StoreContext, type StoreDb } from "@db/store-context";
+import type { CreateHousingHoldingCommand } from "@db/store-types";
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
@@ -25,65 +83,9 @@ import {
   resolveScopeMemberIds,
 } from "@worthline/domain";
 import { and, eq, like } from "drizzle-orm";
-
-import {
-  type AddValuationAnchorInput,
-  type AssetStore,
-  type CreateInvestmentAssetInput,
-  type UpdateAssetInput,
-  type UpdateValuationAnchorInput,
-} from "./asset-store";
-import type { ContributionPlanStore } from "./contribution-plan-store";
-import {
-  BACKFILL_SNAPSHOT_ID_PREFIX,
-  buildHistoricalSnapshotDeps,
-  groupFrozenHoldingsByDate,
-  type HistoricalSnapshotDeps,
-  readFrozenIdentityCaptures,
-  readInvestmentIdentity,
-} from "./historical-snapshot-deps";
-import {
-  type AddBalanceAnchorInput,
-  type AddBalanceRebaselineInput,
-  type AddEarlyRepaymentInput,
-  type AddInterestRateRevisionInput,
-  type CreateAmortizationPlanInput,
-  type LiabilityStore,
-  type UpdateAmortizationPlanInput,
-  type UpdateBalanceAnchorInput,
-  type UpdateBalanceRebaselineInput,
-  type UpdateEarlyRepaymentInput,
-  type UpdateInterestRateRevisionInput,
-  type UpdateLiabilityInput,
-} from "./liability-store";
-import type { MigrateResult } from "./migrate";
-import {
-  type OperationsStore,
-  type UpdateInvestmentOperationInput,
-} from "./operations-store";
-import {
-  amortizationPlans,
-  assetOperations,
-  assetValuations,
-  connectedSources,
-  earlyRepayments,
-  interestRateRevisions,
-  liabilities,
-  liabilityBalanceAnchors,
-  liabilityBalanceRebaselines,
-  liabilityOwnerships,
-  positions,
-  snapshots,
-} from "./schema";
-import {
-  readSnapshotHoldings,
-  readSnapshots,
-  type SaveSnapshotInput,
-  type SnapshotHoldingRecord,
-  type SnapshotStore,
-} from "./snapshot-store";
-import { readAllOperations, type StoreContext, type StoreDb } from "./store-context";
-import type { CreateHousingHoldingCommand } from "./store-types";
+import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
+import type { FactBatchTrigger } from "./types";
+import { createUnitOfWork } from "./unit-of-work";
 
 // ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────
 //
@@ -1371,16 +1373,22 @@ function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): bo
   return after.some((share) => beforeByMember.get(share.memberId) !== share.shareBps);
 }
 
+function throwCommandResultError(result: { error: string; code?: string }): never {
+  const error = new Error(result.error);
+  if (result.code !== undefined) Object.assign(error, { code: result.code });
+  throw error;
+}
+
 /**
- * The dated-fact persist-and-ripple seams (issue #489): the 25 store methods that
+ * Private dated-fact command implementations (issues #489/#972): the operations that
  * persist ONE dated fact (an operation, a valuation/balance anchor, an
  * amortization plan, a rate revision, an early repayment, a cadence/rate change,
  * or an ownership edit) AND ripple the historical snapshots it touches, each
- * atomically in one transaction (ADR 0020). Built as a factory so the monolith
- * can spread the result onto the public `WorthlineStore` object without holding
- * the bodies itself; the 25 method signatures stay declared on `WorthlineStore`.
+ * atomically in one transaction (ADR 0020/0062). The composition root supplies
+ * persistence ports and exposes only suffix-free intent methods through
+ * `CommandHost`; these implementation names never appear on `WorthlineStore`.
  */
-export interface DatedFactSeams {
+export interface DatedFactCommandImplementations {
   createAndLinkContributionOperation: (params: {
     contributionId: string;
     occurrenceId: string;
@@ -1426,6 +1434,7 @@ export interface DatedFactSeams {
     }>;
     propertyValuations?: AddValuationAnchorInput[];
     today?: string;
+    trigger: Extract<FactBatchTrigger, "assistant" | "statement">;
   }) => Promise<void>;
   deleteOperationAndRipple: (params: {
     operationId: string;
@@ -1586,7 +1595,7 @@ export interface DatedFactSeams {
   ) => Promise<void>;
 }
 
-export function createDatedFactSeams(
+export function createDatedFactCommandImplementations(
   ctx: StoreContext,
   stores: {
     assets: AssetStore;
@@ -1595,12 +1604,14 @@ export function createDatedFactSeams(
     operations: OperationsStore;
     contributionPlan: ContributionPlanStore;
   },
-): DatedFactSeams {
+): DatedFactCommandImplementations {
+  const uow = createUnitOfWork(ctx);
   return {
     createAndLinkContributionOperation: async (params) => {
       const today = params.today ?? new Date().toISOString().slice(0, 10);
       await ctx.transaction(async () => {
-        await stores.operations.recordOperation(params.operation);
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
+        await stores.operations.recordOperation(params.operation, { batchId });
         const workspace = await ctx.getWorkspace();
         if (workspace) {
           await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
@@ -1636,20 +1647,29 @@ export function createDatedFactSeams(
     },
     recordOperationAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      // One transaction so the persist + ripple commit or roll back together —
-      // the dated-fact contract is unrepresentable as "persisted, forgot to
-      // ripple" (ADR 0020).
-      await ctx.transaction(async () => {
-        await stores.operations.recordOperation(input);
-        const workspace = await ctx.getWorkspace();
-        if (!workspace) return;
-        await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
-          assetId: input.assetId,
-          mode: "record",
-          operationDateKey: input.executedAt.slice(0, 10),
-          today,
-        });
+      const result = await applyDatedFactsBatch(uow, {
+        batch: { trigger: "manual" },
+        ripple: async (operationDateKey) => {
+          const workspace = await ctx.getWorkspace();
+          if (!workspace) return;
+          await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
+            assetId: input.assetId,
+            mode: "record",
+            operationDateKey,
+            today,
+          });
+        },
+        steps: [
+          {
+            persist: async (batchId) => {
+              await stores.operations.recordOperation(input, { batchId });
+              return input.executedAt.slice(0, 10);
+            },
+          },
+        ],
+        today,
       });
+      if (!result.ok) throwCommandResultError(result);
     },
     recordOperationsAndRipple: async ({
       assetId,
@@ -1663,9 +1683,10 @@ export function createDatedFactSeams(
       // commit or roll back together (ADR 0020 / 0018). The affected from-date
       // window is derived here from the persisted operations, never by the caller.
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
         const operationDateKeys: string[] = [];
         for (const input of creates) {
-          await stores.operations.recordOperation(input);
+          await stores.operations.recordOperation(input, { batchId });
           operationDateKeys.push(input.executedAt.slice(0, 10));
         }
         for (const input of overwrites) {
@@ -1691,6 +1712,7 @@ export function createDatedFactSeams(
       funds,
       propertyValuations = [],
       today: todayOpt,
+      trigger,
     }) => {
       const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       const operationDateKeysByAsset = new Map<string, string[]>();
@@ -1702,6 +1724,7 @@ export function createDatedFactSeams(
       };
 
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger });
         for (const fund of funds) {
           if (fund.kind === "new") {
             await stores.assets.createInvestmentAsset(fund.asset);
@@ -1711,7 +1734,7 @@ export function createDatedFactSeams(
         for (const fund of funds) {
           const assetId = fund.kind === "new" ? fund.asset.id : fund.assetId;
           for (const input of fund.creates) {
-            await stores.operations.recordOperation(input);
+            await stores.operations.recordOperation(input, { batchId });
             noteOperationDate(assetId, input.executedAt.slice(0, 10));
           }
 
@@ -1729,11 +1752,11 @@ export function createDatedFactSeams(
 
         for (const history of balanceHistories) {
           for (const rebaseline of history.rebaselines) {
-            await stores.liabilities.addBalanceRebaseline(rebaseline);
+            await stores.liabilities.addBalanceRebaseline(rebaseline, { batchId });
           }
         }
         for (const valuation of propertyValuations) {
-          await stores.assets.addValuationAnchor(valuation);
+          await stores.assets.addValuationAnchor(valuation, { batchId });
         }
 
         const workspace = await ctx.getWorkspace();
@@ -1829,23 +1852,29 @@ export function createDatedFactSeams(
     },
     addValuationAnchorAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      // One transaction so the persist + ripple commit or roll back together
-      // (ADR 0020). The from-date is the anchor's own date.
-      await ctx.transaction(async () => {
-        await stores.assets.addValuationAnchor(input);
-        const workspace = await ctx.getWorkspace();
-        if (!workspace) return;
-        await rippleHistoricalSnapshotsForValuation(
-          ctx,
-          workspace,
-          stores.snapshots.saveSnapshot,
+      const result = await applyDatedFactsBatch(uow, {
+        batch: { trigger: "manual" },
+        ripple: async (fromDateKey) => {
+          const workspace = await ctx.getWorkspace();
+          if (!workspace) return;
+          await rippleHistoricalSnapshotsForValuation(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            { assetId: input.assetId, fromDateKey, today },
+          );
+        },
+        steps: [
           {
-            assetId: input.assetId,
-            fromDateKey: input.valuationDate,
-            today,
+            persist: async (batchId) => {
+              await stores.assets.addValuationAnchor(input, { batchId });
+              return input.valuationDate;
+            },
           },
-        );
+        ],
+        today,
       });
+      if (!result.ok) throwCommandResultError(result);
     },
     updateValuationAnchorAndRipple: (anchorId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
@@ -1953,6 +1982,7 @@ export function createDatedFactSeams(
       // The from-date is min(first past anchor, earliest snapshot) — same rule as
       // firstHousingCurrentValueRippleDate in the old action layer.
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
         await stores.assets.updateAssetValuation(assetId, currentValue);
         // Upsert a today-dated market anchor (adjustsPriorCurve: true).
         const existing = (await stores.assets.readValuationAnchors(assetId)).find(
@@ -1964,13 +1994,16 @@ export function createDatedFactSeams(
             valueMinor: currentValue,
           });
         } else {
-          await stores.assets.addValuationAnchor({
-            adjustsPriorCurve: true,
-            assetId,
-            id: ctx.newId(),
-            valuationDate: today,
-            valueMinor: currentValue,
-          });
+          await stores.assets.addValuationAnchor(
+            {
+              adjustsPriorCurve: true,
+              assetId,
+              id: ctx.newId(),
+              valuationDate: today,
+              valueMinor: currentValue,
+            },
+            { batchId },
+          );
         }
         // Derive from-date: first anchor through today, else earliest snapshot (see #184).
         const firstAnchorDate = (await stores.assets.readValuationAnchors(assetId))
@@ -2081,14 +2114,15 @@ export function createDatedFactSeams(
       // roll back together (ADR 0020). The from-date is the acquisition date,
       // derived behind the seam from the command's own acquisition anchor.
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
         await stores.assets.createManualAsset(command.asset);
-        await stores.assets.addValuationAnchor(command.acquisitionAnchor);
+        await stores.assets.addValuationAnchor(command.acquisitionAnchor, { batchId });
         await stores.assets.setAnnualAppreciationRate(
           command.asset.id,
           command.annualAppreciationRate,
         );
         if (command.initialValuation) {
-          await stores.assets.addValuationAnchor(command.initialValuation);
+          await stores.assets.addValuationAnchor(command.initialValuation, { batchId });
         }
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
@@ -2412,8 +2446,9 @@ export function createDatedFactSeams(
       // One transaction: the plan row, the rebaseline fact, the balance sync,
       // and the single ripple commit or roll back together (ADR 0020 / 0056).
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
         await stores.liabilities.createAmortizationPlan(plan);
-        await stores.liabilities.addBalanceRebaseline(rebaseline);
+        await stores.liabilities.addBalanceRebaseline(rebaseline, { batchId });
         await stores.liabilities.updateLiabilityBalance(
           rebaseline.liabilityId,
           rebaseline.outstandingBalanceMinor,
@@ -2440,12 +2475,13 @@ export function createDatedFactSeams(
       rebaselines,
       today: todayOpt,
     }) => {
-      if (rebaselines.length === 0) return 0;
       const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
         for (const rebaseline of rebaselines) {
-          await stores.liabilities.addBalanceRebaseline(rebaseline);
+          await stores.liabilities.addBalanceRebaseline(rebaseline, { batchId });
         }
+        if (rebaselines.length === 0) return;
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
         const fromDateKey = rebaselines.reduce(
@@ -2469,22 +2505,34 @@ export function createDatedFactSeams(
     },
     addBalanceRebaselineAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      await ctx.transaction(async () => {
-        await stores.liabilities.addBalanceRebaseline(input);
-        const workspace = await ctx.getWorkspace();
-        if (!workspace) return;
-        await rippleHistoricalSnapshotsForDebt(
-          ctx,
-          workspace,
-          stores.snapshots.saveSnapshot,
+      const result = await applyDatedFactsBatch(uow, {
+        batch: { trigger: "manual" },
+        ripple: async (fromDateKey) => {
+          const workspace = await ctx.getWorkspace();
+          if (!workspace) return;
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              fromDateKey,
+              kind: "amortizable-rebaseline",
+              liabilityId: input.liabilityId,
+              today,
+            },
+          );
+        },
+        steps: [
           {
-            fromDateKey: input.baselineDate,
-            kind: "amortizable-rebaseline",
-            liabilityId: input.liabilityId,
-            today,
+            persist: async (batchId) => {
+              await stores.liabilities.addBalanceRebaseline(input, { batchId });
+              return input.baselineDate;
+            },
           },
-        );
+        ],
+        today,
       });
+      if (!result.ok) throwCommandResultError(result);
     },
     updateBalanceRebaselineAndRipple: (rebaselineId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
@@ -2584,23 +2632,34 @@ export function createDatedFactSeams(
     },
     addBalanceAnchorAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
-      // Atomic persist + ripple (ADR 0020). The from-date is the anchor's own date.
-      await ctx.transaction(async () => {
-        await stores.liabilities.addBalanceAnchor(input);
-        const workspace = await ctx.getWorkspace();
-        if (!workspace) return;
-        await rippleHistoricalSnapshotsForDebt(
-          ctx,
-          workspace,
-          stores.snapshots.saveSnapshot,
+      const result = await applyDatedFactsBatch(uow, {
+        batch: { trigger: "manual" },
+        ripple: async (fromDateKey) => {
+          const workspace = await ctx.getWorkspace();
+          if (!workspace) return;
+          await rippleHistoricalSnapshotsForDebt(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              fromDateKey,
+              kind: "anchor",
+              liabilityId: input.liabilityId,
+              today,
+            },
+          );
+        },
+        steps: [
           {
-            fromDateKey: input.anchorDate,
-            kind: "anchor",
-            liabilityId: input.liabilityId,
-            today,
+            persist: async (batchId) => {
+              await stores.liabilities.addBalanceAnchor(input, { batchId });
+              return input.anchorDate;
+            },
           },
-        );
+        ],
+        today,
       });
+      if (!result.ok) throwCommandResultError(result);
     },
     updateBalanceAnchorAndRipple: (anchorId, input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);

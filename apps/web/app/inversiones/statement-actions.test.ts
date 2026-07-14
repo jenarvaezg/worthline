@@ -6,8 +6,8 @@
  * summary. Prior art: ajustes/numista-actions.test.ts.
  */
 
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -98,6 +98,7 @@ describe("confirmStatementAction (#174)", () => {
       expect(op.kind).toBe("buy");
       expect(op.currency).toBe("EUR");
       expect(op.feesMinor).toBe(0);
+      expect(op.occurredAt).toBeUndefined();
     }
     expect(ops.map((op) => op.executedAt).sort()).toEqual([
       "2024-02-01",

@@ -43,9 +43,8 @@ import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import type {
   AgentViewReadStore,
-  AssetStore,
   AssistantProposalStore,
-  LiabilityStore,
+  WorthlineStore,
 } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
@@ -77,8 +76,8 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 export interface ChatReadStore {
   agentView: AgentViewReadStore;
   assistantProposals?: AssistantProposalStore;
-  liabilities?: LiabilityStore;
-  assets?: AssetStore;
+  liabilities?: WorthlineStore["liabilities"];
+  assets?: WorthlineStore["assets"];
 }
 
 export interface ChatToolsInput {

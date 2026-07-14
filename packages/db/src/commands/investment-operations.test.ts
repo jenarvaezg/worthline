@@ -3,8 +3,9 @@
  * against an in-memory store — no server actions.
  */
 
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
+import { asInstant } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -230,6 +231,7 @@ describe("investment operation commands (#971)", () => {
           feesMinor: 0,
           id: "op_handtyped",
           kind: "buy",
+          occurredAt: asInstant("2024-03-01T07:30:00.000Z"),
           pricePerUnit: "100",
           source: "statement",
           units: "7.18",
@@ -243,6 +245,7 @@ describe("investment operation commands (#971)", () => {
     expect(ops).toHaveLength(2);
     const march = ops.find((op) => op.executedAt === "2024-03-01")!;
     expect(march.id).toBe("op_handtyped");
+    expect(march.occurredAt).toBe("2024-03-01T07:30:00.000Z");
     expect(march.units).toBe("7.18");
 
     store.close();

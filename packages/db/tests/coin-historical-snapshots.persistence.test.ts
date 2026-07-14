@@ -40,7 +40,7 @@ async function recordBuy(
   units: string,
   price: string,
 ): Promise<void> {
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "fund",
       currency: "EUR",
@@ -104,7 +104,7 @@ async function syncCoins(
   positions: SourcePositionInput[],
   syncedAt = "2026-06-15T10:00:00.000Z",
 ): Promise<void> {
-  await store.syncConnectedSource({ positions, sourceId, syncedAt });
+  await store.command.syncConnectedSource({ positions, sourceId, syncedAt });
 }
 
 async function grossAt(

@@ -26,7 +26,11 @@
 import type { FormErrorContext } from "@web/intake";
 import { priceFreshnessLabel } from "@web/intake";
 import type { InvestmentOperation, PriceFreshnessState } from "@worthline/domain";
-import { formatMoneyMinorPrivacy, maskMoneyString } from "@worthline/domain";
+import {
+  compareInvestmentOperations,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
+} from "@worthline/domain";
 import { type FormEvent, useOptimistic, useTransition } from "react";
 
 import {
@@ -275,7 +279,7 @@ export default function OperationsEditor({
               </thead>
               <tbody>
                 {[...optimisticOps]
-                  .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
+                  .sort((a, b) => compareInvestmentOperations(b, a))
                   .map((op) => (
                     <tr key={op.id}>
                       <td>{op.executedAt}</td>

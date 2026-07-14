@@ -36,7 +36,7 @@ async function recordBuy(
   pricePerUnit: string,
 ): Promise<void> {
   // ADR 0020: the persist-and-ripple loop rides ONE store seam method.
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "fund",
       currency: "EUR",
@@ -156,7 +156,7 @@ describe("historical snapshots from operations", () => {
     // Delete the 2024-01-10 buy through the seam (persist + ripple, ADR 0020).
     const ops = await store.operations.readOperations("fund");
     const target = ops.find((op) => op.executedAt === "2024-01-10")!;
-    const deleted = await store.deleteOperationAndRipple({
+    const deleted = await store.command.deleteInvestmentOperation({
       operationId: target.id,
       today: TODAY,
     });
@@ -243,7 +243,7 @@ describe("ripple preserves frozen history (ADR 0012)", () => {
     const op = (await store.operations.readOperations("fund")).find(
       (o) => o.executedAt === "2024-01-10",
     )!;
-    await store.deleteOperationAndRipple({
+    await store.command.deleteInvestmentOperation({
       operationId: op.id,
       today: TODAY,
     });

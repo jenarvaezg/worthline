@@ -154,7 +154,7 @@ describe("saveCurrentStateAmortizationAction — baseline debt", () => {
 
   test("refuses to overwrite an existing amortization plan", async () => {
     const store = await seedAmortizableMortgage();
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         disbursementDate: "2020-01-01",

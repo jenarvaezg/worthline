@@ -59,7 +59,7 @@ async function seed(store: WorthlineStore): Promise<void> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       id: "plan1",
@@ -140,7 +140,7 @@ describe("editAssetAction — ownership-split ripple (#172)", () => {
       type: "mortgage",
     });
     await store.liabilities.setDebtModel("mortgage", "amortizable");
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",

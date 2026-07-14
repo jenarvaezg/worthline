@@ -35,7 +35,7 @@ describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () =
     const store = await createInMemoryStore();
     await seedWorkspace(store);
 
-    await store.createHousingHoldingAndRipple(
+    await store.command.createHousingHolding(
       {
         asset: {
           currency: "EUR",
@@ -71,7 +71,7 @@ describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () =
     const store = await createInMemoryStore();
     await seedWorkspace(store);
 
-    await store.createHousingHoldingAndRipple(
+    await store.command.createHousingHolding(
       {
         asset: {
           currency: "EUR",

@@ -1,3 +1,4 @@
+import { asInstant } from "./dates";
 import type { DecimalString } from "./decimal";
 import {
   addUnits,
@@ -16,6 +17,19 @@ import type {
 import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 
+/** Canonical ledger order: calendar date, optional UTC source instant, stable id. */
+export function compareInvestmentOperations(
+  left: InvestmentOperation,
+  right: InvestmentOperation,
+): number {
+  const byDate = left.executedAt
+    .slice(0, 10)
+    .localeCompare(right.executedAt.slice(0, 10));
+  if (byDate !== 0) return byDate;
+  const byOccurredAt = (left.occurredAt ?? "").localeCompare(right.occurredAt ?? "");
+  return byOccurredAt !== 0 ? byOccurredAt : left.id.localeCompare(right.id);
+}
+
 /** Operations whose executedAt date falls on or before the target date. */
 export function operationsUpTo(
   operations: readonly InvestmentOperation[] | undefined,
@@ -33,11 +47,7 @@ export function latestOperationPrice(
 ): DecimalString | undefined {
   let latest: InvestmentOperation | undefined;
   for (const operation of operations) {
-    if (
-      !latest ||
-      operation.executedAt > latest.executedAt ||
-      (operation.executedAt === latest.executedAt && operation.id > latest.id)
-    ) {
+    if (!latest || compareInvestmentOperations(operation, latest) > 0) {
       latest = operation;
     }
   }
@@ -55,6 +65,13 @@ export function latestOperationPrice(
 export function createInvestmentOperation(
   input: CreateInvestmentOperationInput,
 ): InvestmentOperation {
+  if (
+    input.occurredAt !== undefined &&
+    (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(input.occurredAt) ||
+      !Number.isFinite(Date.parse(input.occurredAt)))
+  ) {
+    throw new Error("Operation occurredAt must be a UTC timestamp.");
+  }
   if (compareUnits(input.units, "0") <= 0) {
     throw new Error("Operation units must be positive.");
   }
@@ -77,6 +94,9 @@ export function createInvestmentOperation(
     feesMinor,
     id: input.id,
     kind: input.kind,
+    ...(input.occurredAt === undefined
+      ? {}
+      : { occurredAt: asInstant(input.occurredAt) }),
     pricePerUnit: input.pricePerUnit,
     source: input.source ?? "manual",
     units: input.units,
@@ -134,17 +154,7 @@ export function createInvestmentOperationSafe(
 
   return {
     ok: true,
-    value: {
-      assetId: input.assetId,
-      currency: input.currency,
-      executedAt: input.executedAt,
-      feesMinor,
-      id: input.id,
-      kind: input.kind,
-      pricePerUnit: input.pricePerUnit,
-      source: input.source ?? "manual",
-      units: input.units,
-    },
+    value: createInvestmentOperation(input),
   };
 }
 
@@ -170,11 +180,7 @@ export function derivePosition(
   let realizedMinor = 0;
   const warnings: string[] = [];
 
-  const ordered = [...operations].sort((left, right) =>
-    left.executedAt === right.executedAt
-      ? left.id.localeCompare(right.id)
-      : left.executedAt.localeCompare(right.executedAt),
-  );
+  const ordered = [...operations].sort(compareInvestmentOperations);
 
   for (const operation of ordered) {
     if (operation.kind === "buy") {

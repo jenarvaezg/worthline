@@ -1,3 +1,4 @@
+import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { CurrencyCode, MoneyMinor } from "./money";
 
@@ -10,6 +11,8 @@ export interface InvestmentOperation {
   assetId: string;
   kind: OperationKind;
   executedAt: string;
+  /** Optional source instant, normalized to UTC. Same-day ordering uses this before id. */
+  occurredAt?: Instant;
   units: DecimalString;
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
@@ -22,6 +25,8 @@ export interface CreateInvestmentOperationInput {
   assetId: string;
   kind: OperationKind;
   executedAt: string;
+  /** Importer/connector source instant. Manual and date-only imports leave it absent. */
+  occurredAt?: string;
   units: DecimalString;
   pricePerUnit: DecimalString;
   currency: CurrencyCode;

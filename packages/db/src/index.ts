@@ -4,8 +4,11 @@ import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
 import { createAssistantProposalStore } from "./assistant-proposal-store";
+import {
+  applyPostMigrateReripples,
+  createDatedFactCommandImplementations,
+} from "./commands/dated-facts";
 import { createCommandHost } from "./commands/host";
-import { executeImportBalanceHistoryCommand } from "./commands/import-balance-history";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
 import {
@@ -13,7 +16,6 @@ import {
   openDatabaseTarget,
   resolveDatabaseTarget,
 } from "./database-target";
-import { applyPostMigrateReripples, createDatedFactSeams } from "./dated-fact-seams";
 import { openLibsqlClient } from "./libsql-client";
 import { type MigrateResult, migrate } from "./migrate";
 import { appSettings, assets, auditLog, liabilities, warningOverrides } from "./schema";
@@ -32,13 +34,11 @@ export type {
   AddEarlyRepaymentCommand,
   AddInterestRateRevisionCommand,
   AddValuationAnchorCommand,
-  ApplyDatedFactsBatchParams,
   CommandExecutor,
   CommandHost,
   CommandResult,
   CreateAmortizationPlanCommand,
   CreateCurrentStateDebtCommand,
-  DatedFactStep,
   DeleteAmortizationPlanCommand,
   DeleteEarlyRepaymentCommand,
   DeleteInterestRateRevisionCommand,
@@ -56,7 +56,6 @@ export type {
   RipplePlan,
   SetAnnualAppreciationRateCommand,
   SetHousingValuationCadenceCommand,
-  UnitOfWork,
   UpdateAmortizationPlanCommand,
   UpdateAssetOwnershipSplitCommand,
   UpdateEarlyRepaymentCommand,
@@ -65,9 +64,6 @@ export type {
   UpdateValuationAnchorCommand,
 } from "./commands";
 export {
-  applyDatedFactsBatch,
-  createCommandHost,
-  createUnitOfWork,
   executeAddEarlyRepaymentCommand,
   executeAddInterestRateRevisionCommand,
   executeAddValuationAnchorCommand,
@@ -78,7 +74,6 @@ export {
   executeDeleteInterestRateRevisionCommand,
   executeDeleteInvestmentOperationCommand,
   executeDeleteValuationAnchorCommand,
-  executeImportBalanceHistoryCommand,
   executeMergeStatementOperationsCommand,
   executeRecalibrateDebtBalanceCommand,
   executeRecordHousingValuationCommand,
@@ -365,9 +360,32 @@ async function buildStore(
       gapFillHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, today),
   });
 
-  const commandHost = createCommandHost(ctx, {
-    saveSnapshot: snapshotStore.saveSnapshot,
+  const datedFactCommands = createDatedFactCommandImplementations(ctx, {
+    assets: assetStore,
+    liabilities: liabilityStore,
+    snapshots: snapshotStore,
+    operations: operationsStore,
+    contributionPlan: contributionPlanStore,
   });
+  const connectedSourceSeams = createConnectedSourceSeams(ctx, {
+    connectedSources: connectedSourceStore,
+    snapshots: snapshotStore,
+  });
+  const snapshotOrchestrator = createSnapshotOrchestrator(ctx, {
+    snapshots: snapshotStore,
+  });
+
+  const commandHost = createCommandHost(
+    ctx,
+    { saveSnapshot: snapshotStore.saveSnapshot },
+    {
+      assistantProposals: assistantProposalStore,
+      connectedSources: connectedSourceSeams,
+      datedFacts: datedFactCommands,
+      factPersistence: { addBalanceRebaseline: liabilityStore.addBalanceRebaseline },
+      snapshotOrchestrator,
+    },
+  );
 
   const store: WorthlineStore = {
     snapshots: snapshotStore,
@@ -382,93 +400,7 @@ async function buildStore(
     contributionPlan: contributionPlanStore,
     agentView: agentViewReadStore,
     assistantProposals: assistantProposalStore,
-    applyAssistantStatementProposalAndRipple: async ({ proposalId, ...params }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposalStore.read(proposalId);
-        if (!proposal) {
-          throw new Error(`Assistant proposal "${proposalId}" was not found.`);
-        }
-        if (proposal.kind !== "statement_import") {
-          throw new Error(`Assistant proposal "${proposalId}" has an unsupported kind.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await store.applyStatementImportAndRipple(params);
-        await assistantProposalStore.markApplied(proposalId);
-      }),
-    applyAssistantMixedProposalAndRipple: async ({ proposalId, ...params }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposalStore.read(proposalId);
-        if (!proposal || proposal.kind !== "mixed_document_import") {
-          throw new Error(`Assistant proposal "${proposalId}" is not a mixed import.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await store.applyStatementImportAndRipple(params);
-        await assistantProposalStore.markApplied(proposalId);
-      }),
-    applyAssistantBalanceHistoryProposalAndRipple: async ({
-      proposalId,
-      liabilityId,
-      rebaselines,
-      today,
-    }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposalStore.read(proposalId);
-        if (!proposal || proposal.kind !== "balance_history_import") {
-          throw new Error(`Assistant proposal "${proposalId}" is not a debt history.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        const result = await executeImportBalanceHistoryCommand(store, {
-          liabilityId,
-          rebaselines,
-          today,
-        });
-        if (!result.ok) throw new Error(result.error);
-        await assistantProposalStore.markApplied(proposalId);
-      }),
-    applyAssistantPropertyValuationProposalAndRipple: async ({
-      proposalId,
-      anchor,
-      today,
-    }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposalStore.read(proposalId);
-        if (!proposal || proposal.kind !== "property_valuation_anchor") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is not a property valuation.`,
-          );
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await store.addValuationAnchorAndRipple(anchor, { today });
-        await assistantProposalStore.markApplied(proposalId);
-      }),
     command: commandHost,
-    // The connected-source cross-cutting seams (issue #487) — syncConnectedSource
-    // and applyBinanceHistoryAndRipple — live in their own module; spread the
-    // factory result onto the public store object here.
-    ...createConnectedSourceSeams(ctx, {
-      connectedSources: connectedSourceStore,
-      snapshots: snapshotStore,
-    }),
-    // The snapshot-orchestration seams (issue #488) — backfillHistoricalSnapshots
-    // and backfillInvestmentPricesAndRipple — live in their own module; spread the
-    // factory result onto the public store object here.
-    ...createSnapshotOrchestrator(ctx, { snapshots: snapshotStore }),
     close: () => {
       client.close();
     },
@@ -592,17 +524,6 @@ async function buildStore(
         id: row.id,
       }));
     },
-    // The dated-fact persist-and-ripple seams (issue #489) — the 25 *AndRipple
-    // methods that persist ONE dated fact and ripple the snapshots it touches —
-    // live in their own module; spread the factory result onto the public store
-    // object here.
-    ...createDatedFactSeams(ctx, {
-      assets: assetStore,
-      liabilities: liabilityStore,
-      snapshots: snapshotStore,
-      operations: operationsStore,
-      contributionPlan: contributionPlanStore,
-    }),
   };
 
   // Post-migrate snapshot reconstruction (issue #491): the v18 / v33 backfills

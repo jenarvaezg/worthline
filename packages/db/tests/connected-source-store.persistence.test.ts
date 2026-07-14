@@ -8,8 +8,9 @@
  */
 
 import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore, openLibsqlClient } from "@db/index";
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { createInMemoryStore } from "@db/testing";
 import {
   type BinanceHistoryCurve,
   type CoinPosition,
@@ -537,7 +538,7 @@ describe("connected-source store — freezeIntoStoredHolding (Binance, multi-run
       "2026-06-16T10:00:00.000Z",
     );
     // Freeze a monthly-close snapshot row for a completed past month (ADR 0008).
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: btcCurve({
         monthEndBalances: { "2026-03": "0.5" },
@@ -607,7 +608,7 @@ describe("connected-source store — removeSourceHoldings (Binance, multi-rung)"
       "2026-06-16T10:00:00.000Z",
     );
     // Freeze a past month-end row so we can prove the REMOVE path keeps history too.
-    await store.applyBinanceHistoryAndRipple({
+    await store.command.applyBinanceHistory({
       sourceId,
       curve: btcCurve({
         monthEndBalances: { "2026-03": "0.5" },

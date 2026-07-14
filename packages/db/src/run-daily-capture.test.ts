@@ -36,7 +36,7 @@ async function seededMarketStore(
     priceProvider: "yahoo",
     providerSymbol: symbol,
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId,
       currency: "EUR",

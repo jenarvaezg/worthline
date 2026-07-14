@@ -236,6 +236,7 @@ function rowToCreateInput(assetId: string, row: ParsedStatementRow, id: string) 
     pricePerUnit: row.pricePerUnit,
     source: "statement" as const,
     units: row.units,
+    ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
   };
 }
 
@@ -321,6 +322,7 @@ export async function confirmImportStatementAction(
             pricePerUnit: row.pricePerUnit,
             source: "statement" as const,
             units: row.units,
+            ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
           })),
         };
       }
@@ -352,7 +354,7 @@ export async function confirmImportStatementAction(
       };
     });
 
-    await store.applyStatementImportAndRipple({ funds, today });
+    await store.command.applyStatementImport({ funds, today });
 
     return {
       includedCount: plan.included.length,

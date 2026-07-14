@@ -17,11 +17,11 @@ import {
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-
 import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import type { FactPersistenceProvenance } from "./fact-provenance";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
 import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
@@ -157,7 +157,10 @@ export interface AssetStore {
   /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
   hardDeleteAsset: (assetId: string) => Promise<number>;
   /** Add a housing valuation anchor (market appraisal or improvement). */
-  addValuationAnchor: (input: AddValuationAnchorInput) => Promise<void>;
+  addValuationAnchor: (
+    input: AddValuationAnchorInput,
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   /** Read an asset's valuation anchors, ordered ascending by date. */
   readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
   /** Read ONE valuation anchor by its id, or null. Used by the dated-fact seam. */
@@ -215,7 +218,7 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) => ctx.transaction(() => hardDeleteAssetTx(ctx, assetId)),
-    addValuationAnchor: (input) => addValuationAnchor(ctx, input),
+    addValuationAnchor: (input, opts) => addValuationAnchor(ctx, input, opts),
     readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
     readValuationAnchorById: (anchorId) => readValuationAnchorById(ctx, anchorId),
     deleteValuationAnchor: (anchorId) => deleteValuationAnchor(ctx, anchorId),
@@ -244,6 +247,7 @@ function assertValuationDate(valuationDate: string): void {
 async function addValuationAnchor(
   ctx: StoreContext,
   input: AddValuationAnchorInput,
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   if (!Number.isInteger(input.valueMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -257,6 +261,7 @@ async function addValuationAnchor(
     .values({
       adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
       assetId: input.assetId,
+      batchId: provenance?.batchId ?? null,
       id: input.id,
       source: input.source ?? "manual",
       valuationDate: input.valuationDate,

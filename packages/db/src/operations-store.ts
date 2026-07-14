@@ -3,12 +3,14 @@ import type {
   CreateInvestmentOperationInput,
   CurrencyCode,
   DecimalString,
+  Instant,
   InvestmentOperation,
   OperationKind,
   OperationSource,
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
+import type { FactPersistenceProvenance } from "./fact-provenance";
 
 import {
   assetOperations,
@@ -56,11 +58,15 @@ export interface UpdateInvestmentOperationInput {
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
   feesMinor: number;
+  occurredAt?: Instant;
   source?: OperationSource;
 }
 
 export interface OperationsStore {
-  recordOperation: (input: CreateInvestmentOperationInput) => Promise<void>;
+  recordOperation: (
+    input: CreateInvestmentOperationInput,
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
   deleteOperation: (
@@ -90,7 +96,7 @@ export interface OperationsStore {
 
 export function createOperationsStore(ctx: StoreContext): OperationsStore {
   return {
-    recordOperation: (input) => recordOperation(ctx, input),
+    recordOperation: (input, opts) => recordOperation(ctx, input, opts),
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     updateOperation: (input) => updateOperation(ctx, input),
@@ -108,6 +114,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
 async function recordOperation(
   ctx: StoreContext,
   input: CreateInvestmentOperationInput,
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   await assertAssetAllowsOperationWrite(ctx, input.assetId);
 
@@ -119,11 +126,13 @@ async function recordOperation(
     .insert(assetOperations)
     .values({
       assetId: operation.assetId,
+      batchId: provenance?.batchId ?? null,
       currency: operation.currency,
       executedAt: asDateKey(operation.executedAt.slice(0, 10)),
       feesMinor: operation.feesMinor,
       id: operation.id,
       kind: operation.kind,
+      occurredAt: operation.occurredAt ?? null,
       pricePerUnit: operation.pricePerUnit,
       source: operation.source ?? "manual",
       units: operation.units,
@@ -139,7 +148,11 @@ async function readOperations(
     .select()
     .from(assetOperations)
     .where(eq(assetOperations.assetId, assetId))
-    .orderBy(asc(assetOperations.executedAt), asc(assetOperations.id))
+    .orderBy(
+      asc(assetOperations.executedAt),
+      asc(assetOperations.occurredAt),
+      asc(assetOperations.id),
+    )
     .all();
   return rows.map(toOperation);
 }
@@ -153,6 +166,7 @@ async function deleteOperation(
     .select({
       assetId: assetOperations.assetId,
       kind: assetOperations.kind,
+      occurredAt: assetOperations.occurredAt,
       executedAt: assetOperations.executedAt,
       units: assetOperations.units,
       pricePerUnit: assetOperations.pricePerUnit,
@@ -214,6 +228,7 @@ async function deleteOperation(
     executedAt: row.executedAt,
     feesMinor: row.feesMinor,
     kind: row.kind,
+    occurredAt: row.occurredAt,
     operationId,
     pricePerUnit: row.pricePerUnit,
     source: row.source,
@@ -251,6 +266,7 @@ async function updateOperation(
       currency: input.currency,
       feesMinor: input.feesMinor,
       kind: input.kind,
+      occurredAt: input.occurredAt ?? null,
       pricePerUnit: input.pricePerUnit,
       source: input.source ?? "statement",
       units: input.units,
@@ -264,6 +280,7 @@ async function updateOperation(
     feesMinor: input.feesMinor,
     kind: input.kind,
     operationId: input.id,
+    occurredAt: input.occurredAt ?? null,
     pricePerUnit: input.pricePerUnit,
     source: input.source ?? "statement",
     units: input.units,

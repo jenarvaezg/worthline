@@ -11,8 +11,8 @@
  *     gap-fill surfaces failure to the caller instead of only console.error.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import type {
   NetWorthSnapshot,
   SnapshotHoldingRow,
@@ -265,7 +265,9 @@ describe("standalone backfill is atomic (#185)", () => {
     const before = (await store.snapshots.readSnapshots()).map((s) => s.id);
     expect(before).toEqual(["histsnap_household_2024-02-10"]);
 
-    await expect(store.backfillHistoricalSnapshots("2026-06-12")).rejects.toThrow();
+    await expect(
+      store.command.backfillHistoricalSnapshots("2026-06-12"),
+    ).rejects.toThrow();
 
     // Rollback: only the pre-seeded sentinel survives; no histsnap rows for
     // 2024-01-10 were left behind by the failed run.

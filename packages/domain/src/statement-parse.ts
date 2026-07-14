@@ -17,6 +17,7 @@
  * import planner, so rows preserve their own ISIN instead of being rejected here.
  */
 
+import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { OperationKind } from "./investment-types";
@@ -44,6 +45,8 @@ export interface ParsedStatementRow {
   name?: string;
   /** ISO `YYYY-MM-DD` execution date. */
   dateKey: string;
+  /** Optional source timestamp, normalized to UTC, for deterministic same-day order. */
+  occurredAt?: Instant;
   /**
    * From the broker's direction signal (`Tipo de operación` when the export
    * carries it; else a negative amount/units); stored with absolute values.

@@ -256,7 +256,11 @@ export async function syncNumistaAction(
   try {
     await runActionWithStore(
       (store) =>
-        store.syncConnectedSource({ positions: drafts, sourceId, syncedAt: nowIso }),
+        store.command.syncConnectedSource({
+          positions: drafts,
+          sourceId,
+          syncedAt: nowIso,
+        }),
       _store,
     );
   } catch {

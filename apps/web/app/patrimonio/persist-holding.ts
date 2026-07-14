@@ -56,7 +56,7 @@ export async function persistManualAssetCreation(
     // store seam. The anchor ids stay resolved here — `createStableId`/`seed` is a
     // determinism source, not clock/ripple arithmetic — and the from-date
     // (acquisition date) lives behind the seam.
-    await store.createHousingHoldingAndRipple(
+    await store.command.createHousingHolding(
       {
         asset: assetCommand,
         acquisitionAnchor: {

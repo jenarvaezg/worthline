@@ -1,45 +1,45 @@
-/**
- * UnitOfWork (#966): wraps the store transaction seam for command executors.
- */
-
-import { createInMemoryStore } from "@worthline/db";
+import type { StoreContext } from "@db/store-context";
 import { describe, expect, test } from "vitest";
 
-describe("UnitOfWork via store.command.uow", () => {
-  test("commits work inside the store transaction", async () => {
-    const store = await createInMemoryStore();
-    await store.workspace.initializeWorkspace({
-      members: [{ id: "m1", name: "Member" }],
-      mode: "individual",
+import { createUnitOfWork } from "./unit-of-work";
+
+function transactionalContext(state: { value: string }): StoreContext {
+  return {
+    transaction: async (work) => {
+      const before = state.value;
+      try {
+        return await work();
+      } catch (error) {
+        state.value = before;
+        throw error;
+      }
+    },
+  } as StoreContext;
+}
+
+describe("private command UnitOfWork", () => {
+  test("commits successful work", async () => {
+    const state = { value: "Before" };
+    const uow = createUnitOfWork(transactionalContext(state));
+
+    await uow.transaction(() => {
+      state.value = "After";
     });
 
-    await store.command.uow.transaction(async () => {
-      await store.workspace.updateMember({ id: "m1", name: "Renamed" });
-    });
-
-    const workspace = await store.workspace.readWorkspace();
-    expect(workspace?.members[0]?.name).toBe("Renamed");
-
-    store.close();
+    expect(state.value).toBe("After");
   });
 
-  test("rolls back when work inside the transaction throws", async () => {
-    const store = await createInMemoryStore();
-    await store.workspace.initializeWorkspace({
-      members: [{ id: "m1", name: "Before" }],
-      mode: "individual",
-    });
+  test("rolls back failed work", async () => {
+    const state = { value: "Before" };
+    const uow = createUnitOfWork(transactionalContext(state));
 
     await expect(
-      store.command.uow.transaction(async () => {
-        await store.workspace.updateMember({ id: "m1", name: "During" });
+      uow.transaction(() => {
+        state.value = "During";
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");
 
-    const workspace = await store.workspace.readWorkspace();
-    expect(workspace?.members[0]?.name).toBe("Before");
-
-    store.close();
+    expect(state.value).toBe("Before");
   });
 });

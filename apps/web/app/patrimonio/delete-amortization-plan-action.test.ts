@@ -100,7 +100,7 @@ describe("deleteAmortizationPlanAction — ripple correctness", () => {
     // of when this test runs.
     // The plan persist + ripple ride one seam call, generating plan-derived
     // historical snapshots.
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       {
         annualInterestRate: "0.03",
         id: "plan1",

@@ -8,7 +8,13 @@ import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
 
 const TODAY = "2026-06-15";
 
+const createdBatches: Array<{ id: string; trigger: string }> = [];
 const immediateUow = {
+  createFactBatch: async ({ trigger }: { trigger: string }) => {
+    const id = `batch-${createdBatches.length + 1}`;
+    createdBatches.push({ id, trigger });
+    return id;
+  },
   transaction: <T>(work: () => T | Promise<T>) => Promise.resolve(work()),
 };
 
@@ -21,13 +27,15 @@ describe("applyDatedFactsBatch", () => {
       today: TODAY,
       steps: [
         {
-          persist: async () => {
+          persist: async (batchId) => {
+            expect(batchId).toMatch(/^batch-/);
             persisted.push("2024-06-01");
             return "2024-06-01";
           },
         },
         {
-          persist: async () => {
+          persist: async (batchId) => {
+            expect(batchId).toMatch(/^batch-/);
             persisted.push("2025-01-01");
             return "2025-01-01";
           },
@@ -82,6 +90,7 @@ describe("applyDatedFactsBatch", () => {
   });
 
   test("returns null ripple plan for an empty batch", async () => {
+    const before = createdBatches.length;
     const rippleCalls: string[] = [];
     const result = await applyDatedFactsBatch(immediateUow, {
       today: TODAY,
@@ -92,6 +101,7 @@ describe("applyDatedFactsBatch", () => {
     });
 
     expect(result).toEqual({ ok: true, value: null });
+    expect(createdBatches).toHaveLength(before + 1);
     expect(rippleCalls).toEqual([]);
   });
 

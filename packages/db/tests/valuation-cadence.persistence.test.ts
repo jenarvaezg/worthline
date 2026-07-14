@@ -11,8 +11,8 @@
  * debts are unaffected.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
@@ -114,7 +114,7 @@ describe("valuation cadence — threading into the debt engine", () => {
       initialCapitalMinor: 150_000_00,
       termMonths: 240,
     } as const;
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       { ...PLAN, id: "plan1", liabilityId: "mortgage" },
       { today: TODAY },
     );
@@ -159,7 +159,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
       initialCapitalMinor: 150_000_00,
       termMonths: 240,
     } as const;
-    await store.createAmortizationPlanAndRipple(
+    await store.command.createAmortizationPlan(
       { ...PLAN, id: "plan1", liabilityId: "mortgage" },
       { today: TODAY },
     );
@@ -175,7 +175,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -200,13 +200,15 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
     expect(await debtsAt(store, "2026-03-20")).toBe(stepValue);
 
     // Flip to interpolated AND re-ripple → the snapshot interpolates.
-    await store.setValuationCadenceAndRipple("mortgage", "interpolated", {
+    await store.command.setLiabilityValuationCadence("mortgage", "interpolated", {
       today: TODAY,
     });
     expect(await debtsAt(store, "2026-03-20")).toBe(interpolatedValue);
 
     // Flip back to step AND re-ripple → the stepped balance is restored.
-    await store.setValuationCadenceAndRipple("mortgage", "step", { today: TODAY });
+    await store.command.setLiabilityValuationCadence("mortgage", "step", {
+      today: TODAY,
+    });
     expect(await debtsAt(store, "2026-03-20")).toBe(stepValue);
     store.close();
   });
@@ -236,7 +238,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
     });
     await store.liabilities.setDebtModel("card", "revolving");
 
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 10_000_00,
@@ -245,7 +247,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
       },
       { today: TODAY },
     );
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-03-01",
         balanceMinor: 4_000_00,
@@ -264,7 +266,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
       name: "Fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    await store.recordOperationAndRipple(
+    await store.command.recordInvestmentOperation(
       {
         assetId: "fund",
         currency: "EUR",
@@ -298,7 +300,9 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
 
     expect(await debtsAt(store, "2025-02-01")).toBe(stepValue);
 
-    await store.setValuationCadenceAndRipple("card", "interpolated", { today: TODAY });
+    await store.command.setLiabilityValuationCadence("card", "interpolated", {
+      today: TODAY,
+    });
     expect(await debtsAt(store, "2025-02-01")).toBe(interpolatedValue);
     store.close();
   });
@@ -327,7 +331,7 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
       type: "debt",
     });
     await store.liabilities.setDebtModel("friend", "informal");
-    await store.addBalanceAnchorAndRipple(
+    await store.command.addBalanceAnchor(
       {
         anchorDate: "2025-01-01",
         balanceMinor: 5_000_00,
@@ -339,7 +343,9 @@ describe("valuation cadence — re-ripple on change (setValuationCadenceAndRippl
 
     const before = await debtsAt(store, "2025-01-01");
     // Even set to interpolated, an informal balance steps — the toggle is a no-op.
-    await store.setValuationCadenceAndRipple("friend", "interpolated", { today: TODAY });
+    await store.command.setLiabilityValuationCadence("friend", "interpolated", {
+      today: TODAY,
+    });
     expect(await store.liabilities.readValuationCadence("friend")).toBe("interpolated");
     expect(await debtsAt(store, "2025-01-01")).toBe(before);
     store.close();

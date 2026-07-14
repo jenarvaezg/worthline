@@ -162,7 +162,7 @@ async function seedRichSnapshot(): Promise<void> {
     name: "Fondo indexado",
     ownership: owner,
   });
-  await store.recordOperationAndRipple(
+  await store.command.recordInvestmentOperation(
     {
       assetId: "asset_fund",
       currency: "EUR",

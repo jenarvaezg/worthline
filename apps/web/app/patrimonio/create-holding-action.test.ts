@@ -9,8 +9,8 @@
  * ignored). These tests assert the resulting store state + the success redirect.
  */
 
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import {
   defaultInstrumentForLiability,
   fixedClock,

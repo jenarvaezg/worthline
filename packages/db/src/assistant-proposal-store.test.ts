@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { ParsedStatementRow } from "@worthline/domain";
+import { asInstant, type ParsedStatementRow } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
 import { createInMemoryStore, createWorthlineStore } from "./index";
@@ -18,6 +18,29 @@ const row: ParsedStatementRow = {
 };
 
 describe("assistant proposal store", () => {
+  it("round-trips an optional statement source instant", async () => {
+    const store = await createInMemoryStore();
+    const proposal = await store.assistantProposals.create({ kind: "statement_import" });
+    const timedRow: ParsedStatementRow = {
+      ...row,
+      occurredAt: asInstant("2026-06-15T09:42:13.000Z"),
+    };
+
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: {
+        name: "timed.csv",
+        provenance: "agent",
+        sha256: "9".repeat(64),
+      },
+      facts: [timedRow],
+    });
+
+    expect(await store.assistantProposals.read(proposal.id)).toMatchObject({
+      documents: [{ facts: [{ row: timedRow }] }],
+    });
+    store.close();
+  });
+
   it("round-trips typed debt observations without raw document contents", async () => {
     const store = await createInMemoryStore();
     const proposal = await store.assistantProposals.create({
@@ -194,7 +217,7 @@ describe("assistant proposal store", () => {
       facts: [row],
     });
 
-    await store.applyAssistantStatementProposalAndRipple({
+    await store.command.applyAssistantStatementProposal({
       funds: [
         {
           asset: {

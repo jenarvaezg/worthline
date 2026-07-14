@@ -24,7 +24,7 @@ async function seed() {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await store.createAmortizationPlanAndRipple(
+  await store.command.createAmortizationPlan(
     {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",
@@ -121,7 +121,7 @@ describe("balance-history assistant proposal (#768)", () => {
     );
     expect(built.ok && projected.ok).toBe(true);
     if (!built.ok || !projected.ok) return;
-    await store.applyAssistantBalanceHistoryProposalAndRipple({
+    await store.command.applyAssistantBalanceHistoryProposal({
       liabilityId: "mortgage",
       proposalId: built.proposal.draft.proposalId,
       rebaselines: projected.plan.composed.map((row) => ({

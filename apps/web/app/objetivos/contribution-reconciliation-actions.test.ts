@@ -61,8 +61,10 @@ describe("contribution reconciliation actions", () => {
         linkOperation: vi.fn(),
         setOccurrenceState: vi.fn(),
       },
-      createAndLinkContributionOperation: vi.fn(),
-      applyStoredContributionValue: vi.fn(),
+      command: {
+        createAndLinkContributionOperation: vi.fn(),
+        applyStoredContributionValue: vi.fn(),
+      },
     };
   }
 
@@ -83,7 +85,7 @@ describe("contribution reconciliation actions", () => {
     await expect(
       createAndLinkContributionOperationAction(form, store as never),
     ).rejects.toThrow(/^REDIRECT:/);
-    expect(store.createAndLinkContributionOperation).toHaveBeenCalledWith(
+    expect(store.command.createAndLinkContributionOperation).toHaveBeenCalledWith(
       expect.objectContaining({
         contributionId: "plan-1",
         occurrenceId: "plan-1:2026-07-01",
@@ -144,7 +146,7 @@ describe("contribution reconciliation actions", () => {
     await expect(
       applyStoredValueContributionAction(form, store as never),
     ).rejects.toThrow(/^REDIRECT:/);
-    expect(store.applyStoredContributionValue).toHaveBeenCalledWith({
+    expect(store.command.applyStoredContributionValue).toHaveBeenCalledWith({
       contributionId: "plan-1",
       occurrenceId: "plan-1:2026-07-01",
       assetId: "asset-1",

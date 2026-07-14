@@ -40,7 +40,7 @@ export async function executeRecordInvestmentOperationCommand(
   command: RecordInvestmentOperationCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  await store.recordOperationAndRipple(command.operation, { today });
+  await store.command.recordInvestmentOperation(command.operation, { today });
   return { ok: true, value: undefined };
 }
 
@@ -49,7 +49,7 @@ export async function executeDeleteInvestmentOperationCommand(
   command: DeleteInvestmentOperationCommand,
 ): Promise<CommandResult<DeleteInvestmentOperationResult | null>> {
   const today = defaultToday(command.today);
-  const deleted = await store.deleteOperationAndRipple({
+  const deleted = await store.command.deleteInvestmentOperation({
     operationId: command.operationId,
     today,
   });
@@ -61,7 +61,7 @@ export async function executeMergeStatementOperationsCommand(
   command: MergeStatementOperationsCommand,
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
-  const params: Parameters<WorthlineStore["recordOperationsAndRipple"]>[0] = {
+  const params: Parameters<WorthlineStore["command"]["mergeInvestmentOperations"]>[0] = {
     assetId: command.assetId,
     creates: command.creates,
     overwrites: command.overwrites,
@@ -70,6 +70,6 @@ export async function executeMergeStatementOperationsCommand(
   if (command.deletes !== undefined) {
     params.deletes = command.deletes;
   }
-  await store.recordOperationsAndRipple(params);
+  await store.command.mergeInvestmentOperations(params);
   return { ok: true, value: undefined };
 }
