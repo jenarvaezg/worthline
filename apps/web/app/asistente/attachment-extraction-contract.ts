@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { ATTACHMENT_TYPES_V1, MAX_ATTACHMENT_FILE_NAME_CHARS } from "./attachment-types";
+
 const MEBIBYTE = 1024 * 1024;
 const ATTACHMENT_LIMIT_REASONS = ["rows", "size", "type"] as const;
 const EXTRACTOR_FAILURE_KINDS = ["permanent", "transient"] as const;
@@ -12,23 +14,7 @@ const EXTRACTOR_FAILURE_CODES = [
 
 /** The complete v1 attachment envelope, shared by image and spreadsheet extractors. */
 export const ATTACHMENT_EXTRACTION_LIMITS_V1 = {
-  acceptedTypes: [
-    { extensions: [".png"], kind: "image", mimeTypes: ["image/png"] },
-    { extensions: [".jpeg", ".jpg"], kind: "image", mimeTypes: ["image/jpeg"] },
-    { extensions: [".webp"], kind: "image", mimeTypes: ["image/webp"] },
-    { extensions: [".heic"], kind: "image", mimeTypes: ["image/heic"] },
-    { extensions: [".heif"], kind: "image", mimeTypes: ["image/heif"] },
-    {
-      extensions: [".csv"],
-      kind: "spreadsheet",
-      mimeTypes: ["application/csv", "application/vnd.ms-excel", "text/csv"],
-    },
-    {
-      extensions: [".xlsx"],
-      kind: "spreadsheet",
-      mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
-    },
-  ],
+  acceptedTypes: ATTACHMENT_TYPES_V1,
   // Vercel Functions reject request bodies above 4.5 MB before the route runs.
   // Four MiB leaves room for multipart framing and the text conversation while
   // keeping every accepted upload inside the deployed transport boundary.
@@ -180,7 +166,16 @@ export function parseExtractionResult(input: unknown): AttachmentExtractionResul
 export function checkAttachmentLimits(
   input: AttachmentLimitInput,
 ): Extract<AttachmentExtractionResult, { status: "out_of_limits" }> | null {
-  const fileName = input.fileName.trim().toLowerCase();
+  const trimmedFileName = input.fileName.trim();
+  if (trimmedFileName.length > MAX_ATTACHMENT_FILE_NAME_CHARS) {
+    return {
+      message: "El nombre del archivo supera el límite de 255 caracteres.",
+      reason: "type",
+      status: "out_of_limits",
+    };
+  }
+
+  const fileName = trimmedFileName.toLowerCase();
   const mimeType = input.mimeType.trim().toLowerCase();
   const acceptedType = ATTACHMENT_EXTRACTION_LIMITS_V1.acceptedTypes.find((type) =>
     type.extensions.some((extension) => fileName.endsWith(extension)),

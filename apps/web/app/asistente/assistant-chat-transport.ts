@@ -1,6 +1,8 @@
 import { deriveScreenContext } from "@web/asistente/screen-context";
 import { DefaultChatTransport, type UIMessage, type UIMessageChunk } from "ai";
 
+import { attachmentMimeTypeForFileName } from "./attachment-types";
+
 interface MultipartBodyInput {
   attachment: File;
   messages: UIMessage[];
@@ -13,11 +15,7 @@ export function buildAssistantMultipartBody({
   screenContext,
 }: MultipartBodyInput): FormData {
   const body = new FormData();
-  const fallbackMimeType = attachment.name.toLowerCase().endsWith(".csv")
-    ? "text/csv"
-    : attachment.name.toLowerCase().endsWith(".xlsx")
-      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      : "";
+  const fallbackMimeType = attachmentMimeTypeForFileName(attachment.name);
   const transportedAttachment =
     attachment.type === "" && fallbackMimeType
       ? new File([attachment], attachment.name, { type: fallbackMimeType })

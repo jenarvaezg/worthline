@@ -13,6 +13,8 @@ import {
 } from "@ai-sdk/provider";
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
+import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
+import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import {
   readProviderCooldowns,
@@ -36,6 +38,9 @@ import { POST } from "./route";
 
 vi.mock("@web/read-store-target", () => ({ readStoreTarget: vi.fn() }));
 vi.mock("@web/asistente/chat-model", () => ({ resolveChatModels: vi.fn() }));
+vi.mock("@web/asistente/attachment-image-extractor", () => ({
+  extractPositionsFromImage: vi.fn(),
+}));
 vi.mock("@web/asistente/provider-cooldown-store", () => ({
   readProviderCooldowns: vi.fn(),
   recordProviderCooldown: vi.fn(),
@@ -191,6 +196,14 @@ function attachmentRequest(
   body.set("screenContext", "null");
   body.set("attachment", new File([contents], fileName, { type: mimeType }));
   return new Request("http://127.0.0.1/api/chat", { method: "POST", body });
+}
+
+function imageAttachmentRequest(
+  contents = "SECRET-PIXELS",
+  fileName = "posiciones.png",
+  mimeType = "image/png",
+): Request {
+  return attachmentRequest(contents, fileName, mimeType);
 }
 
 function userMessage(text: string) {
@@ -483,6 +496,95 @@ describe("POST /api/chat", () => {
     );
     expect(JSON.stringify(model.doStreamCalls)).toContain("1234.56");
     expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("extracts an image through the dedicated seam and grounds the pool only with validated JSON", async () => {
+    const model = simpleAnswerModel("Revisaría la lectura de ACME.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("cerebras", model)]);
+    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+      parseExtractionResult({
+        data: {
+          positions: [
+            {
+              currency: "USD",
+              marketValueEur: 1200,
+              name: "Acme Incorporated",
+              ticker: "ACME",
+              uncertain: true,
+              units: 12,
+            },
+          ],
+          totalEur: 1200,
+          warnings: ["Revisa el ticker antes de usar esta lectura."],
+        },
+        status: "valid",
+      }),
+    );
+
+    const response = await POST(imageAttachmentRequest());
+    const streamed = await response.text();
+    const modelInput = JSON.stringify(model.doStreamCalls);
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(streamed).toContain("ACME");
+    expect(streamed).toContain("Revisa el ticker");
+    expect(streamed).toContain("Revisaría la lectura de ACME.");
+    expect(modelInput).toContain("Acme Incorporated");
+    expect(modelInput).not.toContain("SECRET-PIXELS");
+    expect(extractPositionsFromImage).toHaveBeenCalledWith({
+      bytes: expect.any(Uint8Array),
+      fileName: "posiciones.png",
+      mimeType: "image/png",
+    });
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders invalid image output honestly without calling the conversational pool", async () => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+      parseExtractionResult({
+        data: { positions: [{ name: "Falta el resto" }], warnings: [] },
+        status: "valid",
+      }),
+    );
+
+    const response = await POST(imageAttachmentRequest());
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("datos incompletos o malformados");
+    expect(model.doStreamCalls).toHaveLength(0);
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps chat operational after the image extractor exhausts transient retries", async () => {
+    const model = simpleAnswerModel("Seguimos sin la captura.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("cerebras", model)]);
+    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+      parseExtractionResult({
+        code: "extractor_unavailable",
+        failure: "transient",
+        message: "No he podido leer la captura ahora mismo. Puedes seguir conversando.",
+        status: "failure",
+      }),
+    );
+
+    const failedResponse = await POST(imageAttachmentRequest());
+    const failedStream = await failedResponse.text();
+
+    expect(failedResponse.status).toBe(200);
+    expect(failedStream).toContain("No he podido leer la captura ahora mismo");
+    expect(model.doStreamCalls).toHaveLength(0);
+
+    const nextResponse = await POST(
+      chatRequest({ messages: [userMessage("Sigamos sin la captura")] }),
+    );
+    expect(nextResponse.status).toBe(200);
+    expect(await nextResponse.text()).toContain("Seguimos sin la captura.");
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
   it("returns an honest nonfatal stream for unknown headers without calling the pool", async () => {
