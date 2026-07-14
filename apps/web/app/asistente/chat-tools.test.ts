@@ -11,13 +11,25 @@ import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { createChatTools } from "@web/asistente/chat-tools";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
-import type { AgentViewReadStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { AgentViewReadStore, WorthlineStore } from "@worthline/db";
+import { createInMemoryStore as createWorthlineInMemoryStore } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const SEED_TIMEOUT_MS = 15_000;
+const openStores = new Set<WorthlineStore>();
+
+async function createInMemoryStore(): Promise<WorthlineStore> {
+  const store = await createWorthlineInMemoryStore();
+  openStores.add(store);
+  return store;
+}
+
+afterEach(() => {
+  for (const store of openStores) store.close();
+  openStores.clear();
+});
 
 async function seededStore() {
   const store = await createInMemoryStore();
