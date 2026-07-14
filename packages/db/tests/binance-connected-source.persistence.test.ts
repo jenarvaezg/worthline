@@ -11,7 +11,7 @@
 
 import type { SourcePositionInput, WorthlineStore } from "@db/index";
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore } from "@db/testing";
 import { describe, expect, test } from "vitest";
 
 const MEMBER_ID = "mJ";

@@ -255,7 +255,11 @@ async function seedConnectedSource(
   // Synced once with fixed positions; never refreshed (demo refreshers are no-ops),
   // so the mirror's valuation is frozen in the fixture.
   const syncedAt = `${resolveRelativeDate(asOf, source.syncedAt)}T12:00:00.000Z`;
-  await store.connectedSources.syncPositions(sourceId, source.positions, syncedAt);
+  await store.command.syncConnectedSource({
+    positions: source.positions,
+    sourceId,
+    syncedAt,
+  });
   return { sourceId, spec: source };
 }
 

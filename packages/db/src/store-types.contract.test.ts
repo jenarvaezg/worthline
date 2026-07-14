@@ -13,5 +13,8 @@ describe("public WorthlineStore mutation boundary", () => {
       "addBalanceRebaseline",
     );
     expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty("updateLiability");
+    expectTypeOf<WorthlineStore["connectedSources"]>().not.toHaveProperty(
+      "syncPositions",
+    );
   });
 });

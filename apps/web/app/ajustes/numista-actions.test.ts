@@ -7,7 +7,7 @@
  */
 
 import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test, vi } from "vitest";
 
 vi.mock("next/headers", () => ({

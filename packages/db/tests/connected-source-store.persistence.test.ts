@@ -8,8 +8,9 @@
  */
 
 import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore, openLibsqlClient } from "@db/index";
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
+import { createInMemoryStore } from "@db/testing";
 import {
   type BinanceHistoryCurve,
   type CoinPosition,

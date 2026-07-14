@@ -76,6 +76,8 @@ type PublicOperationsStore = Omit<
   "deleteOperation" | "recordOperation" | "updateOperation"
 >;
 
+type PublicConnectedSourceStore = Omit<ConnectedSourceStore, "syncPositions">;
+
 export interface WorthlineStoreOptions {
   databasePath?: string;
   dataDir?: string;
@@ -185,7 +187,7 @@ interface LegacyWorthlineStore {
   /** Focused workspace lifecycle & member store (Slice R5). */
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
-  connectedSources: ConnectedSourceStore;
+  connectedSources: PublicConnectedSourceStore;
   /** Intermediate goals + their assigned holdings (PRD #421, #424). */
   goals: GoalStore;
   /** Hand-entered exposure profiles keyed by security identity (PRD #539, ADR 0039). */

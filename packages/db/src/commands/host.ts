@@ -1,4 +1,7 @@
-import type { AssistantProposalStore } from "@db/assistant-proposal-store";
+import type {
+  AssistantProposal,
+  AssistantProposalStore,
+} from "@db/assistant-proposal-store";
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { LiabilityStore } from "@db/liability-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
@@ -87,6 +90,25 @@ interface InternalCommandHostDependencies {
   snapshotOrchestrator: SnapshotOrchestrator;
 }
 
+async function applyDraftAssistantProposal(
+  ctx: StoreContext,
+  assistantProposals: AssistantProposalStore,
+  proposalId: string,
+  requireExpectedKind: (proposal: AssistantProposal | null) => AssistantProposal,
+  apply: () => Promise<unknown>,
+): Promise<void> {
+  await ctx.transaction(async () => {
+    const proposal = requireExpectedKind(await assistantProposals.read(proposalId));
+    if (proposal.status !== "draft") {
+      throw new Error(
+        `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
+      );
+    }
+    await apply();
+    await assistantProposals.markApplied(proposalId);
+  });
+}
+
 export function createCommandHost(
   ctx: StoreContext,
   snapshots: { saveSnapshot: SnapshotStore["saveSnapshot"] },
@@ -142,73 +164,72 @@ export function createCommandHost(
     addValuationAnchor: datedFacts.addValuationAnchorAndRipple,
     applyBinanceHistory: connectedSources.applyBinanceHistoryAndRipple,
     applyAssistantStatementProposal: async ({ proposalId, ...params }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposals.read(proposalId);
-        if (!proposal)
-          throw new Error(`Assistant proposal "${proposalId}" was not found.`);
-        if (proposal.kind !== "statement_import") {
-          throw new Error(`Assistant proposal "${proposalId}" has an unsupported kind.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await datedFacts.applyStatementImportAndRipple(params);
-        await assistantProposals.markApplied(proposalId);
-      }),
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal)
+            throw new Error(`Assistant proposal "${proposalId}" was not found.`);
+          if (proposal.kind !== "statement_import") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" has an unsupported kind.`,
+            );
+          }
+          return proposal;
+        },
+        () => datedFacts.applyStatementImportAndRipple(params),
+      ),
     applyAssistantMixedProposal: async ({ proposalId, ...params }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposals.read(proposalId);
-        if (!proposal || proposal.kind !== "mixed_document_import") {
-          throw new Error(`Assistant proposal "${proposalId}" is not a mixed import.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await datedFacts.applyStatementImportAndRipple(params);
-        await assistantProposals.markApplied(proposalId);
-      }),
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "mixed_document_import") {
+            throw new Error(`Assistant proposal "${proposalId}" is not a mixed import.`);
+          }
+          return proposal;
+        },
+        () => datedFacts.applyStatementImportAndRipple(params),
+      ),
     applyAssistantBalanceHistoryProposal: async ({
       proposalId,
       liabilityId,
       rebaselines,
       today,
     }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposals.read(proposalId);
-        if (!proposal || proposal.kind !== "balance_history_import") {
-          throw new Error(`Assistant proposal "${proposalId}" is not a debt history.`);
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await importBalanceHistory(
-          { liabilityId, rebaselines, ...(today === undefined ? {} : { today }) },
-          { trigger: "assistant" },
-        );
-        await assistantProposals.markApplied(proposalId);
-      }),
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "balance_history_import") {
+            throw new Error(`Assistant proposal "${proposalId}" is not a debt history.`);
+          }
+          return proposal;
+        },
+        () =>
+          importBalanceHistory(
+            { liabilityId, rebaselines, ...(today === undefined ? {} : { today }) },
+            { trigger: "assistant" },
+          ),
+      ),
     applyAssistantPropertyValuationProposal: async ({ proposalId, anchor, today }) =>
-      ctx.transaction(async () => {
-        const proposal = await assistantProposals.read(proposalId);
-        if (!proposal || proposal.kind !== "property_valuation_anchor") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is not a property valuation.`,
-          );
-        }
-        if (proposal.status !== "draft") {
-          throw new Error(
-            `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
-          );
-        }
-        await datedFacts.addValuationAnchorAndRipple(anchor, { today });
-        await assistantProposals.markApplied(proposalId);
-      }),
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "property_valuation_anchor") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" is not a property valuation.`,
+            );
+          }
+          return proposal;
+        },
+        () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
+      ),
     applyStatementImport: datedFacts.applyStatementImportAndRipple,
     applyStoredContributionValue: datedFacts.applyStoredContributionValue,
     backfillHistoricalSnapshots: snapshotOrchestrator.backfillHistoricalSnapshots,

@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 
 import type { AssetStore } from "./asset-store";
+import type { ConnectedSourceStore } from "./connected-source-store";
 import {
   createInMemoryStore as createPublicInMemoryStore,
   createStoreFromSqlite as createPublicStoreFromSqlite,
@@ -15,9 +16,10 @@ import type { WorthlineStore } from "./store-types";
  */
 export type PersistenceTestStore = Omit<
   WorthlineStore,
-  "assets" | "liabilities" | "operations"
+  "assets" | "connectedSources" | "liabilities" | "operations"
 > & {
   assets: AssetStore;
+  connectedSources: ConnectedSourceStore;
   liabilities: LiabilityStore;
   operations: OperationsStore;
 };
