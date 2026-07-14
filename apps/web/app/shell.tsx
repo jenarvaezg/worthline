@@ -110,8 +110,8 @@ export default function Shell({
       {/* ── Page content ────────────────────────────────────────────── */}
       {children}
 
-      {/* ── Persistence footer ──────────────────────────────────────── */}
-      <footer className="persistenceBar">
+      {/* ── Persistence footer — franja de remate en cubierta (#909) ── */}
+      <footer className="persistenceBar coverSurface">
         <span>{persistence.displayPath}</span>
         <span>guardado · {savedAt}</span>
       </footer>

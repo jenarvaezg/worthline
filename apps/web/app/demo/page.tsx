@@ -31,37 +31,46 @@ export default async function DemoLanding({
   }
 
   return (
-    <main className="demoLanding">
-      <header className="demoLandingHead">
-        <p className="demoKicker">worthline · demo</p>
-        <h1>Patrimonio neto, con datos de mentira</h1>
-        <p className="demoLede">
-          Esto es una demostración pública de solo lectura. Elige un perfil para explorar
-          la app con una cartera ficticia pero coherente — nada de lo que ves es real y no
-          puedes cambiar nada.
-        </p>
-      </header>
+    // Puerta en registro de cubierta (#829/#909): elegir persona = abrir el
+    // libro. .demoLanding queda como medida interior (compartida con /admin,
+    // que sigue en papel); las tarjetas de persona son hojas encartadas.
+    <main className="demoCover coverSurface">
+      <div className="demoLanding">
+        <header className="demoLandingHead">
+          <p className="demoKicker">worthline · demo</p>
+          <h1>Patrimonio neto, con datos de mentira</h1>
+          <p className="demoLede">
+            Esto es una demostración pública de solo lectura. Elige un perfil para
+            explorar la app con una cartera ficticia pero coherente — nada de lo que ves
+            es real y no puedes cambiar nada.
+          </p>
+        </header>
 
-      <ul className="demoPersonaGrid">
-        {PERSONA_IDS.map((id) => {
-          const meta = PERSONA_META[id];
-          return (
-            <li key={id}>
-              {/* POST to the persona route (mirrors /scope): sets the cookie,
+        <ul className="demoPersonaGrid">
+          {PERSONA_IDS.map((id) => {
+            const meta = PERSONA_META[id];
+            return (
+              <li key={id}>
+                {/* POST to the persona route (mirrors /scope): sets the cookie,
                   clears wl_scope, redirects into the app. The route also serves a
                   GET deep-link (/demo/persona?persona=…) for shareable links. */}
-              <form action="/demo/persona" className="demoPersonaCard" method="post">
-                <input name="persona" type="hidden" value={id} />
-                <h2>{meta.label}</h2>
-                <p>{meta.pitch}</p>
-                <button className="demoPersonaCta" type="submit">
-                  Explorar como {meta.label} →
-                </button>
-              </form>
-            </li>
-          );
-        })}
-      </ul>
+                <form
+                  action="/demo/persona"
+                  className="demoPersonaCard coverSheet"
+                  method="post"
+                >
+                  <input name="persona" type="hidden" value={id} />
+                  <h2>{meta.label}</h2>
+                  <p>{meta.pitch}</p>
+                  <button className="demoPersonaCta" type="submit">
+                    Explorar como {meta.label} →
+                  </button>
+                </form>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </main>
   );
 }

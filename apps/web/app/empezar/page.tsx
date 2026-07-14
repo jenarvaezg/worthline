@@ -51,16 +51,11 @@ export default async function EmpezarPage({ searchParams }: EmpezarPageProps) {
 
   return (
     <main className="workspace empezarPage">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brandMark" aria-hidden="true">
-            wl
-          </span>
-          <div>
-            <h1 className="brandName">worthline</h1>
-            <p>Patrimonio neto local</p>
-          </div>
-        </div>
+      {/* Masthead híbrido (#829/#909): banda de cubierta sobre cuerpo de
+          papel — el login es la cubierta; /empezar, la primera página. */}
+      <header className="coverSurface coverMasthead empezarMasthead">
+        <p className="empezarEyebrow">Patrimonio neto local</p>
+        <h1>worthline</h1>
       </header>
 
       <section className="empezarSection" aria-label="Crear workspace">

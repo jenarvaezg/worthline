@@ -155,7 +155,47 @@
   --paper: var(--cover);
 
   background-color: var(--cover);
+  background-image:
+    radial-gradient(120% 90% at 78% 8%, var(--cover-3) 0%, transparent 55%),
+    linear-gradient(172deg, var(--cover) 50%, var(--cover-2));
   color: var(--cover-ink);
+  position: relative;
+}
+
+/* Grano de papel de la cubierta (#862) — mismo ruido que la landing; nunca
+   intercepta la interacción. */
+.coverSurface::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  content: "";
+  inset: 0;
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  pointer-events: none;
+  position: absolute;
+}
+
+/* La hoja luminosa encartada (#862): un panel de papel dentro de una cubierta.
+   Restaura los tokens semánticos que .coverSurface sombrea — una custom
+   property sombreada no puede des-sombrearse, así que los literales duplican
+   :root a propósito y el guardián los mantiene en sincronía. */
+.coverSheet {
+  --ink: #1c2420;
+  --muted: #4e5c54;
+  --paper: #eef0e4;
+
+  background: var(--panel);
+  color: var(--ink);
+}
+
+/* Sobre la tinta, la marca se dora; dentro de una hoja recupera su tinta. */
+.coverSurface .brandMark {
+  background: var(--gilt);
+  color: var(--cover);
+}
+
+/* Eyebrows (kickers) directamente sobre la cubierta se anotan en dorado. */
+.coverSurface .demoKicker {
+  color: var(--gilt);
 }
 
 .coverMasthead {
@@ -2347,10 +2387,12 @@ svg a:hover .compositionBand {
   fill: var(--red);
 }
 
-/* Persistence footer — quiet status line, no card chrome: it must never
-   compete visually with the data panels above it. */
+/* Persistence footer — franja de remate en registro de cubierta (#829/#909):
+   una cinta de tinta con filete dorado cierra cada página, sin competir con
+   los paneles de datos de encima. */
 .persistenceBar {
   align-items: center;
+  border-top: 1px solid var(--gilt);
   color: var(--muted);
   display: flex;
   font-size: 0.72rem;
@@ -2358,7 +2400,7 @@ svg a:hover .compositionBand {
   justify-content: space-between;
   margin-top: auto;
   min-height: 38px;
-  padding: 8px 6px 0;
+  padding: 10px 14px;
 }
 
 code {
@@ -3040,6 +3082,27 @@ code {
   justify-content: flex-start;
 }
 
+/* Masthead híbrido (#829/#909): banda de cubierta que corona el cuerpo de
+   papel del onboarding — el login es la cubierta; /empezar, la primera página. */
+.empezarMasthead {
+  padding: 18px 24px;
+}
+
+.empezarEyebrow {
+  color: var(--gilt);
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.empezarMasthead h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .empezarSection {
   background: var(--panel);
   border: 1px solid var(--line-soft);
@@ -3103,7 +3166,8 @@ code {
   margin: 0 0 16px;
 }
 
-/* === #384 login === */
+/* === #384 login — umbral de cubierta (#909): la marca sobre la tinta y la
+   hoja luminosa como panel del formulario. === */
 
 .loginPage {
   align-items: center;
@@ -3111,6 +3175,14 @@ code {
   justify-content: center;
   min-height: 100vh;
   padding: 24px;
+}
+
+.loginCover {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 22rem;
+  width: 100%;
 }
 
 .loginCard {
@@ -3121,7 +3193,6 @@ code {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 22rem;
   padding: 32px;
   width: 100%;
 }
@@ -3139,6 +3210,65 @@ code {
 
 .loginCard button {
   width: 100%;
+}
+
+/* === 404 — remate de cubierta (#909): «no está en el libro». === */
+
+.notFoundPage {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: center;
+}
+
+.notFoundPage .brand {
+  text-align: left;
+}
+
+.notFoundPage .brandName {
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.notFoundBody {
+  align-items: center;
+  border-top: 1px solid var(--gilt);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 30rem;
+  padding-top: 24px;
+}
+
+.notFoundBody h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.notFoundBody p {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.notFoundPage .actionLink {
+  border-color: var(--gilt);
+  color: var(--gilt);
+}
+
+.notFoundPage .actionLink:hover {
+  background: var(--gilt);
+  color: var(--cover);
+}
+
+.notFoundPage .actionLink:focus-visible {
+  outline-color: var(--gilt);
 }
 
 /* === #59 historico === */
@@ -6519,6 +6649,15 @@ td.rowActions > * {
 
 .demoBanner button:hover {
   text-decoration: underline;
+}
+
+/* Puerta de la demo en cubierta (#909); .demoLanding queda como medida
+   interior compartida con /admin, que sigue en papel (#829). */
+.demoCover {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100vh;
 }
 
 .demoLanding {

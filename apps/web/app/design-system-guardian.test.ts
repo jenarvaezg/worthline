@@ -248,6 +248,16 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "border-bottom": "2px solid var(--gilt)",
       color: "var(--cover-ink)",
     });
+    // The luminous sheet restores the paper tokens .coverSurface shadows; a
+    // shadowed custom property cannot be un-shadowed, so these literals must
+    // stay in lockstep with the :root pins above.
+    expectRecipe(".coverSheet", {
+      "--ink": "#1c2420",
+      "--muted": "#4e5c54",
+      "--paper": "#eef0e4",
+      background: "var(--panel)",
+      color: "var(--ink)",
+    });
     expectRecipe(".sessionBand", {
       background: "var(--band)",
       "border-bottom": "1px solid var(--line)",
@@ -334,5 +344,22 @@ describe("Libro mayor design-system guardian (#906)", () => {
     }
     expect(dashboard).toContain('className={hasHoldings ? "totalRule"');
     expect(dashboard).toContain('className="debitCol"');
+  });
+
+  test("the threshold and closing surfaces consume the cover register (#909)", () => {
+    const expectations: Array<[file: string, needle: string]> = [
+      ["login/page.tsx", 'className="loginPage coverSurface"'],
+      ["login/page.tsx", 'className="loginCard coverSheet"'],
+      ["demo/page.tsx", 'className="demoCover coverSurface"'],
+      ["demo/page.tsx", 'className="demoPersonaCard coverSheet"'],
+      ["not-found.tsx", 'className="notFoundPage coverSurface"'],
+      ["shell.tsx", 'className="persistenceBar coverSurface"'],
+      ["empezar/page.tsx", 'className="coverSurface coverMasthead empezarMasthead"'],
+    ];
+
+    for (const [file, needle] of expectations) {
+      const source = readFileSync(join(appDirectory, file), "utf8");
+      expect(source, `${file} must contain ${needle}`).toContain(needle);
+    }
   });
 });
