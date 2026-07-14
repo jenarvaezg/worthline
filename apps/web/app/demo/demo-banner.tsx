@@ -5,8 +5,9 @@ import Link from "next/link";
 /**
  * The slim, persistent "Demo · datos ficticios" strip (PRD #297). Rendered on
  * every page in demo mode (from the root layout, gated by `isDemoMode()`), it
- * names the active persona and links back to /demo to switch. A status strip,
- * not a card — no panel chrome, muted text (mirrors the persistence footer).
+ * names the active persona and links back to /demo to switch. A session band
+ * (`.sessionBand`, canon §2/#910): paper with banding and a rule, neutral tone
+ * — a session state, never cover chrome or a card.
  *
  * The exit control (#464) POSTs to `/demo/exit`, which clears the persona/scope
  * cookies and returns to /login. POST + server route, not a GET `<Link>` (ADR
@@ -17,7 +18,7 @@ export default async function DemoBanner() {
   const meta = PERSONA_META[persona];
 
   return (
-    <div className="demoBanner" role="note" aria-label="Modo demostración">
+    <div className="sessionBand" role="note" aria-label="Modo demostración">
       <span>
         Demo · datos ficticios · <strong>{meta.label}</strong>
       </span>

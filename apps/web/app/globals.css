@@ -771,7 +771,6 @@ textarea {
   width: 100%;
 }
 
-.topbar,
 .summaryBand,
 .setupPanel,
 .ledgerPanel,
@@ -784,72 +783,79 @@ textarea {
   min-width: 0;
 }
 
+/* Masthead del libro (#910, canon §3): la cabecera es papel abierto por una
+   regla gruesa, no una tarjeta. El hero es la única hoja con fondo; el shell no
+   compite con fondo, borde perimetral ni radio. */
 .topbar {
   align-items: center;
+  background: transparent;
+  border-bottom: var(--rule-heavy);
   display: flex;
   flex-wrap: wrap;
   gap: 12px 18px;
   justify-content: space-between;
+  min-width: 0;
   min-height: 82px;
-  padding: 14px 16px;
+  padding: 6px 0 14px;
 }
 
-/* Shell topnav — 5 section links inline with the brand. */
+/* Shell topnav — pestañas de registro (.navTab, canon §5). El contenedor solo
+   distribuye; la regla inferior de la activa la pinta .navTab. */
 .topNav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 0 18px;
 }
 
 .topNav a {
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 650;
   letter-spacing: 0;
-  padding: 6px 13px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .topNav a:hover {
-  border-color: var(--line-soft);
   color: var(--ink);
 }
 
-.topNav a.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--paper-strong);
-}
-
-/* Nav + sign-out grouped on the topbar's trailing edge. */
+/* Nav + «Cerrar sesión» comparten una única fila desplazable: en móvil el shell
+   apila y esta tira hace scroll horizontal sin envolver, con el cierre de sesión
+   al final (canon §5, #910). */
 .topbarEnd {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
+  flex-wrap: nowrap;
+  gap: 0 18px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-/* «Cerrar sesión» — secondary outline pill, de-emphasised vs the nav links. */
+.topbarEnd::-webkit-scrollbar {
+  display: none;
+}
+
+/* «Cerrar sesión» — texto pequeño al final de la fila de registro, no un botón
+   destacado (canon §5). */
 .signOutForm {
   display: contents;
 }
 
 .signOutBtn {
   background: transparent;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+  border: 0;
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 650;
   letter-spacing: 0;
-  padding: 6px 13px;
+  padding: 0.45rem 0.2rem;
+  white-space: nowrap;
 }
 
 .signOutBtn:hover {
-  border-color: var(--line-soft);
   color: var(--ink);
 }
 
@@ -862,18 +868,42 @@ textarea {
   line-height: 1;
 }
 
-/* Scope tab POST buttons — match the link-tab style from .scopeTabs a. */
+/* Scope selector — segmented control (canon §5, #910): the .segmented shell
+   supplies the outer rule + radius; each POST button is a flush square segment
+   divided by a rule, and the active scope inverts to ink. */
+.scopeTabs.segmented {
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow: hidden;
+}
+
+.scopeTabs.segmented form {
+  display: contents;
+}
+
 .scopeTabBtn {
   background: transparent;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
   color: var(--ink);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 650;
   letter-spacing: 0;
   min-height: 34px;
-  padding: 6px 14px;
+  padding: 6px 16px;
+  white-space: nowrap;
+}
+
+.scopeTabs.segmented form:first-child .scopeTabBtn {
+  border-left: 0;
+}
+
+/* The segmented shell clips with overflow:hidden (to round the active ink), so
+   the focus ring is drawn inside the segment instead of being cropped (#910). */
+.scopeTabBtn:focus-visible {
+  outline-offset: -3px;
 }
 
 .scopeTabBtn:hover,
@@ -1000,6 +1030,13 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+
+/* Runtime error boundary (#910): stays on paper (a .section, no card); the
+   system fault is the red .errorBand, stacked title over context line. */
+.errorRecovery .errorBand {
+  display: grid;
+  gap: 4px;
 }
 
 .successBand {
@@ -1162,19 +1199,17 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-/* Scope + framing tabs live in a sticky bar so they stay reachable while
-   scrolling (#47). Solid paper blend: translucency would ghost scrolled content. */
+/* Scope tabs stay reachable while scrolling (#47); on paper the bar is a plain
+   sticky rail, not a floating card (#910). Solid --paper fill matches the page
+   so scrolled content never ghosts through when it sticks. */
 .tabsBar {
   align-items: center;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
+  background: var(--paper);
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 10px 0;
   position: sticky;
   top: 0;
   z-index: 30;
@@ -6595,54 +6630,47 @@ td.rowActions > * {
   }
 }
 
-/* ── Demo mode (PRD #297, ADR 0023) ───────────────────────────────────
-   A persistent status strip + the /demo landing. Light surfaces only — the
-   dark panel stays reserved for the dashboard hero. Action accents in --blue. */
-.demoBanner {
-  display: flex;
+/* ── Demo mode (PRD #297, ADR 0023) + impersonation (ADR 0030) ───────────
+   Banda de sesión (#829/#910): demo e impersonación son estados de sesión, no
+   cubierta ni tarjeta. Adoptan .sessionBand del catálogo (#906) — papel con
+   banding y una regla inferior; la impersonación vira al tono de precaución
+   (dorado) vía data-tone="warning". El color/borde canónicos viven en el
+   catálogo; aquí solo la maquetación del contenido y las acciones. */
+.sessionBand {
   align-items: center;
-  justify-content: center;
+  display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+  justify-content: center;
   padding: 0.4rem 1rem;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line-soft);
-  color: var(--muted);
   font-size: 0.78rem;
   letter-spacing: 0.01em;
 }
 
-.demoBanner strong {
+.sessionBand strong {
   color: var(--ink);
   font-weight: 650;
 }
 
-.demoBanner a {
-  color: var(--blue);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.demoBanner a:hover {
-  text-decoration: underline;
-}
-
-/* Exit control (#464): a POST form whose button reads as the sibling link. */
-.demoBanner form {
+/* Exit/switch controls (#464): a POST form whose button reads as a sibling link. */
+.sessionBand form {
   display: contents;
 }
 
-.demoBanner button {
-  padding: 0;
-  border: 0;
+.sessionBand a,
+.sessionBand button {
   background: none;
-  font: inherit;
+  border: 0;
   color: var(--blue);
-  font-weight: 600;
   cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  text-decoration: none;
 }
 
-.demoBanner button:hover {
+.sessionBand a:hover,
+.sessionBand button:hover {
   text-decoration: underline;
 }
 

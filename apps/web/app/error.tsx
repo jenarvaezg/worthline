@@ -22,12 +22,10 @@ export default function ErrorPage({ unstable_retry }: ErrorPageProps) {
         </div>
       </header>
 
-      <section className="summaryBand">
-        <div className="panelHeader">
-          <div>
-            <h2>No pudimos cargar esta vista</h2>
-            <span>Puede ser un fallo temporal de la ruta.</span>
-          </div>
+      <section className="section errorRecovery">
+        <div className="errorBand" role="alert">
+          <strong>No pudimos cargar esta vista</strong>
+          <span>Puede ser un fallo temporal de la ruta. No hemos perdido tus datos.</span>
         </div>
         <p className="emptyLine">Reintenta la carga o vuelve al resumen.</p>
         <div className="errorActions">
