@@ -1056,6 +1056,42 @@ h3 {
   font-weight: 600;
 }
 
+/* Home freshness (#896): a calm, always-visible "última actualización" stamp and
+   — only when the data outran the automatic window — a gentle gold alert with the
+   manual "Actualizar" action. Same warning vocabulary as .heroHealthAlert, never
+   an elevation or a nagging banner. */
+.heroFreshness {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.heroFreshnessStamp {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.heroFreshnessAlert {
+  align-items: center;
+  background: rgba(179, 131, 31, 0.12);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.heroFreshnessLead {
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
 /* Validation error rendered beside the form that failed — same square,
    glossary-palette treatment as the page-level bands. */
 .formError {
