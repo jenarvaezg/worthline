@@ -1,7 +1,23 @@
 import { randomUUID } from "node:crypto";
 
 import type { Client } from "@libsql/client";
+import type {
+  CreateGlobalExposureProfileInput,
+  GlobalExposureProfile,
+  GlobalExposureProfileBreakdowns,
+  GlobalExposureProfileIdentity,
+  InvestmentPriceProvider,
+  RawGlobalExposureProfileIdentityInput,
+  UpdateGlobalExposureProfileInput,
+} from "@worthline/domain";
+import {
+  createValidatedGlobalExposureProfileInput,
+  globalExposureProfileIdentityKey,
+  resolveGlobalExposureProfileIdentity,
+  validateGlobalExposureProfileContent,
+} from "@worthline/domain";
 
+import { migrateControlPlane } from "./control-plane-migrate";
 import { type LibsqlUrlTarget, openLibsqlClient } from "./libsql-client";
 
 /**
@@ -134,6 +150,25 @@ export interface ControlPlaneStore {
    * table so chat and sync quotas cannot interfere.
    */
   recordConnectedSourceSync(rateKey: string, windowKey: string): Promise<number>;
+  /** Global exposure-profile catalog (PRD #711 S1 / #940). */
+  createGlobalExposureProfile(
+    input: CreateGlobalExposureProfileInput,
+  ): Promise<GlobalExposureProfile>;
+  updateGlobalExposureProfile(
+    identity: RawGlobalExposureProfileIdentityInput,
+    input: UpdateGlobalExposureProfileInput,
+  ): Promise<GlobalExposureProfile>;
+  rekeyGlobalExposureProfile(
+    from: RawGlobalExposureProfileIdentityInput,
+    to: RawGlobalExposureProfileIdentityInput,
+  ): Promise<GlobalExposureProfile>;
+  deleteGlobalExposureProfile(
+    identity: RawGlobalExposureProfileIdentityInput,
+  ): Promise<void>;
+  readGlobalExposureProfile(
+    identity: RawGlobalExposureProfileIdentityInput,
+  ): Promise<GlobalExposureProfile | null>;
+  readGlobalExposureProfiles(): Promise<GlobalExposureProfile[]>;
   close(): void;
 }
 
@@ -215,6 +250,25 @@ CREATE TABLE IF NOT EXISTS benchmark_prices (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (series_id, date)
 );
+CREATE TABLE IF NOT EXISTS global_exposure_profiles (
+  identity_key TEXT PRIMARY KEY NOT NULL,
+  identity_kind TEXT NOT NULL,
+  isin TEXT,
+  price_provider TEXT,
+  provider_symbol TEXT,
+  display_name TEXT,
+  breakdowns_json TEXT NOT NULL DEFAULT '{}',
+  ter TEXT,
+  tracked_index TEXT,
+  hedged_to_currency TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_isin
+  ON global_exposure_profiles(isin) WHERE isin IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS global_exposure_profiles_provider
+  ON global_exposure_profiles(price_provider, provider_symbol)
+  WHERE price_provider IS NOT NULL AND provider_symbol IS NOT NULL;
 `;
 
 function toUser(row: Record<string, unknown>): ControlPlaneUser {
@@ -260,6 +314,61 @@ function toBenchmarkPrice(row: Record<string, unknown>): BenchmarkPrice {
   };
 }
 
+function toGlobalExposureProfileIdentity(
+  row: Record<string, unknown>,
+): GlobalExposureProfileIdentity {
+  const kind = String(row["identity_kind"]);
+  if (kind === "isin") {
+    return { isin: String(row["isin"]), kind: "isin" };
+  }
+  return {
+    kind: "provider",
+    priceProvider: String(row["price_provider"]) as InvestmentPriceProvider,
+    providerSymbol: String(row["provider_symbol"]),
+  };
+}
+
+function toGlobalExposureProfile(row: Record<string, unknown>): GlobalExposureProfile {
+  return {
+    identity: toGlobalExposureProfileIdentity(row),
+    displayName: row["display_name"] == null ? null : String(row["display_name"]),
+    breakdowns: JSON.parse(
+      String(row["breakdowns_json"]),
+    ) as GlobalExposureProfileBreakdowns,
+    ter: row["ter"] == null ? null : String(row["ter"]),
+    trackedIndex: row["tracked_index"] == null ? null : String(row["tracked_index"]),
+    hedgedToCurrency:
+      row["hedged_to_currency"] == null ? null : String(row["hedged_to_currency"]),
+    createdAt: String(row["created_at"]),
+    updatedAt: String(row["updated_at"]),
+  };
+}
+
+function identityColumns(identity: GlobalExposureProfileIdentity): {
+  identityKey: string;
+  identityKind: string;
+  isin: string | null;
+  priceProvider: string | null;
+  providerSymbol: string | null;
+} {
+  if (identity.kind === "isin") {
+    return {
+      identityKey: globalExposureProfileIdentityKey(identity),
+      identityKind: "isin",
+      isin: identity.isin,
+      priceProvider: null,
+      providerSymbol: null,
+    };
+  }
+  return {
+    identityKey: globalExposureProfileIdentityKey(identity),
+    identityKind: "provider",
+    isin: null,
+    priceProvider: identity.priceProvider,
+    providerSymbol: identity.providerSymbol,
+  };
+}
+
 /** Correlated subquery: the oldest grant's owner email for a given workspace —
  * shared by the single-workspace and list-all queries below. */
 const OWNER_EMAIL_SUBQUERY = `(
@@ -275,6 +384,7 @@ async function buildControlPlaneStore(
   newId: () => string,
 ): Promise<ControlPlaneStore> {
   await client.executeMultiple(SCHEMA);
+  await migrateControlPlane(client);
 
   return {
     async findOrCreateUser(email) {
@@ -463,6 +573,158 @@ async function buildControlPlaneStore(
         args: [rateKey, windowKey],
       });
       return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async createGlobalExposureProfile(input) {
+      const validated = createValidatedGlobalExposureProfileInput(input);
+      const columns = identityColumns(validated.identity);
+      const existing = await client.execute({
+        sql: "SELECT identity_key FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [columns.identityKey],
+      });
+      if (existing.rows.length > 0) {
+        throw new Error("Global exposure profile identity already exists.");
+      }
+
+      await client.execute({
+        sql: `INSERT INTO global_exposure_profiles (
+                identity_key, identity_kind, isin, price_provider, provider_symbol,
+                display_name, breakdowns_json, ter, tracked_index, hedged_to_currency
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          columns.identityKey,
+          columns.identityKind,
+          columns.isin,
+          columns.priceProvider,
+          columns.providerSymbol,
+          validated.displayName,
+          JSON.stringify(validated.breakdowns),
+          validated.ter,
+          validated.trackedIndex,
+          validated.hedgedToCurrency,
+        ],
+      });
+
+      const created = await client.execute({
+        sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [columns.identityKey],
+      });
+      return toGlobalExposureProfile(created.rows[0]!);
+    },
+    async updateGlobalExposureProfile(identityInput, input) {
+      const identity = resolveGlobalExposureProfileIdentity(identityInput);
+      const validated = validateGlobalExposureProfileContent(input);
+      const identityKey = globalExposureProfileIdentityKey(identity);
+      const existing = await client.execute({
+        sql: "SELECT created_at FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [identityKey],
+      });
+      if (existing.rows.length === 0) {
+        throw new Error("Global exposure profile not found.");
+      }
+
+      await client.execute({
+        sql: `UPDATE global_exposure_profiles SET
+                display_name = ?,
+                breakdowns_json = ?,
+                ter = ?,
+                tracked_index = ?,
+                hedged_to_currency = ?,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE identity_key = ?`,
+        args: [
+          validated.displayName,
+          JSON.stringify(validated.breakdowns),
+          validated.ter,
+          validated.trackedIndex,
+          validated.hedgedToCurrency,
+          identityKey,
+        ],
+      });
+
+      const updated = await client.execute({
+        sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [identityKey],
+      });
+      const profile = toGlobalExposureProfile(updated.rows[0]!);
+      return {
+        ...profile,
+        createdAt: String(existing.rows[0]!.created_at),
+      };
+    },
+    async rekeyGlobalExposureProfile(fromInput, toInput) {
+      const from = resolveGlobalExposureProfileIdentity(fromInput);
+      const to = resolveGlobalExposureProfileIdentity(toInput);
+      const fromKey = globalExposureProfileIdentityKey(from);
+      const toColumns = identityColumns(to);
+
+      const existing = await client.execute({
+        sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [fromKey],
+      });
+      if (existing.rows.length === 0) {
+        throw new Error("Global exposure profile not found.");
+      }
+
+      const collision = await client.execute({
+        sql: "SELECT identity_key FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [toColumns.identityKey],
+      });
+      if (collision.rows.length > 0) {
+        throw new Error("Global exposure profile identity already exists.");
+      }
+
+      const current = existing.rows[0]!;
+      await client.execute({
+        sql: `UPDATE global_exposure_profiles SET
+                identity_key = ?,
+                identity_kind = ?,
+                isin = ?,
+                price_provider = ?,
+                provider_symbol = ?,
+                updated_at = CURRENT_TIMESTAMP
+              WHERE identity_key = ?`,
+        args: [
+          toColumns.identityKey,
+          toColumns.identityKind,
+          toColumns.isin,
+          toColumns.priceProvider,
+          toColumns.providerSymbol,
+          fromKey,
+        ],
+      });
+
+      const rekeyed = await client.execute({
+        sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [toColumns.identityKey],
+      });
+      const profile = toGlobalExposureProfile(rekeyed.rows[0]!);
+      return {
+        ...profile,
+        createdAt: String(current.created_at),
+      };
+    },
+    async deleteGlobalExposureProfile(identityInput) {
+      const identity = resolveGlobalExposureProfileIdentity(identityInput);
+      const identityKey = globalExposureProfileIdentityKey(identity);
+      await client.execute({
+        sql: "DELETE FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [identityKey],
+      });
+    },
+    async readGlobalExposureProfile(identityInput) {
+      const identity = resolveGlobalExposureProfileIdentity(identityInput);
+      const result = await client.execute({
+        sql: "SELECT * FROM global_exposure_profiles WHERE identity_key = ?",
+        args: [globalExposureProfileIdentityKey(identity)],
+      });
+      return result.rows.length > 0 ? toGlobalExposureProfile(result.rows[0]!) : null;
+    },
+    async readGlobalExposureProfiles() {
+      const result = await client.execute(
+        `SELECT * FROM global_exposure_profiles
+         ORDER BY identity_kind ASC, identity_key ASC`,
+      );
+      return result.rows.map((row) => toGlobalExposureProfile(row));
     },
     close() {
       client.close();
