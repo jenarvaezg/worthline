@@ -31,8 +31,10 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="loginPage">
-      <div className="loginCard">
+    // Umbral en registro de cubierta (#829/#909): la marca sobre la tinta,
+    // la hoja luminosa como panel del formulario y el enlace a la demo.
+    <main className="loginPage coverSurface">
+      <div className="loginCover">
         <div className="brand loginBrand">
           <span className="brandMark" aria-hidden="true">
             wl
@@ -43,18 +45,20 @@ export default async function LoginPage({
           </div>
         </div>
 
-        <form
-          action={async () => {
-            "use server";
-            await signIn("google", { redirectTo: returnTo });
-          }}
-        >
-          <button type="submit">Iniciar sesión con Google</button>
-        </form>
+        <div className="loginCard coverSheet">
+          <form
+            action={async () => {
+              "use server";
+              await signIn("google", { redirectTo: returnTo });
+            }}
+          >
+            <button type="submit">Iniciar sesión con Google</button>
+          </form>
 
-        <p className="loginDemoLink">
-          ¿Solo mirando? <Link href="/demo">Probar la demo →</Link>
-        </p>
+          <p className="loginDemoLink">
+            ¿Solo mirando? <Link href="/demo">Probar la demo →</Link>
+          </p>
+        </div>
       </div>
     </main>
   );

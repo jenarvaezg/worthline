@@ -36,15 +36,19 @@ para líquido, azules para el resto y oro para vivienda. `--shadow`,
 
 - **Cubierta**: login, selector demo, 404, footer/remates y la landing. Usa
   `.coverSurface`; esta receta remapea localmente papel, tinta y muted a
-  `--cover*`. No crea un tema ni un selector de apariencia.
+  `--cover*` y lleva el grano de papel del canon. No crea un tema ni un
+  selector de apariencia. Una hoja luminosa encartada dentro de una cubierta
+  (el panel del login, las tarjetas de persona) usa `.coverSheet`, que
+  restaura los tokens de papel que la cubierta sombrea.
 - **Híbrido**: onboarding usa `.coverMasthead` sobre cuerpo de papel.
 - **Papel**: Resumen, histórico, patrimonio, objetivos, ajustes, admin,
   asistente y errores recuperables.
 - **Banda de sesión**: demo e impersonación usan `.sessionBand` y semántica de
   aviso; no se disfrazan de cubierta.
 
-La textura física de la landing es una excepción localizada de cubierta. El
-papel de trabajo es plano; no lleva cuadrícula decorativa global.
+La textura física (el grano) pertenece al registro de cubierta — la landing y
+las superficies `.coverSurface`. El papel de trabajo es plano; no lleva
+cuadrícula decorativa global.
 
 ## 3. Tipografía
 
@@ -110,7 +114,8 @@ autoriza a adelantar esa migración.
 El contrato global está formado por:
 
 `.section`, `.heroPanel`, `.navTab`, `.segmented`, `.btn`, `.totalRule`,
-`.debitCol`, `.band`, `.coverSurface`, `.coverMasthead` y `.sessionBand`.
+`.debitCol`, `.band`, `.coverSurface`, `.coverSheet`, `.coverMasthead` y
+`.sessionBand`.
 
 Las páginas consumen estas recetas; no duplican una versión equivalente ad hoc.
 El test-guardián escanea todas las hojas CSS y falla ante tokens deprecados,
