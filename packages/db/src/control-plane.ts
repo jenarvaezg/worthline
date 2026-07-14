@@ -118,10 +118,15 @@ export interface ControlPlaneStore {
    * (#697).
    */
   listWorkspacesWithOwners(): Promise<ControlPlaneWorkspaceWithOwner[]>;
-  /** Whether the daily fleet capture has already finalized this UTC date. */
-  hasDailyCaptureRun(dateKey: string): Promise<boolean>;
-  /** Record or update daily fleet capture finalization for this UTC date. */
-  recordDailyCaptureRun(dateKey: string, finalizedAt: string): Promise<void>;
+  /**
+   * Whether this fleet-capture pass has already finalized. The key is an opaque
+   * run key, not a bare calendar date: since #895 it is pass-qualified
+   * (`YYYY-MM-DD:am|pm`) so the morning and evening passes finalize
+   * independently — do not query this table by a plain date and expect a match.
+   */
+  hasDailyCaptureRun(runKey: string): Promise<boolean>;
+  /** Record or update this fleet-capture pass's finalization (see `hasDailyCaptureRun`). */
+  recordDailyCaptureRun(runKey: string, finalizedAt: string): Promise<void>;
   /** Benchmark series cached globally in the control plane (ADR 0060). */
   readBenchmarkPrices(seriesId: string): Promise<BenchmarkPrice[]>;
   /** Upsert monthly benchmark rows by `(series_id, date)`. */

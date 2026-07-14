@@ -1,3 +1,5 @@
+import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
+import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import {
   createControlPlaneStore,
   createWorthlineStore,
@@ -101,6 +103,17 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
         url: workspace.dbUrl,
         ...(groupToken ? { authToken: groupToken } : {}),
       }),
+    // Source-sync phase (#895): the same stale-gated orchestrations the GET used
+    // to run, now on the cron. Each isolates per source and degrades to
+    // last-known (never 0) on a Binance/Numista outage — the errors are
+    // collected for observability, never thrown.
+    syncConnectedSources: async (store, now) => {
+      const [binance, numista] = await Promise.all([
+        runBinanceRefresh(store, now),
+        runNumistaCoinRefresh(store, now),
+      ]);
+      return { errors: [...binance.errors, ...numista.errors] };
+    },
     fetchPrices: async (pairs, now): Promise<DailyCaptureFetchedPrice[]> => {
       if (pairs.length === 0) return [];
 

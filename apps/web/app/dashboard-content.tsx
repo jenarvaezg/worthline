@@ -1,5 +1,4 @@
 import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
-import { readDemoContext } from "@web/demo/read-demo-context";
 import { perfEnd, perfStart } from "@web/perf-log";
 import { getRequestStore } from "@web/request-store";
 import { bootstrapHealthcheck } from "@web/store";
@@ -21,11 +20,8 @@ import {
   moneySign,
   presentNetWorth,
 } from "@worthline/domain";
-import { refreshStalePrices } from "@worthline/pricing";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { runBinanceRefresh } from "./ajustes/binance-refresh";
-import { runNumistaCoinRefresh } from "./ajustes/numista-coin-refresh";
 import BenchmarkComparisonCard from "./benchmark-comparison-card";
 import CompositionPanel from "./composition-panel";
 import { compositionUrl } from "./composition-url";
@@ -50,7 +46,6 @@ import {
   parseViviendaParam,
 } from "./intake";
 import { refreshPricesAction } from "./inversiones/actions";
-import type { RefreshPricesResult } from "./load-dashboard";
 import { loadDashboard } from "./load-dashboard";
 import {
   buildMoversDataByPeriod,
@@ -59,7 +54,6 @@ import {
 } from "./movers-data";
 import PrivacyToggle from "./privacy-toggle";
 import { readBenchmarkPricesFromControlPlane } from "./read-benchmark-prices";
-import { refreshAndPersistStalePrices } from "./refresh-prices";
 import { MOVERS_PERIOD_VIEW_PARAM, writeViewParam } from "./view-state";
 
 const framingTabs = [
@@ -306,7 +300,6 @@ export default async function DashboardContent({
   scopeId: string | undefined;
 }) {
   const persistence = await bootstrapHealthcheck();
-  const demo = await readDemoContext();
   const selectedView = parseViewParam(searchParams?.view);
   const selectedDrill = parseDrillParam(searchParams?.drill);
   const selectedRange =
@@ -330,24 +323,6 @@ export default async function DashboardContent({
     now,
     ...(selectedRange === undefined ? {} : { range: selectedRange }),
     readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
-    refreshPrices: demo.enabled
-      ? async (): Promise<RefreshPricesResult> => ({ priceCache: [], errors: [] })
-      : async ({ cacheEntries, assets, nowIso }): Promise<RefreshPricesResult> => {
-          return refreshAndPersistStalePrices({
-            cacheEntries,
-            assets,
-            nowIso,
-            refreshStalePrices,
-            upsertPrices: (prices) => store.operations.upsertPrices(prices),
-            readCache: () => store.operations.readAllPriceCacheEntries(),
-          });
-        },
-    ...(demo.enabled
-      ? {}
-      : {
-          refreshCoinValuations: () => runNumistaCoinRefresh(store, now),
-          refreshBinanceSources: () => runBinanceRefresh(store, now),
-        }),
   });
   perfEnd("dashboard", perfStartedAt);
 

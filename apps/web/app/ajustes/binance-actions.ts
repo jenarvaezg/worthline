@@ -19,6 +19,7 @@ import {
   resolveConnectingOwnership,
   serializeBinanceCredentials,
 } from "./binance-helpers";
+import { runBinanceRefresh } from "./binance-refresh";
 import {
   CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
   connectedSourceProviderErrorMessage,
@@ -92,6 +93,17 @@ export async function connectBinanceAction(
       credentialsJson: serializeBinanceCredentials(creds),
       ownership,
     });
+
+    // Eager sync on connect (#895, #785 dim.2): the GET is now cache-only and no
+    // longer syncs, so without this the source would show 0 positions until the
+    // next cron. Reuses the cron/GET orchestration (stale-gated → a just-
+    // connected source with no freshness always syncs). Best-effort: a Binance
+    // outage degrades to last-known inside the refresh and never fails connect.
+    try {
+      await runBinanceRefresh(store, new Date().toISOString());
+    } catch {
+      // Connecting still succeeds; the twice-daily cron will retry the sync.
+    }
 
     return { ok: true as const };
   }, _store);

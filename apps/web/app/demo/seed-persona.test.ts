@@ -12,20 +12,15 @@
 
 import { resolveRelativeDate, seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
-import { type LoadDashboardInput, loadDashboard } from "@web/load-dashboard";
+import { loadDashboard } from "@web/load-dashboard";
 import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@worthline/db";
 import { amortizableBalanceAtDate, valueHousingAtDate } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const NOW_ISO = `${AS_OF}T12:00:00.000Z`;
 const PERSONA_TEST_TIMEOUT_MS = 15_000;
-
-const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
-  priceCache: [],
-  errors: [],
-});
 
 function persistence() {
   return {
@@ -47,7 +42,6 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
     selectedView: "total",
     today: AS_OF,
     now: NOW_ISO,
-    refreshPrices: noOpRefresh,
   });
 }
 
@@ -131,7 +125,7 @@ describe("seedPersona — familia", () => {
       const store = await createInMemoryStore();
       await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-      await readDashboard(store);
+      await captureDailySnapshotForWorkspace(store, NOW_ISO);
 
       const homeSpec = FAMILIA_SPEC.housing![0]!;
       const expectedAsOfValue = valueHousingAtDate({
@@ -175,7 +169,7 @@ describe("seedPersona — familia", () => {
       const store = await createInMemoryStore();
       await seedPersona(store, FAMILIA_SPEC, AS_OF);
 
-      await readDashboard(store);
+      await captureDailySnapshotForWorkspace(store, NOW_ISO);
 
       const mortgageSpec = FAMILIA_SPEC.housing![0]!.mortgage!;
       const expectedAsOfBalance = amortizableBalanceAtDate({

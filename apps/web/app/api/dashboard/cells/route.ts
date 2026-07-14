@@ -52,7 +52,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // already tenant-resolved), so the scope is never a trust boundary.
     const scopes = listScopeOptions(workspace);
     const selected = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    return readMatrixCells(store, selected?.id, parsed.coords, today);
+    // Union today's live point when the cron has not yet persisted it (#895), so
+    // a client-side toggle to a non-eager cell never loses today's point.
+    return readMatrixCells(
+      store,
+      selected?.id,
+      parsed.coords,
+      today,
+      undefined,
+      selected ? { now: persistence.checkedAt, scope: selected } : undefined,
+    );
   }, target);
 
   return NextResponse.json({ cells }, { headers: NO_STORE });

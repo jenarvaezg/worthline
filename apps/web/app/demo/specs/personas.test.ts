@@ -7,19 +7,14 @@
 import { seedPersona } from "@web/demo/seed-persona";
 import { INVERSOR_SPEC } from "@web/demo/specs/inversor";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
-import { type LoadDashboardInput, loadDashboard } from "@web/load-dashboard";
+import { loadDashboard } from "@web/load-dashboard";
 import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@worthline/db";
 import { describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
 const NOW_ISO = `${AS_OF}T12:00:00.000Z`;
 const PERSONA_TEST_TIMEOUT_MS = 15_000;
-
-const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
-  priceCache: [],
-  errors: [],
-});
 
 async function readDashboard(store: WorthlineStore, scopeId?: string) {
   return loadDashboard({
@@ -36,7 +31,6 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
     selectedView: "total",
     today: AS_OF,
     now: NOW_ISO,
-    refreshPrices: noOpRefresh,
   });
 }
 
@@ -151,7 +145,7 @@ describe("seedPersona — inversor (markets-heavy)", () => {
       const store = await createInMemoryStore();
       await seedPersona(store, INVERSOR_SPEC, AS_OF);
 
-      await readDashboard(store);
+      await captureDailySnapshotForWorkspace(store, NOW_ISO);
 
       const binance = (await store.connectedSources.listSources()).find(
         (source) => source.adapter === "binance",

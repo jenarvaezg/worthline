@@ -1,19 +1,20 @@
 /**
  * Tests for the dashboard load module (issue #69).
  *
- * loadDashboard: scope → dashboard state
- * - Refresh stale prices (via refreshAndPersistStalePrices)
- * - Capture at most one snapshot per scope per day, day's latest winning (ADR 0005)
- * - Compute dashboard state via prepareDashboardState
- * - Pricing failures degrade to last-known values with an explicit signal
+ * loadDashboard: scope → dashboard state (cache-only GET, #895)
+ * - Reads the price cache directly — NO refresh, NO network (`pricingErrors` is
+ *   always empty; freshness is surfaced by the data-health engine).
+ * - Performs ZERO writes: today's live chart point is synthesized in memory
+ *   (histórico = persisted snapshots ∪ today's live point); the twice-daily cron
+ *   is the sole snapshot writer.
+ * - Compute dashboard state via prepareDashboardState.
  */
 
 import type { SourcePositionInput, WorthlineStore } from "@worthline/db";
 
-import { createInMemoryStore } from "@worthline/db";
+import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@worthline/db";
 import { describe, expect, test, vi } from "vitest";
 
-import type { LoadDashboardInput } from "./load-dashboard";
 import { loadDashboard } from "./load-dashboard";
 
 // ---------------------------------------------------------------------------
@@ -50,18 +51,13 @@ function makePersistence() {
   };
 }
 
-/** A no-op pricing refresher — nothing to refresh, no errors. */
-const noOpRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
-  priceCache: [],
-  errors: [],
-});
-
 // ---------------------------------------------------------------------------
-// Snapshot capture policy
-// ---------------------------------------------------------------------------
+// Snapshot capture policy — cache-only GET (#895): the render NEVER writes.
+// Today's live chart point is synthesized in memory (histórico = persisted
+// snapshots ∪ today's live point); the twice-daily cron is the sole writer.
 
-describe("loadDashboard — snapshot capture policy", () => {
-  test("live figures equal today's captured snapshot when curves drift from stored values", async () => {
+describe("loadDashboard — snapshot capture policy (cache-only, #895)", () => {
+  test("live figures reflect today's synthesized point when curves drift from stored values", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await store.assets.createManualAsset({
@@ -118,25 +114,31 @@ describe("loadDashboard — snapshot capture policy", () => {
       selectedView: "total",
       today: "2026-07-02",
       now: "2026-07-02T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
-    const todaySnapshot = (
-      await store.snapshots.readSnapshots(result.selectedScope!.id)
-    ).find((snapshot) => snapshot.dateKey === "2026-07-02");
-    expect(todaySnapshot).toBeDefined();
+    // Today's point is synthesized IN MEMORY and carried in the result — the live
+    // headline figure agrees with it (the drifted curve values, not the stored
+    // ones).
+    const todaySynthesized = result.snapshots.find(
+      (snapshot) => snapshot.dateKey === "2026-07-02",
+    );
+    expect(todaySynthesized).toBeDefined();
     expect(result.summary!.grossAssets.amountMinor).toBe(
-      todaySnapshot!.grossAssets.amountMinor,
+      todaySynthesized!.grossAssets.amountMinor,
     );
-    expect(result.summary!.debts.amountMinor).toBe(todaySnapshot!.debts.amountMinor);
+    expect(result.summary!.debts.amountMinor).toBe(todaySynthesized!.debts.amountMinor);
     expect(result.presentation!.headline.amountMinor).toBe(
-      todaySnapshot!.totalNetWorth.amountMinor,
+      todaySynthesized!.totalNetWorth.amountMinor,
     );
+
+    // …but the store persisted NOTHING for today (cache-only GET, zero writes).
+    const persisted = await store.snapshots.readSnapshots(result.selectedScope!.id);
+    expect(persisted.some((snapshot) => snapshot.dateKey === "2026-07-02")).toBe(false);
 
     store.close();
   });
 
-  test("captures a snapshot on first load of the day", async () => {
+  test("synthesizes today's point in the result without persisting it (first load of the day)", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
@@ -148,129 +150,73 @@ describe("loadDashboard — snapshot capture policy", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
-    // A snapshot should have been captured for the household scope (which is
-    // the default scope for an individual workspace)
     const scopeId = result.selectedScope?.id ?? "household";
-    const snapshots = await store.snapshots.readSnapshots(scopeId);
-    expect(snapshots.length).toBeGreaterThanOrEqual(1);
-    expect(snapshots.some((s) => s.dateKey === "2026-06-10")).toBe(true);
+    // Today appears in the result's snapshots + holding rows (synthesized live)…
+    expect(result.snapshots.some((s) => s.dateKey === "2026-06-10")).toBe(true);
+    expect(result.snapshotHoldingRows.some((r) => r.dateKey === "2026-06-10")).toBe(true);
+    // …and the store persisted nothing — the cron is the sole snapshot writer.
+    const persisted = await store.snapshots.readSnapshots(scopeId);
+    expect(persisted.some((s) => s.dateKey === "2026-06-10")).toBe(false);
+    expect(await store.snapshots.readSnapshotHoldings({ scopeId })).toHaveLength(0);
 
     store.close();
   });
 
-  test("no-ops on same-day reload — the provisional point is held until the close (S3 #531)", async () => {
-    // With the daily cron as the floor (S2), the render captures only when today
-    // is absent and no-ops otherwise. A plain value edit is NOT a dated fact, so
-    // it does not ripple today's snapshot; the live figures reflect it, but the
-    // stored intraday point stays put until the 21:00 cron finalizes the close.
+  test("the GET performs zero writes", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
 
-    // First load at 08:00 → captures the provisional point (100 000 €).
-    const firstResult = await loadDashboard({
+    const upsertPrices = vi.spyOn(store.operations, "upsertPrices");
+    const saveSnapshot = vi.spyOn(store.snapshots, "saveSnapshot");
+    const revaluePositions = vi.spyOn(store.connectedSources, "revaluePositions");
+    const syncConnectedSource = vi.spyOn(store, "syncConnectedSource");
+
+    await loadDashboard({
       store,
       persistence: makePersistence(),
       scopeId: undefined,
       selectedView: "total",
       today: "2026-06-10",
-      now: "2026-06-10T08:00:00.000Z",
-      refreshPrices: noOpRefresh,
+      now: "2026-06-10T10:00:00.000Z",
     });
 
-    const scopeId = firstResult.selectedScope!.id;
-    const snapshotsAfterFirst = await store.snapshots.readSnapshots(scopeId);
-    expect(snapshotsAfterFirst.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
-    const firstId = snapshotsAfterFirst[0]!.id;
+    expect(upsertPrices).not.toHaveBeenCalled();
+    expect(saveSnapshot).not.toHaveBeenCalled();
+    expect(revaluePositions).not.toHaveBeenCalled();
+    expect(syncConnectedSource).not.toHaveBeenCalled();
 
-    // Edit the value (no ripple), then reload at 18:00 → render no-ops.
-    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
-    await loadDashboard({
+    store.close();
+  });
+
+  test("reuses a persisted today snapshot without duplicating or writing", async () => {
+    const store = await createInMemoryStore();
+    await makeWorkspace(store);
+    await makeAsset(store);
+
+    // The cron already persisted today's snapshot before this GET runs.
+    await captureDailySnapshotForWorkspace(store, "2026-06-10T09:00:00.000Z");
+    const before = await store.snapshots.readSnapshots("household");
+    expect(before.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
+
+    const saveSnapshot = vi.spyOn(store.snapshots, "saveSnapshot");
+    const result = await loadDashboard({
       store,
       persistence: makePersistence(),
       scopeId: undefined,
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T18:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
-    const snapshotsAfterSecond = await store.snapshots.readSnapshots(scopeId);
-    const todaySnapshots = snapshotsAfterSecond.filter((s) => s.dateKey === "2026-06-10");
-    // Still exactly one snapshot for today, NOT re-captured: same id, same value.
-    expect(todaySnapshots).toHaveLength(1);
-    expect(todaySnapshots[0]!.id).toBe(firstId);
-    expect(todaySnapshots[0]!.totalNetWorth.amountMinor).toBe(100_000_00);
-
-    store.close();
-  });
-
-  test("captures on first load even when an earlier day already has a snapshot (today still absent)", async () => {
-    // The no-op gate keys on TODAY specifically — a prior day's snapshot must not
-    // suppress today's self-heal capture.
-    const store = await createInMemoryStore();
-    await makeWorkspace(store);
-    await makeAsset(store);
-
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-09",
-      now: "2026-06-09T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
-
-    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
-    const result = await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
-
-    const today = (await store.snapshots.readSnapshots(result.selectedScope!.id)).filter(
-      (s) => s.dateKey === "2026-06-10",
-    );
-    expect(today).toHaveLength(1);
-    // The new day captures the current (edited) value.
-    expect(today[0]!.totalNetWorth.amountMinor).toBe(120_000_00);
-
-    store.close();
-  });
-
-  test("does not accumulate snapshots across multiple same-day loads", async () => {
-    const store = await createInMemoryStore();
-    await makeWorkspace(store);
-    await makeAsset(store);
-
-    let scopeId: string | undefined;
-    for (let i = 0; i < 5; i++) {
-      const result = await loadDashboard({
-        store,
-        persistence: makePersistence(),
-        scopeId: undefined,
-        selectedView: "total",
-        today: "2026-06-10",
-        now: `2026-06-10T${String(i + 8).padStart(2, "0")}:00:00.000Z`,
-        refreshPrices: noOpRefresh,
-      });
-      if (i === 0) {
-        scopeId = result.selectedScope?.id;
-      }
-    }
-
-    // Per scope: exactly one snapshot for today (latest wins)
-    const snapshots = await store.snapshots.readSnapshots(scopeId);
-    const todaySnapshots = snapshots.filter((s) => s.dateKey === "2026-06-10");
-    expect(todaySnapshots).toHaveLength(1);
+    // The load never wrote, and the store still holds exactly one today snapshot.
+    expect(saveSnapshot).not.toHaveBeenCalled();
+    const after = await store.snapshots.readSnapshots("household");
+    expect(after.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
+    // The result carries that one persisted point — not a synthesized duplicate.
+    expect(result.snapshots.filter((s) => s.dateKey === "2026-06-10")).toHaveLength(1);
 
     store.close();
   });
@@ -300,9 +246,11 @@ describe("loadDashboard — snapshot holding rows", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
+    // buildTodaySnapshotForScope does NOT read snapshot holdings, so the single
+    // #571 read still fires exactly once. `snapshotHoldingRows` is persisted-rows
+    // ∪ today's synthesized rows — for a cold store that is just the one live row.
     expect(reads).toEqual([{ scopeId: result.selectedScope!.id }]);
     expect(result.snapshotHoldingRows).toHaveLength(1);
     expect(result.snapshotHoldingRows[0]).toMatchObject({
@@ -313,87 +261,7 @@ describe("loadDashboard — snapshot holding rows", () => {
     store.close();
   });
 
-  test("captures holding rows alongside the snapshot for every scope", async () => {
-    const store = await createInMemoryStore();
-    // A household (not individual) so there is genuinely more than one scope:
-    // individual mode collapses to the lone household scope (#269), which would
-    // make "every scope" vacuous. member_jose owns the asset outright, so both
-    // the (viewed) household scope and the (non-viewed) member scope capture it.
-    await store.workspace.initializeWorkspace({
-      members: [
-        { id: "member_jose", name: "Jose" },
-        { id: "member_ana", name: "Ana" },
-      ],
-      mode: "household",
-    });
-    await makeAsset(store);
-
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
-
-    // Every scope captured its rows, not just the viewed one.
-    for (const scopeId of ["household", "member_jose"]) {
-      const snapshots = await store.snapshots.readSnapshots(scopeId);
-      expect(snapshots).toHaveLength(1);
-
-      const rows = await store.snapshots.readSnapshotHoldings({ scopeId });
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        holdingId: "asset_cash",
-        kind: "asset",
-        label: "Caja",
-        liquidityTier: "cash",
-        snapshotId: snapshots[0]!.id,
-        valueMinor: 100_000_00,
-      });
-    }
-
-    store.close();
-  });
-
-  test("same-day reload holds the frozen rows — no re-capture (S3 #531)", async () => {
-    const store = await createInMemoryStore();
-    await makeWorkspace(store);
-    await makeAsset(store);
-
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T08:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
-
-    await store.assets.updateAssetValuation("asset_cash", 120_000_00);
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T18:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
-
-    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
-    // One set of rows per scope per day, NOT re-captured — the provisional value
-    // is held until the close (a non-dated-fact edit does not ripple).
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.valueMinor).toBe(100_000_00);
-
-    store.close();
-  });
-
-  test("captures investment units and unit price on dashboard load", async () => {
+  test("carries today's synthesized investment units and unit price in the result", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await store.assets.createInvestmentAsset({
@@ -420,21 +288,27 @@ describe("loadDashboard — snapshot holding rows", () => {
       source: "stooq",
     });
 
-    await loadDashboard({
+    const result = await loadDashboard({
       store,
       persistence: makePersistence(),
       scopeId: undefined,
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
-    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
-    const fundRow = rows.find((row) => row.holdingId === "asset_fund");
+    // The synthesized today point (never persisted) carries the same investment
+    // detail the cron would freeze — units, unit price, and derived value.
+    const fundRow = result.snapshotHoldingRows.find(
+      (row) => row.holdingId === "asset_fund",
+    );
     expect(fundRow?.units).toBe("10.5");
     expect(fundRow?.unitPrice).toBe("110.40");
     expect(fundRow?.valueMinor).toBe(115_920);
+    // The store persisted nothing.
+    expect(
+      await store.snapshots.readSnapshotHoldings({ scopeId: "household" }),
+    ).toHaveLength(0);
 
     store.close();
   });
@@ -457,7 +331,6 @@ describe("loadDashboard — liquid drilldown", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.drilldown).toBeNull();
@@ -478,7 +351,6 @@ describe("loadDashboard — liquid drilldown", () => {
       drill: "liquid",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.drilldown).toEqual({ holdings: [], key: "liquid", stack: null });
@@ -492,15 +364,7 @@ describe("loadDashboard — liquid drilldown", () => {
     await makeAsset(store);
 
     // Day 1 capture
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-09",
-      now: "2026-06-09T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-06-09T10:00:00.000Z");
 
     // Day 2: value changed, drill requested
     await store.assets.updateAssetValuation("asset_cash", 120_000_00);
@@ -512,7 +376,6 @@ describe("loadDashboard — liquid drilldown", () => {
       drill: "liquid",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.drilldown).not.toBeNull();
@@ -550,15 +413,7 @@ describe("loadDashboard — rest and housing drilldowns", () => {
     });
 
     // Day 1 capture
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-09",
-      now: "2026-06-09T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-06-09T10:00:00.000Z");
 
     // Day 2: revaluation, drill requested
     await store.assets.updateAssetValuation("asset_piso", 320_000_00);
@@ -570,7 +425,6 @@ describe("loadDashboard — rest and housing drilldowns", () => {
       drill: "housing",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.drilldown).not.toBeNull();
@@ -600,15 +454,7 @@ describe("loadDashboard — deltas", () => {
     await makeAsset(store);
 
     // Day 1: 100 000 €
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-05-01",
-      now: "2026-05-01T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-05-01T10:00:00.000Z");
 
     // Day 2: 110 000 €
     await store.assets.updateAssetValuation("asset_cash", 110_000_00);
@@ -619,7 +465,6 @@ describe("loadDashboard — deltas", () => {
       selectedView: "total",
       today: "2026-05-02",
       now: "2026-05-02T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.deltas).toBeDefined();
@@ -635,15 +480,7 @@ describe("loadDashboard — deltas", () => {
     await makeAsset(store);
 
     // End of May: 100 000 €
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-05-31",
-      now: "2026-05-31T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-05-31T10:00:00.000Z");
 
     // June: 115 000 €
     await store.assets.updateAssetValuation("asset_cash", 115_000_00);
@@ -654,7 +491,6 @@ describe("loadDashboard — deltas", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.deltas).toBeDefined();
@@ -676,15 +512,7 @@ describe("loadDashboard — framed headline deltas", () => {
     await makeAsset(store);
 
     // End of May: total 100 000 €
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-05-31",
-      now: "2026-05-31T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-05-31T10:00:00.000Z");
 
     // June: total 120 000 €
     await store.assets.updateAssetValuation("asset_cash", 120_000_00);
@@ -695,7 +523,6 @@ describe("loadDashboard — framed headline deltas", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     // vs previous and vs monthly close are the same here (single prior snapshot,
@@ -729,15 +556,7 @@ describe("loadDashboard — framed headline deltas", () => {
     });
 
     // Day 1: liquid 100 000 €, total 300 000 €
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "liquid",
-      today: "2026-06-09",
-      now: "2026-06-09T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-06-09T10:00:00.000Z");
 
     // Day 2: cash grows to 150 000 €, property unchanged → liquid +50 000 €,
     // total +50 000 € too, but the liquid base (100 000 €) makes pct +50%.
@@ -749,7 +568,6 @@ describe("loadDashboard — framed headline deltas", () => {
       selectedView: "liquid",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.headlineDeltas.sincePrevious).toEqual({
@@ -772,7 +590,6 @@ describe("loadDashboard — framed headline deltas", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.headlineDeltas.sincePrevious).toBeNull();
@@ -783,36 +600,13 @@ describe("loadDashboard — framed headline deltas", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pricing failure degradation
+// Cache-only GET (#895) — the render never refreshes prices nor syncs sources.
+// `pricingErrors` is retained for result-shape stability but is always empty;
+// figures read from the last-known price cache already in the store.
 // ---------------------------------------------------------------------------
 
-describe("loadDashboard — pricing failure degradation", () => {
-  test("returns pricingErrors array when refresh fails — result carries explicit signal", async () => {
-    const store = await createInMemoryStore();
-    await makeWorkspace(store);
-    await makeAsset(store);
-
-    const failingRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
-      priceCache: [],
-      errors: ["AAPL: provider timeout"],
-    });
-
-    const result = await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: failingRefresh,
-    });
-
-    expect(result.pricingErrors).toEqual(["AAPL: provider timeout"]);
-
-    store.close();
-  });
-
-  test("returns empty pricingErrors when pricing succeeds", async () => {
+describe("loadDashboard — cache-only GET (#895)", () => {
+  test("pricingErrors is always an empty array — the GET never refreshes", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
@@ -824,23 +618,18 @@ describe("loadDashboard — pricing failure degradation", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
+    expect(Array.isArray(result.pricingErrors)).toBe(true);
     expect(result.pricingErrors).toEqual([]);
 
     store.close();
   });
 
-  test("still returns dashboard state (with last-known prices) when pricing fails", async () => {
+  test("figures use the last-known values already in the store", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
-
-    const failingRefresh: LoadDashboardInput["refreshPrices"] = async () => ({
-      priceCache: [],
-      errors: ["network error"],
-    });
 
     const result = await loadDashboard({
       store,
@@ -849,22 +638,43 @@ describe("loadDashboard — pricing failure degradation", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: failingRefresh,
     });
 
-    // dashboard state is always present even on pricing failure
+    // Dashboard state is always present; figures are the last-known manual value.
     expect(result.dashboard).toBeDefined();
     expect(result.presentation).toBeDefined();
-    // figures are based on last-known values (manual asset = 100 000 €)
     expect(result.presentation!.headline.amountMinor).toBe(100_000_00);
 
     store.close();
   });
 
-  test("pricingErrors is an empty array (not undefined) when there are no errors", async () => {
+  test("prices an investment from the persisted price cache without any refresh", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
-    await makeAsset(store);
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      name: "Fondo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-06-01T10:00:00.000Z",
+      id: "op_1",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    // The last-known cached price — the GET reads this directly, no network.
+    await store.operations.upsertPrice({
+      assetId: "asset_fund",
+      currency: "EUR",
+      fetchedAt: "2026-06-09T09:00:00.000Z",
+      freshnessState: "fresh",
+      price: "110.40",
+      source: "stooq",
+    });
 
     const result = await loadDashboard({
       store,
@@ -873,37 +683,11 @@ describe("loadDashboard — pricing failure degradation", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
-    expect(Array.isArray(result.pricingErrors)).toBe(true);
-    expect(result.pricingErrors).toHaveLength(0);
-
-    store.close();
-  });
-
-  test("awaits refreshBinanceSources when provided and merges its errors (PRD #245 S4)", async () => {
-    const store = await createInMemoryStore();
-    await makeWorkspace(store);
-    await makeAsset(store);
-
-    const refreshBinanceSources = vi.fn(async () => ({
-      errors: ["Binance: revisa la conexión."],
-    }));
-
-    const result = await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-      refreshBinanceSources,
-    });
-
-    expect(refreshBinanceSources).toHaveBeenCalledTimes(1);
-    expect(result.pricingErrors).toContain("Binance: revisa la conexión.");
+    // 10 units × 110.40 cached = 1 104.00 € — the cache priced it, unrefreshed.
+    expect(result.pricingErrors).toEqual([]);
+    expect(result.presentation!.headline.amountMinor).toBe(110_400);
 
     store.close();
   });
@@ -925,7 +709,6 @@ describe("loadDashboard — no workspace", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.needsOnboarding).toBe(true);
@@ -944,7 +727,6 @@ describe("loadDashboard — no workspace", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.needsOnboarding).toBe(false);
@@ -972,15 +754,7 @@ describe("loadDashboard — debts drilldown", () => {
     });
 
     // Day 1 capture
-    await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-09",
-      now: "2026-06-09T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
-    });
+    await captureDailySnapshotForWorkspace(store, "2026-06-09T10:00:00.000Z");
 
     // Day 2: balance reduced, debts drill requested
     await store.liabilities.updateLiabilityBalance("debt_mortgage", 190_000_00);
@@ -992,7 +766,6 @@ describe("loadDashboard — debts drilldown", () => {
       drill: "debts",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.drilldown).not.toBeNull();
@@ -1027,15 +800,7 @@ describe("loadDashboard — composition range and density", () => {
       const m = (total % 12) + 1;
       const today = `${y}-${String(m).padStart(2, "0")}-15`;
       await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
-      await loadDashboard({
-        store,
-        persistence: makePersistence(),
-        scopeId: undefined,
-        selectedView: "total",
-        today,
-        now: `${today}T10:00:00.000Z`,
-        refreshPrices: noOpRefresh,
-      });
+      await captureDailySnapshotForWorkspace(store, `${today}T10:00:00.000Z`);
     }
 
     // Explicit all deep-link: the ~13-month span unlocks 1A (and Todo), monthly density.
@@ -1047,7 +812,6 @@ describe("loadDashboard — composition range and density", () => {
       range: "all",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
     expect(all.activeCompositionRange).toBe("all");
     expect(all.compositionRanges).toEqual(["1y", "all"]);
@@ -1068,7 +832,6 @@ describe("loadDashboard — composition range and density", () => {
       selectedView: "total",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
     expect(y1.activeCompositionRange).toBe("1y");
     expect(y1.compositionSeries.length).toBe(12);
@@ -1094,15 +857,7 @@ describe("loadDashboard — composition range and density", () => {
       const m = (total % 12) + 1;
       const today = `${y}-${String(m).padStart(2, "0")}-15`;
       await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
-      await loadDashboard({
-        store,
-        persistence: makePersistence(),
-        scopeId: undefined,
-        selectedView: "total",
-        today,
-        now: `${today}T10:00:00.000Z`,
-        refreshPrices: noOpRefresh,
-      });
+      await captureDailySnapshotForWorkspace(store, `${today}T10:00:00.000Z`);
     }
 
     // Drill the liquid group both unbounded and through the 1y window. Both the
@@ -1117,7 +872,6 @@ describe("loadDashboard — composition range and density", () => {
       range: "all",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
     const windowed = await loadDashboard({
       store,
@@ -1128,7 +882,6 @@ describe("loadDashboard — composition range and density", () => {
       range: "1y",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     // The composition windows to twelve closes; the drill sparkline windows to
@@ -1168,15 +921,7 @@ describe("loadDashboard — composition range and density", () => {
       const today = `${month}-15`;
       await store.assets.updateAssetValuation("asset_cash", 100_000_00 + i * 1_000_00);
       cpi.push({ dateKey: `${month}-01`, value: String(100 + i) });
-      await loadDashboard({
-        store,
-        persistence: makePersistence(),
-        scopeId: undefined,
-        selectedView: "total",
-        today,
-        now: `${today}T10:00:00.000Z`,
-        refreshPrices: noOpRefresh,
-      });
+      await captureDailySnapshotForWorkspace(store, `${today}T10:00:00.000Z`);
     }
 
     const result = await loadDashboard({
@@ -1186,7 +931,6 @@ describe("loadDashboard — composition range and density", () => {
       selectedView: "total",
       today: "2026-06-15",
       now: "2026-06-15T12:00:00.000Z",
-      refreshPrices: noOpRefresh,
       readBenchmarkPrices: async (seriesId) => {
         expect(seriesId).toBe("ipc-es");
         return cpi;
@@ -1248,7 +992,6 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
       selectedView: "total",
       today: "2026-06-11",
       now: "2026-06-11T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
   }
 
@@ -1277,9 +1020,10 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
       "2026-06-11T09:00:00.000Z",
     );
 
-    await loadOnce(store);
-
-    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    // Cache-only GET (#895): the per-token breakdown rides today's synthesized
+    // point in the result — the same capture path the cron persists — never a
+    // store write.
+    const { snapshotHoldingRows: rows } = await loadOnce(store);
     const binance = rows.find((row) => row.label === "Binance");
     expect(binance?.valueMinor).toBe(3_400_000);
     // Keyed by symbol (NOT symbol:wallet): BTC's two wallets collapse to one row,
@@ -1330,9 +1074,10 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
       "2026-06-11T09:00:00.000Z",
     );
 
-    await loadOnce(store);
-
-    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    // Cache-only GET (#895): the per-token breakdown rides today's synthesized
+    // point in the result — the same capture path the cron persists — never a
+    // store write.
+    const { snapshotHoldingRows: rows } = await loadOnce(store);
     const binance = rows.find((row) => row.label === "Binance");
     const wagmi = binance?.positions?.find((p) => p.positionKey === "WAGMI");
     expect(wagmi).toMatchObject({ label: "WAGMI", valueMinor: 0 });
@@ -1368,9 +1113,10 @@ describe("loadDashboard — Binance per-token breakdown capture (ADR 0035, #462)
       "2026-06-11T09:00:00.000Z",
     );
 
-    await loadOnce(store);
-
-    const rows = await store.snapshots.readSnapshotHoldings({ scopeId: "household" });
+    // Cache-only GET (#895): the per-token breakdown rides today's synthesized
+    // point in the result — the same capture path the cron persists — never a
+    // store write.
+    const { snapshotHoldingRows: rows } = await loadOnce(store);
     const binanceRows = rows.filter((row) => row.positions !== undefined);
     // Two rung assets, each with exactly its own rung's token frozen — the
     // breakdown is attributed to the right materialized holding.
@@ -1405,7 +1151,6 @@ describe("loadDashboard — composition series per range", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     // Exactly the offered ranges are keyed — no extra windows shipped.
@@ -1433,7 +1178,6 @@ describe("loadDashboard — composition series per range", () => {
       range: "1y",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.compositionRanges).toEqual(["all"]);
@@ -1454,7 +1198,6 @@ describe("loadDashboard — composition series per range", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.needsOnboarding).toBe(true);
@@ -1482,7 +1225,6 @@ describe("loadDashboard — initial matrix cross", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     // The active cell (chart, all) and the whole column of drills at `all`.
@@ -1510,7 +1252,6 @@ describe("loadDashboard — initial matrix cross", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
 
     expect(result.needsOnboarding).toBe(true);
@@ -1544,7 +1285,6 @@ describe("loadDashboard — contribution plan for FIRE", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
     const manualBase = manualOnly.fireProjection!.scenarios.find(
       (s) => s.label === "base",
@@ -1565,7 +1305,6 @@ describe("loadDashboard — contribution plan for FIRE", () => {
       selectedView: "total",
       today: "2026-06-10",
       now: "2026-06-10T10:00:00.000Z",
-      refreshPrices: noOpRefresh,
     });
     const planBase = withPlan.fireProjection!.scenarios.find((s) => s.label === "base")!;
 
@@ -1589,7 +1328,6 @@ describe("loadDashboard — hero data-health alert", () => {
     selectedView: "total" as const,
     today: "2026-07-02",
     now: "2026-07-02T10:00:00.000Z",
-    refreshPrices: noOpRefresh,
   });
 
   test("is clean when the data is healthy", async () => {

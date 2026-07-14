@@ -7,11 +7,17 @@
  */
 import type {
   AssetProjectionContext,
+  CaptureSnapshotOutput,
   CoinPosition,
   InvestmentCaptureDetail,
+  Liability,
   LiquidityTier,
+  ManualAsset,
+  NetWorthSnapshot,
+  ScopeOption,
   SnapshotPositionInput,
   TokenPosition,
+  Workspace,
 } from "@worthline/domain";
 import {
   captureSnapshotForScope,
@@ -21,6 +27,23 @@ import {
 } from "@worthline/domain";
 
 import type { WorthlineStore } from "./store-types";
+
+/**
+ * The scope-agnostic inputs a snapshot capture needs, read once from the store:
+ * the workspace and its scopes, the curve-valued holdings at the capture date,
+ * and the per-holding investment/position detail maps that freeze into every
+ * scope's rows. Shared by the fleet cron (which walks all scopes and saves) and
+ * the dashboard GET (which synthesizes ONE scope's live today-point in memory,
+ * never saving — #895). `null` when no workspace exists.
+ */
+export interface SharedSnapshotInputs {
+  workspace: Workspace;
+  assets: ManualAsset[];
+  liabilities: Liability[];
+  scopes: ScopeOption[];
+  investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail>;
+  positionDetails: ReadonlyMap<string, SnapshotPositionInput[]>;
+}
 
 /**
  * Capture a daily snapshot for every scope in the workspace.
@@ -45,8 +68,45 @@ export async function captureDailySnapshotForWorkspace(
   now: string,
   projectionContext?: AssetProjectionContext,
 ): Promise<void> {
+  const shared = await buildSharedSnapshotInputs(store, now, projectionContext);
+  if (!shared) return;
+
+  // ── Walk every scope and capture ─────────────────────────────────────────
+  for (const scope of shared.scopes) {
+    const capture = captureSnapshotForScope({
+      assets: shared.assets,
+      capturedAt: now,
+      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
+      investmentDetails: shared.investmentDetails,
+      liabilities: shared.liabilities,
+      positionDetails: shared.positionDetails,
+      scope,
+      workspace: shared.workspace,
+    });
+
+    await store.snapshots.saveSnapshot({
+      holdings: capture.holdings,
+      replace: capture.replace,
+      snapshot: capture.snapshot,
+    });
+  }
+}
+
+/**
+ * Read the scope-agnostic snapshot inputs once from the store (#529, #895).
+ * Returns `null` when the workspace is absent (no-op capture / no live point).
+ *
+ * @param projectionContext - Optional pre-built projection context (dedup #566);
+ *   capture only writes snapshot tables, never the four projection tables, so a
+ *   context built before capture stays valid through it.
+ */
+export async function buildSharedSnapshotInputs(
+  store: WorthlineStore,
+  now: string,
+  projectionContext?: AssetProjectionContext,
+): Promise<SharedSnapshotInputs | null> {
   const workspace = await store.workspace.readWorkspace();
-  if (!workspace) return;
+  if (!workspace) return null;
 
   const dateKey = now.slice(0, 10);
   const { assets, liabilities } = await store.snapshots.readCurveValuedHoldingsAtDate(
@@ -110,23 +170,36 @@ export async function captureDailySnapshotForWorkspace(
     }
   }
 
-  // ── Walk every scope and capture ─────────────────────────────────────────
-  for (const scope of scopes) {
-    const capture = captureSnapshotForScope({
-      assets,
-      capturedAt: now,
-      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
-      investmentDetails,
-      liabilities,
-      positionDetails,
-      scope,
-      workspace,
-    });
+  return { assets, investmentDetails, liabilities, positionDetails, scopes, workspace };
+}
 
-    await store.snapshots.saveSnapshot({
-      holdings: capture.holdings,
-      replace: capture.replace,
-      snapshot: capture.snapshot,
-    });
-  }
+/**
+ * Build ONE scope's snapshot capture in memory without persisting it (#895).
+ *
+ * The dashboard GET is cache-only — it never writes — but the histórico chart
+ * must still show today's live point (snapshots persisted ∪ today live, #485).
+ * This reuses the exact capture path the cron uses so the in-memory today-point
+ * is byte-identical to the snapshot the evening cron will later persist. Returns
+ * `null` when the workspace is absent.
+ */
+export async function buildTodaySnapshotForScope(
+  store: WorthlineStore,
+  now: string,
+  scope: ScopeOption,
+  existingSnapshots: NetWorthSnapshot[],
+  projectionContext?: AssetProjectionContext,
+): Promise<CaptureSnapshotOutput | null> {
+  const shared = await buildSharedSnapshotInputs(store, now, projectionContext);
+  if (!shared) return null;
+
+  return captureSnapshotForScope({
+    assets: shared.assets,
+    capturedAt: now,
+    existingSnapshots,
+    investmentDetails: shared.investmentDetails,
+    liabilities: shared.liabilities,
+    positionDetails: shared.positionDetails,
+    scope,
+    workspace: shared.workspace,
+  });
 }

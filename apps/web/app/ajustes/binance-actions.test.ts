@@ -15,11 +15,20 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
 }));
 
+// Eager sync on connect (#895): connectBinanceAction now fires runBinanceRefresh
+// best-effort after connecting. Stub it so the connect tests never touch the
+// network (syncBinanceAction, below, still exercises the real sync via its own
+// fetch stubs — it does not go through this module).
+vi.mock("./binance-refresh", () => ({
+  runBinanceRefresh: vi.fn(async () => ({ errors: [] })),
+}));
+
 import {
   connectBinanceAction,
   disconnectBinanceAction,
   syncBinanceAction,
 } from "./binance-actions";
+import { runBinanceRefresh } from "./binance-refresh";
 
 function form(entries: Record<string, string>): FormData {
   const fd = new FormData();
@@ -67,12 +76,13 @@ afterEach(() => {
 });
 
 describe("connectBinanceAction", () => {
-  test("connects the first Binance source", async () => {
+  test("connects the first Binance source and eagerly syncs it (#895)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
+    vi.mocked(runBinanceRefresh).mockClear();
 
     const digest = await runAction(
       connectBinanceAction,
@@ -92,6 +102,9 @@ describe("connectBinanceAction", () => {
       apiKey: "the-key",
       apiSecret: "the-secret",
     });
+    // The connect fires exactly one eager refresh so the source shows positions
+    // before the next cron (the GET is cache-only now).
+    expect(runBinanceRefresh).toHaveBeenCalledTimes(1);
   });
 
   test("refuses a second Binance source", async () => {

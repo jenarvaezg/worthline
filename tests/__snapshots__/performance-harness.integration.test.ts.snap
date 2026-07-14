@@ -3,19 +3,19 @@
 exports[`performance harness (integration, #200) > guards the set of measured hot paths via a structural baseline snapshot 1`] = `
 [
   {
-    "ceilingMs": 3000,
+    "ceilingMs": 1500,
     "name": "dashboardLoad",
     "touched": 3,
   },
   {
     "ceilingMs": 250,
     "name": "fullHistoryRead",
-    "touched": 1140,
+    "touched": 1126,
   },
   {
     "ceilingMs": 500,
     "name": "windowedHistoryRead",
-    "touched": 868,
+    "touched": 854,
   },
   {
     "ceilingMs": 250,
@@ -25,17 +25,17 @@ exports[`performance harness (integration, #200) > guards the set of measured ho
   {
     "ceilingMs": 4000,
     "name": "operationRipple",
-    "touched": 84,
+    "touched": 83,
   },
   {
     "ceilingMs": 4000,
     "name": "valuationRipple",
-    "touched": 84,
+    "touched": 83,
   },
   {
     "ceilingMs": 2500,
     "name": "debtRipple",
-    "touched": 84,
+    "touched": 83,
   },
 ]
 `;
