@@ -193,11 +193,6 @@
   color: var(--cover);
 }
 
-/* Eyebrows (kickers) directamente sobre la cubierta se anotan en dorado. */
-.coverSurface .demoKicker {
-  color: var(--gilt);
-}
-
 .coverMasthead {
   background: var(--cover);
   border-bottom: 2px solid var(--gilt);
@@ -6652,12 +6647,17 @@ td.rowActions > * {
 }
 
 /* Puerta de la demo en cubierta (#909); .demoLanding queda como medida
-   interior compartida con /admin, que sigue en papel (#829). */
+   interior compartida con /admin, que sigue en papel (#829). El kicker se
+   anota en dorado solo aquí — /admin conserva el suyo en muted. */
 .demoCover {
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-height: 100vh;
+}
+
+.demoCover .demoKicker {
+  color: var(--gilt);
 }
 
 .demoLanding {
