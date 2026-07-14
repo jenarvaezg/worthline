@@ -362,4 +362,45 @@ describe("Libro mayor design-system guardian (#906)", () => {
       expect(source, `${file} must contain ${needle}`).toContain(needle);
     }
   });
+
+  test("the shell masthead is paper, not a filled panel (#910)", () => {
+    // Canon §3: the hero is the only surface with a fill; the masthead is paper
+    // opened by a heavy rule, never a card. (.topbar also carries a
+    // view-transition anchor rule, so match on the recipe, not the first rule.)
+    expectRecipe(".topbar", {
+      background: "transparent",
+      "border-bottom": "var(--rule-heavy)",
+    });
+
+    // The scope selector is a segmented control (canon §5), not outline pills:
+    // square segments divided by a rule, active inverts to ink.
+    const scopeBtn = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ".scopeTabBtn",
+    );
+    expect(scopeBtn?.declarations.get("border-radius")).toBe("0");
+    expect(scopeBtn?.declarations.get("border-left")).toBe("1px solid var(--line)");
+  });
+
+  test("the shell and root layers consume the paper register (#910)", () => {
+    const expectations: Array<[file: string, needle: string]> = [
+      // Register tabs (navTab) for the section nav; scope selector segmented.
+      ["shell.tsx", "className={`navTab${"],
+      ["shell.tsx", 'className="scopeTabs segmented"'],
+      // Session bands (not cover, not cards): demo neutral, impersonation caution.
+      ["demo/demo-banner.tsx", 'className="sessionBand"'],
+      ["admin/impersonation-banner.tsx", 'className="sessionBand"'],
+      ["admin/impersonation-banner.tsx", 'data-tone="warning"'],
+      // Runtime error boundary stays on paper with a system error band.
+      ["error.tsx", 'className="errorBand"'],
+    ];
+
+    for (const [file, needle] of expectations) {
+      const source = readFileSync(join(appDirectory, file), "utf8");
+      expect(source, `${file} must contain ${needle}`).toContain(needle);
+    }
+
+    // The recoverable error boundary must not fall back to the panel card.
+    const errorSource = readFileSync(join(appDirectory, "error.tsx"), "utf8");
+    expect(errorSource).not.toContain("summaryBand");
+  });
 });

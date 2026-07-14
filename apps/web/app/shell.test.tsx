@@ -38,4 +38,40 @@ describe("Shell", () => {
     expect(html).toContain("worthline");
     expect(html).toContain("contenido");
   });
+
+  it("renders the section nav as register tabs (#910)", () => {
+    const html = renderToStaticMarkup(
+      <Shell
+        activeSection="patrimonio"
+        currentPageUrl="/patrimonio"
+        persistence={persistence}
+        scopes={[]}
+        selectedScopeId={undefined}
+      >
+        <p>contenido</p>
+      </Shell>,
+    );
+    // Every section link is a .navTab; the active one carries the active modifier.
+    expect(html).toContain('class="navTab"');
+    expect(html).toContain('class="navTab active"');
+  });
+
+  it("renders the scope selector as a segmented control (#910)", () => {
+    const html = renderToStaticMarkup(
+      <Shell
+        activeSection="resumen"
+        currentPageUrl="/app"
+        persistence={persistence}
+        scopes={[
+          { id: "jorge", label: "Jorge", type: "member" },
+          { id: "hogar", label: "Hogar", type: "household" },
+        ]}
+        selectedScopeId="jorge"
+      >
+        <p>contenido</p>
+      </Shell>,
+    );
+    expect(html).toContain('class="scopeTabs segmented"');
+    expect(html).toContain("scopeTabBtn active");
+  });
 });

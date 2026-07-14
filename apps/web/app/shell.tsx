@@ -76,7 +76,7 @@ export default function Shell({
           <nav className="topNav" aria-label="Secciones principales">
             {NAV_SECTIONS.map((section) => (
               <ViewTransitionLink
-                className={section.id === activeSection ? "active" : undefined}
+                className={`navTab${section.id === activeSection ? " active" : ""}`}
                 href={section.href}
                 key={section.id}
               >
@@ -91,7 +91,7 @@ export default function Shell({
       {/* ── Scope bar (hidden for single-member workspaces) ─────────── */}
       {scopes.length > 1 ? (
         <div className="tabsBar">
-          <nav aria-label="Selector de ámbito" className="scopeTabs">
+          <nav aria-label="Selector de ámbito" className="scopeTabs segmented">
             {scopes.map((scope) => (
               <form action="/scope" key={scope.id} method="post">
                 <input name="returnTo" type="hidden" value={currentPageUrl} />

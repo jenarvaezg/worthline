@@ -4,8 +4,9 @@ import { readStoreTarget } from "@web/read-store-target";
 /**
  * The persistent "Viendo como <email> (solo lectura)" strip (#697, ADR 0030),
  * rendered on every page while an admin is impersonating a workspace (from the
- * root layout, gated by `isImpersonating()`). Mirrors `DemoBanner`'s shape —
- * same `.demoBanner` classes, a status strip rather than a card.
+ * root layout, gated by `isImpersonating()`). A session band like `DemoBanner`,
+ * but the caution tone (`data-tone="warning"`, canon §2/#910): impersonation is
+ * a state to notice, so the band goes gold rather than the neutral demo tone.
  *
  * "Salir" POSTs to `stopImpersonationAction`, which re-verifies `guardAdmin`,
  * clears the cookie, and redirects to /admin.
@@ -17,7 +18,12 @@ export default async function ImpersonationBanner() {
   }
 
   return (
-    <div className="demoBanner" role="note" aria-label="Impersonación de administrador">
+    <div
+      className="sessionBand"
+      data-tone="warning"
+      role="note"
+      aria-label="Impersonación de administrador"
+    >
       <span>
         Viendo como <strong>{target.impersonatedEmail}</strong> (solo lectura)
       </span>

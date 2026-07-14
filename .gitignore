@@ -8,6 +8,11 @@ package-lock.json
 node_modules/.cache/
 .turbo/
 .next/
+# Next regenerates next-env.d.ts on every dev/build with a different route-types
+# path (.next/dev/types vs .next/types), so a committed copy churns endlessly.
+# It's not a real input: tsconfig lists it as an include glob and CI typechecks
+# green without it. Ignore it and let Next emit it locally.
+next-env.d.ts
 out/
 dist/
 coverage/
