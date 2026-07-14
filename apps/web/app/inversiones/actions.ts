@@ -379,6 +379,7 @@ export async function confirmStatementAction(
         pricePerUnit: row.pricePerUnit,
         source: "statement",
         units: row.units,
+        ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
       })),
       deletes: plan.toDelete.map((operation) => operation.id),
       overwrites: plan.toOverwrite.map(({ operationId, row }) => ({
@@ -389,6 +390,7 @@ export async function confirmStatementAction(
         pricePerUnit: row.pricePerUnit,
         source: "statement",
         units: row.units,
+        ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
       })),
       today,
     });

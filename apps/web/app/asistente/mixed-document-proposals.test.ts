@@ -1,4 +1,5 @@
 import { createInMemoryStore } from "@worthline/db";
+import { asInstant } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
 
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
@@ -7,6 +8,54 @@ import { buildMixedDocumentProposal } from "./mixed-document-proposals";
 const SHA = "a".repeat(64);
 
 describe("mixed document proposal router", () => {
+  test("preserves a statement source instant when applying a mixed proposal", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "timed_fund",
+      isin: "ES00WL000009",
+      liquidityTier: "market",
+      name: "Fondo con hora",
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+    });
+    const proposal = await store.assistantProposals.create({
+      kind: "mixed_document_import",
+    });
+    await store.assistantProposals.appendDocument(proposal.id, {
+      document: {
+        name: "mixed-timed.csv",
+        provenance: "agent",
+        sha256: "7".repeat(64),
+      },
+      facts: [
+        {
+          kind: "statement_operation",
+          row: {
+            currency: "EUR",
+            dateKey: "2024-05-12",
+            feesMinor: 0,
+            isin: "ES00WL000009",
+            kind: "buy",
+            occurredAt: asInstant("2024-05-12T08:05:00.000Z"),
+            pricePerUnit: "12",
+            units: "3",
+          },
+        },
+      ],
+    });
+
+    expect(
+      await confirmMixedDocumentProposalAction({ proposalId: proposal.id }, store),
+    ).toMatchObject({ status: "applied" });
+    expect(await store.operations.readOperations("timed_fund")).toMatchObject([
+      { occurredAt: "2024-05-12T08:05:00.000Z" },
+    ]);
+  });
+
   test("asks for clarification instead of guessing a doubtful segment", async () => {
     const create = vi.fn();
     const result = await buildMixedDocumentProposal(

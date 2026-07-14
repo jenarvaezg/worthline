@@ -152,6 +152,7 @@ function rowToPreviewOperation(
     pricePerUnit: row.pricePerUnit,
     source: "statement",
     units: row.units,
+    ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
   };
 }
 

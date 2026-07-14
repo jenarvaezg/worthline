@@ -13,7 +13,7 @@ export function createUnitOfWork(ctx: StoreContext): UnitOfWork {
           id,
           trigger: input.trigger,
           connectedSourceId: input.connectedSourceId ?? null,
-          syncRunId: input.syncRunId ?? null,
+          syncRunId: null,
         })
         .run();
       return id;

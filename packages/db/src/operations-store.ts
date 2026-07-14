@@ -3,6 +3,7 @@ import type {
   CreateInvestmentOperationInput,
   CurrencyCode,
   DecimalString,
+  Instant,
   InvestmentOperation,
   OperationKind,
   OperationSource,
@@ -57,6 +58,7 @@ export interface UpdateInvestmentOperationInput {
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
   feesMinor: number;
+  occurredAt?: Instant;
   source?: OperationSource;
 }
 
@@ -264,6 +266,7 @@ async function updateOperation(
       currency: input.currency,
       feesMinor: input.feesMinor,
       kind: input.kind,
+      occurredAt: input.occurredAt ?? null,
       pricePerUnit: input.pricePerUnit,
       source: input.source ?? "statement",
       units: input.units,
@@ -277,6 +280,7 @@ async function updateOperation(
     feesMinor: input.feesMinor,
     kind: input.kind,
     operationId: input.id,
+    occurredAt: input.occurredAt ?? null,
     pricePerUnit: input.pricePerUnit,
     source: input.source ?? "statement",
     units: input.units,

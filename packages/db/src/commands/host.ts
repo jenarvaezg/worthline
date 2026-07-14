@@ -15,6 +15,10 @@ import type { FactBatchInput } from "./types";
 import { createUnitOfWork } from "./unit-of-work";
 
 type DatedFactCommands = DatedFactCommandImplementations;
+type StatementImportCommand = Omit<
+  Parameters<DatedFactCommands["applyStatementImportAndRipple"]>[0],
+  "trigger"
+>;
 
 /** Intent-level command surface. Persist+ripple implementation details stay private. */
 export interface CommandHost {
@@ -22,16 +26,12 @@ export interface CommandHost {
   applyStoredContributionValue: DatedFactCommands["applyStoredContributionValue"];
   recordInvestmentOperation: DatedFactCommands["recordOperationAndRipple"];
   mergeInvestmentOperations: DatedFactCommands["recordOperationsAndRipple"];
-  applyStatementImport: DatedFactCommands["applyStatementImportAndRipple"];
+  applyStatementImport: (params: StatementImportCommand) => Promise<void>;
   applyAssistantStatementProposal: (
-    params: Parameters<DatedFactCommands["applyStatementImportAndRipple"]>[0] & {
-      proposalId: string;
-    },
+    params: StatementImportCommand & { proposalId: string },
   ) => Promise<void>;
   applyAssistantMixedProposal: (
-    params: Parameters<DatedFactCommands["applyStatementImportAndRipple"]>[0] & {
-      proposalId: string;
-    },
+    params: StatementImportCommand & { proposalId: string },
   ) => Promise<void>;
   applyAssistantBalanceHistoryProposal: (
     params: Parameters<DatedFactCommands["importBalanceHistoryAndRipple"]>[0] & {
@@ -109,6 +109,12 @@ async function applyDraftAssistantProposal(
   });
 }
 
+function throwCommandResultError(result: { error: string; code?: string }): never {
+  const error = new Error(result.error);
+  if (result.code !== undefined) Object.assign(error, { code: result.code });
+  throw error;
+}
+
 export function createCommandHost(
   ctx: StoreContext,
   snapshots: { saveSnapshot: SnapshotStore["saveSnapshot"] },
@@ -153,7 +159,7 @@ export function createCommandHost(
       params,
       batch,
     );
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) throwCommandResultError(result);
     return result.value.created;
   };
   return {
@@ -178,7 +184,8 @@ export function createCommandHost(
           }
           return proposal;
         },
-        () => datedFacts.applyStatementImportAndRipple(params),
+        () =>
+          datedFacts.applyStatementImportAndRipple({ ...params, trigger: "assistant" }),
       ),
     applyAssistantMixedProposal: async ({ proposalId, ...params }) =>
       applyDraftAssistantProposal(
@@ -191,7 +198,8 @@ export function createCommandHost(
           }
           return proposal;
         },
-        () => datedFacts.applyStatementImportAndRipple(params),
+        () =>
+          datedFacts.applyStatementImportAndRipple({ ...params, trigger: "assistant" }),
       ),
     applyAssistantBalanceHistoryProposal: async ({
       proposalId,
@@ -230,7 +238,8 @@ export function createCommandHost(
         },
         () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
       ),
-    applyStatementImport: datedFacts.applyStatementImportAndRipple,
+    applyStatementImport: (params) =>
+      datedFacts.applyStatementImportAndRipple({ ...params, trigger: "statement" }),
     applyStoredContributionValue: datedFacts.applyStoredContributionValue,
     backfillHistoricalSnapshots: snapshotOrchestrator.backfillHistoricalSnapshots,
     backfillInvestmentPrices: snapshotOrchestrator.backfillInvestmentPricesAndRipple,

@@ -34,7 +34,6 @@ export type FactBatchTrigger =
 export interface FactBatchInput {
   trigger: FactBatchTrigger;
   connectedSourceId?: string;
-  syncRunId?: string;
 }
 
 /**

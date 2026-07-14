@@ -98,6 +98,7 @@ describe("confirmStatementAction (#174)", () => {
       expect(op.kind).toBe("buy");
       expect(op.currency).toBe("EUR");
       expect(op.feesMinor).toBe(0);
+      expect(op.occurredAt).toBeUndefined();
     }
     expect(ops.map((op) => op.executedAt).sort()).toEqual([
       "2024-02-01",

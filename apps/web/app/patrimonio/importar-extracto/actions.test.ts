@@ -342,6 +342,9 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
     const matchedOps = await store.operations.readOperations("matched_fund");
     expect(matchedOps).toHaveLength(2);
+    expect(matchedOps.every((operation) => operation.occurredAt === undefined)).toBe(
+      true,
+    );
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     const created = metas.find((meta) => meta.isin === "LU00WL000002");

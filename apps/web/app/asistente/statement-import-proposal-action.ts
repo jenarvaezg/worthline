@@ -52,6 +52,7 @@ function rowToCreateInput(
     pricePerUnit: row.pricePerUnit,
     source,
     units: row.units,
+    ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
   };
 }
 
@@ -158,6 +159,7 @@ export async function confirmStatementImportProposalAction(
             pricePerUnit: row.pricePerUnit,
             source: "agent" as const,
             units: row.units,
+            ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
           })),
         };
       }

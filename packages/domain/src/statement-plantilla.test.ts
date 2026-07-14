@@ -53,6 +53,7 @@ describe("parseStatement — plantilla (#695)", () => {
     expect(rows[2]!.feesMinor).toBe(150);
     // Both date shapes land as ISO date keys.
     expect(rows[3]!.dateKey).toBe("2026-01-02");
+    expect(rows.every((row) => row.occurredAt === undefined)).toBe(true);
     // Comma and dot decimals both parse; price derives amount ÷ units.
     expect(multiplyToMinor(rows[0]!.units, rows[0]!.pricePerUnit)).toBe(100_00);
     expect(multiplyToMinor(rows[3]!.units, rows[3]!.pricePerUnit)).toBe(119_38);

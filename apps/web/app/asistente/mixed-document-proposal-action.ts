@@ -118,6 +118,7 @@ export async function confirmMixedDocumentProposalAction(
             pricePerUnit: row.pricePerUnit,
             source: "agent" as const,
             units: row.units,
+            ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
           }));
           if (fund.kind === "matched") {
             return {
@@ -133,6 +134,7 @@ export async function confirmMixedDocumentProposalAction(
                 pricePerUnit: row.pricePerUnit,
                 source: "agent" as const,
                 units: row.units,
+                ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
               })),
             };
           }

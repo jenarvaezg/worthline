@@ -51,6 +51,12 @@ creation time, and optional connected-source and sync-run references. It stores
 neither raw payloads nor a serialized diff; those belong to their source
 workflow, not to the financial fact ledger.
 
+The `sync_run_id` column is reserved for the sync-run lifecycle tracked by
+#885. This ADR does not invent that lifecycle: there is no `sync_runs` table
+yet, so the column remains nullable and deliberately has no foreign key.
+Command callers cannot set it until #885 introduces the referenced table and
+its ownership semantics.
+
 The first schema sliver adds a nullable `batch_id` to exactly the fact families
 that participate in this common ingestion path:
 

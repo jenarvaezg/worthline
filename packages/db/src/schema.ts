@@ -111,6 +111,11 @@ export const factBatches = sqliteTable("fact_batch", {
   id: text("id").primaryKey(),
   trigger: text("trigger").notNull(),
   connectedSourceId: text("connected_source_id"),
+  /**
+   * Reserved for the sync-run lifecycle in #885. Intentionally nullable and
+   * without an FK until a real `sync_runs` table exists; command inputs cannot
+   * currently supply a dangling identifier.
+   */
   syncRunId: text("sync_run_id"),
   createdAt: timestamp("created_at"),
 });
