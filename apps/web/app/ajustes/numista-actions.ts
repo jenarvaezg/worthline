@@ -22,6 +22,7 @@ import {
   scopeMemberId,
 } from "./connected-source-helpers";
 import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
+import { runNumistaCoinRefresh } from "./numista-coin-refresh";
 import {
   normalizeApiKey,
   parseNumistaToken,
@@ -93,6 +94,17 @@ export async function connectNumistaAction(
       credentialsJson: JSON.stringify({ apiKey }),
       ownership,
     });
+
+    // Eager sync on connect (#895, #785 dim.2): the GET is now cache-only and no
+    // longer syncs, so without this the collection would show 0 positions until
+    // the next cron. Reuses the cron/GET orchestration (stale-gated → a just-
+    // connected source with no freshness always syncs). Best-effort: a Numista
+    // outage degrades to last-known inside the refresh and never fails connect.
+    try {
+      await runNumistaCoinRefresh(store, new Date().toISOString());
+    } catch {
+      // Connecting still succeeds; the twice-daily cron will retry the sync.
+    }
 
     return { ok: true as const };
   }, _store);

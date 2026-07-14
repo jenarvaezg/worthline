@@ -48,7 +48,7 @@ budgeted:
 
 | Audit path                 | Threshold key(s)                                   | Ceiling                  |
 | -------------------------- | -------------------------------------------------- | ------------------------ |
-| Dashboard load             | `dashboardLoad`                                    | 3,000 ms                 |
+| Dashboard load             | `dashboardLoad`                                    | 1,500 ms                 |
 | Snapshot holding reads     | `fullHistoryRead`, `windowedHistoryRead`           | 250 / 500 ms             |
 | Position reads             | `positionProjection`                               | 250 ms                   |
 | Historical snapshot ripple | `operationRipple`, `valuationRipple`, `debtRipple` | 4,000 / 4,000 / 2,500 ms |

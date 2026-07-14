@@ -48,10 +48,26 @@ export interface RunDailyCaptureDeps {
     pairs: DailyCapturePricePair[],
     now: string,
   ) => Promise<DailyCaptureFetchedPrice[]>;
-  /** Run-level idempotency guard: true means this UTC date already finalized. */
-  isRunFinalized?: (dateKey: string) => Promise<boolean>;
-  /** Persist successful run finalization after all workspaces capture. */
-  markRunFinalized?: (dateKey: string, finalizedAt: string) => Promise<void>;
+  /**
+   * Run-level idempotency guard: true means THIS pass already finalized. Keyed
+   * by a pass-qualified run key (`YYYY-MM-DD:am|pm`, #895) so the morning
+   * (provisional) and evening (close) passes finalize independently — the guard
+   * still dedupes accidental double-triggers within a pass.
+   */
+  isRunFinalized?: (runKey: string) => Promise<boolean>;
+  /** Persist successful run finalization for this pass. */
+  markRunFinalized?: (runKey: string, finalizedAt: string) => Promise<void>;
+  /**
+   * Sync a workspace's connected sources before capture (#895): re-read Binance
+   * balances and Numista/coin valuations so the snapshot freezes fresh figures.
+   * Isolated per workspace here and per source inside the orchestration, which
+   * degrades to last-known (never 0) on an outage rather than throwing. Optional
+   * — omitted in tests that don't exercise connected sources.
+   */
+  syncConnectedSources?: (
+    store: WorthlineStore,
+    now: string,
+  ) => Promise<{ errors: string[] }>;
   /** Catalog series fetched into the shared control-plane benchmark cache. */
   listBenchmarkSeries?: () => Promise<DailyCaptureBenchmarkSeries[]>;
   /** Existing cached rows for one benchmark series. */
@@ -82,26 +98,40 @@ export interface DailyCaptureBenchmarkFailure {
   error: string;
 }
 
+/** One connected-source sync degradation for a workspace (#895). */
+export interface DailyCaptureSourceSyncFailure {
+  workspaceId: string;
+  error: string;
+}
+
 export interface RunDailyCaptureResult {
   total: number;
   captured: number;
   failures: DailyCaptureFailure[];
   benchmarkFailures: DailyCaptureBenchmarkFailure[];
+  /**
+   * Per-workspace connected-source sync degradations (#895). These NEVER count
+   * as capture failures — the snapshot still freezes last-known values — so they
+   * do not block run finalization; they are surfaced for observability only.
+   */
+  sourceSyncFailures: DailyCaptureSourceSyncFailure[];
   dateKey?: string;
   skipped?: boolean;
 }
 
 /**
- * Fleet daily snapshot capture (ADR 0037, PRD #528). Before any expensive
- * cross-tenant work, checks the run-level finalization guard for this UTC date;
- * redundant same-day triggers return without listing workspaces or fetching
- * prices. The first finalized run collects the fleet-wide union of market-price
- * provider symbols, fetches each unique pair once, persists those fresh prices
- * into every matching workspace cache, then captures the day's snapshot
- * **unconditionally** — latest-wins (ADR 0005) overrides any provisional
- * intraday point a render wrote earlier, finalizing the day at its close.
- * Per-workspace failures are isolated: one unreachable or broken tenant never
- * blocks the rest.
+ * Fleet daily snapshot capture (ADR 0037, PRD #528, #895). Runs twice a day
+ * (≈09:00 provisional + ≈21:00 close, latest-wins ADR 0005); the pass-qualified
+ * finalization guard lets both passes run while still short-circuiting redundant
+ * triggers within a pass. Each pass: collects the fleet-wide union of
+ * market-price provider symbols and fetches each unique pair once; then, per
+ * workspace, syncs its connected sources (re-reading STALE Binance/Numista
+ * sources past their daily TTL so the snapshot freezes fresh figures when due —
+ * a source refreshed by the earlier pass stays put), persists the fresh market
+ * prices, and captures the day's snapshot **unconditionally**. Per-workspace
+ * failures are isolated: one unreachable tenant never blocks the rest, and a
+ * connected-source outage degrades to last-known (never 0) without failing the
+ * capture. This is the sole writer of snapshots — the GET is cache-only (#895).
  *
  * Pure orchestration over injected seams — no control plane, no network, no
  * clock of its own (the cron route wires the real dependencies).
@@ -110,12 +140,14 @@ export async function runDailyCapture(
   deps: RunDailyCaptureDeps,
 ): Promise<RunDailyCaptureResult> {
   const dateKey = dateKeyFromIso(deps.now);
-  if (await deps.isRunFinalized?.(dateKey)) {
+  const runKey = runKeyFromIso(deps.now);
+  if (await deps.isRunFinalized?.(runKey)) {
     return {
       total: 0,
       captured: 0,
       failures: [],
       benchmarkFailures: [],
+      sourceSyncFailures: [],
       dateKey,
       skipped: true,
     };
@@ -123,6 +155,7 @@ export async function runDailyCapture(
 
   const workspaces = await deps.listAllWorkspaces();
   const failures: DailyCaptureFailure[] = [];
+  const sourceSyncFailures: DailyCaptureSourceSyncFailure[] = [];
   let captured = 0;
 
   const plans: WorkspaceCapturePlan[] = [];
@@ -151,6 +184,25 @@ export async function runDailyCapture(
 
   for (const plan of plans) {
     try {
+      // ── Source-sync phase (#895) — re-read balances/valuations pre-capture ──
+      // Runs BEFORE the snapshot so it freezes fresh connected-source figures.
+      // Wrapped in its own guard: a sync crash must NEVER block the capture nor
+      // count as a workspace failure — the snapshot still freezes last-known
+      // values (never zeroed). Per-source isolation lives inside the sync.
+      if (deps.syncConnectedSources) {
+        try {
+          const { errors } = await deps.syncConnectedSources(plan.store, deps.now);
+          for (const error of errors) {
+            sourceSyncFailures.push({ workspaceId: plan.workspace.id, error });
+          }
+        } catch (error) {
+          sourceSyncFailures.push({
+            workspaceId: plan.workspace.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       const pricesToUpsert = [];
       for (const asset of plan.assets) {
         if (!asset.providerSymbol) continue;
@@ -185,12 +237,19 @@ export async function runDailyCapture(
   }
 
   if (failures.length === 0) {
-    await deps.markRunFinalized?.(dateKey, deps.now);
+    await deps.markRunFinalized?.(runKey, deps.now);
   }
 
   const benchmarkFailures = await runBenchmarkPhase(deps);
 
-  return { total: workspaces.length, captured, failures, benchmarkFailures, dateKey };
+  return {
+    total: workspaces.length,
+    captured,
+    failures,
+    benchmarkFailures,
+    sourceSyncFailures,
+    dateKey,
+  };
 }
 
 async function runBenchmarkPhase(
@@ -249,4 +308,17 @@ function pricePairKey(provider: InvestmentPriceProvider, symbol: string): string
 
 function dateKeyFromIso(now: string): string {
   return now.slice(0, 10);
+}
+
+/**
+ * The pass-qualified run key for the idempotency guard (#895): the UTC date plus
+ * an `am`/`pm` pass marker split at 15:00 UTC. The two scheduled passes (≈09:00
+ * provisional, ≈21:00 close) therefore finalize independently — the evening pass
+ * is never mistaken for a redundant retry of the morning one — while accidental
+ * double-triggers within a single pass window still short-circuit.
+ */
+function runKeyFromIso(now: string): string {
+  const hour = Number(now.slice(11, 13));
+  const pass = Number.isFinite(hour) && hour < 15 ? "am" : "pm";
+  return `${dateKeyFromIso(now)}:${pass}`;
 }

@@ -22,7 +22,12 @@ import {
   gapFillHistoricalSnapshots,
 } from "./snapshot-orchestrator";
 
-export { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
+export type { SharedSnapshotInputs } from "./capture-daily-snapshot";
+export {
+  buildSharedSnapshotInputs,
+  buildTodaySnapshotForScope,
+  captureDailySnapshotForWorkspace,
+} from "./capture-daily-snapshot";
 export type {
   AddEarlyRepaymentCommand,
   AddInterestRateRevisionCommand,

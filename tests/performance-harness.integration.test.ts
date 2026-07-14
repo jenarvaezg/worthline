@@ -4,8 +4,8 @@
  * A reproducible, agent-runnable harness that seeds a representative worthline
  * workspace (tests/performance-harness-seeds.ts) and measures the hot paths the
  * performance audit flagged:
- *   1. Dashboard load     — the multi-scope capture loop + frozen-row reads that
- *                           apps/web/app/load-dashboard.ts runs on every request.
+ *   1. Dashboard load     — the cache-only reads apps/web/app/load-dashboard.ts
+ *                           runs on every GET (#895): no writes, no network.
  *   2. Frozen holding reads — readSnapshotHoldings over the full history and a
  *                           recent window (the composition chart + drilldown feed).
  *   3. Position projection  — readPositions deriving units/cost/PnL from operations.
@@ -58,7 +58,11 @@ afterEach(cleanupTempDirs);
  * gain in (and say so in the PR).
  */
 const THRESHOLDS_MS = {
-  dashboardLoad: 3_000,
+  // Lowered from 3_000 (#895): the GET `/` is now cache-only — it lost the
+  // multi-scope snapshot WRITES and the price-refresh/source-sync NETWORK, which
+  // moved to the twice-daily cron. `runCacheOnlyLoad` mirrors the reads-only path
+  // the render now runs, so the ceiling locks in the write/network savings.
+  dashboardLoad: 1_500,
   debtRipple: 2_500,
   fullHistoryRead: 250,
   operationRipple: 4_000,
@@ -102,47 +106,43 @@ async function measure(
 }
 
 /**
- * The dashboard load path's multi-scope capture loop, mirrored from
- * apps/web/app/load-dashboard.ts (no price refresh — that is the network seam,
- * stubbed out of the harness by construction).
+ * The cache-only dashboard GET path, mirrored from apps/web/app/load-dashboard.ts
+ * after #895: reads only — NO snapshot writes and NO price-refresh/source-sync
+ * network (both moved to the twice-daily cron). It reads the price cache, the
+ * curve-valued holdings, the shared projection, the scope's snapshots and its
+ * frozen holding rows, and synthesizes today's chart point IN MEMORY without
+ * saving it (histórico = persisted snapshots ∪ today's live point). Returns the
+ * scope count so the touched-count assertion stays anchored to the seed scale.
  */
-async function runCaptureLoop(
+async function runCacheOnlyLoad(
   store: Awaited<ReturnType<typeof createFileBackedStore>>,
 ): Promise<number> {
   const workspace = (await store.workspace.readWorkspace())!;
-  const assets = await store.assets.readAssets();
-  const liabilities = await store.liabilities.readLiabilities();
   const scopes = listScopeOptions(workspace);
-  const selectedScope = scopes[0];
+  const selectedScope = scopes[0]!;
 
+  await store.operations.readAllPriceCacheEntries();
+  const { assets, liabilities } =
+    await store.snapshots.readCurveValuedHoldingsAtDate(SEED_TODAY);
   // Mirror the production reuse seam (#208): one projection serves both the
-  // unscoped capture details that freeze every scope's rows AND the selected
-  // scope's positions, reading every investment operation once per load instead
-  // of twice.
+  // unscoped capture details AND the selected scope's positions.
   const { details: investmentDetails } =
-    await store.snapshots.readScopedPositionsWithDetails(selectedScope?.id);
+    await store.snapshots.readScopedPositionsWithDetails(selectedScope.id);
+  const existingSnapshots = await store.snapshots.readSnapshots(selectedScope.id);
 
-  let saved = 0;
-  for (const scope of scopes) {
-    const capture = captureSnapshotForScope({
-      assets,
-      capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
-      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
-      investmentDetails,
-      liabilities,
-      scope,
-      workspace,
-    });
-    if (capture) {
-      await store.snapshots.saveSnapshot({
-        holdings: capture.holdings,
-        replace: capture.replace,
-        snapshot: capture.snapshot,
-      });
-      saved++;
-    }
-  }
-  return saved;
+  // Today's live point — pure, in memory, NEVER persisted (the write is gone).
+  captureSnapshotForScope({
+    assets,
+    capturedAt: `${SEED_TODAY}T10:00:00.000Z`,
+    existingSnapshots,
+    investmentDetails,
+    liabilities,
+    scope: selectedScope,
+    workspace,
+  });
+
+  await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id });
+  return scopes.length;
 }
 
 /**
@@ -155,12 +155,12 @@ async function runHarness(): Promise<Measurement[]> {
 
   const measurements: Measurement[] = [];
 
-  // 1. Dashboard load — the multi-scope capture loop the web app runs per request.
+  // 1. Dashboard load — the cache-only reads the web app runs per GET (#895).
   measurements.push(
     await measure(
       "dashboardLoad",
       (r) => r as number,
-      () => runCaptureLoop(store),
+      () => runCacheOnlyLoad(store),
     ),
   );
 

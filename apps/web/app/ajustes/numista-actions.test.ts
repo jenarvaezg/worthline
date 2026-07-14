@@ -14,11 +14,20 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
 }));
 
+// Eager sync on connect (#895): connectNumistaAction now fires
+// runNumistaCoinRefresh best-effort after connecting. Stub it so the connect
+// tests never touch the network (syncNumistaAction is cookie-bound and not
+// exercised here; it does not route through this module).
+vi.mock("./numista-coin-refresh", () => ({
+  runNumistaCoinRefresh: vi.fn(async () => ({ errors: [] })),
+}));
+
 import {
   connectNumistaAction,
   disconnectNumistaAction,
   syncNumistaAction,
 } from "./numista-actions";
+import { runNumistaCoinRefresh } from "./numista-coin-refresh";
 
 function form(entries: Record<string, string>): FormData {
   const fd = new FormData();
@@ -62,12 +71,13 @@ async function seedWithSource(
 }
 
 describe("connectNumistaAction", () => {
-  test("connects the first Numista source", async () => {
+  test("connects the first Numista source and eagerly syncs it (#895)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
       mode: "individual",
     });
+    vi.mocked(runNumistaCoinRefresh).mockClear();
 
     const digest = await runAction(
       connectNumistaAction,
@@ -80,6 +90,9 @@ describe("connectNumistaAction", () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]!.adapter).toBe("numista");
     expect(JSON.parse(sources[0]!.credentialsJson)).toEqual({ apiKey: "the-key" });
+    // The connect fires exactly one eager refresh so the collection shows coins
+    // before the next cron (the GET is cache-only now).
+    expect(runNumistaCoinRefresh).toHaveBeenCalledTimes(1);
   });
 
   test("refuses a second Numista source", async () => {

@@ -1,10 +1,13 @@
 import type { WorthlineStore } from "@worthline/db";
+import { buildTodaySnapshotForScope } from "@worthline/db";
 import type {
   CompositionRange,
   CompositionSeriesPoint,
   DatedSnapshotHoldingRow,
   DrilldownKey,
   DrilldownState,
+  NetWorthSnapshot,
+  ScopeOption,
 } from "@worthline/domain";
 import {
   buildCompositionSeries,
@@ -95,19 +98,58 @@ export function buildMatrixCells(
 }
 
 /**
+ * Optional today-point synthesis for the ROUTE path (#895): the GET is now
+ * cache-only and never persists today's snapshot, so the store has nothing for
+ * today until the cron runs. To keep a client-side range/drill toggle from
+ * losing today's live point (a flash against ADR 0036), the route asks this
+ * reader to union today's in-memory point exactly as `loadDashboard` does. The
+ * page path never needs this — it passes `prefetchedInputs` already unioned.
+ */
+export interface TodayPointSynthesis {
+  /** ISO "now" — capturedAt + the dateKey (`now.slice(0,10)`) of the point. */
+  now: string;
+  /** The scope option to synthesize for (needs its label, not just the id). */
+  scope: ScopeOption;
+}
+
+/**
  * Read the matrix inputs once for a scope: snapshots + holding rows always; the
  * current/trashed holding ids only when a drill cell is requested (they cost two
- * extra reads the chart never needs).
+ * extra reads the chart never needs). When `todayPoint` is supplied and today's
+ * snapshot is not yet persisted, today's live point is synthesized in memory and
+ * unioned in — never written (#895).
  */
 export async function readMatrixInputs(
   store: WorthlineStore,
   scopeId: string,
   needDrillData: boolean,
+  todayPoint?: TodayPointSynthesis,
 ): Promise<MatrixInputs> {
-  const [snapshots, holdingRows] = await Promise.all([
+  const [persistedSnapshots, persistedRows] = await Promise.all([
     store.snapshots.readSnapshots(scopeId),
     store.snapshots.readSnapshotHoldings({ scopeId }),
   ]);
+
+  let snapshots: readonly NetWorthSnapshot[] = persistedSnapshots;
+  let holdingRows: DatedSnapshotHoldingRow[] = persistedRows;
+  if (todayPoint) {
+    const dateKey = todayPoint.now.slice(0, 10);
+    if (!persistedSnapshots.some((snapshot) => snapshot.dateKey === dateKey)) {
+      const capture = await buildTodaySnapshotForScope(
+        store,
+        todayPoint.now,
+        todayPoint.scope,
+        persistedSnapshots,
+      );
+      if (capture) {
+        snapshots = [...persistedSnapshots, capture.snapshot];
+        holdingRows = [
+          ...persistedRows,
+          ...capture.holdings.map((holding) => ({ ...holding, dateKey })),
+        ];
+      }
+    }
+  }
 
   if (!needDrillData) {
     return { snapshots, holdingRows, currentHoldingIds: [], trashedHoldingIds: [] };
@@ -140,8 +182,9 @@ export async function readMatrixInputs(
  *
  * When `prefetchedInputs` is supplied (the page path, which already read
  * snapshots + holding rows — often bounded to the eager ranges — and drill
- * ids during `loadDashboard`), the store is not re-read. The route omits it
- * and reads the full history on demand.
+ * ids during `loadDashboard`, today's live point already unioned), the store is
+ * not re-read. The route omits it, reads the full history on demand, and passes
+ * `todayPoint` so today's not-yet-persisted point is unioned there too (#895).
  */
 export async function readMatrixCells(
   store: WorthlineStore,
@@ -149,6 +192,7 @@ export async function readMatrixCells(
   coords: readonly MatrixCoord[],
   today: string,
   prefetchedInputs?: MatrixInputs,
+  todayPoint?: TodayPointSynthesis,
 ): Promise<Record<string, MatrixCellPayload>> {
   if (!scopeId || coords.length === 0) {
     return {};
@@ -159,6 +203,7 @@ export async function readMatrixCells(
       store,
       scopeId,
       coords.some((coord) => coord.mode !== "chart"),
+      todayPoint,
     ));
   return buildMatrixCells(coords, inputs, today);
 }

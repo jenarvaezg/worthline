@@ -3,21 +3,23 @@
  *
  * Single deep module: scope in → dashboard state out.
  *
- * Sequence:
- * 1. Refresh stale prices (via injected refreshPrices — caller supplies the
- *    refreshAndPersistStalePrices orchestration or a test stub).
- * 2. Capture at most one snapshot per scope per day, day's latest winning
- *    (ADR 0005). Runs for every scope so all scopes accumulate history.
+ * Cache-only GET (#785, #788, #895): this path performs NO network and NO
+ * writes. Price refresh and connected-source sync moved to the twice-daily cron
+ * (`run-daily-capture`, 09:00 + 21:00 UTC) and the manual "Actualizar precios"
+ * action. Here we only:
+ * 1. Read the cached prices (no refresh, no upsert).
+ * 2. Compute today's figures live (#485) and, when the cron has not yet written
+ *    today's snapshot, synthesize today's chart point in memory — never
+ *    persisted (histórico = persisted snapshots ∪ today's live point).
  * 3. Compute dashboard state via prepareDashboardState from @worthline/domain.
  *
- * Pricing failures degrade to last-known values; errors surface in the returned
- * `pricingErrors` field — never swallowed silently.
+ * `pricingErrors` is retained for API stability but is always empty here — the
+ * GET no longer refreshes, so freshness is surfaced by the data-health engine.
  */
 
 import type { WorthlineStore } from "@worthline/db";
-import { captureDailySnapshotForWorkspace } from "@worthline/db";
+import { buildTodaySnapshotForScope } from "@worthline/db";
 import type {
-  AssetPrice,
   BenchmarkComparisonResult,
   CompositionRange,
   CompositionSeriesPoint,
@@ -63,13 +65,6 @@ import { type HeroHealthView, selectHeroHealth } from "./hero-data-health";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
-export interface RefreshPricesResult {
-  /** Price cache after refresh (always populated — stale cache on failure). */
-  priceCache: AssetPrice[];
-  /** Non-empty on partial or total failure. */
-  errors: string[];
-}
-
 export interface LoadDashboardInput {
   /** The open store to use for all reads and writes. Caller owns lifecycle. */
   store: WorthlineStore;
@@ -98,34 +93,9 @@ export interface LoadDashboardInput {
    */
   today: string;
   /**
-   * "Now" as ISO timestamp for snapshot capturedAt and staleness checks.
+   * "Now" as ISO timestamp for the synthesized today-point capturedAt.
    */
   now: string;
-  /**
-   * Injected price-refresh orchestration.
-   * In production: refreshAndPersistStalePrices bound to the real pricing provider.
-   * In tests: a stub (noOpRefresh or a failing stub).
-   */
-  refreshPrices: (input: {
-    cacheEntries: AssetPrice[];
-    assets: Array<{ id: string; currency: string; providerSymbol?: string }>;
-    nowIso: string;
-  }) => Promise<RefreshPricesResult>;
-  /**
-   * Optional: refresh stale connected coin-collection valuations before snapshot
-   * capture (PRD #166, ADR 0017), so the snapshot freezes the freshly-valued
-   * coins. Production binds the Numista-backed orchestration; omitted in tests.
-   * Returns one message per source that failed, merged into `pricingErrors`.
-   */
-  refreshCoinValuations?: () => Promise<{ errors: string[] }>;
-  /**
-   * Optional: keep connected Binance sources current before snapshot capture
-   * (PRD #245 S4, ADR 0007/0021). Re-reads each stale source's balances and
-   * re-values them live, so today's snapshot freezes the freshly-valued holdings.
-   * Production binds the Binance-backed orchestration; omitted in tests.
-   * Returns one message per source that failed, merged into `pricingErrors`.
-   */
-  refreshBinanceSources?: () => Promise<{ errors: string[] }>;
   /** Optional CPI benchmark read from the control plane (ADR 0060). */
   readBenchmarkPrices?: (
     seriesId: string,
@@ -221,53 +191,16 @@ export interface LoadDashboardResult extends DashboardState {
 export async function loadDashboard(
   input: LoadDashboardInput,
 ): Promise<LoadDashboardResult> {
-  const { store, persistence, scopeId, selectedView, drill, range, now, refreshPrices } =
-    input;
+  const { store, persistence, scopeId, selectedView, drill, range, now } = input;
 
-  // ── 1. Refresh stale prices ───────────────────────────────────────────────
-  // TX-safety: no transaction is open during the read phase; these two are
-  // independent and can race freely.
-  const [investmentAssets, initialCache] = await Promise.all([
-    store.assets.readInvestmentAssetsWithMeta(),
-    store.operations.readAllPriceCacheEntries(),
-  ]);
-
-  const { priceCache, errors: priceErrors } = await refreshPrices({
-    cacheEntries: initialCache,
-    assets: investmentAssets,
-    nowIso: now,
-  });
-  let pricingErrors = priceErrors;
-
-  // Persist refreshed prices back to the store (one transaction when several changed).
-  const changedPrices = priceCache.filter((price) =>
-    initialCache.every(
-      (c) => c.assetId !== price.assetId || c.fetchedAt !== price.fetchedAt,
-    ),
-  );
-  if (changedPrices.length > 0) {
-    await store.operations.upsertPrices(changedPrices);
-  }
-
-  // ── 1b. Refresh stale coin-collection valuations (PRD #166) ───────────────
-  // Decoupled from position sync: rides the same daily pass, recomputing metal
-  // value from the daily spot and refetching numismatic estimates only past their
-  // long TTL. Degrades to last-known on a Numista outage; runs before snapshot
-  // capture so today's snapshot freezes the freshly-valued coins.
-  if (input.refreshCoinValuations) {
-    const { errors } = await input.refreshCoinValuations();
-    pricingErrors = [...pricingErrors, ...errors];
-  }
-
-  // ── 1c. Refresh stale Binance sources (PRD #245 S4) ───────────────────────
-  // Keeps connected Binance accounts current on the same daily pass: re-reads
-  // each stale source's balances and re-values them LIVE (ADR 0021). Degrades to
-  // last-known on an outage (never zeroed); runs before snapshot capture so
-  // today's snapshot freezes the freshly-valued holdings.
-  if (input.refreshBinanceSources) {
-    const { errors } = await input.refreshBinanceSources();
-    pricingErrors = [...pricingErrors, ...errors];
-  }
+  // ── 1. Read the price cache (cache-only GET, #895) ────────────────────────
+  // The GET no longer refreshes prices or syncs connected sources: that work
+  // moved to the twice-daily cron (`run-daily-capture`) and the manual
+  // "Actualizar precios" action. Here we only READ the cached prices — no
+  // network, no writes. `pricingErrors` stays empty (freshness is surfaced by
+  // the data-health engine, #665) but is retained for result-shape stability.
+  const priceCache = await store.operations.readAllPriceCacheEntries();
+  const pricingErrors: string[] = [];
 
   // ── 2. Read workspace — redirect signal if absent ─────────────────────────
   const workspace = await store.workspace.readWorkspace();
@@ -298,27 +231,33 @@ export async function loadDashboard(
   const scopes = listScopeOptions(workspace);
   const selectedScope = scopes.find((s) => s.id === scopeId) ?? scopes[0];
 
-  // ── 3. Snapshot capture — self-heal only (ADR 0037, PRD #528 S3) ───────────
-  // The daily cron (S2, #530) is the floor: it records every scope's
-  // close-of-day snapshot whether or not anyone signs in. So the render captures
-  // ONLY when today's snapshot is still absent for the scope — a self-heal if the
-  // cron has not yet run — and no-ops otherwise (the common load). This takes the
-  // per-scope saveSnapshot writes (~6 serial round-trips/scope) off the critical
-  // path of the streamed figures (#485); the figures are computed live and never
-  // depend on the write. A declared dated fact (operation, valuation anchor,
-  // housing valuation) still ripples today's snapshot immediately via its own
-  // seam (ADR 0012 / ADR 0020) — unchanged. The 21:00 cron overrides this
-  // provisional intraday point with the day's close (latest-wins, ADR 0005).
-  //
-  // The existence check is free: these are the selected scope's snapshots the
-  // histórico chart already needs (reused in §4, NOT re-read). On the rare
-  // self-heal we re-read so the chart includes today's freshly-captured point.
+  // ── 3. Today's live chart point — synthesized in memory, NEVER persisted ──
+  // Cache-only GET (#895): the render no longer self-heals a snapshot write. The
+  // twice-daily cron (`run-daily-capture`, 09:00 + 21:00 UTC) is the sole writer
+  // of snapshots — the morning pass replaces the self-heal that used to live
+  // here. But the histórico chart must still show today, so when the cron has
+  // not yet written today's snapshot for the selected scope we build it LIVE
+  // (byte-identical to the capture the evening cron will persist) and union it
+  // into `snapshots`; its frozen holding rows are unioned in §4 once read. The
+  // headline figure is computed live regardless (#485), independent of this.
+  // A declared dated fact still ripples persisted snapshots via its own seam
+  // (ADR 0012 / ADR 0020) — unchanged.
   let snapshots = selectedScope
     ? await store.snapshots.readSnapshots(selectedScope.id)
     : [];
+  let todayHoldingRows: DatedSnapshotHoldingRow[] = [];
   if (selectedScope && !snapshots.some((snapshot) => snapshot.dateKey === dateKey)) {
-    await captureDailySnapshotForWorkspace(store, now, projectionContext);
-    snapshots = await store.snapshots.readSnapshots(selectedScope.id);
+    const capture = await buildTodaySnapshotForScope(
+      store,
+      now,
+      selectedScope,
+      snapshots,
+      projectionContext,
+    );
+    if (capture) {
+      snapshots = [...snapshots, capture.snapshot];
+      todayHoldingRows = capture.holdings.map((holding) => ({ ...holding, dateKey }));
+    }
   }
 
   // ── 4. Collect remaining data for state assembly ─────────────────────────
@@ -403,11 +342,16 @@ export async function loadDashboard(
   // chart, drilldown matrix, and page-level movers (#571). When `all` is lazy,
   // this read is bounded to the longest eager range; `/api/dashboard/cells`
   // reads the full history only when the user selects `range=all` (#572).
+  // Union today's synthesized rows (§3) so the chart includes today's live point
+  // without any GET write. Empty when the cron already persisted today.
   const holdingRows = selectedScope
-    ? await store.snapshots.readSnapshotHoldings({
-        ...(holdingRowsFrom ? { from: `${holdingRowsFrom}-01` } : {}),
-        scopeId: selectedScope.id,
-      })
+    ? [
+        ...(await store.snapshots.readSnapshotHoldings({
+          ...(holdingRowsFrom ? { from: `${holdingRowsFrom}-01` } : {}),
+          scopeId: selectedScope.id,
+        })),
+        ...todayHoldingRows,
+      ]
     : [];
 
   // ── 4a. Range window (#144) — owned ONCE here, fed to both consumers ──────
