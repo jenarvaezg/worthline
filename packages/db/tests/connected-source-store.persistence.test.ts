@@ -262,7 +262,7 @@ describe("connected-source store — syncPositions", () => {
       "2024-07-01T10:00:00.000Z",
     );
 
-    const second = await store.connectedSources.readPositions(sourceId);
+    const second = (await store.connectedSources.readPositions(sourceId)).map(asCoin);
     expect(second.find((p) => p.externalId === "ext-1")?.id).toBe(
       idByExternal.get("ext-1"),
     );
