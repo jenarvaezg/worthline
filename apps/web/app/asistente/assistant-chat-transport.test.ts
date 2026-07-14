@@ -54,6 +54,29 @@ describe("assistant attachment transport", () => {
     expect((body.get("attachment") as File).type).toBe("text/csv");
   });
 
+  test.each([
+    ["captura.png", "image/png"],
+    ["captura.jpg", "image/jpeg"],
+    ["captura.jpeg", "image/jpeg"],
+    ["captura.webp", "image/webp"],
+    ["captura.heic", "image/heic"],
+    ["captura.heif", "image/heif"],
+  ])("supplies a safe MIME fallback for %s", (fileName, expectedMimeType) => {
+    const file = new File(["IMAGE-BYTES"], fileName);
+    const body = buildAssistantMultipartBody({
+      attachment: file,
+      messages: [],
+      screenContext: {
+        holdingId: null,
+        route: "/patrimonio",
+        section: "patrimonio",
+        view: {},
+      },
+    });
+
+    expect((body.get("attachment") as File).type).toBe(expectedMimeType);
+  });
+
   test("the concrete transport posts the selected file once as multipart", async () => {
     const fetchMock = vi
       .fn()

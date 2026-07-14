@@ -1,5 +1,6 @@
-export const ASSISTANT_SPREADSHEET_ACCEPT =
-  ".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+import { ASSISTANT_ATTACHMENT_ACCEPT } from "./attachment-types";
+
+export { ASSISTANT_ATTACHMENT_ACCEPT };
 
 export default function AssistantAttachmentControl({
   disabled,
@@ -15,7 +16,7 @@ export default function AssistantAttachmentControl({
   return (
     <div className="assistantAttachmentControl">
       <input
-        accept={ASSISTANT_SPREADSHEET_ACCEPT}
+        accept={ASSISTANT_ATTACHMENT_ACCEPT}
         disabled={disabled}
         id="assistant-positions-file"
         onChange={(event) => onChange(event.currentTarget.files?.[0] ?? null)}
@@ -23,7 +24,7 @@ export default function AssistantAttachmentControl({
         value=""
       />
       <label className="assistantAttachmentButton" htmlFor="assistant-positions-file">
-        Adjuntar CSV/XLSX
+        Adjuntar captura/CSV/XLSX
       </label>
       {file ? (
         <div aria-live="polite" className="assistantSelectedAttachment">

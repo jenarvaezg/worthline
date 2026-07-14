@@ -69,7 +69,7 @@ function contextBlock(previews: AttachmentPreviewData[]): string {
 
 /**
  * Remove UI-only preview and file parts, then attach the latest validated
- * spreadsheet facts to the current user turn. Only three documents are kept in
+ * attachment facts to the current user turn. Only three documents are kept in
  * active context so repeated uploads cannot grow the provider prompt without bound.
  */
 export function prepareAttachmentMessagesForModel(
