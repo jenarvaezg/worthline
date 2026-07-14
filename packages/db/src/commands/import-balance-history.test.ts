@@ -11,8 +11,6 @@ import {
 } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import { executeImportBalanceHistoryCommand, runCommand } from "./index";
-
 const TODAY = "2026-07-02";
 
 async function snapAt(store: WorthlineStore, dateKey: string) {
@@ -56,12 +54,12 @@ async function seedAmortizableMortgage(store?: WorthlineStore): Promise<Worthlin
   return activeStore;
 }
 
-describe("executeImportBalanceHistoryCommand (#969)", () => {
+describe("importBalanceHistory command (#969)", () => {
   test("persists exactly one fact batch and links every inserted fact to it", async () => {
     const client = openLibsqlClient(":memory:");
     const store = await seedAmortizableMortgage(await createStoreFromSqlite(client));
 
-    const result = await executeImportBalanceHistoryCommand(store, {
+    const created = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -86,7 +84,7 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
       today: TODAY,
     });
 
-    expect(result.ok).toBe(true);
+    expect(created).toBe(2);
     const batches = await client.execute("SELECT id, trigger FROM fact_batch");
     expect(batches.rows).toHaveLength(1);
     expect(batches.rows[0]!.trigger).toBe("manual");
@@ -103,44 +101,33 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
     const beforeOldest = await debtsAt(store, "2026-03-15");
     expect(beforeOldest).toBeDefined();
 
-    const result = await runCommand(
-      executeImportBalanceHistoryCommand,
-      {
-        liabilityId: "mortgage",
-        rebaselines: [
-          {
-            annualInterestRate: "0.03",
-            baselineDate: "2026-04-15",
-            endDate: "2046-01-15",
-            id: "reb1",
-            liabilityId: "mortgage",
-            nextPaymentDate: "2026-05-15",
-            outstandingBalanceMinor: 145_000_00,
-            startsAtBaseline: false,
-          },
-          {
-            annualInterestRate: "0.03",
-            baselineDate: "2026-06-15",
-            endDate: "2046-01-15",
-            id: "reb2",
-            liabilityId: "mortgage",
-            nextPaymentDate: "2026-07-15",
-            outstandingBalanceMinor: 140_000_00,
-            startsAtBaseline: false,
-          },
-        ],
-        today: TODAY,
-      },
-      store,
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      value: {
-        created: 2,
-        ripple: { fromDateKey: "2026-04-15", today: TODAY },
-      },
+    const created = await store.command.importBalanceHistory({
+      liabilityId: "mortgage",
+      rebaselines: [
+        {
+          annualInterestRate: "0.03",
+          baselineDate: "2026-04-15",
+          endDate: "2046-01-15",
+          id: "reb1",
+          liabilityId: "mortgage",
+          nextPaymentDate: "2026-05-15",
+          outstandingBalanceMinor: 145_000_00,
+          startsAtBaseline: false,
+        },
+        {
+          annualInterestRate: "0.03",
+          baselineDate: "2026-06-15",
+          endDate: "2046-01-15",
+          id: "reb2",
+          liabilityId: "mortgage",
+          nextPaymentDate: "2026-07-15",
+          outstandingBalanceMinor: 140_000_00,
+          startsAtBaseline: false,
+        },
+      ],
+      today: TODAY,
     });
+    expect(created).toBe(2);
 
     const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
     expect(rebaselines).toHaveLength(2);
@@ -156,38 +143,33 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
   test("audit-trails each created re-baseline", async () => {
     const store = await seedAmortizableMortgage();
 
-    const result = await runCommand(
-      executeImportBalanceHistoryCommand,
-      {
-        liabilityId: "mortgage",
-        rebaselines: [
-          {
-            annualInterestRate: "0.03",
-            baselineDate: "2026-04-15",
-            endDate: "2046-01-15",
-            id: "reb1",
-            liabilityId: "mortgage",
-            nextPaymentDate: "2026-05-15",
-            outstandingBalanceMinor: 145_000_00,
-            startsAtBaseline: false,
-          },
-          {
-            annualInterestRate: "0.03",
-            baselineDate: "2026-06-15",
-            endDate: "2046-01-15",
-            id: "reb2",
-            liabilityId: "mortgage",
-            nextPaymentDate: "2026-07-15",
-            outstandingBalanceMinor: 140_000_00,
-            startsAtBaseline: false,
-          },
-        ],
-        today: TODAY,
-      },
-      store,
-    );
-
-    expect(result.ok).toBe(true);
+    const created = await store.command.importBalanceHistory({
+      liabilityId: "mortgage",
+      rebaselines: [
+        {
+          annualInterestRate: "0.03",
+          baselineDate: "2026-04-15",
+          endDate: "2046-01-15",
+          id: "reb1",
+          liabilityId: "mortgage",
+          nextPaymentDate: "2026-05-15",
+          outstandingBalanceMinor: 145_000_00,
+          startsAtBaseline: false,
+        },
+        {
+          annualInterestRate: "0.03",
+          baselineDate: "2026-06-15",
+          endDate: "2046-01-15",
+          id: "reb2",
+          liabilityId: "mortgage",
+          nextPaymentDate: "2026-07-15",
+          outstandingBalanceMinor: 140_000_00,
+          startsAtBaseline: false,
+        },
+      ],
+      today: TODAY,
+    });
+    expect(created).toBe(2);
 
     const audit = await store.readAuditLog({ entityId: "mortgage" });
     expect(
@@ -201,20 +183,12 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
     const store = await seedAmortizableMortgage();
     const before = await debtsAt(store, "2026-03-15");
 
-    const result = await runCommand(
-      executeImportBalanceHistoryCommand,
-      {
-        liabilityId: "mortgage",
-        rebaselines: [],
-        today: TODAY,
-      },
-      store,
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      value: { created: 0, ripple: null },
+    const created = await store.command.importBalanceHistory({
+      liabilityId: "mortgage",
+      rebaselines: [],
+      today: TODAY,
     });
+    expect(created).toBe(0);
     expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
     expect(await debtsAt(store, "2026-03-15")).toBe(before);
 
@@ -224,9 +198,8 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
   test("rolls back the whole batch when a mid-insert fails", async () => {
     const store = await seedAmortizableMortgage();
 
-    const result = await runCommand(
-      executeImportBalanceHistoryCommand,
-      {
+    await expect(
+      store.command.importBalanceHistory({
         liabilityId: "mortgage",
         rebaselines: [
           {
@@ -250,14 +223,8 @@ describe("executeImportBalanceHistoryCommand (#969)", () => {
           },
         ],
         today: TODAY,
-      },
-      store,
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeTruthy();
-    }
+      }),
+    ).rejects.toThrow();
     expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
 
     store.close();

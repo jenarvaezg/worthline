@@ -13,8 +13,8 @@
 
 import type { DecimalString } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
-import type { WorthlineStore } from "./index";
-import { createInMemoryStore } from "./index";
+import type { PersistenceTestStore as WorthlineStore } from "./testing";
+import { createInMemoryStore } from "./testing";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

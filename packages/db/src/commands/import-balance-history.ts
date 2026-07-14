@@ -1,18 +1,40 @@
+import type { FactPersistenceProvenance } from "@db/fact-provenance";
 import type { AddBalanceRebaselineInput } from "@db/liability-store";
-import type { WorthlineStore } from "@db/store-types";
 
 import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
-import type { CommandResult, RipplePlan } from "./types";
+import type {
+  CommandResult,
+  FactBatchInput,
+  FactBatchTrigger,
+  RipplePlan,
+  UnitOfWork,
+} from "./types";
 
 export interface ImportBalanceHistoryCommand {
   liabilityId: string;
   rebaselines: AddBalanceRebaselineInput[];
   today?: string;
+  /** User-facing ingestion origin; assistant execution overrides this internally. */
+  trigger?: Extract<FactBatchTrigger, "manual" | "csv">;
 }
 
 export interface ImportBalanceHistoryResult {
   created: number;
   ripple: RipplePlan | null;
+}
+
+/** Private persistence/ripple capabilities required by this command executor. */
+export interface ImportBalanceHistoryDependencies {
+  addBalanceRebaseline: (
+    input: AddBalanceRebaselineInput,
+    provenance: FactPersistenceProvenance,
+  ) => Promise<void>;
+  rippleDebtRebaseline: (params: {
+    liabilityId: string;
+    fromDateKey: string;
+    today: string;
+  }) => Promise<void>;
+  uow: UnitOfWork;
 }
 
 function defaultToday(today?: string): string {
@@ -25,19 +47,16 @@ function defaultToday(today?: string): string {
  * the oldest checkpoint via `ApplyDatedFactsBatch`.
  */
 export async function executeImportBalanceHistoryCommand(
-  store: WorthlineStore,
+  dependencies: ImportBalanceHistoryDependencies,
   command: ImportBalanceHistoryCommand,
+  batch: FactBatchInput = { trigger: command.trigger ?? "manual" },
 ): Promise<CommandResult<ImportBalanceHistoryResult>> {
-  if (command.rebaselines.length === 0) {
-    return { ok: true, value: { created: 0, ripple: null } };
-  }
-
   const today = defaultToday(command.today);
-  const { rippleDebtRebaseline, uow } = store.command;
 
-  const result = await applyDatedFactsBatch(uow, {
+  const result = await applyDatedFactsBatch(dependencies.uow, {
+    batch,
     ripple: async (fromDateKey) => {
-      await rippleDebtRebaseline({
+      await dependencies.rippleDebtRebaseline({
         fromDateKey,
         liabilityId: command.liabilityId,
         today,
@@ -45,7 +64,7 @@ export async function executeImportBalanceHistoryCommand(
     },
     steps: command.rebaselines.map((rebaseline) => ({
       persist: async (batchId) => {
-        await store.liabilities.addBalanceRebaseline(rebaseline, { batchId });
+        await dependencies.addBalanceRebaseline(rebaseline, { batchId });
         return rebaseline.baselineDate;
       },
     })),

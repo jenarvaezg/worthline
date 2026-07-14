@@ -20,9 +20,19 @@ export interface RipplePlan {
   today: string;
 }
 
+/** Closed vocabulary for the application paths that can originate dated facts. */
+export type FactBatchTrigger =
+  | "manual"
+  | "csv"
+  | "statement"
+  | "sync"
+  | "connect"
+  | "cron"
+  | "assistant";
+
 /** Minimal provenance retained for one application of dated facts. */
 export interface FactBatchInput {
-  trigger: string;
+  trigger: FactBatchTrigger;
   connectedSourceId?: string;
   syncRunId?: string;
 }

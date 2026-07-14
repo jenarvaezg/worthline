@@ -13,8 +13,8 @@
  */
 
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { type Clock, fixedClock } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { recalibrateDebtBalanceAction } from "./actions";

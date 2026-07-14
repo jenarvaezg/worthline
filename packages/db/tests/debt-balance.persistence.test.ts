@@ -8,9 +8,8 @@
  * dispatcher.
  */
 
-import type { WorthlineStore } from "@db/index";
-
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { describe, expect, test } from "vitest";
 
 async function seed(store: WorthlineStore, balanceMinor = 10_000_00): Promise<void> {

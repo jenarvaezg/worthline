@@ -17,11 +17,11 @@ import {
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
-
 import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import type { FactPersistenceProvenance } from "./fact-provenance";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
 import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
@@ -159,7 +159,7 @@ export interface AssetStore {
   /** Add a housing valuation anchor (market appraisal or improvement). */
   addValuationAnchor: (
     input: AddValuationAnchorInput,
-    opts?: { batchId?: string },
+    provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
   /** Read an asset's valuation anchors, ordered ascending by date. */
   readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
@@ -247,7 +247,7 @@ function assertValuationDate(valuationDate: string): void {
 async function addValuationAnchor(
   ctx: StoreContext,
   input: AddValuationAnchorInput,
-  opts?: { batchId?: string },
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   if (!Number.isInteger(input.valueMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -261,7 +261,7 @@ async function addValuationAnchor(
     .values({
       adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
       assetId: input.assetId,
-      batchId: opts?.batchId ?? null,
+      batchId: provenance?.batchId ?? null,
       id: input.id,
       source: input.source ?? "manual",
       valuationDate: input.valuationDate,

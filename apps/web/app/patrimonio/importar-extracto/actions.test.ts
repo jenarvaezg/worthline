@@ -6,8 +6,8 @@
  * builds on).
  */
 import { readFileSync } from "node:fs";
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { parseStatement } from "@worthline/domain";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";

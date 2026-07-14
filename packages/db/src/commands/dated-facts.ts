@@ -1,3 +1,61 @@
+import {
+  type AddValuationAnchorInput,
+  type AssetStore,
+  type CreateInvestmentAssetInput,
+  type UpdateAssetInput,
+  type UpdateValuationAnchorInput,
+} from "@db/asset-store";
+import type { ContributionPlanStore } from "@db/contribution-plan-store";
+import {
+  BACKFILL_SNAPSHOT_ID_PREFIX,
+  buildHistoricalSnapshotDeps,
+  groupFrozenHoldingsByDate,
+  type HistoricalSnapshotDeps,
+  readFrozenIdentityCaptures,
+  readInvestmentIdentity,
+} from "@db/historical-snapshot-deps";
+import {
+  type AddBalanceAnchorInput,
+  type AddBalanceRebaselineInput,
+  type AddEarlyRepaymentInput,
+  type AddInterestRateRevisionInput,
+  type CreateAmortizationPlanInput,
+  type LiabilityStore,
+  type UpdateAmortizationPlanInput,
+  type UpdateBalanceAnchorInput,
+  type UpdateBalanceRebaselineInput,
+  type UpdateEarlyRepaymentInput,
+  type UpdateInterestRateRevisionInput,
+  type UpdateLiabilityInput,
+} from "@db/liability-store";
+import type { MigrateResult } from "@db/migrate";
+import {
+  type OperationsStore,
+  type UpdateInvestmentOperationInput,
+} from "@db/operations-store";
+import {
+  amortizationPlans,
+  assetOperations,
+  assetValuations,
+  connectedSources,
+  earlyRepayments,
+  interestRateRevisions,
+  liabilities,
+  liabilityBalanceAnchors,
+  liabilityBalanceRebaselines,
+  liabilityOwnerships,
+  positions,
+  snapshots,
+} from "@db/schema";
+import {
+  readSnapshotHoldings,
+  readSnapshots,
+  type SaveSnapshotInput,
+  type SnapshotHoldingRecord,
+  type SnapshotStore,
+} from "@db/snapshot-store";
+import { readAllOperations, type StoreContext, type StoreDb } from "@db/store-context";
+import type { CreateHousingHoldingCommand } from "@db/store-types";
 import type {
   CreateInvestmentOperationInput,
   DecimalString,
@@ -25,65 +83,6 @@ import {
   resolveScopeMemberIds,
 } from "@worthline/domain";
 import { and, eq, like } from "drizzle-orm";
-
-import {
-  type AddValuationAnchorInput,
-  type AssetStore,
-  type CreateInvestmentAssetInput,
-  type UpdateAssetInput,
-  type UpdateValuationAnchorInput,
-} from "./asset-store";
-import type { ContributionPlanStore } from "./contribution-plan-store";
-import {
-  BACKFILL_SNAPSHOT_ID_PREFIX,
-  buildHistoricalSnapshotDeps,
-  groupFrozenHoldingsByDate,
-  type HistoricalSnapshotDeps,
-  readFrozenIdentityCaptures,
-  readInvestmentIdentity,
-} from "./historical-snapshot-deps";
-import {
-  type AddBalanceAnchorInput,
-  type AddBalanceRebaselineInput,
-  type AddEarlyRepaymentInput,
-  type AddInterestRateRevisionInput,
-  type CreateAmortizationPlanInput,
-  type LiabilityStore,
-  type UpdateAmortizationPlanInput,
-  type UpdateBalanceAnchorInput,
-  type UpdateBalanceRebaselineInput,
-  type UpdateEarlyRepaymentInput,
-  type UpdateInterestRateRevisionInput,
-  type UpdateLiabilityInput,
-} from "./liability-store";
-import type { MigrateResult } from "./migrate";
-import {
-  type OperationsStore,
-  type UpdateInvestmentOperationInput,
-} from "./operations-store";
-import {
-  amortizationPlans,
-  assetOperations,
-  assetValuations,
-  connectedSources,
-  earlyRepayments,
-  interestRateRevisions,
-  liabilities,
-  liabilityBalanceAnchors,
-  liabilityBalanceRebaselines,
-  liabilityOwnerships,
-  positions,
-  snapshots,
-} from "./schema";
-import {
-  readSnapshotHoldings,
-  readSnapshots,
-  type SaveSnapshotInput,
-  type SnapshotHoldingRecord,
-  type SnapshotStore,
-} from "./snapshot-store";
-import { readAllOperations, type StoreContext, type StoreDb } from "./store-context";
-import type { CreateHousingHoldingCommand } from "./store-types";
 
 // ── Historical snapshots (ADR 0012, PRD #107) ────────────────────────────────
 //
@@ -1372,15 +1371,15 @@ function ownershipChanged(before: OwnershipShare[], after: OwnershipShare[]): bo
 }
 
 /**
- * The dated-fact persist-and-ripple seams (issue #489): the 25 store methods that
+ * Private dated-fact command implementations (issues #489/#972): the operations that
  * persist ONE dated fact (an operation, a valuation/balance anchor, an
  * amortization plan, a rate revision, an early repayment, a cadence/rate change,
  * or an ownership edit) AND ripple the historical snapshots it touches, each
- * atomically in one transaction (ADR 0020). Built as a factory so the monolith
- * can spread the result onto the public `WorthlineStore` object without holding
- * the bodies itself; the 25 method signatures stay declared on `WorthlineStore`.
+ * atomically in one transaction (ADR 0020/0062). The composition root supplies
+ * persistence ports and exposes only suffix-free intent methods through
+ * `CommandHost`; these implementation names never appear on `WorthlineStore`.
  */
-export interface DatedFactSeams {
+export interface DatedFactCommandImplementations {
   createAndLinkContributionOperation: (params: {
     contributionId: string;
     occurrenceId: string;
@@ -1586,7 +1585,7 @@ export interface DatedFactSeams {
   ) => Promise<void>;
 }
 
-export function createDatedFactSeams(
+export function createDatedFactCommandImplementations(
   ctx: StoreContext,
   stores: {
     assets: AssetStore;
@@ -1595,7 +1594,7 @@ export function createDatedFactSeams(
     operations: OperationsStore;
     contributionPlan: ContributionPlanStore;
   },
-): DatedFactSeams {
+): DatedFactCommandImplementations {
   return {
     createAndLinkContributionOperation: async (params) => {
       const today = params.today ?? new Date().toISOString().slice(0, 10);

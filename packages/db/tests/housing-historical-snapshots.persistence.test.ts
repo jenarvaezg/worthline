@@ -7,9 +7,9 @@
  * ripples the existing snapshots after it. Future anchors generate nothing.
  */
 
-import type { WorthlineStore } from "@db/index";
-
-import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@db/index";
+import { captureDailySnapshotForWorkspace } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { describe, expect, test } from "vitest";
 
 const TODAY = "2026-06-12";

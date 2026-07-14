@@ -6,8 +6,8 @@
  * the anchors + rate and delegates to the pure domain curve.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { valueHousingAtDate } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 

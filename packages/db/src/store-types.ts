@@ -40,6 +40,42 @@ import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
 import type { WorkspaceStore } from "./workspace-store";
 
+type PublicAssetStore = Omit<
+  AssetStore,
+  | "addValuationAnchor"
+  | "deleteValuationAnchor"
+  | "setAnnualAppreciationRate"
+  | "setValuationCadence"
+  | "updateAsset"
+  | "updateValuationAnchor"
+>;
+
+type PublicLiabilityStore = Omit<
+  LiabilityStore,
+  | "addBalanceAnchor"
+  | "addBalanceRebaseline"
+  | "addEarlyRepayment"
+  | "addInterestRateRevision"
+  | "createAmortizationPlan"
+  | "deleteAmortizationPlan"
+  | "deleteBalanceAnchor"
+  | "deleteBalanceRebaseline"
+  | "deleteEarlyRepayment"
+  | "deleteInterestRateRevision"
+  | "setValuationCadence"
+  | "updateAmortizationPlan"
+  | "updateBalanceAnchor"
+  | "updateBalanceRebaseline"
+  | "updateEarlyRepayment"
+  | "updateInterestRateRevision"
+  | "updateLiability"
+>;
+
+type PublicOperationsStore = Omit<
+  OperationsStore,
+  "deleteOperation" | "recordOperation" | "updateOperation"
+>;
+
 export interface WorthlineStoreOptions {
   databasePath?: string;
   dataDir?: string;
@@ -141,11 +177,11 @@ interface LegacyWorthlineStore {
   /** Focused snapshot & position store (Slice R1). */
   snapshots: SnapshotStore;
   /** Focused asset store (Slice R2). */
-  assets: AssetStore;
+  assets: PublicAssetStore;
   /** Focused liability store (Slice R3). */
-  liabilities: LiabilityStore;
+  liabilities: PublicLiabilityStore;
   /** Focused operations & price-cache store (Slice R4). */
-  operations: OperationsStore;
+  operations: PublicOperationsStore;
   /** Focused workspace lifecycle & member store (Slice R5). */
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
@@ -161,7 +197,7 @@ interface LegacyWorthlineStore {
   agentView: AgentViewReadStore;
   /** Durable, explicitly resolved assistant proposals (#767). */
   assistantProposals: AssistantProposalStore;
-  /** Command-layer UnitOfWork + ripple hooks (#966). Not for direct UI use. */
+  /** Intent-level mutation boundary; UnitOfWork and ripple hooks remain private. */
   command: CommandHost;
 
   // ── Cross-cutting (no per-domain home) ──────────────────────────────────────

@@ -13,8 +13,8 @@
  * appraisal segment is left untouched (the rate does not value it).
  */
 
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test } from "vitest";
 
 import { setAppreciationRateAction } from "./actions";

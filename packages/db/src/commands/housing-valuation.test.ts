@@ -3,7 +3,7 @@
  * against an in-memory store — no server actions.
  */
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore } from "@db/testing";
 import { describe, expect, test } from "vitest";
 import {
   executeAddValuationAnchorCommand,

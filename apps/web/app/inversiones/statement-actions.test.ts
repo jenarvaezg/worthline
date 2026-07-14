@@ -6,8 +6,8 @@
  * summary. Prior art: ajustes/numista-actions.test.ts.
  */
 
-import type { WorthlineStore } from "@worthline/db";
-import { createInMemoryStore } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test } from "vitest";
 
 import {

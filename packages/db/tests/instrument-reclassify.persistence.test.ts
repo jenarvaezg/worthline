@@ -5,7 +5,7 @@
  * silently diverge from the old type-based rule — the S2-class byte-identity trap.
  */
 
-import { createInMemoryStore } from "@db/index";
+import { createInMemoryStore } from "@db/testing";
 import { isHousingAsset } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 

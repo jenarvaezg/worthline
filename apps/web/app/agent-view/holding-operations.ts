@@ -1,6 +1,6 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import type { InvestmentOperation } from "@worthline/domain";
-import { multiplyToMinor } from "@worthline/domain";
+import { compareInvestmentOperations, multiplyToMinor } from "@worthline/domain";
 
 import {
   AgentViewHttpError,
@@ -9,7 +9,7 @@ import {
   type AgentViewOperationPage,
   type AgentViewOperationSort,
 } from "./contract";
-import { compareDateId, decodeCursor, dropAfterCursor, encodeCursor } from "./cursor";
+import { decodeCursor, encodeCursor } from "./cursor";
 import { derivePublicId } from "./derived-id";
 import { resolveInternalHoldingId } from "./scope-resolution";
 
@@ -83,18 +83,11 @@ export async function buildHoldingOperations(
       sortKey: `${dateKey(operation)}\u0000${operation.occurredAt ?? ""}`,
     }))
     .sort((a, b) =>
-      compareDateId(
-        { dateKey: a.sortKey, publicId: a.publicId },
-        { dateKey: b.sortKey, publicId: b.publicId },
-        options.sort,
-      ),
+      compareOperationsForAgentView(a.operation, b.operation, options.sort),
     );
 
   const afterCursor = options.cursor
-    ? dropAfterCursor(sorted, decodeCursor(options.cursor), options.sort, (entry) => ({
-        dateKey: entry.sortKey,
-        publicId: entry.publicId,
-      }))
+    ? dropOperationsAfterCursor(sorted, decodeCursor(options.cursor))
     : sorted;
 
   const page = afterCursor.slice(0, options.limit);
@@ -111,6 +104,36 @@ export async function buildHoldingOperations(
     },
     operations: page.map((entry) => toOperation(entry, currency)),
   };
+}
+
+/** Canonical date → occurredAt → internal-id ordering; direction reverses all keys. */
+export function compareOperationsForAgentView(
+  a: InvestmentOperation,
+  b: InvestmentOperation,
+  sort: AgentViewOperationSort,
+): number {
+  const ascending = compareInvestmentOperations(a, b);
+  return sort === "-date" ? -ascending : ascending;
+}
+
+function dropOperationsAfterCursor(
+  sorted: SortedOperation[],
+  cursor: { date: string; id: string },
+): SortedOperation[] {
+  // The reversible cursor contains only the composite date key and opaque public
+  // id. Resolve that identity back to the server-held row, then slice the already
+  // canonical internal-id order without ever exposing the internal id.
+  const index = sorted.findIndex(
+    (entry) => entry.sortKey === cursor.date && entry.publicId === cursor.id,
+  );
+  if (index < 0) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      message: "Invalid cursor.",
+      status: 400,
+    });
+  }
+  return sorted.slice(index + 1);
 }
 
 function toOperation(entry: SortedOperation, currency: string): AgentViewOperation {

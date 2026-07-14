@@ -1,9 +1,5 @@
 import { createStableId } from "@web/intake";
-import {
-  type AddBalanceRebaselineInput,
-  executeImportBalanceHistoryCommand,
-  type WorthlineStore,
-} from "@worthline/db";
+import { type AddBalanceRebaselineInput, type WorthlineStore } from "@worthline/db";
 
 import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import type {
@@ -31,7 +27,7 @@ export async function readBalanceHistoryDebtContext(
 
 /**
  * Persist a balance-history import (ADR 0056, #696, architecture review #969) —
- * delegates to `executeImportBalanceHistoryCommand`: N re-baselines with
+ * delegates to the balance-history command: N re-baselines with
  * `startsAtBaseline: false`, ONE ripple from the oldest checkpoint.
  */
 export async function persistBalanceHistoryImport(
@@ -55,13 +51,10 @@ export async function persistBalanceHistoryImport(
     startsAtBaseline: false,
   }));
 
-  const result = await executeImportBalanceHistoryCommand(store, {
+  return store.command.importBalanceHistory({
     liabilityId,
     rebaselines,
     today,
+    trigger: "csv",
   });
-  if (!result.ok) {
-    throw new Error(result.error);
-  }
-  return result.value.created;
 }

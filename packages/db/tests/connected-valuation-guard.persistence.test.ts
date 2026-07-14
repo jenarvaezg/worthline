@@ -2,7 +2,10 @@
  * Store-level guard: manual valuation facts rejected on connected holdings (#945).
  */
 
-import { createInMemoryStore, type WorthlineStore } from "@db/index";
+import {
+  createInMemoryStore,
+  type PersistenceTestStore as WorthlineStore,
+} from "@db/testing";
 import { afterEach, describe, expect, test } from "vitest";
 
 const MEMBER_ID = "member_yo";

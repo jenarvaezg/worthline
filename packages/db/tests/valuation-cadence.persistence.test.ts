@@ -11,8 +11,8 @@
  * debts are unaffected.
  */
 
-import type { WorthlineStore } from "@db/index";
-import { createInMemoryStore } from "@db/index";
+import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
+import { createInMemoryStore } from "@db/testing";
 import { amortizableBalanceAtDate, debtBalanceAtDate } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 

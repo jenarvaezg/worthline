@@ -19,11 +19,11 @@ import {
   deriveCurrentStateAmortizationPlan,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
-
 import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import type { FactPersistenceProvenance } from "./fact-provenance";
 import {
   amortizationPlans,
   earlyRepayments,
@@ -324,7 +324,7 @@ export interface LiabilityStore {
   /** Add a current-state balance re-baseline to an amortizable liability. */
   addBalanceRebaseline: (
     input: AddBalanceRebaselineInput,
-    opts?: { batchId?: string },
+    provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
   /** Read a liability's balance re-baselines, ordered ascending by baseline date. */
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
@@ -346,7 +346,7 @@ export interface LiabilityStore {
   /** Add a balance anchor to a revolving/informal liability. */
   addBalanceAnchor: (
     input: AddBalanceAnchorInput,
-    opts?: { batchId?: string },
+    provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
   /** Read a liability's balance anchors, ordered ascending by date. */
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
@@ -1051,7 +1051,7 @@ function deriveRebaselineStorage(input: {
 async function addBalanceRebaseline(
   ctx: StoreContext,
   input: AddBalanceRebaselineInput,
-  opts?: { batchId?: string },
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   const derived = deriveRebaselineStorage(input);
 
@@ -1060,7 +1060,7 @@ async function addBalanceRebaseline(
     .values({
       annualInterestRate: derived.annualInterestRate,
       baselineDate: input.baselineDate,
-      batchId: opts?.batchId ?? null,
+      batchId: provenance?.batchId ?? null,
       endDate: input.endDate,
       id: input.id,
       inputMode: derived.inputMode,
@@ -1261,7 +1261,7 @@ async function amortizableBalanceAtDateFor(
 async function addBalanceAnchor(
   ctx: StoreContext,
   input: AddBalanceAnchorInput,
-  opts?: { batchId?: string },
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   if (!Number.isInteger(input.balanceMinor)) {
     throw new Error("Money must be stored as integer minor units.");
@@ -1275,7 +1275,7 @@ async function addBalanceAnchor(
     .insert(liabilityBalanceAnchors)
     .values({
       anchorDate: input.anchorDate,
-      batchId: opts?.batchId ?? null,
+      batchId: provenance?.batchId ?? null,
       balanceMinor: input.balanceMinor,
       id: input.id,
       liabilityId: input.liabilityId,

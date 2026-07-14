@@ -1,6 +1,6 @@
 /**
  * Dated-fact persist-and-ripple seams (issue #489): unit tests for the 25
- * `*AndRipple` store methods extracted into `./dated-fact-seams`. Behavioral,
+ * intent-level commands whose implementation lives in `./dated-facts`. Behavioral,
  * through the public store (`createInMemoryStore` → seed → seam call → snapshot
  * reads), mirroring the established src-local store-test style of
  * `connected-source-seams.test.ts` / `snapshot-orchestrator.test.ts`. These guard
@@ -9,9 +9,10 @@
  * category; the deeper edge matrix lives in the `tests/*.persistence.test.ts`
  * integration suites.
  */
+
+import type { WorthlineStore } from "@db/index";
+import { createInMemoryStore } from "@db/index";
 import { describe, expect, it } from "vitest";
-import type { WorthlineStore } from "./index";
-import { createInMemoryStore } from "./index";
 
 const TODAY = "2026-06-15";
 const MEMBER_ID = "mJ";

@@ -9,6 +9,7 @@ import type {
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
+import type { FactPersistenceProvenance } from "./fact-provenance";
 
 import {
   assetOperations,
@@ -62,7 +63,7 @@ export interface UpdateInvestmentOperationInput {
 export interface OperationsStore {
   recordOperation: (
     input: CreateInvestmentOperationInput,
-    opts?: { batchId?: string },
+    provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
@@ -111,7 +112,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
 async function recordOperation(
   ctx: StoreContext,
   input: CreateInvestmentOperationInput,
-  opts?: { batchId?: string },
+  provenance?: FactPersistenceProvenance,
 ): Promise<void> {
   await assertAssetAllowsOperationWrite(ctx, input.assetId);
 
@@ -123,7 +124,7 @@ async function recordOperation(
     .insert(assetOperations)
     .values({
       assetId: operation.assetId,
-      batchId: opts?.batchId ?? null,
+      batchId: provenance?.batchId ?? null,
       currency: operation.currency,
       executedAt: asDateKey(operation.executedAt.slice(0, 10)),
       feesMinor: operation.feesMinor,

@@ -20,9 +20,10 @@
  * fresh DB (already at the two-date shape) migrates cleanly without a start_date.
  */
 
-import { createInMemoryStore, createStoreFromSqlite, openLibsqlClient } from "@db/index";
+import { openLibsqlClient } from "@db/index";
 import { migrate, SCHEMA_VERSION } from "@db/migrate";
 import { schemaSql } from "@db/schema-sql";
+import { createInMemoryStore, createStoreFromSqlite } from "@db/testing";
 import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 

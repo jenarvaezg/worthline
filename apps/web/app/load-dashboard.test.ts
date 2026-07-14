@@ -10,9 +10,11 @@
  * - Compute dashboard state via prepareDashboardState.
  */
 
-import type { SourcePositionInput, WorthlineStore } from "@worthline/db";
+import type { SourcePositionInput } from "@worthline/db";
 
-import { captureDailySnapshotForWorkspace, createInMemoryStore } from "@worthline/db";
+import { captureDailySnapshotForWorkspace } from "@worthline/db";
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test, vi } from "vitest";
 
 import { loadDashboard } from "./load-dashboard";

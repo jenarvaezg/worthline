@@ -24,15 +24,9 @@ export {
   executeUpdateEarlyRepaymentCommand,
   executeUpdateInterestRateRevisionCommand,
 } from "./amortizable-debt";
-export type {
-  ApplyDatedFactsBatchParams,
-  DatedFactStep,
-} from "./apply-dated-facts-batch";
-export { applyDatedFactsBatch } from "./apply-dated-facts-batch";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";
-export { createCommandHost } from "./host";
 export type {
   AddValuationAnchorCommand,
   DeleteValuationAnchorCommand,
@@ -53,7 +47,6 @@ export type {
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
 } from "./import-balance-history";
-export { executeImportBalanceHistoryCommand } from "./import-balance-history";
 export type {
   DeleteInvestmentOperationCommand,
   DeleteInvestmentOperationResult,
@@ -75,5 +68,9 @@ export {
   executeUpdateAssetOwnershipSplitCommand,
   executeUpdateLiabilityOwnershipSplitCommand,
 } from "./ownership-split";
-export type { CommandResult, FactBatchInput, RipplePlan, UnitOfWork } from "./types";
-export { createUnitOfWork } from "./unit-of-work";
+export type {
+  CommandResult,
+  FactBatchInput,
+  FactBatchTrigger,
+  RipplePlan,
+} from "./types";
