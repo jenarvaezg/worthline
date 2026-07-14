@@ -353,6 +353,25 @@ export type {
 export { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
 export type { EligibleTier } from "./fire-return";
 export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+export type {
+  CreateGlobalExposureProfileInput,
+  GlobalExposureAssetClassBucket,
+  GlobalExposureGeographyBucket,
+  GlobalExposureProfile,
+  GlobalExposureProfileBreakdowns,
+  GlobalExposureProfileContentInput,
+  GlobalExposureProfileIdentity,
+  RawGlobalExposureProfileIdentityInput,
+  UpdateGlobalExposureProfileInput,
+} from "./global-exposure-profile";
+export {
+  createValidatedGlobalExposureProfileInput,
+  GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
+  globalExposureProfileIdentityKey,
+  isValidIsin,
+  resolveGlobalExposureProfileIdentity,
+  validateGlobalExposureProfileContent,
+} from "./global-exposure-profile";
 export type { GoalFireDelay, GoalFireDelayInput } from "./goal-fire-delay";
 export { goalFireDelay } from "./goal-fire-delay";
 export type { Goal, GoalPriority, GoalReservationInput } from "./goals";
