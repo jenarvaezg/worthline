@@ -190,7 +190,7 @@ export default async function AjustesPage({
 
       <div className="ajustesGrid">
         {/* ── Miembros ─────────────────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Miembros">
+        <section className="ajustesPanel section" aria-label="Miembros">
           <div className="panelHeader">
             <h2>Miembros</h2>
             <span>{workspace.members.filter((m) => !m.disabledAt).length} activos</span>
@@ -326,7 +326,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Workspace ────────────────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Workspace">
+        <section className="ajustesPanel section" aria-label="Workspace">
           <div className="panelHeader">
             <h2>Workspace</h2>
             <span>Modo e información general</span>
@@ -344,7 +344,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Configuración FIRE ───────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Configuración FIRE">
+        <section className="ajustesPanel section" aria-label="Configuración FIRE">
           <div className="panelHeader">
             <h2>Configuración FIRE</h2>
             <span>Independencia financiera</span>
@@ -573,7 +573,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Objetivos ────────────────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Enlace objetivos">
+        <section className="ajustesPanel section" aria-label="Enlace objetivos">
           <div className="panelHeader">
             <h2>Objetivos</h2>
             <span>metas con fecha</span>
@@ -587,7 +587,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Persistencia ─────────────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Persistencia">
+        <section className="ajustesPanel section" aria-label="Persistencia">
           <div className="panelHeader">
             <h2>Persistencia</h2>
             <span>Base de datos SQLite local</span>
@@ -624,7 +624,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Fuentes conectadas ──────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Fuentes conectadas">
+        <section className="ajustesPanel section" aria-label="Fuentes conectadas">
           <div className="panelHeader">
             <h2>Fuentes conectadas</h2>
             <span>Numista y Binance</span>
@@ -796,7 +796,7 @@ export default async function AjustesPage({
         </section>
 
         {/* ── Overrides de avisos ──────────────────────────────────── */}
-        <section className="ajustesPanel" aria-label="Overrides de avisos">
+        <section className="ajustesPanel section" aria-label="Overrides de avisos">
           <div className="panelHeader">
             <h2>Avisos marcados como intencionales</h2>
             <span>

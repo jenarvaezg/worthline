@@ -3421,13 +3421,11 @@ code {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Canon §4: only the hero carries a fill. Settings panels are open sections
+   opened by a heavy rule (via the shared .section primitive in markup), not
+   filled/bordered/rounded cards. This rule keeps only the grid-column guard. */
 .ajustesPanel {
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
-  box-shadow: none;
   min-width: 0;
-  padding: 16px;
 }
 
 .ajustesPanel .memberRow {
@@ -3690,13 +3688,15 @@ code {
   margin-top: 14px;
 }
 
+/* Canon §3: warning-override rows read as a ruled ledger list — each entry
+   opened by a hairline, no perimeter border box. */
 .overrideRow {
   align-items: center;
-  border: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) auto;
-  padding: 8px 10px;
+  padding: 10px 0 6px;
 }
 
 .overrideCode {
@@ -6074,7 +6074,9 @@ td.rowActions > * {
   font-variant-numeric: tabular-nums;
 }
 
-/* Connected-source tile (shared by /ajustes and the detail page). */
+/* Connected-source tile (shared by /ajustes and the holding editor). Canon §4:
+   no nested cards — the tile is a ruled ledger entry opened by a heavy rule,
+   sitting flush on paper with no fill, perimeter border or radius. */
 .coinSourceTile {
   display: flex;
   flex-wrap: wrap;
@@ -6082,10 +6084,8 @@ td.rowActions > * {
   justify-content: space-between;
   gap: 1rem;
   margin-top: 0.9rem;
-  padding: 1rem 1.1rem;
-  background: var(--panel);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius);
+  padding: 0.9rem 0 0;
+  border-top: var(--rule-heavy);
   box-shadow: none;
 }
 .coinStatusPill {
