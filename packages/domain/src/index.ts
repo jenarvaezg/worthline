@@ -579,6 +579,15 @@ export {
   unitPriceMajorByHoldingId,
 } from "./prices";
 export type {
+  BenchmarkSeriesAvailability,
+  BenchmarkSeriesPricePoint,
+  BenchmarkSeriesReader,
+  ExposureCatalogAvailability,
+  ExposureCatalogReader,
+  ReferenceDataReaders,
+  ReferenceDataUnavailableReason,
+} from "./reference-data";
+export type {
   DatedCashflow,
   DatedPayout,
   HoldingReturnsInput,
