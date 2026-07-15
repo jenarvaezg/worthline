@@ -19,7 +19,6 @@ import type { AssistantProposalStore } from "./assistant-proposal-store";
 import type { CommandHost } from "./commands/host";
 import type { ConnectedSourceStore, SourcePositionInput } from "./connected-source-store";
 import type { ContributionPlanStore } from "./contribution-plan-store";
-import type { ExposureProfileStore } from "./exposure-profile-store";
 import type { GoalStore } from "./goal-store";
 import type {
   AddBalanceAnchorInput,
@@ -190,8 +189,6 @@ interface LegacyWorthlineStore {
   connectedSources: PublicConnectedSourceStore;
   /** Intermediate goals + their assigned holdings (PRD #421, #424). */
   goals: GoalStore;
-  /** Hand-entered exposure profiles keyed by security identity (PRD #539, ADR 0039). */
-  exposureProfiles: ExposureProfileStore;
   payouts: PayoutStore;
   /** Planned contributions per scope (ADR 0041, PRD #553 S1). */
   contributionPlan: ContributionPlanStore;

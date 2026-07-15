@@ -11,7 +11,6 @@ import type {
   ExportedPublicId,
   ExportedSnapshot,
   ExportedValuationAnchor,
-  ExposureBreakdowns,
   FireScopeConfig,
   Member,
   MemberGroup,
@@ -55,7 +54,6 @@ import {
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   earlyRepayments,
-  exposureProfiles,
   interestRateRevisions,
   investmentAssets,
   liabilities,
@@ -157,7 +155,6 @@ const WORKSPACE_TABLES = [
   "agent_view_public_ids",
   "member_groups",
   "members",
-  "exposure_profiles",
   "workspace",
   "app_settings",
 ] as const;
@@ -967,26 +964,6 @@ async function importWorkspace(
         .run();
     }
 
-    // Hand-entered exposure profiles (PRD #539, ADR 0039), restored verbatim as
-    // the canonical rows keyed by security identity. Auto-derived profiles are
-    // never in the file — they recompute on read.
-    if (doc.exposureProfiles.length > 0) {
-      await db
-        .insert(exposureProfiles)
-        .values(
-          doc.exposureProfiles.map((profile) => ({
-            key: profile.key,
-            source: profile.source,
-            declaredAt: profile.declaredAt,
-            trackedIndex: profile.trackedIndex ?? null,
-            ter: profile.ter ?? null,
-            hedged: profile.hedged ? 1 : 0,
-            breakdownsJson: JSON.stringify(profile.breakdowns ?? {}),
-          })),
-        )
-        .run();
-    }
-
     // Payouts + schedules (PRD #652, ADR 0054), restored verbatim by id after
     // their holdings (FK). Occurrences are never in the file — they derive on read.
     if (doc.payouts.length > 0) {
@@ -1428,15 +1405,6 @@ async function buildWorkspaceExport(
     }),
   );
 
-  // Hand-entered exposure profiles (PRD #539, ADR 0039) — the whole table is
-  // hand-entered (auto-derived ones are never stored), ordered by key for a
-  // stable diff between exports.
-  const exposureProfileRows = await db
-    .select()
-    .from(exposureProfiles)
-    .orderBy(asc(exposureProfiles.key))
-    .all();
-
   // Payouts + schedules (PRD #652, ADR 0054), ordered for a stable diff. Only the
   // declaration is exported; occurrences derive on read and are never stored.
   const payoutRows = await db
@@ -1521,15 +1489,7 @@ async function buildWorkspaceExport(
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
     groups: workspace.groups,
-    exposureProfiles: exposureProfileRows.map((row) => ({
-      key: row.key,
-      source: row.source,
-      declaredAt: row.declaredAt,
-      trackedIndex: row.trackedIndex,
-      ter: row.ter,
-      hedged: row.hedged === 1,
-      breakdowns: JSON.parse(row.breakdownsJson) as ExposureBreakdowns,
-    })),
+    exposureProfiles: [],
     payouts: payoutRows.map((row) => ({
       id: row.id,
       holdingId: row.holdingId,

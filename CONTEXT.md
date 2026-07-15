@@ -152,12 +152,14 @@ breakdown by geography (a fixed set of world regions), by underlying currency, a
 asset class, plus the index it tracks, its TER, and whether its currency exposure is
 **hedged** to the base currency. Shared and keyed by its identity — **ISIN** when present,
 else its **provider symbol** (a pension plan often has no ISIN), so two **holdings**
-of the same security share one profile. Like an **instrument** it is a descriptive label
-and not a figure the math reads: it never touches **net worth**, **snapshots**, or
-**ripple recalculation**. Each breakdown is a set of bucket→weight entries that need not
-sum to 100% — the remainder is an implicit _other_ (only what is known is declared) and a
-breakdown over 100% is rejected. **Cash** and **property** carry auto-derived profiles
-(from their instrument and the base currency); coins are excluded (ADR 0017).
+of the same security share one profile. It lives in the **control plane** as a global,
+admin-curated catalog (ADR 0058): workspaces read it for **look-through** and never write
+it. Like an **instrument** it is a descriptive label and not a figure the math reads: it
+never touches **net worth**, **snapshots**, or **ripple recalculation**. Each breakdown
+is a set of bucket→weight entries that need not sum to 100% — the remainder is an implicit
+_other_ (only what is known is declared) and a breakdown over 100% is rejected. **Cash**
+and **property** carry auto-derived profiles (from their instrument and the base currency);
+coins are excluded (ADR 0017).
 _Avoid_: instrument (the coarse kind — an exposure profile says what one specific security
 contains), security master (implementation term).
 
@@ -723,7 +725,7 @@ _Avoid_: imported history (implies verified), synced history.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
-- An **exposure profile** attaches to an **investment**, shared by **ISIN**; **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
+- An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
 - A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**.
 - A **benchmark comparison** is a present-time lens (never a figure, ADR 0060) that reads a **benchmark series** cached monthly in a control-plane catalog. Globally it offers two real-terms, annualized lenses behind a toggle — **patrimonio real** (net worth deflated by CPI; includes contributions; ungated) and **rentabilidad real** (the invested sleeve's contribution-stripped **return** vs CPI; gated on returns) — and per **holding** it compares a fund's time-weighted **return** to the index it **tracks** (ADR 0039), never touching the net-worth math.
