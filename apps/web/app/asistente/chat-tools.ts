@@ -35,17 +35,20 @@ import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-prop
 import {
   AGENT_FILL_EXPOSURE_POLICY,
   buildExposureProfileProposal,
+  type ExposureProfileProposalReadPort,
   listExposureProfileFillTargets,
 } from "@web/asistente/exposure-profile-proposals";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
+import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
   WorthlineStore,
 } from "@worthline/db";
+import type { ExposureProfile } from "@worthline/domain";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
@@ -85,6 +88,11 @@ export interface ChatToolsInput {
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;
   /** YYYY-MM-DD valuation date — the demo clock for demo targets. */
   asOf: string;
+  /**
+   * Current exposure profiles for the fill tools (PRD #711 S3). Defaults to the
+   * global catalog reader (ADR 0058); injected so tests can supply a fixture.
+   */
+  readExposureProfiles?: () => Promise<ExposureProfile[]>;
 }
 
 /** Holdings included in the compact context — enough to reason, cheap in tokens. */
@@ -92,6 +100,24 @@ const CHAT_HOLDING_LIMIT = 10;
 
 /** The empty-workspace answer for scope-defaulting tools (ADR 0048). */
 const EMPTY_WORKSPACE = { error: "empty_workspace" } as const;
+
+/**
+ * The read port for the exposure-fill proposal tools (PRD #711 S3): eligibility
+ * reads come from the agent view, but the current profiles are now read from the
+ * GLOBAL catalog (ADR 0058), never the per-workspace table. The propose/confirm
+ * write path is vestigial after this reroute and is retired wholesale in a later
+ * slice.
+ */
+function exposureProfileProposalPort(
+  store: ChatReadStore,
+  readExposureProfiles: () => Promise<ExposureProfile[]>,
+): ExposureProfileProposalReadPort {
+  return {
+    readAssets: store.agentView.readAssets,
+    readInvestmentAssetsWithMeta: store.agentView.readInvestmentAssetsWithMeta,
+    readExposureProfiles,
+  };
+}
 
 const catalog = createAgentViewCatalog();
 
@@ -407,6 +433,8 @@ const PROPERTY_VALUATION_PROPOSAL_SCHEMA = jsonSchema<{
 
 export function createChatTools(input: ChatToolsInput): ToolSet {
   const catalogOptions = { asOf: input.asOf };
+  const readExposureProfiles =
+    input.readExposureProfiles ?? readExposureProfilesFromCatalog;
   const catalogRead = <Input, Output>(
     tool: Parameters<typeof runCatalogRead<Input, Output>>[0],
     catalogInput: Input,
@@ -1034,7 +1062,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       execute: () =>
         input.runWithStore(async (store) => ({
           policy: AGENT_FILL_EXPOSURE_POLICY,
-          targets: await listExposureProfileFillTargets(store.agentView),
+          targets: await listExposureProfileFillTargets(
+            exposureProfileProposalPort(store, readExposureProfiles),
+          ),
         })),
     }),
 
@@ -1049,7 +1079,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       execute: (args) =>
         input.runWithStore(async (store) => {
           const built = await buildExposureProfileProposal(
-            store.agentView,
+            exposureProfileProposalPort(store, readExposureProfiles),
             args.drafts ?? [],
           );
           return built.ok ? built.proposal : { error: built.error };

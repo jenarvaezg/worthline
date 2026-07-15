@@ -169,7 +169,7 @@ describe("confirmExposureProfileProposalAction", () => {
     expect(await store.exposureProfiles.readExposureProfile("BTC")).toBeNull();
   });
 
-  test("confirmed agent fills reclassify look-through without normalizing partials", async () => {
+  test("confirmed agent fills persist the raw partial without normalizing, and no longer feed the look-through (catalog is the source of truth, #711 S3)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
@@ -199,10 +199,16 @@ describe("confirmExposureProfileProposalAction", () => {
       scopeId,
     });
 
+    // No control plane is configured here, so the look-through catalog is
+    // `not_configured`: the holding's geography is unknown and the coverage says
+    // so explicitly (never a silent empty classification).
     expect(before.exposure.byGeography.coverage.unknown).toEqual({
       amountMinor: 100_000,
       currency: "EUR",
     });
+    expect(before.exposure.byGeography.coverage.catalogUnavailable).toBe(
+      "not_configured",
+    );
 
     const result = await confirmExposureProfileProposalAction(
       [{ key: "IE00B4L5Y983", breakdowns: { geography: { us: "0.7" } } }],
@@ -215,23 +221,28 @@ describe("confirmExposureProfileProposalAction", () => {
     });
 
     expect(result).toEqual({ applied: 1, status: "applied" });
+    // The confirm still writes the profile to the workspace store, and the raw
+    // partial breakdown is persisted verbatim — 0.7 is NOT normalized to 1.
     expect(
       await store.exposureProfiles.readExposureProfile("IE00B4L5Y983"),
     ).toMatchObject({
+      breakdowns: { geography: { us: "0.7" } },
       declaredAt: "2026-07-04T12:00:00.000Z",
       source: "agent",
     });
-    expect(after.exposure.byGeography.coverage).toEqual({
-      classified: { amountMinor: 100_000, currency: "EUR" },
-      notApplicable: { amountMinor: 0, currency: "EUR" },
-      unknown: { amountMinor: 0, currency: "EUR" },
+    // But the look-through reads the GLOBAL catalog now (ADR 0058), so a local
+    // write no longer reclassifies it: coverage is unchanged.
+    expect(after.exposure.byGeography.coverage.unknown).toEqual({
+      amountMinor: 100_000,
+      currency: "EUR",
+    });
+    expect(after.exposure.byGeography.coverage.classified).toEqual({
+      amountMinor: 0,
+      currency: "EUR",
     });
     expect(
-      after.exposure.byGeography.slices.find((slice) => slice.key === "us")?.value,
-    ).toEqual({ amountMinor: 70_000, currency: "EUR" });
-    expect(
-      after.exposure.byGeography.slices.find((slice) => slice.key === "other")?.value,
-    ).toEqual({ amountMinor: 30_000, currency: "EUR" });
+      after.exposure.byGeography.slices.find((slice) => slice.key === "us"),
+    ).toBeUndefined();
   });
 
   test("is a no-op in demo mode", async () => {

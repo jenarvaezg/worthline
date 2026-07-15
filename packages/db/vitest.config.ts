@@ -29,6 +29,14 @@ export default defineConfig({
     // are collected only by the root config (dev/`test:watch`), never by
     // `turbo run test` (CI), so their assertions never gated a merge.
     include: ["tests/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
+    // Every db test spins up a FULLY-MIGRATED libsql store (`createWorthlineStore`
+    // runs the whole migration ladder against a temp file) — a few seconds each on
+    // its own. Under `test:coverage` (v8 instrumentation) on a 2-core CI runner,
+    // heavy export/import round-trips tip past Vitest's 5s default and flake by
+    // timeout even though nothing is hung. 30s absorbs the coverage tax while still
+    // catching a genuine hang. (These are slow-but-not-hung by construction.)
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: vitestCoverage,
   },
 });

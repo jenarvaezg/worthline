@@ -13,6 +13,7 @@ import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
 import type { AgentViewReadStore, WorthlineStore } from "@worthline/db";
 import { createInMemoryStore as createWorthlineInMemoryStore } from "@worthline/db";
+import type { ExposureProfile } from "@worthline/domain";
 import { formatMoneyMinor } from "@worthline/domain";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -37,8 +38,15 @@ async function seededStore() {
   return store;
 }
 
-function toolsOver(agentView: AgentViewReadStore) {
-  return createChatTools({ runWithStore: (run) => run({ agentView }), asOf: AS_OF });
+function toolsOver(
+  agentView: AgentViewReadStore,
+  readExposureProfiles?: () => Promise<ExposureProfile[]>,
+) {
+  return createChatTools({
+    runWithStore: (run) => run({ agentView }),
+    asOf: AS_OF,
+    ...(readExposureProfiles ? { readExposureProfiles } : {}),
+  });
 }
 
 async function firstHoldingPublicId(agentView: AgentViewReadStore): Promise<string> {
@@ -85,6 +93,14 @@ describe("createChatTools · get_financial_context", () => {
           expected.exposure.byGeography.coverage.notApplicable,
         ),
         unknown: formatMoneyMinor(expected.exposure.byGeography.coverage.unknown),
+        // The chat surface mirrors buildFinancialContext, including the #711 S3
+        // catalog-availability discriminator (set here: no control plane in tests).
+        ...(expected.exposure.byGeography.coverage.catalogUnavailable
+          ? {
+              catalogUnavailable:
+                expected.exposure.byGeography.coverage.catalogUnavailable,
+            }
+          : {}),
       });
       expect(result.holdings.length).toBeGreaterThan(0);
       expect(Object.keys(result.links).length).toBeGreaterThan(0);
@@ -324,7 +340,7 @@ describe("createChatTools · propose_exposure_profiles (#706)", () => {
       ter: "0.002",
     });
     const before = await store.exposureProfiles.readExposureProfiles();
-    const tools = toolsOver(store.agentView);
+    const tools = toolsOver(store.agentView, store.exposureProfiles.readExposureProfiles);
 
     const result = await tools["propose_exposure_profiles"]?.execute?.(
       {
@@ -406,7 +422,7 @@ describe("createChatTools · list_exposure_profile_fill_targets (#707)", () => {
         geography: { us: "1" },
       },
     });
-    const tools = toolsOver(store.agentView);
+    const tools = toolsOver(store.agentView, store.exposureProfiles.readExposureProfiles);
 
     const result = await tools["list_exposure_profile_fill_targets"]?.execute?.(
       {},

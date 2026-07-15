@@ -1,7 +1,7 @@
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
 import type { ExposureLookthrough, ExposureProfile } from "@worthline/domain";
 import { lookThroughExposure } from "@worthline/domain";
 import { NextRequest } from "next/server";
@@ -10,6 +10,7 @@ import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
+const ORIGINAL_CONTROL_PLANE_DB_URL = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
 
 afterEach(() => {
   if (ORIGINAL_DB_PATH === undefined) {
@@ -22,6 +23,12 @@ afterEach(() => {
     delete process.env.WORTHLINE_AGENT_VIEW_TOKEN;
   } else {
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = ORIGINAL_TOKEN;
+  }
+
+  if (ORIGINAL_CONTROL_PLANE_DB_URL === undefined) {
+    delete process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+  } else {
+    process.env.WORTHLINE_CONTROL_PLANE_DB_URL = ORIGINAL_CONTROL_PLANE_DB_URL;
   }
 
   cleanupTempDirs();
@@ -81,6 +88,8 @@ const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 const US_ETF_ISIN = "IE00B5BMR087";
 const US_ETF_PROFILE: ExposureProfile = {
   key: US_ETF_ISIN,
+  source: "user",
+  declaredAt: null,
   trackedIndex: "S&P 500",
   ter: "0.0007",
   hedged: false,
@@ -92,10 +101,16 @@ const US_ETF_PROFILE: ExposureProfile = {
 };
 
 /**
- * Seed a household with a US-tracking ETF (isin + hand-entered profile), a cash
- * account, and a crypto holding. Returns the temp DB path so tests can reopen it.
+ * Seed a household with a US-tracking ETF (isin), a cash account, and a crypto
+ * holding. The exposure profile now lives in the GLOBAL catalog (control plane,
+ * ADR 0058), so — unless `withCatalog` is false — it is seeded there and the
+ * control-plane URL is configured for the read path.
  */
-async function seedExposure(): Promise<void> {
+async function seedExposure(
+  options: { withCatalog?: boolean; seedProfile?: boolean } = {},
+): Promise<void> {
+  const withCatalog = options.withCatalog ?? true;
+  const seedProfile = options.seedProfile ?? true;
   const databasePath = tempDatabasePath("worthline-agent-view-exposure-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
@@ -160,11 +175,36 @@ async function seedExposure(): Promise<void> {
     },
     { today: "2026-06-19" },
   );
-  await store.exposureProfiles.saveExposureProfile(US_ETF_PROFILE);
   store.close();
+
+  if (!withCatalog) {
+    // No control-plane URL: the catalog resolves `not_configured` (never the
+    // per-workspace table), so the look-through must degrade explicitly.
+    delete process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
+    return;
+  }
+
+  const controlPlanePath = tempDatabasePath("worthline-control-plane-exposure-");
+  process.env.WORTHLINE_CONTROL_PLANE_DB_URL = `file:${controlPlanePath}`;
+  const controlPlane = await createControlPlaneStore({ url: `file:${controlPlanePath}` });
+  // The catalog is configured either way; `seedProfile` decides whether the
+  // ETF's identity actually has a row (available-with-row vs available-empty).
+  if (seedProfile) {
+    await controlPlane.createGlobalExposureProfile({
+      identity: { isin: US_ETF_ISIN },
+      breakdowns: {
+        geography: { us: "1" },
+        currency: { USD: "1" },
+        assetClass: { equity: "1" },
+      },
+      ter: "0.0007",
+      trackedIndex: "S&P 500",
+    });
+  }
+  controlPlane.close();
 }
 
-describe("agent-view exposure look-through (PRD #539 S2 / #542)", () => {
+describe("agent-view exposure look-through (PRD #539 S2 / #542, catalog #711 S3)", () => {
   test("financial-context breakdowns reconcile with a direct lookThroughExposure call", async () => {
     await seedExposure();
     const scopeId = await householdScopeId();
@@ -214,6 +254,9 @@ describe("agent-view exposure look-through (PRD #539 S2 / #542)", () => {
     expect(exposure.byAssetClass).toEqual(expected.assetClass);
     expect(exposure.currencyRisk).toEqual(expected.currencyRisk);
 
+    // The catalog was available: no `catalogUnavailable` discriminator anywhere.
+    expect(exposure.byGeography.coverage.catalogUnavailable).toBeUndefined();
+
     // The existing exposure block is untouched.
     expect(exposure.byInstrument).toBeDefined();
     expect(exposure.byLiquidityTier).toBeDefined();
@@ -255,20 +298,65 @@ describe("agent-view exposure look-through (PRD #539 S2 / #542)", () => {
         assetClass: { equity: "1" },
       },
     });
+    // A resolved profile carries no absence discriminator.
+    expect(body.data.exposureProfileStatus).toBeUndefined();
   });
 
   test("get_holding_detail signals absence (null) for a holding with no profile", async () => {
     await seedExposure();
     const scopeId = await householdScopeId();
 
-    // The crypto holding takes no hand-entered profile — absence is honest, not fabricated.
+    // Crypto takes no hand-entered profile (not `canHandEnterExposureProfile`),
+    // so its absence carries no missing/unavailable distinction — a plain null.
     const btcId = await holdingIdByLabel(scopeId, "Bitcoin");
     const btc = await holding(btcId);
     expect(btc.body.data.exposureProfile ?? null).toBeNull();
+    expect(btc.body.data.exposureProfileStatus).toBeUndefined();
 
-    // A non-investment holding (cash) also has no profile.
+    // A non-investment holding (cash) also has no profile — and no identity.
     const cashId = await holdingIdByLabel(scopeId, "Cuenta");
     const cash = await holding(cashId);
     expect(cash.body.data.exposureProfile ?? null).toBeNull();
+    expect(cash.body.data.exposureProfileStatus).toBeUndefined();
+  });
+
+  test("catalog available but empty: an eligible security reports profile_missing", async () => {
+    // Catalog is configured and readable, but has no row for the ETF's ISIN.
+    await seedExposure({ seedProfile: false });
+    const scopeId = await householdScopeId();
+    const etfId = await holdingIdByLabel(scopeId, "S&P 500 ETF");
+
+    const { body } = await holding(etfId);
+    expect(body.data.exposureProfile ?? null).toBeNull();
+    // Known identity + readable catalog + no row → profile_missing, NOT catalog_unavailable.
+    expect(body.data.exposureProfileStatus).toBe("profile_missing");
+  });
+
+  test("catalog unavailable: net worth resolves, look-through/holding degrade to catalog_unavailable", async () => {
+    // No control-plane URL configured — the catalog is `not_configured`, NOT empty.
+    await seedExposure({ withCatalog: false });
+    const scopeId = await householdScopeId();
+
+    const { body, response } = await financialContext(scopeId);
+    expect(response.status).toBe(200);
+    // Patrimonio / net worth still resolve (they never read the catalog).
+    expect(body.data.summary.grossAssets).toEqual(eur(6_000_00));
+
+    // The look-through classifies nothing against reference data and says so —
+    // "catalog down", not "profiles missing".
+    expect(body.data.exposure.byGeography.coverage.catalogUnavailable).toBe(
+      "not_configured",
+    );
+    expect(body.data.exposure.byAssetClass.coverage.catalogUnavailable).toBe(
+      "not_configured",
+    );
+
+    // Holding detail: a KNOWN identity reports catalog_unavailable, not profile_missing.
+    const etfId = await holdingIdByLabel(scopeId, "S&P 500 ETF");
+    const { body: etf } = await holding(etfId);
+    expect(etf.data.exposureProfile ?? null).toBeNull();
+    expect(etf.data.exposureProfileStatus).toBe("catalog_unavailable");
+    // The tracked index lives in the catalog, so the benchmark inherits the signal.
+    expect(etf.data.vsBenchmark.unavailableReason).toBe("catalog_unavailable");
   });
 });

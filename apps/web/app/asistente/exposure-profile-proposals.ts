@@ -213,7 +213,6 @@ export async function readEligibleExposureProfileKeys(
     (
       await readEligibleExposureProfileTargets({
         readAssets: store.assets.readAssets,
-        readExposureProfiles: store.exposureProfiles.readExposureProfiles,
         readInvestmentAssetsWithMeta: store.assets.readInvestmentAssetsWithMeta,
       })
     ).keys(),
@@ -221,7 +220,10 @@ export async function readEligibleExposureProfileKeys(
 }
 
 export async function readEligibleExposureProfileTargets(
-  store: ExposureProfileProposalReadPort,
+  store: Pick<
+    ExposureProfileProposalReadPort,
+    "readAssets" | "readInvestmentAssetsWithMeta"
+  >,
 ): Promise<Map<string, string[]>> {
   const [assets, metas] = await Promise.all([
     store.readAssets(),

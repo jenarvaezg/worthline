@@ -239,6 +239,12 @@ export default async function EditarPage({
       canHandEnterExposure && investment
         ? (investment.isin ?? investment.providerSymbol ?? null)
         : null;
+    // The exposure section here is a hand-entry FORM that still WRITES the
+    // per-workspace table (`saveExposureProfileAction`) until S5 retires it, so
+    // its display + the benchmark card must keep reading that same local record
+    // to stay self-consistent (save an index → it shows). The global-catalog
+    // reroute (PRD #711 S3, ADR 0058) covers the look-through/agent-view READS;
+    // this display read moves to the catalog in S5, when the form is removed.
     const exposureProfile = exposureProfileKey
       ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
       : null;
