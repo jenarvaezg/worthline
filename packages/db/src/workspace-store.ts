@@ -1489,7 +1489,6 @@ async function buildWorkspaceExport(
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
     groups: workspace.groups,
-    exposureProfiles: [],
     payouts: payoutRows.map((row) => ({
       id: row.id,
       holdingId: row.holdingId,

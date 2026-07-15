@@ -12,7 +12,6 @@
 import { z } from "zod";
 import { asInstant } from "./dates";
 import { compareUnits } from "./decimal";
-import { validateImportedExposureProfile } from "./exposure-lookthrough";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
   ExportedAsset,
@@ -370,19 +369,6 @@ const publicIdSchema = z.object({
   publicId: nonEmptyString,
 });
 
-// Exposure profile (PRD #539, ADR 0039): a dimension-agnostic bucket→weight map
-// per dimension, plus scalars. Structure only here; the >100% invariant is
-// enforced in the domain-error phase via validateImportedExposureProfile.
-const exposureProfileSchema = z.object({
-  key: nonEmptyString,
-  source: z.enum(["user", "agent"]).default("user"),
-  declaredAt: nonEmptyString.nullable().default(null),
-  trackedIndex: nonEmptyString.nullish(),
-  ter: nonEmptyString.nullish(),
-  hedged: z.boolean().optional(),
-  breakdowns: z.record(z.string(), z.record(z.string(), z.string())).default({}),
-});
-
 // Payouts (PRD #652, ADR 0054): attribution records attached to a holding.
 // Schedule occurrences are derived on read, never exported — only the declaration.
 const payoutSchema = z.object({
@@ -457,7 +443,6 @@ const documentSchema = z.object({
   priceCache: z.array(priceSchema).default([]),
   connectedSources: z.array(connectedSourceSchema).default([]),
   publicIds: z.array(publicIdSchema).default([]),
-  exposureProfiles: z.array(exposureProfileSchema).default([]),
   payouts: z.array(payoutSchema).default([]),
   payoutSchedules: z.array(payoutScheduleSchema).default([]),
   contributionPlans: z.array(contributionPlanSchema).default([]),
@@ -482,6 +467,12 @@ export function parseWorkspaceExport(input: unknown): ParseWorkspaceExportResult
       version === undefined
         ? `El archivo no indica la versión del formato; esta app solo importa la versión ${EXPORT_VERSION}.`
         : `El archivo usa la versión ${String(version)}; esta app solo importa la versión ${EXPORT_VERSION}.`,
+    ]);
+  }
+
+  if ("exposureProfiles" in (input as Record<string, unknown>)) {
+    return fail([
+      "El archivo incluye la sección exposureProfiles; los backups v3 ya no exportan ni importan perfiles de exposición.",
     ]);
   }
 
@@ -636,7 +627,6 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectDatabaseKeyErrors(errors, doc);
   collectPublicIdErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
-  collectExposureProfileErrors(errors, doc);
 
   return errors;
 }
@@ -840,32 +830,6 @@ function collectStructuralKeyErrors(
       (a) => a.anchorDate,
       (a) => `${liability.id}/${a.anchorDate}`,
     );
-  }
-}
-
-/**
- * Exposure profiles (PRD #539, ADR 0039): reject duplicate keys and any profile
- * whose breakdown exceeds 100% — the same invariant the import path enforces via
- * validateImportedExposureProfile, applied here so a hand-edited file cannot smuggle in a
- * profile that would throw at look-through read time.
- */
-function collectExposureProfileErrors(errors: string[], doc: WorkspaceExport): void {
-  collectDuplicateIdErrors(
-    errors,
-    "perfil de exposición",
-    doc.exposureProfiles.map((profile) => profile.key),
-  );
-
-  for (const profile of doc.exposureProfiles) {
-    try {
-      validateImportedExposureProfile(profile);
-    } catch (error) {
-      errors.push(
-        `El perfil de exposición "${profile.key}" no es válido: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 }
 

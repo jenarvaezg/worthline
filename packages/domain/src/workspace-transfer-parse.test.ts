@@ -232,29 +232,10 @@ describe("parseWorkspaceExport — acceptance", () => {
     }
   });
 
-  test("pre-provenance exposure profiles parse as user-authored legacy rows", () => {
-    const document = makeDocument((doc) => {
-      (doc as { exposureProfiles: unknown[] }).exposureProfiles = [
-        {
-          key: "IE00B3RBWM25",
-          breakdowns: { geography: { us: "1" } },
-        },
-      ];
-    });
+  test("a v3 document has no exposureProfiles section (#942)", () => {
+    const document = makeDocument();
 
-    const result = parseWorkspaceExport(document);
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.exposureProfiles).toEqual([
-        {
-          key: "IE00B3RBWM25",
-          source: "user",
-          declaredAt: null,
-          breakdowns: { geography: { us: "1" } },
-        },
-      ]);
-    }
+    expect("exposureProfiles" in (document as object)).toBe(false);
   });
 
   test("a holding's instrument survives the parse (#149)", () => {
@@ -341,7 +322,7 @@ describe("parseWorkspaceExport — acceptance", () => {
 
   test("a minimal live-state-only document parses with absent sections normalized empty", () => {
     const result = parseWorkspaceExport({
-      version: 2,
+      version: 3,
       workspace: { mode: "individual", baseCurrency: "EUR" },
       members: [{ id: "m1", name: "Alice" }],
       assets: [
@@ -360,7 +341,7 @@ describe("parseWorkspaceExport — acceptance", () => {
     expect(result.ok).toBe(true);
 
     if (result.ok) {
-      expect(result.value.version).toBe(2);
+      expect(result.value.version).toBe(3);
       expect(result.value.groups).toEqual([]);
       expect(result.value.liabilities).toEqual([]);
       expect(result.value.operations).toEqual([]);
@@ -615,7 +596,18 @@ describe("parseWorkspaceExport — input shape and version", () => {
       delete (doc as Partial<WorkspaceExport>).version;
     });
 
-    expectRejection(document, /versión 2/);
+    expectRejection(document, /versión 3/);
+  });
+
+  test("a v2 export is rejected outright — no converter (#942)", () => {
+    const document = makeDocument((doc) => {
+      (doc as unknown as Record<string, unknown>)["version"] = 2;
+    });
+
+    expectRejection(
+      document,
+      "El archivo usa la versión 2; esta app solo importa la versión 3.",
+    );
   });
 
   test("a different version is rejected naming found vs expected", () => {
@@ -624,7 +616,7 @@ describe("parseWorkspaceExport — input shape and version", () => {
     });
 
     expectRejection(document, /versión 99/);
-    expectRejection(document, /versión 2/);
+    expectRejection(document, /versión 3/);
   });
 
   test("the lossy v1 format is rejected outright — no converter (ADR 0015)", () => {
@@ -633,7 +625,17 @@ describe("parseWorkspaceExport — input shape and version", () => {
     });
 
     expectRejection(document, /versión 1/);
-    expectRejection(document, /versión 2/);
+    expectRejection(document, /versión 3/);
+  });
+
+  test("exposureProfiles in a v3 file is rejected — backups no longer carry profiles (#942)", () => {
+    const document = makeDocument((doc) => {
+      (doc as unknown as Record<string, unknown>).exposureProfiles = [
+        { key: "IE00B3RBWM25", breakdowns: { geography: { us: "1" } } },
+      ];
+    });
+
+    expectRejection(document, /exposureProfiles/);
   });
 });
 
