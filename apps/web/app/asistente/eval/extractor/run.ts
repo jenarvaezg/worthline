@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 
 import {
   extractPositionsFromImage,
@@ -12,6 +13,7 @@ import {
   buildAdmissionReport,
   DEFAULT_ADMISSION_THRESHOLD,
 } from "@web/asistente/eval/admission";
+import { parseExtractorEvalArgs } from "./args";
 import { gradeExtractionAgainstExpected } from "./graders";
 import {
   EXTRACTOR_GOLDEN_FIXTURES,
@@ -20,15 +22,7 @@ import {
 } from "./manifest";
 import { resolveFixtureExpectedPath, resolveFixtureImagePath } from "./paths";
 
-const DEFAULT_EXTRACTOR_THRESHOLD = 1;
 const DELAY_BETWEEN_FIXTURES_MS = 20_000;
-
-export interface ExtractorEvalArgs {
-  model?: string;
-  threshold: number;
-  output?: string;
-  only?: string[];
-}
 
 export interface FixtureRunResult {
   id: string;
@@ -37,47 +31,6 @@ export interface FixtureRunResult {
   imagePath: string;
   checks: AdmissionCheck[];
   error?: string;
-}
-
-function valueAfter(argv: readonly string[], flag: string): string | undefined {
-  const index = argv.indexOf(flag);
-  if (index === -1) return undefined;
-  const value = argv[index + 1];
-  if (!value || value.startsWith("--")) throw new Error(`${flag} requires a value.`);
-  return value;
-}
-
-function valuesAfter(argv: readonly string[], flag: string): string[] | undefined {
-  const index = argv.indexOf(flag);
-  if (index === -1) return undefined;
-  const values: string[] = [];
-  for (let cursor = index + 1; cursor < argv.length; cursor += 1) {
-    const value = argv[cursor];
-    if (!value || value.startsWith("--")) break;
-    values.push(value);
-  }
-  if (values.length === 0) throw new Error(`${flag} requires at least one value.`);
-  return values;
-}
-
-export function parseExtractorEvalArgs(argv: readonly string[]): ExtractorEvalArgs {
-  const thresholdValue = valueAfter(argv, "--threshold");
-  const threshold = thresholdValue
-    ? Number.parseFloat(thresholdValue)
-    : DEFAULT_EXTRACTOR_THRESHOLD;
-  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-    throw new Error("--threshold must be a number between 0 and 1.");
-  }
-
-  const model = valueAfter(argv, "--model");
-  const output = valueAfter(argv, "--output");
-  const only = valuesAfter(argv, "--only");
-  return {
-    threshold,
-    ...(model ? { model } : {}),
-    ...(output ? { output } : {}),
-    ...(only ? { only } : {}),
-  };
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -182,6 +135,7 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
   };
   const model = env.WORTHLINE_EXTRACTOR_MODEL?.trim() || IMAGE_EXTRACTOR_DEFAULT_MODEL;
   const startedAt = new Date().toISOString();
+  const subset = args.only !== undefined && args.only.length > 0;
 
   console.error(`\nExtractor eval · google/${model}`);
   console.error("─".repeat(64));
@@ -226,19 +180,18 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
         : {}),
     })),
     skipped: fixtureResults.filter((result) => result.status === "skipped").length,
+    ...(subset ? { subset: true as const } : {}),
   };
   const json = `${JSON.stringify(enriched, null, 2)}\n`;
   process.stdout.write(json);
-  if (args.output) {
-    const { writeFile } = await import("node:fs/promises");
-    await writeFile(args.output, json, "utf8");
-  }
+  if (args.output) await writeFile(args.output, json, "utf8");
 
   console.error("─".repeat(64));
   console.error(
     `${report.summary.passed}/${report.summary.total} checks passed · ` +
       `${report.complete ? "complete" : "incomplete"} · ` +
       `${enriched.skipped} skipped · ` +
+      `${subset ? "subset · " : ""}` +
       `${report.summary.admitted ? "ADMITTED" : "REJECTED"}\n`,
   );
 
@@ -249,14 +202,28 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
   return report.summary.admitted ? 0 : 1;
 }
 
-export { DEFAULT_ADMISSION_THRESHOLD, DEFAULT_EXTRACTOR_THRESHOLD };
+export { DEFAULT_ADMISSION_THRESHOLD } from "@web/asistente/eval/admission";
+export { DEFAULT_EXTRACTOR_THRESHOLD, type ExtractorEvalArgs } from "./args";
 
 async function main(): Promise<void> {
   process.exitCode = await runExtractorEval(process.argv.slice(2));
 }
 
-void main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Extractor eval failed: ${message}`);
-  process.exitCode = 1;
-});
+function isCliEntry(): boolean {
+  if (import.meta.main) return true;
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isCliEntry()) {
+  void main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Extractor eval failed: ${message}`);
+    process.exitCode = 1;
+  });
+}

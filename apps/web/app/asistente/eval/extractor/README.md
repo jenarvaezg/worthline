@@ -89,7 +89,8 @@ bun run eval:extractor -- \
   --output /tmp/extractor-gemini-35.json
 ```
 
-Run a subset while iterating:
+Run a subset while iterating (the JSON report includes `"subset": true`; do not
+treat that verdict as a full admission gate):
 
 ```bash
 bun run eval:extractor -- --only synthetic-baseline mobile
@@ -109,7 +110,9 @@ to stdout and, when `--output` is supplied, to that file. It contains:
 - one result per fixture with status (`completed`, `skipped`, `error`), checks,
   and paths;
 - whole-run passed/total counts, ratio, threshold and admission decision;
-- `skipped` count for missing private fixtures.
+- `skipped` count for missing private fixtures;
+- `subset: true` when `--only` narrowed the fixture list (admit verdict not valid
+  for model admission).
 
 Default threshold is **100%** — every attempted check must pass. Missing private
 fixtures mark the run incomplete and exit non-zero even if the committed

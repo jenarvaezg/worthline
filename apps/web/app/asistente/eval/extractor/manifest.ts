@@ -32,29 +32,16 @@ const goldenExpectedSchema = z
 
 export type GoldenExpected = z.infer<typeof goldenExpectedSchema>;
 
-const committedFixtureSchema = z
-  .object({
-    id: z.string().trim().min(1).max(80),
-    scenario: z.enum(EXTRACTOR_GOLDEN_SCENARIOS),
-    storage: z.literal("committed"),
-    imageFile: z.string().trim().min(1),
-    expectedFile: z.string().trim().min(1),
-  })
-  .strict();
-
-const localFixtureSchema = z
-  .object({
-    id: z.string().trim().min(1).max(80),
-    scenario: z.enum(EXTRACTOR_GOLDEN_SCENARIOS),
-    storage: z.literal("local"),
-    imageFile: z.string().trim().min(1),
-    expectedFile: z.string().trim().min(1),
-  })
-  .strict();
+interface GoldenFixtureBase {
+  id: string;
+  scenario: ExtractorGoldenScenario;
+  imageFile: string;
+  expectedFile: string;
+}
 
 export type GoldenFixture =
-  | z.infer<typeof committedFixtureSchema>
-  | z.infer<typeof localFixtureSchema>;
+  | (GoldenFixtureBase & { storage: "committed" })
+  | (GoldenFixtureBase & { storage: "local" });
 
 /**
  * Golden extractor fixtures (#991). Committed entries ship safe synthetic assets;

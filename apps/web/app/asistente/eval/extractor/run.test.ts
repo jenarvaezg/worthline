@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseExtractorEvalArgs } from "./run";
+import { parseExtractorEvalArgs } from "./args";
 
 describe("parseExtractorEvalArgs", () => {
   it("defaults to a strict threshold and accepts model overrides", () => {
