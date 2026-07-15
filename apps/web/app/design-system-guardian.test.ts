@@ -457,4 +457,50 @@ describe("Libro mayor design-system guardian (#906)", () => {
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
     expect(kindTitles.length).toBe(5);
   });
+
+  test("the settings recipes trade card elevation for paper rules (#912)", () => {
+    // Canon §4: only the hero carries a fill — the settings panels are open
+    // sections opened by a heavy rule, not filled/bordered/rounded cards.
+    const panel = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ".ajustesPanel",
+    );
+    expect(panel?.declarations.get("background")).toBeUndefined();
+    expect(panel?.declarations.get("border")).toBeUndefined();
+    expect(panel?.declarations.get("border-radius")).toBeUndefined();
+    expect(panel?.declarations.get("box-shadow")).toBeUndefined();
+
+    // The connected-source tile (Numista/Binance) — shared with the holding
+    // editor — is a ruled ledger entry opened by a heavy rule, never a nested
+    // card: no fill, no perimeter border, no radius.
+    const tile = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ".coinSourceTile",
+    );
+    expect(tile?.declarations.get("border-top")).toBe("var(--rule-heavy)");
+    expect(tile?.declarations.get("box-shadow")).toBe("none");
+    expect(tile?.declarations.get("background")).toBeUndefined();
+    expect(tile?.declarations.get("border")).toBeUndefined();
+    expect(tile?.declarations.get("border-radius")).toBeUndefined();
+
+    // Warning-override rows read as a ruled list — each opened by a hairline,
+    // not a perimeter border box.
+    const override = rules.find(
+      (rule) => rule.file === "globals.css" && rule.selector === ".overrideRow",
+    );
+    expect(override?.declarations.get("border-top")).toBe("1px solid var(--line-soft)");
+    expect(override?.declarations.get("border")).toBeUndefined();
+  });
+
+  test("the settings and admin surfaces consume the paper register (#912)", () => {
+    // Every settings panel carries the shared .section primitive (paper, not
+    // a card). The count pins the sweep — new panels must opt in too.
+    const ajustes = readFileSync(join(appDirectory, "ajustes/page.tsx"), "utf8");
+    const sectioned = ajustes.match(/className="ajustesPanel section"/g) ?? [];
+    expect(sectioned.length).toBe(7);
+
+    // Admin is an interior tool on paper (canon §2): the list sits inside a
+    // section and never borrows the cover register.
+    const admin = readFileSync(join(appDirectory, "admin/page.tsx"), "utf8");
+    expect(admin).toContain('className="adminList section"');
+    expect(admin).not.toContain("coverSurface");
+  });
 });

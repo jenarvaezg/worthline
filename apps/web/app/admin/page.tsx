@@ -30,33 +30,37 @@ export default async function AdminPage() {
         <p className="demoLede">Workspaces dados de alta en el control plane.</p>
       </header>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Workspace</th>
-            <th>Alta</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {workspaces.map((workspace) => (
-            <tr key={workspace.id}>
-              <td>{workspace.ownerEmail ?? "—"}</td>
-              <td>{workspace.id}</td>
-              <td>{formatCreatedAt(workspace.createdAt)}</td>
-              <td className="rowActions">
-                <form action={impersonateWorkspaceAction}>
-                  <input name="workspaceId" type="hidden" value={workspace.id} />
-                  <button className="btnSmall" type="submit">
-                    Impersonar
-                  </button>
-                </form>
-              </td>
+      {/* Canon §2: /admin is an interior tool on paper — the list sits inside a
+          section opened by a heavy rule, never on the cover. */}
+      <section className="adminList section">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Workspace</th>
+              <th>Alta</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {workspaces.map((workspace) => (
+              <tr key={workspace.id}>
+                <td>{workspace.ownerEmail ?? "—"}</td>
+                <td>{workspace.id}</td>
+                <td>{formatCreatedAt(workspace.createdAt)}</td>
+                <td className="rowActions">
+                  <form action={impersonateWorkspaceAction}>
+                    <input name="workspaceId" type="hidden" value={workspace.id} />
+                    <button className="btnSmall" type="submit">
+                      Impersonar
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </main>
   );
 }
