@@ -14,7 +14,7 @@
 
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 // One temporary DB file for the WHOLE run — discarded when the OS cleans up the
@@ -31,6 +31,13 @@ const e2eDbPath =
   process.env.WORTHLINE_E2E_DB_PATH ??
   join(mkdtempSync(join(tmpdir(), "worthline-e2e-")), "test.sqlite");
 process.env.WORTHLINE_E2E_DB_PATH = e2eDbPath;
+
+// A throwaway control-plane DB for the same run — seeded in globalSetup with the
+// global exposure catalog row the benchmark journey expects (#711 S3 / #1014 S5).
+const e2eControlPlanePath =
+  process.env.WORTHLINE_E2E_CONTROL_PLANE_DB_PATH ??
+  join(dirname(e2eDbPath), "control-plane.sqlite");
+process.env.WORTHLINE_E2E_CONTROL_PLANE_DB_PATH = e2eControlPlanePath;
 
 // Overridable so concurrent checkouts (e.g. agent worktrees) can run the suite
 // side by side without colliding on the same port.
@@ -114,6 +121,7 @@ export default defineConfig({
       reuseExistingServer: false,
       env: {
         WORTHLINE_DB_PATH: e2eDbPath,
+        WORTHLINE_CONTROL_PLANE_DB_URL: `file:${e2eControlPlanePath}`,
         // Point the Binance + CoinGecko clients at the fake server (#252).
         WORTHLINE_BINANCE_BASE_URL: fakeApiBaseUrl,
         WORTHLINE_COINGECKO_BASE_URL: `${fakeApiBaseUrl}/coingecko/api/v3`,

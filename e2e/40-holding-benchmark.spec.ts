@@ -1,9 +1,10 @@
 /**
  * Journey 40: Per-holding benchmark comparison on the ficha (PRD #546 S5, #626).
  *
- * A market investment with a mapped tracked-index shows the vs-benchmark card on
- * `/patrimonio/[id]/editar`. Without control-plane prices the card degrades
- * honestly; with no tracked index assigned the card is omitted entirely.
+ * A market investment whose identity matches a global-catalog exposure profile
+ * with a mapped tracked-index shows the vs-benchmark card on `/patrimonio/[id]/editar`.
+ * Without monthly-close history the card degrades honestly; with no tracked index
+ * in the catalog the card is omitted entirely.
  */
 
 import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
@@ -22,14 +23,6 @@ test("holding ficha shows vs-benchmark card when tracked index is assigned", asy
   await page.goto("/patrimonio");
   const row = holdingRow(page, "ETF Benchmark S5");
   await row.getByRole("link", { name: "ETF Benchmark S5" }).first().click();
-  await openAdvancedSettings(page);
-
-  const exposure = page.getByRole("region", { name: "Exposición" });
-  await expect(exposure).toBeVisible();
-  await exposure.locator('select[name="assetClass"]').selectOption("equity");
-  await exposure.getByLabel("Índice de referencia").fill("MSCI World");
-  await exposure.getByRole("button", { name: "Guardar exposición" }).click();
-  await expect(page.getByRole("status")).toHaveText("Perfil de exposición guardado.");
   await openAdvancedSettings(page);
 
   const benchmark = page.getByLabel("Comparación con MSCI World");
