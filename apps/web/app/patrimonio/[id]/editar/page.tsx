@@ -39,7 +39,6 @@ import {
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
-import { readExposureProfileFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
@@ -240,11 +239,14 @@ export default async function EditarPage({
       canHandEnterExposure && investment
         ? (investment.isin ?? investment.providerSymbol ?? null)
         : null;
-    // Display read of the GLOBAL catalog (PRD #711 S3, ADR 0058): the section
-    // shows the shared profile for this identity read-only; the hand-entry write
-    // path is retired in a later slice.
+    // The exposure section here is a hand-entry FORM that still WRITES the
+    // per-workspace table (`saveExposureProfileAction`) until S5 retires it, so
+    // its display + the benchmark card must keep reading that same local record
+    // to stay self-consistent (save an index → it shows). The global-catalog
+    // reroute (PRD #711 S3, ADR 0058) covers the look-through/agent-view READS;
+    // this display read moves to the catalog in S5, when the form is removed.
     const exposureProfile = exposureProfileKey
-      ? await readExposureProfileFromCatalog(exposureProfileKey)
+      ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
       : null;
 
     // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record

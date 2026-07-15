@@ -55,17 +55,3 @@ export async function readExposureProfilesFromCatalog(): Promise<ExposureProfile
   }
   return [...exposureProfileLookthroughMap(availability.profiles).values()];
 }
-
-/**
- * One catalog profile by its `isin ?? providerSymbol` key, or null — the drop-in
- * replacement for `store.exposureProfiles.readExposureProfile(key)` in RSC display.
- */
-export async function readExposureProfileFromCatalog(
-  key: string,
-): Promise<ExposureProfile | null> {
-  const availability = await readExposureCatalogFromControlPlane();
-  if (availability.status !== "available") {
-    return null;
-  }
-  return exposureProfileLookthroughMap(availability.profiles).get(key) ?? null;
-}
