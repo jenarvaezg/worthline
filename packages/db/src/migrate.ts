@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 50;
+export const SCHEMA_VERSION = 51;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1551,6 +1551,14 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     }
     await writeSchemaVersion(client, 50);
+  }
+
+  if (version < 51) {
+    // ADR 0058 / PRD #711 S7 (#1016): exposure profiles moved to the control-plane
+    // global catalog — the per-workspace table is retired. Forward-only DROP; v38/v41
+    // historical CREATE/ALTER steps stay untouched (ADR 0002).
+    await client.execute("DROP TABLE IF EXISTS exposure_profiles");
+    await writeSchemaVersion(client, 51);
   }
 
   return { ranV18Backfill, ranV33Backfill };

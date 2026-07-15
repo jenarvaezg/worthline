@@ -37,6 +37,6 @@ describe("schema migration v50 (fact provenance and intraday ordering)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(50);
+    expect(SCHEMA_VERSION).toBe(51);
   });
 });

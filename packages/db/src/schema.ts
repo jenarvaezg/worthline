@@ -247,18 +247,6 @@ export const investmentAssets = sqliteTable("investment_assets", {
   benchmarkDistributing: integer("benchmark_distributing").notNull().default(0),
 });
 
-export const exposureProfiles = sqliteTable("exposure_profiles", {
-  key: text("key").primaryKey(),
-  source: text("source").$type<"user" | "agent">().notNull().default("user"),
-  declaredAt: text("declared_at"),
-  trackedIndex: text("tracked_index"),
-  ter: text("ter"),
-  hedged: integer("hedged").notNull().default(0),
-  breakdownsJson: text("breakdowns_json").notNull().default("{}"),
-  createdAt: timestamp("created_at"),
-  updatedAt: timestamp("updated_at"),
-});
-
 // Payouts (PRD #652 / ADR 0054): attribution records, never figures. A payout
 // attaches to one asset holding and touches no snapshot or ripple; FK cascade
 // removes them when the holding is hard-deleted.

@@ -35,98 +35,41 @@ async function seedV40WithExposureProfile(): Promise<Client> {
   return client;
 }
 
-describe("schema migrations v38/v41", () => {
-  test("creates the exposure_profiles table with JSON breakdown defaults", async () => {
+describe("schema migrations v38/v41/v51", () => {
+  test("v38-v41 ladder runs and v51 drops exposure_profiles on upgraded DBs", async () => {
     const client = await seedV37();
 
     await migrate(client);
 
-    const columns = (await client.execute("PRAGMA table_info(exposure_profiles)"))
-      .rows as unknown as Array<{
-      name: string;
-      notnull: number;
-      dflt_value: string | null;
-    }>;
-    expect(columns.map((column) => column.name)).toEqual([
-      "key",
-      "tracked_index",
-      "ter",
-      "hedged",
-      "breakdowns_json",
-      "created_at",
-      "updated_at",
-      "source",
-      "declared_at",
-    ]);
-    expect(columns.find((column) => column.name === "hedged")).toMatchObject({
-      dflt_value: "0",
-      notnull: 1,
-    });
-    expect(columns.find((column) => column.name === "source")).toMatchObject({
-      dflt_value: "'user'",
-      notnull: 1,
-    });
-    expect(columns.find((column) => column.name === "breakdowns_json")).toMatchObject({
-      dflt_value: "'{}'",
-      notnull: 1,
-    });
-
-    await client.execute("INSERT INTO exposure_profiles (key) VALUES ('IE00SP500')");
-    expect(
-      (
-        await client.execute(
-          "SELECT source, declared_at, hedged, breakdowns_json FROM exposure_profiles WHERE key = 'IE00SP500'",
-        )
-      ).rows[0],
-    ).toMatchObject({
-      breakdowns_json: "{}",
-      declared_at: null,
-      hedged: 0,
-      source: "user",
-    });
+    await expect(client.execute("SELECT key FROM exposure_profiles")).rejects.toThrow();
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
     expect(
       Number((await client.execute("PRAGMA user_version")).rows[0]!.user_version),
     ).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(51);
 
     await migrate(client);
-    expect(SCHEMA_VERSION).toBeGreaterThanOrEqual(41);
   });
 
-  test("fresh schemaSql includes the exposure_profiles table", async () => {
+  test("fresh schemaSql does not include the exposure_profiles table", async () => {
     const client = openLibsqlClient(":memory:");
 
     await client.executeMultiple(schemaSql);
-    await client.execute("INSERT INTO exposure_profiles (key) VALUES ('N5394')");
 
-    expect(
-      (
-        await client.execute(
-          "SELECT source, declared_at, hedged, breakdowns_json FROM exposure_profiles WHERE key = 'N5394'",
-        )
-      ).rows[0],
-    ).toMatchObject({
-      breakdowns_json: "{}",
-      declared_at: null,
-      hedged: 0,
-      source: "user",
-    });
+    expect(schemaSql).not.toContain("exposure_profiles");
+    await expect(
+      client.execute("INSERT INTO exposure_profiles (key) VALUES ('N5394')"),
+    ).rejects.toThrow();
   });
 
-  test("adds provenance columns to existing exposure profile rows", async () => {
+  test("v51 drops the exposure_profiles table on an upgraded DB", async () => {
     const client = await seedV40WithExposureProfile();
 
     await migrate(client);
 
-    expect(
-      (
-        await client.execute(
-          "SELECT source, declared_at FROM exposure_profiles WHERE key = 'IE00SP500'",
-        )
-      ).rows[0],
-    ).toMatchObject({ declared_at: null, source: "user" });
+    await expect(client.execute("SELECT key FROM exposure_profiles")).rejects.toThrow();
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);

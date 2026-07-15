@@ -161,7 +161,6 @@ export {
 } from "./sync-engine";
 
 import { createContributionPlanStore } from "./contribution-plan-store";
-import { createExposureProfileStore } from "./exposure-profile-store";
 import { createGoalStore } from "./goal-store";
 import { createLiabilityStore } from "./liability-store";
 import { createOperationsStore } from "./operations-store";
@@ -301,7 +300,6 @@ async function buildStore(
   const operationsStore = createOperationsStore(ctx);
   const connectedSourceStore = createConnectedSourceStore(ctx);
   const goalStore = createGoalStore(ctx);
-  const exposureProfileStore = createExposureProfileStore(ctx);
   const payoutStore = createPayoutStore(ctx);
   const contributionPlanStore = createContributionPlanStore(ctx);
   const assistantProposalStore = createAssistantProposalStore(ctx);
@@ -403,7 +401,6 @@ async function buildStore(
     workspace: workspaceStore,
     connectedSources: connectedSourceStore,
     goals: goalStore,
-    exposureProfiles: exposureProfileStore,
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,
     agentView: agentViewReadStore,
