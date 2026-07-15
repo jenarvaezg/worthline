@@ -35,6 +35,25 @@ function money(value: AgentViewMoney | null | undefined): string {
   return formatMoneyMinor({ amountMinor: value.amountMinor, currency: value.currency });
 }
 
+/**
+ * Whether a stored trace payload has the shape this view dereferences. The
+ * payload is opaque forensic JSON frozen at raise time (control-plane.ts), so a
+ * later change to `AgentViewCalculationTrace` — or a truncated/corrupted row —
+ * must degrade to the raw JSON, never crash the whole /admin detail page.
+ */
+function isRenderableTrace(trace: AgentViewCalculationTrace | null): boolean {
+  if (!trace || typeof trace !== "object") return false;
+  const fidelity = (trace as { fidelity?: unknown }).fidelity;
+  const tolerance = (trace as { tolerance?: unknown }).tolerance;
+  return (
+    typeof fidelity === "object" &&
+    fidelity !== null &&
+    typeof tolerance === "object" &&
+    tolerance !== null &&
+    Array.isArray((trace as { reconciliation?: unknown }).reconciliation)
+  );
+}
+
 /** The trace tabulated like a bank cuadro (#1050): reconciliation + amortization schedule. */
 function CalculationTraceView({ trace }: { trace: AgentViewCalculationTrace }) {
   return (
@@ -91,7 +110,7 @@ function CalculationTraceView({ trace }: { trace: AgentViewCalculationTrace }) {
         </p>
       ) : null}
 
-      {trace.schedule ? (
+      {trace.schedule && Array.isArray(trace.schedule.frontiers) ? (
         <>
           <h3>Cuadro de amortización</h3>
           <p className="alertMeta">
@@ -167,7 +186,16 @@ function OccurrenceView({
             </p>
           ) : null}
           {payload.calculationTrace ? (
-            <CalculationTraceView trace={payload.calculationTrace} />
+            isRenderableTrace(payload.calculationTrace) ? (
+              <CalculationTraceView trace={payload.calculationTrace} />
+            ) : (
+              // A stored trace whose shape drifted or was corrupted still shows
+              // its raw JSON instead of crashing the whole detail page (#1050).
+              <details className="alertExtracted">
+                <summary>Traza de cálculo (formato no reconocido)</summary>
+                <pre>{JSON.stringify(payload.calculationTrace, null, 2)}</pre>
+              </details>
+            )
           ) : (
             <p className="alertMeta">
               Sin traza de cálculo

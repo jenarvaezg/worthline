@@ -23,15 +23,25 @@ export async function resolveMaintainerAlertAction(formData: FormData): Promise<
   const status = rawStatus as Exclude<MaintainerAlertStatus, "open">;
 
   const note = String(formData.get("note") ?? "").trim();
-  const link = String(formData.get("link") ?? "").trim();
+  const rawLink = String(formData.get("link") ?? "").trim();
+  // The `type="url"` input is only a client hint; the value is later rendered as
+  // an <a href>, so accept only http(s) here — a `javascript:` URI must never be
+  // persisted and clicked from /admin.
+  const link = /^https?:\/\//i.test(rawLink) ? rawLink : "";
 
-  await withControlPlaneStore((store) =>
-    store.updateMaintainerAlertStatus(alertId, {
-      status,
-      ...(note ? { note } : {}),
-      ...(link ? { link } : {}),
-    }),
-  );
+  try {
+    await withControlPlaneStore((store) =>
+      store.updateMaintainerAlertStatus(alertId, {
+        status,
+        ...(note ? { note } : {}),
+        ...(link ? { link } : {}),
+      }),
+    );
+  } catch {
+    // Unknown/already-gone alert (or a transient control-plane failure): fall
+    // back to the list rather than surfacing a raw 500.
+    redirect("/admin/alertas");
+  }
 
   redirect(`/admin/alertas/${alertId}`);
 }

@@ -1284,11 +1284,18 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           });
         });
 
-        const raised = await raise({
-          holdingId: args.holdingId,
-          category: args.category,
-          payload,
-        });
+        let raised: RaisedMaintainerAlert | null;
+        try {
+          raised = await raise({
+            holdingId: args.holdingId,
+            category: args.category,
+            payload,
+          });
+        } catch {
+          // A control-plane write failure must never kill the chat turn — the
+          // repair path is unaffected and the agent reports honestly (#1050).
+          return { status: "unpersisted", reason: "control_plane_error" };
+        }
         if (raised === null) {
           return { status: "unpersisted", reason: "control_plane_unavailable" };
         }

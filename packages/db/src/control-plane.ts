@@ -478,6 +478,12 @@ function toMaintainerAlertOccurrence(
   };
 }
 
+/** True when an INSERT lost the race for the one-open-alert-per-key index (#1050). */
+function isOpenKeyConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /UNIQUE constraint failed:\s*maintainer_alerts/i.test(message);
+}
+
 function toGlobalExposureProfileIdentity(
   row: Record<string, unknown>,
 ): GlobalExposureProfileIdentity {
@@ -549,6 +555,87 @@ async function buildControlPlaneStore(
 ): Promise<ControlPlaneStore> {
   await client.executeMultiple(SCHEMA);
   await migrateControlPlane(client);
+
+  /**
+   * One pass of {@link ControlPlaneStore.raiseMaintainerAlert}: accumulate onto
+   * the open alert of this key, or mint a fresh one (linked to the prior closed
+   * alert as a regression). Occurrence count is recomputed from the actual rows
+   * rather than incremented, so a crash between the two writes self-heals on the
+   * next raise instead of drifting.
+   */
+  async function raiseMaintainerAlertOnce({
+    workspaceId,
+    holdingId,
+    category,
+    payload,
+    occurredAt,
+  }: RaiseMaintainerAlertInput): Promise<RaisedMaintainerAlert> {
+    const stamp = occurredAt ?? new Date().toISOString();
+    const payloadJson = JSON.stringify(payload ?? null);
+
+    const open = await client.execute({
+      sql: `SELECT * FROM maintainer_alerts
+            WHERE workspace_id = ? AND holding_id = ? AND category = ? AND status = 'open'
+            LIMIT 1`,
+      args: [workspaceId, holdingId, category],
+    });
+
+    if (open.rows.length > 0) {
+      const alertId = String(open.rows[0]!["id"]);
+      await client.execute({
+        sql: `INSERT INTO maintainer_alert_occurrences (id, alert_id, payload_json, occurred_at)
+              VALUES (?, ?, ?, ?)`,
+        args: [newId(), alertId, payloadJson, stamp],
+      });
+      await client.execute({
+        sql: `UPDATE maintainer_alerts SET
+                occurrence_count = (
+                  SELECT COUNT(*) FROM maintainer_alert_occurrences WHERE alert_id = ?
+                ),
+                last_seen_at = MAX(last_seen_at, ?),
+                updated_at = CURRENT_TIMESTAMP
+              WHERE id = ?`,
+        args: [alertId, stamp, alertId],
+      });
+      const reread = await client.execute({
+        sql: "SELECT * FROM maintainer_alerts WHERE id = ?",
+        args: [alertId],
+      });
+      return { alert: toMaintainerAlert(reread.rows[0]!), created: false };
+    }
+
+    // No open alert of this key: mint a fresh one, linked to the most recent
+    // closed alert of the same key (a re-trigger after closure smells like a
+    // regression — #1050).
+    const priorClosed = await client.execute({
+      sql: `SELECT id FROM maintainer_alerts
+            WHERE workspace_id = ? AND holding_id = ? AND category = ? AND status != 'open'
+            ORDER BY last_seen_at DESC, rowid DESC
+            LIMIT 1`,
+      args: [workspaceId, holdingId, category],
+    });
+    const supersedesAlertId =
+      priorClosed.rows.length > 0 ? String(priorClosed.rows[0]!["id"]) : null;
+
+    const alertId = newId();
+    await client.execute({
+      sql: `INSERT INTO maintainer_alerts (
+              id, workspace_id, holding_id, category, status, occurrence_count,
+              first_seen_at, last_seen_at, supersedes_alert_id
+            ) VALUES (?, ?, ?, ?, 'open', 1, ?, ?, ?)`,
+      args: [alertId, workspaceId, holdingId, category, stamp, stamp, supersedesAlertId],
+    });
+    await client.execute({
+      sql: `INSERT INTO maintainer_alert_occurrences (id, alert_id, payload_json, occurred_at)
+            VALUES (?, ?, ?, ?)`,
+      args: [newId(), alertId, payloadJson, stamp],
+    });
+    const created = await client.execute({
+      sql: "SELECT * FROM maintainer_alerts WHERE id = ?",
+      args: [alertId],
+    });
+    return { alert: toMaintainerAlert(created.rows[0]!), created: true };
+  }
 
   return {
     async findOrCreateUser(email) {
@@ -890,84 +977,21 @@ async function buildControlPlaneStore(
       );
       return result.rows.map((row) => toGlobalExposureProfile(row));
     },
-    async raiseMaintainerAlert({
-      workspaceId,
-      holdingId,
-      category,
-      payload,
-      occurredAt,
-    }) {
-      const stamp = occurredAt ?? new Date().toISOString();
-      const payloadJson = JSON.stringify(payload ?? null);
-
-      const open = await client.execute({
-        sql: `SELECT * FROM maintainer_alerts
-              WHERE workspace_id = ? AND holding_id = ? AND category = ? AND status = 'open'
-              LIMIT 1`,
-        args: [workspaceId, holdingId, category],
-      });
-
-      if (open.rows.length > 0) {
-        const alertId = String(open.rows[0]!["id"]);
-        await client.execute({
-          sql: `INSERT INTO maintainer_alert_occurrences (id, alert_id, payload_json, occurred_at)
-                VALUES (?, ?, ?, ?)`,
-          args: [newId(), alertId, payloadJson, stamp],
-        });
-        await client.execute({
-          sql: `UPDATE maintainer_alerts SET
-                  occurrence_count = occurrence_count + 1,
-                  last_seen_at = MAX(last_seen_at, ?),
-                  updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?`,
-          args: [stamp, alertId],
-        });
-        const reread = await client.execute({
-          sql: "SELECT * FROM maintainer_alerts WHERE id = ?",
-          args: [alertId],
-        });
-        return { alert: toMaintainerAlert(reread.rows[0]!), created: false };
+    async raiseMaintainerAlert(input) {
+      // The open-lookup and the fresh-alert INSERT are two statements: two
+      // concurrent raises of the same not-yet-open key can both read "no open
+      // row", and the second INSERT then trips `maintainer_alerts_one_open_per_key`.
+      // That is the losing raise's cue to accumulate onto the winner's row, not
+      // to fail — so a unique violation retries exactly once, where the open
+      // lookup now sees the row the winner just minted.
+      try {
+        return await raiseMaintainerAlertOnce(input);
+      } catch (error) {
+        if (isOpenKeyConflict(error)) {
+          return await raiseMaintainerAlertOnce(input);
+        }
+        throw error;
       }
-
-      // No open alert of this key: mint a fresh one, linked to the most recent
-      // closed alert of the same key (a re-trigger after closure smells like a
-      // regression — #1050).
-      const priorClosed = await client.execute({
-        sql: `SELECT id FROM maintainer_alerts
-              WHERE workspace_id = ? AND holding_id = ? AND category = ? AND status != 'open'
-              ORDER BY last_seen_at DESC, rowid DESC
-              LIMIT 1`,
-        args: [workspaceId, holdingId, category],
-      });
-      const supersedesAlertId =
-        priorClosed.rows.length > 0 ? String(priorClosed.rows[0]!["id"]) : null;
-
-      const alertId = newId();
-      await client.execute({
-        sql: `INSERT INTO maintainer_alerts (
-                id, workspace_id, holding_id, category, status, occurrence_count,
-                first_seen_at, last_seen_at, supersedes_alert_id
-              ) VALUES (?, ?, ?, ?, 'open', 1, ?, ?, ?)`,
-        args: [
-          alertId,
-          workspaceId,
-          holdingId,
-          category,
-          stamp,
-          stamp,
-          supersedesAlertId,
-        ],
-      });
-      await client.execute({
-        sql: `INSERT INTO maintainer_alert_occurrences (id, alert_id, payload_json, occurred_at)
-              VALUES (?, ?, ?, ?)`,
-        args: [newId(), alertId, payloadJson, stamp],
-      });
-      const created = await client.execute({
-        sql: "SELECT * FROM maintainer_alerts WHERE id = ?",
-        args: [alertId],
-      });
-      return { alert: toMaintainerAlert(created.rows[0]!), created: true };
     },
     async listMaintainerAlerts() {
       const result = await client.execute(

@@ -176,4 +176,28 @@ describe("MaintainerAlertDetail", () => {
     expect(html).toContain("Sin traza de cálculo");
     expect(html).toContain("no es una deuda con modelo");
   });
+
+  test("degrades a shape-drifted/corrupted trace to raw JSON instead of crashing", () => {
+    // A stored payload whose trace lost its `fidelity`/`tolerance`/`reconciliation`
+    // shape (a future contract change, or a truncated row) must not throw.
+    const corrupt = {
+      category: "infidelity",
+      summary: "traza rara",
+      holding: null,
+      calculationTrace: { object: "calculation_trace", model: "amortizable" },
+      raisedAt: "2026-07-15T10:00:00.000Z",
+    } as unknown as MaintainerAlertPayload;
+
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          occurrences: [
+            { id: "occ-1", payload: corrupt, occurredAt: "2026-07-15T10:00:00.000Z" },
+          ],
+        }),
+      }),
+    );
+    expect(html).toContain("formato no reconocido");
+    expect(html).toContain("calculation_trace");
+  });
 });
