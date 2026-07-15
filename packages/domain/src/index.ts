@@ -126,6 +126,7 @@ export {
   groupPositionsByToken,
   instrumentForAdapter,
   isTokenDustValue,
+  mergeCoinPositionSnapshotInputs,
   positionValue,
   projectConnectedSource,
   projectedPositionValue,

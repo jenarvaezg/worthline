@@ -4,6 +4,7 @@ import {
   binanceValueAtDate,
   buildSnapshotAtDate,
   carryForwardTokenUnitPrices,
+  coinPositionSnapshotInput,
   coinValue,
   completedMonthEndDates,
   createNetWorthSnapshot,
@@ -72,6 +73,7 @@ async function rippleHistoricalSnapshotsForCoinAcquisition(
     .map((position) => ({
       purchaseDate: position.purchaseDate as string,
       valueMinor: coinValue(position).minor,
+      position: coinPositionSnapshotInput(position),
     }))
     .filter((trade) => trade.valueMinor > 0);
   if (trades.length === 0) return;
@@ -80,9 +82,11 @@ async function rippleHistoricalSnapshotsForCoinAcquisition(
     for (const snap of await readSnapshots(db, scope.id)) {
       // The combined value of every new coin acquired on/before this snapshot —
       // each trade ripples only from its OWN purchase date forward.
-      const globalDeltaMinor = trades
-        .filter((trade) => trade.purchaseDate <= snap.dateKey)
-        .reduce((sum, trade) => sum + trade.valueMinor, 0);
+      const qualifying = trades.filter((trade) => trade.purchaseDate <= snap.dateKey);
+      const globalDeltaMinor = qualifying.reduce(
+        (sum, trade) => sum + trade.valueMinor,
+        0,
+      );
       if (globalDeltaMinor === 0) continue;
 
       const frozenHoldings = await readSnapshotHoldings(db, {
@@ -98,6 +102,7 @@ async function rippleHistoricalSnapshotsForCoinAcquisition(
         frozenHoldings,
         frozenIdentity,
         globalDeltaMinor,
+        newTrades: qualifying,
         snapshot: snap,
         workspace,
       });

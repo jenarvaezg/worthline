@@ -425,6 +425,14 @@ export async function refreshCoinValuations(
       },
     );
 
+    const metalChanged = candidates.metalValueMinor !== position.metalValueMinor;
+    const numismaticChanged =
+      candidates.numismaticValueMinor !== position.numismaticValueMinor;
+    const fetchedAtChanged = numismaticFetchedAt !== position.numismaticFetchedAt;
+    if (!metalChanged && !numismaticChanged && !fetchedAtChanged) {
+      continue;
+    }
+
     results.push({
       id: position.id,
       metalValueMinor: candidates.metalValueMinor,

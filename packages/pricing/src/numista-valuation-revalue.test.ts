@@ -58,8 +58,8 @@ describe("refreshCoinValuations — metal value rides the daily spot", () => {
       { nowIso: NOW },
     );
 
-    // Spot outage must not zero or null the figure — the holding keeps its value.
-    expect(result[0]!.metalValueMinor).toBe(2750);
+    // Outage leaves values untouched → nothing to persist this pass.
+    expect(result).toEqual([]);
   });
 
   it("dedupes the spot lookup across positions of the same metal", async () => {
@@ -69,6 +69,22 @@ describe("refreshCoinValuations — metal value rides the daily spot", () => {
     });
 
     expect(d.spotPerOzEur).toHaveBeenCalledTimes(1); // silver spot fetched once
+  });
+
+  it("omits coins whose metal and numismatic values are unchanged", async () => {
+    const result = await refreshCoinValuations(
+      [
+        silverEagle({
+          metalValueMinor: 2797,
+          numismaticFetchedAt: NOW,
+          numismaticValueMinor: 7558,
+        }),
+      ],
+      deps(),
+      { nowIso: NOW },
+    );
+
+    expect(result).toEqual([]);
   });
 });
 

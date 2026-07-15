@@ -23,6 +23,8 @@ import {
   captureSnapshotForScope,
   coinPositionSnapshotInput,
   listScopeOptions,
+  mergeCoinPositionSnapshotInputs,
+  resolveScopeMemberIds,
   tokenSymbolSnapshotInputs,
 } from "@worthline/domain";
 
@@ -71,15 +73,53 @@ export async function captureDailySnapshotForWorkspace(
   const shared = await buildSharedSnapshotInputs(store, now, projectionContext);
   if (!shared) return;
 
+  const dateKey = now.slice(0, 10);
+  const numistaAssetIds = new Set(
+    (await store.connectedSources.listSources())
+      .filter((source) => source.adapter === "numista")
+      .map((source) => source.assetId),
+  );
+
   // ── Walk every scope and capture ─────────────────────────────────────────
   for (const scope of shared.scopes) {
+    const existingSnapshots = await store.snapshots.readSnapshots(scope.id);
+    let positionDetails = shared.positionDetails;
+
+    if (existingSnapshots.some((snapshot) => snapshot.dateKey === dateKey)) {
+      const existingHoldings = await store.snapshots.readSnapshotHoldings({
+        from: dateKey,
+        scopeId: scope.id,
+        to: dateKey,
+      });
+      const scopeMemberIds = new Set(resolveScopeMemberIds(shared.workspace, scope.id));
+      const merged = new Map(positionDetails);
+      for (const [assetId, liveCoins] of positionDetails) {
+        if (!numistaAssetIds.has(assetId)) {
+          continue;
+        }
+        const asset = shared.assets.find((row) => row.id === assetId);
+        const existingRow = existingHoldings.find((row) => row.holdingId === assetId);
+        if (!asset || !existingRow?.positions?.length) {
+          continue;
+        }
+        merged.set(
+          assetId,
+          mergeCoinPositionSnapshotInputs(liveCoins, existingRow.positions, {
+            ownership: asset.ownership,
+            scopeMemberIds,
+          }),
+        );
+      }
+      positionDetails = merged;
+    }
+
     const capture = captureSnapshotForScope({
       assets: shared.assets,
       capturedAt: now,
-      existingSnapshots: await store.snapshots.readSnapshots(scope.id),
+      existingSnapshots,
       investmentDetails: shared.investmentDetails,
       liabilities: shared.liabilities,
-      positionDetails: shared.positionDetails,
+      positionDetails,
       scope,
       workspace: shared.workspace,
     });
