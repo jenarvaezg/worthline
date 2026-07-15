@@ -7462,16 +7462,21 @@ td.rowActions > * {
   color: var(--muted);
 }
 
-/* ── Asistente financiero: capa contextual (#629, contenedor S0 #628) ──── */
+/* ── Asistente financiero: capa contextual (#629, contenedor S0 #628) ──────
+   Migrado al registro de papel del canon en el slice 6 (#911, mapa #825): el
+   asistente no tiene ruta propia y la propuesta A no lo receta, así que lleva
+   receta de panel propia —una hoja encartada sobre la página, ligada por su
+   lomo (regla gruesa), sin heredar tarjeta ni elevación. */
 
 .assistantFab {
   position: fixed;
   right: 20px;
   bottom: 20px;
   z-index: 60;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  /* Marcador de registro, no un botón flotante circular (canon §5). */
+  border-radius: var(--radius-sm);
   border: none;
   background: var(--ink);
   color: var(--paper);
@@ -7493,7 +7498,9 @@ td.rowActions > * {
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border-left: 1px solid var(--line-soft);
+  /* El lomo que liga la hoja a la página: regla gruesa, no borde suave con
+     sombra implícita. */
+  border-left: var(--rule-heavy);
   box-shadow: none;
 }
 @media (max-width: 720px) {
@@ -7502,8 +7509,8 @@ td.rowActions > * {
     width: 100vw;
     height: 85dvh;
     border-left: none;
-    border-top: 1px solid var(--line-soft);
-    border-radius: var(--radius) var(--radius) 0 0;
+    border-top: var(--rule-heavy);
+    border-radius: 0;
   }
 }
 
@@ -7512,7 +7519,8 @@ td.rowActions > * {
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--hairline);
+  /* Masthead de papel, abierto por regla gruesa (como el shell, #910). */
+  border-bottom: var(--rule-heavy);
 }
 .assistantHead h2 {
   margin: 0;
@@ -7564,12 +7572,12 @@ td.rowActions > * {
   color: var(--ink);
   white-space: pre-wrap;
 }
+/* El turno del usuario se anota como una entrada de registro con marginalia
+   (regla al margen), no como una burbuja de chat (#911). */
 .assistantMsg.user p {
-  background: var(--paper);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  margin-left: 15%;
+  border-left: 2px solid var(--line-strong);
+  padding-left: 10px;
+  color: var(--muted);
 }
 .assistantTool {
   display: block;
@@ -7589,21 +7597,35 @@ td.rowActions > * {
   color: var(--green);
 }
 
+/* La propuesta es una entrada de papel abierta por regla gruesa, no una
+   tarjeta con borde perimetral, radio y fondo (#911, «sin heredar tarjeta»).
+   Los cuatro estados del ciclo (pendiente/aplicada/bloqueada/descartada) siguen
+   señalizados por sus acciones y por .assistantOk/.assistantError. */
 .assistantProposal {
   display: grid;
   gap: 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
-  padding: 10px 12px;
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
 }
 .assistantProposal p,
 .assistantProposal ul {
   margin: 0;
 }
-.assistantProposal > p:first-child {
-  font-size: 0.82rem;
-  font-weight: 750;
+/* Cabecera de folio: label pequeño en versalitas con tracking (canon §3). El
+   primer hijo real es el estado srOnly del mutation, así que el título lleva su
+   propia clase. */
+.assistantProposalKind {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+/* Emphasis inside the folio label stays label-sized; «No verificada» reads as a
+   caution (canon §6: oro = aviso), not a size jump to the 0.86rem body strong. */
+.assistantProposalKind strong {
+  font-size: inherit;
+  color: var(--gold);
 }
 .assistantProposal ul {
   display: grid;
@@ -7614,6 +7636,12 @@ td.rowActions > * {
 .assistantProposal li {
   display: grid;
   gap: 3px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.assistantProposal li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 .assistantProposal strong {
   font-size: 0.86rem;
@@ -7640,7 +7668,7 @@ td.rowActions > * {
   padding: 0 16px 12px;
 }
 .assistantChip {
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--line);
   background: var(--paper);
   color: var(--ink);
   border-radius: var(--radius-sm);
@@ -7741,14 +7769,15 @@ td.rowActions > * {
   cursor: default;
 }
 
+/* La lectura del adjunto es otra entrada de papel abierta por regla gruesa, no
+   una tarjeta (#911). La tabla ya lleva su gramática de registro (hairlines +
+   .totalRule). */
 .assistantAttachmentPreview {
   display: grid;
   gap: 8px;
   margin-bottom: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--paper);
+  padding-top: 12px;
+  border-top: var(--rule-heavy);
   color: var(--ink);
 }
 .assistantAttachmentPreview > strong {
