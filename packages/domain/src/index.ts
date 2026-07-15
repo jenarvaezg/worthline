@@ -286,6 +286,7 @@ export {
   EVOLUTION_CHART_WIDTH,
   timeProportionalXs,
 } from "./evolution-chart";
+export { exposureProfileLookthroughMap } from "./exposure-catalog-lookthrough";
 export type {
   AssembleExposureDriftHoldingsInput,
   AssembleExposureDriftHoldingsResult,

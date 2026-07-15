@@ -38,6 +38,7 @@ import {
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
+import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { CoinPosition, ValuationMethod } from "@worthline/domain";
@@ -226,13 +227,16 @@ export default async function EditarPage({
       isDerived && investment !== null && operations.length > 0;
     const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
 
-    // Exposure profile read for benchmark comparison (PRD #539): keyed by the
-    // security's identity (`isin ?? providerSymbol`).
+    // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
+    // the security's identity (`isin ?? providerSymbol`) from the global catalog
+    // now that workspace hand-entry was retired (#1014 S5).
     const exposureProfileKey = investment
       ? (investment.isin ?? investment.providerSymbol ?? null)
       : null;
     const exposureProfile = exposureProfileKey
-      ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
+      ? ((await readExposureProfilesFromCatalog()).find(
+          (profile) => profile.key === exposureProfileKey,
+        ) ?? null)
       : null;
 
     // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record

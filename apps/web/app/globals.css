@@ -7823,6 +7823,17 @@ td.rowActions > * {
   border-bottom: none;
   font-weight: 750;
 }
+.assistantAttachmentPreview td:last-child {
+  white-space: nowrap;
+}
+.assistantAttachmentPreview td .actionLink {
+  padding: 3px 9px;
+  font-size: 0.72rem;
+}
+.assistantAttachmentBridgeHint {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
 .assistantAttachmentWarnings {
   padding-left: 8px;
   border-left: 2px solid var(--gold);

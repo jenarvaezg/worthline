@@ -4,7 +4,6 @@ import type {
   ContributionPlan,
   DebtModel,
   ExportedPublicId,
-  ExposureProfile,
   FireScopeConfig,
   Goal,
   InvestmentOperation,
@@ -190,12 +189,6 @@ export interface AgentViewReadStore {
   /** Goals (optionally for one scope) with their assigned holdings (#424). A pure read. */
   readGoals: (scopeId?: string) => Promise<Goal[]>;
   /**
-   * Hand-entered exposure profiles keyed by `isin ?? providerSymbol` (PRD #539,
-   * ADR 0039). A pure read — the look-through aggregation runs in domain code
-   * (`lookThroughExposure`); this port never writes or auto-derives a profile.
-   */
-  readExposureProfiles: () => Promise<ExposureProfile[]>;
-  /**
    * Investment-asset reference metadata — its identity (`isin`, `providerSymbol`)
    * and price provider (PRD #539). A pure read; used to key each holding to its
    * exposure profile for the look-through.
@@ -257,7 +250,6 @@ export interface AgentViewReadStoreDeps {
   } | null>;
   readWarningOverrides: () => Promise<WarningOverride[]>;
   readGoals: (scopeId?: string) => Promise<Goal[]>;
-  readExposureProfiles: () => Promise<ExposureProfile[]>;
   readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
   readPayouts: () => Promise<Payout[]>;
   readPayoutsForHolding: (holdingId: string) => Promise<Payout[]>;
@@ -347,7 +339,6 @@ export function createAgentViewReadStore(
       );
     },
     readTrashedHoldings: () => readTrashedHoldings(ctx.db),
-    readExposureProfiles: () => deps.readExposureProfiles(),
     readInvestmentAssetsWithMeta: () => deps.readInvestmentAssetsWithMeta(),
     readPayouts: () => deps.readPayouts(),
     readPayoutsForHolding: (holdingId) => deps.readPayoutsForHolding(holdingId),

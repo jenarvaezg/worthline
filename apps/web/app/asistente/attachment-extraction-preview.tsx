@@ -1,4 +1,7 @@
+import Link from "next/link";
+
 import type { AttachmentPreviewData } from "./attachment-chat";
+import { wizardPrefillHref } from "./attachment-wizard-prefill";
 
 const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
 const euros = new Intl.NumberFormat("es-ES", {
@@ -37,6 +40,7 @@ export default function AttachmentExtractionPreview({
               <th scope="col">Unidades</th>
               <th scope="col">Valor EUR</th>
               <th scope="col">Divisa</th>
+              <th scope="col">Al alta</th>
             </tr>
           </thead>
           <tbody>
@@ -49,6 +53,15 @@ export default function AttachmentExtractionPreview({
                 <td>{number.format(position.units)}</td>
                 <td>{euros.format(position.marketValueEur)}</td>
                 <td>{position.currency}</td>
+                <td>
+                  <Link
+                    className="actionLink"
+                    href={wizardPrefillHref(position)}
+                    prefetch={false}
+                  >
+                    Llevar al alta
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -61,12 +74,16 @@ export default function AttachmentExtractionPreview({
                 <td>
                   <span className="totalRule">{euros.format(data.totalEur)}</span>
                 </td>
-                <td />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           ) : null}
         </table>
       </div>
+      <p className="assistantAttachmentBridgeHint">
+        Revisa cada lectura. «Llevar al alta» abre el asistente de alta con los datos
+        rellenos para que confirmes tú; nada se guarda desde el chat.
+      </p>
       {data.warnings.length > 0 ? (
         <div className="assistantAttachmentWarnings">
           <span>Avisos</span>

@@ -38,7 +38,10 @@ async function seededStore() {
 }
 
 function toolsOver(agentView: AgentViewReadStore) {
-  return createChatTools({ runWithStore: (run) => run({ agentView }), asOf: AS_OF });
+  return createChatTools({
+    runWithStore: (run) => run({ agentView }),
+    asOf: AS_OF,
+  });
 }
 
 async function firstHoldingPublicId(agentView: AgentViewReadStore): Promise<string> {
@@ -85,6 +88,14 @@ describe("createChatTools · get_financial_context", () => {
           expected.exposure.byGeography.coverage.notApplicable,
         ),
         unknown: formatMoneyMinor(expected.exposure.byGeography.coverage.unknown),
+        // The chat surface mirrors buildFinancialContext, including the #711 S3
+        // catalog-availability discriminator (set here: no control plane in tests).
+        ...(expected.exposure.byGeography.coverage.catalogUnavailable
+          ? {
+              catalogUnavailable:
+                expected.exposure.byGeography.coverage.catalogUnavailable,
+            }
+          : {}),
       });
       expect(result.holdings.length).toBeGreaterThan(0);
       expect(Object.keys(result.links).length).toBeGreaterThan(0);

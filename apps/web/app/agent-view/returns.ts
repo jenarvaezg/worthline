@@ -8,6 +8,7 @@ import type {
   InvestmentOperation,
   MonthlyCloseSnapshotRow,
   MonthlyCloseValue,
+  ReferenceDataUnavailableReason,
   TwrCashflow,
 } from "@worthline/domain";
 import {
@@ -93,6 +94,8 @@ export async function buildPortfolioReturns(input: {
   }[];
   scopeId: string;
   valuationDate: string;
+  /** Set when the global exposure catalog could not be read (PRD #711 S3). */
+  catalogUnavailable?: ReferenceDataUnavailableReason;
 }): Promise<AgentViewReturns | null> {
   const cashflows = [];
   const twrCashflows: TwrCashflow[] = [];
@@ -168,6 +171,9 @@ export async function buildPortfolioReturns(input: {
     holdings: classHoldings,
     snapshotRows,
     valuationDate: input.valuationDate,
+    ...(input.catalogUnavailable === undefined
+      ? {}
+      : { catalogUnavailable: input.catalogUnavailable }),
   });
 
   return byAssetClass ? { ...base, byAssetClass } : base;
@@ -193,6 +199,7 @@ function buildAssetClassReturnsBlock(input: {
   }[];
   snapshotRows: Awaited<ReturnType<AgentViewReadStore["readSnapshotHoldings"]>>;
   valuationDate: string;
+  catalogUnavailable?: ReferenceDataUnavailableReason;
 }): AgentViewAssetClassReturnsBlock | null {
   if (input.holdings.length === 0) {
     return null;
@@ -217,7 +224,7 @@ function buildAssetClassReturnsBlock(input: {
 
   return {
     classes: result.classes.map(toAssetClassReturns),
-    coverage: toExposureCoverage(result.coverage),
+    coverage: toExposureCoverage(result.coverage, input.catalogUnavailable),
   };
 }
 
@@ -245,7 +252,10 @@ function simpleGainToReturn(
   };
 }
 
-function toExposureCoverage(coverage: ExposureCoverage): AgentViewExposureCoverage {
+function toExposureCoverage(
+  coverage: ExposureCoverage,
+  catalogUnavailable?: ReferenceDataUnavailableReason,
+): AgentViewExposureCoverage {
   return {
     classified: moneyOf(coverage.classified.amountMinor, coverage.classified.currency),
     notApplicable: moneyOf(
@@ -253,6 +263,7 @@ function toExposureCoverage(coverage: ExposureCoverage): AgentViewExposureCovera
       coverage.notApplicable.currency,
     ),
     unknown: moneyOf(coverage.unknown.amountMinor, coverage.unknown.currency),
+    ...(catalogUnavailable === undefined ? {} : { catalogUnavailable }),
   };
 }
 

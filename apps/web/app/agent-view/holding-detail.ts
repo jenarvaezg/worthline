@@ -1,4 +1,5 @@
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
+import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
   ExposureProfile,
@@ -23,6 +24,11 @@ import {
   type AgentViewOwnershipShare,
   type AgentViewVsBenchmark,
 } from "./contract";
+import {
+  type ReadExposureCatalog,
+  type ResolvedExposureCatalog,
+  resolveExposureCatalog,
+} from "./exposure-catalog";
 import type { AgentViewBenchmarkPrice } from "./financial-context";
 import { ratioStringFromBps } from "./financial-context";
 import {
@@ -41,6 +47,8 @@ import {
 
 export interface BuildHoldingDetailOptions {
   readBenchmarkPrices?: (seriesId: string) => Promise<AgentViewBenchmarkPrice[]>;
+  /** Global exposure-profile catalog reader (PRD #711 S3); defaults to the control plane. */
+  readExposureCatalog?: ReadExposureCatalog;
 }
 
 /**
@@ -100,8 +108,12 @@ export async function buildHoldingDetail(
       valuationMethod,
       currency,
     );
-    const exposureProfile = await resolveExposureProfile(
+    const catalog = resolveExposureCatalog(
+      await (options.readExposureCatalog ?? readExposureCatalogFromControlPlane)(),
+    );
+    const exposure = await resolveExposureProfile(
       store,
+      catalog,
       internalHoldingId,
       assetRow.instrument,
     );
@@ -112,7 +124,8 @@ export async function buildHoldingDetail(
     return {
       currentValue: moneyOf(assetRow.valueMinor, currency),
       direction: "asset",
-      exposureProfile,
+      exposureProfile: exposure.profile,
+      ...(exposure.status ? { exposureProfileStatus: exposure.status } : {}),
       id: publicHoldingId,
       instrument: assetRow.instrument,
       label: assetRow.name,
@@ -142,11 +155,12 @@ export async function buildHoldingDetail(
       valuationMethod,
       vsBenchmark: await buildVsBenchmark({
         assetId: internalHoldingId,
+        catalogUnavailable: exposure.status === "catalog_unavailable",
         distributing: investmentMeta?.benchmarkDistributing ?? false,
         operations,
         readBenchmarkPrices: options.readBenchmarkPrices,
         store,
-        trackedIndex: exposureProfile?.trackedIndex,
+        trackedIndex: exposure.profile?.trackedIndex,
       }),
       ...(operationSummary ? { operationSummary } : {}),
       ...(sourceSummary ? { sourceSummary } : {}),
@@ -180,12 +194,20 @@ export async function buildHoldingDetail(
 
 async function buildVsBenchmark(input: {
   assetId: string;
+  catalogUnavailable: boolean;
   distributing: boolean;
   operations: Awaited<ReturnType<AgentViewReadStore["readOperations"]>>;
   readBenchmarkPrices: BuildHoldingDetailOptions["readBenchmarkPrices"];
   store: AgentViewReadStore;
   trackedIndex: string | null | undefined;
 }): Promise<AgentViewVsBenchmark> {
+  // The tracked index lives in the exposure catalog, so a catalog we could not
+  // read is reported honestly as `catalog_unavailable` — never mislabelled
+  // `no_tracked_index`, which would imply the security genuinely tracks nothing.
+  if (input.catalogUnavailable) {
+    return unavailableVsBenchmark("catalog_unavailable");
+  }
+
   const monthlyCloses = monthlyCloseValuesFromSnapshotRows(
     await input.store.readSnapshotHoldings({
       holdingId: input.assetId,
@@ -322,19 +344,34 @@ const EXPOSURE_PROFILE_INSTRUMENTS = new Set<Instrument>([
   "pension_plan",
 ]);
 
+/** A holding's exposure profile plus WHY it is absent, when it is (#711 S3). */
+interface ExposureProfileResolution {
+  profile: AgentViewExposureProfile | null;
+  /**
+   * Set only when the holding has a KNOWN identity but no profile object:
+   * `profile_missing` (the catalog has no row) vs `catalog_unavailable` (the
+   * catalog itself could not be read). Absent when a profile is present, or when
+   * the instrument takes no profile / the holding has no identity.
+   */
+  status?: "profile_missing" | "catalog_unavailable";
+}
+
 /**
- * Resolve a holding's exposure profile (PRD #539, ADR 0039). Only instruments
- * with an underlying portfolio carry one; the key is the security identity
- * `isin ?? providerSymbol`. Returns `null` — never a fabricated profile — when
- * the instrument takes none, has no identity, or has no hand-entered profile stored.
+ * Resolve a holding's exposure profile from the global catalog (PRD #711 S3, ADR
+ * 0058). Only instruments with an underlying portfolio carry one; the key is the
+ * security identity `isin ?? providerSymbol`. Returns a `null` profile — never
+ * fabricated — when the instrument takes none or has no identity (no `status`),
+ * when the catalog has no row for a known identity (`profile_missing`), or when
+ * the catalog could not be read for a known identity (`catalog_unavailable`).
  */
 async function resolveExposureProfile(
   store: AgentViewReadStore,
+  catalog: ResolvedExposureCatalog,
   internalHoldingId: string,
   instrument: Instrument,
-): Promise<AgentViewExposureProfile | null> {
+): Promise<ExposureProfileResolution> {
   if (!EXPOSURE_PROFILE_INSTRUMENTS.has(instrument)) {
-    return null;
+    return { profile: null };
   }
 
   const meta = (await store.readInvestmentAssetsWithMeta()).find(
@@ -342,13 +379,17 @@ async function resolveExposureProfile(
   );
   const key = meta?.isin ?? meta?.providerSymbol ?? null;
   if (!key) {
-    return null;
+    return { profile: null };
   }
 
-  const profile = (await store.readExposureProfiles()).find(
-    (candidate) => candidate.key === key,
-  );
-  return profile ? toExposureProfile(profile) : null;
+  if (catalog.status === "unavailable") {
+    return { profile: null, status: "catalog_unavailable" };
+  }
+
+  const profile = catalog.profiles.get(key) ?? null;
+  return profile
+    ? { profile: toExposureProfile(profile) }
+    : { profile: null, status: "profile_missing" };
 }
 
 /** Map the domain profile to the contract shape (nullable scalars, string breakdowns). */
