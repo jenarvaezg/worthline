@@ -1,6 +1,7 @@
 export type {
   AddEarlyRepaymentCommand,
   AddInterestRateRevisionCommand,
+  ChangeDebtModelCommand,
   CreateAmortizationPlanCommand,
   CreateCurrentStateDebtCommand,
   DeleteAmortizationPlanCommand,
@@ -14,6 +15,7 @@ export type {
 export {
   executeAddEarlyRepaymentCommand,
   executeAddInterestRateRevisionCommand,
+  executeChangeDebtModelCommand,
   executeCreateAmortizationPlanCommand,
   executeCreateCurrentStateDebtCommand,
   executeDeleteAmortizationPlanCommand,

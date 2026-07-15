@@ -2,6 +2,10 @@ import {
   type BalanceHistoryProposal,
   parseBalanceHistoryProposalDraft,
 } from "./balance-history-proposal-contract";
+import {
+  type CorrectionProposal,
+  parseCorrectionProposalDraft,
+} from "./correction-proposal-contract";
 import type {
   MixedDocumentProposal,
   MixedDocumentSection,
@@ -173,6 +177,26 @@ export function parseStatementImportProposal(
     draft: parsed.draft,
     funds: raw["funds"] as StatementImportProposal["funds"],
   };
+}
+
+export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "correction") return null;
+  const draft = parseCorrectionProposalDraft(raw.draft);
+  if (
+    draft === null ||
+    !isRecord(raw.holding) ||
+    typeof raw.holding.id !== "string" ||
+    typeof raw.holding.name !== "string" ||
+    raw.mode !== "solo-desde-hoy" ||
+    typeof raw.summary !== "string" ||
+    typeof raw.folio !== "string" ||
+    !isRecord(raw.guarantee) ||
+    typeof raw.guarantee.state !== "string" ||
+    !Array.isArray(raw.edits)
+  ) {
+    return null;
+  }
+  return raw as unknown as CorrectionProposal;
 }
 
 export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {

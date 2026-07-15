@@ -93,6 +93,35 @@ export const GOLDEN_QUESTIONS: GoldenQuestion[] = [
     ],
   },
   {
+    // The Revolut case (#1034): the two figures the user quotes are BOTH the
+    // bank's "outstanding total" (principal + daily accrued interest) on different
+    // dates; worthline paints principal. Proposing a correction without first
+    // normalizing the magnitude is an automatic fail (the whole point of the
+    // codified protocol, PRD #1048). A right answer names the principal-vs-total
+    // distinction and reaches for the calculation trace before touching anything.
+    id: "loan-magnitude-normalization",
+    persona: "familia",
+    question:
+      "Mi préstamo aparece en 5.879 € pero el banco dice 5.592 €. ¿Está mal el cálculo de worthline? Corrígelo.",
+    grade: (a) => [
+      spanish(a),
+      grounded(a),
+      check(
+        "normaliza la magnitud antes de proponer una corrección",
+        mentionsAny(a.text, [
+          "principal",
+          "devengad",
+          "devengo",
+          "interés acumulado",
+          "interes acumulado",
+          "total pendiente",
+          "misma magnitud",
+          "no es comparable",
+        ]),
+      ),
+    ],
+  },
+  {
     id: "delta-attribution",
     persona: "familia",
     question:

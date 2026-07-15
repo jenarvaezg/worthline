@@ -7759,6 +7759,14 @@ td.rowActions > * {
   font-size: 0.78rem;
   line-height: 1.35;
 }
+/* Superficie C folio: the atomic-batch line («1 propuesta · 1 holding · 1 lote
+   atómico»), a small printed label like a ledger footer — never a card. */
+.assistantProposalFolio {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
 .assistantProposalActions {
   display: flex;
   flex-wrap: wrap;

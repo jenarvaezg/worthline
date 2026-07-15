@@ -58,6 +58,7 @@ import { readAllOperations, type StoreContext, type StoreDb } from "@db/store-co
 import type { CreateHousingHoldingCommand } from "@db/store-types";
 import type {
   CreateInvestmentOperationInput,
+  DebtModel,
   DecimalString,
   Liability,
   ManualAsset,
@@ -1593,6 +1594,72 @@ export interface DatedFactCommandImplementations {
     assetId: string,
     opts?: { today?: string },
   ) => Promise<void>;
+  /**
+   * Debt-model change seam (#1051, the one write #997 left open). Flip a
+   * liability's `debtModel` (amortizable ↔ revolving ↔ informal) and re-cut its
+   * modeled curve under the new model, atomically, with ONE ripple. The model is
+   * a parameter flag (like `valuationCadence`), not a dated fact, so no
+   * `fact_batch` row is minted; `debtBalanceAtDate` already gates which facts it
+   * reads by the active model, so the other model's dated facts are re-interpreted
+   * (never deleted — their audit trail survives a switch back). The pre-change
+   * past that the new model cannot reach stays frozen (ADR 0012/0056). A no-op
+   * (same model) ripples nothing. `today` defaults to the current date.
+   */
+  changeDebtModelAndRipple: (
+    liabilityId: string,
+    debtModel: DebtModel,
+    opts?: { today?: string },
+  ) => Promise<void>;
+}
+
+/**
+ * Re-cut a debt's whole modeled curve under a given model (#1051). Dispatches
+ * the ripple by the model's own primitive: amortizable from its plan (every past
+ * cuota boundary) or, planless, from its earliest re-baseline; revolving/informal
+ * from their earliest balance anchor. A model with no defining fact yet has no
+ * curve to cut — the flip stands and the balance falls back until a declaration
+ * (a re-baseline or an anchor) gives the new model a curve.
+ */
+async function rippleWholeDebtCurveByModel(
+  ctx: StoreContext,
+  stores: { liabilities: LiabilityStore; snapshots: SnapshotStore },
+  workspace: Workspace,
+  params: { debtModel: DebtModel; liabilityId: string; today: string },
+): Promise<void> {
+  const { debtModel, liabilityId, today } = params;
+  const save = stores.snapshots.saveSnapshot;
+  if (debtModel === "amortizable") {
+    const plan = await stores.liabilities.readAmortizationPlan(liabilityId);
+    if (plan) {
+      await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
+        kind: "amortizable-plan",
+        liabilityId,
+        today,
+      });
+      return;
+    }
+    const rebaselines = await stores.liabilities.readBalanceRebaselines(liabilityId);
+    const earliestBaseline = rebaselines.map((r) => r.baselineDate).sort()[0];
+    if (earliestBaseline !== undefined) {
+      await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
+        fromDateKey: earliestBaseline,
+        kind: "amortizable-rebaseline",
+        liabilityId,
+        today,
+      });
+    }
+    return;
+  }
+  const anchors = await stores.liabilities.readBalanceAnchors(liabilityId);
+  const earliestAnchor = anchors.map((a) => a.anchorDate).sort()[0];
+  if (earliestAnchor !== undefined && earliestAnchor <= today) {
+    await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
+      fromDateKey: earliestAnchor,
+      kind: "anchor",
+      liabilityId,
+      today,
+    });
+  }
 }
 
 export function createDatedFactCommandImplementations(
@@ -2263,6 +2330,24 @@ export function createDatedFactCommandImplementations(
             );
           }
         }
+      });
+    },
+    changeDebtModelAndRipple: async (liabilityId, debtModel, opts) => {
+      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      await ctx.transaction(async () => {
+        const previous = await stores.liabilities.readDebtModel(liabilityId);
+        if (previous === debtModel) return; // a no-op flip ripples nothing
+        await stores.liabilities.setDebtModel(liabilityId, debtModel);
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return;
+        // Re-cut the whole modeled curve under the NEW model. Like a cadence
+        // change, the flag change recuts every snapshot the new model can reach;
+        // the pre-change past it cannot reach stays frozen (ADR 0012/0056).
+        await rippleWholeDebtCurveByModel(ctx, stores, workspace, {
+          debtModel,
+          liabilityId,
+          today,
+        });
       });
     },
     updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {

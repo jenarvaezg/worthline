@@ -27,6 +27,7 @@ import type {
   ProviderCredentialEnvKey,
 } from "@web/asistente/provider-pool";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
+import { deriveScreenContext } from "@web/asistente/screen-context";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
 import { readStoreTarget } from "@web/read-store-target";
@@ -139,6 +140,48 @@ function maintainerAlertModel(args: Record<string, unknown>) {
                 type: "text-delta" as const,
                 id: "t1",
                 delta: "He anotado la sospecha y sigo con la corrección.",
+              },
+              { type: "text-end" as const, id: "t1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+}
+
+/** Step 1 drafts a correction proposal; step 2 streams the confirmation nudge. */
+function proposeCorrectionModel(args: Record<string, unknown>) {
+  let call = 0;
+  return new MockLanguageModelV4({
+    doStream: async () => {
+      call += 1;
+      const chunks: LanguageModelV4StreamPart[] =
+        call === 1
+          ? [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: "call-correction",
+                toolName: "propose_correction",
+                input: JSON.stringify(args),
+              },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "tool-calls" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ]
+          : [
+              { type: "stream-start" as const, warnings: [] },
+              { type: "text-start" as const, id: "t1" },
+              {
+                type: "text-delta" as const,
+                id: "t1",
+                delta: "Te he preparado la corrección; confírmala cuando quieras.",
               },
               { type: "text-end" as const, id: "t1" },
               {
@@ -327,6 +370,22 @@ describe("POST /api/chat", () => {
     const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
 
     expect(response.status).toBe(401);
+    expect(model.doStreamCalls.length).toBe(0);
+  });
+
+  it("rejects chat turns from the public landing surface", async () => {
+    const model = fakeChatModel();
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [userMessage("hola")],
+        screenContext: deriveScreenContext("/", ""),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "invalid_surface" });
     expect(model.doStreamCalls.length).toBe(0);
   });
 
@@ -914,5 +973,40 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(200);
     await response.text();
     expect(raiseMaintainerAlert).not.toHaveBeenCalled();
+  });
+
+  it("streams a correction proposal part through propose_correction (#1051)", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "token-ana",
+    });
+    // Resolve a real holding public id from the seeded persona so the tool's
+    // id resolution succeeds; an edit_config rename applies to any holding.
+    const holdingId = (await currentStore.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding",
+    )?.publicId;
+    expect(holdingId).toBeTruthy();
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        proposeCorrectionModel({
+          correction: { kind: "edit_config", name: "Nombre corregido" },
+          holdingId,
+          summary: "Renombrar el holding",
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({ messages: [userMessage("esto está mal escrito")] }),
+    );
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("propose_correction");
+    // The tool output — a superficie C proposal in "solo-desde-hoy" mode.
+    expect(streamed).toContain("solo-desde-hoy");
   });
 });

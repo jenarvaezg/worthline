@@ -1,6 +1,7 @@
 import type { ParsedStatementRow } from "@worthline/domain";
 import { and, asc, eq, max } from "drizzle-orm";
 
+import type { CorrectionPlan } from "./correction-plan";
 import {
   type AssistantDocumentProvenance,
   type AssistantProposalKind,
@@ -32,10 +33,21 @@ export interface PropertyValuationAnchorFact {
   row: { assetId: string; valuationDate: string; valueMinor: number };
 }
 
+/**
+ * A whole correction plan (#1051) stored as one self-contained fact: the target
+ * holding, mode, ordered edits and their before-values. Unlike the import facts,
+ * it is not extracted from a document — it is a chat-declared, previewable diff.
+ */
+export interface HoldingCorrectionFact {
+  kind: "holding_correction";
+  row: CorrectionPlan;
+}
+
 export type AssistantProposalFact =
   | StatementOperationFact
   | DebtBalanceObservationFact
-  | PropertyValuationAnchorFact;
+  | PropertyValuationAnchorFact
+  | HoldingCorrectionFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -87,7 +99,8 @@ async function createProposal(
     input.kind !== "statement_import" &&
     input.kind !== "balance_history_import" &&
     input.kind !== "property_valuation_anchor" &&
-    input.kind !== "mixed_document_import"
+    input.kind !== "mixed_document_import" &&
+    input.kind !== "correction"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
@@ -106,6 +119,9 @@ async function createProposal(
 function normalizeFact(
   fact: ParsedStatementRow | AssistantProposalFact,
 ): AssistantProposalFact {
+  if (fact.kind === "holding_correction" && "row" in fact) {
+    return { kind: fact.kind, row: fact.row };
+  }
   if (fact.kind === "property_valuation_anchor" && "row" in fact) {
     return {
       kind: fact.kind,
@@ -244,9 +260,16 @@ async function readProposal(
         if (
           fact.kind !== "statement_operation" &&
           fact.kind !== "debt_balance_observation" &&
-          fact.kind !== "property_valuation_anchor"
+          fact.kind !== "property_valuation_anchor" &&
+          fact.kind !== "holding_correction"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
+        }
+        if (fact.kind === "holding_correction") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as HoldingCorrectionFact["row"],
+          };
         }
         if (fact.kind === "debt_balance_observation") {
           return {

@@ -8,6 +8,7 @@ import type {
   UpdateInterestRateRevisionInput,
 } from "@db/liability-store";
 import type { WorthlineStore } from "@db/store-types";
+import type { DebtModel } from "@worthline/domain";
 
 import type { CommandResult } from "./types";
 
@@ -72,6 +73,12 @@ export interface CreateCurrentStateDebtCommand {
 
 export interface RecalibrateDebtBalanceCommand {
   input: AddBalanceRebaselineInput;
+  today?: string;
+}
+
+export interface ChangeDebtModelCommand {
+  liabilityId: string;
+  debtModel: DebtModel;
   today?: string;
 }
 
@@ -206,5 +213,14 @@ export async function executeRecalibrateDebtBalanceCommand(
 ): Promise<CommandResult<void>> {
   const today = defaultToday(command.today);
   await store.command.addBalanceRebaseline(command.input, { today });
+  return { ok: true, value: undefined };
+}
+
+export async function executeChangeDebtModelCommand(
+  store: WorthlineStore,
+  command: ChangeDebtModelCommand,
+): Promise<CommandResult<void>> {
+  const today = defaultToday(command.today);
+  await store.command.changeDebtModel(command.liabilityId, command.debtModel, { today });
   return { ok: true, value: undefined };
 }

@@ -3,10 +3,12 @@ import type {
   AssistantProposalStore,
 } from "@db/assistant-proposal-store";
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
+import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
 import type { LiabilityStore } from "@db/liability-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
+import { checkOwnershipSplit } from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./dated-facts";
 import { rippleHistoricalSnapshotsForDebt } from "./dated-facts";
 import type { ImportBalanceHistoryCommand } from "./import-balance-history";
@@ -43,6 +45,10 @@ export interface CommandHost {
     anchor: Parameters<DatedFactCommands["addValuationAnchorAndRipple"]>[0];
     today: string;
   }) => Promise<void>;
+  applyAssistantCorrectionProposal: (params: {
+    proposalId: string;
+    today: string;
+  }) => Promise<void>;
   deleteInvestmentOperation: DatedFactCommands["deleteOperationAndRipple"];
   deleteInvestmentOperations: DatedFactCommands["deleteOperationsAndRipple"];
   addValuationAnchor: DatedFactCommands["addValuationAnchorAndRipple"];
@@ -65,6 +71,7 @@ export interface CommandHost {
   updateEarlyRepayment: DatedFactCommands["updateEarlyRepaymentAndRipple"];
   deleteEarlyRepayment: DatedFactCommands["deleteEarlyRepaymentAndRipple"];
   createCurrentStateDebt: DatedFactCommands["createCurrentStateDebtAndRipple"];
+  changeDebtModel: DatedFactCommands["changeDebtModelAndRipple"];
   importBalanceHistory: (command: ImportBalanceHistoryCommand) => Promise<number>;
   addBalanceRebaseline: DatedFactCommands["addBalanceRebaselineAndRipple"];
   updateBalanceRebaseline: DatedFactCommands["updateBalanceRebaselineAndRipple"];
@@ -87,6 +94,8 @@ interface InternalCommandHostDependencies {
   connectedSources: ConnectedSourceSeams;
   datedFacts: DatedFactCommands;
   factPersistence: Pick<LiabilityStore, "addBalanceRebaseline">;
+  /** Read seam for the correction apply's live-data revalidation (#1051). */
+  liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
   snapshotOrchestrator: SnapshotOrchestrator;
 }
 
@@ -115,6 +124,124 @@ function throwCommandResultError(result: { error: string; code?: string }): neve
   throw error;
 }
 
+/** Extract the single correction plan a `correction` proposal carries. */
+function correctionPlanOf(proposal: AssistantProposal): CorrectionPlan {
+  const fact = proposal.documents
+    .flatMap((document) => document.facts)
+    .find((item) => item.kind === "holding_correction");
+  if (!fact || fact.kind !== "holding_correction") {
+    throw new Error(`Correction proposal "${proposal.id}" carries no correction plan.`);
+  }
+  return fact.row;
+}
+
+/**
+ * Apply one correction plan (#1051) inside the caller's transaction: revalidate
+ * against live data first (a stale draft fails honestly and nothing persists),
+ * validate any ownership split at the trust boundary, then dispatch each edit to
+ * the already-shipped #997 write commands with the `"assistant"` provenance. The
+ * radius is one holding, save for the atomic debt↔asset pair an ownership fix
+ * carries as two edits in the same transaction.
+ */
+async function applyCorrectionPlan(
+  ctx: StoreContext,
+  datedFacts: DatedFactCommands,
+  liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">,
+  plan: CorrectionPlan,
+  today: string,
+): Promise<void> {
+  if (plan.revalidation) {
+    const live = await liabilityReads.debtBalanceAtDate(
+      plan.revalidation.liabilityId,
+      plan.revalidation.asOf,
+    );
+    if (live !== plan.revalidation.expectedBalanceMinor) {
+      const error = new Error(
+        "El holding cambió desde que se preparó la propuesta. Vuelve a pedir la corrección.",
+      );
+      Object.assign(error, { code: "correction_draft_stale" });
+      throw error;
+    }
+  }
+  for (const edit of plan.edits) {
+    await applyCorrectionEdit(ctx, datedFacts, edit, today);
+  }
+}
+
+async function assertOwnershipSplit(
+  ctx: StoreContext,
+  ownership: { ownership?: Parameters<typeof checkOwnershipSplit>[1] },
+): Promise<void> {
+  if (!ownership.ownership) return;
+  const workspace = await ctx.getWorkspace();
+  if (!workspace) throw new Error("Workspace no inicializado.");
+  // A correction that repays/reassigns a co-owned home mirrors a known partial
+  // split, exactly as the manual ownership command allows.
+  const violation = checkOwnershipSplit(workspace, ownership.ownership, {
+    allowKnownPartial: true,
+  });
+  if (violation) throw new Error("El reparto de titularidad no suma 100 %.");
+}
+
+async function applyCorrectionEdit(
+  ctx: StoreContext,
+  datedFacts: DatedFactCommands,
+  edit: CorrectionEdit,
+  today: string,
+): Promise<void> {
+  switch (edit.kind) {
+    case "debt_rebaseline":
+      await datedFacts.addBalanceRebaselineAndRipple(edit.input, { today });
+      return;
+    case "balance_anchor":
+      await datedFacts.addBalanceAnchorAndRipple(edit.input, { today });
+      return;
+    case "valuation_anchor":
+      await datedFacts.addValuationAnchorAndRipple(edit.input, { today });
+      return;
+    case "debt_model":
+      await datedFacts.changeDebtModelAndRipple(edit.liabilityId, edit.debtModel, {
+        today,
+      });
+      return;
+    case "liability_cadence":
+      await datedFacts.setValuationCadenceAndRipple(edit.liabilityId, edit.cadence, {
+        today,
+      });
+      return;
+    case "housing_cadence":
+      await datedFacts.setHousingValuationCadenceAndRipple(edit.assetId, edit.cadence, {
+        today,
+      });
+      return;
+    case "amortization_plan":
+      await datedFacts.updateAmortizationPlanAndRipple(edit.planId, edit.input, {
+        liabilityId: edit.liabilityId,
+        today,
+      });
+      return;
+    case "liability_config":
+      await assertOwnershipSplit(ctx, edit.patch);
+      await datedFacts.updateLiabilityAndRippleOwnership(edit.liabilityId, edit.patch, {
+        today,
+      });
+      return;
+    case "asset_config":
+      await assertOwnershipSplit(ctx, edit.patch);
+      await datedFacts.updateAssetAndRippleOwnership(edit.assetId, edit.patch, { today });
+      return;
+    case "investment_operations":
+      await datedFacts.recordOperationsAndRipple({
+        assetId: edit.assetId,
+        creates: edit.creates,
+        deletes: edit.deletes,
+        overwrites: edit.overwrites,
+        today,
+      });
+      return;
+  }
+}
+
 export function createCommandHost(
   ctx: StoreContext,
   snapshots: { saveSnapshot: SnapshotStore["saveSnapshot"] },
@@ -125,6 +252,7 @@ export function createCommandHost(
     connectedSources,
     datedFacts,
     factPersistence,
+    liabilityReads,
     snapshotOrchestrator,
   } = seams;
   const uow = createUnitOfWork(ctx);
@@ -238,10 +366,34 @@ export function createCommandHost(
         },
         () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
       ),
+    applyAssistantCorrectionProposal: async ({ proposalId, today }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "correction") {
+            throw new Error(`Assistant proposal "${proposalId}" is not a correction.`);
+          }
+          return proposal;
+        },
+        async () => {
+          const proposal = await assistantProposals.read(proposalId);
+          if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
+          await applyCorrectionPlan(
+            ctx,
+            datedFacts,
+            liabilityReads,
+            correctionPlanOf(proposal),
+            today,
+          );
+        },
+      ),
     applyStatementImport: (params) =>
       datedFacts.applyStatementImportAndRipple({ ...params, trigger: "statement" }),
     applyStoredContributionValue: datedFacts.applyStoredContributionValue,
     backfillHistoricalSnapshots: snapshotOrchestrator.backfillHistoricalSnapshots,
+    changeDebtModel: datedFacts.changeDebtModelAndRipple,
     backfillInvestmentPrices: snapshotOrchestrator.backfillInvestmentPricesAndRipple,
     correctInvestmentSnapshotUnitPrice:
       snapshotOrchestrator.correctInvestmentSnapshotUnitPrice,
