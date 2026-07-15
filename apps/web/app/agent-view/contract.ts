@@ -3,6 +3,7 @@ import type {
   IrrReason,
   PayoutCadence,
   PriceFreshnessState,
+  ReferenceDataUnavailableReason,
   RiskTolerance,
   TwrReason,
   WorkspaceMode,
@@ -204,6 +205,14 @@ export interface AgentViewExposureCoverage {
   classified: AgentViewMoney;
   notApplicable: AgentViewMoney;
   unknown: AgentViewMoney;
+  /**
+   * Set only when the global exposure catalog could not be read (PRD #711 S3,
+   * ADR 0058): the look-through / per-class returns could not classify against
+   * reference data, so this coverage reflects "catalog unavailable", NOT
+   * "profiles missing". Absent in the normal case where the catalog was read.
+   * MCP/chat inherit this signal without re-deriving it.
+   */
+  catalogUnavailable?: ReferenceDataUnavailableReason;
 }
 
 /**
@@ -550,6 +559,7 @@ export interface AgentViewVsBenchmark {
   } | null;
   unavailableReason:
     | "no_tracked_index"
+    | "catalog_unavailable"
     | "benchmark_unmapped"
     | "twr_unavailable"
     | "benchmark_unavailable"
@@ -837,6 +847,15 @@ export interface AgentViewHoldingDetail {
    * profile, or one with no hand-entered profile. Never a fabricated profile.
    */
   exposureProfile?: AgentViewExposureProfile | null;
+  /**
+   * Why {@link exposureProfile} is null for a security with a known identity
+   * (PRD #711 S3, ADR 0058): `profile_missing` (the catalog has no row for this
+   * identity) vs `catalog_unavailable` (the global catalog itself could not be
+   * read). Absent when a profile IS present, or when the instrument takes no
+   * profile / the holding has no identity — those stay a plain `null` with no
+   * distinction to draw.
+   */
+  exposureProfileStatus?: "profile_missing" | "catalog_unavailable";
   /** TWR vs the holding's tracked index; null comparison with a reason when unavailable (#626). */
   vsBenchmark: AgentViewVsBenchmark;
 }

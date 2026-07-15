@@ -10,6 +10,7 @@ import {
 } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { PendingSubmit } from "@web/pending-submit";
+import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { FireLevel, HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
@@ -211,7 +212,7 @@ export default async function ObjetivosPage({
         : Promise.resolve([]),
       store.operations.readAllPriceCacheEntries(),
       store.assets.readInvestmentAssetsWithMeta(),
-      store.exposureProfiles.readExposureProfiles(),
+      readExposureProfilesFromCatalog(),
       store.snapshots.readSnapshotHoldings({
         kind: "asset",
         scopeId: selectedScope?.id ?? "household",

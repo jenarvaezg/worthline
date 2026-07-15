@@ -12,6 +12,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/actions";
+import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
@@ -109,7 +110,7 @@ export default async function PatrimonioPage({
       store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
       store.readWarningOverrides(),
       store.readTrash(),
-      store.exposureProfiles.readExposureProfiles(),
+      readExposureProfilesFromCatalog(),
       store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
       store.payouts.readPayouts(),
       store.payouts.readPayoutSchedules(),

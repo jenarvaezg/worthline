@@ -39,6 +39,7 @@ import {
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
+import { readExposureProfileFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
 import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { CoinPosition, ExposureProfile, ValuationMethod } from "@worthline/domain";
@@ -239,8 +240,11 @@ export default async function EditarPage({
       canHandEnterExposure && investment
         ? (investment.isin ?? investment.providerSymbol ?? null)
         : null;
+    // Display read of the GLOBAL catalog (PRD #711 S3, ADR 0058): the section
+    // shows the shared profile for this identity read-only; the hand-entry write
+    // path is retired in a later slice.
     const exposureProfile = exposureProfileKey
-      ? await store.exposureProfiles.readExposureProfile(exposureProfileKey)
+      ? await readExposureProfileFromCatalog(exposureProfileKey)
       : null;
 
     // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record

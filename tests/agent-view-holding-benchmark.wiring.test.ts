@@ -4,7 +4,6 @@ import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/r
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
-import type { ExposureProfile } from "@worthline/domain";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -78,13 +77,6 @@ async function holdingIdByLabel(scopeId: string, label: string): Promise<string>
 }
 
 const MSCI_ISIN = "IE00B4L5Y983";
-const MSCI_PROFILE: ExposureProfile = {
-  breakdowns: { assetClass: { equity: "1" } },
-  hedged: false,
-  key: MSCI_ISIN,
-  ter: "0.002",
-  trackedIndex: "MSCI World",
-};
 
 async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
   const databasePath = tempDatabasePath("worthline-agent-view-hold-bench-");
@@ -128,7 +120,6 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
     name: "MSCI World ETF",
     providerSymbol: "IWDA.AS",
   });
-  await store.exposureProfiles.saveExposureProfile(MSCI_PROFILE);
 
   const workspace = (await store.workspace.readWorkspace())!;
   const assetsJan = await store.assets.readAssets();
@@ -164,6 +155,13 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
   store.close();
 
   const controlPlane = await createControlPlaneStore({ url: `file:${controlPlanePath}` });
+  // The tracked index now lives in the GLOBAL catalog (ADR 0058), keyed by ISIN.
+  await controlPlane.createGlobalExposureProfile({
+    identity: { isin: MSCI_ISIN },
+    breakdowns: { assetClass: { equity: "1" } },
+    ter: "0.002",
+    trackedIndex: "MSCI World",
+  });
   await controlPlane.upsertBenchmarkPrices("msci-world-tr", [
     { dateKey: "2024-01-01", value: "100" },
     { dateKey: "2024-03-01", value: "110" },

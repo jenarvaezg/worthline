@@ -1,3 +1,4 @@
+import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
   ContributionPlan,
@@ -26,7 +27,6 @@ import {
   systemClock,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
-
 import {
   type AgentViewContributionOccurrence,
   type AgentViewContributionPlanContext,
@@ -45,6 +45,11 @@ import {
   type AgentViewScope,
 } from "./contract";
 import { derivePublicId } from "./derived-id";
+import {
+  catalogProfileMap,
+  type ReadExposureCatalog,
+  resolveExposureCatalog,
+} from "./exposure-catalog";
 import { ratioStringFromBps } from "./financial-context";
 import { resolveFire } from "./fire-context";
 import { deriveOperationPublicId } from "./holding-operations";
@@ -64,6 +69,8 @@ export interface BuildContributionPlanContextOptions {
   growthAssumption?: FireGrowthAssumption;
   reconciliationWindowDays?: number;
   asOf?: string;
+  /** Global exposure-profile catalog reader (PRD #711 S3); defaults to the control plane. */
+  readExposureCatalog?: ReadExposureCatalog;
 }
 
 /**
@@ -157,6 +164,8 @@ export async function buildContributionPlanContext(
   )?.yearsToFire;
   const exposureDrift = await buildExposureDrift({
     store,
+    readExposureCatalog:
+      options.readExposureCatalog ?? readExposureCatalogFromControlPlane,
     plan,
     growthAssumption,
     assumedAnnualReturn:
@@ -602,6 +611,7 @@ const DEFAULT_EXPOSURE_DRIFT_HORIZON_YEARS = 20;
 
 async function buildExposureDrift(input: {
   store: AgentViewReadStore;
+  readExposureCatalog: ReadExposureCatalog;
   plan: ContributionPlan;
   growthAssumption: FireGrowthAssumption;
   assumedAnnualReturn: number;
@@ -638,11 +648,16 @@ async function buildExposureDrift(input: {
     };
   }
 
-  const [liabilities, investmentMeta, exposureProfiles] = await Promise.all([
+  const [liabilities, investmentMeta, catalogAvailability] = await Promise.all([
     input.store.readLiabilities(),
     input.store.readInvestmentAssetsWithMeta(),
-    input.store.readExposureProfiles(),
+    input.readExposureCatalog(),
   ]);
+  // Drift degrades gracefully when the catalog is unavailable: an empty profile
+  // set leaves holdings unclassified rather than failing the whole plan surface.
+  const exposureProfiles = [
+    ...catalogProfileMap(resolveExposureCatalog(catalogAvailability)).values(),
+  ];
   const { holdings, profiles: profileMap } = assembleExposureDriftHoldings({
     baseCurrency: input.workspace.baseCurrency,
     workspace: input.workspace,

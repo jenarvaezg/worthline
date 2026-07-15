@@ -1,3 +1,4 @@
+import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
   AssetClassResolution,
@@ -12,6 +13,7 @@ import type {
   ManualAsset,
   MoneyMinor,
   NetWorthSummary,
+  ReferenceDataUnavailableReason,
   RowOwnership,
   ScopeOption,
   Workspace,
@@ -47,6 +49,11 @@ import {
   type AgentViewVsInflation,
 } from "./contract";
 import { buildDataQualitySummary } from "./data-quality";
+import {
+  catalogProfileMap,
+  type ReadExposureCatalog,
+  resolveExposureCatalog,
+} from "./exposure-catalog";
 import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";
 import { buildScopePassiveIncome } from "./payouts";
@@ -71,6 +78,12 @@ export interface BuildFinancialContextOptions {
   /** Cap on summarized holdings (default 25, clamped to 100). */
   holdingLimit?: number | undefined;
   readBenchmarkPrices?: (seriesId: string) => Promise<AgentViewBenchmarkPrice[]>;
+  /**
+   * Global exposure-profile catalog reader (PRD #711 S3). Injected so the same
+   * resolved availability the HTTP request derives is inherited by MCP/chat.
+   * Defaults to the control-plane reader.
+   */
+  readExposureCatalog?: ReadExposureCatalog;
 }
 
 /**
@@ -138,15 +151,21 @@ export async function buildFinancialContext(
     liabilities,
   );
 
-  // Meta (ISIN / provider symbol) + exposure profiles, read once and shared by the
-  // exposure look-through and the per-asset-class returns block (PRD #552) so both
-  // resolve a holding's asset class identically (ADR 0039). Keyed by internal id;
-  // a holding's profile keys on `isin ?? providerSymbol`.
+  // Meta (ISIN / provider symbol) + the global exposure catalog (PRD #711 S3, ADR
+  // 0058), read once and shared by the exposure look-through and the per-asset-class
+  // returns block (PRD #552) so both resolve a holding's asset class identically.
+  // The catalog is injected reference data (boundary #943) — never the workspace
+  // store. When it is unavailable the profile map is empty (holdings fall to
+  // unclassified) and the coverage carries `catalogUnavailable` so the caller reads
+  // "catalog down", not "profiles missing".
   const investmentMeta = await store.readInvestmentAssetsWithMeta();
   const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
-  const exposureProfiles = new Map<string, ExposureProfile>(
-    (await store.readExposureProfiles()).map((profile) => [profile.key, profile]),
+  const catalog = resolveExposureCatalog(
+    await (options.readExposureCatalog ?? readExposureCatalogFromControlPlane)(),
   );
+  const exposureProfiles = catalogProfileMap(catalog);
+  const catalogUnavailable: ReferenceDataUnavailableReason | undefined =
+    catalog.status === "unavailable" ? catalog.reason : undefined;
   const assetClassOf = (id: string, instrument: Instrument): AssetClassResolution => {
     const meta = metaById.get(id);
     const key = meta?.isin ?? meta?.providerSymbol ?? null;
@@ -161,6 +180,7 @@ export async function buildFinancialContext(
     summary.grossAssets,
     investmentMeta,
     exposureProfiles,
+    catalogUnavailable,
   );
 
   return {
@@ -196,6 +216,7 @@ export async function buildFinancialContext(
       scopeId: internalScopeId,
       store,
       valuationDate: options.asOf,
+      ...(catalogUnavailable === undefined ? {} : { catalogUnavailable }),
     }),
     scope,
     summary,
@@ -477,6 +498,7 @@ async function buildExposureLookthrough(
   grossAssets: AgentViewMoney,
   meta: Awaited<ReturnType<AgentViewReadStore["readInvestmentAssetsWithMeta"]>>,
   profiles: ReadonlyMap<string, ExposureProfile>,
+  catalogUnavailable?: ReferenceDataUnavailableReason,
 ): Promise<ExposureLookthroughFields> {
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   // Holding summaries carry public IDs; meta is keyed by internal asset id, so
@@ -512,29 +534,32 @@ async function buildExposureLookthrough(
   });
 
   return {
-    byAssetClass: toExposureDimension(result.assetClass),
-    byCurrency: toExposureDimension(result.currency),
-    byGeography: toExposureDimension(result.geography),
+    byAssetClass: toExposureDimension(result.assetClass, catalogUnavailable),
+    byCurrency: toExposureDimension(result.currency, catalogUnavailable),
+    byGeography: toExposureDimension(result.geography, catalogUnavailable),
     currencyRisk: result.currencyRisk.map(toAllocationSlice),
   };
 }
 
 function toExposureDimension(
   dimension: ExposureDimensionResult,
+  catalogUnavailable?: ReferenceDataUnavailableReason,
 ): AgentViewExposureDimension {
   return {
-    coverage: toCoverage(dimension.coverage),
+    coverage: toCoverage(dimension.coverage, catalogUnavailable),
     slices: dimension.slices.map(toAllocationSlice),
   };
 }
 
 function toCoverage(
   coverage: ExposureDimensionResult["coverage"],
+  catalogUnavailable?: ReferenceDataUnavailableReason,
 ): AgentViewExposureCoverage {
   return {
     classified: money(coverage.classified),
     notApplicable: money(coverage.notApplicable),
     unknown: money(coverage.unknown),
+    ...(catalogUnavailable === undefined ? {} : { catalogUnavailable }),
   };
 }
 
