@@ -8,6 +8,7 @@ import { extractPositionsFromSpreadsheet } from "@web/asistente/attachment-sprea
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
+import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   deriveProviderCooldownUntil,
   providersOutsideCooldown,
@@ -290,6 +291,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const system = buildChatSystemPrompt(body.screenContext);
+  // Maintainer alerts persist only for a real workspace (ADR 0064). Demo is
+  // read-only and local dev has no control plane, so the closure is bound only
+  // when authenticated; otherwise the tool reports the alert as unavailable.
+  const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
   const tools = createChatTools({
     runWithStore: (run) =>
       withStore(
@@ -302,6 +307,12 @@ export async function POST(request: Request): Promise<Response> {
         target,
       ),
     asOf: chatAsOf(target),
+    ...(workspaceId === null
+      ? {}
+      : {
+          raiseMaintainerAlert: (alert) =>
+            raiseMaintainerAlert({ workspaceId, ...alert }),
+        }),
   });
   const selected = await streamWithProviderFailover({
     providers: eligibleProviders,

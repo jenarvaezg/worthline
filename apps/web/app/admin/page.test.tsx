@@ -17,7 +17,12 @@ vi.mock("@web/admin/list-workspaces", () => ({
   listAdminWorkspaces: vi.fn(),
 }));
 
+vi.mock("@web/admin/list-maintainer-alerts", () => ({
+  countAdminOpenMaintainerAlerts: vi.fn(),
+}));
+
 import { guardAdmin } from "@web/admin/guard-admin";
+import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 import { listAdminWorkspaces } from "@web/admin/list-workspaces";
 
 import AdminPage from "./page";
@@ -25,10 +30,12 @@ import AdminPage from "./page";
 describe("AdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(countAdminOpenMaintainerAlerts).mockResolvedValue(0);
   });
 
-  test("renders the workspace list for the admin", async () => {
+  test("renders the workspace list for the admin, with a maintainer-alerts link + badge", async () => {
     vi.mocked(guardAdmin).mockResolvedValue({ email: "admin@example.com" });
+    vi.mocked(countAdminOpenMaintainerAlerts).mockResolvedValue(3);
     vi.mocked(listAdminWorkspaces).mockResolvedValue([
       {
         id: "ws-ana",
@@ -46,6 +53,9 @@ describe("AdminPage", () => {
     expect(html).toContain("Impersonar");
     expect(html).toContain('name="workspaceId"');
     expect(html).toContain('value="ws-ana"');
+    expect(html).toContain('href="/admin/alertas"');
+    expect(html).toContain("Alertas de mantenedor");
+    expect(html).toContain(">3<");
   });
 
   test("shows an em-dash for a dangling workspace with no owner", async () => {

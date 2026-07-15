@@ -359,6 +359,98 @@ describe("createChatTools · propose_statement_import (#767)", () => {
   });
 });
 
+describe("createChatTools · raise_maintainer_alert (#1050)", () => {
+  it("reports the alert as unavailable when no raise callback is bound", async () => {
+    const store = await seededStore();
+    const tools = toolsOver(store.agentView);
+
+    const result = await tools["raise_maintainer_alert"]?.execute?.(
+      { holdingId: "wl_hld_x", category: "infidelity", summary: "algo huele mal" },
+      toolCallContext(),
+    );
+
+    expect(result).toEqual({ error: "maintainer_alert_unavailable" });
+  });
+
+  it("assembles the forensic payload and routes it to the bound raise callback", async () => {
+    const store = await seededStore();
+    const raised: Array<{
+      holdingId: string;
+      category: string;
+      payload: unknown;
+    }> = [];
+    const tools = createChatTools({
+      runWithStore: (run) => run({ agentView: store.agentView }),
+      asOf: AS_OF,
+      raiseMaintainerAlert: async (alert) => {
+        raised.push(alert);
+        return {
+          alert: {
+            id: "alert-1",
+            workspaceId: "ws-x",
+            holdingId: alert.holdingId,
+            category: alert.category,
+            status: "open",
+            occurrenceCount: 1,
+            firstSeenAt: "2026-06-19T00:00:00.000Z",
+            lastSeenAt: "2026-06-19T00:00:00.000Z",
+            resolutionNote: null,
+            resolutionLink: null,
+            resolvedAt: null,
+            supersedesAlertId: null,
+            createdAt: "2026-06-19T00:00:00.000Z",
+            updatedAt: "2026-06-19T00:00:00.000Z",
+          },
+          created: true,
+        };
+      },
+    });
+
+    const result = await tools["raise_maintainer_alert"]?.execute?.(
+      {
+        holdingId: "wl_hld_unknown",
+        category: "infidelity",
+        summary: "El saldo pintado no coincide con el recomputado.",
+        conversationRef: "msg-42",
+      },
+      toolCallContext(),
+    );
+
+    // The alert reached the callback with the raw category + holding id.
+    expect(raised).toHaveLength(1);
+    expect(raised[0]).toMatchObject({
+      holdingId: "wl_hld_unknown",
+      category: "infidelity",
+    });
+    // The payload is assembled server-side: the model's summary + conversation
+    // ref, and a null trace with a documented reason when the holding is not a
+    // traceable debt (the tool never fabricates the arithmetic).
+    expect(raised[0]?.payload).toMatchObject({
+      category: "infidelity",
+      summary: "El saldo pintado no coincide con el recomputado.",
+      conversationRef: "msg-42",
+      calculationTrace: null,
+    });
+    expect(result).toMatchObject({ status: "raised", alertId: "alert-1", created: true });
+  });
+
+  it("rejects an unknown category", async () => {
+    const store = await seededStore();
+    const tools = createChatTools({
+      runWithStore: (run) => run({ agentView: store.agentView }),
+      asOf: AS_OF,
+      raiseMaintainerAlert: async () => null,
+    });
+
+    const result = await tools["raise_maintainer_alert"]?.execute?.(
+      { holdingId: "wl_hld_x", category: "nonsense", summary: "x" } as never,
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ error: { code: "bad_request" } });
+  });
+});
+
 /** Minimal execution options the AI SDK passes to execute — unused by our tools. */
 function toolCallContext(): never {
   return { toolCallId: "call-1", messages: [] } as unknown as never;

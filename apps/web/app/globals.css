@@ -3903,6 +3903,113 @@ code {
   font-size: 0.85em;
 }
 
+/* === #1050 maintainer alerts (/admin · superficie papel) === */
+
+/* Open-count badge: a bordered rectangle on the band, never a pill (canon §6). */
+.alertBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  color: var(--red);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.maintainerAlerts .alertMeta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 4px 0;
+}
+
+.maintainerAlerts .alertMeta a,
+.maintainerAlerts .alertResolve a {
+  color: var(--blue);
+}
+
+/* An open alert's row reads a touch louder; a closed one recedes to muted. */
+.alertOpenRow td:first-child {
+  font-weight: 650;
+}
+
+.alertOccurrence {
+  border-top: 1px solid var(--hairline);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+
+.alertOccurrence:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.alertSummary {
+  font-size: 0.95rem;
+  margin: 4px 0 8px;
+}
+
+.alertTrace h3,
+.alertResolve h2 {
+  font-size: 0.9rem;
+  margin: 16px 0 6px;
+}
+
+/* Tabular figures so the cuadro reads column-aligned like a bank statement. */
+.alertTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.alertTable th,
+.alertTable td {
+  text-align: right;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.alertTable th:first-child,
+.alertTable td:first-child {
+  text-align: left;
+}
+
+/* A divergent reconciliation row is the #1042 smell — mark it in the debit red. */
+.alertDiverges td {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.alertExtracted {
+  margin: 8px 0;
+  font-size: 0.82rem;
+}
+
+.alertExtracted pre {
+  overflow-x: auto;
+  background: var(--band);
+  padding: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.alertResolve label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 8px 0;
+}
+
+.alertResolve input[type="text"],
+.alertResolve input[type="url"] {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 2px;
+}
+
 /* === #57 patrimonio === */
 
 /* Page masthead, not a card (canon §3): the title + actions sit on the paper. */

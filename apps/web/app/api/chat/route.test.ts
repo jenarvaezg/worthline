@@ -16,6 +16,7 @@ import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
+import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   readProviderCooldowns,
   recordProviderCooldown,
@@ -46,6 +47,9 @@ vi.mock("@web/asistente/provider-cooldown-store", () => ({
   recordProviderCooldown: vi.fn(),
 }));
 vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() }));
+vi.mock("@web/asistente/maintainer-alert-store", () => ({
+  raiseMaintainerAlert: vi.fn(),
+}));
 vi.mock("@web/store", () => ({
   withStore: <T>(run: (store: WorthlineStore) => Promise<T>) => run(currentStore),
 }));
@@ -93,6 +97,48 @@ function fakeChatModel() {
                 type: "text-delta" as const,
                 id: "t1",
                 delta: "Tu patrimonio neto sale de la lectura del workspace.",
+              },
+              { type: "text-end" as const, id: "t1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+}
+
+/** Step 1 raises a maintainer alert; step 2 streams the (still-repairing) answer. */
+function maintainerAlertModel(args: Record<string, unknown>) {
+  let call = 0;
+  return new MockLanguageModelV4({
+    doStream: async () => {
+      call += 1;
+      const chunks: LanguageModelV4StreamPart[] =
+        call === 1
+          ? [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: "call-alert",
+                toolName: "raise_maintainer_alert",
+                input: JSON.stringify(args),
+              },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "tool-calls" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ]
+          : [
+              { type: "stream-start" as const, warnings: [] },
+              { type: "text-start" as const, id: "t1" },
+              {
+                type: "text-delta" as const,
+                id: "t1",
+                delta: "He anotado la sospecha y sigo con la corrección.",
               },
               { type: "text-end" as const, id: "t1" },
               {
@@ -787,5 +833,86 @@ describe("POST /api/chat", () => {
     expect(resolveChatModels).not.toHaveBeenCalled();
     expect(countChatRequest).not.toHaveBeenCalled();
     expect(readProviderCooldowns).not.toHaveBeenCalled();
+  });
+
+  it("persists a maintainer alert through the raise_maintainer_alert tool (#1050)", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "token-ana",
+    });
+    vi.mocked(raiseMaintainerAlert).mockResolvedValue({
+      alert: {
+        id: "alert-1",
+        workspaceId: "ws-ana",
+        holdingId: "wl_hld_loan",
+        category: "infidelity",
+        status: "open",
+        occurrenceCount: 1,
+        firstSeenAt: "2026-07-15T10:00:00.000Z",
+        lastSeenAt: "2026-07-15T10:00:00.000Z",
+        resolutionNote: null,
+        resolutionLink: null,
+        resolvedAt: null,
+        supersedesAlertId: null,
+        createdAt: "2026-07-15T10:00:00.000Z",
+        updatedAt: "2026-07-15T10:00:00.000Z",
+      },
+      created: true,
+    });
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        maintainerAlertModel({
+          holdingId: "wl_hld_loan",
+          category: "infidelity",
+          summary: "El saldo pintado no coincide con el recomputado.",
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({ messages: [userMessage("el préstamo pinta mal")] }),
+    );
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("raise_maintainer_alert");
+
+    // The alert reached the control-plane seam, bound to the caller's workspace,
+    // with the deterministically-assembled payload.
+    expect(raiseMaintainerAlert).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(raiseMaintainerAlert).mock.calls[0]![0];
+    expect(call.workspaceId).toBe("ws-ana");
+    expect(call.category).toBe("infidelity");
+    expect(call.holdingId).toBe("wl_hld_loan");
+    expect(call.payload).toMatchObject({
+      category: "infidelity",
+      summary: "El saldo pintado no coincide con el recomputado.",
+    });
+  });
+
+  it("does not persist a maintainer alert for a demo (read-only) target", async () => {
+    // Demo is the default target in beforeEach; the closure is never bound, so
+    // the tool reports the alert as unavailable and the seam is never called.
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        maintainerAlertModel({
+          holdingId: "wl_hld_loan",
+          category: "infidelity",
+          summary: "x",
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({ messages: [userMessage("el préstamo pinta mal")] }),
+    );
+
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(raiseMaintainerAlert).not.toHaveBeenCalled();
   });
 });

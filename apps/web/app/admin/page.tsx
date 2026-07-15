@@ -1,5 +1,6 @@
 import { impersonateWorkspaceAction } from "@web/admin/actions";
 import { guardAdmin } from "@web/admin/guard-admin";
+import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 import { listAdminWorkspaces } from "@web/admin/list-workspaces";
 
 export const dynamic = "force-dynamic";
@@ -20,14 +21,23 @@ function formatCreatedAt(iso: string): string {
  */
 export default async function AdminPage() {
   await guardAdmin();
-  const workspaces = await listAdminWorkspaces();
+  const [workspaces, openAlerts] = await Promise.all([
+    listAdminWorkspaces(),
+    countAdminOpenMaintainerAlerts(),
+  ]);
 
   return (
     <main className="demoLanding">
       <header className="demoLandingHead">
         <p className="demoKicker">worthline · admin</p>
         <h1>Usuarios</h1>
-        <p className="demoLede">Workspaces dados de alta en el control plane.</p>
+        <p className="demoLede">
+          Workspaces dados de alta en el control plane.{" "}
+          <a href="/admin/alertas">
+            Alertas de mantenedor
+            {openAlerts > 0 ? <span className="alertBadge">{openAlerts}</span> : null}
+          </a>
+        </p>
       </header>
 
       {/* Canon §2: /admin is an interior tool on paper — the list sits inside a

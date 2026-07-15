@@ -33,6 +33,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/debes identificar.*(?:cifra|fuente interna)/i);
     // #631: it must offer typed read-only follow-ups via the action tool.
     expect(prompt).toMatch(/suggest_actions/);
+    // #1050: it must know the maintainer-alert path exists and never blocks repair.
+    expect(prompt).toMatch(/raise_maintainer_alert/);
+    expect(prompt).toMatch(/nunca espera a la alerta/i);
   });
 
   it("pins the core read-only contract", () => {
