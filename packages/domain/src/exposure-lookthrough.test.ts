@@ -1,17 +1,38 @@
 import { describe, expect, test } from "vitest";
 import {
-  createExposureProfile,
+  type ExposureBreakdowns,
   type ExposureProfile,
   lookThroughExposure,
+  validateImportedExposureProfile,
 } from "./exposure-lookthrough";
 import { calculateNetWorth, createManualAsset, createWorkspace } from "./index";
+
+function fixtureProfile(input: {
+  key: string;
+  breakdowns?: ExposureBreakdowns;
+  hedged?: boolean;
+  source?: "user" | "agent";
+  declaredAt?: string | null;
+  trackedIndex?: string | null;
+  ter?: string | null;
+}): ExposureProfile {
+  return {
+    key: input.key,
+    source: input.source ?? "user",
+    declaredAt: input.declaredAt ?? null,
+    hedged: input.hedged ?? false,
+    breakdowns: input.breakdowns ?? {},
+    ...(input.trackedIndex !== undefined ? { trackedIndex: input.trackedIndex } : {}),
+    ...(input.ter !== undefined ? { ter: input.ter } : {}),
+  };
+}
 
 describe("lookThroughExposure", () => {
   test("value-weights seeded single-region and multi-region profiles", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
         "IE00SP500",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { USD: "1" },
@@ -23,7 +44,7 @@ describe("lookThroughExposure", () => {
       ],
       [
         "IE00WORLD",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { EUR: "0.2", JPY: "0.1", USD: "0.7" },
@@ -154,11 +175,10 @@ describe("lookThroughExposure", () => {
 
   test("rejects a profile breakdown above 100 percent", () => {
     expect(() =>
-      createExposureProfile({
+      validateImportedExposureProfile({
         breakdowns: {
           geography: { emerging: "0.25", us: "0.8" },
         },
-        key: "bad_profile",
       }),
     ).toThrow("Exposure profile geography breakdown cannot exceed 100%.");
   });
@@ -179,7 +199,7 @@ describe("lookThroughExposure", () => {
       profiles: new Map([
         [
           "N5394",
-          createExposureProfile({
+          fixtureProfile({
             breakdowns: {
               assetClass: { equity: "1" },
               currency: { USD: "1" },
@@ -212,7 +232,7 @@ describe("lookThroughExposure", () => {
       profiles: new Map([
         [
           "PARTIAL",
-          createExposureProfile({
+          fixtureProfile({
             breakdowns: {
               assetClass: { equity: "1" },
               currency: { USD: "0.75" },
@@ -258,7 +278,7 @@ describe("lookThroughExposure", () => {
       profiles: new Map([
         [
           "TINY",
-          createExposureProfile({
+          fixtureProfile({
             breakdowns: {
               assetClass: { bond: "0.5", equity: "0.5" },
               currency: { JPY: "0.5", USD: "0.5" },
@@ -282,7 +302,7 @@ describe("lookThroughExposure", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
         "UNHEDGED",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { USD: "1" },
@@ -294,7 +314,7 @@ describe("lookThroughExposure", () => {
       ],
       [
         "HEDGED",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { USD: "1" },
@@ -341,7 +361,7 @@ describe("lookThroughExposure", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
         "AGENT",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             geography: { us: "1" },
@@ -377,7 +397,7 @@ describe("lookThroughExposure", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
         "EQUITY",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
             currency: { USD: "1" },
@@ -388,7 +408,7 @@ describe("lookThroughExposure", () => {
       ],
       [
         "BOND",
-        createExposureProfile({
+        fixtureProfile({
           breakdowns: {
             assetClass: { bond: "1" },
             currency: { EUR: "1" },
@@ -455,7 +475,7 @@ describe("lookThroughExposure", () => {
       profiles: new Map([
         [
           "MIXED",
-          createExposureProfile({
+          fixtureProfile({
             breakdowns: {
               assetClass: { bond: "0.4", equity: "0.6" },
               currency: { USD: "1" },
@@ -544,7 +564,7 @@ describe("lookThroughExposure", () => {
       profiles: new Map([
         [
           "IE00SP500",
-          createExposureProfile({
+          fixtureProfile({
             breakdowns: {
               assetClass: { equity: "1" },
               currency: { USD: "1" },

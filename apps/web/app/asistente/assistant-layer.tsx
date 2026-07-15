@@ -15,7 +15,6 @@ import {
 } from "react";
 import {
   parseBalanceHistoryProposal,
-  parseExposureProfileProposal,
   parseMixedDocumentProposal,
   parsePropertyValuationProposal,
   parseQuickActions,
@@ -30,11 +29,6 @@ import AttachmentExtractionPreview from "./attachment-extraction-preview";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
-import { confirmExposureProfileProposalAction } from "./exposure-profile-proposal-action";
-import type {
-  ExposureProfileProposal,
-  ExposureProfileProposalPreviewProfile,
-} from "./exposure-profile-proposals";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import {
@@ -82,33 +76,6 @@ function currentQuickActions(messages: UIMessage[]): QuickAction[] {
     return [];
   }
   return [];
-}
-
-function formatWeight(weight: string): string {
-  const n = Number(weight);
-  if (!Number.isFinite(n)) return weight;
-  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 }).format(n * 100)}%`;
-}
-
-function breakdownSummary(
-  breakdowns: ExposureProfileProposalPreviewProfile["breakdowns"],
-): string[] {
-  return Object.entries(breakdowns).flatMap(([dimension, values]) =>
-    Object.entries(values ?? {}).map(
-      ([bucket, weight]) => `${dimension}.${bucket} ${formatWeight(String(weight))}`,
-    ),
-  );
-}
-
-function profileSummary(profile: ExposureProfileProposalPreviewProfile): string {
-  const bits = [
-    profile.trackedIndex ? `Índice ${profile.trackedIndex}` : null,
-    profile.ter ? `TER ${formatWeight(profile.ter)}` : null,
-    profile.hedged ? "Cubierto EUR" : null,
-    ...breakdownSummary(profile.breakdowns),
-  ].filter((bit): bit is string => bit !== null);
-
-  return bits.length > 0 ? bits.join(" · ") : "Sin datos";
 }
 
 function formatPositionMoney(amountMinor: number): string {
@@ -584,69 +551,6 @@ function PropertyValuationProposalCard({
   );
 }
 
-function ExposureProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
-  proposal,
-}: {
-  mutationsDisabled: boolean;
-  mutationsDisabledMessage: string;
-  proposal: ExposureProfileProposal;
-}) {
-  const [rejected, setRejected] = useState(false);
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmExposureProfileProposalAction>
-  > | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  if (rejected) return null;
-
-  const blockedMessage = mutationsDisabled ? mutationsDisabledMessage : null;
-  const confirmDisabled = pending || result?.status === "applied" || mutationsDisabled;
-
-  function confirm() {
-    startTransition(async () => {
-      setResult(await confirmExposureProfileProposalAction(proposal.drafts));
-    });
-  }
-
-  return (
-    <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
-      <p className="assistantProposalKind">Propuesta de exposición</p>
-      <ul>
-        {proposal.previews.map((preview) => (
-          <li key={preview.key}>
-            <strong>{preview.labels.join(", ")}</strong>
-            <span>Antes: {profileSummary(preview.before)}</span>
-            <span>Después: {profileSummary(preview.after)}</span>
-          </li>
-        ))}
-      </ul>
-      {result ? (
-        <p className={result.status === "applied" ? "assistantOk" : "assistantError"}>
-          {proposalResultMessage(result, "Propuesta aplicada.")}
-        </p>
-      ) : blockedMessage ? (
-        <p className="assistantError">{blockedMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button disabled={confirmDisabled} onClick={confirm} type="button">
-          Confirmar
-        </button>
-        <button
-          className="secondary"
-          disabled={confirmDisabled}
-          onClick={() => setRejected(true)}
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /**
  * The financial assistant's contextual layer (#629, container decided in S0
  * #628): a FAB opens an overlay side panel (desktop) / bottom sheet (mobile)
@@ -819,17 +723,6 @@ export default function AssistantLayer({
                   "toolName" in part ? String(part.toolName) : part.type.slice(5);
                 // suggest_actions renders as chips below, not as tool activity.
                 if (name === "suggest_actions") return null;
-                if (name === "propose_exposure_profiles" && "output" in part) {
-                  const proposal = parseExposureProfileProposal(part.output);
-                  return proposal ? (
-                    <ExposureProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
                 if (name === "propose_statement_import" && "output" in part) {
                   const proposal = parseStatementImportProposal(part.output);
                   return proposal ? (

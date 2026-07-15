@@ -32,11 +32,6 @@ import {
   sourceHref,
 } from "@web/asistente/assistant-actions";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
-import {
-  AGENT_FILL_EXPOSURE_POLICY,
-  buildExposureProfileProposal,
-  listExposureProfileFillTargets,
-} from "@web/asistente/exposure-profile-proposals";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
@@ -164,18 +159,6 @@ interface ProposedAction {
   prompt?: string;
 }
 
-interface ProposedExposureProfileDraft {
-  key: string;
-  trackedIndex?: string | null;
-  ter?: string | null;
-  hedged?: boolean;
-  breakdowns?: {
-    geography?: Record<string, string>;
-    currency?: Record<string, string>;
-    assetClass?: Record<string, string>;
-  };
-}
-
 /**
  * Resolve one proposed `openInternalSource` reference to an internal href, or
  * null if it points nowhere we can navigate. The model supplies a PUBLIC
@@ -258,39 +241,6 @@ const HOLDING_ID_SCHEMA = jsonSchema<{ holdingId: string }>({
   type: "object",
   properties: { holdingId: { type: "string" } },
   required: ["holdingId"],
-  additionalProperties: false,
-});
-
-const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
-  drafts?: ProposedExposureProfileDraft[];
-}>({
-  type: "object",
-  properties: {
-    drafts: {
-      type: "array",
-      maxItems: 10,
-      items: {
-        type: "object",
-        properties: {
-          key: { type: "string" },
-          trackedIndex: { type: ["string", "null"] },
-          ter: { type: ["string", "null"] },
-          hedged: { type: "boolean" },
-          breakdowns: {
-            type: "object",
-            properties: {
-              geography: { type: "object", additionalProperties: { type: "string" } },
-              currency: { type: "object", additionalProperties: { type: "string" } },
-              assetClass: { type: "object", additionalProperties: { type: "string" } },
-            },
-            additionalProperties: false,
-          },
-        },
-        required: ["key"],
-        additionalProperties: false,
-      },
-    },
-  },
   additionalProperties: false,
 });
 
@@ -1020,39 +970,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           }
           // Final trust boundary: only the typed, bounded, internal-href set renders.
           return { actions: parseQuickActions(built) satisfies QuickAction[] };
-        }),
-    }),
-
-    list_exposure_profile_fill_targets: tool({
-      description:
-        "Lista posiciones elegibles para rellenar perfiles de exposición, ordenadas gap-first. " +
-        "Incluye fund/etf/stock/index/pension_plan con clave ISIN o provider symbol y excluye " +
-        "perfiles auto-derivados como cash/property/crypto/commodity. Usa esta tool antes de " +
-        "`propose_exposure_profiles`: sin buscar en web, declara solo conocimiento entrenado " +
-        "fiable, deja `other` implícito si dudas y nunca normalices un parcial a 100%.",
-      inputSchema: EMPTY_SCHEMA,
-      execute: () =>
-        input.runWithStore(async (store) => ({
-          policy: AGENT_FILL_EXPOSURE_POLICY,
-          targets: await listExposureProfileFillTargets(store.agentView),
-        })),
-    }),
-
-    propose_exposure_profiles: tool({
-      description:
-        "Prepara una propuesta de perfiles de exposición para posiciones elegibles " +
-        "(fund/etf/stock/index/pension_plan), keyed by ISIN o provider symbol. No escribe " +
-        "nada: devuelve el borrador validado y un before/after para que la app lo previsualice " +
-        "y el usuario lo confirme. Pesos en fracción decimal: 0.7 = 70%. Omite campos que " +
-        "quieras preservar; usa null solo para limpiarlos.",
-      inputSchema: EXPOSURE_PROFILE_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
-          const built = await buildExposureProfileProposal(
-            store.agentView,
-            args.drafts ?? [],
-          );
-          return built.ok ? built.proposal : { error: built.error };
         }),
     }),
 

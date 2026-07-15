@@ -7,7 +7,6 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
-  canHandEnterExposureProfile,
   collectWarnings,
   defaultsFor,
   listScopeOptions,
@@ -315,19 +314,26 @@ function holdingHasWarnings(
   );
 }
 
+const EXPOSURE_PROFILE_INSTRUMENTS = new Set<Instrument>([
+  "fund",
+  "etf",
+  "stock",
+  "index",
+  "pension_plan",
+]);
+
 /**
  * Resolve a holding's exposure profile (PRD #539, ADR 0039). Only instruments
- * with an underlying portfolio (`canHandEnterExposureProfile`) carry one; the key
- * is the security identity `isin ?? providerSymbol`. Returns `null` — never a
- * fabricated profile — when the instrument takes none, has no identity, or has no
- * hand-entered profile stored.
+ * with an underlying portfolio carry one; the key is the security identity
+ * `isin ?? providerSymbol`. Returns `null` — never a fabricated profile — when
+ * the instrument takes none, has no identity, or has no hand-entered profile stored.
  */
 async function resolveExposureProfile(
   store: AgentViewReadStore,
   internalHoldingId: string,
   instrument: Instrument,
 ): Promise<AgentViewExposureProfile | null> {
-  if (!canHandEnterExposureProfile(instrument)) {
+  if (!EXPOSURE_PROFILE_INSTRUMENTS.has(instrument)) {
     return null;
   }
 

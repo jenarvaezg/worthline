@@ -8,7 +8,11 @@ import type { ExposureProfile } from "@worthline/domain";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
-import { cleanupTempDirs, tempDatabasePath } from "./helpers";
+import {
+  cleanupTempDirs,
+  seedExposureProfilesViaImport,
+  tempDatabasePath,
+} from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
@@ -128,7 +132,7 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
     name: "MSCI World ETF",
     providerSymbol: "IWDA.AS",
   });
-  await store.exposureProfiles.saveExposureProfile(MSCI_PROFILE);
+  await seedExposureProfilesViaImport(store, [MSCI_PROFILE]);
 
   const workspace = (await store.workspace.readWorkspace())!;
   const assetsJan = await store.assets.readAssets();

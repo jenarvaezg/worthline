@@ -102,9 +102,9 @@ const KEY_EXPORTS = [
   // portfolio-projection
   "projectPortfolio",
   // exposure look-through (#540)
-  "createExposureProfile",
   "lookThroughExposure",
   "resolveAssetClassBreakdown",
+  "validateImportedExposureProfile",
   // portfolio-grouping (#154)
   "groupPortfolio",
   // dashboard

@@ -6,7 +6,11 @@ import type { ExposureLookthrough, ExposureProfile } from "@worthline/domain";
 import { lookThroughExposure } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
-import { cleanupTempDirs, tempDatabasePath } from "./helpers";
+import {
+  cleanupTempDirs,
+  seedExposureProfilesViaImport,
+  tempDatabasePath,
+} from "./helpers";
 
 const ORIGINAL_DB_PATH = process.env.WORTHLINE_DB_PATH;
 const ORIGINAL_TOKEN = process.env.WORTHLINE_AGENT_VIEW_TOKEN;
@@ -160,7 +164,7 @@ async function seedExposure(): Promise<void> {
     },
     { today: "2026-06-19" },
   );
-  await store.exposureProfiles.saveExposureProfile(US_ETF_PROFILE);
+  await seedExposureProfilesViaImport(store, [US_ETF_PROFILE]);
   store.close();
 }
 

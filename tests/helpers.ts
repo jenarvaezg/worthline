@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createWorthlineStore, type WorthlineStore } from "@worthline/db";
+import type { ExposureProfile } from "@worthline/domain";
 
 export function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
   return fn().then(
@@ -55,4 +56,14 @@ export function tempDatabasePath(prefix = "worthline-test-"): string {
   tempDirs.push(dataDir);
 
   return join(dataDir, "worthline.sqlite");
+}
+
+/** Seed exposure profiles via workspace import — bypasses removed write surfaces (#1014). */
+export async function seedExposureProfilesViaImport(
+  store: WorthlineStore,
+  profiles: ExposureProfile[],
+): Promise<void> {
+  const doc = await store.workspace.exportWorkspace();
+  doc.exposureProfiles = [...doc.exposureProfiles, ...profiles];
+  await store.workspace.importWorkspace(doc);
 }

@@ -12,7 +12,7 @@
 import { z } from "zod";
 import { asInstant } from "./dates";
 import { compareUnits } from "./decimal";
-import { createExposureProfile } from "./exposure-lookthrough";
+import { validateImportedExposureProfile } from "./exposure-lookthrough";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
   ExportedAsset,
@@ -372,7 +372,7 @@ const publicIdSchema = z.object({
 
 // Exposure profile (PRD #539, ADR 0039): a dimension-agnostic bucket→weight map
 // per dimension, plus scalars. Structure only here; the >100% invariant is
-// enforced in the domain-error phase via createExposureProfile.
+// enforced in the domain-error phase via validateImportedExposureProfile.
 const exposureProfileSchema = z.object({
   key: nonEmptyString,
   source: z.enum(["user", "agent"]).default("user"),
@@ -845,8 +845,8 @@ function collectStructuralKeyErrors(
 
 /**
  * Exposure profiles (PRD #539, ADR 0039): reject duplicate keys and any profile
- * whose breakdown exceeds 100% — the same invariant the write path enforces via
- * createExposureProfile, applied here so a hand-edited file cannot smuggle in a
+ * whose breakdown exceeds 100% — the same invariant the import path enforces via
+ * validateImportedExposureProfile, applied here so a hand-edited file cannot smuggle in a
  * profile that would throw at look-through read time.
  */
 function collectExposureProfileErrors(errors: string[], doc: WorkspaceExport): void {
@@ -858,7 +858,7 @@ function collectExposureProfileErrors(errors: string[], doc: WorkspaceExport): v
 
   for (const profile of doc.exposureProfiles) {
     try {
-      createExposureProfile(profile);
+      validateImportedExposureProfile(profile);
     } catch (error) {
       errors.push(
         `El perfil de exposición "${profile.key}" no es válido: ${
