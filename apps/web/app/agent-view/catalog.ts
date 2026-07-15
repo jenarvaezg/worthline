@@ -1,4 +1,5 @@
 import type {
+  AgentViewCalculationTrace,
   AgentViewConnectedSourceListEntry,
   AgentViewConnectedSourcePosition,
   AgentViewConnectedSourcePositionGroup,
@@ -151,6 +152,15 @@ export interface GetPriceFreshnessInput {
   holdingId: string;
 }
 
+export interface GetCalculationTraceInput {
+  /** Public holding ID (`wl_hld_…`) of a modelled debt holding. */
+  holdingId: string;
+  /** A user-declared balance in integer minor units, for the modeling-tolerance verdict. */
+  declaredBalanceMinor?: number;
+  /** The date the declared figure describes, `YYYY-MM-DD`; defaults to today. */
+  declaredDate?: string;
+}
+
 export interface GetSourceFreshnessInput {
   /** Public connected-source ID (`wl_src_…`). */
   sourceId: string;
@@ -230,6 +240,9 @@ export interface AgentViewBackend {
     params: Omit<GetTrashSummaryInput, "scopeId">,
   ): Promise<AgentViewEnvelope<AgentViewTrashedHolding[]>>;
   holdingDetail(holdingId: string): Promise<AgentViewEnvelope<AgentViewHoldingDetail>>;
+  calculationTrace(
+    params: GetCalculationTraceInput,
+  ): Promise<AgentViewEnvelope<AgentViewCalculationTrace>>;
   priceFreshness(
     holdingId: string,
   ): Promise<AgentViewEnvelope<AgentViewPriceFreshnessResult>>;
@@ -301,6 +314,10 @@ export interface AgentViewCatalog {
   get_holding_detail: AgentViewCatalogTool<
     GetHoldingDetailInput,
     AgentViewEnvelope<AgentViewHoldingDetail>
+  >;
+  get_calculation_trace: AgentViewCatalogTool<
+    GetCalculationTraceInput,
+    AgentViewEnvelope<AgentViewCalculationTrace>
   >;
   get_price_freshness: AgentViewCatalogTool<
     GetPriceFreshnessInput,
@@ -561,6 +578,26 @@ export function createAgentViewCatalog(): AgentViewCatalog {
       },
       name: "get_holding_detail",
       run: (input, backend) => backend.holdingDetail(input.holdingId),
+    },
+    get_calculation_trace: {
+      description:
+        "Get a debt holding's calculation trace by its public ID: the engine's full cuadro — for an amortizable liability the amortization schedule frontiers with the interest/principal split per cuota and the dated events (rate revisions, early repayments) attached to each frontier; for a revolving/informal liability its declared balance anchors — plus a per-date reconciliation of the live recomputed balance against the persisted snapshot value, an infidelity check (persisted values the current config no longer reproduces), and the modeling-tolerance band max(1 €, 0.05 % of the balance). Pass declaredBalanceMinor (integer minor units) and optional declaredDate (YYYY-MM-DD) to get the residual of a user-cited figure against the engine's live balance and whether it is within tolerance. Use this before diagnosing a wrong-figure complaint so you never rebuild amortization arithmetic yourself. Only debt holdings with a configured debt model are supported; anything else is a 422. Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          declaredBalanceMinor: {
+            description:
+              "A user-declared balance in integer minor units (céntimos), for the modeling-tolerance verdict.",
+            type: "integer",
+          },
+          declaredDate: { type: "string" },
+          holdingId: { type: "string" },
+        },
+        required: ["holdingId"],
+        type: "object",
+      },
+      name: "get_calculation_trace",
+      run: (input, backend) => backend.calculationTrace(input),
     },
     get_price_freshness: {
       description:

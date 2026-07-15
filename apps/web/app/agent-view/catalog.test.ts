@@ -62,6 +62,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
     dataQuality: record("dataQuality"),
     trashSummary: record("trashSummary"),
     holdingDetail: record("holdingDetail"),
+    calculationTrace: record("calculationTrace"),
     priceFreshness: record("priceFreshness"),
     operations: record("operations"),
     holdingConnectedSourcePositions: record("holdingConnectedSourcePositions"),
@@ -81,7 +82,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
 }
 
 describe("agent-view catalog · single source of truth (#576)", () => {
-  test("exposes exactly the 19 agent-view tools, each with matching metadata", () => {
+  test("exposes exactly the 20 agent-view tools, each with matching metadata", () => {
     const catalog = createAgentViewCatalog();
     const names = Object.values(catalog)
       .map((tool) => tool.name)
@@ -90,6 +91,7 @@ describe("agent-view catalog · single source of truth (#576)", () => {
     expect(names).toEqual(
       [
         "explain_figure",
+        "get_calculation_trace",
         "get_connected_source_positions",
         "get_contribution_plan",
         "get_data_quality",

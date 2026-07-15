@@ -1,6 +1,9 @@
 export type {
   AmortizableBalanceAtDateInput,
   AmortizationPlanInput,
+  AmortizationScheduleEvent,
+  AmortizationSchedulePeriod,
+  AmortizationScheduleTrace,
   BalanceRebaselineInput,
   CurrentStateAmortizationDerivation,
   CurrentStateAmortizationInput,
@@ -13,6 +16,7 @@ export {
   addMonths,
   amortizableBalanceAtDate,
   amortizationPlanFromBalanceRebaseline,
+  amortizationScheduleTrace,
   assertEventWithinTerm,
   deriveCurrentStateAmortizationPlan,
   firstCuota,

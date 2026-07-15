@@ -28,6 +28,7 @@ import type { ConnectedSourceRow } from "./connected-source-store";
 import type {
   AmortizationPlanRecord,
   BalanceAnchorRecord,
+  BalanceRebaselineRecord,
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "./liability-store";
@@ -161,6 +162,8 @@ export interface AgentViewReadStore {
   readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   /** A liability's balance anchors, ascending by date (#338). */
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
+  /** A liability's balance re-baselines, ascending by baseline date (ADR 0056, #1049). */
+  readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
   /** FIRE configs keyed by internal scope id (`household` | member | group), #340. */
   readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
   /**
@@ -240,6 +243,7 @@ export interface AgentViewReadStoreDeps {
   readInterestRateRevisions: (planId: string) => Promise<InterestRateRevisionRecord[]>;
   readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
+  readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
   readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
   /** The price-cache row of any asset (its valuation freshness), or null. */
   readPriceCache: (assetId: string) => Promise<{
@@ -312,6 +316,7 @@ export function createAgentViewReadStore(
     readInterestRateRevisions: (planId) => deps.readInterestRateRevisions(planId),
     readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
     readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
+    readBalanceRebaselines: (liabilityId) => deps.readBalanceRebaselines(liabilityId),
     readFireConfig: () => deps.readFireConfig(),
     readPriceFreshness: async (assetId) => {
       const cache = await deps.readPriceCache(assetId);

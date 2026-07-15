@@ -3,6 +3,7 @@ import {
   type AgentViewCatalog,
   type AgentViewCatalogTool,
   createAgentViewCatalog,
+  type GetCalculationTraceInput,
   type GetContributionPlanInput,
   type GetDataQualityInput,
   type GetOperationsInput,
@@ -13,6 +14,7 @@ import {
 export type {
   AgentViewMcpInputSchema,
   ExplainFigureInput,
+  GetCalculationTraceInput,
   GetConnectedSourcePositionsInput,
   GetConnectedSourcePositionsOutput,
   GetContributionPlanInput,
@@ -134,6 +136,13 @@ export function createAgentViewApiBackend(client: AgentViewApiClient): AgentView
         ])}`,
       ),
     holdingDetail: (holdingId) => client.get(holding(holdingId)),
+    calculationTrace: (params: GetCalculationTraceInput) =>
+      client.get(
+        `${holding(params.holdingId)}/calculation-trace${queryString([
+          ["declaredBalanceMinor", params.declaredBalanceMinor],
+          ["declaredDate", params.declaredDate],
+        ])}`,
+      ),
     priceFreshness: (holdingId) => client.get(`${holding(holdingId)}/price-freshness`),
     operations: (params: GetOperationsInput) =>
       client.get(

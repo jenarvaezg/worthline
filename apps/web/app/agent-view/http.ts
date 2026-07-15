@@ -332,6 +332,41 @@ export async function handleGetPriceFreshness(
   }
 }
 
+const CALCULATION_TRACE_QUERY_PARAMS = ["declaredBalanceMinor", "declaredDate"];
+
+export async function handleGetCalculationTrace(
+  request: NextRequest,
+  holdingId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, CALCULATION_TRACE_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const declaredBalanceMinor = parseNonNegativeInteger(
+      params.get("declaredBalanceMinor"),
+      "declaredBalanceMinor",
+    );
+    const declaredDate = parseIsoDate(params.get("declaredDate"), "declaredDate");
+
+    return await runWithStore((store) =>
+      catalogJson(
+        runCatalogRead(
+          catalog.get_calculation_trace,
+          {
+            holdingId,
+            ...(declaredBalanceMinor === undefined ? {} : { declaredBalanceMinor }),
+            ...(declaredDate === undefined ? {} : { declaredDate }),
+          },
+          store.agentView,
+        ),
+      ),
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
 export async function handleListConnectedSources(
   request: NextRequest,
   runWithStore: StoreRunner,
@@ -759,6 +794,23 @@ function parseHoldingLimit(raw: string | null): number | undefined {
       code: "bad_request",
       details: { holdingLimit: raw },
       message: "holdingLimit must be a positive integer.",
+      status: 400,
+    });
+  }
+
+  return Number(raw);
+}
+
+function parseNonNegativeInteger(raw: string | null, field: string): number | undefined {
+  if (raw === null) {
+    return undefined;
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    throw new AgentViewHttpError({
+      code: "bad_request",
+      details: { [field]: raw },
+      message: `${field} must be a non-negative integer (minor units).`,
       status: 400,
     });
   }
