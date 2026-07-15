@@ -47,6 +47,14 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).toContain("2109,81");
     expect(html).toContain("<table");
     expect(html).not.toMatch(/Confirmar|Importar|Guardar/);
+
+    // Each position offers a quick action to the wizard, prefilled, and NEVER a
+    // write from the chat nor a misleading operations-import bridge (#989).
+    expect(html.match(/href="\/patrimonio\/anadir\?/g)).toHaveLength(2);
+    expect(html).toContain(">Llevar al alta<");
+    expect(html).toContain("name_fund=Fondo+global");
+    expect(html).not.toContain("importar-extracto");
+    expect(html).not.toMatch(/<form|<button/);
   });
 
   test("renders typed nonfatal failures honestly", () => {
