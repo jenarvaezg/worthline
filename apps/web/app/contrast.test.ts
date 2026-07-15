@@ -55,6 +55,22 @@ describe("contrast tokens (WCAG)", () => {
     }
   });
 
+  test("--blue interaction text meets ≥4.5:1 on both papers", () => {
+    for (const background of backgrounds) {
+      expect(contrastRatio(token("--blue"), background)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  test("--gold and --red semantic text meet ≥4.5:1 on both papers (#913)", () => {
+    // Oro = aviso and rojo = negativo are used as small text throughout the
+    // paper register; both must hold AA, not just the structural tokens.
+    for (const foreground of ["--gold", "--red"]) {
+      for (const background of backgrounds) {
+        expect(contrastRatio(token(foreground), background)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   test("--line meets ≥3:1 non-text contrast on both papers", () => {
     for (const background of backgrounds) {
       expect(contrastRatio(token("--line"), background)).toBeGreaterThanOrEqual(3);

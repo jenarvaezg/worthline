@@ -23,7 +23,7 @@
   --green: #006f5f;
   --blue: #1f4d74;
   --red: #b9442f;
-  --gold: #b3831f;
+  --gold: #7d5c12;
   --debit-rule: #a03a28;
   /* Liquidity tier identity — liquid family in greens, "rest" in blues,
      housing in gold. Green/red elsewhere stay reserved for deltas and P/L. */
@@ -1061,7 +1061,8 @@ h3 {
 }
 
 .heroHealthAlert--error {
-  background: rgba(185, 68, 47, 0.1);
+  /* 6% tint, not 10%: --red body text inside the fill must keep ≥4.5:1. */
+  background: rgba(185, 68, 47, 0.06);
   border-color: var(--red);
   /* One-shot shake — draws the eye without nagging (#639), matching .errorBand. */
   animation: wl-shake var(--dur-base) var(--ease-standard);
@@ -1102,7 +1103,7 @@ h3 {
 }
 
 .heroHealthMsg {
-  color: var(--paper-strong);
+  color: var(--ink);
   font-size: 0.8rem;
   font-weight: 600;
 }
@@ -3765,7 +3766,7 @@ code {
 .inversionesForm small {
   font-size: 0.75rem;
   font-weight: 400;
-  color: var(--ink-muted, #4a524e);
+  color: var(--muted);
 }
 
 /* ── Symbol search (#138) ──────────────────────────────────────────────── */
@@ -3785,7 +3786,7 @@ code {
 .symbolSearchForm small {
   font-size: 0.75rem;
   font-weight: 400;
-  color: var(--ink-muted, #4a524e);
+  color: var(--muted);
 }
 
 .symbolSearchRow {
@@ -3823,7 +3824,7 @@ code {
 }
 
 .symbolResultPicked {
-  border-color: var(--ink, #1a1a1a);
+  border-color: var(--ink);
   background: var(--paper-strong);
 }
 
@@ -3833,11 +3834,11 @@ code {
 }
 
 .symbolResultName {
-  color: var(--ink, #1a1a1a);
+  color: var(--ink);
 }
 
 .symbolResultMeta {
-  color: var(--ink-muted, #4a524e);
+  color: var(--muted);
   font-size: 0.75rem;
   grid-column: 1 / -1;
   margin-top: 2px;
@@ -3855,7 +3856,7 @@ code {
 }
 
 .contextLabel {
-  color: var(--ink-muted, #4a524e);
+  color: var(--muted);
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3894,7 +3895,7 @@ code {
 }
 
 .rowActions a {
-  color: var(--accent, #2a6049);
+  color: var(--blue);
 }
 
 .warnBadge {

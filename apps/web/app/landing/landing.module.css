@@ -81,23 +81,26 @@
     border-color 0.18s ease;
 }
 
-.btnPaper {
+/* Scoped under .landing so the CTA colors beat the `.landing a` link rule —
+   with a bare class the link blue wins and paints the outline CTA illegible
+   on the cover (#913). */
+.landing .btnPaper {
   background: var(--paper);
   color: var(--cover);
   border: 1px solid var(--paper);
 }
 
-.btnPaper:hover {
+.landing .btnPaper:hover {
   background: #ffffff;
 }
 
-.btnOutline {
+.landing .btnOutline {
   background: transparent;
   color: var(--cover-ink);
   border: 1px solid rgba(159, 176, 163, 0.7);
 }
 
-.btnOutline:hover {
+.landing .btnOutline:hover {
   border-color: var(--cover-ink);
 }
 

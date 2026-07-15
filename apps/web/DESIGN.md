@@ -24,7 +24,7 @@ colors:
   debit-rule: "#a03a28"
   positive: "#006f5f"
   negative: "#b9442f"
-  warning: "#b3831f"
+  warning: "#7d5c12"
   tier-housing: "#b3831f"
   tier-cash: "#0d7a64"
   tier-market: "#2aa188"

@@ -265,6 +265,57 @@ describe("Libro mayor design-system guardian (#906)", () => {
     });
   });
 
+  test("every consumed custom property resolves to a real definition (#913)", () => {
+    // A var(--x) whose token was renamed or deleted fails silently: the
+    // declaration becomes invalid-at-computed-value time and the element
+    // renders with no color at all (how «Depósitos»/«Europa» went blank on
+    // the landing when the local cover tokens were consolidated into
+    // globals.css). Tokens may be defined in CSS declarations or injected
+    // from TSX (inline style keys, next/font `variable:`) — both count.
+    const sourceFiles = (function walk(directory: string): string[] {
+      return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        if (!entry.isFile()) return [];
+        return /\.(?:css|tsx?)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)
+          ? [path]
+          : [];
+      });
+    })(appDirectory);
+
+    const defined = new Set<string>();
+    const used = new Map<string, Set<string>>();
+
+    for (const file of sourceFiles) {
+      const source = readFileSync(file, "utf8");
+      if (file.endsWith(".css")) {
+        for (const match of source.matchAll(/(--[a-zA-Z][\w-]*)\s*:/g)) {
+          defined.add(match[1]!);
+        }
+      } else {
+        // Inline style keys ({ "--dot": … }) and next/font variable names.
+        for (const match of source.matchAll(/"(--[a-zA-Z][\w-]*)"/g)) {
+          defined.add(match[1]!);
+        }
+      }
+      // The [,)] terminator skips dynamic names (`var(--tier-${id})`), which
+      // cannot be checked statically.
+      for (const match of source.matchAll(/var\(\s*(--[a-zA-Z][\w-]*)\s*[,)]/g)) {
+        const name = match[1]!;
+        const seats = used.get(name) ?? new Set<string>();
+        seats.add(relative(appDirectory, file));
+        used.set(name, seats);
+      }
+    }
+
+    const orphans = [...used.entries()]
+      .filter(([name]) => !defined.has(name))
+      .map(([name, seats]) => `${name} :: ${[...seats].sort().join(", ")}`)
+      .sort();
+
+    expect(orphans).toEqual([]);
+  });
+
   test("rejects deprecated visual vocabulary everywhere", () => {
     const deprecated = [
       "--shadow",

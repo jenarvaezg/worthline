@@ -443,7 +443,7 @@ function Proofs() {
               />
               <span
                 className={styles.seg}
-                style={{ width: "31%", background: "var(--tier-term)" }}
+                style={{ width: "31%", background: "var(--tier-term-locked)" }}
               />
               <span
                 className={styles.seg}
