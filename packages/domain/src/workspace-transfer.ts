@@ -17,7 +17,6 @@ import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
 import type { ContributionOccurrenceState, ContributionPlan } from "./contribution-plan";
 import type { DecimalString } from "./decimal";
-import type { ExposureProfile } from "./exposure-lookthrough";
 import type { FireScopeConfig } from "./fire";
 import type { ValuationMethod } from "./holding-valuation";
 import type { Instrument } from "./instrument-catalog";
@@ -45,8 +44,13 @@ import type {
  * anchors, debt model, amortization plan, rate revisions, early repayments,
  * balance anchors). No production v1 exports exist, so v1 is abandoned with no
  * converter — version 1 is rejected outright like any other mismatch.
+ *
+ * Bumped to 3 for the global exposure-profile catalog (PRD #711 S6, #942): v3
+ * backups no longer carry or restore workspace-local exposure profiles — the
+ * global catalog is the sole source. v2 is rejected outright like any other
+ * mismatch.
  */
-export const EXPORT_VERSION = 2;
+export const EXPORT_VERSION = 3;
 
 /** Workspace-level configuration carried by the file. */
 export interface ExportedWorkspaceConfig {
@@ -291,12 +295,6 @@ export interface WorkspaceExportData {
   /** Public opaque IDs exposed by agent view; exported so restored workspaces keep references stable. */
   publicIds?: ExportedPublicId[];
   /**
-   * Hand-entered exposure profiles (PRD #539, ADR 0039), keyed by security
-   * identity. Optional: older export files omit the section and import
-   * unchanged. Auto-derived profiles are never stored/exported (recomputed).
-   */
-  exposureProfiles?: ExposureProfile[];
-  /**
    * Payouts and payout schedules (PRD #652, ADR 0054), attribution records
    * attached to a holding. Optional: older export files omit the sections and
    * import unchanged. Schedule occurrences are derived on read, never exported.
@@ -313,7 +311,6 @@ export interface WorkspaceExport
   extends Omit<
     WorkspaceExportData,
     | "publicIds"
-    | "exposureProfiles"
     | "payouts"
     | "payoutSchedules"
     | "contributionPlans"
@@ -321,7 +318,6 @@ export interface WorkspaceExport
   > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
-  exposureProfiles: ExposureProfile[];
   payouts: Payout[];
   payoutSchedules: PayoutSchedule[];
   contributionPlans: ContributionPlan[];
@@ -345,7 +341,6 @@ export interface WorkspaceExportSummary {
   priceCacheEntries: number;
   fireConfigScopes: number;
   connectedSources: number;
-  exposureProfiles: number;
   payouts: number;
   payoutSchedules: number;
   contributionPlans: number;
@@ -367,7 +362,6 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     priceCacheEntries: doc.priceCache.length,
     fireConfigScopes: Object.keys(doc.fireConfig).length,
     connectedSources: doc.connectedSources.length,
-    exposureProfiles: doc.exposureProfiles.length,
     payouts: doc.payouts.length,
     payoutSchedules: doc.payoutSchedules.length,
     contributionPlans: doc.contributionPlans.length,
@@ -392,7 +386,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     priceCache: data.priceCache,
     connectedSources: data.connectedSources,
     publicIds: data.publicIds ?? [],
-    exposureProfiles: data.exposureProfiles ?? [],
     payouts: data.payouts ?? [],
     payoutSchedules: data.payoutSchedules ?? [],
     contributionPlans: data.contributionPlans ?? [],

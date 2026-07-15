@@ -59,7 +59,6 @@ function summaryLines(s: WorkspaceExportSummary): string[] {
     count(s.priceCacheEntries, "precio en caché", "precios en caché"),
     count(s.fireConfigScopes, "configuración FIRE", "configuraciones FIRE"),
     count(s.connectedSources, "fuente conectada", "fuentes conectadas"),
-    count(s.exposureProfiles, "perfil de exposición", "perfiles de exposición"),
   ];
 }
 
