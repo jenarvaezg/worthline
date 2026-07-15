@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>worthline synthetic broker capture</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #f4f6f8;
+        color: #152033;
+      }
+      .frame {
+        width: 820px;
+        min-height: 640px;
+        margin: 0 auto;
+        background: #ffffff;
+        border: 1px solid #d7dde7;
+        box-shadow: 0 12px 32px rgba(21, 32, 51, 0.08);
+      }
+      header {
+        padding: 20px 24px 12px;
+        border-bottom: 1px solid #e6ebf2;
+      }
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      p {
+        margin: 6px 0 0;
+        color: #5b677a;
+        font-size: 13px;
+      }
+      table {
+        width: calc(100% - 48px);
+        margin: 20px 24px 24px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e6ebf2;
+        text-align: left;
+      }
+      th {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #5b677a;
+      }
+      td.num,
+      th.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      tfoot td {
+        border-top: 2px solid #152033;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <header>
+        <h1>Cartera · ejemplo sintético</h1>
+        <p>Datos inventados para el golden set del extractor de visión (#991).</p>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Ticker</th>
+            <th>Producto</th>
+            <th class="num">Uds.</th>
+            <th class="num">Valor de mercado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>VWCE</td>
+            <td>Vanguard FTSE All-World</td>
+            <td class="num">120</td>
+            <td class="num">13.450,32 €</td>
+          </tr>
+          <tr>
+            <td>SXR8</td>
+            <td>iShares Core S&P 500</td>
+            <td class="num">18</td>
+            <td class="num">9.876,50 €</td>
+          </tr>
+          <tr>
+            <td>EUNL</td>
+            <td>iShares Core MSCI World</td>
+            <td class="num">42</td>
+            <td class="num">4.512,18 €</td>
+          </tr>
+          <tr>
+            <td>AGGH</td>
+            <td>iShares Global Aggregate Bond</td>
+            <td class="num">310</td>
+            <td class="num">1.589,00 €</td>
+          </tr>
+          <tr>
+            <td>IB01</td>
+            <td>iShares $ Treasury 0-1yr</td>
+            <td class="num">7</td>
+            <td class="num">771,05 €</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="3">Total</td>
+            <td class="num">30.199,05 €</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </body>
+</html>
