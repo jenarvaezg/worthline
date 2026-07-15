@@ -85,6 +85,14 @@ Solo los chips de selección de holding y las figuras intrínsecamente circulare
 conservan forma de píldora/círculo. Tarjetas, botones, tabs, badges y barras no
 usan `999px` por inercia.
 
+El asistente (#911) no tiene ruta propia y la propuesta A no lo receta, así que
+lleva receta de panel propia: una hoja encartada sobre la página (`.assistantPanel`,
+fondo `--panel`) ligada por su lomo —una regla gruesa, no un borde suave con
+sombra—; su masthead se abre por regla gruesa; su lanzador es un marcador
+rectangular, no un círculo flotante. Sus propuestas y la lectura de adjuntos son
+entradas de papel abiertas por regla gruesa (`border-top: var(--rule-heavy)`), no
+tarjetas; el turno del usuario se anota con marginalia, no como burbuja de chat.
+
 ## 5. Controles y navegación
 
 - `.navTab`: pestaña de registro sin fondo ni radio; activa mediante regla

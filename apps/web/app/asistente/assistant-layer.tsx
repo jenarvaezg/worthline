@@ -150,7 +150,7 @@ function MixedDocumentProposalCard({
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
-      <p>Propuesta de documento mixto · todo o nada</p>
+      <p className="assistantProposalKind">Propuesta de documento mixto · todo o nada</p>
       <ul>
         {proposal.sections.map((section, index) => {
           const trust = section.preview.trust;
@@ -358,7 +358,7 @@ function StatementProposalCard({
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
-      <p>Propuesta de importación de extracto</p>
+      <p className="assistantProposalKind">Propuesta de importación de extracto</p>
       <ul>
         {proposal.funds.map((fund) => (
           <li key={fund.isin}>
@@ -434,7 +434,7 @@ function BalanceHistoryProposalCard({
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
-      <p>Propuesta de historial de deuda</p>
+      <p className="assistantProposalKind">Propuesta de historial de deuda</p>
       <strong>{proposal.liability.name}</strong>
       <svg
         aria-label="Curva resultante del saldo de la deuda"
@@ -516,7 +516,7 @@ function PropertyValuationProposalCard({
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
-      <p>
+      <p className="assistantProposalKind">
         Propuesta de tasación · <strong>No verificada</strong>
       </p>
       <strong>{proposal.property.name}</strong>
@@ -613,7 +613,7 @@ function ExposureProposalCard({
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
-      <p>Propuesta de exposición</p>
+      <p className="assistantProposalKind">Propuesta de exposición</p>
       <ul>
         {proposal.previews.map((preview) => (
           <li key={preview.key}>

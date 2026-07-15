@@ -403,4 +403,58 @@ describe("Libro mayor design-system guardian (#906)", () => {
     const errorSource = readFileSync(join(appDirectory, "error.tsx"), "utf8");
     expect(errorSource).not.toContain("summaryBand");
   });
+
+  test("the assistant layer is recipe'd on paper, not as cards (#911)", () => {
+    const assistantRule = (selector: string): CssRule | undefined =>
+      rules.find((rule) => rule.file === "globals.css" && rule.selector === selector);
+
+    // The launcher is a register marker (square, radius-sm), never a floating
+    // circle — canon §5 forbids pills/circles by inertia.
+    const fab = assistantRule(".assistantFab");
+    expect(fab?.declarations.get("border-radius")).toBe("var(--radius-sm)");
+    expect(fab?.declarations.get("box-shadow")).toBe("none");
+
+    // The panel is an inserted sheet bound to the page by a heavy rule (its
+    // spine), with no elevation shadow — not a card floating over the page.
+    // (assistantRule returns the base rule; the @media bottom-sheet override
+    // that resets border-left comes later in document order.)
+    const panel = assistantRule(".assistantPanel");
+    expect(panel?.declarations.get("border-left")).toBe("var(--rule-heavy)");
+    expect(panel?.declarations.get("box-shadow")).toBe("none");
+
+    // The panel masthead is paper opened by a heavy rule, like the shell (#910).
+    expect(assistantRule(".assistantHead")?.declarations.get("border-bottom")).toBe(
+      "var(--rule-heavy)",
+    );
+
+    // Proposals and the attachment reading are paper entries opened by a heavy
+    // rule — the slice's core demand: "sin heredar tarjeta". No perimeter
+    // border, no radius, no paper fill.
+    for (const selector of [".assistantProposal", ".assistantAttachmentPreview"]) {
+      const entry = assistantRule(selector);
+      expect(entry?.declarations.get("border-top"), selector).toBe("var(--rule-heavy)");
+      expect(entry?.declarations.get("border"), selector).toBeUndefined();
+      expect(entry?.declarations.get("border-radius"), selector).toBeUndefined();
+      expect(entry?.declarations.get("background"), selector).toBeUndefined();
+    }
+
+    // The user turn is a ledger entry with a marginalia rule, not a chat bubble.
+    const userTurn = assistantRule(".assistantMsg.user p");
+    expect(userTurn?.declarations.get("border-left")).toBe(
+      "2px solid var(--line-strong)",
+    );
+    expect(userTurn?.declarations.get("border-radius")).toBeUndefined();
+    expect(userTurn?.declarations.get("background")).toBeUndefined();
+  });
+
+  test("the assistant surface consumes the paper register in markup (#911)", () => {
+    const layer = readFileSync(
+      join(appDirectory, "asistente/assistant-layer.tsx"),
+      "utf8",
+    );
+    // Each proposal states its kind through the shared folio label (the first
+    // real child is the srOnly mutation status, so the title carries its class).
+    const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
+    expect(kindTitles.length).toBe(5);
+  });
 });
