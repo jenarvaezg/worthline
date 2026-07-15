@@ -24,7 +24,7 @@ siguen en [`interaction-patterns.md`](./interaction-patterns.md).
 | Banding | `--band` | `#eaedde` |
 | Interacción | `--blue` | `#1f4d74` |
 | Movimiento | `--green` / `--red` | `#006f5f` / `#b9442f` |
-| Aviso / debe | `--gold` / `--debit-rule` | `#b3831f` / `#a03a28` |
+| Aviso / debe | `--gold` / `--debit-rule` | `#7d5c12` / `#a03a28` |
 | Forma | `--radius` / `--radius-sm` | `6px` / `4px` |
 | Regla de sección | `--rule-heavy` | `2px solid var(--ink)` |
 

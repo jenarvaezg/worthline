@@ -135,7 +135,7 @@ const LANDING_TIER_LABELS: Record<LiquidityTier, string> = {
 const TIER_TONES: Record<LiquidityTier, string | null> = {
   cash: "var(--tier-cash)",
   market: "var(--tier-market)",
-  "term-locked": "var(--tier-term)",
+  "term-locked": "var(--tier-term-locked)",
   illiquid: "var(--tier-illiquid)",
   housing: null,
 };
