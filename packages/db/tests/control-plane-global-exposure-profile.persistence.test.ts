@@ -96,6 +96,24 @@ describe("control-plane global exposure profile migration (#1010)", () => {
     expect(await readControlPlaneSchemaVersion(client)).toBe(CP_SCHEMA_VERSION);
     client.close();
   });
+
+  test("forward migration creates the maintainer-alert tables (#1050)", async () => {
+    const url = await seedPreCatalogControlPlane();
+    const cp = await createControlPlaneStore({ url });
+    try {
+      const client = openLibsqlClient({ url });
+      const tables = (
+        await client.execute(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'maintainer_alert%'",
+        )
+      ).rows.map((row) => String(row["name"]));
+      expect(tables).toContain("maintainer_alerts");
+      expect(tables).toContain("maintainer_alert_occurrences");
+      client.close();
+    } finally {
+      cp.close();
+    }
+  });
 });
 
 describe("control-plane global exposure profile store (#1010)", () => {

@@ -4,7 +4,9 @@ import {
   MAX_POSITION_LIMIT,
 } from "@web/agent-view/connected-source-positions";
 import {
+  type AgentViewCalculationTrace,
   type AgentViewFinancialContext,
+  type AgentViewHoldingDetail,
   AgentViewHttpError,
   errorEnvelope,
 } from "@web/agent-view/contract";
@@ -32,6 +34,11 @@ import {
   sourceHref,
 } from "@web/asistente/assistant-actions";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
+import {
+  buildMaintainerAlertPayload,
+  isMaintainerAlertCategory,
+  type MaintainerAlertDeclaredFigure,
+} from "@web/asistente/maintainer-alert";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
@@ -39,6 +46,8 @@ import { buildStatementImportProposal } from "@web/asistente/statement-import-pr
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
+  MaintainerAlertCategory,
+  RaisedMaintainerAlert,
   WorthlineStore,
 } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
@@ -80,6 +89,17 @@ export interface ChatToolsInput {
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;
   /** YYYY-MM-DD valuation date — the demo clock for demo targets. */
   asOf: string;
+  /**
+   * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
+   * the route to the caller's resolved workspace id, so the tool never needs to
+   * know it. Absent in read-only contexts (evals, unit fixtures): the tool then
+   * reports the alert as unavailable and the repair path is unaffected.
+   */
+  raiseMaintainerAlert?: (input: {
+    holdingId: string;
+    category: MaintainerAlertCategory;
+    payload: unknown;
+  }) => Promise<RaisedMaintainerAlert | null>;
 }
 
 /** Holdings included in the compact context — enough to reason, cheap in tokens. */
@@ -352,6 +372,31 @@ const PROPERTY_VALUATION_PROPOSAL_SCHEMA = jsonSchema<{
     valueMinor: { type: "integer" },
   },
   required: ["assetId", "documentName", "documentSha256", "valuationDate", "valueMinor"],
+  additionalProperties: false,
+});
+
+const RAISE_MAINTAINER_ALERT_SCHEMA = jsonSchema<{
+  holdingId: string;
+  category: MaintainerAlertCategory;
+  summary: string;
+  declaredBalanceMinor?: number;
+  declaredDate?: string;
+  declaredSource?: string;
+  extractedData?: Record<string, unknown>;
+  conversationRef?: string;
+}>({
+  type: "object",
+  properties: {
+    holdingId: { type: "string" },
+    category: { enum: ["infidelity", "residual", "sync_source"], type: "string" },
+    summary: { type: "string" },
+    declaredBalanceMinor: { type: "integer" },
+    declaredDate: { type: "string" },
+    declaredSource: { type: "string" },
+    extractedData: { type: "object", additionalProperties: true },
+    conversationRef: { type: "string" },
+  },
+  required: ["holdingId", "category", "summary"],
   additionalProperties: false,
 });
 
@@ -1138,6 +1183,132 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           );
           return built.ok ? built.proposal : { error: built.error };
         }),
+    }),
+    raise_maintainer_alert: tool({
+      description:
+        "Levanta una ALERTA FORENSE SOLO-MANTENEDOR cuando huela un bug de cálculo de worthline " +
+        "(no una duda del usuario). Camino separado de las propuestas y de las señales de calidad " +
+        "de datos de cara al usuario. Úsala SOLO tras leer get_calculation_trace y normalizar la " +
+        "magnitud, en tres categorías: `infidelity` (un saldo persistido que la config actual ya no " +
+        "reproduce — fidelity.faithful=false), `residual` (residuo inexplicado por encima de la " +
+        "tolerancia tras verificar la config), `sync_source` (el olor es de fuente conectada/sync, no " +
+        "de cálculo). Pasa holdingId (`wl_hld_…`), category, un summary con tu diagnóstico, y si " +
+        "aplica declaredBalanceMinor (céntimos)/declaredDate/declaredSource, extractedData " +
+        "(datos estructurados del documento, NUNCA el binario) y conversationRef. La app adjunta " +
+        "sola el snapshot de config y la traza de cálculo completa. La reparación NUNCA espera a la " +
+        "alerta: propón y arregla igual.",
+      inputSchema: RAISE_MAINTAINER_ALERT_SCHEMA,
+      execute: async (args) => {
+        const raise = input.raiseMaintainerAlert;
+        if (!raise) return { error: "maintainer_alert_unavailable" };
+        if (!isMaintainerAlertCategory(args.category)) {
+          return {
+            error: { code: "bad_request", message: `Unknown category: ${args.category}` },
+          };
+        }
+
+        // Assemble the forensic payload from the read store with RAW money
+        // (never `formatChatMoney`), so declared-vs-computed on /admin is exact.
+        const payload = await input.runWithStore(async (store) => {
+          let detail: AgentViewHoldingDetail | null = null;
+          try {
+            const detailResult = await catalogRead(
+              catalog.get_holding_detail,
+              { holdingId: args.holdingId },
+              store.agentView,
+            );
+            if (!isAgentViewErrorEnvelope(detailResult)) detail = detailResult.data;
+          } catch (error) {
+            if (!(error instanceof AgentViewHttpError)) throw error;
+          }
+
+          let calculationTrace: AgentViewCalculationTrace | null = null;
+          let calculationTraceUnavailable: string | undefined;
+          try {
+            const traceResult = await catalogRead(
+              catalog.get_calculation_trace,
+              {
+                holdingId: args.holdingId,
+                ...(args.declaredBalanceMinor === undefined
+                  ? {}
+                  : { declaredBalanceMinor: args.declaredBalanceMinor }),
+                ...(args.declaredDate === undefined
+                  ? {}
+                  : { declaredDate: args.declaredDate }),
+              },
+              store.agentView,
+            );
+            if (isAgentViewErrorEnvelope(traceResult)) {
+              calculationTraceUnavailable = traceResult.error.message;
+            } else {
+              calculationTrace = traceResult.data;
+            }
+          } catch (error) {
+            if (error instanceof AgentViewHttpError) {
+              calculationTraceUnavailable = error.message;
+            } else {
+              throw error;
+            }
+          }
+
+          let declared: MaintainerAlertDeclaredFigure | undefined;
+          if (args.declaredBalanceMinor !== undefined) {
+            const currency =
+              calculationTrace?.currentValue.currency ??
+              detail?.currentValue.currency ??
+              "EUR";
+            declared = {
+              balanceMinor: args.declaredBalanceMinor,
+              currency,
+              date: args.declaredDate ?? input.asOf,
+              source: args.declaredSource ?? "declarado por el usuario",
+            };
+          }
+
+          return buildMaintainerAlertPayload({
+            category: args.category,
+            summary: args.summary,
+            raisedAt: new Date().toISOString(),
+            detail,
+            calculationTrace,
+            ...(calculationTraceUnavailable === undefined
+              ? {}
+              : { calculationTraceUnavailable }),
+            ...(declared === undefined ? {} : { declared }),
+            ...(args.extractedData === undefined
+              ? {}
+              : { extractedData: args.extractedData }),
+            ...(args.conversationRef === undefined
+              ? {}
+              : { conversationRef: args.conversationRef }),
+          });
+        });
+
+        let raised: RaisedMaintainerAlert | null;
+        try {
+          raised = await raise({
+            holdingId: args.holdingId,
+            category: args.category,
+            payload,
+          });
+        } catch {
+          // A control-plane write failure must never kill the chat turn — the
+          // repair path is unaffected and the agent reports honestly (#1050).
+          return { status: "unpersisted", reason: "control_plane_error" };
+        }
+        if (raised === null) {
+          return { status: "unpersisted", reason: "control_plane_unavailable" };
+        }
+        return {
+          status: "raised",
+          alertId: raised.alert.id,
+          alertStatus: raised.alert.status,
+          category: raised.alert.category,
+          occurrenceCount: raised.alert.occurrenceCount,
+          created: raised.created,
+          regressionOf: raised.alert.supersedesAlertId,
+        };
+      },
     }),
   };
 }

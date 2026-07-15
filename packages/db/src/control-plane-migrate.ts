@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 1;
+export const CP_SCHEMA_VERSION = 2;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -70,5 +70,41 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       ON global_exposure_profiles(price_provider, provider_symbol)
       WHERE price_provider IS NOT NULL AND provider_symbol IS NOT NULL;`);
     await writeControlPlaneSchemaVersion(client, 1);
+  }
+
+  if (version < 2) {
+    // Maintainer alerts (#1050, ADR 0064): control-plane-only, so no workspace
+    // export can drag maintainer material out.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS maintainer_alerts (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      holding_id TEXT NOT NULL,
+      category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      occurrence_count INTEGER NOT NULL DEFAULT 0,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      resolution_note TEXT,
+      resolution_link TEXT,
+      resolved_at TEXT,
+      supersedes_alert_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS maintainer_alerts_one_open_per_key
+      ON maintainer_alerts(workspace_id, holding_id, category) WHERE status = 'open';
+    CREATE INDEX IF NOT EXISTS maintainer_alerts_recency
+      ON maintainer_alerts(last_seen_at);
+    CREATE TABLE IF NOT EXISTS maintainer_alert_occurrences (
+      id TEXT PRIMARY KEY,
+      alert_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (alert_id) REFERENCES maintainer_alerts(id)
+    );
+    CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
+      ON maintainer_alert_occurrences(alert_id);`);
+    await writeControlPlaneSchemaVersion(client, 2);
   }
 }

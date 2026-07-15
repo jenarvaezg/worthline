@@ -98,7 +98,15 @@ export {
   type ControlPlaneWorkspaceWithOwner,
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
+  type MaintainerAlert,
+  type MaintainerAlertCategory,
+  type MaintainerAlertOccurrence,
+  type MaintainerAlertStatus,
+  type MaintainerAlertWithOccurrences,
   type ProviderCooldown,
+  type RaisedMaintainerAlert,
+  type RaiseMaintainerAlertInput,
+  type UpdateMaintainerAlertStatusInput,
 } from "./control-plane";
 export {
   ENCRYPTION_KEY_ENV,
