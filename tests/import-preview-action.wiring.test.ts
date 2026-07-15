@@ -25,9 +25,9 @@ import { type ImportPreviewState, previewImportAction } from "@web/ajustes/actio
 
 const IDLE: ImportPreviewState = { status: "idle" };
 
-/** A valid version-2 export document with known per-section counts (#155). */
+/** A valid version-3 export document with known per-section counts (#155, #942). */
 const validDoc = {
-  version: 2,
+  version: 3,
   workspace: { mode: "individual", baseCurrency: "EUR" },
   members: [
     { id: "m1", name: "Ana" },
@@ -73,7 +73,6 @@ describe("previewImportAction wiring", () => {
         priceCacheEntries: 0,
         fireConfigScopes: 0,
         connectedSources: 0,
-        exposureProfiles: 0,
         payouts: 0,
         payoutSchedules: 0,
         contributionPlans: 0,
@@ -90,6 +89,19 @@ describe("previewImportAction wiring", () => {
 
     expect(state.status).toBe("error");
     expect(state.status === "error" && state.errors.join(" ")).toContain("versión 99");
+    expect(state.status === "error" && state.errors.join(" ")).toContain("versión 3");
+  });
+
+  test("a v2 export is rejected with the version mismatch message (#942)", async () => {
+    const state = await previewImportAction(
+      IDLE,
+      fdWithFile(JSON.stringify({ ...validDoc, version: 2 })),
+    );
+
+    expect(state).toEqual({
+      status: "error",
+      errors: ["El archivo usa la versión 2; esta app solo importa la versión 3."],
+    });
   });
 
   test("malformed JSON → clear Spanish error state", async () => {

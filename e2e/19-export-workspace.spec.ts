@@ -58,7 +58,11 @@ test("export workspace: bootstrap via UI → Exportar downloads the JSON documen
   const downloadPath = await download.path();
   const doc = JSON.parse(readFileSync(downloadPath, "utf8")) as ExportDocument;
 
-  expect(doc.version).toBe(2);
+  expect(doc.version).toBe(3);
+  expect(
+    doc,
+    "v3 exports must not carry workspace-local exposure profiles",
+  ).not.toHaveProperty("exposureProfiles");
   for (const section of [
     "workspace",
     "members",

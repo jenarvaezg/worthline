@@ -221,17 +221,6 @@ function makeExportData(): WorkspaceExportData {
       },
     ],
     connectedSources: [],
-    exposureProfiles: [
-      {
-        key: "IE00B3RBWM25",
-        source: "user",
-        declaredAt: "2026-06-15T12:00:00.000Z",
-        trackedIndex: "FTSE All-World",
-        ter: "0.0022",
-        hedged: false,
-        breakdowns: { geography: { us: "0.6" }, assetClass: { equity: "1" } },
-      },
-    ],
     payouts: [
       {
         id: "p1",
@@ -260,7 +249,7 @@ describe("serializeWorkspaceExport", () => {
   test("stamps the document with the current export version", () => {
     const doc = serializeWorkspaceExport(makeExportData());
 
-    expect(EXPORT_VERSION).toBe(2);
+    expect(EXPORT_VERSION).toBe(3);
     expect(doc.version).toBe(EXPORT_VERSION);
   });
 
@@ -319,6 +308,12 @@ describe("serializeWorkspaceExport", () => {
       { id: "banchor1", balanceMinor: 100000, anchorDate: "2025-01-01" },
       { id: "banchor2", balanceMinor: 80000, anchorDate: "2025-06-01" },
     ]);
+  });
+
+  test("does not carry exposure profiles — global catalog is the sole source (#942)", () => {
+    const doc = serializeWorkspaceExport(makeExportData());
+
+    expect("exposureProfiles" in doc).toBe(false);
   });
 
   test("carries every section of the workspace verbatim", () => {
@@ -408,7 +403,6 @@ describe("summarizeWorkspaceExport", () => {
       priceCacheEntries: 1,
       fireConfigScopes: 1,
       connectedSources: 0,
-      exposureProfiles: 1,
       payouts: 1,
       payoutSchedules: 1,
       contributionPlans: 0,
@@ -445,7 +439,6 @@ describe("summarizeWorkspaceExport", () => {
       priceCacheEntries: 0,
       fireConfigScopes: 0,
       connectedSources: 0,
-      exposureProfiles: 0,
       payouts: 0,
       payoutSchedules: 0,
       contributionPlans: 0,

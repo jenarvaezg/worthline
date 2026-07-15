@@ -13,9 +13,9 @@
 
 import { addHolding, expect, holdingRow, test } from "./fixtures";
 
-/** A valid version-2 export document, built inline (plain object literal). */
+/** A valid version-3 export document, built inline (plain object literal). */
 const importedDoc = {
-  version: 2,
+  version: 3,
   workspace: { mode: "individual", baseCurrency: "EUR" },
   members: [{ id: "member-ana-importada", name: "Ana Importada" }],
   assets: [
