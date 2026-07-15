@@ -1,5 +1,7 @@
 # Investments carry a shared, identity-keyed exposure profile; look-through is a present-time lens, never frozen
 
+> **Superseded by [ADR 0058](0058-exposure-profiles-are-a-global-admin-curated-catalog.md)** for where profiles are authored and stored. Workspace hand-entry and assistant fill were retired in #1014; look-through reads the global catalog.
+
 ## Context
 
 worthline records what a holding **is** via its coarse **instrument** (`fund`, `etf`, `stock`, `pension_plan`, `crypto`…) and already aggregates a scope's assets by instrument and by liquidity tier — present-time, in the agent view's exposure block (the `AgentViewAllocationSlice` shape: `{ key, value, weight }`). But it knows nothing of what a fund actually holds underneath: no tracked index, no TER, no geography, no underlying currency, no asset class. An agent (or the user) deciding "how much US equity do I really have" must hand-compute it from outside knowledge, mixing "the S&P is 100% US, the World is ~70% developed" by hand — exactly the invention we want to stop.

@@ -8,7 +8,6 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
-  canHandEnterExposureProfile,
   collectWarnings,
   defaultsFor,
   listScopeOptions,
@@ -337,6 +336,14 @@ function holdingHasWarnings(
   );
 }
 
+const EXPOSURE_PROFILE_INSTRUMENTS = new Set<Instrument>([
+  "fund",
+  "etf",
+  "stock",
+  "index",
+  "pension_plan",
+]);
+
 /** A holding's exposure profile plus WHY it is absent, when it is (#711 S3). */
 interface ExposureProfileResolution {
   profile: AgentViewExposureProfile | null;
@@ -351,12 +358,11 @@ interface ExposureProfileResolution {
 
 /**
  * Resolve a holding's exposure profile from the global catalog (PRD #711 S3, ADR
- * 0058). Only instruments with an underlying portfolio (`canHandEnterExposureProfile`)
- * carry one; the key is the security identity `isin ?? providerSymbol`. Returns a
- * `null` profile — never fabricated — when the instrument takes none or has no
- * identity (no `status`, nothing to distinguish), when the catalog has no row for
- * a known identity (`profile_missing`), or when the catalog could not be read for
- * a known identity (`catalog_unavailable`).
+ * 0058). Only instruments with an underlying portfolio carry one; the key is the
+ * security identity `isin ?? providerSymbol`. Returns a `null` profile — never
+ * fabricated — when the instrument takes none or has no identity (no `status`),
+ * when the catalog has no row for a known identity (`profile_missing`), or when
+ * the catalog could not be read for a known identity (`catalog_unavailable`).
  */
 async function resolveExposureProfile(
   store: AgentViewReadStore,
@@ -364,7 +370,7 @@ async function resolveExposureProfile(
   internalHoldingId: string,
   instrument: Instrument,
 ): Promise<ExposureProfileResolution> {
-  if (!canHandEnterExposureProfile(instrument)) {
+  if (!EXPOSURE_PROFILE_INSTRUMENTS.has(instrument)) {
     return { profile: null };
   }
 

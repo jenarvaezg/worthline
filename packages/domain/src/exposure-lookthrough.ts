@@ -21,26 +21,14 @@ export interface ExposureBreakdowns {
   assetClass?: Partial<Record<ExposureAssetClassBucket, DecimalString>>;
 }
 
-export type ExposureProfileSource = "user" | "agent";
-
 export interface ExposureProfile {
   key: string;
-  source: ExposureProfileSource;
+  source: "user" | "agent";
   declaredAt: string | null;
   trackedIndex?: string | null;
   ter?: DecimalString | null;
   hedged?: boolean;
   breakdowns: ExposureBreakdowns;
-}
-
-export interface CreateExposureProfileInput {
-  key: string;
-  source?: ExposureProfileSource;
-  declaredAt?: string | null;
-  trackedIndex?: string | null;
-  ter?: DecimalString | null;
-  hedged?: boolean;
-  breakdowns?: ExposureBreakdowns;
 }
 
 export interface ExposureLookthroughHolding {
@@ -115,16 +103,6 @@ const GEO_CURRENCY_NOT_APPLICABLE_INSTRUMENTS = new Set<Instrument>([
 ]);
 
 /**
- * Whether an instrument takes a *hand-entered* exposure profile (PRD #539 S1).
- * fund/etf/stock/index/pension_plan carry an underlying portfolio the user
- * fills; everything else auto-derives its class/geography from the instrument
- * (see resolveDimension) and must never show the hand-entry form.
- */
-export function canHandEnterExposureProfile(instrument: Instrument): boolean {
-  return INVESTMENT_PROFILE_INSTRUMENTS.has(instrument);
-}
-
-/**
  * A holding's resolved asset-class breakdown: the profile's stored vector when
  * present, else the single auto-derived class for instruments without a hand-
  * entered profile (cash/property/crypto/commodity), else `unknown`. Asset class
@@ -153,21 +131,14 @@ export function resolveAssetClassBreakdown(
     : { kind: "unknown" };
 }
 
-export function createExposureProfile(
-  input: CreateExposureProfileInput,
-): ExposureProfile {
-  const breakdowns = input.breakdowns ?? {};
+/** Validates an imported exposure profile shape (workspace transfer, not a write factory). */
+export function validateImportedExposureProfile(profile: {
+  breakdowns?: ExposureBreakdowns;
+}): void {
+  const breakdowns = profile.breakdowns ?? {};
   for (const dimension of EXPOSURE_DIMENSIONS) {
     assertBreakdownTotal(breakdowns[dimension] as Breakdown | undefined, dimension);
   }
-
-  return {
-    ...input,
-    breakdowns,
-    declaredAt: input.declaredAt ?? null,
-    hedged: input.hedged ?? false,
-    source: input.source ?? "user",
-  };
 }
 
 const EXPOSURE_DIMENSIONS: readonly ExposureDimension[] = [

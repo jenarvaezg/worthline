@@ -302,7 +302,6 @@ export {
 } from "./exposure-drift-projection";
 export type {
   AssetClassResolution,
-  CreateExposureProfileInput,
   ExposureAllocationSlice,
   ExposureBreakdowns,
   ExposureCoverage,
@@ -311,13 +310,11 @@ export type {
   ExposureLookthroughHolding,
   ExposureLookthroughInput,
   ExposureProfile,
-  ExposureProfileSource,
 } from "./exposure-lookthrough";
 export {
-  canHandEnterExposureProfile,
-  createExposureProfile,
   lookThroughExposure,
   resolveAssetClassBreakdown,
+  validateImportedExposureProfile,
 } from "./exposure-lookthrough";
 export type {
   ExposureAssetClassBucket,
@@ -326,7 +323,9 @@ export type {
 } from "./exposure-taxonomy";
 export {
   EXPOSURE_ASSET_CLASS_BUCKETS,
+  EXPOSURE_ASSET_CLASS_LABELS,
   EXPOSURE_GEOGRAPHY_BUCKETS,
+  EXPOSURE_GEOGRAPHY_LABELS,
 } from "./exposure-taxonomy";
 export type { FireResult, FireScopeConfig } from "./fire";
 export {

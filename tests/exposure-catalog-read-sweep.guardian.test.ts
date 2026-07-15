@@ -21,11 +21,7 @@ const REROUTED_READ_SURFACES = [
   "apps/web/app/agent-view/returns.ts",
   "apps/web/app/patrimonio/page.tsx",
   "apps/web/app/objetivos/page.tsx",
-  // NOTE: `patrimonio/[id]/editar/page.tsx` is intentionally NOT here. Its
-  // exposure section is a hand-entry FORM that still WRITES the per-workspace
-  // table until S5; its display + benchmark card must keep reading that same
-  // local record to stay self-consistent (save an index → it shows). That
-  // display read moves to the catalog in S5, when the form is removed.
+  "apps/web/app/patrimonio/[id]/editar/page.tsx",
 ];
 
 function source(relativePath: string): string {

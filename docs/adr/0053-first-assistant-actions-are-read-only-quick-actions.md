@@ -15,4 +15,6 @@ Write-capable actions are deliberately excluded from this first action model. Wh
 
 Issue #706 adds the first write-capable assistant action class without changing the quick-action contract. `suggest_actions` remains read-only. Write-capable assistant output is a separate **confirmed proposal**: the model calls a proposal tool (`propose_exposure_profiles`) whose output writes nothing, the chat layer renders a before/after preview, and only an explicit user confirmation invokes a server action.
 
-Confirmed proposal actions must re-validate on the server before writing, must be rejectable without side effects, and must no-op in demo mode. The first member is exposure-profile proposals; future import/fix proposals should copy this shape rather than extending read-only quick actions.
+Confirmed proposal actions must re-validate on the server before writing, must be rejectable without side effects, and must no-op in demo mode. Future import/fix proposals should copy this shape rather than extending read-only quick actions.
+
+**Amendment (#1014):** `propose_exposure_profiles` was removed. Exposure profiles are admin-only (ADR 0058); the assistant no longer drafts profile writes.

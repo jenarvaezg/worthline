@@ -1,11 +1,29 @@
-import { createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
+
+/** ETF symbol the benchmark journey (#40) creates — catalog row seeded here. */
+const BENCHMARK_ETF_SYMBOL = "IWDA.AS";
 
 export default async function globalSetup(): Promise<void> {
   const databasePath = process.env.WORTHLINE_DB_PATH;
   if (!databasePath) {
     throw new Error("WORTHLINE_DB_PATH must be set for e2e globalSetup");
   }
+
+  const controlPlanePath = process.env.WORTHLINE_E2E_CONTROL_PLANE_DB_PATH;
+  if (!controlPlanePath) {
+    throw new Error(
+      "WORTHLINE_E2E_CONTROL_PLANE_DB_PATH must be set for e2e globalSetup",
+    );
+  }
+
+  const controlPlane = await createControlPlaneStore({ url: `file:${controlPlanePath}` });
+  await controlPlane.createGlobalExposureProfile({
+    identity: { priceProvider: "yahoo", providerSymbol: BENCHMARK_ETF_SYMBOL },
+    breakdowns: { assetClass: { equity: "1" } },
+    trackedIndex: "MSCI World",
+  });
+  controlPlane.close();
 
   const store = await createWorthlineStore({ databasePath });
 

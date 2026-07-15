@@ -7,11 +7,31 @@ import {
   projectExposureDrift,
 } from "./exposure-drift-projection";
 import {
-  createExposureProfile,
+  type ExposureBreakdowns,
   type ExposureLookthroughHolding,
   type ExposureProfile,
 } from "./exposure-lookthrough";
 import { createManualAsset, createWorkspace } from "./workspace-types";
+
+function fixtureProfile(input: {
+  key: string;
+  breakdowns?: ExposureBreakdowns;
+  hedged?: boolean;
+  source?: "user" | "agent";
+  declaredAt?: string | null;
+  trackedIndex?: string | null;
+  ter?: string | null;
+}): ExposureProfile {
+  return {
+    key: input.key,
+    source: input.source ?? "user",
+    declaredAt: input.declaredAt ?? null,
+    hedged: input.hedged ?? false,
+    breakdowns: input.breakdowns ?? {},
+    ...(input.trackedIndex !== undefined ? { trackedIndex: input.trackedIndex } : {}),
+    ...(input.ter !== undefined ? { ter: input.ter } : {}),
+  };
+}
 
 function contribution(overrides: Partial<PlannedContribution> = {}): PlannedContribution {
   return {
@@ -33,7 +53,7 @@ function plan(
 
 const EUR = "EUR" as const;
 
-const usProfile = createExposureProfile({
+const usProfile = fixtureProfile({
   key: "IE00US",
   breakdowns: {
     assetClass: { equity: "1" },
@@ -42,7 +62,7 @@ const usProfile = createExposureProfile({
   },
 });
 
-const europeProfile = createExposureProfile({
+const europeProfile = fixtureProfile({
   key: "IE00EU",
   breakdowns: {
     assetClass: { equity: "1" },
@@ -273,7 +293,7 @@ describe("assembleExposureDriftHoldings", () => {
     ownership: [{ memberId: "member_ana", shareBps: 10_000 }],
     type: "investment",
   });
-  const europeProfile = createExposureProfile({
+  const europeProfile = fixtureProfile({
     key: "IE00EU",
     breakdowns: {
       assetClass: { equity: "1" },

@@ -142,7 +142,7 @@ function classShares(resolution: AssetClassResolution): Array<[string, number]> 
     shares.push([bucket, bps]);
   }
 
-  // Upstream `createExposureProfile` rejects a breakdown over 100%, so a negative
+  // Upstream validation rejects a breakdown over 100%, so a negative
   // remainder cannot occur here; the guard is defensive (no `other` when full).
   const remainderBps = FULL_SHARE_BPS - assignedBps;
   if (remainderBps > 0) {

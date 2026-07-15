@@ -3,11 +3,6 @@ import {
   parseBalanceHistoryProposalDraft,
 } from "./balance-history-proposal-contract";
 import type {
-  ExposureProfileProposal,
-  ExposureProfileProposalPreview,
-  ExposureProfileProposalPreviewProfile,
-} from "./exposure-profile-proposals";
-import type {
   MixedDocumentProposal,
   MixedDocumentSection,
   MixedTrust,
@@ -135,43 +130,6 @@ export function parseQuickActions(raw: unknown): QuickAction[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isPreviewProfile(
-  value: unknown,
-): value is ExposureProfileProposalPreviewProfile {
-  return (
-    isRecord(value) &&
-    isRecord(value["breakdowns"]) &&
-    typeof value["hedged"] === "boolean" &&
-    (typeof value["ter"] === "string" || value["ter"] === null) &&
-    (typeof value["trackedIndex"] === "string" || value["trackedIndex"] === null)
-  );
-}
-
-function isProposalPreview(value: unknown): value is ExposureProfileProposalPreview {
-  return (
-    isRecord(value) &&
-    typeof value["key"] === "string" &&
-    Array.isArray(value["labels"]) &&
-    value["labels"].every((label) => typeof label === "string") &&
-    isPreviewProfile(value["before"]) &&
-    isPreviewProfile(value["after"])
-  );
-}
-
-export function parseExposureProfileProposal(
-  raw: unknown,
-): ExposureProfileProposal | null {
-  if (!isRecord(raw) || raw["proposalType"] !== "exposure_profiles") return null;
-  if (!Array.isArray(raw["drafts"]) || !Array.isArray(raw["previews"])) return null;
-  if (!raw["previews"].every(isProposalPreview)) return null;
-
-  return {
-    proposalType: "exposure_profiles",
-    drafts: raw["drafts"] as ExposureProfileProposal["drafts"],
-    previews: raw["previews"],
-  };
 }
 
 function isPositionImpact(impact: unknown): boolean {

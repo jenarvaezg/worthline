@@ -4,11 +4,7 @@
  * set, and only internal destinations — the model never supplies a raw URL.
  */
 
-import {
-  parseExposureProfileProposal,
-  parseQuickActions,
-  sourceHref,
-} from "@web/asistente/assistant-actions";
+import { parseQuickActions, sourceHref } from "@web/asistente/assistant-actions";
 import { describe, expect, it } from "vitest";
 
 describe("parseQuickActions", () => {
@@ -83,43 +79,5 @@ describe("sourceHref", () => {
     expect(sourceHref({ kind: "figure", figure: "not_a_figure" })).toBeNull();
     expect(sourceHref({ kind: "holding", internalId: "" })).toBeNull();
     expect(sourceHref({ kind: "holding", internalId: "a/b" })).toBeNull();
-  });
-});
-
-describe("parseExposureProfileProposal", () => {
-  it("keeps the typed exposure-profile proposal shape and drops junk", () => {
-    const proposal = {
-      proposalType: "exposure_profiles",
-      drafts: [{ key: "IE00B4L5Y983", breakdowns: { geography: { us: "0.7" } } }],
-      previews: [
-        {
-          after: {
-            breakdowns: { geography: { us: "0.7" } },
-            hedged: false,
-            ter: "0.002",
-            trackedIndex: "MSCI World",
-          },
-          before: {
-            breakdowns: {},
-            hedged: false,
-            ter: "0.002",
-            trackedIndex: null,
-          },
-          key: "IE00B4L5Y983",
-          labels: ["iShares MSCI World"],
-        },
-      ],
-    };
-
-    expect(parseExposureProfileProposal(proposal)).toEqual(proposal);
-    expect(
-      parseExposureProfileProposal({ proposalType: "delete_everything" }),
-    ).toBeNull();
-    expect(
-      parseExposureProfileProposal({
-        ...proposal,
-        previews: [{ ...proposal.previews[0], after: { hedged: false } }],
-      }),
-    ).toBeNull();
   });
 });

@@ -32,23 +32,15 @@ import {
   sourceHref,
 } from "@web/asistente/assistant-actions";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
-import {
-  AGENT_FILL_EXPOSURE_POLICY,
-  buildExposureProfileProposal,
-  type ExposureProfileProposalReadPort,
-  listExposureProfileFillTargets,
-} from "@web/asistente/exposure-profile-proposals";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
-import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
   WorthlineStore,
 } from "@worthline/db";
-import type { ExposureProfile } from "@worthline/domain";
 import { formatMoneyMinor } from "@worthline/domain";
 import { jsonSchema, type ToolSet, tool } from "ai";
 
@@ -88,11 +80,6 @@ export interface ChatToolsInput {
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;
   /** YYYY-MM-DD valuation date — the demo clock for demo targets. */
   asOf: string;
-  /**
-   * Current exposure profiles for the fill tools (PRD #711 S3). Defaults to the
-   * global catalog reader (ADR 0058); injected so tests can supply a fixture.
-   */
-  readExposureProfiles?: () => Promise<ExposureProfile[]>;
 }
 
 /** Holdings included in the compact context — enough to reason, cheap in tokens. */
@@ -100,24 +87,6 @@ const CHAT_HOLDING_LIMIT = 10;
 
 /** The empty-workspace answer for scope-defaulting tools (ADR 0048). */
 const EMPTY_WORKSPACE = { error: "empty_workspace" } as const;
-
-/**
- * The read port for the exposure-fill proposal tools (PRD #711 S3): eligibility
- * reads come from the agent view, but the current profiles are now read from the
- * GLOBAL catalog (ADR 0058), never the per-workspace table. The propose/confirm
- * write path is vestigial after this reroute and is retired wholesale in a later
- * slice.
- */
-function exposureProfileProposalPort(
-  store: ChatReadStore,
-  readExposureProfiles: () => Promise<ExposureProfile[]>,
-): ExposureProfileProposalReadPort {
-  return {
-    readAssets: store.agentView.readAssets,
-    readInvestmentAssetsWithMeta: store.agentView.readInvestmentAssetsWithMeta,
-    readExposureProfiles,
-  };
-}
 
 const catalog = createAgentViewCatalog();
 
@@ -188,18 +157,6 @@ interface ProposedAction {
   figure?: string;
   /** Follow-up prompt, for `runSuggestedAnalysis`. */
   prompt?: string;
-}
-
-interface ProposedExposureProfileDraft {
-  key: string;
-  trackedIndex?: string | null;
-  ter?: string | null;
-  hedged?: boolean;
-  breakdowns?: {
-    geography?: Record<string, string>;
-    currency?: Record<string, string>;
-    assetClass?: Record<string, string>;
-  };
 }
 
 /**
@@ -284,39 +241,6 @@ const HOLDING_ID_SCHEMA = jsonSchema<{ holdingId: string }>({
   type: "object",
   properties: { holdingId: { type: "string" } },
   required: ["holdingId"],
-  additionalProperties: false,
-});
-
-const EXPOSURE_PROFILE_PROPOSAL_SCHEMA = jsonSchema<{
-  drafts?: ProposedExposureProfileDraft[];
-}>({
-  type: "object",
-  properties: {
-    drafts: {
-      type: "array",
-      maxItems: 10,
-      items: {
-        type: "object",
-        properties: {
-          key: { type: "string" },
-          trackedIndex: { type: ["string", "null"] },
-          ter: { type: ["string", "null"] },
-          hedged: { type: "boolean" },
-          breakdowns: {
-            type: "object",
-            properties: {
-              geography: { type: "object", additionalProperties: { type: "string" } },
-              currency: { type: "object", additionalProperties: { type: "string" } },
-              assetClass: { type: "object", additionalProperties: { type: "string" } },
-            },
-            additionalProperties: false,
-          },
-        },
-        required: ["key"],
-        additionalProperties: false,
-      },
-    },
-  },
   additionalProperties: false,
 });
 
@@ -433,8 +357,6 @@ const PROPERTY_VALUATION_PROPOSAL_SCHEMA = jsonSchema<{
 
 export function createChatTools(input: ChatToolsInput): ToolSet {
   const catalogOptions = { asOf: input.asOf };
-  const readExposureProfiles =
-    input.readExposureProfiles ?? readExposureProfilesFromCatalog;
   const catalogRead = <Input, Output>(
     tool: Parameters<typeof runCatalogRead<Input, Output>>[0],
     catalogInput: Input,
@@ -1048,41 +970,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           }
           // Final trust boundary: only the typed, bounded, internal-href set renders.
           return { actions: parseQuickActions(built) satisfies QuickAction[] };
-        }),
-    }),
-
-    list_exposure_profile_fill_targets: tool({
-      description:
-        "Lista posiciones elegibles para rellenar perfiles de exposición, ordenadas gap-first. " +
-        "Incluye fund/etf/stock/index/pension_plan con clave ISIN o provider symbol y excluye " +
-        "perfiles auto-derivados como cash/property/crypto/commodity. Usa esta tool antes de " +
-        "`propose_exposure_profiles`: sin buscar en web, declara solo conocimiento entrenado " +
-        "fiable, deja `other` implícito si dudas y nunca normalices un parcial a 100%.",
-      inputSchema: EMPTY_SCHEMA,
-      execute: () =>
-        input.runWithStore(async (store) => ({
-          policy: AGENT_FILL_EXPOSURE_POLICY,
-          targets: await listExposureProfileFillTargets(
-            exposureProfileProposalPort(store, readExposureProfiles),
-          ),
-        })),
-    }),
-
-    propose_exposure_profiles: tool({
-      description:
-        "Prepara una propuesta de perfiles de exposición para posiciones elegibles " +
-        "(fund/etf/stock/index/pension_plan), keyed by ISIN o provider symbol. No escribe " +
-        "nada: devuelve el borrador validado y un before/after para que la app lo previsualice " +
-        "y el usuario lo confirme. Pesos en fracción decimal: 0.7 = 70%. Omite campos que " +
-        "quieras preservar; usa null solo para limpiarlos.",
-      inputSchema: EXPOSURE_PROFILE_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
-          const built = await buildExposureProfileProposal(
-            exposureProfileProposalPort(store, readExposureProfiles),
-            args.drafts ?? [],
-          );
-          return built.ok ? built.proposal : { error: built.error };
         }),
     }),
 

@@ -5,7 +5,6 @@ import type {
   DebtModel,
   EarlyRepaymentMode,
   ExportedPublicIdEntityType,
-  ExposureProfileSource,
   GoalPriority,
   Instant,
   Instrument,
@@ -250,7 +249,7 @@ export const investmentAssets = sqliteTable("investment_assets", {
 
 export const exposureProfiles = sqliteTable("exposure_profiles", {
   key: text("key").primaryKey(),
-  source: text("source").$type<ExposureProfileSource>().notNull().default("user"),
+  source: text("source").$type<"user" | "agent">().notNull().default("user"),
   declaredAt: text("declared_at"),
   trackedIndex: text("tracked_index"),
   ter: text("ter"),
