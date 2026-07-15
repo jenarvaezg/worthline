@@ -306,6 +306,7 @@ async function buildStore(
       snapshotStore.readCurveValuedHoldingsAtDate(dateKey),
     readGoals: goalStore.readGoals,
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
+    readBalanceRebaselines: liabilityStore.readBalanceRebaselines,
     readDebtModel: liabilityStore.readDebtModel,
     readEarlyRepayments: liabilityStore.readEarlyRepayments,
     readFireConfig: () => store.readFireConfig(),

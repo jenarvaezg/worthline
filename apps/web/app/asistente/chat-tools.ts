@@ -796,6 +796,53 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         }),
     }),
 
+    get_calculation_trace: tool({
+      description:
+        "Traza de cálculo de una deuda por su id `wl_hld_…`: el cuadro del motor — para una " +
+        "deuda amortizable, las fronteras de cuota con el desglose interés/principal y los " +
+        "eventos (revisiones de tipo, amortizaciones anticipadas) enganchados a cada frontera; " +
+        "para revolving/informal, sus anclas de saldo — más la reconciliación por fecha del " +
+        "saldo vivo recomputado frente al persistido en snapshot, el check de infidelidad " +
+        "(saldos persistidos que la config actual ya no reproduce) y la tolerancia de modelado " +
+        "max(1 €, 0,05 % del saldo). Pasa declaredBalanceMinor (céntimos) y declaredDate " +
+        "(YYYY-MM-DD) opcional para obtener el residuo de una cifra citada por el usuario frente " +
+        "al saldo vivo y si está dentro de tolerancia. Úsala ANTES de diagnosticar una queja de " +
+        "cifra equivocada, para no rehacer tú la aritmética de amortización. Solo deudas con " +
+        "modelo configurado; el resto devuelve error.",
+      inputSchema: jsonSchema<{
+        holdingId: string;
+        declaredBalanceMinor?: number;
+        declaredDate?: string;
+      }>({
+        type: "object",
+        properties: {
+          holdingId: { type: "string" },
+          declaredBalanceMinor: { type: "integer" },
+          declaredDate: { type: "string" },
+        },
+        required: ["holdingId"],
+        additionalProperties: false,
+      }),
+      execute: (args) =>
+        chatRead(input, async (store) => {
+          const result = await catalogRead(
+            catalog.get_calculation_trace,
+            {
+              holdingId: args.holdingId,
+              ...(args.declaredBalanceMinor === undefined
+                ? {}
+                : { declaredBalanceMinor: args.declaredBalanceMinor }),
+              ...(args.declaredDate === undefined
+                ? {}
+                : { declaredDate: args.declaredDate }),
+            },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return result.data;
+        }),
+    }),
+
     get_operations: tool({
       description:
         "Operaciones (compras y ventas) de una posición de inversión por su id `wl_hld_…`, " +

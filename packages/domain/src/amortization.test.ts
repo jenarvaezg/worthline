@@ -6,6 +6,7 @@ import type {
 } from "./amortization";
 import {
   amortizableBalanceAtDate,
+  amortizationScheduleTrace,
   assertEventWithinTerm,
   deriveCurrentStateAmortizationPlan,
   firstCuota,
@@ -973,5 +974,124 @@ describe("current-state amortization derivation — ADR 0056 / #676", () => {
         nextPaymentDate: "2026-08-05",
       }),
     ).toThrow(/before the next payment/i);
+  });
+});
+
+/**
+ * Amortization schedule trace (#1049): the per-cuota interest/principal split plus
+ * the dated events attached to their boundaries. The load-bearing invariant is
+ * that every period's closing balance equals `amortizableBalanceAtDate` on that
+ * period's date — the trace never derives a curve the balance locator disagrees
+ * with. All other pinned figures are the exact big.js output of the schedule.
+ */
+describe("amortizationScheduleTrace — the calculation cuadro (#1049)", () => {
+  const PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    disbursementDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
+    initialCapitalMinor: 120_000_00,
+    termMonths: 240,
+  };
+
+  test("period 1 splits the first cuota into interest + principal on the initial capital", () => {
+    const trace = amortizationScheduleTrace({ plan: PLAN, targetDate: "2020-02-01" });
+    const first = trace.periods[0]!;
+
+    expect(first.index).toBe(1);
+    expect(first.date).toBe("2020-02-01");
+    expect(first.openingBalanceMinor).toBe(120_000_00);
+    // interest = 120000 × 0.03/12 = 300.00 exactly.
+    expect(first.interestMinor).toBe(300_00);
+    expect(first.paymentMinor).toBe(first.interestMinor + first.principalMinor);
+    expect(first.closingBalanceMinor).toBe(120_000_00 - first.principalMinor);
+    expect(first.annualInterestRate).toBe("0.03");
+    expect(first.events).toEqual([]);
+  });
+
+  test("every period's closing balance equals amortizableBalanceAtDate on its date", () => {
+    const trace = amortizationScheduleTrace({ plan: PLAN, targetDate: "2020-02-01" });
+    expect(trace.periods).toHaveLength(240);
+    for (const period of trace.periods) {
+      expect(period.closingBalanceMinor).toBe(
+        amortizableBalanceAtDate({ plan: PLAN, targetDate: period.date }),
+      );
+    }
+    // The loan fully amortizes: the final boundary is zero.
+    expect(trace.periods.at(-1)!.closingBalanceMinor).toBe(0);
+  });
+
+  test("a rate revision is attached to the boundary it lands on and recomputes the cuota", () => {
+    const revisions: InterestRateRevision[] = [
+      { newAnnualInterestRate: "0.05", revisionDate: "2021-02-01" },
+    ];
+    const trace = amortizationScheduleTrace({
+      earlyRepayments: [],
+      plan: PLAN,
+      revisions,
+      targetDate: "2020-02-01",
+    });
+    // 2021-02-01 is boundary 13, so period 13 carries the event. Per the engine's
+    // `annualRateForMonth`, the new rate governs the cuota computed FROM that
+    // boundary — the next period (14, dated 2021-03-01) — so period 13 keeps the
+    // old rate while period 14 is the first at 0.05.
+    const revised = trace.periods.find((p) => p.date === "2021-02-01")!;
+    expect(revised.events).toEqual([
+      { annualInterestRate: "0.05", date: "2021-02-01", kind: "rate_revision" },
+    ]);
+    expect(revised.annualInterestRate).toBe("0.03");
+    expect(trace.periods.find((p) => p.date === "2021-03-01")!.annualInterestRate).toBe(
+      "0.05",
+    );
+    expect(trace.periods[0]!.annualInterestRate).toBe("0.03");
+
+    // Closing balances still track the curve with the revision applied.
+    for (const period of trace.periods) {
+      expect(period.closingBalanceMinor).toBe(
+        amortizableBalanceAtDate({ plan: PLAN, revisions, targetDate: period.date }),
+      );
+    }
+  });
+
+  test("a reduce-term lump attaches to its boundary and closes the loan early", () => {
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 110_000_00, mode: "reduce-term", repaymentDate: "2021-02-01" },
+    ];
+    const trace = amortizationScheduleTrace({
+      earlyRepayments,
+      plan: PLAN,
+      revisions: [],
+      targetDate: "2020-02-01",
+    });
+
+    const lumpPeriod = trace.periods.find((p) => p.date === "2021-02-01")!;
+    expect(lumpPeriod.events).toEqual([
+      {
+        amountMinor: 110_000_00,
+        date: "2021-02-01",
+        kind: "early_repayment",
+        mode: "reduce-term",
+      },
+    ]);
+    // The lump lands on this frontier, so the period's CLOSING balance drops by
+    // the 110.000€ repaid — far below the ~114.500€ it would otherwise carry —
+    // exactly as a bank table shows an amortización anticipada line.
+    expect(lumpPeriod.closingBalanceMinor).toBeLessThan(11_000_00);
+    expect(lumpPeriod.closingBalanceMinor).toBe(
+      amortizableBalanceAtDate({ plan: PLAN, earlyRepayments, targetDate: "2021-02-01" }),
+    );
+
+    // reduce-term keeps the cuota and pays the loan off well before the 240th
+    // period; the schedule stops at the payoff period (closing balance zero).
+    expect(trace.periods.at(-1)!.closingBalanceMinor).toBe(0);
+    expect(trace.periods.length).toBeLessThan(240);
+    for (const period of trace.periods) {
+      expect(period.closingBalanceMinor).toBe(
+        amortizableBalanceAtDate({
+          plan: PLAN,
+          earlyRepayments,
+          targetDate: period.date,
+        }),
+      );
+    }
   });
 });

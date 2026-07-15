@@ -860,6 +860,156 @@ export interface AgentViewHoldingDetail {
   vsBenchmark: AgentViewVsBenchmark;
 }
 
+/** The debt family a calculation trace was computed for (PRD #1048, #1049). */
+export type AgentViewCalculationTraceModel = "amortizable" | "revolving" | "informal";
+
+/**
+ * One dated event on the amortization schedule, attached to the frontier it lands
+ * on (PRD #1049). A `rate_revision` carries the new `annualInterestRate`; an
+ * `early_repayment` carries the `amount` repaid and its `mode`.
+ */
+export interface AgentViewAmortizationScheduleEvent {
+  kind: "rate_revision" | "early_repayment";
+  /** Date the event is dated, as `YYYY-MM-DD`. */
+  date: string;
+  /** New annual rate as a decimal string — `rate_revision` only. */
+  annualInterestRate?: string;
+  /** Principal repaid — `early_repayment` only. */
+  amount?: AgentViewMoney;
+  /** `reduce-payment` keeps the term; `reduce-term` keeps the cuota — `early_repayment` only. */
+  mode?: "reduce-payment" | "reduce-term";
+}
+
+/**
+ * One cuota of the amortization schedule (PRD #1049): the frontier date with its
+ * opening/closing balances and the interest/principal split of the payment.
+ * `closingBalance` is what the engine reports on `date` (it matches the balance
+ * the dashboard curve reads). `events` are the dated events applied on this
+ * frontier. All money on the loan's OWN (unscoped) terms.
+ */
+export interface AgentViewAmortizationScheduleFrontier {
+  index: number;
+  /** The cuota date, as `YYYY-MM-DD`. */
+  date: string;
+  openingBalance: AgentViewMoney;
+  payment: AgentViewMoney;
+  interest: AgentViewMoney;
+  principal: AgentViewMoney;
+  closingBalance: AgentViewMoney;
+  /** Annual rate in effect this period, decimal string. */
+  annualInterestRate: string;
+  events: AgentViewAmortizationScheduleEvent[];
+}
+
+/**
+ * The full computed amortization cuadro for an amortizable liability (PRD #1049):
+ * the plan governing today (resolved through balance re-baselines, ADR 0056) and
+ * its frontiers with the per-cuota interest/principal split and attached events.
+ * Money is on the loan's own (unscoped) terms; for a wholly-owned holding this
+ * coincides with the scope-weighted reconciliation figures below.
+ */
+export interface AgentViewAmortizationSchedule {
+  disbursementDate: string;
+  firstPaymentDate: string;
+  termMonths: number;
+  initialCapital: AgentViewMoney;
+  /** The date the effective plan takes over (a re-baseline's baseline, or the plan's disbursement). */
+  effectiveFrom: string;
+  frontiers: AgentViewAmortizationScheduleFrontier[];
+}
+
+/**
+ * One reconciliation point of the calculation trace (PRD #1049): the engine's
+ * fresh recomputation (`live`) for a date against the value frozen in the
+ * persisted snapshot (`persisted`). Both are scope-weighted for the household,
+ * matching the dashboard figure. `diverges` flags a real divergence — a persisted
+ * value that the current config no longer reproduces beyond a cent (the #1042
+ * class of bug) — never a rounding artifact.
+ */
+export interface AgentViewCalculationTracePoint {
+  /** The date, as `YYYY-MM-DD`. */
+  date: string;
+  /** Fresh engine recomputation for the current config (household-weighted). */
+  live: AgentViewMoney;
+  /** The value frozen in the persisted snapshot for this date; null when none exists. */
+  persisted: AgentViewMoney | null;
+  /** `live − persisted`; null when there is no persisted value to compare. */
+  difference: AgentViewMoney | null;
+  /** True when a persisted value exists and diverges from `live` beyond a cent. */
+  diverges: boolean;
+  /** True when this row is a persisted snapshot (vs the always-present current-date row). */
+  isSnapshot: boolean;
+}
+
+/**
+ * The infidelity check (PRD #1049): does the painted/persisted figure match the
+ * engine's recomputation for the same config? `faithful` is true when no
+ * persisted snapshot diverges beyond a cent; `divergences` lists the offending
+ * points (the #1042 class of bug made visible, never hidden).
+ */
+export interface AgentViewCalculationTraceFidelity {
+  faithful: boolean;
+  divergences: AgentViewCalculationTracePoint[];
+  /** Persisted snapshot points that were compared. */
+  checkedPoints: number;
+}
+
+/**
+ * The modeling-tolerance verdict (PRD #1049): the tolerance band `max(1 €,
+ * 0.05 % of |balance|)` and, when a declared figure was supplied, the residual of
+ * that figure against the engine's live balance and whether it falls within the
+ * band. The band constant is documented so a "difference" below it reads as
+ * modeling friction, not a real error.
+ */
+export interface AgentViewCalculationTraceTolerance {
+  /** `max(1 €, 0.05 % of |referenceBalance|)`. */
+  band: AgentViewMoney;
+  /** The live balance the top-level band was computed against (at `referenceDate`). */
+  referenceBalance: AgentViewMoney;
+  referenceDate: string;
+  /** Present only when a declared figure was supplied. */
+  declared?: {
+    balance: AgentViewMoney;
+    /** The date the declared figure describes. */
+    date: string;
+    /** `declared − live` at the declared date (signed). */
+    residual: AgentViewMoney;
+    /** Whether `|residual|` is within the band computed against the declared date's live balance. */
+    withinTolerance: boolean;
+  };
+}
+
+/**
+ * The calculation trace for a modelled debt holding (PRD #1048 S1, #1049): the
+ * engine's full cuadro (amortization schedule frontiers, or the declared balance
+ * anchors of a revolving/informal debt), the live-vs-persisted reconciliation per
+ * date, and the two pre-computed verdicts — the infidelity check and the modeling
+ * tolerance. It exists so an agent diagnoses a "this figure is wrong" complaint
+ * from the engine's own arithmetic instead of rebuilding amortization in tokens
+ * (lesson of #1034), and so live-vs-persisted divergences (#1042) are visible.
+ * Side-effect-free. Scoped to liabilities with a configured debt model in v1.
+ */
+export interface AgentViewCalculationTrace {
+  object: "calculation_trace";
+  /** The holding this trace describes (echoed public `wl_hld_…`). */
+  holding: string;
+  direction: AgentViewHoldingDirection;
+  model: AgentViewCalculationTraceModel;
+  /** The valuation date the trace was computed for, as `YYYY-MM-DD`. */
+  asOf: string;
+  /** The painted current balance (the dashboard figure), household-weighted. */
+  currentValue: AgentViewMoney;
+  /** Present only for an amortizable liability with a plan. */
+  schedule?: AgentViewAmortizationSchedule;
+  /** Present only for a revolving/informal liability: its declared balance anchors. */
+  balanceAnchors?: AgentViewBalanceAnchorFacts;
+  reconciliation: AgentViewCalculationTracePoint[];
+  fidelity: AgentViewCalculationTraceFidelity;
+  tolerance: AgentViewCalculationTraceTolerance;
+  /** Persisted snapshot points beyond the cap that were not reconciled (never silently dropped). */
+  omittedReconciliationPoints: number;
+}
+
 /**
  * The current figures an agent can ask the view to explain (PRD #328, #343). A
  * path-param value outside this set is a documented `400 invalid_figure`; a value

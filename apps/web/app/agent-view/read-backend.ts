@@ -2,6 +2,7 @@ import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices"
 import { type AgentViewReadStore } from "@worthline/db";
 import { systemClock } from "@worthline/domain";
 
+import { buildCalculationTrace } from "./calculation-trace";
 import { type AgentViewBackend, type AgentViewCatalogTool } from "./catalog";
 import {
   buildHoldingConnectedSourcePositions,
@@ -133,6 +134,18 @@ export function createReadStoreBackend(
       successEnvelope(
         await buildHoldingDetail(agentView, holdingId, {
           readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
+        }),
+      ),
+    calculationTrace: async (params) =>
+      successEnvelope(
+        await buildCalculationTrace(agentView, params.holdingId, {
+          asOf,
+          ...(params.declaredBalanceMinor === undefined
+            ? {}
+            : { declaredBalanceMinor: params.declaredBalanceMinor }),
+          ...(params.declaredDate === undefined
+            ? {}
+            : { declaredDate: params.declaredDate }),
         }),
       ),
     priceFreshness: async (holdingId) =>

@@ -700,6 +700,201 @@ export function firstCuota(plan: AmortizationPlanInput): FirstCuota {
   };
 }
 
+/** One dated event applied to the schedule, attached to a payment boundary (#1049). */
+export interface AmortizationScheduleEvent {
+  kind: "rate_revision" | "early_repayment";
+  /** YYYY-MM-DD the event is dated. */
+  date: string;
+  /** New annual rate as a decimal string — `rate_revision` only. */
+  annualInterestRate?: DecimalString;
+  /** Principal repaid, integer minor units — `early_repayment` only. */
+  amountMinor?: number;
+  /** Repayment mode — `early_repayment` only. */
+  mode?: EarlyRepaymentMode;
+}
+
+/**
+ * One period of the amortization schedule (#1049): the `index`-th cuota, spanning
+ * boundary `index − 1` → `index`. `openingBalanceMinor` is the outstanding
+ * principal at the start of the month (after any lump repaid on this boundary);
+ * `closingBalanceMinor` is the balance at the period's payment date and is
+ * byte-identical to {@link amortizableBalanceAtDate} on that date. Interest and
+ * principal are each rounded to the cent (half up) for display, mirroring
+ * {@link firstCuota}; their rounded parts may differ from the rounded payment by a
+ * cent, exactly as the components of the first cuota can.
+ */
+export interface AmortizationSchedulePeriod {
+  /** 1-based payment number; period `p` spans boundary `p − 1` → `p`. */
+  index: number;
+  /** The cuota date (boundary `index`), YYYY-MM-DD. */
+  date: string;
+  openingBalanceMinor: number;
+  paymentMinor: number;
+  interestMinor: number;
+  principalMinor: number;
+  closingBalanceMinor: number;
+  /** Annual rate in effect this period, decimal string. */
+  annualInterestRate: DecimalString;
+  /** Events applied on this period's opening boundary (`index − 1`). */
+  events: AmortizationScheduleEvent[];
+}
+
+/**
+ * The full computed amortization schedule (#1049): the plan's frontiers with the
+ * interest/principal split per cuota and the dated events attached to the boundary
+ * each one lands on. The calculation trace exposes this so an agent never rebuilds
+ * amortization arithmetic in tokens (lesson of #1034). Trailing fully-repaid
+ * periods are omitted: the schedule stops at the first period whose closing
+ * balance is zero (a `reduce-term` lump or a total repayment closes it early).
+ */
+export interface AmortizationScheduleTrace {
+  disbursementDate: string;
+  firstPaymentDate: string;
+  termMonths: number;
+  initialCapitalMinor: number;
+  periods: AmortizationSchedulePeriod[];
+}
+
+/**
+ * Build the amortization schedule with a per-cuota interest/principal split and
+ * the dated events attached to their boundaries (#1049). Mirrors the boundary
+ * curve {@link computeBoundaries} step for step — payment recomputed at every rate
+ * revision and `reduce-payment` lump, lumps applied on their boundary before that
+ * month's amortization — so each period's `closingBalanceMinor` equals
+ * {@link amortizableBalanceAtDate} on the period's date. Pure and cache-free (it is
+ * a rare diagnostic read, not the hot ripple path).
+ */
+export function amortizationScheduleTrace(
+  input: AmortizableBalanceAtDateInput,
+): AmortizationScheduleTrace {
+  const { plan } = input;
+  const { initialCapitalMinor, annualInterestRate, termMonths } = plan;
+
+  const sortedRevisions = (input.revisions ?? [])
+    .map((revision) => ({
+      date: revision.revisionDate,
+      monthIndex: monthIndexForDate(plan, revision.revisionDate),
+      rate: revision.newAnnualInterestRate,
+    }))
+    .sort((a, b) => a.monthIndex - b.monthIndex);
+
+  // Events are attached to the FRONTIER they land on (the largest boundary ≤ the
+  // event date, #182). A boundary `k ≥ 1` is the closing of schedule period `k`
+  // (dated `boundaryDate(k)`); a boundary-0 event (a lump on/before the first
+  // payment) has no period of its own, so it rides period 1 — its effect shows in
+  // that period's opening balance.
+  const eventsByPeriod = new Map<number, AmortizationScheduleEvent[]>();
+  const attach = (monthIndex: number, event: AmortizationScheduleEvent): void => {
+    const period = monthIndex === 0 ? 1 : monthIndex;
+    const list = eventsByPeriod.get(period) ?? [];
+    list.push(event);
+    eventsByPeriod.set(period, list);
+  };
+  for (const revision of sortedRevisions) {
+    attach(revision.monthIndex, {
+      annualInterestRate: revision.rate,
+      date: revision.date,
+      kind: "rate_revision",
+    });
+  }
+  const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
+  for (const repayment of input.earlyRepayments ?? []) {
+    const monthIndex = monthIndexForDate(plan, repayment.repaymentDate);
+    const list = repaymentsByMonth.get(monthIndex) ?? [];
+    list.push(repayment);
+    repaymentsByMonth.set(monthIndex, list);
+    attach(monthIndex, {
+      amountMinor: repayment.amountMinor,
+      date: repayment.repaymentDate,
+      kind: "early_repayment",
+      mode: repayment.mode,
+    });
+  }
+
+  // Replay the boundary curve exactly like `computeBoundaries` (lump applied on
+  // its boundary before that month's amortization, payment recomputed at every
+  // rate change / reduce-payment lump), recording each month's split. `boundaries`
+  // holds the post-lump start-of-month balances, so `boundaries[p]` is period `p`'s
+  // closing balance and matches `amortizableBalanceAtDate` on `boundaryDate(p)`.
+  const boundaries: Big[] = [new Big(initialCapitalMinor)];
+  const monthMeta: {
+    opening: Big;
+    interest: Big;
+    principal: Big;
+    payment: Big;
+    rate: DecimalString;
+  }[] = [];
+
+  let balance = new Big(initialCapitalMinor);
+  let payment = monthlyPayment(balance, new Big(annualInterestRate).div(12), termMonths);
+  let activeRate = annualInterestRate;
+
+  for (let monthIndex = 0; monthIndex < termMonths; monthIndex += 1) {
+    const rateForMonth = annualRateForMonth(
+      annualInterestRate,
+      sortedRevisions,
+      monthIndex,
+    );
+    if (rateForMonth !== activeRate) {
+      activeRate = rateForMonth;
+      payment = monthlyPayment(
+        balance,
+        new Big(activeRate).div(12),
+        termMonths - monthIndex,
+      );
+    }
+
+    const repayments = repaymentsByMonth.get(monthIndex);
+    if (repayments) {
+      for (const repayment of repayments) {
+        balance = balance.minus(repayment.amountMinor);
+        if (balance.lt(0)) balance = new Big(0);
+        if (repayment.mode === "reduce-payment") {
+          payment = monthlyPayment(
+            balance,
+            new Big(activeRate).div(12),
+            termMonths - monthIndex,
+          );
+        }
+      }
+      boundaries[monthIndex] = balance;
+    }
+
+    const opening = balance;
+    const interest = opening.times(new Big(activeRate).div(12));
+    const principal = payment.minus(interest);
+    balance = opening.minus(principal);
+    if (balance.lt(0)) balance = new Big(0);
+    boundaries.push(balance);
+    monthMeta.push({ interest, opening, payment, principal, rate: activeRate });
+
+    if (balance.eq(0)) break;
+  }
+
+  const periods: AmortizationSchedulePeriod[] = monthMeta.map((meta, i) => {
+    const index = i + 1;
+    return {
+      annualInterestRate: meta.rate,
+      closingBalanceMinor: toMinorInt(boundaries[index]!),
+      date: boundaryDate(plan, index),
+      events: eventsByPeriod.get(index) ?? [],
+      index,
+      interestMinor: toMinorInt(meta.interest),
+      openingBalanceMinor: toMinorInt(meta.opening),
+      paymentMinor: toMinorInt(meta.payment),
+      principalMinor: toMinorInt(meta.principal),
+    };
+  });
+
+  return {
+    disbursementDate: plan.disbursementDate,
+    firstPaymentDate: plan.firstPaymentDate,
+    initialCapitalMinor,
+    periods,
+    termMonths,
+  };
+}
+
 /**
  * Outstanding principal on `targetDate`, in integer minor units (cents, half up).
  * Before the first payment → the full initial capital (flat — covers both the
