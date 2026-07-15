@@ -12,9 +12,9 @@
 
 import { addHolding, expect, holdingRow, test } from "./fixtures";
 
-/** A valid version-2 export document with known per-section counts. */
+/** A valid version-3 export document with known per-section counts. */
 const previewDoc = {
-  version: 2,
+  version: 3,
   workspace: { mode: "household", baseCurrency: "EUR" },
   members: [
     { id: "member-preview-1", name: "Preview Uno" },

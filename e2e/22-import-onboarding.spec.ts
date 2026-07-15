@@ -16,12 +16,12 @@
 import { expect, holdingRow, test } from "./fixtures";
 
 /**
- * A live-state-only version-2 export document, as an externally-prepared file
+ * A live-state-only version-3 export document, as an externally-prepared file
  * would carry it: no snapshots, no trash, no priceCache, no operations — only
  * the live workspace, its member, and two holdings.
  */
 const liveStateOnlyDoc = {
-  version: 2,
+  version: 3,
   workspace: { mode: "individual", baseCurrency: "EUR" },
   members: [{ id: "member-onboarding-22", name: "Onboarding Veintidós" }],
   assets: [
