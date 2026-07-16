@@ -236,6 +236,19 @@ export interface ControlPlaneStore {
   createGlobalExposureProfile(
     input: CreateGlobalExposureProfileInput,
   ): Promise<GlobalExposureProfile>;
+  /**
+   * Register an empty, curatable catalog row for a market holding's identity if
+   * one does not already exist (#1097, ADR 0058 amendment). Idempotent by
+   * `identity_key` and NON-destructive: an existing row — curated data or a prior
+   * stub — is left untouched (no display-name rewrite). This is a system action
+   * (the row is born with the holding), distinct from admin data curation
+   * (`createGlobalExposureProfile`/`updateGlobalExposureProfile`), so it never
+   * validates content and is allowed to be completely empty.
+   */
+  ensureGlobalExposureProfileStub(
+    identity: GlobalExposureProfileIdentity,
+    displayName?: string | null,
+  ): Promise<void>;
   updateGlobalExposureProfile(
     identity: RawGlobalExposureProfileIdentityInput,
     input: UpdateGlobalExposureProfileInput,
@@ -860,6 +873,27 @@ async function buildControlPlaneStore(
         args: [columns.identityKey],
       });
       return toGlobalExposureProfile(created.rows[0]!);
+    },
+    async ensureGlobalExposureProfileStub(identity, displayName) {
+      const columns = identityColumns(identity);
+      const name = (displayName ?? "").trim() || null;
+      // Non-destructive: ON CONFLICT DO NOTHING leaves a pre-existing row (curated
+      // data or an earlier stub) exactly as it was — breakdowns default to '{}',
+      // the metadata columns to null, the timestamps to CURRENT_TIMESTAMP.
+      await client.execute({
+        sql: `INSERT INTO global_exposure_profiles (
+                identity_key, identity_kind, isin, price_provider, provider_symbol, display_name
+              ) VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(identity_key) DO NOTHING`,
+        args: [
+          columns.identityKey,
+          columns.identityKind,
+          columns.isin,
+          columns.priceProvider,
+          columns.providerSymbol,
+          name,
+        ],
+      });
     },
     async updateGlobalExposureProfile(identityInput, input) {
       const identity = resolveGlobalExposureProfileIdentity(identityInput);

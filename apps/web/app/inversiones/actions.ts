@@ -6,6 +6,10 @@ import {
   testStoreFromActionArgs,
 } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import {
+  type ExposureCatalogStubCandidate,
+  ensureExposureCatalogStubs,
+} from "@web/ensure-exposure-catalog-stubs";
 import type { FormErrorContext } from "@web/intake";
 import {
   createStableId,
@@ -350,6 +354,17 @@ export async function confirmStatementAction(
       await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
     }
 
+    // The catalog identity to register once the merge commits (#1097). A statement
+    // is the path where an ISIN first attaches to a fund, so this is often the very
+    // first identity the holding has. No instrument here: `readInvestmentAssetById`
+    // is a market investment by construction and supplies its own provider.
+    const catalog: ExposureCatalogStubCandidate = {
+      displayName: asset?.name ?? null,
+      isin: guard.status === "backfill" ? guard.isin : (asset?.isin ?? null),
+      priceProvider: asset?.priceProvider ?? null,
+      providerSymbol: asset?.providerSymbol ?? null,
+    };
+
     // Merge by date (S2): plan against the asset's current operations so an
     // overlapping date overwrites in place instead of duplicating, and operations
     // the file does not mention survive untouched. Anomalous dates are set aside.
@@ -390,6 +405,7 @@ export async function confirmStatementAction(
 
     return {
       anomalies: plan.anomalies.length,
+      catalog,
       created: plan.toCreate.length,
       overwritten: plan.toOverwrite.length,
       sells: countSells(plan),
@@ -399,6 +415,10 @@ export async function confirmStatementAction(
   if ("error" in applied) {
     redirect(statementErrorUrl(applied.error));
   }
+
+  // The merge committed — register the holding's (now possibly ISIN-bearing)
+  // catalog row so it surfaces in /admin/catalogo. Best-effort (#1097).
+  await ensureExposureCatalogStubs([applied.catalog]);
 
   redirect(
     statementLoadedRedirectUrl(returnUrl, {

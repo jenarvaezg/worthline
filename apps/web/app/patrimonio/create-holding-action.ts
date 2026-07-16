@@ -7,6 +7,10 @@ import {
 } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import {
+  type ExposureCatalogStubCandidate,
+  ensureExposureCatalogStubs,
+} from "@web/ensure-exposure-catalog-stubs";
+import {
   errorRedirectUrl,
   mapDomainViolation,
   parseAssetCommandStrict,
@@ -519,6 +523,17 @@ export async function createHoldingAction(
 
       await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
 
+      // The catalog identity to register once the write commits (#1097). Threaded
+      // out of the store closure so the best-effort stub call runs after — and
+      // never inside — the workspace transaction.
+      const catalog: ExposureCatalogStubCandidate = {
+        displayName: parsed.command.name,
+        instrument,
+        isin: parsed.command.isin ?? null,
+        priceProvider: parsed.command.priceProvider ?? null,
+        providerSymbol: parsed.command.providerSymbol ?? null,
+      };
+
       // Record the opening BUY dated today, so the holding lands valued — not the
       // 0 € container the alta used to create. Never combined with (b) import: a
       // today-dated apertura would not match the CSV's historical orders (merge
@@ -536,12 +551,17 @@ export async function createHoldingAction(
         }
       }
 
-      return { ok: true as const, id: parsed.command.id };
+      return { catalog, id: parsed.command.id, ok: true as const };
     }, _store);
 
     if (!result.ok) {
       redirect(errorUrl(result.error));
     }
+
+    // The market holding is written — register its (empty) global-catalog row so
+    // it surfaces in /admin/catalogo «por categorizar». Best-effort: never blocks
+    // the redirect if the control plane is down (#1097).
+    await ensureExposureCatalogStubs([result.catalog]);
 
     // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
     // (#173) so the broker CSV's historical orders are the only operations.

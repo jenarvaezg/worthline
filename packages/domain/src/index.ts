@@ -290,6 +290,8 @@ export {
   EVOLUTION_CHART_WIDTH,
   timeProportionalXs,
 } from "./evolution-chart";
+export type { ExposureCatalogIdentitySource } from "./exposure-catalog-identity";
+export { deriveExposureCatalogIdentity } from "./exposure-catalog-identity";
 export { exposureProfileLookthroughMap } from "./exposure-catalog-lookthrough";
 export type {
   AssembleExposureDriftHoldingsInput,
@@ -316,6 +318,7 @@ export type {
   ExposureProfile,
 } from "./exposure-lookthrough";
 export {
+  INVESTMENT_PROFILE_INSTRUMENTS,
   lookThroughExposure,
   resolveAssetClassBreakdown,
   validateImportedExposureProfile,

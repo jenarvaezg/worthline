@@ -1,0 +1,18 @@
+{
+  "//": "Alias map for running committed scripts that pull in the full @db/@domain/@pricing source graph via tsx. Non-default name so tsx never auto-loads it for other scripts — point at it explicitly with TSX_TSCONFIG_PATH (see scripts/backfill-exposure-catalog-stubs.ts).",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "types": ["node"],
+    "baseUrl": "..",
+    "paths": {
+      "@web/*": ["apps/web/app/*"],
+      "@domain/*": ["packages/domain/src/*"],
+      "@db/*": ["packages/db/src/*"],
+      "@pricing/*": ["packages/pricing/src/*"],
+      "@tests/*": ["tests/*"],
+      "@scripts/*": ["scripts/*"]
+    }
+  }
+}
