@@ -5,7 +5,12 @@
  * command applies it atomically, revalidating against live data first.
  */
 
-import type { CorrectionPlan, WorthlineStore } from "@worthline/db";
+import type {
+  AddBalanceRebaselineInput,
+  AnchorOnlyCorrectionPlan,
+  CorrectionPlan,
+  WorthlineStore,
+} from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
@@ -67,7 +72,9 @@ async function createRebaselineCorrection(
   return proposal.id;
 }
 
-function rebaselinePlan(overrides?: Partial<CorrectionPlan>): CorrectionPlan {
+function rebaselinePlan(
+  overrides?: Partial<AnchorOnlyCorrectionPlan>,
+): AnchorOnlyCorrectionPlan {
   return {
     edits: [
       {
@@ -152,6 +159,92 @@ describe("correction proposal apply (#1051)", () => {
     // A snapshot before the baseline date keeps the original curve; only the
     // present and forward move.
     expect(await debtsAt(store, "2026-06-08")).toBe(before0608);
+    store.close();
+  });
+});
+
+/** The reconstruct depth (#1053): a document-driven dated balance series. */
+function reconstructPlan(): CorrectionPlan {
+  return {
+    before: { balanceMinor: 5_586_30 },
+    holding: "wl_hld_loan",
+    liabilityId: "loan",
+    mode: "reconstruct",
+    observations: [
+      { balanceMinor: 5_760_00, date: "2026-06-08" },
+      { balanceMinor: 5_587_10, date: "2026-07-08" },
+    ],
+  };
+}
+
+function reconstructRebaselines(): AddBalanceRebaselineInput[] {
+  return [
+    {
+      annualInterestRate: "0.0589",
+      baselineDate: "2026-06-08",
+      endDate: "2029-10-08",
+      id: "reb-0608",
+      liabilityId: "loan",
+      nextPaymentDate: "2026-07-08",
+      outstandingBalanceMinor: 5_760_00,
+      source: "agent",
+      startsAtBaseline: false,
+    },
+    {
+      annualInterestRate: "0.0589",
+      baselineDate: "2026-07-08",
+      endDate: "2029-10-08",
+      id: "reb-0708",
+      liabilityId: "loan",
+      nextPaymentDate: "2026-08-08",
+      outstandingBalanceMinor: 5_587_10,
+      source: "agent",
+      startsAtBaseline: false,
+    },
+  ];
+}
+
+describe("correction proposal apply · reconstruct depth (#1053)", () => {
+  test("applies the reconstructed series as ONE atomic batch and marks it applied", async () => {
+    const store = await seedDriftedMortgage();
+    const proposalId = await createRebaselineCorrection(store, reconstructPlan());
+
+    await store.command.applyAssistantCorrectionProposal({
+      proposalId,
+      reconstruct: { liabilityId: "loan", rebaselines: reconstructRebaselines() },
+      today: TODAY,
+    });
+
+    expect((await store.assistantProposals.read(proposalId))?.status).toBe("applied");
+    // Both re-baselines land, and the endpoint reconciles to the last balance.
+    expect(await store.liabilities.readBalanceRebaselines("loan")).toHaveLength(2);
+    expect(await store.liabilities.debtBalanceAtDate("loan", TODAY)).toBe(5_587_10);
+    // The reconstructed past date is now modelled (unlike anchor-only).
+    expect(await store.liabilities.debtBalanceAtDate("loan", "2026-06-08")).toBe(
+      5_760_00,
+    );
+    store.close();
+  });
+
+  test("the applied proposal keeps the raw series and before-values, no ripple leak", async () => {
+    const store = await seedDriftedMortgage();
+    const proposalId = await createRebaselineCorrection(store, reconstructPlan());
+
+    await store.command.applyAssistantCorrectionProposal({
+      proposalId,
+      reconstruct: { liabilityId: "loan", rebaselines: reconstructRebaselines() },
+      today: TODAY,
+    });
+
+    const applied = await store.assistantProposals.read(proposalId);
+    const fact = applied?.documents.flatMap((doc) => doc.facts)[0];
+    expect(fact?.kind).toBe("holding_correction");
+    if (fact?.kind === "holding_correction" && fact.row.mode === "reconstruct") {
+      expect(fact.row.observations).toHaveLength(2);
+      expect(fact.row.before).toEqual({ balanceMinor: 5_586_30 });
+    } else {
+      throw new Error("expected a reconstruct holding_correction fact");
+    }
     store.close();
   });
 });

@@ -154,6 +154,47 @@ function maintainerAlertModel(args: Record<string, unknown>) {
 }
 
 /** Step 1 drafts a correction proposal; step 2 streams the confirmation nudge. */
+function proposeToolModel(toolName: string, args: Record<string, unknown>) {
+  let call = 0;
+  return new MockLanguageModelV4({
+    doStream: async () => {
+      call += 1;
+      const chunks: LanguageModelV4StreamPart[] =
+        call === 1
+          ? [
+              { type: "stream-start" as const, warnings: [] },
+              {
+                type: "tool-call" as const,
+                toolCallId: `call-${toolName}`,
+                toolName,
+                input: JSON.stringify(args),
+              },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "tool-calls" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ]
+          : [
+              { type: "stream-start" as const, warnings: [] },
+              { type: "text-start" as const, id: "t1" },
+              {
+                type: "text-delta" as const,
+                id: "t1",
+                delta: "Listo; confírmala cuando quieras.",
+              },
+              { type: "text-end" as const, id: "t1" },
+              {
+                type: "finish" as const,
+                finishReason: { unified: "stop" as const, raw: undefined },
+                usage: USAGE,
+              },
+            ];
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+}
+
 function proposeCorrectionModel(args: Record<string, unknown>) {
   let call = 0;
   return new MockLanguageModelV4({
@@ -1013,5 +1054,66 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("propose_correction");
     // The tool output — a superficie C proposal in "solo-desde-hoy" mode.
     expect(streamed).toContain("solo-desde-hoy");
+  });
+
+  it("streams a reconstruct proposal part through propose_reconstruction (#1053)", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "token-ana",
+    });
+    // Seed an amortizable debt to reconstruct, then resolve its public id.
+    const memberId = (await currentStore.agentView.readPublicIds()).find(
+      (row) => row.entityType === "member",
+    )?.entityId;
+    expect(memberId).toBeTruthy();
+    await currentStore.liabilities.createLiability({
+      balanceMinor: 6_000_00,
+      currency: "EUR",
+      id: "recon-loan",
+      name: "Préstamo a reconstruir",
+      ownership: [{ memberId: memberId as string, shareBps: 10_000 }],
+      type: "debt",
+    });
+    await currentStore.liabilities.setDebtModel("recon-loan", "amortizable");
+    await currentStore.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.0589",
+        disbursementDate: "2026-01-08",
+        firstPaymentDate: "2026-02-08",
+        id: "recon-plan",
+        initialCapitalMinor: 6_000_00,
+        liabilityId: "recon-loan",
+        termMonths: 42,
+      },
+      { today: AS_OF },
+    );
+    const holdingId = (await currentStore.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding" && row.entityId === "recon-loan",
+    )?.publicId;
+    expect(holdingId).toBeTruthy();
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        proposeToolModel("propose_reconstruction", {
+          documentName: "extracto.pdf",
+          holdingId,
+          rows: [{ balanceMinor: 5_800_00, date: "2026-05-08" }],
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [userMessage("reconstruye mi préstamo con este extracto")],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("propose_reconstruction");
+    // The tool output — a superficie C proposal in "reconstruir" mode.
+    expect(streamed).toContain("reconstruir");
   });
 });

@@ -359,6 +359,70 @@ describe("createChatTools · propose_statement_import (#767)", () => {
   });
 });
 
+describe("createChatTools · propose_reconstruction (#1053)", () => {
+  it("builds a superficie-C reconstruct proposal from a dated balance series", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 140_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: AS_OF },
+    );
+    const holding = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding",
+    );
+    const tools = createChatTools({
+      asOf: AS_OF,
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+        }),
+    });
+
+    const result = await tools["propose_reconstruction"]?.execute?.(
+      {
+        documentName: "extracto.pdf",
+        holdingId: holding?.publicId,
+        rows: [{ balanceMinor: 140_000_00, date: AS_OF }],
+      },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      holding: { name: "Hipoteca" },
+      mode: "reconstruir",
+      proposalType: "correction",
+    });
+    const proposalId = (result as { draft: { proposalId: string } }).draft.proposalId;
+    expect(await store.assistantProposals.read(proposalId)).toMatchObject({
+      kind: "correction",
+      status: "draft",
+    });
+    store.close();
+  });
+});
+
 describe("createChatTools · raise_maintainer_alert (#1050)", () => {
   it("reports the alert as unavailable when no raise callback is bound", async () => {
     const store = await seededStore();

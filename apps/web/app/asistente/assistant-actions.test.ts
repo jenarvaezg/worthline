@@ -4,7 +4,11 @@
  * set, and only internal destinations — the model never supplies a raw URL.
  */
 
-import { parseQuickActions, sourceHref } from "@web/asistente/assistant-actions";
+import {
+  parseCorrectionProposal,
+  parseQuickActions,
+  sourceHref,
+} from "@web/asistente/assistant-actions";
 import { describe, expect, it } from "vitest";
 
 describe("parseQuickActions", () => {
@@ -52,6 +56,50 @@ describe("parseQuickActions", () => {
         parseQuickActions([{ type: "openInternalSource", label: "x", href }]),
       ).toEqual([]);
     }
+  });
+});
+
+describe("parseCorrectionProposal (#1051/#1053)", () => {
+  const base = {
+    draft: { proposalId: "prop-1" },
+    folio: "1 propuesta · 1 holding · 1 lote atómico",
+    guarantee: { state: "reconciled" },
+    holding: { id: "wl_hld_x", name: "Hipoteca" },
+    proposalType: "correction",
+    summary: "Corrección",
+  };
+
+  it("accepts the anchor-only depth", () => {
+    expect(
+      parseCorrectionProposal({ ...base, edits: [], mode: "solo-desde-hoy" }),
+    ).not.toBeNull();
+  });
+
+  it("accepts the reconstruct depth with a series, curve and anchor", () => {
+    expect(
+      parseCorrectionProposal({
+        ...base,
+        anchorMinor: 140_000_00,
+        curve: [{ balanceMinor: 140_000_00, date: "2026-07-12" }],
+        mode: "reconstruir",
+        series: [{ balanceMinor: 140_000_00, date: "2026-07-12", origin: "assistant" }],
+      }),
+    ).not.toBeNull();
+  });
+
+  it("rejects a reconstruct payload missing the anchor", () => {
+    expect(
+      parseCorrectionProposal({
+        ...base,
+        curve: [],
+        mode: "reconstruir",
+        series: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects an unknown mode", () => {
+    expect(parseCorrectionProposal({ ...base, mode: "otra-cosa" })).toBeNull();
   });
 });
 

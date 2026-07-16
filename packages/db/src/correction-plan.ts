@@ -8,7 +8,10 @@
  *
  * S3 covers the "anchor-only" depth ("Solo desde hoy"): the correction declares
  * the real value from today forward and never rewrites the past (ADR 0056). S5
- * will add document-driven history reconstruction over the same surface.
+ * (#1053) adds the "reconstruct" depth ("Reconstruir historia"): a document-driven
+ * dated balance series reconstructed as a chain of re-baselines and reconciled to
+ * the live anchor, applied as ONE atomic batch with ONE ripple from the oldest
+ * affected date. Both depths share the superficie C surface and this proposal kind.
  *
  * Before-values of edited facts live IN the applied proposal (this payload), not
  * in `fact_batch` — respecting the #889 provenance sliver while leaving the
@@ -29,7 +32,7 @@ import type {
 } from "./liability-store";
 import type { UpdateInvestmentOperationInput } from "./operations-store";
 
-export type CorrectionMode = "anchor-only";
+export type CorrectionMode = "anchor-only" | "reconstruct";
 
 /** A money value known when the draft was armed, kept for provenance/undo. */
 export type CorrectionBeforeMoney = { balanceMinor: number | null };
@@ -115,10 +118,40 @@ export interface CorrectionRevalidation {
   expectedBalanceMinor: number;
 }
 
-export interface CorrectionPlan {
-  mode: CorrectionMode;
+/**
+ * One observed dated balance read from a statement or amortization schedule —
+ * the raw series the reconstruct depth persists for provenance. Only the
+ * *observed* balance and its date are kept; loan parameters (rate, payment, term)
+ * are never inferred nor stored — the reconstruction re-derives the rate from the
+ * debt's own amortization curve (PRD #1048 S4/S5, "únicamente saldos observados").
+ */
+export interface DatedBalanceObservation {
+  date: string;
+  balanceMinor: number;
+}
+
+/** The "Solo desde hoy" depth (#1051): declared facts applied from today forward. */
+export interface AnchorOnlyCorrectionPlan {
+  mode: "anchor-only";
   /** The public holding id the whole correction is about (echoed for the card). */
   holding: string;
   edits: CorrectionEdit[];
   revalidation?: CorrectionRevalidation;
 }
+
+/**
+ * The "Reconstruir historia" depth (#1053): the raw dated balance series and the
+ * live anchor it was armed against. The composed re-baseline chain is NOT baked
+ * in — the confirm re-projects the (possibly point-edited) series against live
+ * data, so a stale draft or a series that no longer reconciles fails honestly.
+ * `before` is the live balance when the draft was armed (persisted for undo/audit).
+ */
+export interface ReconstructCorrectionPlan {
+  mode: "reconstruct";
+  holding: string;
+  liabilityId: string;
+  observations: DatedBalanceObservation[];
+  before: CorrectionBeforeMoney;
+}
+
+export type CorrectionPlan = AnchorOnlyCorrectionPlan | ReconstructCorrectionPlan;

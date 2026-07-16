@@ -4,7 +4,7 @@ import type {
 } from "@db/assistant-proposal-store";
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
-import type { LiabilityStore } from "@db/liability-store";
+import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
@@ -48,6 +48,14 @@ export interface CommandHost {
   applyAssistantCorrectionProposal: (params: {
     proposalId: string;
     today: string;
+    /**
+     * Present only for the "reconstruct" depth (#1053): the freshly re-projected
+     * re-baseline chain the confirm composed from the (possibly point-edited)
+     * series. When set, the apply routes through the atomic balance-history
+     * import (ONE fact_batch, ONE ripple from the oldest date) instead of the
+     * anchor-only edit loop. The persisted plan keeps the raw series + before-values.
+     */
+    reconstruct?: { liabilityId: string; rebaselines: AddBalanceRebaselineInput[] };
   }) => Promise<void>;
   deleteInvestmentOperation: DatedFactCommands["deleteOperationAndRipple"];
   deleteInvestmentOperations: DatedFactCommands["deleteOperationsAndRipple"];
@@ -150,6 +158,11 @@ async function applyCorrectionPlan(
   plan: CorrectionPlan,
   today: string,
 ): Promise<void> {
+  if (plan.mode !== "anchor-only") {
+    // The reconstruct depth is applied through the atomic balance-history import,
+    // never this per-edit loop — the caller routes it before reaching here.
+    throw new Error(`Correction plan mode "${plan.mode}" is not applied here.`);
+  }
   if (plan.revalidation) {
     const live = await liabilityReads.debtBalanceAtDate(
       plan.revalidation.liabilityId,
@@ -366,7 +379,7 @@ export function createCommandHost(
         },
         () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
       ),
-    applyAssistantCorrectionProposal: async ({ proposalId, today }) =>
+    applyAssistantCorrectionProposal: async ({ proposalId, today, reconstruct }) =>
       applyDraftAssistantProposal(
         ctx,
         assistantProposals,
@@ -378,6 +391,21 @@ export function createCommandHost(
           return proposal;
         },
         async () => {
+          // Reconstruct depth (#1053): apply the re-projected series as ONE atomic
+          // batch with ONE ripple from the oldest date. The confirm already
+          // revalidated the endpoint against live data (the series must reconcile
+          // to the current anchor), so a stale draft never reaches here.
+          if (reconstruct) {
+            await importBalanceHistory(
+              {
+                liabilityId: reconstruct.liabilityId,
+                rebaselines: reconstruct.rebaselines,
+                today,
+              },
+              { trigger: "assistant" },
+            );
+            return;
+          }
           const proposal = await assistantProposals.read(proposalId);
           if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
           await applyCorrectionPlan(

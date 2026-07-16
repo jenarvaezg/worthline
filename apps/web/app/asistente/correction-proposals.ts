@@ -15,9 +15,10 @@ import type {
   WorthlineStore,
 } from "@worthline/db";
 import { formatMoneyMinor, type ValuationCadence } from "@worthline/domain";
-import type {
-  CorrectionProposal,
-  CorrectionProposalEditRow,
+import {
+  CORRECTION_FOLIO,
+  type CorrectionProposal,
+  type CorrectionProposalEditRow,
 } from "./correction-proposal-contract";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities" | "assets"> & {
@@ -71,8 +72,6 @@ function euros(currency: string, minor: number | null | undefined): string {
 function factId(prefix: string): string {
   return `${prefix}_${randomUUID()}`;
 }
-
-const FOLIO = "1 propuesta · 1 holding · 1 lote atómico";
 
 export async function buildCorrectionProposal(
   store: ProposalStore,
@@ -405,7 +404,7 @@ async function persist(
     proposal: {
       draft: { proposalId: proposal.id },
       edits: rows,
-      folio: FOLIO,
+      folio: CORRECTION_FOLIO,
       guarantee: { state: "declared" },
       holding: { id: args.publicHoldingId, name: holdingName },
       mode: "solo-desde-hoy",

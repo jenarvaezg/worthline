@@ -187,16 +187,25 @@ export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null
     !isRecord(raw.holding) ||
     typeof raw.holding.id !== "string" ||
     typeof raw.holding.name !== "string" ||
-    raw.mode !== "solo-desde-hoy" ||
     typeof raw.summary !== "string" ||
     typeof raw.folio !== "string" ||
     !isRecord(raw.guarantee) ||
-    typeof raw.guarantee.state !== "string" ||
-    !Array.isArray(raw.edits)
+    typeof raw.guarantee.state !== "string"
   ) {
     return null;
   }
-  return raw as unknown as CorrectionProposal;
+  if (raw.mode === "solo-desde-hoy" && Array.isArray(raw.edits)) {
+    return raw as unknown as CorrectionProposal;
+  }
+  if (
+    raw.mode === "reconstruir" &&
+    Array.isArray(raw.series) &&
+    Array.isArray(raw.curve) &&
+    typeof raw.anchorMinor === "number"
+  ) {
+    return raw as unknown as CorrectionProposal;
+  }
+  return null;
 }
 
 export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {
