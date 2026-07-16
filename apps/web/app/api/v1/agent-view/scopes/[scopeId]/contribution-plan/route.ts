@@ -1,5 +1,5 @@
+import { runAgentViewStore } from "@web/agent-view/agent-view-store";
 import { handleGetContributionPlan } from "@web/agent-view/http";
-import { withStore } from "@web/store";
 import type { NextRequest } from "next/server";
 
 export async function GET(
@@ -7,5 +7,5 @@ export async function GET(
   context: { params: Promise<{ scopeId: string }> },
 ) {
   const { scopeId } = await context.params;
-  return handleGetContributionPlan(request, scopeId, withStore);
+  return handleGetContributionPlan(request, scopeId, runAgentViewStore);
 }
