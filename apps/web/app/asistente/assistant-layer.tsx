@@ -15,6 +15,7 @@ import {
 } from "react";
 import { editCorrectionPoint } from "./anchor-correction-gate";
 import {
+  extractEmbeddedQuickActions,
   parseBalanceHistoryProposal,
   parseCorrectionProposal,
   parseMixedDocumentProposal,
@@ -83,11 +84,23 @@ function currentQuickActions(messages: UIMessage[]): QuickAction[] {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== "assistant") continue;
+
+    let toolActions: QuickAction[] = [];
+    let textActions: QuickAction[] = [];
+
     for (const part of message.parts) {
       if (part.type === "tool-suggest_actions" && "output" in part) {
-        return parseQuickActions((part.output as { actions?: unknown } | null)?.actions);
+        toolActions = parseQuickActions(
+          (part.output as { actions?: unknown } | null)?.actions,
+        );
+      }
+      if (part.type === "text" && typeof part.text === "string") {
+        textActions = extractEmbeddedQuickActions(part.text).actions;
       }
     }
+
+    if (toolActions.length > 0) return toolActions;
+    if (textActions.length > 0) return textActions;
     return [];
   }
   return [];
@@ -1002,7 +1015,8 @@ export default function AssistantLayer({
           <div className={`assistantMsg ${message.role}`} key={message.id}>
             {message.parts.map((part, i) => {
               if (part.type === "text") {
-                return <p key={`${message.id}-${i}`}>{part.text}</p>;
+                const { cleaned } = extractEmbeddedQuickActions(part.text);
+                return <p key={`${message.id}-${i}`}>{cleaned}</p>;
               }
               if (part.type === "data-attachment-extraction") {
                 const preview = parseAttachmentPreviewData(part.data);
@@ -1083,11 +1097,8 @@ export default function AssistantLayer({
                     />
                   ) : null;
                 }
-                return (
-                  <span className="assistantTool" key={`${message.id}-${i}`}>
-                    → {name}
-                  </span>
-                );
+                // Read tools run silently; only proposal cards surface tool activity.
+                return null;
               }
               return null;
             })}

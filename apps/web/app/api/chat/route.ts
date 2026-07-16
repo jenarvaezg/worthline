@@ -59,8 +59,8 @@ const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 16_000;
 const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
-/** Read tool + suggest_actions (#631) + answer, with one step of headroom. */
-const MAX_STEPS = 4;
+/** Read tool(s) + answer + suggest_actions (#631), with headroom for one extra read. */
+const MAX_STEPS = 6;
 
 interface ChatBody {
   messages: UIMessage[];

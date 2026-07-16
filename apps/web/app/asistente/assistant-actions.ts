@@ -132,6 +132,106 @@ export function parseQuickActions(raw: unknown): QuickAction[] {
   return actions;
 }
 
+const SCREEN_SECTIONS = new Set<ScreenSection>([
+  "resumen",
+  "patrimonio",
+  "historico",
+  "objetivos",
+  "ajustes",
+  "otra",
+]);
+
+function parseScreenSection(value: unknown): ScreenSection | null {
+  return typeof value === "string" && SCREEN_SECTIONS.has(value as ScreenSection)
+    ? (value as ScreenSection)
+    : null;
+}
+
+/**
+ * Resolve model-proposed quick actions before the server has turned refs into
+ * hrefs — covers the failure mode where the model prints `{"actions":[…]}`
+ * in text instead of calling `suggest_actions`.
+ */
+export function resolveModelQuickActions(raw: unknown): QuickAction[] {
+  if (!Array.isArray(raw)) return [];
+
+  const actions: QuickAction[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) continue;
+    const label = boundedString(item["label"], MAX_LABEL);
+    if (label === null) continue;
+
+    if (item["type"] === "openInternalSource") {
+      const hrefDirect = boundedString(item["href"], MAX_LABEL);
+      if (hrefDirect !== null && isInternalHref(hrefDirect)) {
+        actions.push({ type: "openInternalSource", label, href: hrefDirect });
+      } else {
+        const holding = boundedString(item["holding"], MAX_LABEL);
+        const section = parseScreenSection(item["section"]);
+        const figure = boundedString(item["figure"], MAX_LABEL);
+        let href: string | null = null;
+        if (holding !== null) {
+          href = sourceHref({ kind: "holding", internalId: holding });
+        } else if (section !== null) {
+          href = sourceHref({ kind: "section", section });
+        } else if (figure !== null) {
+          href = sourceHref({ kind: "figure", figure });
+        }
+        if (href !== null) {
+          actions.push({ type: "openInternalSource", label, href });
+        }
+      }
+    } else if (item["type"] === "runSuggestedAnalysis") {
+      const prompt = boundedString(item["prompt"], MAX_PROMPT);
+      if (prompt !== null) {
+        actions.push({ type: "runSuggestedAnalysis", label, prompt });
+      }
+    }
+
+    if (actions.length === MAX_ACTIONS) break;
+  }
+
+  return actions;
+}
+
+/**
+ * Strip a trailing `{"actions":[…]}` block from assistant text and recover any
+ * typed quick actions the model printed instead of calling `suggest_actions`.
+ */
+export function extractEmbeddedQuickActions(text: string): {
+  cleaned: string;
+  actions: QuickAction[];
+} {
+  const trimmedEnd = text.trimEnd();
+  let depth = 0;
+  for (let i = trimmedEnd.length - 1; i >= 0; i--) {
+    const ch = trimmedEnd[i];
+    if (ch === "}") depth += 1;
+    else if (ch === "{") {
+      depth -= 1;
+      if (depth !== 0) continue;
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmedEnd.slice(i));
+      } catch {
+        return { cleaned: text, actions: [] };
+      }
+
+      if (!isRecord(parsed) || !Array.isArray(parsed["actions"])) {
+        return { cleaned: text, actions: [] };
+      }
+
+      const actions = resolveModelQuickActions(parsed["actions"]);
+      if (actions.length === 0) return { cleaned: text, actions: [] };
+
+      return { cleaned: trimmedEnd.slice(0, i).trimEnd(), actions };
+    }
+  }
+
+  return { cleaned: text, actions: [] };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
