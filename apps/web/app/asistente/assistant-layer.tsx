@@ -26,6 +26,7 @@ import {
 } from "./assistant-actions";
 import AssistantAttachmentControl from "./assistant-attachment-control";
 import { assistantChatTransport } from "./assistant-chat-transport";
+import { AssistantTextPart } from "./assistant-markdown";
 import AssistantMessages from "./assistant-messages";
 import { parseAttachmentPreviewData } from "./attachment-chat";
 import AttachmentExtractionPreview from "./attachment-extraction-preview";
@@ -1016,7 +1017,13 @@ export default function AssistantLayer({
             {message.parts.map((part, i) => {
               if (part.type === "text") {
                 const { cleaned } = extractEmbeddedQuickActions(part.text);
-                return <p key={`${message.id}-${i}`}>{cleaned}</p>;
+                return (
+                  <AssistantTextPart
+                    key={`${message.id}-${i}`}
+                    role={message.role}
+                    text={cleaned}
+                  />
+                );
               }
               if (part.type === "data-attachment-extraction") {
                 const preview = parseAttachmentPreviewData(part.data);
