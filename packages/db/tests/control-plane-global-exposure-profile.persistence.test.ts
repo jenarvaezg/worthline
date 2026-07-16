@@ -232,3 +232,84 @@ describe("control-plane global exposure profile store (#1010)", () => {
     }
   });
 });
+
+describe("control-plane exposure profile stub registration (#1097)", () => {
+  test("registers an empty, curatable stub for a brand-new identity", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      await cp.ensureGlobalExposureProfileStub(
+        { isin: VWRL_ISIN, kind: "isin" },
+        "MSCI World",
+      );
+
+      const stub = await cp.readGlobalExposureProfile({ isin: VWRL_ISIN });
+      expect(stub).toMatchObject({
+        identity: { isin: VWRL_ISIN, kind: "isin" },
+        displayName: "MSCI World",
+        breakdowns: {},
+        ter: null,
+        trackedIndex: null,
+        hedgedToCurrency: null,
+      });
+      expect(stub?.createdAt).toBeTruthy();
+      expect(stub?.updatedAt).toBeTruthy();
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("is idempotent: two calls leave exactly one row and never throw", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      await cp.ensureGlobalExposureProfileStub(
+        { kind: "provider", priceProvider: "yahoo", providerSymbol: "VWRL.L" },
+        "Vanguard",
+      );
+      await cp.ensureGlobalExposureProfileStub(
+        { kind: "provider", priceProvider: "yahoo", providerSymbol: "VWRL.L" },
+        "Vanguard (renamed)",
+      );
+
+      const all = await cp.readGlobalExposureProfiles();
+      expect(all).toHaveLength(1);
+      // The first display name is preserved — a re-register never rewrites.
+      expect(all[0]?.displayName).toBe("Vanguard");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("never overwrites an already-curated profile", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const curated = await cp.createGlobalExposureProfile({
+        identity: { isin: VWRL_ISIN },
+        displayName: "Vanguard FTSE All-World",
+        trackedIndex: "FTSE All-World",
+        ter: "0.0022",
+        breakdowns: { assetClass: { equity: "1" }, geography: { us: "0.6" } },
+      });
+
+      await cp.ensureGlobalExposureProfileStub(
+        { isin: VWRL_ISIN, kind: "isin" },
+        "MSCI World",
+      );
+
+      expect(await cp.readGlobalExposureProfile({ isin: VWRL_ISIN })).toEqual(curated);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("a null display name registers an unnamed stub", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      await cp.ensureGlobalExposureProfileStub({ isin: "IE00BK5BQT80", kind: "isin" });
+      const stub = await cp.readGlobalExposureProfile({ isin: "IE00BK5BQT80" });
+      expect(stub?.displayName).toBeNull();
+      expect(stub?.breakdowns).toEqual({});
+    } finally {
+      cp.close();
+    }
+  });
+});

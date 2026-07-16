@@ -28,6 +28,7 @@
     "test:watch": "vitest",
     "capture:landing": "tsx scripts/capture-landing.ts",
     "backfill:snapshots": "tsx scripts/backfill-historical-snapshots.ts",
+    "backfill:catalog-stubs": "TSX_TSCONFIG_PATH=scripts/tsconfig.aliases.json tsx scripts/backfill-exposure-catalog-stubs.ts",
     "sync:pull": "tsx scripts/sync-pull.ts",
     "sync:push": "tsx scripts/sync-push.ts",
     "subset:fonts": "scripts/subset-web-fonts.sh",

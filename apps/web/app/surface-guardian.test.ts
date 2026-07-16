@@ -1,6 +1,12 @@
 /**
- * Surface guardian (#1014): workspace code must not write exposure profiles.
- * After S5, the only writer is admin CRUD on the control plane (S4).
+ * Surface guardian (#1014): workspace code must not write exposure profile
+ * _content_. After S5, the only writer of breakdowns/TER/index/hedged is admin
+ * CRUD on the control plane (S4).
+ *
+ * Not forbidden (#1097): system _identity registration_ — `ensureGlobalExposureProfileStub`
+ * — which creates the empty catalog row when a market holding is persisted. It
+ * carries no content and never overwrites, so it is not curation; it is
+ * deliberately absent from the forbidden patterns below (ADR 0058 amendment).
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
