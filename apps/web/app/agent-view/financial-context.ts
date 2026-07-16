@@ -58,7 +58,8 @@ import { buildFireSummary } from "./fire-context";
 import { summarizeOperations } from "./operation-summary";
 import { buildScopePassiveIncome } from "./payouts";
 import { buildPortfolioReturns } from "./returns";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_HOLDING_LIMIT = 25;
@@ -71,8 +72,6 @@ export interface AgentViewBenchmarkPrice {
 }
 
 export interface BuildFinancialContextOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
   /** Date the figures describe, as `YYYY-MM-DD`. */
   asOf: string;
   /** Cap on summarized holdings (default 25, clamped to 100). */
@@ -93,9 +92,10 @@ export interface BuildFinancialContextOptions {
  * dashboard load path, so a read cannot refresh prices or capture snapshots.
  */
 export async function buildFinancialContext(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildFinancialContextOptions,
 ): Promise<AgentViewFinancialContext> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -107,7 +107,7 @@ export async function buildFinancialContext(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === options.scopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
@@ -118,7 +118,7 @@ export async function buildFinancialContext(
     });
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -187,15 +187,15 @@ export async function buildFinancialContext(
     asOf: options.asOf,
     baseCurrency: workspace.baseCurrency,
     connectedSources: await buildConnectedSources(store, holdingSummaries),
-    dataQuality: await buildDataQualitySummary(store, options.scopeId),
+    dataQuality: await buildDataQualitySummary(scoped),
     exposure: buildExposure(holdingSummaries, summary.grossAssets, lookthrough),
-    fire: await buildFireSummary(store, options.scopeId),
+    fire: await buildFireSummary(scoped),
     holdings: toHoldingsBlock(
       holdingSummaries,
       options.holdingLimit,
       workspace.baseCurrency,
     ),
-    links: buildLinks(options.scopeId),
+    links: buildLinks(scoped.scopeId),
     liquidityBreakdown: buildLiquidityBreakdown(figuresInput).map(toLiquidityRung),
     passiveIncome: await buildScopePassiveIncome({
       store,

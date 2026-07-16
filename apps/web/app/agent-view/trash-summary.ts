@@ -15,15 +15,14 @@ import {
   dropAfterCursor,
   encodeCursor,
 } from "./cursor";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_TRASH_LIMIT = 100;
 export const MAX_TRASH_LIMIT = 500;
 
 export interface BuildTrashSummaryOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
   /** Page size, already clamped to `[1, MAX_TRASH_LIMIT]` by the caller. */
   limit: number;
   /** Opaque cursor from a previous page's `meta.nextCursor`. */
@@ -57,9 +56,10 @@ interface SortedTrashedHolding {
  * sees all trash — the common case; member/group scopes see only their own.
  */
 export async function buildTrashSummary(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildTrashSummaryOptions,
 ): Promise<AgentViewTrashSummary> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -67,14 +67,14 @@ export async function buildTrashSummary(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === options.scopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, internalScopeId));
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const currency = workspace.baseCurrency;

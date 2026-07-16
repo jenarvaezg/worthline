@@ -1,5 +1,5 @@
+import { runAgentViewStore } from "@web/agent-view/agent-view-store";
 import { handleGetTrashSummary } from "@web/agent-view/http";
-import { withStoreUnsafe } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export async function GET(
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<NextResponse> {
   const { scopeId } = await params;
-  return handleGetTrashSummary(request, scopeId, withStoreUnsafe);
+  return handleGetTrashSummary(request, scopeId, runAgentViewStore);
 }

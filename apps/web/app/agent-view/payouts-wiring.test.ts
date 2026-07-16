@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import { buildFinancialContext } from "./financial-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { publicIdMap } from "./scope-resolution";
+import { bindScope } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 const AS_OF = "2026-06-19";
@@ -52,8 +53,7 @@ describe("agent-view payouts wiring", () => {
     const scopes = await listAgentViewScopes(store.agentView);
     const scope = scopes.find((candidate) => candidate.isDefault) ?? scopes[0];
     if (!scope) throw new Error("seed has no scope");
-    const context = await buildFinancialContext(store.agentView, {
-      scopeId: scope.id,
+    const context = await buildFinancialContext(bindScope(store.agentView, scope.id), {
       asOf: AS_OF,
     });
     expect(context.passiveIncome.hasPayouts).toBe(true);

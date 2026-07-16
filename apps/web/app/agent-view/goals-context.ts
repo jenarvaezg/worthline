@@ -9,7 +9,8 @@ import {
 
 import type { AgentViewGoal } from "./contract";
 import { ratioStringFromBps } from "./financial-context";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 
 /**
  * The goals for a scope as `list_goals` exposes them (PRD #421, #424): each with
@@ -21,17 +22,15 @@ import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-re
  * additional filter: only future in-horizon reservations backed by FIRE-eligible
  * assigned holdings reduce FIRE.
  */
-export async function buildGoals(
-  store: AgentViewReadStore,
-  publicScopeId: string,
-): Promise<AgentViewGoal[]> {
+export async function buildGoals(scoped: ScopedAgentView): Promise<AgentViewGoal[]> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
     return [];
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, internalScopeId));
   const goals = await store.readGoals(internalScopeId);
   // Curve-valued today so funded ratios count live housing values, matching FIRE.

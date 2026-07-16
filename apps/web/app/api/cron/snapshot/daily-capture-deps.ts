@@ -1,8 +1,8 @@
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
+import { openAuthorizedStore } from "@web/principal";
 import {
   createControlPlaneStore,
-  createWorthlineStoreUnsafe,
   type DailyCaptureFetchedPrice,
   type RunDailyCaptureDeps,
 } from "@worthline/db";
@@ -22,7 +22,8 @@ const SPANISH_CPI_SERIES_ID = "ipc-es";
 /**
  * Wire the real dependencies for the daily-capture cron (ADR 0037, PRD #528).
  * The system actor lists every workspace from the control plane and opens each
- * per-workspace database with the shared group token and no session — a narrow,
+ * per-workspace database through the authorization port as an explicit `system`
+ * principal (#998 S2) — with the shared group token and no session, a narrow,
  * capture-only cross-tenant path.
  *
  * `now` is the real wall clock: the job must never honor WORTHLINE_DEMO_NOW (it
@@ -98,10 +99,17 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
         controlPlane.close();
       }
     },
+    // The cron is a `system` actor: it carries its own workspace coordinates
+    // (control-plane URL + group token) rather than resolving them from a
+    // request, and opens each workspace THROUGH the authorization port like
+    // every other surface (#998 S2) — never a raw DB open.
     openStore: (workspace) =>
-      createWorthlineStoreUnsafe({
-        url: workspace.dbUrl,
-        ...(groupToken ? { authToken: groupToken } : {}),
+      openAuthorizedStore({
+        kind: "system",
+        options: {
+          url: workspace.dbUrl,
+          ...(groupToken ? { authToken: groupToken } : {}),
+        },
       }),
     // Source-sync phase (#895): the same stale-gated orchestrations the GET used
     // to run, now on the cron. Each isolates per source and degrades to

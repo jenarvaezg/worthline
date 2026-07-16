@@ -30,13 +30,9 @@ import {
   type AgentViewScope,
 } from "./contract";
 import { ratioStringFromBps } from "./financial-context";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
-
-export interface BuildFireContextOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
-}
 
 /**
  * The FIRE facts a scope resolves to (PRD #328, #340): its config and computed
@@ -57,9 +53,9 @@ interface ResolvedFire {
  * responsible for rejecting historical requests before this point.
  */
 export async function resolveFire(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
 ): Promise<{ scope: AgentViewScope; fire: ResolvedFire }> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -67,14 +63,14 @@ export async function resolveFire(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === publicScopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -162,10 +158,9 @@ export async function goalReservationMinor(
  * quality signal. Reads only; never writes FIRE settings (ADR 0023).
  */
 export async function buildFireContext(
-  store: AgentViewReadStore,
-  options: BuildFireContextOptions,
+  scoped: ScopedAgentView,
 ): Promise<AgentViewFireContext> {
-  const { scope, fire } = await resolveFire(store, options.scopeId);
+  const { scope, fire } = await resolveFire(scoped);
 
   if (fire.config === undefined || fire.result === undefined) {
     return {
@@ -190,7 +185,7 @@ export async function buildFireContext(
     assumptions,
     config: toConfig(config, result, fire.currency),
     eligibleAssetsTotal: money(result.eligibleAssets),
-    excludedAssets: await toExcludedAssets(store, result),
+    excludedAssets: await toExcludedAssets(scoped.store, result),
     qualitySignals: [],
     result: toResult(result),
     scope,
@@ -204,10 +199,9 @@ export async function buildFireContext(
  * compact assumptions block. Reuses the same resolution as the full endpoint.
  */
 export async function buildFireSummary(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
 ): Promise<AgentViewFireSummary> {
-  const { fire } = await resolveFire(store, publicScopeId);
+  const { fire } = await resolveFire(scoped);
 
   if (fire.config === undefined || fire.result === undefined) {
     return { status: "unconfigured" };

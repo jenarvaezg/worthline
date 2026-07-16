@@ -7,6 +7,7 @@
 
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { createChatTools } from "@web/asistente/chat-tools";
 import { seedPersona } from "@web/demo/seed-persona";
@@ -68,11 +69,13 @@ describe("createChatTools · get_financial_context", () => {
 
       const scopes = await listAgentViewScopes(store.agentView);
       const defaultScope = scopes.find((s) => s.isDefault) ?? scopes[0];
-      const expected = await buildFinancialContext(store.agentView, {
-        scopeId: defaultScope?.id ?? "",
-        asOf: AS_OF,
-        holdingLimit: 10,
-      });
+      const expected = await buildFinancialContext(
+        bindScope(store.agentView, defaultScope?.id ?? ""),
+        {
+          asOf: AS_OF,
+          holdingLimit: 10,
+        },
+      );
 
       // Amounts arrive FORMATTED (es-ES strings): a model reading raw
       // amountMinor recites céntimos as euros — the #629 smoke bug.
@@ -109,8 +112,7 @@ describe("createChatTools · get_financial_context", () => {
       const store = await seededStore();
       const scopes = await listAgentViewScopes(store.agentView);
       const scopeId = (scopes.find((s) => s.isDefault) ?? scopes[0])?.id ?? "";
-      const before = await buildFinancialContext(store.agentView, {
-        scopeId,
+      const before = await buildFinancialContext(bindScope(store.agentView, scopeId), {
         asOf: AS_OF,
       });
 
@@ -120,8 +122,7 @@ describe("createChatTools · get_financial_context", () => {
       });
       await tools["get_financial_context"]?.execute?.({}, toolCallContext());
 
-      const after = await buildFinancialContext(store.agentView, {
-        scopeId,
+      const after = await buildFinancialContext(bindScope(store.agentView, scopeId), {
         asOf: AS_OF,
       });
       expect(after).toEqual(before);
