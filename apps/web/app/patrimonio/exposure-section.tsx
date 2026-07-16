@@ -3,7 +3,11 @@ import {
   type ExposureLens,
   writeViewParam,
 } from "@web/view-state";
-import type { ExposureDimensionResult, ExposureLookthrough } from "@worthline/domain";
+import type {
+  ExposureDimensionResult,
+  ExposureLookthrough,
+  ExposureSectorStyle,
+} from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 
 import ExposureLensPanel, { type ExposureLensTab } from "./exposure-lens";
@@ -12,18 +16,25 @@ import {
   formatExposureWeight,
   geographyForLens,
   geographyLabel,
+  sectorForLens,
+  sectorLabel,
+  sectorStyleChips,
+  sectorStyleForLens,
 } from "./exposure-view";
 
 /**
- * The exposure look-through section on /patrimonio (PRD #539 S3, #543): a
- * present-time lens (never a snapshot/figure) over where the portfolio is
- * actually invested, computed by the S0 domain `lookThroughExposure` and handed
- * here already aggregated. It renders the geography breakdown (MSCI buckets)
- * behind a client lens toggle — full portfolio ↔ equity-only — with the
+ * The exposure look-through section on /patrimonio (PRD #539 S3, #543; sector:
+ * PRD #1018 S3, #1021): a present-time lens (never a snapshot/figure) over where
+ * the portfolio is actually invested, computed by the S0 domain
+ * `lookThroughExposure` and handed here already aggregated. It renders the
+ * geography breakdown (MSCI buckets) and the GICS-11 sector breakdown behind a
+ * single client lens toggle — full portfolio ↔ equity-only — each with the
  * three-way coverage split (classified / not-applicable / unknown) so an
  * `unknown` remainder is never hidden and crypto/cash reads as "no aplica", not
- * missing; plus the unhedged currency-risk readout. Only the geography block and
- * its coverage swap with the lens; currency risk is portfolio-level, shown once.
+ * missing. Sector is equity-scaled (ADR 0065) and carries a derived
+ * defensive/cyclical chip line; plus the unhedged currency-risk readout. Both
+ * breakdowns and their coverage swap with the lens; currency risk is
+ * portfolio-level, shown once (Variant A).
  */
 export default function ExposureSection({
   currentUrl,
@@ -61,16 +72,10 @@ export default function ExposureSection({
 
       <ExposureLensPanel
         all={
-          <GeographyBlock
-            geography={geographyForLens("all", full, equity)}
-            privacyMode={privacyMode}
-          />
+          <LensView equity={equity} full={full} lens="all" privacyMode={privacyMode} />
         }
         equity={
-          <GeographyBlock
-            geography={geographyForLens("equity", full, equity)}
-            privacyMode={privacyMode}
-          />
+          <LensView equity={equity} full={full} lens="equity" privacyMode={privacyMode} />
         }
         initialLens={initialLens}
         tabs={tabs}
@@ -98,6 +103,38 @@ export default function ExposureSection({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Everything that swaps with the lens (Variant A): the geography breakdown then
+ * the equity-scaled sector breakdown, each with its own three-way coverage, so
+ * one toggle re-renders both blocks together. The among-state (which
+ * pre-rendered breakdown a lens shows) is the pure `exposure-view` module.
+ */
+function LensView({
+  lens,
+  full,
+  equity,
+  privacyMode,
+}: {
+  lens: ExposureLens;
+  full: ExposureLookthrough;
+  equity: ExposureLookthrough;
+  privacyMode: boolean;
+}) {
+  return (
+    <>
+      <GeographyBlock
+        geography={geographyForLens(lens, full, equity)}
+        privacyMode={privacyMode}
+      />
+      <SectorBlock
+        privacyMode={privacyMode}
+        sector={sectorForLens(lens, full, equity)}
+        style={sectorStyleForLens(lens, full, equity)}
+      />
+    </>
   );
 }
 
@@ -136,6 +173,71 @@ function GeographyBlock({
 
       <dl className="exposureCoverage">
         {coverageParts(geography.coverage).map((part) => (
+          <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
+            <dt>{part.label}</dt>
+            <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * The equity-scaled sector breakdown for one lens (PRD #1018, ADR 0065): a
+ * derived defensive/cyclical chip line over a labelled bar per GICS-11 sector,
+ * plus the three-way coverage readout for THIS lens's sector. Titled "de la
+ * renta variable" because the vector is relative to the equity sleeve, not the
+ * whole fund. The chips are a derived lens — never a bar and never a bucket.
+ */
+function SectorBlock({
+  sector,
+  style,
+  privacyMode,
+}: {
+  sector: ExposureDimensionResult;
+  style: ExposureSectorStyle;
+  privacyMode: boolean;
+}) {
+  return (
+    <div className="exposureSector">
+      <h3 className="exposureSectorTitle">Por sector · de la renta variable</h3>
+
+      {/* The defensive/cyclical line only reads meaningfully over classified
+          slices; with none it would print "0 % · 0 %" above the empty note, so
+          it is suppressed alongside the empty state. */}
+      {sector.slices.length > 0 ? (
+        <ul className="exposureSectorStyle" aria-label="Estilo defensivo/cíclico">
+          {sectorStyleChips(style).map((chip) => (
+            <li className={`exposureStyleChip ${chip.kind}`} key={chip.kind}>
+              <span className="exposureStyleChipLabel">{chip.label}</span>
+              <b>{formatExposureWeight(chip.weight)}</b>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {sector.slices.length > 0 ? (
+        <ul className="exposureBars">
+          {sector.slices.map((slice) => (
+            <li className="exposureBar" key={slice.key}>
+              <span className="exposureBarLabel">{sectorLabel(slice.key)}</span>
+              <b>{formatMoneyMinorPrivacy(slice.value, privacyMode)}</b>
+              <span className="exposureBarShare">
+                {formatExposureWeight(slice.weight)}
+              </span>
+              <span className="exposureBarTrack" aria-hidden="true">
+                <i style={{ width: percentWidth(slice.weight) }} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="emptyLine">Sin exposición por sector clasificada.</p>
+      )}
+
+      <dl className="exposureCoverage">
+        {coverageParts(sector.coverage).map((part) => (
           <div className={`exposureCoveragePart ${part.kind}`} key={part.kind}>
             <dt>{part.label}</dt>
             <dd>{formatMoneyMinorPrivacy(part.value, privacyMode)}</dd>

@@ -34,7 +34,12 @@ const profiles = new Map<string, ExposureProfile>([
       source: "user",
       declaredAt: null,
       hedged: false,
-      breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } },
+      breakdowns: {
+        assetClass: { equity: "1" },
+        geography: { us: "1" },
+        // 60% cyclical (info tech) / 40% defensive (health care) of the equity sleeve.
+        sector: { health_care: "0.4", information_technology: "0.6" },
+      },
     },
   ],
   [
@@ -148,6 +153,47 @@ describe("ExposureSection", () => {
     expect(html).toContain('href="/patrimonio"');
     // The active 'all' lens is marked current (§8).
     expect(html).toMatch(/aria-current="true"[^>]*>Cartera completa/);
+  });
+
+  test("full-portfolio sector block shows the equity-scaled GICS breakdown", () => {
+    // US-EQ (60k, 100% equity) carries 60% info tech / 40% health care; the bond
+    // and crypto contribute no equity sleeve → sector classified = 60k.
+    expect(full.sector.slices.map((s) => s.key)).toEqual([
+      "information_technology",
+      "health_care",
+    ]);
+    expect(full.sector.coverage.classified.amountMinor).toBe(60_000);
+    expect(full.sector.coverage.notApplicable.amountMinor).toBe(40_000);
+    const html = render("all");
+    expect(html).toContain("Por sector · de la renta variable");
+    expect(html).toContain("Tecnología");
+    expect(html).toContain("Salud");
+    // 36.000 minor → 360 € (info tech) ; 24.000 minor → 240 € (health care).
+    expect(html).toContain("360");
+    expect(html).toContain("240");
+  });
+
+  test("defensive/cyclical chips render as a derived lens over the sector bars", () => {
+    // full sector-style over gross: defensive (health) 24k → 24 %, cyclical
+    // (info tech) 36k → 36 %; the uncovered remainder stays out of the chips.
+    expect(full.sectorStyle).toEqual({ cyclical: "0.36", defensive: "0.24" });
+    const html = render("all");
+    expect(html).toContain("Defensivo");
+    expect(html).toContain("Cíclico");
+    expect(html).toContain("24 %");
+    expect(html).toContain("36 %");
+  });
+
+  test("the lens toggle re-scales the sector block to the equity sleeve", () => {
+    // Equity lens drops the bond → sector base is the 60k equity sleeve, so the
+    // same vector reads 60 % / 40 % and the defensive chip climbs to 40 %.
+    expect(equity.sector.slices.map((s) => s.weight)).toEqual(["0.6", "0.4"]);
+    expect(equity.sectorStyle).toEqual({ cyclical: "0.6", defensive: "0.4" });
+    const html = render("equity");
+    expect(html).toContain("Por sector · de la renta variable");
+    expect(html).toContain("Tecnología");
+    expect(html).toContain("40 %");
+    expect(html).toContain("60 %");
   });
 
   test("currency-risk readout renders per-currency unhedged share", () => {

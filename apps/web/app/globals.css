@@ -5291,6 +5291,69 @@ td.rowActions > * {
   color: var(--gold);
 }
 
+/* Sector look-through (PRD #1018 S3, #1021), Variant A: a second breakdown block
+   under the same lens, separated from geography by a hairline. Equity-scaled, so
+   it carries the "de la renta variable" qualifier and a derived defensive/cyclical
+   chip line above its bars. Bars/coverage reuse the neutral exposure idiom. */
+.exposureSector {
+  margin-top: 20px;
+  border-top: 1px solid var(--hairline);
+  padding-top: 16px;
+}
+
+.exposureSectorTitle {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px;
+  text-transform: uppercase;
+}
+
+/* Defensive/cyclical markers: a derived lens, never a bar. Quiet square-cornered
+   tags (--radius-sm, the .btn/.segmented register — canon §5 forbids inertia
+   pills) so they read as a summary over the sector bars, not another figure
+   (design-system §4/§6): defensive leans on the calm --blue tint, cyclical stays
+   ink-neutral. */
+.exposureSectorStyle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.exposureStyleChip {
+  align-items: baseline;
+  background: rgba(23, 32, 30, 0.05);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.exposureStyleChipLabel {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.exposureStyleChip b {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.exposureStyleChip.defensive {
+  background: rgba(31, 77, 116, 0.1);
+}
+
+.exposureStyleChip.defensive .exposureStyleChipLabel {
+  color: var(--blue);
+}
+
 .exposureCurrencyRisk {
   margin-top: 20px;
   border-top: 1px solid var(--line);

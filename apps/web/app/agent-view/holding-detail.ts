@@ -403,6 +403,7 @@ function toExposureProfile(profile: ExposureProfile): AgentViewExposureProfile {
       ...(profile.breakdowns.assetClass
         ? { assetClass: profile.breakdowns.assetClass }
         : {}),
+      ...(profile.breakdowns.sector ? { sector: profile.breakdowns.sector } : {}),
     },
     hedged: profile.hedged ?? false,
     ter: profile.ter ?? null,
