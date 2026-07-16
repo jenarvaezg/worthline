@@ -5,6 +5,7 @@ import type {
   ExposureDimensionResult,
   ExposureGeographyBucket,
   ExposureLookthrough,
+  ExposureSectorBucket,
   MoneyMinor,
 } from "@worthline/domain";
 
@@ -61,6 +62,26 @@ export function assetClassLabel(key: string): string {
   return (
     ASSET_CLASS_LABELS[key as ExposureAssetClassBucket | "other" | "unclassified"] ?? key
   );
+}
+
+/** GICS-11 sector buckets → Spanish labels (mirrors the admin hand-entry form, S4). */
+const SECTOR_LABELS: Record<ExposureSectorBucket, string> = {
+  communication_services: "Servicios de comunicación",
+  consumer_discretionary: "Consumo discrecional",
+  consumer_staples: "Consumo básico",
+  energy: "Energía",
+  financials: "Financiero",
+  health_care: "Salud",
+  industrials: "Industria",
+  information_technology: "Tecnología",
+  materials: "Materiales",
+  real_estate: "Inmobiliario",
+  utilities: "Servicios públicos",
+};
+
+/** The Spanish label for a sector slice key, or the raw key if unrecognised. */
+export function sectorLabel(key: string): string {
+  return SECTOR_LABELS[key as ExposureSectorBucket] ?? key;
 }
 
 /**

@@ -324,12 +324,17 @@ export type {
   ExposureAssetClassBucket,
   ExposureDimension,
   ExposureGeographyBucket,
+  ExposureSectorBucket,
 } from "./exposure-taxonomy";
 export {
   EXPOSURE_ASSET_CLASS_BUCKETS,
   EXPOSURE_ASSET_CLASS_LABELS,
+  EXPOSURE_DEFENSIVE_SECTORS,
   EXPOSURE_GEOGRAPHY_BUCKETS,
   EXPOSURE_GEOGRAPHY_LABELS,
+  EXPOSURE_SECTOR_BUCKETS,
+  EXPOSURE_SECTOR_LABELS,
+  sectorStyleSplit,
 } from "./exposure-taxonomy";
 export type { FireResult, FireScopeConfig } from "./fire";
 export {

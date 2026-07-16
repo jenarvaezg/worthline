@@ -5,6 +5,7 @@ import type {
   ExposureAssetClassBucket,
   ExposureDimension,
   ExposureGeographyBucket,
+  ExposureSectorBucket,
 } from "./exposure-taxonomy";
 import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
@@ -19,6 +20,12 @@ export interface ExposureBreakdowns {
   geography?: Partial<Record<ExposureGeographyBucket, DecimalString>>;
   currency?: Breakdown;
   assetClass?: Partial<Record<ExposureAssetClassBucket, DecimalString>>;
+  /**
+   * Sector vector relative to the holding's equity sleeve (sums ≤ 1 over the
+   * equity part, not whole-fund — ADR 0065). The engine scales it by the
+   * derived equity weight in S2; here it is storage only.
+   */
+  sector?: Partial<Record<ExposureSectorBucket, DecimalString>>;
 }
 
 export interface ExposureProfile {
