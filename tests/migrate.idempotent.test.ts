@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { schemaSql } from "@db/schema-sql";
 import type { Client } from "@libsql/client";
 
-import { openLibsqlClient, SCHEMA_VERSION, withStore } from "@worthline/db";
+import { openLibsqlClient, SCHEMA_VERSION, withStoreUnsafe } from "@worthline/db";
 import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
@@ -61,7 +61,7 @@ describe("migrate idempotency", () => {
   test("opening an already-migrated database twice does not throw", async () => {
     const databasePath = tempDatabasePath();
 
-    await withStore(
+    await withStoreUnsafe(
       async (store) => {
         await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
@@ -72,7 +72,7 @@ describe("migrate idempotency", () => {
     );
 
     await expect(
-      withStore(async (store) => (await store.workspace.readWorkspace())?.mode, {
+      withStoreUnsafe(async (store) => (await store.workspace.readWorkspace())?.mode, {
         databasePath,
       }),
     ).resolves.not.toThrow();
@@ -88,7 +88,9 @@ describe("migrate idempotency", () => {
     legacy.close();
 
     await expect(
-      withStore(async (store) => await store.workspace.readWorkspace(), { databasePath }),
+      withStoreUnsafe(async (store) => await store.workspace.readWorkspace(), {
+        databasePath,
+      }),
     ).resolves.not.toThrow();
   });
 
@@ -100,7 +102,9 @@ describe("migrate idempotency", () => {
     pushed.close();
 
     await expect(
-      withStore(async (store) => await store.workspace.readWorkspace(), { databasePath }),
+      withStoreUnsafe(async (store) => await store.workspace.readWorkspace(), {
+        databasePath,
+      }),
     ).resolves.not.toThrow();
   });
 });
@@ -109,7 +113,7 @@ describe("fresh database", () => {
   test("creates all tables with correct columns", async () => {
     const databasePath = tempDatabasePath();
 
-    await withStore(
+    await withStoreUnsafe(
       async (store) => {
         await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
@@ -195,7 +199,7 @@ describe("forward migration from v2", () => {
     await v2.execute("PRAGMA user_version = 2");
     v2.close();
 
-    await withStore(
+    await withStoreUnsafe(
       async (store) => {
         expect(await store.workspace.readWorkspace()).toBeNull();
       },
@@ -256,7 +260,7 @@ describe("forward migration from v3", () => {
     await v3.execute("PRAGMA user_version = 3");
     v3.close();
 
-    await withStore(
+    await withStoreUnsafe(
       async (store) => {
         expect(await store.workspace.readWorkspace()).toBeNull();
       },

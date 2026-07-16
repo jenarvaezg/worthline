@@ -1,4 +1,4 @@
-import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStoreUnsafe } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
 /** ETF symbol the benchmark journey (#40) creates — catalog row seeded here. */
@@ -25,7 +25,7 @@ export default async function globalSetup(): Promise<void> {
   });
   controlPlane.close();
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
 
   await store.workspace.initializeWorkspace({
     mode: "household",

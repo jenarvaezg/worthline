@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getSourceFreshness } from "@web/api/v1/agent-view/connected-sources/[sourceId]/freshness/route";
 import { GET as listSources } from "@web/api/v1/agent-view/connected-sources/route";
 import type { SourcePositionInput } from "@worthline/db";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -117,7 +117,7 @@ async function seedSources(): Promise<void> {
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",

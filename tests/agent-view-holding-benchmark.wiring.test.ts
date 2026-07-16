@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStoreUnsafe } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -84,7 +84,7 @@ async function seedBenchmarkHolding(controlPlanePath: string): Promise<void> {
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
   process.env.WORTHLINE_CONTROL_PLANE_DB_URL = `file:${controlPlanePath}`;
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -246,7 +246,7 @@ describe("get_holding_detail — vsBenchmark (#626)", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",

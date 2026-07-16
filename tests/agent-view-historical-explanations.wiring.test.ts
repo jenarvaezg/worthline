@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getFigureExplanation } from "@web/api/v1/agent-view/scopes/[scopeId]/figure-explanations/[figure]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import {
   captureNetWorthSnapshot,
   captureValuedNetWorthSnapshot,
@@ -74,7 +74,7 @@ async function holdingPublicId(
   databasePath: string,
   internalId: string,
 ): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const publicId = (await store.agentView.readPublicIds()).find(
     (row) => row.entityType === "holding" && row.entityId === internalId,
   )!.publicId;
@@ -85,7 +85,7 @@ async function holdingPublicId(
 // A fingerprint of every mutation-prone read, to prove a historical explanation
 // read writes nothing (no snapshots, frozen rows, price cache, public IDs, …).
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
     fireConfig: await store.readFireConfig(),
@@ -139,7 +139,7 @@ async function seedHistorical(prefix = "worthline-agent-view-histexp-"): Promise
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -410,7 +410,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
     const scopeId = await householdScopeId();
     // Create a NEW asset after the snapshots so it has a public id but no frozen
     // row at D1.
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.assets.createManualAsset({
       currency: "EUR",
       currentValueMinor: 1_000_00,
@@ -476,7 +476,7 @@ describe("GET figure-explanations/{figure}?date= (historical, PRD #328 #344)", (
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },

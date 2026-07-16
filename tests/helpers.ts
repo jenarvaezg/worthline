@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createWorthlineStore, type WorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe, type WorthlineStore } from "@worthline/db";
 
 export function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
   return fn().then(
@@ -45,7 +45,7 @@ export function createFileBackedStore(
   const dataDir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dataDir);
 
-  return createWorthlineStore({
+  return createWorthlineStoreUnsafe({
     databasePath: join(dataDir, "worthline.sqlite"),
   });
 }

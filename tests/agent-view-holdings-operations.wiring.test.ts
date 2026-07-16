@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getOperations } from "@web/api/v1/agent-view/holdings/[holdingId]/operations/route";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -103,7 +103,7 @@ async function seedPortfolio(): Promise<void> {
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -337,7 +337,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -653,7 +653,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/operations", () => {
 // A fingerprint of every mutation-prone read, to prove an agent read writes
 // nothing (no operations rewritten, no price cache, no public IDs, no holdings).
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
     liabilities: await store.liabilities.readLiabilities(),

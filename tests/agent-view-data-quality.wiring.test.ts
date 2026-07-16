@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getDataQuality } from "@web/api/v1/agent-view/scopes/[scopeId]/data-quality/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -86,7 +86,7 @@ async function signals(scopeId: string, query = ""): Promise<Signal[]> {
 // A fingerprint of every mutation-prone read, including the warning overrides, to
 // prove a data-quality read writes nothing — and crucially, NO override.
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
@@ -163,7 +163,7 @@ async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<s
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -345,7 +345,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -482,7 +482,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",

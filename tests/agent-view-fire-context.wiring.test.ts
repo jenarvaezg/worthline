@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getFireContext } from "@web/api/v1/agent-view/scopes/[scopeId]/fire-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import type { FireScopeConfig } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -92,7 +92,7 @@ function eur(amountMinor: number) {
 // A fingerprint of every mutation-prone read, including the FIRE config, to
 // prove a FIRE read writes nothing.
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
     fireConfig: await store.readFireConfig(),
@@ -153,7 +153,7 @@ async function seedConfiguredHousehold(
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -208,7 +208,7 @@ async function holdingPublicId(
   databasePath: string,
   internalId: string,
 ): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const publicId = (await store.agentView.readPublicIds()).find(
     (row) => row.entityType === "holding" && row.entityId === internalId,
   )!.publicId;
@@ -281,7 +281,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -316,7 +316,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
@@ -465,7 +465,7 @@ describe("main financial context FIRE summary (#340)", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",

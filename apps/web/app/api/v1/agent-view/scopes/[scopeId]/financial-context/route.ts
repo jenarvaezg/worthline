@@ -1,5 +1,5 @@
 import { handleGetFinancialContext } from "@web/agent-view/http";
-import { withStore } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export async function GET(
   { params }: { params: Promise<{ scopeId: string }> },
 ): Promise<NextResponse> {
   const { scopeId } = await params;
-  return handleGetFinancialContext(request, scopeId, withStore);
+  return handleGetFinancialContext(request, scopeId, withStoreUnsafe);
 }

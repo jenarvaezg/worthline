@@ -2,7 +2,7 @@ import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import {
   createControlPlaneStore,
-  createWorthlineStore,
+  createWorthlineStoreUnsafe,
   type DailyCaptureFetchedPrice,
   type RunDailyCaptureDeps,
 } from "@worthline/db";
@@ -99,7 +99,7 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
       }
     },
     openStore: (workspace) =>
-      createWorthlineStore({
+      createWorthlineStoreUnsafe({
         url: workspace.dbUrl,
         ...(groupToken ? { authToken: groupToken } : {}),
       }),

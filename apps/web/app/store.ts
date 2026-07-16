@@ -10,43 +10,35 @@
  * lives in one seam rather than scattered across pages.
  */
 
-import { demoAsOfDateKey, demoNowDate } from "@web/demo/demo-clock";
-import { getDemoStore } from "@web/demo/store-provider";
-import {
-  createWorthlineStore,
-  runBootstrapHealthcheck,
-  type WorthlineStore,
-} from "@worthline/db";
+import { demoNowDate } from "@web/demo/demo-clock";
+import { runBootstrapHealthcheck, type WorthlineStore } from "@worthline/db";
 import type { LocalPersistenceStatus } from "@worthline/domain";
 
-import { perfEnd, perfStart } from "./perf-log";
+import { openAuthorizedStore, type Principal, withAuthorizedStore } from "./principal";
 import { readStoreTarget } from "./read-store-target";
 import type { StoreTarget } from "./store-resolver";
 
 // Re-exported so request-scoped callers (pages, server actions) import both the
 // store opener and its type from this seam — never from `@worthline/db` directly,
-// whose `withStore` defaults to the local file path (ENOENT on Vercel's read-only
-// FS) instead of resolving the authenticated workspace / demo target (ADR 0030).
+// whose `withStoreUnsafe` defaults to the local file path (ENOENT on Vercel's
+// read-only FS) instead of resolving the authenticated workspace / demo target
+// (ADR 0030), and — more importantly — opens with no principal at all (#998 S1).
 export type { WorthlineStore } from "@worthline/db";
 
-function assertReachable(target: StoreTarget): void {
+/**
+ * Narrow a resolved target to a {@link Principal} (authenticated | demo | local),
+ * throwing when the request carried no principal. `openStore`/`withStore` accept
+ * an optional target for back-compat, so this is where the request-scoped path
+ * refuses `unauthenticated` before handing a typed principal to the port; the
+ * port itself cannot even be called with `unauthenticated` (it is not a
+ * `Principal`), so there is no code path to a store without one (#998 S1).
+ */
+function assertReachable(
+  target: StoreTarget,
+): asserts target is Exclude<StoreTarget, { kind: "unauthenticated" }> {
   if (target.kind === "unauthenticated") {
     throw new Error("Store opened without authentication");
   }
-}
-
-/**
- * Wrap the shared demo store so `withStore`'s close-after-use cannot tear down
- * the cached instance; it lives for the process and is reused across warm
- * requests (#616, see {@link getDemoStore}). Reads/writes pass straight through.
- */
-function withNoopClose(store: WorthlineStore): WorthlineStore {
-  return new Proxy(store, {
-    get(target, prop, receiver) {
-      if (prop === "close") return () => {};
-      return Reflect.get(target, prop, receiver);
-    },
-  });
 }
 
 /** Synthesize the persistence status for the demo (no real connection to probe). */
@@ -116,24 +108,21 @@ export async function bootstrapHealthcheck(
   return runBootstrapHealthcheck();
 }
 
-/** Open a store. Caller owns the lifecycle (must call `store.close()`). */
-export async function openStore(target?: StoreTarget): Promise<WorthlineStore> {
+/**
+ * Resolve the request's principal (or use the one passed explicitly), refusing
+ * an unauthenticated request. This is the request-scoped adapter in front of
+ * the authorization port: every RSC read/write reaches a workspace store only
+ * by producing a {@link Principal} here first.
+ */
+async function requirePrincipal(target?: StoreTarget): Promise<Principal> {
   const resolved = target ?? (await readStoreTarget());
   assertReachable(resolved);
+  return resolved;
+}
 
-  if (resolved.kind === "authenticated") {
-    return createWorthlineStore({
-      authToken: resolved.token,
-      url: resolved.dbUrl,
-    });
-  }
-
-  if (resolved.kind === "demo") {
-    const store = await getDemoStore(resolved.persona, demoAsOfDateKey(resolved.now));
-    return withNoopClose(store);
-  }
-
-  return createWorthlineStore();
+/** Open a store. Caller owns the lifecycle (must call `store.close()`). */
+export async function openStore(target?: StoreTarget): Promise<WorthlineStore> {
+  return openAuthorizedStore(await requirePrincipal(target));
 }
 
 /** Run a unit of work against a freshly opened store, always closing it after. */
@@ -142,12 +131,5 @@ export async function withStore<T>(
   target?: StoreTarget,
   label = "store",
 ): Promise<T> {
-  const startedAt = perfStart();
-  const store = await openStore(target);
-  try {
-    return await run(store);
-  } finally {
-    store.close();
-    perfEnd(label, startedAt);
-  }
+  return withAuthorizedStore(await requirePrincipal(target), run, label);
 }

@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getFigureExplanation } from "@web/api/v1/agent-view/scopes/[scopeId]/figure-explanations/[figure]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -74,7 +74,7 @@ function eur(amountMinor: number) {
 // A fingerprint of every mutation-prone read, to prove an explanation read
 // writes nothing (no snapshots, price cache, public IDs, holdings, FIRE config).
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
     fireConfig: await store.readFireConfig(),
@@ -121,7 +121,7 @@ async function holdingPublicId(
   databasePath: string,
   internalId: string,
 ): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const publicId = (await store.agentView.readPublicIds()).find(
     (row) => row.entityType === "holding" && row.entityId === internalId,
   )!.publicId;
@@ -136,7 +136,7 @@ async function seedHousehold(prefix = "worthline-agent-view-figexp-"): Promise<s
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -213,7 +213,7 @@ async function seedFireHousehold(
   prefix = "worthline-agent-view-figexp-fire-",
 ): Promise<string> {
   const databasePath = await seedHousehold(prefix);
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.saveFireConfig("household", {
     ...CONFIGURED,
     excludedAssetIds: ["asset_watch"],
@@ -437,7 +437,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [{ id: "group_x", memberIds: ["member_ana"], name: "Solo Ana" }],
       members: [
@@ -566,7 +566,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -609,7 +609,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -689,7 +689,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },

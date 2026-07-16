@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -77,12 +77,14 @@ async function holdingIdByLabel(scopeId: string, label: string): Promise<string>
 const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
 
 /** Open a fresh store against a temp DB and initialize a single-member household. */
-async function freshStore(): Promise<Awaited<ReturnType<typeof createWorthlineStore>>> {
+async function freshStore(): Promise<
+  Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>
+> {
   const databasePath = tempDatabasePath("worthline-agent-view-facts-");
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -626,7 +628,7 @@ describe("get_holding_detail — facts parity & no mutation (#338)", () => {
 // A fingerprint of every dated calculation fact, to prove an agent read writes
 // nothing (no anchors, plans, revisions, repayments, or balance anchors changed).
 async function factsFingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     amortizationPlan: await store.liabilities.readAmortizationPlan("liab_mortgage"),
     balanceAnchors: await store.liabilities.readBalanceAnchors("liab_card"),

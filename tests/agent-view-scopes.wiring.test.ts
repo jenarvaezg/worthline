@@ -1,5 +1,5 @@
 import { GET } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore, openLibsqlClient } from "@worthline/db";
+import { createWorthlineStoreUnsafe, openLibsqlClient } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -36,7 +36,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [
         {
@@ -132,7 +132,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     const targetPath = tempDatabasePath("worthline-agent-view-target-");
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const source = await createWorthlineStore({ databasePath: sourcePath });
+    const source = await createWorthlineStoreUnsafe({ databasePath: sourcePath });
     await source.workspace.initializeWorkspace({
       groups: [{ id: "scope_family", memberIds: ["member_ana"], name: "Familia" }],
       members: [{ id: "member_ana", name: "Ana" }],
@@ -144,7 +144,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     process.env.WORTHLINE_DB_PATH = sourcePath;
     const before = await (await GET(request())).json();
 
-    const target = await createWorthlineStore({ databasePath: targetPath });
+    const target = await createWorthlineStoreUnsafe({ databasePath: targetPath });
     await target.workspace.importWorkspace(exported);
     target.close();
 
@@ -159,7 +159,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     const targetPath = tempDatabasePath("worthline-agent-view-legacy-target-");
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const source = await createWorthlineStore({ databasePath: sourcePath });
+    const source = await createWorthlineStoreUnsafe({ databasePath: sourcePath });
     await source.workspace.initializeWorkspace({
       groups: [{ id: "scope_family", memberIds: ["member_ana"], name: "Familia" }],
       members: [{ id: "member_ana", name: "Ana" }],
@@ -172,7 +172,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     // read path never 500s on a freshly restored legacy workspace.
     const legacy = { ...exported, publicIds: [] };
 
-    const target = await createWorthlineStore({ databasePath: targetPath });
+    const target = await createWorthlineStoreUnsafe({ databasePath: targetPath });
     await target.workspace.importWorkspace(legacy);
     target.close();
 
@@ -280,7 +280,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",
@@ -297,7 +297,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
     const response = await GET(request());
 
     expect(response.status).toBe(500);
-    const reopened = await createWorthlineStore({ databasePath });
+    const reopened = await createWorthlineStoreUnsafe({ databasePath });
     expect(
       (await reopened.agentView.readPublicIds()).some(
         (row) => row.entityType === "scope" && row.entityId === "household",
@@ -308,7 +308,7 @@ describe("GET /api/v1/agent-view/scopes", () => {
 
   test("does not export public IDs for hard-deleted members", async () => {
     const databasePath = tempDatabasePath("worthline-agent-view-stale-public-id-");
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "household",

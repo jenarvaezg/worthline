@@ -1,5 +1,5 @@
 import { handleGetHoldingOperations } from "@web/agent-view/http";
-import { withStore } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export async function GET(
   { params }: { params: Promise<{ holdingId: string }> },
 ): Promise<NextResponse> {
   const { holdingId } = await params;
-  return handleGetHoldingOperations(request, holdingId, withStore);
+  return handleGetHoldingOperations(request, holdingId, withStoreUnsafe);
 }
