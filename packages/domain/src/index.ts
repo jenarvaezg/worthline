@@ -316,6 +316,7 @@ export type {
   ExposureLookthroughHolding,
   ExposureLookthroughInput,
   ExposureProfile,
+  ExposureSectorStyle,
 } from "./exposure-lookthrough";
 export {
   INVESTMENT_PROFILE_INSTRUMENTS,
