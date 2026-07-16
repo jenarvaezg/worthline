@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { deriveScreenContext, isScreenContext } from "./screen-context";
+import {
+  deriveScreenContext,
+  isAssistantSurface,
+  isScreenContext,
+} from "./screen-context";
+
+describe("isAssistantSurface", () => {
+  it("excludes the public landing", () => {
+    expect(isAssistantSurface("/")).toBe(false);
+  });
+
+  it("allows workspace routes", () => {
+    expect(isAssistantSurface("/app")).toBe(true);
+    expect(isAssistantSurface("/patrimonio")).toBe(true);
+  });
+});
 
 describe("deriveScreenContext", () => {
   it("maps the dashboard to resumen", () => {

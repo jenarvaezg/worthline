@@ -70,6 +70,11 @@ export function isScreenContext(value: unknown): value is ScreenContext {
 const SECTIONS = ["patrimonio", "historico", "objetivos", "ajustes"] as const;
 const VIEW_KEYS = ["view", "range", "exp", "hide"];
 
+/** The public landing at `/` is marketing-only — no assistant layer or chat turns. */
+export function isAssistantSurface(pathname: string): boolean {
+  return pathname !== "/";
+}
+
 export function deriveScreenContext(pathname: string, search: string): ScreenContext {
   const seg = pathname.split("/").filter(Boolean);
   const section: ScreenSection =

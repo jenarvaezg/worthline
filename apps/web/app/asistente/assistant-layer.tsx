@@ -15,6 +15,7 @@ import {
 } from "react";
 import {
   parseBalanceHistoryProposal,
+  parseCorrectionProposal,
   parseMixedDocumentProposal,
   parsePropertyValuationProposal,
   parseQuickActions,
@@ -29,6 +30,11 @@ import AttachmentExtractionPreview from "./attachment-extraction-preview";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
+import {
+  confirmCorrectionProposalAction,
+  discardCorrectionProposalAction,
+} from "./correction-proposal-action";
+import type { CorrectionProposal } from "./correction-proposal-contract";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import {
@@ -36,7 +42,11 @@ import {
   discardPropertyValuationProposalAction,
 } from "./property-valuation-proposal-action";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
-import { deriveScreenContext, type ScreenSection } from "./screen-context";
+import {
+  deriveScreenContext,
+  isAssistantSurface,
+  type ScreenSection,
+} from "./screen-context";
 import {
   confirmStatementImportProposalAction,
   discardStatementImportProposalAction,
@@ -380,6 +390,104 @@ function StatementProposalCard({
   );
 }
 
+/** The guarantee sentence of superficie C «Ancla primero», by gate state. */
+function guaranteeMessage(state: CorrectionProposal["guarantee"]["state"]): string {
+  switch (state) {
+    case "declared":
+      return "Hecho declarado por ti — la historia anterior queda intacta.";
+    case "reconciled":
+      return "Reconciliado con el saldo conocido.";
+    case "mismatch":
+      return "No cuadra con el saldo conocido — revisa los puntos.";
+    case "unverified":
+      return "No verificado — revisa cada punto antes de confirmar.";
+  }
+}
+
+function CorrectionProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: CorrectionProposal;
+}) {
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmCorrectionProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+  const verified =
+    proposal.guarantee.state === "declared" || proposal.guarantee.state === "reconciled";
+  const settled = result?.status === "applied" || result?.status === "discarded";
+  const actionsDisabled = pending || mutationsDisabled || settled;
+  return (
+    <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
+      <p className="assistantProposalKind">Corrección · Solo desde hoy</p>
+      <strong>{proposal.summary}</strong>
+      {/* Superficie C: the guarantee leads; the point-by-point diff follows. */}
+      <p className={verified ? "assistantOk" : "assistantError"}>
+        {guaranteeMessage(proposal.guarantee.state)}
+      </p>
+      <ul>
+        {proposal.edits.map((edit, index) => (
+          <li key={`${edit.label}-${index}`}>
+            <span>{edit.label}</span>{" "}
+            <span>
+              {edit.before} → {edit.after}
+            </span>
+            <span>
+              {edit.origin === "user" ? "Corregido por ti" : "Propuesto por el asistente"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="assistantProposalFolio">{proposal.folio}</p>
+      {result ? (
+        <p
+          aria-live="polite"
+          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          role="status"
+        >
+          {result.status === "applied"
+            ? "Corrección aplicada."
+            : result.status === "discarded"
+              ? "Propuesta descartada."
+              : result.message}
+        </p>
+      ) : mutationsDisabled ? (
+        <p className="assistantError">{mutationsDisabledMessage}</p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={actionsDisabled || !verified}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await confirmCorrectionProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          {pending ? "Guardando…" : "Confirmar"}
+        </button>
+        <button
+          className="secondary"
+          disabled={actionsDisabled}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await discardCorrectionProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BalanceHistoryProposalCard({
   mutationsDisabled,
   mutationsDisabledMessage,
@@ -635,6 +743,10 @@ export default function AssistantLayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [close, open]);
 
+  useEffect(() => {
+    if (!isAssistantSurface(pathname) && open) setOpen(false);
+  }, [open, pathname]);
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const text = draft.trim();
@@ -648,6 +760,10 @@ export default function AssistantLayer({
     );
     setDraft("");
     setAttachment(null);
+  }
+
+  if (!isAssistantSurface(pathname)) {
+    return null;
   }
 
   if (!open) {
@@ -727,6 +843,17 @@ export default function AssistantLayer({
                   const proposal = parseStatementImportProposal(part.output);
                   return proposal ? (
                     <StatementProposalCard
+                      key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
+                      proposal={proposal}
+                    />
+                  ) : null;
+                }
+                if (name === "propose_correction" && "output" in part) {
+                  const proposal = parseCorrectionProposal(part.output);
+                  return proposal ? (
+                    <CorrectionProposalCard
                       key={`${message.id}-${i}`}
                       mutationsDisabled={mutationsDisabled}
                       mutationsDisabledMessage={mutationsDisabledMessage}

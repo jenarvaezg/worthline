@@ -34,6 +34,7 @@ export type {
   AddEarlyRepaymentCommand,
   AddInterestRateRevisionCommand,
   AddValuationAnchorCommand,
+  ChangeDebtModelCommand,
   CommandExecutor,
   CommandHost,
   CommandResult,
@@ -67,6 +68,7 @@ export {
   executeAddEarlyRepaymentCommand,
   executeAddInterestRateRevisionCommand,
   executeAddValuationAnchorCommand,
+  executeChangeDebtModelCommand,
   executeCreateAmortizationPlanCommand,
   executeCreateCurrentStateDebtCommand,
   executeDeleteAmortizationPlanCommand,
@@ -199,6 +201,7 @@ export type {
   AssistantProposalDocumentRef,
   AssistantProposalFact,
   AssistantProposalStore,
+  HoldingCorrectionFact,
   PropertyValuationAnchorFact,
   StatementOperationFact,
 } from "./assistant-proposal-store";
@@ -210,6 +213,14 @@ export type {
   SourcePositionInput,
   ValuationFreshness,
 } from "./connected-source-store";
+export type {
+  CorrectionBeforeMoney,
+  CorrectionEdit,
+  CorrectionEditKind,
+  CorrectionMode,
+  CorrectionPlan,
+  CorrectionRevalidation,
+} from "./correction-plan";
 export type {
   AddBalanceAnchorInput,
   AddBalanceRebaselineInput,
@@ -389,6 +400,7 @@ async function buildStore(
       connectedSources: connectedSourceSeams,
       datedFacts: datedFactCommands,
       factPersistence: { addBalanceRebaseline: liabilityStore.addBalanceRebaseline },
+      liabilityReads: { debtBalanceAtDate: liabilityStore.debtBalanceAtDate },
       snapshotOrchestrator,
     },
   );

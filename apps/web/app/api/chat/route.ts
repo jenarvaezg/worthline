@@ -23,7 +23,11 @@ import {
 } from "@web/asistente/provider-failover";
 import { chatRatePlan, chatRateWindow } from "@web/asistente/rate-limit";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
-import { isScreenContext, type ScreenContext } from "@web/asistente/screen-context";
+import {
+  isAssistantSurface,
+  isScreenContext,
+  type ScreenContext,
+} from "@web/asistente/screen-context";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
@@ -228,6 +232,10 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { attachment, body } = input;
 
+  if (body.screenContext && !isAssistantSurface(body.screenContext.route)) {
+    return jsonError("invalid_surface", 403);
+  }
+
   let currentPreview: AttachmentPreviewData | null = null;
   if (attachment) {
     const fileName = attachment.name.trim();
@@ -301,6 +309,7 @@ export async function POST(request: Request): Promise<Response> {
         (store) =>
           run({
             agentView: store.agentView,
+            assets: store.assets,
             assistantProposals: store.assistantProposals,
             liabilities: store.liabilities,
           }),

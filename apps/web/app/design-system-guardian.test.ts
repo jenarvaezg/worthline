@@ -505,8 +505,9 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     // Each proposal states its kind through the shared folio label (the first
     // real child is the srOnly mutation status, so the title carries its class).
+    // Five kinds: statement, correction (#1051), balance-history, valuation, mixed.
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
-    expect(kindTitles.length).toBe(4);
+    expect(kindTitles.length).toBe(5);
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {

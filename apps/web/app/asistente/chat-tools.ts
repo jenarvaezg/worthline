@@ -35,6 +35,10 @@ import {
 } from "@web/asistente/assistant-actions";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
 import {
+  buildCorrectionProposal,
+  type CorrectionInput,
+} from "@web/asistente/correction-proposals";
+import {
   buildMaintainerAlertPayload,
   isMaintainerAlertCategory,
   type MaintainerAlertDeclaredFigure,
@@ -305,6 +309,78 @@ const BALANCE_HISTORY_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["liabilityId", "rows"],
+  additionalProperties: false,
+});
+
+const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
+  holdingId?: string;
+  summary?: string;
+  correction?: {
+    kind?: string;
+    balanceMinor?: number;
+    valueMinor?: number;
+    date?: string;
+    endDate?: string;
+    monthlyPaymentMinor?: number;
+    annualRate?: string;
+    debtModel?: string;
+    name?: string;
+    ownership?: Array<{ memberId: string; shareBps: number }>;
+    cadence?: string | null;
+    plan?: {
+      annualInterestRate?: string;
+      termMonths?: number;
+      firstPaymentDate?: string;
+    };
+  };
+}>({
+  type: "object",
+  properties: {
+    holdingId: { type: "string" },
+    summary: { type: "string" },
+    correction: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["declare_balance", "declare_value", "change_debt_model", "edit_config"],
+        },
+        balanceMinor: { type: "number" },
+        valueMinor: { type: "number" },
+        date: { type: "string" },
+        endDate: { type: "string" },
+        monthlyPaymentMinor: { type: "number" },
+        annualRate: { type: "string" },
+        debtModel: { type: "string", enum: ["amortizable", "revolving", "informal"] },
+        name: { type: "string" },
+        ownership: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              memberId: { type: "string" },
+              shareBps: { type: "number" },
+            },
+            required: ["memberId", "shareBps"],
+            additionalProperties: false,
+          },
+        },
+        cadence: { type: ["string", "null"], enum: ["step", "interpolated", null] },
+        plan: {
+          type: "object",
+          properties: {
+            annualInterestRate: { type: "string" },
+            termMonths: { type: "number" },
+            firstPaymentDate: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+  },
+  required: ["holdingId", "correction"],
   additionalProperties: false,
 });
 
@@ -1136,6 +1212,42 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           const built = await buildPropertyValuationProposal(
             { assistantProposals: store.assistantProposals, assets: store.assets },
             { ...args, assetId },
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_correction: tool({
+      description:
+        "Prepara una propuesta de CORRECCIÓN «Solo desde hoy» para UN holding mal modelado (holdingId es el public id wl_hld_… de las tools de lectura). Úsala solo tras leer get_calculation_trace y normalizar la magnitud citada (principal vs «total pendiente» con devengo). Radio: una propuesta = un holding. " +
+        "correction.kind: 'declare_balance' (deuda: declara el saldo real hoy; en amortizable envía endDate y exactamente uno de annualRate o monthlyPaymentMinor → re-baseline ADR 0056; en revolving/informal → balance anchor), " +
+        "'declare_value' (activo: valueMinor real de hoy → valuation anchor), " +
+        "'change_debt_model' (debtModel destino cuando el modelo era el error), " +
+        "'edit_config' (name, ownership, cadence, o plan.{annualInterestRate,termMonths,firstPaymentDate}). " +
+        "No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Split, alta o baja → wizard o papelera, no esta tool.",
+      inputSchema: CORRECTION_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.liabilities || !store.assets) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          if (!args.correction?.kind) return { error: "correction_kind_required" };
+          const internalId = await resolveInternalHoldingId(
+            store.agentView,
+            args.holdingId ?? "",
+          );
+          const built = await buildCorrectionProposal(
+            {
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+            },
+            {
+              correction: args.correction as unknown as CorrectionInput,
+              holdingId: internalId,
+              publicHoldingId: args.holdingId ?? "",
+              ...(args.summary === undefined ? {} : { summary: args.summary }),
+            },
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
