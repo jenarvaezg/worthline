@@ -10,11 +10,13 @@ import { join } from "node:path";
 import type { Goal } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
-import { createWorthlineStore } from "./index";
+import { createWorthlineStoreUnsafe } from "./index";
 
-async function freshStore(): Promise<Awaited<ReturnType<typeof createWorthlineStore>>> {
+async function freshStore(): Promise<
+  Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>
+> {
   const dbPath = join(mkdtempSync(join(tmpdir(), "wl-goal-")), "w.sqlite");
-  const store = await createWorthlineStore({ databasePath: dbPath });
+  const store = await createWorthlineStoreUnsafe({ databasePath: dbPath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Uno" }],
     mode: "individual",

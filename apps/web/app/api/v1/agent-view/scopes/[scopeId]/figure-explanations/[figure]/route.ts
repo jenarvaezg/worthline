@@ -1,5 +1,5 @@
 import { handleExplainFigure } from "@web/agent-view/http";
-import { withStore } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db";
 import type { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -10,5 +10,5 @@ export async function GET(
   { params }: { params: Promise<{ scopeId: string; figure: string }> },
 ): Promise<NextResponse> {
   const { figure, scopeId } = await params;
-  return handleExplainFigure(request, scopeId, figure, withStore);
+  return handleExplainFigure(request, scopeId, figure, withStoreUnsafe);
 }

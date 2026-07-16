@@ -270,7 +270,7 @@ export type {
  *
  * Each call produces an independent, isolated database — parallel tests are
  * safe and no files are left behind.  Callers must call store.close() when done
- * (or use withStore with the store directly).
+ * (or use withStoreUnsafe with the store directly).
  */
 export async function createInMemoryStore(): Promise<WorthlineStore> {
   const client = openLibsqlClient(":memory:");
@@ -283,14 +283,27 @@ export async function createInMemoryStore(): Promise<WorthlineStore> {
  * ladder (and any post-migrate re-ripples) on it. Useful in tests that seed a
  * legacy-schema database and then need to verify the store behaves correctly
  * after migration — without going through the file-path lifecycle of
- * `createWorthlineStore`.
+ * `createWorthlineStoreUnsafe`.
  */
 export async function createStoreFromSqlite(client: Client): Promise<WorthlineStore> {
   const migrateResult = await migrate(client);
   return buildStore(client, migrateResult);
 }
 
-export async function createWorthlineStore(
+/**
+ * The RAW workspace-store opener. It resolves whatever database the options (or
+ * env) point at — an authenticated workspace URL, or the local file path when
+ * unspecified — with NO authorization. The `Unsafe` suffix is deliberate: a
+ * request surface (RSC/REST/MCP) must never import this by accident, because it
+ * ignores the caller's principal entirely (PRD #998 S1, decision #892).
+ *
+ * The web authorization port (`apps/web/app/principal.ts`, `withAuthorizedStore`)
+ * is the RSC surface's only wrapper of this opener. Non-request callers that
+ * legitimately bring their own coordinates — cron, scripts, migrations, tests —
+ * still call it directly today; PRD #998's later slices route the production
+ * ones through the port's `system` principal.
+ */
+export async function createWorthlineStoreUnsafe(
   options: WorthlineStoreOptions = {},
 ): Promise<WorthlineStore> {
   const target = resolveDatabaseTarget(options);
@@ -562,12 +575,15 @@ async function buildStore(
  * Run a unit of work against a freshly opened store and guarantee the SQLite
  * connection is closed afterwards — even if the callback throws. This is the one
  * home for the open/use/close lifecycle so callers never leak a connection.
+ *
+ * `Unsafe` for the same reason as {@link createWorthlineStoreUnsafe}: it opens
+ * without a principal. Surfaces go through the web authorization port.
  */
-export async function withStore<T>(
+export async function withStoreUnsafe<T>(
   run: (store: WorthlineStore) => T | Promise<T>,
   options: WorthlineStoreOptions = {},
 ): Promise<T> {
-  const store = await createWorthlineStore(options);
+  const store = await createWorthlineStoreUnsafe(options);
 
   try {
     return await run(store);

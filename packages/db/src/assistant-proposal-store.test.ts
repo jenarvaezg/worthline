@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { asInstant, type ParsedStatementRow } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
-import { createInMemoryStore, createWorthlineStore } from "./index";
+import { createInMemoryStore, createWorthlineStoreUnsafe } from "./index";
 
 const row: ParsedStatementRow = {
   currency: "EUR",
@@ -181,7 +181,7 @@ describe("assistant proposal store", () => {
       mkdtempSync(join(tmpdir(), "wl-proposal-")),
       "worthline.db",
     );
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     const proposal = await store.assistantProposals.create({ kind: "statement_import" });
     await store.assistantProposals.appendDocument(proposal.id, {
       document: {
@@ -193,7 +193,7 @@ describe("assistant proposal store", () => {
     });
     store.close();
 
-    const reopened = await createWorthlineStore({ databasePath });
+    const reopened = await createWorthlineStoreUnsafe({ databasePath });
     expect(await reopened.assistantProposals.read(proposal.id)).toMatchObject({
       documents: [{ document: { name: "persisted.csv" }, facts: [{ row }] }],
       status: "draft",

@@ -14,7 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import {
-  createWorthlineStore,
+  createWorthlineStoreUnsafe,
   resolveDatabasePath,
   type SyncDeps,
   type WorthlineStore,
@@ -29,12 +29,15 @@ export function openProdStore(): Promise<WorthlineStore> {
       "WORTHLINE_SYNC_PROD_URL must be set (the prod workspace libsql:// URL).",
     );
   }
-  return createWorthlineStore({ url, authToken: process.env.WORTHLINE_SYNC_PROD_TOKEN });
+  return createWorthlineStoreUnsafe({
+    url,
+    authToken: process.env.WORTHLINE_SYNC_PROD_TOKEN,
+  });
 }
 
 /** Open the local workspace store (the developer's file database). */
 export function openLocalStore(): Promise<WorthlineStore> {
-  return createWorthlineStore({ databasePath: resolveDatabasePath() });
+  return createWorthlineStoreUnsafe({ databasePath: resolveDatabasePath() });
 }
 
 /** The `sync/` directory next to the local database (created on demand). */

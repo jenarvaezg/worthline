@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStoreUnsafe } from "@worthline/db";
 import { debtBalanceAtDate, systemClock } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -81,7 +81,7 @@ function eur(amountMinor: number) {
 // A fingerprint of every mutation-prone read, to prove an agent read writes
 // nothing (no snapshots, price cache, public IDs, holdings).
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
     liabilities: await store.liabilities.readLiabilities(),
@@ -128,7 +128,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -182,7 +182,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -268,7 +268,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -405,7 +405,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -515,7 +515,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
     process.env.WORTHLINE_CONTROL_PLANE_DB_URL = `file:${controlPlanePath}`;
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -641,7 +641,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       groups: [
         { id: "group_adults", memberIds: ["member_ana", "member_jose"], name: "Adultos" },
@@ -711,7 +711,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/financial-context", () => {
     };
     const storedBalanceMinor = 5_879_18;
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",

@@ -1,5 +1,5 @@
 import type { WorthlineStore } from "@worthline/db";
-import { createWorthlineStore, openLibsqlClient } from "@worthline/db";
+import { createWorthlineStoreUnsafe, openLibsqlClient } from "@worthline/db";
 import { calculateNetWorth } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, createFileBackedStore, tempDatabasePath } from "./helpers";
@@ -99,7 +99,7 @@ describe("investment position persistence", () => {
 
   test("an investment asset contributes its derived market value to net worth, not the stored stale value", async () => {
     const databasePath = tempDatabasePath("worthline-positions-");
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await seedWorkspace(store);
     await store.assets.createInvestmentAsset({
       currency: "EUR",

@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 // A pure token-authenticated MCP request: no persona cookie, no Auth.js session.
@@ -51,7 +51,7 @@ function authFor(workspaceId: string, dbUrl: string) {
 
 /** Seed a workspace with a single known-value cash asset (no ripple machinery). */
 async function seedWorkspace(url: string, cashMinor: number): Promise<void> {
-  const store = await createWorthlineStore({ url });
+  const store = await createWorthlineStoreUnsafe({ url });
   try {
     await store.workspace.initializeWorkspace({
       members: [{ id: "m1", name: "Uno" }],

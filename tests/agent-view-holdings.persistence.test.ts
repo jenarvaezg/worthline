@@ -1,4 +1,4 @@
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
@@ -6,7 +6,7 @@ afterEach(cleanupTempDirs);
 
 /** Public ids of `holding` entity type, keyed by holding id. */
 async function holdingPublicIds(
-  store: Awaited<ReturnType<typeof createWorthlineStore>>,
+  store: Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>,
 ): Promise<Map<string, string>> {
   return new Map(
     (await store.agentView.readPublicIds())
@@ -18,7 +18,7 @@ async function holdingPublicIds(
 describe("agent-view holding public IDs (#335)", () => {
   test("registers wl_hld_-prefixed public IDs when creating an asset and a liability", async () => {
     const databasePath = tempDatabasePath("worthline-agent-view-holding-create-");
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "individual",
@@ -51,7 +51,7 @@ describe("agent-view holding public IDs (#335)", () => {
 
   test("removes a holding's public ID on hard delete, keeps it through trash/restore", async () => {
     const databasePath = tempDatabasePath("worthline-agent-view-holding-delete-");
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "individual",
@@ -94,7 +94,7 @@ describe("agent-view holding public IDs (#335)", () => {
     const sourcePath = tempDatabasePath("worthline-agent-view-holding-source-");
     const targetPath = tempDatabasePath("worthline-agent-view-holding-target-");
 
-    const source = await createWorthlineStore({ databasePath: sourcePath });
+    const source = await createWorthlineStoreUnsafe({ databasePath: sourcePath });
     await source.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "individual",
@@ -123,7 +123,7 @@ describe("agent-view holding public IDs (#335)", () => {
     // The export carries the holding public ids.
     expect(exported.publicIds.some((row) => row.entityType === "holding")).toBe(true);
 
-    const target = await createWorthlineStore({ databasePath: targetPath });
+    const target = await createWorthlineStoreUnsafe({ databasePath: targetPath });
     await target.workspace.importWorkspace(exported);
     const after = await holdingPublicIds(target);
 
@@ -135,7 +135,7 @@ describe("agent-view holding public IDs (#335)", () => {
     const sourcePath = tempDatabasePath("worthline-agent-view-holding-legacy-source-");
     const targetPath = tempDatabasePath("worthline-agent-view-holding-legacy-target-");
 
-    const source = await createWorthlineStore({ databasePath: sourcePath });
+    const source = await createWorthlineStoreUnsafe({ databasePath: sourcePath });
     await source.workspace.initializeWorkspace({
       members: [{ id: "member_ana", name: "Ana" }],
       mode: "individual",
@@ -159,7 +159,7 @@ describe("agent-view holding public IDs (#335)", () => {
       publicIds: exported.publicIds.filter((row) => row.entityType !== "holding"),
     };
 
-    const target = await createWorthlineStore({ databasePath: targetPath });
+    const target = await createWorthlineStoreUnsafe({ databasePath: targetPath });
     await target.workspace.importWorkspace(legacy);
 
     expect((await holdingPublicIds(target)).get("asset_cash")).toMatch(

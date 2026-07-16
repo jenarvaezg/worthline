@@ -15,11 +15,11 @@
  *   npx tsx scripts/backfill-historical-snapshots.ts
  *   WORTHLINE_DATA_DIR=/path/to/data npx tsx scripts/backfill-historical-snapshots.ts
  */
-import { withStore } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db";
 
 const today = new Date().toISOString().slice(0, 10);
 
-withStore((store) => {
+withStoreUnsafe((store) => {
   const workspace = store.workspace.readWorkspace();
   if (!workspace) {
     console.error("No workspace found — nothing to backfill.");

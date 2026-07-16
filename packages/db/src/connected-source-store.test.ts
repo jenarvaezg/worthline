@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createWorthlineStore, openLibsqlClient } from "./index";
+import { createWorthlineStoreUnsafe, openLibsqlClient } from "./index";
 
 const KEY = "test-secret-key";
 
@@ -20,11 +20,11 @@ afterEach(() => {
 });
 
 async function freshStore(): Promise<{
-  store: Awaited<ReturnType<typeof createWorthlineStore>>;
+  store: Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>;
   dbPath: string;
 }> {
   const dbPath = join(mkdtempSync(join(tmpdir(), "wl-secret-")), "w.sqlite");
-  const store = await createWorthlineStore({ databasePath: dbPath });
+  const store = await createWorthlineStoreUnsafe({ databasePath: dbPath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "m1", name: "Uno" }],
     mode: "individual",
@@ -96,7 +96,7 @@ describe("connected source secret encryption", () => {
 
     // Later a key is configured; the legacy row still reads back as plaintext.
     process.env.WORTHLINE_ENCRYPTION_KEY = KEY;
-    const reopened = await createWorthlineStore({ databasePath: dbPath });
+    const reopened = await createWorthlineStoreUnsafe({ databasePath: dbPath });
     const source = await reopened.connectedSources.readSource(sourceId);
     expect(source?.credentialsJson).toBe(creds);
     reopened.close();

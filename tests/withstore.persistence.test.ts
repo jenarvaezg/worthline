@@ -1,14 +1,14 @@
-import { type WorthlineStore, withStore } from "@worthline/db";
+import { type WorthlineStore, withStoreUnsafe } from "@worthline/db";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
 afterEach(cleanupTempDirs);
 
-describe("withStore unit-of-work", () => {
+describe("withStoreUnsafe unit-of-work", () => {
   test("runs the callback against an open store and returns its result", async () => {
     const databasePath = tempDatabasePath("worthline-withstore-");
 
-    const mode = await withStore(
+    const mode = await withStoreUnsafe(
       async (store) => {
         await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
@@ -28,7 +28,7 @@ describe("withStore unit-of-work", () => {
     let captured: WorthlineStore | undefined;
 
     await expect(
-      withStore(
+      withStoreUnsafe(
         (store) => {
           captured = store;
           throw new Error("boom");
@@ -45,7 +45,7 @@ describe("withStore unit-of-work", () => {
     const databasePath = tempDatabasePath("worthline-withstore-");
     let captured: WorthlineStore | undefined;
 
-    await withStore(
+    await withStoreUnsafe(
       (store) => {
         captured = store;
       },

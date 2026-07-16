@@ -1,7 +1,7 @@
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createControlPlaneStore, createWorthlineStore } from "@worthline/db";
+import { createControlPlaneStore, createWorthlineStoreUnsafe } from "@worthline/db";
 import type { ExposureLookthrough, ExposureProfile } from "@worthline/domain";
 import { lookThroughExposure } from "@worthline/domain";
 import { NextRequest } from "next/server";
@@ -115,7 +115,7 @@ async function seedExposure(
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",

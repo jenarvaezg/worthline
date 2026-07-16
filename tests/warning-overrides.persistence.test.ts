@@ -1,4 +1,4 @@
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 
@@ -7,7 +7,7 @@ afterEach(cleanupTempDirs);
 describe("warning overrides persistence", () => {
   test("acknowledging a warning persists, is idempotent, survives reopen, and can be removed", async () => {
     const path = tempDatabasePath("worthline-overrides-");
-    const store = await createWorthlineStore({ databasePath: path });
+    const store = await createWorthlineStoreUnsafe({ databasePath: path });
 
     await store.acknowledgeWarning("ZERO_VALUE_ASSET", "asset_1");
     await store.acknowledgeWarning("ZERO_VALUE_ASSET", "asset_1"); // idempotent — no duplicate
@@ -17,7 +17,7 @@ describe("warning overrides persistence", () => {
     ]);
     store.close();
 
-    const reopened = await createWorthlineStore({ databasePath: path });
+    const reopened = await createWorthlineStoreUnsafe({ databasePath: path });
     expect(await reopened.readWarningOverrides()).toEqual([
       { code: "ZERO_VALUE_ASSET", entityId: "asset_1" },
     ]);
@@ -29,7 +29,7 @@ describe("warning overrides persistence", () => {
 
   test("acknowledges overrideable signal kinds with the same persisted shape", async () => {
     const path = tempDatabasePath("worthline-overrides-signal-");
-    const store = await createWorthlineStore({ databasePath: path });
+    const store = await createWorthlineStoreUnsafe({ databasePath: path });
 
     await store.acknowledgeWarning("STALE_MANUAL_VALUE", "asset_cash");
 

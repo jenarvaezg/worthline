@@ -17,7 +17,7 @@
  * written for it — modelling a provider refresh without any external call.
  */
 
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 
 import { addHolding, expect, holdingRow, test } from "./fixtures";
 
@@ -46,7 +46,7 @@ test("price refresh: board hover + detail caption show date + provider for a cac
   //    global setup uses. Two whole days back so the relative phrase is stable.
   const databasePath = process.env.WORTHLINE_DB_PATH!;
   const fetchedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.operations.upsertPrice({
     assetId,
     currency: "EUR",

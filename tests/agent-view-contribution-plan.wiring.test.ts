@@ -1,7 +1,7 @@
 import { derivePublicId } from "@web/agent-view/derived-id";
 import { GET as getContributionPlan } from "@web/api/v1/agent-view/scopes/[scopeId]/contribution-plan/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { contributionOccurrenceId } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -55,7 +55,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -131,7 +131,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -158,7 +158,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -262,7 +262,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -305,7 +305,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -329,7 +329,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -352,7 +352,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -377,7 +377,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     store.close();
 
     const fingerprint = async (): Promise<string> => {
-      const check = await createWorthlineStore({ databasePath });
+      const check = await createWorthlineStoreUnsafe({ databasePath });
       const snapshot = JSON.stringify({
         plan: await check.contributionPlan.readContributionPlan("household"),
         publicIds: await check.agentView.readPublicIds(),

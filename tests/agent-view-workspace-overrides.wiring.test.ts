@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getWarningOverrides } from "@web/api/v1/agent-view/warning-overrides/route";
 import { GET as getWorkspace } from "@web/api/v1/agent-view/workspace/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -56,7 +56,7 @@ async function seedWorkspace(): Promise<string> {
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [
       { id: "member_jose", name: "Jose" },
@@ -178,7 +178,7 @@ describe("GET /api/v1/agent-view/warning-overrides", () => {
 
 // A fingerprint of the override + public-id state, to prove a read writes nothing.
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     overrides: await store.readWarningOverrides(),
     publicIds: await store.agentView.readPublicIds(),

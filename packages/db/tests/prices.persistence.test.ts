@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WorthlineStore } from "@db/index";
-import { createWorthlineStore } from "@db/index";
+import { createWorthlineStoreUnsafe } from "@db/index";
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 
@@ -18,7 +18,7 @@ async function createTestStore(): Promise<WorthlineStore> {
   const dataDir = mkdtempSync(join(tmpdir(), "worthline-prices-"));
   tempDirs.push(dataDir);
 
-  return createWorthlineStore({ databasePath: join(dataDir, "worthline.sqlite") });
+  return createWorthlineStoreUnsafe({ databasePath: join(dataDir, "worthline.sqlite") });
 }
 
 async function seedWorkspaceAndAsset(

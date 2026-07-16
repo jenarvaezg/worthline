@@ -17,7 +17,7 @@
  * round-trips — including through a drill (#145).
  */
 
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
 import { expect, test } from "./fixtures";
@@ -28,7 +28,7 @@ async function seedMultiYearHistory(): Promise<void> {
 
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const store = await createWorthlineStore({ databasePath });
+      const store = await createWorthlineStoreUnsafe({ databasePath });
       try {
         const workspace = await store.workspace.readWorkspace();
         if (!workspace) return;

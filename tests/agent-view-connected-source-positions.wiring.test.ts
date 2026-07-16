@@ -5,7 +5,7 @@ import { GET as getHoldingPositions } from "@web/api/v1/agent-view/holdings/[hol
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import type { SourcePositionInput } from "@worthline/db";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -169,7 +169,7 @@ async function seedSources(): Promise<void> {
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -310,7 +310,7 @@ describe("connected-source summaries in the financial context", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -493,7 +493,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -555,7 +555,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
 
     // Re-sync the SAME externalIds (worthline reassigns internal ids each sync).
     const databasePath = process.env.WORTHLINE_DB_PATH as string;
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     const numista = (await store.connectedSources.listSources()).find(
       (s) => s.adapter === "numista",
     )!;
@@ -714,7 +714,7 @@ describe("MCP get_connected_source_positions", () => {
     process.env.WORTHLINE_DB_PATH = databasePath;
     process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-    const store = await createWorthlineStore({ databasePath });
+    const store = await createWorthlineStoreUnsafe({ databasePath });
     await store.workspace.initializeWorkspace({
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
@@ -767,7 +767,7 @@ describe("connected-source position reads are side-effect-free", () => {
 // A fingerprint of every mutation-prone read, to prove a position read writes
 // nothing (no positions re-synced, no price cache, no sources, no public IDs).
 async function fingerprint(databasePath: string): Promise<string> {
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),

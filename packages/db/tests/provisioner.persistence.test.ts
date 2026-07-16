@@ -63,7 +63,7 @@ describe("workspace provisioner", () => {
       expect(await cp.readGrant(user.id, ws.id)).not.toBeNull();
 
       // 3. The new workspace database was migrated to the current schema.
-      //    Open a RAW client (not createWorthlineStore, which would migrate it
+      //    Open a RAW client (not createWorthlineStoreUnsafe, which would migrate it
       //    itself) so this asserts the provisioner did the migration.
       const raw = openLibsqlClient({ url: ws.dbUrl });
       const version = Number(

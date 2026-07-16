@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getTrace } from "@web/api/v1/agent-view/holdings/[holdingId]/calculation-trace/route";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
@@ -66,7 +66,7 @@ async function freshStore(prefix: string) {
   process.env.WORTHLINE_DB_PATH = databasePath;
   process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
 
-  const store = await createWorthlineStore({ databasePath });
+  const store = await createWorthlineStoreUnsafe({ databasePath });
   await store.workspace.initializeWorkspace({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
@@ -76,7 +76,7 @@ async function freshStore(prefix: string) {
 
 /** Seed a 120.000 €, 3 %, 240-month amortizable loan disbursed 2020-01-01. */
 async function seedLoan(
-  store: Awaited<ReturnType<typeof createWorthlineStore>>,
+  store: Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>,
 ): Promise<void> {
   await store.liabilities.createLiability({
     balanceMinor: 120_000_00,
@@ -100,7 +100,7 @@ async function seedLoan(
 
 /** Capture and persist a household snapshot with the curve-valued ledger at `date`. */
 async function captureAt(
-  store: Awaited<ReturnType<typeof createWorthlineStore>>,
+  store: Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>,
   date: string,
   id: string,
 ): Promise<void> {
@@ -353,7 +353,7 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => 
     store.close();
 
     // The financial context drops a 0-value liability, so resolve the id directly.
-    const reopened = await createWorthlineStore({
+    const reopened = await createWorthlineStoreUnsafe({
       databasePath: process.env.WORTHLINE_DB_PATH!,
     });
     const publicId = (await reopened.agentView.readPublicIds()).find(

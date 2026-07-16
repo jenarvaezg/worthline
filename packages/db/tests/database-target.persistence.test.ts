@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveDatabaseTarget, withStore } from "@db/index";
+import { resolveDatabaseTarget, withStoreUnsafe } from "@db/index";
 import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
@@ -80,7 +80,7 @@ describe("database target resolution", () => {
     ).toThrow(/authToken/);
   });
 
-  test("withStore opens the env database URL", async () => {
+  test("withStoreUnsafe opens the env database URL", async () => {
     const databasePath = join(tempDir("worthline-url-target-"), "workspace.sqlite");
     const fallbackDataDir = tempDir("worthline-url-fallback-");
     const previous = {
@@ -94,14 +94,14 @@ describe("database target resolution", () => {
     process.env.WORTHLINE_DB_URL = `file:${databasePath}`;
 
     try {
-      await withStore(async (store) => {
+      await withStoreUnsafe(async (store) => {
         await store.workspace.initializeWorkspace({
           members: [{ id: "member_jose", name: "Jose" }],
           mode: "individual",
         });
       });
 
-      await withStore(
+      await withStoreUnsafe(
         async (store) => {
           expect((await store.workspace.readWorkspace())?.mode).toBe("individual");
         },
