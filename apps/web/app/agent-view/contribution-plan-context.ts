@@ -54,7 +54,8 @@ import { ratioStringFromBps } from "./financial-context";
 import { resolveFire } from "./fire-context";
 import { deriveOperationPublicId } from "./holding-operations";
 import { buildHoldingReturns } from "./returns";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 const TRUTH_NOTE =
@@ -63,7 +64,6 @@ const TRUTH_NOTE =
 const DEFAULT_RECONCILIATION_WINDOW_DAYS = 90;
 
 export interface BuildContributionPlanContextOptions {
-  scopeId: string;
   /** `YYYY-MM` month for the allocation view; defaults to the current UTC month. */
   month?: string;
   growthAssumption?: FireGrowthAssumption;
@@ -79,9 +79,10 @@ export interface BuildContributionPlanContextOptions {
  * what-if trajectory. Pure read — forecast never enters net worth or snapshots.
  */
 export async function buildContributionPlanContext(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildContributionPlanContextOptions,
 ): Promise<AgentViewContributionPlanContext> {
+  const { store } = scoped;
   const today = options.asOf ?? systemClock().today();
   const month = options.month ?? today.slice(0, 7);
   if (!isContributionMonthKey(month)) {
@@ -96,8 +97,8 @@ export async function buildContributionPlanContext(
   const reconciliationWindowDays =
     options.reconciliationWindowDays ?? DEFAULT_RECONCILIATION_WINDOW_DAYS;
 
-  const scope = await resolveScope(store, options.scopeId);
-  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
+  const scope = await resolveScope(store, scoped.scopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const workspace = await store.readWorkspace();
   const currency = workspace?.baseCurrency ?? "EUR";
 
@@ -134,7 +135,7 @@ export async function buildContributionPlanContext(
     operations,
   });
 
-  const { fire } = await resolveFire(store, options.scopeId);
+  const { fire } = await resolveFire(scoped);
 
   const whatIf = await buildWhatIf({
     store,

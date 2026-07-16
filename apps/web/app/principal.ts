@@ -1,5 +1,5 @@
 /**
- * The authorization port (PRD #998 S1, decision #892 — adopción Sure banda 2).
+ * The authorization port (PRD #998 S1/S2, decision #892 — adopción Sure banda 2).
  *
  * A workspace's data can only be reached by presenting a {@link Principal}:
  * the port's entry points take one BY VALUE, so the old runtime
@@ -7,13 +7,39 @@
  * COMPILE-TIME guarantee — the `unauthenticated` state is unrepresentable as a
  * `Principal`, so a store cannot be constructed without one.
  *
- * The RSC seam (`store.ts`) reaches a workspace store ONLY through here, so the
- * whole RSC surface starts from a principal. The raw opener lives in
- * `@worthline/db` under a deliberately unsafe name (`createWorthlineStoreUnsafe`)
- * so no surface grabs it by accident; this port is its only authorized wrapper.
- * The other current callers of the unsafe opener — cron, scripts, and the
- * deferred REST v1 routes (tripwire of #892) — still open it directly for now;
- * they migrate onto the `system` principal in a later slice of PRD #998.
+ * EVERY surface now starts from a principal and reaches a workspace store ONLY
+ * through here (#998 S2):
+ *   - RSC (pages/layouts/server actions) → `@web/store`, which resolves the
+ *     request's principal and calls the port;
+ *   - MCP (`/api/mcp`) → `internal-catalog.ts` resolves the token's principal
+ *     via `storeTargetFromMcpAuth` + the shared `resolveStoreTarget`, then calls
+ *     the port through `@web/store`;
+ *   - REST `/api/v1/agent-view/**` → `runAgentViewStore`, a `local` principal
+ *     (the loopback + capability-token guard is the grant, #328);
+ *   - cron (`/api/cron/snapshot`) → a `system` principal carrying its own
+ *     workspace coordinates.
+ * The raw opener lives in `@worthline/db` under a deliberately unsafe name
+ * (`createWorthlineStoreUnsafe`) so no surface grabs it by accident; this port is
+ * its only authorized wrapper. The sole remaining direct callers are operational
+ * scripts (`scripts/**`) and persistence tests — not request-reachable surfaces,
+ * and outside the tripwire of #892.
+ *
+ * GRANT RE-CHECK POLICY (unified, #998 S2). The port TRUSTS the principal it is
+ * handed; verifying that the caller is entitled to that workspace — the "grant" —
+ * is each surface's RESOLVER responsibility, performed once at the boundary
+ * BEFORE a principal exists, never re-checked here. The cadence of that check is
+ * the surface credential's natural cadence, and deliberately differs (forcing one
+ * cadence on all would either add a control-plane round-trip to every RSC render,
+ * avoided by #445, or let a revoked MCP token linger until expiry):
+ *   - web: the workspace is pinned into the Auth.js JWT at sign-in and trusted
+ *     for the JWT's lifetime — no per-request control-plane re-check;
+ *   - MCP: the bearer token is verified per request (`verifyMcpToken`), which
+ *     re-resolves the workspace claims from the control plane on every call;
+ *   - cron: a deploy-configured `system` actor (CRON_SECRET) with no per-workspace
+ *     grant — it iterates every workspace by construction;
+ *   - local: single-user no-auth; the loopback + capability token IS the grant.
+ * The invariant the port enforces is narrower and absolute: no store without a
+ * principal. WHO may hold each principal is settled upstream, at these cadences.
  */
 
 import { demoAsOfDateKey } from "@web/demo/demo-clock";

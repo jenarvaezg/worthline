@@ -25,7 +25,8 @@ import {
   encodeCursor,
 } from "./cursor";
 import { derivePublicId } from "./derived-id";
-import { publicIdMap, requirePublicId, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap, requirePublicId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_DATA_QUALITY_LIMIT = 100;
@@ -44,8 +45,6 @@ const SEVERITY_RANK: Record<AgentViewDataQualitySeverity, number> = {
 };
 
 export interface BuildDataQualityOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
   /** Page size, already clamped to `[1, MAX_DATA_QUALITY_LIMIT]` by the caller. */
   limit: number;
   /** Restrict to one category, when given. */
@@ -64,10 +63,10 @@ export interface BuildDataQualityOptions {
  * state only; surfacing a `warning` signal NEVER writes an override (ADR 0023).
  */
 export async function buildDataQuality(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildDataQualityOptions,
 ): Promise<AgentViewDataQualityPage> {
-  const { signals } = await collectScopeSignals(store, options.scopeId);
+  const { signals } = await collectScopeSignals(scoped);
 
   const filtered = signals.filter(
     (signal) =>
@@ -106,10 +105,9 @@ export async function buildDataQuality(
  * signal collection as the full endpoint, so both read identical figures.
  */
 export async function buildDataQualitySummary(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
 ): Promise<AgentViewDataQualitySummary> {
-  const { signals } = await collectScopeSignals(store, publicScopeId);
+  const { signals } = await collectScopeSignals(scoped);
 
   const countsBySeverity = emptySeverityCounts();
   const countsByCategory = emptyCategoryCounts();
@@ -128,9 +126,9 @@ export async function buildDataQualitySummary(
 }
 
 async function collectScopeSignals(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
 ): Promise<{ scope: AgentViewScope; signals: AgentViewDataQualitySignal[] }> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -138,14 +136,14 @@ async function collectScopeSignals(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === publicScopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );

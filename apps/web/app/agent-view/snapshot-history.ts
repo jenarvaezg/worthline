@@ -24,7 +24,8 @@ import {
   encodeCursor,
 } from "./cursor";
 import { derivePublicId } from "./derived-id";
-import { publicIdMap, resolveInternalScopeId } from "./scope-resolution";
+import { publicIdMap } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 
 export const DEFAULT_SNAPSHOT_LIMIT = 100;
@@ -40,8 +41,6 @@ const LIQUIDITY_LADDER: readonly AgentViewLiquidityTier[] = [
 ];
 
 export interface BuildSnapshotHistoryOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
   granularity: AgentViewSnapshotGranularity;
   sort: AgentViewSnapshotSort;
   /** Page size, already clamped to `[1, MAX_SNAPSHOT_LIMIT]` by the caller. */
@@ -70,9 +69,10 @@ interface SortedSnapshot {
  * ripples (ADR 0023).
  */
 export async function buildSnapshotHistory(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildSnapshotHistoryOptions,
 ): Promise<AgentViewSnapshotHistory> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -80,14 +80,14 @@ export async function buildSnapshotHistory(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === options.scopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, options.scopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const allSnapshots = await store.readSnapshots(internalScopeId);
   const closeIds = new Set(deriveMonthlyCloses(allSnapshots).values());
 

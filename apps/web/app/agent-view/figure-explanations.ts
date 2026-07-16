@@ -47,8 +47,8 @@ import {
   publicIdMap,
   requirePublicId,
   resolveInternalHoldingId,
-  resolveInternalScopeId,
 } from "./scope-resolution";
+import { bindScope, type ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 import { deriveSnapshotPublicId } from "./snapshot-history";
 
@@ -70,8 +70,6 @@ export function isFigureName(value: string): value is AgentViewFigureName {
 }
 
 export interface BuildFigureExplanationOptions {
-  /** Public scope ID (`wl_scp_…`) selected by the caller. */
-  scopeId: string;
   /** The figure to explain — already validated against the known enum. */
   figure: AgentViewFigureName;
   /** Public holding ID (`wl_hld_…`); required for `holding_value`. */
@@ -118,14 +116,15 @@ interface ResolvedScopeFacts {
  * issue #344 and is rejected before this point.
  */
 export async function buildFigureExplanation(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildFigureExplanationOptions,
 ): Promise<AgentViewFigureExplanation> {
+  const { store } = scoped;
   if (options.date !== undefined) {
-    return buildHistoricalFigureExplanation(store, options, options.date);
+    return buildHistoricalFigureExplanation(scoped, options, options.date);
   }
 
-  const facts = await resolveScopeFacts(store, options.scopeId, options.asOf);
+  const facts = await resolveScopeFacts(scoped, options.asOf);
 
   switch (options.figure) {
     case "net_worth":
@@ -183,10 +182,11 @@ interface HistoricalSnapshotFacts {
  * snapshot is an old capture with no rows. Reads mutate nothing.
  */
 async function buildHistoricalFigureExplanation(
-  store: AgentViewReadStore,
+  scoped: ScopedAgentView,
   options: BuildFigureExplanationOptions,
   date: string,
 ): Promise<AgentViewFigureExplanation> {
+  const { store } = scoped;
   // FIRE has no honest historical value — reject before the snapshot lookup so a
   // dated FIRE request fails fast regardless of whether a snapshot exists.
   if (FIRE_FIGURE_NAMES.has(options.figure)) {
@@ -198,7 +198,7 @@ async function buildHistoricalFigureExplanation(
     });
   }
 
-  const facts = await resolveHistoricalSnapshotFacts(store, options.scopeId, date);
+  const facts = await resolveHistoricalSnapshotFacts(scoped, date);
 
   switch (options.figure) {
     case "net_worth":
@@ -228,10 +228,10 @@ async function buildHistoricalFigureExplanation(
 }
 
 async function resolveHistoricalSnapshotFacts(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
   date: string,
 ): Promise<HistoricalSnapshotFacts> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -239,14 +239,14 @@ async function resolveHistoricalSnapshotFacts(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === publicScopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
 
   // Exactly one snapshot per scope per day — never pick the nearest.
   const snapshot = (await store.readSnapshots(internalScopeId)).find(
@@ -1283,10 +1283,10 @@ function fireProgressRatio(eligibleAssets: MoneyMinor, fireNumber: MoneyMinor): 
 // ── Shared helpers ──────────────────────────────────────────────────────────────
 
 async function resolveScopeFacts(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
   asOf: string,
 ): Promise<ResolvedScopeFacts> {
+  const { store } = scoped;
   const workspace = await store.readWorkspace();
 
   if (!workspace) {
@@ -1294,14 +1294,14 @@ async function resolveScopeFacts(
   }
 
   const scope = (await listAgentViewScopes(store)).find(
-    (candidate) => candidate.id === publicScopeId,
+    (candidate) => candidate.id === scoped.scopeId,
   );
 
   if (!scope) {
     throw unknownScope();
   }
 
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const scopeOption = listScopeOptions(workspace).find(
     (option) => option.id === internalScopeId,
   );
@@ -1399,9 +1399,8 @@ async function qualityNotesFor(
     }
   }
 
-  const { signals } = await buildDataQuality(store, {
+  const { signals } = await buildDataQuality(bindScope(store, facts.scope.id), {
     limit: MAX_DATA_QUALITY_LIMIT,
-    scopeId: facts.scope.id,
   });
 
   return signals.filter((signal) => {

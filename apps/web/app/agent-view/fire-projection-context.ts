@@ -1,4 +1,3 @@
-import type { AgentViewReadStore } from "@worthline/db";
 import type { FireScenario } from "@worthline/domain";
 import {
   projectFire,
@@ -12,7 +11,7 @@ import type {
   AgentViewMoney,
 } from "./contract";
 import { resolveFire } from "./fire-context";
-import { resolveInternalScopeId } from "./scope-resolution";
+import type { ScopedAgentView } from "./scoped-read";
 
 /**
  * Build the FIRE projection for a scope (PRD #421, #427): optimistic/base/
@@ -26,10 +25,10 @@ import { resolveInternalScopeId } from "./scope-resolution";
  * no FIRE config; no figures are fabricated.
  */
 export async function buildFireProjection(
-  store: AgentViewReadStore,
-  publicScopeId: string,
+  scoped: ScopedAgentView,
 ): Promise<AgentViewFireProjection> {
-  const { scope, fire } = await resolveFire(store, publicScopeId);
+  const { store } = scoped;
+  const { scope, fire } = await resolveFire(scoped);
 
   if (fire.config === undefined || fire.result === undefined) {
     return { object: "fire_projection", scope, status: "unconfigured", scenarios: [] };
@@ -38,7 +37,7 @@ export async function buildFireProjection(
   const config = fire.config;
   const result = fire.result;
   const currency = fire.currency;
-  const internalScopeId = await resolveInternalScopeId(store, publicScopeId);
+  const internalScopeId = await scoped.internalScopeId();
   const contributionPlan = await store.readContributionPlan(internalScopeId);
   const priceCache = await store.readAllPriceCacheEntries();
   const today = new Date().toISOString().slice(0, 10);

@@ -12,6 +12,7 @@ import {
   type LanguageModelV4Usage,
 } from "@ai-sdk/provider";
 import { buildFinancialContext } from "@web/agent-view/financial-context";
+import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
@@ -368,10 +369,12 @@ describe("POST /api/chat", () => {
   it("streams a grounded answer through the tool and writes nothing", async () => {
     const scopes = await listAgentViewScopes(currentStore.agentView);
     const scopeId = (scopes.find((s) => s.isDefault) ?? scopes[0])?.id ?? "";
-    const before = await buildFinancialContext(currentStore.agentView, {
-      scopeId,
-      asOf: AS_OF,
-    });
+    const before = await buildFinancialContext(
+      bindScope(currentStore.agentView, scopeId),
+      {
+        asOf: AS_OF,
+      },
+    );
 
     const response = await POST(
       chatRequest({ messages: [userMessage("¿cuál es mi patrimonio neto?")] }),
@@ -382,10 +385,12 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("get_financial_context");
     expect(streamed).toContain("patrimonio neto sale de la lectura");
 
-    const after = await buildFinancialContext(currentStore.agentView, {
-      scopeId,
-      asOf: AS_OF,
-    });
+    const after = await buildFinancialContext(
+      bindScope(currentStore.agentView, scopeId),
+      {
+        asOf: AS_OF,
+      },
+    );
     expect(after).toEqual(before);
   });
 

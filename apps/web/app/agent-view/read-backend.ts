@@ -27,6 +27,7 @@ import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
 import { clampPositiveLimit } from "./pagination";
 import { buildPriceFreshness } from "./price-freshness";
+import { bindScope } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
 import { buildSnapshotHistory } from "./snapshot-history";
 import { buildTrashSummary } from "./trash-summary";
@@ -71,33 +72,30 @@ export function createReadStoreBackend(
     listScopes: async () => successEnvelope(await listAgentViewScopes(agentView)),
     financialContext: async (scopeId, params) =>
       successEnvelope(
-        await buildFinancialContext(agentView, {
+        await buildFinancialContext(bindScope(agentView, scopeId), {
           asOf,
           holdingLimit: params.holdingLimit,
           readBenchmarkPrices: readBenchmarkPricesFromControlPlane,
-          scopeId,
         }),
       ),
     fireContext: async (scopeId) =>
-      successEnvelope(await buildFireContext(agentView, { scopeId })),
+      successEnvelope(await buildFireContext(bindScope(agentView, scopeId))),
     explainFigure: async (scopeId, params) => {
       if (!isFigureName(params.figure)) {
         return {
           error: { code: "bad_request", message: `Unknown figure: ${params.figure}` },
         } as never;
       }
-      const explanation = await buildFigureExplanation(agentView, {
+      const explanation = await buildFigureExplanation(bindScope(agentView, scopeId), {
         asOf,
         figure: params.figure,
         holdingId: params.holdingId,
-        scopeId,
         ...(params.date === undefined ? {} : { date: params.date }),
       });
       return successEnvelope(explanation);
     },
     snapshotHistory: async (scopeId, params) => {
-      const history = await buildSnapshotHistory(agentView, {
-        scopeId,
+      const history = await buildSnapshotHistory(bindScope(agentView, scopeId), {
         cursor: params.cursor,
         from: params.from,
         granularity: params.granularity ?? "monthly-close",
@@ -109,8 +107,7 @@ export function createReadStoreBackend(
       return pageEnvelope(history.entries, history.meta);
     },
     dataQuality: async (scopeId, params) => {
-      const page = await buildDataQuality(agentView, {
-        scopeId,
+      const page = await buildDataQuality(bindScope(agentView, scopeId), {
         cursor: params.cursor,
         limit: pageLimit(params.limit),
         ...(params.category === undefined
@@ -123,8 +120,7 @@ export function createReadStoreBackend(
       return pageEnvelope(page.signals, page.meta);
     },
     trashSummary: async (scopeId, params) => {
-      const summary = await buildTrashSummary(agentView, {
-        scopeId,
+      const summary = await buildTrashSummary(bindScope(agentView, scopeId), {
         cursor: params.cursor,
         limit: pageLimit(params.limit),
       });
@@ -184,13 +180,13 @@ export function createReadStoreBackend(
     workspace: async () => successEnvelope(await buildWorkspaceInfo(agentView)),
     warningOverrides: async () => successEnvelope(await buildWarningOverrides(agentView)),
     memberProfiles: async () => successEnvelope(await buildMemberProfiles(agentView)),
-    goals: async (scopeId) => successEnvelope(await buildGoals(agentView, scopeId)),
+    goals: async (scopeId) =>
+      successEnvelope(await buildGoals(bindScope(agentView, scopeId))),
     fireProjection: async (scopeId) =>
-      successEnvelope(await buildFireProjection(agentView, scopeId)),
+      successEnvelope(await buildFireProjection(bindScope(agentView, scopeId))),
     contributionPlan: async (scopeId, params) =>
       successEnvelope(
-        await buildContributionPlanContext(agentView, {
-          scopeId,
+        await buildContributionPlanContext(bindScope(agentView, scopeId), {
           asOf,
           ...(params.month === undefined ? {} : { month: params.month }),
           ...(params.growthAssumption === undefined
