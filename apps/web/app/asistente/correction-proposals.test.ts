@@ -67,6 +67,7 @@ describe("buildCorrectionProposal (#1051)", () => {
     const fact = stored?.documents[0]?.facts[0];
     expect(fact?.kind).toBe("holding_correction");
     if (fact?.kind !== "holding_correction") return;
+    if (fact.row.mode !== "anchor-only") throw new Error("expected anchor-only plan");
     expect(fact.row.edits[0]).toMatchObject({ kind: "debt_rebaseline" });
     expect(fact.row.revalidation).toMatchObject({ liabilityId: "loan" });
     store.close();
@@ -116,6 +117,7 @@ describe("buildCorrectionProposal (#1051)", () => {
     const fact = (await store.assistantProposals.read(built.proposal.draft.proposalId))
       ?.documents[0]?.facts[0];
     if (fact?.kind !== "holding_correction") throw new Error("expected correction fact");
+    if (fact.row.mode !== "anchor-only") throw new Error("expected anchor-only plan");
     expect(fact.row.edits[0]?.kind).toBe("balance_anchor");
     store.close();
   });
@@ -128,7 +130,7 @@ describe("buildCorrectionProposal (#1051)", () => {
       TODAY,
     );
     expect(changed.ok).toBe(true);
-    if (changed.ok) {
+    if (changed.ok && changed.proposal.mode === "solo-desde-hoy") {
       expect(changed.proposal.edits[0]).toMatchObject({ label: "Modelo de deuda" });
     }
     const noop = await buildCorrectionProposal(
@@ -152,6 +154,7 @@ describe("buildCorrectionProposal (#1051)", () => {
     const fact = (await store.assistantProposals.read(built.proposal.draft.proposalId))
       ?.documents[0]?.facts[0];
     if (fact?.kind !== "holding_correction") throw new Error("expected correction fact");
+    if (fact.row.mode !== "anchor-only") throw new Error("expected anchor-only plan");
     expect(fact.row.edits[0]).toMatchObject({
       kind: "liability_config",
       patch: { name: "Préstamo personal Revolut" },

@@ -214,12 +214,15 @@ export type {
   ValuationFreshness,
 } from "./connected-source-store";
 export type {
+  AnchorOnlyCorrectionPlan,
   CorrectionBeforeMoney,
   CorrectionEdit,
   CorrectionEditKind,
   CorrectionMode,
   CorrectionPlan,
   CorrectionRevalidation,
+  DatedBalanceObservation,
+  ReconstructCorrectionPlan,
 } from "./correction-plan";
 export type {
   AddBalanceAnchorInput,

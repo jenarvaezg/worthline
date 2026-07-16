@@ -45,6 +45,7 @@ import {
 } from "@web/asistente/maintainer-alert";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
+import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import type {
@@ -309,6 +310,34 @@ const BALANCE_HISTORY_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["liabilityId", "rows"],
+  additionalProperties: false,
+});
+
+const RECONSTRUCTION_PROPOSAL_SCHEMA = jsonSchema<{
+  holdingId?: string;
+  summary?: string;
+  documentName?: string;
+  rows?: Array<{ date: string; balanceMinor: number }>;
+}>({
+  type: "object",
+  properties: {
+    holdingId: { type: "string" },
+    summary: { type: "string" },
+    documentName: { type: "string" },
+    rows: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          date: { type: "string" },
+          balanceMinor: { type: "number" },
+        },
+        required: ["date", "balanceMinor"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["holdingId", "rows"],
   additionalProperties: false,
 });
 
@@ -1247,6 +1276,41 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               holdingId: internalId,
               publicHoldingId: args.holdingId ?? "",
               ...(args.summary === undefined ? {} : { summary: args.summary }),
+            },
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_reconstruction: tool({
+      description:
+        "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada (holdingId es el public id wl_hld_… de las tools de lectura), a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF incluido). " +
+        "Envía solo fecha (YYYY-MM-DD) y saldo observado en céntimos; NO infieras capital, plazo, cuota ni tipo (la app re-deriva el tipo de la curva vigente). " +
+        "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico. " +
+        "Para declarar solo el saldo real de hoy sin tocar el pasado usa propose_correction (declare_balance). No escribas a deudas de fuente conectada.",
+      inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.liabilities) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const liabilityId = await resolveInternalHoldingId(
+            store.agentView,
+            args.holdingId ?? "",
+          );
+          const built = await buildReconstructionProposal(
+            {
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+            },
+            {
+              liabilityId,
+              publicHoldingId: args.holdingId ?? "",
+              rows: args.rows ?? [],
+              ...(args.summary === undefined ? {} : { summary: args.summary }),
+              ...(args.documentName === undefined
+                ? {}
+                : { documentName: args.documentName }),
             },
             input.asOf,
           );

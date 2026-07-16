@@ -13,6 +13,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { editCorrectionPoint } from "./anchor-correction-gate";
 import {
   parseBalanceHistoryProposal,
   parseCorrectionProposal,
@@ -34,7 +35,11 @@ import {
   confirmCorrectionProposalAction,
   discardCorrectionProposalAction,
 } from "./correction-proposal-action";
-import type { CorrectionProposal } from "./correction-proposal-contract";
+import type {
+  AnchorOnlyCorrectionProposal,
+  CorrectionProposal,
+  ReconstructionCorrectionProposal,
+} from "./correction-proposal-contract";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import {
@@ -411,7 +416,7 @@ function CorrectionProposalCard({
 }: {
   mutationsDisabled: boolean;
   mutationsDisabledMessage: string;
-  proposal: CorrectionProposal;
+  proposal: AnchorOnlyCorrectionProposal;
 }) {
   const [result, setResult] = useState<Awaited<
     ReturnType<typeof confirmCorrectionProposalAction>
@@ -465,6 +470,180 @@ function CorrectionProposalCard({
           onClick={() =>
             startTransition(async () =>
               setResult(await confirmCorrectionProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          {pending ? "Guardando…" : "Confirmar"}
+        </button>
+        <button
+          className="secondary"
+          disabled={actionsDisabled}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await discardCorrectionProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Superficie C «Ancla primero», reconstruct depth (#1053): the guarantee leads,
+ * an orienting stepped curve follows, and the point-by-point series is folded
+ * below with per-point amount edit / exclusion. The confirm gate (canConfirm) and
+ * the exclusions/edits run through the pure `anchor-correction-gate` module; the
+ * confirm re-sends the kept series so the server re-projects it against live data.
+ */
+function ReconstructionProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: ReconstructionCorrectionProposal;
+}) {
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmCorrectionProposalAction>
+  > | null>(null);
+  const [series, setSeries] = useState(proposal.series);
+  const [dirty, setDirty] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  const applyEdit = (
+    index: number,
+    change: { balanceMinor?: number; excluded?: boolean },
+  ) => {
+    setSeries((current) => editCorrectionPoint(current, index, change) as typeof current);
+    setDirty(true);
+  };
+  const editedRows = series
+    .filter((point) => !point.excluded && point.balanceMinor !== null)
+    .map((point) => ({ balanceMinor: point.balanceMinor as number, date: point.date }));
+
+  // Pristine, the engine's reconciliation from the build is both the guarantee
+  // and the gate. After an edit the strong check moves fully server-side — the
+  // confirm re-projects the kept series and reconciles its endpoint against live
+  // data (a naive last-point check would wrongly block a statement dated before
+  // today), so we allow the attempt whenever a point remains and surface the
+  // server's verdict in the result.
+  const verified = !dirty && proposal.guarantee.state === "reconciled";
+  const canConfirm = dirty
+    ? editedRows.length > 0
+    : proposal.guarantee.state === "reconciled";
+  const settled = result?.status === "applied" || result?.status === "discarded";
+  const actionsDisabled = pending || mutationsDisabled || settled;
+
+  return (
+    <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
+      <p className="assistantProposalKind">Corrección · Reconstruir historia</p>
+      <strong>{proposal.summary}</strong>
+      {/* Superficie C: the guarantee leads, the point-by-point detail folds below. */}
+      <p className={verified ? "assistantOk" : dirty ? "" : "assistantError"}>
+        {dirty
+          ? "Editaste la serie — se recomprobará con el motor al confirmar."
+          : guaranteeMessage(proposal.guarantee.state)}
+      </p>
+      <svg
+        aria-label="Curva escalonada orientativa del saldo reconstruido"
+        role="img"
+        viewBox="0 0 100 100"
+      >
+        <polyline
+          fill="none"
+          points={balanceCurvePolyline(proposal.curve)}
+          stroke="currentColor"
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      {!dirty && "resultingMinor" in proposal.guarantee ? (
+        <p>
+          Reconciliación:{" "}
+          {proposal.guarantee.resultingMinor === null
+            ? "—"
+            : formatPositionMoney(proposal.guarantee.resultingMinor)}{" "}
+          / {formatPositionMoney(proposal.anchorMinor)} ·{" "}
+          {proposal.guarantee.state === "reconciled"
+            ? "Cuadra en el extremo"
+            : "No cuadra en el extremo"}
+        </p>
+      ) : null}
+      <details>
+        <summary>Detalle punto a punto ({series.length})</summary>
+        <ul>
+          {series.map((point, index) => (
+            <li key={point.date}>
+              <span>{point.date}</span>{" "}
+              <input
+                aria-label={`Saldo de ${point.date} en euros`}
+                disabled={actionsDisabled || point.excluded}
+                min={0}
+                onChange={(event) => {
+                  const euros = Number.parseFloat(event.target.value);
+                  if (Number.isFinite(euros)) {
+                    applyEdit(index, { balanceMinor: Math.round(euros * 100) });
+                  }
+                }}
+                step={0.01}
+                type="number"
+                value={point.balanceMinor === null ? "" : point.balanceMinor / 100}
+              />
+              <label>
+                <input
+                  checked={point.excluded ?? false}
+                  disabled={actionsDisabled}
+                  onChange={(event) =>
+                    applyEdit(index, { excluded: event.target.checked })
+                  }
+                  type="checkbox"
+                />
+                Excluir
+              </label>
+              <span>
+                {point.origin === "user"
+                  ? "Corregido por ti"
+                  : "Extraído por el asistente"}
+                {point.reason === undefined ? "" : ` · ${point.reason}`}
+                {point.driftMinor === null || point.driftMinor === undefined
+                  ? ""
+                  : ` · Desvío ${formatPositionMoney(point.driftMinor)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+      <p className="assistantProposalFolio">{proposal.folio}</p>
+      {result ? (
+        <p
+          aria-live="polite"
+          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          role="status"
+        >
+          {result.status === "applied"
+            ? "Historia reconstruida."
+            : result.status === "discarded"
+              ? "Propuesta descartada."
+              : result.message}
+        </p>
+      ) : mutationsDisabled ? (
+        <p className="assistantError">{mutationsDisabledMessage}</p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={actionsDisabled || !canConfirm || editedRows.length === 0}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(
+                await confirmCorrectionProposalAction(proposal.draft, editedRows),
+              ),
             )
           }
           type="button"
@@ -850,16 +1029,27 @@ export default function AssistantLayer({
                     />
                   ) : null;
                 }
-                if (name === "propose_correction" && "output" in part) {
+                if (
+                  (name === "propose_correction" || name === "propose_reconstruction") &&
+                  "output" in part
+                ) {
                   const proposal = parseCorrectionProposal(part.output);
-                  return proposal ? (
+                  if (!proposal) return null;
+                  return proposal.mode === "reconstruir" ? (
+                    <ReconstructionProposalCard
+                      key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
+                      proposal={proposal}
+                    />
+                  ) : (
                     <CorrectionProposalCard
                       key={`${message.id}-${i}`}
                       mutationsDisabled={mutationsDisabled}
                       mutationsDisabledMessage={mutationsDisabledMessage}
                       proposal={proposal}
                     />
-                  ) : null;
+                  );
                 }
                 if (name === "propose_balance_history_import" && "output" in part) {
                   const proposal = parseBalanceHistoryProposal(part.output);
