@@ -1,11 +1,12 @@
 import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
-import type {
-  ExposureAssetClassBucket,
-  ExposureDimension,
-  ExposureGeographyBucket,
-  ExposureSectorBucket,
+import {
+  type ExposureAssetClassBucket,
+  type ExposureDimension,
+  type ExposureGeographyBucket,
+  type ExposureSectorBucket,
+  sectorStyleSplit,
 } from "./exposure-taxonomy";
 import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
@@ -65,10 +66,31 @@ export interface ExposureDimensionResult {
   coverage: ExposureCoverage;
 }
 
+/**
+ * The defensive/cyclical style lens (ADR 0065): a *derived* view over the
+ * sector slices, never a stored bucket. Both weights are fractions of gross
+ * (the same base as the sector slice weights), so `defensive + cyclical`
+ * equals the sector `classified` coverage — the uncovered remainder stays
+ * unclassified, exactly as the coverage box shows.
+ */
+export interface ExposureSectorStyle {
+  defensive: DecimalString;
+  cyclical: DecimalString;
+}
+
 export interface ExposureLookthrough {
   geography: ExposureDimensionResult;
   currency: ExposureDimensionResult;
   assetClass: ExposureDimensionResult;
+  /**
+   * Sector look-through, equity-scaled (ADR 0065). Unlike the whole-fund
+   * geography/currency dimensions, each holding's sector vector is scaled by
+   * its derived equity weight: the non-equity part is `notApplicable`, and an
+   * equity part the vector does not cover is `unknown`.
+   */
+  sector: ExposureDimensionResult;
+  /** Derived defensive/cyclical lens over the sector slices. */
+  sectorStyle: ExposureSectorStyle;
   currencyRisk: ExposureAllocationSlice[];
 }
 
@@ -154,6 +176,7 @@ const EXPOSURE_DIMENSIONS: readonly ExposureDimension[] = [
   "geography",
   "currency",
   "assetClass",
+  "sector",
 ];
 
 export function lookThroughExposure(
@@ -183,10 +206,12 @@ export function lookThroughExposure(
   const currencyTotals = new Map<string, number>();
   const currencyRiskTotals = new Map<string, number>();
   const assetClassTotals = new Map<string, number>();
+  const sectorTotals = new Map<string, number>();
   const coverage = {
     assetClass: emptyCoverage(currency),
     currency: emptyCoverage(currency),
     geography: emptyCoverage(currency),
+    sector: emptyCoverage(currency),
   };
 
   for (const { holding, profile, valueMinor } of projectedHoldings) {
@@ -216,8 +241,17 @@ export function lookThroughExposure(
       profile,
       totals: assetClassTotals,
     });
+    addSectorDimension({
+      assetClassFilter: input.assetClassFilter,
+      coverage: coverage.sector,
+      holding: filteredHolding,
+      profile,
+      totals: sectorTotals,
+    });
     addCurrencyRisk(currencyRiskTotals, filteredHolding, profile, input.baseCurrency);
   }
+
+  const sectorSlices = slicesFromTotals(sectorTotals, exposureGrossAssets);
 
   return {
     assetClass: {
@@ -233,6 +267,8 @@ export function lookThroughExposure(
       coverage: coverage.geography,
       slices: slicesFromTotals(geographyTotals, exposureGrossAssets),
     },
+    sector: { coverage: coverage.sector, slices: sectorSlices },
+    sectorStyle: sectorStyleFromSlices(sectorSlices),
   };
 }
 
@@ -276,6 +312,121 @@ function addProfileDimension(input: {
 
   addBreakdown(input.totals, input.holding.valueMinor, resolution.breakdown);
   input.coverage.classified.amountMinor += input.holding.valueMinor;
+}
+
+/** Reserved destination keys for the sector allocation — never GICS buckets. */
+const SECTOR_UNKNOWN_KEY = "__sector_unknown__";
+const SECTOR_NOT_APPLICABLE_KEY = "__sector_not_applicable__";
+
+/**
+ * The equity fraction a holding's sector vector scales against (ADR 0065). It is
+ * *derived* from the holding's own asset-class resolution — no stored field:
+ * a stored asset-class vector's `equity` weight, a bare stock's auto 100%, or a
+ * non-equity auto class's 0%. A holding with no declared asset class (an
+ * unprofiled fund/ETF) resolves to `unknown` — the whole holding is a sector
+ * gap. Under an asset-class filter the passed value is already that sleeve, so
+ * the equity weight is 1 for the equity sleeve and 0 for any other class.
+ */
+function sectorEquityWeight(
+  holding: ExposureLookthroughHolding,
+  profile: ExposureProfile | null,
+  filter: ExposureAssetClassBucket | undefined,
+): { kind: "unknown" } | { kind: "equity"; equityWeight: Big } {
+  if (filter) {
+    return {
+      equityWeight: filter === "equity" ? new Big(1) : new Big(0),
+      kind: "equity",
+    };
+  }
+
+  const stored = profile?.breakdowns.assetClass as Breakdown | undefined;
+  if (stored && Object.keys(stored).length > 0) {
+    return { equityWeight: new Big(stored.equity ?? "0"), kind: "equity" };
+  }
+
+  if (holding.instrument === "stock") {
+    return { equityWeight: new Big(1), kind: "equity" };
+  }
+
+  const auto = resolveAssetClassBreakdown(holding.instrument, null);
+  if (auto.kind === "classified") {
+    return { equityWeight: new Big(auto.breakdown.equity ?? "0"), kind: "equity" };
+  }
+
+  return { kind: "unknown" };
+}
+
+/**
+ * The sector dimension is not the flat whole-fund path: it scales the stored
+ * sector vector by the derived equity weight (ADR 0065). Per holding of value
+ * `V` with equity fraction `e` and declared sector coverage `Σ`:
+ *   - € per sector = `V × e × weight`
+ *   - classified   = `V × e × Σ`
+ *   - unknown      = `V × e × (1 − Σ)` (equity the vector doesn't cover)
+ *   - notApplicable = `V × (1 − e)` (the non-equity sleeve — no GICS sector)
+ * The four destinations partition exactly `1`, so a single largest-remainder
+ * pass keeps the integer minors reconciling to `V` — the three coverage parts
+ * always sum to the holding's gross.
+ */
+function addSectorDimension(input: {
+  assetClassFilter: ExposureAssetClassBucket | undefined;
+  holding: ExposureLookthroughHolding;
+  profile: ExposureProfile | null;
+  totals: Map<string, number>;
+  coverage: ExposureCoverage;
+}): void {
+  const equity = sectorEquityWeight(input.holding, input.profile, input.assetClassFilter);
+  const value = input.holding.valueMinor;
+
+  if (equity.kind === "unknown") {
+    input.coverage.unknown.amountMinor += value;
+    return;
+  }
+
+  const equityWeight = equity.equityWeight;
+  const sectorVector = (input.profile?.breakdowns.sector as Breakdown | undefined) ?? {};
+
+  let declared = new Big(0);
+  const destinations: Array<{ key: string; weight: Big }> = [];
+  for (const [bucket, weight] of Object.entries(sectorVector)) {
+    const parsed = new Big(weight);
+    declared = declared.plus(parsed);
+    destinations.push({ key: bucket, weight: equityWeight.times(parsed) });
+  }
+  if (declared.gt(1)) {
+    throw new Error("Exposure profile sector breakdown cannot exceed 100%.");
+  }
+
+  destinations.push({
+    key: SECTOR_UNKNOWN_KEY,
+    weight: equityWeight.times(new Big(1).minus(declared)),
+  });
+  destinations.push({
+    key: SECTOR_NOT_APPLICABLE_KEY,
+    weight: new Big(1).minus(equityWeight),
+  });
+
+  for (const [key, amountMinor] of allocateWeightedMinor(value, destinations)) {
+    if (key === SECTOR_UNKNOWN_KEY) {
+      input.coverage.unknown.amountMinor += amountMinor;
+    } else if (key === SECTOR_NOT_APPLICABLE_KEY) {
+      input.coverage.notApplicable.amountMinor += amountMinor;
+    } else {
+      input.totals.set(key, (input.totals.get(key) ?? 0) + amountMinor);
+      input.coverage.classified.amountMinor += amountMinor;
+    }
+  }
+}
+
+/** Derived defensive/cyclical lens over the sector slices (ADR 0065, S1 helper). */
+function sectorStyleFromSlices(
+  slices: readonly ExposureAllocationSlice[],
+): ExposureSectorStyle {
+  const vector: Partial<Record<ExposureSectorBucket, DecimalString>> = {};
+  for (const slice of slices) {
+    vector[slice.key as ExposureSectorBucket] = slice.weight;
+  }
+  return sectorStyleSplit(vector);
 }
 
 function filteredValueMinor(
@@ -410,14 +561,27 @@ function allocateBreakdown(
     );
   }
 
-  const parts = [...weights.entries()].map(([key, weight]) => {
+  return allocateWeightedMinor(
+    valueMinor,
+    [...weights.entries()].map(([key, weight]) => ({ key, weight })),
+  );
+}
+
+/**
+ * Split `valueMinor` across destinations whose `weight`s sum to exactly 1, using
+ * largest-remainder rounding so the integer minors reconcile to `valueMinor`
+ * with no leftover. The caller supplies every destination explicitly: the
+ * whole-fund path (`allocateBreakdown`) injects an `other` bucket for the
+ * remainder, while the sector path routes its remainder to coverage instead.
+ */
+function allocateWeightedMinor(
+  valueMinor: number,
+  destinations: ReadonlyArray<{ key: string; weight: Big }>,
+): Array<[string, number]> {
+  const parts = destinations.map(({ key, weight }) => {
     const raw = new Big(valueMinor).times(weight);
     const floor = raw.round(0, Big.roundDown);
-    return {
-      amountMinor: Number(floor.toString()),
-      key,
-      remainder: raw.minus(floor),
-    };
+    return { amountMinor: Number(floor.toString()), key, remainder: raw.minus(floor) };
   });
   let remainingMinor =
     valueMinor - parts.reduce((sum, part) => sum + part.amountMinor, 0);
