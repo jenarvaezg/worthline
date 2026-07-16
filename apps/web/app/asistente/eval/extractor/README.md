@@ -1,8 +1,10 @@
 # Vision extractor golden set (#991)
 
 Local admission gate for `WORTHLINE_EXTRACTOR_MODEL`. The runner calls the same
-`extractPositionsFromImage` seam used in production, compares the validated JSON
-against expected fixtures, and emits a machine-readable admit/reject report.
+production seams — `extractPositionsFromImage` for screenshots and
+`extractBalanceSeriesFromPdf` for PDF statements/amortization schedules — compares
+the validated JSON against expected fixtures, and emits a machine-readable
+admit/reject report.
 
 This harness stays **outside CI**. Normal `bun run test` never needs
 `GOOGLE_GENERATIVE_AI_API_KEY` or private captures.
@@ -23,6 +25,14 @@ The manifest in `manifest.ts` covers every required scenario:
 - `misaligned-columns` — private capture
 - `ticker-name-ambiguity` — private capture
 - `thousand-separator` — private capture (`1.000` vs `1,000`)
+
+The PDF **dated balance series** track (`balance_series` document, PRD #1048 S4)
+lives alongside it and is **always private** — real statements and amortization
+schedules are never committed:
+
+- `debt-statement` — private PDF (`.local/extractor-golden/debt-statement.pdf`)
+- `amortization-schedule` — private PDF (only observed balances are graded, never
+  inferred loan parameters)
 
 ## Prepare private fixtures
 
@@ -64,7 +74,24 @@ grading hints:
 - `warningIncludes` — each fragment must appear in at least one warning
   (case- and accent-insensitive).
 
-Never commit real broker screenshots or sensitive expected JSON.
+Balance-series fixtures use the parallel dated-balance shape (`.local` only):
+
+```json
+{
+  "balances": [
+    { "date": "2026-06-30", "amount": 5592, "currency": "EUR" },
+    { "date": "2026-07-31", "amount": 5401.12, "currency": "EUR", "uncertain": true }
+  ],
+  "warnings": ["Una fila del cuadro estaba tapada."],
+  "mustBeUncertain": ["2026-07-31"],
+  "warningIncludes": ["tapada"]
+}
+```
+
+Here `mustBeUncertain` lists ISO dates instead of tickers; `date`, `amount` and
+`currency` must all match (amounts within the money epsilon).
+
+Never commit real broker screenshots, bank PDFs or sensitive expected JSON.
 
 Regenerate the committed synthetic baseline after editing
 `fixtures/synthetic-baseline.html`:

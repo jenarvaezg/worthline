@@ -5,6 +5,7 @@ import {
   extractPositionsFromImage,
   IMAGE_EXTRACTOR_DEFAULT_MODEL,
 } from "@web/asistente/attachment-image-extractor";
+import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
 
 import {
@@ -14,13 +15,24 @@ import {
   DEFAULT_ADMISSION_THRESHOLD,
 } from "@web/asistente/eval/admission";
 import { parseExtractorEvalArgs } from "./args";
-import { gradeExtractionAgainstExpected } from "./graders";
 import {
+  gradeBalanceSeriesAgainstExpected,
+  gradeExtractionAgainstExpected,
+} from "./graders";
+import {
+  BALANCE_SERIES_GOLDEN_FIXTURES,
+  type BalanceSeriesGoldenFixture,
   EXTRACTOR_GOLDEN_FIXTURES,
   type GoldenFixture,
+  parseBalanceSeriesGoldenExpected,
   parseGoldenExpected,
 } from "./manifest";
-import { resolveFixtureExpectedPath, resolveFixtureImagePath } from "./paths";
+import {
+  resolveBalanceSeriesExpectedPath,
+  resolveBalanceSeriesSourcePath,
+  resolveFixtureExpectedPath,
+  resolveFixtureImagePath,
+} from "./paths";
 
 const DELAY_BETWEEN_FIXTURES_MS = 20_000;
 
@@ -28,7 +40,7 @@ export interface FixtureRunResult {
   id: string;
   scenario: string;
   status: "completed" | "error" | "skipped";
-  imagePath: string;
+  sourcePath: string;
   checks: AdmissionCheck[];
   error?: string;
 }
@@ -42,16 +54,27 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+function assertKnownIds(only: string[]): void {
+  const known = new Set([
+    ...EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.id),
+    ...BALANCE_SERIES_GOLDEN_FIXTURES.map((fixture) => fixture.id),
+  ]);
+  const unknown = only.filter((id) => !known.has(id));
+  if (unknown.length > 0) {
+    throw new Error(`Unknown fixture id(s): ${unknown.join(", ")}`);
+  }
+}
+
 function selectedFixtures(only?: string[]): GoldenFixture[] {
   if (!only || only.length === 0) return EXTRACTOR_GOLDEN_FIXTURES;
   const allowed = new Set(only);
-  const fixtures = EXTRACTOR_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
-  if (fixtures.length !== allowed.size) {
-    const known = new Set(EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.id));
-    const unknown = [...allowed].filter((id) => !known.has(id));
-    throw new Error(`Unknown fixture id(s): ${unknown.join(", ")}`);
-  }
-  return fixtures;
+  return EXTRACTOR_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
+}
+
+function selectedBalanceSeriesFixtures(only?: string[]): BalanceSeriesGoldenFixture[] {
+  if (!only || only.length === 0) return BALANCE_SERIES_GOLDEN_FIXTURES;
+  const allowed = new Set(only);
+  return BALANCE_SERIES_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -77,7 +100,7 @@ export async function runExtractorFixture(
       checks: [],
       error: `Missing ${missing} fixture files.`,
       id: fixture.id,
-      imagePath,
+      sourcePath: imagePath,
       scenario: fixture.scenario,
       status: "skipped",
     };
@@ -108,7 +131,7 @@ export async function runExtractorFixture(
     return {
       checks,
       id: fixture.id,
-      imagePath,
+      sourcePath: imagePath,
       scenario: fixture.scenario,
       status: "completed",
     };
@@ -119,7 +142,74 @@ export async function runExtractorFixture(
       checks: [],
       error: message,
       id: fixture.id,
-      imagePath,
+      sourcePath: imagePath,
+      scenario: fixture.scenario,
+      status: "error",
+    };
+  }
+}
+
+export async function runBalanceSeriesFixture(
+  fixture: BalanceSeriesGoldenFixture,
+  env: Record<string, string | undefined>,
+): Promise<FixtureRunResult> {
+  const sourcePath = resolveBalanceSeriesSourcePath(fixture);
+  const expectedPath = resolveBalanceSeriesExpectedPath(fixture);
+  const rowLabel = `${fixture.scenario}/${fixture.id}`.padEnd(36);
+
+  const hasSource = await fileExists(sourcePath);
+  const hasExpected = await fileExists(expectedPath);
+  if (!hasSource || !hasExpected) {
+    const missing = [!hasSource ? "pdf" : null, !hasExpected ? "expected" : null]
+      .filter((part): part is string => part !== null)
+      .join(" + ");
+    console.error(`SKIP  ${rowLabel} missing ${missing} under ${fixture.storage}`);
+    return {
+      checks: [],
+      error: `Missing ${missing} fixture files.`,
+      id: fixture.id,
+      sourcePath,
+      scenario: fixture.scenario,
+      status: "skipped",
+    };
+  }
+
+  try {
+    const [bytes, expectedRaw] = await Promise.all([
+      readFile(sourcePath),
+      readFile(expectedPath, "utf8"),
+    ]);
+    const expected = parseBalanceSeriesGoldenExpected(JSON.parse(expectedRaw));
+    const result = await extractBalanceSeriesFromPdf(
+      {
+        bytes: new Uint8Array(bytes),
+        fileName: fixture.sourceFile,
+        mimeType: "application/pdf",
+      },
+      { env },
+    );
+    const checks = gradeBalanceSeriesAgainstExpected(result, expected);
+    const passed = checks.filter((check) => check.pass).length;
+    const green = passed === checks.length;
+    console.error(`${green ? "PASS" : "FAIL"}  ${rowLabel} ${passed}/${checks.length}`);
+    for (const check of checks.filter((candidate) => !candidate.pass)) {
+      console.error(`        ✗ ${check.name}`);
+    }
+    return {
+      checks,
+      id: fixture.id,
+      sourcePath,
+      scenario: fixture.scenario,
+      status: "completed",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`ERR   ${rowLabel} ${message}`);
+    return {
+      checks: [],
+      error: message,
+      id: fixture.id,
+      sourcePath,
       scenario: fixture.scenario,
       status: "error",
     };
@@ -128,7 +218,9 @@ export async function runExtractorFixture(
 
 export async function runExtractorEval(argv: readonly string[]): Promise<number> {
   const args = parseExtractorEvalArgs(argv);
+  if (args.only) assertKnownIds(args.only);
   const fixtures = selectedFixtures(args.only);
+  const balanceSeriesFixtures = selectedBalanceSeriesFixtures(args.only);
   const env = {
     ...process.env,
     ...(args.model ? { WORTHLINE_EXTRACTOR_MODEL: args.model } : {}),
@@ -145,10 +237,17 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     if (index > 0) await sleep(DELAY_BETWEEN_FIXTURES_MS);
     fixtureResults.push(await runExtractorFixture(fixture, env));
   }
+  for (const fixture of balanceSeriesFixtures) {
+    if (fixtureResults.length > 0) await sleep(DELAY_BETWEEN_FIXTURES_MS);
+    fixtureResults.push(await runBalanceSeriesFixture(fixture, env));
+  }
 
   const attempted = fixtureResults.filter((result) => result.status !== "skipped");
   const report = buildAdmissionReport({
-    expectedQuestionIds: fixtures.map((fixture) => fixture.id),
+    expectedQuestionIds: [
+      ...fixtures.map((fixture) => fixture.id),
+      ...balanceSeriesFixtures.map((fixture) => fixture.id),
+    ],
     finishedAt: new Date().toISOString(),
     model,
     provider: "google",
@@ -168,7 +267,7 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     ...report,
     fixtures: fixtureResults.map((result) => ({
       id: result.id,
-      imagePath: result.imagePath,
+      sourcePath: result.sourcePath,
       scenario: result.scenario,
       status: result.status,
       ...(result.error ? { error: result.error } : {}),
@@ -195,9 +294,10 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
       `${report.summary.admitted ? "ADMITTED" : "REJECTED"}\n`,
   );
 
+  const totalFixtures = fixtures.length + balanceSeriesFixtures.length;
   const incompleteBecauseSkipped =
     fixtureResults.some((result) => result.status === "skipped") &&
-    attempted.length < fixtures.length;
+    attempted.length < totalFixtures;
   if (incompleteBecauseSkipped) return 1;
   return report.summary.admitted ? 0 : 1;
 }

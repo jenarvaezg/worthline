@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { GoldenFixture } from "./manifest";
+import type { BalanceSeriesGoldenFixture, GoldenFixture } from "./manifest";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(MODULE_DIR, "../../../../../..");
@@ -15,15 +15,26 @@ export function localExtractorGoldenRoot(): string {
   return LOCAL_ROOT;
 }
 
-function resolveFixtureFile(fixture: GoldenFixture, file: string): string {
-  const root = fixture.storage === "committed" ? MODULE_DIR : LOCAL_ROOT;
-  return join(root, file);
+function rootFor(storage: "committed" | "local"): string {
+  return storage === "committed" ? MODULE_DIR : LOCAL_ROOT;
 }
 
 export function resolveFixtureImagePath(fixture: GoldenFixture): string {
-  return resolveFixtureFile(fixture, fixture.imageFile);
+  return join(rootFor(fixture.storage), fixture.imageFile);
 }
 
 export function resolveFixtureExpectedPath(fixture: GoldenFixture): string {
-  return resolveFixtureFile(fixture, fixture.expectedFile);
+  return join(rootFor(fixture.storage), fixture.expectedFile);
+}
+
+export function resolveBalanceSeriesSourcePath(
+  fixture: BalanceSeriesGoldenFixture,
+): string {
+  return join(rootFor(fixture.storage), fixture.sourceFile);
+}
+
+export function resolveBalanceSeriesExpectedPath(
+  fixture: BalanceSeriesGoldenFixture,
+): string {
+  return join(rootFor(fixture.storage), fixture.expectedFile);
 }

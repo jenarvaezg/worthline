@@ -44,6 +44,12 @@ export const ATTACHMENT_TYPES_V1 = [
     kind: "spreadsheet",
     mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
   },
+  {
+    extensions: [".pdf"],
+    fallbackMimeType: "application/pdf",
+    kind: "pdf",
+    mimeTypes: ["application/pdf"],
+  },
 ] as const;
 
 export const ASSISTANT_ATTACHMENT_ACCEPT = ATTACHMENT_TYPES_V1.flatMap((type) => [

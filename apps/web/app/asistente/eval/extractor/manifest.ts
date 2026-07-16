@@ -95,3 +95,92 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
 export function parseGoldenExpected(input: unknown): GoldenExpected {
   return goldenExpectedSchema.parse(input);
 }
+
+// --- Dated balance series (PDF) golden track (PRD #1048 S4) ---------------------
+
+export const BALANCE_SERIES_GOLDEN_SCENARIOS = [
+  "debt-statement",
+  "amortization-schedule",
+] as const;
+
+export type BalanceSeriesGoldenScenario =
+  (typeof BALANCE_SERIES_GOLDEN_SCENARIOS)[number];
+
+const balanceSeriesGoldenExpectedSchema = z
+  .object({
+    balances: z
+      .array(
+        z
+          .object({
+            date: z
+              .string()
+              .trim()
+              .regex(/^\d{4}-\d{2}-\d{2}$/),
+            amount: z.number().finite(),
+            currency: z
+              .string()
+              .trim()
+              .regex(/^[A-Z]{3}$/),
+            uncertain: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
+    warnings: z.array(nonEmptyMessageSchema).max(20),
+    mustBeUncertain: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^\d{4}-\d{2}-\d{2}$/),
+      )
+      .max(20)
+      .optional(),
+    warningIncludes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  })
+  .strict();
+
+export type BalanceSeriesGoldenExpected = z.infer<
+  typeof balanceSeriesGoldenExpectedSchema
+>;
+
+interface BalanceSeriesGoldenFixtureBase {
+  id: string;
+  scenario: BalanceSeriesGoldenScenario;
+  sourceFile: string;
+  expectedFile: string;
+}
+
+export type BalanceSeriesGoldenFixture = BalanceSeriesGoldenFixtureBase & {
+  storage: "local";
+};
+
+/**
+ * Balance-series PDF fixtures are private by nature (real bank statements and
+ * amortization schedules). They live only under `.local/extractor-golden/` and
+ * are never committed — the CLI eval skips any scenario whose files are absent,
+ * exactly like #865's private capture set.
+ */
+export const BALANCE_SERIES_GOLDEN_FIXTURES: BalanceSeriesGoldenFixture[] = [
+  {
+    expectedFile: "debt-statement.expected.json",
+    id: "debt-statement",
+    scenario: "debt-statement",
+    sourceFile: "debt-statement.pdf",
+    storage: "local",
+  },
+  {
+    expectedFile: "amortization-schedule.expected.json",
+    id: "amortization-schedule",
+    scenario: "amortization-schedule",
+    sourceFile: "amortization-schedule.pdf",
+    storage: "local",
+  },
+];
+
+export function parseBalanceSeriesGoldenExpected(
+  input: unknown,
+): BalanceSeriesGoldenExpected {
+  return balanceSeriesGoldenExpectedSchema.parse(input);
+}

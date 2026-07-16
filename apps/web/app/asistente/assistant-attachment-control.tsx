@@ -24,7 +24,7 @@ export default function AssistantAttachmentControl({
         value=""
       />
       <label className="assistantAttachmentButton" htmlFor="assistant-positions-file">
-        Adjuntar captura/CSV/XLSX
+        Adjuntar captura/CSV/XLSX/PDF
       </label>
       {file ? (
         <div aria-live="polite" className="assistantSelectedAttachment">

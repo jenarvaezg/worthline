@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { extractedPositionsSchema } from "./attachment-extraction-contract";
+import { extractedDocumentSchema } from "./attachment-extraction-contract";
 import AttachmentExtractionPreview from "./attachment-extraction-preview";
 
 describe("AttachmentExtractionPreview", () => {
@@ -11,7 +11,8 @@ describe("AttachmentExtractionPreview", () => {
         preview={{
           fileName: "cartera.xlsx",
           result: {
-            data: extractedPositionsSchema.parse({
+            data: extractedDocumentSchema.parse({
+              documentType: "positions",
               positions: [
                 {
                   currency: "EUR",
@@ -55,6 +56,37 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).toContain("name_fund=Fondo+global");
     expect(html).not.toContain("importar-extracto");
     expect(html).not.toMatch(/<form|<button/);
+  });
+
+  test("shows a dated balance series with uncertainty, warnings and no wizard bridge", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        preview={{
+          fileName: "prestamo.pdf",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "balance_series",
+              balances: [
+                { amount: 5592, currency: "EUR", date: "2026-06-30" },
+                { amount: 5401.12, currency: "EUR", date: "2026-07-31", uncertain: true },
+              ],
+              warnings: ["Una fila del cuadro estaba tapada."],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Lectura de prestamo.pdf");
+    expect(html).toContain("2026-06-30");
+    expect(html).toContain("2026-07-31");
+    expect(html).toContain("Revisar lectura");
+    expect(html).toContain("Una fila del cuadro estaba tapada.");
+    expect(html).toContain("<table");
+    // The balance series has no add-holding bridge in v1 (S5 owns the proposal).
+    expect(html).not.toContain("/patrimonio/anadir");
+    expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
   });
 
   test("renders typed nonfatal failures honestly", () => {

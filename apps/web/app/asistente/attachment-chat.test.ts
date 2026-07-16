@@ -10,6 +10,7 @@ const extraction = {
   fileName: "posiciones.csv",
   result: {
     data: {
+      documentType: "positions",
       positions: [
         {
           currency: "EUR",

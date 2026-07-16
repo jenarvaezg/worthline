@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
+  balanceSeriesDocumentSchema,
   checkAttachmentLimits,
-  extractedPositionsSchema,
+  datedBalanceSchema,
+  extractedDocumentSchema,
   normalizeExtractedNumber,
   parseExtractionResult,
+  positionsDocumentSchema,
 } from "./attachment-extraction-contract";
 
 describe("attachment extraction contract", () => {
@@ -15,8 +18,9 @@ describe("attachment extraction contract", () => {
     expect(normalizeExtractedNumber("not a number")).toBeNull();
   });
 
-  test("accepts and normalizes a complete positions extraction", () => {
-    const parsed = extractedPositionsSchema.parse({
+  test("accepts and normalizes a complete positions document", () => {
+    const parsed = positionsDocumentSchema.parse({
+      documentType: "positions",
       positions: [
         {
           currency: "EUR",
@@ -31,6 +35,7 @@ describe("attachment extraction contract", () => {
     });
 
     expect(parsed).toEqual({
+      documentType: "positions",
       positions: [
         {
           currency: "EUR",
@@ -45,8 +50,9 @@ describe("attachment extraction contract", () => {
     });
   });
 
-  test("preserves visible uncertainty and warnings", () => {
-    const parsed = extractedPositionsSchema.parse({
+  test("preserves visible uncertainty and warnings on positions", () => {
+    const parsed = positionsDocumentSchema.parse({
+      documentType: "positions",
       positions: [
         {
           currency: "USD",
@@ -67,12 +73,14 @@ describe("attachment extraction contract", () => {
   });
 
   test.each([
-    { positions: [], warnings: [] },
+    { documentType: "positions", positions: [], warnings: [] },
     {
+      documentType: "positions",
       positions: [{ currency: "EUR", marketValueEur: 10, name: "Incomplete", units: 1 }],
       warnings: [],
     },
     {
+      documentType: "positions",
       positions: [
         {
           currency: "EURO",
@@ -85,6 +93,7 @@ describe("attachment extraction contract", () => {
       warnings: [],
     },
     {
+      documentType: "positions",
       positions: [
         {
           currency: "EUR",
@@ -97,6 +106,7 @@ describe("attachment extraction contract", () => {
       warnings: [],
     },
     {
+      documentType: "positions",
       extra: "not part of v1",
       positions: [
         {
@@ -109,14 +119,97 @@ describe("attachment extraction contract", () => {
       ],
       warnings: [],
     },
-  ])("rejects malformed or partial extraction %#", (raw) => {
-    expect(extractedPositionsSchema.safeParse(raw).success).toBe(false);
+    // A positions payload without its discriminant cannot enter the union.
+    {
+      positions: [
+        {
+          currency: "EUR",
+          marketValueEur: 10,
+          name: "Missing discriminant",
+          ticker: "BAD",
+          units: 1,
+        },
+      ],
+      warnings: [],
+    },
+  ])("rejects malformed or partial positions %#", (raw) => {
+    expect(extractedDocumentSchema.safeParse(raw).success).toBe(false);
+  });
+
+  test("accepts a complete dated balance series document", () => {
+    const parsed = balanceSeriesDocumentSchema.parse({
+      documentType: "balance_series",
+      balances: [
+        { amount: "5.592,00", currency: "EUR", date: "2026-06-30" },
+        { amount: 5401.12, currency: "EUR", date: "2026-07-31", uncertain: true },
+      ],
+      uncertain: true,
+      warnings: ["Una fila del cuadro está parcialmente tapada."],
+    });
+
+    expect(parsed.balances).toEqual([
+      { amount: 5592, currency: "EUR", date: "2026-06-30" },
+      { amount: 5401.12, currency: "EUR", date: "2026-07-31", uncertain: true },
+    ]);
+    expect(parsed.uncertain).toBe(true);
+  });
+
+  test("routes a valid balance series through the shared discriminated union", () => {
+    const parsed = extractedDocumentSchema.parse({
+      documentType: "balance_series",
+      balances: [{ amount: 1200, currency: "EUR", date: "2026-01-15" }],
+      warnings: [],
+    });
+    expect(parsed.documentType).toBe("balance_series");
+  });
+
+  test.each([
+    // Empty series.
+    { documentType: "balance_series", balances: [], warnings: [] },
+    // Missing currency.
+    {
+      documentType: "balance_series",
+      balances: [{ amount: 100, date: "2026-01-15" }],
+      warnings: [],
+    },
+    // Non-ISO / impossible date.
+    {
+      documentType: "balance_series",
+      balances: [{ amount: 100, currency: "EUR", date: "2026-13-40" }],
+      warnings: [],
+    },
+    // Free-form date the model might invent instead of a real day.
+    {
+      documentType: "balance_series",
+      balances: [{ amount: 100, currency: "EUR", date: "30 de junio" }],
+      warnings: [],
+    },
+    // Unknown field cannot ride along.
+    {
+      documentType: "balance_series",
+      balances: [{ amount: 100, currency: "EUR", date: "2026-01-15", note: "x" }],
+      warnings: [],
+    },
+  ])("rejects malformed or partial balance series %#", (raw) => {
+    expect(extractedDocumentSchema.safeParse(raw).success).toBe(false);
+  });
+
+  test("rejects an impossible calendar day at the dated balance seam", () => {
+    expect(
+      datedBalanceSchema.safeParse({ amount: 1, currency: "EUR", date: "2026-02-30" })
+        .success,
+    ).toBe(false);
+    expect(
+      datedBalanceSchema.safeParse({ amount: 1, currency: "EUR", date: "2026-02-28" })
+        .success,
+    ).toBe(true);
   });
 
   test("turns a malformed valid result into a definitive extractor failure", () => {
     expect(
       parseExtractionResult({
         data: {
+          documentType: "positions",
           positions: [{ currency: "EUR", name: "Missing fields" }],
           warnings: [],
         },
@@ -130,6 +223,21 @@ describe("attachment extraction contract", () => {
     });
   });
 
+  test("preserves a valid balance series through parseExtractionResult", () => {
+    const result = parseExtractionResult({
+      data: {
+        documentType: "balance_series",
+        balances: [{ amount: 5592, currency: "EUR", date: "2026-06-30" }],
+        warnings: [],
+      },
+      status: "valid",
+    });
+    expect(result.status).toBe("valid");
+    if (result.status === "valid" && result.data.documentType === "balance_series") {
+      expect(result.data.balances[0]?.amount).toBe(5592);
+    }
+  });
+
   test.each([
     {
       input: {
@@ -140,8 +248,8 @@ describe("attachment extraction contract", () => {
     },
     {
       input: {
-        message: "La hoja supera el límite de filas.",
-        reason: "rows",
+        message: "El PDF supera el límite de páginas.",
+        reason: "pages",
         status: "out_of_limits",
       },
       status: "out_of_limits",
@@ -168,7 +276,7 @@ describe("attachment extraction contract", () => {
     expect(parseExtractionResult(input).status).toBe(status);
   });
 
-  test("accepts every v1 attachment family at the exact size and row boundaries", () => {
+  test("accepts every v1 attachment family at the exact size and unit boundaries", () => {
     for (const input of [
       {
         fileName: "broker.png",
@@ -214,6 +322,13 @@ describe("attachment extraction contract", () => {
         rowCount: ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows,
         sizeBytes: 1,
       },
+      {
+        fileName: "statement.pdf",
+        kind: "pdf" as const,
+        mimeType: "application/pdf",
+        pageCount: ATTACHMENT_EXTRACTION_LIMITS_V1.maxPdfPages,
+        sizeBytes: 1,
+      },
     ]) {
       expect(
         checkAttachmentLimits({
@@ -226,7 +341,7 @@ describe("attachment extraction contract", () => {
 
   test.each([
     {
-      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV o XLSX.",
+      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV, XLSX o PDF.",
       input: {
         fileName: "statement.pdf",
         kind: "image" as const,
@@ -236,17 +351,18 @@ describe("attachment extraction contract", () => {
       reason: "type",
     },
     {
-      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV o XLSX.",
+      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV, XLSX o PDF.",
       input: {
         fileName: "statement.pdf",
-        kind: "image" as const,
+        kind: "pdf" as const,
         mimeType: "image/png",
+        pageCount: 1,
         sizeBytes: 10,
       },
       reason: "type",
     },
     {
-      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV o XLSX.",
+      expected: "Solo se admiten archivos PNG, JPEG, WebP, HEIC/HEIF, CSV, XLSX o PDF.",
       input: {
         fileName: "payload.exe",
         kind: "spreadsheet" as const,
@@ -277,6 +393,17 @@ describe("attachment extraction contract", () => {
       },
       reason: "rows",
     },
+    {
+      expected: `El PDF supera el límite de ${ATTACHMENT_EXTRACTION_LIMITS_V1.maxPdfPages} páginas.`,
+      input: {
+        fileName: "statement.pdf",
+        kind: "pdf" as const,
+        mimeType: "application/pdf",
+        pageCount: ATTACHMENT_EXTRACTION_LIMITS_V1.maxPdfPages + 1,
+        sizeBytes: 10,
+      },
+      reason: "pages",
+    },
   ])("returns a comprehensible $reason limit result", ({ expected, input, reason }) => {
     expect(checkAttachmentLimits(input)).toEqual({
       message: expected,
@@ -285,7 +412,7 @@ describe("attachment extraction contract", () => {
     });
   });
 
-  test("requires spreadsheet row counts at the typed limit seam", () => {
+  test("requires spreadsheet row counts and pdf page counts at the typed limit seam", () => {
     const checkTypedInput = (input: Parameters<typeof checkAttachmentLimits>[0]) => input;
 
     // @ts-expect-error Spreadsheet inputs cannot omit the row count.
@@ -293,6 +420,14 @@ describe("attachment extraction contract", () => {
       fileName: "positions.csv",
       kind: "spreadsheet",
       mimeType: "text/csv",
+      sizeBytes: 10,
+    });
+
+    // @ts-expect-error PDF inputs cannot omit the page count.
+    checkTypedInput({
+      fileName: "statement.pdf",
+      kind: "pdf",
+      mimeType: "application/pdf",
       sizeBytes: 10,
     });
   });
@@ -310,10 +445,10 @@ describe("attachment extraction contract", () => {
   });
 
   test("brands parsed data so raw structural objects cannot masquerade as validated", () => {
-    const acceptValidated = (value: ReturnType<typeof extractedPositionsSchema.parse>) =>
+    const acceptValidated = (value: ReturnType<typeof extractedDocumentSchema.parse>) =>
       value;
 
     // @ts-expect-error Only schema parsing can create a validated extraction.
-    acceptValidated({ positions: [], warnings: [] });
+    acceptValidated({ documentType: "positions", positions: [], warnings: [] });
   });
 });
