@@ -26,7 +26,7 @@ import { GOLDEN_QUESTIONS } from "./golden";
 import type { AssistantAnswer } from "./graders";
 
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
-const MAX_STEPS = 4;
+const MAX_STEPS = 6;
 
 function suggestedActions(result: {
   toolResults?: unknown[];

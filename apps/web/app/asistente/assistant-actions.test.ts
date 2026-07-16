@@ -5,8 +5,10 @@
  */
 
 import {
+  extractEmbeddedQuickActions,
   parseCorrectionProposal,
   parseQuickActions,
+  resolveModelQuickActions,
   sourceHref,
 } from "@web/asistente/assistant-actions";
 import { describe, expect, it } from "vitest";
@@ -56,6 +58,84 @@ describe("parseQuickActions", () => {
         parseQuickActions([{ type: "openInternalSource", label: "x", href }]),
       ).toEqual([]);
     }
+  });
+});
+
+describe("resolveModelQuickActions", () => {
+  it("resolves holding and section refs into internal hrefs", () => {
+    expect(
+      resolveModelQuickActions([
+        {
+          type: "openInternalSource",
+          label: "Ver Flores 11",
+          holding: "wl_hld_abc",
+        },
+        {
+          type: "openInternalSource",
+          label: "Ver patrimonio",
+          section: "patrimonio",
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "openInternalSource",
+        label: "Ver Flores 11",
+        href: "/patrimonio/wl_hld_abc/editar",
+      },
+      {
+        type: "openInternalSource",
+        label: "Ver patrimonio",
+        href: "/patrimonio",
+      },
+    ]);
+  });
+});
+
+describe("extractEmbeddedQuickActions", () => {
+  it("strips a trailing actions JSON block and recovers chips", () => {
+    const text =
+      "Tu patrimonio está concentrado.\n\n" +
+      JSON.stringify(
+        {
+          actions: [
+            {
+              type: "openInternalSource",
+              label: "Ver detalle de Flores 11",
+              holding: "wl_hld_6e8207be9e01d55c58e8245c5f694229",
+            },
+            {
+              type: "runSuggestedAnalysis",
+              label: "¿Cuál es mi capacidad de ahorro mensual?",
+              prompt: "¿Cuál es mi capacidad de ahorro mensual?",
+            },
+          ],
+        },
+        null,
+        2,
+      );
+
+    const { cleaned, actions } = extractEmbeddedQuickActions(text);
+
+    expect(cleaned).toBe("Tu patrimonio está concentrado.");
+    expect(actions).toEqual([
+      {
+        type: "openInternalSource",
+        label: "Ver detalle de Flores 11",
+        href: "/patrimonio/wl_hld_6e8207be9e01d55c58e8245c5f694229/editar",
+      },
+      {
+        type: "runSuggestedAnalysis",
+        label: "¿Cuál es mi capacidad de ahorro mensual?",
+        prompt: "¿Cuál es mi capacidad de ahorro mensual?",
+      },
+    ]);
+  });
+
+  it("leaves ordinary text untouched when there is no actions block", () => {
+    expect(extractEmbeddedQuickActions("Sin acciones aquí.")).toEqual({
+      cleaned: "Sin acciones aquí.",
+      actions: [],
+    });
   });
 });
 

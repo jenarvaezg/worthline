@@ -33,6 +33,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/debes identificar.*(?:cifra|fuente interna)/i);
     // #631: it must offer typed read-only follow-ups via the action tool.
     expect(prompt).toMatch(/suggest_actions/);
+    expect(prompt).toMatch(/get_financial_context.*una sola vez/i);
+    expect(prompt).toMatch(/nunca imprimas json de acciones/i);
     // #1050: it must know the maintainer-alert path exists and never blocks repair.
     expect(prompt).toMatch(/raise_maintainer_alert/);
     expect(prompt).toMatch(/nunca espera a la alerta/i);
