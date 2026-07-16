@@ -4010,6 +4010,265 @@ code {
   margin-top: 2px;
 }
 
+/* === #1013 exposure catalog (/admin · maestro-detalle sobre papel) === */
+
+/* The workbench is wider than the default admin measure: a full-width triage
+   register beside a detail panel, on one screen (decision #941). */
+.catalogAdmin {
+  max-width: 1200px;
+}
+
+.catalogWorkbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .catalogWorkbench {
+    grid-template-columns: 1fr;
+  }
+}
+
+.catalogListHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* The triage count is an advisory in gold (canon §6: warning, never red). */
+.catalogTriageCount {
+  margin: 0;
+  color: var(--gold);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.catalogSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.catalogSearch {
+  flex: 1;
+  min-width: 0;
+}
+
+.catalogTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.catalogTable th {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.catalogTable td {
+  padding: 5px 8px;
+}
+
+.catalogTable .catalogNum {
+  text-align: right;
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+.catalogRow {
+  border-bottom: 1px solid var(--hairline);
+  transition: background var(--dur-smooth) var(--ease-standard);
+}
+
+.catalogRow.isSelected {
+  background: var(--band);
+}
+
+.catalogRowButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-family: var(--font-numeric);
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalogRowButton:hover {
+  text-decoration: underline;
+}
+
+/* The «Aviso» marker: a gold bordered label — never color alone (it carries the
+   word «Aviso» and a title), never the debit red (canon §6, #941). */
+.catalogAviso {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  color: var(--gold);
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.catalogAvisoNone {
+  color: var(--muted);
+}
+
+.catalogEmpty,
+.catalogDetailEmpty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.catalogDetailPane h2 {
+  font-size: 1.1rem;
+  margin: 0 0 12px;
+}
+
+.catalogForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Fieldsets are ruled sections, not bordered cards (canon §4). */
+.catalogFieldset {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 0 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.catalogFieldset legend {
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.catalogFieldset label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.catalogFieldset input,
+.catalogFieldset select {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.catalogTwoCol {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.catalogWeights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 12px;
+}
+
+.catalogWeights label {
+  margin-top: 0;
+}
+
+.catalogCurrencyRow {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.catalogCurrencyRow input {
+  margin-top: 0;
+}
+
+.catalogCurrencyRow input:first-child {
+  width: 5.5rem;
+  flex: none;
+}
+
+.catalogIdentity {
+  margin: 4px 0 0;
+  font-family: var(--font-numeric);
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.catalogHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* Live coverage readout under each dimension (contract #940 honesty). */
+.catalogRemainder {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.catalogAvisoInline {
+  color: var(--gold);
+  font-weight: 650;
+}
+
+.catalogOver {
+  color: var(--red);
+  font-weight: 650;
+}
+
+.catalogComplete {
+  color: var(--green);
+}
+
+.catalogDangerZone {
+  border-top: var(--rule-heavy);
+  margin-top: 20px;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.catalogRekey {
+  gap: 10px;
+}
+
+.catalogUnavailableMsg {
+  color: var(--muted);
+  max-width: 60ch;
+  line-height: 1.5;
+}
+
+.catalogUnavailableMsg code {
+  font-family: var(--font-numeric);
+  font-size: 0.9em;
+}
+
 /* === #57 patrimonio === */
 
 /* Page masthead, not a card (canon §3): the title + actions sit on the paper. */
