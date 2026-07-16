@@ -36,7 +36,8 @@ export default async function AdminPage() {
           <a href="/admin/alertas">
             Alertas de mantenedor
             {openAlerts > 0 ? <span className="alertBadge">{openAlerts}</span> : null}
-          </a>
+          </a>{" "}
+          · <a href="/admin/catalogo">Catálogo de exposición</a>
         </p>
       </header>
 
