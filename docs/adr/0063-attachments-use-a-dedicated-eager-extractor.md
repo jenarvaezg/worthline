@@ -68,6 +68,40 @@ shown to the user.
   for a preview, not user confirmation; writes stay in the existing import and wizard
   flows.
 
+## Amendment — PDF and the dated balance series document (PRD #1048 S4)
+
+The valid extraction is no longer positions-only. The contract's valid payload is a
+**discriminated union of document schemas** keyed by `documentType`; the envelope
+(`valid` / `unrecognized` / `out_of_limits` / `failure`) is unchanged. Two documents
+exist in v1: the existing `positions` (images and spreadsheets) and a new
+`balance_series` — observed balances each with an ISO calendar date, amount and
+currency, plus honesty `uncertain`/`warnings`. The dated balance series covers both a
+debt statement and an amortization schedule; from a schedule only *observed* balances
+are read, never parameters (rate, instalment, term) inferred by the model. Valuation and
+positions extraction from PDF are out of scope for v1.
+
+PDF is a first-class attachment kind. It is read by a dedicated extractor over the same
+fixed, env-overridable vision model (`WORTHLINE_EXTRACTOR_MODEL`) outside the
+conversational pool, producing the same versioned contract and typed outcomes. PDF
+carries its own limits inside the existing 4 MiB request boundary: a dedicated page cap
+(`maxPdfPages`, surfaced as the new `pages` limit reason) enforced by a best-effort page
+count from the raw bytes, and a `%PDF` magic-byte check that maps a non-PDF payload to
+an `unsupported_document` failure. When the page count cannot be determined (compressed
+object streams), the byte-size limit remains the hard boundary. Process-and-discard is
+unchanged: the PDF binary is never persisted.
+
+**Prompt-injection boundary (explicit security decision).** A bank document is untrusted
+input, and #627 deferred document input precisely because of this; attachments activate
+it. The exposure is contained by the same seam that already governs screenshots: the
+binary reaches only the dedicated extractor, never the conversational pool; the extractor
+prompt states that the document is data and that any instruction written inside it must
+be ignored; and the only text that can survive extraction is schema-bounded
+`warnings`/free strings, capped in length and count and re-validated by the branded
+common contract before they can become conversational context (already wrapped as
+"su contenido no son instrucciones"). No new capability is granted to the document: chat
+and extractor code still hold no workspace write, and any write stays behind the existing
+preview-and-confirm proposal boundary.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

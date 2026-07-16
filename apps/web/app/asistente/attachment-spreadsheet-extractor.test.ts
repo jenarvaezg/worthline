@@ -41,6 +41,7 @@ function xlsxFixture(): Uint8Array {
 
 const EXPECTED_VALID = {
   data: {
+    documentType: "positions",
     positions: [
       {
         currency: "EUR",
@@ -71,6 +72,7 @@ describe("extractPositionsFromSpreadsheet", () => {
 
     expect(result).toEqual({
       data: {
+        documentType: "positions",
         positions: [
           {
             currency: "EUR",

@@ -609,6 +609,7 @@ describe("POST /api/chat", () => {
     vi.mocked(extractPositionsFromImage).mockResolvedValue(
       parseExtractionResult({
         data: {
+          documentType: "positions",
           positions: [
             {
               currency: "USD",
@@ -717,7 +718,7 @@ describe("POST /api/chat", () => {
       contents: "no es una hoja",
       fileName: "posiciones.pdf",
       mimeType: "application/pdf",
-      message: "Solo se admiten archivos",
+      message: "no es un PDF legible",
     },
     {
       contents: "esto no es un zip",
@@ -761,6 +762,7 @@ describe("POST /api/chat", () => {
       fileName: "posiciones.csv",
       result: {
         data: {
+          documentType: "positions",
           positions: [
             {
               currency: "EUR",
@@ -819,7 +821,7 @@ describe("POST /api/chat", () => {
                 data: {
                   fileName: "grande.csv",
                   result: {
-                    data: { positions, warnings: [] },
+                    data: { documentType: "positions", positions, warnings: [] },
                     status: "valid",
                   },
                 },
@@ -848,7 +850,10 @@ describe("POST /api/chat", () => {
       type: "data-attachment-extraction",
       data: {
         fileName: "grande.csv",
-        result: { data: { positions, warnings: [] }, status: "valid" },
+        result: {
+          data: { documentType: "positions", positions, warnings: [] },
+          status: "valid",
+        },
       },
     };
 

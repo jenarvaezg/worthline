@@ -221,6 +221,7 @@ export function extractPositionsFromSpreadsheet(
 
   return parseExtractionResult({
     data: {
+      documentType: "positions",
       positions,
       totalEur: positions.reduce((total, position) => total + position.marketValueEur, 0),
       warnings: [],

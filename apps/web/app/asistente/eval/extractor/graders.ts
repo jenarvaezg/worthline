@@ -1,6 +1,6 @@
 import type { AttachmentExtractionResult } from "@web/asistente/attachment-extraction-contract";
 
-import type { GoldenExpected } from "./manifest";
+import type { BalanceSeriesGoldenExpected, GoldenExpected } from "./manifest";
 
 export interface ExtractorCheck {
   name: string;
@@ -67,18 +67,21 @@ export function gradeExtractionAgainstExpected(
     },
   ];
   if (result.status !== "valid") return checks;
+  if (result.data.documentType !== "positions") {
+    checks.push({ name: "documento de posiciones", pass: false });
+    return checks;
+  }
+  const data = result.data;
 
   checks.push({
     name: "posiciones coinciden",
-    pass: positionsMatch(result.data.positions, expected.positions),
+    pass: positionsMatch(data.positions, expected.positions),
   });
 
   if (expected.totalEur !== undefined) {
     checks.push({
       name: "total coincide",
-      pass:
-        result.data.totalEur !== undefined &&
-        numbersClose(result.data.totalEur, expected.totalEur),
+      pass: data.totalEur !== undefined && numbersClose(data.totalEur, expected.totalEur),
     });
   }
 
@@ -88,7 +91,7 @@ export function gradeExtractionAgainstExpected(
     pass:
       mustBeUncertain.length === 0 ||
       mustBeUncertain.every((ticker) =>
-        result.data.positions.some(
+        data.positions.some(
           (position) =>
             normalizeText(position.ticker) === normalizeText(ticker) &&
             position.uncertain === true,
@@ -101,7 +104,82 @@ export function gradeExtractionAgainstExpected(
     name: "warnings visibles",
     pass:
       warningIncludes.length === 0 ||
-      warningIncludes.every((fragment) => warningMatches(fragment, result.data.warnings)),
+      warningIncludes.every((fragment) => warningMatches(fragment, data.warnings)),
+  });
+
+  return checks;
+}
+
+function balanceMatches(
+  actual: BalanceSeriesGoldenExpected["balances"][number],
+  expected: BalanceSeriesGoldenExpected["balances"][number],
+): boolean {
+  return (
+    actual.date === expected.date &&
+    numbersClose(actual.amount, expected.amount) &&
+    actual.currency === expected.currency &&
+    (expected.uncertain === undefined || actual.uncertain === expected.uncertain)
+  );
+}
+
+function balancesMatch(
+  actual: BalanceSeriesGoldenExpected["balances"],
+  expected: BalanceSeriesGoldenExpected["balances"],
+): boolean {
+  if (actual.length !== expected.length) return false;
+  const remaining = [...actual];
+  return expected.every((expectedBalance) => {
+    const index = remaining.findIndex((candidate) =>
+      balanceMatches(candidate, expectedBalance),
+    );
+    if (index === -1) return false;
+    remaining.splice(index, 1);
+    return true;
+  });
+}
+
+/**
+ * Grade a PDF balance-series result against its golden expected series. Mirrors
+ * the positions grader: dated-balance accuracy plus visibility of expected
+ * `uncertain` dates and `warnings`, not just schema validity.
+ */
+export function gradeBalanceSeriesAgainstExpected(
+  result: AttachmentExtractionResult,
+  expected: BalanceSeriesGoldenExpected,
+): ExtractorCheck[] {
+  const checks: ExtractorCheck[] = [
+    { name: "extracción válida", pass: result.status === "valid" },
+  ];
+  if (result.status !== "valid") return checks;
+  if (result.data.documentType !== "balance_series") {
+    checks.push({ name: "documento de saldos fechados", pass: false });
+    return checks;
+  }
+  const data = result.data;
+
+  checks.push({
+    name: "saldos coinciden",
+    pass: balancesMatch(data.balances, expected.balances),
+  });
+
+  const mustBeUncertain = expected.mustBeUncertain ?? [];
+  checks.push({
+    name: "uncertain visible",
+    pass:
+      mustBeUncertain.length === 0 ||
+      mustBeUncertain.every((date) =>
+        data.balances.some(
+          (balance) => balance.date === date && balance.uncertain === true,
+        ),
+      ),
+  });
+
+  const warningIncludes = expected.warningIncludes ?? [];
+  checks.push({
+    name: "warnings visibles",
+    pass:
+      warningIncludes.length === 0 ||
+      warningIncludes.every((fragment) => warningMatches(fragment, data.warnings)),
   });
 
   return checks;

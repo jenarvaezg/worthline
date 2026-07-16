@@ -49,7 +49,10 @@ describe("image positions extractor", () => {
       sleep: vi.fn(),
     });
 
-    expect(result).toEqual({ data: VISION_OUTPUT, status: "valid" });
+    expect(result).toEqual({
+      data: { documentType: "positions", ...VISION_OUTPUT },
+      status: "valid",
+    });
     expect(createModel).toHaveBeenCalledWith({
       apiKey: "secret",
       modelId: IMAGE_EXTRACTOR_DEFAULT_MODEL,

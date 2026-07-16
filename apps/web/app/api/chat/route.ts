@@ -4,6 +4,7 @@ import {
   prepareAttachmentMessagesForModel,
 } from "@web/asistente/attachment-chat";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
+import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractPositionsFromSpreadsheet } from "@web/asistente/attachment-spreadsheet-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
@@ -239,16 +240,21 @@ export async function POST(request: Request): Promise<Response> {
   let currentPreview: AttachmentPreviewData | null = null;
   if (attachment) {
     const fileName = attachment.name.trim();
+    const mimeType = attachment.type.toLowerCase();
     const extractionInput = {
       bytes: new Uint8Array(await attachment.arrayBuffer()),
       fileName,
       mimeType: attachment.type,
     };
+    const isPdf =
+      mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
     currentPreview = {
       fileName,
-      result: attachment.type.toLowerCase().startsWith("image/")
-        ? await extractPositionsFromImage(extractionInput)
-        : extractPositionsFromSpreadsheet(extractionInput),
+      result: isPdf
+        ? await extractBalanceSeriesFromPdf(extractionInput)
+        : mimeType.startsWith("image/")
+          ? await extractPositionsFromImage(extractionInput)
+          : extractPositionsFromSpreadsheet(extractionInput),
     };
     if (currentPreview.result.status !== "valid") {
       const preview = currentPreview;

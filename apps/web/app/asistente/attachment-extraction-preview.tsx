@@ -1,6 +1,10 @@
 import Link from "next/link";
 
 import type { AttachmentPreviewData } from "./attachment-chat";
+import type {
+  ExtractedBalanceSeriesDocument,
+  ExtractedPositionsDocument,
+} from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
 
 const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
@@ -9,29 +13,18 @@ const euros = new Intl.NumberFormat("es-ES", {
   style: "currency",
 });
 
-export default function AttachmentExtractionPreview({
-  preview,
-}: {
-  preview: AttachmentPreviewData;
-}) {
-  if (preview.result.status !== "valid") {
-    return (
-      <section className="assistantAttachmentPreview" role="status">
-        <strong>Lectura de {preview.fileName}</strong>
-        <p>{preview.result.message}</p>
-      </section>
-    );
+function formatAmount(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("es-ES", { currency, style: "currency" }).format(amount);
+  } catch {
+    // A currency the runtime cannot format still reads honestly as number + code.
+    return `${number.format(amount)} ${currency}`;
   }
+}
 
-  const { data } = preview.result;
+function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
   return (
-    <section
-      aria-label={`Lectura de ${preview.fileName}`}
-      aria-live="polite"
-      className="assistantAttachmentPreview"
-      role="status"
-    >
-      <strong>Lectura de {preview.fileName}</strong>
+    <>
       <div className="assistantAttachmentTableScroll">
         <table>
           <thead>
@@ -84,6 +77,72 @@ export default function AttachmentExtractionPreview({
         Revisa cada lectura. «Llevar al alta» abre el asistente de alta con los datos
         rellenos para que confirmes tú; nada se guarda desde el chat.
       </p>
+    </>
+  );
+}
+
+function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }) {
+  return (
+    <>
+      <div className="assistantAttachmentTableScroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Fecha</th>
+              <th scope="col">Saldo</th>
+              <th scope="col">Divisa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.balances.map((balance, index) => (
+              <tr key={`${balance.date}-${index}`}>
+                <th scope="row">
+                  {balance.date}
+                  {balance.uncertain ? <em>Revisar lectura</em> : null}
+                </th>
+                <td>{formatAmount(balance.amount, balance.currency)}</td>
+                <td>{balance.currency}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="assistantAttachmentBridgeHint">
+        Son los saldos fechados leídos del documento. Revísalos: nada se guarda desde el
+        chat.
+      </p>
+    </>
+  );
+}
+
+export default function AttachmentExtractionPreview({
+  preview,
+}: {
+  preview: AttachmentPreviewData;
+}) {
+  if (preview.result.status !== "valid") {
+    return (
+      <section className="assistantAttachmentPreview" role="status">
+        <strong>Lectura de {preview.fileName}</strong>
+        <p>{preview.result.message}</p>
+      </section>
+    );
+  }
+
+  const { data } = preview.result;
+  return (
+    <section
+      aria-label={`Lectura de ${preview.fileName}`}
+      aria-live="polite"
+      className="assistantAttachmentPreview"
+      role="status"
+    >
+      <strong>Lectura de {preview.fileName}</strong>
+      {data.documentType === "positions" ? (
+        <PositionsPreview data={data} />
+      ) : (
+        <BalanceSeriesPreview data={data} />
+      )}
       {data.warnings.length > 0 ? (
         <div className="assistantAttachmentWarnings">
           <span>Avisos</span>
