@@ -7946,6 +7946,164 @@ td.rowActions > * {
   padding-left: 10px;
   color: var(--muted);
 }
+/* El asistente responde en markdown; streamdown lo renderiza (#1047). El repo
+   no usa Tailwind, así que las clases de utilidad de streamdown son inertes: su
+   HTML se estila a mano con tokens, acotado bajo .assistantMarkdown para no
+   pisar otras superficies. Streamdown emite elementos reales para casi todo,
+   pero marca la negrita como <span data-streamdown="strong"> y los enlaces como
+   <button data-streamdown="link">, así que esos van por atributo. El turno del
+   usuario sigue en texto plano (.assistantMsg.user p). */
+.assistantMarkdown {
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.assistantMarkdown > div > :first-child {
+  margin-top: 0;
+}
+.assistantMarkdown > div > :last-child {
+  margin-bottom: 0;
+}
+.assistantMarkdown p {
+  margin: 0 0 0.7em;
+  white-space: normal;
+}
+.assistantMarkdown h1,
+.assistantMarkdown h2,
+.assistantMarkdown h3,
+.assistantMarkdown h4,
+.assistantMarkdown h5,
+.assistantMarkdown h6 {
+  margin: 1em 0 0.4em;
+  font-family: var(--font-body);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
+.assistantMarkdown h1 {
+  font-size: 1.15rem;
+}
+.assistantMarkdown h2 {
+  font-size: 1.05rem;
+}
+.assistantMarkdown h3 {
+  font-size: 0.98rem;
+}
+.assistantMarkdown h4,
+.assistantMarkdown h5,
+.assistantMarkdown h6 {
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+.assistantMarkdown ul,
+.assistantMarkdown ol {
+  margin: 0 0 0.7em;
+  padding-left: 1.3em;
+  list-style-position: outside;
+}
+.assistantMarkdown li {
+  margin: 0.2em 0;
+}
+.assistantMarkdown li::marker {
+  color: var(--muted);
+}
+.assistantMarkdown li.task-list-item {
+  list-style: none;
+  margin-left: -1.1em;
+}
+.assistantMarkdown li input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+.assistantMarkdown [data-streamdown="strong"] {
+  font-weight: 700;
+  color: var(--ink);
+}
+.assistantMarkdown em {
+  font-style: italic;
+}
+.assistantMarkdown del {
+  color: var(--muted);
+}
+.assistantMarkdown [data-streamdown="link"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.assistantMarkdown [data-streamdown="link"]:hover {
+  text-decoration: none;
+}
+.assistantMarkdown [data-streamdown="inline-code"] {
+  padding: 0.05em 0.3em;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.85em;
+}
+.assistantMarkdown [data-streamdown="code-block"] {
+  margin: 0 0 0.7em;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.assistantMarkdown [data-streamdown="code-block-header"] {
+  padding: 0.3em 0.7em;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.72rem;
+}
+.assistantMarkdown [data-streamdown="code-block-body"] {
+  overflow-x: auto;
+}
+.assistantMarkdown pre {
+  margin: 0;
+  padding: 0.7em 0.8em;
+}
+.assistantMarkdown pre code {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 0.85em;
+}
+.assistantMarkdown blockquote {
+  margin: 0 0 0.7em;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted);
+}
+.assistantMarkdown [data-streamdown="table-wrapper"] {
+  margin: 0 0 0.7em;
+  overflow-x: auto;
+}
+.assistantMarkdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.assistantMarkdown th,
+.assistantMarkdown td {
+  padding: 0.35em 0.5em;
+  border-bottom: 1px solid var(--hairline);
+  text-align: left;
+}
+.assistantMarkdown th {
+  border-bottom: 2px solid var(--line-strong);
+  font-weight: 700;
+}
+.assistantMarkdown hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+.assistantMarkdown img {
+  max-width: 100%;
+  height: auto;
+}
 .assistantTool {
   display: block;
   margin-bottom: 6px;
