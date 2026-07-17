@@ -31,6 +31,7 @@ import {
   type SnapshotStore,
 } from "./snapshot-store";
 import { type StoreContext } from "./store-context";
+import { createSyncJobExecutor, syncJobErrorFromCause } from "./sync-job";
 import { type SyncRunStore, type SyncTrigger } from "./sync-run-store";
 
 /**
@@ -412,42 +413,74 @@ export function createConnectedSourceSeams(
     });
   };
 
+  // The single synchronous job executor (PRD #999 S2, #1062). `source-sync` is the
+  // only kind wired in S2; it walks the observable `sync_run` lifecycle around the
+  // persist half above. The executor adds job-level single-flight by `dedupeKey`
+  // on top of the handler's own DB-level `sync_run` guard (see the handler's
+  // comments). Future kinds — `daily-capture` (S4 #1064), backfills, doc ingestion
+  // — register alongside without touching the executor core.
+  const jobExecutor = createSyncJobExecutor({
+    "source-sync": {
+      run: async (payload) => {
+        // Open the observable run and claim the DB-level single-flight in one
+        // committed step (#885). A run already in flight for this source → run
+        // nothing rather than open an overlapping one (no storm); reported as a
+        // benign skip so the executor releases the dedupe key cleanly.
+        const begun = await stores.syncRuns.beginRun({
+          at: payload.syncedAt,
+          sourceId: payload.sourceId,
+          trigger: payload.trigger,
+        });
+        if (!begun) return { reason: "no-op", status: "skipped" };
+
+        try {
+          await persistSync(payload);
+          await stores.syncRuns.finishRun({
+            at: payload.syncedAt,
+            runId: begun.runId,
+            sourceId: payload.sourceId,
+          });
+          return { status: "ok" };
+        } catch (cause) {
+          // The fetch already succeeded upstream, so a throw here is a
+          // persist/ripple failure. Record it on the run as a structured,
+          // retriable error — so nothing is left `running` — and surface it as a
+          // typed job outcome. `cause` rides along so the synchronous caller can
+          // rethrow it verbatim (below), keeping the pre-S2 redirect/swallow paths
+          // unchanged; the future queue reads `error.retriable` instead.
+          const error = syncJobErrorFromCause(cause, {
+            code: "sync_persist_failed",
+            retriable: true,
+          });
+          await stores.syncRuns.failRun({
+            at: payload.syncedAt,
+            error,
+            runId: begun.runId,
+            sourceId: payload.sourceId,
+          });
+          return { cause, error, status: "error" };
+        }
+      },
+    },
+  });
+
   return {
     syncConnectedSource: async (params) => {
-      // Open the observable run and claim single-flight in one committed step
-      // (#885). A run already in flight for this source → skip this sync entirely
-      // rather than open an overlapping run (no storm).
-      const begun = await stores.syncRuns.beginRun({
-        at: params.syncedAt,
-        sourceId: params.sourceId,
-        trigger: params.trigger,
+      // Route through the one executor (#1062). Behavior-equivalent to S1: an
+      // `error` outcome rethrows the original cause (callers' existing
+      // redirect/best-effort-swallow handling is untouched); `ok`/`skipped` return
+      // silently, exactly as the pre-executor seam did.
+      const result = await jobExecutor.runSyncJob({
+        dedupeKey: `source-sync:${params.sourceId}`,
+        kind: "source-sync",
+        payload: {
+          positions: params.positions,
+          sourceId: params.sourceId,
+          syncedAt: params.syncedAt,
+          trigger: params.trigger,
+        },
       });
-      if (!begun) return;
-
-      try {
-        await persistSync(params);
-        await stores.syncRuns.finishRun({
-          at: params.syncedAt,
-          runId: begun.runId,
-          sourceId: params.sourceId,
-        });
-      } catch (error) {
-        // The fetch already succeeded upstream, so a throw here is a persist/ripple
-        // failure. Record it on the run as a structured, retriable error — so
-        // nothing is left `running` — then rethrow, leaving the caller's existing
-        // error handling (redirect / best-effort swallow) unchanged.
-        await stores.syncRuns.failRun({
-          at: params.syncedAt,
-          error: {
-            code: "sync_persist_failed",
-            message: error instanceof Error ? error.message : String(error),
-            retriable: true,
-          },
-          runId: begun.runId,
-          sourceId: params.sourceId,
-        });
-        throw error;
-      }
+      if (result.status === "error") throw result.cause;
     },
     applyBinanceHistoryAndRipple: async (params) => {
       const workspace = await ctx.getWorkspace();
