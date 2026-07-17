@@ -15,6 +15,15 @@ vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
 }));
 
+// The manual-refresh throttle (6/hour) opens a control plane, absent in tests — so
+// it bypasses by default here, exactly as it does in local dev. Mock it to a no-op
+// (matching that bypass, so the sync tests below are unaffected) and let one test
+// flip it to the over-limit redirect to prove the gate is honored before syncing.
+vi.mock("./connected-source-sync-throttle-guard", () => ({
+  CONNECTED_SOURCE_SYNC_RATE_LIMIT_MESSAGE: "rate-limited",
+  enforceConnectedSourceSyncThrottle: vi.fn(async () => {}),
+}));
+
 // Eager sync on connect (#895): connectBinanceAction now fires runBinanceRefresh
 // best-effort after connecting. Stub it so the connect tests never touch the
 // network (syncBinanceAction, below, still exercises the real sync via its own
@@ -23,12 +32,14 @@ vi.mock("./binance-refresh", () => ({
   runBinanceRefresh: vi.fn(async () => ({ errors: [] })),
 }));
 
+import { redirect } from "next/navigation";
 import {
   connectBinanceAction,
   disconnectBinanceAction,
   syncBinanceAction,
 } from "./binance-actions";
 import { runBinanceRefresh } from "./binance-refresh";
+import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
 
 function form(entries: Record<string, string>): FormData {
   const fd = new FormData();
@@ -294,6 +305,57 @@ describe("disconnectBinanceAction", () => {
 });
 
 describe("syncBinanceAction", () => {
+  test("respects the throttle: an over-limit refresh redirects BEFORE syncing (#1064)", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    // A seeded position proves the sync never ran: the throttle blocks before the
+    // fetch + the durable enqueue, so nothing changes.
+    await store.connectedSources.syncPositions(
+      sourceId,
+      [
+        {
+          balance: "2",
+          currency: "EUR",
+          externalId: "ETH:spot",
+          imageUrl: null,
+          kind: "token",
+          liquidityTier: "market",
+          name: "ETH",
+          symbol: "ETH",
+          unitPrice: "2000",
+          wallet: "spot",
+        },
+      ],
+      "2026-06-16T10:00:00.000Z",
+    );
+
+    vi.mocked(enforceConnectedSourceSyncThrottle).mockImplementationOnce(
+      async (returnUrl) => {
+        redirect(`${returnUrl}?error=rate_limit`);
+      },
+    );
+    // If the flow reached the provider fetch, this would throw loudly — proving the
+    // throttle did NOT gate the enqueue. The redirect must pre-empt it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => {
+        throw new Error("throttle must block before any provider fetch");
+      }),
+    );
+
+    const digest = await runAction(
+      syncBinanceAction,
+      form({ currentUrl: "/ajustes", sourceId }),
+      store,
+    );
+
+    expect(enforceConnectedSourceSyncThrottle).toHaveBeenCalled();
+    expect(digest).toContain("error=rate_limit");
+    expect(digest).not.toContain("binance_synced");
+    // Untouched: no fetch, no enqueue, no persist.
+    expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+  });
+
   test("errors (without wiping positions) when the source id is unknown", async () => {
     const store = await createInMemoryStore();
     const { sourceId } = await seedWithSource(store);

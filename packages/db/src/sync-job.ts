@@ -48,13 +48,18 @@ export interface SourceSyncJobPayload {
 }
 
 /**
- * Payload for the fleet-wide daily capture. Only the pass-qualified run key is
- * modeled here (it doubles as the `dedupeKey`); the full deps + orchestration are
- * wired in S4 (#1064) when this kind actually routes through the executor.
+ * Payload for the fleet-wide daily capture (S4 #1064). The pass-qualified run key
+ * doubles as the `dedupeKey`; `now` is the enqueue-time wall clock, pinned so the
+ * worker's capture derives the SAME date/run-key/snapshot instant it deduped on —
+ * even if it drains after the 15:00 UTC pass cutoff or past midnight. Without a
+ * pinned `now`, a delayed drain would recompute a different run key than the one
+ * the enqueue single-flighted on, and the idempotency guard would stop composing.
  */
 export interface DailyCaptureJobPayload {
   /** Pass-qualified run key (`YYYY-MM-DD:am|pm`, #895) — the idempotency handle. */
   runKey: string;
+  /** Enqueue-time wall clock (ISO) — the intended capture instant, never the drain time. */
+  now: string;
 }
 
 /** The payload carried by each {@link SyncJobKind}. */
@@ -110,6 +115,54 @@ export function syncJobErrorFromCause(
     message: cause instanceof Error ? cause.message : String(cause),
     retriable: policy.retriable,
   };
+}
+
+/**
+ * Single-flight dedupe key for one source's sync (S1's per-source guard, lifted to
+ * the job level). Two `source-sync` descriptors for the same source share this key,
+ * so the queue never runs them overlapped.
+ */
+export function sourceSyncDedupeKey(sourceId: string): string {
+  return `source-sync:${sourceId}`;
+}
+
+/**
+ * Build a connected-source sync descriptor from its raw params (connect / manual /
+ * cron). Centralizes the `dedupeKey` construction so every enqueue site — the
+ * per-workspace seam and the app-edge triggers (S4) — agrees on one key shape.
+ */
+export function sourceSyncDescriptor(payload: SourceSyncJobPayload): SyncJobDescriptor {
+  return {
+    dedupeKey: sourceSyncDedupeKey(payload.sourceId),
+    kind: "source-sync",
+    payload,
+  };
+}
+
+/**
+ * The pass-qualified daily-capture run key (`YYYY-MM-DD:am|pm`, #895): the UTC date
+ * plus an `am`/`pm` marker split at 15:00 UTC, so the ≈09:00 provisional and ≈21:00
+ * close passes finalize independently while accidental double-triggers within a
+ * single pass still collapse. It doubles as the job's `dedupeKey` AND the
+ * idempotency handle inside `runDailyCapture` — computed ONCE at enqueue and carried
+ * in the payload so a worker draining later uses the same key the enqueue deduped
+ * on (see {@link DailyCaptureJobPayload}).
+ */
+export function dailyCaptureRunKey(nowIso: string): string {
+  const dateKey = nowIso.slice(0, 10);
+  const hour = Number(nowIso.slice(11, 13));
+  const pass = Number.isFinite(hour) && hour < 15 ? "am" : "pm";
+  return `${dateKey}:${pass}`;
+}
+
+/**
+ * Build the fleet-wide daily-capture descriptor, pinning the enqueue-time `now` and
+ * deriving the pass-qualified run key from it. The run key is both the `dedupeKey`
+ * (single-flight per pass) and the payload's idempotency handle.
+ */
+export function dailyCaptureDescriptor(nowIso: string): SyncJobDescriptor {
+  const runKey = dailyCaptureRunKey(nowIso);
+  return { dedupeKey: runKey, kind: "daily-capture", payload: { now: nowIso, runKey } };
 }
 
 /** A per-kind unit of work. Runs synchronously and reports a typed outcome. */

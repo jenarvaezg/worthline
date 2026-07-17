@@ -1,144 +1,92 @@
-import type { RunDailyCaptureDeps, WorthlineStore } from "@worthline/db";
-
-import { createInMemoryStore } from "@worthline/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const NOW = "2026-06-25T21:00:00.000Z";
-const TODAY = "2026-06-25";
+/**
+ * The snapshot cron now ENQUEUES a `daily-capture` job (PRD #999 S4, #1064) rather
+ * than running the fleet capture inline. This suite pins the route's own
+ * responsibility: the `CRON_SECRET` gate and enqueuing exactly one daily-capture
+ * job keyed by the pass-qualified run key. The enqueue → worker → capture chain
+ * (and its idempotency under redelivery) is covered at the queue level in
+ * `packages/db/src/daily-capture-queue.test.ts`.
+ */
 
-// Inject fake deps so the route's real secret gate + real `runDailyCapture`
-// wiring run without control plane, Turso, or network.
-const { captureDeps } = vi.hoisted(() => {
-  const deps: RunDailyCaptureDeps = {
-    now: "2026-06-25T21:00:00.000Z",
-    listAllWorkspaces: async () => [],
-    openStore: async () => {
-      throw new Error("no workspaces to open");
-    },
-    fetchPrices: async () => [],
-  };
-  return { captureDeps: deps };
-});
+const { enqueue } = vi.hoisted(() => ({ enqueue: vi.fn() }));
 
-vi.mock("./daily-capture-deps", () => ({
-  buildDailyCaptureDeps: () => captureDeps,
+vi.mock("@web/sync-queue", () => ({
+  productionSyncQueue: () => ({ enqueue, drain: vi.fn() }),
 }));
 
-import { GET } from "./route";
+import { dailyCaptureDescriptor } from "@worthline/db";
+import { GET, POST } from "./route";
 
 const URL = "http://localhost:3000/api/cron/snapshot";
 const SECRET = "s3cr3t";
 
-function keepOpen(store: WorthlineStore): WorthlineStore {
-  return new Proxy(store, {
-    get(target, prop, receiver) {
-      if (prop === "close") return () => {};
-      return Reflect.get(target, prop, receiver);
-    },
-  });
-}
-
-async function seededMarketStore(): Promise<WorthlineStore> {
-  const store = await createInMemoryStore();
-  await store.workspace.initializeWorkspace({
-    members: [{ id: "mJ", name: "Jose" }],
-    mode: "individual",
-  });
-  await store.assets.createInvestmentAsset({
-    currency: "EUR",
-    id: "fund",
-    liquidityTier: "market",
-    name: "Fund",
-    ownership: [{ memberId: "mJ", shareBps: 10_000 }],
-    priceProvider: "yahoo",
-    providerSymbol: "AAPL",
-  });
-  await store.command.recordInvestmentOperation(
-    {
-      assetId: "fund",
-      currency: "EUR",
-      executedAt: "2026-01-01",
-      feesMinor: 0,
-      id: "op_fund",
-      kind: "buy",
-      pricePerUnit: "100",
-      units: "10",
-    },
-    { today: TODAY },
-  );
-  return store;
+function bearer(token: string): Request {
+  return new Request(URL, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 describe("/api/cron/snapshot", () => {
   const original = process.env.CRON_SECRET;
   beforeEach(() => {
     process.env.CRON_SECRET = SECRET;
-    captureDeps.listAllWorkspaces = async () => [];
-    captureDeps.openStore = async () => {
-      throw new Error("no workspaces to open");
-    };
-    captureDeps.fetchPrices = async () => [];
+    enqueue.mockReset();
+    enqueue.mockResolvedValue({
+      enqueued: true,
+      job: { id: "job_1", dedupeKey: "dk", status: "pending" },
+    });
   });
   afterEach(() => {
     if (original === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = original;
   });
 
-  test("rejects a request with no Authorization (401)", async () => {
+  test("rejects a request with no Authorization (401) and never enqueues", async () => {
     const res = await GET(new Request(URL));
     expect(res.status).toBe(401);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   test("rejects a wrong bearer secret (401)", async () => {
-    const res = await GET(
-      new Request(URL, { headers: { Authorization: "Bearer wrong" } }),
-    );
+    const res = await GET(bearer("wrong"));
     expect(res.status).toBe(401);
-  });
-
-  test("with the secret, runs the capture and returns a summary (200)", async () => {
-    const res = await GET(
-      new Request(URL, { headers: { Authorization: `Bearer ${SECRET}` } }),
-    );
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ total: 0, captured: 0, failures: [] });
-  });
-
-  test("with a seeded workspace, captures priced holdings through the route (200)", async () => {
-    const seeded = await seededMarketStore();
-    captureDeps.listAllWorkspaces = async () => [{ id: "ws", dbUrl: "libsql://ws" }];
-    captureDeps.openStore = async () => keepOpen(seeded);
-    captureDeps.fetchPrices = async () => [
-      {
-        provider: "yahoo",
-        symbol: "AAPL",
-        currency: "EUR",
-        price: "250",
-        source: "yahoo",
-        fetchedAt: NOW,
-        freshnessState: "fresh",
-      },
-    ];
-
-    const res = await GET(
-      new Request(URL, { headers: { Authorization: `Bearer ${SECRET}` } }),
-    );
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ total: 1, captured: 1, failures: [] });
-
-    const snapshot = (await seeded.snapshots.readSnapshots("household")).find(
-      (row) => row.dateKey === TODAY,
-    );
-    expect(snapshot?.grossAssets.amountMinor).toBe(2_500_00);
-
-    seeded.close();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   test("fails closed when CRON_SECRET is unset (401 even with a bearer)", async () => {
     delete process.env.CRON_SECRET;
-    const res = await GET(
-      new Request(URL, { headers: { Authorization: `Bearer ${SECRET}` } }),
-    );
+    const res = await GET(bearer(SECRET));
     expect(res.status).toBe(401);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  test("with the secret, enqueues exactly one daily-capture job keyed by the run key (200)", async () => {
+    const before = new Date().toISOString();
+    const res = await GET(bearer(SECRET));
+    const after = new Date().toISOString();
+
+    expect(res.status).toBe(200);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+
+    const input = enqueue.mock.calls[0]![0];
+    expect(input.workspaceId).toBeNull();
+    expect(input.descriptor.kind).toBe("daily-capture");
+    // The descriptor is built from the route's own wall clock — its dedupe key is
+    // the pass-qualified run key, and its payload pins that same instant.
+    expect(input.descriptor.dedupeKey).toBe(dailyCaptureDescriptor(before).dedupeKey);
+    expect(input.descriptor.payload.now >= before).toBe(true);
+    expect(input.descriptor.payload.now <= after).toBe(true);
+
+    expect(await res.json()).toEqual({
+      dedupeKey: "dk",
+      enqueued: true,
+      jobId: "job_1",
+      status: "pending",
+    });
+  });
+
+  test("POST is also accepted for a manual token-holder trigger", async () => {
+    const res = await POST(bearer(SECRET));
+    expect(res.status).toBe(200);
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 });

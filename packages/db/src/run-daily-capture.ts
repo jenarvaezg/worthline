@@ -2,6 +2,7 @@ import type { AssetPrice, InvestmentPriceProvider } from "@worthline/domain";
 import type { InvestmentAssetMeta } from "./asset-store";
 import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 import type { WorthlineStore } from "./store-types";
+import { dailyCaptureRunKey, type SyncJobResult } from "./sync-job";
 
 /** A workspace the cron must capture — its id and per-workspace database URL. */
 export interface DailyCaptureWorkspace {
@@ -140,7 +141,7 @@ export async function runDailyCapture(
   deps: RunDailyCaptureDeps,
 ): Promise<RunDailyCaptureResult> {
   const dateKey = dateKeyFromIso(deps.now);
-  const runKey = runKeyFromIso(deps.now);
+  const runKey = dailyCaptureRunKey(deps.now);
   if (await deps.isRunFinalized?.(runKey)) {
     return {
       total: 0,
@@ -252,6 +253,42 @@ export async function runDailyCapture(
   };
 }
 
+/**
+ * Map a {@link RunDailyCaptureResult} onto the durable queue's typed outcome (S4
+ * #1064). This is how the `daily-capture` job kind reports to the worker so the
+ * store decides ack-vs-retry:
+ *
+ *   - `skipped` (the run-key guard already finalized this pass) → a benign no-op
+ *     ack: the pass is done, so retrying would only loop. This is the composition
+ *     that keeps at-least-once REDELIVERY safe — a re-leased daily-capture job
+ *     re-invokes `runDailyCapture`, whose `isRunFinalized` guard short-circuits, so
+ *     no second capture happens.
+ *   - per-workspace capture `failures` → a RETRIABLE error. `runDailyCapture` only
+ *     finalizes on zero failures, so a partial failure is genuinely un-finalized
+ *     work; the queue re-enqueues it and the re-run re-captures the succeeded
+ *     workspaces harmlessly (latest-wins, the sole snapshot writer) while retrying
+ *     the failed ones. `sourceSyncFailures`/`benchmarkFailures` are observability
+ *     only (they never block finalization), so they do NOT force a retry.
+ *   - otherwise → `ok`.
+ */
+export function dailyCaptureJobOutcome(result: RunDailyCaptureResult): SyncJobResult {
+  if (result.skipped) {
+    return { reason: "no-op", status: "skipped" };
+  }
+  if (result.failures.length > 0) {
+    return {
+      cause: result,
+      error: {
+        code: "daily_capture_partial_failure",
+        message: `daily capture failed for ${result.failures.length} workspace(s)`,
+        retriable: true,
+      },
+      status: "error",
+    };
+  }
+  return { status: "ok" };
+}
+
 async function runBenchmarkPhase(
   deps: RunDailyCaptureDeps,
 ): Promise<DailyCaptureBenchmarkFailure[]> {
@@ -308,17 +345,4 @@ function pricePairKey(provider: InvestmentPriceProvider, symbol: string): string
 
 function dateKeyFromIso(now: string): string {
   return now.slice(0, 10);
-}
-
-/**
- * The pass-qualified run key for the idempotency guard (#895): the UTC date plus
- * an `am`/`pm` pass marker split at 15:00 UTC. The two scheduled passes (≈09:00
- * provisional, ≈21:00 close) therefore finalize independently — the evening pass
- * is never mistaken for a redundant retry of the morning one — while accidental
- * double-triggers within a single pass window still short-circuit.
- */
-function runKeyFromIso(now: string): string {
-  const hour = Number(now.slice(11, 13));
-  const pass = Number.isFinite(hour) && hour < 15 ? "am" : "pm";
-  return `${dateKeyFromIso(now)}:${pass}`;
 }
