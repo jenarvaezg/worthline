@@ -72,6 +72,7 @@ import {
   amortizationPaymentDatesUpTo,
   amortizationPlanFromBalanceRebaseline,
   buildSnapshotAtDate,
+  eventBoundaryDate,
   globalHoldingValueAtDate,
   historicalCapturedAt,
   housingAssetIdsOf,
@@ -1662,6 +1663,33 @@ async function rippleWholeDebtCurveByModel(
   }
 }
 
+/**
+ * The from-date a ripple for an amortization-plan event (early repayment or rate
+ * revision) must use (#1042): the schedule boundary the event anchors to, NOT its
+ * raw date. The live curve buckets an event by the boundary it falls in (#182).
+ * For an early repayment the lump lands on that boundary, so the whole window
+ * `[boundary, eventDate)` shows the post-lump balance; rippling from the raw date
+ * would leave the persisted snapshots in that window at their pre-lump value
+ * forever, diverging from the live curve, and a later ripple crossing the window
+ * would silently rewrite figures the user already saw. A rate revision does not
+ * move the in-window balance (it changes the payment from the next cuota on), so
+ * for revisions this alignment is a consistency guarantee, not a divergence fix.
+ *
+ * Shares the single source of truth (`eventBoundaryDate`) with the curve's own
+ * bucketing so the two can never drift. The whether-to-ripple guard (ADR 0012:
+ * events dated today/future never generate history) stays on the raw event date
+ * upstream; only this from-date moves earlier to the boundary. Falls back to the
+ * raw date if the plan is gone (defensive — an amortizable event always has one).
+ */
+async function amortizationEventRippleFromDate(
+  liabilities: LiabilityStore,
+  liabilityId: string,
+  eventDate: string,
+): Promise<string> {
+  const plan = await liabilities.readAmortizationPlan(liabilityId);
+  return plan ? eventBoundaryDate(plan, eventDate) : eventDate;
+}
+
 export function createDatedFactCommandImplementations(
   ctx: StoreContext,
   stores: {
@@ -2283,6 +2311,8 @@ export function createDatedFactCommandImplementations(
       const today = opts.today ?? new Date().toISOString().slice(0, 10);
       await ctx.transaction(async () => {
         await stores.liabilities.addInterestRateRevision(input);
+        // Guard (ADR 0012) stays on the raw date; the from-date moves to the
+        // event's cuota boundary (#1042).
         if (input.revisionDate > today) return;
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
@@ -2291,7 +2321,11 @@ export function createDatedFactCommandImplementations(
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            fromDateKey: input.revisionDate,
+            fromDateKey: await amortizationEventRippleFromDate(
+              stores.liabilities,
+              opts.liabilityId,
+              input.revisionDate,
+            ),
             kind: "amortizable-revision",
             liabilityId: opts.liabilityId,
             today,
@@ -2369,10 +2403,13 @@ export function createDatedFactCommandImplementations(
         )
           return 0;
         const newDate = input.revisionDate ?? previousRevisionDate;
-        // From-date math unchanged: the earlier of the old/new date.
-        const fromDateKey =
+        // Guard (ADR 0012) on the earlier of the old/new RAW date; the from-date
+        // then moves to that date's cuota boundary (#1042). Boundary-of-min equals
+        // min-of-boundaries (the boundary map is monotonic in the date), so this
+        // ripples from the earlier of the old/new BOUNDARY, as required.
+        const rawFromDateKey =
           previousRevisionDate < newDate ? previousRevisionDate : newDate;
-        if (fromDateKey <= today) {
+        if (rawFromDateKey <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
             await rippleHistoricalSnapshotsForDebt(
@@ -2380,7 +2417,11 @@ export function createDatedFactCommandImplementations(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey,
+                fromDateKey: await amortizationEventRippleFromDate(
+                  stores.liabilities,
+                  liabilityId,
+                  rawFromDateKey,
+                ),
                 kind: "amortizable-revision",
                 liabilityId,
                 today,
@@ -2407,7 +2448,8 @@ export function createDatedFactCommandImplementations(
           liabilityId === undefined
         )
           return 0;
-        // From-date unchanged: the removed revision's own date.
+        // Guard (ADR 0012) on the raw date; the from-date moves to the removed
+        // revision's cuota boundary (#1042).
         if (previousRevisionDate <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
@@ -2416,7 +2458,11 @@ export function createDatedFactCommandImplementations(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey: previousRevisionDate,
+                fromDateKey: await amortizationEventRippleFromDate(
+                  stores.liabilities,
+                  liabilityId,
+                  previousRevisionDate,
+                ),
                 kind: "amortizable-revision",
                 liabilityId,
                 today,
@@ -2433,6 +2479,8 @@ export function createDatedFactCommandImplementations(
       // recalculate the ones after it (the "amortizable-repayment" kind).
       await ctx.transaction(async () => {
         await stores.liabilities.addEarlyRepayment(input);
+        // Guard (ADR 0012) stays on the raw date; the from-date moves to the
+        // event's cuota boundary (#1042).
         if (input.repaymentDate > today) return;
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
@@ -2441,7 +2489,11 @@ export function createDatedFactCommandImplementations(
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            fromDateKey: input.repaymentDate,
+            fromDateKey: await amortizationEventRippleFromDate(
+              stores.liabilities,
+              opts.liabilityId,
+              input.repaymentDate,
+            ),
             kind: "amortizable-repayment",
             liabilityId: opts.liabilityId,
             today,
@@ -2466,10 +2518,13 @@ export function createDatedFactCommandImplementations(
         )
           return 0;
         const newDate = input.repaymentDate ?? previousRepaymentDate;
-        // From-date math unchanged: the earlier of the old/new date.
-        const fromDateKey =
+        // Guard (ADR 0012) on the earlier of the old/new RAW date; the from-date
+        // then moves to that date's cuota boundary (#1042). Boundary-of-min equals
+        // min-of-boundaries (the boundary map is monotonic in the date), so this
+        // ripples from the earlier of the old/new BOUNDARY, as required.
+        const rawFromDateKey =
           previousRepaymentDate < newDate ? previousRepaymentDate : newDate;
-        if (fromDateKey <= today) {
+        if (rawFromDateKey <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
             await rippleHistoricalSnapshotsForDebt(
@@ -2477,7 +2532,11 @@ export function createDatedFactCommandImplementations(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey,
+                fromDateKey: await amortizationEventRippleFromDate(
+                  stores.liabilities,
+                  liabilityId,
+                  rawFromDateKey,
+                ),
                 kind: "amortizable-repayment",
                 liabilityId,
                 today,
@@ -2506,7 +2565,8 @@ export function createDatedFactCommandImplementations(
           liabilityId === undefined
         )
           return 0;
-        // From-date unchanged: the removed repayment's own date.
+        // Guard (ADR 0012) on the raw date; the from-date moves to the removed
+        // repayment's cuota boundary (#1042).
         if (previousRepaymentDate <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
@@ -2515,7 +2575,11 @@ export function createDatedFactCommandImplementations(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey: previousRepaymentDate,
+                fromDateKey: await amortizationEventRippleFromDate(
+                  stores.liabilities,
+                  liabilityId,
+                  previousRepaymentDate,
+                ),
                 kind: "amortizable-revision",
                 liabilityId,
                 today,

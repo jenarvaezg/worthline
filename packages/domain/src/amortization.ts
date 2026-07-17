@@ -624,6 +624,31 @@ function monthIndexForDate(plan: AmortizationPlanInput, eventDate: string): numb
 }
 
 /**
+ * The date of the schedule boundary a dated event (early repayment or rate
+ * revision) anchors to (#1042): `boundaryDate(plan, monthIndexForDate(plan,
+ * eventDate))`. This is the SINGLE source of truth the live curve's bucketing
+ * (#182) and the historical ripple's from-date must both use, so they can never
+ * drift.
+ *
+ * Both event types are bucketed to this boundary by the locator. For an early
+ * repayment `computeBoundaries` additionally overwrites the boundary's balance
+ * with the post-lump value, so the whole window `[boundary, eventDate)` shows the
+ * lump; rippling from the raw event date would leave the persisted snapshots in
+ * that window at their pre-lump value forever, diverging from the live curve — the
+ * bug (#1042) this from-date fixes. A rate revision does not overwrite the
+ * boundary balance (it changes the payment, so the balance moves only from the
+ * next cuota on), so aligning its from-date here is a consistency guarantee rather
+ * than a divergence fix. Floored at boundary 0 (the disbursement) for events on or
+ * before the first payment.
+ */
+export function eventBoundaryDate(
+  plan: AmortizationPlanInput,
+  eventDate: string,
+): string {
+  return boundaryDate(plan, monthIndexForDate(plan, eventDate));
+}
+
+/**
  * Reject a dated event (early repayment or rate revision) that falls AFTER the
  * loan's final payment boundary (#210). `monthIndexForDate` pins an event to the
  * largest boundary `m ≤ eventDate` with no upper clamp, but the schedule only has

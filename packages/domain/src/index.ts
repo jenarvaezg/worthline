@@ -19,6 +19,7 @@ export {
   amortizationScheduleTrace,
   assertEventWithinTerm,
   deriveCurrentStateAmortizationPlan,
+  eventBoundaryDate,
   firstCuota,
   monthlyPaymentMinorFromRate,
   remainingMonthlyPayments,

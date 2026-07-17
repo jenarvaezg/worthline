@@ -9,6 +9,7 @@ import {
   amortizationScheduleTrace,
   assertEventWithinTerm,
   deriveCurrentStateAmortizationPlan,
+  eventBoundaryDate,
   firstCuota,
   remainingMonthlyPayments,
   suggestFirstPaymentDate,
@@ -670,6 +671,66 @@ describe("event month-mapping when the event day precedes the first-payment day 
       expect(Math.abs(withoutLump - withLump - 10_000_00)).toBeLessThanOrEqual(1);
     });
   }
+});
+
+describe("eventBoundaryDate — ripple from-date shares the curve's bucketing (#1042)", () => {
+  // Cuota on day 8; a mid-cycle event falls after one boundary and before the
+  // next, exactly the window the ripple used to leave stale.
+  const DAY8_LOAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    initialCapitalMinor: 100_000_00,
+    disbursementDate: "2020-01-08",
+    firstPaymentDate: "2020-02-08",
+    termMonths: 120,
+  };
+  const CYCLE_BOUNDARY = "2022-02-08"; // the cuota starting the cycle the event lands in
+  const NEXT_BOUNDARY = "2022-03-08"; // the following cuota
+  const EVENT_DATE = "2022-03-03"; // mid-cycle: after CYCLE_BOUNDARY, before NEXT_BOUNDARY
+
+  test("a mid-cycle event anchors to the start of its cuota cycle", () => {
+    expect(eventBoundaryDate(DAY8_LOAN, EVENT_DATE)).toBe(CYCLE_BOUNDARY);
+  });
+
+  test("the helper agrees with the curve: the live balance is flat and post-lump across [boundary, eventDate)", () => {
+    const lump = 20_000_00;
+    const repayments: EarlyRepayment[] = [
+      { amountMinor: lump, mode: "reduce-payment", repaymentDate: EVENT_DATE },
+    ];
+    const boundary = eventBoundaryDate(DAY8_LOAN, EVENT_DATE);
+    const balanceAt = (targetDate: string, withLump: boolean) =>
+      amortizableBalanceAtDate(
+        withLump
+          ? { earlyRepayments: repayments, plan: DAY8_LOAN, targetDate }
+          : { plan: DAY8_LOAN, targetDate },
+      );
+
+    // Post-lump value the ripple-from-boundary would persist at the cycle start.
+    const postLumpAtBoundary = balanceAt(boundary, true);
+    expect(balanceAt(boundary, false) - postLumpAtBoundary).toBe(lump);
+
+    // Every date in [boundary, eventDate) carries that SAME post-lump value in the
+    // live curve (step-by-default within a cuota cycle) — so recalculating those
+    // existing snapshots from the boundary re-derives exactly what the curve shows.
+    for (const dateInWindow of [boundary, "2022-02-20", "2022-03-02"]) {
+      expect(balanceAt(dateInWindow, true)).toBe(postLumpAtBoundary);
+      // …and each pre-lump value (what a stale snapshot keeps if the ripple starts
+      // at the raw event date) diverges from the live curve — the bug this fixes.
+      expect(balanceAt(dateInWindow, false)).not.toBe(postLumpAtBoundary);
+    }
+  });
+
+  test("an event on a boundary anchors to that boundary itself", () => {
+    expect(eventBoundaryDate(DAY8_LOAN, CYCLE_BOUNDARY)).toBe(CYCLE_BOUNDARY);
+    expect(eventBoundaryDate(DAY8_LOAN, NEXT_BOUNDARY)).toBe(NEXT_BOUNDARY);
+  });
+
+  test("an event on or before the first payment floors at boundary 0 (the disbursement)", () => {
+    // Between disbursement and first payment, and on the disbursement itself.
+    expect(eventBoundaryDate(DAY8_LOAN, "2020-01-20")).toBe(DAY8_LOAN.disbursementDate);
+    expect(eventBoundaryDate(DAY8_LOAN, DAY8_LOAN.disbursementDate)).toBe(
+      DAY8_LOAN.disbursementDate,
+    );
+  });
 });
 
 describe("addMonths day-clamping — end-of-month first-payment dates", () => {
