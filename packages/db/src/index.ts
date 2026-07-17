@@ -258,6 +258,21 @@ export type {
   SnapshotStore,
 } from "./snapshot-store";
 export {
+  createSyncJobExecutor,
+  type DailyCaptureJobPayload,
+  type SourceSyncJobPayload,
+  type SyncJobDescriptor,
+  type SyncJobError,
+  type SyncJobExecutor,
+  type SyncJobHandler,
+  type SyncJobHandlers,
+  type SyncJobKind,
+  type SyncJobPayloadByKind,
+  type SyncJobResult,
+  type SyncJobSkipReason,
+  syncJobErrorFromCause,
+} from "./sync-job";
+export {
   SYNC_RUN_RETENTION_LIMIT,
   type SyncRun,
   type SyncRunError,
