@@ -1,7 +1,6 @@
 import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
 import { perfEnd, perfStart } from "@web/perf-log";
-import { getRequestStore } from "@web/request-store";
-import { bootstrapHealthcheck } from "@web/store";
+import { bootstrapHealthcheck, getRequestStore } from "@web/store";
 import type {
   DrilldownKey,
   FireGlance,

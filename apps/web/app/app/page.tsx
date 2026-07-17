@@ -10,9 +10,8 @@ import {
 } from "@web/intake";
 import { perfEnd, perfStart } from "@web/perf-log";
 import { requireStoreTarget } from "@web/read-store-target";
-import { getRequestStore } from "@web/request-store";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck } from "@web/store";
+import { bootstrapHealthcheck, getRequestStore } from "@web/store";
 import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
