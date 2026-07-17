@@ -2,10 +2,15 @@ import {
   type AttachmentPreviewData,
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
+  type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
-import { extractPositionsFromSpreadsheet } from "@web/asistente/attachment-spreadsheet-extractor";
+import {
+  extractPositionsFromSpreadsheet,
+  renderSpreadsheetForContext,
+  UNSTRUCTURED_SPREADSHEET_MESSAGE,
+} from "@web/asistente/attachment-spreadsheet-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
@@ -238,6 +243,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   let currentPreview: AttachmentPreviewData | null = null;
+  let unstructuredAttachment: UnstructuredAttachment | null = null;
   if (attachment) {
     const fileName = attachment.name.trim();
     const mimeType = attachment.type.toLowerCase();
@@ -248,33 +254,42 @@ export async function POST(request: Request): Promise<Response> {
     };
     const isPdf =
       mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
-    currentPreview = {
-      fileName,
-      result: isPdf
-        ? await extractBalanceSeriesFromPdf(extractionInput)
-        : mimeType.startsWith("image/")
-          ? await extractPositionsFromImage(extractionInput)
-          : extractPositionsFromSpreadsheet(extractionInput),
-    };
-    if (currentPreview.result.status !== "valid") {
-      const preview = currentPreview;
-      const failureMessage = currentPreview.result.message;
-      const textId = "attachment-extraction-message";
-      return createUIMessageStreamResponse({
-        headers: NO_STORE,
-        stream: createUIMessageStream({
-          execute: ({ writer }) => {
-            writer.write({ type: "data-attachment-extraction", data: preview });
-            writer.write({ type: "text-start", id: textId });
-            writer.write({
-              type: "text-delta",
-              id: textId,
-              delta: failureMessage,
-            });
-            writer.write({ type: "text-end", id: textId });
-          },
-        }),
-      });
+    const isImage = mimeType.startsWith("image/");
+    const isSpreadsheet = !isPdf && !isImage;
+    const result = isPdf
+      ? await extractBalanceSeriesFromPdf(extractionInput)
+      : isImage
+        ? await extractPositionsFromImage(extractionInput)
+        : extractPositionsFromSpreadsheet(extractionInput);
+    currentPreview = { fileName, result };
+
+    if (result.status !== "valid") {
+      // A readable spreadsheet that is not a positions table becomes
+      // conversational material instead of a dead-end (#865): render the whole
+      // book and let the model describe it — never as validated figures.
+      if (isSpreadsheet && result.status === "unrecognized") {
+        const text = renderSpreadsheetForContext(extractionInput);
+        if (text) {
+          unstructuredAttachment = { fileName, text };
+          currentPreview = {
+            fileName,
+            result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
+          };
+        }
+      }
+      if (!unstructuredAttachment) {
+        // An honest dead-end (unreadable, too large): the preview card carries
+        // the message, so no redundant text bubble repeats it.
+        const preview = currentPreview;
+        return createUIMessageStreamResponse({
+          headers: NO_STORE,
+          stream: createUIMessageStream({
+            execute: ({ writer }) => {
+              writer.write({ type: "data-attachment-extraction", data: preview });
+            },
+          }),
+        });
+      }
     }
   }
 
@@ -298,7 +313,11 @@ export async function POST(request: Request): Promise<Response> {
   let modelMessages;
   try {
     modelMessages = await convertToModelMessages(
-      prepareAttachmentMessagesForModel(body.messages, currentPreview),
+      prepareAttachmentMessagesForModel(
+        body.messages,
+        currentPreview,
+        unstructuredAttachment,
+      ),
     );
   } catch {
     return jsonError("invalid_body", 400);

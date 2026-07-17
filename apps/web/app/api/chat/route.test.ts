@@ -739,24 +739,26 @@ describe("POST /api/chat", () => {
     expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
-  it("returns an honest nonfatal stream for unknown headers without calling the pool", async () => {
-    const model = simpleAnswerModel("no debe llamarse");
+  it("hands an unrecognized spreadsheet to the model as unstructured material (#865)", async () => {
+    const model = simpleAnswerModel("Veo dos columnas, Foo y Bar.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
 
     const response = await POST(attachmentRequest("Foo;Bar\nuno;dos"));
     const streamed = await response.text();
+    const modelInput = JSON.stringify(model.doStreamCalls);
 
     expect(response.status).toBe(200);
+    // Preview card is present with the soft, non-dead-end message.
     expect(streamed).toContain("data-attachment-extraction");
-    expect(streamed).toContain("No reconozco");
-    expect(model.doStreamCalls).toHaveLength(0);
-
-    const nextResponse = await POST(
-      chatRequest({ messages: [userMessage("Sigamos sin el archivo")] }),
-    );
-    expect(nextResponse.status).toBe(200);
-    expect(await nextResponse.text()).toContain("no debe llamarse");
+    expect(streamed).toContain("Te comento lo que veo");
+    expect(streamed).not.toContain("No reconozco");
+    // The model was called with the raw grid, framed as unvalidated.
     expect(model.doStreamCalls).toHaveLength(1);
+    expect(modelInput).toContain("ADJUNTO NO ESTRUCTURADO");
+    expect(modelInput).toContain("Foo");
+    expect(modelInput).toContain("uno");
+    expect(streamed).toContain("Veo dos columnas, Foo y Bar.");
+    expect(countChatRequest).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -798,7 +800,29 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(200);
     expect(streamed).toContain(message);
+    // The preview card carries the message once — no duplicate text bubble (#865).
+    expect(streamed.split(message)).toHaveLength(2);
     expect(model.doStreamCalls).toHaveLength(0);
+  });
+
+  it("keeps a non-unrecognized spreadsheet a canned dead-end, never conversational (#865)", async () => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const oversized = [
+      "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
+      ...Array.from({ length: 501 }, (_, index) => `T${index};P${index};1;1;EUR`),
+    ].join("\n");
+
+    const response = await POST(
+      attachmentRequest(oversized, "demasiadas.csv", "text/csv"),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("500 filas");
+    // out_of_limits must not slip into the conversational render path.
+    expect(model.doStreamCalls).toHaveLength(0);
+    expect(JSON.stringify(model.doStreamCalls)).not.toContain("ADJUNTO NO ESTRUCTURADO");
   });
 
   it("reuses validated structured history without accepting a file or data URL", async () => {

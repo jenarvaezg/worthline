@@ -1,4 +1,9 @@
-import { SpreadsheetReadError, spreadsheetToRows } from "@web/spreadsheet-text";
+import {
+  SpreadsheetReadError,
+  spreadsheetToAllSheets,
+  spreadsheetToRows,
+  type WorkbookSheet,
+} from "@web/spreadsheet-text";
 
 import {
   type AttachmentExtractionResult,
@@ -228,4 +233,80 @@ export function extractPositionsFromSpreadsheet(
     },
     status: "valid",
   });
+}
+
+/** Card message when a readable spreadsheet is handed to the model to discuss. */
+export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
+  "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.";
+
+// Bounds keep an arbitrary workbook from flooding the model prompt. A quick
+// read of the shape is enough to converse; the whole book is not needed.
+const MAX_CONTEXT_SHEETS = 8;
+const MAX_CONTEXT_ROWS_PER_SHEET = 60;
+const MAX_CONTEXT_COLS = 20;
+const MAX_CONTEXT_CELL_CHARS = 120;
+const MAX_CONTEXT_CHARS = 12_000;
+
+/**
+ * Render a readable-but-unrecognized spreadsheet as bounded plain text so the
+ * assistant can describe what it sees instead of dead-ending (#865). Reads
+ * every worksheet of an .xlsx, or the delimited grid of a CSV. Returns null
+ * when the bytes cannot be read at all — the caller then falls back to the
+ * honest canned failure.
+ */
+export function renderSpreadsheetForContext(
+  input: SpreadsheetExtractionInput,
+): string | null {
+  let sheets: WorkbookSheet[];
+  try {
+    sheets = isXlsx(input.fileName)
+      ? spreadsheetToAllSheets(input.bytes)
+      : csvSheets(input.bytes);
+  } catch {
+    return null;
+  }
+  // Drop whitespace-only sheets so they do not render as "0 fila(s)" noise.
+  const nonEmpty = sheets.filter((sheet) =>
+    sheet.rows.some((row) => row.some((cell) => cell.trim() !== "")),
+  );
+  if (nonEmpty.length === 0) return null;
+
+  const rendered = nonEmpty.slice(0, MAX_CONTEXT_SHEETS).map(renderSheet).join("\n\n");
+  const extraSheets = nonEmpty.length - MAX_CONTEXT_SHEETS;
+  const suffix = extraSheets > 0 ? `\n\n(y ${extraSheets} hoja(s) más sin mostrar)` : "";
+  const text = `${rendered}${suffix}`;
+  return text.length > MAX_CONTEXT_CHARS
+    ? `${text.slice(0, MAX_CONTEXT_CHARS)}\n(contenido truncado)`
+    : text;
+}
+
+function csvSheets(bytes: Uint8Array): WorkbookSheet[] {
+  const rows = csvToRows(bytes);
+  return rows && rows.length > 0 ? [{ name: "", rows }] : [];
+}
+
+function renderSheet(sheet: WorkbookSheet, index: number): string {
+  const dataRows = sheet.rows.filter((row) => row.some((cell) => cell.trim() !== ""));
+  const cols = Math.min(
+    MAX_CONTEXT_COLS,
+    dataRows.reduce((max, row) => Math.max(max, row.length), 0),
+  );
+  const shown = dataRows.slice(0, MAX_CONTEXT_ROWS_PER_SHEET);
+  const body = shown
+    .map((row) =>
+      Array.from({ length: cols }, (_, col) => clampCell(row[col] ?? "")).join(" | "),
+    )
+    .join("\n");
+
+  const title = sheet.name.trim() || `Hoja ${index + 1}`;
+  const extraRows = dataRows.length - shown.length;
+  const more = extraRows > 0 ? `\n(y ${extraRows} fila(s) más)` : "";
+  return `Hoja «${title}» (${dataRows.length} fila(s) × ${cols} columna(s)):\n${body}${more}`;
+}
+
+function clampCell(cell: string): string {
+  const value = cell.trim().replace(/\s+/g, " ");
+  return value.length > MAX_CONTEXT_CELL_CHARS
+    ? `${value.slice(0, MAX_CONTEXT_CELL_CHARS)}…`
+    : value;
 }

@@ -2,7 +2,10 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
 
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "./attachment-extraction-contract";
-import { extractPositionsFromSpreadsheet } from "./attachment-spreadsheet-extractor";
+import {
+  extractPositionsFromSpreadsheet,
+  renderSpreadsheetForContext,
+} from "./attachment-spreadsheet-extractor";
 
 const HEADER = "Símbolo;Nombre;Unidades;Valor de mercado EUR;Divisa";
 
@@ -180,5 +183,46 @@ describe("extractPositionsFromSpreadsheet", () => {
 
     expect(fromCsv).toEqual(EXPECTED_VALID);
     expect(fromXlsx).toEqual(fromCsv);
+  });
+});
+
+describe("renderSpreadsheetForContext (#865)", () => {
+  test("renders every worksheet of an xlsx as bounded named text", () => {
+    const text = renderSpreadsheetForContext(
+      input(
+        xlsxFixture(),
+        "libro.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    );
+
+    expect(text).not.toBeNull();
+    // Both sheets are described, in workbook order, with their names.
+    expect(text).toContain("Hoja «Posiciones»");
+    expect(text).toContain("Hoja «Otra»");
+    expect(text).toContain("VWCE | Vanguard FTSE All-World");
+    expect(text).toContain("No debe leerse");
+  });
+
+  test("renders a delimited CSV as a single unnamed sheet", () => {
+    const text = renderSpreadsheetForContext(
+      input(csvBytes(["Activo;2024;2023", "Inmovilizado;100;90"])),
+    );
+
+    expect(text).toContain("Hoja «Hoja 1»");
+    expect(text).toContain("Activo | 2024 | 2023");
+    expect(text).toContain("Inmovilizado | 100 | 90");
+  });
+
+  test("returns null when the bytes cannot be read at all", () => {
+    expect(
+      renderSpreadsheetForContext(
+        input(
+          strToU8("not a workbook"),
+          "roto.xlsx",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+      ),
+    ).toBeNull();
   });
 });
