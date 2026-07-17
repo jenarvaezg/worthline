@@ -38,6 +38,9 @@ describe("buildChatSystemPrompt", () => {
     // #1050: it must know the maintainer-alert path exists and never blocks repair.
     expect(prompt).toMatch(/raise_maintainer_alert/);
     expect(prompt).toMatch(/nunca espera a la alerta/i);
+    // #865: a readable-but-unvalidated attachment is analysed, not dead-ended.
+    expect(prompt).toMatch(/adjunto no estructurado/i);
+    expect(prompt).toMatch(/análisis rápido de lo que ves/i);
   });
 
   it("pins the core read-only contract", () => {

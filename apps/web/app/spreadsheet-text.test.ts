@@ -6,6 +6,7 @@ import {
   isSpreadsheet,
   MAX_SPREADSHEET_UNCOMPRESSED_BYTES,
   SpreadsheetReadError,
+  spreadsheetToAllSheets,
   spreadsheetToDelimitedText,
   spreadsheetToRows,
 } from "./spreadsheet-text";
@@ -113,6 +114,33 @@ describe("spreadsheetToDelimitedText (#695)", () => {
       "Nombre",
     ]);
     expect(rows[1]?.[7]).toBe("Cartera; la de siempre");
+  });
+
+  test("reads every worksheet in workbook order with its name (#865)", () => {
+    const balance = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Activo</t></is></c><c r="B1"><v>100</v></c></row>
+</sheetData></worksheet>`;
+    const pyg = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Ingresos</t></is></c><c r="B1"><v>50</v></c></row>
+</sheetData></worksheet>`;
+    const workbook = `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Balance" sheetId="1" r:id="rId1"/><sheet name="PyG" sheetId="2" r:id="rId2"/></sheets></workbook>`;
+    const rels = `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`;
+    const bytes = zipSync({
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/_rels/workbook.xml.rels": strToU8(rels),
+      "xl/worksheets/sheet1.xml": strToU8(balance),
+      "xl/worksheets/sheet2.xml": strToU8(pyg),
+    });
+
+    const sheets = spreadsheetToAllSheets(bytes);
+    expect(sheets).toEqual([
+      { name: "Balance", rows: [["Activo", "100"]] },
+      { name: "PyG", rows: [["Ingresos", "50"]] },
+    ]);
   });
 
   test("rejects a workbook whose selected parts exceed the uncompressed cap", () => {

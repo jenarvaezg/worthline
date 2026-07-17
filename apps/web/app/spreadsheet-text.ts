@@ -42,6 +42,12 @@ export function isSpreadsheet(bytes: Uint8Array): boolean {
   );
 }
 
+/** One named worksheet of an .xlsx as a neutral cell matrix. */
+export interface WorkbookSheet {
+  name: string;
+  rows: string[][];
+}
+
 /** First worksheet of an .xlsx as a neutral matrix shared by importers. */
 export function spreadsheetToRows(bytes: Uint8Array): string[][] {
   if (!isSpreadsheet(bytes)) throw new SpreadsheetReadError(UNREADABLE);
@@ -53,22 +59,90 @@ export function spreadsheetToRows(bytes: Uint8Array): string[][] {
   const sheetXml = part(sheet, sheetPath);
   if (!sheetXml) throw new SpreadsheetReadError(UNREADABLE);
 
-  const shared = sharedStrings(metadata);
-  const dateStyles = dateStyleIndexes(metadata);
-  const date1904 = /date1904\s*=\s*"(?:1|true)"/i.test(part(metadata, "xl/workbook.xml"));
+  return sheetXmlToRows(sheetXml, workbookContext(metadata));
+}
 
+/**
+ * Every worksheet of an .xlsx as named cell matrices, order preserved. Powers
+ * the assistant's conversational reading of a workbook that is not a positions
+ * table (#865): the whole book is the material to describe, not just sheet one.
+ */
+export function spreadsheetToAllSheets(bytes: Uint8Array): WorkbookSheet[] {
+  if (!isSpreadsheet(bytes)) throw new SpreadsheetReadError(UNREADABLE);
+
+  const budget = { used: 0 };
+  const metadata = unzipSelected(bytes, (name) => METADATA_PARTS.has(name), budget);
+  const entries = sheetEntries(metadata);
+  const paths = new Set(entries.map((entry) => entry.path));
+  const sheets = unzipSelected(bytes, (name) => paths.has(name), budget);
+
+  const context = workbookContext(metadata);
+  const read = entries
+    .map((entry) => ({
+      name: entry.name,
+      rows: sheetXmlToRows(part(sheets, entry.path), context),
+    }))
+    .filter((sheet) => sheet.rows.length > 0);
+  if (read.length === 0) throw new SpreadsheetReadError(UNREADABLE);
+  return read;
+}
+
+interface WorkbookContext {
+  shared: string[];
+  dateStyles: Set<number>;
+  date1904: boolean;
+}
+
+function workbookContext(metadata: Record<string, Uint8Array>): WorkbookContext {
+  return {
+    shared: sharedStrings(metadata),
+    dateStyles: dateStyleIndexes(metadata),
+    date1904: /date1904\s*=\s*"(?:1|true)"/i.test(part(metadata, "xl/workbook.xml")),
+  };
+}
+
+/** A worksheet's XML rows as a cell matrix, gaps filled by column reference. */
+function sheetXmlToRows(sheetXml: string, context: WorkbookContext): string[][] {
   const rows: string[][] = [];
   for (const rowXml of sheetXml.match(/<row[\s>][\s\S]*?<\/row>/g) ?? []) {
     const cells: string[] = [];
     for (const cellXml of rowXml.match(/<c[\s>][\s\S]*?(?:<\/c>|\/>)/g) ?? []) {
       const at = columnIndexOf(cellXml);
       while (cells.length < at) cells.push("");
-      cells[at] = cellText(cellXml, shared, dateStyles, date1904);
+      cells[at] = cellText(cellXml, context.shared, context.dateStyles, context.date1904);
     }
     rows.push(cells);
   }
-
   return rows;
+}
+
+/** Ordered `{ name, path }` for every worksheet declared in workbook.xml. */
+function sheetEntries(
+  metadata: Record<string, Uint8Array>,
+): { name: string; path: string }[] {
+  const workbook = part(metadata, "xl/workbook.xml");
+  const rels = part(metadata, "xl/_rels/workbook.xml.rels");
+
+  const targets = new Map<string, string>();
+  for (const rel of rels.match(/<Relationship\b[^>]*\/?>/g) ?? []) {
+    const id = /\bId\s*=\s*"([^"]+)"/.exec(rel)?.[1];
+    const target = /\bTarget\s*=\s*"([^"]+)"/.exec(rel)?.[1];
+    if (id && target) targets.set(id, target);
+  }
+
+  const entries: { name: string; path: string }[] = [];
+  for (const sheet of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+    const name = unescapeXml(/\bname\s*=\s*"([^"]*)"/.exec(sheet)?.[1] ?? "");
+    const relId = /\br:id\s*=\s*"([^"]+)"/.exec(sheet)?.[1];
+    const target = relId ? targets.get(relId) : undefined;
+    if (!target) continue;
+    const path = target.startsWith("/")
+      ? target.slice(1)
+      : `xl/${target.replace(/^\.\//, "")}`;
+    entries.push({ name, path });
+  }
+  // Fallback for writers that skip rels: the conventional first-sheet path.
+  return entries.length > 0 ? entries : [{ name: "", path: "xl/worksheets/sheet1.xml" }];
 }
 
 /** First worksheet of an .xlsx → `;`-delimited lines, ready for parseStatement. */
