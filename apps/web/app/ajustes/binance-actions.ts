@@ -100,7 +100,7 @@ export async function connectBinanceAction(
     // connected source with no freshness always syncs). Best-effort: a Binance
     // outage degrades to last-known inside the refresh and never fails connect.
     try {
-      await runBinanceRefresh(store, new Date().toISOString());
+      await runBinanceRefresh(store, new Date().toISOString(), "connect");
     } catch {
       // Connecting still succeeds; the twice-daily cron will retry the sync.
     }
@@ -184,6 +184,7 @@ export async function syncBinanceAction(
           positions: drafts,
           sourceId,
           syncedAt: nowIso,
+          trigger: "manual",
         }),
       _store,
     );

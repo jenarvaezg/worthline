@@ -259,6 +259,7 @@ async function seedConnectedSource(
     positions: source.positions,
     sourceId,
     syncedAt,
+    trigger: "connect",
   });
   return { sourceId, spec: source };
 }

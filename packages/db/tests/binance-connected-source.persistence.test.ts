@@ -420,6 +420,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-21T07:00:00.000Z",
+      trigger: "manual",
     });
 
     // Second sync: CoinGecko missed WBETH (null), BNB still priced. Without the
@@ -437,6 +438,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-22T07:00:00.000Z",
+      trigger: "manual",
     });
 
     const positions = await store.connectedSources.readPositions(sourceId);
@@ -460,6 +462,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-21T07:00:00.000Z",
+      trigger: "manual",
     });
     await store.command.syncConnectedSource({
       sourceId,
@@ -468,6 +471,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-22T07:00:00.000Z",
+      trigger: "manual",
     });
 
     const positions = await store.connectedSources.readPositions(sourceId);
@@ -490,6 +494,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "500" }),
       ],
       syncedAt: "2026-06-21T07:00:00.000Z",
+      trigger: "manual",
     });
     await store.command.syncConnectedSource({
       sourceId,
@@ -497,6 +502,7 @@ describe("syncConnectedSource (Binance) carries a token's last-good price forwar
         token({ externalId: "BNB:spot", symbol: "BNB", balance: "10", unitPrice: "509" }),
       ],
       syncedAt: "2026-06-22T07:00:00.000Z",
+      trigger: "manual",
     });
 
     const asset = (await store.assets.readAssets()).find((a) => a.id === assetId)!;

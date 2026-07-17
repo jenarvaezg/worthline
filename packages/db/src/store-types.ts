@@ -37,6 +37,7 @@ import type {
 import type { OperationsStore, UpdateInvestmentOperationInput } from "./operations-store";
 import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
+import type { SyncTrigger } from "./sync-run-store";
 import type { WorkspaceStore } from "./workspace-store";
 
 type PublicAssetStore = Omit<
@@ -662,6 +663,10 @@ interface LegacyWorthlineStore {
     sourceId: string;
     positions: SourcePositionInput[];
     syncedAt: string;
+    /** What triggered the sync (#885): connect / manual / cron. Recorded on the
+     *  observable `sync_run` this seam opens for the attempt. The GET never calls
+     *  this — it is cache-only (#785/#895). */
+    trigger: SyncTrigger;
   }) => Promise<void>;
   /**
    * Backfill a connected Binance source's monthly value history into snapshots

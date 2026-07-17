@@ -111,9 +111,10 @@ export const factBatches = sqliteTable("fact_batch", {
   trigger: text("trigger").notNull(),
   connectedSourceId: text("connected_source_id"),
   /**
-   * Reserved for the sync-run lifecycle in #885. Intentionally nullable and
-   * without an FK until a real `sync_runs` table exists; command inputs cannot
-   * currently supply a dangling identifier.
+   * The `sync_run` this batch was applied under (#885). The `sync_run` table now
+   * exists (S1, #1061), but wiring a batch to its run — and adding the FK — is
+   * deferred to a later slice; for now this stays nullable and unlinked, and no
+   * command supplies it.
    */
   syncRunId: text("sync_run_id"),
   createdAt: timestamp("created_at"),
@@ -613,6 +614,47 @@ export const positions = sqliteTable("positions", {
   imageUrl: text("image_url"),
   createdAt: timestamp("created_at"),
 });
+
+/**
+ * One connected-source sync ATTEMPT, as an observable row rather than a mutable
+ * column on `connected_sources` (#885 / PRD #999 S1). Every real sync (connect,
+ * manual refresh, cron) opens a row and walks it `pending → running → ok | error`,
+ * so the health-of-fetch signal (did the sync run and work?) is separated from
+ * the freshness-of-valuation signal (which still lives, untouched, in
+ * `asset_price_cache.freshness_state`). One row per attempt, one attempt per
+ * source (the plano 1-source=1-run model, #885 — no parent/child trees).
+ *
+ * `trigger` ∈ {cron, manual, connect} and `status` ∈ {pending, running, ok,
+ * error} are enforced in TS (no SQL CHECK, like the other text enums).
+ * `error_json` carries the structured `{ code, message, retriable }` on failure
+ * and is null otherwise. `last_sync_at` on `connected_sources` becomes a cached
+ * derivation of the latest `ok` run (the run is the truth). The GET never writes
+ * a run — only the trigger does (the GET is cache-only since #785/#895).
+ */
+export const syncRuns = sqliteTable(
+  "sync_run",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => connectedSources.id, { onDelete: "cascade" }),
+    trigger: text("trigger").$type<"cron" | "manual" | "connect">().notNull(),
+    status: text("status").$type<"pending" | "running" | "ok" | "error">().notNull(),
+    // Structured `{ code, message, retriable }` (JSON) on an `error` run; null otherwise.
+    errorJson: text("error_json"),
+    // When the run entered `running`; null while still `pending`.
+    startedAt: text("started_at"),
+    // When the run reached `ok`/`error`; null while non-terminal.
+    finishedAt: text("finished_at"),
+    createdAt: timestamp("created_at"),
+  },
+  (table) => [
+    // Single-flight lookup (is a run already in flight for this source?) and the
+    // retention prune (keep the newest N per source) both filter by source and
+    // order by creation — the composite serves both.
+    index("sync_run_source_created_idx").on(table.sourceId, table.createdAt),
+  ],
+);
 
 export const auditLog = sqliteTable(
   "audit_log",

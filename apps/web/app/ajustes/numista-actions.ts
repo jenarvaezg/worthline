@@ -260,6 +260,7 @@ export async function syncNumistaAction(
           positions: drafts,
           sourceId,
           syncedAt: nowIso,
+          trigger: "manual",
         }),
       _store,
     );
