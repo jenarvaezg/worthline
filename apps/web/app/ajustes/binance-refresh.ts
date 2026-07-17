@@ -3,7 +3,7 @@ import {
   type RefreshBinanceSourcesResult,
   refreshStaleBinanceSources,
 } from "@web/refresh-binance-sources";
-import type { WorthlineStore } from "@worthline/db";
+import type { SyncTrigger, WorthlineStore } from "@worthline/db";
 import {
   fetchCoinGeckoLogos,
   fetchCoinGeckoPriceEur,
@@ -30,6 +30,9 @@ import { readBinanceCredentials } from "./binance-helpers";
 export async function runBinanceRefresh(
   store: WorthlineStore,
   nowIso: string,
+  // What triggered this refresh (#885): `connect` on first connect, `cron` on the
+  // twice-daily capture. Recorded on the observable `sync_run` the store opens.
+  trigger: SyncTrigger = "cron",
 ): Promise<RefreshBinanceSourcesResult> {
   const binanceSources = (await store.connectedSources.listSources()).filter(
     (source) => source.adapter === "binance",
@@ -67,6 +70,7 @@ export async function runBinanceRefresh(
         sourceId,
         positions: drafts,
         syncedAt: nowIso,
+        trigger,
       });
       await store.connectedSources.revaluePositions(sourceId, [], {
         fetchedAt: nowIso,

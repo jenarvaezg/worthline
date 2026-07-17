@@ -457,4 +457,18 @@ CREATE TABLE \`goal_holdings\` (
 	FOREIGN KEY (\`goal_id\`) REFERENCES \`goals\`(\`id\`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE \`sync_run\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`source_id\` text NOT NULL,
+	\`trigger\` text NOT NULL,
+	\`status\` text NOT NULL,
+	\`error_json\` text,
+	\`started_at\` text,
+	\`finished_at\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX \`sync_run_source_created_idx\` ON \`sync_run\` (\`source_id\`,\`created_at\`);
 `;

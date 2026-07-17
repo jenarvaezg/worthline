@@ -31,6 +31,7 @@ import {
   type SnapshotStore,
 } from "./snapshot-store";
 import { type StoreContext } from "./store-context";
+import { type SyncRunStore, type SyncTrigger } from "./sync-run-store";
 
 /**
  * Ripple newly-mirrored coin purchase dates into snapshot history (ADR 0017, S6
@@ -313,6 +314,13 @@ export interface ConnectedSourceSeams {
     sourceId: string;
     positions: SourcePositionInput[];
     syncedAt: string;
+    /**
+     * What triggered this sync (#885 / PRD #999 S1). The seam opens an observable
+     * `sync_run` for the attempt and walks it `pending→running→ok|error` around
+     * the persist below, so the trigger is recorded on the run. Connect/manual/cron
+     * all pass their own value; the GET never calls this (it is cache-only).
+     */
+    trigger: SyncTrigger;
   }) => Promise<void>;
   /**
    * Backfill a connected Binance source's monthly value history into snapshots
@@ -333,68 +341,113 @@ export interface ConnectedSourceSeams {
 
 export function createConnectedSourceSeams(
   ctx: StoreContext,
-  stores: { connectedSources: ConnectedSourceStore; snapshots: SnapshotStore },
+  stores: {
+    connectedSources: ConnectedSourceStore;
+    snapshots: SnapshotStore;
+    syncRuns: SyncRunStore;
+  },
 ): ConnectedSourceSeams {
+  // The persist + ripple half of the sync, in one transaction so the wholesale
+  // replace and every coin ripple commit or roll back together. Extracted so the
+  // observable-run lifecycle (begin → this → finish|fail) can wrap it WITHOUT
+  // sharing its transaction: a persist failure must roll back only the persist,
+  // never the `error` run that records it (#885 / PRD #999 S1).
+  const persistSync = async (params: {
+    sourceId: string;
+    positions: SourcePositionInput[];
+    syncedAt: string;
+  }): Promise<void> => {
+    const workspace = await ctx.getWorkspace();
+    await ctx.transaction(async () => {
+      // Read the prior positions ONCE: they seed both the new-coin diff below AND
+      // the token price carry-forward — the wholesale replace reassigns ids, so
+      // this must run first.
+      const previousPositions = await stores.connectedSources.readPositions(
+        params.sourceId,
+      );
+
+      // Diff BEFORE the wholesale replace: the set of external ids already
+      // mirrored — the coins already on the timeline.
+      const knownExternalIds = new Set(
+        previousPositions.map((position) => position.externalId),
+      );
+
+      // A token this sync could not price arrives with unitPrice null, which would
+      // value it 0 — silently zeroing a balance the account still holds on a single
+      // transient price miss (the WBETH-vanished bug). Carry each token's last-good
+      // price forward so a valued holding is never zeroed by a one-off CoinGecko
+      // miss; it self-heals on the next clean price.
+      const positions = carryForwardTokenUnitPrices(params.positions, previousPositions);
+
+      await stores.connectedSources.syncPositions(
+        params.sourceId,
+        positions,
+        params.syncedAt,
+      );
+
+      if (!workspace) return; // no workspace → no scopes, no history to ripple
+
+      const source = await stores.connectedSources.readSource(params.sourceId);
+      if (!source) return;
+
+      // A genuinely new trade carrying a purchase date is the only dated fact to
+      // ripple (ADR 0017): a coin seen before is frozen, a coin with no date has
+      // no past fact (it counts from the live holding forward).
+      const newDatedTrades = (
+        await stores.connectedSources.readPositions(params.sourceId)
+      ).filter(
+        (position): position is CoinPosition =>
+          position.kind === "coin" &&
+          !knownExternalIds.has(position.externalId) &&
+          position.purchaseDate !== null,
+      );
+      if (newDatedTrades.length === 0) return;
+
+      await rippleHistoricalSnapshotsForCoinAcquisition(
+        ctx,
+        workspace,
+        stores.snapshots.saveSnapshot,
+        { assetId: source.assetId, newTrades: newDatedTrades },
+      );
+    });
+  };
+
   return {
     syncConnectedSource: async (params) => {
-      const workspace = await ctx.getWorkspace();
-      // One transaction so the wholesale replace + every coin ripple commit or
-      // roll back together.
-      await ctx.transaction(async () => {
-        // Read the prior positions ONCE: they seed both the new-coin diff below AND
-        // the token price carry-forward — the wholesale replace reassigns ids, so
-        // this must run first.
-        const previousPositions = await stores.connectedSources.readPositions(
-          params.sourceId,
-        );
-
-        // Diff BEFORE the wholesale replace: the set of external ids already
-        // mirrored — the coins already on the timeline.
-        const knownExternalIds = new Set(
-          previousPositions.map((position) => position.externalId),
-        );
-
-        // A token this sync could not price arrives with unitPrice null, which would
-        // value it 0 — silently zeroing a balance the account still holds on a single
-        // transient price miss (the WBETH-vanished bug). Carry each token's last-good
-        // price forward so a valued holding is never zeroed by a one-off CoinGecko
-        // miss; it self-heals on the next clean price.
-        const positions = carryForwardTokenUnitPrices(
-          params.positions,
-          previousPositions,
-        );
-
-        await stores.connectedSources.syncPositions(
-          params.sourceId,
-          positions,
-          params.syncedAt,
-        );
-
-        if (!workspace) return; // no workspace → no scopes, no history to ripple
-
-        const source = await stores.connectedSources.readSource(params.sourceId);
-        if (!source) return;
-
-        // A genuinely new trade carrying a purchase date is the only dated fact to
-        // ripple (ADR 0017): a coin seen before is frozen, a coin with no date has
-        // no past fact (it counts from the live holding forward).
-        const newDatedTrades = (
-          await stores.connectedSources.readPositions(params.sourceId)
-        ).filter(
-          (position): position is CoinPosition =>
-            position.kind === "coin" &&
-            !knownExternalIds.has(position.externalId) &&
-            position.purchaseDate !== null,
-        );
-        if (newDatedTrades.length === 0) return;
-
-        await rippleHistoricalSnapshotsForCoinAcquisition(
-          ctx,
-          workspace,
-          stores.snapshots.saveSnapshot,
-          { assetId: source.assetId, newTrades: newDatedTrades },
-        );
+      // Open the observable run and claim single-flight in one committed step
+      // (#885). A run already in flight for this source → skip this sync entirely
+      // rather than open an overlapping run (no storm).
+      const begun = await stores.syncRuns.beginRun({
+        at: params.syncedAt,
+        sourceId: params.sourceId,
+        trigger: params.trigger,
       });
+      if (!begun) return;
+
+      try {
+        await persistSync(params);
+        await stores.syncRuns.finishRun({
+          at: params.syncedAt,
+          runId: begun.runId,
+          sourceId: params.sourceId,
+        });
+      } catch (error) {
+        // The fetch already succeeded upstream, so a throw here is a persist/ripple
+        // failure. Record it on the run as a structured, retriable error — so
+        // nothing is left `running` — then rethrow, leaving the caller's existing
+        // error handling (redirect / best-effort swallow) unchanged.
+        await stores.syncRuns.failRun({
+          at: params.syncedAt,
+          error: {
+            code: "sync_persist_failed",
+            message: error instanceof Error ? error.message : String(error),
+            retriable: true,
+          },
+          runId: begun.runId,
+          sourceId: params.sourceId,
+        });
+        throw error;
+      }
     },
     applyBinanceHistoryAndRipple: async (params) => {
       const workspace = await ctx.getWorkspace();

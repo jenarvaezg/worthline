@@ -23,6 +23,7 @@ import {
   createSnapshotOrchestrator,
   gapFillHistoricalSnapshots,
 } from "./snapshot-orchestrator";
+import { createSyncRunStore } from "./sync-run-store";
 
 export type { SharedSnapshotInputs } from "./capture-daily-snapshot";
 export {
@@ -256,6 +257,14 @@ export type {
   SnapshotHoldingRecord,
   SnapshotStore,
 } from "./snapshot-store";
+export {
+  SYNC_RUN_RETENTION_LIMIT,
+  type SyncRun,
+  type SyncRunError,
+  type SyncRunStatus,
+  type SyncRunStore,
+  type SyncTrigger,
+} from "./sync-run-store";
 export type {
   ImportWorkspaceResult,
   InitializeWorkspaceInput,
@@ -326,6 +335,7 @@ async function buildStore(
   const liabilityStore = createLiabilityStore(ctx);
   const operationsStore = createOperationsStore(ctx);
   const connectedSourceStore = createConnectedSourceStore(ctx);
+  const syncRunStore = createSyncRunStore(ctx);
   const goalStore = createGoalStore(ctx);
   const payoutStore = createPayoutStore(ctx);
   const contributionPlanStore = createContributionPlanStore(ctx);
@@ -403,6 +413,7 @@ async function buildStore(
   const connectedSourceSeams = createConnectedSourceSeams(ctx, {
     connectedSources: connectedSourceStore,
     snapshots: snapshotStore,
+    syncRuns: syncRunStore,
   });
   const snapshotOrchestrator = createSnapshotOrchestrator(ctx, {
     snapshots: snapshotStore,

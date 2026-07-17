@@ -150,9 +150,16 @@ describe("fresh database", () => {
         "interest_rate_revisions",
         "liability_balance_anchors",
         "early_repayments",
+        "connected_sources",
+        "sync_run",
       ]) {
         expect(tables).toContain(expected);
       }
+
+      // #1061: the observable sync-run entity and its retention/single-flight index.
+      expect(await indexNames(client, "sync_run")).toContain(
+        "sync_run_source_created_idx",
+      );
 
       const assetColumns = await columnNames(client, "assets");
       expect(assetColumns).toContain("deleted_at");

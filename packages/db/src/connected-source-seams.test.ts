@@ -113,7 +113,12 @@ async function syncCoins(
   positions: SourcePositionInput[],
   syncedAt = "2026-06-15T10:00:00.000Z",
 ): Promise<void> {
-  await store.command.syncConnectedSource({ positions, sourceId, syncedAt });
+  await store.command.syncConnectedSource({
+    positions,
+    sourceId,
+    syncedAt,
+    trigger: "manual",
+  });
 }
 
 /** A BTC-only curve from per-month balances + per-date prices. */

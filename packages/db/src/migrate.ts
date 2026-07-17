@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 52;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1559,6 +1559,33 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     // historical CREATE/ALTER steps stay untouched (ADR 0002).
     await client.execute("DROP TABLE IF EXISTS exposure_profiles");
     await writeSchemaVersion(client, 51);
+  }
+
+  if (version < 52) {
+    // #885 / PRD #999 S1 (#1061): the connected-source sync becomes an observable
+    // entity — one immutable row per attempt walking `pending→running→ok|error` —
+    // instead of hiding behind `connected_sources.last_sync_at`. It separates
+    // health-of-fetch from freshness-of-valuation (which stays in
+    // `asset_price_cache`, untouched). `last_sync_at` now derives from the latest
+    // `ok` run (the cached column stays, but the run is the truth). No backfill:
+    // existing sources simply have no run history until their next sync — the
+    // cached `last_sync_at` remains their last-known signal in the meantime.
+    // IF NOT EXISTS because a fresh DB already created these via schema-sql at v<2.
+    // Table + index in one block (like v42/v45): the index's target was just
+    // created above, so no missing-table tolerance is needed.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS sync_run (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_id TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error_json TEXT,
+      started_at TEXT,
+      finished_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      FOREIGN KEY (source_id) REFERENCES connected_sources(id) ON UPDATE no action ON DELETE cascade
+    );
+    CREATE INDEX IF NOT EXISTS sync_run_source_created_idx ON sync_run (source_id, created_at);`);
+    await writeSchemaVersion(client, 52);
   }
 
   return { ranV18Backfill, ranV33Backfill };

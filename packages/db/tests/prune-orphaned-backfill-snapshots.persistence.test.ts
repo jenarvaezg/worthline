@@ -531,6 +531,7 @@ describe("prune spares snapshots justified by a non-operation dated fact (#305 /
       positions: [coinPosition],
       sourceId: source.sourceId,
       syncedAt: "2026-06-01T10:00:00.000Z",
+      trigger: "manual",
     });
 
     // Now DELETE the fund op that ORIGINALLY justified D. D must SURVIVE because the
