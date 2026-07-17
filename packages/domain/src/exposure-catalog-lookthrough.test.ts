@@ -56,6 +56,22 @@ describe("exposureProfileLookthroughMap (#711 S3)", () => {
     expect(map.get("bitcoin")?.breakdowns).toEqual({ assetClass: { crypto: "1" } });
   });
 
+  test("carries the sector vector through to look-through unchanged (S4 → S2 seam)", () => {
+    const map = exposureProfileLookthroughMap([
+      profile({
+        breakdowns: {
+          assetClass: { equity: "1" },
+          sector: { information_technology: "0.3", health_care: "0.2" },
+        },
+      }),
+    ]);
+
+    expect(map.get("IE00B4L5Y983")?.breakdowns.sector).toEqual({
+      information_technology: "0.3",
+      health_care: "0.2",
+    });
+  });
+
   test("maps a hedgedToCurrency value to hedged:true (currency-risk suppression)", () => {
     const map = exposureProfileLookthroughMap([profile({ hedgedToCurrency: "EUR" })]);
 

@@ -14,9 +14,12 @@
 
 import {
   EXPOSURE_ASSET_CLASS_LABELS,
+  EXPOSURE_DEFENSIVE_SECTORS,
   EXPOSURE_GEOGRAPHY_LABELS,
+  EXPOSURE_SECTOR_LABELS,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
   type GlobalExposureProfile,
+  sectorStyleSplit,
 } from "@worthline/domain";
 import { startTransition, useActionState, useEffect, useState } from "react";
 
@@ -79,6 +82,7 @@ interface EditorDraft {
   hedgedToCurrency: string;
   geography: Record<string, string>;
   assetClass: Record<string, string>;
+  sector: Record<string, string>;
   currency: CurrencyRow[];
   isin: string;
   priceProvider: string;
@@ -93,6 +97,7 @@ function draftFromProfile(profile: GlobalExposureProfile | null): EditorDraft {
     hedgedToCurrency: profile?.hedgedToCurrency ?? "",
     geography: { ...(profile?.breakdowns.geography ?? {}) },
     assetClass: { ...(profile?.breakdowns.assetClass ?? {}) },
+    sector: { ...(profile?.breakdowns.sector ?? {}) },
     currency: Object.entries(profile?.breakdowns.currency ?? {}).map(
       ([code, weight], index) => ({ id: index, code, weight }),
     ),
@@ -129,10 +134,12 @@ function draftBreakdownsJson(draft: EditorDraft): string {
   const out: Record<string, Record<string, string>> = {};
   const geography = pruneWeights(draft.geography);
   const assetClass = pruneWeights(draft.assetClass);
+  const sector = pruneWeights(draft.sector);
   const currency = currencyObject(draft.currency);
   if (Object.keys(geography).length) out.geography = geography;
   if (Object.keys(currency).length) out.currency = currency;
   if (Object.keys(assetClass).length) out.assetClass = assetClass;
+  if (Object.keys(sector).length) out.sector = sector;
   return JSON.stringify(out);
 }
 
@@ -145,6 +152,7 @@ function draftExceedsHundred(draft: EditorDraft): boolean {
   return [
     pruneWeights(draft.geography),
     pruneWeights(draft.assetClass),
+    pruneWeights(draft.sector),
     currencyObject(draft.currency),
   ].some((weights) => sumWeights(weights) > 1 + COVERAGE_EPSILON);
 }
@@ -168,6 +176,39 @@ function CoverageMeter({ weights }: { weights: Record<string, string> }) {
         <span className="catalogComplete"> · completo</span>
       )}
     </p>
+  );
+}
+
+/**
+ * Derived defensive/cyclical lens over the sector draft (ADR 0065): a read-only
+ * chip line, never a bar and never a stored bucket. `sectorStyleSplit` sums the
+ * raw declared weights into the two groups without renormalising, so an
+ * under-100% vector leaves its remainder unclassified — exactly like the
+ * coverage meter above. Reuses the read-surface chip idiom (S3, #1021).
+ */
+function SectorStyleLens({ weights }: { weights: Record<string, string> }) {
+  // The draft is live and unvalidated, so a transient entry (".", "30%", "1e")
+  // would throw inside `sectorStyleSplit`'s `new Big()` and crash this island.
+  // Keep only finite numerics — the same tolerance the coverage meter applies —
+  // so the derived lens degrades gracefully while the admin is still typing.
+  const finite: Record<string, `${number}`> = {};
+  for (const [bucket, weight] of Object.entries(weights)) {
+    if (Number.isFinite(Number(weight))) {
+      finite[bucket] = weight as `${number}`;
+    }
+  }
+  const split = sectorStyleSplit(finite);
+  return (
+    <ul className="exposureSectorStyle" aria-label="Estilo defensivo/cíclico (derivado)">
+      <li className="exposureStyleChip defensive">
+        <span className="exposureStyleChipLabel">Defensivo</span>
+        <b>{formatPercent(Number(split.defensive))}</b>
+      </li>
+      <li className="exposureStyleChip cyclical">
+        <span className="exposureStyleChipLabel">Cíclico</span>
+        <b>{formatPercent(Number(split.cyclical))}</b>
+      </li>
+    </ul>
   );
 }
 
@@ -352,6 +393,40 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
           ))}
         </div>
         <CoverageMeter weights={pruneWeights(draft.assetClass)} />
+      </fieldset>
+
+      <fieldset className="catalogFieldset">
+        <legend>Sector · de la renta variable</legend>
+        <p className="catalogHint">
+          Los 11 sectores GICS como <strong>% de la renta variable</strong> del fondo (no
+          del fondo entero). La suma en vivo es orientativa (~100%, sin normalizar); lo no
+          declarado baja cobertura, no se rellena. La lente defensivo/cíclico es derivada.
+        </p>
+        <div className="catalogWeights">
+          {EXPOSURE_SECTOR_LABELS.map(({ bucket, label }) => (
+            <label key={bucket}>
+              <span className="catalogSectorLabel">
+                {label}
+                {EXPOSURE_DEFENSIVE_SECTORS.has(bucket) ? (
+                  <span className="catalogDefensiveMark">defensivo</span>
+                ) : null}
+              </span>
+              <input
+                inputMode="decimal"
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    sector: { ...draft.sector, [bucket]: e.target.value },
+                  })
+                }
+                placeholder="0"
+                value={draft.sector[bucket] ?? ""}
+              />
+            </label>
+          ))}
+        </div>
+        <SectorStyleLens weights={pruneWeights(draft.sector)} />
+        <CoverageMeter weights={pruneWeights(draft.sector)} />
       </fieldset>
 
       <fieldset className="catalogFieldset">

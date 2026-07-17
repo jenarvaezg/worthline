@@ -56,7 +56,7 @@ function readBreakdowns(formData: FormData): GlobalExposureProfileBreakdowns {
   }
   const parsed = JSON.parse(raw) as Record<string, Record<string, string>>;
   const breakdowns: GlobalExposureProfileBreakdowns = {};
-  for (const dimension of ["geography", "currency", "assetClass"] as const) {
+  for (const dimension of ["geography", "currency", "assetClass", "sector"] as const) {
     const source = parsed[dimension];
     if (!source || typeof source !== "object") {
       continue;

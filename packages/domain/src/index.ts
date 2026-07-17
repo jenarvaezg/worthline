@@ -375,6 +375,7 @@ export type {
   GlobalExposureProfileBreakdowns,
   GlobalExposureProfileContentInput,
   GlobalExposureProfileIdentity,
+  GlobalExposureSectorBucket,
   RawGlobalExposureProfileIdentityInput,
   UpdateGlobalExposureProfileInput,
 } from "./global-exposure-profile";
