@@ -101,6 +101,14 @@ export {
   type ControlPlaneWorkspaceWithOwner,
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
+  DEFAULT_JOB_MAX_ATTEMPTS,
+  type EnqueueJobInput,
+  type EnqueueJobResult,
+  type FailJobInput,
+  type JobError,
+  type JobRecord,
+  type JobStatus,
+  type LeaseJobInput,
   type MaintainerAlert,
   type MaintainerAlertCategory,
   type MaintainerAlertOccurrence,
@@ -109,6 +117,7 @@ export {
   type ProviderCooldown,
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
+  type RenewJobLeaseInput,
   type UpdateMaintainerAlertStatusInput,
 } from "./control-plane";
 export {
@@ -225,6 +234,21 @@ export type {
   DatedBalanceObservation,
   ReconstructCorrectionPlan,
 } from "./correction-plan";
+export {
+  createJobQueue,
+  createSyncJobWorker,
+  createVercelQueueTransport,
+  DEFAULT_JOB_LEASE_MS,
+  type DrainOutcome,
+  defaultJobBackoff,
+  type EnqueueSyncJobInput,
+  type JobQueue,
+  type QueueTransport,
+  type RunnableJob,
+  type SyncJobWorker,
+  type SyncJobWorkerDeps,
+  type VercelQueueProducer,
+} from "./job-queue";
 export type {
   AddBalanceAnchorInput,
   AddBalanceRebaselineInput,

@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 2;
+export const CP_SCHEMA_VERSION = 3;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -106,5 +106,31 @@ export async function migrateControlPlane(client: Client): Promise<void> {
     CREATE INDEX IF NOT EXISTS maintainer_alert_occurrences_alert
       ON maintainer_alert_occurrences(alert_id);`);
     await writeControlPlaneSchemaVersion(client, 2);
+  }
+
+  if (version < 3) {
+    // Durable job queue (#887, PRD #999 S3): the TECHNICAL state of sync work,
+    // beside the other control-plane coordination tables. The observable outcome
+    // stays in the workspace `sync_run` (S1). Mirror control-plane.ts's SCHEMA.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS job (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      dedupe_key TEXT NOT NULL,
+      workspace_id TEXT,
+      payload_json TEXT NOT NULL DEFAULT 'null',
+      status TEXT NOT NULL DEFAULT 'pending',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      run_after TEXT NOT NULL,
+      lease_owner TEXT,
+      lease_expires_at TEXT,
+      last_error_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS job_active_dedupe
+      ON job(dedupe_key) WHERE status IN ('pending', 'leased');
+    CREATE INDEX IF NOT EXISTS job_ready ON job(status, run_after);`);
+    await writeControlPlaneSchemaVersion(client, 3);
   }
 }

@@ -90,6 +90,12 @@ export interface CommandHost {
   rippleHousingAfterAssetEdit: DatedFactCommands["rippleHousingAfterAssetEdit"];
 
   syncConnectedSource: ConnectedSourceSeams["syncConnectedSource"];
+  /**
+   * Run one sync job through the S2 executor and report its typed outcome (#1063):
+   * the per-workspace entry point the durable queue's worker routes a leased job
+   * to. Never throws for a job failure — returns the typed error result.
+   */
+  runSyncJob: ConnectedSourceSeams["runSyncJob"];
   applyBinanceHistory: ConnectedSourceSeams["applyBinanceHistoryAndRipple"];
   backfillHistoricalSnapshots: SnapshotOrchestrator["backfillHistoricalSnapshots"];
   backfillInvestmentPrices: SnapshotOrchestrator["backfillInvestmentPricesAndRipple"];
@@ -445,6 +451,7 @@ export function createCommandHost(
     setAnnualAppreciationRate: datedFacts.setAnnualAppreciationRateAndRipple,
     setHousingValuationCadence: datedFacts.setHousingValuationCadenceAndRipple,
     setLiabilityValuationCadence: datedFacts.setValuationCadenceAndRipple,
+    runSyncJob: connectedSources.runSyncJob,
     syncConnectedSource: connectedSources.syncConnectedSource,
     updateAmortizationPlan: datedFacts.updateAmortizationPlanAndRipple,
     updateAssetOwnership: datedFacts.updateAssetAndRippleOwnership,
