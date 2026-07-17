@@ -12,7 +12,10 @@ export const maxDuration = 60;
  *   - SWEEP: a scheduler (GET + `CRON_SECRET` bearer) drains anything the default
  *     pull-mode path could not — chiefly a job a crashed in-process drain left
  *     `leased`, whose lease lapses and is re-leased here. The twice-daily capture
- *     cron already sweeps; schedule this in `vercel.json` for a tighter cadence.
+ *     cron already sweeps, so this is NOT scheduled in `vercel.json`: the hosted
+ *     account is Vercel Hobby (daily-only crons), which rejects a sub-daily
+ *     `schedule`. A tighter cadence needs the push consumer below (or Pro) — do
+ *     not re-add an hourly cron here or the deploy fails.
  *   - PUSH CONSUMER: when a Vercel Queues transport is configured, its doorbell
  *     (`{ jobId }`) POSTs here to drain promptly. The doorbell is best-effort — the
  *     `job` table is the source of truth — so this ignores the body and drains the
