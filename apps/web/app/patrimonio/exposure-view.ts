@@ -6,6 +6,7 @@ import type {
   ExposureGeographyBucket,
   ExposureLookthrough,
   ExposureSectorBucket,
+  ExposureSectorStyle,
   MoneyMinor,
 } from "@worthline/domain";
 
@@ -105,6 +106,54 @@ export function geographyForLens(
   equity: ExposureLookthrough,
 ): ExposureDimensionResult {
   return lens === "equity" ? equity.geography : full.geography;
+}
+
+/**
+ * The sector breakdown to show for the chosen lens (PRD #1018, ADR 0065). Both
+ * are pre-rendered server-side, so the island only picks — same shape as
+ * `geographyForLens`. Sector is equity-scaled, so under the equity lens it is
+ * the sector mix of the equity sleeve alone.
+ */
+export function sectorForLens(
+  lens: ExposureLens,
+  full: ExposureLookthrough,
+  equity: ExposureLookthrough,
+): ExposureDimensionResult {
+  return lens === "equity" ? equity.sector : full.sector;
+}
+
+/**
+ * The defensive/cyclical style split for the chosen lens (ADR 0065): a derived
+ * lens over the sector slices, picked the same way so the chips swap with the
+ * bars they sit over.
+ */
+export function sectorStyleForLens(
+  lens: ExposureLens,
+  full: ExposureLookthrough,
+  equity: ExposureLookthrough,
+): ExposureSectorStyle {
+  return lens === "equity" ? equity.sectorStyle : full.sectorStyle;
+}
+
+/** One derived defensive/cyclical chip: a label and its `0..1` weight of gross. */
+export interface ExposureSectorStyleChip {
+  kind: "defensive" | "cyclical";
+  label: string;
+  weight: string;
+}
+
+/**
+ * The defensive/cyclical split as two ordered, labelled chips (ADR 0065). A
+ * *derived* lens over the sector slices — never a bar and never a bucket. Both
+ * weights are fractions of gross (`defensive + cyclical` equals the sector
+ * `classified` coverage), so the uncovered remainder stays out of the chips,
+ * exactly as the coverage box shows.
+ */
+export function sectorStyleChips(style: ExposureSectorStyle): ExposureSectorStyleChip[] {
+  return [
+    { kind: "defensive", label: "Defensivo", weight: style.defensive },
+    { kind: "cyclical", label: "Cíclico", weight: style.cyclical },
+  ];
 }
 
 /** One labelled slice of the three-way coverage readout. */

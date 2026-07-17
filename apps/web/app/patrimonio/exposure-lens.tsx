@@ -5,12 +5,14 @@ import { EXPOSURE_LENS_VIEW_PARAM, type ExposureLens } from "@web/view-state";
 import { type ReactNode } from "react";
 
 /**
- * The exposure geography lens as a client island (PRD #539 S3, #543, ADR 0036).
+ * The exposure lens as a client island (PRD #539 S3, #543; sector: #1018 S3,
+ * #1021; ADR 0036).
  *
- * The server pre-renders BOTH geography breakdowns — the full-portfolio
- * look-through and the equity-restricted one — plus the tabs' real `href`s; this
- * island shows the active one and switches instantly on click, no server
- * round-trip (interaction-patterns §2). It mirrors the exact shape of the Vista
+ * The server pre-renders BOTH lens views — the full-portfolio look-through and
+ * the equity-restricted one, each carrying the geography AND sector breakdowns
+ * (Variant A) — plus the tabs' real `href`s; this island shows the active one
+ * and switches instantly on click, no server round-trip (interaction-patterns
+ * §2). It mirrors the exact shape of the Vista
  * framing island (`framing-panel.tsx`): the tabs stay real `<a href>` so they
  * deep-link, are keyboard-operable, and work with JS off (§3, §8); the island
  * only intercepts a plain left-click to swap client-side and mirror `exp` to the

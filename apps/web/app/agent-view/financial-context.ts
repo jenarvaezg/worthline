@@ -426,6 +426,7 @@ interface ExposureLookthroughFields {
   byGeography: AgentViewExposureDimension;
   byCurrency: AgentViewExposureDimension;
   byAssetClass: AgentViewExposureDimension;
+  bySector: AgentViewExposureDimension;
   currencyRisk: AgentViewAllocationSlice[];
 }
 
@@ -462,6 +463,7 @@ function buildExposure(
     byAssetClass: lookthrough.byAssetClass,
     byCurrency: lookthrough.byCurrency,
     byGeography: lookthrough.byGeography,
+    bySector: lookthrough.bySector,
     byInstrument: allocationByKey(
       assetHoldings,
       (holding) => holding.instrument,
@@ -537,6 +539,7 @@ async function buildExposureLookthrough(
     byAssetClass: toExposureDimension(result.assetClass, catalogUnavailable),
     byCurrency: toExposureDimension(result.currency, catalogUnavailable),
     byGeography: toExposureDimension(result.geography, catalogUnavailable),
+    bySector: toExposureDimension(result.sector, catalogUnavailable),
     currencyRisk: result.currencyRisk.map(toAllocationSlice),
   };
 }

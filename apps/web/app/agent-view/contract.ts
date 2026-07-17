@@ -241,6 +241,15 @@ export interface AgentViewExposure {
   /** Present-time look-through by asset class (PRD #539, ADR 0039). */
   byAssetClass: AgentViewExposureDimension;
   /**
+   * Present-time look-through by GICS-11 sector, equity-scaled (PRD #1018, ADR
+   * 0065). Unlike the whole-fund geography/currency dimensions, each holding's
+   * sector vector is scaled by its derived equity weight: the non-equity part
+   * reads `notApplicable`, and an equity sleeve the vector does not cover reads
+   * `unknown`. The vector is relative to the equity sleeve, so the coverage's
+   * three parts still partition gross exactly.
+   */
+  bySector: AgentViewExposureDimension;
+  /**
    * The currency-risk lens (PRD #539, ADR 0039): the unhedged, non-base-currency
    * share of the portfolio, by currency. Informational exposure only — worthline
    * assumes the base currency for every figure, so this changes no valuation.
@@ -270,6 +279,12 @@ export interface AgentViewExposureProfile {
     geography?: Record<string, string>;
     currency?: Record<string, string>;
     assetClass?: Record<string, string>;
+    /**
+     * The GICS-11 sector vector, relative to the instrument's equity sleeve
+     * (PRD #1018, ADR 0065): weights sum to ≤ 1 over the equity part, never the
+     * whole fund. Absent when the profile carries no sector data.
+     */
+    sector?: Record<string, string>;
   };
 }
 
