@@ -1,13 +1,20 @@
 import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
-import type { ExposureGeographyBucket } from "./exposure-taxonomy";
-import { EXPOSURE_GEOGRAPHY_BUCKETS } from "./exposure-taxonomy";
+import type { ExposureGeographyBucket, ExposureSectorBucket } from "./exposure-taxonomy";
+import { EXPOSURE_GEOGRAPHY_BUCKETS, EXPOSURE_SECTOR_BUCKETS } from "./exposure-taxonomy";
 import type { CurrencyCode } from "./money";
 import type { InvestmentPriceProvider } from "./prices";
 
 /** Geography buckets allowed in the global catalog — same closed set as workspace v1. */
 export type GlobalExposureGeographyBucket = ExposureGeographyBucket;
+
+/**
+ * Sector buckets allowed in the global catalog — the fixed GICS-11 enum. Unlike
+ * geography/assetClass the sector vector is read **relative to the equity
+ * sleeve** (sums ≤ 1 over the equity part), not whole-fund (ADR 0065, #940 S4).
+ */
+export type GlobalExposureSectorBucket = ExposureSectorBucket;
 
 /** Asset-class buckets in the global catalog — `mixed` is intentionally excluded (#940). */
 export type GlobalExposureAssetClassBucket =
@@ -39,6 +46,8 @@ export interface GlobalExposureProfileBreakdowns {
   geography?: Partial<Record<GlobalExposureGeographyBucket, DecimalString>>;
   currency?: Record<string, DecimalString>;
   assetClass?: Partial<Record<GlobalExposureAssetClassBucket, DecimalString>>;
+  /** Sector vector as a fraction of the equity sleeve (≤ 1), never whole-fund (ADR 0065). */
+  sector?: Partial<Record<GlobalExposureSectorBucket, DecimalString>>;
 }
 
 export interface GlobalExposureProfile {
@@ -84,6 +93,7 @@ const INVESTMENT_PRICE_PROVIDERS = new Set<InvestmentPriceProvider>([
 ]);
 const GEOGRAPHY_BUCKETS = new Set<string>(EXPOSURE_GEOGRAPHY_BUCKETS);
 const ASSET_CLASS_BUCKETS = new Set<string>(GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS);
+const SECTOR_BUCKETS = new Set<string>(EXPOSURE_SECTOR_BUCKETS);
 
 export function globalExposureProfileIdentityKey(
   identity: GlobalExposureProfileIdentity,
@@ -224,6 +234,10 @@ function normalizeBreakdowns(
   if (assetClass) {
     normalized.assetClass = assetClass;
   }
+  const sector = normalizeDimensionBreakdown(breakdowns.sector, SECTOR_BUCKETS, "sector");
+  if (sector) {
+    normalized.sector = sector;
+  }
   return normalized;
 }
 
@@ -300,7 +314,12 @@ function assertBreakdownTotal(
 }
 
 function isBreakdownEmpty(breakdowns: GlobalExposureProfileBreakdowns): boolean {
-  return !breakdowns.geography && !breakdowns.currency && !breakdowns.assetClass;
+  return (
+    !breakdowns.geography &&
+    !breakdowns.currency &&
+    !breakdowns.assetClass &&
+    !breakdowns.sector
+  );
 }
 
 function normalizeTer(value: DecimalString | null | undefined): DecimalString | null {

@@ -137,6 +137,46 @@ describe("global exposure profile content validation (#940)", () => {
     ).toEqual({ EUR: "1" });
   });
 
+  test("accepts a sector vector (% of equity) summing to at most 1 (ADR 0065, S4)", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        breakdowns: {
+          assetClass: { equity: "1" },
+          sector: {
+            information_technology: "0.3",
+            financials: "0.2",
+            health_care: "0.15",
+          },
+        },
+      }).breakdowns.sector,
+    ).toEqual({
+      information_technology: "0.3",
+      financials: "0.2",
+      health_care: "0.15",
+    });
+  });
+
+  test("rejects an unknown sector bucket and a sector total above 1", () => {
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: { sector: { tech: "1" } as never },
+      }),
+    ).toThrow(/not allowed/);
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: { sector: { financials: "0.7", utilities: "0.5" } },
+      }),
+    ).toThrow(/cannot exceed 100%/);
+  });
+
+  test("a sector-only vector is enough content — not a fully empty profile", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        breakdowns: { sector: { energy: "1" } },
+      }).breakdowns.sector,
+    ).toEqual({ energy: "1" });
+  });
+
   test("rejects TER outside [0,1]", () => {
     expect(() =>
       validateGlobalExposureProfileContent({

@@ -4194,6 +4194,24 @@ code {
   margin-top: 0;
 }
 
+/* Sector weight label carries an inline, non-editable "defensivo" marker next to
+   the three canonically defensive GICS sectors (ADR 0065): a marker, never a
+   bucket. Quiet --blue tag echoing the read-surface defensive chip. */
+.catalogSectorLabel {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.catalogDefensiveMark {
+  color: var(--blue);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .catalogCurrencyRow {
   display: flex;
   align-items: end;

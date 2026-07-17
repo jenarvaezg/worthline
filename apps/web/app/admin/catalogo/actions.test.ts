@@ -185,6 +185,30 @@ describe("saveCatalogProfileAction", () => {
       expect.objectContaining({ breakdowns: { geography: { us: "0.6" } } }),
     );
   });
+
+  it("carries the sector vector (% of equity) through to the store (S4)", async () => {
+    asAdmin();
+    storeSpies.create.mockResolvedValueOnce(sampleProfile());
+    const fd = createForm();
+    fd.set(
+      "breakdowns",
+      JSON.stringify({
+        assetClass: { equity: "1" },
+        sector: { information_technology: "0.3", financials: "0.2", energy: "" },
+      }),
+    );
+
+    await saveCatalogProfileAction({ status: "idle" }, fd);
+
+    expect(storeSpies.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        breakdowns: {
+          assetClass: { equity: "1" },
+          sector: { information_technology: "0.3", financials: "0.2" },
+        },
+      }),
+    );
+  });
 });
 
 describe("rekeyCatalogProfileAction", () => {

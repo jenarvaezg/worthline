@@ -49,6 +49,20 @@ const COVERED: GlobalExposureProfile = {
   updatedAt: "2026-06-02T00:00:00Z",
 };
 
+const SECTORED: GlobalExposureProfile = {
+  identity: { kind: "isin", isin: "IE00B4L5Y983" },
+  displayName: "World Equity",
+  breakdowns: {
+    assetClass: { equity: "1" },
+    sector: { information_technology: "0.3", utilities: "0.2", health_care: "0.1" },
+  },
+  ter: "0.002",
+  trackedIndex: "MSCI World",
+  hedgedToCurrency: null,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-06-03T00:00:00Z",
+};
+
 function available(profiles: GlobalExposureProfile[]): ExposureCatalogAvailability {
   return { status: "available", profiles };
 }
@@ -115,6 +129,27 @@ describe("AdminCatalogPage", () => {
     // The detail panel shows the update form (identity fixed → "Guardar cambios").
     expect(html).toContain("Guardar cambios");
     expect(html).toContain("Rekey (cambiar identidad)");
+  });
+
+  test("edits the sector vector as % of equity with a derived defensive lens (S4)", async () => {
+    vi.mocked(readExposureCatalogFromControlPlane).mockResolvedValue(
+      available([SECTORED]),
+    );
+
+    const html = renderToStaticMarkup(await renderPage({ perfil: "IE00B4L5Y983" }));
+
+    // The sector fieldset is present, titled "% de la renta variable".
+    expect(html).toContain("Sector · de la renta variable");
+    // The stored sector weights are pre-filled into the controlled inputs.
+    expect(html).toContain('value="0.3"');
+    // The three canonically defensive sectors carry the non-editable marker.
+    expect((html.match(/catalogDefensiveMark/g) ?? []).length).toBe(3);
+    // The derived defensive/cyclical lens renders as chips with the computed
+    // split: utilities 0.2 + health_care 0.1 = 30% defensive, IT 0.3 = 30%
+    // cyclical. Asserting the values (not just the labels) locks the derivation.
+    expect(html).toContain("Defensivo");
+    expect(html).toContain("Cíclico");
+    expect((html.match(/30%/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
   test("propagates guardAdmin's notFound() unchanged for a non-admin request", async () => {
