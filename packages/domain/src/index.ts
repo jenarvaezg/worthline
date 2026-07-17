@@ -376,6 +376,22 @@ export { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-proje
 export type { EligibleTier } from "./fire-return";
 export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 export type {
+  FxAggregation,
+  FxConversionResult,
+  FxExcludedHolding,
+  FxRatePoint,
+  FxRateSnapshot,
+  FxUnconvertibleReason,
+  MoneyConverter,
+} from "./fx";
+export {
+  BASE_CURRENCY,
+  createFxRateSnapshot,
+  createMoneyConverter,
+  FX_CARRY_FORWARD_DAYS,
+  resolveToBaseCurrency,
+} from "./fx";
+export type {
   CreateGlobalExposureProfileInput,
   GlobalExposureAssetClassBucket,
   GlobalExposureGeographyBucket,

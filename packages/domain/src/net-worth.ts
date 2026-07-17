@@ -7,6 +7,8 @@ import {
   securesHousingAsset,
   tierOfAsset,
 } from "./classification";
+import type { FxAggregation, FxExcludedHolding } from "./fx";
+import { resolveToBaseCurrency } from "./fx";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
 import { addMoney, money, subtractMoney } from "./money";
@@ -21,6 +23,14 @@ export interface NetWorthSummary {
   housingEquity: MoneyMinor;
   grossAssets: MoneyMinor;
   debts: MoneyMinor;
+  /**
+   * Holdings left OUT of every figure above because their currency could not be
+   * converted to the base currency (#1065). Empty in the all-EUR common case. When
+   * non-empty the total is PARTIAL — the UI surfaces a "no incluido / parcial" chip
+   * and the agent view marks the figure `convertible: false` rather than pretending
+   * the number covers everything (the pre-#1065 silent mis-sum).
+   */
+  fxExcluded: FxExcludedHolding[];
 }
 
 /**
@@ -84,6 +94,13 @@ export function calculateNetWorth(input: {
   scopeId: string;
   assets: ManualAsset[];
   liabilities?: Liability[];
+  /**
+   * FX context for non-base-currency holdings (#1065). When present, a non-base
+   * value is converted to the base currency at `asOf`; when absent, or when a rate
+   * is missing, the holding is EXCLUDED and reported in `fxExcluded` — never summed
+   * as if it were base. All-EUR portfolios are unaffected.
+   */
+  fx?: FxAggregation;
 }): NetWorthSummary {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
   const currency = input.workspace.baseCurrency;
@@ -99,10 +116,22 @@ export function calculateNetWorth(input: {
   let debts = zero;
   let housingDebts = zero;
   let liquidDebts = zero;
+  const fxExcluded: FxExcludedHolding[] = [];
 
   for (const asset of input.assets) {
+    const resolved = resolveToBaseCurrency(asset.currentValue, currency, input.fx);
+    if (!resolved.ok) {
+      fxExcluded.push({
+        holdingId: asset.id,
+        name: asset.name,
+        original: asset.currentValue,
+        reason: resolved.reason,
+      });
+      continue;
+    }
+
     const scoped = money(
-      allocateScopedHolding(asset.currentValue.amountMinor, {
+      allocateScopedHolding(resolved.value.amountMinor, {
         ownership: asset.ownership,
         scopeMemberIds,
       }).ownedMinor,
@@ -121,8 +150,19 @@ export function calculateNetWorth(input: {
   }
 
   for (const liability of input.liabilities ?? []) {
+    const resolved = resolveToBaseCurrency(liability.currentBalance, currency, input.fx);
+    if (!resolved.ok) {
+      fxExcluded.push({
+        holdingId: liability.id,
+        name: liability.name,
+        original: liability.currentBalance,
+        reason: resolved.reason,
+      });
+      continue;
+    }
+
     const scoped = money(
-      allocateScopedHolding(liability.currentBalance.amountMinor, {
+      allocateScopedHolding(resolved.value.amountMinor, {
         ownership: liability.ownership,
         scopeMemberIds,
       }).ownedMinor,
@@ -142,6 +182,7 @@ export function calculateNetWorth(input: {
 
   return {
     debts,
+    fxExcluded,
     grossAssets,
     housingEquity: subtractMoney(housingAssets, housingDebts),
     liquidNetWorth: subtractMoney(liquidAssets, liquidDebts),
@@ -174,6 +215,8 @@ export function buildLiquidityBreakdown(input: {
   scopeId: string;
   assets: ManualAsset[];
   liabilities?: Liability[];
+  /** FX context (#1065) — non-convertible holdings are skipped, matching net worth. */
+  fx?: FxAggregation;
 }): LiquidityTierBreakdown[] {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
   const currency = input.workspace.baseCurrency;
@@ -202,7 +245,12 @@ export function buildLiquidityBreakdown(input: {
       continue;
     }
 
-    const scopedValue = allocateScopedHolding(asset.currentValue.amountMinor, {
+    const resolved = resolveToBaseCurrency(asset.currentValue, currency, input.fx);
+    if (!resolved.ok) {
+      continue;
+    }
+
+    const scopedValue = allocateScopedHolding(resolved.value.amountMinor, {
       ownership: asset.ownership,
       scopeMemberIds,
     }).ownedMinor;
@@ -228,7 +276,12 @@ export function buildLiquidityBreakdown(input: {
       continue;
     }
 
-    const scopedValue = allocateScopedHolding(liability.currentBalance.amountMinor, {
+    const resolved = resolveToBaseCurrency(liability.currentBalance, currency, input.fx);
+    if (!resolved.ok) {
+      continue;
+    }
+
+    const scopedValue = allocateScopedHolding(resolved.value.amountMinor, {
       ownership: liability.ownership,
       scopeMemberIds,
     }).ownedMinor;

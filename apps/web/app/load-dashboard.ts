@@ -60,6 +60,7 @@ import {
 import { type MatrixCellPayload, readMatrixCells } from "./dashboard-cells";
 import { collectDashboardDataQualitySignals } from "./dashboard-data-quality";
 import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matrix";
+import { resolveFxAggregation } from "./fx-context";
 import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
 import { type HeroHealthView, selectHeroHealth } from "./hero-data-health";
 
@@ -491,11 +492,25 @@ export async function loadDashboard(
     : [];
   const heroHealth = selectHeroHealth(dataQualitySignals, overrides);
 
+  // ── 4f. FX context for non-EUR holdings (#1065) ───────────────────────────
+  // Hard-gated inside resolveFxAggregation: it hits ECB only when a foreign
+  // currency is actually present, so an all-EUR portfolio (today's only case)
+  // keeps this GET strictly cache-only — no network. Non-convertible holdings are
+  // then excluded from the total and surfaced as "no incluido / parcial".
+  const fx = await resolveFxAggregation(
+    [
+      ...assets.map((asset) => asset.currentValue),
+      ...liabilities.map((liability) => liability.currentBalance),
+    ],
+    input.today,
+  );
+
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
     assets,
     contributionPlan,
     fireConfig,
+    ...(fx ? { fx } : {}),
     goals,
     liabilities,
     overrides,

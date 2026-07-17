@@ -273,6 +273,12 @@ export type {
   NumismaticValuation,
 } from "./coin-valuation";
 export { COIN_VALUE_TTL_DAYS, coinValuation, isNumismaticStale } from "./coin-valuation";
+export { fetchEcbDailyRatesEur } from "./ecb";
+export type {
+  EcbDailyRatesFetcher,
+  ResolveFxRateSnapshotOptions,
+} from "./fx-rates";
+export { resolveFxRateSnapshot } from "./fx-rates";
 export type {
   HistoricalPriceSeries,
   HistoricalPriceSource,

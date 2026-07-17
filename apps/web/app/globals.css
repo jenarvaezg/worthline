@@ -1129,6 +1129,31 @@ h3 {
   font-weight: 600;
 }
 
+/* FX-partial note (#1065): shown in the hero when a holding's currency could not
+   be converted to EUR, so it is left OUT of the headline total. Same quiet gold
+   vocabulary as .heroHealthAlert--warning — informational, never an elevation. */
+.heroFxPartial {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.heroFxPartialTag {
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  background: rgba(179, 131, 31, 0.12);
+  padding: 1px 8px;
+  color: var(--gold);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 /* Home freshness (#896): a calm, always-visible "última actualización" stamp and
    — only when the data outran the automatic window — a gentle gold alert with the
    manual "Actualizar" action. Same warning vocabulary as .heroHealthAlert, never
