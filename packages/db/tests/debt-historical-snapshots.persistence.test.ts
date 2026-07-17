@@ -273,6 +273,207 @@ describe("historical snapshots from amortizable plans", () => {
     store.close();
   });
 
+  test("a mid-cycle early repayment recalculates the whole cuota cycle it lands in, not just from its raw date (#1042)", async () => {
+    const store = await createInMemoryStore();
+    await seedAmortizable(store);
+    const PLAN = {
+      annualInterestRate: "0.03",
+      disbursementDate: "2026-01-15",
+      firstPaymentDate: "2026-02-15",
+      initialCapitalMinor: 150_000_00,
+      termMonths: 240,
+    } as const;
+    await store.command.createAmortizationPlan(
+      { ...PLAN, id: "plan1", liabilityId: "mortgage" },
+      { today: TODAY },
+    );
+    const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
+
+    // An EXISTING snapshot INSIDE the cycle window — between the 03-15 cuota
+    // boundary and the mid-cycle repayment date (03-20) — a daily-capture-style
+    // snapshot the ripple must reach. An unrelated op on 03-18 generates it, valued
+    // off the mortgage's debt curve on that date.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-03-18",
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    // The cycle: the 03-15 boundary and the 03-18 in-window snapshot. Pre-lump both
+    // hold the 03-15 cuota balance (step within a cuota cycle).
+    const CYCLE = ["2026-03-15", "2026-03-18"];
+    const preLump = (await debtsAt(store, "2026-03-18"))!;
+    expect(preLump).toBe((await debtsAt(store, "2026-03-15"))!);
+
+    // Register a mid-cycle lump dated 03-20 — after the 03-15 boundary, before the
+    // 04-15 cuota. The live curve applies it from the 03-15 boundary (#182).
+    await store.command.addEarlyRepayment(
+      {
+        amountMinor: 20_000_00,
+        id: "erp1",
+        mode: "reduce-payment",
+        planId,
+        repaymentDate: "2026-03-20",
+      },
+      { liabilityId: "mortgage", today: TODAY },
+    );
+
+    // Every snapshot in the cycle — including 03-15 and 03-18, both dated BEFORE the
+    // raw 03-20 event — now matches the live curve (post-lump). Rippling from the
+    // raw date would have left these at the pre-lump value forever (the bug).
+    for (const dateKey of CYCLE) {
+      expect(await debtsAt(store, dateKey)).toBe(
+        await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+      expect(await holdingsReconcile(store, dateKey)).toBe(true);
+    }
+    // The in-window snapshot genuinely moved by the lump — proof the ripple reached
+    // back to the cuota boundary rather than stopping at the raw event date.
+    const postLump = (await debtsAt(store, "2026-03-18"))!;
+    expect(preLump - postLump).toBeGreaterThan(19_000_00);
+
+    // A later unrelated whole-plan ripple crossing the window does NOT rewrite any
+    // figure the user already saw: the persisted history already equals the live
+    // curve, so the silent-rewrite hazard is gone.
+    await store.command.setLiabilityValuationCadence("mortgage", "step", {
+      today: TODAY,
+    });
+    for (const dateKey of CYCLE) {
+      expect(await debtsAt(store, dateKey)).toBe(
+        await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+    }
+    expect((await debtsAt(store, "2026-03-18"))!).toBe(postLump);
+    store.close();
+  });
+
+  test("an early repayment dated exactly today updates its past cuota-boundary snapshot, never the future (#1042, ADR 0012)", async () => {
+    const store = await createInMemoryStore();
+    await seedAmortizable(store);
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
+    const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
+
+    // TODAY is 2026-06-13; a lump dated exactly today anchors to the 2026-05-15
+    // cuota boundary (the largest boundary ≤ today). The ADR-0012 guard keys on the
+    // RAW date, so a today-dated fact is allowed to ripple, but the from-date is the
+    // PAST boundary — so its already-persisted boundary snapshot must reflect the
+    // lump, while no future snapshot is ever fabricated.
+    const beforeBoundary = (await debtsAt(store, "2026-05-15"))!;
+    await store.command.addEarlyRepayment(
+      {
+        amountMinor: 20_000_00,
+        id: "erp1",
+        mode: "reduce-payment",
+        planId,
+        repaymentDate: TODAY,
+      },
+      { liabilityId: "mortgage", today: TODAY },
+    );
+
+    // The past cuota-boundary snapshot now carries the lump and matches the live
+    // curve; the prior cuota (04-15) is untouched; no history beyond today.
+    expect(await debtsAt(store, "2026-05-15")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-05-15"),
+    );
+    expect(beforeBoundary - (await debtsAt(store, "2026-05-15"))!).toBeGreaterThan(
+      19_000_00,
+    );
+    expect(await snapAt(store, "2026-06-15")).toBeUndefined();
+    store.close();
+  });
+
+  test("a mid-cycle rate revision ripples from its boundary and never diverges in-window (#1042)", async () => {
+    const store = await createInMemoryStore();
+    await seedAmortizable(store);
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
+    const planId = (await store.liabilities.readAmortizationPlan("mortgage"))!.id;
+
+    // An existing in-window snapshot (03-18) between the 03-15 boundary and the
+    // mid-cycle revision date (03-20).
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "100",
+      name: "Fondo",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-03-18",
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    const beforeInWindow = (await debtsAt(store, "2026-03-18"))!;
+
+    await store.command.addInterestRateRevision(
+      { id: "rev1", newAnnualInterestRate: "0.06", planId, revisionDate: "2026-03-20" },
+      { liabilityId: "mortgage", today: TODAY },
+    );
+
+    // Unlike an early repayment, a revision does NOT overwrite the start-of-cycle
+    // balance (computeBoundaries only rewrites a boundary for a lump) — it changes
+    // the payment, so the balance only moves from the NEXT cuota onward. The fix
+    // still aligns the revision's ripple from-date to the 03-15 boundary (single
+    // source of truth), and the contract that matters holds: every snapshot in the
+    // cycle matches the live curve, the in-window 03-18 value is unchanged (no
+    // spurious rewrite), and a later cuota does move to the revised curve.
+    for (const dateKey of ["2026-03-15", "2026-03-18"]) {
+      expect(await debtsAt(store, dateKey)).toBe(
+        await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
+      );
+    }
+    expect(await debtsAt(store, "2026-03-18")).toBe(beforeInWindow);
+    expect(await debtsAt(store, "2026-04-15")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-04-15"),
+    );
+    store.close();
+  });
+
   test("future plan generates nothing", async () => {
     const store = await createInMemoryStore();
     await seedAmortizable(store);
