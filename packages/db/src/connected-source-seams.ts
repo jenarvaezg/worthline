@@ -35,6 +35,7 @@ import {
   createSyncJobExecutor,
   type SyncJobDescriptor,
   type SyncJobResult,
+  sourceSyncDescriptor,
   syncJobErrorFromCause,
 } from "./sync-job";
 import { type SyncRunStore, type SyncTrigger } from "./sync-run-store";
@@ -488,16 +489,14 @@ export function createConnectedSourceSeams(
       // `error` outcome rethrows the original cause (callers' existing
       // redirect/best-effort-swallow handling is untouched); `ok`/`skipped` return
       // silently, exactly as the pre-executor seam did.
-      const result = await jobExecutor.runSyncJob({
-        dedupeKey: `source-sync:${params.sourceId}`,
-        kind: "source-sync",
-        payload: {
+      const result = await jobExecutor.runSyncJob(
+        sourceSyncDescriptor({
           positions: params.positions,
           sourceId: params.sourceId,
           syncedAt: params.syncedAt,
           trigger: params.trigger,
-        },
-      });
+        }),
+      );
       if (result.status === "error") throw result.cause;
     },
     applyBinanceHistoryAndRipple: async (params) => {

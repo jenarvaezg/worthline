@@ -31,7 +31,10 @@ const SPANISH_CPI_SERIES_ID = "ipc-es";
  * ephemeral/in-memory and never enumerated here, so they are skipped by
  * construction.
  */
-export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptureDeps {
+export function buildDailyCaptureDeps(
+  env: CronEnv = process.env,
+  opts: { now?: string } = {},
+): RunDailyCaptureDeps {
   const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
   const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
   const openControlPlane = async () => {
@@ -45,7 +48,11 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
   };
 
   return {
-    now: new Date().toISOString(),
+    // The daily-capture job pins its capture instant at ENQUEUE time (S4 #1064) and
+    // carries it in the payload, so a worker draining later derives the same
+    // date/run-key/snapshot instant it deduped on (never the drain clock). Falls
+    // back to the wall clock for a direct, un-queued call.
+    now: opts.now ?? new Date().toISOString(),
     listAllWorkspaces: async () => {
       const controlPlane = await openControlPlane();
       try {
@@ -55,18 +62,18 @@ export function buildDailyCaptureDeps(env: CronEnv = process.env): RunDailyCaptu
         controlPlane.close();
       }
     },
-    isRunFinalized: async (dateKey) => {
+    isRunFinalized: async (runKey) => {
       const controlPlane = await openControlPlane();
       try {
-        return await controlPlane.hasDailyCaptureRun(dateKey);
+        return await controlPlane.hasDailyCaptureRun(runKey);
       } finally {
         controlPlane.close();
       }
     },
-    markRunFinalized: async (dateKey, finalizedAt) => {
+    markRunFinalized: async (runKey, finalizedAt) => {
       const controlPlane = await openControlPlane();
       try {
-        await controlPlane.recordDailyCaptureRun(dateKey, finalizedAt);
+        await controlPlane.recordDailyCaptureRun(runKey, finalizedAt);
       } finally {
         controlPlane.close();
       }

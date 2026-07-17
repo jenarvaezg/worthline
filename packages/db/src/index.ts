@@ -151,7 +151,7 @@ export type {
   RunDailyCaptureDeps,
   RunDailyCaptureResult,
 } from "./run-daily-capture";
-export { runDailyCapture } from "./run-daily-capture";
+export { dailyCaptureJobOutcome, runDailyCapture } from "./run-daily-capture";
 export type {
   ApplyStatementImportParams,
   AuditLogEntry,
@@ -284,6 +284,8 @@ export type {
 export {
   createSyncJobExecutor,
   type DailyCaptureJobPayload,
+  dailyCaptureDescriptor,
+  dailyCaptureRunKey,
   type SourceSyncJobPayload,
   type SyncJobDescriptor,
   type SyncJobError,
@@ -294,6 +296,8 @@ export {
   type SyncJobPayloadByKind,
   type SyncJobResult,
   type SyncJobSkipReason,
+  sourceSyncDedupeKey,
+  sourceSyncDescriptor,
   syncJobErrorFromCause,
 } from "./sync-job";
 export {

@@ -29,6 +29,7 @@ import {
   readApiKey,
   resolveConnectingOwnership,
 } from "./numista-helpers";
+import { enqueueSourceSync } from "./source-sync-enqueue";
 
 /**
  * Server actions for the Numista connected source (PRD #160 / #163, ADR 0016/0017).
@@ -100,6 +101,12 @@ export async function connectNumistaAction(
     // the next cron. Reuses the cron/GET orchestration (stale-gated → a just-
     // connected source with no freshness always syncs). Best-effort: a Numista
     // outage degrades to last-known inside the refresh and never fails connect.
+    //
+    // NOT enqueued onto the durable queue (unlike Binance connect, PRD #999 S4):
+    // `runNumistaCoinRefresh` is a metal-spot REVALUATION that persists via
+    // `revaluePositions`, not `syncConnectedSource` — it never opens a `sync_run`,
+    // so there is no `source-sync` job to enqueue here. The manual Numista refresh
+    // (which does go through `syncConnectedSource`) is the one that enqueues.
     try {
       await runNumistaCoinRefresh(store, new Date().toISOString());
     } catch {
@@ -254,15 +261,17 @@ export async function syncNumistaAction(
   }
 
   try {
-    await runActionWithStore(
-      (store) =>
-        store.command.syncConnectedSource({
-          positions: drafts,
-          sourceId,
-          syncedAt: nowIso,
-          trigger: "manual",
-        }),
-      _store,
+    // Enqueue the persist onto the durable queue (PRD #999 S4, #1064) instead of
+    // running it inline — drained in-process locally, off a worker hosted. The
+    // throttle above already gated this call, so enqueuing never bypasses it.
+    const payload = {
+      positions: drafts,
+      sourceId,
+      syncedAt: nowIso,
+      trigger: "manual" as const,
+    };
+    await enqueueSourceSync(payload, () =>
+      runActionWithStore((store) => store.command.syncConnectedSource(payload), _store),
     );
   } catch {
     redirect(

@@ -11,9 +11,13 @@
 
 import { describe, expect, test } from "vitest";
 import {
+  sourceSyncDescriptor as buildSourceSyncDescriptor,
   createSyncJobExecutor,
+  dailyCaptureDescriptor,
+  dailyCaptureRunKey,
   type SyncJobDescriptor,
   type SyncJobResult,
+  sourceSyncDedupeKey,
 } from "./sync-job";
 
 /** A deferred promise so a test can hold a job "in flight" across an await. */
@@ -203,13 +207,52 @@ describe("createSyncJobExecutor — the contract admits `daily-capture` (S4 wiri
     });
 
     const descriptor: SyncJobDescriptor = {
-      dedupeKey: "daily-capture:2026-07-01:am",
+      dedupeKey: "2026-07-01:am",
       kind: "daily-capture",
-      payload: { runKey: "2026-07-01:am" },
+      payload: { now: "2026-07-01T09:00:00.000Z", runKey: "2026-07-01:am" },
     };
     const result: SyncJobResult = await executor.runSyncJob(descriptor);
 
     expect(result).toEqual({ status: "ok" });
     expect(seen).toEqual(["2026-07-01:am"]);
+  });
+});
+
+describe("descriptor builders + run-key derivation (S4 #1064)", () => {
+  test("sourceSyncDescriptor keys single-flight by source id", () => {
+    const descriptor = buildSourceSyncDescriptor({
+      positions: [],
+      sourceId: "src_1",
+      syncedAt: "2026-07-17T09:00:00.000Z",
+      trigger: "manual",
+    });
+    expect(descriptor.kind).toBe("source-sync");
+    expect(descriptor.dedupeKey).toBe(sourceSyncDedupeKey("src_1"));
+    expect(descriptor.dedupeKey).toBe("source-sync:src_1");
+  });
+
+  test("dailyCaptureRunKey splits am/pm at the 15:00 UTC cutoff", () => {
+    expect(dailyCaptureRunKey("2026-07-17T09:00:00.000Z")).toBe("2026-07-17:am");
+    expect(dailyCaptureRunKey("2026-07-17T14:59:59.000Z")).toBe("2026-07-17:am");
+    expect(dailyCaptureRunKey("2026-07-17T15:00:00.000Z")).toBe("2026-07-17:pm");
+    expect(dailyCaptureRunKey("2026-07-17T21:00:00.000Z")).toBe("2026-07-17:pm");
+  });
+
+  test("dailyCaptureDescriptor pins `now` and makes the run key its dedupe key", () => {
+    const now = "2026-07-17T21:07:30.000Z";
+    const descriptor = dailyCaptureDescriptor(now);
+    expect(descriptor.kind).toBe("daily-capture");
+    expect(descriptor.dedupeKey).toBe("2026-07-17:pm");
+    expect(descriptor.payload).toEqual({ now, runKey: "2026-07-17:pm" });
+  });
+
+  test("the pinned `now` keeps the dedupe key stable across a late drain past the cutoff", () => {
+    // Enqueued at 14:59 (am pass); a worker draining at 15:30 must NOT recompute a
+    // pm key — the payload carries the enqueue-time key so idempotency composes.
+    const descriptor = dailyCaptureDescriptor("2026-07-17T14:59:00.000Z");
+    expect(descriptor.dedupeKey).toBe("2026-07-17:am");
+    expect(descriptor.payload).toMatchObject({ runKey: "2026-07-17:am" });
+    // The would-be drain-time key differs — proving why we pin.
+    expect(dailyCaptureRunKey("2026-07-17T15:30:00.000Z")).toBe("2026-07-17:pm");
   });
 });

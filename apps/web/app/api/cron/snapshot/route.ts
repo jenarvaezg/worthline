@@ -1,55 +1,44 @@
-import { timingSafeEqual } from "node:crypto";
-
-import { runDailyCapture } from "@worthline/db";
-
-import { buildDailyCaptureDeps } from "./daily-capture-deps";
+import { cronBearerAuthorized } from "@web/cron-auth";
+import { productionSyncQueue } from "@web/sync-queue";
+import { dailyCaptureDescriptor } from "@worthline/db";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * Fleet snapshot capture cron (ADR 0037, PRD #528, #895). Scheduled TWICE daily
- * by `vercel.json` — ≈09:00 UTC (provisional intraday point) and ≈21:00 UTC
- * (day's close, latest-wins). Each pass refreshes fleet prices, syncs connected
- * sources, and captures. Guarded by a `CRON_SECRET` bearer: an anonymous caller cannot
- * trigger this expensive, cross-tenant-mutating job, while any scheduler holding
- * the token can. Fails closed — no secret configured means no trigger.
+ * Fleet snapshot capture cron (ADR 0037, PRD #528, #895; #1064). Scheduled TWICE
+ * daily by `vercel.json` — ≈09:00 UTC (provisional intraday point) and ≈21:00 UTC
+ * (day's close, latest-wins). Each pass ENQUEUES a `daily-capture` job onto the
+ * durable queue (PRD #999 S4) keyed by the pass-qualified run key, pinning the
+ * capture instant at enqueue time. In the default pull mode the job drains
+ * in-process here (same cost as the pre-S4 inline capture) AND sweeps any ready
+ * `source-sync` jobs a crashed drain left behind; with a Vercel Queues transport
+ * the doorbell is rung and the push consumer drains. Idempotent under redelivery:
+ * the run-key single-flight + `runDailyCapture`'s finalization guard + latest-wins
+ * capture compose so a re-delivered pass never captures twice.
  *
- * Vercel Cron invokes with GET and `Authorization: Bearer <CRON_SECRET>`; POST
- * is exposed for a manual trigger by a token holder.
+ * Guarded by a `CRON_SECRET` bearer: an anonymous caller cannot trigger this
+ * expensive, cross-tenant-mutating job, while any scheduler holding the token can.
+ * Fails closed — no secret configured means no trigger. Vercel Cron invokes with
+ * GET and `Authorization: Bearer <CRON_SECRET>`; POST is exposed for a manual
+ * trigger by a token holder.
  */
-function authorized(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const suppliedToken = bearerToken(req.headers.get("authorization"));
-  return Boolean(suppliedToken && tokenMatches(suppliedToken, secret));
-}
-
-function bearerToken(header: string | null): string | null {
-  const parts = header?.split(" ") ?? [];
-  const [scheme, token] = parts;
-
-  if (parts.length !== 2 || scheme?.toLowerCase() !== "bearer" || !token) {
-    return null;
-  }
-
-  return token;
-}
-
-function tokenMatches(suppliedToken: string, expectedToken: string): boolean {
-  const supplied = Buffer.from(suppliedToken);
-  const expected = Buffer.from(expectedToken);
-
-  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
-}
-
 async function handler(req: Request): Promise<Response> {
-  if (!authorized(req)) {
+  if (!cronBearerAuthorized(req)) {
     return new Response("Unauthorized", { status: 401 });
   }
-  const result = await runDailyCapture(buildDailyCaptureDeps());
-  return Response.json(result);
+  const now = new Date().toISOString();
+  const { job, enqueued } = await productionSyncQueue().enqueue({
+    descriptor: dailyCaptureDescriptor(now),
+    workspaceId: null,
+  });
+  return Response.json({
+    dedupeKey: job.dedupeKey,
+    enqueued,
+    jobId: job.id,
+    status: job.status,
+  });
 }
 
 export { handler as GET, handler as POST };

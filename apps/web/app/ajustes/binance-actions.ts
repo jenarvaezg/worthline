@@ -27,6 +27,7 @@ import {
   scopeMemberId,
 } from "./connected-source-helpers";
 import { enforceConnectedSourceSyncThrottle } from "./connected-source-sync-throttle-guard";
+import { enqueueSourceSync } from "./source-sync-enqueue";
 
 /**
  * Server actions for the Binance connected source (PRD #245, ADR 0021). ADR 0043
@@ -97,10 +98,14 @@ export async function connectBinanceAction(
     // Eager sync on connect (#895, #785 dim.2): the GET is now cache-only and no
     // longer syncs, so without this the source would show 0 positions until the
     // next cron. Reuses the cron/GET orchestration (stale-gated → a just-
-    // connected source with no freshness always syncs). Best-effort: a Binance
-    // outage degrades to last-known inside the refresh and never fails connect.
+    // connected source with no freshness always syncs). The persist ENQUEUES onto
+    // the durable queue (PRD #999 S4, #1064) — drained in-process locally, off a
+    // worker hosted. Best-effort: a Binance outage degrades to last-known inside
+    // the refresh and never fails connect.
     try {
-      await runBinanceRefresh(store, new Date().toISOString(), "connect");
+      await runBinanceRefresh(store, new Date().toISOString(), "connect", (params) =>
+        enqueueSourceSync(params, () => store.command.syncConnectedSource(params)),
+      );
     } catch {
       // Connecting still succeeds; the twice-daily cron will retry the sync.
     }
@@ -178,15 +183,18 @@ export async function syncBinanceAction(
   }
 
   try {
-    await runActionWithStore(
-      (store) =>
-        store.command.syncConnectedSource({
-          positions: drafts,
-          sourceId,
-          syncedAt: nowIso,
-          trigger: "manual",
-        }),
-      _store,
+    // Enqueue the persist onto the durable queue (PRD #999 S4, #1064) instead of
+    // running it inline — drained in-process locally, off a worker hosted. The
+    // throttle above already gated this call, so enqueuing never bypasses it. The
+    // observable `sync_run` + derived `last_sync_at` update when the job completes.
+    const payload = {
+      positions: drafts,
+      sourceId,
+      syncedAt: nowIso,
+      trigger: "manual" as const,
+    };
+    await enqueueSourceSync(payload, () =>
+      runActionWithStore((store) => store.command.syncConnectedSource(payload), _store),
     );
 
     await runActionWithStore(

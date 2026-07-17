@@ -27,13 +27,24 @@ import { readBinanceCredentials } from "./binance-helpers";
  * `withStore` is sync-only so the caller keeps the store open across the awaited
  * network here. The API key + secret are SECRETS (ADR 0021): never logged.
  */
+/** Persist a source's freshly-fetched positions — the swappable half of the refresh. */
+type PersistSync = (
+  params: Parameters<WorthlineStore["command"]["syncConnectedSource"]>[0],
+) => Promise<void>;
+
 export async function runBinanceRefresh(
   store: WorthlineStore,
   nowIso: string,
   // What triggered this refresh (#885): `connect` on first connect, `cron` on the
   // twice-daily capture. Recorded on the observable `sync_run` the store opens.
   trigger: SyncTrigger = "cron",
+  // How to persist fetched positions (PRD #999 S4, #1064). Defaults to the inline
+  // `syncConnectedSource` — the path the cron's source-sync phase keeps, since the
+  // snapshot must freeze fresh figures synchronously. `connect` overrides it to
+  // ENQUEUE onto the durable queue so the persist runs off a worker.
+  persistSync?: PersistSync,
 ): Promise<RefreshBinanceSourcesResult> {
+  const persist = persistSync ?? ((params) => store.command.syncConnectedSource(params));
   const binanceSources = (await store.connectedSources.listSources()).filter(
     (source) => source.adapter === "binance",
   );
@@ -66,7 +77,7 @@ export async function runBinanceRefresh(
       });
     },
     persistFresh: async (sourceId, drafts) => {
-      await store.command.syncConnectedSource({
+      await persist({
         sourceId,
         positions: drafts,
         syncedAt: nowIso,
