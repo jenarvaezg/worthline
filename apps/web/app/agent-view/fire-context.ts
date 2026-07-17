@@ -5,6 +5,7 @@ import type {
   GoalReservationInput,
   ManualAsset,
   MoneyMinor,
+  ScopeFireResult,
   Workspace,
 } from "@worthline/domain";
 import {
@@ -42,7 +43,7 @@ import { listAgentViewScopes } from "./scopes";
  */
 interface ResolvedFire {
   config: FireScopeConfig | undefined;
-  result: FireResult | undefined;
+  result: ScopeFireResult | undefined;
   currency: string;
 }
 
@@ -84,7 +85,7 @@ export async function resolveFire(
   }
 
   const config = (await store.readFireConfig())[internalScopeId];
-  let result: FireResult | undefined;
+  let result: ScopeFireResult | undefined;
 
   if (config !== undefined) {
     // Curve-valued today: FIRE eligibility counts the same live balances the
@@ -221,13 +222,11 @@ export async function buildFireSummary(
 
 function toConfig(
   config: FireScopeConfig,
-  result: FireResult,
+  result: ScopeFireResult,
   currency: string,
 ): AgentViewFireConfig {
   return {
-    expectedRealReturn: rateString(
-      result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
-    ),
+    expectedRealReturn: rateString(result.context.realReturnUsed),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: rateString(config.safeWithdrawalRate),
     ...(config.currentAge === undefined ? {} : { currentAge: config.currentAge }),
@@ -244,13 +243,11 @@ function toConfig(
 
 function toAssumptions(
   config: FireScopeConfig,
-  result: FireResult,
+  result: ScopeFireResult,
   currency: string,
 ): AgentViewFireAssumptions {
   return {
-    expectedRealReturn: rateString(
-      result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
-    ),
+    expectedRealReturn: rateString(result.context.realReturnUsed),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: rateString(config.safeWithdrawalRate),
   };

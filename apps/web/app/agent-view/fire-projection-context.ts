@@ -1,6 +1,6 @@
 import type { FireScenario } from "@worthline/domain";
 import {
-  projectFire,
+  projectFireFromContext,
   resolveMonthlySavingsCapacityForFire,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
@@ -48,14 +48,10 @@ export async function buildFireProjection(
     unitPriceMajorByHoldingId(priceCache),
   ).capacityMinor;
 
-  // N3 (#515): use result.realReturnUsed (the single resolved rate) — not
-  // config.expectedRealReturn directly — so projection is coherent with coast.
-  const projection = projectFire({
-    startingEligibleMinor: result.eligibleAssets.amountMinor,
+  // #1026: the resolved rate, FIRE number and age all ride in the context, so
+  // this projection is coherent with coast + levels by construction.
+  const projection = projectFireFromContext(result.context, {
     monthlyContributionMinor,
-    expectedRealReturn: result.realReturnUsed ?? config.expectedRealReturn ?? 0.05,
-    fireNumberMinor: result.fireNumber.amountMinor,
-    ...(config.currentAge === undefined ? {} : { currentAge: config.currentAge }),
   });
 
   return {

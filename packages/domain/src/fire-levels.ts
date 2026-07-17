@@ -15,10 +15,9 @@
 
 import type { ContributionPlan } from "./contribution-plan";
 import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
-import type { FireScopeConfig } from "./fire";
+import type { FireContext } from "./fire";
 import { calculateFire } from "./fire";
 import { fractionalFireYear, projectFire } from "./fire-projection";
-import type { CurrencyCode } from "./money";
 
 export type FireLevelKey = "coast" | "lean" | "barista" | "regular" | "fat";
 
@@ -35,16 +34,13 @@ export interface FireLevel {
 }
 
 export interface FireLevelsInput {
-  config: FireScopeConfig;
-  /** Current eligible assets in minor units (net of goal reservations, same as the chart). */
-  eligibleMinor: number;
-  currency: CurrencyCode;
   /**
-   * The single resolved real return to use (N3, #515). Pass `fireResult.realReturnUsed`
-   * so coast + projection + levels all use the same rate. Falls back to
-   * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
+   * The resolved FIRE context (#1026): carries the config, the net-eligible
+   * total, the currency and the single resolved rate together. Coast, the
+   * projection ETAs and every level use `context.realReturnUsed` — there is no
+   * loose rate to forget and no fallback.
    */
-  resolvedRealReturn?: number;
+  context: FireContext;
   /** Scope contribution plan for derived monthly savings (ADR 0041). */
   contributionPlan?: ContributionPlan | null;
   /** ISO YYYY-MM-DD for active-contribution filtering. */
@@ -64,11 +60,9 @@ const LABEL: Record<FireLevelKey, string> = {
 
 /** Returns null when config is degenerate — caller should hide the rail. */
 export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
-  const { config, eligibleMinor, currency, resolvedRealReturn } = input;
+  const { context } = input;
+  const { config, currency, realReturnUsed: expectedRealReturn, eligibleMinor } = context;
   const { monthlySpendingMinor, safeWithdrawalRate } = config;
-  // N3 (#515): use the caller-supplied resolved rate (fireResult.realReturnUsed)
-  // so coast + projection + levels all agree on the same scalar.
-  const expectedRealReturn = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;
 
   if (!safeWithdrawalRate || !monthlySpendingMinor) return null;
 

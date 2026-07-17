@@ -1,4 +1,6 @@
 import { tierOfAsset } from "./classification";
+import type { FireProjection } from "./fire-projection";
+import { projectFire } from "./fire-projection";
 import { effectiveRealReturn } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode, MoneyMinor } from "./money";
@@ -83,19 +85,81 @@ export interface FireResult {
   coastFireRequired?: MoneyMinor;
   coastFireAge?: number;
   isAlreadyAtCoastFire?: boolean;
+}
+
+/**
+ * The resolved FIRE inputs that every downstream projection needs, packaged as
+ * one value so the rate can never travel apart from the totals it was resolved
+ * against (#1026). `calculateFireForScope` produces it; *levels*, *goal delay*
+ * and *projection* consume it instead of a loose optional rate. Once you hold a
+ * context there is no rate `?? fallback` to reach for — having the context IS
+ * having the rate. (A caller with no FIRE config at all has no context, and may
+ * still default a display rate; that's the absence-of-config case, not this one.)
+ *
+ * The only sanctioned way to change the rate for a what-if is `withRate`, which
+ * returns a fresh context — an explicit override, never a silent divergence.
+ */
+export interface FireContext {
+  /** The scope config these totals + rate were resolved from. */
+  readonly config: FireScopeConfig;
+  readonly currency: CurrencyCode;
   /**
-   * Weighted real return estimate from the eligible tier mix (N3, #515).
-   * Σ(tier_weight × tier_return) over the eligible pool. Always present on
-   * `calculateFireForScope`; absent on `calculateFire` (no tier info available).
+   * The single resolved real return for ALL projection math (coast, scenarios,
+   * levels, «+X meses»). = `config.expectedRealReturn` when the override is set;
+   * = `effectiveRealReturn` otherwise (N3, #515). Required by construction.
    */
-  effectiveRealReturn?: number;
+  readonly realReturnUsed: number;
   /**
-   * The single resolved rate used for ALL projection math in this result
-   * (coast, scenarios, levels, «+X meses»). = `config.expectedRealReturn` when
-   * an override is set; = `effectiveRealReturn` otherwise (N3, #515).
-   * Always present on `calculateFireForScope`; absent on `calculateFire`.
+   * Weighted real return from the eligible tier mix — Σ(tier_weight × tier_return)
+   * over the eligible pool (N3, #515). The rate before any manual override.
    */
-  realReturnUsed?: number;
+  readonly effectiveRealReturn: number;
+  /** Eligible assets net of goal reservations (minor units); projection/levels start here. */
+  readonly eligibleMinor: number;
+  /** Eligible assets BEFORE goal reservation (minor units); `goalFireDelay` needs this. */
+  readonly eligibleGrossMinor: number;
+  /** The FIRE target (minor units) — `12 × monthlySpending / safeWithdrawalRate`. */
+  readonly fireNumberMinor: number;
+}
+
+/** `calculateFireForScope`'s result: a `FireResult` that always carries its `FireContext`. */
+export interface ScopeFireResult extends FireResult {
+  readonly context: FireContext;
+}
+
+/**
+ * The explicit what-if override: a copy of `context` with a different resolved
+ * rate. This is the ONLY way the rate changes downstream — a caller that wants a
+ * different rate must say so here, it can never happen by forgetting to thread it.
+ */
+export function withRate(context: FireContext, realReturnUsed: number): FireContext {
+  return { ...context, realReturnUsed };
+}
+
+/**
+ * Run the FIRE projection straight from a `FireContext` (#1026): the rate, FIRE
+ * number and reference age all come from the context, so the projection cannot
+ * diverge from coast/levels. `startingEligibleMinor` defaults to the context's
+ * net-eligible total; pass it only for what-if starting balances.
+ */
+export function projectFireFromContext(
+  context: FireContext,
+  input: {
+    monthlyContributionMinor: number;
+    startingEligibleMinor?: number;
+    maxYears?: number;
+  },
+): FireProjection {
+  return projectFire({
+    startingEligibleMinor: input.startingEligibleMinor ?? context.eligibleMinor,
+    monthlyContributionMinor: input.monthlyContributionMinor,
+    expectedRealReturn: context.realReturnUsed,
+    fireNumberMinor: context.fireNumberMinor,
+    ...(context.config.currentAge === undefined
+      ? {}
+      : { currentAge: context.config.currentAge }),
+    ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+  });
 }
 
 export function isFireEligibleAsset(
@@ -191,7 +255,7 @@ export function calculateFireForScope(
    * the scope-eligible total before the FIRE math; defaults to 0 (no goals).
    */
   reservedForGoalsMinor = 0,
-): FireResult {
+): ScopeFireResult {
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scopeId));
   const excludedSet = new Set(config.excludedAssetIds ?? []);
 
@@ -261,16 +325,27 @@ export function calculateFireForScope(
   const reserved = Math.max(0, Math.min(reservedForGoalsMinor, netEligibleMinor));
   const eligibleAfterReservation = netEligibleMinor - reserved;
 
+  const base = calculateFire(
+    config,
+    eligibleAfterReservation,
+    workspace.baseCurrency,
+    realReturnUsed,
+  );
+
+  const context: FireContext = {
+    config,
+    currency: workspace.baseCurrency,
+    realReturnUsed,
+    effectiveRealReturn: effective,
+    eligibleMinor: eligibleAfterReservation,
+    eligibleGrossMinor: netEligibleMinor,
+    fireNumberMinor: base.fireNumber.amountMinor,
+  };
+
   return {
-    ...calculateFire(
-      config,
-      eligibleAfterReservation,
-      workspace.baseCurrency,
-      realReturnUsed,
-    ),
+    ...base,
     excludedAssets,
     reservedForGoals: money(reserved, workspace.baseCurrency),
-    effectiveRealReturn: effective,
-    realReturnUsed,
+    context,
   };
 }

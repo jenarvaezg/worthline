@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { FireScopeConfig } from "./fire";
+import type { FireContext, FireScopeConfig } from "./fire";
 import { goalFireDelay } from "./goal-fire-delay";
 import type { Goal } from "./goals";
 
@@ -39,6 +39,35 @@ const BASE_CONFIG: FireScopeConfig = {
 // fireNumber = 2000 * 12 / 0.04 = 600 000 € = 60_000_000 minor
 // fireReservationHorizon = 2026 + (55-35) = 2046
 
+/**
+ * Build a `FireContext` the way `calculateFireForScope` would (#1026): the
+ * gross-eligible total and the resolved rate ride together, so `goalFireDelay`
+ * reads them from one value instead of loose params. With no explicit rate the
+ * context resolves to `config.expectedRealReturn` — same as the old default.
+ */
+function ctx(
+  overrides: {
+    config?: FireScopeConfig;
+    eligibleGrossMinor?: number;
+    realReturnUsed?: number;
+  } = {},
+): FireContext {
+  const config = overrides.config ?? BASE_CONFIG;
+  const eligibleGrossMinor = overrides.eligibleGrossMinor ?? 0;
+  const effectiveRealReturn = config.expectedRealReturn ?? 0.05;
+  return {
+    config,
+    currency: "EUR",
+    realReturnUsed: overrides.realReturnUsed ?? effectiveRealReturn,
+    effectiveRealReturn,
+    eligibleMinor: eligibleGrossMinor,
+    eligibleGrossMinor,
+    fireNumberMinor: Math.round(
+      (config.monthlySpendingMinor * 12) / config.safeWithdrawalRate,
+    ),
+  };
+}
+
 // ── 1. revaluation captured ─────────────────────────────────────────────────
 
 describe("goalFireDelay – revaluation captured", () => {
@@ -47,11 +76,10 @@ describe("goalFireDelay – revaluation captured", () => {
     // naive linear: (2M / (100k*12)) * 12 = 20 months
     // with compounding at 5%: interpolated delta = 9 months
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
@@ -74,21 +102,19 @@ describe("goalFireDelay – marginal computation", () => {
   it("marginal delay differs from absolute delay (other reservations shift the base)", () => {
     // absolute: base = 30M, reservation = 2M → starts 28M
     const resultAbsolute = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ id: "g2", targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
     // marginal: goal-1 already reserved 2M → base = 28M, this goal adds 2M → starts 26M
     const resultMarginal = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ id: "g2", targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 2_000_000,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
@@ -118,11 +144,10 @@ describe("goalFireDelay – interpolation produces non-12-multiple months", () =
     };
 
     const result = goalFireDelay({
+      context: ctx({ config, eligibleGrossMinor: 25_000_000 }),
       goal: makeGoal({ targetAmountMinor: 3_000_000, deadline: "2029-01-01" }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 25_000_000,
       thisGoalReservationMinor: 3_000_000,
-      config,
       now: "2026-06-25",
     });
 
@@ -142,11 +167,10 @@ describe("goalFireDelay – no_effect when deadline is at or after the FIRE hori
     // horizon = 2026-06-25 + 20y = 2046-06-25
     // deadline 2050-01-01 >= "2046-06-25" → out of horizon → no_effect
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 1_000_000, deadline: "2050-01-01" }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 1_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
@@ -161,11 +185,10 @@ describe("goalFireDelay – no_effect when deadline is at or after the FIRE hori
     // consistent with countsTowardFire=true for the same goal.
     // deadline 2040-01-01: > ~2036 projectFire year, < 2046 horizon.
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000, deadline: "2040-01-01" }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
@@ -182,11 +205,10 @@ describe("goalFireDelay – no_effect when deadline is at or after the FIRE hori
 describe("goalFireDelay – no_effect when reservation is 0 or no horizon", () => {
   it("returns no_effect for zero thisGoalReservationMinor (no holdings assigned)", () => {
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 0, // caller passes 0 when out-of-horizon or unassigned
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
     expect(result.kind).toBe("no_effect");
@@ -194,11 +216,10 @@ describe("goalFireDelay – no_effect when reservation is 0 or no horizon", () =
 
   it("returns no_effect when goal deadline is in the past", () => {
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000, deadline: "2020-01-01" }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
     expect(result.kind).toBe("no_effect");
@@ -213,11 +234,10 @@ describe("goalFireDelay – no_effect when reservation is 0 or no horizon", () =
       // currentAge omitted → fireReservationHorizon returns undefined
     };
     const result = goalFireDelay({
+      context: ctx({ config: configNoAge, eligibleGrossMinor: 30_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 30_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config: configNoAge,
       now: "2026-06-25",
     });
     expect(result.kind).toBe("no_effect");
@@ -230,11 +250,10 @@ describe("goalFireDelay – clamps and edge cases", () => {
   it("returns 0 months (or no_effect) when already FI, never NaN or negative", () => {
     // eligible > fireNumber → both runs yearsToFire=0 → 0 delta
     const result = goalFireDelay({
+      context: ctx({ eligibleGrossMinor: 70_000_000 }), // > 60M fireNumber
       goal: makeGoal({ targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 70_000_000, // > 60M fireNumber
       thisGoalReservationMinor: 2_000_000,
-      config: BASE_CONFIG,
       now: "2026-06-25",
     });
 
@@ -252,11 +271,10 @@ describe("goalFireDelay – clamps and edge cases", () => {
       monthlySavingsCapacityMinor: 0,
     };
     const result = goalFireDelay({
+      context: ctx({ config, eligibleGrossMinor: 1_000_000 }),
       goal: makeGoal({ targetAmountMinor: 2_000_000 }),
       otherReservationsMinor: 0,
-      eligibleGrossMinor: 1_000_000,
       thisGoalReservationMinor: 2_000_000,
-      config,
       now: "2026-06-25",
     });
 

@@ -462,23 +462,20 @@ describe("prepareObjetivosState", () => {
     expect(obj.goals).toHaveLength(1);
     const g = obj.goals[0]!;
 
-    // Reconstruct what the wiring should compute.
-    // eligibleGrossMinor = eligible (after reservation) + reserved
+    // Reconstruct what the wiring should compute. The FIRE context (#1026)
+    // carries the gross-eligible total and the resolved rate together, so the
+    // direct call threads exactly the same context the wiring does.
     const dash = prepareDashboardState(baseInput);
-    const eligibleGrossMinor =
-      dash.fireResult!.eligibleAssets.amountMinor +
-      (dash.fireResult!.reservedForGoals?.amountMinor ?? 0);
 
     // The one goal is in-horizon (deadline 2030-01-01 < horizon ~2046) so
     // thisGoalReservation = min(target, assignedValue) = min(2M, 30M) = 2M.
     // otherReservationsMinor = 0 (no other goals).
     // in-horizon reservation = min(target=2M, assignedValue=30M) = 2M
     const direct = goalFireDelay({
+      context: dash.fireResult!.context,
       goal,
       otherReservationsMinor: 0,
-      eligibleGrossMinor,
       thisGoalReservationMinor: 2_000_000,
-      config: fireConfig,
       now: "2026-06-25",
     });
 

@@ -25,7 +25,7 @@
 
 import type { ContributionPlan } from "./contribution-plan";
 import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
-import type { FireScopeConfig } from "./fire";
+import type { FireContext } from "./fire";
 import { fireReservationHorizon } from "./fire";
 import { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
 import type { Goal } from "./goals";
@@ -33,43 +33,33 @@ import type { Goal } from "./goals";
 export type GoalFireDelay = { kind: "delays"; months: number } | { kind: "no_effect" };
 
 export interface GoalFireDelayInput {
+  /**
+   * The resolved FIRE context (#1026): carries the config, the gross-eligible
+   * total (before goal reservation) and the single resolved rate. This helper
+   * uses `context.realReturnUsed` — the same rate as coast, projection and
+   * fireLevels — with no loose rate to forget and no fallback.
+   */
+  context: FireContext;
   goal: Goal;
   /** In-horizon reservation of ALL OTHER goals (minor units), already filtered
    *  by the same `fireReservationHorizon` rule as `countsTowardFire`. */
   otherReservationsMinor: number;
-  /** Eligible assets BEFORE any goal reservation (minor units). */
-  eligibleGrossMinor: number;
   /**
    * This goal's in-horizon reservation in minor units — pass the value from
    * `goalReservationMap.get(goal.id)` in `prepareObjetivosState` so the helper
    * subtracts exactly what FIRE subtracts, not a separately derived amount.
    */
   thisGoalReservationMinor: number;
-  config: FireScopeConfig;
   /** ISO YYYY-MM-DD. */
   now: string;
-  /**
-   * The single resolved real return to use for projection (N3, #515).
-   * Pass `fireResult.realReturnUsed` from the caller so this helper uses the
-   * same rate as coast, projection, and fireLevels. Falls back to
-   * `config.expectedRealReturn ?? 0.05` when omitted (backward-compat).
-   */
-  resolvedRealReturn?: number;
   /** Scope contribution plan for derived monthly savings (ADR 0041). */
   contributionPlan?: ContributionPlan | null;
   unitPriceMajorByHoldingId?: Record<string, string>;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
-  const {
-    goal,
-    otherReservationsMinor,
-    eligibleGrossMinor,
-    thisGoalReservationMinor,
-    config,
-    now,
-    resolvedRealReturn,
-  } = input;
+  const { context, goal, otherReservationsMinor, thisGoalReservationMinor, now } = input;
+  const { config, realReturnUsed, eligibleGrossMinor } = context;
 
   // ── Unified horizon: same source of truth as countsTowardFire / totalGoalReservationMinor
   const horizon = fireReservationHorizon(config, now);
@@ -104,9 +94,9 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
     now,
     input.unitPriceMajorByHoldingId,
   ).capacityMinor;
-  // N3 (#515): use resolvedRealReturn from the caller (fireResult.realReturnUsed)
-  // so this projection is coherent with coast + the main projection chart.
-  const rateToUse = resolvedRealReturn ?? config.expectedRealReturn ?? 0.05;
+  // #1026: the rate rides in the context (fireResult.context.realReturnUsed), so
+  // this projection is coherent with coast + the main projection chart by type.
+  const rateToUse = realReturnUsed;
   const projInput = {
     monthlyContributionMinor: monthlyContribution,
     expectedRealReturn: rateToUse,

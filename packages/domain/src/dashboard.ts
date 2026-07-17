@@ -7,11 +7,11 @@ import {
   calculateFireForScope,
   fireReservationHorizon,
   isFireEligibleAsset,
+  projectFireFromContext,
 } from "./fire";
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
-import { projectFire } from "./fire-projection";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
 import type { Goal } from "./goals";
@@ -237,27 +237,19 @@ export function prepareDashboardState(input: {
       : null;
 
   // FIRE projection (#427): scenarios from the reservation-adjusted eligible
-  // total and the configured monthly savings capacity.
-  // N3 (#515): use fireResult.realReturnUsed — the single resolved rate — not
-  // config.expectedRealReturn directly, so coast + projection + levels all agree.
-  const fireProjection =
-    fireScopeConfig && fireResult
-      ? projectFire({
-          startingEligibleMinor: fireResult.eligibleAssets.amountMinor,
-          monthlyContributionMinor: resolveMonthlySavingsCapacityForFire(
-            input.contributionPlan,
-            fireScopeConfig,
-            today,
-            unitPrices,
-          ).capacityMinor,
-          expectedRealReturn:
-            fireResult.realReturnUsed ?? fireScopeConfig.expectedRealReturn ?? 0.05,
-          fireNumberMinor: fireResult.fireNumber.amountMinor,
-          ...(fireScopeConfig.currentAge === undefined
-            ? {}
-            : { currentAge: fireScopeConfig.currentAge }),
-        })
-      : null;
+  // total and the configured monthly savings capacity. The resolved rate, FIRE
+  // number and age ride in the context (#1026), so coast + projection + levels
+  // agree by construction — no rate to thread by hand, no fallback.
+  const fireProjection = fireResult
+    ? projectFireFromContext(fireResult.context, {
+        monthlyContributionMinor: resolveMonthlySavingsCapacityForFire(
+          input.contributionPlan,
+          fireResult.context.config,
+          today,
+          unitPrices,
+        ).capacityMinor,
+      })
+    : null;
 
   const selectedMemberIds =
     workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
@@ -409,13 +401,6 @@ export function prepareObjetivosState(
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;
 
-  // eligibleGrossMinor = eligible BEFORE goal reservation (needed for goalFireDelay).
-  // fireResult.eligibleAssets is already net of reservation; add it back.
-  const eligibleGrossMinor = dash.fireResult
-    ? dash.fireResult.eligibleAssets.amountMinor +
-      (dash.fireResult.reservedForGoals?.amountMinor ?? 0)
-    : 0;
-
   // Per-goal in-horizon reservation map: only goals whose deadline is future + before horizon.
   const goalReservationMap = new Map<string, number>();
   for (const goal of input.goals ?? []) {
@@ -450,13 +435,12 @@ export function prepareObjetivosState(
       fundedRatioBps: goalFundedRatioBps(goal.targetAmountMinor, assignedMinor),
       reservedMinor: goalReservedMinor(goal.targetAmountMinor, assignedMinor),
       countsTowardFire,
-      fireDelay: dash.fireScopeConfig
+      fireDelay: dash.fireResult
         ? goalFireDelay({
+            context: dash.fireResult.context,
             goal,
             otherReservationsMinor,
-            eligibleGrossMinor,
             thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
-            config: dash.fireScopeConfig,
             now,
             ...(input.contributionPlan
               ? { contributionPlan: input.contributionPlan }
@@ -464,35 +448,24 @@ export function prepareObjetivosState(
             ...(Object.keys(unitPrices).length > 0
               ? { unitPriceMajorByHoldingId: unitPrices }
               : {}),
-            // N3 (#515): thread the single resolved rate so goalFireDelay is
-            // coherent with coast + projection + fireLevels.
-            ...(dash.fireResult?.realReturnUsed !== undefined
-              ? { resolvedRealReturn: dash.fireResult.realReturnUsed }
-              : {}),
           })
         : { kind: "no_effect" as const },
     };
   });
 
-  // fireLevels uses the SAME net eligible the projection chart uses (fireResult.eligibleAssets),
-  // not eligibleGrossMinor — so rail ETAs are coherent with the displayed trajectory.
-  // N3 (#515): pass realReturnUsed so coast + levels + projection all agree.
-  const fireLevelRail =
-    dash.fireScopeConfig && dash.workspace && dash.fireResult
-      ? fireLevels({
-          config: dash.fireScopeConfig,
-          eligibleMinor: dash.fireResult.eligibleAssets.amountMinor,
-          currency: dash.workspace.baseCurrency,
-          today: now,
-          ...(input.contributionPlan ? { contributionPlan: input.contributionPlan } : {}),
-          ...(Object.keys(unitPrices).length > 0
-            ? { unitPriceMajorByHoldingId: unitPrices }
-            : {}),
-          ...(dash.fireResult.realReturnUsed !== undefined
-            ? { resolvedRealReturn: dash.fireResult.realReturnUsed }
-            : {}),
-        })
-      : null;
+  // fireLevels reads the net eligible + resolved rate straight from the context
+  // (#1026), so rail ETAs are coherent with the projection chart and coast by
+  // construction — the context carries the SAME net eligible the chart starts from.
+  const fireLevelRail = dash.fireResult
+    ? fireLevels({
+        context: dash.fireResult.context,
+        today: now,
+        ...(input.contributionPlan ? { contributionPlan: input.contributionPlan } : {}),
+        ...(Object.keys(unitPrices).length > 0
+          ? { unitPriceMajorByHoldingId: unitPrices }
+          : {}),
+      })
+    : null;
 
   return {
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,

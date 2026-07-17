@@ -357,8 +357,7 @@ export default async function ObjetivosPage({
       })
     : null;
 
-  const assumedAnnualReturn =
-    fireResult?.realReturnUsed ?? fireScopeConfig?.expectedRealReturn ?? 0.05;
+  const assumedAnnualReturn = fireResult?.context.realReturnUsed ?? 0.05;
   const exposureDriftHorizon =
     fireProjection?.scenarios.find((scenario) => scenario.label === "base")
       ?.yearsToFire ?? 20;
@@ -634,7 +633,7 @@ export default async function ObjetivosPage({
           <div className="objetivosFireFoot">
             <span>
               Supuestos FIRE (retirada, retorno, edades) → en Ajustes
-              {fireResult?.effectiveRealReturn !== undefined ? (
+              {fireResult != null ? (
                 <>
                   {" · "}
                   {fireScopeConfig?.expectedRealReturn !== undefined ? (
@@ -646,7 +645,10 @@ export default async function ObjetivosPage({
                   ) : (
                     <span title="Retorno estimado ponderando tu mezcla de activos por tipo">
                       Retorno real estimado de tu cartera:{" "}
-                      {formatDecimalAsPercentField(fireResult.effectiveRealReturn)} %
+                      {formatDecimalAsPercentField(
+                        fireResult.context.effectiveRealReturn,
+                      )}{" "}
+                      %
                     </span>
                   )}
                 </>
