@@ -31,7 +31,12 @@ import {
   type SnapshotStore,
 } from "./snapshot-store";
 import { type StoreContext } from "./store-context";
-import { createSyncJobExecutor, syncJobErrorFromCause } from "./sync-job";
+import {
+  createSyncJobExecutor,
+  type SyncJobDescriptor,
+  type SyncJobResult,
+  syncJobErrorFromCause,
+} from "./sync-job";
 import { type SyncRunStore, type SyncTrigger } from "./sync-run-store";
 
 /**
@@ -338,6 +343,18 @@ export interface ConnectedSourceSeams {
     curve: BinanceHistoryCurve;
     today?: string;
   }) => Promise<void>;
+  /**
+   * Run ONE sync job through the S2 executor (PRD #999 S2, #1062) and report its
+   * typed outcome — the per-workspace entry point the durable queue's worker (S3,
+   * #1063) routes a leased job to. Unlike {@link syncConnectedSource} (which builds
+   * the `source-sync` descriptor from raw params and rethrows an error for its
+   * synchronous callers), this takes a ready descriptor and NEVER throws for a job
+   * failure: it returns the typed `{ status: "error", ... }` so the queue can decide
+   * re-enqueue from `error.retriable`. It still owns the observable `sync_run`
+   * lifecycle inside the handler (1 job ↔ 1 sync_run). Throws only on a programming
+   * error (no handler registered for the kind).
+   */
+  runSyncJob: (descriptor: SyncJobDescriptor) => Promise<SyncJobResult>;
 }
 
 export function createConnectedSourceSeams(
@@ -465,6 +482,7 @@ export function createConnectedSourceSeams(
   });
 
   return {
+    runSyncJob: jobExecutor.runSyncJob,
     syncConnectedSource: async (params) => {
       // Route through the one executor (#1062). Behavior-equivalent to S1: an
       // `error` outcome rethrows the original cause (callers' existing
