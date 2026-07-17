@@ -1,5 +1,23 @@
 # The historical-snapshot monolith splits into a pure core seam plus one module per ripple trigger
 
+> **Status: superseded by #1027 (jul 2026).** The trigger-module split described
+> below was carried out (#320/#321) but did not deliver its goal — a testable,
+> byte-stable seam that shrinks an interface. In practice each
+> `historical-snapshot-*-ripple.ts` module imported its seam
+> (`assembleRippleSnapshot`, `resolveFrozenIdentity`, `debtCurveValuationInput`)
+> **back** from this core, which then **re-exported** the module's functions
+> outward — a round-trip through the module boundary that abstracted nothing. The
+> four `*-ripple.test.ts` files were 14–22-line existence checks that only
+> asserted `typeof fn === "function"`; the real behaviour always lived in
+> `historical-snapshot.test.ts`. No interface got smaller. #1027 folds the four
+> modules back into `historical-snapshot.ts` (the six `recalculateSnapshotFor*`
+> functions, their `Recalculate*Input` types, and `OwnershipRippleHolding` are now
+> defined there directly, alongside the seam they call) and drops the no-op tests.
+> The barrel (`packages/domain/src/index.ts`) already re-exported everything from
+> `./historical-snapshot`, so the public surface is unchanged. The
+> text below records the original decision; the "one module per trigger" file
+> layout it prescribes no longer holds.
+
 ## Context
 
 `packages/domain/src/historical-snapshot.ts` is a ~1345-line pure-domain module. It is
