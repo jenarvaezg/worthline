@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -23,7 +24,7 @@ import {
 } from "@web/intake";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import { type WorthlineStore } from "@web/store";
-import type { Clock, DebtModel, Instrument, LiabilityType } from "@worthline/domain";
+import type { DebtModel, Instrument, LiabilityType } from "@worthline/domain";
 import {
   checkOwnershipSplit,
   createInvestmentOperationSafe,
@@ -57,12 +58,6 @@ const ADVANCED_ADD_URL = "/patrimonio/anadir/avanzado";
 
 function parseReturnUrl(value: FormDataEntryValue | null): string {
   return String(value ?? "") === ADVANCED_ADD_URL ? ADVANCED_ADD_URL : ADD_URL;
-}
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
 }
 
 type SimpleDrawer = "dinero" | "inmueble" | "bien" | "deuda" | "inversion";

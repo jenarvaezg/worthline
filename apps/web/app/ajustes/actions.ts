@@ -2,6 +2,7 @@
 
 import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -17,7 +18,6 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import {
-  type Clock,
   parseWorkspaceExport,
   type RiskTolerance,
   summarizeWorkspaceExport,
@@ -30,12 +30,6 @@ import { redirect } from "next/navigation";
 import { currentUrlOf } from "./connected-source-helpers";
 
 // === Member actions ===
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
-}
 
 export async function createMemberAction(formData: FormData, ..._testArgs: unknown[]) {
   const _store = testStoreFromActionArgs(_testArgs);
