@@ -340,12 +340,19 @@ export {
   EXPOSURE_SECTOR_LABELS,
   sectorStyleSplit,
 } from "./exposure-taxonomy";
-export type { FireResult, FireScopeConfig } from "./fire";
+export type {
+  FireContext,
+  FireResult,
+  FireScopeConfig,
+  ScopeFireResult,
+} from "./fire";
 export {
   calculateFire,
   calculateFireForScope,
   fireReservationHorizon,
   isFireEligibleAsset,
+  projectFireFromContext,
+  withRate,
 } from "./fire";
 export type { FireLevel, FireLevelKey, FireLevelsInput } from "./fire-levels";
 export { fireLevels } from "./fire-levels";

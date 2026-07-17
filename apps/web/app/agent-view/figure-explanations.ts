@@ -1260,11 +1260,7 @@ function fireAssumptions(
   currency: string,
 ): AgentViewFireAssumptions {
   return {
-    expectedRealReturn: (
-      result.realReturnUsed ??
-      config.expectedRealReturn ??
-      0.05
-    ).toString(),
+    expectedRealReturn: result.context.realReturnUsed.toString(),
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: config.safeWithdrawalRate.toString(),
   };

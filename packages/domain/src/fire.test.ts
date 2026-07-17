@@ -359,7 +359,7 @@ describe("calculateFireForScope", () => {
     );
 
     expect(result.eligibleAssets.amountMinor).toBe(200_000_00);
-    expect(result.effectiveRealReturn).toBeCloseTo(
+    expect(result.context.effectiveRealReturn).toBeCloseTo(
       (TIER_REAL_RETURN_DEFAULTS.market + TIER_REAL_RETURN_DEFAULTS.housing) / 2,
       10,
     );

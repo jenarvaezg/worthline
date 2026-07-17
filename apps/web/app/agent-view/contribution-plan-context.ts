@@ -147,8 +147,7 @@ export async function buildContributionPlanContext(
       : {
           fireNumberMinor: fire.result.fireNumber.amountMinor,
           startingEligibleMinor: fire.result.eligibleAssets.amountMinor,
-          expectedRealReturn:
-            fire.result.realReturnUsed ?? fire.config?.expectedRealReturn ?? 0.05,
+          expectedRealReturn: fire.result.context.realReturnUsed,
         }),
     ...(fire.config?.currentAge === undefined
       ? {}
@@ -169,8 +168,7 @@ export async function buildContributionPlanContext(
       options.readExposureCatalog ?? readExposureCatalogFromControlPlane,
     plan,
     growthAssumption,
-    assumedAnnualReturn:
-      fire.result?.realReturnUsed ?? fire.config?.expectedRealReturn ?? 0.05,
+    assumedAnnualReturn: fire.result?.context.realReturnUsed ?? 0.05,
     workspace,
     internalScopeId,
     assets,
