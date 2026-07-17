@@ -1159,6 +1159,14 @@ export interface AgentViewFigureExplanation {
   snapshot?: AgentViewFigureSnapshotReference;
   /** Present only on a historical explanation (#344): `full` or `partial`. */
   decompositionStatus?: AgentViewFigureDecompositionStatus;
+  /**
+   * `false` when the figure is PARTIAL because at least one holding's currency could
+   * not be converted to the base currency (#1065): that holding is listed in
+   * `excludedHoldings` and left out of `value`, so an agent states the figure does
+   * not cover everything rather than treating a non-EUR amount as EUR. Absent (the
+   * common all-EUR case) means the figure is fully converted — never inferred true.
+   */
+  convertible?: false;
 }
 
 export type AgentViewOperationSort = "date" | "-date";

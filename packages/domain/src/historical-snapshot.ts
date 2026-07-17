@@ -478,6 +478,9 @@ export function assembleRippleSnapshot(input: {
 
   const summary = {
     debts: { amountMinor: debtsMinor, currency },
+    // A frozen snapshot was captured in the base currency, so there is nothing left
+    // unconverted to report (#1065) — the FX guard applies only to live aggregation.
+    fxExcluded: [],
     grossAssets: { amountMinor: grossAssetsMinor, currency },
     housingEquity: { amountMinor: housingEquityMinor, currency },
     liquidNetWorth: { amountMinor: liquidNetWorthMinor, currency },

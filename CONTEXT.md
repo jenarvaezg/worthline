@@ -174,7 +174,11 @@ hidden behind a figure that pretends to cover everything. Because asset class is
 breakdown axis, a reader can restrict to equity and then read geography, answering "how
 much US equity do I hold" without inventing the number. It also derives a **currency-risk**
 lens — the unhedged non-EUR exposure, by currency — as information, never a change to a
-figure (worthline has no FX layer and stays in EUR).
+figure. The base currency stays EUR; a **holding** denominated in another currency is
+converted to EUR for aggregation at the dated ECB rate (spot for today), and when no rate is
+available it is **excluded from the total and marked partial** — never summed as if it were
+EUR, never a 1:1 guess (#1065). This currency-risk lens is exposure information, distinct
+from that aggregation-time conversion.
 _Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
 
 **Operation**:

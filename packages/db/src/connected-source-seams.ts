@@ -263,6 +263,7 @@ async function backfillBinanceHistoricalSnapshots(
             scopeLabel: scope.label,
             summary: {
               debts: { amountMinor: 0, currency: workspace.baseCurrency },
+              fxExcluded: [],
               grossAssets: { amountMinor: 0, currency: workspace.baseCurrency },
               housingEquity: { amountMinor: 0, currency: workspace.baseCurrency },
               liquidNetWorth: { amountMinor: 0, currency: workspace.baseCurrency },

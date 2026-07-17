@@ -12,6 +12,7 @@ import {
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
+import type { FxAggregation } from "./fx";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
 import type { Goal } from "./goals";
@@ -180,6 +181,14 @@ export function prepareDashboardState(input: {
   today?: string;
   /** Scope contribution plan (ADR 0041); drives derived monthly savings for FIRE. */
   contributionPlan?: ContributionPlan | null;
+  /**
+   * FX context for non-base-currency holdings (#1065). Present only when the
+   * portfolio actually holds a foreign currency (the caller resolves ECB rates
+   * lazily); absent for an all-EUR portfolio, in which case nothing is converted
+   * or excluded. Threaded into net worth and the liquidity breakdown so both
+   * agree on which holdings the total covers.
+   */
+  fx?: FxAggregation;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -189,6 +198,7 @@ export function prepareDashboardState(input: {
     workspace && selectedScope
       ? calculateNetWorth({
           assets,
+          ...(input.fx ? { fx: input.fx } : {}),
           liabilities,
           scopeId: selectedScope.id,
           workspace,
@@ -258,6 +268,7 @@ export function prepareDashboardState(input: {
     workspace && selectedScope
       ? buildLiquidityBreakdown({
           assets,
+          ...(input.fx ? { fx: input.fx } : {}),
           liabilities,
           scopeId: selectedScope.id,
           workspace,

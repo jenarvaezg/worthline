@@ -1,4 +1,5 @@
 import { isDemoMode } from "@web/demo/write-guard";
+import { resolveFxAggregation } from "@web/fx-context";
 import {
   appendParam,
   buildCurrentUrlFor,
@@ -218,9 +219,22 @@ export default async function PatrimonioPage({
         .map(([assetId]) => assetId),
     );
 
+    // FX context for the projection (#1065). Hard-gated: hits ECB only when a
+    // foreign currency is actually held, so an all-EUR board does no network. A
+    // non-convertible holding is excluded from the rows/totals and surfaced as
+    // "no incluido / parcial", matching the dashboard's net-worth exclusion.
+    const fx = await resolveFxAggregation(
+      [
+        ...assets.map((asset) => asset.currentValue),
+        ...liabilities.map((liability) => liability.currentBalance),
+      ],
+      today,
+    );
+
     return {
       assets,
       exposureProfiles,
+      fx,
       hasPricedHoldings,
       investmentMeta,
       investmentReturns,
@@ -243,6 +257,7 @@ export default async function PatrimonioPage({
   const {
     assets,
     exposureProfiles,
+    fx,
     hasPricedHoldings,
     investmentMeta,
     investmentReturns,
@@ -266,6 +281,7 @@ export default async function PatrimonioPage({
         assets,
         liabilities,
         priceMetaByAsset,
+        ...(fx ? { fx } : {}),
       })
     : null;
 

@@ -6,6 +6,7 @@ import type {
   FireGlance,
   FramedDelta,
   FramedSnapshotDeltas,
+  FxExcludedHolding,
   NetWorthFraming,
   NetWorthPresentation,
 } from "@worthline/domain";
@@ -37,6 +38,7 @@ import {
 import type { HeroHealthView } from "./hero-data-health";
 import HeroDataHealthAlert from "./hero-data-health-alert";
 import HeroFreshness from "./hero-freshness";
+import HeroFxPartial from "./hero-fx-partial";
 import HeroMovers, { type MoversPeriodTab } from "./hero-movers";
 import {
   parseDrillParam,
@@ -194,6 +196,7 @@ function FireGlanceCard({
  * identical `monthly`/`weekly`; only headline, chips, stats and movers reframe.
  */
 function HeroFraming({
+  fxExcluded,
   hasHoldings,
   headlineDeltas,
   health,
@@ -207,6 +210,7 @@ function HeroFraming({
   showDeltas,
   weekly,
 }: {
+  fxExcluded: FxExcludedHolding[];
   hasHoldings: boolean;
   headlineDeltas: FramedSnapshotDeltas;
   health: HeroHealthView;
@@ -251,6 +255,8 @@ function HeroFraming({
         ) : null}
 
         <HeroDataHealthAlert health={health} />
+
+        <HeroFxPartial excluded={fxExcluded} />
 
         {monthly ? <HeroMonthlyMicroBand monthly={monthly} /> : null}
 
@@ -442,6 +448,7 @@ export default async function DashboardContent({
             initialView={selectedView}
             liquid={
               <HeroFraming
+                fxExcluded={state.summary?.fxExcluded ?? []}
                 hasHoldings={hasHoldings}
                 headlineDeltas={deltasByView.liquid}
                 health={state.heroHealth}
@@ -459,6 +466,7 @@ export default async function DashboardContent({
             tabs={framingTabsWithHref}
             total={
               <HeroFraming
+                fxExcluded={state.summary?.fxExcluded ?? []}
                 hasHoldings={hasHoldings}
                 headlineDeltas={deltasByView.total}
                 health={state.heroHealth}

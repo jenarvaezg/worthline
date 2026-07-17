@@ -1,6 +1,8 @@
+import { resolveFxAggregation } from "@web/fx-context";
 import type { AgentViewReadStore, SnapshotHoldingRecord } from "@worthline/db";
 import type {
   FireScopeConfig,
+  FxAggregation,
   Liability,
   LiquidityTierBreakdown,
   ManualAsset,
@@ -104,6 +106,13 @@ interface ResolvedScopeFacts {
   liabilities: Liability[];
   currency: string;
   holdingPublicIds: Map<string, string>;
+  /**
+   * FX context (#1065) so a CURRENT explanation reports the SAME figures the
+   * dashboard derives. Resolved lazily and only when a foreign currency is held
+   * (all-EUR → undefined, no ECB call); a non-convertible holding is then excluded
+   * from `value` and surfaced via `convertible: false` + `excludedHoldings`.
+   */
+  fx?: FxAggregation;
 }
 
 /**
@@ -711,13 +720,18 @@ async function explainNetWorth(
 ): Promise<AgentViewFigureExplanation> {
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
+  const fxParts = fxExclusionParts(projection, facts);
 
   return {
     asOf,
-    excludedHoldings: projection.sections[1].rows.map((row) => ({
-      holding: holdingRef(facts.holdingPublicIds, row.id, row.name),
-      reason: "liability netted against gross assets",
-    })),
+    ...fxParts.flag,
+    excludedHoldings: [
+      ...projection.sections[1].rows.map((row) => ({
+        holding: holdingRef(facts.holdingPublicIds, row.id, row.name),
+        reason: "liability netted against gross assets",
+      })),
+      ...fxParts.excludedHoldings,
+    ],
     figure: "net_worth",
     formula: {
       expression: "grossAssets − debts",
@@ -750,10 +764,12 @@ async function explainGrossAssets(
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const assetIds = projection.sections[0].rows.map((row) => row.id);
+  const fxParts = fxExclusionParts(projection, facts, "assets");
 
   return {
     asOf,
-    excludedHoldings: [],
+    ...fxParts.flag,
+    excludedHoldings: fxParts.excludedHoldings,
     figure: "gross_assets",
     formula: {
       expression: "sum(assetHoldings)",
@@ -783,10 +799,12 @@ async function explainDebts(
   const summary = netWorth(facts);
   const projection = projectPortfolio(portfolioInput(facts));
   const liabilityIds = projection.sections[1].rows.map((row) => row.id);
+  const fxParts = fxExclusionParts(projection, facts, "liabilities");
 
   return {
     asOf,
-    excludedHoldings: [],
+    ...fxParts.flag,
+    excludedHoldings: fxParts.excludedHoldings,
     figure: "debts",
     formula: {
       expression: "sum(liabilityHoldings)",
@@ -1314,9 +1332,20 @@ async function resolveScopeFacts(
   // dashboard derives; the historical path reads frozen snapshots instead.
   const { assets, liabilities } = await store.readCurveValuedHoldings(asOf);
 
+  // Same hard-gated FX resolution the dashboard uses (#1065): no ECB call unless a
+  // foreign currency is actually held, so all-EUR agent reads stay network-free.
+  const fx = await resolveFxAggregation(
+    [
+      ...assets.map((asset) => asset.currentValue),
+      ...liabilities.map((liability) => liability.currentBalance),
+    ],
+    asOf,
+  );
+
   return {
     assets,
     currency: workspace.baseCurrency,
+    ...(fx ? { fx } : {}),
     holdingPublicIds: publicIdMap(await store.readPublicIds(), "holding"),
     internalScopeId,
     liabilities,
@@ -1334,6 +1363,7 @@ function netWorth(facts: ResolvedScopeFacts) {
 function figuresInput(facts: ResolvedScopeFacts) {
   return {
     assets: facts.assets,
+    ...(facts.fx ? { fx: facts.fx } : {}),
     liabilities: facts.liabilities,
     scopeId: facts.internalScopeId,
     workspace: facts.workspace,
@@ -1343,9 +1373,44 @@ function figuresInput(facts: ResolvedScopeFacts) {
 function portfolioInput(facts: ResolvedScopeFacts) {
   return {
     assets: facts.assets,
+    ...(facts.fx ? { fx: facts.fx } : {}),
     liabilities: facts.liabilities,
     scope: facts.scopeOption,
     workspace: facts.workspace,
+  };
+}
+
+/**
+ * The `excludedHoldings` entries + `convertible: false` flag for holdings a figure
+ * could not convert to the base currency (#1065). Empty for an all-EUR portfolio,
+ * so the spread adds nothing. Shared by every whole-portfolio figure builder so
+ * they mark FX-partiality identically. `only` scopes the excluded holdings to the
+ * kind a figure actually sums (assets for gross_assets, liabilities for debts);
+ * omitted (net worth) reports both.
+ */
+function fxExclusionParts(
+  projection: ReturnType<typeof projectPortfolio>,
+  facts: ResolvedScopeFacts,
+  only?: "assets" | "liabilities",
+): {
+  excludedHoldings: AgentViewFigureExcludedHolding[];
+  flag: { convertible: false } | Record<string, never>;
+} {
+  const assetIds = new Set(facts.assets.map((asset) => asset.id));
+  const inKind = (holdingId: string): boolean => {
+    if (only === "assets") return assetIds.has(holdingId);
+    if (only === "liabilities") return !assetIds.has(holdingId);
+    return true;
+  };
+  const excludedHoldings = projection.fxExcluded
+    .filter((excluded) => inKind(excluded.holdingId))
+    .map((excluded) => ({
+      holding: holdingRef(facts.holdingPublicIds, excluded.holdingId, excluded.name),
+      reason: `moneda ${excluded.original.currency} sin tipo de cambio a EUR (no incluida)`,
+    }));
+  return {
+    excludedHoldings,
+    flag: excludedHoldings.length > 0 ? { convertible: false } : {},
   };
 }
 

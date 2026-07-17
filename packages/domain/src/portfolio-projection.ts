@@ -16,6 +16,8 @@
 
 import type { Instrument, LiquidityTier } from "./classification";
 import { instrumentOfAsset, rungForLiability, tierOfAsset } from "./classification";
+import type { FxAggregation, FxExcludedHolding } from "./fx";
+import { resolveToBaseCurrency } from "./fx";
 import { defaultInstrumentForLiability } from "./instrument-catalog";
 import { LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
 import type { MoneyMinor } from "./money";
@@ -127,6 +129,13 @@ export interface PortfolioProjection {
   totalGrossAssets: MoneyMinor;
   /** Total debts for the scope — equals sum of liability row balances. */
   totalDebts: MoneyMinor;
+  /**
+   * Holdings with no convertible rate to the base currency (#1065): excluded from
+   * both the rows and the totals above, so the reconciliation invariant with
+   * calculateNetWorth still holds (both exclude exactly the same set). Empty for
+   * an all-EUR portfolio.
+   */
+  fxExcluded: FxExcludedHolding[];
 }
 
 // ── Input ────────────────────────────────────────────────────────────────────
@@ -150,6 +159,13 @@ export interface PortfolioProjectionInput {
    * `type: "investment"` rows ever surface it; entries for other kinds are ignored.
    */
   priceMetaByAsset?: Map<string, PriceRefreshMeta>;
+  /**
+   * FX context (#1065). When present, non-base-currency holdings are converted to
+   * the base currency at `asOf`; when absent, or a rate is missing, they are excluded
+   * from the rows and totals and reported in `fxExcluded`. Must match the `fx` passed
+   * to calculateNetWorth for the same scope or the reconciliation invariant breaks.
+   */
+  fx?: FxAggregation;
 }
 
 // ── Implementation ────────────────────────────────────────────────────────────
@@ -165,14 +181,29 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   const currency = workspace.baseCurrency;
 
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scope.id));
+  const fxExcluded: FxExcludedHolding[] = [];
 
   // ── Asset rows ──────────────────────────────────────────────────────────
   const assetRows: ProjectedAssetRow[] = [];
   let grossAssetsMinor = 0;
 
   for (const asset of assets) {
+    // Convert to the base currency BEFORE scoping, so a non-convertible holding is
+    // excluded here — from both rows and gross — exactly as calculateNetWorth
+    // excludes it (the reconciliation invariant). All-EUR values pass through.
+    const resolvedValue = resolveToBaseCurrency(asset.currentValue, currency, input.fx);
+    if (!resolvedValue.ok) {
+      fxExcluded.push({
+        holdingId: asset.id,
+        name: asset.name,
+        original: asset.currentValue,
+        reason: resolvedValue.reason,
+      });
+      continue;
+    }
+
     const { ownedMinor: scopedValue, totalShareBps: shareBps } = allocateScopedHolding(
-      asset.currentValue.amountMinor,
+      resolvedValue.value.amountMinor,
       { ownership: asset.ownership, scopeMemberIds },
     );
 
@@ -228,8 +259,23 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   let debtsMinor = 0;
 
   for (const liability of liabilities) {
+    const resolvedBalance = resolveToBaseCurrency(
+      liability.currentBalance,
+      currency,
+      input.fx,
+    );
+    if (!resolvedBalance.ok) {
+      fxExcluded.push({
+        holdingId: liability.id,
+        name: liability.name,
+        original: liability.currentBalance,
+        reason: resolvedBalance.reason,
+      });
+      continue;
+    }
+
     const { ownedMinor: scopedValue, totalShareBps: shareBps } = allocateScopedHolding(
-      liability.currentBalance.amountMinor,
+      resolvedBalance.value.amountMinor,
       { ownership: liability.ownership, scopeMemberIds },
     );
 
@@ -263,6 +309,7 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
   }
 
   return {
+    fxExcluded,
     scope,
     sections: [
       { kind: "assets", rows: assetRows },
