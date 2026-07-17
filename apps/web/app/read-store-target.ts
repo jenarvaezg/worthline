@@ -17,6 +17,24 @@ function isAuthConfigured(env: Record<string, string | undefined>): boolean {
 }
 
 /**
+ * A resolved target that carries a principal — i.e. anything but
+ * `unauthenticated`. Shares its exact shape with the request half of
+ * {@link Principal}, so a reachable target opens a store with no conversion.
+ */
+export type ReachableStoreTarget = Exclude<StoreTarget, { kind: "unauthenticated" }>;
+
+/**
+ * The single reachability check (ADR 0030, #1025): a request without a
+ * principal cannot open a store. The CHECK lives only here; each site chooses
+ * its response — the store seam throws (`requirePrincipal` in `store.ts`),
+ * pages redirect to sign-in ({@link requireStoreTarget}) — so the
+ * `unauthenticated → refuse` policy is defined once rather than copied per site.
+ */
+export function isReachable(target: StoreTarget): target is ReachableStoreTarget {
+  return target.kind !== "unauthenticated";
+}
+
+/**
  * Read a cookie by name, or undefined when there is no request scope to read
  * it from. A server action invoked directly in a unit test runs outside
  * Next's request context, where `cookies()` throws — that simply means "no
@@ -126,11 +144,9 @@ export const readStoreTarget = cache(async (): Promise<StoreTarget> => {
  * unauthenticated. Use this in pages that require a workspace; an authenticated
  * workspace, a demo persona, and the local store all flow through unchanged.
  */
-export async function requireStoreTarget(): Promise<
-  Exclude<StoreTarget, { kind: "unauthenticated" }>
-> {
+export async function requireStoreTarget(): Promise<ReachableStoreTarget> {
   const target = await readStoreTarget();
-  if (target.kind === "unauthenticated") {
+  if (!isReachable(target)) {
     redirect(`/login?returnTo=${encodeURIComponent(DEFAULT_APP_PATH)}`);
   }
   return target;

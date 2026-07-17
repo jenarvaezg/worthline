@@ -8,10 +8,30 @@
  * cookie, control plane not configured, and an unknown workspace id.
  */
 
-import { lookupImpersonationTarget } from "@web/read-store-target";
+import { isReachable, lookupImpersonationTarget } from "@web/read-store-target";
+import type { StoreTarget } from "@web/store-resolver";
 
 import { createInMemoryControlPlaneStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
+
+/**
+ * The single reachability guard (#1025): one check shared by the store seam's
+ * throw and the page redirect, instead of three hand-rolled
+ * `kind === "unauthenticated"` copies.
+ */
+describe("isReachable", () => {
+  test("an unauthenticated target is not reachable", () => {
+    expect(isReachable({ kind: "unauthenticated" })).toBe(false);
+  });
+
+  test.each<StoreTarget>([
+    { kind: "authenticated", workspaceId: "w", dbUrl: "libsql://w", token: "t" },
+    { kind: "demo", persona: "familia", now: "" },
+    { kind: "local" },
+  ])("a principal-bearing target ($kind) is reachable", (target) => {
+    expect(isReachable(target)).toBe(true);
+  });
+});
 
 describe("lookupImpersonationTarget", () => {
   test("resolves the workspace's dbUrl and owner email for a known workspace id", async () => {
