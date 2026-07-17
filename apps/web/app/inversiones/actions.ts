@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
@@ -39,7 +40,6 @@ import {
   executeRecordInvestmentOperationCommand,
 } from "@worthline/db";
 import type {
-  Clock,
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
@@ -88,12 +88,6 @@ const EDIT_INVESTMENT_FIELDS = [
 // default to the surviving investment homes rather than the removed list.
 function currentUrlOf(formData: FormData, fallback = "/patrimonio"): string {
   return (formData.get("currentUrl") as string) || fallback;
-}
-
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
 }
 
 function isPriceProvider(value: unknown): value is PriceProvider {

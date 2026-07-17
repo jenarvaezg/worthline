@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  isClock,
   runActionWithStore,
   runDatedFactAction,
   testArgFromActionArgs,
@@ -50,7 +51,6 @@ import {
   type OwnershipSplitCommandResult,
 } from "@worthline/db";
 import {
-  type Clock,
   checkManualValuationViolation,
   checkSinglePrimaryResidence,
   effectiveAmortizationPlan,
@@ -99,12 +99,6 @@ function baseUrl(formData: FormData): string {
   return (formData.get("currentUrl") as string) || "/patrimonio";
 }
 
-function isClock(value: unknown): value is Clock {
-  return (
-    typeof value === "object" && value !== null && "now" in value && "today" in value
-  );
-}
-
 function mapOwnershipSplitCommandResult(
   result: OwnershipSplitCommandResult,
 ): { ok: true } | { ok: false; error: string } {
@@ -115,6 +109,107 @@ function mapOwnershipSplitCommandResult(
     return { ok: false, error: mapDomainViolation(result.violation) };
   }
   return { ok: false, error: result.error };
+}
+
+/**
+ * The shared envelope for a **dated-fact** server action (#1028). Every such
+ * action repeated the same shell — lift the test seams, guard the demo write,
+ * parse the entity id(s), resolve `today` off the clock, parse the body, run the
+ * command behind the dated-fact store transaction, then redirect on success or
+ * failure. `datedFactAction` owns that shell so each action supplies ONLY what
+ * varies: which ids it needs, how it parses the body, the command it runs, and
+ * its own success/error redirects.
+ *
+ * Two invariants live here and so can never be forgotten in a new action: the
+ * demo-write guard, and the duplicate-date translation (`runDatedFactAction`,
+ * #692) that turns a UNIQUE-index collision into a friendly `{ ok: false }`
+ * instead of a raw 500.
+ */
+type DatedFactParse<P> = { ok: true; value: P } | { ok: false; redirect: string };
+
+/** The extra required ids, keyed by their form field name (e.g. `extra.planId`). */
+type DatedFactExtraIds = Readonly<Record<string, string>>;
+
+type DatedFactRedirectInput = {
+  /** The primary entity id (`id`) — always present past the missing-id guard. */
+  id: string;
+  /** Extra required ids, keyed by field name; all present past the guard. */
+  extra: DatedFactExtraIds;
+  formData: FormData;
+};
+
+type DatedFactActionConfig<P> = {
+  /** Extra id fields required beyond `id` (e.g. `["planId", "revisionId"]`). */
+  extraIds?: readonly string[];
+  /** Message shown (redirecting to /patrimonio) when any required id is absent. */
+  missingId: string;
+  /** Parse + validate the body; on failure carries the redirect URL to send. */
+  parse: (input: {
+    formData: FormData;
+    id: string;
+    extra: DatedFactExtraIds;
+    today: string;
+  }) => DatedFactParse<P>;
+  /** The guarded command, run inside the dated-fact store transaction. */
+  run: (
+    store: WorthlineStore,
+    ctx: {
+      formData: FormData;
+      id: string;
+      extra: DatedFactExtraIds;
+      today: string;
+      parsed: P;
+    },
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** Redirect URL when `run` returns `{ ok: false }`. */
+  onError: (input: DatedFactRedirectInput & { error: string }) => string;
+  /** Redirect URL on success. */
+  onSuccess: (input: DatedFactRedirectInput) => string;
+};
+
+function datedFactAction<P>(
+  config: DatedFactActionConfig<P>,
+): (formData: FormData, ..._testArgs: unknown[]) => Promise<never> {
+  return async (formData, ..._testArgs) => {
+    const _store = testStoreFromActionArgs(_testArgs);
+    const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+    await guardDemoWrite(baseUrl(formData));
+
+    const primaryId = parseEntityId(formData);
+    // Parse every extra id keyed by its field name so consumers read `extra.planId`
+    // instead of a positional index — a reordered `extraIds` can't silently break them.
+    const extra: Record<string, string> = {};
+    let missingExtra = false;
+    for (const field of config.extraIds ?? []) {
+      const value = parseEntityId(formData, field);
+      if (!value) {
+        missingExtra = true;
+        break;
+      }
+      extra[field] = value;
+    }
+    if (!primaryId || missingExtra) {
+      redirect(errorRedirectUrl("/patrimonio", { message: config.missingId }));
+    }
+    const id = primaryId;
+    const today = _clock.today();
+
+    const parsed = config.parse({ formData, id, extra, today });
+    if (!parsed.ok) {
+      redirect(parsed.redirect);
+    }
+
+    const result = await runDatedFactAction(
+      (store) => config.run(store, { formData, id, extra, today, parsed: parsed.value }),
+      _store,
+    );
+
+    if (!result.ok) {
+      redirect(config.onError({ id, extra, formData, error: result.error! }));
+    }
+
+    redirect(config.onSuccess({ id, extra, formData }));
+  };
 }
 
 export async function deleteAssetAction(
@@ -748,60 +843,41 @@ export async function addValuationAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de activo no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "anchor",
-        message: parsed.error,
-        values: preserveFields(formData, [
-          "valuationDate",
-          "anchorValue",
-          "adjustsPriorCurve",
-        ]),
-      }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const asset = await findAsset(store, id);
-
-    if (!asset) {
-      return { ok: false, error: "No se encontró el activo." };
-    }
-
-    if (!isHousingAsset(asset)) {
-      return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
-    }
-
-    await executeAddValuationAnchorCommand(store, {
-      input: parsed.command,
-      today,
-    });
-
-    return { ok: true };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { formId: "anchor", message: result.error! }));
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "anchor_added", id));
+  return datedFactAction({
+    missingId: "Identificador de activo no encontrado.",
+    parse: ({ formData, id, today }) => {
+      const parsed = parseValuationAnchorStrict(formData, id, Date.now(), today);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: "anchor",
+            message: parsed.error,
+            values: preserveFields(formData, [
+              "valuationDate",
+              "anchorValue",
+              "adjustsPriorCurve",
+            ]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const asset = await findAsset(store, id);
+      if (!asset) {
+        return { ok: false, error: "No se encontró el activo." };
+      }
+      if (!isHousingAsset(asset)) {
+        return { ok: false, error: "Solo los inmuebles pueden tener tasaciones." };
+      }
+      await executeAddValuationAnchorCommand(store, { input: parsed, today });
+      return { ok: true };
+    },
+    onError: ({ id, error }) =>
+      errorRedirectUrl(editUrl(id), { formId: "anchor", message: error }),
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "anchor_added", id),
+  })(formData, ..._testArgs);
 }
 
 export async function updateValuationAnchorAction(
@@ -1266,106 +1342,89 @@ export async function recalibrateDebtBalanceAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
+  return datedFactAction({
+    missingId: "Identificador de deuda no encontrado.",
+    parse: ({ formData, id, today }) => {
+      const validated = validateRecalibrateDebt({
+        balanceDate: String(formData.get("rbBalanceDate") ?? "").trim(),
+        outstandingBalance: String(formData.get("rbOutstandingBalance") ?? ""),
+        today,
+      });
+      if (!validated.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: "recalibrateDebt",
+            message: validated.error,
+            values: preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]),
+          }),
+        };
+      }
+      return { ok: true, value: validated };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) {
+        return guard;
+      }
 
-  if (!id) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
+      // Gate on the effective CURVE, not the plan row (#678 review): an imported
+      // current-state debt can be rebaselined with no plan row at all (S1's
+      // `startsAtBaseline` fact alone governs the curve) — that debt still has a
+      // valid schedule to recalibrate, so requiring a plan row would falsely
+      // reject it. Revisions hang off `planId`, so they only exist with a plan.
+      const curve = await readAmortizableDebtCurveContext(store, id);
 
-  const today = _clock.today();
-  const values = preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]);
+      const effective = effectiveAmortizationPlan({
+        balanceRebaselines: curve.balanceRebaselines,
+        ...(curve.plan
+          ? {
+              plan: {
+                annualInterestRate: curve.plan.annualInterestRate,
+                disbursementDate: curve.plan.disbursementDate,
+                firstPaymentDate: curve.plan.firstPaymentDate,
+                initialCapitalMinor: curve.plan.initialCapitalMinor,
+                termMonths: curve.plan.termMonths,
+              },
+            }
+          : {}),
+        targetDate: parsed.balanceDate,
+      });
 
-  const validated = validateRecalibrateDebt({
-    balanceDate: String(formData.get("rbBalanceDate") ?? "").trim(),
-    outstandingBalance: String(formData.get("rbOutstandingBalance") ?? ""),
-    today,
-  });
+      const derived = deriveRecalibrationRebaseline({
+        balanceDate: parsed.balanceDate,
+        effective,
+        revisions: curve.revisions,
+      });
 
-  if (!validated.ok) {
-    redirect(
+      if (!derived.ok) {
+        return derived;
+      }
+
+      await executeRecalibrateDebtBalanceCommand(store, {
+        today,
+        input: {
+          annualInterestRate: derived.annualInterestRate,
+          baselineDate: parsed.balanceDate,
+          endDate: derived.endDate,
+          id: createStableId("rebaseline", id, Date.now()),
+          liabilityId: id,
+          nextPaymentDate: derived.nextPaymentDate,
+          outstandingBalanceMinor: parsed.outstandingBalanceMinor,
+          startsAtBaseline: false,
+        },
+      });
+
+      return { ok: true as const };
+    },
+    onError: ({ id, error, formData }) =>
       errorRedirectUrl(editUrl(id), {
         formId: "recalibrateDebt",
-        message: validated.error,
-        values,
+        message: error,
+        values: preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]),
       }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    // Gate on the effective CURVE, not the plan row (#678 review): an imported
-    // current-state debt can be rebaselined with no plan row at all (S1's
-    // `startsAtBaseline` fact alone governs the curve) — that debt still has a
-    // valid schedule to recalibrate, so requiring a plan row would falsely
-    // reject it. Revisions hang off `planId`, so they only exist with a plan.
-    const curve = await readAmortizableDebtCurveContext(store, id);
-
-    const effective = effectiveAmortizationPlan({
-      balanceRebaselines: curve.balanceRebaselines,
-      ...(curve.plan
-        ? {
-            plan: {
-              annualInterestRate: curve.plan.annualInterestRate,
-              disbursementDate: curve.plan.disbursementDate,
-              firstPaymentDate: curve.plan.firstPaymentDate,
-              initialCapitalMinor: curve.plan.initialCapitalMinor,
-              termMonths: curve.plan.termMonths,
-            },
-          }
-        : {}),
-      targetDate: validated.balanceDate,
-    });
-
-    const derived = deriveRecalibrationRebaseline({
-      balanceDate: validated.balanceDate,
-      effective,
-      revisions: curve.revisions,
-    });
-
-    if (!derived.ok) {
-      return derived;
-    }
-
-    await executeRecalibrateDebtBalanceCommand(store, {
-      today,
-      input: {
-        annualInterestRate: derived.annualInterestRate,
-        baselineDate: validated.balanceDate,
-        endDate: derived.endDate,
-        id: createStableId("rebaseline", id, Date.now()),
-        liabilityId: id,
-        nextPaymentDate: derived.nextPaymentDate,
-        outstandingBalanceMinor: validated.outstandingBalanceMinor,
-        startsAtBaseline: false,
-      },
-    });
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "recalibrateDebt",
-        message: result.error!,
-        values,
-      }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "debt_recalibrated", id));
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "debt_recalibrated", id),
+  })(formData, ..._testArgs);
 }
 
 /**
@@ -1378,67 +1437,51 @@ export async function importBalanceHistoryAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  let rawRows: unknown;
-  try {
-    rawRows = JSON.parse(String(formData.get("rows") ?? "[]"));
-  } catch {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        message: BALANCE_HISTORY_MESSAGES.invalidSeries,
-      }),
-    );
-  }
-  const parsedRows = parseBalanceHistoryRows(rawRows);
-  if (!parsedRows.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        message: parsedRows.error,
-      }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-    if (!guard.ok) return guard;
-
-    const ctx = await readBalanceHistoryDebtContext(store, id, today);
-    const plan = planBalanceHistoryImport(parsedRows.rows, ctx);
-    const skipped = plan.previews.filter((row) => row.status === "skipped").length;
-
-    if (plan.composed.length === 0) {
-      if (skipped > 0 && skipped === plan.previews.length) {
-        return { created: 0, ok: true as const, skipped };
+  return datedFactAction({
+    missingId: "Identificador de deuda no encontrado.",
+    parse: ({ formData, id }) => {
+      let rawRows: unknown;
+      try {
+        rawRows = JSON.parse(String(formData.get("rows") ?? "[]"));
+      } catch {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            message: BALANCE_HISTORY_MESSAGES.invalidSeries,
+          }),
+        };
       }
-      return { error: "No hay saldos válidos que importar.", ok: false as const };
-    }
+      const parsedRows = parseBalanceHistoryRows(rawRows);
+      if (!parsedRows.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), { message: parsedRows.error }),
+        };
+      }
+      return { ok: true, value: parsedRows.rows };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) return guard;
 
-    const created = await persistBalanceHistoryImport(store, id, plan.composed, today);
-    return { created, ok: true as const, skipped };
-  }, _store);
+      const ctx = await readBalanceHistoryDebtContext(store, id, today);
+      const plan = planBalanceHistoryImport(parsed, ctx);
+      const skipped = plan.previews.filter((row) => row.status === "skipped").length;
 
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        message: result.error!,
-      }),
-    );
-  }
+      if (plan.composed.length === 0) {
+        if (skipped > 0 && skipped === plan.previews.length) {
+          return { created: 0, ok: true as const, skipped };
+        }
+        return { error: "No hay saldos válidos que importar.", ok: false as const };
+      }
 
-  redirect(successRedirectUrl(editUrl(id), "balance_history_imported", id));
+      const created = await persistBalanceHistoryImport(store, id, plan.composed, today);
+      return { created, ok: true as const, skipped };
+    },
+    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
+    onSuccess: ({ id }) =>
+      successRedirectUrl(editUrl(id), "balance_history_imported", id),
+  })(formData, ..._testArgs);
 }
 
 export async function saveAmortizationPlanAction(
@@ -1585,133 +1628,107 @@ export async function addInterestRateRevisionAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const planId = parseEntityId(formData, "planId");
-
-  if (!id || !planId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador del plan no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "revision",
-        message: parsed.error,
-        values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
-      }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    const added = await executeAddInterestRateRevisionCommand(store, {
-      liabilityId: id,
-      today,
-      input: parsed.command,
-    });
-    if (!added.ok) {
-      return { ok: false as const, error: added.error };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), { formId: "revision", message: result.error! }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "revision_added", id));
+  return datedFactAction({
+    extraIds: ["planId"],
+    missingId: "Identificador del plan no encontrado.",
+    parse: ({ formData, id, extra, today }) => {
+      const parsed = parseInterestRateRevisionStrict(
+        formData,
+        extra.planId!,
+        Date.now(),
+        today,
+      );
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: "revision",
+            message: parsed.error,
+            values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) {
+        return guard;
+      }
+      const added = await executeAddInterestRateRevisionCommand(store, {
+        liabilityId: id,
+        today,
+        input: parsed,
+      });
+      if (!added.ok) {
+        return { ok: false as const, error: added.error };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, error }) =>
+      errorRedirectUrl(editUrl(id), { formId: "revision", message: error }),
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "revision_added", id),
+  })(formData, ..._testArgs);
 }
 
 export async function updateInterestRateRevisionAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const planId = parseEntityId(formData, "planId");
-  const revisionId = parseEntityId(formData, "revisionId");
-
-  if (!id || !planId || !revisionId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de la revisión no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseInterestRateRevisionStrict(formData, planId, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
+  return datedFactAction({
+    extraIds: ["planId", "revisionId"],
+    missingId: "Identificador de la revisión no encontrado.",
+    parse: ({ formData, id, extra, today }) => {
+      const parsed = parseInterestRateRevisionStrict(
+        formData,
+        extra.planId!,
+        Date.now(),
+        today,
+      );
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: `revision-${extra.revisionId}`,
+            message: parsed.error,
+            values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, extra, today, parsed }) => {
+      const revisionId = extra.revisionId!;
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) {
+        return guard;
+      }
+      const updated = await executeUpdateInterestRateRevisionCommand(store, {
+        revisionId,
+        today,
+        input: {
+          newAnnualInterestRate: parsed.newAnnualInterestRate,
+          revisionDate: parsed.revisionDate,
+        },
+      });
+      if (!updated.ok) {
+        return { ok: false as const, error: updated.error };
+      }
+      if (updated.value.changes === 0) {
+        return {
+          ok: false as const,
+          error: "No se encontró la revisión — puede que ya se haya eliminado.",
+        };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, extra, error }) =>
       errorRedirectUrl(editUrl(id), {
-        formId: `revision-${revisionId}`,
-        message: parsed.error,
-        values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
+        formId: `revision-${extra.revisionId}`,
+        message: error,
       }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    const updated = await executeUpdateInterestRateRevisionCommand(store, {
-      revisionId,
-      today,
-      input: {
-        newAnnualInterestRate: parsed.command.newAnnualInterestRate,
-        revisionDate: parsed.command.revisionDate,
-      },
-    });
-    if (!updated.ok) {
-      return { ok: false as const, error: updated.error };
-    }
-    const changes = updated.value.changes;
-
-    if (changes === 0) {
-      return {
-        ok: false as const,
-        error: "No se encontró la revisión — puede que ya se haya eliminado.",
-      };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: `revision-${revisionId}`,
-        message: result.error!,
-      }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "revision_saved", id));
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "revision_saved", id),
+  })(formData, ..._testArgs);
 }
 
 export async function deleteInterestRateRevisionAction(
@@ -1771,134 +1788,108 @@ export async function addEarlyRepaymentAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const planId = parseEntityId(formData, "planId");
-
-  if (!id || !planId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador del plan no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "repayment",
-        message: parsed.error,
-        values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
-      }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    const added = await executeAddEarlyRepaymentCommand(store, {
-      liabilityId: id,
-      today,
-      input: parsed.command,
-    });
-    if (!added.ok) {
-      return { ok: false as const, error: added.error };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), { formId: "repayment", message: result.error! }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "repayment_added", id));
+  return datedFactAction({
+    extraIds: ["planId"],
+    missingId: "Identificador del plan no encontrado.",
+    parse: ({ formData, id, extra, today }) => {
+      const parsed = parseEarlyRepaymentStrict(
+        formData,
+        extra.planId!,
+        Date.now(),
+        today,
+      );
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: "repayment",
+            message: parsed.error,
+            values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) {
+        return guard;
+      }
+      const added = await executeAddEarlyRepaymentCommand(store, {
+        liabilityId: id,
+        today,
+        input: parsed,
+      });
+      if (!added.ok) {
+        return { ok: false as const, error: added.error };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, error }) =>
+      errorRedirectUrl(editUrl(id), { formId: "repayment", message: error }),
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "repayment_added", id),
+  })(formData, ..._testArgs);
 }
 
 export async function updateEarlyRepaymentAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const planId = parseEntityId(formData, "planId");
-  const repaymentId = parseEntityId(formData, "repaymentId");
-
-  if (!id || !planId || !repaymentId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de la amortización no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseEarlyRepaymentStrict(formData, planId, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
+  return datedFactAction({
+    extraIds: ["planId", "repaymentId"],
+    missingId: "Identificador de la amortización no encontrado.",
+    parse: ({ formData, id, extra, today }) => {
+      const parsed = parseEarlyRepaymentStrict(
+        formData,
+        extra.planId!,
+        Date.now(),
+        today,
+      );
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: `repayment-${extra.repaymentId}`,
+            message: parsed.error,
+            values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, extra, today, parsed }) => {
+      const repaymentId = extra.repaymentId!;
+      const guard = await requireDebtModel(store, id, "amortizable");
+      if (!guard.ok) {
+        return guard;
+      }
+      const updated = await executeUpdateEarlyRepaymentCommand(store, {
+        repaymentId,
+        today,
+        input: {
+          amountMinor: parsed.amountMinor,
+          mode: parsed.mode,
+          repaymentDate: parsed.repaymentDate,
+        },
+      });
+      if (!updated.ok) {
+        return { ok: false as const, error: updated.error };
+      }
+      if (updated.value.changes === 0) {
+        return {
+          ok: false as const,
+          error: "No se encontró la amortización — puede que ya se haya eliminado.",
+        };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, extra, error }) =>
       errorRedirectUrl(editUrl(id), {
-        formId: `repayment-${repaymentId}`,
-        message: parsed.error,
-        values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
+        formId: `repayment-${extra.repaymentId}`,
+        message: error,
       }),
-    );
-  }
-
-  const result = await runDatedFactAction(async (store) => {
-    const guard = await requireDebtModel(store, id, "amortizable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    const updated = await executeUpdateEarlyRepaymentCommand(store, {
-      repaymentId,
-      today,
-      input: {
-        amountMinor: parsed.command.amountMinor,
-        mode: parsed.command.mode,
-        repaymentDate: parsed.command.repaymentDate,
-      },
-    });
-    if (!updated.ok) {
-      return { ok: false as const, error: updated.error };
-    }
-    const changes = updated.value.changes;
-
-    if (changes === 0) {
-      return {
-        ok: false as const,
-        error: "No se encontró la amortización — puede que ya se haya eliminado.",
-      };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: `repayment-${repaymentId}`,
-        message: result.error!,
-      }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "repayment_saved", id));
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "repayment_saved", id),
+  })(formData, ..._testArgs);
 }
 
 export async function deleteEarlyRepaymentAction(
