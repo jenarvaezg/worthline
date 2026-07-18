@@ -1,15 +1,6 @@
 "use server";
 
-import {
-  isClock,
-  runActionWithStore,
-  testArgFromActionArgs,
-  testStoreFromActionArgs,
-} from "@web/action-store";
-import {
-  DEMO_DISABLED_MESSAGE,
-  IMPERSONATION_READONLY_MESSAGE,
-} from "@web/demo/write-guard";
+import { testArgFromActionArgs } from "@web/action-store";
 import { createStableId, resolveOwnershipSplit } from "@web/intake";
 import {
   buildStatementImportPreview,
@@ -19,17 +10,15 @@ import {
   statementImportPreviewReadPort,
   typeConflictMessage,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
-import { readStoreTarget } from "@web/read-store-target";
 import {
   buildStatementImportPlan,
-  defaultsFor,
   findStatementTypeConflict,
   isIsinShaped,
   type ParsedStatementRow,
   resolveStatementImportBuckets,
-  systemClock,
 } from "@worthline/domain";
 
+import { runProposalConfirm, runProposalDiscard } from "./proposal-action";
 import {
   parseStatementImportProposalDraft,
   selectionsFromPreviewFunds,
@@ -65,142 +54,134 @@ export async function confirmStatementImportProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
 ): Promise<StatementImportProposalConfirmResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
   const _resolver =
     testArgFromActionArgs(_testArgs, isIsinSymbolResolver) ?? defaultIsinSymbolResolver;
-  const target = await readStoreTarget();
-  if (target.kind === "demo") {
-    return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
-  }
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    return { status: "blocked", message: IMPERSONATION_READONLY_MESSAGE };
-  }
+  return runProposalConfirm<{ included: number; created: number }>({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "statement_import",
+    parse: (raw) => {
+      const p = parseStatementImportProposalDraft(raw);
+      return p.ok
+        ? { ok: true, proposalId: p.draft.proposalId, data: undefined }
+        : { ok: false, message: p.error };
+    },
+    apply: async ({ store, proposal, today }) => {
+      const seed = Date.now();
+      const statement = statementFromAssistantProposal(proposal);
+      if (!statement || statement.rows.length === 0) {
+        return { status: "error", message: "La propuesta no contiene movimientos." };
+      }
 
-  const parsed = parseStatementImportProposalDraft(rawDraft);
-  if (!parsed.ok) {
-    return { status: "error", message: parsed.error };
-  }
+      const readPort = statementImportPreviewReadPort(store);
+      const preview = await buildStatementImportPreview(readPort, statement, _resolver);
+      if (!preview.ok) {
+        return { status: "error", message: preview.message };
+      }
 
-  const today = _clock.today();
-  const seed = Date.now();
+      const investments = await readPortfolioInvestments(readPort);
+      const buckets = resolveStatementImportBuckets(statement, investments);
+      const conflict = findStatementTypeConflict(buckets);
+      if (conflict) {
+        return { status: "error", message: typeConflictMessage(conflict) };
+      }
 
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(parsed.draft.proposalId);
-    if (!proposal) {
-      return { status: "error", message: "La propuesta ya no existe." };
-    }
-    if (proposal.status !== "draft") {
-      return { status: "error", message: "La propuesta ya está resuelta." };
-    }
-    const statement = statementFromAssistantProposal(proposal);
-    if (!statement || statement.rows.length === 0) {
-      return { status: "error", message: "La propuesta no contiene movimientos." };
-    }
+      const workspace = await store.workspace.readWorkspace();
+      if (!workspace) {
+        return { status: "error", message: "Workspace no inicializado." };
+      }
 
-    const readPort = statementImportPreviewReadPort(store);
-    const preview = await buildStatementImportPreview(readPort, statement, _resolver);
-    if (!preview.ok) {
-      return { status: "error", message: preview.message };
-    }
+      const activeMembers = workspace.members.filter((member) => !member.disabledAt);
+      const ownership = resolveOwnershipSplit({
+        activeMembers,
+        preset: "scope",
+        shortfall: "complete-to-full-ownership",
+      });
 
-    const investments = await readPortfolioInvestments(readPort);
-    const buckets = resolveStatementImportBuckets(statement, investments);
-    const conflict = findStatementTypeConflict(buckets);
-    if (conflict) {
-      return { status: "error", message: typeConflictMessage(conflict) };
-    }
+      const selections = selectionsFromPreviewFunds(
+        buckets,
+        preview.funds,
+        ownership,
+        seed,
+      );
+      const plan = buildStatementImportPlan(buckets, selections);
 
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) {
-      return { status: "error", message: "Workspace no inicializado." };
-    }
+      const funds = plan.included.map((fund, index) => {
+        const opSeed = `${seed}_${index}`;
 
-    const activeMembers = workspace.members.filter((member) => !member.disabledAt);
-    const ownership = resolveOwnershipSplit({
-      activeMembers,
-      preset: "scope",
-      shortfall: "complete-to-full-ownership",
-    });
-
-    const selections = selectionsFromPreviewFunds(
-      buckets,
-      preview.funds,
-      ownership,
-      seed,
-    );
-    const plan = buildStatementImportPlan(buckets, selections);
-
-    const funds = plan.included.map((fund, index) => {
-      const opSeed = `${seed}_${index}`;
-
-      if (fund.kind === "matched") {
-        return {
-          assetId: fund.assetId,
-          creates: fund.mergePlan.toCreate.map((row, j) =>
-            rowToCreateInput(
-              fund.assetId,
-              row,
-              createStableId(
-                "op",
-                `${fund.assetId}_${row.dateKey}`,
-                seed + index * 1000 + j,
+        if (fund.kind === "matched") {
+          return {
+            assetId: fund.assetId,
+            creates: fund.mergePlan.toCreate.map((row, j) =>
+              rowToCreateInput(
+                fund.assetId,
+                row,
+                createStableId(
+                  "op",
+                  `${fund.assetId}_${row.dateKey}`,
+                  seed + index * 1000 + j,
+                ),
+                "agent",
               ),
+            ),
+            deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
+            kind: "matched" as const,
+            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
+              currency: row.currency,
+              feesMinor: row.feesMinor,
+              id: operationId,
+              kind: row.kind,
+              pricePerUnit: row.pricePerUnit,
+              source: "agent" as const,
+              units: row.units,
+              ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
+            })),
+          };
+        }
+
+        return {
+          asset: {
+            currency: fund.creation.currency,
+            id: fund.creation.assetId,
+            ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
+            name: fund.creation.name,
+            ownership: fund.creation.ownership,
+            ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),
+            ...(fund.creation.liquidityTier
+              ? { liquidityTier: fund.creation.liquidityTier }
+              : {}),
+            ...(fund.creation.priceProvider
+              ? { priceProvider: fund.creation.priceProvider }
+              : {}),
+            ...(fund.creation.providerSymbol
+              ? { providerSymbol: fund.creation.providerSymbol }
+              : {}),
+          },
+          creates: fund.rows.map((row, j) =>
+            rowToCreateInput(
+              fund.creation.assetId,
+              row,
+              `create_${opSeed}_${j}`,
               "agent",
             ),
           ),
-          deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
-          kind: "matched" as const,
-          overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
-            currency: row.currency,
-            feesMinor: row.feesMinor,
-            id: operationId,
-            kind: row.kind,
-            pricePerUnit: row.pricePerUnit,
-            source: "agent" as const,
-            units: row.units,
-            ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-          })),
+          kind: "new" as const,
         };
-      }
+      });
+
+      await store.command.applyAssistantStatementProposal({
+        funds,
+        proposalId: proposal.id,
+        today,
+      });
 
       return {
-        asset: {
-          currency: fund.creation.currency,
-          id: fund.creation.assetId,
-          ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
-          name: fund.creation.name,
-          ownership: fund.creation.ownership,
-          ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),
-          ...(fund.creation.liquidityTier
-            ? { liquidityTier: fund.creation.liquidityTier }
-            : {}),
-          ...(fund.creation.priceProvider
-            ? { priceProvider: fund.creation.priceProvider }
-            : {}),
-          ...(fund.creation.providerSymbol
-            ? { providerSymbol: fund.creation.providerSymbol }
-            : {}),
-        },
-        creates: fund.rows.map((row, j) =>
-          rowToCreateInput(fund.creation.assetId, row, `create_${opSeed}_${j}`, "agent"),
-        ),
-        kind: "new" as const,
+        created: plan.included.filter((fund) => fund.kind === "new").length,
+        included: plan.included.length,
+        status: "applied",
       };
-    });
-
-    await store.command.applyAssistantStatementProposal({
-      funds,
-      proposalId: proposal.id,
-      today,
-    });
-
-    return {
-      created: plan.included.filter((fund) => fund.kind === "new").length,
-      included: plan.included.length,
-      status: "applied",
-    };
-  }, _store);
+    },
+  });
 }
 
 export type StatementImportProposalDiscardResult =
@@ -212,24 +193,15 @@ export async function discardStatementImportProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
 ): Promise<StatementImportProposalDiscardResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const target = await readStoreTarget();
-  if (target.kind === "demo") {
-    return { status: "blocked", message: DEMO_DISABLED_MESSAGE };
-  }
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    return { status: "blocked", message: IMPERSONATION_READONLY_MESSAGE };
-  }
-  const parsed = parseStatementImportProposalDraft(rawDraft);
-  if (!parsed.ok) return { status: "error", message: parsed.error };
-
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(parsed.draft.proposalId);
-    if (!proposal) return { status: "error", message: "La propuesta ya no existe." };
-    if (proposal.status !== "draft") {
-      return { status: "error", message: "La propuesta ya está resuelta." };
-    }
-    await store.assistantProposals.markDiscarded(proposal.id);
-    return { status: "discarded" };
-  }, _store);
+  return runProposalDiscard({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "statement_import",
+    parse: (raw) => {
+      const p = parseStatementImportProposalDraft(raw);
+      return p.ok
+        ? { ok: true, proposalId: p.draft.proposalId, data: undefined }
+        : { ok: false, message: p.error };
+    },
+  });
 }

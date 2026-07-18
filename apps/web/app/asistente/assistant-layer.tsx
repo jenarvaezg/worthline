@@ -179,9 +179,11 @@ function HoldingCreationProposalCard({
   mutationsDisabledMessage: string;
   proposal: HoldingCreationProposal;
 }) {
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmHoldingCreationProposalAction>
-  > | null>(null);
+  const [result, setResult] = useState<
+    | Awaited<ReturnType<typeof confirmHoldingCreationProposalAction>>
+    | Awaited<ReturnType<typeof discardHoldingCreationProposalAction>>
+    | null
+  >(null);
   const [pending, startTransition] = useTransition();
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
@@ -292,9 +294,11 @@ function HoldingTrashProposalCard({
   const discardAction = isRemoval
     ? discardHoldingRemovalProposalAction
     : discardHoldingRestorationProposalAction;
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmHoldingRemovalProposalAction>
-  > | null>(null);
+  const [result, setResult] = useState<
+    | Awaited<ReturnType<typeof confirmHoldingRemovalProposalAction>>
+    | Awaited<ReturnType<typeof discardHoldingRemovalProposalAction>>
+    | null
+  >(null);
   const [pending, startTransition] = useTransition();
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
@@ -401,9 +405,11 @@ function ReconcileProposalCard({
   proposal: ReconcileProposal;
 }) {
   const [rows, setRows] = useState<ReconcileRow[]>(proposal.rows);
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmReconcileProposalAction>
-  > | null>(null);
+  const [result, setResult] = useState<
+    | Awaited<ReturnType<typeof confirmReconcileProposalAction>>
+    | Awaited<ReturnType<typeof discardReconcileProposalAction>>
+    | null
+  >(null);
   const [pending, startTransition] = useTransition();
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
@@ -842,9 +848,11 @@ function CorrectionProposalCard({
   mutationsDisabledMessage: string;
   proposal: AnchorOnlyCorrectionProposal;
 }) {
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmCorrectionProposalAction>
-  > | null>(null);
+  const [result, setResult] = useState<
+    | Awaited<ReturnType<typeof confirmCorrectionProposalAction>>
+    | Awaited<ReturnType<typeof discardCorrectionProposalAction>>
+    | null
+  >(null);
   const [pending, startTransition] = useTransition();
   const verified =
     proposal.guarantee.state === "declared" || proposal.guarantee.state === "reconciled";
@@ -933,9 +941,11 @@ function ReconstructionProposalCard({
   mutationsDisabledMessage: string;
   proposal: ReconstructionCorrectionProposal;
 }) {
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmCorrectionProposalAction>
-  > | null>(null);
+  const [result, setResult] = useState<
+    | Awaited<ReturnType<typeof confirmCorrectionProposalAction>>
+    | Awaited<ReturnType<typeof discardCorrectionProposalAction>>
+    | null
+  >(null);
   const [series, setSeries] = useState(proposal.series);
   const [dirty, setDirty] = useState(false);
   const [pending, startTransition] = useTransition();

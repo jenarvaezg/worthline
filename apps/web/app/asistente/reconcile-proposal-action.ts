@@ -1,24 +1,18 @@
 "use server";
 
-import {
-  isClock,
-  runActionWithStore,
-  testArgFromActionArgs,
-  testStoreFromActionArgs,
-} from "@web/action-store";
-import {
-  DEMO_DISABLED_MESSAGE,
-  IMPERSONATION_READONLY_MESSAGE,
-} from "@web/demo/write-guard";
 import { createStableId, resolveOwnershipSplit } from "@web/intake";
-import { readStoreTarget } from "@web/read-store-target";
 import type { WorthlineStore } from "@web/store";
 import type { AssistantProposal, ReconcileDocument } from "@worthline/db";
 import type { CreateInvestmentOperationInput, OwnershipShare } from "@worthline/domain";
-import { defaultsFor, systemClock } from "@worthline/domain";
+import { defaultsFor } from "@worthline/domain";
 
 import type { ExtractedPositionsMovementsDocument } from "./attachment-extraction-contract";
 import { movementLinksToHolding } from "./attachment-extraction-contract";
+import {
+  PROPOSAL_UNRECOGNIZED_MESSAGE,
+  runProposalConfirm,
+  runProposalDiscard,
+} from "./proposal-action";
 import { mapReconcileTypeToInstrument } from "./reconcile-instrument-mapping";
 import { buildReconcileRows, type ReconcileRow } from "./reconcile-plan";
 import {
@@ -30,12 +24,6 @@ import {
   connectedReconcileAssetIds,
   projectReconcilePortfolio,
 } from "./reconcile-proposals";
-
-type ActionResult =
-  | { status: "applied"; created: number; updated: number }
-  | { status: "discarded" }
-  | { status: "blocked"; message: string }
-  | { status: "error"; message: string };
 
 type ReconcileFunds = Parameters<
   WorthlineStore["command"]["applyAssistantReconcileProposal"]
@@ -49,17 +37,6 @@ const INVESTMENT_INSTRUMENTS = new Set([
   "pension_plan",
   "crypto",
 ]);
-
-/** The demo / impersonation write barrier (ADR 0044/0057). */
-async function guardWrites(): Promise<{ status: "blocked"; message: string } | null> {
-  const target = await readStoreTarget();
-  if (target.kind === "demo")
-    return { message: DEMO_DISABLED_MESSAGE, status: "blocked" };
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    return { message: IMPERSONATION_READONLY_MESSAGE, status: "blocked" };
-  }
-  return null;
-}
 
 /** The single positions + movements document a `reconcile` proposal carries. */
 function reconcileDocumentOf(proposal: AssistantProposal): ReconcileDocument | null {
@@ -224,88 +201,86 @@ export async function confirmReconcileProposalAction(
   rawDraft: unknown,
   rawCuration: unknown,
   ..._testArgs: unknown[]
-): Promise<ActionResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  const blocked = await guardWrites();
-  if (blocked) return blocked;
-  const draft = parseReconcileProposalDraft(rawDraft);
-  if (!draft) return { message: "Propuesta no reconocida.", status: "error" };
-  const curation = parseReconcileCuration(rawCuration);
-  if (!curation)
-    return { message: "La selección del reconcile no es válida.", status: "error" };
+) {
+  return runProposalConfirm<{ created: number; updated: number }, ReconcileCuration[]>({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "reconcile",
+    parse: (raw) => {
+      const d = parseReconcileProposalDraft(raw);
+      if (!d) return { ok: false, message: PROPOSAL_UNRECOGNIZED_MESSAGE };
+      const c = parseReconcileCuration(rawCuration);
+      if (!c) return { ok: false, message: "La selección del reconcile no es válida." };
+      return { ok: true, proposalId: d.proposalId, data: c };
+    },
+    apply: async ({ store, proposal, today, data: curation }) => {
+      const document = reconcileDocumentOf(proposal);
+      if (!document) {
+        return {
+          status: "error",
+          message: "La propuesta no contiene un documento de cartera.",
+        };
+      }
+      const workspace = await store.workspace.readWorkspace();
+      if (!workspace) return { status: "error", message: "Workspace no inicializado." };
 
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(draft.proposalId);
-    if (!proposal || proposal.kind !== "reconcile" || proposal.status !== "draft") {
-      return { message: "La propuesta ya no está disponible.", status: "error" };
-    }
-    const document = reconcileDocumentOf(proposal);
-    if (!document) {
-      return {
-        message: "La propuesta no contiene un documento de cartera.",
-        status: "error",
-      };
-    }
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) return { message: "Workspace no inicializado.", status: "error" };
+      // Fence off sync-owned holdings from the write scope (the "no escribas a fuente
+      // conectada" boundary, enforced in code) and re-run the matcher against the LIVE
+      // portfolio so the curated targets are re-resolved against current data.
+      const connectedIds = await connectedReconcileAssetIds(store.connectedSources);
+      const investmentAssetIds = new Set(
+        (await store.assets.readInvestmentAssetsWithMeta())
+          .map((meta) => meta.id)
+          .filter((id) => !connectedIds.has(id)),
+      );
+      const portfolio = await projectReconcilePortfolio(store);
+      const freshRows = buildReconcileRows(asExtractedDocument(document), portfolio);
+      const rowById = new Map(freshRows.map((row) => [row.rowId, row]));
+      const ownership = resolveOwnershipSplit({
+        activeMembers: workspace.members.filter((member) => !member.disabledAt),
+        preset: "scope",
+        shortfall: "complete-to-full-ownership",
+      });
+      const funds = resolveFunds(
+        document,
+        curation,
+        rowById,
+        investmentAssetIds,
+        ownership,
+        today,
+        Date.now(),
+      );
+      if (funds.length === 0) {
+        return {
+          status: "error",
+          message: "No hay cambios que aplicar en el reconcile.",
+        };
+      }
 
-    // Fence off sync-owned holdings from the write scope (the "no escribas a fuente
-    // conectada" boundary, enforced in code) and re-run the matcher against the LIVE
-    // portfolio so the curated targets are re-resolved against current data.
-    const connectedIds = await connectedReconcileAssetIds(store.connectedSources);
-    const investmentAssetIds = new Set(
-      (await store.assets.readInvestmentAssetsWithMeta())
-        .map((meta) => meta.id)
-        .filter((id) => !connectedIds.has(id)),
-    );
-    const portfolio = await projectReconcilePortfolio(store);
-    const freshRows = buildReconcileRows(asExtractedDocument(document), portfolio);
-    const rowById = new Map(freshRows.map((row) => [row.rowId, row]));
-    const ownership = resolveOwnershipSplit({
-      activeMembers: workspace.members.filter((member) => !member.disabledAt),
-      preset: "scope",
-      shortfall: "complete-to-full-ownership",
-    });
-    const today = clock.today();
-    const funds = resolveFunds(
-      document,
-      curation,
-      rowById,
-      investmentAssetIds,
-      ownership,
-      today,
-      Date.now(),
-    );
-    if (funds.length === 0) {
-      return { message: "No hay cambios que aplicar en el reconcile.", status: "error" };
-    }
-
-    await store.command.applyAssistantReconcileProposal({
-      funds,
-      proposalId: proposal.id,
-      today,
-    });
-    const created = funds.filter((fund) => fund.kind === "new").length;
-    return { created, status: "applied", updated: funds.length - created };
-  }, _store);
+      await store.command.applyAssistantReconcileProposal({
+        funds,
+        proposalId: proposal.id,
+        today,
+      });
+      const created = funds.filter((fund) => fund.kind === "new").length;
+      return { created, status: "applied", updated: funds.length - created };
+    },
+  });
 }
 
 export async function discardReconcileProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
-): Promise<ActionResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const blocked = await guardWrites();
-  if (blocked) return blocked;
-  const draft = parseReconcileProposalDraft(rawDraft);
-  if (!draft) return { message: "Propuesta no reconocida.", status: "error" };
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(draft.proposalId);
-    if (!proposal || proposal.kind !== "reconcile" || proposal.status !== "draft") {
-      return { message: "La propuesta ya no está disponible.", status: "error" };
-    }
-    await store.assistantProposals.markDiscarded(proposal.id);
-    return { status: "discarded" };
-  }, _store);
+) {
+  return runProposalDiscard({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "reconcile",
+    parse: (raw) => {
+      const d = parseReconcileProposalDraft(raw);
+      return d
+        ? { ok: true, proposalId: d.proposalId, data: undefined }
+        : { ok: false, message: PROPOSAL_UNRECOGNIZED_MESSAGE };
+    },
+  });
 }

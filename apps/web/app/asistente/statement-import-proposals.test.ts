@@ -366,6 +366,6 @@ describe("discardStatementImportProposalAction", () => {
         store,
         TEST_RESOLVER,
       ),
-    ).toEqual({ status: "error", message: "La propuesta ya está resuelta." });
+    ).toEqual({ status: "error", message: "La propuesta ya no está disponible." });
   });
 });
