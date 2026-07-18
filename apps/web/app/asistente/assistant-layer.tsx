@@ -23,6 +23,7 @@ import {
   parseMixedDocumentProposal,
   parsePropertyValuationProposal,
   parseQuickActions,
+  parseReconcileProposal,
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
@@ -60,6 +61,7 @@ import {
   discardHoldingRestorationProposalAction,
 } from "./holding-trash-proposal-action";
 import type { HoldingTrashProposal } from "./holding-trash-proposal-contract";
+import { instrumentLabel } from "./instrument-labels";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import {
@@ -67,6 +69,26 @@ import {
   discardPropertyValuationProposalAction,
 } from "./property-valuation-proposal-action";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
+import {
+  discardReconcileRow,
+  effectiveDecision,
+  isRowWritable,
+  type ReconcileRow,
+  reassignRowToCandidate,
+  reassignRowToNew,
+  reconcileImpact,
+  reconcileSummary,
+  restoreReconcileRow,
+} from "./reconcile-plan";
+import {
+  confirmReconcileProposalAction,
+  discardReconcileProposalAction,
+} from "./reconcile-proposal-action";
+import {
+  type ReconcileCuration,
+  type ReconcileProposal,
+  reconcileFolio,
+} from "./reconcile-proposal-contract";
 import {
   deriveScreenContext,
   isAssistantSurface,
@@ -335,6 +357,174 @@ function HoldingTrashProposalCard({
           disabled={actionsDisabled}
           onClick={() =>
             startTransition(async () => setResult(await discardAction(proposal.draft)))
+          }
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The es-ES fidelity mark a reconcile row shows (decision #1090, ADR 0048). */
+function reconcileFidelityMark(fidelity: ReconcileRow["fidelity"]): string {
+  if (fidelity === "movements") return "con movimientos";
+  if (fidelity === "declared_cost") return "coste declarado";
+  return "sin coste real";
+}
+
+/** The es-ES decision line a reconcile row shows. */
+function reconcileDecisionLabel(row: ReconcileRow): string {
+  const decision = effectiveDecision(row);
+  if (decision === "leave") return "Dejar";
+  if (decision === "create") return `Crear «${row.name}»`;
+  const target = row.match.candidates.find((c) => c.holdingId === row.match.target);
+  return `Actualizar «${target?.name ?? row.name}»`;
+}
+
+/**
+ * Reconcile por documento (#1108, PRD #1103 S5): the impact header leads
+ * (patrimonio neto antes → después, estimado sobre las altas), then each row with
+ * its decision and fidelity tier, reassignable in place (crear ↔ actualizar ↔
+ * descartar), never blocking on a doubtful match; folio «Propuesta de reconcile ·
+ * N holdings». Reuses the `.assistantProposal` anatomy — no new card. The rows are
+ * editable client state; Confirmar sends the curated decisions to the atomic apply.
+ */
+function ReconcileProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: ReconcileProposal;
+}) {
+  const [rows, setRows] = useState<ReconcileRow[]>(proposal.rows);
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmReconcileProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+  const settled = result?.status === "applied" || result?.status === "discarded";
+  const actionsDisabled = pending || mutationsDisabled || settled;
+
+  const summary = reconcileSummary(rows);
+  const impact = reconcileImpact(rows, proposal.netWorthBeforeMinor);
+  const increases = impact.deltaMinor >= 0;
+  const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
+    Math.abs(impact.deltaMinor),
+  )}${impact.partial ? " · estimado sobre las altas" : ""}`;
+  const totalKnown = impact.beforeMinor !== null && impact.afterMinor !== null;
+  const folio = reconcileFolio(summary.active);
+
+  const curation: ReconcileCuration[] = rows.map((row) => {
+    const decision = effectiveDecision(row);
+    return decision === "update" && row.match.target
+      ? { decision, rowId: row.rowId, target: row.match.target }
+      : { decision, rowId: row.rowId };
+  });
+
+  return (
+    <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
+      <p className="assistantProposalKind">{folio}</p>
+      <strong>
+        {totalKnown
+          ? `Patrimonio neto ${formatPositionMoney(
+              impact.beforeMinor as number,
+            )} → ${formatPositionMoney(impact.afterMinor as number)}`
+          : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`}
+      </strong>
+      <p className={increases ? "assistantOk" : "assistantError"}>{deltaLabel}</p>
+      <ul>
+        {rows.map((row) => (
+          <li key={row.rowId}>
+            <strong>{row.name}</strong>{" "}
+            <span>
+              {instrumentLabel(row.instrument)} · {reconcileFidelityMark(row.fidelity)} ·{" "}
+              {reconcileDecisionLabel(row)}
+              {row.uncertain ? " · dudoso" : ""}
+              {!row.excluded && !isRowWritable(row) ? " · fuera de alcance" : ""}
+            </span>
+            <span className="assistantProposalActions">
+              {effectiveDecision(row) !== "create" || row.excluded ? (
+                <button
+                  disabled={actionsDisabled}
+                  onClick={() => setRows(reassignRowToNew(rows, row.rowId))}
+                  type="button"
+                >
+                  Crear nuevo
+                </button>
+              ) : null}
+              {row.match.candidates.map((candidate) => (
+                <button
+                  disabled={actionsDisabled}
+                  key={candidate.holdingId}
+                  onClick={() =>
+                    setRows(reassignRowToCandidate(rows, row.rowId, candidate.holdingId))
+                  }
+                  type="button"
+                >
+                  Actualizar «{candidate.name}»
+                </button>
+              ))}
+              {row.excluded ? (
+                <button
+                  disabled={actionsDisabled}
+                  onClick={() => setRows(restoreReconcileRow(rows, row.rowId))}
+                  type="button"
+                >
+                  Recuperar
+                </button>
+              ) : (
+                <button
+                  className="secondary"
+                  disabled={actionsDisabled}
+                  onClick={() => setRows(discardReconcileRow(rows, row.rowId))}
+                  type="button"
+                >
+                  Descartar
+                </button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="assistantProposalFolio">{folio}</p>
+      {result ? (
+        <p
+          aria-live="polite"
+          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          role="status"
+        >
+          {result.status === "applied"
+            ? `Cartera cuadrada: ${result.created} creados, ${result.updated} actualizados.`
+            : result.status === "discarded"
+              ? "Propuesta descartada."
+              : result.message}
+        </p>
+      ) : mutationsDisabled ? (
+        <p className="assistantError">{mutationsDisabledMessage}</p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={actionsDisabled || summary.active === 0}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await confirmReconcileProposalAction(proposal.draft, curation)),
+            )
+          }
+          type="button"
+        >
+          {pending ? "Guardando…" : "Confirmar"}
+        </button>
+        <button
+          className="secondary"
+          disabled={actionsDisabled}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await discardReconcileProposalAction(proposal.draft)),
+            )
           }
           type="button"
         >
@@ -1348,6 +1538,17 @@ export default function AssistantLayer({
                     <PropertyValuationProposalCard
                       key={`${message.id}-${i}`}
                       mutationsDisabled={mutationsDisabled}
+                      proposal={proposal}
+                    />
+                  ) : null;
+                }
+                if (name === "propose_reconcile" && "output" in part) {
+                  const proposal = parseReconcileProposal(part.output);
+                  return proposal ? (
+                    <ReconcileProposalCard
+                      key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
                       proposal={proposal}
                     />
                   ) : null;

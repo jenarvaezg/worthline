@@ -72,13 +72,55 @@ export interface HoldingTrashActionFact {
   };
 }
 
+/**
+ * The positions + movements document a `reconcile` proposal (#1108, PRD #1103 S5)
+ * carries — the S4 extraction persisted verbatim so the confirm can re-run the
+ * matcher against LIVE portfolio data and rebuild the write plan. The user's
+ * per-row curation from the preview is NOT stored here: it is passed to the
+ * confirm action as the live editable state, so a drift between draft and confirm
+ * is re-resolved rather than frozen. A structural mirror of the web extractor's
+ * `positions_movements` shape, kept db-local so the package stays web-independent.
+ */
+export interface ReconcileDocumentHolding {
+  name: string;
+  type: string;
+  isin?: string;
+  value: number;
+  currency: string;
+  declaredCost?: number;
+  fidelity: "movements" | "declared_cost" | "value_only";
+  uncertain?: boolean;
+}
+
+export interface ReconcileDocumentMovement {
+  date: string;
+  kind: "buy" | "sell" | "contribution";
+  isin?: string;
+  name?: string;
+  units?: number;
+  amount: number;
+  currency: string;
+  uncertain?: boolean;
+}
+
+export interface ReconcileDocument {
+  holdings: ReconcileDocumentHolding[];
+  movements: ReconcileDocumentMovement[];
+}
+
+export interface HoldingReconcileFact {
+  kind: "holding_reconcile";
+  row: ReconcileDocument;
+}
+
 export type AssistantProposalFact =
   | StatementOperationFact
   | DebtBalanceObservationFact
   | PropertyValuationAnchorFact
   | HoldingCorrectionFact
   | HoldingCreationFact
-  | HoldingTrashActionFact;
+  | HoldingTrashActionFact
+  | HoldingReconcileFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -134,7 +176,8 @@ async function createProposal(
     input.kind !== "correction" &&
     input.kind !== "holding_creation" &&
     input.kind !== "holding_removal" &&
-    input.kind !== "holding_restoration"
+    input.kind !== "holding_restoration" &&
+    input.kind !== "reconcile"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
@@ -169,6 +212,9 @@ function normalizeFact(
         name: fact.row.name,
       },
     };
+  }
+  if (fact.kind === "holding_reconcile" && "row" in fact) {
+    return { kind: fact.kind, row: fact.row };
   }
   if (fact.kind === "property_valuation_anchor" && "row" in fact) {
     return {
@@ -311,9 +357,16 @@ async function readProposal(
           fact.kind !== "property_valuation_anchor" &&
           fact.kind !== "holding_correction" &&
           fact.kind !== "holding_creation" &&
-          fact.kind !== "holding_trash_action"
+          fact.kind !== "holding_trash_action" &&
+          fact.kind !== "holding_reconcile"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
+        }
+        if (fact.kind === "holding_reconcile") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as HoldingReconcileFact["row"],
+          };
         }
         if (fact.kind === "holding_correction") {
           return {
