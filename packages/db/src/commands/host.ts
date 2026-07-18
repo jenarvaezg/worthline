@@ -9,10 +9,13 @@ import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
 import { checkOwnershipSplit } from "@worthline/domain";
-import type { DatedFactCommandImplementations } from "./dated-facts";
-import { rippleHistoricalSnapshotsForDebt } from "./dated-facts";
+import type { DatedFactCommandImplementations } from "./command-implementation-types";
 import type { ImportBalanceHistoryCommand } from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
+import {
+  rippleHistoricalSnapshotsForDebt,
+  throwCommandResultError,
+} from "./ripple-engine";
 import type { FactBatchInput } from "./types";
 import { createUnitOfWork } from "./unit-of-work";
 
@@ -22,12 +25,73 @@ type StatementImportCommand = Omit<
   "trigger"
 >;
 
-/** Intent-level command surface. Persist+ripple implementation details stay private. */
-export interface CommandHost {
-  createAndLinkContributionOperation: DatedFactCommands["createAndLinkContributionOperation"];
-  applyStoredContributionValue: DatedFactCommands["applyStoredContributionValue"];
-  recordInvestmentOperation: DatedFactCommands["recordOperationAndRipple"];
-  mergeInvestmentOperations: DatedFactCommands["recordOperationsAndRipple"];
+/**
+ * The intent→persistence rename boundary (ADR 0062), declared ONCE. Each key is
+ * the intent-shaped name the command host exposes; each value the
+ * persistence-shaped `…AndRipple` implementation it forwards to. Both the
+ * `CommandHost` type (via `DatedFactAliases`) and the runtime host object (via
+ * `datedFactAliases`) are derived from this single table, so the boundary is
+ * never restated per method.
+ */
+const DATED_FACT_ALIASES = {
+  createAndLinkContributionOperation: "createAndLinkContributionOperation",
+  applyStoredContributionValue: "applyStoredContributionValue",
+  recordInvestmentOperation: "recordOperationAndRipple",
+  mergeInvestmentOperations: "recordOperationsAndRipple",
+  deleteInvestmentOperation: "deleteOperationAndRipple",
+  deleteInvestmentOperations: "deleteOperationsAndRipple",
+  addValuationAnchor: "addValuationAnchorAndRipple",
+  updateValuationAnchor: "updateValuationAnchorAndRipple",
+  deleteValuationAnchor: "deleteValuationAnchorAndRipple",
+  setAnnualAppreciationRate: "setAnnualAppreciationRateAndRipple",
+  setHousingValuationCadence: "setHousingValuationCadenceAndRipple",
+  recordHousingValuation: "recordHousingValuationAndRipple",
+  updateAssetOwnership: "updateAssetAndRippleOwnership",
+  updateLiabilityOwnership: "updateLiabilityAndRippleOwnership",
+  createHousingHolding: "createHousingHoldingAndRipple",
+  createAmortizationPlan: "createAmortizationPlanAndRipple",
+  updateAmortizationPlan: "updateAmortizationPlanAndRipple",
+  deleteAmortizationPlan: "deleteAmortizationPlanAndRipple",
+  addInterestRateRevision: "addInterestRateRevisionAndRipple",
+  setLiabilityValuationCadence: "setValuationCadenceAndRipple",
+  updateInterestRateRevision: "updateInterestRateRevisionAndRipple",
+  deleteInterestRateRevision: "deleteInterestRateRevisionAndRipple",
+  addEarlyRepayment: "addEarlyRepaymentAndRipple",
+  updateEarlyRepayment: "updateEarlyRepaymentAndRipple",
+  deleteEarlyRepayment: "deleteEarlyRepaymentAndRipple",
+  createCurrentStateDebt: "createCurrentStateDebtAndRipple",
+  changeDebtModel: "changeDebtModelAndRipple",
+  addBalanceRebaseline: "addBalanceRebaselineAndRipple",
+  updateBalanceRebaseline: "updateBalanceRebaselineAndRipple",
+  deleteBalanceRebaseline: "deleteBalanceRebaselineAndRipple",
+  addBalanceAnchor: "addBalanceAnchorAndRipple",
+  updateBalanceAnchor: "updateBalanceAnchorAndRipple",
+  deleteBalanceAnchor: "deleteBalanceAnchorAndRipple",
+  rippleHousingAfterAssetEdit: "rippleHousingAfterAssetEdit",
+} as const satisfies Record<string, keyof DatedFactCommands>;
+
+/** The renamed slice of `CommandHost`, derived from the single alias table. */
+type DatedFactAliases = {
+  [Intent in keyof typeof DATED_FACT_ALIASES]: DatedFactCommands[(typeof DATED_FACT_ALIASES)[Intent]];
+};
+
+/** Build the runtime alias slice by forwarding each intent name to its
+ *  persistence-shaped implementation, from the same single table. */
+function datedFactAliases(datedFacts: DatedFactCommands): DatedFactAliases {
+  const aliased: Record<string, unknown> = {};
+  for (const [intent, impl] of Object.entries(DATED_FACT_ALIASES)) {
+    aliased[intent] = datedFacts[impl as keyof DatedFactCommands];
+  }
+  return aliased as DatedFactAliases;
+}
+
+/**
+ * Intent-level command surface. Persist+ripple implementation details stay
+ * private. The 1:1 intent→persistence renames live in `DatedFactAliases` (the
+ * single `DATED_FACT_ALIASES` table); only the members with real wrapping logic
+ * or a different seam are declared here.
+ */
+export interface CommandHost extends DatedFactAliases {
   applyStatementImport: (params: StatementImportCommand) => Promise<void>;
   applyAssistantStatementProposal: (
     params: StatementImportCommand & { proposalId: string },
@@ -68,37 +132,7 @@ export interface CommandHost {
      */
     reconstruct?: { liabilityId: string; rebaselines: AddBalanceRebaselineInput[] };
   }) => Promise<void>;
-  deleteInvestmentOperation: DatedFactCommands["deleteOperationAndRipple"];
-  deleteInvestmentOperations: DatedFactCommands["deleteOperationsAndRipple"];
-  addValuationAnchor: DatedFactCommands["addValuationAnchorAndRipple"];
-  updateValuationAnchor: DatedFactCommands["updateValuationAnchorAndRipple"];
-  deleteValuationAnchor: DatedFactCommands["deleteValuationAnchorAndRipple"];
-  setAnnualAppreciationRate: DatedFactCommands["setAnnualAppreciationRateAndRipple"];
-  setHousingValuationCadence: DatedFactCommands["setHousingValuationCadenceAndRipple"];
-  recordHousingValuation: DatedFactCommands["recordHousingValuationAndRipple"];
-  updateAssetOwnership: DatedFactCommands["updateAssetAndRippleOwnership"];
-  updateLiabilityOwnership: DatedFactCommands["updateLiabilityAndRippleOwnership"];
-  createHousingHolding: DatedFactCommands["createHousingHoldingAndRipple"];
-  createAmortizationPlan: DatedFactCommands["createAmortizationPlanAndRipple"];
-  updateAmortizationPlan: DatedFactCommands["updateAmortizationPlanAndRipple"];
-  deleteAmortizationPlan: DatedFactCommands["deleteAmortizationPlanAndRipple"];
-  addInterestRateRevision: DatedFactCommands["addInterestRateRevisionAndRipple"];
-  setLiabilityValuationCadence: DatedFactCommands["setValuationCadenceAndRipple"];
-  updateInterestRateRevision: DatedFactCommands["updateInterestRateRevisionAndRipple"];
-  deleteInterestRateRevision: DatedFactCommands["deleteInterestRateRevisionAndRipple"];
-  addEarlyRepayment: DatedFactCommands["addEarlyRepaymentAndRipple"];
-  updateEarlyRepayment: DatedFactCommands["updateEarlyRepaymentAndRipple"];
-  deleteEarlyRepayment: DatedFactCommands["deleteEarlyRepaymentAndRipple"];
-  createCurrentStateDebt: DatedFactCommands["createCurrentStateDebtAndRipple"];
-  changeDebtModel: DatedFactCommands["changeDebtModelAndRipple"];
   importBalanceHistory: (command: ImportBalanceHistoryCommand) => Promise<number>;
-  addBalanceRebaseline: DatedFactCommands["addBalanceRebaselineAndRipple"];
-  updateBalanceRebaseline: DatedFactCommands["updateBalanceRebaselineAndRipple"];
-  deleteBalanceRebaseline: DatedFactCommands["deleteBalanceRebaselineAndRipple"];
-  addBalanceAnchor: DatedFactCommands["addBalanceAnchorAndRipple"];
-  updateBalanceAnchor: DatedFactCommands["updateBalanceAnchorAndRipple"];
-  deleteBalanceAnchor: DatedFactCommands["deleteBalanceAnchorAndRipple"];
-  rippleHousingAfterAssetEdit: DatedFactCommands["rippleHousingAfterAssetEdit"];
 
   syncConnectedSource: ConnectedSourceSeams["syncConnectedSource"];
   /**
@@ -141,12 +175,6 @@ async function applyDraftAssistantProposal(
     await apply();
     await assistantProposals.markApplied(proposalId);
   });
-}
-
-function throwCommandResultError(result: { error: string; code?: string }): never {
-  const error = new Error(result.error);
-  if (result.code !== undefined) Object.assign(error, { code: result.code });
-  throw error;
 }
 
 /** Extract the single correction plan a `correction` proposal carries. */
@@ -321,11 +349,7 @@ export function createCommandHost(
     return result.value.created;
   };
   return {
-    addBalanceAnchor: datedFacts.addBalanceAnchorAndRipple,
-    addBalanceRebaseline: datedFacts.addBalanceRebaselineAndRipple,
-    addEarlyRepayment: datedFacts.addEarlyRepaymentAndRipple,
-    addInterestRateRevision: datedFacts.addInterestRateRevisionAndRipple,
-    addValuationAnchor: datedFacts.addValuationAnchorAndRipple,
+    ...datedFactAliases(datedFacts),
     applyBinanceHistory: connectedSources.applyBinanceHistoryAndRipple,
     applyAssistantStatementProposal: async ({ proposalId, ...params }) =>
       applyDraftAssistantProposal(
@@ -450,41 +474,12 @@ export function createCommandHost(
       ),
     applyStatementImport: (params) =>
       datedFacts.applyStatementImportAndRipple({ ...params, trigger: "statement" }),
-    applyStoredContributionValue: datedFacts.applyStoredContributionValue,
     backfillHistoricalSnapshots: snapshotOrchestrator.backfillHistoricalSnapshots,
-    changeDebtModel: datedFacts.changeDebtModelAndRipple,
     backfillInvestmentPrices: snapshotOrchestrator.backfillInvestmentPricesAndRipple,
     correctInvestmentSnapshotUnitPrice:
       snapshotOrchestrator.correctInvestmentSnapshotUnitPrice,
-    createAmortizationPlan: datedFacts.createAmortizationPlanAndRipple,
-    createAndLinkContributionOperation: datedFacts.createAndLinkContributionOperation,
-    createCurrentStateDebt: datedFacts.createCurrentStateDebtAndRipple,
-    createHousingHolding: datedFacts.createHousingHoldingAndRipple,
-    deleteAmortizationPlan: datedFacts.deleteAmortizationPlanAndRipple,
-    deleteBalanceAnchor: datedFacts.deleteBalanceAnchorAndRipple,
-    deleteBalanceRebaseline: datedFacts.deleteBalanceRebaselineAndRipple,
-    deleteEarlyRepayment: datedFacts.deleteEarlyRepaymentAndRipple,
-    deleteInterestRateRevision: datedFacts.deleteInterestRateRevisionAndRipple,
-    deleteInvestmentOperation: datedFacts.deleteOperationAndRipple,
-    deleteInvestmentOperations: datedFacts.deleteOperationsAndRipple,
-    deleteValuationAnchor: datedFacts.deleteValuationAnchorAndRipple,
     importBalanceHistory,
-    mergeInvestmentOperations: datedFacts.recordOperationsAndRipple,
-    recordHousingValuation: datedFacts.recordHousingValuationAndRipple,
-    recordInvestmentOperation: datedFacts.recordOperationAndRipple,
-    rippleHousingAfterAssetEdit: datedFacts.rippleHousingAfterAssetEdit,
-    setAnnualAppreciationRate: datedFacts.setAnnualAppreciationRateAndRipple,
-    setHousingValuationCadence: datedFacts.setHousingValuationCadenceAndRipple,
-    setLiabilityValuationCadence: datedFacts.setValuationCadenceAndRipple,
     runSyncJob: connectedSources.runSyncJob,
     syncConnectedSource: connectedSources.syncConnectedSource,
-    updateAmortizationPlan: datedFacts.updateAmortizationPlanAndRipple,
-    updateAssetOwnership: datedFacts.updateAssetAndRippleOwnership,
-    updateBalanceAnchor: datedFacts.updateBalanceAnchorAndRipple,
-    updateBalanceRebaseline: datedFacts.updateBalanceRebaselineAndRipple,
-    updateEarlyRepayment: datedFacts.updateEarlyRepaymentAndRipple,
-    updateInterestRateRevision: datedFacts.updateInterestRateRevisionAndRipple,
-    updateLiabilityOwnership: datedFacts.updateLiabilityAndRippleOwnership,
-    updateValuationAnchor: datedFacts.updateValuationAnchorAndRipple,
   };
 }
