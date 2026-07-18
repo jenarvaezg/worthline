@@ -6,6 +6,10 @@ import {
   type CorrectionProposal,
   parseCorrectionProposalDraft,
 } from "./correction-proposal-contract";
+import {
+  type HoldingCreationProposal,
+  parseHoldingCreationProposalDraft,
+} from "./holding-creation-proposal-contract";
 import type {
   MixedDocumentProposal,
   MixedDocumentSection,
@@ -306,6 +310,31 @@ export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null
     return raw as unknown as CorrectionProposal;
   }
   return null;
+}
+
+export function parseHoldingCreationProposal(
+  raw: unknown,
+): HoldingCreationProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "holding_creation") return null;
+  const draft = parseHoldingCreationProposalDraft(raw.draft);
+  if (
+    draft === null ||
+    typeof raw.folio !== "string" ||
+    typeof raw.family !== "string" ||
+    !isRecord(raw.holding) ||
+    typeof raw.holding.name !== "string" ||
+    typeof raw.holding.instrumentLabel !== "string" ||
+    typeof raw.holding.detail !== "string" ||
+    !isRecord(raw.impact) ||
+    // beforeMinor/afterMinor are null when the net-worth read degraded (ADR 0048):
+    // accept number-or-null; only the delta is always a number.
+    !(raw.impact.beforeMinor === null || typeof raw.impact.beforeMinor === "number") ||
+    !(raw.impact.afterMinor === null || typeof raw.impact.afterMinor === "number") ||
+    typeof raw.impact.deltaMinor !== "number"
+  ) {
+    return null;
+  }
+  return raw as unknown as HoldingCreationProposal;
 }
 
 export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {

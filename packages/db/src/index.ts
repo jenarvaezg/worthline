@@ -212,6 +212,7 @@ export type {
   AssistantProposalFact,
   AssistantProposalStore,
   HoldingCorrectionFact,
+  HoldingCreationFact,
   PropertyValuationAnchorFact,
   StatementOperationFact,
 } from "./assistant-proposal-store";
@@ -234,6 +235,14 @@ export type {
   DatedBalanceObservation,
   ReconstructCorrectionPlan,
 } from "./correction-plan";
+export type {
+  AppreciatingHoldingCreationPlan,
+  DebtHoldingCreationPlan,
+  HoldingCreationFamily,
+  HoldingCreationPlan,
+  InvestmentHoldingCreationPlan,
+  StoredHoldingCreationPlan,
+} from "./holding-creation-plan";
 export {
   createJobQueue,
   createSyncJobWorker,

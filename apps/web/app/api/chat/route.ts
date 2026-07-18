@@ -337,6 +337,7 @@ export async function POST(request: Request): Promise<Response> {
             assets: store.assets,
             assistantProposals: store.assistantProposals,
             liabilities: store.liabilities,
+            workspace: store.workspace,
           }),
         target,
       ),
