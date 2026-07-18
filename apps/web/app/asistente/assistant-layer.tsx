@@ -18,6 +18,7 @@ import {
   extractEmbeddedQuickActions,
   parseBalanceHistoryProposal,
   parseCorrectionProposal,
+  parseHoldingCreationProposal,
   parseMixedDocumentProposal,
   parsePropertyValuationProposal,
   parseQuickActions,
@@ -42,6 +43,11 @@ import type {
   CorrectionProposal,
   ReconstructionCorrectionProposal,
 } from "./correction-proposal-contract";
+import {
+  confirmHoldingCreationProposalAction,
+  discardHoldingCreationProposalAction,
+} from "./holding-creation-proposal-action";
+import type { HoldingCreationProposal } from "./holding-creation-proposal-contract";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import {
@@ -122,6 +128,109 @@ function ProposalMutationStatus({
     <p aria-live="polite" className="srOnly" role="status">
       {pending ? "Guardando…" : result?.status === "applied" ? "Guardado." : ""}
     </p>
+  );
+}
+
+/**
+ * Alta «por estado actual» (#1105, PRD #1103 S2): the impact header leads
+ * (patrimonio neto antes → después), then the holding row, then the informative
+ * duplicate warning (never blocks), then Confirmar / Descartar.
+ */
+function HoldingCreationProposalCard({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  proposal,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  proposal: HoldingCreationProposal;
+}) {
+  const [result, setResult] = useState<Awaited<
+    ReturnType<typeof confirmHoldingCreationProposalAction>
+  > | null>(null);
+  const [pending, startTransition] = useTransition();
+  const settled = result?.status === "applied" || result?.status === "discarded";
+  const actionsDisabled = pending || mutationsDisabled || settled;
+  const increases = proposal.impact.deltaMinor >= 0;
+  const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
+    Math.abs(proposal.impact.deltaMinor),
+  )}`;
+  // `beforeMinor === null` means the net-worth read degraded — show the known
+  // delta but never fabricate a total the card never read (ADR 0048).
+  const totalKnown =
+    proposal.impact.beforeMinor !== null && proposal.impact.afterMinor !== null;
+  return (
+    <div className="assistantProposal">
+      <ProposalMutationStatus pending={pending} result={result} />
+      <p className="assistantProposalKind">{proposal.folio}</p>
+      {/* Impact first: what confirming does to the household net worth. */}
+      <strong>
+        {totalKnown
+          ? `Patrimonio neto ${formatPositionMoney(
+              proposal.impact.beforeMinor as number,
+            )} → ${formatPositionMoney(proposal.impact.afterMinor as number)}`
+          : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`}
+      </strong>
+      <p className={increases ? "assistantOk" : "assistantError"}>{deltaLabel}</p>
+      <ul>
+        <li>
+          <strong>{proposal.holding.name}</strong>{" "}
+          <span>
+            {proposal.holding.instrumentLabel} · {proposal.holding.detail}
+          </span>
+        </li>
+      </ul>
+      {proposal.duplicate ? (
+        <p className="assistantError">
+          Ya tienes «{proposal.duplicate.name}»
+          {proposal.duplicate.confidence === "strong"
+            ? " (coincidencia fuerte)"
+            : " (mismo nombre)"}
+          . Puedes crearlo igualmente si es otro distinto.
+        </p>
+      ) : null}
+      <p className="assistantProposalFolio">{proposal.folio}</p>
+      {result ? (
+        <p
+          aria-live="polite"
+          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          role="status"
+        >
+          {result.status === "applied"
+            ? "Holding creado."
+            : result.status === "discarded"
+              ? "Propuesta descartada."
+              : result.message}
+        </p>
+      ) : mutationsDisabled ? (
+        <p className="assistantError">{mutationsDisabledMessage}</p>
+      ) : null}
+      <div className="assistantProposalActions">
+        <button
+          disabled={actionsDisabled}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await confirmHoldingCreationProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          {pending ? "Guardando…" : "Confirmar"}
+        </button>
+        <button
+          className="secondary"
+          disabled={actionsDisabled}
+          onClick={() =>
+            startTransition(async () =>
+              setResult(await discardHoldingCreationProposalAction(proposal.draft)),
+            )
+          }
+          type="button"
+        >
+          Descartar
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1071,6 +1180,17 @@ export default function AssistantLayer({
                       proposal={proposal}
                     />
                   );
+                }
+                if (name === "propose_holding" && "output" in part) {
+                  const proposal = parseHoldingCreationProposal(part.output);
+                  return proposal ? (
+                    <HoldingCreationProposalCard
+                      key={`${message.id}-${i}`}
+                      mutationsDisabled={mutationsDisabled}
+                      mutationsDisabledMessage={mutationsDisabledMessage}
+                      proposal={proposal}
+                    />
+                  ) : null;
                 }
                 if (name === "propose_balance_history_import" && "output" in part) {
                   const proposal = parseBalanceHistoryProposal(part.output);

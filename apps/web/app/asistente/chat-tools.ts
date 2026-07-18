@@ -39,6 +39,10 @@ import {
   type CorrectionInput,
 } from "@web/asistente/correction-proposals";
 import {
+  buildHoldingCreationProposal,
+  type HoldingCreationArgs,
+} from "@web/asistente/holding-creation-proposals";
+import {
   buildMaintainerAlertPayload,
   isMaintainerAlertCategory,
   type MaintainerAlertDeclaredFigure,
@@ -87,6 +91,8 @@ export interface ChatReadStore {
   assistantProposals?: AssistantProposalStore;
   liabilities?: WorthlineStore["liabilities"];
   assets?: WorthlineStore["assets"];
+  /** Present for the alta builder (#1105): resolves ownership at build time. */
+  workspace?: WorthlineStore["workspace"];
 }
 
 export interface ChatToolsInput {
@@ -410,6 +416,47 @@ const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["holdingId", "correction"],
+  additionalProperties: false,
+});
+
+const HOLDING_CREATION_PROPOSAL_SCHEMA = jsonSchema<HoldingCreationArgs>({
+  type: "object",
+  properties: {
+    family: {
+      type: "string",
+      enum: ["stored", "appreciating", "debt", "investment"],
+    },
+    name: { type: "string" },
+    instrument: {
+      type: "string",
+      enum: [
+        "current_account",
+        "term_deposit",
+        "precious_metal",
+        "vehicle",
+        "other",
+        "property",
+        "mortgage",
+        "loan",
+        "credit_card",
+        "fund",
+        "etf",
+        "stock",
+        "index",
+        "pension_plan",
+        "crypto",
+      ],
+    },
+    currentValueMinor: { type: "integer" },
+    isPrimaryResidence: { type: "boolean" },
+    balanceMinor: { type: "integer" },
+    debtModel: { type: "string", enum: ["amortizable", "revolving", "informal"] },
+    providerSymbol: { type: "string" },
+    isin: { type: "string" },
+    openingValueMinor: { type: "integer" },
+    pricePerUnit: { type: "string" },
+  },
+  required: ["family", "name", "instrument"],
   additionalProperties: false,
 });
 
@@ -1277,6 +1324,36 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               publicHoldingId: args.holdingId ?? "",
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_holding: tool({
+      description:
+        "Prepara una propuesta de ALTA «por estado actual» para crear UN holding manual por su valor/saldo de HOY (ADR 0056: nunca un holding vacío, nunca historia inventada). " +
+        "family + instrument deben concordar: stored (current_account/term_deposit/precious_metal/vehicle/other) → currentValueMinor; appreciating (property) → currentValueMinor + isPrimaryResidence; debt (mortgage/loan/credit_card) → balanceMinor (+ debtModel si lo conoces); investment (fund/etf/stock/index/pension_plan/crypto) → isin/providerSymbol opcionales y, para valorar la apertura de hoy, openingValueMinor (euros en céntimos) + pricePerUnit; sin apertura crea un contenedor vacío. " +
+        "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Un split no está soportado: dilo honestamente. Corregir o dar de baja un holding existente usan sus propias tools, no esta.",
+      inputSchema: HOLDING_CREATION_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (
+            !store.assistantProposals ||
+            !store.liabilities ||
+            !store.assets ||
+            !store.workspace
+          ) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const built = await buildHoldingCreationProposal(
+            {
+              agentView: store.agentView,
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+              workspace: store.workspace,
+            },
+            args,
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };

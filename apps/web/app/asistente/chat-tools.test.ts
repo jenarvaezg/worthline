@@ -424,6 +424,49 @@ describe("createChatTools · propose_reconstruction (#1053)", () => {
   });
 });
 
+describe("createChatTools · propose_holding (#1105)", () => {
+  it("builds an alta proposal and persists a holding_creation draft", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+    });
+
+    const result = await tools["propose_holding"]?.execute?.(
+      {
+        currentValueMinor: 2_500_00,
+        family: "stored",
+        instrument: "current_account",
+        name: "Cuenta BBVA",
+      },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      family: "stored",
+      holding: { name: "Cuenta BBVA" },
+      proposalType: "holding_creation",
+    });
+    const proposalId = (result as { draft: { proposalId: string } }).draft.proposalId;
+    expect(await store.assistantProposals.read(proposalId)).toMatchObject({
+      kind: "holding_creation",
+      status: "draft",
+    });
+    store.close();
+  });
+});
+
 describe("createChatTools · raise_maintainer_alert (#1050)", () => {
   it("reports the alert as unavailable when no raise callback is bound", async () => {
     const store = await seededStore();
