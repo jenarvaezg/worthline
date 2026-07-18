@@ -152,6 +152,9 @@ const KEY_EXPORTS = [
   "compareGrowthToBenchmark",
   "holdingBenchmarkComparison",
   "resolveBenchmarkSeriesId",
+  // holding-matcher (#1104)
+  "matchHoldings",
+  "reassignToCandidate",
 ] as const;
 
 describe("@worthline/domain barrel", () => {

@@ -455,6 +455,21 @@ export {
   holdingBenchmarkComparison,
   holdingTwrIndexSeries,
 } from "./holding-benchmark-comparison";
+export type {
+  MatchCandidate,
+  MatchCandidateRow,
+  MatchConfidence,
+  MatchDecision,
+  MatchKey,
+  MatchPortfolioHolding,
+  RowMatch,
+} from "./holding-matcher";
+export {
+  discardRow,
+  matchHoldings,
+  reassignToCandidate,
+  reassignToNew,
+} from "./holding-matcher";
 export {
   isValueUpdateEligible,
   valuationMethodOfAsset,
