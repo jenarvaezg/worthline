@@ -11,6 +11,7 @@ import type {
   ManualAsset,
   ManualValuePoint,
   NetWorthSnapshot,
+  OwnershipShare,
   Payout,
   PayoutSchedule,
   PriceFreshnessState,
@@ -35,7 +36,7 @@ import type {
 import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
-import type { StoreContext, StoreDb } from "./store-context";
+import { groupOwnershipByOwner, type StoreContext, type StoreDb } from "./store-context";
 
 /**
  * A connected source as the agent view sees it — identity, label, freshness, and
@@ -89,6 +90,12 @@ export interface AgentViewTrashedHolding {
   valueMinor: number | null;
   /** Member ids with an ownership share in this holding. */
   ownerMemberIds: string[];
+  /**
+   * The ownership split (member id + bps). Carried alongside `ownerMemberIds` so
+   * the assistant restauración proposal can weight the net-worth impact by the
+   * holding's owned share, exactly as the household figure does (PRD #1103 S3).
+   */
+  ownership: OwnershipShare[];
 }
 
 /**
@@ -391,24 +398,35 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
     .where(isNotNull(liabilities.deletedAt))
     .all();
 
-  const assetOwners = groupOwnerMemberIds(
+  const assetOwners = groupOwnershipByOwner(
     await db
       .select({
         holdingId: assetOwnerships.assetId,
         memberId: assetOwnerships.memberId,
+        shareBps: assetOwnerships.shareBps,
       })
       .from(assetOwnerships)
       .all(),
+    (row) => row.holdingId,
   );
-  const liabilityOwners = groupOwnerMemberIds(
+  const liabilityOwners = groupOwnershipByOwner(
     await db
       .select({
         holdingId: liabilityOwnerships.liabilityId,
         memberId: liabilityOwnerships.memberId,
+        shareBps: liabilityOwnerships.shareBps,
       })
       .from(liabilityOwnerships)
       .all(),
+    (row) => row.holdingId,
   );
+
+  const trashedOf = (
+    ownership: OwnershipShare[],
+  ): { ownerMemberIds: string[]; ownership: OwnershipShare[] } => ({
+    ownerMemberIds: ownership.map((share) => share.memberId),
+    ownership,
+  });
 
   return [
     ...assetRows.map((row) => ({
@@ -417,8 +435,8 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
       instrument: row.instrument,
       kind: "asset" as const,
       name: row.name,
-      ownerMemberIds: assetOwners.get(row.id) ?? [],
       valueMinor: row.currentValueMinor,
+      ...trashedOf(assetOwners.get(row.id) ?? []),
     })),
     ...liabilityRows.map((row) => ({
       deletedAt: row.deletedAt,
@@ -426,24 +444,8 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
       instrument: row.instrument,
       kind: "liability" as const,
       name: row.name,
-      ownerMemberIds: liabilityOwners.get(row.id) ?? [],
       valueMinor: row.currentBalanceMinor,
+      ...trashedOf(liabilityOwners.get(row.id) ?? []),
     })),
   ];
-}
-
-/** Group flat `{ holdingId, memberId }` ownership rows into member ids per holding. */
-function groupOwnerMemberIds(
-  rows: { holdingId: string; memberId: string }[],
-): Map<string, string[]> {
-  const byHolding = new Map<string, string[]>();
-  for (const row of rows) {
-    const existing = byHolding.get(row.holdingId);
-    if (existing) {
-      existing.push(row.memberId);
-    } else {
-      byHolding.set(row.holdingId, [row.memberId]);
-    }
-  }
-  return byHolding;
 }

@@ -926,7 +926,9 @@ export type AssistantProposalKind =
   | "property_valuation_anchor"
   | "mixed_document_import"
   | "correction"
-  | "holding_creation";
+  | "holding_creation"
+  | "holding_removal"
+  | "holding_restoration";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 

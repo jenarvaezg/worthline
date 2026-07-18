@@ -155,9 +155,11 @@ export { dailyCaptureJobOutcome, runDailyCapture } from "./run-daily-capture";
 export type {
   ApplyStatementImportParams,
   AuditLogEntry,
+  BatchTrashResult,
   BootstrapHealthcheckOptions,
   CreateHousingHoldingCommand,
   DatabaseTarget,
+  HoldingTrashTarget,
   TrashView,
   WorthlineStore,
   WorthlineStoreOptions,
@@ -182,8 +184,14 @@ import {
   createStoreContext,
   hardDeleteAssetTx,
   hardDeleteLiabilityTx,
+  type StoreContext,
 } from "./store-context";
-import type { WorthlineStore, WorthlineStoreOptions } from "./store-types";
+import type {
+  BatchTrashResult,
+  HoldingTrashTarget,
+  WorthlineStore,
+  WorthlineStoreOptions,
+} from "./store-types";
 import { createWorkspaceStore, readWorkspace } from "./workspace-store";
 
 export type {
@@ -364,6 +372,53 @@ export async function createStoreFromSqlite(client: Client): Promise<WorthlineSt
  * still call it directly today; PRD #998's later slices route the production
  * ones through the port's `system` principal.
  */
+/**
+ * Sentinel thrown to unwind {@link runBatchTrash}'s transaction when one target
+ * fails, so the whole baja/restauración batch rolls back atomically. Caught at
+ * the seam boundary and turned into a `{ ok: false }` result — never leaks.
+ */
+class BatchTrashAbort extends Error {
+  constructor(
+    readonly holdingId: string,
+    readonly reason: "not_found" | "not_in_trash",
+  ) {
+    super("batch trash aborted");
+    this.name = "BatchTrashAbort";
+  }
+}
+
+/**
+ * Apply a per-holding trash mutation across N targets inside ONE transaction
+ * (PRD #1103 S3, #1106). Mirrors {@link emptyTrash}: it composes the existing
+ * soft-delete / restore seams so a mid-batch failure (a seam returning 0 rows)
+ * throws the sentinel, rolls the whole unit back, and surfaces as a typed
+ * `{ ok: false }` — nothing half-applies.
+ */
+async function runBatchTrash(
+  ctx: StoreContext,
+  targets: readonly HoldingTrashTarget[],
+  reason: "not_found" | "not_in_trash",
+  apply: (target: HoldingTrashTarget) => Promise<number>,
+): Promise<BatchTrashResult> {
+  try {
+    const count = await ctx.transaction(async () => {
+      let touched = 0;
+      for (const target of targets) {
+        const affected = await apply(target);
+        if (affected === 0) throw new BatchTrashAbort(target.holdingId, reason);
+        touched += affected;
+      }
+      return touched;
+    });
+    return { count, ok: true };
+  } catch (error) {
+    if (error instanceof BatchTrashAbort) {
+      return { holdingId: error.holdingId, ok: false, reason: error.reason };
+    }
+    throw error;
+  }
+}
+
 export async function createWorthlineStoreUnsafe(
   options: WorthlineStoreOptions = {},
 ): Promise<WorthlineStore> {
@@ -600,6 +655,18 @@ async function buildStore(
 
         return { assets: assetsRemoved, liabilities: liabilitiesRemoved };
       }),
+    batchSoftDeleteHoldings: (targets, deletedAt) =>
+      runBatchTrash(ctx, targets, "not_found", (target) =>
+        target.kind === "asset"
+          ? assetStore.softDeleteAsset(target.holdingId, deletedAt)
+          : liabilityStore.softDeleteLiability(target.holdingId, deletedAt),
+      ),
+    batchRestoreHoldings: (targets) =>
+      runBatchTrash(ctx, targets, "not_in_trash", (target) =>
+        target.kind === "asset"
+          ? assetStore.restoreAsset(target.holdingId)
+          : liabilityStore.restoreLiability(target.holdingId),
+      ),
     readAuditLog: async (filter) => {
       const { db } = ctx;
       const rows = filter?.entityId

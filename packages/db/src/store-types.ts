@@ -113,6 +113,21 @@ export interface TrashView {
   liabilities: Array<{ id: string; name: string }>;
 }
 
+/** One holding a batch baja/restauración targets (PRD #1103 S3, #1106). */
+export interface HoldingTrashTarget {
+  holdingId: string;
+  kind: "asset" | "liability";
+}
+
+/**
+ * The atomic outcome of a batch baja/restauración (PRD #1103 S3, #1106). Success
+ * carries the number of rows touched; a failure names the offending holding and
+ * why it aborted, with the whole batch already rolled back.
+ */
+export type BatchTrashResult =
+  | { ok: true; count: number }
+  | { ok: false; reason: "not_found" | "not_in_trash"; holdingId: string };
+
 /**
  * The full real_estate creation command for `store.command.createHousingHolding`.
  * The caller resolves the anchor ids (a determinism source — `createStableId`/seed
@@ -209,6 +224,28 @@ interface LegacyWorthlineStore {
   readTrash: () => Promise<TrashView>;
   /** Hard-delete every trashed holding atomically. Returns how many of each kind were removed. */
   emptyTrash: () => Promise<{ assets: number; liabilities: number }>;
+  /**
+   * Soft-delete N holdings to the trash **atomically** (PRD #1103 S3, #1106) —
+   * the assistant «baja» batch. Composes the existing `softDeleteAsset` /
+   * `softDeleteLiability` seams inside one transaction (like {@link emptyTrash}),
+   * so a write that fails midway rolls the whole batch back and nothing persists.
+   * Returns `{ ok: true, count }` on success, or `{ ok: false, reason:
+   * "not_found", holdingId }` — rolled back — when a target no longer exists.
+   */
+  batchSoftDeleteHoldings: (
+    targets: readonly HoldingTrashTarget[],
+    deletedAt: string,
+  ) => Promise<BatchTrashResult>;
+  /**
+   * Restore N trashed holdings **atomically** (PRD #1103 S3, #1106) — the mirror
+   * of {@link batchSoftDeleteHoldings}. Composes `restoreAsset` / `restoreLiability`
+   * inside one transaction. A target that is **not in the trash** is a validity
+   * failure: the batch rolls back and returns `{ ok: false, reason: "not_in_trash",
+   * holdingId }`, so a stale restore never half-applies.
+   */
+  batchRestoreHoldings: (
+    targets: readonly HoldingTrashTarget[],
+  ) => Promise<BatchTrashResult>;
   readAuditLog: (filter?: { entityId?: string }) => Promise<AuditLogEntry[]>;
   readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => Promise<void>;

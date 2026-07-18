@@ -8227,6 +8227,14 @@ td.rowActions > * {
   font-size: 0.88rem;
   color: var(--green);
 }
+/* Informative proposal warnings (aviso): oro, never red — red is movement/error,
+   oro is caution (design-system §color). Used by the baja/restauración warnings
+   (#1106): orphan debt↔asset pair, shared ownership, restore duplicate. */
+.assistantWarning {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--gold);
+}
 
 /* La propuesta es una entrada de papel abierta por regla gruesa, no una
    tarjeta con borde perimetral, radio y fondo (#911, «sin heredar tarjeta»).

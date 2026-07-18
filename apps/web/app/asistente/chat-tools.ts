@@ -43,6 +43,10 @@ import {
   type HoldingCreationArgs,
 } from "@web/asistente/holding-creation-proposals";
 import {
+  buildHoldingRemovalProposal,
+  buildHoldingRestorationProposal,
+} from "@web/asistente/holding-trash-proposals";
+import {
   buildMaintainerAlertPayload,
   isMaintainerAlertCategory,
   type MaintainerAlertDeclaredFigure,
@@ -457,6 +461,19 @@ const HOLDING_CREATION_PROPOSAL_SCHEMA = jsonSchema<HoldingCreationArgs>({
     pricePerUnit: { type: "string" },
   },
   required: ["family", "name", "instrument"],
+  additionalProperties: false,
+});
+
+const HOLDING_TRASH_PROPOSAL_SCHEMA = jsonSchema<{
+  holdingIds?: string[];
+  summary?: string;
+}>({
+  type: "object",
+  properties: {
+    holdingIds: { type: "array", items: { type: "string" } },
+    summary: { type: "string" },
+  },
+  required: ["holdingIds"],
   additionalProperties: false,
 });
 
@@ -1354,6 +1371,42 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               workspace: store.workspace,
             },
             args,
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_holding_removal: tool({
+      description:
+        "Prepara una propuesta de BAJA reversible (soft delete a la papelera) de UNO O VARIOS holdings manuales, por sus ids públicos wl_hld_… ya leídos. Es el caso «quita/borra estos activos». Se aplica en lote atómico tras confirmar; nada se pierde (se puede restaurar). " +
+        "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
+      inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const built = await buildHoldingRemovalProposal(
+            { agentView: store.agentView, assistantProposals: store.assistantProposals },
+            args.holdingIds ?? [],
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_holding_restoration: tool({
+      description:
+        "Prepara una propuesta de RESTAURACIÓN (espejo de la baja) de UNO O VARIOS holdings que están EN LA PAPELERA, por sus ids públicos wl_hld_… (los que devuelve get_trash_summary). Se aplica en lote atómico tras confirmar. " +
+        "Restaurar un holding que NO está en la papelera es un error; primero comprueba la papelera con get_trash_summary.",
+      inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (!store.assistantProposals) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const built = await buildHoldingRestorationProposal(
+            { agentView: store.agentView, assistantProposals: store.assistantProposals },
+            args.holdingIds ?? [],
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
