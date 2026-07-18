@@ -1,6 +1,10 @@
 import type { AttachmentExtractionResult } from "@web/asistente/attachment-extraction-contract";
 
-import type { BalanceSeriesGoldenExpected, GoldenExpected } from "./manifest";
+import type {
+  BalanceSeriesGoldenExpected,
+  GoldenExpected,
+  PositionsMovementsGoldenExpected,
+} from "./manifest";
 
 export interface ExtractorCheck {
   name: string;
@@ -98,6 +102,85 @@ export function gradeExtractionAgainstExpected(
         ),
       ),
   });
+
+  const warningIncludes = expected.warningIncludes ?? [];
+  checks.push({
+    name: "warnings visibles",
+    pass:
+      warningIncludes.length === 0 ||
+      warningIncludes.every((fragment) => warningMatches(fragment, data.warnings)),
+  });
+
+  return checks;
+}
+
+function holdingMatches(
+  actual: {
+    name: string;
+    type: string;
+    isin?: string | undefined;
+    value: number;
+    currency: string;
+    fidelity: string;
+  },
+  expected: PositionsMovementsGoldenExpected["holdings"][number],
+): boolean {
+  return (
+    normalizeText(actual.name) === normalizeText(expected.name) &&
+    normalizeText(actual.type) === normalizeText(expected.type) &&
+    actual.isin === expected.isin &&
+    numbersClose(actual.value, expected.value) &&
+    actual.currency === expected.currency &&
+    actual.fidelity === expected.fidelity
+  );
+}
+
+function holdingsMatch(
+  actual: PositionsMovementsGoldenExpected["holdings"],
+  expected: PositionsMovementsGoldenExpected["holdings"],
+): boolean {
+  if (actual.length !== expected.length) return false;
+  const remaining = [...actual];
+  return expected.every((expectedHolding) => {
+    const index = remaining.findIndex((candidate) =>
+      holdingMatches(candidate, expectedHolding),
+    );
+    if (index === -1) return false;
+    remaining.splice(index, 1);
+    return true;
+  });
+}
+
+/**
+ * Grade a positions + movements result against its golden expected portfolio.
+ * Beyond field accuracy it grades the honest **fidelity tier** of each holding —
+ * the mark the reconcile surface paints — and the movement count and warnings.
+ */
+export function gradePositionsMovementsAgainstExpected(
+  result: AttachmentExtractionResult,
+  expected: PositionsMovementsGoldenExpected,
+): ExtractorCheck[] {
+  const checks: ExtractorCheck[] = [
+    { name: "extracción válida", pass: result.status === "valid" },
+  ];
+  if (result.status !== "valid") return checks;
+  if (result.data.documentType !== "positions_movements") {
+    checks.push({ name: "documento de posiciones + movimientos", pass: false });
+    return checks;
+  }
+  const data = result.data;
+
+  checks.push({
+    name: "holdings y tier coinciden",
+    pass: holdingsMatch(data.holdings, expected.holdings),
+  });
+
+  if (expected.movementCount !== undefined) {
+    checks.push({
+      name: "movimientos coinciden",
+      pass: data.movements.length === expected.movementCount,
+    });
+  }
 
   const warningIncludes = expected.warningIncludes ?? [];
   checks.push({

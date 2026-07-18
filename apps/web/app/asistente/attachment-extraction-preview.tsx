@@ -4,6 +4,8 @@ import type { AttachmentPreviewData } from "./attachment-chat";
 import type {
   ExtractedBalanceSeriesDocument,
   ExtractedPositionsDocument,
+  ExtractedPositionsMovementsDocument,
+  HoldingFidelity,
 } from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
 
@@ -115,6 +117,57 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
   );
 }
 
+const FIDELITY_LABEL: Record<HoldingFidelity, string> = {
+  declared_cost: "Coste declarado",
+  movements: "Coste real",
+  value_only: "Sin coste real",
+};
+
+function PositionsMovementsPreview({
+  data,
+}: {
+  data: ExtractedPositionsMovementsDocument;
+}) {
+  return (
+    <>
+      <div className="assistantAttachmentTableScroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Posición</th>
+              <th scope="col">Tipo</th>
+              <th scope="col">Valor</th>
+              <th scope="col">Divisa</th>
+              <th scope="col">Fidelidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.holdings.map((holding, index) => (
+              <tr key={`${holding.name}-${index}`}>
+                <th scope="row">
+                  {holding.name}
+                  {holding.uncertain ? <em>Revisar lectura</em> : null}
+                </th>
+                <td>{holding.type}</td>
+                <td>{formatAmount(holding.value, holding.currency)}</td>
+                <td>{holding.currency}</td>
+                <td>{FIDELITY_LABEL[holding.fidelity]}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="assistantAttachmentBridgeHint">
+        {data.movements.length > 0
+          ? `Leídas ${data.holdings.length} posiciones y ${data.movements.length} movimientos. `
+          : `Leídas ${data.holdings.length} posiciones. `}
+        «Sin coste real» marca las que sólo traen su valor actual. Revísalas: nada se
+        guarda desde el chat.
+      </p>
+    </>
+  );
+}
+
 export default function AttachmentExtractionPreview({
   preview,
 }: {
@@ -140,8 +193,10 @@ export default function AttachmentExtractionPreview({
       <strong>Lectura de {preview.fileName}</strong>
       {data.documentType === "positions" ? (
         <PositionsPreview data={data} />
-      ) : (
+      ) : data.documentType === "balance_series" ? (
         <BalanceSeriesPreview data={data} />
+      ) : (
+        <PositionsMovementsPreview data={data} />
       )}
       {data.warnings.length > 0 ? (
         <div className="assistantAttachmentWarnings">
