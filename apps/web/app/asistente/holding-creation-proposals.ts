@@ -10,9 +10,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { createAgentViewCatalog } from "@web/agent-view/catalog";
-import { isAgentViewErrorEnvelope, runCatalogRead } from "@web/agent-view/read-backend";
-import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { resolveOwnershipSplit } from "@web/intake";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import type {
@@ -36,6 +33,8 @@ import {
   type HoldingCreationDuplicate,
   type HoldingCreationProposal,
 } from "./holding-creation-proposal-contract";
+import { instrumentLabel } from "./instrument-labels";
+import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 
 type ProposalStore = Pick<WorthlineStore, "assets" | "liabilities" | "workspace"> & {
   assistantProposals: AssistantProposalStore;
@@ -70,25 +69,6 @@ export interface HoldingCreationArgs {
 type BuildResult =
   | { ok: true; proposal: HoldingCreationProposal }
   | { ok: false; error: string };
-
-/** es-ES label for an instrument, for the card's "name · label · detail" row. */
-const INSTRUMENT_LABEL: Partial<Record<Instrument, string>> = {
-  credit_card: "Tarjeta de crédito",
-  crypto: "Cripto",
-  current_account: "Cuenta corriente",
-  etf: "ETF",
-  fund: "Fondo",
-  index: "Índice",
-  loan: "Préstamo",
-  mortgage: "Hipoteca",
-  other: "Otro bien",
-  pension_plan: "Plan de pensiones",
-  precious_metal: "Metal precioso",
-  property: "Inmueble",
-  stock: "Acción",
-  term_deposit: "Depósito a plazo",
-  vehicle: "Vehículo",
-};
 
 /** Which alta family an instrument belongs to. `coin_collection` is OUT (#1105). */
 const FAMILY_BY_INSTRUMENT: Partial<Record<Instrument, Family>> = {
@@ -291,30 +271,6 @@ function duplicateOf(
   };
 }
 
-/**
- * The scope net worth before the alta (household by default), or `null` when the
- * canonical read has no scope or errors. `null` (unavailable) is distinct from an
- * empty workspace's real 0 €: the card must not fabricate a net-worth figure it
- * never read (ADR 0048), so a failed read degrades to "impacto no disponible".
- */
-async function readNetWorthBeforeMinor(
-  store: ProposalStore,
-  today: string,
-): Promise<number | null> {
-  const scopes = await listAgentViewScopes(store.agentView);
-  const scopeId = (scopes.find((scope) => scope.isDefault) ?? scopes[0])?.id;
-  if (!scopeId) return null;
-  const context = await runCatalogRead(
-    createAgentViewCatalog().get_financial_context,
-    { scopeId, holdingLimit: 1 },
-    store.agentView,
-    { asOf: today },
-  );
-  return isAgentViewErrorEnvelope(context)
-    ? null
-    : context.data.summary.netWorth.amountMinor;
-}
-
 /** The formatted detail line (value / balance) the card shows next to the name. */
 function detailOf(plan: HoldingCreationPlan): string {
   const euros = (minor: number): string =>
@@ -356,7 +312,7 @@ export async function buildHoldingCreationProposal(
   const holdings = await projectHoldings(store);
   const duplicate = duplicateOf(plan, holdings);
 
-  const netWorthBeforeMinor = await readNetWorthBeforeMinor(store, today);
+  const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
   const impact = holdingCreationImpact(netWorthBeforeMinor, plan);
 
   const proposal = await store.assistantProposals.create({ kind: "holding_creation" });
@@ -377,7 +333,7 @@ export async function buildHoldingCreationProposal(
       folio: HOLDING_CREATION_FOLIO,
       holding: {
         detail: detailOf(plan),
-        instrumentLabel: INSTRUMENT_LABEL[plan.instrument] ?? plan.instrument,
+        instrumentLabel: instrumentLabel(plan.instrument, plan.instrument),
         name: plan.name,
       },
       impact,

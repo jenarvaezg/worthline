@@ -55,12 +55,30 @@ export interface HoldingCreationFact {
   row: HoldingCreationPlan;
 }
 
+/**
+ * One holding targeted by a baja (soft delete) or restauración proposal (#1106).
+ * The batch carries one fact per holding; the confirm reads them back into
+ * `{ holdingId, kind }` targets for the atomic `batchSoftDeleteHoldings` /
+ * `batchRestoreHoldings` seams. `action` distinguishes the two mirror kinds so a
+ * single fact shape serves both, and `name` is kept for the audit/echo only.
+ */
+export interface HoldingTrashActionFact {
+  kind: "holding_trash_action";
+  row: {
+    action: "remove" | "restore";
+    holdingKind: "asset" | "liability";
+    holdingId: string;
+    name: string;
+  };
+}
+
 export type AssistantProposalFact =
   | StatementOperationFact
   | DebtBalanceObservationFact
   | PropertyValuationAnchorFact
   | HoldingCorrectionFact
-  | HoldingCreationFact;
+  | HoldingCreationFact
+  | HoldingTrashActionFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -114,7 +132,9 @@ async function createProposal(
     input.kind !== "property_valuation_anchor" &&
     input.kind !== "mixed_document_import" &&
     input.kind !== "correction" &&
-    input.kind !== "holding_creation"
+    input.kind !== "holding_creation" &&
+    input.kind !== "holding_removal" &&
+    input.kind !== "holding_restoration"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
@@ -138,6 +158,17 @@ function normalizeFact(
   }
   if (fact.kind === "holding_creation" && "row" in fact) {
     return { kind: fact.kind, row: fact.row };
+  }
+  if (fact.kind === "holding_trash_action" && "row" in fact) {
+    return {
+      kind: fact.kind,
+      row: {
+        action: fact.row.action,
+        holdingId: fact.row.holdingId,
+        holdingKind: fact.row.holdingKind,
+        name: fact.row.name,
+      },
+    };
   }
   if (fact.kind === "property_valuation_anchor" && "row" in fact) {
     return {
@@ -279,7 +310,8 @@ async function readProposal(
           fact.kind !== "debt_balance_observation" &&
           fact.kind !== "property_valuation_anchor" &&
           fact.kind !== "holding_correction" &&
-          fact.kind !== "holding_creation"
+          fact.kind !== "holding_creation" &&
+          fact.kind !== "holding_trash_action"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
         }
@@ -293,6 +325,12 @@ async function readProposal(
           return {
             kind: fact.kind,
             row: JSON.parse(fact.payloadJson) as HoldingCreationFact["row"],
+          };
+        }
+        if (fact.kind === "holding_trash_action") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as HoldingTrashActionFact["row"],
           };
         }
         if (fact.kind === "debt_balance_observation") {

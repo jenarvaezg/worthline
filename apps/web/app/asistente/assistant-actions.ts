@@ -10,6 +10,10 @@ import {
   type HoldingCreationProposal,
   parseHoldingCreationProposalDraft,
 } from "./holding-creation-proposal-contract";
+import {
+  type HoldingTrashProposal,
+  parseHoldingTrashProposalDraft,
+} from "./holding-trash-proposal-contract";
 import type {
   MixedDocumentProposal,
   MixedDocumentSection,
@@ -335,6 +339,35 @@ export function parseHoldingCreationProposal(
     return null;
   }
   return raw as unknown as HoldingCreationProposal;
+}
+
+/**
+ * Trust-boundary parser for a baja/restauración proposal (#1106) coming back off
+ * the tool stream. Validates the discriminant, the draft handle, the impact
+ * triple (before/after nullable when the read degraded, ADR 0048) and the three
+ * arrays the card renders. `proposalType` pins which mirror kind is expected.
+ */
+export function parseHoldingTrashProposal(
+  raw: unknown,
+  proposalType: "holding_removal" | "holding_restoration",
+): HoldingTrashProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== proposalType) return null;
+  const draft = parseHoldingTrashProposalDraft(raw.draft);
+  if (
+    draft === null ||
+    typeof raw.folio !== "string" ||
+    (raw.operation !== "remove" && raw.operation !== "restore") ||
+    !Array.isArray(raw.lines) ||
+    !Array.isArray(raw.orphanPairs) ||
+    !Array.isArray(raw.duplicates) ||
+    !isRecord(raw.impact) ||
+    !(raw.impact.beforeMinor === null || typeof raw.impact.beforeMinor === "number") ||
+    !(raw.impact.afterMinor === null || typeof raw.impact.afterMinor === "number") ||
+    typeof raw.impact.deltaMinor !== "number"
+  ) {
+    return null;
+  }
+  return raw as unknown as HoldingTrashProposal;
 }
 
 export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {

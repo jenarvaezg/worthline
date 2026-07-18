@@ -467,6 +467,56 @@ describe("createChatTools · propose_holding (#1105)", () => {
   });
 });
 
+describe("createChatTools · propose_holding_removal (#1106)", () => {
+  it("builds a baja proposal and persists a holding_removal draft", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 2_500_00,
+      id: "a1",
+      instrument: "current_account",
+      liquidityTier: "cash",
+      name: "Cuenta BBVA",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+    const publicId = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding" && row.entityId === "a1",
+    )!.publicId;
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+    });
+
+    const result = await tools["propose_holding_removal"]?.execute?.(
+      { holdingIds: [publicId] },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      operation: "remove",
+      proposalType: "holding_removal",
+    });
+    const proposalId = (result as { draft: { proposalId: string } }).draft.proposalId;
+    expect(await store.assistantProposals.read(proposalId)).toMatchObject({
+      kind: "holding_removal",
+      status: "draft",
+    });
+    store.close();
+  });
+});
+
 describe("createChatTools · raise_maintainer_alert (#1050)", () => {
   it("reports the alert as unavailable when no raise callback is bound", async () => {
     const store = await seededStore();
