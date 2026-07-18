@@ -3,11 +3,11 @@
 import {
   isClock,
   runActionWithStore,
-  runDatedFactAction,
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { formAction } from "@web/form-action";
 import {
   appendParam,
   createStableId,
@@ -112,105 +112,13 @@ function mapOwnershipSplitCommandResult(
 }
 
 /**
- * The shared envelope for a **dated-fact** server action (#1028). Every such
- * action repeated the same shell — lift the test seams, guard the demo write,
- * parse the entity id(s), resolve `today` off the clock, parse the body, run the
- * command behind the dated-fact store transaction, then redirect on success or
- * failure. `datedFactAction` owns that shell so each action supplies ONLY what
- * varies: which ids it needs, how it parses the body, the command it runs, and
- * its own success/error redirects.
- *
- * Two invariants live here and so can never be forgotten in a new action: the
- * demo-write guard, and the duplicate-date translation (`runDatedFactAction`,
- * #692) that turns a UNIQUE-index collision into a friendly `{ ok: false }`
- * instead of a raw 500.
+ * The dated-fact server actions below (#1028) were the embryo of the `formAction`
+ * combinator, now lifted to its own module (PRD #1112 S1, `@web/form-action`).
+ * They keep calling it under the `datedFactAction` name via this bridge alias —
+ * the expand-contract step: the combinator coexists with these call sites until a
+ * later slice renames each to `formAction` directly. No behavior changes.
  */
-type DatedFactParse<P> = { ok: true; value: P } | { ok: false; redirect: string };
-
-/** The extra required ids, keyed by their form field name (e.g. `extra.planId`). */
-type DatedFactExtraIds = Readonly<Record<string, string>>;
-
-type DatedFactRedirectInput = {
-  /** The primary entity id (`id`) — always present past the missing-id guard. */
-  id: string;
-  /** Extra required ids, keyed by field name; all present past the guard. */
-  extra: DatedFactExtraIds;
-  formData: FormData;
-};
-
-type DatedFactActionConfig<P> = {
-  /** Extra id fields required beyond `id` (e.g. `["planId", "revisionId"]`). */
-  extraIds?: readonly string[];
-  /** Message shown (redirecting to /patrimonio) when any required id is absent. */
-  missingId: string;
-  /** Parse + validate the body; on failure carries the redirect URL to send. */
-  parse: (input: {
-    formData: FormData;
-    id: string;
-    extra: DatedFactExtraIds;
-    today: string;
-  }) => DatedFactParse<P>;
-  /** The guarded command, run inside the dated-fact store transaction. */
-  run: (
-    store: WorthlineStore,
-    ctx: {
-      formData: FormData;
-      id: string;
-      extra: DatedFactExtraIds;
-      today: string;
-      parsed: P;
-    },
-  ) => Promise<{ ok: boolean; error?: string }>;
-  /** Redirect URL when `run` returns `{ ok: false }`. */
-  onError: (input: DatedFactRedirectInput & { error: string }) => string;
-  /** Redirect URL on success. */
-  onSuccess: (input: DatedFactRedirectInput) => string;
-};
-
-function datedFactAction<P>(
-  config: DatedFactActionConfig<P>,
-): (formData: FormData, ..._testArgs: unknown[]) => Promise<never> {
-  return async (formData, ..._testArgs) => {
-    const _store = testStoreFromActionArgs(_testArgs);
-    const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-    await guardDemoWrite(baseUrl(formData));
-
-    const primaryId = parseEntityId(formData);
-    // Parse every extra id keyed by its field name so consumers read `extra.planId`
-    // instead of a positional index — a reordered `extraIds` can't silently break them.
-    const extra: Record<string, string> = {};
-    let missingExtra = false;
-    for (const field of config.extraIds ?? []) {
-      const value = parseEntityId(formData, field);
-      if (!value) {
-        missingExtra = true;
-        break;
-      }
-      extra[field] = value;
-    }
-    if (!primaryId || missingExtra) {
-      redirect(errorRedirectUrl("/patrimonio", { message: config.missingId }));
-    }
-    const id = primaryId;
-    const today = _clock.today();
-
-    const parsed = config.parse({ formData, id, extra, today });
-    if (!parsed.ok) {
-      redirect(parsed.redirect);
-    }
-
-    const result = await runDatedFactAction(
-      (store) => config.run(store, { formData, id, extra, today, parsed: parsed.value }),
-      _store,
-    );
-
-    if (!result.ok) {
-      redirect(config.onError({ id, extra, formData, error: result.error! }));
-    }
-
-    redirect(config.onSuccess({ id, extra, formData }));
-  };
-}
+const datedFactAction = formAction;
 
 export async function deleteAssetAction(
   formData: FormData,
@@ -1945,175 +1853,131 @@ export async function deleteEarlyRepaymentAction(
   redirect(successRedirectUrl(editUrl(id), "repayment_deleted", id));
 }
 
+/**
+ * Balance-anchor actions (revolving/informal debt, ADR 0020 / 0025) — the #1112
+ * S1 pilot. Migrated to the `formAction` combinator: the shell (test seams, demo
+ * guard, id parse, clock, store cycle, redirects) rides the combinator, and the
+ * duplicate-date invariant (`runDatedFactAction`, #692) now covers these three
+ * too — a same-(liability, date) re-submit surfaces a friendly error instead of
+ * a raw 500 from the UNIQUE index, exactly like every other dated fact.
+ */
 export async function addBalanceAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador de deuda no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: "balanceAnchor",
-        message: parsed.error,
-        values: preserveFields(formData, ["anchorDate", "balance"]),
-      }),
-    );
-  }
-
-  const result = await runActionWithStore(async (store) => {
-    const guard = await requireDebtModel(store, id, "anchorable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    // Persist + ripple ride the debt seam (ADR 0020), atomically; the from-date is
-    // the anchor's own date.
-    await store.command.addBalanceAnchor(parsed.command, { today });
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: result.error! }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "balance_anchor_added", id));
+  return formAction({
+    missingId: "Identificador de deuda no encontrado.",
+    parse: ({ formData, id, today }) => {
+      const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: "balanceAnchor",
+            message: parsed.error,
+            values: preserveFields(formData, ["anchorDate", "balance"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "anchorable");
+      if (!guard.ok) {
+        return guard;
+      }
+      // Persist + ripple ride the debt seam (ADR 0020), atomically; the from-date
+      // is the anchor's own date.
+      await store.command.addBalanceAnchor(parsed, { today });
+      return { ok: true as const };
+    },
+    onError: ({ id, error }) =>
+      errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: error }),
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_added", id),
+  })(formData, ..._testArgs);
 }
 
 export async function updateBalanceAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const anchorId = parseEntityId(formData, "anchorId");
-
-  if (!id || !anchorId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador del saldo no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
-
-  if (!parsed.ok) {
-    redirect(
+  return formAction({
+    extraIds: ["anchorId"],
+    missingId: "Identificador del saldo no encontrado.",
+    parse: ({ formData, id, extra, today }) => {
+      const parsed = parseBalanceAnchorStrict(formData, id, Date.now(), today);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(editUrl(id), {
+            formId: `balanceAnchor-${extra.anchorId}`,
+            message: parsed.error,
+            values: preserveFields(formData, ["anchorDate", "balance"]),
+          }),
+        };
+      }
+      return { ok: true, value: parsed.command };
+    },
+    run: async (store, { id, extra, today, parsed }) => {
+      const guard = await requireDebtModel(store, id, "anchorable");
+      if (!guard.ok) {
+        return guard;
+      }
+      // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
+      // anchor date behind the seam, ripples from the earlier of the old/new date,
+      // and guards the future. The action no longer pre-reads the row.
+      const changes = await store.command.updateBalanceAnchor(
+        extra.anchorId!,
+        {
+          anchorDate: parsed.anchorDate,
+          balanceMinor: parsed.balanceMinor,
+        },
+        { today },
+      );
+      if (changes === 0) {
+        return {
+          ok: false as const,
+          error: "No se encontró el saldo — puede que ya se haya eliminado.",
+        };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, extra, error }) =>
       errorRedirectUrl(editUrl(id), {
-        formId: `balanceAnchor-${anchorId}`,
-        message: parsed.error,
-        values: preserveFields(formData, ["anchorDate", "balance"]),
+        formId: `balanceAnchor-${extra.anchorId}`,
+        message: error,
       }),
-    );
-  }
-
-  const result = await runActionWithStore(async (store) => {
-    const guard = await requireDebtModel(store, id, "anchorable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    // Persist + ripple ride the debt seam (ADR 0020 / 0025): it reads the OLD
-    // anchor date behind the seam, ripples from the earlier of the old/new date,
-    // and guards the future. The action no longer pre-reads the row.
-    const changes = await store.command.updateBalanceAnchor(
-      anchorId,
-      {
-        anchorDate: parsed.command.anchorDate,
-        balanceMinor: parsed.command.balanceMinor,
-      },
-      { today },
-    );
-
-    if (changes === 0) {
-      return {
-        ok: false as const,
-        error: "No se encontró el saldo — puede que ya se haya eliminado.",
-      };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(
-      errorRedirectUrl(editUrl(id), {
-        formId: `balanceAnchor-${anchorId}`,
-        message: result.error!,
-      }),
-    );
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "balance_anchor_saved", id));
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_saved", id),
+  })(formData, ..._testArgs);
 }
 
 export async function deleteBalanceAnchorAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(baseUrl(formData));
-  const id = parseEntityId(formData);
-  const anchorId = parseEntityId(formData, "anchorId");
-
-  if (!id || !anchorId) {
-    redirect(
-      errorRedirectUrl("/patrimonio", {
-        message: "Identificador del saldo no encontrado.",
-      }),
-    );
-  }
-
-  const today = _clock.today();
-  const result = await runActionWithStore(async (store) => {
-    const guard = await requireDebtModel(store, id, "anchorable");
-
-    if (!guard.ok) {
-      return guard;
-    }
-
-    // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
-    // anchor's date behind the seam, recalculates from it, and guards the future.
-    // The action no longer pre-reads the row.
-    const changes = await store.command.deleteBalanceAnchor(anchorId, { today });
-
-    if (changes === 0) {
-      return {
-        ok: false as const,
-        error: "No se encontró el saldo — puede que ya se haya eliminado.",
-      };
-    }
-
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(editUrl(id), { message: result.error! }));
-  }
-
-  redirect(successRedirectUrl(editUrl(id), "balance_anchor_deleted", id));
+  return formAction<undefined>({
+    extraIds: ["anchorId"],
+    missingId: "Identificador del saldo no encontrado.",
+    // Delete carries no body — nothing to parse or validate.
+    parse: () => ({ ok: true, value: undefined }),
+    run: async (store, { id, extra, today }) => {
+      const guard = await requireDebtModel(store, id, "anchorable");
+      if (!guard.ok) {
+        return guard;
+      }
+      // Delete + ripple ride the debt seam (ADR 0020 / 0025): it reads the removed
+      // anchor's date behind the seam, recalculates from it, and guards the future.
+      // The action no longer pre-reads the row.
+      const changes = await store.command.deleteBalanceAnchor(extra.anchorId!, { today });
+      if (changes === 0) {
+        return {
+          ok: false as const,
+          error: "No se encontró el saldo — puede que ya se haya eliminado.",
+        };
+      }
+      return { ok: true as const };
+    },
+    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
+    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_deleted", id),
+  })(formData, ..._testArgs);
 }
