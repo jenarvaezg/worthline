@@ -263,6 +263,7 @@ export type {
   UpdateInvestmentOperationInput,
   ValueUpdateCommand,
 } from "./operations-store";
+export type { AssistantProposalKind } from "./schema";
 export type {
   PositionView,
   SaveSnapshotInput,

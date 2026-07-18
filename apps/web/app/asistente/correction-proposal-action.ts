@@ -1,41 +1,18 @@
 "use server";
 
-import {
-  isClock,
-  runActionWithStore,
-  testArgFromActionArgs,
-  testStoreFromActionArgs,
-} from "@web/action-store";
-import {
-  DEMO_DISABLED_MESSAGE,
-  IMPERSONATION_READONLY_MESSAGE,
-} from "@web/demo/write-guard";
 import { createStableId } from "@web/intake";
 import { parseBalanceHistoryRows } from "@web/patrimonio/import-balance-history";
-import { readStoreTarget } from "@web/read-store-target";
 import type { WorthlineStore } from "@web/store";
 import type { AssistantProposal } from "@worthline/db";
-import { systemClock } from "@worthline/domain";
 
 import { projectBalanceHistoryProposal } from "./balance-history-proposals";
 import { parseCorrectionProposalDraft } from "./correction-proposal-contract";
-
-type ActionResult =
-  | { status: "applied" }
-  | { status: "discarded" }
-  | { status: "blocked"; message: string }
-  | { status: "error"; message: string };
-
-/** The demo / impersonation write barrier shared by both actions. */
-async function guardWrites(): Promise<{ status: "blocked"; message: string } | null> {
-  const target = await readStoreTarget();
-  if (target.kind === "demo")
-    return { message: DEMO_DISABLED_MESSAGE, status: "blocked" };
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    return { message: IMPERSONATION_READONLY_MESSAGE, status: "blocked" };
-  }
-  return null;
-}
+import {
+  PROPOSAL_UNRECOGNIZED_MESSAGE,
+  type ProposalApplyResult,
+  runProposalConfirm,
+  runProposalDiscard,
+} from "./proposal-action";
 
 /** The single correction plan a `correction` proposal carries. */
 function correctionPlanOf(proposal: AssistantProposal) {
@@ -69,40 +46,40 @@ function editedRowsFromArgs(args: unknown[]): unknown[] | undefined {
 export async function confirmCorrectionProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
-): Promise<ActionResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+) {
   const editedRows = editedRowsFromArgs(_testArgs);
-  const blocked = await guardWrites();
-  if (blocked) return blocked;
-  const draft = parseCorrectionProposalDraft(rawDraft);
-  if (!draft) return { message: "Propuesta no reconocida.", status: "error" };
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(draft.proposalId);
-    if (!proposal || proposal.kind !== "correction" || proposal.status !== "draft") {
-      return { message: "La propuesta ya no está disponible.", status: "error" };
-    }
-    const plan = correctionPlanOf(proposal);
-    const today = clock.today();
-    try {
-      if (plan?.mode === "reconstruct") {
-        return await applyReconstruction(store, proposal.id, plan, editedRows, today);
+  return runProposalConfirm({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "correction",
+    parse: (raw) => {
+      const draft = parseCorrectionProposalDraft(raw);
+      return draft
+        ? { ok: true, proposalId: draft.proposalId, data: undefined }
+        : { ok: false, message: PROPOSAL_UNRECOGNIZED_MESSAGE };
+    },
+    apply: async ({ store, proposal, today }) => {
+      const plan = correctionPlanOf(proposal);
+      try {
+        if (plan?.mode === "reconstruct") {
+          return await applyReconstruction(store, proposal.id, plan, editedRows, today);
+        }
+        await store.command.applyAssistantCorrectionProposal({
+          proposalId: proposal.id,
+          today,
+        });
+      } catch (error) {
+        // A stale draft (live data moved since drafting) or a domain violation
+        // rolls the whole apply back; surface it honestly, nothing persisted.
+        return {
+          status: "error",
+          message:
+            error instanceof Error ? error.message : "No se pudo aplicar la corrección.",
+        };
       }
-      await store.command.applyAssistantCorrectionProposal({
-        proposalId: proposal.id,
-        today,
-      });
-    } catch (error) {
-      // A stale draft (live data moved since drafting) or a domain violation
-      // rolls the whole apply back; surface it honestly, nothing persisted.
-      return {
-        message:
-          error instanceof Error ? error.message : "No se pudo aplicar la corrección.",
-        status: "error",
-      };
-    }
-    return { status: "applied" };
-  }, _store);
+      return { status: "applied" };
+    },
+  });
 }
 
 /**
@@ -117,7 +94,7 @@ async function applyReconstruction(
   plan: { liabilityId: string; observations: unknown },
   editedRows: unknown[] | undefined,
   today: string,
-): Promise<ActionResult> {
+): Promise<ProposalApplyResult> {
   const parsed = parseBalanceHistoryRows(editedRows ?? plan.observations);
   if (!parsed.ok) return { message: parsed.error, status: "error" };
   const projected = await projectBalanceHistoryProposal(
@@ -153,18 +130,16 @@ async function applyReconstruction(
 export async function discardCorrectionProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
-): Promise<ActionResult> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const blocked = await guardWrites();
-  if (blocked) return blocked;
-  const draft = parseCorrectionProposalDraft(rawDraft);
-  if (!draft) return { message: "Propuesta no reconocida.", status: "error" };
-  return runActionWithStore(async (store) => {
-    const proposal = await store.assistantProposals.read(draft.proposalId);
-    if (!proposal || proposal.kind !== "correction" || proposal.status !== "draft") {
-      return { message: "La propuesta ya no está disponible.", status: "error" };
-    }
-    await store.assistantProposals.markDiscarded(proposal.id);
-    return { status: "discarded" };
-  }, _store);
+) {
+  return runProposalDiscard({
+    rawDraft,
+    testArgs: _testArgs,
+    kind: "correction",
+    parse: (raw) => {
+      const draft = parseCorrectionProposalDraft(raw);
+      return draft
+        ? { ok: true, proposalId: draft.proposalId, data: undefined }
+        : { ok: false, message: PROPOSAL_UNRECOGNIZED_MESSAGE };
+    },
+  });
 }
