@@ -14,8 +14,6 @@ import type {
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import { executeCreateAmortizationPlanCommand } from "./index";
-
 const TODAY = "2026-07-08";
 
 async function debtsAt(
@@ -41,9 +39,8 @@ async function seedDriftedMortgage(): Promise<WorthlineStore> {
     type: "debt",
   });
   await store.liabilities.setDebtModel("loan", "amortizable");
-  await executeCreateAmortizationPlanCommand(store, {
-    today: TODAY,
-    input: {
+  await store.command.createAmortizationPlan(
+    {
       annualInterestRate: "0.0589",
       disbursementDate: "2026-05-08",
       firstPaymentDate: "2026-06-08",
@@ -52,7 +49,8 @@ async function seedDriftedMortgage(): Promise<WorthlineStore> {
       liabilityId: "loan",
       termMonths: 42,
     },
-  });
+    { today: TODAY },
+  );
   return store;
 }
 

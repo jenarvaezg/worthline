@@ -310,3 +310,83 @@ describe("formActionState — useActionState form choreography", () => {
     expect(ran).toBe(false);
   });
 });
+
+describe("formAction — generalized capabilities (#1114)", () => {
+  test("requireId:false runs a whole-workspace action with no id, id is empty string", async () => {
+    let receivedId: string | undefined;
+    const action = formAction({
+      requireId: false,
+      run: async (_store, { id }) => {
+        receivedId = id;
+        return { ok: true };
+      },
+      onError: () => "/e",
+      onSuccess: () => successRedirectUrl("/patrimonio", "trash_emptied"),
+    });
+
+    const url = await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    expect(receivedId).toBe("");
+    expect(url).toContain("trash_emptied");
+  });
+
+  test("run receives now off the clock (not only today)", async () => {
+    let receivedNow: string | undefined;
+    const action = formAction({
+      requireId: false,
+      run: async (_store, { now }) => {
+        receivedNow = now;
+        return { ok: true };
+      },
+      onError: () => "/e",
+      onSuccess: () => "/s",
+    });
+
+    await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    // fixedClock(TODAY).now() is the day's ISO timestamp — starts with the date.
+    expect(receivedNow).toContain(TODAY);
+  });
+
+  test("onSuccess receives the run payload (e.g. a batch count)", async () => {
+    const action = formAction<undefined, { count: number }>({
+      requireId: false,
+      run: async () => ({ ok: true, value: { count: 3 } }),
+      onError: () => "/e",
+      onSuccess: ({ value }) =>
+        successRedirectUrl("/patrimonio", value?.count === 0 ? "saved" : "updated"),
+    });
+
+    const url = await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    expect(url).toContain("ok=updated");
+  });
+
+  test("datedFact:false does NOT translate a UNIQUE throw — the raw error propagates", async () => {
+    const action = formAction({
+      datedFact: false,
+      missingId: "Falta el id.",
+      run: async () => {
+        throw { code: "SQLITE_CONSTRAINT_UNIQUE" };
+      },
+      onError: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => "/s",
+    });
+
+    await expect(action(form({ id: "e1" }), fakeStore, CLOCK)).rejects.toMatchObject({
+      code: "SQLITE_CONSTRAINT_UNIQUE",
+    });
+  });
+
+  test("missingIdUrl routes the missing-id error to the form's own page", async () => {
+    const action = formAction({
+      missingId: "Falta el id.",
+      missingIdUrl: (fd) => (fd.get("currentUrl") as string) || "/patrimonio",
+      run: async () => ({ ok: true }),
+      onError: () => "/e",
+      onSuccess: () => "/s",
+    });
+
+    const url = await runRedirect(() =>
+      action(form({ currentUrl: "/patrimonio/x/editar" }), fakeStore, CLOCK),
+    );
+    expect(url).toContain("/patrimonio/x/editar");
+  });
+});

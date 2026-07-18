@@ -7,15 +7,6 @@ import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import {
-  executeAddInterestRateRevisionCommand,
-  executeCreateAmortizationPlanCommand,
-  executeCreateCurrentStateDebtCommand,
-  executeRecalibrateDebtBalanceCommand,
-  executeUpdateInterestRateRevisionCommand,
-  runCommand,
-} from "./index";
-
 const TODAY = "2026-07-02";
 
 async function debtsAt(
@@ -48,24 +39,19 @@ describe("amortizable debt commands (#970)", () => {
   test("create plan via command generates snapshots along the amortization schedule", async () => {
     const store = await seedAmortizableMortgage();
 
-    const result = await runCommand(
-      executeCreateAmortizationPlanCommand,
+    await store.command.createAmortizationPlan(
       {
-        today: TODAY,
-        input: {
-          annualInterestRate: "0.03",
-          disbursementDate: "2026-01-15",
-          firstPaymentDate: "2026-02-15",
-          id: "plan1",
-          initialCapitalMinor: 150_000_00,
-          liabilityId: "mortgage",
-          termMonths: 240,
-        },
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
       },
-      store,
+      { today: TODAY },
     );
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.liabilities.readAmortizationPlan("mortgage")).toBeTruthy();
     expect(await debtsAt(store, "2026-02-15")).toBe(
       await store.liabilities.debtBalanceAtDate("mortgage", "2026-02-15"),
@@ -76,9 +62,8 @@ describe("amortizable debt commands (#970)", () => {
 
   test("update interest rate revision ripples from the earlier of old and new dates", async () => {
     const store = await seedAmortizableMortgage();
-    await executeCreateAmortizationPlanCommand(store, {
-      today: TODAY,
-      input: {
+    await store.command.createAmortizationPlan(
+      {
         annualInterestRate: "0.03",
         disbursementDate: "2026-01-15",
         firstPaymentDate: "2026-02-15",
@@ -87,26 +72,26 @@ describe("amortizable debt commands (#970)", () => {
         liabilityId: "mortgage",
         termMonths: 240,
       },
-    });
-    await executeAddInterestRateRevisionCommand(store, {
-      liabilityId: "mortgage",
-      today: TODAY,
-      input: {
+      { today: TODAY },
+    );
+    await store.command.addInterestRateRevision(
+      {
         id: "rev1",
         newAnnualInterestRate: "0.06",
         planId: "plan1",
         revisionDate: "2026-04-15",
       },
-    });
+      { liabilityId: "mortgage", today: TODAY },
+    );
     const before0515 = (await debtsAt(store, "2026-05-15"))!;
 
-    const result = await executeUpdateInterestRateRevisionCommand(store, {
-      revisionId: "rev1",
-      today: TODAY,
-      input: { revisionDate: "2026-03-15" },
-    });
+    const changes = await store.command.updateInterestRateRevision(
+      "rev1",
+      { revisionDate: "2026-03-15" },
+      { today: TODAY },
+    );
 
-    expect(result).toEqual({ ok: true, value: { changes: 1 } });
+    expect(changes).toBe(1);
     for (const dateKey of ["2026-03-15", "2026-04-15", "2026-05-15"]) {
       expect(await debtsAt(store, dateKey)).toBe(
         await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
@@ -120,8 +105,7 @@ describe("amortizable debt commands (#970)", () => {
   test("create current-state debt persists plan and startsAtBaseline rebaseline atomically", async () => {
     const store = await seedAmortizableMortgage();
 
-    const result = await executeCreateCurrentStateDebtCommand(store, {
-      today: TODAY,
+    await store.command.createCurrentStateDebt({
       plan: {
         annualInterestRate: "0.0235",
         disbursementDate: TODAY,
@@ -141,9 +125,9 @@ describe("amortizable debt commands (#970)", () => {
         outstandingBalanceMinor: 118_000_00,
         startsAtBaseline: true,
       },
+      today: TODAY,
     });
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.liabilities.readAmortizationPlan("mortgage")).toBeTruthy();
     const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
     expect(rebaselines).toHaveLength(1);
@@ -162,9 +146,8 @@ describe("amortizable debt commands (#970)", () => {
 
   test("recalibrate debt balance ripples forward only from the declared checkpoint", async () => {
     const store = await seedAmortizableMortgage();
-    await executeCreateAmortizationPlanCommand(store, {
-      today: TODAY,
-      input: {
+    await store.command.createAmortizationPlan(
+      {
         annualInterestRate: "0.03",
         disbursementDate: "2026-01-15",
         firstPaymentDate: "2026-02-15",
@@ -173,13 +156,13 @@ describe("amortizable debt commands (#970)", () => {
         liabilityId: "mortgage",
         termMonths: 240,
       },
-    });
+      { today: TODAY },
+    );
     const beforeRecalibration = await debtsAt(store, "2026-03-15");
     expect(beforeRecalibration).toBeDefined();
 
-    const result = await executeRecalibrateDebtBalanceCommand(store, {
-      today: TODAY,
-      input: {
+    await store.command.addBalanceRebaseline(
+      {
         annualInterestRate: "0.03",
         baselineDate: "2026-06-15",
         endDate: "2046-01-15",
@@ -189,9 +172,9 @@ describe("amortizable debt commands (#970)", () => {
         outstandingBalanceMinor: 140_000_00,
         startsAtBaseline: false,
       },
-    });
+      { today: TODAY },
+    );
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await debtsAt(store, "2026-03-15")).toBe(beforeRecalibration);
     expect(await debtsAt(store, "2026-06-15")).toBe(140_000_00);
     expect(await store.liabilities.debtBalanceAtDate("mortgage", "2026-06-15")).toBe(
