@@ -5,9 +5,13 @@ import {
   checkAttachmentLimits,
   datedBalanceSchema,
   extractedDocumentSchema,
+  extractedHoldingSchema,
+  extractedMovementSchema,
   normalizeExtractedNumber,
   parseExtractionResult,
   positionsDocumentSchema,
+  positionsMovementsDocumentSchema,
+  resolveHoldingFidelity,
 } from "./attachment-extraction-contract";
 
 describe("attachment extraction contract", () => {
@@ -450,5 +454,135 @@ describe("attachment extraction contract", () => {
 
     // @ts-expect-error Only schema parsing can create a validated extraction.
     acceptValidated({ documentType: "positions", positions: [], warnings: [] });
+  });
+});
+
+describe("positions + movements document (PRD #1103 S4)", () => {
+  const holding = (overrides: Record<string, unknown> = {}) => ({
+    name: "Vanguard FTSE All-World",
+    type: "Fondo indexado",
+    value: "1.234,56",
+    currency: "EUR",
+    fidelity: "value_only" as const,
+    ...overrides,
+  });
+
+  test("accepts a snapshot with no movements and normalizes Spanish numbers", () => {
+    const parsed = positionsMovementsDocumentSchema.parse({
+      documentType: "positions_movements",
+      holdings: [holding()],
+      movements: [],
+      warnings: [],
+    });
+
+    expect(parsed.holdings[0]).toMatchObject({
+      name: "Vanguard FTSE All-World",
+      type: "Fondo indexado",
+      value: 1234.56,
+      currency: "EUR",
+      fidelity: "value_only",
+    });
+    expect(parsed.movements).toEqual([]);
+  });
+
+  test("uppercases a valid ISIN and rejects a malformed one", () => {
+    const parsed = extractedHoldingSchema.parse(holding({ isin: "ie00b3rbwm25" }));
+    expect(parsed.isin).toBe("IE00B3RBWM25");
+
+    expect(
+      extractedHoldingSchema.safeParse(holding({ isin: "NOT-AN-ISIN" })).success,
+    ).toBe(false);
+  });
+
+  test("rejects a movement that carries neither ISIN nor name to link on", () => {
+    expect(
+      extractedMovementSchema.safeParse({
+        date: "2026-01-15",
+        kind: "buy",
+        amount: 500,
+        currency: "EUR",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      extractedMovementSchema.safeParse({
+        date: "2026-01-15",
+        kind: "buy",
+        name: "Vanguard FTSE All-World",
+        amount: 500,
+        currency: "EUR",
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects an unknown movement kind — the extractor never invents one", () => {
+    expect(
+      extractedMovementSchema.safeParse({
+        date: "2026-01-15",
+        kind: "rebalance",
+        name: "Fondo",
+        amount: 500,
+        currency: "EUR",
+      }).success,
+    ).toBe(false);
+  });
+
+  describe("resolveHoldingFidelity — the honest cost-basis tier", () => {
+    test("movements linked by ISIN win the real cost-basis tier", () => {
+      expect(
+        resolveHoldingFidelity(
+          { isin: "IE00B3RBWM25", name: "Fondo", declaredCost: 1000 },
+          [{ isin: "IE00B3RBWM25", name: undefined }],
+        ),
+      ).toBe("movements");
+    });
+
+    test("movements linked by name (case/space-insensitive) also win", () => {
+      expect(
+        resolveHoldingFidelity({ isin: undefined, name: "Banco  Santander" }, [
+          { isin: undefined, name: "banco santander" },
+        ]),
+      ).toBe("movements");
+    });
+
+    test("a declared cost with no movements is the declared-cost tier", () => {
+      expect(
+        resolveHoldingFidelity({ isin: undefined, name: "Fondo", declaredCost: 900 }, []),
+      ).toBe("declared_cost");
+    });
+
+    test("only a value, nothing else, is the honest value-only tier", () => {
+      expect(resolveHoldingFidelity({ isin: undefined, name: "Fondo" }, [])).toBe(
+        "value_only",
+      );
+    });
+
+    test("a movement whose ISIN differs never links, even if names collide by luck", () => {
+      // The invariant that keeps a coincidental match from forging a fake cost basis.
+      expect(
+        resolveHoldingFidelity({ isin: "IE00B3RBWM25", name: "Fondo" }, [
+          { isin: "US0378331005", name: "Otra cosa" },
+        ]),
+      ).toBe("value_only");
+    });
+  });
+
+  test("is a discriminated-union member the branded contract validates", () => {
+    const parsed = extractedDocumentSchema.parse({
+      documentType: "positions_movements",
+      holdings: [holding({ fidelity: "movements", isin: "IE00B3RBWM25" })],
+      movements: [
+        {
+          date: "2026-01-15",
+          kind: "buy",
+          isin: "IE00B3RBWM25",
+          units: "10,5",
+          amount: "1.000",
+          currency: "EUR",
+        },
+      ],
+      warnings: [],
+    });
+    expect(parsed.documentType).toBe("positions_movements");
   });
 });

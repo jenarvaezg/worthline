@@ -1,7 +1,11 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { BalanceSeriesGoldenFixture, GoldenFixture } from "./manifest";
+import type {
+  BalanceSeriesGoldenFixture,
+  GoldenFixture,
+  PositionsMovementsGoldenFixture,
+} from "./manifest";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(MODULE_DIR, "../../../../../..");
@@ -35,6 +39,18 @@ export function resolveBalanceSeriesSourcePath(
 
 export function resolveBalanceSeriesExpectedPath(
   fixture: BalanceSeriesGoldenFixture,
+): string {
+  return join(rootFor(fixture.storage), fixture.expectedFile);
+}
+
+export function resolvePositionsMovementsSourcePath(
+  fixture: PositionsMovementsGoldenFixture,
+): string {
+  return join(rootFor(fixture.storage), fixture.sourceFile);
+}
+
+export function resolvePositionsMovementsExpectedPath(
+  fixture: PositionsMovementsGoldenFixture,
 ): string {
   return join(rootFor(fixture.storage), fixture.expectedFile);
 }

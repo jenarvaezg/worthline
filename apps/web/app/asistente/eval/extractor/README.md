@@ -34,6 +34,34 @@ schedules are never committed:
 - `amortization-schedule` — private PDF (only observed balances are graded, never
   inferred loan parameters)
 
+The XLSX/CSV **positions + movements** track (`positions_movements` document, PRD
+#1103 S4) is **deterministic** — it needs no API key — but its documents are a real
+portfolio export, so it stays private and outside CI like the others:
+
+- `portfolio-snapshot` — private XLSX (holdings only; graded on the honest
+  `value_only` / `declared_cost` fidelity tiers)
+- `portfolio-with-movements` — private XLSX (holdings + a movements sheet; the linked
+  holdings must reach the `movements` tier)
+
+Its expected JSON grades each holding's `fidelity` tier and the movement count:
+
+```json
+{
+  "holdings": [
+    {
+      "name": "Vanguard FTSE All-World",
+      "type": "Fondo indexado",
+      "isin": "IE00B3RBWM25",
+      "value": 1234.56,
+      "currency": "EUR",
+      "fidelity": "movements"
+    }
+  ],
+  "movementCount": 1,
+  "warningIncludes": ["isin"]
+}
+```
+
 ## Prepare private fixtures
 
 Create the local directory:

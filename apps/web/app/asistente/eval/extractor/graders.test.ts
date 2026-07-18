@@ -7,8 +7,13 @@ import { describe, expect, it } from "vitest";
 import {
   gradeBalanceSeriesAgainstExpected,
   gradeExtractionAgainstExpected,
+  gradePositionsMovementsAgainstExpected,
 } from "./graders";
-import type { BalanceSeriesGoldenExpected, GoldenExpected } from "./manifest";
+import type {
+  BalanceSeriesGoldenExpected,
+  GoldenExpected,
+  PositionsMovementsGoldenExpected,
+} from "./manifest";
 
 const BASELINE: GoldenExpected = {
   positions: [
@@ -189,6 +194,82 @@ describe("gradeBalanceSeriesAgainstExpected", () => {
 
     expect(checks).toContainEqual({
       name: "documento de saldos fechados",
+      pass: false,
+    });
+  });
+});
+
+const POSITIONS_MOVEMENTS_BASELINE: PositionsMovementsGoldenExpected = {
+  holdings: [
+    {
+      currency: "EUR",
+      fidelity: "movements",
+      isin: "IE00B3RBWM25",
+      name: "Vanguard FTSE All-World",
+      type: "Fondo indexado",
+      value: 1234.56,
+    },
+    {
+      currency: "EUR",
+      fidelity: "value_only",
+      name: "Banco Santander",
+      type: "Acción",
+      value: 765.44,
+    },
+  ],
+  movementCount: 1,
+};
+
+const validPositionsMovementsResult = (
+  data: PositionsMovementsGoldenExpected,
+): AttachmentExtractionResult => ({
+  data: {
+    documentType: "positions_movements",
+    holdings: data.holdings,
+    movements: Array.from({ length: data.movementCount ?? 0 }, () => ({
+      amount: 1000,
+      currency: "EUR",
+      date: "2026-01-15",
+      kind: "buy",
+      name: "Vanguard FTSE All-World",
+    })),
+    warnings: [],
+  } as unknown as ExtractedDocument,
+  status: "valid",
+});
+
+describe("gradePositionsMovementsAgainstExpected", () => {
+  it("passes when every holding, its fidelity tier and the movement count match", () => {
+    const checks = gradePositionsMovementsAgainstExpected(
+      validPositionsMovementsResult(POSITIONS_MOVEMENTS_BASELINE),
+      POSITIONS_MOVEMENTS_BASELINE,
+    );
+    expect(checks.every((check) => check.pass)).toBe(true);
+  });
+
+  it("fails when a holding's honest tier drifts from expected", () => {
+    const checks = gradePositionsMovementsAgainstExpected(
+      validPositionsMovementsResult({
+        ...POSITIONS_MOVEMENTS_BASELINE,
+        holdings: [
+          { ...POSITIONS_MOVEMENTS_BASELINE.holdings[0]!, fidelity: "value_only" },
+          POSITIONS_MOVEMENTS_BASELINE.holdings[1]!,
+        ],
+      }),
+      POSITIONS_MOVEMENTS_BASELINE,
+    );
+    expect(
+      checks.some((check) => check.name === "holdings y tier coinciden" && !check.pass),
+    ).toBe(true);
+  });
+
+  it("fails a positions result graded on the positions + movements track", () => {
+    const checks = gradePositionsMovementsAgainstExpected(
+      validResult(BASELINE),
+      POSITIONS_MOVEMENTS_BASELINE,
+    );
+    expect(checks).toContainEqual({
+      name: "documento de posiciones + movimientos",
       pass: false,
     });
   });

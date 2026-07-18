@@ -102,6 +102,49 @@ common contract before they can become conversational context (already wrapped a
 and extractor code still hold no workspace write, and any write stays behind the existing
 preview-and-confirm proposal boundary.
 
+## Amendment — the positions + movements document (PRD #1103 S4)
+
+The discriminated union gains a third document, `positions_movements`, for the
+assistant reconcile (#1090). A portfolio spreadsheet extracts to a **holdings**
+table (name, verbatim type label, optional ISIN, current value, currency, optional
+declared cost) plus an **optional dated movements** table (buys, sells and
+contributions, linked back to a holding by ISIN or name). It reuses the existing
+deterministic spreadsheet route: the richer `positions_movements` recognizer runs
+first and a broker positions table it does not recognize falls through to the
+existing `positions` extractor, then to unstructured context. Limits, eager
+pre-stream extraction and process-and-discard are unchanged.
+
+Each holding carries a **cost-basis fidelity tier**, derived — never inferred by a
+model — from what the document actually contains (ADR 0048): `movements` when dated
+operations back the holding (a real cost basis), `declared_cost` when only a cost is
+stated, `value_only` when only a current value is present (the "sin coste real"
+mark). The tier is a total function of the envelope (`resolveHoldingFidelity`), so it
+can never claim a cost basis the data does not support, and the reconcile surface
+(S5) paints it from the envelope alone. The type label is preserved verbatim: mapping
+it to a domain instrument is the reconcile's job, not the extractor's, so no
+classification is invented. Dates are deterministically reformatted from the
+`dd/mm/yyyy` the spreadsheet reader emits (Excel date serials, Spanish CSV exports)
+to ISO, never guessed.
+
+Because an arbitrary spreadsheet is not a structured broker statement, reading is
+**lenient but honest**: a non-ISIN in an ISIN column or a non-numeric declared cost
+is dropped-and-warned on an otherwise valid holding; a row that cannot be read at all
+(a subtotal line, an unknown movement operation, an unparseable date or amount) is
+**skipped with a visible warning** rather than failing the whole document — the
+remaining rows still extract, nothing is invented, and a holding whose only movement
+was skipped simply keeps a lower, honest fidelity tier. When no row yields a usable
+holding the extractor returns `unrecognized`, so the broker-positions recognizer and
+then the #865 unstructured path still get a turn instead of dead-ending.
+
+**Prompt-injection boundary (shared with S5).** The spreadsheet route runs no model,
+so an untrusted workbook never reaches a language model at all — a stronger boundary
+than the vision routes. The only free text that survives extraction is the
+schema-bounded holding and movement names and the warnings, all length-capped by the
+branded contract and reaching chat only through `JSON.stringify` framed as data, not
+instructions (the #865 invariant). No workspace write capability is granted; any
+mutation stays behind the existing preview-and-confirm proposal boundary that S5 will
+build on.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

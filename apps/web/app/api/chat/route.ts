@@ -6,8 +6,8 @@ import {
 } from "@web/asistente/attachment-chat";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
+import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
 import {
-  extractPositionsFromSpreadsheet,
   renderSpreadsheetForContext,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
 } from "@web/asistente/attachment-spreadsheet-extractor";
@@ -260,7 +260,7 @@ export async function POST(request: Request): Promise<Response> {
       ? await extractBalanceSeriesFromPdf(extractionInput)
       : isImage
         ? await extractPositionsFromImage(extractionInput)
-        : extractPositionsFromSpreadsheet(extractionInput);
+        : extractSpreadsheetDocument(extractionInput);
     currentPreview = { fileName, result };
 
     if (result.status !== "valid") {

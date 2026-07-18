@@ -184,3 +184,88 @@ export function parseBalanceSeriesGoldenExpected(
 ): BalanceSeriesGoldenExpected {
   return balanceSeriesGoldenExpectedSchema.parse(input);
 }
+
+// --- Positions + movements (XLSX/CSV) golden track (PRD #1103 S4) ----------------
+
+export const POSITIONS_MOVEMENTS_GOLDEN_SCENARIOS = [
+  "portfolio-snapshot",
+  "portfolio-with-movements",
+] as const;
+
+export type PositionsMovementsGoldenScenario =
+  (typeof POSITIONS_MOVEMENTS_GOLDEN_SCENARIOS)[number];
+
+const HOLDING_FIDELITY = z.enum(["movements", "declared_cost", "value_only"]);
+
+const positionsMovementsGoldenExpectedSchema = z
+  .object({
+    holdings: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(240),
+            type: z.string().trim().min(1).max(120),
+            isin: z
+              .string()
+              .trim()
+              .regex(/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/)
+              .optional(),
+            value: z.number().finite(),
+            currency: z
+              .string()
+              .trim()
+              .regex(/^[A-Z]{3}$/),
+            fidelity: HOLDING_FIDELITY,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
+    movementCount: z.number().int().min(0).optional(),
+    warningIncludes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+  })
+  .strict();
+
+export type PositionsMovementsGoldenExpected = z.infer<
+  typeof positionsMovementsGoldenExpectedSchema
+>;
+
+interface PositionsMovementsGoldenFixtureBase {
+  id: string;
+  scenario: PositionsMovementsGoldenScenario;
+  sourceFile: string;
+  expectedFile: string;
+}
+
+export type PositionsMovementsGoldenFixture = PositionsMovementsGoldenFixtureBase & {
+  storage: "local";
+};
+
+/**
+ * Positions + movements XLSX/CSV fixtures are private by nature (a real portfolio
+ * export). They live only under `.local/extractor-golden/` and are never committed.
+ * The extractor is deterministic, so no API key is needed — but the documents stay
+ * private, so the track runs outside CI like #865's private capture set.
+ */
+export const POSITIONS_MOVEMENTS_GOLDEN_FIXTURES: PositionsMovementsGoldenFixture[] = [
+  {
+    expectedFile: "portfolio-snapshot.expected.json",
+    id: "portfolio-snapshot",
+    scenario: "portfolio-snapshot",
+    sourceFile: "portfolio-snapshot.xlsx",
+    storage: "local",
+  },
+  {
+    expectedFile: "portfolio-with-movements.expected.json",
+    id: "portfolio-with-movements",
+    scenario: "portfolio-with-movements",
+    sourceFile: "portfolio-with-movements.xlsx",
+    storage: "local",
+  },
+];
+
+export function parsePositionsMovementsGoldenExpected(
+  input: unknown,
+): PositionsMovementsGoldenExpected {
+  return positionsMovementsGoldenExpectedSchema.parse(input);
+}
