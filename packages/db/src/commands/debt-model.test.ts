@@ -8,11 +8,6 @@ import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import {
-  executeChangeDebtModelCommand,
-  executeCreateAmortizationPlanCommand,
-} from "./index";
-
 const TODAY = "2026-07-02";
 
 async function debtsAt(
@@ -38,9 +33,8 @@ async function seedAmortizableMortgageWithPlan(): Promise<WorthlineStore> {
     type: "mortgage",
   });
   await store.liabilities.setDebtModel("mortgage", "amortizable");
-  await executeCreateAmortizationPlanCommand(store, {
-    today: TODAY,
-    input: {
+  await store.command.createAmortizationPlan(
+    {
       annualInterestRate: "0.03",
       disbursementDate: "2026-01-15",
       firstPaymentDate: "2026-02-15",
@@ -49,7 +43,8 @@ async function seedAmortizableMortgageWithPlan(): Promise<WorthlineStore> {
       liabilityId: "mortgage",
       termMonths: 240,
     },
-  });
+    { today: TODAY },
+  );
   return store;
 }
 
@@ -68,13 +63,8 @@ describe("change debt model command (#1051)", () => {
       { today: TODAY },
     );
 
-    const result = await executeChangeDebtModelCommand(store, {
-      debtModel: "revolving",
-      liabilityId: "mortgage",
-      today: TODAY,
-    });
+    await store.command.changeDebtModel("mortgage", "revolving", { today: TODAY });
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.liabilities.readDebtModel("mortgage")).toBe("revolving");
     // Snapshots on/after the anchor now match the revolving curve, not the plan's.
     expect(await debtsAt(store, "2026-03-15")).toBe(
@@ -89,13 +79,8 @@ describe("change debt model command (#1051)", () => {
     const store = await seedAmortizableMortgageWithPlan();
     const before = await debtsAt(store, "2026-03-15");
 
-    const result = await executeChangeDebtModelCommand(store, {
-      debtModel: "amortizable",
-      liabilityId: "mortgage",
-      today: TODAY,
-    });
+    await store.command.changeDebtModel("mortgage", "amortizable", { today: TODAY });
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.liabilities.readDebtModel("mortgage")).toBe("amortizable");
     expect(await debtsAt(store, "2026-03-15")).toBe(before);
 
@@ -114,19 +99,10 @@ describe("change debt model command (#1051)", () => {
       },
       { today: TODAY },
     );
-    await executeChangeDebtModelCommand(store, {
-      debtModel: "revolving",
-      liabilityId: "mortgage",
-      today: TODAY,
-    });
+    await store.command.changeDebtModel("mortgage", "revolving", { today: TODAY });
 
-    const result = await executeChangeDebtModelCommand(store, {
-      debtModel: "amortizable",
-      liabilityId: "mortgage",
-      today: TODAY,
-    });
+    await store.command.changeDebtModel("mortgage", "amortizable", { today: TODAY });
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await debtsAt(store, "2026-03-15")).toBe(
       await store.liabilities.debtBalanceAtDate("mortgage", "2026-03-15"),
     );

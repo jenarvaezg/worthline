@@ -1,31 +1,3 @@
-export type {
-  AddEarlyRepaymentCommand,
-  AddInterestRateRevisionCommand,
-  ChangeDebtModelCommand,
-  CreateAmortizationPlanCommand,
-  CreateCurrentStateDebtCommand,
-  DeleteAmortizationPlanCommand,
-  DeleteEarlyRepaymentCommand,
-  DeleteInterestRateRevisionCommand,
-  RecalibrateDebtBalanceCommand,
-  UpdateAmortizationPlanCommand,
-  UpdateEarlyRepaymentCommand,
-  UpdateInterestRateRevisionCommand,
-} from "./amortizable-debt";
-export {
-  executeAddEarlyRepaymentCommand,
-  executeAddInterestRateRevisionCommand,
-  executeChangeDebtModelCommand,
-  executeCreateAmortizationPlanCommand,
-  executeCreateCurrentStateDebtCommand,
-  executeDeleteAmortizationPlanCommand,
-  executeDeleteEarlyRepaymentCommand,
-  executeDeleteInterestRateRevisionCommand,
-  executeRecalibrateDebtBalanceCommand,
-  executeUpdateAmortizationPlanCommand,
-  executeUpdateEarlyRepaymentCommand,
-  executeUpdateInterestRateRevisionCommand,
-} from "./amortizable-debt";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";

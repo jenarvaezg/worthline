@@ -1,5 +1,5 @@
 import { createStableId } from "@web/intake";
-import { executeCreateCurrentStateDebtCommand, type WorthlineStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
 
 import type {
   CurrentStateDebtDerived,
@@ -40,7 +40,7 @@ export async function persistCurrentStateAmortization(
     startsAtBaseline: true as const,
   };
 
-  const result = await executeCreateCurrentStateDebtCommand(store, {
+  await store.command.createCurrentStateDebt({
     plan: {
       ...derived.plan,
       id: createStableId("plan", liabilityId, seed),
@@ -53,7 +53,4 @@ export async function persistCurrentStateAmortization(
         : { ...rebaselineBase, monthlyPaymentMinor: derived.monthlyPaymentMinor },
     today,
   });
-  if (!result.ok) {
-    throw new Error(result.error);
-  }
 }
