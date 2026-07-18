@@ -11,12 +11,12 @@ import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
 } from "@web/ensure-exposure-catalog-stubs";
+import { formAction } from "@web/form-action";
 import type { FormErrorContext } from "@web/intake";
 import {
   createStableId,
   errorRedirectUrl,
   mapDomainViolation,
-  parseEntityId,
   parseRouteOperationCommand,
   parseUpdateInvestmentCommand,
   preserveFields,
@@ -34,11 +34,6 @@ import {
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
 import { type WorthlineStore } from "@web/store";
-import {
-  executeDeleteInvestmentOperationCommand,
-  executeMergeStatementOperationsCommand,
-  executeRecordInvestmentOperationCommand,
-} from "@worthline/db";
 import type {
   InvestmentPriceProvider,
   LiquidityTier,
@@ -152,9 +147,6 @@ export async function recordOperationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
@@ -163,29 +155,37 @@ export async function recordOperationAction(
       values: preserveFields(formData, OPERATION_FORM_FIELDS),
     });
 
-  const today = _clock.today();
-  const parsed = parseRouteOperationCommand(formData, routeAssetId, Date.now(), today);
+  return formAction({
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    onError: ({ error }) => operationErrorUrl(error),
+    onSuccess: () => successRedirectUrl(returnUrl, "saved"),
+    parse: ({ today }) => {
+      const parsed = parseRouteOperationCommand(
+        formData,
+        routeAssetId,
+        Date.now(),
+        today,
+      );
+      if (!parsed.ok) return { ok: false, redirect: operationErrorUrl(parsed.error) };
 
-  if (!parsed.ok) {
-    redirect(operationErrorUrl(parsed.error));
-  }
-
-  const domainResult = createInvestmentOperationSafe(parsed.command);
-
-  if (!domainResult.ok) {
-    redirect(operationErrorUrl(mapDomainViolation(domainResult.violations[0])));
-  }
-
-  // One command persists the operation AND ripples its snapshots atomically
-  // (ADR 0020; backdated operation → reconstruct history, PRD #107).
-  await runActionWithStore(async (store) => {
-    await executeRecordInvestmentOperationCommand(store, {
-      operation: domainResult.value,
-      today,
-    });
-  }, _store);
-
-  redirect(successRedirectUrl(returnUrl, "saved"));
+      const domainResult = createInvestmentOperationSafe(parsed.command);
+      if (!domainResult.ok) {
+        return {
+          ok: false,
+          redirect: operationErrorUrl(mapDomainViolation(domainResult.violations[0])),
+        };
+      }
+      return { ok: true, value: domainResult.value };
+    },
+    requireId: false,
+    // One command persists the operation AND ripples its snapshots atomically
+    // (ADR 0020; backdated operation → reconstruct history, PRD #107).
+    run: async (store, { parsed, today }) => {
+      await store.command.recordInvestmentOperation(parsed, { today });
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 /**
@@ -321,108 +321,121 @@ export async function confirmStatementAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
   const statementErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, { formId: "statement", message });
 
-  const read = await readStatementFromForm(formData);
-  if (!read.ok) {
-    redirect(statementErrorUrl(read.message));
-  }
-  const { rows, skipped } = read.value;
-  const today = _clock.today();
-  const seed = Date.now();
-
-  const applied = await runActionWithStore(async (store) => {
-    // ISIN guard (S4): block a mismatch before any write; backfill an empty asset
-    // so a later upload to the same holding is guarded too.
-    const asset = await store.assets.readInvestmentAssetById(routeAssetId);
-    const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
-    if (guard.status === "mismatch") {
-      return { error: isinMismatchMessage(guard.fileIsins, asset?.isin ?? "") } as const;
+  return formAction<
+    undefined,
+    {
+      anomalies: number;
+      catalog: ExposureCatalogStubCandidate;
+      created: number;
+      overwritten: number;
+      sells: number;
+      skipped: number;
     }
-    if (guard.status === "backfill") {
-      await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
-    }
+  >({
+    // The merge committed — register the holding's (now possibly ISIN-bearing)
+    // catalog row so it surfaces in /admin/catalogo. Best-effort (#1097).
+    afterCommit: async ({ value }) => {
+      await ensureExposureCatalogStubs([value!.catalog]);
+    },
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    onError: ({ error }) => statementErrorUrl(error),
+    onSuccess: ({ value }) =>
+      statementLoadedRedirectUrl(returnUrl, {
+        anomalies: value!.anomalies,
+        created: value!.created,
+        overwritten: value!.overwritten,
+        sells: value!.sells,
+        skipped: value!.skipped,
+      }),
+    requireId: false,
+    run: async (store, { today }) => {
+      const read = await readStatementFromForm(formData);
+      if (!read.ok) return { error: read.message, ok: false };
 
-    // The catalog identity to register once the merge commits (#1097). A statement
-    // is the path where an ISIN first attaches to a fund, so this is often the very
-    // first identity the holding has. No instrument here: `readInvestmentAssetById`
-    // is a market investment by construction and supplies its own provider.
-    const catalog: ExposureCatalogStubCandidate = {
-      displayName: asset?.name ?? null,
-      isin: guard.status === "backfill" ? guard.isin : (asset?.isin ?? null),
-      priceProvider: asset?.priceProvider ?? null,
-      providerSymbol: asset?.providerSymbol ?? null,
-    };
+      // ISIN guard (S4): block a mismatch before any write; backfill an empty
+      // asset so a later upload to the same holding is guarded too.
+      const asset = await store.assets.readInvestmentAssetById(routeAssetId);
+      const guard = resolvePerHoldingStatementIsinGuard(read.value, asset?.isin ?? null);
+      if (guard.status === "mismatch") {
+        return {
+          error: isinMismatchMessage(guard.fileIsins, asset?.isin ?? ""),
+          ok: false,
+        };
+      }
+      if (guard.status === "backfill") {
+        await store.assets.backfillInvestmentIsin(routeAssetId, guard.isin);
+      }
 
-    // Merge by date (S2): plan against the asset's current operations so an
-    // overlapping date overwrites in place instead of duplicating, and operations
-    // the file does not mention survive untouched. Anomalous dates are set aside.
-    const plan = planStatementMerge(
-      rows,
-      await store.operations.readOperations(routeAssetId),
-    );
+      // The catalog identity to register once the merge commits (#1097). A
+      // statement is the path where an ISIN first attaches to a fund, so this is
+      // often the very first identity the holding has. No instrument here:
+      // `readInvestmentAssetById` is a market investment by construction and
+      // supplies its own provider.
+      const catalog: ExposureCatalogStubCandidate = {
+        displayName: asset?.name ?? null,
+        isin: guard.status === "backfill" ? guard.isin : (asset?.isin ?? null),
+        priceProvider: asset?.priceProvider ?? null,
+        providerSymbol: asset?.providerSymbol ?? null,
+      };
 
-    // One command persists every create + overwrite AND runs ONE batched ripple
-    // over the dates they touch, atomically (ADR 0020 / 0018).
-    await executeMergeStatementOperationsCommand(store, {
-      assetId: routeAssetId,
-      creates: plan.toCreate.map((row, i) => ({
+      // Merge by date (S2): plan against the asset's current operations so an
+      // overlapping date overwrites in place instead of duplicating, and
+      // operations the file does not mention survive untouched. Anomalous dates
+      // are set aside.
+      const plan = planStatementMerge(
+        read.value.rows,
+        await store.operations.readOperations(routeAssetId),
+      );
+
+      const seed = Date.now();
+      // One command persists every create + overwrite AND runs ONE batched ripple
+      // over the dates they touch, atomically (ADR 0020 / 0018).
+      await store.command.mergeInvestmentOperations({
         assetId: routeAssetId,
-        currency: row.currency,
-        executedAt: row.dateKey,
-        feesMinor: row.feesMinor,
-        id: createStableId("op", `${routeAssetId}_${row.dateKey}`, seed + i),
-        kind: row.kind,
-        pricePerUnit: row.pricePerUnit,
-        source: "statement",
-        units: row.units,
-        ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-      })),
-      deletes: plan.toDelete.map((operation) => operation.id),
-      overwrites: plan.toOverwrite.map(({ operationId, row }) => ({
-        currency: row.currency,
-        feesMinor: row.feesMinor,
-        id: operationId,
-        kind: row.kind,
-        pricePerUnit: row.pricePerUnit,
-        source: "statement",
-        units: row.units,
-        ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-      })),
-      today,
-    });
+        creates: plan.toCreate.map((row, i) => ({
+          assetId: routeAssetId,
+          currency: row.currency,
+          executedAt: row.dateKey,
+          feesMinor: row.feesMinor,
+          id: createStableId("op", `${routeAssetId}_${row.dateKey}`, seed + i),
+          kind: row.kind,
+          pricePerUnit: row.pricePerUnit,
+          source: "statement",
+          units: row.units,
+          ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
+        })),
+        deletes: plan.toDelete.map((operation) => operation.id),
+        overwrites: plan.toOverwrite.map(({ operationId, row }) => ({
+          currency: row.currency,
+          feesMinor: row.feesMinor,
+          id: operationId,
+          kind: row.kind,
+          pricePerUnit: row.pricePerUnit,
+          source: "statement",
+          units: row.units,
+          ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
+        })),
+        today,
+      });
 
-    return {
-      anomalies: plan.anomalies.length,
-      catalog,
-      created: plan.toCreate.length,
-      overwritten: plan.toOverwrite.length,
-      sells: countSells(plan),
-    } as const;
-  }, _store);
-
-  if ("error" in applied) {
-    redirect(statementErrorUrl(applied.error));
-  }
-
-  // The merge committed — register the holding's (now possibly ISIN-bearing)
-  // catalog row so it surfaces in /admin/catalogo. Best-effort (#1097).
-  await ensureExposureCatalogStubs([applied.catalog]);
-
-  redirect(
-    statementLoadedRedirectUrl(returnUrl, {
-      anomalies: applied.anomalies,
-      created: applied.created,
-      overwritten: applied.overwritten,
-      sells: applied.sells,
-      skipped: skipped.length,
-    }),
-  );
+      return {
+        ok: true,
+        value: {
+          anomalies: plan.anomalies.length,
+          catalog,
+          created: plan.toCreate.length,
+          overwritten: plan.toOverwrite.length,
+          sells: countSells(plan),
+          skipped: read.value.skipped.length,
+        },
+      };
+    },
+  })(formData, ..._testArgs);
 }
 
 export async function updateInvestmentAction(
@@ -488,37 +501,33 @@ export async function deleteOperationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
-  const operationId = parseEntityId(formData, "operationId");
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
-  if (!operationId) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "Identificador de operación no encontrado.",
-      }),
-    );
-  }
-
-  // One command deletes the operation AND ripples snapshots ≥ its date,
-  // atomically (ADR 0020; deleting a backdated operation, PRD #107).
-  const deleted = await runActionWithStore(async (store) => {
-    const result = await executeDeleteInvestmentOperationCommand(store, {
-      operationId,
-    });
-    return result.ok ? result.value : null;
-  }, _store);
-
-  if (!deleted) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la operación — puede que ya se haya eliminado.",
-      }),
-    );
-  }
-
-  redirect(successRedirectUrl(returnUrl, "operation_deleted"));
+  return formAction({
+    datedFact: false,
+    extraIds: ["operationId"],
+    guardUrl: () => returnUrl,
+    missingId: "Identificador de operación no encontrado.",
+    missingIdUrl: () => returnUrl,
+    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "operation_deleted"),
+    requireId: false,
+    // One command deletes the operation AND ripples snapshots ≥ its date,
+    // atomically (ADR 0020; deleting a backdated operation, PRD #107).
+    run: async (store, { extra, today }) => {
+      const deleted = await store.command.deleteInvestmentOperation({
+        operationId: extra.operationId!,
+        today,
+      });
+      if (!deleted) {
+        return {
+          error: "No se encontró la operación — puede que ya se haya eliminado.",
+          ok: false,
+        };
+      }
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 // ── Historical-price backfill (#380, ADR 0033) ───────────────────────────────
@@ -818,37 +827,30 @@ export async function confirmSnapshotPriceCorrectionAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
-  const planned = await runActionWithStore(
-    (store) => planCorrectionFromForm(store, routeAssetId, formData, _clock.today()),
-    _store,
-  );
-  if (planned.kind === "not_eligible") {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "Esta inversión no admite corrección de snapshot.",
-      }),
-    );
-  }
-  if (planned.kind === "error") {
-    redirect(errorRedirectUrl(returnUrl, { message: planned.message }));
-  }
+  return formAction<undefined, { dateKey: string }>({
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    onSuccess: ({ value }) =>
+      snapshotPriceCorrectionDoneRedirectUrl(returnUrl, value!.dateKey),
+    requireId: false,
+    run: async (store, { today }) => {
+      const planned = await planCorrectionFromForm(store, routeAssetId, formData, today);
+      if (planned.kind === "not_eligible") {
+        return { error: "Esta inversión no admite corrección de snapshot.", ok: false };
+      }
+      if (planned.kind === "error") return { error: planned.message, ok: false };
 
-  await runActionWithStore(
-    (store) =>
-      store.command.correctInvestmentSnapshotUnitPrice({
+      await store.command.correctInvestmentSnapshotUnitPrice({
         assetId: routeAssetId,
         dateKey: planned.point.dateKey,
         unitPriceDecimal: planned.point.unitPriceDecimal,
-      }),
-    _store,
-  );
-
-  redirect(snapshotPriceCorrectionDoneRedirectUrl(returnUrl, planned.point.dateKey));
+      });
+      return { ok: true, value: { dateKey: planned.point.dateKey } };
+    },
+  })(formData, ..._testArgs);
 }
 
 // ── Payout attribution (PRD #652 S1, #656, ADR 0054) ─────────────────────────
@@ -885,20 +887,33 @@ export async function createPayoutAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
-  const result = buildPayoutResult(parsePayoutFieldsFromForm(formData));
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { formId: "payout", message: result.error }));
-  }
-
-  await runActionWithStore(
-    (store) => store.payouts.createPayout({ holdingId: routeAssetId, ...result.payout }),
-    _store,
-  );
-  redirect(successRedirectUrl(returnUrl, "payout_saved"));
+  return formAction({
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    onError: ({ error }) =>
+      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "payout_saved"),
+    parse: () => {
+      const result = buildPayoutResult(parsePayoutFieldsFromForm(formData));
+      if (!result.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(returnUrl, {
+            formId: "payout",
+            message: result.error,
+          }),
+        };
+      }
+      return { ok: true, value: result.payout };
+    },
+    requireId: false,
+    run: async (store, { parsed }) => {
+      await store.payouts.createPayout({ holdingId: routeAssetId, ...parsed });
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 export async function deletePayoutAction(
@@ -906,17 +921,22 @@ export async function deletePayoutAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
-  const payoutId = parseEntityId(formData, "payoutId");
 
-  if (!payoutId) {
-    redirect(errorRedirectUrl(returnUrl, { message: "Cobro no encontrado." }));
-  }
-
-  await runActionWithStore((store) => store.payouts.deletePayout(payoutId), _store);
-  redirect(successRedirectUrl(returnUrl, "payout_deleted"));
+  return formAction({
+    datedFact: false,
+    extraIds: ["payoutId"],
+    guardUrl: () => returnUrl,
+    missingId: "Cobro no encontrado.",
+    missingIdUrl: () => returnUrl,
+    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "payout_deleted"),
+    requireId: false,
+    run: async (store, { extra }) => {
+      await store.payouts.deletePayout(extra.payoutId!);
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 export async function createPayoutScheduleAction(
@@ -924,21 +944,35 @@ export async function createPayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
 
-  const result = buildPayoutScheduleResult(parsePayoutScheduleFieldsFromForm(formData));
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { formId: "payout", message: result.error }));
-  }
-
-  await runActionWithStore(
-    (store) =>
-      store.payouts.createPayoutSchedule({ holdingId: routeAssetId, ...result.schedule }),
-    _store,
-  );
-  redirect(successRedirectUrl(returnUrl, "payout_schedule_saved"));
+  return formAction({
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    onError: ({ error }) =>
+      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_saved"),
+    parse: () => {
+      const result = buildPayoutScheduleResult(
+        parsePayoutScheduleFieldsFromForm(formData),
+      );
+      if (!result.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(returnUrl, {
+            formId: "payout",
+            message: result.error,
+          }),
+        };
+      }
+      return { ok: true, value: result.schedule };
+    },
+    requireId: false,
+    run: async (store, { parsed }) => {
+      await store.payouts.createPayoutSchedule({ holdingId: routeAssetId, ...parsed });
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 /**
@@ -952,40 +986,43 @@ export async function updatePayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
-  const scheduleId = parseEntityId(formData, "scheduleId");
 
-  if (!scheduleId) {
-    redirect(errorRedirectUrl(returnUrl, { message: "Cobro recurrente no encontrado." }));
-  }
+  return formAction({
+    datedFact: false,
+    extraIds: ["scheduleId"],
+    guardUrl: () => returnUrl,
+    missingId: "Cobro recurrente no encontrado.",
+    missingIdUrl: () => returnUrl,
+    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_updated"),
+    requireId: false,
+    run: async (store, { extra }) => {
+      const scheduleId = extra.scheduleId!;
+      const excludeDate = String(formData.get("excludeDate") ?? "").trim();
+      const endISO = String(formData.get("endISO") ?? "").trim();
 
-  const excludeDate = String(formData.get("excludeDate") ?? "").trim();
-  const endISO = String(formData.get("endISO") ?? "").trim();
-
-  await runActionWithStore(async (store) => {
-    if (excludeDate) {
-      const schedule = (
-        await store.payouts.readPayoutSchedulesForHolding(routeAssetId)
-      ).find((candidate) => candidate.id === scheduleId);
-      if (schedule) {
-        await store.payouts.updatePayoutSchedule(scheduleId, {
-          exclusions: toggleExclusion(schedule.exclusions, excludeDate),
-        });
+      if (excludeDate) {
+        const schedule = (
+          await store.payouts.readPayoutSchedulesForHolding(routeAssetId)
+        ).find((candidate) => candidate.id === scheduleId);
+        if (schedule) {
+          await store.payouts.updatePayoutSchedule(scheduleId, {
+            exclusions: toggleExclusion(schedule.exclusions, excludeDate),
+          });
+        }
+        return { ok: true };
       }
-      return;
-    }
-    if (formData.get("clearEnd") === "1") {
-      await store.payouts.updatePayoutSchedule(scheduleId, { endISO: null });
-      return;
-    }
-    if (endISO) {
-      await store.payouts.updatePayoutSchedule(scheduleId, { endISO });
-    }
-  }, _store);
-
-  redirect(successRedirectUrl(returnUrl, "payout_schedule_updated"));
+      if (formData.get("clearEnd") === "1") {
+        await store.payouts.updatePayoutSchedule(scheduleId, { endISO: null });
+        return { ok: true };
+      }
+      if (endISO) {
+        await store.payouts.updatePayoutSchedule(scheduleId, { endISO });
+      }
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 export async function deletePayoutScheduleAction(
@@ -993,20 +1030,22 @@ export async function deletePayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
   const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
-  const scheduleId = parseEntityId(formData, "scheduleId");
 
-  if (!scheduleId) {
-    redirect(errorRedirectUrl(returnUrl, { message: "Cobro recurrente no encontrado." }));
-  }
-
-  await runActionWithStore(
-    (store) => store.payouts.deletePayoutSchedule(scheduleId),
-    _store,
-  );
-  redirect(successRedirectUrl(returnUrl, "payout_schedule_deleted"));
+  return formAction({
+    datedFact: false,
+    extraIds: ["scheduleId"],
+    guardUrl: () => returnUrl,
+    missingId: "Cobro recurrente no encontrado.",
+    missingIdUrl: () => returnUrl,
+    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_deleted"),
+    requireId: false,
+    run: async (store, { extra }) => {
+      await store.payouts.deletePayoutSchedule(extra.scheduleId!);
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
 }
 
 export async function refreshPricesAction(formData: FormData, ..._testArgs: unknown[]) {

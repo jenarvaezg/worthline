@@ -1,9 +1,8 @@
 "use server";
 
 import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
-import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { currentUrlOf } from "@web/ajustes/connected-source-helpers";
-import { guardDemoWrite } from "@web/demo/write-guard";
+import { formAction } from "@web/form-action";
 import {
   appendParam,
   createStableId,
@@ -13,7 +12,6 @@ import {
   preserveFields,
 } from "@web/intake";
 import type { GoalPriority } from "@worthline/domain";
-import { redirect } from "next/navigation";
 
 type ParsedGoalForm =
   | {
@@ -67,57 +65,36 @@ function parseGoalForm(formData: FormData): ParsedGoalForm {
   return { ok: true, name, scopeId, targetAmountMinor, deadline, priority, assetIds };
 }
 
-async function redirectIfInvalidScope(
+type ValidGoalForm = Extract<ParsedGoalForm, { ok: true }>;
+
+export async function createGoalAction(
   formData: FormData,
-  scopeId: string,
-  formId: string,
-  anchor: string,
-  injectedStore?: ReturnType<typeof testStoreFromActionArgs>,
-): Promise<void> {
-  const exists = await runActionWithStore(
-    (worthlineStore) => actionScopeExists(worthlineStore, scopeId),
-    injectedStore,
-  );
-
-  if (!exists) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: INVALID_SCOPE_MESSAGE,
-        formId,
-        values: preserveGoalFields(formData),
-        anchor,
-      }),
-    );
-  }
-}
-
-export async function createGoalAction(formData: FormData, ..._testArgs: unknown[]) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData));
-  const parsed = parseGoalForm(formData);
-
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: parsed.error,
-        formId: "goal",
-        values: preserveGoalFields(formData),
-        anchor: "goalCreateForm",
-      }),
-    );
-  }
-
-  await redirectIfInvalidScope(
-    formData,
-    parsed.scopeId,
-    "goal",
-    "goalCreateForm",
-    _store,
-  );
-
-  await runActionWithStore(
-    (store) =>
-      store.goals.createGoal({
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<ValidGoalForm>({
+    requireId: false,
+    datedFact: false,
+    guardUrl: (fd) => currentUrlOf(fd),
+    parse: ({ formData }) => {
+      const parsed = parseGoalForm(formData);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(currentUrlOf(formData), {
+            message: parsed.error,
+            formId: "goal",
+            values: preserveGoalFields(formData),
+            anchor: "goalCreateForm",
+          }),
+        };
+      }
+      return { ok: true, value: parsed };
+    },
+    run: async (store, { parsed }) => {
+      if (!(await actionScopeExists(store, parsed.scopeId))) {
+        return { ok: false, error: INVALID_SCOPE_MESSAGE };
+      }
+      await store.goals.createGoal({
         id: createStableId("goal", parsed.name, Date.now()),
         name: parsed.name,
         targetAmountMinor: parsed.targetAmountMinor,
@@ -125,76 +102,110 @@ export async function createGoalAction(formData: FormData, ..._testArgs: unknown
         priority: parsed.priority,
         scopeId: parsed.scopeId,
         assetIds: parsed.assetIds,
-      }),
-    _store,
-  );
-  redirect(appendParam(currentUrlOf(formData), "ok", "goal_saved"));
-}
-
-export async function updateGoalAction(formData: FormData, ..._testArgs: unknown[]) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData));
-  const id = parseEntityId(formData);
-  const parsed = parseGoalForm(formData);
-
-  if (!id) {
-    redirect(
+      });
+      return { ok: true };
+    },
+    onError: ({ formData, error }) =>
       errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de objetivo no encontrado.",
+        message: error,
         formId: "goal",
+        values: preserveGoalFields(formData),
         anchor: "goalCreateForm",
       }),
-    );
-  }
-  if (!parsed.ok) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: parsed.error,
+    onSuccess: ({ formData }) => appendParam(currentUrlOf(formData), "ok", "goal_saved"),
+  })(formData, ..._testArgs);
+}
+
+export async function updateGoalAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<{ id: string; form: ValidGoalForm }>({
+    requireId: false,
+    datedFact: false,
+    guardUrl: (fd) => currentUrlOf(fd),
+    parse: ({ formData }) => {
+      const id = parseEntityId(formData);
+      if (!id) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(currentUrlOf(formData), {
+            message: "Identificador de objetivo no encontrado.",
+            formId: "goal",
+            anchor: "goalCreateForm",
+          }),
+        };
+      }
+      const parsed = parseGoalForm(formData);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(currentUrlOf(formData), {
+            message: parsed.error,
+            formId: `goal-${id}`,
+            values: preserveGoalFields(formData),
+            anchor: `goalEdit-${id}`,
+          }),
+        };
+      }
+      return { ok: true, value: { id, form: parsed } };
+    },
+    run: async (store, { parsed }) => {
+      if (!(await actionScopeExists(store, parsed.form.scopeId))) {
+        return { ok: false, error: INVALID_SCOPE_MESSAGE };
+      }
+      await store.goals.updateGoal({
+        id: parsed.id,
+        name: parsed.form.name,
+        targetAmountMinor: parsed.form.targetAmountMinor,
+        deadline: parsed.form.deadline,
+        priority: parsed.form.priority,
+        scopeId: parsed.form.scopeId,
+        assetIds: parsed.form.assetIds,
+      });
+      return { ok: true };
+    },
+    onError: ({ formData, error }) => {
+      const id = parseEntityId(formData);
+      return errorRedirectUrl(currentUrlOf(formData), {
+        message: error,
         formId: `goal-${id}`,
         values: preserveGoalFields(formData),
         anchor: `goalEdit-${id}`,
-      }),
-    );
-  }
-
-  await redirectIfInvalidScope(
-    formData,
-    parsed.scopeId,
-    `goal-${id}`,
-    `goalEdit-${id}`,
-    _store,
-  );
-
-  await runActionWithStore(
-    (store) =>
-      store.goals.updateGoal({
-        id,
-        name: parsed.name,
-        targetAmountMinor: parsed.targetAmountMinor,
-        deadline: parsed.deadline,
-        priority: parsed.priority,
-        scopeId: parsed.scopeId,
-        assetIds: parsed.assetIds,
-      }),
-    _store,
-  );
-  redirect(appendParam(currentUrlOf(formData), "ok", "goal_saved"));
+      });
+    },
+    onSuccess: ({ formData }) => appendParam(currentUrlOf(formData), "ok", "goal_saved"),
+  })(formData, ..._testArgs);
 }
 
-export async function deleteGoalAction(formData: FormData, ..._testArgs: unknown[]) {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData));
-  const id = parseEntityId(formData);
-
-  if (!id) {
-    redirect(
-      errorRedirectUrl(currentUrlOf(formData), {
-        message: "Identificador de objetivo no encontrado.",
-        formId: "goal",
-      }),
-    );
-  }
-
-  await runActionWithStore((store) => store.goals.deleteGoal(id), _store);
-  redirect(appendParam(currentUrlOf(formData), "ok", "goal_deleted"));
+export async function deleteGoalAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<string>({
+    requireId: false,
+    datedFact: false,
+    guardUrl: (fd) => currentUrlOf(fd),
+    parse: ({ formData }) => {
+      const id = parseEntityId(formData);
+      if (!id) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(currentUrlOf(formData), {
+            message: "Identificador de objetivo no encontrado.",
+            formId: "goal",
+          }),
+        };
+      }
+      return { ok: true, value: id };
+    },
+    run: async (store, { parsed }) => {
+      await store.goals.deleteGoal(parsed);
+      return { ok: true };
+    },
+    onError: ({ formData, error }) =>
+      errorRedirectUrl(currentUrlOf(formData), { message: error, formId: "goal" }),
+    onSuccess: ({ formData }) =>
+      appendParam(currentUrlOf(formData), "ok", "goal_deleted"),
+  })(formData, ..._testArgs);
 }

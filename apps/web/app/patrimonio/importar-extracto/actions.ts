@@ -20,12 +20,12 @@
  */
 
 import {
-  isClock,
   runActionWithStore,
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { formAction } from "@web/form-action";
 import {
   createStableId,
   errorRedirectUrl,
@@ -41,7 +41,6 @@ import { type WorthlineStore } from "@web/store";
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 import {
   buildStatementImportPlan,
-  type Clock,
   defaultsFor,
   findStatementTypeConflict,
   isIsinShaped,
@@ -52,9 +51,7 @@ import {
   resolveStatementImportBuckets,
   type StatementFundSelection,
   type StatementImportBucket,
-  systemClock,
 } from "@worthline/domain";
-import { redirect } from "next/navigation";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
@@ -251,123 +248,121 @@ export async function confirmImportStatementAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData));
-  const returnUrl = currentUrlOf(formData);
   const errorUrl = (message: string) =>
-    errorRedirectUrl(returnUrl, { formId: "statement", message });
+    errorRedirectUrl(currentUrlOf(formData), { formId: "statement", message });
 
-  const read = await readStatementFromForm(formData);
-  if (!read.ok) {
-    redirect(errorUrl(read.message));
-  }
-  const today = _clock.today();
-  const seed = Date.now();
-
-  const outcome = await runActionWithStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) {
-      return { error: "Workspace no inicializado." } as const;
-    }
-
-    const investments = await readPortfolioInvestments(
-      statementImportPreviewReadPort(store),
-    );
-    const buckets = resolveStatementImportBuckets(read.value, investments, {
-      replaceOpening: (group) => shouldReplaceOpening(formData, group.isin),
-    });
-
-    const conflict = findStatementTypeConflict(buckets);
-    if (conflict) {
-      return { error: typeConflictMessage(conflict) } as const;
-    }
-
-    const activeMembers = workspace.members.filter((member) => !member.disabledAt);
-    // Wizard ownership default (#593): 100% to the connecting scope member —
-    // here, absent an explicit scope, the workspace's first active member.
-    const ownership = resolveOwnershipSplit({
-      activeMembers,
-      preset: "scope",
-      shortfall: "complete-to-full-ownership",
-    });
-
-    const selections = selectionsFromForm(buckets, formData, ownership, seed);
-    const plan = buildStatementImportPlan(buckets, selections);
-
-    const funds = plan.included.map((fund, index) => {
-      const opSeed = `${seed}_${index}`;
-
-      if (fund.kind === "matched") {
-        return {
-          assetId: fund.assetId,
-          creates: fund.mergePlan.toCreate.map((row, j) =>
-            rowToCreateInput(
-              fund.assetId,
-              row,
-              createStableId(
-                "op",
-                `${fund.assetId}_${row.dateKey}`,
-                seed + index * 1000 + j,
-              ),
-            ),
-          ),
-          deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
-          kind: "matched" as const,
-          overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
-            currency: row.currency,
-            feesMinor: row.feesMinor,
-            id: operationId,
-            kind: row.kind,
-            pricePerUnit: row.pricePerUnit,
-            source: "statement" as const,
-            units: row.units,
-            ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-          })),
-        };
+  return formAction<undefined, { includedCount: number; newCount: number }>({
+    requireId: false,
+    datedFact: false,
+    guardUrl: (fd) => currentUrlOf(fd),
+    run: async (store, { formData, today }) => {
+      const read = await readStatementFromForm(formData);
+      if (!read.ok) {
+        return { ok: false, error: read.message };
       }
 
+      const seed = Date.now();
+
+      const workspace = await store.workspace.readWorkspace();
+      if (!workspace) {
+        return { ok: false, error: "Workspace no inicializado." };
+      }
+
+      const investments = await readPortfolioInvestments(
+        statementImportPreviewReadPort(store),
+      );
+      const buckets = resolveStatementImportBuckets(read.value, investments, {
+        replaceOpening: (group) => shouldReplaceOpening(formData, group.isin),
+      });
+
+      const conflict = findStatementTypeConflict(buckets);
+      if (conflict) {
+        return { ok: false, error: typeConflictMessage(conflict) };
+      }
+
+      const activeMembers = workspace.members.filter((member) => !member.disabledAt);
+      // Wizard ownership default (#593): 100% to the connecting scope member —
+      // here, absent an explicit scope, the workspace's first active member.
+      const ownership = resolveOwnershipSplit({
+        activeMembers,
+        preset: "scope",
+        shortfall: "complete-to-full-ownership",
+      });
+
+      const selections = selectionsFromForm(buckets, formData, ownership, seed);
+      const plan = buildStatementImportPlan(buckets, selections);
+
+      const funds = plan.included.map((fund, index) => {
+        const opSeed = `${seed}_${index}`;
+
+        if (fund.kind === "matched") {
+          return {
+            assetId: fund.assetId,
+            creates: fund.mergePlan.toCreate.map((row, j) =>
+              rowToCreateInput(
+                fund.assetId,
+                row,
+                createStableId(
+                  "op",
+                  `${fund.assetId}_${row.dateKey}`,
+                  seed + index * 1000 + j,
+                ),
+              ),
+            ),
+            deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
+            kind: "matched" as const,
+            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
+              currency: row.currency,
+              feesMinor: row.feesMinor,
+              id: operationId,
+              kind: row.kind,
+              pricePerUnit: row.pricePerUnit,
+              source: "statement" as const,
+              units: row.units,
+              ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
+            })),
+          };
+        }
+
+        return {
+          asset: {
+            currency: fund.creation.currency,
+            id: fund.creation.assetId,
+            // A plantilla identifier without ISIN shape (Finect code, CoinGecko
+            // id) lives in providerSymbol, never in the isin column (#695).
+            ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
+            name: fund.creation.name,
+            ownership: fund.creation.ownership,
+            ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),
+            ...(fund.creation.liquidityTier
+              ? { liquidityTier: fund.creation.liquidityTier }
+              : {}),
+            ...(fund.creation.priceProvider
+              ? { priceProvider: fund.creation.priceProvider }
+              : {}),
+            ...(fund.creation.providerSymbol
+              ? { providerSymbol: fund.creation.providerSymbol }
+              : {}),
+          },
+          creates: fund.rows.map((row, j) =>
+            rowToCreateInput(fund.creation.assetId, row, `create_${opSeed}_${j}`),
+          ),
+          kind: "new" as const,
+        };
+      });
+
+      await store.command.applyStatementImport({ funds, today });
+
       return {
-        asset: {
-          currency: fund.creation.currency,
-          id: fund.creation.assetId,
-          // A plantilla identifier without ISIN shape (Finect code, CoinGecko
-          // id) lives in providerSymbol, never in the isin column (#695).
-          ...(isIsinShaped(fund.isin) ? { isin: fund.isin } : {}),
-          name: fund.creation.name,
-          ownership: fund.creation.ownership,
-          ...(fund.creation.instrument ? { instrument: fund.creation.instrument } : {}),
-          ...(fund.creation.liquidityTier
-            ? { liquidityTier: fund.creation.liquidityTier }
-            : {}),
-          ...(fund.creation.priceProvider
-            ? { priceProvider: fund.creation.priceProvider }
-            : {}),
-          ...(fund.creation.providerSymbol
-            ? { providerSymbol: fund.creation.providerSymbol }
-            : {}),
+        ok: true,
+        value: {
+          includedCount: plan.included.length,
+          newCount: plan.included.filter((fund) => fund.kind === "new").length,
         },
-        creates: fund.rows.map((row, j) =>
-          rowToCreateInput(fund.creation.assetId, row, `create_${opSeed}_${j}`),
-        ),
-        kind: "new" as const,
       };
-    });
-
-    await store.command.applyStatementImport({ funds, today });
-
-    return {
-      includedCount: plan.included.length,
-      newCount: plan.included.filter((fund) => fund.kind === "new").length,
-      ok: true as const,
-    };
-  }, _store);
-
-  if ("error" in outcome) {
-    redirect(errorUrl(outcome.error));
-  }
-
-  redirect(
-    `${successRedirectUrl(returnUrl, "statement_import_loaded")}&funds=${outcome.includedCount}&created=${outcome.newCount}`,
-  );
+    },
+    onError: ({ error }) => errorUrl(error),
+    onSuccess: ({ value }) =>
+      `${successRedirectUrl(currentUrlOf(formData), "statement_import_loaded")}&funds=${value?.includedCount}&created=${value?.newCount}`,
+  })(formData, ..._testArgs);
 }

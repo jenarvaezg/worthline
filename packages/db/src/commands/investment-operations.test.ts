@@ -1,19 +1,14 @@
 /**
  * Investment operation commands (#971): exercise the command interface directly
- * against an in-memory store — no server actions.
+ * against an in-memory store — no server actions. Since #1115 the actions call
+ * `store.command.*` directly (the thin `execute*` wrappers were removed), so this
+ * suite drives those same command methods it always covered.
  */
 
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
 import { asInstant } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-
-import {
-  executeDeleteInvestmentOperationCommand,
-  executeMergeStatementOperationsCommand,
-  executeRecordInvestmentOperationCommand,
-  runCommand,
-} from "./index";
 
 const TODAY = "2026-06-12";
 
@@ -53,25 +48,20 @@ describe("investment operation commands (#971)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    const result = await runCommand(
-      executeRecordInvestmentOperationCommand,
+    await store.command.recordInvestmentOperation(
       {
-        today: TODAY,
-        operation: {
-          assetId: "fund",
-          currency: "EUR",
-          executedAt: "2024-01-10",
-          feesMinor: 0,
-          id: "op1",
-          kind: "buy",
-          pricePerUnit: "100",
-          units: "10",
-        },
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2024-01-10",
+        feesMinor: 0,
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
       },
-      store,
+      { today: TODAY },
     );
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.operations.readOperations("fund")).toHaveLength(1);
     expect(await grossAt(store, "2024-01-10")).toBe(1_000_00);
     expect(await positionUnits(store, "fund")).toBe("10");
@@ -83,9 +73,8 @@ describe("investment operation commands (#971)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await executeRecordInvestmentOperationCommand(store, {
-      today: TODAY,
-      operation: {
+    await store.command.recordInvestmentOperation(
+      {
         assetId: "fund",
         currency: "EUR",
         executedAt: "2024-01-10",
@@ -95,11 +84,11 @@ describe("investment operation commands (#971)", () => {
         pricePerUnit: "100",
         units: "10",
       },
-    });
+      { today: TODAY },
+    );
 
-    const result = await executeRecordInvestmentOperationCommand(store, {
-      today: TODAY,
-      operation: {
+    await store.command.recordInvestmentOperation(
+      {
         assetId: "fund",
         currency: "EUR",
         executedAt: "2024-02-10",
@@ -109,9 +98,9 @@ describe("investment operation commands (#971)", () => {
         pricePerUnit: "120",
         units: "4",
       },
-    });
+      { today: TODAY },
+    );
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.operations.readOperations("fund")).toHaveLength(2);
     expect(await positionUnits(store, "fund")).toBe("6");
 
@@ -122,9 +111,8 @@ describe("investment operation commands (#971)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    await executeRecordInvestmentOperationCommand(store, {
-      today: TODAY,
-      operation: {
+    await store.command.recordInvestmentOperation(
+      {
         assetId: "fund",
         currency: "EUR",
         executedAt: "2024-01-10",
@@ -134,18 +122,16 @@ describe("investment operation commands (#971)", () => {
         pricePerUnit: "100",
         units: "10",
       },
-    });
+      { today: TODAY },
+    );
     expect(await positionUnits(store, "fund")).toBe("10");
 
-    const result = await executeDeleteInvestmentOperationCommand(store, {
+    const deleted = await store.command.deleteInvestmentOperation({
       operationId: "op1",
       today: TODAY,
     });
 
-    expect(result).toEqual({
-      ok: true,
-      value: { assetId: "fund", executedAt: "2024-01-10" },
-    });
+    expect(deleted).toEqual({ assetId: "fund", executedAt: "2024-01-10" });
     expect(await store.operations.readOperations("fund")).toHaveLength(0);
     expect(await positionUnits(store, "fund")).toBe("0");
 
@@ -156,12 +142,12 @@ describe("investment operation commands (#971)", () => {
     const store = await createInMemoryStore();
     await seedFund(store);
 
-    const result = await executeDeleteInvestmentOperationCommand(store, {
+    const deleted = await store.command.deleteInvestmentOperation({
       operationId: "missing",
       today: TODAY,
     });
 
-    expect(result).toEqual({ ok: true, value: null });
+    expect(deleted).toBe(null);
 
     store.close();
   });
@@ -171,7 +157,7 @@ describe("investment operation commands (#971)", () => {
     await seedFund(store);
 
     const dates = ["2024-02-01", "2024-03-01", "2024-04-01"] as const;
-    const result = await executeMergeStatementOperationsCommand(store, {
+    await store.command.mergeInvestmentOperations({
       assetId: "fund",
       today: TODAY,
       creates: dates.map((executedAt, i) => ({
@@ -188,11 +174,12 @@ describe("investment operation commands (#971)", () => {
       overwrites: [],
     });
 
-    expect(result).toEqual({ ok: true, value: undefined });
     expect(await store.operations.readOperations("fund")).toHaveLength(3);
     expect(
       (await store.snapshots.readSnapshots("household")).map((s) => s.dateKey).sort(),
     ).toEqual([...dates]);
+
+    store.close();
   });
 
   test("merge overwrites an existing operation on the same date", async () => {
@@ -209,7 +196,7 @@ describe("investment operation commands (#971)", () => {
       units: "999",
     });
 
-    const result = await executeMergeStatementOperationsCommand(store, {
+    await store.command.mergeInvestmentOperations({
       assetId: "fund",
       today: TODAY,
       creates: [
@@ -238,8 +225,6 @@ describe("investment operation commands (#971)", () => {
         },
       ],
     });
-
-    expect(result).toEqual({ ok: true, value: undefined });
 
     const ops = await store.operations.readOperations("fund");
     expect(ops).toHaveLength(2);
