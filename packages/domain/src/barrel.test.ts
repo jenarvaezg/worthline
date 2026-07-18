@@ -47,8 +47,6 @@ const KEY_EXPORTS = [
   "createNetWorthSnapshot",
   "captureNetWorthSnapshot",
   "calculateSnapshotDeltas",
-  // dashboard-shell
-  "createDashboardShell",
   // positions
   "createInvestmentOperation",
   "derivePosition",

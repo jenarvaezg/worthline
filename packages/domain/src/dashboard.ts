@@ -1,7 +1,5 @@
 import type { ContributionPlan } from "./contribution-plan";
 import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
-import type { DashboardShell } from "./dashboard-shell";
-import { createDashboardShell } from "./dashboard-shell";
 import type { FireScopeConfig } from "./fire";
 import {
   calculateFireForScope,
@@ -42,6 +40,13 @@ import { collectWarnings } from "./warnings";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 
 export type { LocalPersistenceStatus };
+
+export interface DashboardShell {
+  productName: "worthline";
+  baseCurrency: "EUR";
+  generatedAt: string;
+  persistence: LocalPersistenceStatus;
+}
 
 export interface PositionView extends PositionSummary {
   name: string;
@@ -280,16 +285,12 @@ export function prepareDashboardState(input: {
     ? calculateSnapshotDeltas(input.snapshots, latestSnapshot.id)
     : undefined;
 
-  const dashboard = createDashboardShell({
-    moduleStates: {
-      liquidity: workspace ? "ready" : "empty",
-      members: workspace ? "ready" : "empty",
-      ownership: assets.length > 0 || liabilities.length > 0 ? "ready" : "empty",
-      snapshots: input.snapshots.length > 0 ? "ready" : "empty",
-    },
+  const dashboard: DashboardShell = {
+    productName: "worthline",
+    baseCurrency: "EUR",
+    generatedAt: persistence.checkedAt,
     persistence,
-    ...(summary ? { summary } : {}),
-  });
+  };
 
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");

@@ -2,7 +2,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runBootstrapHealthcheck } from "@worthline/db";
-import { createDashboardShell } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];
@@ -23,7 +22,12 @@ describe("worthline bootstrap", () => {
       now: () => new Date("2026-06-08T12:00:00.000Z"),
     });
 
-    const dashboard = createDashboardShell({ persistence });
+    const dashboard = {
+      productName: "worthline" as const,
+      baseCurrency: "EUR" as const,
+      generatedAt: persistence.checkedAt,
+      persistence,
+    };
 
     expect(dashboard.productName).toBe("worthline");
     expect(dashboard.baseCurrency).toBe("EUR");

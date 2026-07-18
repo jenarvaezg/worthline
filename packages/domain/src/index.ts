@@ -175,6 +175,7 @@ export {
   resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
 export type {
+  DashboardShell,
   DashboardState,
   FireGlance,
   LocalPersistenceStatus,
@@ -188,8 +189,6 @@ export {
   prepareDashboardState,
   prepareObjetivosState,
 } from "./dashboard";
-export type { DashboardShell } from "./dashboard-shell";
-export { createDashboardShell } from "./dashboard-shell";
 export type {
   CollectDataQualitySignalsInput,
   DataQualityAffectedObject,
