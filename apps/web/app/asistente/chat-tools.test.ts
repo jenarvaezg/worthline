@@ -360,6 +360,72 @@ describe("createChatTools · propose_statement_import (#767)", () => {
   });
 });
 
+describe("createChatTools · propose_reconcile (#1108)", () => {
+  it("merges an extracted portfolio into an editable reconcile proposal", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset-amundi",
+      instrument: "fund",
+      isin: "LU1681043599",
+      name: "Amundi MSCI World",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+    });
+
+    const result = await tools["propose_reconcile"]?.execute?.(
+      {
+        documentName: "cartera.xlsx",
+        holdings: [
+          {
+            name: "Amundi MSCI World",
+            type: "Fondo",
+            isin: "LU1681043599",
+            value: 12000,
+            currency: "EUR",
+            fidelity: "value_only",
+          },
+          {
+            name: "Vanguard Global",
+            type: "ETF",
+            value: 5000,
+            currency: "EUR",
+            fidelity: "value_only",
+          },
+        ],
+        movements: [],
+      },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      proposalType: "reconcile",
+      draft: { proposalId: expect.any(String) },
+    });
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0].match.decision).toBe("update");
+    expect(result.rows[1].match.decision).toBe("create");
+    expect(await store.assistantProposals.read(result.draft.proposalId)).toMatchObject({
+      kind: "reconcile",
+      status: "draft",
+    });
+  });
+});
+
 describe("createChatTools · propose_reconstruction (#1053)", () => {
   it("builds a superficie-C reconstruct proposal from a dated balance series", async () => {
     const store = await createInMemoryStore();

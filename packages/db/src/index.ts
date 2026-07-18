@@ -221,7 +221,11 @@ export type {
   AssistantProposalStore,
   HoldingCorrectionFact,
   HoldingCreationFact,
+  HoldingReconcileFact,
   PropertyValuationAnchorFact,
+  ReconcileDocument,
+  ReconcileDocumentHolding,
+  ReconcileDocumentMovement,
   StatementOperationFact,
 } from "./assistant-proposal-store";
 export type {

@@ -505,11 +505,11 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     // Each proposal states its kind through the shared folio label (the first
     // real child is the srOnly mutation status, so the title carries its class).
-    // Eight cards: statement, correction (#1051), reconstruction (#1053),
-    // balance-history, valuation, mixed, holding-creation (#1105), and the shared
-    // baja/restauración card (#1106, one card, two folios).
+    // Nine cards: statement, correction (#1051), reconstruction (#1053),
+    // balance-history, valuation, mixed, holding-creation (#1105), the shared
+    // baja/restauración card (#1106, one card, two folios), and reconcile (#1108).
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
-    expect(kindTitles.length).toBe(8);
+    expect(kindTitles.length).toBe(9);
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {

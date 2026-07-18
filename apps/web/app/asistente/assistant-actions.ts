@@ -21,6 +21,11 @@ import type {
 } from "./mixed-document-proposals";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
+import type { ReconcileRow } from "./reconcile-plan";
+import {
+  parseReconcileProposalDraft,
+  type ReconcileProposal,
+} from "./reconcile-proposal-contract";
 import type { ScreenSection } from "./screen-context";
 import type { StatementImportProposal } from "./statement-import-proposals";
 import { parseStatementImportProposalDraft } from "./statement-import-proposals";
@@ -339,6 +344,36 @@ export function parseHoldingCreationProposal(
     return null;
   }
   return raw as unknown as HoldingCreationProposal;
+}
+
+/** Shallow shape check for a reconcile row off the tool stream (own JSON). */
+function isReconcileRow(value: unknown): value is ReconcileRow {
+  return (
+    isRecord(value) &&
+    typeof value.rowId === "string" &&
+    typeof value.name === "string" &&
+    isRecord(value.match) &&
+    typeof value.match.decision === "string"
+  );
+}
+
+/**
+ * Trust-boundary parser for a reconcile proposal (#1108) coming back off the tool
+ * stream: validates the discriminant, the draft handle, the nullable net-worth
+ * header (ADR 0048) and the editable rows the card renders.
+ */
+export function parseReconcileProposal(raw: unknown): ReconcileProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "reconcile") return null;
+  const draft = parseReconcileProposalDraft(raw.draft);
+  if (
+    draft === null ||
+    !(raw.netWorthBeforeMinor === null || typeof raw.netWorthBeforeMinor === "number") ||
+    !Array.isArray(raw.rows) ||
+    !raw.rows.every(isReconcileRow)
+  ) {
+    return null;
+  }
+  return raw as unknown as ReconcileProposal;
 }
 
 /**

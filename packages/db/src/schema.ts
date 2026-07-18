@@ -928,7 +928,8 @@ export type AssistantProposalKind =
   | "correction"
   | "holding_creation"
   | "holding_removal"
-  | "holding_restoration";
+  | "holding_restoration"
+  | "reconcile";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 

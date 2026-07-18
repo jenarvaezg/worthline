@@ -53,6 +53,7 @@ import {
 } from "@web/asistente/maintainer-alert";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
+import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
@@ -97,6 +98,8 @@ export interface ChatReadStore {
   assets?: WorthlineStore["assets"];
   /** Present for the alta builder (#1105): resolves ownership at build time. */
   workspace?: WorthlineStore["workspace"];
+  /** Present for the reconcile builder (#1108): fences off sync-owned holdings. */
+  connectedSources?: WorthlineStore["connectedSources"];
 }
 
 export interface ChatToolsInput {
@@ -522,6 +525,58 @@ const MIXED_DOCUMENT_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["documentName", "documentSha256", "segments"],
+  additionalProperties: false,
+});
+
+const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
+  documentName?: string;
+  holdings?: Array<Record<string, unknown>>;
+  movements?: Array<Record<string, unknown>>;
+}>({
+  type: "object",
+  properties: {
+    documentName: { type: "string" },
+    holdings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          type: { type: "string" },
+          isin: { type: "string" },
+          value: { type: "number" },
+          currency: { type: "string" },
+          declaredCost: { type: "number" },
+          fidelity: {
+            enum: ["movements", "declared_cost", "value_only"],
+            type: "string",
+          },
+          uncertain: { type: "boolean" },
+        },
+        required: ["name", "type", "value", "currency", "fidelity"],
+        additionalProperties: false,
+      },
+    },
+    movements: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          date: { type: "string" },
+          kind: { enum: ["buy", "sell", "contribution"], type: "string" },
+          isin: { type: "string" },
+          name: { type: "string" },
+          units: { type: "number" },
+          amount: { type: "number" },
+          currency: { type: "string" },
+          uncertain: { type: "boolean" },
+        },
+        required: ["date", "kind", "amount", "currency"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["holdings", "movements"],
   additionalProperties: false,
 });
 
@@ -1486,6 +1541,43 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             },
             { ...args, segments },
             input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        }),
+    }),
+    propose_reconcile: tool({
+      description:
+        "Prepara UNA propuesta de RECONCILE de cartera a partir de un documento «posiciones + movimientos» ya extraído por el seam de adjuntos (documentType positions_movements en los DATOS ESTRUCTURADOS). Pasa holdings y movements TAL CUAL los diste por extraídos, sin recalcular ni inventar (respeta el tier de fidelidad ya estampado; ADR 0048). La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; otras familias o un split usa el alta por chat (propose_holding), no ésta. No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync.",
+      inputSchema: RECONCILE_PROPOSAL_SCHEMA,
+      execute: (args) =>
+        input.runWithStore(async (store) => {
+          if (
+            !store.assistantProposals ||
+            !store.assets ||
+            !store.liabilities ||
+            !store.workspace
+          ) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const built = await buildReconcileProposal(
+            {
+              agentView: store.agentView,
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              liabilities: store.liabilities,
+              workspace: store.workspace,
+              ...(store.connectedSources
+                ? { connectedSources: store.connectedSources }
+                : {}),
+            },
+            {
+              documentType: "positions_movements",
+              holdings: args.holdings ?? [],
+              movements: args.movements ?? [],
+              warnings: [],
+            },
+            input.asOf,
+            args.documentName ?? "cartera.xlsx",
           );
           return built.ok ? built.proposal : { error: built.error };
         }),

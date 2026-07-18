@@ -35,6 +35,17 @@ export interface CommandHost {
   applyAssistantMixedProposal: (
     params: StatementImportCommand & { proposalId: string },
   ) => Promise<void>;
+  /**
+   * Apply one reconcile proposal (PRD #1103 S5, #1108) and resolve it in the SAME
+   * transaction — the "todo o nada" upsert. The web action resolves the curated
+   * batch into a statement-import `funds` array (created holdings as `new`,
+   * matched-with-movements holdings as `matched`); this runs them through the
+   * proven atomic statement-import ripple, so a write that fails midway rolls the
+   * whole batch back and nothing persists, and the draft survives for a retry.
+   */
+  applyAssistantReconcileProposal: (
+    params: StatementImportCommand & { proposalId: string },
+  ) => Promise<void>;
   applyAssistantBalanceHistoryProposal: (
     params: Parameters<DatedFactCommands["importBalanceHistoryAndRipple"]>[0] & {
       proposalId: string;
@@ -342,6 +353,20 @@ export function createCommandHost(
         (proposal) => {
           if (!proposal || proposal.kind !== "mixed_document_import") {
             throw new Error(`Assistant proposal "${proposalId}" is not a mixed import.`);
+          }
+          return proposal;
+        },
+        () =>
+          datedFacts.applyStatementImportAndRipple({ ...params, trigger: "assistant" }),
+      ),
+    applyAssistantReconcileProposal: async ({ proposalId, ...params }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "reconcile") {
+            throw new Error(`Assistant proposal "${proposalId}" is not a reconcile.`);
           }
           return proposal;
         },
