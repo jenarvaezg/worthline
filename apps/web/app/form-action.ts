@@ -75,10 +75,11 @@ async function resolveFrontMatter(
   formData: FormData,
   testArgs: readonly unknown[],
   extraIds: readonly string[] | undefined,
+  guardUrl: (formData: FormData) => string,
 ): Promise<FrontMatter> {
   const store = testStoreFromActionArgs(testArgs);
   const clock: Clock = testArgFromActionArgs(testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOrDefault(formData));
+  await guardDemoWrite(guardUrl(formData));
 
   const id = parseEntityId(formData);
   // Key each extra id by its field name so consumers read `extra.planId` instead
@@ -133,6 +134,12 @@ export type FormActionConfig<P, R = void> = {
   /** Extra id fields required beyond `id` (e.g. `["planId", "revisionId"]`). */
   extraIds?: readonly string[];
   /**
+   * Where the demo/impersonation write guard redirects a blocked write. Default:
+   * the form's own `currentUrl`, or `/patrimonio`. Override for a section whose
+   * guard target differs (e.g. `() => "/ajustes"`, or a per-holding edit page).
+   */
+  guardUrl?: (formData: FormData) => string;
+  /**
    * Whether the action requires a primary `id` field. Default `true`. Set `false`
    * for actions that operate on the whole workspace (e.g. empty trash, batch
    * value update), where `id` is `""` throughout.
@@ -159,6 +166,16 @@ export type FormActionConfig<P, R = void> = {
   run: (store: WorthlineStore, ctx: ActionContext<P>) => Promise<FormRunResult<R>>;
   /** Redirect URL when `run` returns `{ ok: false }`. */
   onError: (input: Omit<RedirectInput<R>, "value"> & { error: string }) => string;
+  /**
+   * A best-effort side effect run AFTER the mutation commits (the store cycle has
+   * closed) and BEFORE the success redirect — the seam for the work that used to
+   * sit between `}, _store)` and `redirect(...)`: registering an exposure-catalog
+   * stub (#1097), or pointing the scope cookie at a freshly-imported member. It
+   * receives the run payload. It runs only on success; a throw propagates, so a
+   * genuinely-optional effect (a catalog stub) must swallow its own errors, while
+   * one whose failure should abort the redirect (a required cookie) may throw.
+   */
+  afterCommit?: (input: RedirectInput<R>) => Promise<void>;
   /** Redirect URL on success (receives the run payload). */
   onSuccess: (input: RedirectInput<R>) => string;
 };
@@ -174,6 +191,7 @@ export function formAction<P = undefined, R = void>(
   const requireId = config.requireId ?? true;
   const datedFact = config.datedFact ?? true;
   const missingIdUrl = config.missingIdUrl ?? (() => DEFAULT_GUARD_URL);
+  const guardUrl = config.guardUrl ?? currentUrlOrDefault;
 
   return async (formData, ..._testArgs) => {
     const {
@@ -183,7 +201,7 @@ export function formAction<P = undefined, R = void>(
       id: primaryId,
       extra,
       missingExtra,
-    } = await resolveFrontMatter(formData, _testArgs, config.extraIds);
+    } = await resolveFrontMatter(formData, _testArgs, config.extraIds, guardUrl);
 
     if ((requireId && !primaryId) || missingExtra) {
       redirect(
@@ -211,7 +229,11 @@ export function formAction<P = undefined, R = void>(
       redirect(config.onError({ id, extra, formData, error: result.error }));
     }
 
-    redirect(config.onSuccess({ id, extra, formData, value: result.value }));
+    const committed = { id, extra, formData, value: result.value };
+    if (config.afterCommit) {
+      await config.afterCommit(committed);
+    }
+    redirect(config.onSuccess(committed));
   };
 }
 
@@ -233,6 +255,8 @@ export type FormActionStateParse<P> =
 export type FormActionStateConfig<P, S extends object> = {
   /** Extra id fields required beyond `id`. */
   extraIds?: readonly string[];
+  /** Where the demo/impersonation write guard redirects a blocked write. Default: `currentUrl` or `/patrimonio`. */
+  guardUrl?: (formData: FormData) => string;
   /** Whether the action requires a primary `id` field. Default `true`. */
   requireId?: boolean;
   /** Error message returned when a required id is absent. Required unless `requireId` is false. */
@@ -270,6 +294,7 @@ export function formActionState<P = undefined, S extends object = Record<never, 
 ) => Promise<FormActionState<S>> {
   const requireId = config.requireId ?? true;
   const datedFact = config.datedFact ?? true;
+  const guardUrl = config.guardUrl ?? currentUrlOrDefault;
 
   return async (_prevState, formData, ..._testArgs) => {
     const {
@@ -279,7 +304,7 @@ export function formActionState<P = undefined, S extends object = Record<never, 
       id: primaryId,
       extra,
       missingExtra,
-    } = await resolveFrontMatter(formData, _testArgs, config.extraIds);
+    } = await resolveFrontMatter(formData, _testArgs, config.extraIds, guardUrl);
 
     if ((requireId && !primaryId) || missingExtra) {
       return { ok: false, error: config.missingId ?? "Falta un identificador." };

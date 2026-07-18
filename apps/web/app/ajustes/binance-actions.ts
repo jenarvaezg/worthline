@@ -2,6 +2,7 @@
 
 import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { formAction } from "@web/form-action";
 import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import {
   fetchCoinGeckoHistoryEur,
@@ -42,33 +43,32 @@ import { enqueueSourceSync } from "./source-sync-enqueue";
 
 const BINANCE_LABEL = "Binance";
 
-export async function connectBinanceAction(
-  formData: FormData,
-  ..._testArgs: unknown[]
-): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite("/ajustes");
-  const returnUrl = currentUrlOf(formData);
-  const creds = parseBinanceCredentials(
-    formData.get("apiKey"),
-    formData.get("apiSecret"),
-  );
-
-  if (!creds) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        formId: "binance",
-        message: "Pega tu clave de API y tu secreto de Binance (solo lectura).",
-      }),
+export const connectBinanceAction = formAction({
+  requireId: false,
+  datedFact: false,
+  guardUrl: () => "/ajustes",
+  parse: ({ formData }) => {
+    const creds = parseBinanceCredentials(
+      formData.get("apiKey"),
+      formData.get("apiSecret"),
     );
-  }
-
-  const scoped = await scopeMemberId();
-  const result = await runActionWithStore(async (store) => {
+    if (!creds) {
+      return {
+        ok: false,
+        redirect: errorRedirectUrl(currentUrlOf(formData), {
+          formId: "binance",
+          message: "Pega tu clave de API y tu secreto de Binance (solo lectura).",
+        }),
+      };
+    }
+    return { ok: true, value: creds };
+  },
+  run: async (store, { parsed }) => {
+    const scoped = await scopeMemberId();
     const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
-      return { ok: false as const, error: "Workspace no inicializado." };
+      return { ok: false, error: "Workspace no inicializado." };
     }
 
     const existing = (await store.connectedSources.listSources()).find(
@@ -76,14 +76,14 @@ export async function connectBinanceAction(
     );
 
     if (existing) {
-      return { ok: false as const, error: "Ya hay una cuenta de Binance conectada." };
+      return { ok: false, error: "Ya hay una cuenta de Binance conectada." };
     }
 
     const ownership = resolveConnectingOwnership(workspace.members, scoped);
 
     if (!ownership) {
       return {
-        ok: false as const,
+        ok: false,
         error: "No hay ningún miembro activo que pueda ser propietario de la cuenta.",
       };
     }
@@ -91,7 +91,7 @@ export async function connectBinanceAction(
     await store.connectedSources.connect({
       adapter: "binance",
       label: BINANCE_LABEL,
-      credentialsJson: serializeBinanceCredentials(creds),
+      credentialsJson: serializeBinanceCredentials(parsed),
       ownership,
     });
 
@@ -110,15 +110,13 @@ export async function connectBinanceAction(
       // Connecting still succeeds; the twice-daily cron will retry the sync.
     }
 
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { formId: "binance", message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", "binance_connected"));
-}
+    return { ok: true };
+  },
+  onError: ({ formData, error }) =>
+    errorRedirectUrl(currentUrlOf(formData), { formId: "binance", message: error }),
+  onSuccess: ({ formData }) =>
+    appendParam(currentUrlOf(formData), "ok", "binance_connected"),
+});
 
 export async function syncBinanceAction(
   formData: FormData,
@@ -235,50 +233,39 @@ export async function syncBinanceAction(
   redirect(appendParam(returnUrl, "ok", "binance_synced"));
 }
 
-export async function disconnectBinanceAction(
-  formData: FormData,
-  ..._testArgs: unknown[]
-): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const returnUrl = currentUrlOf(formData);
-  await guardDemoWrite(returnUrl);
-  const sourceId = parseEntityId(formData, "sourceId");
-  const freeze = (formData.get("mode") as string) === "freeze";
-
-  if (!sourceId) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la cuenta conectada de Binance.",
-      }),
-    );
-  }
-
-  const result = await runActionWithStore(async (store) => {
-    const source = await store.connectedSources.readSource(sourceId);
+export const disconnectBinanceAction = formAction({
+  requireId: false,
+  datedFact: false,
+  extraIds: ["sourceId"],
+  guardUrl: (fd) => currentUrlOf(fd),
+  missingId: "No se encontró la cuenta conectada de Binance.",
+  missingIdUrl: (fd) => currentUrlOf(fd),
+  run: async (store, { extra, formData }) => {
+    const freeze = (formData.get("mode") as string) === "freeze";
+    const source = await store.connectedSources.readSource(extra.sourceId!);
 
     if (!source) {
-      return {
-        ok: false as const,
-        error: "No se encontró la cuenta conectada de Binance.",
-      };
+      return { ok: false, error: "No se encontró la cuenta conectada de Binance." };
     }
 
     if (freeze) {
-      const frozen = await store.connectedSources.freezeIntoStoredHolding(sourceId);
+      const frozen = await store.connectedSources.freezeIntoStoredHolding(
+        extra.sourceId!,
+      );
       return frozen
-        ? { ok: true as const, message: "binance_frozen" }
-        : { ok: false as const, error: "No se pudo congelar la cuenta." };
+        ? { ok: true, value: { message: "binance_frozen" } }
+        : { ok: false, error: "No se pudo congelar la cuenta." };
     }
 
-    const { removed } = await store.connectedSources.removeSourceHoldings(sourceId);
+    const { removed } = await store.connectedSources.removeSourceHoldings(
+      extra.sourceId!,
+    );
     return removed > 0
-      ? { ok: true as const, message: "binance_disconnected" }
-      : { ok: false as const, error: "No se pudo desconectar la cuenta." };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", result.message));
-}
+      ? { ok: true, value: { message: "binance_disconnected" } }
+      : { ok: false, error: "No se pudo desconectar la cuenta." };
+  },
+  onError: ({ formData, error }) =>
+    errorRedirectUrl(currentUrlOf(formData), { message: error }),
+  onSuccess: ({ formData, value }) =>
+    appendParam(currentUrlOf(formData), "ok", value!.message),
+});

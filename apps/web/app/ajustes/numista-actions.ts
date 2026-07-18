@@ -2,6 +2,7 @@
 
 import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { formAction } from "@web/form-action";
 import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import type { CoinPosition } from "@worthline/domain";
 import {
@@ -43,30 +44,29 @@ import { enqueueSourceSync } from "./source-sync-enqueue";
 
 const NUMISTA_LABEL = "Colección Numista";
 
-export async function connectNumistaAction(
-  formData: FormData,
-  ..._testArgs: unknown[]
-): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite("/ajustes");
-  const returnUrl = currentUrlOf(formData);
-  const apiKey = normalizeApiKey(formData.get("apiKey"));
-
-  if (!apiKey) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        formId: "numista",
-        message: "Pega tu clave de API de Numista para conectar la colección.",
-      }),
-    );
-  }
-
-  const scoped = await scopeMemberId();
-  const result = await runActionWithStore(async (store) => {
+export const connectNumistaAction = formAction({
+  requireId: false,
+  datedFact: false,
+  guardUrl: () => "/ajustes",
+  parse: ({ formData }) => {
+    const apiKey = normalizeApiKey(formData.get("apiKey"));
+    if (!apiKey) {
+      return {
+        ok: false,
+        redirect: errorRedirectUrl(currentUrlOf(formData), {
+          formId: "numista",
+          message: "Pega tu clave de API de Numista para conectar la colección.",
+        }),
+      };
+    }
+    return { ok: true, value: apiKey };
+  },
+  run: async (store, { parsed }) => {
+    const scoped = await scopeMemberId();
     const workspace = await store.workspace.readWorkspace();
 
     if (!workspace) {
-      return { ok: false as const, error: "Workspace no inicializado." };
+      return { ok: false, error: "Workspace no inicializado." };
     }
 
     const existing = (await store.connectedSources.listSources()).find(
@@ -74,17 +74,14 @@ export async function connectNumistaAction(
     );
 
     if (existing) {
-      return {
-        ok: false as const,
-        error: "Ya hay una colección Numista conectada.",
-      };
+      return { ok: false, error: "Ya hay una colección Numista conectada." };
     }
 
     const ownership = resolveConnectingOwnership(workspace.members, scoped);
 
     if (!ownership) {
       return {
-        ok: false as const,
+        ok: false,
         error: "No hay ningún miembro activo que pueda ser propietario de la colección.",
       };
     }
@@ -92,7 +89,7 @@ export async function connectNumistaAction(
     await store.connectedSources.connect({
       adapter: "numista",
       label: NUMISTA_LABEL,
-      credentialsJson: JSON.stringify({ apiKey }),
+      credentialsJson: JSON.stringify({ apiKey: parsed }),
       ownership,
     });
 
@@ -113,15 +110,13 @@ export async function connectNumistaAction(
       // Connecting still succeeds; the twice-daily cron will retry the sync.
     }
 
-    return { ok: true as const };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { formId: "numista", message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", "numista_connected"));
-}
+    return { ok: true };
+  },
+  onError: ({ formData, error }) =>
+    errorRedirectUrl(currentUrlOf(formData), { formId: "numista", message: error }),
+  onSuccess: ({ formData }) =>
+    appendParam(currentUrlOf(formData), "ok", "numista_connected"),
+});
 
 export async function syncNumistaAction(
   formData: FormData,
@@ -284,50 +279,39 @@ export async function syncNumistaAction(
   redirect(appendParam(returnUrl, "ok", "numista_synced"));
 }
 
-export async function disconnectNumistaAction(
-  formData: FormData,
-  ..._testArgs: unknown[]
-): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const returnUrl = currentUrlOf(formData);
-  await guardDemoWrite(returnUrl);
-  const sourceId = parseEntityId(formData, "sourceId");
-  const freeze = (formData.get("mode") as string) === "freeze";
-
-  if (!sourceId) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        message: "No se encontró la fuente conectada de Numista.",
-      }),
-    );
-  }
-
-  const result = await runActionWithStore(async (store) => {
-    const source = await store.connectedSources.readSource(sourceId);
+export const disconnectNumistaAction = formAction({
+  requireId: false,
+  datedFact: false,
+  extraIds: ["sourceId"],
+  guardUrl: (fd) => currentUrlOf(fd),
+  missingId: "No se encontró la fuente conectada de Numista.",
+  missingIdUrl: (fd) => currentUrlOf(fd),
+  run: async (store, { extra, formData }) => {
+    const freeze = (formData.get("mode") as string) === "freeze";
+    const source = await store.connectedSources.readSource(extra.sourceId!);
 
     if (!source) {
-      return {
-        ok: false as const,
-        error: "No se encontró la fuente conectada de Numista.",
-      };
+      return { ok: false, error: "No se encontró la fuente conectada de Numista." };
     }
 
     if (freeze) {
-      const frozen = await store.connectedSources.freezeIntoStoredHolding(sourceId);
+      const frozen = await store.connectedSources.freezeIntoStoredHolding(
+        extra.sourceId!,
+      );
       return frozen
-        ? { ok: true as const, message: "numista_frozen" }
-        : { ok: false as const, error: "No se pudo congelar la colección." };
+        ? { ok: true, value: { message: "numista_frozen" } }
+        : { ok: false, error: "No se pudo congelar la colección." };
     }
 
-    const { removed } = await store.connectedSources.removeSourceHoldings(sourceId);
+    const { removed } = await store.connectedSources.removeSourceHoldings(
+      extra.sourceId!,
+    );
     return removed > 0
-      ? { ok: true as const, message: "numista_disconnected" }
-      : { ok: false as const, error: "No se pudo desconectar la colección." };
-  }, _store);
-
-  if (!result.ok) {
-    redirect(errorRedirectUrl(returnUrl, { message: result.error }));
-  }
-
-  redirect(appendParam(returnUrl, "ok", result.message));
-}
+      ? { ok: true, value: { message: "numista_disconnected" } }
+      : { ok: false, error: "No se pudo desconectar la colección." };
+  },
+  onError: ({ formData, error }) =>
+    errorRedirectUrl(currentUrlOf(formData), { message: error }),
+  onSuccess: ({ formData, value }) =>
+    appendParam(currentUrlOf(formData), "ok", value!.message),
+});

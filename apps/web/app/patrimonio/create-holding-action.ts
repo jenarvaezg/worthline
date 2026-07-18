@@ -1,16 +1,10 @@
 "use server";
 
 import {
-  isClock,
-  runActionWithStore,
-  testArgFromActionArgs,
-  testStoreFromActionArgs,
-} from "@web/action-store";
-import { guardDemoWrite } from "@web/demo/write-guard";
-import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
 } from "@web/ensure-exposure-catalog-stubs";
+import { formAction } from "@web/form-action";
 import {
   errorRedirectUrl,
   mapDomainViolation,
@@ -30,9 +24,7 @@ import {
   createInvestmentOperationSafe,
   createLiabilitySafe,
   defaultsFor,
-  systemClock,
 } from "@worthline/domain";
-import { redirect } from "next/navigation";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
@@ -368,354 +360,363 @@ export async function createHoldingAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const _store = testStoreFromActionArgs(_testArgs);
-  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  const today = _clock.today();
   const returnUrl = parseReturnUrl(formData.get("returnTo"));
-  await guardDemoWrite(returnUrl);
+  return formAction<
+    undefined,
+    { redirectUrl: string; catalog?: ExposureCatalogStubCandidate }
+  >({
+    requireId: false,
+    datedFact: false,
+    guardUrl: () => returnUrl,
+    run: async (store, { today }) => {
+      const normalized = normalizeSimpleDrawerForm(formData, today);
+      const actionFormData = normalized.formData;
+      const instrument = normalized.instrument;
 
-  const normalized = normalizeSimpleDrawerForm(formData, today);
-  const actionFormData = normalized.formData;
-  const instrument = normalized.instrument;
-
-  if (!instrument) {
-    redirect(
-      errorRedirectUrl(returnUrl, {
-        formId: "holding",
-        message: normalized.unsupported ?? "Elige un tipo de instrumento.",
-        values: preserveFields(
-          actionFormData,
-          ["instrument", "ownershipPreset", "scopeMemberId", ...SIMPLE_FIELD_KEYS],
-          ["owner_"],
-        ),
-      }),
-    );
-  }
-
-  // On error, reopen the chosen pane and refill what was typed.
-  const errorUrl = (message: string): string =>
-    errorRedirectUrl(returnUrl, {
-      formId: "holding",
-      message,
-      values: preserveFields(
-        actionFormData,
-        [
-          "instrument",
-          "ownershipPreset",
-          "scopeMemberId",
-          ...SIMPLE_FIELD_KEYS,
-          ...FIELD_KEYS.map((k) => `${k}_${instrument}`),
-        ],
-        ["owner_"],
-      ),
-    });
-
-  // S5 (#600): the simple wizard loops. A successful add returns to the wizard
-  // with a success panel (the `ok` key + the new holding id as a query param the
-  // server can read — the #anchor is client-only), so first runs chain adds
-  // without friction. The avanzado flow keeps landing on the holdings list; the
-  // investment-import route below is exempt (it goes to «Cargar movimientos»).
-  const successUrl = (okKey: string, id: string): string =>
-    returnUrl === ADD_URL
-      ? `${successRedirectUrl(ADD_URL, okKey)}&added=${id}`
-      : successRedirectUrl("/patrimonio", okKey, id);
-
-  // The catalog owns every per-instrument storage decision: the rung, valuation
-  // method and provider, plus the legacy AssetType a stored asset persists as
-  // and how a debt persists (its type + default model). The action only reads it.
-  const defaults = defaultsFor(instrument);
-
-  // Assets — stored (cash/manual) and appreciating (property). Reuse the strict
-  // asset parser + shared persistence, stamping the chosen instrument.
-  const assetType = defaults.assetType;
-
-  if (assetType) {
-    const scoped = scopedAssetForm(actionFormData, instrument, assetType, defaults.rung);
-    const result = await runActionWithStore(async (store) => {
-      const workspace = await store.workspace.readWorkspace();
-
-      if (!workspace) {
-        return { ok: false as const, error: "Workspace no inicializado." };
-      }
-
-      const parsed = parseAssetCommandStrict(
-        scoped,
-        workspace.members,
-        Date.now(),
-        today,
-      );
-
-      if (!parsed.ok) {
-        return { ok: false as const, error: parsed.error };
-      }
-
-      return persistManualAssetCreation(
-        store,
-        workspace,
-        { ...parsed.command, instrument },
-        Date.now(),
-        today,
-      );
-    }, _store);
-
-    if (!result.ok) {
-      redirect(errorUrl(result.error));
-    }
-
-    redirect(successUrl("asset_added", result.id));
-  }
-
-  // Derived investments — value is units × price; the provider comes from the
-  // instrument (yahoo / finect / coingecko), not a form dropdown.
-  if (defaults.valuationMethod === "derived") {
-    const scoped = scopedInvestmentForm(
-      actionFormData,
-      instrument,
-      defaults.priceProvider,
-      defaults.rung,
-    );
-    // The simple investment drawer (#597) captures "how much you have" via one of
-    // two mutually-exclusive modes; the avanzado flow posts neither and creates
-    // the empty container exactly as before.
-    const invMode = parseInvMode(actionFormData.get(`invMode_${instrument}`));
-
-    // (a) "Saldo de hoy": derive units (€ ÷ precio) up-front (pure) so a missing
-    // saldo/price fails BEFORE anything is persisted — no orphaned 0 € holding.
-    const opening =
-      invMode === "saldo"
-        ? deriveOpeningUnits({
-            priceRaw: String(scoped.get("manualPricePerUnit") ?? ""),
-            saldoRaw: String(actionFormData.get(`saldo_${instrument}`) ?? ""),
-          })
-        : null;
-
-    if (opening && !opening.ok) {
-      redirect(errorUrl(openingUnitsErrorMessage(opening.reason)));
-    }
-
-    const result = await runActionWithStore(async (store) => {
-      const workspace = await store.workspace.readWorkspace();
-
-      if (!workspace) {
-        return { ok: false as const, error: "Workspace no inicializado." };
-      }
-
-      const parsed = parseInvestmentAssetCommandStrict(
-        scoped,
-        workspace.members,
-        Date.now(),
-      );
-
-      if (!parsed.ok) {
-        return { ok: false as const, error: parsed.error };
-      }
-
-      const splitViolation = checkOwnershipSplit(workspace, parsed.command.ownership);
-
-      if (splitViolation) {
-        return { ok: false as const, error: mapDomainViolation(splitViolation) };
-      }
-
-      await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
-
-      // The catalog identity to register once the write commits (#1097). Threaded
-      // out of the store closure so the best-effort stub call runs after — and
-      // never inside — the workspace transaction.
-      const catalog: ExposureCatalogStubCandidate = {
-        displayName: parsed.command.name,
-        instrument,
-        isin: parsed.command.isin ?? null,
-        priceProvider: parsed.command.priceProvider ?? null,
-        providerSymbol: parsed.command.providerSymbol ?? null,
-      };
-
-      // Record the opening BUY dated today, so the holding lands valued — not the
-      // 0 € container the alta used to create. Never combined with (b) import: a
-      // today-dated apertura would not match the CSV's historical orders (merge
-      // keys on date) → a duplicate position; the mode exclusion prevents it (#597).
-      if (opening?.ok) {
-        const opError = await recordOpeningOperation(
-          store,
-          parsed.command.id,
-          opening,
-          today,
-        );
-
-        if (opError) {
-          return { ok: false as const, error: opError };
-        }
-      }
-
-      return { catalog, id: parsed.command.id, ok: true as const };
-    }, _store);
-
-    if (!result.ok) {
-      redirect(errorUrl(result.error));
-    }
-
-    // The market holding is written — register its (empty) global-catalog row so
-    // it surfaces in /admin/catalogo «por categorizar». Best-effort: never blocks
-    // the redirect if the control plane is down (#1097).
-    await ensureExposureCatalogStubs([result.catalog]);
-
-    // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
-    // (#173) so the broker CSV's historical orders are the only operations.
-    if (invMode === "import") {
-      redirect(
-        successRedirectUrl(`/patrimonio/${result.id}/editar`, "investment_import_ready"),
-      );
-    }
-
-    redirect(successUrl("investment_added", result.id));
-  }
-
-  // Debts — the catalog fixes the type + default debt model so the holding's
-  // valuation method is right from creation (loan → amortizable, credit_card →
-  // revolving).
-  const liabilitySpec = defaults.liability;
-
-  if (liabilitySpec) {
-    // A loan lets the user choose its model at creation (#273); mortgage/credit_card
-    // keep the fixed model the catalog assigns.
-    const debtModel =
-      instrument === "loan"
-        ? parseLoanDebtModel(actionFormData)
-        : liabilitySpec.debtModel;
-
-    // «Alta por estado actual» (ADR 0056, #677): the SIMPLE wizard drawer's
-    // debt pane (simpleDrawer==="deuda") offers it as the DEFAULT path for an
-    // amortizable mortgage/loan — the CSS reveal (anadir/page.tsx) hides the
-    // plain "Saldo pendiente" field for those two and shows the current-state
-    // block instead, so `csOutstandingBalance` is the ONLY visible balance
-    // input for them regardless of whether the rest of the block (end date,
-    // cuota/tipo) is filled — it must always become the liability's balance,
-    // never gated on `csEndDate`. Filling the end date on top additionally
-    // opts into persisting the plan + re-baseline; leaving it blank keeps a
-    // plan-less creation ("origin path" — decide the model later, in the
-    // ficha) with the current-state balance intact. Gated on the ORIGINAL
-    // `simpleDrawer` (not just the instrument) so the avanzado/canonical form
-    // — which has no current-state fields and already posts `balance_*`
-    // directly — is untouched.
-    const showsCurrentStateBalanceField =
-      formData.get("simpleDrawer") === "deuda" &&
-      (instrument === "mortgage" ||
-        (instrument === "loan" && debtModel === "amortizable"));
-
-    if (showsCurrentStateBalanceField) {
-      actionFormData.set(
-        `balance_${instrument}`,
-        String(actionFormData.get("csOutstandingBalance") ?? ""),
-      );
-    }
-
-    const scoped = scopedLiabilityForm(actionFormData, instrument, liabilitySpec.type);
-
-    if (!String(scoped.get("name") ?? "").trim()) {
-      redirect(errorUrl("El nombre de la deuda es obligatorio."));
-    }
-
-    if (parseMoneyMinorField(scoped, "balance") === null) {
-      redirect(errorUrl("El saldo de la deuda no es válido."));
-    }
-
-    const csEndDate = String(actionFormData.get("csEndDate") ?? "").trim();
-    const usesCurrentState = showsCurrentStateBalanceField && csEndDate !== "";
-    const currentStateNextPaymentDate = String(
-      actionFormData.get("csNextPaymentDate") ?? "",
-    ).trim();
-    const currentStateInputMode =
-      actionFormData.get("csInputMode") === "payment" ? "payment" : "rate";
-    const currentStateOriginalSigningDate = String(
-      actionFormData.get("csOriginalSigningDate") ?? "",
-    ).trim();
-
-    const currentStateDerived = usesCurrentState
-      ? deriveCurrentStateDebt({
-          annualRatePercent: String(actionFormData.get("csAnnualRate") ?? ""),
-          baselineDate: today,
-          endDate: csEndDate,
-          inputMode: currentStateInputMode,
-          monthlyPayment: String(actionFormData.get("csMonthlyPayment") ?? ""),
-          nextPaymentDate: currentStateNextPaymentDate,
-          originalSigningDate: currentStateOriginalSigningDate,
-          outstandingBalance: String(actionFormData.get("csOutstandingBalance") ?? ""),
-        })
-      : null;
-
-    if (currentStateDerived && !currentStateDerived.ok) {
-      redirect(errorUrl(currentStateDerived.error));
-    }
-
-    const result = await runActionWithStore(async (store) => {
-      const workspace = await store.workspace.readWorkspace();
-
-      if (!workspace) {
-        return { ok: false as const, error: "Workspace no inicializado." };
-      }
-
-      const command = parseLiabilityCommand(scoped, workspace.members, Date.now());
-
-      // #171: a liability associated to an asset inherits that asset's ownership
-      // split by default — a one-time copy at creation, then independently
-      // editable (not a live link, CONTEXT.md). Resolved here, server-side,
-      // because the add page carries no client JS (ADR 0009). The pre-checked
-      // "mismo reparto" option drives it; unchecked — or no asset associated —
-      // falls back to the footer ownership inputs exactly as before.
-      const inheritOwnership = scoped.get("inheritOwnership") === "on";
-      const associatedAsset = command.associatedAssetId
-        ? ((await store.assets.readAssets()).find(
-            (a) => a.id === command.associatedAssetId,
-          ) ?? null)
-        : null;
-      // A debt on a co-owned home mirrors the asset's split, which may be a known
-      // partial (e.g. 75% mine, 25% a non-member's), so it accepts a partial split
-      // exactly like the real_estate asset; a standalone debt still totals 100%.
-      const allowKnownPartial = associatedAsset?.type === "real_estate";
-      const resolved =
-        inheritOwnership && associatedAsset
-          ? { ...command, ownership: associatedAsset.ownership }
-          : command;
-
-      const domainResult = createLiabilitySafe(workspace, resolved, {
-        allowKnownPartial,
-      });
-
-      if (!domainResult.ok) {
+      if (!instrument) {
         return {
-          ok: false as const,
-          error: mapDomainViolation(domainResult.violations[0]),
+          ok: false,
+          error: errorRedirectUrl(returnUrl, {
+            formId: "holding",
+            message: normalized.unsupported ?? "Elige un tipo de instrumento.",
+            values: preserveFields(
+              actionFormData,
+              ["instrument", "ownershipPreset", "scopeMemberId", ...SIMPLE_FIELD_KEYS],
+              ["owner_"],
+            ),
+          }),
         };
       }
 
-      await store.liabilities.createLiability(resolved);
-      await store.liabilities.setDebtModel(resolved.id, debtModel);
+      // On error, reopen the chosen pane and refill what was typed.
+      const errorUrl = (message: string): string =>
+        errorRedirectUrl(returnUrl, {
+          formId: "holding",
+          message,
+          values: preserveFields(
+            actionFormData,
+            [
+              "instrument",
+              "ownershipPreset",
+              "scopeMemberId",
+              ...SIMPLE_FIELD_KEYS,
+              ...FIELD_KEYS.map((k) => `${k}_${instrument}`),
+            ],
+            ["owner_"],
+          ),
+        });
 
-      if (currentStateDerived && currentStateDerived.ok) {
-        await persistCurrentStateAmortization(
-          store,
-          resolved.id,
-          currentStateDerived,
-          {
-            baselineDate: today,
-            endDate: csEndDate,
-            inputMode: currentStateInputMode,
-            nextPaymentDate: currentStateNextPaymentDate,
-            originalSigningDate: currentStateOriginalSigningDate || null,
-          },
+      // S5 (#600): the simple wizard loops. A successful add returns to the wizard
+      // with a success panel (the `ok` key + the new holding id as a query param the
+      // server can read — the #anchor is client-only), so first runs chain adds
+      // without friction. The avanzado flow keeps landing on the holdings list; the
+      // investment-import route below is exempt (it goes to «Cargar movimientos»).
+      const successUrl = (okKey: string, id: string): string =>
+        returnUrl === ADD_URL
+          ? `${successRedirectUrl(ADD_URL, okKey)}&added=${id}`
+          : successRedirectUrl("/patrimonio", okKey, id);
+
+      // The catalog owns every per-instrument storage decision: the rung, valuation
+      // method and provider, plus the legacy AssetType a stored asset persists as
+      // and how a debt persists (its type + default model). The action only reads it.
+      const defaults = defaultsFor(instrument);
+
+      // Assets — stored (cash/manual) and appreciating (property). Reuse the strict
+      // asset parser + shared persistence, stamping the chosen instrument.
+      const assetType = defaults.assetType;
+
+      if (assetType) {
+        const scoped = scopedAssetForm(
+          actionFormData,
+          instrument,
+          assetType,
+          defaults.rung,
+        );
+        const workspace = await store.workspace.readWorkspace();
+
+        if (!workspace) {
+          return { ok: false, error: errorUrl("Workspace no inicializado.") };
+        }
+
+        const parsed = parseAssetCommandStrict(
+          scoped,
+          workspace.members,
           Date.now(),
           today,
         );
+
+        if (!parsed.ok) {
+          return { ok: false, error: errorUrl(parsed.error) };
+        }
+
+        const result = await persistManualAssetCreation(
+          store,
+          workspace,
+          { ...parsed.command, instrument },
+          Date.now(),
+          today,
+        );
+
+        if (!result.ok) {
+          return { ok: false, error: errorUrl(result.error) };
+        }
+
+        return { ok: true, value: { redirectUrl: successUrl("asset_added", result.id) } };
       }
 
-      return { ok: true as const, id: resolved.id };
-    }, _store);
+      // Derived investments — value is units × price; the provider comes from the
+      // instrument (yahoo / finect / coingecko), not a form dropdown.
+      if (defaults.valuationMethod === "derived") {
+        const scoped = scopedInvestmentForm(
+          actionFormData,
+          instrument,
+          defaults.priceProvider,
+          defaults.rung,
+        );
+        // The simple investment drawer (#597) captures "how much you have" via one of
+        // two mutually-exclusive modes; the avanzado flow posts neither and creates
+        // the empty container exactly as before.
+        const invMode = parseInvMode(actionFormData.get(`invMode_${instrument}`));
 
-    if (!result.ok) {
-      redirect(errorUrl(result.error));
-    }
+        // (a) "Saldo de hoy": derive units (€ ÷ precio) up-front (pure) so a missing
+        // saldo/price fails BEFORE anything is persisted — no orphaned 0 € holding.
+        const opening =
+          invMode === "saldo"
+            ? deriveOpeningUnits({
+                priceRaw: String(scoped.get("manualPricePerUnit") ?? ""),
+                saldoRaw: String(actionFormData.get(`saldo_${instrument}`) ?? ""),
+              })
+            : null;
 
-    redirect(successUrl("liability_added", result.id));
-  }
+        if (opening && !opening.ok) {
+          return { ok: false, error: errorUrl(openingUnitsErrorMessage(opening.reason)) };
+        }
 
-  redirect(errorUrl("Instrumento no soportado todavía."));
+        const workspace = await store.workspace.readWorkspace();
+
+        if (!workspace) {
+          return { ok: false, error: errorUrl("Workspace no inicializado.") };
+        }
+
+        const parsed = parseInvestmentAssetCommandStrict(
+          scoped,
+          workspace.members,
+          Date.now(),
+        );
+
+        if (!parsed.ok) {
+          return { ok: false, error: errorUrl(parsed.error) };
+        }
+
+        const splitViolation = checkOwnershipSplit(workspace, parsed.command.ownership);
+
+        if (splitViolation) {
+          return { ok: false, error: errorUrl(mapDomainViolation(splitViolation)) };
+        }
+
+        await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
+
+        // The catalog identity to register once the write commits (#1097). Threaded
+        // out on the run payload so the best-effort stub call runs in afterCommit —
+        // after, and never inside, the workspace transaction.
+        const catalog: ExposureCatalogStubCandidate = {
+          displayName: parsed.command.name,
+          instrument,
+          isin: parsed.command.isin ?? null,
+          priceProvider: parsed.command.priceProvider ?? null,
+          providerSymbol: parsed.command.providerSymbol ?? null,
+        };
+
+        // Record the opening BUY dated today, so the holding lands valued — not the
+        // 0 € container the alta used to create. Never combined with (b) import: a
+        // today-dated apertura would not match the CSV's historical orders (merge
+        // keys on date) → a duplicate position; the mode exclusion prevents it (#597).
+        if (opening?.ok) {
+          const opError = await recordOpeningOperation(
+            store,
+            parsed.command.id,
+            opening,
+            today,
+          );
+
+          if (opError) {
+            return { ok: false, error: errorUrl(opError) };
+          }
+        }
+
+        // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
+        // (#173) so the broker CSV's historical orders are the only operations.
+        const redirectUrl =
+          invMode === "import"
+            ? successRedirectUrl(
+                `/patrimonio/${parsed.command.id}/editar`,
+                "investment_import_ready",
+              )
+            : successUrl("investment_added", parsed.command.id);
+
+        return { ok: true, value: { redirectUrl, catalog } };
+      }
+
+      // Debts — the catalog fixes the type + default debt model so the holding's
+      // valuation method is right from creation (loan → amortizable, credit_card →
+      // revolving).
+      const liabilitySpec = defaults.liability;
+
+      if (liabilitySpec) {
+        // A loan lets the user choose its model at creation (#273); mortgage/credit_card
+        // keep the fixed model the catalog assigns.
+        const debtModel =
+          instrument === "loan"
+            ? parseLoanDebtModel(actionFormData)
+            : liabilitySpec.debtModel;
+
+        // «Alta por estado actual» (ADR 0056, #677): the SIMPLE wizard drawer's
+        // debt pane (simpleDrawer==="deuda") offers it as the DEFAULT path for an
+        // amortizable mortgage/loan — the CSS reveal (anadir/page.tsx) hides the
+        // plain "Saldo pendiente" field for those two and shows the current-state
+        // block instead, so `csOutstandingBalance` is the ONLY visible balance
+        // input for them regardless of whether the rest of the block (end date,
+        // cuota/tipo) is filled — it must always become the liability's balance,
+        // never gated on `csEndDate`. Filling the end date on top additionally
+        // opts into persisting the plan + re-baseline; leaving it blank keeps a
+        // plan-less creation ("origin path" — decide the model later, in the
+        // ficha) with the current-state balance intact. Gated on the ORIGINAL
+        // `simpleDrawer` (not just the instrument) so the avanzado/canonical form
+        // — which has no current-state fields and already posts `balance_*`
+        // directly — is untouched.
+        const showsCurrentStateBalanceField =
+          formData.get("simpleDrawer") === "deuda" &&
+          (instrument === "mortgage" ||
+            (instrument === "loan" && debtModel === "amortizable"));
+
+        if (showsCurrentStateBalanceField) {
+          actionFormData.set(
+            `balance_${instrument}`,
+            String(actionFormData.get("csOutstandingBalance") ?? ""),
+          );
+        }
+
+        const scoped = scopedLiabilityForm(
+          actionFormData,
+          instrument,
+          liabilitySpec.type,
+        );
+
+        if (!String(scoped.get("name") ?? "").trim()) {
+          return { ok: false, error: errorUrl("El nombre de la deuda es obligatorio.") };
+        }
+
+        if (parseMoneyMinorField(scoped, "balance") === null) {
+          return { ok: false, error: errorUrl("El saldo de la deuda no es válido.") };
+        }
+
+        const csEndDate = String(actionFormData.get("csEndDate") ?? "").trim();
+        const usesCurrentState = showsCurrentStateBalanceField && csEndDate !== "";
+        const currentStateNextPaymentDate = String(
+          actionFormData.get("csNextPaymentDate") ?? "",
+        ).trim();
+        const currentStateInputMode =
+          actionFormData.get("csInputMode") === "payment" ? "payment" : "rate";
+        const currentStateOriginalSigningDate = String(
+          actionFormData.get("csOriginalSigningDate") ?? "",
+        ).trim();
+
+        const currentStateDerived = usesCurrentState
+          ? deriveCurrentStateDebt({
+              annualRatePercent: String(actionFormData.get("csAnnualRate") ?? ""),
+              baselineDate: today,
+              endDate: csEndDate,
+              inputMode: currentStateInputMode,
+              monthlyPayment: String(actionFormData.get("csMonthlyPayment") ?? ""),
+              nextPaymentDate: currentStateNextPaymentDate,
+              originalSigningDate: currentStateOriginalSigningDate,
+              outstandingBalance: String(
+                actionFormData.get("csOutstandingBalance") ?? "",
+              ),
+            })
+          : null;
+
+        if (currentStateDerived && !currentStateDerived.ok) {
+          return { ok: false, error: errorUrl(currentStateDerived.error) };
+        }
+
+        const workspace = await store.workspace.readWorkspace();
+
+        if (!workspace) {
+          return { ok: false, error: errorUrl("Workspace no inicializado.") };
+        }
+
+        const command = parseLiabilityCommand(scoped, workspace.members, Date.now());
+
+        // #171: a liability associated to an asset inherits that asset's ownership
+        // split by default — a one-time copy at creation, then independently
+        // editable (not a live link, CONTEXT.md). Resolved here, server-side,
+        // because the add page carries no client JS (ADR 0009). The pre-checked
+        // "mismo reparto" option drives it; unchecked — or no asset associated —
+        // falls back to the footer ownership inputs exactly as before.
+        const inheritOwnership = scoped.get("inheritOwnership") === "on";
+        const associatedAsset = command.associatedAssetId
+          ? ((await store.assets.readAssets()).find(
+              (a) => a.id === command.associatedAssetId,
+            ) ?? null)
+          : null;
+        // A debt on a co-owned home mirrors the asset's split, which may be a known
+        // partial (e.g. 75% mine, 25% a non-member's), so it accepts a partial split
+        // exactly like the real_estate asset; a standalone debt still totals 100%.
+        const allowKnownPartial = associatedAsset?.type === "real_estate";
+        const resolved =
+          inheritOwnership && associatedAsset
+            ? { ...command, ownership: associatedAsset.ownership }
+            : command;
+
+        const domainResult = createLiabilitySafe(workspace, resolved, {
+          allowKnownPartial,
+        });
+
+        if (!domainResult.ok) {
+          return {
+            ok: false,
+            error: errorUrl(mapDomainViolation(domainResult.violations[0])),
+          };
+        }
+
+        await store.liabilities.createLiability(resolved);
+        await store.liabilities.setDebtModel(resolved.id, debtModel);
+
+        if (currentStateDerived && currentStateDerived.ok) {
+          await persistCurrentStateAmortization(
+            store,
+            resolved.id,
+            currentStateDerived,
+            {
+              baselineDate: today,
+              endDate: csEndDate,
+              inputMode: currentStateInputMode,
+              nextPaymentDate: currentStateNextPaymentDate,
+              originalSigningDate: currentStateOriginalSigningDate || null,
+            },
+            Date.now(),
+            today,
+          );
+        }
+
+        return {
+          ok: true,
+          value: { redirectUrl: successUrl("liability_added", resolved.id) },
+        };
+      }
+
+      return { ok: false, error: errorUrl("Instrumento no soportado todavía.") };
+    },
+    // The market holding is written — register its (empty) global-catalog row so
+    // it surfaces in /admin/catalogo «por categorizar». Best-effort: never blocks
+    // the redirect if the control plane is down (#1097).
+    afterCommit: async ({ value }) => {
+      if (value?.catalog) {
+        await ensureExposureCatalogStubs([value.catalog]);
+      }
+    },
+    onError: ({ error }) => error, // run already built the full URL
+    onSuccess: ({ value }) => value!.redirectUrl,
+  })(formData, ..._testArgs);
 }

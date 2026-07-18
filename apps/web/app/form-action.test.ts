@@ -375,6 +375,61 @@ describe("formAction — generalized capabilities (#1114)", () => {
     });
   });
 
+  test("afterCommit runs on success, after the cycle, before the redirect, with the run payload", async () => {
+    const order: string[] = [];
+    const action = formAction<undefined, { memberId: string }>({
+      requireId: false,
+      run: async () => {
+        order.push("run");
+        return { ok: true, value: { memberId: "m1" } };
+      },
+      afterCommit: async ({ value }) => {
+        order.push(`afterCommit:${value?.memberId}`);
+      },
+      onError: () => "/e",
+      onSuccess: () => {
+        order.push("onSuccess");
+        return successRedirectUrl("/app", "done");
+      },
+    });
+
+    const url = await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    expect(order).toEqual(["run", "afterCommit:m1", "onSuccess"]);
+    expect(url).toContain("ok=done");
+  });
+
+  test("afterCommit does NOT run when the command fails", async () => {
+    let afterCommitRan = false;
+    const action = formAction({
+      requireId: false,
+      run: async () => ({ ok: false, error: "boom" }),
+      afterCommit: async () => {
+        afterCommitRan = true;
+      },
+      onError: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => "/s",
+    });
+
+    await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    expect(afterCommitRan).toBe(false);
+  });
+
+  test("guardUrl overrides where a blocked demo write redirects", async () => {
+    mockPersonaCookie = "familia";
+    const action = formAction({
+      requireId: false,
+      guardUrl: () => "/ajustes",
+      run: async () => ({ ok: true }),
+      onError: () => "/e",
+      onSuccess: () => "/s",
+    });
+
+    const url = await runRedirect(() => action(form({}), fakeStore, CLOCK));
+    const decoded = decodeURIComponent(url.replace(/\+/g, " "));
+    expect(decoded).toContain(DEMO_DISABLED_MESSAGE);
+    expect(url).toContain("/ajustes");
+  });
+
   test("missingIdUrl routes the missing-id error to the form's own page", async () => {
     const action = formAction({
       missingId: "Falta el id.",
