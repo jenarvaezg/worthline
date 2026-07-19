@@ -25,32 +25,40 @@ const calls = vi.hoisted(() => ({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   })),
-  withStore: vi.fn(async (run: (store: unknown) => unknown) =>
-    run({
-      assets: { readAssets: calls.readAssets },
-      connectedSources: {
-        listSources: calls.listSources,
-        listSourceAssetIds: calls.readSourceAssetIds,
-        readPositions: calls.readPositions,
+  resolvePageShell: vi.fn(async () => {
+    const scopes = [{ id: "household", label: "Hogar", type: "household" }];
+    return {
+      persistence: {
+        status: "ok",
+        checkKey: "bootstrap.last_healthcheck_at",
+        checkedAt: "2026-06-27T00:00:00.000Z",
+        checkValue: "2026-06-27T00:00:00.000Z",
+        databasePath: ":memory:",
+        displayPath: ":memory:",
       },
-      operations: { readOperations: calls.readOperations },
-      readFireConfig: calls.readFireConfig,
-      readWarningOverrides: calls.readWarningOverrides,
-      workspace: { readWorkspace: calls.readWorkspace },
-    }),
-  ),
+      privacyMode: false,
+      requestedScopeId: undefined,
+      scopes,
+      selectedScope: scopes[0],
+      store: {
+        assets: { readAssets: calls.readAssets },
+        connectedSources: {
+          listSources: calls.listSources,
+          listSourceAssetIds: calls.readSourceAssetIds,
+          readPositions: calls.readPositions,
+        },
+        operations: { readOperations: calls.readOperations },
+        readFireConfig: calls.readFireConfig,
+        readWarningOverrides: calls.readWarningOverrides,
+      },
+      target: { kind: "local" },
+      workspace: await calls.readWorkspace(),
+    };
+  }),
 }));
 
-vi.mock("@web/store", () => ({
-  bootstrapHealthcheck: async () => ({
-    status: "ok",
-    checkKey: "bootstrap.last_healthcheck_at",
-    checkedAt: "2026-06-27T00:00:00.000Z",
-    checkValue: "2026-06-27T00:00:00.000Z",
-    databasePath: ":memory:",
-    displayPath: ":memory:",
-  }),
-  withStore: calls.withStore,
+vi.mock("@web/page-shell", () => ({
+  resolvePageShell: calls.resolvePageShell,
 }));
 
 vi.mock("@web/demo/write-guard", () => ({ isDemoMode: async () => false }));
@@ -71,7 +79,7 @@ describe("ajustes page data loading (#636)", () => {
   test("reuses store reads across the page render", async () => {
     await AjustesPage({ searchParams: Promise.resolve({}) });
 
-    expect(calls.withStore).toHaveBeenCalledTimes(1);
+    expect(calls.resolvePageShell).toHaveBeenCalledTimes(1);
     expect(calls.listSources).toHaveBeenCalledTimes(1);
     expect(calls.readAssets).toHaveBeenCalledTimes(1);
     expect(calls.readWarningOverrides).toHaveBeenCalledTimes(1);

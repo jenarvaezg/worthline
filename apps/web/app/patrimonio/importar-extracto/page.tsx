@@ -1,16 +1,7 @@
 import { isDemoMode } from "@web/demo/write-guard";
-import {
-  buildCurrentUrlFor,
-  parseFormError,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
+import { resolvePageShell } from "@web/page-shell";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import { listScopeOptions } from "@worthline/domain";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { confirmImportStatementAction, previewImportStatementAction } from "./actions";
 import { ImportStatementPreview } from "./import-statement-preview";
 
@@ -27,7 +18,6 @@ export default async function ImportarExtractoPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
@@ -36,24 +26,9 @@ export default async function ImportarExtractoPage({
     resolvedSearchParams,
   );
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) return null;
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-
-    return { scopes, selectedScope };
+  const { persistence, scopes, selectedScope } = await resolvePageShell({
+    searchParams: resolvedSearchParams,
   });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const { scopes, selectedScope } = storeData;
 
   return (
     <Shell

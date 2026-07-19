@@ -1,18 +1,10 @@
 import FireProjectionCard from "@web/fire-projection-card";
-import {
-  buildCurrentUrlFor,
-  PRIVACY_COOKIE_NAME,
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
+import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { FireLevel, HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
@@ -20,7 +12,6 @@ import {
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   investmentReturnsById,
-  listScopeOptions,
   monthlyCloseValuesFromSnapshotRows,
   prepareObjetivosState,
   projectContributionReconciliation,
@@ -28,9 +19,7 @@ import {
   scopePassiveIncome,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   buildExposureDriftProjection,
   exposureDriftTrajectories,
@@ -167,117 +156,61 @@ export default async function ObjetivosPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const persistence = await bootstrapHealthcheck();
   const currentUrl = buildCurrentUrlFor("/objetivos", resolvedSearchParams);
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store, workspace } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-    if (!workspace) return null;
-
-    const today = new Date().toISOString().slice(0, 10);
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((s) => s.id === cookieScopeId) ?? scopes[0];
-    const projectionContext = await store.snapshots.buildProjectionContext();
-    const [
-      { assets, liabilities },
-      goals,
-      fireConfig,
-      overrides,
-      payoutRecords,
-      payoutSchedules,
-      contributionPlan,
-      contributionReconciliations,
-      priceCache,
-      investmentMeta,
-      exposureProfiles,
-      returnSnapshotRows,
-    ] = await Promise.all([
-      store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
-      selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
-      store.readFireConfig(),
-      store.readWarningOverrides(),
-      store.payouts.readPayouts(),
-      store.payouts.readPayoutSchedules(),
-      selectedScope
-        ? store.contributionPlan.readContributionPlan(selectedScope.id)
-        : Promise.resolve(null),
-      selectedScope
-        ? store.contributionPlan.readReconciliations(selectedScope.id)
-        : Promise.resolve([]),
-      store.operations.readAllPriceCacheEntries(),
-      store.assets.readInvestmentAssetsWithMeta(),
-      readExposureProfilesFromCatalog(),
-      store.snapshots.readSnapshotHoldings({
-        kind: "asset",
-        scopeId: selectedScope?.id ?? "household",
-      }),
-    ]);
-
-    const contributionOperations = (
-      await Promise.all(
-        assets
-          .filter((asset) => asset.type === "investment")
-          .map((asset) => store.operations.readOperations(asset.id)),
-      )
-    ).flat();
-
-    // Recorded payouts up to today, keyed by holding — the single source S1
-    // owns, so this surface never re-derives a schedule.
-    const payoutsByHolding = collectHoldingPayouts(payoutRecords, payoutSchedules, today);
-
-    return {
-      workspace,
-      scopes,
-      selectedScope,
-      assets,
-      liabilities,
-      goals,
-      fireConfig,
-      overrides,
-      payoutsByHolding,
-      today,
-      contributionPlan,
-      contributionReconciliations,
-      contributionOperations,
-      priceCache,
-      projectionContext,
-      investmentMeta,
-      exposureProfiles,
-      returnSnapshotRows,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  // workspace is non-null after the redirect guard above
-  const {
-    workspace,
-    scopes,
-    selectedScope,
-    assets,
-    liabilities,
+  const today = new Date().toISOString().slice(0, 10);
+  const projectionContext = await store.snapshots.buildProjectionContext();
+  const [
+    { assets, liabilities },
     goals,
     fireConfig,
     overrides,
-    payoutsByHolding,
-    today,
+    payoutRecords,
+    payoutSchedules,
     contributionPlan,
     contributionReconciliations,
-    contributionOperations,
     priceCache,
-    projectionContext,
     investmentMeta,
     exposureProfiles,
     returnSnapshotRows,
-  } = storeData;
+  ] = await Promise.all([
+    store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
+    selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
+    store.readFireConfig(),
+    store.readWarningOverrides(),
+    store.payouts.readPayouts(),
+    store.payouts.readPayoutSchedules(),
+    selectedScope
+      ? store.contributionPlan.readContributionPlan(selectedScope.id)
+      : Promise.resolve(null),
+    selectedScope
+      ? store.contributionPlan.readReconciliations(selectedScope.id)
+      : Promise.resolve([]),
+    store.operations.readAllPriceCacheEntries(),
+    store.assets.readInvestmentAssetsWithMeta(),
+    readExposureProfilesFromCatalog(),
+    store.snapshots.readSnapshotHoldings({
+      kind: "asset",
+      scopeId: selectedScope?.id ?? "household",
+    }),
+  ]);
+
+  const contributionOperations = (
+    await Promise.all(
+      assets
+        .filter((asset) => asset.type === "investment")
+        .map((asset) => store.operations.readOperations(asset.id)),
+    )
+  ).flat();
+
+  // Recorded payouts up to today, keyed by holding — the single source S1
+  // owns, so this surface never re-derives a schedule.
+  const payoutsByHolding = collectHoldingPayouts(payoutRecords, payoutSchedules, today);
 
   const {
     fireProjection,

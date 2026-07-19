@@ -3,19 +3,14 @@ import { resolveFxAggregation } from "@web/fx-context";
 import {
   appendParam,
   buildCurrentUrlFor,
-  PRIVACY_COOKIE_NAME,
   parseFormError,
   parseGroupParam,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  parseScopeParam,
   resolveOkMessage,
-  SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/actions";
+import { resolvePageShell } from "@web/page-shell";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
 import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
 import type {
   AssetClassResolution,
@@ -32,7 +27,6 @@ import {
   groupPortfolio,
   instrumentOfAsset,
   investmentReturnsById,
-  listScopeOptions,
   lookThroughExposure,
   monthlyCloseValuesFromSnapshotRows,
   projectPortfolio,
@@ -40,9 +34,7 @@ import {
   returnsByAssetClassView,
   systemClock,
 } from "@worthline/domain";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import BalanceBoard from "./balance-board";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
@@ -57,7 +49,6 @@ export default async function PatrimonioPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   // Demo skips optimistic mutations — the write-guard rejects them, so a faked
   // change would only flicker before reverting (interaction-patterns §10).
   const isDemo = await isDemoMode();
@@ -66,211 +57,154 @@ export default async function PatrimonioPage({
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
   const selectedGroup = parseGroupParam(resolvedSearchParams?.group);
 
-  const jar = await cookies();
-  const queryScopeId = parseScopeParam(resolvedSearchParams?.scope);
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store, workspace } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
+  const today = systemClock().today();
+  // The shared raw-reads context (operations, prices, ownership) built once and
+  // reused: it both feeds the curve valuation below (dedup, #566) and drives the
+  // per-holding returns without a second operation read (#551).
+  const projectionContext = await store.snapshots.buildProjectionContext();
 
-    if (!workspace) {
-      return null;
+  // These reads are independent of one another, so fire them in one wave
+  // instead of stacking serial round-trips to the (remote) store (#446).
+  const [
+    priceCacheEntries,
+    investmentMeta,
+    // Curve-valued today (housing appreciation, amortized debt balances) so
+    // the board shows the same live figures the dashboard derives — a raw
+    // readAssets/readLiabilities would freeze modelled balances at whatever
+    // the user last typed (the curve's fallback input).
+    { assets, liabilities },
+    overrides,
+    trash,
+    exposureProfiles,
+    returnSnapshotRows,
+    payoutRecords,
+    payoutSchedules,
+  ] = await Promise.all([
+    store.operations.readAllPriceCacheEntries(),
+    store.assets.readInvestmentAssetsWithMeta(),
+    store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
+    store.readWarningOverrides(),
+    store.readTrash(),
+    readExposureProfilesFromCatalog(),
+    store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
+    store.payouts.readPayouts(),
+    store.payouts.readPayoutSchedules(),
+  ]);
+
+  // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
+  // each operation-bearing investment through the return engine — market
+  // instruments only; a stored/mirrored holding carries no operations, so it is
+  // absent from the map and shows no returns (never a fabricated figure).
+  const instrumentByAsset = new Map<string, Instrument>(
+    assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
+  );
+  const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
+  for (const row of returnSnapshotRows) {
+    if (!projectionContext.operationsByAsset.has(row.holdingId)) {
+      continue;
     }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScopeId = queryScopeId ?? cookieScopeId;
-    const selectedScope =
-      scopes.find((scope) => scope.id === selectedScopeId) ?? scopes[0];
-
-    const today = systemClock().today();
-    // The shared raw-reads context (operations, prices, ownership) built once and
-    // reused: it both feeds the curve valuation below (dedup, #566) and drives the
-    // per-holding returns without a second operation read (#551).
-    const projectionContext = await store.snapshots.buildProjectionContext();
-
-    // These reads are independent of one another, so fire them in one wave
-    // instead of stacking serial round-trips to the (remote) store (#446).
-    const [
-      priceCacheEntries,
-      investmentMeta,
-      // Curve-valued today (housing appreciation, amortized debt balances) so
-      // the board shows the same live figures the dashboard derives — a raw
-      // readAssets/readLiabilities would freeze modelled balances at whatever
-      // the user last typed (the curve's fallback input).
-      { assets, liabilities },
-      overrides,
-      trash,
-      exposureProfiles,
-      returnSnapshotRows,
-      payoutRecords,
-      payoutSchedules,
-    ] = await Promise.all([
-      store.operations.readAllPriceCacheEntries(),
-      store.assets.readInvestmentAssetsWithMeta(),
-      store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
-      store.readWarningOverrides(),
-      store.readTrash(),
-      readExposureProfilesFromCatalog(),
-      store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
-      store.payouts.readPayouts(),
-      store.payouts.readPayoutSchedules(),
-    ]);
-
-    // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
-    // each operation-bearing investment through the return engine — market
-    // instruments only; a stored/mirrored holding carries no operations, so it is
-    // absent from the map and shows no returns (never a fabricated figure).
-    const instrumentByAsset = new Map<string, Instrument>(
-      assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
-    );
-    const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
-    for (const row of returnSnapshotRows) {
-      if (!projectionContext.operationsByAsset.has(row.holdingId)) {
-        continue;
-      }
-      const rows = snapshotRowsByAsset.get(row.holdingId);
-      if (rows) {
-        rows.push(row);
-      } else {
-        snapshotRowsByAsset.set(row.holdingId, [row]);
-      }
+    const rows = snapshotRowsByAsset.get(row.holdingId);
+    if (rows) {
+      rows.push(row);
+    } else {
+      snapshotRowsByAsset.set(row.holdingId, [row]);
     }
-    const monthlyClosesByAsset = new Map(
-      [...snapshotRowsByAsset].map(([assetId, rows]) => [
+  }
+  const monthlyClosesByAsset = new Map(
+    [...snapshotRowsByAsset].map(([assetId, rows]) => [
+      assetId,
+      monthlyCloseValuesFromSnapshotRows(rows),
+    ]),
+  );
+  // Recorded payouts (one-offs + derived schedule occurrences up to today) fed
+  // to the return engine so distributing holdings stop understating (#657, ADR
+  // 0054). Keyed by holding id — the same key `operationsByAsset` uses.
+  const payoutsByAsset = new Map<string, DatedPayout[]>(
+    [...collectHoldingPayouts(payoutRecords, payoutSchedules, today)].map(
+      ([assetId, rows]) => [
         assetId,
-        monthlyCloseValuesFromSnapshotRows(rows),
-      ]),
-    );
-    // Recorded payouts (one-offs + derived schedule occurrences up to today) fed
-    // to the return engine so distributing holdings stop understating (#657, ADR
-    // 0054). Keyed by holding id — the same key `operationsByAsset` uses.
-    const payoutsByAsset = new Map<string, DatedPayout[]>(
-      [...collectHoldingPayouts(payoutRecords, payoutSchedules, today)].map(
-        ([assetId, rows]) => [
-          assetId,
-          rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
-        ],
-      ),
-    );
-    const investmentReturns = investmentReturnsById({
-      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
-      currency: workspace.baseCurrency,
-      instrumentByAsset,
-      manualPriceByAsset: projectionContext.manualPriceByAsset,
-      monthlyClosesByAsset,
-      operationsByAsset: projectionContext.operationsByAsset,
-      payoutsByAsset,
-      valuationDate: today,
-    });
-
-    // Per-asset-class decomposition of the portfolio returns (#552, ADR 0040
-    // fast-follow). Resolves each holding's asset class from the SAME exposure
-    // profiles the look-through uses (`resolveAssetClassBreakdown`, ADR 0039), then
-    // folds the market holdings through the return engine per class. Present-time
-    // and unscoped, mirroring the per-holding board figures above.
-    const exposureProfileByKey = new Map<string, ExposureProfile>(
-      exposureProfiles.map((profile) => [profile.key, profile]),
-    );
-    const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
-    const assetClassByAsset = new Map<string, AssetClassResolution>(
-      assets.map((asset) => {
-        const meta = metaById.get(asset.id);
-        const key = meta?.isin ?? meta?.providerSymbol ?? null;
-        const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
-        return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
-      }),
-    );
-    const returnsByClass = returnsByAssetClassView({
-      assetClassByAsset,
-      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
-      currency: workspace.baseCurrency,
-      instrumentByAsset,
-      manualPriceByAsset: projectionContext.manualPriceByAsset,
-      monthlyClosesByAsset,
-      operationsByAsset: projectionContext.operationsByAsset,
-      payoutsByAsset,
-      valuationDate: today,
-    });
-
-    // Price-refresh metadata for the derived-value badge hover (#303): when + by
-    // which source each cached unit price was last fetched, keyed by asset id. The
-    // projection attaches it to investment rows only; non-investment entries are
-    // ignored downstream.
-    const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
-      priceCacheEntries.map((entry) => [
-        entry.assetId,
-        { fetchedAt: entry.fetchedAt, source: entry.source },
-      ]),
-    );
-
-    // Whether the manual "Actualizar precios" trigger (#405) has anything to do:
-    // read from the SAME meta source the action filters on, so the control only
-    // appears when a force-refresh would actually refetch a provider-priced holding.
-    const hasPricedHoldings = investmentMeta.some((asset) =>
-      Boolean(asset.providerSymbol),
-    );
-
-    // Assets with at least one recorded operation — the board's guard that
-    // separates a fully-sold position (folds away) from a just-created one.
-    const operatedAssetIds = new Set(
-      [...projectionContext.operationsByAsset]
-        .filter(([, rows]) => rows.length > 0)
-        .map(([assetId]) => assetId),
-    );
-
-    // FX context for the projection (#1065). Hard-gated: hits ECB only when a
-    // foreign currency is actually held, so an all-EUR board does no network. A
-    // non-convertible holding is excluded from the rows/totals and surfaced as
-    // "no incluido / parcial", matching the dashboard's net-worth exclusion.
-    const fx = await resolveFxAggregation(
-      [
-        ...assets.map((asset) => asset.currentValue),
-        ...liabilities.map((liability) => liability.currentBalance),
+        rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
       ],
-      today,
-    );
-
-    return {
-      assets,
-      exposureProfiles,
-      fx,
-      hasPricedHoldings,
-      investmentMeta,
-      investmentReturns,
-      liabilities,
-      operatedAssetIds,
-      overrides,
-      priceMetaByAsset,
-      returnsByClass,
-      scopes,
-      selectedScope,
-      trash,
-      workspace,
-    };
+    ),
+  );
+  const investmentReturns = investmentReturnsById({
+    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+    currency: workspace.baseCurrency,
+    instrumentByAsset,
+    manualPriceByAsset: projectionContext.manualPriceByAsset,
+    monthlyClosesByAsset,
+    operationsByAsset: projectionContext.operationsByAsset,
+    payoutsByAsset,
+    valuationDate: today,
   });
 
-  if (!storeData) {
-    redirect("/empezar");
-  }
+  // Per-asset-class decomposition of the portfolio returns (#552, ADR 0040
+  // fast-follow). Resolves each holding's asset class from the SAME exposure
+  // profiles the look-through uses (`resolveAssetClassBreakdown`, ADR 0039), then
+  // folds the market holdings through the return engine per class. Present-time
+  // and unscoped, mirroring the per-holding board figures above.
+  const exposureProfileByKey = new Map<string, ExposureProfile>(
+    exposureProfiles.map((profile) => [profile.key, profile]),
+  );
+  const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
+  const assetClassByAsset = new Map<string, AssetClassResolution>(
+    assets.map((asset) => {
+      const meta = metaById.get(asset.id);
+      const key = meta?.isin ?? meta?.providerSymbol ?? null;
+      const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
+      return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
+    }),
+  );
+  const returnsByClass = returnsByAssetClassView({
+    assetClassByAsset,
+    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+    currency: workspace.baseCurrency,
+    instrumentByAsset,
+    manualPriceByAsset: projectionContext.manualPriceByAsset,
+    monthlyClosesByAsset,
+    operationsByAsset: projectionContext.operationsByAsset,
+    payoutsByAsset,
+    valuationDate: today,
+  });
 
-  const {
-    assets,
-    exposureProfiles,
-    fx,
-    hasPricedHoldings,
-    investmentMeta,
-    investmentReturns,
-    liabilities,
-    operatedAssetIds,
-    overrides,
-    priceMetaByAsset,
-    returnsByClass,
-    scopes,
-    selectedScope,
-    trash,
-    workspace,
-  } = storeData;
+  // Price-refresh metadata for the derived-value badge hover (#303): when + by
+  // which source each cached unit price was last fetched, keyed by asset id. The
+  // projection attaches it to investment rows only; non-investment entries are
+  // ignored downstream.
+  const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
+    priceCacheEntries.map((entry) => [
+      entry.assetId,
+      { fetchedAt: entry.fetchedAt, source: entry.source },
+    ]),
+  );
+
+  // Whether the manual "Actualizar precios" trigger (#405) has anything to do:
+  // read from the SAME meta source the action filters on, so the control only
+  // appears when a force-refresh would actually refetch a provider-priced holding.
+  const hasPricedHoldings = investmentMeta.some((asset) => Boolean(asset.providerSymbol));
+
+  // Assets with at least one recorded operation — the board's guard that
+  // separates a fully-sold position (folds away) from a just-created one.
+  const operatedAssetIds = new Set(
+    [...projectionContext.operationsByAsset]
+      .filter(([, rows]) => rows.length > 0)
+      .map(([assetId]) => assetId),
+  );
+
+  // FX context for the projection (#1065). Hard-gated: hits ECB only when a
+  // foreign currency is actually held, so an all-EUR board does no network. A
+  // non-convertible holding is excluded from the rows/totals and surfaced as
+  // "no incluido / parcial", matching the dashboard's net-worth exclusion.
+  const fx = await resolveFxAggregation(
+    [
+      ...assets.map((asset) => asset.currentValue),
+      ...liabilities.map((liability) => liability.currentBalance),
+    ],
+    today,
+  );
 
   const warnings = collectWarnings(assets, overrides);
 

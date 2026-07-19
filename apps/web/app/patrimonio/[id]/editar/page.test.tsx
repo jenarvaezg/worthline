@@ -26,33 +26,41 @@ const calls = vi.hoisted(() => ({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   })),
-  withStore: vi.fn(async (run: (store: unknown) => unknown) =>
-    run({
-      assets: { readAssets: calls.readAssets },
-      liabilities: {
-        readAmortizationPlan: calls.readAmortizationPlan,
-        readDebtModel: calls.readDebtModel,
-        readEarlyRepayments: calls.readEarlyRepayments,
-        readInterestRateRevisions: calls.readInterestRateRevisions,
-        readLiabilities: calls.readLiabilities,
-        readValuationCadence: calls.readValuationCadence,
+  resolvePageShell: vi.fn(async () => {
+    const scopes = [{ id: "household", label: "Hogar", type: "household" }];
+    return {
+      persistence: {
+        checkedAt: "2026-07-07T00:00:00.000Z",
+        checkKey: "bootstrap.last_healthcheck_at",
+        checkValue: "2026-07-07T00:00:00.000Z",
+        databasePath: ":memory:",
+        displayPath: ":memory:",
+        status: "ok",
       },
-      readWarningOverrides: calls.readWarningOverrides,
-      workspace: { readWorkspace: calls.readWorkspace },
-    }),
-  ),
+      privacyMode: false,
+      requestedScopeId: undefined,
+      scopes,
+      selectedScope: scopes[0],
+      store: {
+        assets: { readAssets: calls.readAssets },
+        liabilities: {
+          readAmortizationPlan: calls.readAmortizationPlan,
+          readDebtModel: calls.readDebtModel,
+          readEarlyRepayments: calls.readEarlyRepayments,
+          readInterestRateRevisions: calls.readInterestRateRevisions,
+          readLiabilities: calls.readLiabilities,
+          readValuationCadence: calls.readValuationCadence,
+        },
+        readWarningOverrides: calls.readWarningOverrides,
+      },
+      target: { kind: "local" },
+      workspace: await calls.readWorkspace(),
+    };
+  }),
 }));
 
-vi.mock("@web/store", () => ({
-  bootstrapHealthcheck: async () => ({
-    checkedAt: "2026-07-07T00:00:00.000Z",
-    checkKey: "bootstrap.last_healthcheck_at",
-    checkValue: "2026-07-07T00:00:00.000Z",
-    databasePath: ":memory:",
-    displayPath: ":memory:",
-    status: "ok",
-  }),
-  withStore: calls.withStore,
+vi.mock("@web/page-shell", () => ({
+  resolvePageShell: calls.resolvePageShell,
 }));
 
 vi.mock("@web/demo/write-guard", () => ({ isDemoMode: async () => false }));

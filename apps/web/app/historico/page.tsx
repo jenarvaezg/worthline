@@ -1,15 +1,7 @@
-import {
-  buildCurrentUrl,
-  PRIVACY_COOKIE_NAME,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { buildCurrentUrl } from "@web/intake";
+import { resolvePageShell } from "@web/page-shell";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import { listScopeOptions, valuationMethodOfAsset } from "@worthline/domain";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { valuationMethodOfAsset } from "@worthline/domain";
 import { buildHistoricoBreakdownView } from "./build-historico-breakdown";
 import HistoricoBreakdown from "./historico-breakdown";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
@@ -22,32 +14,15 @@ export default async function HistoricoPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
-  const persistence = await bootstrapHealthcheck();
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store, workspace } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
+  const today = new Date().toISOString().slice(0, 10);
 
-    if (!workspace) {
-      return null;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-    const today = new Date().toISOString().slice(0, 10);
-
-    const [
-      snapshots,
-      holdingRecords,
-      assets,
-      liabilities,
-      payoutRecords,
-      payoutSchedules,
-    ] = await Promise.all([
+  const [snapshots, holdingRecords, assets, liabilities, payoutRecords, payoutSchedules] =
+    await Promise.all([
       selectedScope
         ? store.snapshots.readSnapshots(selectedScope.id)
         : Promise.resolve([]),
@@ -60,57 +35,25 @@ export default async function HistoricoPage({
       store.payouts.readPayoutSchedules(),
     ]);
 
-    const derivedAssetIds = assets
-      .filter((asset) => valuationMethodOfAsset(asset) === "derived")
-      .map((asset) => asset.id);
-    const operationEntries = await Promise.all(
-      derivedAssetIds.map(
-        async (assetId) =>
-          [assetId, await store.operations.readOperations(assetId)] as const,
-      ),
-    );
+  const derivedAssetIds = assets
+    .filter((asset) => valuationMethodOfAsset(asset) === "derived")
+    .map((asset) => asset.id);
+  const operationEntries = await Promise.all(
+    derivedAssetIds.map(
+      async (assetId) =>
+        [assetId, await store.operations.readOperations(assetId)] as const,
+    ),
+  );
 
-    const debtModelEntries = await Promise.all(
-      liabilities.map(
-        async (liability) =>
-          [liability.id, await store.liabilities.readDebtModel(liability.id)] as const,
-      ),
-    );
+  const debtModelEntries = await Promise.all(
+    liabilities.map(
+      async (liability) =>
+        [liability.id, await store.liabilities.readDebtModel(liability.id)] as const,
+    ),
+  );
 
-    return {
-      scopes,
-      selectedScope,
-      snapshots,
-      holdingRecords,
-      assets,
-      liabilities,
-      debtModelByLiabilityId: new Map(debtModelEntries),
-      operationsByHoldingId: new Map(operationEntries),
-      payoutRecords,
-      payoutSchedules,
-      today,
-      workspace,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const {
-    scopes,
-    selectedScope,
-    snapshots,
-    holdingRecords,
-    assets,
-    liabilities,
-    debtModelByLiabilityId,
-    operationsByHoldingId,
-    payoutRecords,
-    payoutSchedules,
-    today,
-    workspace,
-  } = storeData;
+  const debtModelByLiabilityId = new Map(debtModelEntries);
+  const operationsByHoldingId = new Map(operationEntries);
 
   const rows = buildHistoricoRows(snapshots, holdingRecords, today);
   const breakdown =
