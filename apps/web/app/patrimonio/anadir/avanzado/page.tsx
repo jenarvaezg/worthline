@@ -1,9 +1,5 @@
-import {
-  parseFormError,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { parseFormError, resolveOkMessage } from "@web/intake";
+import { resolvePageShell } from "@web/page-shell";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -14,12 +10,9 @@ import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
-import { defaultsFor, LIQUIDITY_TIER_LABELS, listScopeOptions } from "@worthline/domain";
-import { cookies } from "next/headers";
+import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { CSSProperties } from "react";
 
 export const dynamic = "force-dynamic";
@@ -141,36 +134,15 @@ export default async function AnadirHoldingPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
+  const { persistence, scopes, selectedScope, store, workspace } = await resolvePageShell(
+    { searchParams: resolvedSearchParams },
+  );
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return null;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-
-    return {
-      activeMembers: workspace.members.filter((m) => !m.disabledAt),
-      assets: (await store.assets.readAssets()).filter((a) => a.type !== "investment"),
-      scopes,
-      selectedScope,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const { activeMembers, assets, scopes, selectedScope } = storeData;
+  const activeMembers = workspace.members.filter((m) => !m.disabledAt);
+  const assets = (await store.assets.readAssets()).filter((a) => a.type !== "investment");
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;

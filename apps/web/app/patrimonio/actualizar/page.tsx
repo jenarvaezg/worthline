@@ -1,23 +1,10 @@
 import { isDemoMode } from "@web/demo/write-guard";
-import {
-  PRIVACY_COOKIE_NAME,
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { parseFormError, resolveOkMessage } from "@web/intake";
+import { resolvePageShell } from "@web/page-shell";
 import { batchValueUpdateAction } from "@web/patrimonio/actions";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
-import {
-  formatMoneyInput,
-  isValueUpdateEligible,
-  listScopeOptions,
-} from "@worthline/domain";
-import { cookies } from "next/headers";
+import { formatMoneyInput, isValueUpdateEligible } from "@worthline/domain";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import PuestaAlDiaForm, { type PuestaFieldRow } from "./puesta-al-dia-form";
 
@@ -29,47 +16,23 @@ export default async function PuestaAlDiaPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   // Demo skips optimistic mutations — the write-guard rejects them (§10).
   const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return null;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-
-    return {
-      // Only hand-valued assets — derived holdings (investments, connected-source
-      // coin collections) are valued from their sub-detail, never in this pass.
-      assets: (await store.assets.readAssets())
-        .filter(isValueUpdateEligible)
-        .sort((a, b) => {
-          // Stable fallback: sort by id alphabetically for determinism
-          return a.id.localeCompare(b.id);
-        }),
-      liabilities: await store.liabilities.readLiabilities(),
-      scopes,
-      selectedScope,
-      workspace,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const { assets, liabilities, scopes, selectedScope } = storeData;
+  // Only hand-valued assets — derived holdings (investments, connected-source
+  // coin collections) are valued from their sub-detail, never in this pass.
+  const assets = (await store.assets.readAssets())
+    .filter(isValueUpdateEligible)
+    .sort((a, b) => {
+      // Stable fallback: sort by id alphabetically for determinism
+      return a.id.localeCompare(b.id);
+    });
+  const liabilities = await store.liabilities.readLiabilities();
 
   const currency =
     assets[0]?.currentValue.currency ?? liabilities[0]?.currentBalance.currency ?? "EUR";

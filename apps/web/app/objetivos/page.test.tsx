@@ -84,51 +84,59 @@ const calls = vi.hoisted(() => {
       members: [{ id: "member_jose", name: "Jose" }],
       mode: "individual",
     })),
-    withStore: vi.fn(async (run: (store: unknown) => unknown) =>
-      run({
-        assets: {
-          readAssets: calls.readAssets,
-          readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+    resolvePageShell: vi.fn(async () => {
+      const scopes = [{ id: "household", label: "Hogar", type: "household" }];
+      return {
+        persistence: {
+          checkedAt: "2026-07-03T00:00:00.000Z",
+          checkKey: "bootstrap.last_healthcheck_at",
+          checkValue: "2026-07-03T00:00:00.000Z",
+          databasePath: ":memory:",
+          displayPath: ":memory:",
+          status: "ok",
         },
-        contributionPlan: {
-          readContributionPlan: calls.readContributionPlan,
-          readReconciliations: calls.readContributionReconciliations,
+        privacyMode: false,
+        requestedScopeId: undefined,
+        scopes,
+        selectedScope: scopes[0],
+        store: {
+          assets: {
+            readAssets: calls.readAssets,
+            readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+          },
+          contributionPlan: {
+            readContributionPlan: calls.readContributionPlan,
+            readReconciliations: calls.readContributionReconciliations,
+          },
+          exposureProfiles: {
+            readExposureProfiles: calls.readExposureProfiles,
+          },
+          goals: { readGoals: calls.readGoals },
+          operations: {
+            readAllPriceCacheEntries: calls.readAllPriceCacheEntries,
+            readOperations: calls.readOperations,
+          },
+          payouts: {
+            readPayouts: calls.readPayouts,
+            readPayoutSchedules: calls.readPayoutSchedules,
+          },
+          readFireConfig: calls.readFireConfig,
+          readWarningOverrides: calls.readWarningOverrides,
+          snapshots: {
+            buildProjectionContext: calls.buildProjectionContext,
+            readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
+            readSnapshotHoldings: calls.readSnapshotHoldings,
+          },
         },
-        exposureProfiles: {
-          readExposureProfiles: calls.readExposureProfiles,
-        },
-        goals: { readGoals: calls.readGoals },
-        operations: {
-          readAllPriceCacheEntries: calls.readAllPriceCacheEntries,
-          readOperations: calls.readOperations,
-        },
-        payouts: {
-          readPayouts: calls.readPayouts,
-          readPayoutSchedules: calls.readPayoutSchedules,
-        },
-        readFireConfig: calls.readFireConfig,
-        readWarningOverrides: calls.readWarningOverrides,
-        snapshots: {
-          buildProjectionContext: calls.buildProjectionContext,
-          readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
-          readSnapshotHoldings: calls.readSnapshotHoldings,
-        },
-        workspace: { readWorkspace: calls.readWorkspace },
-      }),
-    ),
+        target: { kind: "local" },
+        workspace: await calls.readWorkspace(),
+      };
+    }),
   };
 });
 
-vi.mock("@web/store", () => ({
-  bootstrapHealthcheck: async () => ({
-    checkedAt: "2026-07-03T00:00:00.000Z",
-    checkKey: "bootstrap.last_healthcheck_at",
-    checkValue: "2026-07-03T00:00:00.000Z",
-    databasePath: ":memory:",
-    displayPath: ":memory:",
-    status: "ok",
-  }),
-  withStore: calls.withStore,
+vi.mock("@web/page-shell", () => ({
+  resolvePageShell: calls.resolvePageShell,
 }));
 
 vi.mock("next/headers", () => ({

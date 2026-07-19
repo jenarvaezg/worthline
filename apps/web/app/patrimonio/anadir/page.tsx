@@ -1,11 +1,5 @@
-import {
-  PRIVACY_COOKIE_NAME,
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { parseFormError, resolveOkMessage } from "@web/intake";
+import { resolvePageShell } from "@web/page-shell";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 import {
   addHoldingFieldValue,
@@ -19,19 +13,15 @@ import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { CurrentStateDebtFields } from "@web/patrimonio/current-state-debt-fields";
 import { PendingSubmit } from "@web/pending-submit";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { Instrument, Member } from "@worthline/domain";
 import {
   calculateNetWorth,
   defaultsFor,
   formatMoneyMinorPrivacy,
-  listScopeOptions,
 } from "@worthline/domain";
 import type { RegisteredSource } from "@worthline/pricing";
 import { fetchPriceNow } from "@worthline/pricing";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 
 export const dynamic = "force-dynamic";
@@ -165,61 +155,30 @@ export default async function AnadirHoldingPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store, workspace } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
-
-    if (!workspace) {
-      return null;
-    }
-
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
-
-    // Holdings drive the first-run copy (no holdings yet → warm welcome, #600)
-    // and the running net-worth total shown on the success screen's loop.
-    const [assets, liabilities] = await Promise.all([
-      store.assets.readAssets(),
-      store.liabilities.readLiabilities(),
-    ]);
-    const netWorth = calculateNetWorth({
-      assets,
-      liabilities,
-      scopeId: selectedScope?.id ?? scopes[0]?.id ?? "",
-      workspace,
-    });
-
-    return {
-      activeMembers: workspace.members.filter((m) => !m.disabledAt),
-      currency: workspace.baseCurrency,
-      hasHoldings: assets.length > 0 || liabilities.length > 0,
-      hasPrimaryResidence: assets.some((asset) => asset.isPrimaryResidence),
-      netWorthMinor: netWorth.totalNetWorth.amountMinor,
-      scopes,
-      selectedScope,
-    };
+  // Holdings drive the first-run copy (no holdings yet → warm welcome, #600)
+  // and the running net-worth total shown on the success screen's loop.
+  const [assets, liabilities] = await Promise.all([
+    store.assets.readAssets(),
+    store.liabilities.readLiabilities(),
+  ]);
+  const netWorth = calculateNetWorth({
+    assets,
+    liabilities,
+    scopeId: selectedScope?.id ?? scopes[0]?.id ?? "",
+    workspace,
   });
 
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const {
-    activeMembers,
-    currency,
-    hasHoldings,
-    hasPrimaryResidence,
-    netWorthMinor,
-    scopes,
-    selectedScope,
-  } = storeData;
+  const activeMembers = workspace.members.filter((m) => !m.disabledAt);
+  const currency = workspace.baseCurrency;
+  const hasHoldings = assets.length > 0 || liabilities.length > 0;
+  const hasPrimaryResidence = assets.some((asset) => asset.isPrimaryResidence);
+  const netWorthMinor = netWorth.totalNetWorth.amountMinor;
   const resolvedParams = resolvedSearchParams ?? {};
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;

@@ -2,14 +2,7 @@ import OperationsEditor from "@web/_components/operations-editor";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import { isDemoMode } from "@web/demo/write-guard";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
-import {
-  PRIVACY_COOKIE_NAME,
-  parseFormError,
-  parsePrivacyCookie,
-  parseScopeCookie,
-  resolveOkMessage,
-  SCOPE_COOKIE_NAME,
-} from "@web/intake";
+import { parseFormError, resolveOkMessage } from "@web/intake";
 import {
   confirmPriceBackfillAction,
   confirmSnapshotPriceCorrectionAction,
@@ -30,6 +23,7 @@ import {
   updateInvestmentAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/actions";
+import { resolvePageShell } from "@web/page-shell";
 import {
   acknowledgeWarningAction,
   deleteAssetAction,
@@ -40,7 +34,6 @@ import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import Shell from "@web/shell";
-import { bootstrapHealthcheck, withStore } from "@web/store";
 import type { CoinPosition, ValuationMethod } from "@worthline/domain";
 import {
   buildHoldingReturnsView,
@@ -50,15 +43,13 @@ import {
   holdingIrr,
   holdingTwr,
   instrumentOfAsset,
-  listScopeOptions,
   monthlyCloseValuesFromSnapshotRows,
   simpleGain,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CobrosSection } from "./_surfaces/cobros-section";
@@ -84,292 +75,192 @@ export default async function EditarPage({
 }) {
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
-  const persistence = await bootstrapHealthcheck();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
 
-  const jar = await cookies();
-  const cookieScopeId = parseScopeCookie(jar.get(SCOPE_COOKIE_NAME)?.value);
-  const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
+  const { persistence, privacyMode, scopes, selectedScope, store, workspace } =
+    await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const storeData = await withStore(async (store) => {
-    const workspace = await store.workspace.readWorkspace();
+  // Independent base reads — one wave instead of serial round-trips (#446).
+  const [allAssets, liabilities, overrides] = await Promise.all([
+    store.assets.readAssets(),
+    store.liabilities.readLiabilities(),
+    store.readWarningOverrides(),
+  ]);
 
-    if (!workspace) {
-      return null;
-    }
+  const asset = allAssets.find((a) => a.id === id) ?? null;
+  const liability = liabilities.find((l) => l.id === id) ?? null;
 
-    const scopes = listScopeOptions(workspace);
-    const selectedScope = scopes.find((scope) => scope.id === cookieScopeId) ?? scopes[0];
+  // The holding's valuation method drives which surface renders (#152, ADR 0014).
+  const assetMethod = asset ? valuationMethodOfAsset(asset) : null;
 
-    // Independent base reads — one wave instead of serial round-trips (#446).
-    const [assets, liabilities, overrides] = await Promise.all([
-      store.assets.readAssets(),
-      store.liabilities.readLiabilities(),
-      store.readWarningOverrides(),
-    ]);
+  // appreciating (property): appreciation rate + market appraisals (PRD #108).
+  const isAppreciating = assetMethod === "appreciating";
+  // The three housing reads are independent — fetch them in one wave (#446).
+  // (cadence: ADR 0031, #394; null → `step`.)
+  const [anchors, appreciationRate, housingValuationCadence] = isAppreciating
+    ? await Promise.all([
+        store.assets.readValuationAnchors(id),
+        store.assets.readAnnualAppreciationRate(id),
+        store.assets.readValuationCadence(id),
+      ])
+    : [[], null, null];
 
-    const asset = assets.find((a) => a.id === id) ?? null;
-    const liability = liabilities.find((l) => l.id === id) ?? null;
+  // A connected-source coin collection (Numista) is `derived` too, but its
+  // sub-detail is its mirrored positions, not investment operations (ADR 0016).
+  // Resolve the source from the asset id, then read its positions.
+  const isCoinCollection = asset?.instrument === "coin_collection";
+  const coinSource = isCoinCollection
+    ? ((await store.connectedSources.listSources()).find((s) => s.assetId === id) ?? null)
+    : null;
+  const coinPositions = coinSource
+    ? (await store.connectedSources.readPositions(coinSource.id)).filter(
+        (p): p is CoinPosition => p.kind === "coin",
+      )
+    : [];
 
-    // The holding's valuation method drives which surface renders (#152, ADR 0014).
-    const assetMethod = asset ? valuationMethodOfAsset(asset) : null;
-
-    // appreciating (property): appreciation rate + market appraisals (PRD #108).
-    const isAppreciating = assetMethod === "appreciating";
-    // The three housing reads are independent — fetch them in one wave (#446).
-    // (cadence: ADR 0031, #394; null → `step`.)
-    const [anchors, appreciationRate, housingValuationCadence] = isAppreciating
-      ? await Promise.all([
-          store.assets.readValuationAnchors(id),
-          store.assets.readAnnualAppreciationRate(id),
-          store.assets.readValuationCadence(id),
-        ])
-      : [[], null, null];
-
-    // A connected-source coin collection (Numista) is `derived` too, but its
-    // sub-detail is its mirrored positions, not investment operations (ADR 0016).
-    // Resolve the source from the asset id, then read its positions.
-    const isCoinCollection = asset?.instrument === "coin_collection";
-    const coinSource = isCoinCollection
-      ? ((await store.connectedSources.listSources()).find((s) => s.assetId === id) ??
-        null)
+  // A connected Binance crypto holding is `derived` too (instrument `crypto`),
+  // but — like Numista — its sub-detail is mirrored token positions, not
+  // investment operations (ADR 0021). A source now materializes ONE asset per
+  // rung (market + term-locked, #248), so the term-locked asset's id does NOT
+  // match `connected_sources.asset_id`. Resolve the source via the asset's OWN
+  // `connected_source_id` back-link instead, then show only the positions on
+  // THIS asset's rung — opening the market asset lists market tokens, opening the
+  // term-locked asset lists the locked ones. Distinguishes a connected holding
+  // from a MANUAL crypto investment (which has no source link).
+  const assetSourceId =
+    asset?.instrument === "crypto"
+      ? await store.connectedSources.readSourceIdForAsset(id)
       : null;
-    const coinPositions = coinSource
-      ? (await store.connectedSources.readPositions(coinSource.id)).filter(
-          (p): p is CoinPosition => p.kind === "coin",
+  const binanceSourceRow = assetSourceId
+    ? ((await store.connectedSources.listSources()).find(
+        (s) => s.id === assetSourceId && s.adapter === "binance",
+      ) ?? null)
+    : null;
+  const isBinanceHolding = binanceSourceRow !== null;
+  const binancePositions =
+    binanceSourceRow && asset
+      ? tokenPositionsOnRung(
+          await store.connectedSources.readPositions(binanceSourceRow.id),
+          asset.liquidityTier,
         )
       : [];
-
-    // A connected Binance crypto holding is `derived` too (instrument `crypto`),
-    // but — like Numista — its sub-detail is mirrored token positions, not
-    // investment operations (ADR 0021). A source now materializes ONE asset per
-    // rung (market + term-locked, #248), so the term-locked asset's id does NOT
-    // match `connected_sources.asset_id`. Resolve the source via the asset's OWN
-    // `connected_source_id` back-link instead, then show only the positions on
-    // THIS asset's rung — opening the market asset lists market tokens, opening the
-    // term-locked asset lists the locked ones. Distinguishes a connected holding
-    // from a MANUAL crypto investment (which has no source link).
-    const assetSourceId =
-      asset?.instrument === "crypto"
-        ? await store.connectedSources.readSourceIdForAsset(id)
-        : null;
-    const binanceSourceRow = assetSourceId
-      ? ((await store.connectedSources.listSources()).find(
-          (s) => s.id === assetSourceId && s.adapter === "binance",
-        ) ?? null)
-      : null;
-    const isBinanceHolding = binanceSourceRow !== null;
-    const binancePositions =
-      binanceSourceRow && asset
-        ? tokenPositionsOnRung(
-            await store.connectedSources.readPositions(binanceSourceRow.id),
-            asset.liquidityTier,
-          )
-        : [];
-    // The curve start (PRD #245 S5, #250): the earliest snapshot dateKey carrying
-    // this asset's frozen row — how far back the reconstructed monthly history
-    // reaches. Null until a backfill has run. Surfaced as "Datos desde DD/MM".
-    const binanceSinceDateKey =
-      binanceSourceRow && asset
-        ? ((
-            await store.snapshots.readSnapshotHoldings({ holdingId: id, kind: "asset" })
-          ).reduce<string | null>(
-            (min, row) => (min === null || row.dateKey < min ? row.dateKey : min),
-            null,
-          ) ?? null)
-        : null;
-
-    // derived (investment): the operations editor + its derived position (ADR 0006).
-    // A coin collection / Binance holding is derived but routed to its own surface,
-    // so skip these.
-    const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
-    // The four derived-investment reads are independent of one another — fetch
-    // them in one wave instead of stacking serial round-trips to the store (#446).
-    const [investment, operations, priceCache, position, twrSnapshotRows] = isDerived
-      ? await Promise.all([
-          store.assets.readInvestmentAssetById(id),
-          store.operations.readOperations(id),
-          store.operations.readPriceCache(id),
-          store.snapshots
-            .readPositions()
-            .then((ps) => ps.find((p) => p.assetId === id) ?? null),
-          store.snapshots.readSnapshotHoldings({
-            holdingId: id,
-            kind: "asset",
-            scopeId: "household",
-          }),
-        ])
-      : [null, [], null, null, []];
-    // The coin collection's decoupled valuation freshness (PRD #166): its own
-    // `numista`-source cache row, separate from the investment derived path above.
-    const coinValuationCache = isCoinCollection
-      ? await store.operations.readPriceCache(id)
-      : null;
-
-    // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
-    // with a provider symbol AND cost-basis history offers the explicit backfill
-    // surface. Detected here server-side so the surface only renders for a real
-    // candidate (the action re-checks before writing).
-    const isBackfillCandidate =
-      isDerived && investment !== null
-        ? detectSingleAssetBackfillCandidate({
-            assetId: id,
-            operations,
-            priceProvider: investment.priceProvider,
-            ...(investment.providerSymbol
-              ? { providerSymbol: investment.providerSymbol }
-              : {}),
-            snapshotRows: twrSnapshotRows,
-          }) !== null
-        : false;
-    const isSnapshotCorrectionEligible =
-      isDerived && investment !== null && operations.length > 0;
-    const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
-
-    // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
-    // the security's identity (`isin ?? providerSymbol`) from the global catalog
-    // now that workspace hand-entry was retired (#1014 S5).
-    const exposureProfileKey = investment
-      ? (investment.isin ?? investment.providerSymbol ?? null)
-      : null;
-    const exposureProfile = exposureProfileKey
-      ? ((await readExposureProfilesFromCatalog()).find(
-          (profile) => profile.key === exposureProfileKey,
+  // The curve start (PRD #245 S5, #250): the earliest snapshot dateKey carrying
+  // this asset's frozen row — how far back the reconstructed monthly history
+  // reaches. Null until a backfill has run. Surfaced as "Datos desde DD/MM".
+  const binanceSinceDateKey =
+    binanceSourceRow && asset
+      ? ((
+          await store.snapshots.readSnapshotHoldings({ holdingId: id, kind: "asset" })
+        ).reduce<string | null>(
+          (min, row) => (min === null || row.dateKey < min ? row.dateKey : min),
+          null,
         ) ?? null)
       : null;
 
-    // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record
-    // on an asset holding — never a figure. Read this holding's one-off payouts +
-    // declared schedules, plus the scope's declared monthly spending (for the
-    // renta-pasiva coverage; omitted gracefully when the scope has no FIRE figure).
-    const payouts = asset ? await store.payouts.readPayoutsForHolding(id) : [];
-    const payoutSchedules = asset
-      ? await store.payouts.readPayoutSchedulesForHolding(id)
+  // derived (investment): the operations editor + its derived position (ADR 0006).
+  // A coin collection / Binance holding is derived but routed to its own surface,
+  // so skip these.
+  const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
+  // The four derived-investment reads are independent of one another — fetch
+  // them in one wave instead of stacking serial round-trips to the store (#446).
+  const [investment, operations, priceCache, position, twrSnapshotRows] = isDerived
+    ? await Promise.all([
+        store.assets.readInvestmentAssetById(id),
+        store.operations.readOperations(id),
+        store.operations.readPriceCache(id),
+        store.snapshots
+          .readPositions()
+          .then((ps) => ps.find((p) => p.assetId === id) ?? null),
+        store.snapshots.readSnapshotHoldings({
+          holdingId: id,
+          kind: "asset",
+          scopeId: "household",
+        }),
+      ])
+    : [null, [], null, null, []];
+  // The coin collection's decoupled valuation freshness (PRD #166): its own
+  // `numista`-source cache row, separate from the investment derived path above.
+  const coinValuationCache = isCoinCollection
+    ? await store.operations.readPriceCache(id)
+    : null;
+
+  // Historical-price backfill candidacy (#380, ADR 0033): a derived investment
+  // with a provider symbol AND cost-basis history offers the explicit backfill
+  // surface. Detected here server-side so the surface only renders for a real
+  // candidate (the action re-checks before writing).
+  const isBackfillCandidate =
+    isDerived && investment !== null
+      ? detectSingleAssetBackfillCandidate({
+          assetId: id,
+          operations,
+          priceProvider: investment.priceProvider,
+          ...(investment.providerSymbol
+            ? { providerSymbol: investment.providerSymbol }
+            : {}),
+          snapshotRows: twrSnapshotRows,
+        }) !== null
+      : false;
+  const isSnapshotCorrectionEligible =
+    isDerived && investment !== null && operations.length > 0;
+  const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
+
+  // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
+  // the security's identity (`isin ?? providerSymbol`) from the global catalog
+  // now that workspace hand-entry was retired (#1014 S5).
+  const exposureProfileKey = investment
+    ? (investment.isin ?? investment.providerSymbol ?? null)
+    : null;
+  const exposureProfile = exposureProfileKey
+    ? ((await readExposureProfilesFromCatalog()).find(
+        (profile) => profile.key === exposureProfileKey,
+      ) ?? null)
+    : null;
+
+  // Cobros (PRD #652 S1, #656, ADR 0054): a payout is a pure attribution record
+  // on an asset holding — never a figure. Read this holding's one-off payouts +
+  // declared schedules, plus the scope's declared monthly spending (for the
+  // renta-pasiva coverage; omitted gracefully when the scope has no FIRE figure).
+  const payouts = asset ? await store.payouts.readPayoutsForHolding(id) : [];
+  const payoutSchedules = asset
+    ? await store.payouts.readPayoutSchedulesForHolding(id)
+    : [];
+  const scopeFireConfig =
+    asset && selectedScope ? (await store.readFireConfig())[selectedScope.id] : undefined;
+  const payoutMonthlySpendingMinor = scopeFireConfig?.monthlySpendingMinor ?? null;
+
+  // amortized / anchored: the debt-model data (PRD #109).
+  const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
+  const amortizationPlan =
+    liability && debtModel === "amortizable"
+      ? await store.liabilities.readAmortizationPlan(id)
+      : null;
+  // Revisions + early repayments both hang off the plan id and are independent
+  // of each other — one wave once the plan is known (#446).
+  const [rateRevisions, earlyRepayments] = amortizationPlan
+    ? await Promise.all([
+        store.liabilities.readInterestRateRevisions(amortizationPlan.id),
+        store.liabilities.readEarlyRepayments(amortizationPlan.id),
+      ])
+    : [[], []];
+  const balanceAnchors =
+    liability && (debtModel === "revolving" || debtModel === "informal")
+      ? await store.liabilities.readBalanceAnchors(id)
       : [];
-    const scopeFireConfig =
-      asset && selectedScope
-        ? (await store.readFireConfig())[selectedScope.id]
-        : undefined;
-    const payoutMonthlySpendingMinor = scopeFireConfig?.monthlySpendingMinor ?? null;
+  // Valuation cadence (ADR 0031, #393); null reads as the default `step`.
+  const valuationCadence = liability
+    ? await store.liabilities.readValuationCadence(id)
+    : null;
+  // The current MODELLED balance, shown beside "Recalibrar con saldo real"
+  // (ADR 0056, PRD #670 S3, #678) so the drift against the bank's real figure
+  // is visible at the moment of repair — only meaningful once a plan exists.
+  const currentModelledBalanceMinor = amortizationPlan
+    ? await store.liabilities.debtBalanceAtDate(id, new Date().toISOString().slice(0, 10))
+    : null;
 
-    // amortized / anchored: the debt-model data (PRD #109).
-    const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
-    const amortizationPlan =
-      liability && debtModel === "amortizable"
-        ? await store.liabilities.readAmortizationPlan(id)
-        : null;
-    // Revisions + early repayments both hang off the plan id and are independent
-    // of each other — one wave once the plan is known (#446).
-    const [rateRevisions, earlyRepayments] = amortizationPlan
-      ? await Promise.all([
-          store.liabilities.readInterestRateRevisions(amortizationPlan.id),
-          store.liabilities.readEarlyRepayments(amortizationPlan.id),
-        ])
-      : [[], []];
-    const balanceAnchors =
-      liability && (debtModel === "revolving" || debtModel === "informal")
-        ? await store.liabilities.readBalanceAnchors(id)
-        : [];
-    // Valuation cadence (ADR 0031, #393); null reads as the default `step`.
-    const valuationCadence = liability
-      ? await store.liabilities.readValuationCadence(id)
-      : null;
-    // The current MODELLED balance, shown beside "Recalibrar con saldo real"
-    // (ADR 0056, PRD #670 S3, #678) so the drift against the bank's real figure
-    // is visible at the moment of repair — only meaningful once a plan exists.
-    const currentModelledBalanceMinor = amortizationPlan
-      ? await store.liabilities.debtBalanceAtDate(
-          id,
-          new Date().toISOString().slice(0, 10),
-        )
-      : null;
-
-    return {
-      activeMembers: workspace.members.filter((m) => !m.disabledAt),
-      amortizationPlan,
-      currentModelledBalanceMinor,
-      anchors,
-      appreciationRate,
-      asset,
-      assetMethod,
-      assets: assets.filter((a) => a.type !== "investment"),
-      balanceAnchors,
-      binancePositions,
-      binanceSinceDateKey,
-      binanceSource: binanceSourceRow,
-      coinPositions,
-      coinSource,
-      coinValuationCache,
-      debtModel,
-      earlyRepayments,
-      exposureProfile,
-      housingValuationCadence,
-      isBackfillCandidate,
-      isSnapshotCorrectionEligible,
-      isBinanceHolding,
-      isCoinCollection,
-      investment,
-      liability,
-      operations,
-      overrides,
-      payouts,
-      payoutSchedules,
-      payoutMonthlySpendingMinor,
-      position,
-      priceCache,
-      rateRevisions,
-      scopes,
-      selectedScope,
-      twrMonthlyCloses,
-      valuationCadence,
-      workspace,
-    };
-  });
-
-  if (!storeData) {
-    redirect("/empezar");
-  }
-
-  const {
-    activeMembers,
-    amortizationPlan,
-    anchors,
-    appreciationRate,
-    asset,
-    assetMethod,
-    assets,
-    balanceAnchors,
-    binancePositions,
-    binanceSinceDateKey,
-    binanceSource,
-    coinPositions,
-    coinSource,
-    coinValuationCache,
-    currentModelledBalanceMinor,
-    debtModel,
-    earlyRepayments,
-    exposureProfile,
-    housingValuationCadence,
-    isBackfillCandidate,
-    isSnapshotCorrectionEligible,
-    isBinanceHolding,
-    isCoinCollection,
-    investment,
-    liability,
-    operations,
-    overrides,
-    payouts,
-    payoutSchedules,
-    payoutMonthlySpendingMinor,
-    position,
-    priceCache,
-    rateRevisions,
-    scopes,
-    selectedScope,
-    twrMonthlyCloses,
-    valuationCadence,
-  } = storeData;
+  const activeMembers = workspace.members.filter((m) => !m.disabledAt);
+  const assets = allAssets.filter((a) => a.type !== "investment");
+  const binanceSource = binanceSourceRow;
 
   if (!asset && !liability) {
     notFound();

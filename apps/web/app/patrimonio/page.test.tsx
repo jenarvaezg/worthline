@@ -34,39 +34,47 @@ const calls = vi.hoisted(() => ({
     members: [{ id: "member_jose", name: "Jose" }],
     mode: "individual",
   })),
-  withStore: vi.fn(async (run: (store: unknown) => unknown) =>
-    run({
-      assets: {
-        readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+  resolvePageShell: vi.fn(async () => {
+    const scopes = [{ id: "household", label: "Hogar", type: "household" }];
+    return {
+      persistence: {
+        checkedAt: "2026-06-27T00:00:00.000Z",
+        checkKey: "bootstrap.last_healthcheck_at",
+        checkValue: "2026-06-27T00:00:00.000Z",
+        databasePath: ":memory:",
+        displayPath: ":memory:",
+        status: "ok",
       },
-      exposureProfiles: { readExposureProfiles: calls.readExposureProfiles },
-      operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
-      payouts: {
-        readPayoutSchedules: calls.readPayoutSchedules,
-        readPayouts: calls.readPayouts,
+      privacyMode: false,
+      requestedScopeId: undefined,
+      scopes,
+      selectedScope: scopes[0],
+      store: {
+        assets: {
+          readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+        },
+        exposureProfiles: { readExposureProfiles: calls.readExposureProfiles },
+        operations: { readAllPriceCacheEntries: calls.readAllPriceCacheEntries },
+        payouts: {
+          readPayoutSchedules: calls.readPayoutSchedules,
+          readPayouts: calls.readPayouts,
+        },
+        snapshots: {
+          buildProjectionContext: calls.buildProjectionContext,
+          readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
+          readSnapshotHoldings: calls.readSnapshotHoldings,
+        },
+        readTrash: calls.readTrash,
+        readWarningOverrides: calls.readWarningOverrides,
       },
-      snapshots: {
-        buildProjectionContext: calls.buildProjectionContext,
-        readCurveValuedHoldingsAtDate: calls.readCurveValuedHoldingsAtDate,
-        readSnapshotHoldings: calls.readSnapshotHoldings,
-      },
-      readTrash: calls.readTrash,
-      readWarningOverrides: calls.readWarningOverrides,
-      workspace: { readWorkspace: calls.readWorkspace },
-    }),
-  ),
+      target: { kind: "local" },
+      workspace: await calls.readWorkspace(),
+    };
+  }),
 }));
 
-vi.mock("@web/store", () => ({
-  bootstrapHealthcheck: async () => ({
-    checkedAt: "2026-06-27T00:00:00.000Z",
-    checkKey: "bootstrap.last_healthcheck_at",
-    checkValue: "2026-06-27T00:00:00.000Z",
-    databasePath: ":memory:",
-    displayPath: ":memory:",
-    status: "ok",
-  }),
-  withStore: calls.withStore,
+vi.mock("@web/page-shell", () => ({
+  resolvePageShell: calls.resolvePageShell,
 }));
 
 vi.mock("@web/demo/write-guard", () => ({ isDemoMode: calls.isDemoMode }));
