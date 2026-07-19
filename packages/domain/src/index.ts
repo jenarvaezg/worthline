@@ -139,6 +139,33 @@ export {
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
 export type {
+  ConnectorAccount,
+  ConnectorAdapter,
+  ConnectorCapability,
+  ConnectorCapabilityKind,
+  ConnectorCursor,
+  FactDisposition,
+  FactKey,
+  FetchCapabilityKind,
+  FetchRequest,
+  NormalizedBatch,
+  NormalizedFact,
+  ReconciledFact,
+  ReconcilePlan,
+} from "./connector-port";
+export {
+  assertCapability,
+  reconcileFacts,
+  supportsCapability,
+} from "./connector-port";
+export type {
+  ReferenceAdapterHandle,
+  ReferenceAdapterOptions,
+  ReferenceEvent,
+  ReferencePayload,
+} from "./connector-reference-adapter";
+export { createReferenceAdapter } from "./connector-reference-adapter";
+export type {
   MonthlyAllocationDestination,
   MonthlyContributionAllocation,
 } from "./contribution-allocation";
