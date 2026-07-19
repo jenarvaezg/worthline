@@ -34,6 +34,14 @@ export interface ApplyDatedFactsBatchParams {
    * earliest key — override for edits where the floor is min(old, new).
    */
   deriveFromDateKey?: (dateKeys: string[]) => string | null;
+  /**
+   * Bookkeeping to run INSIDE the same transaction, after every fact step and
+   * before the ripple — e.g. a connector advancing its cursor and dedup ledger,
+   * which must commit or roll back atomically with the facts (decision #888).
+   * Runs even for an empty batch (a no-op sync still records its freshness).
+   * Contributes no date keys, so the ripple floor is unaffected.
+   */
+  afterPersist?: (batchId: string) => Promise<void>;
 }
 
 /**
@@ -52,6 +60,8 @@ export async function applyDatedFactsBatch(
       for (const step of params.steps) {
         dateKeys.push(await step.persist(batchId));
       }
+
+      await params.afterPersist?.(batchId);
 
       if (dateKeys.length === 0) {
         return { ok: true, value: null };

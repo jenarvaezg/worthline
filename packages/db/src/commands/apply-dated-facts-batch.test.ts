@@ -105,6 +105,48 @@ describe("applyDatedFactsBatch", () => {
     expect(rippleCalls).toEqual([]);
   });
 
+  test("runs afterPersist inside the transaction, even for an empty batch", async () => {
+    const order: string[] = [];
+    const result = await applyDatedFactsBatch(immediateUow, {
+      today: TODAY,
+      steps: [],
+      afterPersist: async (batchId) => {
+        expect(batchId).toMatch(/^batch-/);
+        order.push("afterPersist");
+      },
+      ripple: async () => {
+        order.push("ripple");
+      },
+    });
+
+    expect(result).toEqual({ ok: true, value: null });
+    // afterPersist ran; the empty batch skipped the ripple.
+    expect(order).toEqual(["afterPersist"]);
+  });
+
+  test("runs afterPersist after steps and before the ripple", async () => {
+    const order: string[] = [];
+    await applyDatedFactsBatch(immediateUow, {
+      today: TODAY,
+      steps: [
+        {
+          persist: async () => {
+            order.push("persist");
+            return "2024-01-01";
+          },
+        },
+      ],
+      afterPersist: async () => {
+        order.push("afterPersist");
+      },
+      ripple: async () => {
+        order.push("ripple");
+      },
+    });
+
+    expect(order).toEqual(["persist", "afterPersist", "ripple"]);
+  });
+
   test("surfaces persist failures as CommandResult errors", async () => {
     const result = await applyDatedFactsBatch(immediateUow, {
       today: TODAY,
