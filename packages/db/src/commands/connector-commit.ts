@@ -25,6 +25,13 @@ export interface ConnectorCommitRecord {
   cursor: ConnectorCursor | null;
   /** The keys applied in this batch — appended to the dedup ledger. */
   appliedKeys: FactKey[];
+  /**
+   * The keys the user dismissed with ignore-always — appended to the discard
+   * ledger (PRD #1000 S4, #890). Recorded in the SAME transaction as the facts and
+   * cursor, so a dismissal is as durable and atomic as an application: a future
+   * reconciliation reads it back and suppresses the fact. Empty on a plain sync.
+   */
+  rejectedKeys: FactKey[];
 }
 
 export interface ConnectorCommitParams<TPayload> {
@@ -41,6 +48,13 @@ export interface ConnectorCommitParams<TPayload> {
    * the adapter never sees it. The fact's `dateKey` drives the ripple floor.
    */
   persistFact: (fact: NormalizedFact<TPayload>, batchId: string) => Promise<void>;
+  /**
+   * Keys the user chose to dismiss forever (ignore-always). Persisted with the
+   * facts via `recordCommit`; defaults to none. A commit may carry rejections and
+   * no facts (the user only dismissed rows) — it still opens a batch and records
+   * the discard, so the dismissal survives.
+   */
+  rejectedKeys?: FactKey[];
   /** Re-derive snapshots from the earliest applied date (ADR 0020). */
   ripple: (fromDateKey: string) => Promise<void>;
   /**
@@ -55,6 +69,8 @@ export interface ConnectorCommitParams<TPayload> {
 export interface ConnectorCommitResult {
   /** How many facts this commit persisted (0 for an all-duplicate / empty sync). */
   applied: number;
+  /** How many keys this commit added to the discard ledger (ignore-always). */
+  rejected: number;
   /** The cursor the source resumes from next time. */
   cursor: ConnectorCursor | null;
   /** The ripple window, or null when nothing datable-in-the-past was applied. */
@@ -84,6 +100,7 @@ export async function commitReconciled<TPayload>(
 ): Promise<CommandResult<ConnectorCommitResult>> {
   const { plan } = params;
   const appliedKeys = plan.toApply.map((fact) => fact.key);
+  const rejectedKeys = params.rejectedKeys ?? [];
 
   const result = await applyDatedFactsBatch(params.uow, {
     batch: {
@@ -98,7 +115,12 @@ export async function commitReconciled<TPayload>(
       },
     })),
     afterPersist: async (batchId) => {
-      await params.recordCommit({ batchId, cursor: plan.cursor, appliedKeys });
+      await params.recordCommit({
+        batchId,
+        cursor: plan.cursor,
+        appliedKeys,
+        rejectedKeys,
+      });
     },
     ripple: params.ripple,
   });
@@ -111,6 +133,7 @@ export async function commitReconciled<TPayload>(
     ok: true,
     value: {
       applied: appliedKeys.length,
+      rejected: rejectedKeys.length,
       cursor: plan.cursor,
       ripple: result.value,
     },

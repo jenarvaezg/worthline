@@ -19,9 +19,17 @@ import type {
   ConnectorCursor,
   FactKey,
   FetchCapabilityKind,
+  InboxPlan,
+  InboxRowAction,
+  NormalizedFact,
   ReferenceEvent,
 } from "@worthline/domain";
-import { assertCapability, reconcileFacts } from "@worthline/domain";
+import {
+  assertCapability,
+  reconcileFacts,
+  reconcileInbox,
+  resolveInbox,
+} from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { type ConnectorCommitResult, commitReconciled } from "./connector-commit";
@@ -48,6 +56,23 @@ export interface RunSyncOptions {
   failPersistOnKey?: FactKey;
 }
 
+/**
+ * Options for one inbox-driven sync (PRD #1000 S4): the same fetch, but the batch
+ * flows through the reconciliation inbox (`reconcileInbox` → `resolveInbox`)
+ * instead of the bare `reconcileFacts`, so a test can exercise the four
+ * dispositions, per-row actions, and the persistent discard ledger end-to-end.
+ */
+export interface RunInboxSyncOptions<TPayload = unknown> extends RunSyncOptions {
+  identityOf?: (fact: NormalizedFact<TPayload>) => string;
+  isDubious?: (fact: NormalizedFact<TPayload>) => boolean;
+  /** Per-key action overriding each row's default (accept for new/modified, …). */
+  actions?: ReadonlyMap<FactKey, InboxRowAction>;
+  /** Per-key replacement fact for `edit` actions. */
+  edits?: ReadonlyMap<FactKey, NormalizedFact<TPayload>>;
+  /** Observe the classified plan before it is resolved and committed. */
+  onPlan?: (plan: InboxPlan<TPayload>) => void;
+}
+
 /** The in-memory application host the conformance suite drives the port through. */
 export interface InMemoryConnectorHost {
   /** Fetch → reconcile → commit one batch from `adapter`, returning the result. */
@@ -56,11 +81,19 @@ export interface InMemoryConnectorHost {
     capability: FetchCapabilityKind,
     options?: RunSyncOptions,
   ) => Promise<CommandResult<ConnectorCommitResult>>;
-  /** Forget the connector's dedup ledger + cursor (an unlink). */
+  /** Fetch → inbox reconcile → resolve actions → commit — the S4 surface path. */
+  runInboxSync: <TPayload>(
+    adapter: ConnectorAdapter<TPayload>,
+    capability: FetchCapabilityKind,
+    options?: RunInboxSyncOptions<TPayload>,
+  ) => Promise<CommandResult<ConnectorCommitResult>>;
+  /** Forget the connector's dedup + discard ledgers + cursor (an unlink). */
   unlink: () => void;
   appliedFacts: () => AppliedFact[];
   appliedKeys: () => FactKey[];
   seenSize: () => number;
+  /** The keys the user dismissed with ignore-always (the discard ledger). */
+  rejectedKeys: () => FactKey[];
   cursor: () => ConnectorCursor | null;
   batchCount: () => number;
   rippleFloors: () => string[];
@@ -70,6 +103,9 @@ export interface InMemoryConnectorHost {
 export function createInMemoryConnectorHost(): InMemoryConnectorHost {
   let applied: AppliedFact[] = [];
   let seen = new Set<FactKey>();
+  let rejected = new Set<FactKey>();
+  // Identity → applied content key: the source of `modified` detection across syncs.
+  let appliedIdentities = new Map<string, FactKey>();
   let cursor: ConnectorCursor | null = null;
   let batches: string[] = [];
   let rippleFloors: string[] = [];
@@ -88,6 +124,8 @@ export function createInMemoryConnectorHost(): InMemoryConnectorHost {
       const snapshot = {
         applied,
         seen: new Set(seen),
+        rejected: new Set(rejected),
+        appliedIdentities: new Map(appliedIdentities),
         cursor,
         batches,
         rippleFloors,
@@ -98,6 +136,8 @@ export function createInMemoryConnectorHost(): InMemoryConnectorHost {
       } catch (error) {
         applied = snapshot.applied;
         seen = snapshot.seen;
+        rejected = snapshot.rejected;
+        appliedIdentities = snapshot.appliedIdentities;
         cursor = snapshot.cursor;
         batches = snapshot.batches;
         rippleFloors = snapshot.rippleFloors;
@@ -136,13 +176,75 @@ export function createInMemoryConnectorHost(): InMemoryConnectorHost {
         uow,
       });
     },
+    runInboxSync: async (adapter, capability, options) => {
+      assertCapability(adapter, capability);
+      const fromCursor = options?.cursor !== undefined ? options.cursor : cursor;
+      const batch = await adapter.fetch({ capability, cursor: fromCursor });
+
+      const plan = reconcileInbox({
+        batch,
+        seen,
+        rejected,
+        ...(options?.identityOf ? { identityOf: options.identityOf } : {}),
+        appliedIdentities,
+        ...(options?.isDubious ? { isDubious: options.isDubious } : {}),
+      });
+      options?.onPlan?.(plan);
+
+      const decision = resolveInbox({
+        plan,
+        ...(options?.actions ? { actions: options.actions } : {}),
+        ...(options?.edits ? { edits: options.edits } : {}),
+      });
+
+      // The identity each applied fact establishes, so a later restatement of the
+      // same operation classifies as `modified` (recorded atomically below).
+      const identityByKey = new Map<FactKey, string>();
+      if (options?.identityOf) {
+        for (const fact of decision.toApply) {
+          identityByKey.set(fact.key, options.identityOf(fact));
+        }
+      }
+
+      return commitReconciled({
+        plan: { reconciled: [], toApply: decision.toApply, cursor: decision.cursor },
+        rejectedKeys: decision.toReject,
+        today: TODAY,
+        connectedSourceId: SOURCE_ID,
+        persistFact: async (fact, batchId) => {
+          if (options?.failPersistOnKey === fact.key) {
+            throw new Error(`persist failed for ${fact.key}`);
+          }
+          applied = [...applied, { batchId, key: fact.key, dateKey: fact.dateKey }];
+        },
+        ripple: async (fromDateKey) => {
+          rippleFloors = [...rippleFloors, fromDateKey];
+        },
+        recordCommit: async ({ cursor: nextCursor, appliedKeys, rejectedKeys }) => {
+          cursor = nextCursor;
+          seen = new Set(seen);
+          appliedIdentities = new Map(appliedIdentities);
+          for (const key of appliedKeys) {
+            seen.add(key);
+            const identity = identityByKey.get(key);
+            if (identity !== undefined) appliedIdentities.set(identity, key);
+          }
+          rejected = new Set(rejected);
+          for (const key of rejectedKeys) rejected.add(key);
+        },
+        uow,
+      });
+    },
     unlink: () => {
       seen = new Set();
+      rejected = new Set();
+      appliedIdentities = new Map();
       cursor = null;
     },
     appliedFacts: () => [...applied],
     appliedKeys: () => applied.map((fact) => fact.key),
     seenSize: () => seen.size,
+    rejectedKeys: () => [...rejected],
     cursor: () => cursor,
     batchCount: () => batches.length,
     rippleFloors: () => [...rippleFloors],

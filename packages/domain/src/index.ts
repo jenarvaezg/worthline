@@ -139,6 +139,17 @@ export {
   tokenSymbolSnapshotInputs,
 } from "./connected-source";
 export type {
+  InboxDecision,
+  InboxDecisionInput,
+  InboxDisposition,
+  InboxPlan,
+  InboxReconcileInput,
+  InboxRow,
+  InboxRowAction,
+  SkipReason,
+} from "./connector-inbox";
+export { reconcileInbox, resolveInbox } from "./connector-inbox";
+export type {
   ConnectorAccount,
   ConnectorAdapter,
   ConnectorCapability,
@@ -175,6 +186,8 @@ export {
 } from "./connector-statement-adapter";
 export type { StatementFactPayload } from "./connector-statement-normalize";
 export {
+  isStatementFactDubious,
+  statementFactIdentity,
   statementFactsFromStatement,
   statementRowKey,
 } from "./connector-statement-normalize";

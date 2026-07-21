@@ -118,6 +118,14 @@ adopts this port; until then the two live sources are untouched.
 - Later slices add adapters (S3 universal statement, then IBKR / open banking /
   exchanges) and the reconciliation inbox surface (S4); each new adapter must pass
   the conformance suite.
+- **S4 reconciliation inbox (#1068) lands the surface's contract**
+  (`connector-inbox.ts`): the four triage dispositions (`new` / `modified` /
+  `dubious` / `skipped`), the per-row actions (`accept` / `edit` / `ignore-once` /
+  `ignore-always`), and the persistent discard ledger — an ignore-always key is
+  recorded via `recordCommit`'s new `rejectedKeys`, atomic with the facts and
+  cursor, so a dismissal never resurfaces. `FactDisposition` stays the minimal
+  `new`/`duplicate` the commit needs; the inbox is the richer read on top. Only
+  the inbox's *visual* form is deferred (to «Libro mayor» primitives, #825).
 
 ## Deliberately deferred / revisit later
 
