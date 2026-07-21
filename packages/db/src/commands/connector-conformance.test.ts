@@ -84,10 +84,35 @@ describe("commitReconciled", () => {
 
     expect(result.ok && result.value).toEqual({
       applied: 0,
+      rejected: 0,
       cursor: "c9",
       ripple: null,
     });
     expect(persisted).toEqual([]);
     expect(recorded).toEqual({ cursor: "c9", applied: 0 });
+  });
+
+  test("records ignore-always rejections in the same commit, even with nothing to apply", async () => {
+    let recordedRejections: string[] | null = null;
+    const result = await commitReconciled({
+      plan: { reconciled: [], toApply: [], cursor: "c1" },
+      rejectedKeys: ["dismiss-me", "and-me"],
+      today: "2026-07-19",
+      connectedSourceId: "src-1",
+      persistFact: async () => {},
+      ripple: async () => {},
+      recordCommit: async ({ rejectedKeys }) => {
+        recordedRejections = rejectedKeys;
+      },
+      uow: {
+        createFactBatch: async () => "batch-1",
+        transaction: (work) => Promise.resolve(work()),
+      },
+    });
+
+    // A dismissal-only commit still opens a batch and persists the discard ledger.
+    expect(result.ok && result.value.rejected).toBe(2);
+    expect(result.ok && result.value.applied).toBe(0);
+    expect(recordedRejections).toEqual(["dismiss-me", "and-me"]);
   });
 });

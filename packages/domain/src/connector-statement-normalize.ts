@@ -20,28 +20,29 @@ import type { ParsedStatement, ParsedStatementRow } from "./statement-parse";
 export type StatementFactPayload = ParsedStatementRow;
 
 /**
- * Mint a stable, content-derived dedup key for one statement row. Two observations
- * of the same underlying operation — a re-uploaded file, an overlapping export
- * window — derive the SAME key, so the port applies the operation once. Built from
- * the row's own stable identifiers (never ingestion time): its instrument key, the
- * execution date (and optional intraday timestamp for same-day ordering), the
- * direction, and the reconstructed units/price.
+ * The stable *identity* of a statement row — the operation it is, independent of
+ * the values a restatement corrects: instrument · execution date · optional
+ * intraday timestamp · direction. The shared prefix of {@link statementRowKey} and
+ * {@link statementFactIdentity}, so the two can never drift.
  *
  * `isin` is the primary grouping key; a row that carries none (a name-only
  * plantilla row) falls back to its display name so distinct instruments on the same
  * day do not collide.
  */
-export function statementRowKey(row: ParsedStatementRow): string {
+function statementRowIdentity(row: ParsedStatementRow): string {
   const instrument = row.isin ?? (row.name ? `name:${row.name}` : "∅");
-  return [
-    instrument,
-    row.dateKey,
-    row.occurredAt ?? "",
-    row.kind,
-    row.units,
-    row.pricePerUnit,
-    row.currency,
-  ].join("|");
+  return [instrument, row.dateKey, row.occurredAt ?? "", row.kind].join("|");
+}
+
+/**
+ * Mint a stable, content-derived dedup key for one statement row. Two observations
+ * of the same underlying operation — a re-uploaded file, an overlapping export
+ * window — derive the SAME key, so the port applies the operation once. Built from
+ * the row's own stable identifiers (never ingestion time): its {@link
+ * statementRowIdentity identity} plus the reconstructed units/price/currency.
+ */
+export function statementRowKey(row: ParsedStatementRow): string {
+  return [statementRowIdentity(row), row.units, row.pricePerUnit, row.currency].join("|");
 }
 
 /**
@@ -63,4 +64,30 @@ export function statementFactsFromStatement(
     dateKey: row.dateKey,
     payload: row,
   }));
+}
+
+/**
+ * The stable *identity* of a statement fact — the operation it is, independent of
+ * the values that a restatement corrects. It is {@link statementRowKey} without
+ * `units`/`pricePerUnit`/`currency`, so a re-exported statement that fixes a
+ * price on the same instrument·date·direction resolves to the SAME identity under
+ * a DIFFERENT content key — which the inbox surfaces as `modified` rather than a
+ * second, contradictory `new` fact. Feeds `identityOf` in `reconcileInbox`.
+ */
+export function statementFactIdentity(
+  fact: NormalizedFact<StatementFactPayload>,
+): string {
+  return statementRowIdentity(fact.payload);
+}
+
+/**
+ * Whether a statement fact is ambiguous enough to need a human before it applies
+ * (`dubious`). A row carrying no ISIN cannot be confidently matched to an existing
+ * holding by identifier — the honest signal that it needs review, not silent
+ * auto-apply. Feeds `isDubious` in `reconcileInbox`.
+ */
+export function isStatementFactDubious(
+  fact: NormalizedFact<StatementFactPayload>,
+): boolean {
+  return fact.payload.isin == null;
 }

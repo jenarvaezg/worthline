@@ -6,9 +6,16 @@
  * commits through `applyDatedFactsBatch` and re-imports idempotently.
  */
 
-import type { ParsedStatement, ParsedStatementRow } from "@worthline/domain";
+import type {
+  InboxPlan,
+  ParsedStatement,
+  ParsedStatementRow,
+  StatementFactPayload,
+} from "@worthline/domain";
 import {
   createStatementConnectorAdapter,
+  isStatementFactDubious,
+  statementFactIdentity,
   statementFactsFromStatement,
 } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
@@ -111,5 +118,127 @@ describe("universal statement — end-to-end over a real file", () => {
     // A sync still happened: one more batch, no new facts, no extra ripple.
     expect(host.batchCount()).toBe(2);
     expect(host.rippleFloors()).toEqual(["2026-01-15"]);
+  });
+});
+
+// PRD #1000 S4 (#1068): the reconciliation inbox — the SAME universal statement
+// feed, but driven through preview → reconcile (four dispositions, per-row
+// actions) → confirm, proving the discard ledger persists.
+describe("universal statement — reconciliation inbox (S4, #1068)", () => {
+  const INBOX_STATEMENT: ParsedStatement = {
+    isin: null,
+    isins: ["IE00B4L5Y983", "US0378331005"],
+    rows: [
+      statementRow({ dateKey: "2026-01-15", units: "12", pricePerUnit: "95" }),
+      statementRow({
+        isin: "US0378331005",
+        dateKey: "2026-02-20",
+        units: "5",
+        pricePerUnit: "180",
+      }),
+      // A name-only row (no ISIN): parseable but not confidently matchable → dubious.
+      statementRow({
+        isin: null,
+        name: "Fondo local sin ISIN",
+        dateKey: "2026-03-01",
+        units: "3",
+        pricePerUnit: "50",
+      }),
+    ],
+    skipped: [],
+    directionResolved: true,
+  };
+
+  const inboxOptions = {
+    identityOf: statementFactIdentity,
+    isDubious: isStatementFactDubious,
+  } as const;
+
+  test("classifies buckets, applies accepted rows, and ignore-always suppresses a fact on later reconciliations", async () => {
+    const host = createInMemoryConnectorHost();
+    const facts = statementFactsFromStatement(INBOX_STATEMENT);
+    const rowA = facts[0]!;
+    const rowB = facts[1]!;
+    const { adapter } = createStatementConnectorAdapter({ rows: facts });
+
+    let preview: InboxPlan<StatementFactPayload> | undefined;
+    const first = await host.runInboxSync(adapter, "fetch_transactions", {
+      ...inboxOptions,
+      actions: new Map([[rowB.key, "ignore_always"]]),
+      onPlan: (plan) => {
+        preview = plan;
+      },
+    });
+
+    // Preview before applying: two clean new rows + one name-only dubious row.
+    expect(preview?.counts).toEqual({ new: 2, modified: 0, dubious: 1, skipped: 0 });
+
+    // Confirm: rowA applied (default accept), rowB dismissed forever, dubious left
+    // for review (default ignore-once — applied nothing, remembered nothing).
+    expect(first.ok && first.value.applied).toBe(1);
+    expect(first.ok && first.value.rejected).toBe(1);
+    expect(host.appliedKeys()).toEqual([rowA.key]);
+    expect(host.rejectedKeys()).toEqual([rowB.key]);
+
+    // A re-served file (cursor rewound): the dismissed row is skipped as `rejected`
+    // — never a `new` again — and the applied one is a `duplicate`.
+    let replayPreview: InboxPlan<StatementFactPayload> | undefined;
+    const replay = await host.runInboxSync(adapter, "fetch_transactions", {
+      ...inboxOptions,
+      cursor: null,
+      onPlan: (plan) => {
+        replayPreview = plan;
+      },
+    });
+
+    const byKey = new Map(replayPreview!.rows.map((row) => [row.fact.key, row]));
+    expect(byKey.get(rowB.key)?.disposition).toBe("skipped");
+    expect(byKey.get(rowB.key)?.reason).toBe("rejected");
+    expect(byKey.get(rowA.key)?.disposition).toBe("skipped");
+    expect(byKey.get(rowA.key)?.reason).toBe("duplicate");
+    // Nothing re-applied; the applied ledger is unchanged.
+    expect(replay.ok && replay.value.applied).toBe(0);
+    expect(host.appliedKeys()).toEqual([rowA.key]);
+  });
+
+  test("a restated operation (corrected price) is classified as modified, not a second new fact", async () => {
+    const host = createInMemoryConnectorHost();
+    const original: ParsedStatement = {
+      isin: null,
+      isins: ["IE00B4L5Y983"],
+      rows: [statementRow({ dateKey: "2026-01-15", units: "12", pricePerUnit: "95" })],
+      skipped: [],
+      directionResolved: true,
+    };
+    const originalFacts = statementFactsFromStatement(original);
+    const { adapter: first } = createStatementConnectorAdapter({ rows: originalFacts });
+    await host.runInboxSync(first, "fetch_transactions", inboxOptions);
+    expect(host.appliedKeys()).toEqual([originalFacts[0]!.key]);
+
+    // The broker re-issues the statement with the same operation at a corrected
+    // price: same instrument·date·direction (identity), different content key.
+    const corrected: ParsedStatement = {
+      ...original,
+      rows: [statementRow({ dateKey: "2026-01-15", units: "12", pricePerUnit: "97" })],
+    };
+    const correctedFacts = statementFactsFromStatement(corrected);
+    const { adapter: reissue } = createStatementConnectorAdapter({
+      rows: correctedFacts,
+    });
+
+    let plan: InboxPlan<StatementFactPayload> | undefined;
+    await host.runInboxSync(reissue, "fetch_transactions", {
+      ...inboxOptions,
+      cursor: null,
+      // Leave it for review — assert the classification, not the merge (deferred).
+      actions: new Map([[correctedFacts[0]!.key, "ignore_once"]]),
+      onPlan: (observed) => {
+        plan = observed;
+      },
+    });
+
+    const modified = plan?.rows[0];
+    expect(modified?.disposition).toBe("modified");
+    expect(modified?.supersedes).toBe(originalFacts[0]!.key);
   });
 });

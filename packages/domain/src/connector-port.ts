@@ -171,10 +171,11 @@ export function assertCapability(
 /**
  * What reconciliation decided a fact is against what the source already applied.
  * `new` is applied on commit; `duplicate` was already seen (a prior sync or a
- * repeat within this batch) and is skipped. The richer inbox dispositions
- * (`modified` / `dubious` / `skipped`) are the reconciliation *surface*'s job
- * (PRD #1000 S4, #890) and are deferred with its visual form; this port carries
- * the minimum the idempotent commit needs.
+ * repeat within this batch) and is skipped. This is the minimum the idempotent
+ * commit needs — the richer inbox dispositions a human triages (`modified` /
+ * `dubious` / `skipped`) and the per-row actions + discard ledger live in the
+ * reconciliation surface, {@link ../connector-inbox} (PRD #1000 S4, #890); only
+ * that inbox's *visual* form is deferred (to the «Libro mayor» primitives, #825).
  */
 export type FactDisposition = "new" | "duplicate";
 
