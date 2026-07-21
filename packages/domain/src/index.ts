@@ -166,6 +166,19 @@ export type {
 } from "./connector-reference-adapter";
 export { createReferenceAdapter } from "./connector-reference-adapter";
 export type {
+  StatementAdapterHandle,
+  StatementAdapterOptions,
+} from "./connector-statement-adapter";
+export {
+  createStatementConnectorAdapter,
+  statementContentToken,
+} from "./connector-statement-adapter";
+export type { StatementFactPayload } from "./connector-statement-normalize";
+export {
+  statementFactsFromStatement,
+  statementRowKey,
+} from "./connector-statement-normalize";
+export type {
   MonthlyAllocationDestination,
   MonthlyContributionAllocation,
 } from "./contribution-allocation";
