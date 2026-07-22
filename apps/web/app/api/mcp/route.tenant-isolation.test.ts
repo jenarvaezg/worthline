@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 // A pure token-authenticated MCP request: no persona cookie, no Auth.js session.

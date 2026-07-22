@@ -44,11 +44,8 @@
 
 import { demoAsOfDateKey } from "@web/demo/demo-clock";
 import { getDemoStore } from "@web/demo/store-provider";
-import {
-  createWorthlineStoreUnsafe,
-  type WorthlineStore,
-  type WorthlineStoreOptions,
-} from "@worthline/db";
+import type { WorthlineStore, WorthlineStoreOptions } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 
 import { perfEnd, perfStart } from "./perf-log";
 import type { StoreTarget } from "./store-resolver";

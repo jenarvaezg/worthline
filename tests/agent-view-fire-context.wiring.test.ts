@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getFireContext } from "@web/api/v1/agent-view/scopes/[scopeId]/fire-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import type { FireScopeConfig } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";

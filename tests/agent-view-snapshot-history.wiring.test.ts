@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getSnapshots } from "@web/api/v1/agent-view/scopes/[scopeId]/snapshots/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";

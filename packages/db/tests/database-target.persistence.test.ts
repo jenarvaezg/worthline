@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveDatabaseTarget, withStoreUnsafe } from "@db/index";
+import { resolveDatabaseTarget } from "@db/index";
+import { withStoreUnsafe } from "@db/unsafe-store";
 import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createWorthlineStoreUnsafe, type WorthlineStore } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 
 export function catchRedirect(fn: () => Promise<unknown>): Promise<string> {
   return fn().then(

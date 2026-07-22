@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";

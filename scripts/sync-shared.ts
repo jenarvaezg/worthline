@@ -13,12 +13,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import {
-  createWorthlineStoreUnsafe,
-  resolveDatabasePath,
-  type SyncDeps,
-  type WorthlineStore,
-} from "@worthline/db";
+import { resolveDatabasePath, type SyncDeps, type WorthlineStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import type { WorkspaceExport } from "@worthline/domain";
 
 /** Open the prod workspace store from the sync env (libsql:// + token). */

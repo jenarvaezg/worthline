@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { asInstant, type ParsedStatementRow } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
-import { createInMemoryStore, createWorthlineStoreUnsafe } from "./index";
+import { createInMemoryStore } from "./index";
+import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 const row: ParsedStatementRow = {
   currency: "EUR",

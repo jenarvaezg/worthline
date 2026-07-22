@@ -1,4 +1,5 @@
-import { createControlPlaneStore, createWorthlineStoreUnsafe } from "@worthline/db";
+import { createControlPlaneStore } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
 /** ETF symbol the benchmark journey (#40) creates — catalog row seeded here. */

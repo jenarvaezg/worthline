@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { Goal } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 
-import { createWorthlineStoreUnsafe } from "./index";
+import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 async function freshStore(): Promise<
   Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>

@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { createWorthlineStoreUnsafe } from "./index";
+import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 async function freshStore(): Promise<
   Awaited<ReturnType<typeof createWorthlineStoreUnsafe>>

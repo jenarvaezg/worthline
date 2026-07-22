@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
   return { authClose, createWorthlineStoreUnsafe, demoClose, getDemoStore };
 });
 
-vi.mock("@worthline/db", () => ({
+vi.mock("@worthline/db/unsafe-store", () => ({
   createWorthlineStoreUnsafe: mocks.createWorthlineStoreUnsafe,
 }));
 vi.mock("@web/demo/store-provider", () => ({
