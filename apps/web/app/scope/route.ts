@@ -1,6 +1,6 @@
 import { appendParam, SCOPE_COOKIE_NAME } from "@web/intake";
-import { parseReturnTo } from "@web/return-to";
-import { type NextRequest, NextResponse } from "next/server";
+import { parseReturnTo, seeOtherRedirect } from "@web/return-to";
+import type { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const formData = await request.formData();
@@ -9,9 +9,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const returnTo = parseReturnTo(rawReturnTo);
 
   const scopedReturnTo = scopeId ? appendParam(returnTo, "scope", scopeId) : returnTo;
-  const response = NextResponse.redirect(new URL(scopedReturnTo, request.url), {
-    status: 303,
-  });
+  const response = seeOtherRedirect(scopedReturnTo);
 
   if (scopeId) {
     response.cookies.set(SCOPE_COOKIE_NAME, scopeId, {

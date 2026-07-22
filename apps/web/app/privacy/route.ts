@@ -1,19 +1,15 @@
 import { PRIVACY_COOKIE_NAME } from "@web/intake";
-import { parseReturnTo } from "@web/return-to";
-import { cookies } from "next/headers";
-import { type NextRequest, NextResponse } from "next/server";
+import { parseReturnTo, seeOtherRedirect } from "@web/return-to";
+import type { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const formData = await request.formData();
   const rawReturnTo = String(formData.get("returnTo") ?? "").trim();
   const returnTo = parseReturnTo(rawReturnTo);
 
-  const jar = await cookies();
-  const isPrivacyMode = jar.get(PRIVACY_COOKIE_NAME)?.value === "1";
+  const isPrivacyMode = request.cookies.get(PRIVACY_COOKIE_NAME)?.value === "1";
 
-  const response = NextResponse.redirect(new URL(returnTo, request.url), {
-    status: 303,
-  });
+  const response = seeOtherRedirect(returnTo);
 
   if (isPrivacyMode) {
     response.cookies.delete(PRIVACY_COOKIE_NAME);
