@@ -5,7 +5,7 @@ import { GET as getHoldingPositions } from "@web/api/v1/agent-view/holdings/[hol
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import type { SourcePositionInput } from "@worthline/db";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";

@@ -11,6 +11,10 @@
     "./testing": {
       "types": "./src/testing.ts",
       "default": "./src/testing.ts"
+    },
+    "./unsafe-store": {
+      "types": "./src/unsafe-store.ts",
+      "default": "./src/unsafe-store.ts"
     }
   },
   "dependencies": {

@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { schemaSql } from "@db/schema-sql";
 import type { Client } from "@libsql/client";
 
-import { openLibsqlClient, SCHEMA_VERSION, withStoreUnsafe } from "@worthline/db";
+import { openLibsqlClient, SCHEMA_VERSION } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db/unsafe-store";
 import { afterEach, describe, expect, test } from "vitest";
 
 const tempDirs: string[] = [];

@@ -30,9 +30,9 @@ import {
   type ControlPlaneStore,
   type ControlPlaneWorkspace,
   createControlPlaneStore,
-  createWorthlineStoreUnsafe,
   type WorthlineStore,
 } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import {
   deriveExposureCatalogIdentity,
   type GlobalExposureProfileIdentity,

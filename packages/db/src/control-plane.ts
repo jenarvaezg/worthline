@@ -363,10 +363,16 @@ export interface UsageLimits {
 }
 
 /** Global exposure-profile catalog (PRD #711 S1 / #940). */
+/**
+ * Read + system-registration access to the global exposure-profile catalog
+ * (PRD #711 S1 / #940, ADR 0058). This is the broadly-visible port every
+ * control-plane consumer may hold: reading the catalog, and registering the
+ * empty stub a holding is born with. Content CURATION (create / update / rekey /
+ * delete) deliberately does NOT live here — it is on {@link
+ * ExposureProfileCatalogAdmin}, off this port, so no ordinary caller can rewrite
+ * curated data (#1123, retaining the capability in the interface).
+ */
 export interface ExposureProfileCatalog {
-  createGlobalExposureProfile(
-    input: CreateGlobalExposureProfileInput,
-  ): Promise<GlobalExposureProfile>;
   /**
    * Register an empty, curatable catalog row for a market holding's identity if
    * one does not already exist (#1097, ADR 0058 amendment). Idempotent by
@@ -380,6 +386,25 @@ export interface ExposureProfileCatalog {
     identity: GlobalExposureProfileIdentity,
     displayName?: string | null,
   ): Promise<void>;
+  readGlobalExposureProfile(
+    identity: RawGlobalExposureProfileIdentityInput,
+  ): Promise<GlobalExposureProfile | null>;
+  readGlobalExposureProfiles(): Promise<GlobalExposureProfile[]>;
+}
+
+/**
+ * Admin curation of the global exposure-profile catalog (PRD #711 S4, decision
+ * #941). These content writes are the capability #1123 retains in the interface:
+ * they are reachable ONLY through the admin control-plane surface ({@link
+ * createAdminControlPlaneStore} / the `/admin/catalogo` server actions), never
+ * from the base {@link ControlPlaneStore} a request-scoped consumer holds. A
+ * non-admin surface rewriting curated catalog content is now unrepresentable by
+ * type, not merely grep-detectable.
+ */
+export interface ExposureProfileCatalogAdmin extends ExposureProfileCatalog {
+  createGlobalExposureProfile(
+    input: CreateGlobalExposureProfileInput,
+  ): Promise<GlobalExposureProfile>;
   updateGlobalExposureProfile(
     identity: RawGlobalExposureProfileIdentityInput,
     input: UpdateGlobalExposureProfileInput,
@@ -391,10 +416,6 @@ export interface ExposureProfileCatalog {
   deleteGlobalExposureProfile(
     identity: RawGlobalExposureProfileIdentityInput,
   ): Promise<void>;
-  readGlobalExposureProfile(
-    identity: RawGlobalExposureProfileIdentityInput,
-  ): Promise<GlobalExposureProfile | null>;
-  readGlobalExposureProfiles(): Promise<GlobalExposureProfile[]>;
 }
 
 /** Maintainer alert log (#1050, ADR 0064) — the `/admin` alerts surface. */
@@ -476,6 +497,18 @@ export interface ControlPlaneStore
     JobStore {
   close(): void;
 }
+
+/**
+ * The admin control plane: the full {@link ControlPlaneStore} plus exposure-
+ * profile catalog curation ({@link ExposureProfileCatalogAdmin}). Held ONLY by
+ * the `/admin` surface, opened through {@link createAdminControlPlaneStore};
+ * ordinary request-scoped consumers get the narrower {@link ControlPlaneStore},
+ * whose {@link ExposureProfileCatalog} port cannot reach the catalog content
+ * writes (#1123).
+ */
+export interface AdminControlPlaneStore
+  extends ControlPlaneStore,
+    ExposureProfileCatalogAdmin {}
 
 export interface ControlPlaneStoreOptions {
   url?: string;
@@ -813,7 +846,7 @@ const OWNER_EMAIL_SUBQUERY = `(
 async function buildControlPlaneStore(
   client: Client,
   newId: () => string,
-): Promise<ControlPlaneStore> {
+): Promise<AdminControlPlaneStore> {
   await client.executeMultiple(SCHEMA);
   await migrateControlPlane(client);
 
@@ -1491,23 +1524,56 @@ async function buildControlPlaneStore(
   };
 }
 
-export async function createControlPlaneStore(
-  options: ControlPlaneStoreOptions = {},
-): Promise<ControlPlaneStore> {
+function openControlPlaneClient(
+  options: ControlPlaneStoreOptions,
+  callerName: string,
+): Client {
   if (!options.url) {
-    throw new Error("createControlPlaneStore requires a url (libsql:// or file:).");
+    throw new Error(`${callerName} requires a url (libsql:// or file:).`);
   }
   const target: LibsqlUrlTarget = {
     url: options.url,
     ...(options.authToken ? { authToken: options.authToken } : {}),
   };
-  return buildControlPlaneStore(openLibsqlClient(target), options.newId ?? randomUUID);
+  return openLibsqlClient(target);
 }
 
-/** Open an ephemeral in-memory control plane — for tests. */
+/**
+ * Open the control plane for an ordinary request-scoped consumer: the narrow
+ * {@link ControlPlaneStore}, which cannot reach exposure-catalog content writes
+ * (#1123). The admin surface uses {@link createAdminControlPlaneStore} instead.
+ */
+export async function createControlPlaneStore(
+  options: ControlPlaneStoreOptions = {},
+): Promise<ControlPlaneStore> {
+  return buildControlPlaneStore(
+    openControlPlaneClient(options, "createControlPlaneStore"),
+    options.newId ?? randomUUID,
+  );
+}
+
+/**
+ * Open the control plane with exposure-catalog curation writes (#1123) — the
+ * `/admin` surface's opener. Identical wiring to {@link createControlPlaneStore},
+ * only the wider {@link AdminControlPlaneStore} type.
+ */
+export async function createAdminControlPlaneStore(
+  options: ControlPlaneStoreOptions = {},
+): Promise<AdminControlPlaneStore> {
+  return buildControlPlaneStore(
+    openControlPlaneClient(options, "createAdminControlPlaneStore"),
+    options.newId ?? randomUUID,
+  );
+}
+
+/**
+ * Open an ephemeral in-memory control plane — for tests. Returns the wide
+ * {@link AdminControlPlaneStore} so persistence tests can exercise catalog
+ * curation writes directly.
+ */
 export async function createInMemoryControlPlaneStore(
   options: Pick<ControlPlaneStoreOptions, "newId"> = {},
-): Promise<ControlPlaneStore> {
+): Promise<AdminControlPlaneStore> {
   return buildControlPlaneStore(
     openLibsqlClient(":memory:"),
     options.newId ?? randomUUID,

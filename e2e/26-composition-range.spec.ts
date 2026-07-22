@@ -17,7 +17,7 @@
  * round-trips — including through a drill (#145).
  */
 
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
 import { expect, test } from "./fixtures";

@@ -3,7 +3,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { GET as getOperations } from "@web/api/v1/agent-view/holdings/[holdingId]/operations/route";
 import { GET as getHolding } from "@web/api/v1/agent-view/holdings/[holdingId]/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";

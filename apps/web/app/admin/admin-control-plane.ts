@@ -4,7 +4,7 @@
  * `run`, and always closes it — unless a store is injected (tests), whose
  * lifecycle the caller owns instead.
  */
-import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
+import { type AdminControlPlaneStore, createAdminControlPlaneStore } from "@worthline/db";
 
 function requireControlPlaneUrl(env: Record<string, string | undefined>): string {
   const url = env.WORTHLINE_CONTROL_PLANE_DB_URL;
@@ -14,27 +14,29 @@ function requireControlPlaneUrl(env: Record<string, string | undefined>): string
   return url;
 }
 
-async function openControlPlaneStore(): Promise<ControlPlaneStore> {
+async function openControlPlaneStore(): Promise<AdminControlPlaneStore> {
   const env = process.env;
   const url = requireControlPlaneUrl(env);
-  return createControlPlaneStore({
+  return createAdminControlPlaneStore({
     url,
     ...(env.WORTHLINE_DB_AUTH_TOKEN ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN } : {}),
   });
 }
 
 /**
- * Hand a control-plane port to `run`, opening (and always closing) the real
- * store unless one is injected. Generic over the port `S` the caller needs —
- * `run`'s param and `injectedStore` narrow to just that concern, so a caller
- * touches only the methods it uses and a test can inject a fake of that single
- * port. `S` is constrained to a subset of `ControlPlaneStore`, so the opened
- * store (which implements every port) always satisfies it — the widening cast
- * is sound, and a foreign `S` is rejected at the call site.
+ * Hand an admin control-plane port to `run`, opening (and always closing) the
+ * real store unless one is injected. This is the `/admin` seam, so it opens the
+ * wide {@link AdminControlPlaneStore} — the ONLY surface from which exposure-
+ * catalog curation writes are reachable (#1123). Generic over the port `S` the
+ * caller needs — `run`'s param and `injectedStore` narrow to just that concern,
+ * so a caller touches only the methods it uses and a test can inject a fake of
+ * that single port. `S` is constrained to a subset of `AdminControlPlaneStore`,
+ * so the opened store (which implements every port) always satisfies it — the
+ * widening cast is sound, and a foreign `S` is rejected at the call site.
  */
 export async function withControlPlaneStore<
   T,
-  S extends Partial<ControlPlaneStore> = ControlPlaneStore,
+  S extends Partial<AdminControlPlaneStore> = AdminControlPlaneStore,
 >(run: (store: S) => T | Promise<T>, injectedStore?: S): Promise<T> {
   if (injectedStore) {
     return run(injectedStore);

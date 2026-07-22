@@ -11,7 +11,8 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createWorthlineStoreUnsafe, openLibsqlClient } from "./index";
+import { openLibsqlClient } from "./index";
+import { createWorthlineStoreUnsafe } from "./unsafe-store";
 
 const KEY = "test-secret-key";
 

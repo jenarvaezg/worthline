@@ -15,7 +15,7 @@
  *   npx tsx scripts/backfill-historical-snapshots.ts
  *   WORTHLINE_DATA_DIR=/path/to/data npx tsx scripts/backfill-historical-snapshots.ts
  */
-import { withStoreUnsafe } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db/unsafe-store";
 
 const today = new Date().toISOString().slice(0, 10);
 

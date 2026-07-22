@@ -1,5 +1,6 @@
 import type { WorthlineStore } from "@worthline/db";
-import { createWorthlineStoreUnsafe, openLibsqlClient } from "@worthline/db";
+import { openLibsqlClient } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { calculateNetWorth } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, createFileBackedStore, tempDatabasePath } from "./helpers";

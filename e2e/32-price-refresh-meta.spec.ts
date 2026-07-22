@@ -17,7 +17,7 @@
  * written for it — modelling a provider refresh without any external call.
  */
 
-import { createWorthlineStoreUnsafe } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 
 import { addHolding, expect, holdingRow, test } from "./fixtures";
 

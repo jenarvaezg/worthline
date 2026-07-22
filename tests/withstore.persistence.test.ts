@@ -1,4 +1,5 @@
-import { type WorthlineStore, withStoreUnsafe } from "@worthline/db";
+import type { WorthlineStore } from "@worthline/db";
+import { withStoreUnsafe } from "@worthline/db/unsafe-store";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
 

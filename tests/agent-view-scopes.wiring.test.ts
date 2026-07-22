@@ -1,5 +1,6 @@
 import { GET } from "@web/api/v1/agent-view/scopes/route";
-import { createWorthlineStoreUnsafe, openLibsqlClient } from "@worthline/db";
+import { openLibsqlClient } from "@worthline/db";
+import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
