@@ -1,4 +1,4 @@
-import { createControlPlaneStore } from "@worthline/db";
+import { createControlPlaneStore, type UsageLimits } from "@worthline/db";
 
 export async function countConnectedSourceSync(
   rateKey: string,
@@ -10,7 +10,9 @@ export async function countConnectedSourceSync(
   }
 
   const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
-  const controlPlane = await createControlPlaneStore({
+  const controlPlane: Pick<UsageLimits, "recordConnectedSourceSync"> & {
+    close(): void;
+  } = await createControlPlaneStore({
     url,
     ...(authToken ? { authToken } : {}),
   });

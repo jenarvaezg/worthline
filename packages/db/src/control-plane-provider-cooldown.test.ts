@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createControlPlaneStore } from "./control-plane";
+import { createControlPlaneStore, type UsageLimits } from "./control-plane";
+
+// Cross the real UsageLimits port seam across two separate connections.
+type UsageLimitsStore = UsageLimits & { close(): void };
 
 const tempDirs: string[] = [];
 
@@ -16,8 +19,8 @@ describe("control plane provider cooldowns", () => {
     const dir = mkdtempSync(join(tmpdir(), "worthline-provider-cooldown-"));
     tempDirs.push(dir);
     const url = `file:${join(dir, "control-plane.db")}`;
-    const writer = await createControlPlaneStore({ url });
-    const reader = await createControlPlaneStore({ url });
+    const writer: UsageLimitsStore = await createControlPlaneStore({ url });
+    const reader: UsageLimitsStore = await createControlPlaneStore({ url });
     try {
       await writer.recordProviderCooldown(
         "preview-959",
@@ -42,8 +45,8 @@ describe("control plane provider cooldowns", () => {
     const dir = mkdtempSync(join(tmpdir(), "worthline-provider-cooldown-"));
     tempDirs.push(dir);
     const url = `file:${join(dir, "control-plane.db")}`;
-    const first = await createControlPlaneStore({ url });
-    const second = await createControlPlaneStore({ url });
+    const first: UsageLimitsStore = await createControlPlaneStore({ url });
+    const second: UsageLimitsStore = await createControlPlaneStore({ url });
     try {
       await Promise.all([
         first.recordProviderCooldown("production", "groq", "2026-07-13T00:00:00.000Z"),

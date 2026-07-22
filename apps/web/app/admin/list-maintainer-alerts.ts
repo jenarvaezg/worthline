@@ -1,5 +1,5 @@
 import { withControlPlaneStore } from "@web/admin/admin-control-plane";
-import type { ControlPlaneStore, MaintainerAlert } from "@worthline/db";
+import type { MaintainerAlert, MaintainerAlertLog } from "@worthline/db";
 
 /** The maintainer-alert index for /admin (#1050): every alert (most-recently-seen first) + the open badge. */
 export interface AdminMaintainerAlerts {
@@ -8,23 +8,35 @@ export interface AdminMaintainerAlerts {
 }
 
 export async function listAdminMaintainerAlerts(
-  injectedStore?: ControlPlaneStore,
+  injectedStore?: Pick<
+    MaintainerAlertLog,
+    "listMaintainerAlerts" | "countOpenMaintainerAlerts"
+  >,
 ): Promise<AdminMaintainerAlerts> {
-  return withControlPlaneStore(async (store) => {
-    const [alerts, openCount] = await Promise.all([
-      store.listMaintainerAlerts(),
-      store.countOpenMaintainerAlerts(),
-    ]);
-    return { alerts, openCount };
-  }, injectedStore);
+  return withControlPlaneStore(
+    async (
+      store: Pick<
+        MaintainerAlertLog,
+        "listMaintainerAlerts" | "countOpenMaintainerAlerts"
+      >,
+    ) => {
+      const [alerts, openCount] = await Promise.all([
+        store.listMaintainerAlerts(),
+        store.countOpenMaintainerAlerts(),
+      ]);
+      return { alerts, openCount };
+    },
+    injectedStore,
+  );
 }
 
 /** The open-alert badge count alone — for the /admin index without loading the full list. */
 export async function countAdminOpenMaintainerAlerts(
-  injectedStore?: ControlPlaneStore,
+  injectedStore?: Pick<MaintainerAlertLog, "countOpenMaintainerAlerts">,
 ): Promise<number> {
   return withControlPlaneStore(
-    (store) => store.countOpenMaintainerAlerts(),
+    (store: Pick<MaintainerAlertLog, "countOpenMaintainerAlerts">) =>
+      store.countOpenMaintainerAlerts(),
     injectedStore,
   );
 }

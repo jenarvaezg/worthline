@@ -2,6 +2,7 @@
 
 import { withControlPlaneStore } from "@web/admin/admin-control-plane";
 import { guardAdmin } from "@web/admin/guard-admin";
+import type { ExposureProfileCatalog } from "@worthline/db";
 import type {
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
@@ -108,7 +109,7 @@ export async function saveCatalogProfileAction(
   try {
     const content = readContent(formData);
     const identity = readIdentity(formData);
-    const profile = await withControlPlaneStore((store) =>
+    const profile = await withControlPlaneStore((store: ExposureProfileCatalog) =>
       mode === "update"
         ? store.updateGlobalExposureProfile(identity, content)
         : store.createGlobalExposureProfile({ ...content, identity }),
@@ -136,7 +137,7 @@ export async function rekeyCatalogProfileAction(
     const previousKey = globalExposureProfileIdentityKey(
       resolveGlobalExposureProfileIdentity(from),
     );
-    const profile = await withControlPlaneStore((store) =>
+    const profile = await withControlPlaneStore((store: ExposureProfileCatalog) =>
       store.rekeyGlobalExposureProfile(from, to),
     );
     return { status: "saved", profile, previousKey };
@@ -157,7 +158,9 @@ export async function deleteCatalogProfileAction(
     const identityKey = globalExposureProfileIdentityKey(
       resolveGlobalExposureProfileIdentity(identity),
     );
-    await withControlPlaneStore((store) => store.deleteGlobalExposureProfile(identity));
+    await withControlPlaneStore((store: ExposureProfileCatalog) =>
+      store.deleteGlobalExposureProfile(identity),
+    );
     return { status: "deleted", identityKey };
   } catch (error) {
     return { status: "error", message: errorMessage(error) };

@@ -1,7 +1,7 @@
 import {
-  type ControlPlaneStore,
   createControlPlaneStore,
   type ProviderCooldown,
+  type UsageLimits,
 } from "@worthline/db";
 
 export type ProviderCooldownRead =
@@ -63,7 +63,9 @@ export function providerCooldownDeploymentKey(
 async function runWithControlPlane<T>(
   config: { url: string; authToken?: string },
   operation: "read" | "write",
-  run: (store: ControlPlaneStore) => Promise<T>,
+  run: (
+    store: Pick<UsageLimits, "readProviderCooldowns" | "recordProviderCooldown">,
+  ) => Promise<T>,
 ): Promise<T> {
   const task = (async () => {
     const controlPlane = await createControlPlaneStore(config);

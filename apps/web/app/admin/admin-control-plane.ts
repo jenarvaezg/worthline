@@ -23,16 +23,25 @@ async function openControlPlaneStore(): Promise<ControlPlaneStore> {
   });
 }
 
-export async function withControlPlaneStore<T>(
-  run: (store: ControlPlaneStore) => T | Promise<T>,
-  injectedStore?: ControlPlaneStore,
-): Promise<T> {
+/**
+ * Hand a control-plane port to `run`, opening (and always closing) the real
+ * store unless one is injected. Generic over the port `S` the caller needs —
+ * `run`'s param and `injectedStore` narrow to just that concern, so a caller
+ * touches only the methods it uses and a test can inject a fake of that single
+ * port. `S` is constrained to a subset of `ControlPlaneStore`, so the opened
+ * store (which implements every port) always satisfies it — the widening cast
+ * is sound, and a foreign `S` is rejected at the call site.
+ */
+export async function withControlPlaneStore<
+  T,
+  S extends Partial<ControlPlaneStore> = ControlPlaneStore,
+>(run: (store: S) => T | Promise<T>, injectedStore?: S): Promise<T> {
   if (injectedStore) {
     return run(injectedStore);
   }
   const store = await openControlPlaneStore();
   try {
-    return await run(store);
+    return await run(store as unknown as S);
   } finally {
     store.close();
   }

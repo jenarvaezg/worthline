@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ControlPlaneStore, ControlPlaneWorkspace } from "./control-plane";
+import type { ControlPlaneWorkspace, TenancyDirectory } from "./control-plane";
 import { openLibsqlClient } from "./libsql-client";
 import { migrate } from "./migrate";
 
@@ -27,7 +27,7 @@ export interface TursoPort {
 }
 
 export interface ProvisionDeps {
-  controlPlane: ControlPlaneStore;
+  controlPlane: TenancyDirectory;
   turso: TursoPort;
   /** Shared Turso group token used to open `libsql://` workspace databases. */
   groupAuthToken?: string;

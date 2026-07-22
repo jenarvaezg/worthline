@@ -62,6 +62,7 @@ export {
 } from "./commands";
 export {
   type BenchmarkPrice,
+  type BenchmarkPriceCache,
   type ControlPlaneGrant,
   type ControlPlaneStore,
   type ControlPlaneStoreOptions,
@@ -70,16 +71,20 @@ export {
   type ControlPlaneWorkspaceWithOwner,
   createControlPlaneStore,
   createInMemoryControlPlaneStore,
+  type DailyCaptureLog,
   DEFAULT_JOB_MAX_ATTEMPTS,
   type EnqueueJobInput,
   type EnqueueJobResult,
+  type ExposureProfileCatalog,
   type FailJobInput,
   type JobError,
   type JobRecord,
   type JobStatus,
+  type JobStore,
   type LeaseJobInput,
   type MaintainerAlert,
   type MaintainerAlertCategory,
+  type MaintainerAlertLog,
   type MaintainerAlertOccurrence,
   type MaintainerAlertStatus,
   type MaintainerAlertWithOccurrences,
@@ -87,7 +92,9 @@ export {
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
   type RenewJobLeaseInput,
+  type TenancyDirectory,
   type UpdateMaintainerAlertStatusInput,
+  type UsageLimits,
 } from "./control-plane";
 export {
   ENCRYPTION_KEY_ENV,
