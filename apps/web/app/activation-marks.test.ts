@@ -78,7 +78,7 @@ describe("activation marks (#1131, PRD #1160 S1)", () => {
     const { url, workspaceId } = await controlPlaneWithWorkspace();
     vi.stubEnv("WORTHLINE_CONTROL_PLANE_DB_URL", url);
 
-    await markFirstHoldingBestEffort({ kind: "demo", now: "", persona: "sofia" });
+    await markFirstHoldingBestEffort({ kind: "demo", now: "", persona: "familia" });
     await markOnboardedBestEffort({ kind: "local" });
 
     const store = await createControlPlaneStore({ url });
