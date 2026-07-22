@@ -11,8 +11,10 @@
  */
 import { describe, expect, it } from "vitest";
 import { calculateFireForScope, projectFireFromContext, withRate } from "./fire";
+import { projectFireWithContributionPlan } from "./fire-plan-projection";
+import { projectFire } from "./fire-projection";
 import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
-import type { ManualAsset, Workspace } from "./index";
+import type { ContributionPlan, ManualAsset, Workspace } from "./index";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -109,5 +111,102 @@ describe("the context is what every projection consumes", () => {
       monthlyContributionMinor: 0,
     }).scenarios.find((s) => s.label === "base")!;
     expect(whatIfBase.annualReturn).toBeCloseTo(0.09, 10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The single projection door (#1122): the door must reproduce, verbatim, what
+// the scalar engine and the contribution-plan engine produced when callers
+// reached for them directly — so re-routing every entry through it cannot move
+// a single figure.
+// ---------------------------------------------------------------------------
+
+describe("projectFireFromContext is the single door with no numeric drift", () => {
+  const { context } = calculateFireForScope(
+    BASE_CONFIG,
+    [makeAsset("stocks", 600_000, "market"), makeAsset("cash", 400_000, "cash")],
+    [],
+    workspace,
+    "alice",
+  );
+
+  it("scalar mode equals the internal projectFire engine, defaults drawn from the context", () => {
+    const viaDoor = projectFireFromContext(context, {
+      monthlyContributionMinor: 50_000,
+    });
+    const direct = projectFire({
+      startingEligibleMinor: context.eligibleMinor,
+      monthlyContributionMinor: 50_000,
+      expectedRealReturn: context.realReturnUsed,
+      fireNumberMinor: context.fireNumberMinor,
+    });
+    expect(viaDoor).toEqual(direct);
+  });
+
+  it("honours the fireNumberMinor override (the level rail projects to Fat)", () => {
+    const fat = context.fireNumberMinor * 2;
+    const viaDoor = projectFireFromContext(context, {
+      monthlyContributionMinor: 50_000,
+      fireNumberMinor: fat,
+    });
+    expect(viaDoor.fireNumberMinor).toBe(fat);
+    expect(viaDoor).toEqual(
+      projectFire({
+        startingEligibleMinor: context.eligibleMinor,
+        monthlyContributionMinor: 50_000,
+        expectedRealReturn: context.realReturnUsed,
+        fireNumberMinor: fat,
+      }),
+    );
+  });
+
+  it("honours the startingEligibleMinor override (goal-delay's with/without probes)", () => {
+    const viaDoor = projectFireFromContext(context, {
+      monthlyContributionMinor: 0,
+      startingEligibleMinor: 123_456,
+    });
+    expect(viaDoor).toEqual(
+      projectFire({
+        startingEligibleMinor: 123_456,
+        monthlyContributionMinor: 0,
+        expectedRealReturn: context.realReturnUsed,
+        fireNumberMinor: context.fireNumberMinor,
+      }),
+    );
+  });
+
+  it("plan mode equals the internal contribution-plan engine (the what-if)", () => {
+    const plan: ContributionPlan = {
+      scopeId: "scope-1",
+      contributions: [
+        {
+          id: "c1",
+          destinationHoldingId: "h1",
+          amount: { mode: "money", value: 100_000 },
+          cadence: { kind: "monthly", dayOfMonth: 1 },
+          startDate: "2026-01-01",
+        },
+      ],
+    };
+    const holdingAnnualReturnById = { h1: 0.06 };
+
+    const viaDoor = projectFireFromContext(context, {
+      plan,
+      growthAssumption: "historical",
+      assumedAnnualReturn: context.realReturnUsed,
+      holdingAnnualReturnById,
+      todayISO: "2026-01-01",
+    });
+    const direct = projectFireWithContributionPlan({
+      startingEligibleMinor: context.eligibleMinor,
+      expectedRealReturn: context.realReturnUsed,
+      fireNumberMinor: context.fireNumberMinor,
+      todayISO: "2026-01-01",
+      plan,
+      growthAssumption: "historical",
+      assumedAnnualReturn: context.realReturnUsed,
+      holdingAnnualReturnById,
+    });
+    expect(viaDoor).toEqual(direct);
   });
 });

@@ -4,6 +4,7 @@ import type {
   ContributionPlan,
   ExposureAllocationSlice,
   ExposureDimensionResult,
+  FireContext,
   FireGrowthAssumption,
   FireScenario,
   ManualAsset,
@@ -21,7 +22,7 @@ import {
   listScopeOptions,
   projectContributionReconciliation,
   projectExposureDrift,
-  projectFireWithContributionPlan,
+  projectFireFromContext,
   resolveHoldingAnnualReturnForProjection,
   resolveMonthlySavingsCapacityForFire,
   systemClock,
@@ -141,17 +142,7 @@ export async function buildContributionPlanContext(
     store,
     plan,
     growthAssumption,
-    fireConfigured: fire.config !== undefined && fire.result !== undefined,
-    ...(fire.result === undefined
-      ? {}
-      : {
-          fireNumberMinor: fire.result.fireNumber.amountMinor,
-          startingEligibleMinor: fire.result.eligibleAssets.amountMinor,
-          expectedRealReturn: fire.result.context.realReturnUsed,
-        }),
-    ...(fire.config?.currentAge === undefined
-      ? {}
-      : { currentAge: fire.config.currentAge }),
+    ...(fire.result === undefined ? {} : { context: fire.result.context }),
     assetById,
     internalScopeId,
     today,
@@ -409,24 +400,18 @@ async function buildWhatIf(input: {
   store: AgentViewReadStore;
   plan: ContributionPlan;
   growthAssumption: FireGrowthAssumption;
-  fireConfigured: boolean;
-  fireNumberMinor?: number;
-  startingEligibleMinor?: number;
-  expectedRealReturn?: number;
-  currentAge?: number;
+  /** The scope's resolved FIRE context; absent → the scope has no FIRE config. */
+  context?: FireContext;
   assetById: Map<string, ManualAsset>;
   internalScopeId: string;
   today: string;
   currency: string;
   unitPrices: Record<string, string>;
 }): Promise<AgentViewContributionWhatIf> {
-  const assumedAnnualReturn = input.expectedRealReturn ?? 0.05;
+  const { context } = input;
+  const assumedAnnualReturn = context?.realReturnUsed ?? 0.05;
 
-  if (
-    !input.fireConfigured ||
-    input.fireNumberMinor === undefined ||
-    input.startingEligibleMinor === undefined
-  ) {
+  if (context === undefined) {
     return {
       object: "contribution_what_if",
       growthAssumption: input.growthAssumption,
@@ -446,17 +431,16 @@ async function buildWhatIf(input: {
     assumedAnnualReturn,
   });
 
-  const projection = projectFireWithContributionPlan({
-    startingEligibleMinor: input.startingEligibleMinor,
-    expectedRealReturn: assumedAnnualReturn,
-    fireNumberMinor: input.fireNumberMinor,
-    todayISO: input.today,
+  // #1122: the what-if projects through the single door (plan + growth-assumption
+  // mode), so its rate, FIRE number and starting balance all come from the same
+  // context as coast + levels + the main projection chart.
+  const projection = projectFireFromContext(context, {
     plan: input.plan,
     growthAssumption: input.growthAssumption,
     assumedAnnualReturn,
     holdingAnnualReturnById,
     unitPriceMajorByHoldingId: input.unitPrices,
-    ...(input.currentAge === undefined ? {} : { currentAge: input.currentAge }),
+    todayISO: input.today,
   });
 
   return {
@@ -464,7 +448,7 @@ async function buildWhatIf(input: {
     growthAssumption: input.growthAssumption,
     assumedAnnualReturn: assumedAnnualReturn.toString(),
     status: "configured",
-    fireNumber: moneyOf(input.fireNumberMinor, input.currency),
+    fireNumber: moneyOf(context.fireNumberMinor, input.currency),
     scenarios: projection.scenarios.map((scenario) =>
       toScenario(scenario, input.currency),
     ),
