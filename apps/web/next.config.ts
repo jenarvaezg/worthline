@@ -1,7 +1,20 @@
 import type { NextConfig } from "next";
+import { securityHeaders } from "./app/security-headers";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Don't advertise the framework (#1179).
+  poweredByHeader: false,
+  // Security headers on every route (#1179). Vercel doesn't inject these; the
+  // CSP ships report-only first so we can observe breakage before enforcing.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders({ dev: process.env.NODE_ENV !== "production" }),
+      },
+    ];
+  },
   experimental: {
     // Enable React 19 / Next 16 View Transitions API integration.
     // Route navigations automatically become transitions; <ViewTransition>
