@@ -51,6 +51,7 @@ import {
   isMaintainerAlertCategory,
   type MaintainerAlertDeclaredFigure,
 } from "@web/asistente/maintainer-alert";
+import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
@@ -464,6 +465,22 @@ const HOLDING_CREATION_PROPOSAL_SCHEMA = jsonSchema<HoldingCreationArgs>({
     pricePerUnit: { type: "string" },
   },
   required: ["family", "name", "instrument"],
+  additionalProperties: false,
+});
+
+const MARKET_SYMBOL_SEARCH_SCHEMA = jsonSchema<{
+  query: string;
+  instrument?: string;
+}>({
+  type: "object",
+  properties: {
+    query: { type: "string" },
+    instrument: {
+      type: "string",
+      enum: ["fund", "etf", "stock", "index", "crypto"],
+    },
+  },
+  required: ["query"],
   additionalProperties: false,
 });
 
@@ -1401,10 +1418,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           return built.ok ? built.proposal : { error: built.error };
         }),
     }),
+    search_market_symbol: tool({
+      description:
+        "Resuelve el `providerSymbol` (ticker de precios) de un instrumento de mercado por nombre o ISIN. " +
+        "ÚSALA SIEMPRE antes de proponer un alta de fund/etf/stock/index/crypto con propose_holding: sin símbolo el precio no se revalúa. " +
+        "Devuelve candidatos (symbol, name, market, currency) para desambiguar — el sufijo de mercado importa: VUSA.L ≠ VUSA.AS —. " +
+        "`instrument` enruta el proveedor: fund/etf/stock/index → Yahoo, crypto → CoinGecko (el symbol es el id de la moneda, p. ej. `bitcoin`). " +
+        "Pasa el `symbol` elegido a propose_holding.providerSymbol. Si no hay ningún candidato fiable, crea el alta igualmente (avisará de que el precio no se actualizará). Solo lectura.",
+      inputSchema: MARKET_SYMBOL_SEARCH_SCHEMA,
+      execute: async (args) => {
+        const matches = await resolveMarketSymbolCandidates(
+          args.query ?? "",
+          args.instrument,
+        );
+        return { matches };
+      },
+    }),
     propose_holding: tool({
       description:
         "Prepara una propuesta de ALTA «por estado actual» para crear UN holding manual por su valor/saldo de HOY (ADR 0056: nunca un holding vacío, nunca historia inventada). " +
         "family + instrument deben concordar: stored (current_account/term_deposit/precious_metal/vehicle/other) → currentValueMinor; appreciating (property) → currentValueMinor + isPrimaryResidence; debt (mortgage/loan/credit_card) → balanceMinor (+ debtModel si lo conoces); investment (fund/etf/stock/index/pension_plan/crypto) → isin/providerSymbol opcionales y, para valorar la apertura de hoy, openingValueMinor (euros en céntimos) + pricePerUnit; sin apertura crea un contenedor vacío. " +
+        "Para un instrumento de mercado (fund/etf/stock/index/crypto) resuelve ANTES su símbolo con search_market_symbol y pasa el providerSymbol elegido: sin símbolo el precio no se actualizará solo (la propuesta lo avisa). " +
         "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Un split no está soportado: dilo honestamente. Corregir o dar de baja un holding existente usan sus propias tools, no esta.",
       inputSchema: HOLDING_CREATION_PROPOSAL_SCHEMA,
       execute: (args) =>

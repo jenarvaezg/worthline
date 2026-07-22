@@ -490,6 +490,24 @@ describe("createChatTools · propose_reconstruction (#1053)", () => {
   });
 });
 
+describe("createChatTools · search_market_symbol (#1186)", () => {
+  it("is a read tool wired over resolveMarketSymbolCandidates (blank query → no matches)", async () => {
+    const store = await seededStore();
+    const tools = toolsOver(store.agentView);
+    const tool = tools["search_market_symbol"];
+    expect(tool).toBeDefined();
+
+    // A blank query short-circuits before any network call — deterministic wiring
+    // check; the routing/disambiguation logic is covered in market-symbol-search.test.
+    const result = await tool?.execute?.(
+      { query: "   ", instrument: "etf" },
+      toolCallContext(),
+    );
+
+    expect(result).toEqual({ matches: [] });
+  });
+});
+
 describe("createChatTools · propose_holding (#1105)", () => {
   it("builds an alta proposal and persists a holding_creation draft", async () => {
     const store = await createInMemoryStore();
