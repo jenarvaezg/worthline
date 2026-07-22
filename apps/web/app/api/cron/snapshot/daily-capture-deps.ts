@@ -1,11 +1,14 @@
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
+import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import { openAuthorizedStore } from "@web/principal";
 import {
   type BenchmarkPriceCache,
   createControlPlaneStore,
   type DailyCaptureFetchedPrice,
   type DailyCaptureLog,
+  deriveEffectivePlan,
+  type EntitlementDirectory,
   type RunDailyCaptureDeps,
   type TenancyDirectory,
 } from "@worthline/db";
@@ -40,8 +43,10 @@ export function buildDailyCaptureDeps(
 ): RunDailyCaptureDeps {
   const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
   const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
+  const now = opts.now ?? new Date().toISOString();
   const openControlPlane = async (): Promise<
     Pick<TenancyDirectory, "listAllWorkspaces"> &
+      Pick<EntitlementDirectory, "readWorkspaceEntitlement"> &
       DailyCaptureLog &
       BenchmarkPriceCache & { close(): void }
   > => {
@@ -59,12 +64,25 @@ export function buildDailyCaptureDeps(
     // carries it in the payload, so a worker draining later derives the same
     // date/run-key/snapshot instant it deduped on (never the drain clock). Falls
     // back to the wall clock for a direct, un-queued call.
-    now: opts.now ?? new Date().toISOString(),
+    now,
     listAllWorkspaces: async () => {
       const controlPlane = await openControlPlane();
       try {
         const workspaces = await controlPlane.listAllWorkspaces();
         return workspaces.map((w) => ({ id: w.id, dbUrl: w.dbUrl }));
+      } finally {
+        controlPlane.close();
+      }
+    },
+    // Premium gate (#1162): a workspace whose plan has lapsed to free keeps its
+    // ingested data, but its connected sources are PAUSED — the cron skips their
+    // sync so nothing new is ingested, while the snapshot still freezes
+    // last-known values. Derived server-side from the entitlement row (S1).
+    shouldSyncConnectedSources: async (workspace) => {
+      const controlPlane = await openControlPlane();
+      try {
+        const entitlement = await controlPlane.readWorkspaceEntitlement(workspace.id);
+        return isPremiumIngestionAllowed(deriveEffectivePlan(entitlement, now));
       } finally {
         controlPlane.close();
       }

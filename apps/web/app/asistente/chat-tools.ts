@@ -58,6 +58,11 @@ import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
+import {
+  PAYWALL_RECONCILE_MESSAGE,
+  PAYWALL_STATEMENT_MESSAGE,
+  premiumRequired,
+} from "@web/entitlements/paywall-copy";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
@@ -108,6 +113,17 @@ export interface ChatToolsInput {
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;
   /** YYYY-MM-DD valuation date — the demo clock for demo targets. */
   asOf: string;
+  /**
+   * Whether premium document ingestion is allowed for the caller (PRD #1160 S2,
+   * #1162) — false only for an authenticated `free` workspace. When false, the
+   * document-ingestion tools (statement import, portfolio/document reconcile,
+   * mixed-document import, reconstruction) short-circuit with an honest
+   * `premium_required` envelope the model relays; manual tracking tools
+   * (holding create/correct/remove/restore) and every read stay available. The
+   * route also gates attachment upload itself, so this is defense-in-depth for a
+   * text-only ingestion attempt. Defaults to allowed for read-only fixtures.
+   */
+  ingestionAllowed?: boolean;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -648,6 +664,10 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     catalogInput: Input,
     agentView: AgentViewReadStore,
   ) => runCatalogRead(tool, catalogInput, agentView, catalogOptions);
+
+  // Premium document ingestion (#1162): false only for an authenticated free
+  // workspace. The gated tools relay this honestly; manual tracking stays open.
+  const ingestionGated = input.ingestionAllowed === false;
 
   return {
     get_financial_context: tool({
@@ -1314,8 +1334,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Para acumular otro fichero en la misma propuesta, pasa el proposalId devuelto antes. " +
         "La confirmación re-deriva el matching vivo y sella source: agent.",
       inputSchema: STATEMENT_IMPORT_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        return input.runWithStore(async (store) => {
           if (!store.assistantProposals) {
             return { error: "proposal_persistence_unavailable" };
           }
@@ -1334,7 +1355,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             },
           );
           return built.ok ? built.proposal : { error: built.error };
-        }),
+        });
+      },
     }),
     propose_balance_history_import: tool({
       description:
@@ -1508,8 +1530,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico. " +
         "Para declarar solo el saldo real de hoy sin tocar el pasado usa propose_correction (declare_balance). No escribas a deudas de fuente conectada.",
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
           }
@@ -1534,14 +1557,16 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
-        }),
+        });
+      },
     }),
     propose_mixed_document_import: tool({
       description:
         "Segmenta un documento mixto y prepara UNA propuesta multi-dominio. Agrupa por tipo y activo, y usa confidence=certain solo cuando tipo, columnas y activo son inequívocos. Si cualquier segmento es dudoso, NO llames esta tool: pregunta al usuario. Usa ids públicos wl_hld_… para deuda/inmueble; la app enruta cada segmento a su extractor tipado, calcula previews y confirma todo-o-nada con un único ripple.",
       inputSchema: MIXED_DOCUMENT_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
+        return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities || !store.assets)
             return { error: "proposal_persistence_unavailable" };
           const segments = [];
@@ -1577,14 +1602,16 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
-        }),
+        });
+      },
     }),
     propose_reconcile: tool({
       description:
         "Prepara UNA propuesta de RECONCILE de cartera a partir de un documento «posiciones + movimientos» ya extraído por el seam de adjuntos (documentType positions_movements en los DATOS ESTRUCTURADOS). Pasa holdings y movements TAL CUAL los diste por extraídos, sin recalcular ni inventar (respeta el tier de fidelidad ya estampado; ADR 0048). La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; otras familias o un split usa el alta por chat (propose_holding), no ésta. No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync.",
       inputSchema: RECONCILE_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
+        return input.runWithStore(async (store) => {
           if (
             !store.assistantProposals ||
             !store.assets ||
@@ -1614,7 +1641,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             args.documentName ?? "cartera.xlsx",
           );
           return built.ok ? built.proposal : { error: built.error };
-        }),
+        });
+      },
     }),
     raise_maintainer_alert: tool({
       description:

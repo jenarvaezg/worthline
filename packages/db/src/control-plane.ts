@@ -361,6 +361,15 @@ export interface UsageLimits {
    * table so chat and sync quotas cannot interfere.
    */
   recordConnectedSourceSync(rateKey: string, windowKey: string): Promise<number>;
+  /**
+   * Count one free-plan courtesy assistant turn for (rateKey, monthKey) and
+   * return the running count (PRD #1160 S2, #1162): the free assistant's monthly
+   * product quota over the ADR 0051 mechanism. Same increment-then-check
+   * contract as chat usage, but a MONTHLY window and its own table — a distinct
+   * concern from the hourly operational throttle, so the two never interfere and
+   * a future sweep of stale hourly rows can never purge a month's courtesy count.
+   */
+  recordAssistantCourtesyUse(rateKey: string, monthKey: string): Promise<number>;
 }
 
 /** Global exposure-profile catalog (PRD #711 S1 / #940). */
@@ -639,6 +648,13 @@ CREATE TABLE IF NOT EXISTS provider_cooldowns (
   PRIMARY KEY (deployment_key, provider)
 );
 CREATE TABLE IF NOT EXISTS connected_source_sync_usage (
+  rate_key TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (rate_key, window_key)
+);
+CREATE TABLE IF NOT EXISTS assistant_courtesy_usage (
   rate_key TEXT NOT NULL,
   window_key TEXT NOT NULL,
   count INTEGER NOT NULL DEFAULT 0,
@@ -1250,6 +1266,19 @@ async function buildControlPlaneStore(
     async recordConnectedSourceSync(rateKey, windowKey) {
       const result = await client.execute({
         sql: `INSERT INTO connected_source_sync_usage (rate_key, window_key, count)
+              VALUES (?, ?, 1)
+              ON CONFLICT(rate_key, window_key) DO UPDATE SET
+                count = count + 1,
+                updated_at = CURRENT_TIMESTAMP
+              RETURNING count`,
+        args: [rateKey, windowKey],
+      });
+      return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async recordAssistantCourtesyUse(rateKey, windowKey) {
+      // Monthly rows are tiny (≤1/key/month) and self-expire by window key; no sweep needed.
+      const result = await client.execute({
+        sql: `INSERT INTO assistant_courtesy_usage (rate_key, window_key, count)
               VALUES (?, ?, 1)
               ON CONFLICT(rate_key, window_key) DO UPDATE SET
                 count = count + 1,

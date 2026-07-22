@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
+import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
 import { usePathname, useRouter } from "next/navigation";
@@ -64,6 +65,7 @@ import type { HoldingTrashProposal } from "./holding-trash-proposal-contract";
 import { instrumentLabel } from "./instrument-labels";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
+import { parsePaywallPartData } from "./paywall-part";
 import {
   confirmPropertyValuationProposalAction,
   discardPropertyValuationProposalAction,
@@ -1458,6 +1460,12 @@ export default function AssistantLayer({
                     key={`${message.id}-${i}`}
                     preview={preview}
                   />
+                ) : null;
+              }
+              if (part.type === "data-paywall") {
+                const paywall = parsePaywallPartData(part.data);
+                return paywall ? (
+                  <PremiumNotice key={`${message.id}-${i}`} message={paywall.message} />
                 ) : null;
               }
               if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
