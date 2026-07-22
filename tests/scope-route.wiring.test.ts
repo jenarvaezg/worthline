@@ -5,6 +5,10 @@
  * `wl_scope` cookie and redirects back with a `scope=` query override so the
  * very next render highlights the selected tab even before later cookie-only
  * navigations.
+ *
+ * The redirect `Location` is RELATIVE (#1179): an absolute URL built off
+ * `request.url` can carry a host that differs from the browser's and trip CSP
+ * `form-action 'self'` on the redirect hop (see apps/web/app/scope/route.test.ts).
  */
 
 import { POST } from "@web/scope/route";
@@ -31,9 +35,7 @@ describe("POST /scope", () => {
     );
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "http://worthline.local/patrimonio?scope=member_jose",
-    );
+    expect(response.headers.get("location")).toBe("/patrimonio?scope=member_jose");
     expect(response.headers.get("set-cookie")).toContain("wl_scope=member_jose");
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
   });
@@ -46,16 +48,14 @@ describe("POST /scope", () => {
       }),
     );
 
-    expect(response.headers.get("location")).toBe(
-      "http://worthline.local/?scope=member_ana&view=liquid",
-    );
+    expect(response.headers.get("location")).toBe("/?scope=member_ana&view=liquid");
   });
 
   test("blank scopeId redirects without setting a cookie", async () => {
     const response = await POST(request({ returnTo: "/inversiones", scopeId: "" }));
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe("http://worthline.local/inversiones");
+    expect(response.headers.get("location")).toBe("/inversiones");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
@@ -64,8 +64,6 @@ describe("POST /scope", () => {
       request({ returnTo: "//evil.com/steal", scopeId: "member_ana" }),
     );
 
-    expect(response.headers.get("location")).toBe(
-      "http://worthline.local/app?scope=member_ana",
-    );
+    expect(response.headers.get("location")).toBe("/app?scope=member_ana");
   });
 });
