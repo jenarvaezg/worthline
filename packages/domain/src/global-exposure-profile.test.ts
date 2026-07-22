@@ -1,10 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  createValidatedGlobalExposureProfileInput,
   globalExposureProfileIdentityKey,
   isValidIsin,
   resolveGlobalExposureProfileIdentity,
+} from "./exposure-identity";
+import {
+  createValidatedGlobalExposureProfileInput,
   validateGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 

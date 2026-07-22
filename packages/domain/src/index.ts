@@ -343,9 +343,6 @@ export {
   EVOLUTION_CHART_WIDTH,
   timeProportionalXs,
 } from "./evolution-chart";
-export type { ExposureCatalogIdentitySource } from "./exposure-catalog-identity";
-export { deriveExposureCatalogIdentity } from "./exposure-catalog-identity";
-export { exposureProfileLookthroughMap } from "./exposure-catalog-lookthrough";
 export type {
   AssembleExposureDriftHoldingsInput,
   AssembleExposureDriftHoldingsResult,
@@ -360,6 +357,20 @@ export {
   projectExposureDrift,
 } from "./exposure-drift-projection";
 export type {
+  ExposureCatalogIdentitySource,
+  GlobalExposureProfileIdentity,
+  RawGlobalExposureProfileIdentityInput,
+} from "./exposure-identity";
+export {
+  deriveExposureCatalogIdentity,
+  exposureLookthroughKey,
+  exposureProfileLookthroughMap,
+  globalExposureProfileIdentityKey,
+  INVESTMENT_PROFILE_INSTRUMENTS,
+  isValidIsin,
+  resolveGlobalExposureProfileIdentity,
+} from "./exposure-identity";
+export type {
   AssetClassResolution,
   ExposureAllocationSlice,
   ExposureBreakdowns,
@@ -372,7 +383,6 @@ export type {
   ExposureSectorStyle,
 } from "./exposure-lookthrough";
 export {
-  INVESTMENT_PROFILE_INSTRUMENTS,
   lookThroughExposure,
   resolveAssetClassBreakdown,
   validateImportedExposureProfile,
@@ -450,17 +460,12 @@ export type {
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
   GlobalExposureProfileContentInput,
-  GlobalExposureProfileIdentity,
   GlobalExposureSectorBucket,
-  RawGlobalExposureProfileIdentityInput,
   UpdateGlobalExposureProfileInput,
 } from "./global-exposure-profile";
 export {
   createValidatedGlobalExposureProfileInput,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
-  globalExposureProfileIdentityKey,
-  isValidIsin,
-  resolveGlobalExposureProfileIdentity,
   validateGlobalExposureProfileContent,
 } from "./global-exposure-profile";
 export type { GoalFireDelay, GoalFireDelayInput } from "./goal-fire-delay";

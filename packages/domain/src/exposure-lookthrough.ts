@@ -2,6 +2,10 @@ import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
 import {
+  exposureLookthroughKey,
+  INVESTMENT_PROFILE_INSTRUMENTS,
+} from "./exposure-identity";
+import {
   type ExposureAssetClassBucket,
   type ExposureDimension,
   type ExposureGeographyBucket,
@@ -101,16 +105,6 @@ export interface ExposureLookthroughInput {
   holdings: readonly ExposureLookthroughHolding[];
   profiles: ReadonlyMap<string, ExposureProfile>;
 }
-
-/**
- * The instruments that carry a look-through exposure profile — the equity/fund
- * family keyed by `isin ?? providerSymbol`. The single source of truth for "is
- * this a market holding with a catalog identity": both `resolveProfile` (here)
- * and `deriveExposureCatalogIdentity` (#1097) read it, so the set that gets a
- * profile lookup and the set that registers a catalog stub never drift.
- */
-export const INVESTMENT_PROFILE_INSTRUMENTS: ReadonlySet<Instrument> =
-  new Set<Instrument>(["fund", "etf", "stock", "index", "pension_plan"]);
 
 const AUTO_ASSET_CLASS_BY_INSTRUMENT: Partial<
   Record<Instrument, ExposureAssetClassBucket>
@@ -280,7 +274,7 @@ function resolveProfile(
     return null;
   }
 
-  const key = holding.isin ?? holding.providerSymbol ?? null;
+  const key = exposureLookthroughKey(holding);
   return key ? (profiles.get(key) ?? null) : null;
 }
 
