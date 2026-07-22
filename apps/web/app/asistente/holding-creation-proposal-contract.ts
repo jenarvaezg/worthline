@@ -36,9 +36,21 @@ export interface HoldingCreationProposal {
     instrumentLabel: string;
     /** Formatted current value / balance detail (e.g. "12.500 €"). */
     detail: string;
+    /**
+     * The resolved price symbol for an investment alta (#1186), surfaced so the
+     * user confirms/corrects it before applying. Absent for non-investment
+     * families and for an investment created without a resolved symbol.
+     */
+    providerSymbol?: string;
   };
   impact: HoldingCreationImpact;
   duplicate?: HoldingCreationDuplicate;
+  /**
+   * Informative price-tracking warning (never blocks, #1186): set when an
+   * investment alta lacks a `providerSymbol`, so its value will not be repriced
+   * by the daily capture / stale-price refresh until a symbol is assigned.
+   */
+  priceTrackingWarning?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

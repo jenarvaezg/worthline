@@ -213,9 +213,15 @@ function HoldingCreationProposalCard({
           <strong>{proposal.holding.name}</strong>{" "}
           <span>
             {proposal.holding.instrumentLabel} · {proposal.holding.detail}
+            {proposal.holding.providerSymbol
+              ? ` · Símbolo ${proposal.holding.providerSymbol}`
+              : ""}
           </span>
         </li>
       </ul>
+      {proposal.priceTrackingWarning ? (
+        <p className="assistantWarning">{proposal.priceTrackingWarning}</p>
+      ) : null}
       {proposal.duplicate ? (
         <p className="assistantError">
           Ya tienes «{proposal.duplicate.name}»

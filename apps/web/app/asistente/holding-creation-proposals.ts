@@ -271,6 +271,28 @@ function duplicateOf(
   };
 }
 
+/**
+ * The resolved price symbol the card surfaces for confirmation (#1186), only
+ * for an investment alta that carries one. Absent otherwise.
+ */
+function providerSymbolOf(plan: HoldingCreationPlan): string | undefined {
+  return plan.family === "investment" ? plan.providerSymbol : undefined;
+}
+
+/**
+ * The informative price-tracking warning (#1186): ANY investment holding is
+ * repriced by `pricePairKey(priceProvider, providerSymbol)`, so one created
+ * without a symbol lands valued today and then freezes — the daily capture and
+ * the stale-price refresh drop it. Keyed on the investment FAMILY, not on the
+ * search tool's `MARKET_INSTRUMENTS` set: it is deliberately broader (a
+ * pension_plan reprices by its Finect symbol too), so it warns for every
+ * symbol-less investment alta. Never blocks: the alta still applies.
+ */
+function priceTrackingWarningOf(plan: HoldingCreationPlan): string | undefined {
+  if (plan.family !== "investment" || plan.providerSymbol) return undefined;
+  return "Sin símbolo de mercado: el valor no se actualizará automáticamente hasta asignarle uno.";
+}
+
 /** The formatted detail line (value / balance) the card shows next to the name. */
 function detailOf(plan: HoldingCreationPlan): string {
   const euros = (minor: number): string =>
@@ -315,6 +337,9 @@ export async function buildHoldingCreationProposal(
   const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
   const impact = holdingCreationImpact(netWorthBeforeMinor, plan);
 
+  const providerSymbol = providerSymbolOf(plan);
+  const priceTrackingWarning = priceTrackingWarningOf(plan);
+
   const proposal = await store.assistantProposals.create({ kind: "holding_creation" });
   await store.assistantProposals.appendDocument(proposal.id, {
     document: {
@@ -335,10 +360,12 @@ export async function buildHoldingCreationProposal(
         detail: detailOf(plan),
         instrumentLabel: instrumentLabel(plan.instrument, plan.instrument),
         name: plan.name,
+        ...(providerSymbol ? { providerSymbol } : {}),
       },
       impact,
       proposalType: "holding_creation",
       ...(duplicate ? { duplicate } : {}),
+      ...(priceTrackingWarning ? { priceTrackingWarning } : {}),
     },
   };
 }

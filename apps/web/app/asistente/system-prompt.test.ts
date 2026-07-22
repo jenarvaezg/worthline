@@ -41,6 +41,9 @@ describe("buildChatSystemPrompt", () => {
     // #865: a readable-but-unvalidated attachment is analysed, not dead-ended.
     expect(prompt).toMatch(/adjunto no estructurado/i);
     expect(prompt).toMatch(/análisis rápido de lo que ves/i);
+    // #1186: a market-instrument alta must resolve its price symbol first.
+    expect(prompt).toMatch(/search_market_symbol/);
+    expect(prompt).toMatch(/providerSymbol/);
   });
 
   it("pins the core read-only contract", () => {
