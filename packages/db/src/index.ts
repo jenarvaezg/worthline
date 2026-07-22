@@ -92,6 +92,7 @@ export {
   DEFAULT_JOB_MAX_ATTEMPTS,
   type EnqueueJobInput,
   type EnqueueJobResult,
+  type EntitlementDirectory,
   type ExposureProfileCatalog,
   type ExposureProfileCatalogAdmin,
   type FailJobInput,
@@ -110,6 +111,7 @@ export {
   type RaisedMaintainerAlert,
   type RaiseMaintainerAlertInput,
   type RenewJobLeaseInput,
+  type StartTrialInput,
   type TenancyDirectory,
   type UpdateMaintainerAlertStatusInput,
   type UsageLimits,
@@ -138,6 +140,13 @@ export {
   resolveDataDir,
   runBootstrapHealthcheck,
 } from "./database-target";
+export {
+  deriveEffectivePlan,
+  type EntitlementPlan,
+  TRIAL_DURATION_DAYS,
+  trialEndsAtFrom,
+  type WorkspaceEntitlement,
+} from "./entitlements";
 export type {
   AppreciatingHoldingCreationPlan,
   DebtHoldingCreationPlan,

@@ -76,6 +76,23 @@ describe("workspace provisioner", () => {
     }
   });
 
+  test("a fresh provision starts the identity's trial (#1128, PRD #1160 S1)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-"));
+    try {
+      const ws = await provisionWorkspaceForUser(
+        { controlPlane: cp, now: () => "2026-07-22T12:00:00.000Z", turso: port },
+        "ana@example.com",
+      );
+
+      const entitlement = await cp.readWorkspaceEntitlement(ws.id);
+      expect(entitlement?.plan).toBe("trial");
+      expect(entitlement?.trialEndsAt).toBe("2026-07-25T12:00:00.000Z");
+    } finally {
+      cp.close();
+    }
+  });
+
   test("is idempotent: a second login for the same account reuses the workspace, no new db", async () => {
     const cp = await createInMemoryControlPlaneStore();
     const { port, created } = fakeTurso(tempDir("worthline-provision-idem-"));

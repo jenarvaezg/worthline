@@ -1,5 +1,6 @@
 "use server";
 
+import { markFirstHoldingBestEffort } from "@web/activation-marks";
 import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
@@ -715,6 +716,8 @@ export async function createHoldingAction(
       if (value?.catalog) {
         await ensureExposureCatalogStubs([value.catalog]);
       }
+      // First patrimonio write → stamp the set-once activation mark (#1131).
+      await markFirstHoldingBestEffort();
     },
     onError: ({ error }) => error, // run already built the full URL
     onSuccess: ({ value }) => value!.redirectUrl,

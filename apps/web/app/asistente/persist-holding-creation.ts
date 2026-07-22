@@ -9,6 +9,7 @@
  * guards these seams already run — never throws on a domain violation.
  */
 
+import { markFirstHoldingBestEffort } from "@web/activation-marks";
 import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
@@ -148,6 +149,9 @@ export async function persistHoldingCreation(
     providerSymbol: plan.providerSymbol ?? null,
   };
   await ensureExposureCatalogStubs([catalog]);
+  // A chat-driven alta (or the reconcile "create new" branch) can be the
+  // workspace's first holding write — stamp the set-once mark (#1131).
+  await markFirstHoldingBestEffort();
 
   return { id, ok: true };
 }

@@ -18,6 +18,7 @@ import {
 } from "@worthline/domain";
 
 import { migrateControlPlane } from "./control-plane-migrate";
+import { trialEndsAtFrom, type WorkspaceEntitlement } from "./entitlements";
 import { type LibsqlUrlTarget, openLibsqlClient } from "./libsql-client";
 
 /**
@@ -440,6 +441,47 @@ export interface MaintainerAlertLog {
   countOpenMaintainerAlerts(): Promise<number>;
 }
 
+export interface StartTrialInput {
+  /** The identity consuming its one trial (#1128) — trials are per user, not per workspace. */
+  userId: string;
+  /** The freshly provisioned workspace the trial entitles. */
+  workspaceId: string;
+  /** The reference "now" (ISO) — injectable so tests are deterministic. Defaults to the wall clock. */
+  now?: string;
+}
+
+/**
+ * Workspace entitlements (PRD #1160 S1, #1161): the stored `free|trial|premium`
+ * row beside the grant, plus the set-once activation timestamps (#1131). The
+ * control plane is the ONLY source of truth here — billing webhooks and the
+ * admin palanca write it, every surface derives from it (`deriveEffectivePlan`),
+ * and nothing queries the merchant-of-record on a hot path.
+ */
+export interface EntitlementDirectory {
+  /**
+   * The stored entitlement row, or null when none exists — which reads as
+   * `free` with no trial consumed (the pre-#1161 migration story: existing
+   * workspaces get no row and need no backfill).
+   */
+  readWorkspaceEntitlement(workspaceId: string): Promise<WorkspaceEntitlement | null>;
+  /**
+   * Start the identity's one trial for a freshly provisioned workspace (#1128):
+   * atomically consume the per-user trial marker (set-once — an INSERT that
+   * loses means the trial was already used, so re-provisioning NEVER re-trials)
+   * and write the workspace's `trial` entitlement with its window. Returns the
+   * entitlement, or null when this identity already used its trial.
+   */
+  startTrialIfUnused(input: StartTrialInput): Promise<WorkspaceEntitlement | null>;
+  /**
+   * Record that the workspace completed onboarding (#1131). Set-once: the first
+   * call wins, every later call is a no-op — the timestamp says only THAT it
+   * happened, never what the workspace holds.
+   */
+  markWorkspaceOnboarded(workspaceId: string, at: string): Promise<void>;
+  /** Record that the workspace holds its first holding (#1131). Set-once, like `markWorkspaceOnboarded`. */
+  markWorkspaceFirstHolding(workspaceId: string, at: string): Promise<void>;
+}
+
 /** Durable job queue (#887, PRD #999 S3). */
 export interface JobStore {
   /**
@@ -489,6 +531,7 @@ export interface JobStore {
  */
 export interface ControlPlaneStore
   extends TenancyDirectory,
+    EntitlementDirectory,
     DailyCaptureLog,
     BenchmarkPriceCache,
     UsageLimits,
@@ -554,6 +597,28 @@ WHERE role = 'owner' AND EXISTS (
 -- still grant the same user other workspaces under non-owner roles.
 CREATE UNIQUE INDEX IF NOT EXISTS grants_one_owner_per_user
   ON grants(user_id) WHERE role = 'owner';
+CREATE TABLE IF NOT EXISTS workspace_entitlements (
+  workspace_id TEXT PRIMARY KEY,
+  plan TEXT NOT NULL DEFAULT 'free',
+  trial_ends_at TEXT,
+  premium_until TEXT,
+  billing_provider TEXT,
+  billing_customer_id TEXT,
+  subscription_id TEXT,
+  subscription_status TEXT,
+  onboarded_at TEXT,
+  first_holding_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+);
+-- One trial per identity (#1128): the row's existence IS the marker, so the
+-- set-once arbiter is the primary key — an insert that loses means "already used".
+CREATE TABLE IF NOT EXISTS user_trials (
+  user_id TEXT NOT NULL PRIMARY KEY,
+  used_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
 CREATE TABLE IF NOT EXISTS daily_capture_runs (
   date_key TEXT PRIMARY KEY,
   finalized_at TEXT NOT NULL,
@@ -695,6 +760,25 @@ function toWorkspaceWithOwner(
   return {
     ...toWorkspace(row),
     ownerEmail: row["owner_email"] == null ? null : String(row["owner_email"]),
+  };
+}
+
+function toWorkspaceEntitlement(row: Record<string, unknown>): WorkspaceEntitlement {
+  const text = (column: string): string | null =>
+    row[column] == null ? null : String(row[column]);
+  return {
+    workspaceId: String(row["workspace_id"]),
+    plan: String(row["plan"]) as WorkspaceEntitlement["plan"],
+    trialEndsAt: text("trial_ends_at"),
+    premiumUntil: text("premium_until"),
+    billingProvider: text("billing_provider"),
+    billingCustomerId: text("billing_customer_id"),
+    subscriptionId: text("subscription_id"),
+    subscriptionStatus: text("subscription_status"),
+    onboardedAt: text("onboarded_at"),
+    firstHoldingAt: text("first_holding_at"),
+    createdAt: String(row["created_at"]),
+    updatedAt: String(row["updated_at"]),
   };
 }
 
@@ -1029,6 +1113,62 @@ async function buildControlPlaneStore(
          ORDER BY w.created_at ASC`,
       );
       return result.rows.map((row) => toWorkspaceWithOwner(row));
+    },
+    async readWorkspaceEntitlement(workspaceId) {
+      const result = await client.execute({
+        sql: "SELECT * FROM workspace_entitlements WHERE workspace_id = ?",
+        args: [workspaceId],
+      });
+      return result.rows.length > 0 ? toWorkspaceEntitlement(result.rows[0]!) : null;
+    },
+    async startTrialIfUnused({ userId, workspaceId, now }) {
+      const stamp = now ?? new Date().toISOString();
+      // The per-identity marker is the arbiter (#1128): losing this insert means
+      // the trial was already consumed — by an earlier workspace, or by the
+      // concurrent provision that won — so there is nothing left to start.
+      const consumed = await client.execute({
+        sql: `INSERT INTO user_trials (user_id, used_at) VALUES (?, ?)
+              ON CONFLICT(user_id) DO NOTHING`,
+        args: [userId, stamp],
+      });
+      if (consumed.rowsAffected === 0) {
+        return null;
+      }
+      await client.execute({
+        sql: `INSERT INTO workspace_entitlements (workspace_id, plan, trial_ends_at)
+              VALUES (?, 'trial', ?)
+              ON CONFLICT(workspace_id) DO UPDATE SET
+                plan = 'trial',
+                trial_ends_at = excluded.trial_ends_at,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [workspaceId, trialEndsAtFrom(stamp)],
+      });
+      const created = await client.execute({
+        sql: "SELECT * FROM workspace_entitlements WHERE workspace_id = ?",
+        args: [workspaceId],
+      });
+      return toWorkspaceEntitlement(created.rows[0]!);
+    },
+    async markWorkspaceOnboarded(workspaceId, at) {
+      // Set-once via COALESCE: the first stamp wins, later calls are no-ops.
+      await client.execute({
+        sql: `INSERT INTO workspace_entitlements (workspace_id, onboarded_at)
+              VALUES (?, ?)
+              ON CONFLICT(workspace_id) DO UPDATE SET
+                onboarded_at = COALESCE(onboarded_at, excluded.onboarded_at),
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [workspaceId, at],
+      });
+    },
+    async markWorkspaceFirstHolding(workspaceId, at) {
+      await client.execute({
+        sql: `INSERT INTO workspace_entitlements (workspace_id, first_holding_at)
+              VALUES (?, ?)
+              ON CONFLICT(workspace_id) DO UPDATE SET
+                first_holding_at = COALESCE(first_holding_at, excluded.first_holding_at),
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [workspaceId, at],
+      });
     },
     async hasDailyCaptureRun(dateKey) {
       const result = await client.execute({

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { ControlPlaneWorkspace, TenancyDirectory } from "./control-plane";
+import type {
+  ControlPlaneWorkspace,
+  EntitlementDirectory,
+  TenancyDirectory,
+} from "./control-plane";
 import { openLibsqlClient } from "./libsql-client";
 import { migrate } from "./migrate";
 
@@ -27,7 +31,7 @@ export interface TursoPort {
 }
 
 export interface ProvisionDeps {
-  controlPlane: TenancyDirectory;
+  controlPlane: TenancyDirectory & EntitlementDirectory;
   turso: TursoPort;
   /** Shared Turso group token used to open `libsql://` workspace databases. */
   groupAuthToken?: string;
@@ -38,6 +42,8 @@ export interface ProvisionDeps {
   openAndMigrate?: (target: { url: string; authToken?: string }) => Promise<void>;
   /** Workspace database-name generator, injectable for determinism. */
   newDbName?: () => string;
+  /** The reference "now" (ISO) for the trial window — injectable for tests. */
+  now?: () => string;
 }
 
 function defaultDbName(): string {
@@ -69,6 +75,7 @@ export async function provisionWorkspaceForUser(
     groupAuthToken,
     openAndMigrate = defaultOpenAndMigrate,
     newDbName = defaultDbName,
+    now = () => new Date().toISOString(),
   } = deps;
 
   const user = await controlPlane.findOrCreateUser(email);
@@ -123,7 +130,32 @@ export async function provisionWorkspaceForUser(
     }
     return winner;
   }
+  await startTrialBestEffort(controlPlane, user.id, workspace.id, now());
   return workspace;
+}
+
+/**
+ * A fresh provision starts the identity's one trial (#1128, PRD #1160 S1) —
+ * `startTrialIfUnused` is set-once per user, so a re-provisioned identity never
+ * re-trials, and pre-#1161 workspaces (which never pass through here) stay free.
+ * Best-effort: a failure must not fail the login — the workspace simply reads
+ * as `free` (the safe default) and the admin's manual grant is the recovery
+ * palanca, matching the provisioner's other warn-and-continue cleanups.
+ */
+async function startTrialBestEffort(
+  controlPlane: EntitlementDirectory,
+  userId: string,
+  workspaceId: string,
+  now: string,
+): Promise<void> {
+  try {
+    await controlPlane.startTrialIfUnused({ now, userId, workspaceId });
+  } catch (error) {
+    console.warn(
+      `provisioner: could not start the trial for workspace ${workspaceId}; it stays free (admin grant is the recovery)`,
+      error,
+    );
+  }
 }
 
 /**

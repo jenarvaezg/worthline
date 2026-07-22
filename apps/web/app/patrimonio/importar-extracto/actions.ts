@@ -24,6 +24,7 @@ import {
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
+import { markFirstHoldingBestEffort } from "@web/activation-marks";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { formAction } from "@web/form-action";
 import {
@@ -255,6 +256,10 @@ export async function confirmImportStatementAction(
     requireId: false,
     datedFact: false,
     guardUrl: (fd) => currentUrlOf(fd),
+    // A statement import can be the workspace's first holding write (#1131).
+    afterCommit: async () => {
+      await markFirstHoldingBestEffort();
+    },
     run: async (store, { formData, today }) => {
       const read = await readStatementFromForm(formData);
       if (!read.ok) {

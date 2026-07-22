@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 3;
+export const CP_SCHEMA_VERSION = 4;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -132,5 +132,33 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       ON job(dedupe_key) WHERE status IN ('pending', 'leased');
     CREATE INDEX IF NOT EXISTS job_ready ON job(status, run_after);`);
     await writeControlPlaneSchemaVersion(client, 3);
+  }
+
+  if (version < 4) {
+    // Entitlements (PRD #1160 S1, #1161): the stored free|trial|premium row
+    // beside the grant, plus the per-identity trial marker (#1128) and the
+    // set-once activation timestamps (#1131). No backfill: a workspace without
+    // a row reads as free with no trial consumed. Mirror control-plane.ts's SCHEMA.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS workspace_entitlements (
+      workspace_id TEXT PRIMARY KEY,
+      plan TEXT NOT NULL DEFAULT 'free',
+      trial_ends_at TEXT,
+      premium_until TEXT,
+      billing_provider TEXT,
+      billing_customer_id TEXT,
+      subscription_id TEXT,
+      subscription_status TEXT,
+      onboarded_at TEXT,
+      first_holding_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+    );
+    CREATE TABLE IF NOT EXISTS user_trials (
+      user_id TEXT NOT NULL PRIMARY KEY,
+      used_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );`);
+    await writeControlPlaneSchemaVersion(client, 4);
   }
 }
