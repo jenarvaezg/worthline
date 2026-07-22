@@ -1,12 +1,13 @@
 import { withControlPlaneStore } from "@web/admin/admin-control-plane";
-import type { ControlPlaneStore, ControlPlaneWorkspaceWithOwner } from "@worthline/db";
+import type { ControlPlaneWorkspaceWithOwner, TenancyDirectory } from "@worthline/db";
 
 /** The admin user list (#697): every workspace with its owner's email, oldest first. */
 export async function listAdminWorkspaces(
-  injectedStore?: ControlPlaneStore,
+  injectedStore?: Pick<TenancyDirectory, "listWorkspacesWithOwners">,
 ): Promise<ControlPlaneWorkspaceWithOwner[]> {
   return withControlPlaneStore(
-    (store) => store.listWorkspacesWithOwners(),
+    (store: Pick<TenancyDirectory, "listWorkspacesWithOwners">) =>
+      store.listWorkspacesWithOwners(),
     injectedStore,
   );
 }

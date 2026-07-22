@@ -254,7 +254,11 @@ export interface ControlPlaneWorkspaceWithOwner extends ControlPlaneWorkspace {
   ownerEmail: string | null;
 }
 
-export interface ControlPlaneStore {
+/**
+ * Tenancy directory (ADR 0030): users → workspaces → grants. The only concern
+ * that knows which workspace a signed-in user owns.
+ */
+export interface TenancyDirectory {
   /** Idempotent by email: the same address always maps to the same user row. */
   findOrCreateUser(email: string): Promise<ControlPlaneUser>;
   /**
@@ -304,6 +308,10 @@ export interface ControlPlaneStore {
    * (#697).
    */
   listWorkspacesWithOwners(): Promise<ControlPlaneWorkspaceWithOwner[]>;
+}
+
+/** Daily fleet-capture idempotency ledger (ADR 0037, #895). */
+export interface DailyCaptureLog {
   /**
    * Whether this fleet-capture pass has already finalized. The key is an opaque
    * run key, not a bare calendar date: since #895 it is pass-qualified
@@ -313,13 +321,24 @@ export interface ControlPlaneStore {
   hasDailyCaptureRun(runKey: string): Promise<boolean>;
   /** Record or update this fleet-capture pass's finalization (see `hasDailyCaptureRun`). */
   recordDailyCaptureRun(runKey: string, finalizedAt: string): Promise<void>;
-  /** Benchmark series cached globally in the control plane (ADR 0060). */
+}
+
+/** Benchmark series cached globally in the control plane (ADR 0060). */
+export interface BenchmarkPriceCache {
   readBenchmarkPrices(seriesId: string): Promise<BenchmarkPrice[]>;
   /** Upsert monthly benchmark rows by `(series_id, date)`. */
   upsertBenchmarkPrices(
     seriesId: string,
     prices: { dateKey: string; value: string }[],
   ): Promise<void>;
+}
+
+/**
+ * Serverless-shared usage limits: the chat and connected-source-sync rate
+ * counters (ADR 0051) and provider cooldowns. All are operational throttles
+ * shared by every serverless instance of one deployment.
+ */
+export interface UsageLimits {
   /**
    * Count one shared-baseline chat request and return the running count for
    * (rateKey, windowKey) — the serverless-safe counter behind the assistant's
@@ -341,7 +360,10 @@ export interface ControlPlaneStore {
    * table so chat and sync quotas cannot interfere.
    */
   recordConnectedSourceSync(rateKey: string, windowKey: string): Promise<number>;
-  /** Global exposure-profile catalog (PRD #711 S1 / #940). */
+}
+
+/** Global exposure-profile catalog (PRD #711 S1 / #940). */
+export interface ExposureProfileCatalog {
   createGlobalExposureProfile(
     input: CreateGlobalExposureProfileInput,
   ): Promise<GlobalExposureProfile>;
@@ -373,6 +395,10 @@ export interface ControlPlaneStore {
     identity: RawGlobalExposureProfileIdentityInput,
   ): Promise<GlobalExposureProfile | null>;
   readGlobalExposureProfiles(): Promise<GlobalExposureProfile[]>;
+}
+
+/** Maintainer alert log (#1050, ADR 0064) — the `/admin` alerts surface. */
+export interface MaintainerAlertLog {
   /**
    * Raise a maintainer alert (#1050, ADR 0064). Dedup by
    * `workspaceId + holdingId + category`: an existing OPEN alert of that key
@@ -391,6 +417,10 @@ export interface ControlPlaneStore {
   ): Promise<MaintainerAlert>;
   /** Count of currently-open alerts — the `/admin` badge. */
   countOpenMaintainerAlerts(): Promise<number>;
+}
+
+/** Durable job queue (#887, PRD #999 S3). */
+export interface JobStore {
   /**
    * Durably enqueue a job (#887, PRD #999 S3). Single-flight by `dedupeKey`: if an
    * ACTIVE (`pending`/`leased`) job of the same key already exists, no row is
@@ -427,6 +457,23 @@ export interface ControlPlaneStore {
   readJob(jobId: string): Promise<JobRecord | null>;
   /** Every job, newest first — observability / tests. */
   listJobs(): Promise<JobRecord[]>;
+}
+
+/**
+ * The full control plane: one libSQL database (ADR 0030) exposing every
+ * cohesive port over a single shared connection. Consumers should depend on the
+ * narrowest port they use (e.g. {@link TenancyDirectory}, {@link JobStore}) so
+ * no caller sees a concern it does not touch; this composite is the assembled
+ * adapter returned by the factories and the type held by the composition root.
+ */
+export interface ControlPlaneStore
+  extends TenancyDirectory,
+    DailyCaptureLog,
+    BenchmarkPriceCache,
+    UsageLimits,
+    ExposureProfileCatalog,
+    MaintainerAlertLog,
+    JobStore {
   close(): void;
 }
 

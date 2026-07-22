@@ -2,9 +2,12 @@ import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import { openAuthorizedStore } from "@web/principal";
 import {
+  type BenchmarkPriceCache,
   createControlPlaneStore,
   type DailyCaptureFetchedPrice,
+  type DailyCaptureLog,
   type RunDailyCaptureDeps,
+  type TenancyDirectory,
 } from "@worthline/db";
 import {
   benchmarkCatalogEntryBySeriesId,
@@ -37,7 +40,11 @@ export function buildDailyCaptureDeps(
 ): RunDailyCaptureDeps {
   const controlPlaneUrl = env["WORTHLINE_CONTROL_PLANE_DB_URL"];
   const groupToken = env["WORTHLINE_DB_AUTH_TOKEN"];
-  const openControlPlane = async () => {
+  const openControlPlane = async (): Promise<
+    Pick<TenancyDirectory, "listAllWorkspaces"> &
+      DailyCaptureLog &
+      BenchmarkPriceCache & { close(): void }
+  > => {
     if (!controlPlaneUrl) {
       throw new Error("Daily capture requires WORTHLINE_CONTROL_PLANE_DB_URL.");
     }

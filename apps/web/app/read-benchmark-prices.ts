@@ -1,4 +1,8 @@
-import { type BenchmarkPrice, createControlPlaneStore } from "@worthline/db";
+import {
+  type BenchmarkPrice,
+  type BenchmarkPriceCache,
+  createControlPlaneStore,
+} from "@worthline/db";
 import { unstable_cache } from "next/cache";
 
 const BENCHMARK_CACHE_REVALIDATE_SECONDS = 86_400;
@@ -7,7 +11,9 @@ async function readBenchmarkPricesUncached(seriesId: string): Promise<BenchmarkP
   const url = process.env.WORTHLINE_CONTROL_PLANE_DB_URL;
   if (!url) return [];
 
-  const controlPlane = await createControlPlaneStore({
+  const controlPlane: Pick<BenchmarkPriceCache, "readBenchmarkPrices"> & {
+    close(): void;
+  } = await createControlPlaneStore({
     url,
     ...(process.env.WORTHLINE_DB_AUTH_TOKEN
       ? { authToken: process.env.WORTHLINE_DB_AUTH_TOKEN }

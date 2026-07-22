@@ -1,4 +1,4 @@
-import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
+import { createControlPlaneStore, type ExposureProfileCatalog } from "@worthline/db";
 import {
   deriveExposureCatalogIdentity,
   type ExposureCatalogIdentitySource,
@@ -54,7 +54,9 @@ export async function ensureExposureCatalogStubs(
     return;
   }
 
-  let store: ControlPlaneStore;
+  let store: Pick<ExposureProfileCatalog, "ensureGlobalExposureProfileStub"> & {
+    close(): void;
+  };
   try {
     store = await createControlPlaneStore({
       url,

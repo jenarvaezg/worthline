@@ -1,4 +1,4 @@
-import { createControlPlaneStore } from "@worthline/db";
+import { createControlPlaneStore, type UsageLimits } from "@worthline/db";
 
 /**
  * The rate limit's persistence half (ADR 0051): count this request in the
@@ -15,10 +15,11 @@ export async function countChatRequest(
   }
 
   const authToken = process.env["WORTHLINE_DB_AUTH_TOKEN"];
-  const controlPlane = await createControlPlaneStore({
-    url,
-    ...(authToken ? { authToken } : {}),
-  });
+  const controlPlane: Pick<UsageLimits, "recordChatRequest"> & { close(): void } =
+    await createControlPlaneStore({
+      url,
+      ...(authToken ? { authToken } : {}),
+    });
   try {
     return await controlPlane.recordChatRequest(rateKey, windowKey);
   } finally {

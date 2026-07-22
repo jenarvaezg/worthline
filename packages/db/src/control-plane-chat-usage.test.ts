@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { createInMemoryControlPlaneStore } from "./control-plane";
+import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
+
+// Cross the real UsageLimits port seam: the in-memory store implements the whole
+// control plane, but this test depends only on the usage-limits concern.
+type UsageLimitsStore = UsageLimits & { close(): void };
 
 describe("control plane chat usage counter", () => {
   it("increments atomically within the same key and window", async () => {
-    const store = await createInMemoryControlPlaneStore();
+    const store: UsageLimitsStore = await createInMemoryControlPlaneStore();
 
     expect(await store.recordChatRequest("ws:a", "2026-07-04T10")).toBe(1);
     expect(await store.recordChatRequest("ws:a", "2026-07-04T10")).toBe(2);
@@ -14,7 +18,7 @@ describe("control plane chat usage counter", () => {
   });
 
   it("counts keys and windows independently", async () => {
-    const store = await createInMemoryControlPlaneStore();
+    const store: UsageLimitsStore = await createInMemoryControlPlaneStore();
 
     await store.recordChatRequest("ws:a", "2026-07-04T10");
     await store.recordChatRequest("ws:a", "2026-07-04T10");

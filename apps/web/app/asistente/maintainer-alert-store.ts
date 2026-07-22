@@ -1,7 +1,7 @@
 import {
-  type ControlPlaneStore,
   createControlPlaneStore,
   type MaintainerAlertCategory,
+  type MaintainerAlertLog,
   type RaisedMaintainerAlert,
 } from "@worthline/db";
 
@@ -26,7 +26,7 @@ function controlPlaneConfig(): { url: string; authToken?: string } | null {
 
 async function runWithControlPlane<T>(
   config: { url: string; authToken?: string },
-  run: (store: ControlPlaneStore) => Promise<T>,
+  run: (store: MaintainerAlertLog) => Promise<T>,
 ): Promise<T> {
   const controlPlane = await createControlPlaneStore(config);
   try {

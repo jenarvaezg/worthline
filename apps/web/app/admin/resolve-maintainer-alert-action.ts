@@ -2,7 +2,7 @@
 
 import { withControlPlaneStore } from "@web/admin/admin-control-plane";
 import { guardAdmin } from "@web/admin/guard-admin";
-import type { MaintainerAlertStatus } from "@worthline/db";
+import type { MaintainerAlertLog, MaintainerAlertStatus } from "@worthline/db";
 import { redirect } from "next/navigation";
 
 /**
@@ -30,12 +30,13 @@ export async function resolveMaintainerAlertAction(formData: FormData): Promise<
   const link = /^https?:\/\//i.test(rawLink) ? rawLink : "";
 
   try {
-    await withControlPlaneStore((store) =>
-      store.updateMaintainerAlertStatus(alertId, {
-        status,
-        ...(note ? { note } : {}),
-        ...(link ? { link } : {}),
-      }),
+    await withControlPlaneStore(
+      (store: Pick<MaintainerAlertLog, "updateMaintainerAlertStatus">) =>
+        store.updateMaintainerAlertStatus(alertId, {
+          status,
+          ...(note ? { note } : {}),
+          ...(link ? { link } : {}),
+        }),
     );
   } catch {
     // Unknown/already-gone alert (or a transient control-plane failure): fall

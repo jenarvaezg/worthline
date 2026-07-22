@@ -1,4 +1,8 @@
-import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
+import {
+  type BenchmarkPriceCache,
+  createControlPlaneStore,
+  type ExposureProfileCatalog,
+} from "@worthline/db";
 import type { ExposureCatalogAvailability, ExposureProfile } from "@worthline/domain";
 import { exposureProfileLookthroughMap } from "@worthline/domain";
 
@@ -21,7 +25,8 @@ export async function readExposureCatalogFromControlPlane(): Promise<ExposureCat
     return { status: "unavailable", reason: "not_configured" };
   }
 
-  let store: ControlPlaneStore;
+  let store: Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
+    Pick<BenchmarkPriceCache, "readBenchmarkPrices"> & { close(): void };
   try {
     store = await createControlPlaneStore({
       url,

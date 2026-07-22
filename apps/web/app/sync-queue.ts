@@ -3,7 +3,6 @@ import { buildDailyCaptureDeps } from "@web/api/cron/snapshot/daily-capture-deps
 import { openAuthorizedStore } from "@web/principal";
 import type { StoreTarget } from "@web/store-resolver";
 import {
-  type ControlPlaneStore,
   createControlPlaneStore,
   createJobQueue,
   createSyncJobWorker,
@@ -13,15 +12,26 @@ import {
   dailyCaptureJobOutcome,
   type EnqueueJobResult,
   type EnqueueSyncJobInput,
+  type JobStore,
   type QueueTransport,
   type RunnableJob,
   runDailyCapture,
   type SyncJobDescriptor,
   type SyncJobResult,
   syncJobErrorFromCause,
+  type TenancyDirectory,
   type VercelQueueProducer,
   type WorthlineStore,
 } from "@worthline/db";
+
+/**
+ * The control-plane view the sync queue needs: resolve a workspace's database
+ * URL (tenancy) and drive the durable job queue. Deliberately excludes every
+ * other control-plane concern — the queue never touches catalog, alerts,
+ * benchmark, usage limits or daily-capture.
+ */
+type SyncQueueControlPlane = Pick<TenancyDirectory, "getWorkspaceWithOwner"> &
+  JobStore & { close(): void };
 
 /**
  * The app-edge wiring for the durable sync queue (PRD #999 S4, #1064). S3 (#1063)
@@ -54,7 +64,7 @@ export function isDurableQueueConfigured(env: Env = process.env): boolean {
   return Boolean(env.WORTHLINE_CONTROL_PLANE_DB_URL);
 }
 
-function openControlPlane(env: Env): Promise<ControlPlaneStore> {
+function openControlPlane(env: Env): Promise<SyncQueueControlPlane> {
   const url = env.WORTHLINE_CONTROL_PLANE_DB_URL;
   if (!url) {
     throw new Error("Durable job queue requires WORTHLINE_CONTROL_PLANE_DB_URL.");
@@ -171,7 +181,7 @@ export function createSyncJobResolver(
 
 /** Drain every ready job to idle on a fresh worker — the pull-mode + sweep recipe. */
 function drainToIdle(
-  controlPlane: ControlPlaneStore,
+  controlPlane: SyncQueueControlPlane,
   resolver: (job: RunnableJob) => Promise<SyncJobResult>,
   owner: string,
   leaseMs: number,
@@ -187,7 +197,7 @@ function drainToIdle(
 
 /** The seams {@link enqueueSyncJob} needs — injectable for tests, env-wired in prod. */
 export interface SyncQueueDeps {
-  openControlPlane: () => Promise<ControlPlaneStore>;
+  openControlPlane: () => Promise<SyncQueueControlPlane>;
   resolver: (job: RunnableJob) => Promise<SyncJobResult>;
   transport?: QueueTransport;
   owner: string;

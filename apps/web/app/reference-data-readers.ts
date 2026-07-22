@@ -1,4 +1,4 @@
-import type { ControlPlaneStore } from "@worthline/db";
+import type { BenchmarkPriceCache, ExposureProfileCatalog } from "@worthline/db";
 import type {
   BenchmarkSeriesAvailability,
   BenchmarkSeriesReader,
@@ -48,7 +48,8 @@ export function createUnavailableReferenceDataReaders(
 }
 
 export function createControlPlaneReferenceDataReaders(
-  store: ControlPlaneStore,
+  store: Pick<ExposureProfileCatalog, "readGlobalExposureProfiles"> &
+    Pick<BenchmarkPriceCache, "readBenchmarkPrices">,
 ): ReferenceDataReaders {
   let catalogSnapshot: ExposureCatalogAvailability | undefined;
   let catalogLoadPromise: Promise<ExposureCatalogAvailability> | undefined;

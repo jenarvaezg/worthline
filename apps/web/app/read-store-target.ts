@@ -1,7 +1,7 @@
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { DEFAULT_APP_PATH } from "@web/return-to";
-import { type ControlPlaneStore, createControlPlaneStore } from "@worthline/db";
+import { createControlPlaneStore, type TenancyDirectory } from "@worthline/db";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -80,7 +80,9 @@ export async function readSessionEmail(): Promise<string | null> {
 export async function lookupImpersonationTarget(input: {
   workspaceId: string | undefined;
   env: Record<string, string | undefined>;
-  openControlPlane?: () => Promise<ControlPlaneStore>;
+  openControlPlane?: () => Promise<
+    Pick<TenancyDirectory, "getWorkspaceWithOwner"> & { close(): void }
+  >;
 }): Promise<{ workspaceId: string; dbUrl: string; email: string } | null> {
   const { workspaceId, env } = input;
   if (!workspaceId) return null;

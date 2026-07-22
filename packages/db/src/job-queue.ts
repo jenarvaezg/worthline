@@ -1,9 +1,4 @@
-import type {
-  ControlPlaneStore,
-  EnqueueJobResult,
-  JobError,
-  JobRecord,
-} from "./control-plane";
+import type { EnqueueJobResult, JobError, JobRecord, JobStore } from "./control-plane";
 import type { SyncJobDescriptor, SyncJobResult, SyncJobSkipReason } from "./sync-job";
 
 /**
@@ -67,7 +62,7 @@ export interface JobQueue {
 }
 
 export function createJobQueue(deps: {
-  store: Pick<ControlPlaneStore, "enqueueJob">;
+  store: Pick<JobStore, "enqueueJob">;
   transport?: QueueTransport;
 }): JobQueue {
   return {
@@ -114,10 +109,7 @@ export type DrainOutcome =
 
 export interface SyncJobWorkerDeps {
   /** The durable job primitives (control plane). */
-  store: Pick<
-    ControlPlaneStore,
-    "leaseJob" | "completeJob" | "failJob" | "renewJobLease"
-  >;
+  store: Pick<JobStore, "leaseJob" | "completeJob" | "failJob" | "renewJobLease">;
   /** This worker's stable lease-owner id. */
   owner: string;
   /** How long a lease is held before it lapses (ms). */

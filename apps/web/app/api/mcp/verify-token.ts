@@ -1,5 +1,5 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
-import { createControlPlaneStore } from "@worthline/db";
+import { createControlPlaneStore, type TenancyDirectory } from "@worthline/db";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
 
 /**
@@ -268,7 +268,10 @@ async function envResolveWorkspace(
   const url = env["WORTHLINE_CONTROL_PLANE_DB_URL"]?.trim();
   if (!url) return null;
   const authToken = env["WORTHLINE_DB_AUTH_TOKEN"];
-  const controlPlane = await createControlPlaneStore({
+  const controlPlane: Pick<
+    TenancyDirectory,
+    "findUserByEmail" | "listWorkspacesForUser"
+  > & { close(): void } = await createControlPlaneStore({
     url,
     ...(authToken ? { authToken } : {}),
   });
