@@ -5,7 +5,7 @@ import { createInMemoryControlPlaneStore } from "@db/control-plane";
 import { openLibsqlClient } from "@db/libsql-client";
 import { SCHEMA_VERSION } from "@db/migrate";
 import { provisionWorkspaceForUser, type TursoPort } from "@db/provisioner";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 
 const tempDirs: string[] = [];
 function tempDir(prefix: string): string {
@@ -71,6 +71,23 @@ describe("workspace provisioner", () => {
       );
       raw.close();
       expect(version).toBe(SCHEMA_VERSION);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("a fresh provision starts the identity's trial (#1128, PRD #1160 S1)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-"));
+    try {
+      const ws = await provisionWorkspaceForUser(
+        { controlPlane: cp, now: () => "2026-07-22T12:00:00.000Z", turso: port },
+        "ana@example.com",
+      );
+
+      const entitlement = await cp.readWorkspaceEntitlement(ws.id);
+      expect(entitlement?.plan).toBe("trial");
+      expect(entitlement?.trialEndsAt).toBe("2026-07-25T12:00:00.000Z");
     } finally {
       cp.close();
     }
@@ -158,7 +175,45 @@ describe("workspace provisioner", () => {
       expect(deleted).toHaveLength(1);
       expect(created).toContain(deleted[0]);
       expect(deleted[0]).not.toBe(first.dbName);
+
+      // Exactly ONE trial was started, on the surviving workspace: the loser
+      // returns the winner's workspace before ever reaching the trial start,
+      // so the identity's single trial (#1128) lands on the winner's row.
+      const entitlement = await cp.readWorkspaceEntitlement(first.id);
+      expect(entitlement?.plan).toBe("trial");
+      expect(
+        await cp.startTrialIfUnused({ userId: user.id, workspaceId: first.id }),
+      ).toBeNull();
     } finally {
+      cp.close();
+    }
+  });
+
+  test("a trial-start failure is swallowed: login still gets its workspace, which reads free", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-trial-fail-"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const failing = {
+        ...cp,
+        startTrialIfUnused: async () => {
+          throw new Error("control plane hiccup");
+        },
+      };
+      const ws = await provisionWorkspaceForUser(
+        { controlPlane: failing, turso: port },
+        "ana@example.com",
+      );
+
+      // The provision itself survived (workspace + grant written)…
+      const user = await cp.findOrCreateUser("ana@example.com");
+      expect(await cp.readGrant(user.id, ws.id)).not.toBeNull();
+      expect(warn).toHaveBeenCalledOnce();
+      // …and the workspace simply reads as free (no entitlement row) — the
+      // admin's manual grant is the recovery palanca.
+      expect(await cp.readWorkspaceEntitlement(ws.id)).toBeNull();
+    } finally {
+      warn.mockRestore();
       cp.close();
     }
   });

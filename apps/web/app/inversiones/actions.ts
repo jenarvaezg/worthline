@@ -6,6 +6,7 @@ import {
   testArgFromActionArgs,
   testStoreFromActionArgs,
 } from "@web/action-store";
+import { markFirstHoldingBestEffort } from "@web/activation-marks";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import {
   type ExposureCatalogStubCandidate,
@@ -340,6 +341,8 @@ export async function confirmStatementAction(
     // catalog row so it surfaces in /admin/catalogo. Best-effort (#1097).
     afterCommit: async ({ value }) => {
       await ensureExposureCatalogStubs([value!.catalog]);
+      // A statement merge can be the workspace's first holding write (#1131).
+      await markFirstHoldingBestEffort();
     },
     datedFact: false,
     guardUrl: () => returnUrl,

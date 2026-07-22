@@ -1,5 +1,6 @@
 "use server";
 
+import { markOnboardedBestEffort } from "@web/activation-marks";
 import { formAction } from "@web/form-action";
 import {
   errorRedirectUrl,
@@ -45,6 +46,8 @@ export async function initSoloAction(
           sameSite: "lax",
         });
       }
+      // The workspace completed /empezar — stamp the set-once mark (#1131).
+      await markOnboardedBestEffort();
     },
     // parse builds the full redirect URL on failure; run never returns { ok: false }.
     onError: () => "/empezar",
@@ -80,6 +83,10 @@ export async function initHogarAction(
       // Leave the scope cookie unset — the wizard falls back to the first scope.
       await store.workspace.initializeWorkspace(parsed);
       return { ok: true };
+    },
+    // The workspace completed /empezar — stamp the set-once mark (#1131).
+    afterCommit: async () => {
+      await markOnboardedBestEffort();
     },
     // parse builds the full redirect URL on failure; run never returns { ok: false }.
     onError: () => "/empezar",
