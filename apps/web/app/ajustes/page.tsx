@@ -1,9 +1,17 @@
 import { isDemoMode } from "@web/demo/write-guard";
+import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
+import {
+  PAYWALL_CONNECT_SOURCE_MESSAGE,
+  PAYWALL_SOURCES_PAUSED_MESSAGE,
+} from "@web/entitlements/paywall-copy";
+import { PremiumNotice } from "@web/entitlements/premium-notice";
+import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
+import { readStoreTarget } from "@web/read-store-target";
 import Shell from "@web/shell";
 import {
   formatMoneyMinorPrivacy,
@@ -49,6 +57,13 @@ export default async function AjustesPage({
   const sources = await store.connectedSources.listSources();
   const allAssets = await store.assets.readAssets();
   const overrides = await store.readWarningOverrides();
+
+  // Connected sources are premium ingestion (#1162): a free workspace keeps its
+  // already-imported data, but sees an honest paused/connect reminder instead of
+  // syncing. Reads and manual tracking on this page stay free.
+  const sourcesGated = !isPremiumIngestionAllowed(
+    await readEffectivePlan(await readStoreTarget()),
+  );
 
   // The connected Numista source (PRD #160), if any. The derived holding's value
   // and coin count come from the asset row + its positions.
@@ -579,6 +594,17 @@ export default async function AjustesPage({
             <h2>Fuentes conectadas</h2>
             <span>Numista y Binance</span>
           </div>
+
+          {sourcesGated ? (
+            <PremiumNotice
+              cta={false}
+              message={
+                sources.length > 0
+                  ? PAYWALL_SOURCES_PAUSED_MESSAGE
+                  : PAYWALL_CONNECT_SOURCE_MESSAGE
+              }
+            />
+          ) : null}
 
           {formError?.formId === "numista" ? (
             <p className="formError" role="alert">

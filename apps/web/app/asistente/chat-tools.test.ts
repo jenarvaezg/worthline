@@ -694,6 +694,62 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
 });
 
 /** Minimal execution options the AI SDK passes to execute — unused by our tools. */
+describe("createChatTools · premium ingestion gate (#1162)", () => {
+  const GATED_TOOLS = [
+    "propose_statement_import",
+    "propose_reconstruction",
+    "propose_mixed_document_import",
+    "propose_reconcile",
+  ];
+
+  it("refuses each document-ingestion tool for a free workspace, honestly", async () => {
+    const store = await seededStore();
+    const tools = createChatTools({
+      runWithStore: (run) => run({ agentView: store.agentView }),
+      asOf: AS_OF,
+      ingestionAllowed: false,
+    });
+
+    for (const name of GATED_TOOLS) {
+      const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
+        error?: string;
+        message?: string;
+      };
+      expect(result?.error, name).toBe("premium_required");
+      expect((result?.message ?? "").length, name).toBeGreaterThan(0);
+    }
+  });
+
+  it("leaves reads and manual tracking open for a free workspace", async () => {
+    const store = await seededStore();
+    const tools = createChatTools({
+      runWithStore: (run) => run({ agentView: store.agentView }),
+      asOf: AS_OF,
+      ingestionAllowed: false,
+    });
+
+    const read = (await tools["get_financial_context"]?.execute?.(
+      {},
+      toolCallContext(),
+    )) as { error?: string };
+    expect(read?.error).not.toBe("premium_required");
+  });
+
+  it("allows the ingestion tools when premium (the default)", async () => {
+    const store = await seededStore();
+    const tools = toolsOver(store.agentView);
+
+    for (const name of GATED_TOOLS) {
+      const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
+        error?: string;
+      };
+      // Past the gate: the persistence-unavailable fixture error is fine — what
+      // matters is that it is NOT the premium wall.
+      expect(result?.error, name).not.toBe("premium_required");
+    }
+  });
+});
+
 function toolCallContext(): never {
   return { toolCallId: "call-1", messages: [] } as unknown as never;
 }

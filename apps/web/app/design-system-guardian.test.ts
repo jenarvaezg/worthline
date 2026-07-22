@@ -263,6 +263,13 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "border-bottom": "1px solid var(--line)",
       color: "var(--ink)",
     });
+    // The honest paywall (#1162) is an aviso opened by a gold left rule — same
+    // semantics as .debitCol/.sessionBand[warning], never a card. Pinned so the
+    // aviso vocabulary cannot silently drift into a shadowed/pilled panel.
+    expectRecipe(".premiumNotice", {
+      "border-left": "2px solid var(--gold)",
+      "border-radius": "var(--radius-sm)",
+    });
   });
 
   test("every consumed custom property resolves to a real definition (#913)", () => {

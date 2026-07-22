@@ -69,6 +69,16 @@ export interface RunDailyCaptureDeps {
     store: WorthlineStore,
     now: string,
   ) => Promise<{ errors: string[] }>;
+  /**
+   * Whether this workspace's connected sources may sync on this pass (PRD #1160
+   * S2, #1162). A workspace whose premium has lapsed keeps every figure already
+   * ingested, but its sources are PAUSED: the sync phase is skipped so no fresh
+   * ingestion happens, while the snapshot still captures last-known values (the
+   * manual-valuation path below is always free). Omitted → every workspace syncs
+   * (tests and any deploy without entitlements). The snapshot NEVER pauses; only
+   * the connected-source sync does.
+   */
+  shouldSyncConnectedSources?: (workspace: DailyCaptureWorkspace) => Promise<boolean>;
   /** Catalog series fetched into the shared control-plane benchmark cache. */
   listBenchmarkSeries?: () => Promise<DailyCaptureBenchmarkSeries[]>;
   /** Existing cached rows for one benchmark series. */
@@ -191,16 +201,37 @@ export async function runDailyCapture(
       // count as a workspace failure — the snapshot still freezes last-known
       // values (never zeroed). Per-source isolation lives inside the sync.
       if (deps.syncConnectedSources) {
-        try {
-          const { errors } = await deps.syncConnectedSources(plan.store, deps.now);
-          for (const error of errors) {
-            sourceSyncFailures.push({ workspaceId: plan.workspace.id, error });
+        // Premium gate (#1162): a lapsed-to-free workspace's sources are paused —
+        // skip the sync so nothing fresh is ingested, but the snapshot below still
+        // freezes last-known values. The gate reads the control plane, so its own
+        // failure is contained HERE and NEVER escapes to the outer capture guard:
+        // an entitlement-read hiccup skips this pass's sync (fail-closed on
+        // ingestion) and is recorded as a source-sync degradation — the free
+        // snapshot must still be captured, exactly like a sync-phase crash.
+        let maySync = true;
+        if (deps.shouldSyncConnectedSources) {
+          try {
+            maySync = await deps.shouldSyncConnectedSources(plan.workspace);
+          } catch (error) {
+            maySync = false;
+            sourceSyncFailures.push({
+              workspaceId: plan.workspace.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
-        } catch (error) {
-          sourceSyncFailures.push({
-            workspaceId: plan.workspace.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        }
+        if (maySync) {
+          try {
+            const { errors } = await deps.syncConnectedSources(plan.store, deps.now);
+            for (const error of errors) {
+              sourceSyncFailures.push({ workspaceId: plan.workspace.id, error });
+            }
+          } catch (error) {
+            sourceSyncFailures.push({
+              workspaceId: plan.workspace.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
       }
 

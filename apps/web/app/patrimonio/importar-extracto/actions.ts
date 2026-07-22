@@ -26,6 +26,8 @@ import {
 } from "@web/action-store";
 import { markFirstHoldingBestEffort } from "@web/activation-marks";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { ingestionBlockedMessage } from "@web/entitlements/ingestion-guard";
+import { PAYWALL_STATEMENT_MESSAGE } from "@web/entitlements/paywall-copy";
 import { formAction } from "@web/form-action";
 import {
   createStableId,
@@ -147,6 +149,14 @@ export async function previewImportStatementAction(
   const _resolver =
     testArgFromActionArgs(_testArgs, isIsinSymbolResolver) ?? defaultIsinSymbolResolver;
   await guardDemoWrite(currentUrlOf(formData));
+
+  // Importing a broker statement is premium ingestion (#1162): manual entry
+  // stays free, but the machine only reads a statement for premium.
+  const paywall = await ingestionBlockedMessage(PAYWALL_STATEMENT_MESSAGE);
+  if (paywall) {
+    return { message: paywall, status: "error" };
+  }
+
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
     return { message: read.message, status: "error" };
@@ -261,6 +271,13 @@ export async function confirmImportStatementAction(
       await markFirstHoldingBestEffort();
     },
     run: async (store, { formData, today }) => {
+      // Premium ingestion gate (#1162), re-checked at confirm — never trust the
+      // preview to have gated. Manual tracking stays free.
+      const paywall = await ingestionBlockedMessage(PAYWALL_STATEMENT_MESSAGE);
+      if (paywall) {
+        return { ok: false, error: paywall };
+      }
+
       const read = await readStatementFromForm(formData);
       if (!read.ok) {
         return { ok: false, error: read.message };

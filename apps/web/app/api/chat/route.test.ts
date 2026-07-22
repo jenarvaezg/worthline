@@ -17,6 +17,7 @@ import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
+import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   readProviderCooldowns,
@@ -31,6 +32,7 @@ import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { deriveScreenContext } from "@web/asistente/screen-context";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
+import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { simulateReadableStream } from "ai";
@@ -49,6 +51,10 @@ vi.mock("@web/asistente/provider-cooldown-store", () => ({
   recordProviderCooldown: vi.fn(),
 }));
 vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() }));
+vi.mock("@web/entitlements/read-effective-plan", () => ({ readEffectivePlan: vi.fn() }));
+vi.mock("@web/asistente/courtesy-quota-store", () => ({
+  countAssistantCourtesyUse: vi.fn(),
+}));
 vi.mock("@web/asistente/maintainer-alert-store", () => ({
   raiseMaintainerAlert: vi.fn(),
 }));
@@ -354,6 +360,10 @@ beforeEach(() => {
     now: AS_OF,
   });
   vi.mocked(countChatRequest).mockResolvedValue(1);
+  // Entitlements are not what these tests exercise: default to premium so
+  // ingestion tools and attachments are available; the gate has its own tests.
+  vi.mocked(readEffectivePlan).mockResolvedValue("premium");
+  vi.mocked(countAssistantCourtesyUse).mockResolvedValue(1);
   vi.mocked(readProviderCooldowns).mockResolvedValue({
     mode: "hosted",
     deploymentKey: "preview-959",
@@ -1144,5 +1154,56 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("propose_reconstruction");
     // The tool output — a superficie C proposal in "reconstruir" mode.
     expect(streamed).toContain("reconstruir");
+  });
+});
+
+describe("POST /api/chat · premium ingestion gate + courtesy quota (#1162)", () => {
+  const freeWorkspace = () =>
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-free",
+      dbUrl: "libsql://wl-free.turso.io",
+      token: "token-free",
+    });
+
+  it("streams an honest paywall instead of reading an attachment for a free workspace", async () => {
+    freeWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("free");
+
+    const response = await POST(attachmentRequest("ISIN,valor\nX,1"));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    // The paywall part carries the honest attachment reminder…
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("adjuntos son premium");
+    // …and the extractor was never invoked (no ingestion happened).
+    expect(vi.mocked(extractPositionsFromImage)).not.toHaveBeenCalled();
+  });
+
+  it("streams the courtesy paywall once the free monthly quota is exhausted", async () => {
+    freeWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("free");
+    vi.mocked(countAssistantCourtesyUse).mockResolvedValue(11);
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("cortesía");
+  });
+
+  it("answers normally for a free workspace still within its courtesy quota", async () => {
+    freeWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("free");
+    vi.mocked(countAssistantCourtesyUse).mockResolvedValue(3);
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).not.toContain("data-paywall");
+    expect(streamed).toContain("patrimonio neto");
   });
 });

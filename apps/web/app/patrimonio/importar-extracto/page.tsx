@@ -1,6 +1,11 @@
 import { isDemoMode } from "@web/demo/write-guard";
+import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
+import { PAYWALL_STATEMENT_MESSAGE } from "@web/entitlements/paywall-copy";
+import { PremiumNotice } from "@web/entitlements/premium-notice";
+import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
+import { readStoreTarget } from "@web/read-store-target";
 import Shell from "@web/shell";
 import { confirmImportStatementAction, previewImportStatementAction } from "./actions";
 import { ImportStatementPreview } from "./import-statement-preview";
@@ -30,6 +35,12 @@ export default async function ImportarExtractoPage({
     searchParams: resolvedSearchParams,
   });
 
+  // Statement import is premium ingestion (#1162): a free workspace sees an
+  // honest reminder — reading stays open, and manual entry is always free.
+  const importGated = !isPremiumIngestionAllowed(
+    await readEffectivePlan(await readStoreTarget()),
+  );
+
   return (
     <Shell
       activeSection="patrimonio"
@@ -56,6 +67,8 @@ export default async function ImportarExtractoPage({
           Un extracto con cualquier mezcla de ISINs reconstruye tu cartera de una vez
         </span>
       </section>
+
+      {importGated ? <PremiumNotice message={PAYWALL_STATEMENT_MESSAGE} /> : null}
 
       <ImportStatementPreview
         confirmAction={confirmImportStatementAction}

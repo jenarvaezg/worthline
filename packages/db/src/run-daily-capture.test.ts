@@ -459,6 +459,70 @@ describe("runDailyCapture — connected-source sync phase (#895)", () => {
     b.close();
   });
 
+  test("pauses connected-source sync for a workspace the gate denies, still capturing its snapshot (#1162)", async () => {
+    const free = await seededStore();
+    const premium = await seededStore();
+    const syncConnectedSources = vi.fn(async () => ({ errors: [] }));
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [
+        { id: "wsFree", dbUrl: "libsql://free" },
+        { id: "wsPremium", dbUrl: "libsql://premium" },
+      ],
+      openStore: async (ws) => keepOpen(ws.id === "wsFree" ? free : premium),
+      fetchPrices: noFetchedPrices,
+      syncConnectedSources,
+      // Free workspace's sources are paused; premium's still sync.
+      shouldSyncConnectedSources: async (ws) => ws.id !== "wsFree",
+      now: NOW,
+    });
+
+    // The paused workspace never syncs, the premium one does — exactly once.
+    expect(syncConnectedSources).toHaveBeenCalledTimes(1);
+    // Both snapshots are still captured: the pause never blocks valuation.
+    expect(result.captured).toBe(2);
+    expect(result.sourceSyncFailures).toEqual([]);
+    expect(await free.snapshots.readSnapshots("household")).toHaveLength(1);
+    expect(await premium.snapshots.readSnapshots("household")).toHaveLength(1);
+
+    free.close();
+    premium.close();
+  });
+
+  test("a gate read that throws never blocks the free snapshot — pause is fail-closed, capture still runs (#1162)", async () => {
+    const store = await seededStore();
+    const finalized = new Set<string>();
+    const syncConnectedSources = vi.fn(async () => ({ errors: [] }));
+
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      syncConnectedSources,
+      shouldSyncConnectedSources: async () => {
+        throw new Error("control plane unreachable");
+      },
+      isRunFinalized: async (runKey) => finalized.has(runKey),
+      markRunFinalized: async (runKey) => {
+        finalized.add(runKey);
+      },
+      now: NOW,
+    });
+
+    // The gate failure paused the sync (never called) but is only a degradation…
+    expect(syncConnectedSources).not.toHaveBeenCalled();
+    expect(result.failures).toEqual([]);
+    expect(result.sourceSyncFailures).toEqual([
+      { workspaceId: "ws", error: "control plane unreachable" },
+    ]);
+    // …so the free snapshot was still captured and the pass still finalized.
+    expect(result.captured).toBe(1);
+    expect(await store.snapshots.readSnapshots("household")).toHaveLength(1);
+    expect(finalized.has(`${TODAY}:pm`)).toBe(true);
+
+    store.close();
+  });
+
   test("morning and evening passes finalize independently — the evening close overwrites the morning point", async () => {
     const store = await seededStore();
     const finalized = new Set<string>();

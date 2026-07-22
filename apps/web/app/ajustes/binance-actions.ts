@@ -2,6 +2,11 @@
 
 import { runActionWithStore, testStoreFromActionArgs } from "@web/action-store";
 import { guardDemoWrite } from "@web/demo/write-guard";
+import { ingestionBlockedMessage } from "@web/entitlements/ingestion-guard";
+import {
+  PAYWALL_CONNECT_SOURCE_MESSAGE,
+  PAYWALL_SOURCES_PAUSED_MESSAGE,
+} from "@web/entitlements/paywall-copy";
 import { formAction } from "@web/form-action";
 import { appendParam, errorRedirectUrl, parseEntityId } from "@web/intake";
 import {
@@ -64,6 +69,13 @@ export const connectBinanceAction = formAction({
     return { ok: true, value: creds };
   },
   run: async (store, { parsed }) => {
+    // Connecting a data source is premium ingestion (#1162): a free workspace
+    // keeps everything it typed, but the machine only syncs for premium.
+    const paywall = await ingestionBlockedMessage(PAYWALL_CONNECT_SOURCE_MESSAGE);
+    if (paywall) {
+      return { ok: false, error: paywall };
+    }
+
     const scoped = await scopeMemberId();
     const workspace = await store.workspace.readWorkspace();
 
@@ -125,6 +137,14 @@ export async function syncBinanceAction(
   const _store = testStoreFromActionArgs(_testArgs);
   const returnUrl = currentUrlOf(formData);
   await guardDemoWrite(returnUrl);
+
+  // A lapsed-to-free workspace keeps its imported data but its sources are
+  // paused (#1162): a manual sync is refused with the same honest notice.
+  const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
+  if (paywall) {
+    redirect(errorRedirectUrl(returnUrl, { message: paywall }));
+  }
+
   const sourceId = parseEntityId(formData, "sourceId");
 
   if (!sourceId) {

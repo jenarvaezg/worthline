@@ -14,6 +14,11 @@ import {
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
+import {
+  courtesyMonthWindow,
+  isCourtesyQuotaExhausted,
+} from "@web/asistente/courtesy-quota";
+import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   deriveProviderCooldownUntil,
@@ -35,6 +40,12 @@ import {
   type ScreenContext,
 } from "@web/asistente/screen-context";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
+import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
+import {
+  PAYWALL_ATTACHMENT_MESSAGE,
+  PAYWALL_COURTESY_MESSAGE,
+} from "@web/entitlements/paywall-copy";
+import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
 import {
@@ -193,6 +204,23 @@ function jsonError(error: string, status: number): NextResponse {
   return NextResponse.json({ error }, { status, headers: NO_STORE });
 }
 
+/**
+ * Stream the honest paywall (#1162) instead of an error: a `data-paywall` part
+ * the assistant panel renders as a premium reminder. A 200 stream, not a 4xx,
+ * so it reads as a normal assistant turn — never a scary failure, never a wall
+ * in front of the user's own data.
+ */
+function paywallResponse(message: string): Response {
+  return createUIMessageStreamResponse({
+    headers: NO_STORE,
+    stream: createUIMessageStream({
+      execute: ({ writer }) => {
+        writer.write({ type: "data-paywall", data: { message } });
+      },
+    }),
+  });
+}
+
 function operationalCause(error: unknown): { name: string; message: string } {
   return error instanceof Error
     ? { name: error.name, message: error.message }
@@ -240,6 +268,33 @@ export async function POST(request: Request): Promise<Response> {
 
   if (body.screenContext && !isAssistantSurface(body.screenContext.route)) {
     return jsonError("invalid_surface", 403);
+  }
+
+  // Premium ingestion gate + free courtesy quota (PRD #1160 S2, #1162). The plan
+  // is derived server-side from the control plane (S1); demo/local bypass to
+  // premium. Reads and manual tracking never pass through here — only the
+  // machine reading documents for you, and the free monthly courtesy turns.
+  const nowIso = new Date().toISOString();
+  const effectivePlan = await readEffectivePlan(target, nowIso);
+  const ingestionAllowed = isPremiumIngestionAllowed(effectivePlan);
+
+  // A free workspace cannot have the machine read a document for it — but every
+  // figure it typed stays free. Honest reminder, no courtesy turn charged.
+  if (attachment && !ingestionAllowed) {
+    return paywallResponse(PAYWALL_ATTACHMENT_MESSAGE);
+  }
+
+  // The free plan's monthly courtesy quota over the shared assistant (ADR 0051
+  // mechanism). Only authenticated free turns that reach the model count;
+  // trial/premium answer to the token budget (S3), demo/local bypass entirely.
+  if (target.kind === "authenticated" && effectivePlan === "free") {
+    const used = await countAssistantCourtesyUse(
+      `ws:${target.workspaceId}`,
+      courtesyMonthWindow(nowIso),
+    );
+    if (isCourtesyQuotaExhausted(used)) {
+      return paywallResponse(PAYWALL_COURTESY_MESSAGE);
+    }
   }
 
   let currentPreview: AttachmentPreviewData | null = null;
@@ -329,6 +384,7 @@ export async function POST(request: Request): Promise<Response> {
   // when authenticated; otherwise the tool reports the alert as unavailable.
   const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
   const tools = createChatTools({
+    ingestionAllowed,
     runWithStore: (run) =>
       withStore(
         (store) =>
