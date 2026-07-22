@@ -1,10 +1,14 @@
 import Big from "big.js";
 
 import type { DecimalString } from "./decimal";
+import {
+  type GlobalExposureProfileIdentity,
+  type RawGlobalExposureProfileIdentityInput,
+  resolveGlobalExposureProfileIdentity,
+} from "./exposure-identity";
 import type { ExposureGeographyBucket, ExposureSectorBucket } from "./exposure-taxonomy";
 import { EXPOSURE_GEOGRAPHY_BUCKETS, EXPOSURE_SECTOR_BUCKETS } from "./exposure-taxonomy";
 import type { CurrencyCode } from "./money";
-import type { InvestmentPriceProvider } from "./prices";
 
 /** Geography buckets allowed in the global catalog — same closed set as workspace v1. */
 export type GlobalExposureGeographyBucket = ExposureGeographyBucket;
@@ -34,14 +38,6 @@ export const GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS = [
   "crypto",
 ] as const satisfies readonly GlobalExposureAssetClassBucket[];
 
-export type GlobalExposureProfileIdentity =
-  | { kind: "isin"; isin: string }
-  | {
-      kind: "provider";
-      priceProvider: InvestmentPriceProvider;
-      providerSymbol: string;
-    };
-
 export interface GlobalExposureProfileBreakdowns {
   geography?: Partial<Record<GlobalExposureGeographyBucket, DecimalString>>;
   currency?: Record<string, DecimalString>;
@@ -61,12 +57,6 @@ export interface GlobalExposureProfile {
   updatedAt: string;
 }
 
-export interface RawGlobalExposureProfileIdentityInput {
-  isin?: string | null;
-  priceProvider?: string | null;
-  providerSymbol?: string | null;
-}
-
 export interface GlobalExposureProfileContentInput {
   displayName?: string | null;
   breakdowns?: GlobalExposureProfileBreakdowns;
@@ -83,82 +73,10 @@ export interface CreateGlobalExposureProfileInput
 export interface UpdateGlobalExposureProfileInput
   extends GlobalExposureProfileContentInput {}
 
-const ISIN_PATTERN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 const ISO_4217_PATTERN = /^[A-Z]{3}$/;
-const INVESTMENT_PRICE_PROVIDERS = new Set<InvestmentPriceProvider>([
-  "yahoo",
-  "stooq",
-  "finect",
-  "coingecko",
-]);
 const GEOGRAPHY_BUCKETS = new Set<string>(EXPOSURE_GEOGRAPHY_BUCKETS);
 const ASSET_CLASS_BUCKETS = new Set<string>(GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS);
 const SECTOR_BUCKETS = new Set<string>(EXPOSURE_SECTOR_BUCKETS);
-
-export function globalExposureProfileIdentityKey(
-  identity: GlobalExposureProfileIdentity,
-): string {
-  return identity.kind === "isin"
-    ? identity.isin
-    : `p:${identity.priceProvider}:${identity.providerSymbol}`;
-}
-
-export function isValidIsin(value: string): boolean {
-  if (!ISIN_PATTERN.test(value)) {
-    return false;
-  }
-
-  const expanded = [...value]
-    .map((character) => {
-      if (character >= "0" && character <= "9") {
-        return character;
-      }
-      return String(character.charCodeAt(0) - 55);
-    })
-    .join("");
-
-  let sum = 0;
-  let alternate = false;
-  for (let index = expanded.length - 1; index >= 0; index -= 1) {
-    let digit = Number(expanded[index]);
-    if (alternate) {
-      digit *= 2;
-      if (digit > 9) {
-        digit -= 9;
-      }
-    }
-    sum += digit;
-    alternate = !alternate;
-  }
-
-  return sum % 10 === 0;
-}
-
-export function resolveGlobalExposureProfileIdentity(
-  input: RawGlobalExposureProfileIdentityInput,
-): GlobalExposureProfileIdentity {
-  const trimmedIsin = trimToNull(input.isin);
-  if (trimmedIsin) {
-    const normalized = trimmedIsin.toUpperCase();
-    if (isValidIsin(normalized)) {
-      return { isin: normalized, kind: "isin" };
-    }
-  }
-
-  const priceProvider = trimToNull(input.priceProvider);
-  const providerSymbol = trimPreserveCase(input.providerSymbol);
-  if (priceProvider && providerSymbol) {
-    return {
-      kind: "provider",
-      priceProvider: assertInvestmentPriceProvider(priceProvider),
-      providerSymbol,
-    };
-  }
-
-  throw new Error(
-    "Exposure profile identity requires a valid ISIN or priceProvider + providerSymbol.",
-  );
-}
 
 export function validateGlobalExposureProfileContent(
   input: GlobalExposureProfileContentInput,
@@ -352,15 +270,4 @@ function normalizeOptionalText(value: string | null | undefined): string | null 
 function trimToNull(value: string | null | undefined): string | null {
   const trimmed = (value ?? "").trim();
   return trimmed ? trimmed : null;
-}
-
-function trimPreserveCase(value: string | null | undefined): string | null {
-  return trimToNull(value);
-}
-
-function assertInvestmentPriceProvider(value: string): InvestmentPriceProvider {
-  if (!INVESTMENT_PRICE_PROVIDERS.has(value as InvestmentPriceProvider)) {
-    throw new Error(`Unknown price provider "${value}".`);
-  }
-  return value as InvestmentPriceProvider;
 }
