@@ -405,8 +405,11 @@ export {
 } from "./exposure-taxonomy";
 export type {
   FireContext,
+  FireExcludedAsset,
+  FireExclusionReason,
   FireResult,
   FireScopeConfig,
+  ProjectFireFromContextInput,
   ScopeFireResult,
 } from "./fire";
 export {
@@ -417,24 +420,27 @@ export {
   projectFireFromContext,
   withRate,
 } from "./fire";
+export type {
+  AssembleFireEligiblePoolInput,
+  FireEligiblePool,
+} from "./fire-eligible-pool";
+export { assembleFireEligiblePool } from "./fire-eligible-pool";
 export type { FireLevel, FireLevelKey, FireLevelsInput } from "./fire-levels";
 export { fireLevels } from "./fire-levels";
-export type {
-  FireGrowthAssumption,
-  FirePlanProjectionInput,
-} from "./fire-plan-projection";
-export {
-  contributionMoneyByProjectionYear,
-  projectFireWithContributionPlan,
-} from "./fire-plan-projection";
+export type { FireGrowthAssumption } from "./fire-plan-projection";
+// `projectFireWithContributionPlan` (the contribution-plan engine) is an internal
+// dispatch target of `projectFireFromContext` (#1122); only the shared
+// contribution-stream seam is public.
+export { contributionMoneyByProjectionYear } from "./fire-plan-projection";
 export type {
   FireProjection,
-  FireProjectionInput,
   FireScenario,
   FireScenarioLabel,
   FireTrajectoryPoint,
 } from "./fire-projection";
-export { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
+// `projectFire` (the scalar engine) is intentionally internal (#1122): callers
+// project through `projectFireFromContext`, the single door.
+export { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 export type { EligibleTier } from "./fire-return";
 export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 export type {

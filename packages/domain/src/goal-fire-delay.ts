@@ -3,7 +3,8 @@
  *
  * Answers: "how many months does THIS goal delay my FIRE date?"
  *
- * Approach: run `projectFire` twice on the BASE scenario —
+ * Approach: project twice on the BASE scenario, through the single projection
+ * door (`projectFireFromContext`, #1122) —
  *   WITHOUT: startingEligible = eligibleGross − otherReservations
  *   WITH:    startingEligible = eligibleGross − otherReservations − thisGoalReservation
  * Interpolate the fractional year of the threshold crossing in each run, then
@@ -26,8 +27,8 @@
 import type { ContributionPlan } from "./contribution-plan";
 import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireContext } from "./fire";
-import { fireReservationHorizon } from "./fire";
-import { DEFAULT_MAX_YEARS, fractionalFireYear, projectFire } from "./fire-projection";
+import { fireReservationHorizon, projectFireFromContext } from "./fire";
+import { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 import type { Goal } from "./goals";
 
 export type GoalFireDelay = { kind: "delays"; months: number } | { kind: "no_effect" };
@@ -59,7 +60,7 @@ export interface GoalFireDelayInput {
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
   const { context, goal, otherReservationsMinor, thisGoalReservationMinor, now } = input;
-  const { config, realReturnUsed, eligibleGrossMinor } = context;
+  const { config, eligibleGrossMinor, fireNumberMinor } = context;
 
   // ── Unified horizon: same source of truth as countsTowardFire / totalGoalReservationMinor
   const horizon = fireReservationHorizon(config, now);
@@ -85,37 +86,28 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
   }
 
   // ── Project twice on the base scenario ───────────────────────────────────
-  const fireNumberMinor = Math.round(
-    (config.monthlySpendingMinor * 12) / config.safeWithdrawalRate,
-  );
   const monthlyContribution = resolveMonthlySavingsCapacityForFire(
     input.contributionPlan,
     config,
     now,
     input.unitPriceMajorByHoldingId,
   ).capacityMinor;
-  // #1026: the rate rides in the context (fireResult.context.realReturnUsed), so
-  // this projection is coherent with coast + the main projection chart by type.
-  const rateToUse = realReturnUsed;
-  const projInput = {
-    monthlyContributionMinor: monthlyContribution,
-    expectedRealReturn: rateToUse,
-    fireNumberMinor,
-    ...(config.currentAge !== undefined ? { currentAge: config.currentAge } : {}),
-  };
 
   // WITHOUT this goal: gross − other reservations
   const startingWithout = Math.max(0, eligibleGrossMinor - otherReservationsMinor);
   // WITH this goal: gross − other reservations − this goal's in-horizon reservation
   const startingWith = Math.max(0, startingWithout - thisGoalReservationMinor);
 
-  const baseWithout = projectFire({
-    ...projInput,
+  // #1026/#1122: rate, FIRE number and age all ride in the context and the
+  // projection runs through the single door, so this delta stays coherent with
+  // coast + the main projection chart by construction.
+  const baseWithout = projectFireFromContext(context, {
+    monthlyContributionMinor: monthlyContribution,
     startingEligibleMinor: startingWithout,
   }).scenarios.find((s) => s.label === "base")!;
 
-  const baseWith = projectFire({
-    ...projInput,
+  const baseWith = projectFireFromContext(context, {
+    monthlyContributionMinor: monthlyContribution,
     startingEligibleMinor: startingWith,
   }).scenarios.find((s) => s.label === "base")!;
 

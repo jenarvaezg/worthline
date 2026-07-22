@@ -16,8 +16,8 @@
 import type { ContributionPlan } from "./contribution-plan";
 import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireContext } from "./fire";
-import { calculateFire } from "./fire";
-import { fractionalFireYear, projectFire } from "./fire-projection";
+import { calculateFire, projectFireFromContext } from "./fire";
+import { fractionalFireYear } from "./fire-projection";
 
 export type FireLevelKey = "coast" | "lean" | "barista" | "regular" | "fat";
 
@@ -82,18 +82,16 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
   const fireResult = calculateFire(config, eligibleMinor, currency, expectedRealReturn);
   const coastAmountMinor = fireResult.coastFireRequired?.amountMinor ?? null;
 
-  // Single projection run with fireNumberMinor = fatAmount so the trajectory is
-  // tall enough to cross every level. All four levels interpolate on this trajectory.
   const monthlyContribution = resolveMonthlySavingsCapacityForFire(
     input.contributionPlan,
     config,
     input.today ?? new Date().toISOString().slice(0, 10),
     input.unitPriceMajorByHoldingId,
   ).capacityMinor;
-  const projection = projectFire({
-    startingEligibleMinor: eligibleMinor,
+  const projection = projectFireFromContext(context, {
     monthlyContributionMinor: monthlyContribution,
-    expectedRealReturn,
+    // Project to Fat so the single trajectory is tall enough to cross every
+    // level; all four levels interpolate on it (rate/age ride in the context).
     fireNumberMinor: fatAmount,
   });
   const base = projection.scenarios.find((s) => s.label === "base")!;

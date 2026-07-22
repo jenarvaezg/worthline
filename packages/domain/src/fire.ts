@@ -1,13 +1,16 @@
-import { tierOfAsset } from "./classification";
+import type { ContributionPlan } from "./contribution-plan";
+import { assembleFireEligiblePool, type FireExcludedAsset } from "./fire-eligible-pool";
+import type { FireGrowthAssumption } from "./fire-plan-projection";
+import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import { effectiveRealReturn } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
-import { resolveScopeMemberIds } from "./scope";
-import { allocateScopedHolding } from "./scope-allocation";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
+
+export type { FireExcludedAsset, FireExclusionReason } from "./fire-eligible-pool";
 
 export interface FireScopeConfig {
   monthlySpendingMinor: number;
@@ -51,18 +54,6 @@ export interface FireScopeConfig {
    * 0 / undefined → no Barista level shown.
    */
   baristaMonthlyIncomeMinor?: number;
-}
-
-/**
- * Why an asset is held out of the FIRE-eligible total. `primary_residence`
- * comes from the asset's own flag; `manual` comes from `config.excludedAssetIds`.
- */
-export type FireExclusionReason = "primary_residence" | "manual";
-
-export interface FireExcludedAsset {
-  id: string;
-  name: string;
-  reason: FireExclusionReason;
 }
 
 export interface FireResult {
@@ -137,27 +128,85 @@ export function withRate(context: FireContext, realReturnUsed: number): FireCont
 }
 
 /**
- * Run the FIRE projection straight from a `FireContext` (#1026): the rate, FIRE
- * number and reference age all come from the context, so the projection cannot
- * diverge from coast/levels. `startingEligibleMinor` defaults to the context's
- * net-eligible total; pass it only for what-if starting balances.
+ * The single projection door (#1122). Every FIRE trajectory — the dashboard
+ * chart, the level rail, the goal-delay probes and the contribution what-if —
+ * runs through here, so the rate, FIRE number and reference age always come from
+ * the `FireContext` (#1026) and can never diverge from coast/levels. The scalar
+ * engine (`projectFire`) and the contribution-plan engine
+ * (`projectFireWithContributionPlan`) are internal dispatch targets, not caller
+ * choices.
+ *
+ * Defaults come from the context: `startingEligibleMinor` → its net-eligible
+ * total, `fireNumberMinor` → its FIRE number, age → its config. Override
+ * `startingEligibleMinor` for a what-if starting balance, or `fireNumberMinor`
+ * to project a trajectory tall enough to cross a higher target (the level rail
+ * projects to Fat). Passing `plan` + `growthAssumption` switches to the
+ * contribution-plan what-if (ADR 0041); otherwise it is the scalar projection.
  */
+export interface ProjectFireFromContextInput {
+  /** Monthly contribution (minor units) for the scalar projection; ignored in plan mode. */
+  monthlyContributionMinor?: number;
+  /** Override the starting eligible balance; defaults to the context's net-eligible total. */
+  startingEligibleMinor?: number;
+  /** Override the FIRE target; defaults to the context's FIRE number. */
+  fireNumberMinor?: number;
+  maxYears?: number;
+  /**
+   * Contribution-plan what-if (ADR 0041). When set together with
+   * `growthAssumption`, the door dispatches to `projectFireWithContributionPlan`;
+   * `monthlyContributionMinor` is then unused (the plan stream drives contributions).
+   */
+  plan?: ContributionPlan;
+  growthAssumption?: FireGrowthAssumption;
+  /** Plan mode: per-bucket fallback annual return; defaults to the context rate. */
+  assumedAnnualReturn?: number;
+  /** Plan mode: pre-resolved annual returns per holding id (#547). */
+  holdingAnnualReturnById?: Record<string, number>;
+  /** Plan mode: optional split of today's eligible assets across holdings. */
+  startingEligibleByHoldingId?: Record<string, number>;
+  /** Plan mode: unit prices for pricing units-denominated contributions. */
+  unitPriceMajorByHoldingId?: Record<string, string>;
+  /** Plan mode: today (ISO YYYY-MM-DD). Required when `plan` is set. */
+  todayISO?: string;
+}
+
 export function projectFireFromContext(
   context: FireContext,
-  input: {
-    monthlyContributionMinor: number;
-    startingEligibleMinor?: number;
-    maxYears?: number;
-  },
+  input: ProjectFireFromContextInput,
 ): FireProjection {
+  const startingEligibleMinor = input.startingEligibleMinor ?? context.eligibleMinor;
+  const fireNumberMinor = input.fireNumberMinor ?? context.fireNumberMinor;
+  const currentAge = context.config.currentAge;
+
+  if (input.plan !== undefined && input.growthAssumption !== undefined) {
+    return projectFireWithContributionPlan({
+      startingEligibleMinor,
+      expectedRealReturn: context.realReturnUsed,
+      fireNumberMinor,
+      todayISO: input.todayISO ?? new Date().toISOString().slice(0, 10),
+      plan: input.plan,
+      growthAssumption: input.growthAssumption,
+      assumedAnnualReturn: input.assumedAnnualReturn ?? context.realReturnUsed,
+      ...(input.holdingAnnualReturnById === undefined
+        ? {}
+        : { holdingAnnualReturnById: input.holdingAnnualReturnById }),
+      ...(input.startingEligibleByHoldingId === undefined
+        ? {}
+        : { startingEligibleByHoldingId: input.startingEligibleByHoldingId }),
+      ...(input.unitPriceMajorByHoldingId === undefined
+        ? {}
+        : { unitPriceMajorByHoldingId: input.unitPriceMajorByHoldingId }),
+      ...(currentAge === undefined ? {} : { currentAge }),
+      ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+    });
+  }
+
   return projectFire({
-    startingEligibleMinor: input.startingEligibleMinor ?? context.eligibleMinor,
-    monthlyContributionMinor: input.monthlyContributionMinor,
+    startingEligibleMinor,
+    monthlyContributionMinor: input.monthlyContributionMinor ?? 0,
     expectedRealReturn: context.realReturnUsed,
-    fireNumberMinor: context.fireNumberMinor,
-    ...(context.config.currentAge === undefined
-      ? {}
-      : { currentAge: context.config.currentAge }),
+    fireNumberMinor,
+    ...(currentAge === undefined ? {} : { currentAge }),
     ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
   });
 }
@@ -256,64 +305,15 @@ export function calculateFireForScope(
    */
   reservedForGoalsMinor = 0,
 ): ScopeFireResult {
-  const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scopeId));
-  const excludedSet = new Set(config.excludedAssetIds ?? []);
-
-  let eligibleAssetsMinor = 0;
-  const excludedAssets: FireExcludedAsset[] = [];
-  const excludedAssetIds = new Set<string>();
-  // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
-  const eligibleByTierMinor: Partial<Record<string, number>> = {};
-
-  for (const asset of assets) {
-    const ownedMinor = allocateScopedHolding(asset.currentValue.amountMinor, {
-      ownership: asset.ownership,
-      scopeMemberIds,
-    }).ownedMinor;
-
-    const reason: FireExclusionReason | null = asset.isPrimaryResidence
-      ? "primary_residence"
-      : excludedSet.has(asset.id)
-        ? "manual"
-        : null;
-
-    if (reason === null) {
-      eligibleAssetsMinor += ownedMinor;
-      // Accumulate by tier for the weighted return calculation.
-      const tier = tierOfAsset(asset);
-      eligibleByTierMinor[tier] = (eligibleByTierMinor[tier] ?? 0) + ownedMinor;
-      continue;
-    }
-
-    excludedAssetIds.add(asset.id);
-    // Scope-relative: only surface what the scope actually holds. An excluded
-    // asset owned entirely outside this scope contributes nothing either way,
-    // so listing it would just be noise.
-    if (ownedMinor > 0) {
-      excludedAssets.push({ id: asset.id, name: asset.name, reason });
-    }
-  }
-
-  // Net the scope's debt against eligible capital: coast/FIRE measures what you
-  // could draw down, and a mortgage or loan is capital you don't own. A liability
-  // secured against an EXCLUDED asset (primary residence / manual) is dropped with
-  // that asset — netting it too would double-count the exclusion.
-  let scopedDebtMinor = 0;
-  for (const liability of liabilities) {
-    if (
-      liability.associatedAssetId &&
-      excludedAssetIds.has(liability.associatedAssetId)
-    ) {
-      continue;
-    }
-    scopedDebtMinor += allocateScopedHolding(liability.currentBalance.amountMinor, {
-      ownership: liability.ownership,
-      scopeMemberIds,
-    }).ownedMinor;
-  }
-  // ponytail: clamp at 0 — an underwater scope reads as 0 drawable capital, not
-  // negative coast math. Tier weights stay gross (debt only shifts the level).
-  const netEligibleMinor = Math.max(0, eligibleAssetsMinor - scopedDebtMinor);
+  // The risk-bearing pool assembly lives in its own tested module (#1122).
+  const pool = assembleFireEligiblePool({
+    config,
+    assets,
+    liabilities,
+    workspace,
+    scopeId,
+  });
+  const { excludedAssets, netEligibleMinor, eligibleByTierMinor } = pool;
 
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   const effective = effectiveRealReturn({
