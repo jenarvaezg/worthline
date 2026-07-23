@@ -1,6 +1,7 @@
 import { impersonateWorkspaceAction } from "@web/admin/actions";
 import {
   grantWorkspacePremiumAction,
+  resyncWorkspaceBillingAction,
   revokeWorkspacePremiumAction,
 } from "@web/admin/entitlement-actions";
 import { guardAdmin } from "@web/admin/guard-admin";
@@ -94,6 +95,15 @@ export default async function AdminPage({
             </span>
           </p>
         ) : null}
+        {entError === "resync" ? (
+          <p className="premiumNotice" role="alert">
+            <span className="premiumNoticeText">
+              No se pudo re-sincronizar: el workspace no tiene suscripción del MoR, el
+              adapter configurado no coincide con su proveedor, o el proveedor no conoce
+              esa suscripción.
+            </span>
+          </p>
+        ) : null}
         <table>
           <thead>
             <tr>
@@ -145,6 +155,14 @@ export default async function AdminPage({
                         <input name="workspaceId" type="hidden" value={row.workspaceId} />
                         <button className="btnSmall" type="submit">
                           Revocar
+                        </button>
+                      </form>
+                    ) : null}
+                    {row.subscriptionId ? (
+                      <form action={resyncWorkspaceBillingAction}>
+                        <input name="workspaceId" type="hidden" value={row.workspaceId} />
+                        <button className="btnSmall" type="submit">
+                          Re-sync MoR
                         </button>
                       </form>
                     ) : null}

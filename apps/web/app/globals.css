@@ -235,6 +235,25 @@
   flex: 0 0 auto;
 }
 
+/* Upgrade page (#1165): the tier links to the MoR's hosted checkout — plain
+   paper entries, no cards; the checkout itself shows the prices. */
+.premiumTierList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.premiumTierList li {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+}
+.premiumTierList .muted {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
 /* Monthly allocation view (#557): the plan's forward capital split, forecast only. */
 .contributionAllocationMonths {
   display: inline-flex;

@@ -32,6 +32,14 @@ export type {
   ReconcileDocumentMovement,
   StatementOperationFact,
 } from "./assistant-proposal-store";
+export {
+  applyBillingEvent,
+  type BillingEvent,
+  type BillingSubscriptionState,
+  billingStateFromSubscription,
+  PAYMENT_GRACE_DAYS,
+  type WorkspaceBillingState,
+} from "./billing";
 export type { SharedSnapshotInputs } from "./capture-daily-snapshot";
 export {
   buildSharedSnapshotInputs,
@@ -117,6 +125,7 @@ export {
   type StartTrialInput,
   type TenancyDirectory,
   type UpdateMaintainerAlertStatusInput,
+  type UpdateWorkspaceBillingInput,
   type UsageLimits,
   type WorkspaceDailyTokenUsage,
 } from "./control-plane";

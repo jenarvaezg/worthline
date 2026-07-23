@@ -6,8 +6,8 @@
  * front of the user's own data (#1127).
  */
 
-/** Where the reminder's call-to-action points. S5 (#1165) wires the real checkout here. */
-export const PREMIUM_CTA = { href: "/ajustes", label: "Gestionar premium" } as const;
+/** Where the reminder's call-to-action points: the upgrade page (#1165), which launches the MoR's hosted checkout. */
+export const PREMIUM_CTA = { href: "/premium", label: "Gestionar premium" } as const;
 
 /** A free workspace tried to upload a document / attachment to the assistant. */
 export const PAYWALL_ATTACHMENT_MESSAGE =

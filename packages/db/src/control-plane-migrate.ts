@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 4;
+export const CP_SCHEMA_VERSION = 5;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -160,5 +160,18 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );`);
     await writeControlPlaneSchemaVersion(client, 4);
+  }
+
+  if (version < 5) {
+    // Billing webhook idempotency (PRD #1160 S5, #1135): one row per delivered
+    // provider event id — an insert that loses means "already processed".
+    // Mirror control-plane.ts's SCHEMA.
+    await client.executeMultiple(`CREATE TABLE IF NOT EXISTS billing_webhook_events (
+      provider TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (provider, event_id)
+    );`);
+    await writeControlPlaneSchemaVersion(client, 5);
   }
 }
