@@ -350,6 +350,12 @@ export interface AiDailyTokenUsage {
   tokens: number;
 }
 
+/** One workspace's AI token total for a single UTC day — the /admin entitlements view (#1164). */
+export interface WorkspaceDailyTokenUsage {
+  workspaceId: string;
+  tokens: number;
+}
+
 /**
  * Serverless-shared usage limits: the chat and connected-source-sync rate
  * counters (ADR 0051), provider cooldowns, and the AI token meter + daily fuse
@@ -409,6 +415,13 @@ export interface UsageLimits {
    * only: no per-workspace rows, never any content.
    */
   readRecentGlobalAiTokenUsage(sinceDayKey: string): Promise<AiDailyTokenUsage[]>;
+  /**
+   * Per-workspace token totals for one UTC day — the /admin entitlements view
+   * (#1164). Workspace scope only (`ws:*`), never the global fuse; aggregate
+   * only, never any content (#1131). A workspace with no usage that day is
+   * simply absent.
+   */
+  listWorkspaceAiTokenUsage(dayKey: string): Promise<WorkspaceDailyTokenUsage[]>;
 }
 
 /** Global exposure-profile catalog (PRD #711 S1 / #940). */
@@ -498,6 +511,18 @@ export interface StartTrialInput {
   now?: string;
 }
 
+/** Input for the admin premium palanca (PRD #1160 S4, #1164). */
+export interface GrantPremiumInput {
+  workspaceId: string;
+  /**
+   * Until when the grant holds (ISO), or null for an INDEFINITE grant — the
+   * beta/comps/lifetime carril (#1133). `deriveEffectivePlan` honors the date
+   * regardless of the declared plan, so a dated grant lapses on its own with no
+   * expiry job; an indefinite one holds until an explicit revoke.
+   */
+  premiumUntil: string | null;
+}
+
 /**
  * Workspace entitlements (PRD #1160 S1, #1161): the stored `free|trial|premium`
  * row beside the grant, plus the set-once activation timestamps (#1131). The
@@ -528,6 +553,23 @@ export interface EntitlementDirectory {
   markWorkspaceOnboarded(workspaceId: string, at: string): Promise<void>;
   /** Record that the workspace holds its first holding (#1131). Set-once, like `markWorkspaceOnboarded`. */
   markWorkspaceFirstHolding(workspaceId: string, at: string): Promise<void>;
+  /** Every stored entitlement row — the /admin entitlements view (#1164). Order unspecified; callers join by workspace id. */
+  listWorkspaceEntitlements(): Promise<WorkspaceEntitlement[]>;
+  /**
+   * The admin premium palanca (PRD #1160 S4, #1164): declare a workspace
+   * `premium` with `premiumUntil` (a dated grant) or null (indefinite). Upsert —
+   * creates the row for a workspace that never had one, or overwrites the plan
+   * and window on an existing row, always preserving the set-once activation
+   * timestamps and the trial marker. Returns the resulting row.
+   */
+  grantWorkspacePremium(input: GrantPremiumInput): Promise<WorkspaceEntitlement>;
+  /**
+   * Revoke a premium grant (#1164): drop the workspace back to `free` and clear
+   * `premiumUntil`. A workspace with no row is already free, so this is a no-op
+   * there. The trial marker and activation timestamps are left untouched — this
+   * removes only the premium grant, never rewrites history.
+   */
+  revokeWorkspacePremium(workspaceId: string): Promise<void>;
 }
 
 /** Durable job queue (#887, PRD #999 S3). */
@@ -1235,6 +1277,40 @@ async function buildControlPlaneStore(
         args: [workspaceId, at],
       });
     },
+    async listWorkspaceEntitlements() {
+      const result = await client.execute("SELECT * FROM workspace_entitlements");
+      return result.rows.map((row) => toWorkspaceEntitlement(row));
+    },
+    async grantWorkspacePremium({ workspaceId, premiumUntil }) {
+      // Upsert onto plan='premium' with the (possibly null → indefinite) window,
+      // leaving the trial marker and set-once timestamps intact — a grant only
+      // asserts the premium state, it never rewrites activation history.
+      await client.execute({
+        sql: `INSERT INTO workspace_entitlements (workspace_id, plan, premium_until)
+              VALUES (?, 'premium', ?)
+              ON CONFLICT(workspace_id) DO UPDATE SET
+                plan = 'premium',
+                premium_until = excluded.premium_until,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [workspaceId, premiumUntil],
+      });
+      const created = await client.execute({
+        sql: "SELECT * FROM workspace_entitlements WHERE workspace_id = ?",
+        args: [workspaceId],
+      });
+      return toWorkspaceEntitlement(created.rows[0]!);
+    },
+    async revokeWorkspacePremium(workspaceId) {
+      // No INSERT: a workspace with no row is already free. Touch only the
+      // premium fields, so a live trial (its own column) and the activation
+      // timestamps survive the revoke.
+      await client.execute({
+        sql: `UPDATE workspace_entitlements
+              SET plan = 'free', premium_until = NULL, updated_at = CURRENT_TIMESTAMP
+              WHERE workspace_id = ?`,
+        args: [workspaceId],
+      });
+    },
     async hasDailyCaptureRun(dateKey) {
       const result = await client.execute({
         sql: "SELECT 1 FROM daily_capture_runs WHERE date_key = ? LIMIT 1",
@@ -1376,6 +1452,18 @@ async function buildControlPlaneStore(
       });
       return result.rows.map((row) => ({
         dayKey: String(row["day_key"]),
+        tokens: Number(row["tokens"] ?? 0),
+      }));
+    },
+    async listWorkspaceAiTokenUsage(dayKey) {
+      const result = await client.execute({
+        sql: `SELECT scope_key, tokens FROM ai_token_usage
+              WHERE day_key = ? AND scope_key LIKE 'ws:%'`,
+        args: [dayKey],
+      });
+      return result.rows.map((row) => ({
+        // scope_key is 'ws:<workspaceId>' — strip the 3-char prefix.
+        workspaceId: String(row["scope_key"]).slice(3),
         tokens: Number(row["tokens"] ?? 0),
       }));
     },

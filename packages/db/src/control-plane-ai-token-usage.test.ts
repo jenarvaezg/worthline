@@ -85,4 +85,26 @@ describe("control plane AI token usage meter", () => {
 
     store.close();
   });
+
+  it("lists per-workspace usage for a day (never the global fuse) for /admin (#1164)", async () => {
+    const store: UsageLimitsStore = await createInMemoryControlPlaneStore();
+
+    await store.recordAiTokenUsage("ws-a", "2026-07-22", 30);
+    await store.recordAiTokenUsage("ws-b", "2026-07-22", 5);
+    await store.recordAiTokenUsage("ws-a", "2026-07-21", 99);
+
+    const day = await store.listWorkspaceAiTokenUsage("2026-07-22");
+    const byId = new Map(day.map((r) => [r.workspaceId, r.tokens]));
+
+    // Only the two workspaces of that day, and never the 'global' scope row.
+    expect(day).toHaveLength(2);
+    expect(byId.get("ws-a")).toBe(30);
+    expect(byId.get("ws-b")).toBe(5);
+    expect(byId.has("global")).toBe(false);
+
+    // A day with no usage is simply empty.
+    expect(await store.listWorkspaceAiTokenUsage("2026-07-23")).toEqual([]);
+
+    store.close();
+  });
 });

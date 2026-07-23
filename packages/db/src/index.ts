@@ -98,6 +98,7 @@ export {
   type ExposureProfileCatalog,
   type ExposureProfileCatalogAdmin,
   type FailJobInput,
+  type GrantPremiumInput,
   type JobError,
   type JobRecord,
   type JobStatus,
@@ -117,6 +118,7 @@ export {
   type TenancyDirectory,
   type UpdateMaintainerAlertStatusInput,
   type UsageLimits,
+  type WorkspaceDailyTokenUsage,
 } from "./control-plane";
 export type {
   AnchorOnlyCorrectionPlan,
