@@ -12,6 +12,7 @@
     "@ai-sdk/groq": "^4.0.5",
     "@ai-sdk/react": "^4.0.15",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@paddle/paddle-node-sdk": "^3.8.0",
     "@tursodatabase/api": "^2.0.4",
     "@worthline/db": "workspace:*",
     "@worthline/domain": "workspace:*",

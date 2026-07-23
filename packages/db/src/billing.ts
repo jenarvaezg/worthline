@@ -152,7 +152,16 @@ export function applyBillingEvent(
   }
 
   if (event.type === "subscription_activated") {
-    return { premiumUntil: event.paidUntil, ...refs };
+    // La ventana pagada solo avanza: una activación stale o fuera de orden
+    // (redelivery, entrega concurrente) con un fin de periodo ANTERIOR al ya
+    // almacenado no puede regresar el acceso — quien decide el estado efectivo
+    // es `deriveEffectivePlan` sobre esta fecha, así que mantenerla monótona es
+    // el guard de ordenación del contrato (#1166; nota de review de S5). Una
+    // renovación legítima siempre trae un `paidUntil` posterior y gana.
+    return {
+      premiumUntil: laterOf(current?.premiumUntil ?? null, event.paidUntil),
+      ...refs,
+    };
   }
   if (event.type === "subscription_canceled") {
     return {
