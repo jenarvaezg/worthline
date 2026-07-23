@@ -33,9 +33,9 @@ import { notFound } from "next/navigation";
 
 import {
   grantWorkspacePremiumAction,
-  parsePremiumUntil,
   revokeWorkspacePremiumAction,
 } from "./entitlement-actions";
+import { parsePremiumUntil } from "./parse-premium-until";
 
 const NOW = "2026-07-22T12:00:00.000Z";
 

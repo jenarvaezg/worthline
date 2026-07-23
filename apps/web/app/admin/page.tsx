@@ -58,7 +58,7 @@ function planDetail(row: AdminEntitlementRow): string | null {
 export default async function AdminPage({
   searchParams,
 }: {
-  searchParams: Promise<{ entError?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await guardAdmin();
   const [{ entError }, rows, openAlerts, tokenUsage] = await Promise.all([
