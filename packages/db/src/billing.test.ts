@@ -79,6 +79,27 @@ describe("applyBillingEvent (PRD #1160 S5, contrato #1135)", () => {
     expect(state.subscriptionStatus).toBe("active");
   });
 
+  it("activación stale/fuera de orden nunca regresa una ventana pagada más larga (#1166)", () => {
+    const nextPeriodEnd = "2026-09-23T12:00:00.000Z";
+    const current = entitlementRow({
+      plan: "premium",
+      premiumUntil: nextPeriodEnd,
+      billingProvider: "paddle",
+      billingCustomerId: "cus-1",
+      subscriptionId: "sub-1",
+      subscriptionStatus: "active",
+    });
+
+    // Una activación vieja (redelivery/entrega concurrente) con un fin de
+    // periodo ANTERIOR al ya almacenado llega después de la renovación nueva.
+    const state = applyBillingEvent(
+      current,
+      activation({ provider: "paddle", paidUntil: PERIOD_END, occurredAt: NOW }),
+    );
+
+    expect(state.premiumUntil).toBe(nextPeriodEnd);
+  });
+
   it("cancelación: premium se mantiene hasta el fin de periodo del evento y luego cae a free", () => {
     const current = entitlementRow({
       plan: "premium",
