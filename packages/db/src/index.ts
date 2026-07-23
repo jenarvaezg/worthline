@@ -77,6 +77,8 @@ export type {
 } from "./connected-source-store";
 export {
   type AdminControlPlaneStore,
+  type AiDailyTokenUsage,
+  type AiTokenUsage,
   type BenchmarkPrice,
   type BenchmarkPriceCache,
   type ControlPlaneGrant,

@@ -1,5 +1,6 @@
 import { impersonateWorkspaceAction } from "@web/admin/actions";
 import { guardAdmin } from "@web/admin/guard-admin";
+import { listAdminAiTokenUsage } from "@web/admin/list-ai-token-usage";
 import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 import { listAdminWorkspaces } from "@web/admin/list-workspaces";
 
@@ -13,6 +14,8 @@ function formatCreatedAt(iso: string): string {
   });
 }
 
+const tokenFormatter = new Intl.NumberFormat("es-ES");
+
 /**
  * The /admin surface (#697, ADR 0030): a user/workspace list from the control
  * plane, with a per-row "Impersonar" action. `guardAdmin()` runs first — any
@@ -21,9 +24,10 @@ function formatCreatedAt(iso: string): string {
  */
 export default async function AdminPage() {
   await guardAdmin();
-  const [workspaces, openAlerts] = await Promise.all([
+  const [workspaces, openAlerts, tokenUsage] = await Promise.all([
     listAdminWorkspaces(),
     countAdminOpenMaintainerAlerts(),
+    listAdminAiTokenUsage(),
   ]);
 
   return (
@@ -71,6 +75,32 @@ export default async function AdminPage() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      {/* AI spend meter (PRD #1160 S3, #1163): the shared daily token totals so
+          the maintainer can see the cost. Aggregate only — no workspace data. */}
+      <section className="adminList section">
+        <h2>Gasto de IA · tokens/día (global)</h2>
+        {tokenUsage.length === 0 ? (
+          <p className="demoLede">Aún no hay consumo de IA registrado.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Día</th>
+                <th>Tokens</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokenUsage.map((day) => (
+                <tr key={day.dayKey}>
+                  <td>{day.dayKey}</td>
+                  <td>{tokenFormatter.format(day.tokens)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </main>
   );

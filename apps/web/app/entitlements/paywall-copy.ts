@@ -36,6 +36,24 @@ export const PAYWALL_CONNECT_SOURCE_MESSAGE =
   "Conectar fuentes de datos es premium. Tus datos manuales siguen siendo gratis; " +
   "premium mantiene tus fuentes sincronizando solas.";
 
+/**
+ * A paid workspace (trial/premium) spent its generous daily AI token budget
+ * (PRD #1160 S3, #1163). Honest and never a wall in front of the user's data:
+ * the assistant pauses for the day, everything else stays a tap away.
+ */
+export const PAYWALL_TOKEN_BUDGET_MESSAGE =
+  "El asistente ha alcanzado su presupuesto de IA de hoy para tu cuenta. Vuelve " +
+  "mañana; tu patrimonio y todas las lentes siguen a mano ahora mismo.";
+
+/**
+ * The shared daily AI fuse blew — the whole deployment's assistant is paused for
+ * the day (#1163). Honest capacity limit, not a per-user paywall: reads and
+ * manual tracking are untouched.
+ */
+export const PAYWALL_GLOBAL_FUSE_MESSAGE =
+  "El asistente comparte un presupuesto de IA diario que hoy se ha agotado. " +
+  "Vuelve más tarde; tus datos y todas las lentes siguen disponibles.";
+
 /** A free workspace has connected sources that are now paused (premium lapsed). */
 export const PAYWALL_SOURCES_PAUSED_MESSAGE =
   "Tus fuentes conectadas están en pausa: dejaron de sincronizar al terminar premium. " +

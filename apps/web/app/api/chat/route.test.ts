@@ -30,6 +30,11 @@ import type {
 } from "@web/asistente/provider-pool";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { deriveScreenContext } from "@web/asistente/screen-context";
+import {
+  GLOBAL_DAILY_TOKEN_FUSE,
+  TRIAL_PREMIUM_DAILY_TOKEN_BUDGET,
+} from "@web/asistente/token-budget";
+import { readAiTokenUsage } from "@web/asistente/token-budget-store";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
@@ -54,6 +59,10 @@ vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() })
 vi.mock("@web/entitlements/read-effective-plan", () => ({ readEffectivePlan: vi.fn() }));
 vi.mock("@web/asistente/courtesy-quota-store", () => ({
   countAssistantCourtesyUse: vi.fn(),
+}));
+vi.mock("@web/asistente/token-budget-store", () => ({
+  readAiTokenUsage: vi.fn(),
+  recordAiTokenUsage: vi.fn(),
 }));
 vi.mock("@web/asistente/maintainer-alert-store", () => ({
   raiseMaintainerAlert: vi.fn(),
@@ -364,6 +373,9 @@ beforeEach(() => {
   // ingestion tools and attachments are available; the gate has its own tests.
   vi.mocked(readEffectivePlan).mockResolvedValue("premium");
   vi.mocked(countAssistantCourtesyUse).mockResolvedValue(1);
+  // Token metering is unmetered by default (local dev / no control-plane URL);
+  // the #1163 gate has its own tests.
+  vi.mocked(readAiTokenUsage).mockResolvedValue(null);
   vi.mocked(readProviderCooldowns).mockResolvedValue({
     mode: "hosted",
     deploymentKey: "preview-959",
@@ -1198,6 +1210,101 @@ describe("POST /api/chat · premium ingestion gate + courtesy quota (#1162)", ()
     freeWorkspace();
     vi.mocked(readEffectivePlan).mockResolvedValue("free");
     vi.mocked(countAssistantCourtesyUse).mockResolvedValue(3);
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).not.toContain("data-paywall");
+    expect(streamed).toContain("patrimonio neto");
+  });
+});
+
+describe("POST /api/chat · token budget + global fuse (#1163)", () => {
+  const paidWorkspace = () =>
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-premium",
+      dbUrl: "libsql://wl-premium.turso.io",
+      token: "token-premium",
+    });
+
+  it("streams the token-budget paywall once a paid workspace spends its daily budget", async () => {
+    paidWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("premium");
+    vi.mocked(readAiTokenUsage).mockResolvedValue({
+      workspaceTokens: TRIAL_PREMIUM_DAILY_TOKEN_BUDGET,
+      globalTokens: TRIAL_PREMIUM_DAILY_TOKEN_BUDGET,
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("presupuesto de IA de hoy");
+    // The model was never reached — the gate runs before the provider call.
+    expect(streamed).not.toContain("patrimonio neto");
+  });
+
+  it("streams the shared-fuse paywall once the global daily fuse blows", async () => {
+    paidWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("premium");
+    vi.mocked(readAiTokenUsage).mockResolvedValue({
+      workspaceTokens: 0,
+      globalTokens: GLOBAL_DAILY_TOKEN_FUSE,
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("presupuesto de IA diario que hoy se ha agotado");
+  });
+
+  it("blows the shared fuse for a free workspace too (the fuse is everyone's)", async () => {
+    paidWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("free");
+    vi.mocked(countAssistantCourtesyUse).mockResolvedValue(1);
+    vi.mocked(readAiTokenUsage).mockResolvedValue({
+      workspaceTokens: 0,
+      globalTokens: GLOBAL_DAILY_TOKEN_FUSE,
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("presupuesto de IA diario que hoy se ha agotado");
+  });
+
+  it("never gates a free workspace on the WORKSPACE token budget — only the courtesy quota bounds it", async () => {
+    paidWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("free");
+    vi.mocked(countAssistantCourtesyUse).mockResolvedValue(3);
+    // Well past what a paid workspace could spend, but free has no token budget.
+    vi.mocked(readAiTokenUsage).mockResolvedValue({
+      workspaceTokens: TRIAL_PREMIUM_DAILY_TOKEN_BUDGET * 5,
+      globalTokens: 100,
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).not.toContain("data-paywall");
+    expect(streamed).toContain("patrimonio neto");
+  });
+
+  it("answers normally for a paid workspace comfortably under both limits", async () => {
+    paidWorkspace();
+    vi.mocked(readEffectivePlan).mockResolvedValue("premium");
+    vi.mocked(readAiTokenUsage).mockResolvedValue({
+      workspaceTokens: 10,
+      globalTokens: 100,
+    });
 
     const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
 
