@@ -44,7 +44,7 @@
     "*": ["biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"]
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.5",
+    "@biomejs/biome": "2.5.3",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^4.1.10",
