@@ -14,6 +14,8 @@ vi.mock("@web/admin/guard-admin", () => ({
 
 const grantWorkspacePremium = vi.fn();
 const revokeWorkspacePremium = vi.fn();
+const readWorkspaceEntitlement = vi.fn();
+const updateWorkspaceBilling = vi.fn();
 
 vi.mock("@web/admin/admin-control-plane", () => ({
   withControlPlaneStore: vi.fn(
@@ -21,18 +23,34 @@ vi.mock("@web/admin/admin-control-plane", () => ({
       run: (
         store: Pick<
           EntitlementDirectory,
-          "grantWorkspacePremium" | "revokeWorkspacePremium"
+          | "grantWorkspacePremium"
+          | "readWorkspaceEntitlement"
+          | "revokeWorkspacePremium"
+          | "updateWorkspaceBilling"
         >,
       ) => unknown,
-    ) => run({ grantWorkspacePremium, revokeWorkspacePremium }),
+    ) =>
+      run({
+        grantWorkspacePremium,
+        readWorkspaceEntitlement,
+        revokeWorkspacePremium,
+        updateWorkspaceBilling,
+      }),
   ),
 }));
 
+const getBillingAdapter = vi.fn();
+vi.mock("@web/billing/get-billing-adapter", () => ({
+  getBillingAdapter: (...args: unknown[]) => getBillingAdapter(...args),
+}));
+
 import { guardAdmin } from "@web/admin/guard-admin";
+import type { WorkspaceEntitlement } from "@worthline/db";
 import { notFound } from "next/navigation";
 
 import {
   grantWorkspacePremiumAction,
+  resyncWorkspaceBillingAction,
   revokeWorkspacePremiumAction,
 } from "./entitlement-actions";
 import { parsePremiumUntil } from "./parse-premium-until";
@@ -179,5 +197,118 @@ describe("revokeWorkspacePremiumAction", () => {
     const digest = await redirectOf(() => revokeWorkspacePremiumAction(fd));
     expect(digest).toContain("/admin");
     expect(revokeWorkspacePremium).toHaveBeenCalledWith("ws-a");
+  });
+});
+
+describe("resyncWorkspaceBillingAction (PRD #1160 S5, #1165)", () => {
+  const NOW_ROW = "2026-07-23T12:00:00.000Z";
+  const PERIOD_END = "2026-08-23T12:00:00.000Z";
+
+  function subscribedRow(
+    overrides: Partial<WorkspaceEntitlement> = {},
+  ): WorkspaceEntitlement {
+    return {
+      workspaceId: "ws-a",
+      plan: "premium",
+      trialEndsAt: null,
+      premiumUntil: NOW_ROW,
+      billingProvider: "fake",
+      billingCustomerId: "cus-1",
+      subscriptionId: "sub-1",
+      subscriptionStatus: "active",
+      onboardedAt: null,
+      firstHoldingAt: null,
+      createdAt: NOW_ROW,
+      updatedAt: NOW_ROW,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(guardAdmin).mockResolvedValue({ email: "admin@example.com" });
+    getBillingAdapter.mockReturnValue({
+      provider: "fake",
+      readSubscription: vi.fn(async () => ({
+        status: "active",
+        customerId: "cus-1",
+        paidUntil: PERIOD_END,
+      })),
+    });
+    readWorkspaceEntitlement.mockResolvedValue(subscribedRow());
+  });
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects (404) for a non-admin and never touches the control plane", async () => {
+    vi.mocked(guardAdmin).mockImplementationOnce(async () => notFound());
+    const fd = new FormData();
+    fd.set("workspaceId", "ws-a");
+
+    await expect(resyncWorkspaceBillingAction(fd)).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+    expect(updateWorkspaceBilling).not.toHaveBeenCalled();
+  });
+
+  it("consulta el estado real vía adapter y reescribe la fila con la transición del webhook", async () => {
+    const fd = new FormData();
+    fd.set("workspaceId", "ws-a");
+
+    const digest = await redirectOf(() => resyncWorkspaceBillingAction(fd));
+
+    expect(digest).toContain("/admin");
+    expect(digest).not.toContain("entError");
+    expect(updateWorkspaceBilling).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "ws-a",
+        premiumUntil: PERIOD_END,
+        billingProvider: "fake",
+        subscriptionId: "sub-1",
+        subscriptionStatus: "active",
+      }),
+    );
+  });
+
+  it("un workspace sin suscripción del MoR rebota con el flag de error, sin escribir", async () => {
+    readWorkspaceEntitlement.mockResolvedValue(
+      subscribedRow({ subscriptionId: null, billingProvider: null }),
+    );
+    const fd = new FormData();
+    fd.set("workspaceId", "ws-a");
+
+    const digest = await redirectOf(() => resyncWorkspaceBillingAction(fd));
+
+    expect(digest).toContain("entError=resync");
+    expect(updateWorkspaceBilling).not.toHaveBeenCalled();
+  });
+
+  it("sin adapter, o con un adapter de otro proveedor, rebota sin escribir", async () => {
+    getBillingAdapter.mockReturnValue(null);
+    const fd = new FormData();
+    fd.set("workspaceId", "ws-a");
+    expect(await redirectOf(() => resyncWorkspaceBillingAction(fd))).toContain(
+      "entError=resync",
+    );
+
+    getBillingAdapter.mockReturnValue({ provider: "paddle", readSubscription: vi.fn() });
+    expect(await redirectOf(() => resyncWorkspaceBillingAction(fd))).toContain(
+      "entError=resync",
+    );
+    expect(updateWorkspaceBilling).not.toHaveBeenCalled();
+  });
+
+  it("una suscripción que el proveedor no conoce rebota sin escribir", async () => {
+    getBillingAdapter.mockReturnValue({
+      provider: "fake",
+      readSubscription: vi.fn(async () => null),
+    });
+    const fd = new FormData();
+    fd.set("workspaceId", "ws-a");
+
+    const digest = await redirectOf(() => resyncWorkspaceBillingAction(fd));
+
+    expect(digest).toContain("entError=resync");
+    expect(updateWorkspaceBilling).not.toHaveBeenCalled();
   });
 });

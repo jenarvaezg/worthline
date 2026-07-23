@@ -17,6 +17,7 @@ import {
   validateGlobalExposureProfileContent,
 } from "@worthline/domain";
 
+import type { WorkspaceBillingState } from "./billing";
 import { migrateControlPlane } from "./control-plane-migrate";
 import { trialEndsAtFrom, type WorkspaceEntitlement } from "./entitlements";
 import { type LibsqlUrlTarget, openLibsqlClient } from "./libsql-client";
@@ -511,6 +512,16 @@ export interface StartTrialInput {
   now?: string;
 }
 
+/**
+ * Input for a billing-driven entitlement write (PRD #1160 S5, #1165): the
+ * transition already computed by `applyBillingEvent`/`billingStateFromSubscription`
+ * plus the workspace it lands on. Billing always asserts `plan='premium'` and
+ * lets the dates cap it — see `billing.ts` for the contract (#1135).
+ */
+export interface UpdateWorkspaceBillingInput extends WorkspaceBillingState {
+  workspaceId: string;
+}
+
 /** Input for the admin premium palanca (PRD #1160 S4, #1164). */
 export interface GrantPremiumInput {
   workspaceId: string;
@@ -570,6 +581,22 @@ export interface EntitlementDirectory {
    * removes only the premium grant, never rewrites history.
    */
   revokeWorkspacePremium(workspaceId: string): Promise<void>;
+  /**
+   * Apply a billing transition (PRD #1160 S5, #1165): upsert the workspace onto
+   * `plan='premium'` with the window and merchant-of-record references the
+   * transition computed. Like the admin palanca, it preserves the trial marker
+   * and the set-once activation timestamps — billing asserts the premium state
+   * and its refs, never rewrites activation history. Returns the resulting row.
+   */
+  updateWorkspaceBilling(
+    input: UpdateWorkspaceBillingInput,
+  ): Promise<WorkspaceEntitlement>;
+  /**
+   * The webhook idempotency arbiter (#1135): record a provider event id,
+   * returning true when this delivery is the FIRST (process it) and false on a
+   * redelivery (skip it). Keyed per provider, so two MoRs can never collide.
+   */
+  recordBillingWebhookEvent(provider: string, eventId: string): Promise<boolean>;
 }
 
 /** Durable job queue (#887, PRD #999 S3). */
@@ -701,6 +728,15 @@ CREATE TABLE IF NOT EXISTS workspace_entitlements (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+);
+-- Billing webhook idempotency (PRD #1160 S5, #1135): one row per delivered
+-- provider event id — an insert that loses means "already processed". Keyed per
+-- provider so two MoRs can never collide on an id.
+CREATE TABLE IF NOT EXISTS billing_webhook_events (
+  provider TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (provider, event_id)
 );
 -- One trial per identity (#1128): the row's existence IS the marker, so the
 -- set-once arbiter is the primary key — an insert that loses means "already used".
@@ -1299,6 +1335,54 @@ async function buildControlPlaneStore(
         args: [workspaceId],
       });
       return toWorkspaceEntitlement(created.rows[0]!);
+    },
+    async updateWorkspaceBilling({
+      workspaceId,
+      premiumUntil,
+      billingProvider,
+      billingCustomerId,
+      subscriptionId,
+      subscriptionStatus,
+    }) {
+      // Mirrors grantWorkspacePremium's upsert shape: assert plan='premium'
+      // plus the MoR refs, leave trial + activation history untouched (#1165).
+      await client.execute({
+        sql: `INSERT INTO workspace_entitlements (
+                workspace_id, plan, premium_until, billing_provider,
+                billing_customer_id, subscription_id, subscription_status)
+              VALUES (?, 'premium', ?, ?, ?, ?, ?)
+              ON CONFLICT(workspace_id) DO UPDATE SET
+                plan = 'premium',
+                premium_until = excluded.premium_until,
+                billing_provider = excluded.billing_provider,
+                billing_customer_id = excluded.billing_customer_id,
+                subscription_id = excluded.subscription_id,
+                subscription_status = excluded.subscription_status,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [
+          workspaceId,
+          premiumUntil,
+          billingProvider,
+          billingCustomerId,
+          subscriptionId,
+          subscriptionStatus,
+        ],
+      });
+      const updated = await client.execute({
+        sql: "SELECT * FROM workspace_entitlements WHERE workspace_id = ?",
+        args: [workspaceId],
+      });
+      return toWorkspaceEntitlement(updated.rows[0]!);
+    },
+    async recordBillingWebhookEvent(provider, eventId) {
+      // Losing the insert means the event id was already processed (#1135).
+      const result = await client.execute({
+        sql: `INSERT INTO billing_webhook_events (provider, event_id)
+              VALUES (?, ?)
+              ON CONFLICT(provider, event_id) DO NOTHING`,
+        args: [provider, eventId],
+      });
+      return result.rowsAffected > 0;
     },
     async revokeWorkspacePremium(workspaceId) {
       // No INSERT: a workspace with no row is already free. Touch only the

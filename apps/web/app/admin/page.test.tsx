@@ -45,6 +45,7 @@ function row(
     premiumUntil: null,
     isIndefinitePremium: false,
     billingProvider: null,
+    subscriptionId: null,
     subscriptionStatus: null,
     tokensToday: 0,
     ...partial,

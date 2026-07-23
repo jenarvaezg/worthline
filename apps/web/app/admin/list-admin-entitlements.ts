@@ -30,6 +30,7 @@ export interface AdminEntitlementRow {
   /** Effective premium with no window: an indefinite manual/lifetime grant (#1133). */
   isIndefinitePremium: boolean;
   billingProvider: string | null;
+  subscriptionId: string | null;
   subscriptionStatus: string | null;
   /** The workspace's AI token total today (UTC), zero when it has none. */
   tokensToday: number;
@@ -65,6 +66,7 @@ export function buildAdminEntitlementRows(input: {
       isIndefinitePremium:
         effectivePlan === "premium" && (entitlement?.premiumUntil ?? null) === null,
       billingProvider: entitlement?.billingProvider ?? null,
+      subscriptionId: entitlement?.subscriptionId ?? null,
       subscriptionStatus: entitlement?.subscriptionStatus ?? null,
       tokensToday: tokensById.get(workspace.id) ?? 0,
     };
