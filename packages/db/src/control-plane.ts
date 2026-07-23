@@ -335,9 +335,27 @@ export interface BenchmarkPriceCache {
 }
 
 /**
+ * The day's accumulated AI token totals read by the metering gate (PRD #1160
+ * S3, #1163): the workspace's own usage (the per-plan daily budget) and the
+ * shared global usage (the daily fuse). Zero when a scope has no row yet.
+ */
+export interface AiTokenUsage {
+  workspaceTokens: number;
+  globalTokens: number;
+}
+
+/** One day's GLOBAL AI token total — the aggregate spend series for /admin (#1163). */
+export interface AiDailyTokenUsage {
+  dayKey: string;
+  tokens: number;
+}
+
+/**
  * Serverless-shared usage limits: the chat and connected-source-sync rate
- * counters (ADR 0051) and provider cooldowns. All are operational throttles
- * shared by every serverless instance of one deployment.
+ * counters (ADR 0051), provider cooldowns, and the AI token meter + daily fuse
+ * (#1163). All are operational limits shared by every serverless instance of one
+ * deployment; the counters live in the control-plane DB because process memory
+ * cannot survive across serverless invocations (ADR 0051).
  */
 export interface UsageLimits {
   /**
@@ -370,6 +388,27 @@ export interface UsageLimits {
    * a future sweep of stale hourly rows can never purge a month's courtesy count.
    */
   recordAssistantCourtesyUse(rateKey: string, monthKey: string): Promise<number>;
+  /**
+   * Add `tokens` of assistant AI usage to BOTH this workspace's and the shared
+   * global daily counters (PRD #1160 S3, #1163) for `dayKey` (UTC "YYYY-MM-DD").
+   * The per-plan workspace budget and the global daily fuse both read from these
+   * counters. Aggregate only — never any content (#1131). Recorded AFTER a turn
+   * completes (the token count is only known then), so a single turn may overshoot
+   * before the next is refused; that increment-then-check tolerance is by design.
+   */
+  recordAiTokenUsage(workspaceId: string, dayKey: string, tokens: number): Promise<void>;
+  /**
+   * The day's accumulated token totals for the pre-call gate (#1163): the
+   * workspace's own usage (against its plan budget) and the global shared usage
+   * (against the daily fuse). Zero for a scope with no row yet.
+   */
+  readAiTokenUsage(workspaceId: string, dayKey: string): Promise<AiTokenUsage>;
+  /**
+   * Global daily token totals from `sinceDayKey` onward (inclusive), newest
+   * first — the aggregate spend series /admin renders (#1163). Global scope
+   * only: no per-workspace rows, never any content.
+   */
+  readRecentGlobalAiTokenUsage(sinceDayKey: string): Promise<AiDailyTokenUsage[]>;
 }
 
 /** Global exposure-profile catalog (PRD #711 S1 / #940). */
@@ -660,6 +699,16 @@ CREATE TABLE IF NOT EXISTS assistant_courtesy_usage (
   count INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (rate_key, window_key)
+);
+-- AI token meter (#1163): aggregate tokens per scope per UTC day. scope_key is
+-- 'global' (the shared daily fuse) or 'ws:<workspaceId>' (the per-plan budget).
+-- Rows are tiny (one per scope per day) and self-expire by day key; no sweep.
+CREATE TABLE IF NOT EXISTS ai_token_usage (
+  scope_key TEXT NOT NULL,
+  day_key TEXT NOT NULL,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (scope_key, day_key)
 );
 CREATE TABLE IF NOT EXISTS benchmark_prices (
   series_id TEXT NOT NULL,
@@ -1287,6 +1336,48 @@ async function buildControlPlaneStore(
         args: [rateKey, windowKey],
       });
       return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async recordAiTokenUsage(workspaceId, dayKey, tokens) {
+      if (tokens <= 0) return;
+      // Two upserts — the workspace's own budget counter and the shared global
+      // fuse — so both read a live running total. No transaction: metering is
+      // best-effort and overshoot-tolerant, matching the whole increment-then-check
+      // contract (ADR 0051). scope_key namespaces the two so a workspace whose id
+      // is literally "global" (impossible — ids are `wl-…`) still could not clash.
+      const upsert = `INSERT INTO ai_token_usage (scope_key, day_key, tokens)
+                      VALUES (?, ?, ?)
+                      ON CONFLICT(scope_key, day_key) DO UPDATE SET
+                        tokens = tokens + excluded.tokens,
+                        updated_at = CURRENT_TIMESTAMP`;
+      await client.execute({ sql: upsert, args: [`ws:${workspaceId}`, dayKey, tokens] });
+      await client.execute({ sql: upsert, args: ["global", dayKey, tokens] });
+    },
+    async readAiTokenUsage(workspaceId, dayKey) {
+      const result = await client.execute({
+        sql: `SELECT scope_key, tokens FROM ai_token_usage
+              WHERE day_key = ? AND scope_key IN (?, 'global')`,
+        args: [dayKey, `ws:${workspaceId}`],
+      });
+      let workspaceTokens = 0;
+      let globalTokens = 0;
+      for (const row of result.rows) {
+        const tokens = Number(row["tokens"] ?? 0);
+        if (String(row["scope_key"]) === "global") globalTokens = tokens;
+        else workspaceTokens = tokens;
+      }
+      return { workspaceTokens, globalTokens };
+    },
+    async readRecentGlobalAiTokenUsage(sinceDayKey) {
+      const result = await client.execute({
+        sql: `SELECT day_key, tokens FROM ai_token_usage
+              WHERE scope_key = 'global' AND day_key >= ?
+              ORDER BY day_key DESC`,
+        args: [sinceDayKey],
+      });
+      return result.rows.map((row) => ({
+        dayKey: String(row["day_key"]),
+        tokens: Number(row["tokens"] ?? 0),
+      }));
     },
     async createGlobalExposureProfile(input) {
       const validated = createValidatedGlobalExposureProfileInput(input);

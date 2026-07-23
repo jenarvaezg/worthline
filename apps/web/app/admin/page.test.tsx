@@ -21,7 +21,12 @@ vi.mock("@web/admin/list-maintainer-alerts", () => ({
   countAdminOpenMaintainerAlerts: vi.fn(),
 }));
 
+vi.mock("@web/admin/list-ai-token-usage", () => ({
+  listAdminAiTokenUsage: vi.fn(),
+}));
+
 import { guardAdmin } from "@web/admin/guard-admin";
+import { listAdminAiTokenUsage } from "@web/admin/list-ai-token-usage";
 import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 import { listAdminWorkspaces } from "@web/admin/list-workspaces";
 
@@ -31,6 +36,7 @@ describe("AdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(countAdminOpenMaintainerAlerts).mockResolvedValue(0);
+    vi.mocked(listAdminAiTokenUsage).mockResolvedValue([]);
   });
 
   test("renders the workspace list for the admin, with a maintainer-alerts link + badge", async () => {
@@ -56,6 +62,32 @@ describe("AdminPage", () => {
     expect(html).toContain('href="/admin/alertas"');
     expect(html).toContain("Alertas de mantenedor");
     expect(html).toContain(">3<");
+  });
+
+  test("renders the global AI spend series as tokens per day", async () => {
+    vi.mocked(guardAdmin).mockResolvedValue({ email: "admin@example.com" });
+    vi.mocked(listAdminWorkspaces).mockResolvedValue([]);
+    vi.mocked(listAdminAiTokenUsage).mockResolvedValue([
+      { dayKey: "2026-07-22", tokens: 1234567 },
+      { dayKey: "2026-07-21", tokens: 42 },
+    ]);
+
+    const html = renderToStaticMarkup(await AdminPage());
+
+    expect(html).toContain("Gasto de IA");
+    expect(html).toContain("2026-07-22");
+    // Grouped with the es-ES separator (computed the same way the page does, so
+    // the assertion holds regardless of the runtime's ICU build).
+    expect(html).toContain(new Intl.NumberFormat("es-ES").format(1234567));
+  });
+
+  test("shows an empty-state line when no AI spend is recorded yet", async () => {
+    vi.mocked(guardAdmin).mockResolvedValue({ email: "admin@example.com" });
+    vi.mocked(listAdminWorkspaces).mockResolvedValue([]);
+    vi.mocked(listAdminAiTokenUsage).mockResolvedValue([]);
+
+    const html = renderToStaticMarkup(await AdminPage());
+    expect(html).toContain("Aún no hay consumo de IA registrado");
   });
 
   test("shows an em-dash for a dangling workspace with no owner", async () => {

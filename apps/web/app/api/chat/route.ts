@@ -40,10 +40,19 @@ import {
   type ScreenContext,
 } from "@web/asistente/screen-context";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
+import {
+  isGlobalTokenFuseBlown,
+  isWorkspaceTokenBudgetExhausted,
+  tokenDayWindow,
+} from "@web/asistente/token-budget";
+import { readAiTokenUsage, recordAiTokenUsage } from "@web/asistente/token-budget-store";
+import { meterAssistantStream } from "@web/asistente/token-metering";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_ATTACHMENT_MESSAGE,
   PAYWALL_COURTESY_MESSAGE,
+  PAYWALL_GLOBAL_FUSE_MESSAGE,
+  PAYWALL_TOKEN_BUDGET_MESSAGE,
 } from "@web/entitlements/paywall-copy";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
@@ -57,7 +66,7 @@ import {
   toUIMessageStream,
   type UIMessage,
 } from "ai";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 /**
  * The assistant's chat route (#629) — the spine of PRD #627. Streams model
@@ -284,6 +293,28 @@ export async function POST(request: Request): Promise<Response> {
     return paywallResponse(PAYWALL_ATTACHMENT_MESSAGE);
   }
 
+  // AI token metering + shared daily fuse (PRD #1160 S3, #1163). Counted per UTC
+  // day in the control plane and checked BEFORE the model call — so the eager
+  // extractor degrades honestly too, running only after this gate. The fuse
+  // applies to every authenticated caller; the per-plan workspace budget bites
+  // only trial/premium (free is bounded by the courtesy quota below, not tokens).
+  // A null read is unmetered (local dev) — the pure predicates never fire.
+  //
+  // demo/local deliberately bypass the meter, exactly as S2's courtesy quota and
+  // ingestion gates do: demo is already coarsely IP-rate-limited (ADR 0051) and
+  // its shared spend is capped by the Gateway money ceiling (ADR 0050); local
+  // dev owns its own key. The token fuse governs the authenticated shared spend
+  // the trial opens up — the abuse surface it was designed for (plan §4.2).
+  if (target.kind === "authenticated") {
+    const usage = await readAiTokenUsage(target.workspaceId, tokenDayWindow(nowIso));
+    if (usage && isGlobalTokenFuseBlown(usage.globalTokens)) {
+      return paywallResponse(PAYWALL_GLOBAL_FUSE_MESSAGE);
+    }
+    if (usage && isWorkspaceTokenBudgetExhausted(usage.workspaceTokens, effectivePlan)) {
+      return paywallResponse(PAYWALL_TOKEN_BUDGET_MESSAGE);
+    }
+  }
+
   // The free plan's monthly courtesy quota over the shared assistant (ADR 0051
   // mechanism). Only authenticated free turns that reach the model count;
   // trial/premium answer to the token budget (S3), demo/local bypass entirely.
@@ -450,8 +481,31 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("assistant_unavailable", 503);
   }
 
+  // Record this turn's tokens once it finishes (PRD #1160 S3, #1163). The count
+  // is only known at the finish part — after we have begun streaming — so we tap
+  // the stream and schedule the write with `after()`, never blocking the reply.
+  // Gated on a real control plane so local dev and the route tests stay unmetered.
+  let meteredStream = selected.stream;
+  if (workspaceId !== null && process.env["WORTHLINE_CONTROL_PLANE_DB_URL"]) {
+    const metered = meterAssistantStream(selected.stream);
+    meteredStream = metered.stream;
+    const dayKey = tokenDayWindow(nowIso);
+    after(async () => {
+      const tokens = await metered.totalTokens;
+      if (tokens <= 0) return;
+      try {
+        await recordAiTokenUsage(workspaceId, dayKey, tokens);
+      } catch (error) {
+        console.error("Assistant token metering write failed", {
+          operation: "write",
+          cause: operationalCause(error),
+        });
+      }
+    });
+  }
+
   const providerStream = toUIMessageStream({
-    stream: selected.stream,
+    stream: meteredStream,
     onError: (error) => {
       console.error("Chat stream failed", {
         provider: selected.provider.provider,
