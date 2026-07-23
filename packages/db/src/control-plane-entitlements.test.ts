@@ -180,3 +180,150 @@ describe("control plane entitlements (PRD #1160 S1)", () => {
     store.close();
   });
 });
+
+describe("admin premium palanca (PRD #1160 S4, #1164)", () => {
+  const FUTURE = "2026-08-22T12:00:00.000Z";
+
+  it("grants an indefinite premium (null window) that derives premium forever", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    const granted = await store.grantWorkspacePremium({
+      workspaceId: wsId,
+      premiumUntil: null,
+    });
+
+    expect(granted.plan).toBe("premium");
+    expect(granted.premiumUntil).toBeNull();
+    expect(deriveEffectivePlan(granted, NOW)).toBe("premium");
+    // No expiry job: an indefinite grant is still premium far in the future.
+    expect(deriveEffectivePlan(granted, "2099-01-01T00:00:00.000Z")).toBe("premium");
+    expect(await store.readWorkspaceEntitlement(wsId)).toEqual(granted);
+
+    store.close();
+  });
+
+  it("grants a dated premium that lapses to free on its own after the window", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    const granted = await store.grantWorkspacePremium({
+      workspaceId: wsId,
+      premiumUntil: FUTURE,
+    });
+
+    expect(granted.plan).toBe("premium");
+    expect(granted.premiumUntil).toBe(FUTURE);
+    expect(deriveEffectivePlan(granted, NOW)).toBe("premium");
+    expect(deriveEffectivePlan(granted, "2026-09-01T00:00:00.000Z")).toBe("free");
+
+    store.close();
+  });
+
+  it("upsizes a workspace that had no row, and overwrites an existing plan/window", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    // Never had a row → the grant creates one.
+    await store.grantWorkspacePremium({ workspaceId: wsId, premiumUntil: FUTURE });
+    // A second grant overwrites the window (e.g. dated → indefinite).
+    const regranted = await store.grantWorkspacePremium({
+      workspaceId: wsId,
+      premiumUntil: null,
+    });
+
+    expect(regranted.premiumUntil).toBeNull();
+    expect(regranted.plan).toBe("premium");
+
+    store.close();
+  });
+
+  it("preserves the trial marker and activation timestamps across a grant", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { userId, workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    await store.startTrialIfUnused({ now: NOW, userId, workspaceId: wsId });
+    await store.markWorkspaceOnboarded(wsId, NOW);
+    const granted = await store.grantWorkspacePremium({
+      workspaceId: wsId,
+      premiumUntil: null,
+    });
+
+    // The grant flips the plan but never rewrites history.
+    expect(granted.plan).toBe("premium");
+    expect(granted.trialEndsAt).toBe(trialEndsAtFrom(NOW));
+    expect(granted.onboardedAt).toBe(NOW);
+
+    store.close();
+  });
+
+  it("revokes a premium grant back to free, clearing only the window", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    await store.grantWorkspacePremium({ workspaceId: wsId, premiumUntil: FUTURE });
+    await store.revokeWorkspacePremium(wsId);
+
+    const after = await store.readWorkspaceEntitlement(wsId);
+    expect(after!.plan).toBe("free");
+    expect(after!.premiumUntil).toBeNull();
+    expect(deriveEffectivePlan(after, NOW)).toBe("free");
+
+    store.close();
+  });
+
+  it("revoke is a no-op for a workspace with no row (already free)", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    await store.revokeWorkspacePremium(wsId);
+
+    expect(await store.readWorkspaceEntitlement(wsId)).toBeNull();
+
+    store.close();
+  });
+
+  it("revoke leaves a still-live trial intact — it removes only the premium grant", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { userId, workspaceIds } = await seed(store);
+    const wsId = workspaceIds[0]!;
+
+    await store.startTrialIfUnused({ now: NOW, userId, workspaceId: wsId });
+    await store.grantWorkspacePremium({ workspaceId: wsId, premiumUntil: FUTURE });
+    await store.revokeWorkspacePremium(wsId);
+
+    const after = await store.readWorkspaceEntitlement(wsId);
+    // The trial window survives, so derivation falls back to trial (not free).
+    expect(after!.trialEndsAt).toBe(trialEndsAtFrom(NOW));
+    const insideTrial = "2026-07-24T00:00:00.000Z";
+    expect(deriveEffectivePlan(after, insideTrial)).toBe("trial");
+
+    store.close();
+  });
+
+  it("lists every stored entitlement row for the /admin view", async () => {
+    const store: EntitlementStore = await createInMemoryControlPlaneStore();
+    const { userId, workspaceIds } = await seed(store, 2);
+
+    await store.grantWorkspacePremium({
+      workspaceId: workspaceIds[0]!,
+      premiumUntil: null,
+    });
+    await store.startTrialIfUnused({ now: NOW, userId, workspaceId: workspaceIds[1]! });
+
+    const rows = await store.listWorkspaceEntitlements();
+    const byId = new Map(rows.map((r) => [r.workspaceId, r]));
+
+    expect(rows).toHaveLength(2);
+    expect(byId.get(workspaceIds[0]!)!.plan).toBe("premium");
+    expect(byId.get(workspaceIds[1]!)!.plan).toBe("trial");
+
+    store.close();
+  });
+});
