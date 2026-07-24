@@ -52,4 +52,56 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toMatch(/propose_exposure_profiles/);
     expect(prompt).not.toMatch(/list_exposure_profile_fill_targets/);
   });
+
+  // #1169 — the onboarding surface augments the SAME contract with a present-state
+  // framing, honest degradation, and the existing proposal tools (cero motor nuevo).
+  describe("onboarding mode (#1169)", () => {
+    const onboardingContext = {
+      route: "/bienvenida",
+      section: "otra" as const,
+      holdingId: null,
+      view: {},
+    };
+
+    it("adds the onboarding framing on the /bienvenida surface", () => {
+      const prompt = buildChatSystemPrompt(onboardingContext);
+
+      expect(prompt).toMatch(/modo onboarding/i);
+      // Present-state declaration (ADR 0059): what you have today, not history.
+      expect(prompt).toMatch(/0059/);
+      expect(prompt).toMatch(/estado presente|qué tiene hoy/i);
+      expect(prompt).toMatch(/no.*histórico de movimientos/i);
+      // Both paths are first-class, never a plan B.
+      expect(prompt).toMatch(/plan b/i);
+      // Cero motor nuevo: it steers the existing proposal tools.
+      expect(prompt).toMatch(/propose_holding/);
+      expect(prompt).toMatch(/propose_reconcile/);
+      // Honest degradation (#1130): name the failure and the discreet escapes.
+      expect(prompt).toMatch(/1130/);
+      expect(prompt).toMatch(/prefiero cargarlo a mano/i);
+      expect(prompt).toMatch(/lo haré luego/i);
+    });
+
+    it("keeps the base contract underneath the onboarding framing", () => {
+      const prompt = buildChatSystemPrompt(onboardingContext);
+
+      expect(prompt).toMatch(/debes responder en español/i);
+      expect(prompt).toMatch(/no inventes/i);
+      expect(prompt).toMatch(/suggest_actions/);
+      // The screen context is still embedded so «esto/aquí» stays grounded.
+      expect(prompt).toContain("/bienvenida");
+    });
+
+    it("never leaks the onboarding framing onto ordinary surfaces", () => {
+      const patrimonio = buildChatSystemPrompt({
+        route: "/patrimonio",
+        section: "patrimonio",
+        holdingId: null,
+        view: {},
+      });
+      expect(patrimonio).not.toMatch(/modo onboarding/i);
+
+      expect(buildChatSystemPrompt(null)).not.toMatch(/modo onboarding/i);
+    });
+  });
 });

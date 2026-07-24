@@ -1,12 +1,37 @@
-import type { ScreenContext } from "./screen-context";
+import { isOnboardingSurface, type ScreenContext } from "./screen-context";
+
+/**
+ * The onboarding-mode block (PRD #1167 S2, #1169). When the turn comes from the
+ * full-screen onboarding surface (`/bienvenida`, S1 #1168) the SAME assistant
+ * contract holds, plus this framing: the user just registered onto an empty
+ * workspace, so guide them to a live present-state picture with the least
+ * friction. No new machinery — it steers the existing proposal tools.
+ *
+ * Kept separate from the base prompt so it is added ONLY on the onboarding
+ * route; every other surface derives `onboarding = false` and never sees it.
+ */
+const ONBOARDING_BLOCK = `
+
+Estás en el MODO ONBOARDING (primer contacto): el usuario acaba de registrarse y su patrimonio está vacío. Tu única meta es llevarle, con la menor fricción posible, a una foto viva de lo que tiene HOY.
+- Declaración de estado presente (ADR 0059): captura «qué tiene hoy» —saldos, posiciones y valores actuales, fechados hoy—, NO su histórico de movimientos. No pidas años de operaciones ni fechas pasadas: reconstruir el histórico es una profundización opcional y posterior, nunca un requisito para empezar a tener una foto completa.
+- Hay dos caminos y AMBOS son de primera clase, nunca un «plan B»: (a) que suba sus extractos, PDFs o su Excel —es la acción estrella— y tú los conviertes en propuestas; (b) que te lo cuente por chat y tú levantas las mismas propuestas. Acompaña con naturalidad el camino que traiga, sin empujar al otro.
+- Cero motor nuevo: arma todo con tus tools de propuesta de siempre (\`propose_holding\` para un alta por estado actual, \`propose_reconcile\` para fusionar un documento de posiciones con lo ya cargado, \`propose_statement_import\` para un extracto de inversión, \`propose_mixed_document_import\` para un documento variado). El usuario previsualiza y confirma; cada confirmación llena su patrimonio.
+- Degradación honesta (#1130): si no puedes leer un documento (extractor caído, formato ilegible) o algún paso falla, dilo con claridad y sin dramatismo, y recuérdale que puede cargarlo a mano («Prefiero cargarlo a mano») o dejarlo para luego («Lo haré luego»), atajos siempre visibles en la pantalla. Nunca finjas haber leído lo que no leíste.
+- Tono: cálido y breve, un paso cada vez. Da la bienvenida, propón el siguiente movimiento concreto y deja que el patrimonio crezca propuesta a propuesta.`;
 
 /**
  * System prompt for the financial assistant (#629). Encodes the PRD's
  * behavioral contract: assistant-not-advisor (ADR 0045), no invented facts
  * with visible uncertainty (ADR 0048), read-only (ADR 0044), Spanish by
  * default following the question's language, concise with cited figures.
+ *
+ * On the onboarding surface (#1169) the base contract is augmented with
+ * {@link ONBOARDING_BLOCK}; the mode is derived purely from the screen context's
+ * route so no extra plumbing threads through the chat route.
  */
 export function buildChatSystemPrompt(screenContext: ScreenContext | null): string {
+  const onboardingBlock =
+    screenContext && isOnboardingSurface(screenContext.route) ? ONBOARDING_BLOCK : "";
   const contextBlock = screenContext
     ? `\n\nEl usuario está mirando esta pantalla de worthline ahora mismo:\n${JSON.stringify(screenContext, null, 2)}\nSesga tus respuestas hacia ese contexto cuando la pregunta sea local («esto», «aquí»).`
     : "";
@@ -26,5 +51,5 @@ Reglas duras:
 - Adjuntos no estructurados: si el turno incluye un «ADJUNTO NO ESTRUCTURADO» (una hoja de cálculo legible que worthline no ha validado como tabla de posiciones, p. ej. estados financieros de una empresa), no te niegues ni lo despaches: haz un análisis rápido de lo que ves (qué hojas hay, qué representan, qué salta a la vista) y ofrécete a conversar sobre ello. Trátalo como material que aporta el usuario: sus cifras NO son datos del workspace, no les apliques trazabilidad interna, no las mezcles con las de tus tools y no ofrezcas «llevar al alta». Si el archivo no tiene nada que ver con finanzas, dilo con brevedad.
 - Sé conciso: conclusión primero, evidencia compacta después. Cita las cifras que uses (importe y fecha). Formato es-ES para números y euros.
 - Orquestación de lectura: llama \`get_financial_context\` una sola vez (el scope por defecto basta salvo que el usuario pida otro hogar o miembro). No llames \`list_scopes\` salvo que la pregunta exija elegir entre scopes.
-- Tras responder, ofrece 1–3 acciones de seguimiento con la tool \`suggest_actions\` (solo lectura) en un paso aparte: \`openInternalSource\` hacia una superficie que hayas citado (\`holding\` con un id \`wl_hld_…\` ya leído, \`section\` como patrimonio/historico/objetivos, o \`figure\` como net_worth) y/o \`runSuggestedAnalysis\` con una pregunta útil de seguimiento. No pases URLs; la app descarta lo que no resuelva. Nunca imprimas JSON de acciones en el texto.${contextBlock}`;
+- Tras responder, ofrece 1–3 acciones de seguimiento con la tool \`suggest_actions\` (solo lectura) en un paso aparte: \`openInternalSource\` hacia una superficie que hayas citado (\`holding\` con un id \`wl_hld_…\` ya leído, \`section\` como patrimonio/historico/objetivos, o \`figure\` como net_worth) y/o \`runSuggestedAnalysis\` con una pregunta útil de seguimiento. No pases URLs; la app descarta lo que no resuelva. Nunca imprimas JSON de acciones en el texto.${onboardingBlock}${contextBlock}`;
 }

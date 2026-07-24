@@ -68,6 +68,10 @@ import type { HoldingTrashProposal } from "./holding-trash-proposal-contract";
 import { instrumentLabel } from "./instrument-labels";
 import { confirmMixedDocumentProposalAction } from "./mixed-document-proposal-action";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
+import {
+  ProposalAppliedContext,
+  useNotifyProposalApplied,
+} from "./onboarding-completion";
 import { parsePaywallPartData } from "./paywall-part";
 import {
   confirmPropertyValuationProposalAction,
@@ -164,6 +168,10 @@ function ProposalMutationStatus({
   pending: boolean;
   result: { status: string } | null;
 }) {
+  // Every proposal card renders this, so it is the one place that sees an
+  // `applied` transition for any kind — the onboarding surface listens here to
+  // stamp `onboarded_at` on the first confirmed proposal (#1169).
+  useNotifyProposalApplied(result?.status);
   return (
     <p aria-live="polite" className="srOnly" role="status">
       {pending ? "Guardando…" : result?.status === "applied" ? "Guardado." : ""}
@@ -1542,12 +1550,14 @@ export default function AssistantLayer({
   variant = "floating",
   onboardingManualHref = "/patrimonio/anadir",
   onboardingSkipAction,
+  onboardingCompleteAction,
 }: {
   mutationsDisabled?: boolean;
   mutationsDisabledMessage?: string;
   variant?: "floating" | "onboarding";
   onboardingManualHref?: string;
   onboardingSkipAction?: (formData: FormData) => void | Promise<void>;
+  onboardingCompleteAction?: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -1581,6 +1591,16 @@ export default function AssistantLayer({
     closingRef.current = true;
     setOpen(false);
   }, []);
+
+  // Stamp `onboarded_at` on the first confirmed proposal (#1169). Guarded to fire
+  // the set-once mark at most once per session, even if several cards apply; the
+  // server action is itself idempotent (COALESCE), so this is belt-and-braces.
+  const onboardedRef = useRef(false);
+  const handleProposalApplied = useCallback(() => {
+    if (onboardedRef.current || !onboardingCompleteAction) return;
+    onboardedRef.current = true;
+    void onboardingCompleteAction();
+  }, [onboardingCompleteAction]);
 
   function seed(text: string) {
     if (busy) return;
@@ -1729,13 +1749,17 @@ export default function AssistantLayer({
           )}
 
           <AssistantMessages>
-            <ConversationParts
-              endRef={endRef}
-              error={error}
-              messages={messages}
-              mutationsDisabled={mutationsDisabled}
-              mutationsDisabledMessage={mutationsDisabledMessage}
-            />
+            {/* Confirming the first proposal here stamps onboarded (#1169); the
+                floating panel provides no listener, so it never fires there. */}
+            <ProposalAppliedContext.Provider value={handleProposalApplied}>
+              <ConversationParts
+                endRef={endRef}
+                error={error}
+                messages={messages}
+                mutationsDisabled={mutationsDisabled}
+                mutationsDisabledMessage={mutationsDisabledMessage}
+              />
+            </ProposalAppliedContext.Provider>
           </AssistantMessages>
 
           {quickActions.length > 0 ? (
