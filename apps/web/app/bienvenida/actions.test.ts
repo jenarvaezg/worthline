@@ -5,7 +5,7 @@ const { markOnboardedBestEffort } = vi.hoisted(() => ({
 }));
 vi.mock("@web/activation-marks", () => ({ markOnboardedBestEffort }));
 
-import { skipOnboardingAction } from "./actions";
+import { markOnboardingCompleteAction, skipOnboardingAction } from "./actions";
 
 /** Invoke the action (which always throws redirect()) and return the URL digest. */
 async function runRedirect(action: () => Promise<never>): Promise<string> {
@@ -29,5 +29,16 @@ describe("skipOnboardingAction (#1168)", () => {
 
     expect(markOnboardedBestEffort).toHaveBeenCalledOnce();
     expect(url).toContain("/app");
+  });
+});
+
+describe("markOnboardingCompleteAction (#1169)", () => {
+  test("stamps onboarded when the first proposal is confirmed, without redirecting", async () => {
+    markOnboardedBestEffort.mockClear();
+
+    // Unlike the skip, this runs mid-conversation: it must NOT navigate away.
+    await expect(markOnboardingCompleteAction()).resolves.toBeUndefined();
+
+    expect(markOnboardedBestEffort).toHaveBeenCalledOnce();
   });
 });

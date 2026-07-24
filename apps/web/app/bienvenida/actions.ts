@@ -17,3 +17,20 @@ export async function skipOnboardingAction(): Promise<never> {
   await markOnboardedBestEffort();
   redirect("/app");
 }
+
+/**
+ * Onboarding completed by DOING (PRD #1167 S2, #1169): the assistant confirmed
+ * the workspace's first proposal from the onboarding surface, so stamp the
+ * set-once `onboarded_at` mark (#1131) — the post-registration gate must never
+ * force this now-live workspace back into onboarding.
+ *
+ * Fired mid-conversation from the client (once, guarded there), so unlike the
+ * explicit skip it does NOT navigate: the user stays in the flow, free to keep
+ * composing their patrimonio or leave via the always-visible escapes. Best-effort
+ * like every other activation mark — a no-op on the local/no-control-plane build.
+ * Confirming a holding-creating proposal already stamps `first_holding_at` in its
+ * own persist seam; this is the explicit onboarding-complete signal on top.
+ */
+export async function markOnboardingCompleteAction(): Promise<void> {
+  await markOnboardedBestEffort();
+}

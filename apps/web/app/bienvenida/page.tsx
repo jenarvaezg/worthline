@@ -5,7 +5,7 @@ import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 
-import { skipOnboardingAction } from "./actions";
+import { markOnboardingCompleteAction, skipOnboardingAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +49,7 @@ export default async function BienvenidaPage() {
   return (
     <AssistantLayer
       mutationsDisabled={mutationsDisabled}
+      onboardingCompleteAction={markOnboardingCompleteAction}
       onboardingSkipAction={skipOnboardingAction}
       variant="onboarding"
     />
