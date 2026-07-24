@@ -1,5 +1,5 @@
 /**
- * Patrimonio load module (issue #1119, arch review 2026-07-17).
+ * Patrimonio load module (issue #1119, arch review 2026-07-17; split #1195).
  *
  * Sibling of the home read model ({@link loadDashboard}): one input in, one
  * result out. The /patrimonio page used to assemble a parallel read model inline
@@ -11,13 +11,23 @@
  * Cache-only GET (#785, #788, #895): like the dashboard, this path performs NO
  * network and NO writes. It reads the cached prices and computes today's figures
  * live from the same curve-valued ledger snapshot capture uses.
+ *
+ * `loadPatrimonio` itself no longer reads the exposure-profile catalog or
+ * derives the exposure look-through / per-class returns (#1195): those are the
+ * only two analytical sub-sections streamed behind Suspense on /patrimonio, and
+ * the catalog read is the one await that lets the synchronous board flush
+ * first. It instead returns `exposureContext` — everything {@link
+ * deriveExposureAndReturns} needs, computed once here and carried into the
+ * streamed child so that derivation is never duplicated.
  */
 
 import { resolveFxAggregation } from "@web/fx-context";
-import type { TrashView, WorthlineStore } from "@worthline/db";
+import type { InvestmentAssetMeta, TrashView, WorthlineStore } from "@worthline/db";
 import type {
   AssetClassResolution,
   AssetClassReturnsViewResult,
+  AssetProjectionContext,
+  CurrencyCode,
   DatedPayout,
   DomainWarning,
   ExposureLookthrough,
@@ -25,8 +35,11 @@ import type {
   ExposureProfile,
   HoldingReturnsView,
   Instrument,
+  ManualAsset,
+  MonthlyCloseValue,
   PortfolioGroup,
   PortfolioGroupKey,
+  PortfolioProjection,
   PriceRefreshMeta,
   ScopeOption,
   Workspace,
@@ -55,13 +68,29 @@ export interface LoadPatrimonioInput {
   today: string;
   /** The grouping axis for the unified board (#154, S8). */
   selectedGroup: PortfolioGroupKey;
-  /**
-   * The global exposure-profile catalog reader (PRD #711 S3). Injected so the
-   * read model stays testable without the control plane; the page passes
-   * `readExposureProfilesFromCatalog`. Absent → the look-through classifies
-   * nothing (empty profiles), never throws.
-   */
-  readExposureProfiles?: () => Promise<ExposureProfile[]>;
+}
+
+/**
+ * Everything {@link deriveExposureAndReturns} needs that is otherwise only
+ * computed inside `loadPatrimonio`. Carried across the Suspense boundary (#1195)
+ * so the streamed analytics child derives the look-through + per-class returns
+ * without re-reading assets, operations or monthly closes.
+ */
+export interface PatrimonioExposureContext {
+  /** The scope-weighted projection, or null when there is no selected scope. */
+  projection: PortfolioProjection | null;
+  /** Curve-valued assets at `today` — the same rows the board/projection use. */
+  assets: ManualAsset[];
+  /** Investment metadata (isin/providerSymbol), keyed by asset id. */
+  metaByAssetId: Map<string, InvestmentAssetMeta>;
+  instrumentByAsset: Map<string, Instrument>;
+  monthlyClosesByAsset: Map<string, MonthlyCloseValue[]>;
+  payoutsByAsset: Map<string, DatedPayout[]>;
+  cachedPriceByAsset: AssetProjectionContext["cachedPriceByAsset"];
+  manualPriceByAsset: AssetProjectionContext["manualPriceByAsset"];
+  operationsByAsset: AssetProjectionContext["operationsByAsset"];
+  baseCurrency: CurrencyCode;
+  today: string;
 }
 
 export interface LoadPatrimonioResult {
@@ -69,12 +98,6 @@ export interface LoadPatrimonioResult {
   groups: PortfolioGroup[];
   /** Per-holding simple total gain, keyed by asset id (#551, ADR 0040). */
   returnsById: Map<string, HoldingReturnsView>;
-  /** Per-asset-class decomposition of the portfolio returns (#552). Null when none. */
-  returnsByClass: AssetClassReturnsViewResult | null;
-  /** Present-time exposure look-through, full portfolio (PRD #539 S3, ADR 0039). */
-  exposureFull: ExposureLookthrough;
-  /** The same look-through restricted to equity — the client lens toggles to it. */
-  exposureEquity: ExposureLookthrough;
   /** Asset ids with at least one recorded operation — the board's fold guard. */
   operatedAssetIds: Set<string>;
   /** Modelling/data warnings surfaced on the board (minus overridden ones). */
@@ -85,6 +108,8 @@ export interface LoadPatrimonioResult {
   hasPricedHoldings: boolean;
   /** Whether there is any holding at all — gates the "Puesta al día" entry. */
   hasHoldings: boolean;
+  /** Everything the streamed analytics child needs (#1195). See {@link PatrimonioExposureContext}. */
+  exposureContext: PatrimonioExposureContext;
 }
 
 /**
@@ -94,7 +119,6 @@ export async function loadPatrimonio(
   input: LoadPatrimonioInput,
 ): Promise<LoadPatrimonioResult> {
   const { store, workspace, selectedScope, today, selectedGroup } = input;
-  const readExposureProfiles = input.readExposureProfiles ?? (async () => []);
 
   // The shared raw-reads context (operations, prices, ownership) built once and
   // reused: it both feeds the curve valuation below (dedup, #566) and drives the
@@ -102,7 +126,10 @@ export async function loadPatrimonio(
   const projectionContext = await store.snapshots.buildProjectionContext();
 
   // These reads are independent of one another, so fire them in one wave
-  // instead of stacking serial round-trips to the (remote) store (#446).
+  // instead of stacking serial round-trips to the (remote) store (#446). The
+  // exposure-profile catalog is deliberately NOT read here (#1195): it is the
+  // one await `deriveExposureAndReturns` needs, and reading it only in the
+  // streamed analytics child is what lets this board flush first.
   const [
     priceCacheEntries,
     investmentMeta,
@@ -113,7 +140,6 @@ export async function loadPatrimonio(
     { assets, liabilities },
     overrides,
     trash,
-    exposureProfiles,
     returnSnapshotRows,
     payoutRecords,
     payoutSchedules,
@@ -123,7 +149,6 @@ export async function loadPatrimonio(
     store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
     store.readWarningOverrides(),
     store.readTrash(),
-    readExposureProfiles(),
     store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
@@ -165,40 +190,12 @@ export async function loadPatrimonio(
       ],
     ),
   );
-  // Both the per-class returns and the exposure look-through key by the same two
-  // maps — profiles by their catalog key, and investment meta by asset id. Built
-  // once here and shared by both consumers below.
-  const exposureProfileByKey = new Map<string, ExposureProfile>(
-    exposureProfiles.map((profile) => [profile.key, profile]),
-  );
+  // Investment metadata (isin/providerSymbol) by asset id — the join key the
+  // streamed analytics child uses to resolve each holding's exposure profile
+  // (#1195; was also used here for the per-class returns and look-through).
   const metaByAssetId = new Map(investmentMeta.map((row) => [row.id, row]));
 
   const returnsById = investmentReturnsById({
-    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
-    currency: workspace.baseCurrency,
-    instrumentByAsset,
-    manualPriceByAsset: projectionContext.manualPriceByAsset,
-    monthlyClosesByAsset,
-    operationsByAsset: projectionContext.operationsByAsset,
-    payoutsByAsset,
-    valuationDate: today,
-  });
-
-  // Per-asset-class decomposition of the portfolio returns (#552, ADR 0040
-  // fast-follow). Resolves each holding's asset class from the SAME exposure
-  // profiles the look-through uses (`resolveAssetClassBreakdown`, ADR 0039), then
-  // folds the market holdings through the return engine per class. Present-time
-  // and unscoped, mirroring the per-holding board figures above.
-  const assetClassByAsset = new Map<string, AssetClassResolution>(
-    assets.map((asset) => {
-      const meta = metaByAssetId.get(asset.id);
-      const key = meta?.isin ?? meta?.providerSymbol ?? null;
-      const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
-      return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
-    }),
-  );
-  const returnsByClass = returnsByAssetClassView({
-    assetClassByAsset,
     cachedPriceByAsset: projectionContext.cachedPriceByAsset,
     currency: workspace.baseCurrency,
     instrumentByAsset,
@@ -262,6 +259,91 @@ export async function loadPatrimonio(
   // group doubles as the filter; BalanceBoard splits each group across the two panes.
   const groups = projection ? groupPortfolio(projection, selectedGroup) : [];
 
+  return {
+    exposureContext: {
+      assets,
+      baseCurrency: workspace.baseCurrency,
+      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+      instrumentByAsset,
+      manualPriceByAsset: projectionContext.manualPriceByAsset,
+      metaByAssetId,
+      monthlyClosesByAsset,
+      operationsByAsset: projectionContext.operationsByAsset,
+      payoutsByAsset,
+      projection,
+      today,
+    },
+    groups,
+    hasHoldings: assets.length > 0 || liabilities.length > 0,
+    hasPricedHoldings,
+    operatedAssetIds,
+    returnsById,
+    trash,
+    warnings,
+  };
+}
+
+/**
+ * Derive the two streamed /patrimonio analytics sub-sections (#1195): the
+ * present-time exposure look-through (PRD #539 S3, ADR 0039) and the per-
+ * asset-class decomposition of the portfolio returns (#552, ADR 0040 fast-
+ * follow). Pure given `ctx` (from {@link loadPatrimonio}) and the exposure-
+ * profile catalog — reproduces exactly the derivation that used to run inline
+ * in `loadPatrimonio` before the board/analytics split.
+ */
+export function deriveExposureAndReturns(
+  ctx: PatrimonioExposureContext,
+  exposureProfiles: ExposureProfile[],
+): {
+  exposureFull: ExposureLookthrough;
+  exposureEquity: ExposureLookthrough;
+  returnsByClass: AssetClassReturnsViewResult | null;
+} {
+  const {
+    assets,
+    baseCurrency,
+    cachedPriceByAsset,
+    instrumentByAsset,
+    manualPriceByAsset,
+    metaByAssetId,
+    monthlyClosesByAsset,
+    operationsByAsset,
+    payoutsByAsset,
+    projection,
+    today,
+  } = ctx;
+
+  // Both the per-class returns and the exposure look-through key by the same
+  // catalog, by its key.
+  const exposureProfileByKey = new Map<string, ExposureProfile>(
+    exposureProfiles.map((profile) => [profile.key, profile]),
+  );
+
+  // Per-asset-class decomposition of the portfolio returns (#552, ADR 0040
+  // fast-follow). Resolves each holding's asset class from the SAME exposure
+  // profiles the look-through uses (`resolveAssetClassBreakdown`, ADR 0039), then
+  // folds the market holdings through the return engine per class. Present-time
+  // and unscoped, mirroring the per-holding board figures.
+  const assetClassByAsset = new Map<string, AssetClassResolution>(
+    assets.map((asset) => {
+      const meta = metaByAssetId.get(asset.id);
+      const key = meta?.isin ?? meta?.providerSymbol ?? null;
+      const profile = key ? (exposureProfileByKey.get(key) ?? null) : null;
+      return [asset.id, resolveAssetClassBreakdown(instrumentOfAsset(asset), profile)];
+    }),
+  );
+  const returnsByClass = returnsByAssetClassView({
+    assetClassByAsset,
+    cachedPriceByAsset,
+    currency: baseCurrency,
+    instrumentByAsset,
+    manualPriceByAsset,
+    monthlyClosesByAsset,
+    operationsByAsset,
+    payoutsByAsset,
+    valuationDate: today,
+  });
+
   // Present-time exposure look-through (PRD #539 S3, ADR 0039): build the domain
   // input from the projection's ASSET rows (already scope-weighted; their sum is
   // the projection's gross assets, so grossAssets stays consistent) keyed to
@@ -271,7 +353,7 @@ export async function loadPatrimonio(
   // results (interaction-patterns §2). It is a lens, never a snapshot/figure.
   const exposureHoldings: ExposureLookthroughHolding[] = projection
     ? projection.sections[0].rows.map((row) => ({
-        currency: workspace.baseCurrency,
+        currency: baseCurrency,
         geography: null,
         id: row.id,
         instrument: row.instrument,
@@ -281,10 +363,10 @@ export async function loadPatrimonio(
       }))
     : [];
   const exposureInput = {
-    baseCurrency: workspace.baseCurrency,
+    baseCurrency,
     grossAssets: projection?.totalGrossAssets ?? {
       amountMinor: 0,
-      currency: workspace.baseCurrency,
+      currency: baseCurrency,
     },
     holdings: exposureHoldings,
     profiles: exposureProfileByKey,
@@ -295,16 +377,5 @@ export async function loadPatrimonio(
     assetClassFilter: "equity",
   });
 
-  return {
-    exposureEquity,
-    exposureFull,
-    groups,
-    hasHoldings: assets.length > 0 || liabilities.length > 0,
-    hasPricedHoldings,
-    operatedAssetIds,
-    returnsByClass,
-    returnsById,
-    trash,
-    warnings,
-  };
+  return { exposureEquity, exposureFull, returnsByClass };
 }
