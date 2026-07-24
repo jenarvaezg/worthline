@@ -2,8 +2,9 @@
  * First-run hogar onboarding (isolated DB project)
  *
  * Fresh database → /empezar renders → fill the Crear hogar form →
- * workspace is created with 2+ members → first run chains straight into the
- * add wizard (S4, #599) with the household scope live in the shared shell.
+ * workspace is created with 2+ members → first run lands on the full-screen
+ * onboarding (#1168), whose «a mano» escape reaches the add wizard with the
+ * household scope live in the shared shell.
  *
  * This spec runs in its own Playwright project with an isolated database,
  * so /empezar is reachable (no redirect to /).
@@ -11,7 +12,7 @@
 
 import { expect, test } from "./fixtures";
 
-test("hogar onboarding: /empezar → Crear hogar → add wizard with household scope", async ({
+test("hogar onboarding: /empezar → Crear hogar → onboarding → add wizard with household scope", async ({
   page,
 }) => {
   // 1. Navigate to /empezar — fresh DB, so the onboarding page renders
@@ -30,7 +31,13 @@ test("hogar onboarding: /empezar → Crear hogar → add wizard with household s
   // 4. Submit the Crear hogar form
   await page.getByRole("button", { name: "Crear hogar" }).click();
 
-  // 5. First run chains straight into the add wizard (S4, #599) — not the dashboard.
+  // 5. First run lands on the full-screen onboarding (#1168); the «a mano»
+  // escape leads to the add wizard — not a drop onto the dashboard.
+  await expect(page).toHaveURL("/bienvenida");
+  await expect(
+    page.getByRole("heading", { name: "Vamos a componer tu patrimonio." }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Prefiero cargarlo a mano" }).click();
   await expect(page).toHaveURL("/patrimonio/anadir");
   await expect(
     page.getByRole("heading", { name: "Añade algo a tu patrimonio" }),

@@ -36,14 +36,14 @@ async function freshStore(): Promise<WorthlineStore> {
 // ================================================================ initSoloAction
 
 describe("initSoloAction wiring", () => {
-  test("happy path: valid name → workspace created, cookie set, redirect to the add wizard", async () => {
+  test("happy path: valid name → workspace created, cookie set, redirect to onboarding", async () => {
     const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initSoloAction(fd({ name: "Ana" }, "/empezar?path=solo"), s),
     );
 
-    expect(url).toBe("/patrimonio/anadir");
+    expect(url).toBe("/bienvenida");
 
     const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("individual");
@@ -84,7 +84,7 @@ describe("initSoloAction wiring", () => {
       initSoloAction(fd({ name: "Nuevo" }, "/empezar?path=solo"), s),
     );
 
-    expect(url).toBe("/patrimonio/anadir");
+    expect(url).toBe("/bienvenida");
 
     const ws = (await s.workspace.readWorkspace())!;
     expect(ws.members).toHaveLength(1);
@@ -95,14 +95,14 @@ describe("initSoloAction wiring", () => {
 // ================================================================ initHogarAction
 
 describe("initHogarAction wiring", () => {
-  test("happy path: valid memberNames → household workspace, redirect to the add wizard", async () => {
+  test("happy path: valid memberNames → household workspace, redirect to onboarding", async () => {
     const s = await freshStore();
 
     const url = await catchRedirect(() =>
       initHogarAction(fd({ memberNames: "Ana\nJose\nPedro" }, "/empezar?path=hogar"), s),
     );
 
-    expect(url).toBe("/patrimonio/anadir");
+    expect(url).toBe("/bienvenida");
 
     const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("household");
@@ -148,7 +148,7 @@ describe("initHogarAction wiring", () => {
       initHogarAction(fd({ memberNames: "Ana\nJose" }, "/empezar?path=hogar"), s),
     );
 
-    expect(url).toBe("/patrimonio/anadir");
+    expect(url).toBe("/bienvenida");
 
     const ws = (await s.workspace.readWorkspace())!;
     expect(ws.mode).toBe("household");

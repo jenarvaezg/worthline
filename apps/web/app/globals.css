@@ -8459,6 +8459,116 @@ td.rowActions > * {
   cursor: default;
 }
 
+/* === Onboarding «estreno» (#1168): el asistente a pantalla completa. Cuerpo de
+   papel coronado por el masthead de cubierta (canon híbrido #829/#909), con la
+   drop-zone como acción-héroe. Reutiliza .assistant* para la conversación y el
+   composer, así que cualquier propuesta nueva del asistente enriquece el
+   onboarding gratis. === */
+.onboardingSurface {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
+.onboardingMasthead {
+  padding: 18px 24px;
+}
+
+.onboardingBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 20px;
+  margin: 0 auto;
+  max-width: 40rem;
+  padding: 28px 24px 40px;
+  width: 100%;
+}
+
+.onboardingWelcome {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.onboardingWelcome h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.onboardingWelcome > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* La drop-zone es la acción-héroe: un marco de papel abierto por regla punteada,
+   no una tarjeta con sombra (canon §5). El puntero y :focus-within la señalan;
+   «dragging» invierte a regla sólida verde como acuse del arrastre. */
+.onboardingDrop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 180px;
+  padding: 32px 24px;
+  text-align: center;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+.onboardingDrop:hover,
+.onboardingDrop:focus-within {
+  border-color: var(--green);
+}
+.onboardingDrop.dragging {
+  border-style: solid;
+  border-color: var(--green);
+  background: var(--band);
+}
+.onboardingDropTitle {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.onboardingDropHint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* Escapes deliberadamente discretos: enlaces al pie, separados por una regla del
+   cuerpo, nunca botones que compitan con la acción-héroe. */
+.onboardingEscapes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.onboardingEscapes a,
+.onboardingEscapes button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.onboardingEscapes a:hover,
+.onboardingEscapes button:hover {
+  color: var(--blue);
+}
+
 /* La lectura del adjunto es otra entrada de papel abierta por regla gruesa, no
    una tarjeta (#911). La tabla ya lleva su gramática de registro (hairlines +
    .totalRule). */
