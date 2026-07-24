@@ -59,8 +59,9 @@ test("import preview: summary + data-loss warning for a valid file; inline error
     await expect(page.getByRole("heading", { name: "Empezar solo" })).toBeVisible();
     await page.getByLabel("Tu nombre").fill("TestUser");
     await page.getByRole("button", { name: "Empezar solo" }).click();
-    // First run chains into the add wizard (S4, #599), not the dashboard.
-    await expect(page).toHaveURL("/patrimonio/anadir");
+    // First run now lands on the full-screen onboarding (#1168), not the dashboard;
+    // addHolding navigates to the wizard itself from here.
+    await expect(page).toHaveURL("/bienvenida");
   }
 
   // Guarantee pre-existing data: create one asset through the UI.
