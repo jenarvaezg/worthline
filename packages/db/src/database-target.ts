@@ -5,7 +5,7 @@ import type { LocalPersistenceStatus } from "@worthline/domain";
 import { eq } from "drizzle-orm";
 
 import { openDrizzle, openLibsqlClient } from "./libsql-client";
-import { migrate } from "./migrate";
+import { migrate, SCHEMA_VERSION } from "./migrate";
 import { appSettings } from "./schema";
 import type {
   BootstrapHealthcheckOptions,
@@ -16,25 +16,54 @@ import type {
 const bootstrapKey = "bootstrap.last_healthcheck_at";
 
 /**
- * Run the migration ladder, but skip the schema-version probe for a remote
- * (`libsql://`) database this process has already confirmed at-version (perf
- * #445). The ladder is idempotent and the schema only ever changes on a deploy
- * (a fresh lambda process), so re-reading `schema_meta` on every request to a
- * warm lambda is pure network round-trip overhead.
+ * Per-process memo of remote databases already confirmed at the compiled schema
+ * version (perf #445 / #1194). The ladder is idempotent and the schema only ever
+ * changes on a deploy, so re-reading `schema_meta` on every request to a warm
+ * lambda is pure network round-trip overhead — the whole `migrate()` call is
+ * skipped once a base is known to be at-version.
  *
- * Never memoized for `path` targets (`:memory:` / `file:`): those reuse a single
- * URL string across distinct databases (every `createInMemoryStore()` is a fresh
- * DB), so skipping their migration would be a correctness bug. Remote URLs are
- * unique per workspace and stable, so keying the skip on the URL is safe.
+ * The key is `${url}@${SCHEMA_VERSION}`, i.e. the base URL qualified by the
+ * COMPILED schema version. A deploy that ships a new schema also ships a new
+ * `SCHEMA_VERSION` constant, so its warm processes compute a different key and can
+ * never hit a stale "already migrated" entry — the memo is invalidated by
+ * construction, independent of process lifetime (a fresh lambda starts empty too;
+ * the version qualifier just makes the guarantee explicit rather than incidental).
+ *
+ * Never memoized for `path` targets (`:memory:` / `file:` opened by path): those
+ * reuse a single string across genuinely distinct databases (every
+ * `createInMemoryStore()` is a fresh DB), so skipping their migration would be a
+ * correctness bug. Remote URLs are unique per workspace and stable, so keying the
+ * skip on the URL is safe — and each workspace gets its own entry, so a
+ * multi-tenant process (admin/impersonation, demo) never contaminates one base's
+ * state with another's.
  */
-const migratedRemoteUrls = new Set<string>();
+const migratedTargets = new Set<string>();
+
+/** The versioned memo key for a remote base — see {@link migratedTargets}. */
+function migratedTargetKey(url: string): string {
+  return `${url}@${SCHEMA_VERSION}`;
+}
+
 export async function migrateTarget(target: DatabaseTarget, client: Client) {
-  if (target.kind === "url" && migratedRemoteUrls.has(target.url)) {
+  const key = target.kind === "url" ? migratedTargetKey(target.url) : null;
+  if (key !== null && migratedTargets.has(key)) {
     return { ranV18Backfill: false, ranV33Backfill: false };
   }
   const result = await migrate(client);
-  if (target.kind === "url") migratedRemoteUrls.add(target.url);
+  // Populate ONLY after `migrate()` has verified/reached the target version: a
+  // base that still needed migrating is memoized exactly once its ladder ran, and
+  // a thrown migration never records a false "at-version".
+  if (key !== null) migratedTargets.add(key);
   return result;
+}
+
+/**
+ * Test-only: clear the per-process migration memo so a spec observes a cold first
+ * open. Never called by production paths (the memo is meant to persist for the
+ * life of the process).
+ */
+export function __resetMigratedTargetsForTests(): void {
+  migratedTargets.clear();
 }
 
 export async function runBootstrapHealthcheck(
