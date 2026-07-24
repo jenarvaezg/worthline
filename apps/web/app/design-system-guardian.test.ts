@@ -125,44 +125,44 @@ const semanticShapeAllowlist: AllowedDeclaration[] = [
 
 const legacyPrototypeAllowlist: AllowedDeclaration[] = [
   {
-    file: "patrimonio/prototipo-extracto/prototype.module.css",
+    file: "(workspace)/patrimonio/prototipo-extracto/prototype.module.css",
     property: "box-shadow",
     selector:
       ".topbar, .heroPanel, .summaryPanel, .bucketCard, .fixturePanel, .tablePanel",
     value: "0 1px 2px rgba(23, 32, 30, 0.05), 0 10px 30px rgba(23, 32, 30, 0.06)",
   },
   {
-    file: "patrimonio/prototipo-extracto/prototype.module.css",
+    file: "(workspace)/patrimonio/prototipo-extracto/prototype.module.css",
     property: "border-radius",
     selector: ".backLink",
     value: "999px",
   },
   {
-    file: "patrimonio/prototipo-extracto/prototype.module.css",
+    file: "(workspace)/patrimonio/prototipo-extracto/prototype.module.css",
     property: "border-radius",
     selector: ".fixtureMeta span",
     value: "999px",
   },
   {
-    file: "patrimonio/prototipo-extracto/prototype.module.css",
+    file: "(workspace)/patrimonio/prototipo-extracto/prototype.module.css",
     property: "border-radius",
     selector: ".bucketPill",
     value: "999px",
   },
   {
-    file: "patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
+    file: "(workspace)/patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
     property: "box-shadow",
     selector: ".panel",
     value: "0 1px 2px rgba(23, 32, 30, 0.05), 0 10px 30px rgba(23, 32, 30, 0.06)",
   },
   {
-    file: "patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
+    file: "(workspace)/patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
     property: "border-radius",
     selector: ".badge",
     value: "999px",
   },
   {
-    file: "patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
+    file: "(workspace)/patrimonio/prototipo-deuda-estado/prototipo-deuda-estado.module.css",
     property: "border-radius",
     selector: ".toggle span",
     value: "999px",
@@ -411,7 +411,7 @@ describe("Libro mayor design-system guardian (#906)", () => {
       ["demo/page.tsx", 'className="demoCover coverSurface"'],
       ["demo/page.tsx", 'className="demoPersonaCard coverSheet"'],
       ["not-found.tsx", 'className="notFoundPage coverSurface"'],
-      ["shell.tsx", 'className="persistenceBar coverSurface"'],
+      ["workspace-footer.tsx", 'className="persistenceBar coverSurface"'],
       ["empezar/page.tsx", 'className="coverSurface coverMasthead empezarMasthead"'],
     ];
 
@@ -442,8 +442,8 @@ describe("Libro mayor design-system guardian (#906)", () => {
   test("the shell and root layers consume the paper register (#910)", () => {
     const expectations: Array<[file: string, needle: string]> = [
       // Register tabs (navTab) for the section nav; scope selector segmented.
-      ["shell.tsx", "className={`navTab${"],
-      ["shell.tsx", 'className="scopeTabs segmented"'],
+      ["section-nav.tsx", "className={`navTab${"],
+      ["workspace-scope-bar.tsx", 'className="scopeTabs segmented"'],
       // Session bands (not cover, not cards): demo neutral, impersonation caution.
       ["demo/demo-banner.tsx", 'className="sessionBand"'],
       ["admin/impersonation-banner.tsx", 'className="sessionBand"'],
@@ -554,7 +554,10 @@ describe("Libro mayor design-system guardian (#906)", () => {
   test("the settings and admin surfaces consume the paper register (#912)", () => {
     // Every settings panel carries the shared .section primitive (paper, not
     // a card). The count pins the sweep — new panels must opt in too.
-    const ajustes = readFileSync(join(appDirectory, "ajustes/page.tsx"), "utf8");
+    const ajustes = readFileSync(
+      join(appDirectory, "(workspace)/ajustes/page.tsx"),
+      "utf8",
+    );
     const sectioned = ajustes.match(/className="ajustesPanel section"/g) ?? [];
     expect(sectioned.length).toBe(7);
 

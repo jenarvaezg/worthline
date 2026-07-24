@@ -9,6 +9,10 @@ import type {
 } from "@worthline/domain";
 import { PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
 
+import { PRESERVED_VALUE_PREFIX } from "./current-url";
+
+export { buildCurrentUrl, buildCurrentUrlFor } from "./current-url";
+
 /**
  * The web intake seam: turns raw HTML form input into validated domain command
  * objects and parses request params. Pure and framework-agnostic (no Next.js),
@@ -173,63 +177,6 @@ export function appendParam(url: string, key: string, value: string): string {
   const next = qs ? `${path ?? "/"}?${qs}` : (path ?? "/");
 
   return `${next}${hash}`;
-}
-
-/** One-shot post-redirect feedback params — never carried forward in currentUrl. */
-const ONE_SHOT_PARAMS = new Set([
-  "ok",
-  "error",
-  "form",
-  "updated",
-  "failed",
-  "anchor",
-  // Statement-load summary (#174, #175, #178, #179): counts shown once in the banner.
-  "created",
-  "overwritten",
-  "skipped",
-  "anomalies",
-  "sells",
-  // Symbol-search state (#138): the query and the picked candidate's prefill
-  // live in the URL only while the user is choosing — never carried into the
-  // action return URL.
-  "symbolq",
-  "pfName",
-  "pfSymbol",
-  "pfProvider",
-  // Onboarding re-run trigger (#1170): a one-shot activation flag consumed by the
-  // assistant layer; never carried into action-return URLs or the sibling links.
-  "repasar",
-]);
-const PRESERVED_VALUE_PREFIX = "v_";
-
-/**
- * The canonical "return here" URL for a server action, rebuilt from the page's
- * search params with every one-shot feedback param stripped so banners and
- * preserved form values never persist across later navigation.
- */
-export function buildCurrentUrl(
-  searchParams?: Record<string, string | string[] | undefined>,
-): string {
-  const params = new URLSearchParams();
-
-  if (searchParams) {
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value === undefined) continue;
-      if (ONE_SHOT_PARAMS.has(key) || key.startsWith(PRESERVED_VALUE_PREFIX)) continue;
-
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          params.append(key, item);
-        }
-      } else {
-        params.set(key, value);
-      }
-    }
-  }
-
-  const queryString = params.toString();
-
-  return queryString ? `/app?${queryString}` : "/app";
 }
 
 /** A validation failure tied to the form that produced it, with the typed input. */
@@ -655,37 +602,6 @@ function normalizeParam(value: string | string[] | undefined): string | undefine
 }
 
 // === #58 inversiones ===
-
-/**
- * buildCurrentUrlFor: like buildCurrentUrl but prepends a fixed basePath so
- * subpages (/inversiones/nueva, /patrimonio/[id]/editar, etc.) get the
- * right return URL without knowing the page URL at parse time.
- */
-export function buildCurrentUrlFor(
-  basePath: string,
-  searchParams?: Record<string, string | string[] | undefined>,
-): string {
-  const params = new URLSearchParams();
-
-  if (searchParams) {
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value === undefined) continue;
-      if (ONE_SHOT_PARAMS.has(key) || key.startsWith(PRESERVED_VALUE_PREFIX)) continue;
-
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          params.append(key, item);
-        }
-      } else {
-        params.set(key, value);
-      }
-    }
-  }
-
-  const queryString = params.toString();
-
-  return queryString ? `${basePath}?${queryString}` : basePath;
-}
 
 /** Map a price freshness state to a localized label (shared by /inversiones pages). */
 export function priceFreshnessLabel(freshness: PriceFreshnessState | null): string {

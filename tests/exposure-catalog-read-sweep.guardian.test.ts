@@ -19,9 +19,9 @@ const REROUTED_READ_SURFACES = [
   "apps/web/app/agent-view/holding-detail.ts",
   "apps/web/app/agent-view/contribution-plan-context.ts",
   "apps/web/app/agent-view/returns.ts",
-  "apps/web/app/patrimonio/page.tsx",
-  "apps/web/app/objetivos/page.tsx",
-  "apps/web/app/patrimonio/[id]/editar/page.tsx",
+  "apps/web/app/(workspace)/patrimonio/page.tsx",
+  "apps/web/app/(workspace)/objetivos/page.tsx",
+  "apps/web/app/(workspace)/patrimonio/[id]/editar/page.tsx",
 ];
 
 function source(relativePath: string): string {

@@ -31,6 +31,7 @@ import type { LocalPersistenceStatus, Workspace } from "@worthline/domain";
 import { listScopeOptions, type ScopeOption } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 export interface PageShellInput {
   /**
@@ -60,10 +61,41 @@ export interface PageShell {
   privacyMode: boolean;
 }
 
+/**
+ * The session-independent half of the preamble: target → healthcheck → store →
+ * workspace (onboarding redirect) → scope options. Memoized per request with
+ * React `cache()` so the shared `(workspace)` layout (chrome, scope bar, footer)
+ * and the page underneath resolve it exactly once between them (#1190) — no
+ * duplicated reads even though both call in. Scope selection and privacy are
+ * request-cheap and stay in {@link resolvePageShell}, which layers them on top.
+ */
+export const resolveWorkspaceContext = cache(
+  async (): Promise<
+    Pick<PageShell, "target" | "persistence" | "store" | "workspace" | "scopes">
+  > => {
+    const target = await requireStoreTarget();
+    const persistence = await bootstrapHealthcheck(target);
+
+    const store = await getRequestStore();
+    const workspace = await store.workspace.readWorkspace();
+    if (!workspace) {
+      redirect("/empezar");
+    }
+
+    return {
+      persistence,
+      scopes: listScopeOptions(workspace),
+      store,
+      target,
+      workspace,
+    };
+  },
+);
+
 /** Run the shared page preamble. See the module doc for what it owns. */
 export async function resolvePageShell(input: PageShellInput = {}): Promise<PageShell> {
-  const target = await requireStoreTarget();
-  const persistence = await bootstrapHealthcheck(target);
+  const { persistence, scopes, store, target, workspace } =
+    await resolveWorkspaceContext();
 
   const jar = await cookies();
   const queryScopeId = parseScopeParam(input.searchParams?.scope);
@@ -71,13 +103,6 @@ export async function resolvePageShell(input: PageShellInput = {}): Promise<Page
   const requestedScopeId = queryScopeId ?? cookieScopeId;
   const privacyMode = parsePrivacyCookie(jar.get(PRIVACY_COOKIE_NAME)?.value);
 
-  const store = await getRequestStore();
-  const workspace = await store.workspace.readWorkspace();
-  if (!workspace) {
-    redirect("/empezar");
-  }
-
-  const scopes = listScopeOptions(workspace);
   const selectedScope =
     scopes.find((scope) => scope.id === requestedScopeId) ?? scopes[0];
 

@@ -6,6 +6,12 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["node"],
     "paths": {
+      "@web/app/*": ["./apps/web/app/(workspace)/app/*"],
+      "@web/patrimonio/*": ["./apps/web/app/(workspace)/patrimonio/*"],
+      "@web/historico/*": ["./apps/web/app/(workspace)/historico/*"],
+      "@web/objetivos/*": ["./apps/web/app/(workspace)/objetivos/*"],
+      "@web/ajustes/*": ["./apps/web/app/(workspace)/ajustes/*"],
+      "@web/premium/*": ["./apps/web/app/(workspace)/premium/*"],
       "@web/*": ["./apps/web/app/*"],
       "@domain/*": ["./packages/domain/src/*"],
       "@db/*": ["./packages/db/src/*"],
