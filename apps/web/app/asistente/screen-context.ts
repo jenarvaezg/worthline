@@ -70,9 +70,26 @@ export function isScreenContext(value: unknown): value is ScreenContext {
 const SECTIONS = ["patrimonio", "historico", "objetivos", "ajustes"] as const;
 const VIEW_KEYS = ["view", "range", "exp", "hide"];
 
+/**
+ * The dedicated onboarding route (PRD #1167 S1, #1168): the assistant in a
+ * full-screen «estreno» presentation. It is where a freshly-provisioned
+ * workspace lands (redirect gate in `onboarding-redirect.ts`) before it has an
+ * `onboarded_at` mark.
+ */
+export const ONBOARDING_PATH = "/bienvenida";
+
 /** The public landing at `/` is marketing-only — no assistant layer or chat turns. */
 export function isAssistantSurface(pathname: string): boolean {
   return pathname !== "/";
+}
+
+/**
+ * The onboarding route IS the assistant in full-screen mode, so `isAssistantSurface`
+ * stays true here (chat turns are allowed); this predicate only tells the layer to
+ * render its dedicated `estreno` presentation instead of the floating panel.
+ */
+export function isOnboardingSurface(pathname: string): boolean {
+  return pathname === ONBOARDING_PATH;
 }
 
 export function deriveScreenContext(pathname: string, search: string): ScreenContext {

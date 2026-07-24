@@ -1,9 +1,9 @@
 /**
- * /empezar action tests (S4, #599). The solo/hogar onboarding actions create the
- * workspace through the shared store seam and then chain straight into the add
- * wizard — first run is one continuous path, never a drop onto an empty
- * dashboard. These assert the workspace shape AND the post-creation redirect
- * target.
+ * /empezar action tests (S4 #599; repointed in #1168). The solo/hogar actions
+ * create the workspace through the shared store seam and then chain into the
+ * full-screen onboarding (`/bienvenida`) — first run is one continuous path,
+ * never a drop onto an empty dashboard. These assert the workspace shape AND the
+ * post-creation redirect target.
  */
 
 import type { WorthlineStore } from "@worthline/db";
@@ -51,12 +51,12 @@ async function runAction(
 }
 
 describe("initSoloAction (#599)", () => {
-  test("creates an individual workspace and chains into the add wizard", async () => {
+  test("creates an individual workspace and chains into onboarding", async () => {
     const store = await createInMemoryStore();
 
     const url = await runAction(initSoloAction, form({ name: "Ana" }), store);
 
-    expect(url).toContain("/patrimonio/anadir");
+    expect(url).toContain("/bienvenida");
 
     const workspace = await store.workspace.readWorkspace();
     expect(workspace?.mode).toBe("individual");
@@ -65,7 +65,7 @@ describe("initSoloAction (#599)", () => {
 });
 
 describe("initHogarAction (#599)", () => {
-  test("creates a household workspace and chains into the add wizard", async () => {
+  test("creates a household workspace and chains into onboarding", async () => {
     const store = await createInMemoryStore();
 
     const url = await runAction(
@@ -74,7 +74,7 @@ describe("initHogarAction (#599)", () => {
       store,
     );
 
-    expect(url).toContain("/patrimonio/anadir");
+    expect(url).toContain("/bienvenida");
 
     const workspace = await store.workspace.readWorkspace();
     expect(workspace?.mode).toBe("household");

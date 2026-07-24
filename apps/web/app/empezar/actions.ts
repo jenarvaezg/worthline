@@ -1,6 +1,5 @@
 "use server";
 
-import { markOnboardedBestEffort } from "@web/activation-marks";
 import { formAction } from "@web/form-action";
 import {
   errorRedirectUrl,
@@ -46,14 +45,15 @@ export async function initSoloAction(
           sameSite: "lax",
         });
       }
-      // The workspace completed /empezar — stamp the set-once mark (#1131).
-      await markOnboardedBestEffort();
+      // No onboarded mark here (#1168): declaring who you are is not onboarding.
+      // The full-screen onboarding owns `onboarded_at` — it is stamped when the
+      // workspace completes onboarding («lo haré luego» or its first holding).
     },
     // parse builds the full redirect URL on failure; run never returns { ok: false }.
     onError: () => "/empezar",
-    // S4 (#599): first run flows straight into the add wizard — one continuous
-    // path, never a drop onto an empty dashboard.
-    onSuccess: () => "/patrimonio/anadir",
+    // Post-registration lands on the full-screen onboarding (#1168), which
+    // replaces the drop onto the manual add wizard as the first-run surface.
+    onSuccess: () => "/bienvenida",
   })(formData, ..._testArgs);
 }
 
@@ -84,13 +84,10 @@ export async function initHogarAction(
       await store.workspace.initializeWorkspace(parsed);
       return { ok: true };
     },
-    // The workspace completed /empezar — stamp the set-once mark (#1131).
-    afterCommit: async () => {
-      await markOnboardedBestEffort();
-    },
     // parse builds the full redirect URL on failure; run never returns { ok: false }.
     onError: () => "/empezar",
-    // S4 (#599): chain straight into the add wizard, not the empty dashboard.
-    onSuccess: () => "/patrimonio/anadir",
+    // Post-registration lands on the full-screen onboarding (#1168); onboarding
+    // owns the `onboarded_at` mark, so /empezar no longer stamps it.
+    onSuccess: () => "/bienvenida",
   })(formData, ..._testArgs);
 }

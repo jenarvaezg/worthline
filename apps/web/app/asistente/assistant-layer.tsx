@@ -5,6 +5,7 @@ import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   useCallback,
@@ -28,7 +29,9 @@ import {
   parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
-import AssistantAttachmentControl from "./assistant-attachment-control";
+import AssistantAttachmentControl, {
+  ASSISTANT_ATTACHMENT_ACCEPT,
+} from "./assistant-attachment-control";
 import { assistantChatTransport } from "./assistant-chat-transport";
 import { AssistantTextPart } from "./assistant-markdown";
 import AssistantMessages from "./assistant-messages";
@@ -94,6 +97,7 @@ import {
 import {
   deriveScreenContext,
   isAssistantSurface,
+  isOnboardingSurface,
   type ScreenSection,
 } from "./screen-context";
 import {
@@ -1281,23 +1285,274 @@ function PropertyValuationProposalCard({
 }
 
 /**
+ * The rendered conversation turns — message parts and the proposal cards they
+ * unfold into. Extracted so the floating panel (#628) and the full-screen
+ * onboarding surface (#1168) render the SAME turns with zero duplication: every
+ * proposal the assistant learns to make surfaces in onboarding for free.
+ */
+function ConversationParts({
+  messages,
+  error,
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  endRef,
+}: {
+  messages: UIMessage[];
+  error: Error | undefined;
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  endRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <>
+      {messages.map((message) => (
+        <div className={`assistantMsg ${message.role}`} key={message.id}>
+          {message.parts.map((part, i) => {
+            if (part.type === "text") {
+              const { cleaned } = extractEmbeddedQuickActions(part.text);
+              return (
+                <AssistantTextPart
+                  key={`${message.id}-${i}`}
+                  role={message.role}
+                  text={cleaned}
+                />
+              );
+            }
+            if (part.type === "data-attachment-extraction") {
+              const preview = parseAttachmentPreviewData(part.data);
+              return preview ? (
+                <AttachmentExtractionPreview
+                  key={`${message.id}-${i}`}
+                  preview={preview}
+                />
+              ) : null;
+            }
+            if (part.type === "data-paywall") {
+              const paywall = parsePaywallPartData(part.data);
+              return paywall ? (
+                <PremiumNotice key={`${message.id}-${i}`} message={paywall.message} />
+              ) : null;
+            }
+            if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
+              const name =
+                "toolName" in part ? String(part.toolName) : part.type.slice(5);
+              // suggest_actions renders as chips below, not as tool activity.
+              if (name === "suggest_actions") return null;
+              if (name === "propose_statement_import" && "output" in part) {
+                const proposal = parseStatementImportProposal(part.output);
+                return proposal ? (
+                  <StatementProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (
+                (name === "propose_correction" || name === "propose_reconstruction") &&
+                "output" in part
+              ) {
+                const proposal = parseCorrectionProposal(part.output);
+                if (!proposal) return null;
+                return proposal.mode === "reconstruir" ? (
+                  <ReconstructionProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : (
+                  <CorrectionProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                );
+              }
+              if (name === "propose_holding" && "output" in part) {
+                const proposal = parseHoldingCreationProposal(part.output);
+                return proposal ? (
+                  <HoldingCreationProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_holding_removal" && "output" in part) {
+                const proposal = parseHoldingTrashProposal(
+                  part.output,
+                  "holding_removal",
+                );
+                return proposal ? (
+                  <HoldingTrashProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_holding_restoration" && "output" in part) {
+                const proposal = parseHoldingTrashProposal(
+                  part.output,
+                  "holding_restoration",
+                );
+                return proposal ? (
+                  <HoldingTrashProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_balance_history_import" && "output" in part) {
+                const proposal = parseBalanceHistoryProposal(part.output);
+                return proposal ? (
+                  <BalanceHistoryProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_property_valuation_anchor" && "output" in part) {
+                const proposal = parsePropertyValuationProposal(part.output);
+                return proposal ? (
+                  <PropertyValuationProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_reconcile" && "output" in part) {
+                const proposal = parseReconcileProposal(part.output);
+                return proposal ? (
+                  <ReconcileProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              if (name === "propose_mixed_document_import" && "output" in part) {
+                const proposal = parseMixedDocumentProposal(part.output);
+                return proposal ? (
+                  <MixedDocumentProposalCard
+                    key={`${message.id}-${i}`}
+                    mutationsDisabled={mutationsDisabled}
+                    mutationsDisabledMessage={mutationsDisabledMessage}
+                    proposal={proposal}
+                  />
+                ) : null;
+              }
+              // Read tools run silently; only proposal cards surface tool activity.
+              return null;
+            }
+            return null;
+          })}
+        </div>
+      ))}
+      {error ? (
+        <p className="assistantError" role="alert">
+          El asistente no ha podido responder. Vuelve a intentarlo.
+        </p>
+      ) : null}
+      <div ref={endRef} />
+    </>
+  );
+}
+
+/**
+ * The message composer: attachment control plus the text input row. Shared by
+ * the floating panel and the onboarding surface (#1168).
+ */
+function Composer({
+  busy,
+  attachment,
+  setAttachment,
+  draft,
+  setDraft,
+  inputRef,
+  onSubmit,
+  placeholder,
+}: {
+  busy: boolean;
+  attachment: File | null;
+  setAttachment: (file: File | null) => void;
+  draft: string;
+  setDraft: (value: string) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onSubmit: (e: React.FormEvent) => void;
+  placeholder: string;
+}) {
+  return (
+    <form className="assistantComposer" onSubmit={onSubmit}>
+      <AssistantAttachmentControl
+        disabled={busy}
+        file={attachment}
+        onChange={setAttachment}
+        onRemove={() => setAttachment(null)}
+      />
+      <div className="assistantInputRow">
+        <input
+          aria-label="Mensaje para el asistente"
+          disabled={busy}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={placeholder}
+          ref={inputRef}
+          value={draft}
+        />
+        <button
+          disabled={busy || (draft.trim() === "" && attachment === null)}
+          type="submit"
+        >
+          Enviar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
  * The financial assistant's contextual layer (#629, container decided in S0
  * #628): a FAB opens an overlay side panel (desktop) / bottom sheet (mobile)
  * that survives in-app navigation because it mounts in the root layout. The
  * conversation is ephemeral — client state only, nothing persisted (#627).
- * Styles live in globals.css (`assistant*` classes, design-system tokens).
+ *
+ * On the dedicated onboarding route (#1168) the SAME layer renders a full-screen
+ * «estreno» presentation instead — a dominant drop-zone, a welcome first turn,
+ * and two deliberately discreet escapes («a mano» / «lo haré luego»). It reuses
+ * the conversation and composer above, so anything the assistant learns to
+ * propose enriches onboarding for free (the whole point of «cero motor nuevo»).
+ *
+ * Styles live in globals.css (`assistant*` / `onboarding*` classes, tokens).
  */
 
 export default function AssistantLayer({
   mutationsDisabled = false,
   mutationsDisabledMessage = DEMO_DISABLED_MESSAGE,
+  variant = "floating",
+  onboardingManualHref = "/patrimonio/anadir",
+  onboardingSkipAction,
 }: {
   mutationsDisabled?: boolean;
   mutationsDisabledMessage?: string;
+  variant?: "floating" | "onboarding";
+  onboardingManualHref?: string;
+  onboardingSkipAction?: (formData: FormData) => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const { messages, sendMessage, status, error } = useChat({
     transport: assistantChatTransport,
   });
@@ -1383,7 +1638,156 @@ export default function AssistantLayer({
     setAttachment(null);
   }
 
-  if (!isAssistantSurface(pathname)) {
+  // The onboarding drop-zone is the hero action (#1168): a dropped document
+  // sends straight away, so arriving with a statement in hand needs no typing.
+  function sendAttachment(file: File) {
+    if (busy) return;
+    void sendMessage(
+      { role: "user", parts: [{ type: "text", text: `Adjunto: ${file.name}` }] },
+      { body: { attachment: file } },
+    );
+  }
+
+  if (variant === "onboarding") {
+    const hasConversation = messages.length > 0;
+    return (
+      <main aria-label="Bienvenida a worthline" className="onboardingSurface">
+        <p aria-live="polite" className="srOnly" role="status">
+          {busy
+            ? "El asistente está respondiendo."
+            : "Onboarding de worthline. Arrastra tus extractos o cuéntame qué tienes."}
+        </p>
+
+        <header className="coverSurface coverMasthead onboardingMasthead">
+          <p className="empezarEyebrow">Patrimonio neto</p>
+          <h1>worthline</h1>
+        </header>
+
+        <div className="onboardingBody">
+          {hasConversation ? null : (
+            <div className="onboardingWelcome">
+              <h2>Vamos a componer tu patrimonio.</h2>
+              <p>
+                Arrastra aquí tus extractos, PDFs o tu Excel —o cuéntame qué tienes— y lo
+                convierto en tu patrimonio, contigo, en unos minutos.
+              </p>
+
+              <label
+                className={`onboardingDrop${dragActive ? " dragging" : ""}`}
+                htmlFor="onboarding-drop-input"
+                onDragLeave={() => setDragActive(false)}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragActive(true);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) sendAttachment(file);
+                }}
+              >
+                <span className="onboardingDropTitle">
+                  Arrastra un documento o pulsa para elegirlo
+                </span>
+                <span className="onboardingDropHint">
+                  Captura, CSV, XLSX o PDF de tu banco o bróker
+                </span>
+                <input
+                  accept={ASSISTANT_ATTACHMENT_ACCEPT}
+                  className="srOnly"
+                  disabled={busy}
+                  id="onboarding-drop-input"
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0];
+                    if (file) sendAttachment(file);
+                  }}
+                  type="file"
+                  value=""
+                />
+              </label>
+
+              {prompts.length > 0 ? (
+                <div
+                  aria-label="O cuéntamelo por escrito"
+                  className="assistantPrompts"
+                  role="group"
+                >
+                  {prompts.map((p) => (
+                    <button
+                      className="assistantChip"
+                      key={p.id}
+                      onClick={() => seed(p.prompt)}
+                      type="button"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <AssistantMessages>
+            <ConversationParts
+              endRef={endRef}
+              error={error}
+              messages={messages}
+              mutationsDisabled={mutationsDisabled}
+              mutationsDisabledMessage={mutationsDisabledMessage}
+            />
+          </AssistantMessages>
+
+          {quickActions.length > 0 ? (
+            <div
+              aria-label="Acciones sugeridas"
+              className="assistantActions"
+              role="group"
+            >
+              {quickActions.map((action, i) => (
+                <button
+                  className={`assistantChip ${action.type}`}
+                  key={`${action.label}-${i}`}
+                  onClick={() => runAction(action)}
+                  type="button"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <Composer
+            attachment={attachment}
+            busy={busy}
+            draft={draft}
+            inputRef={inputRef}
+            onSubmit={submit}
+            placeholder="Cuéntame qué tienes…"
+            setAttachment={setAttachment}
+            setDraft={setDraft}
+          />
+
+          {/* Escapes deliberadamente discretos (#1130): a mano y «lo haré luego».
+              Nunca un «plan B» ruidoso; siempre accesibles. */}
+          <nav aria-label="Otras formas de empezar" className="onboardingEscapes">
+            <Link href={onboardingManualHref}>Prefiero cargarlo a mano</Link>
+            {onboardingSkipAction ? (
+              <form action={onboardingSkipAction}>
+                <button type="submit">Lo haré luego</button>
+              </form>
+            ) : (
+              <Link href="/app">Lo haré luego</Link>
+            )}
+          </nav>
+        </div>
+      </main>
+    );
+  }
+
+  // The floating layer never shows on the onboarding route — that surface is the
+  // onboarding variant above, mounted by the route itself.
+  if (!isAssistantSurface(pathname) || isOnboardingSurface(pathname)) {
     return null;
   }
 
@@ -1440,167 +1844,13 @@ export default function AssistantLayer({
             </div>
           </div>
         ) : null}
-        {messages.map((message) => (
-          <div className={`assistantMsg ${message.role}`} key={message.id}>
-            {message.parts.map((part, i) => {
-              if (part.type === "text") {
-                const { cleaned } = extractEmbeddedQuickActions(part.text);
-                return (
-                  <AssistantTextPart
-                    key={`${message.id}-${i}`}
-                    role={message.role}
-                    text={cleaned}
-                  />
-                );
-              }
-              if (part.type === "data-attachment-extraction") {
-                const preview = parseAttachmentPreviewData(part.data);
-                return preview ? (
-                  <AttachmentExtractionPreview
-                    key={`${message.id}-${i}`}
-                    preview={preview}
-                  />
-                ) : null;
-              }
-              if (part.type === "data-paywall") {
-                const paywall = parsePaywallPartData(part.data);
-                return paywall ? (
-                  <PremiumNotice key={`${message.id}-${i}`} message={paywall.message} />
-                ) : null;
-              }
-              if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
-                const name =
-                  "toolName" in part ? String(part.toolName) : part.type.slice(5);
-                // suggest_actions renders as chips below, not as tool activity.
-                if (name === "suggest_actions") return null;
-                if (name === "propose_statement_import" && "output" in part) {
-                  const proposal = parseStatementImportProposal(part.output);
-                  return proposal ? (
-                    <StatementProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (
-                  (name === "propose_correction" || name === "propose_reconstruction") &&
-                  "output" in part
-                ) {
-                  const proposal = parseCorrectionProposal(part.output);
-                  if (!proposal) return null;
-                  return proposal.mode === "reconstruir" ? (
-                    <ReconstructionProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : (
-                    <CorrectionProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  );
-                }
-                if (name === "propose_holding" && "output" in part) {
-                  const proposal = parseHoldingCreationProposal(part.output);
-                  return proposal ? (
-                    <HoldingCreationProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_holding_removal" && "output" in part) {
-                  const proposal = parseHoldingTrashProposal(
-                    part.output,
-                    "holding_removal",
-                  );
-                  return proposal ? (
-                    <HoldingTrashProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_holding_restoration" && "output" in part) {
-                  const proposal = parseHoldingTrashProposal(
-                    part.output,
-                    "holding_restoration",
-                  );
-                  return proposal ? (
-                    <HoldingTrashProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_balance_history_import" && "output" in part) {
-                  const proposal = parseBalanceHistoryProposal(part.output);
-                  return proposal ? (
-                    <BalanceHistoryProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_property_valuation_anchor" && "output" in part) {
-                  const proposal = parsePropertyValuationProposal(part.output);
-                  return proposal ? (
-                    <PropertyValuationProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_reconcile" && "output" in part) {
-                  const proposal = parseReconcileProposal(part.output);
-                  return proposal ? (
-                    <ReconcileProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                if (name === "propose_mixed_document_import" && "output" in part) {
-                  const proposal = parseMixedDocumentProposal(part.output);
-                  return proposal ? (
-                    <MixedDocumentProposalCard
-                      key={`${message.id}-${i}`}
-                      mutationsDisabled={mutationsDisabled}
-                      mutationsDisabledMessage={mutationsDisabledMessage}
-                      proposal={proposal}
-                    />
-                  ) : null;
-                }
-                // Read tools run silently; only proposal cards surface tool activity.
-                return null;
-              }
-              return null;
-            })}
-          </div>
-        ))}
-        {error ? (
-          <p className="assistantError" role="alert">
-            El asistente no ha podido responder. Vuelve a intentarlo.
-          </p>
-        ) : null}
-        <div ref={endRef} />
+        <ConversationParts
+          endRef={endRef}
+          error={error}
+          messages={messages}
+          mutationsDisabled={mutationsDisabled}
+          mutationsDisabledMessage={mutationsDisabledMessage}
+        />
       </AssistantMessages>
 
       {quickActions.length > 0 ? (
@@ -1618,30 +1868,16 @@ export default function AssistantLayer({
         </div>
       ) : null}
 
-      <form className="assistantComposer" onSubmit={submit}>
-        <AssistantAttachmentControl
-          disabled={busy}
-          file={attachment}
-          onChange={setAttachment}
-          onRemove={() => setAttachment(null)}
-        />
-        <div className="assistantInputRow">
-          <input
-            aria-label="Mensaje para el asistente"
-            disabled={busy}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Pregunta sobre esta pantalla…"
-            ref={inputRef}
-            value={draft}
-          />
-          <button
-            disabled={busy || (draft.trim() === "" && attachment === null)}
-            type="submit"
-          >
-            Enviar
-          </button>
-        </div>
-      </form>
+      <Composer
+        attachment={attachment}
+        busy={busy}
+        draft={draft}
+        inputRef={inputRef}
+        onSubmit={submit}
+        placeholder="Pregunta sobre esta pantalla…"
+        setAttachment={setAttachment}
+        setDraft={setDraft}
+      />
     </section>
   );
 }

@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   deriveScreenContext,
   isAssistantSurface,
+  isOnboardingSurface,
   isScreenContext,
+  ONBOARDING_PATH,
 } from "./screen-context";
 
 describe("isAssistantSurface", () => {
@@ -14,6 +16,24 @@ describe("isAssistantSurface", () => {
   it("allows workspace routes", () => {
     expect(isAssistantSurface("/app")).toBe(true);
     expect(isAssistantSurface("/patrimonio")).toBe(true);
+  });
+
+  it("allows the onboarding route — it IS the assistant in full-screen mode", () => {
+    expect(isAssistantSurface(ONBOARDING_PATH)).toBe(true);
+  });
+});
+
+describe("isOnboardingSurface", () => {
+  it("matches only the dedicated onboarding route", () => {
+    expect(isOnboardingSurface(ONBOARDING_PATH)).toBe(true);
+    expect(isOnboardingSurface("/bienvenida")).toBe(true);
+  });
+
+  it("rejects every other surface", () => {
+    expect(isOnboardingSurface("/")).toBe(false);
+    expect(isOnboardingSurface("/app")).toBe(false);
+    expect(isOnboardingSurface("/patrimonio")).toBe(false);
+    expect(isOnboardingSurface("/bienvenida/extra")).toBe(false);
   });
 });
 
