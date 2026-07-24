@@ -1380,6 +1380,33 @@ describe("POST /api/chat · oversized-upload guard (#1180)", () => {
     expect(arrayBuffer).not.toHaveBeenCalled();
   });
 
+  it("rejects a declared body over the request ceiling before parsing anything", async () => {
+    // `request.formData()` materializes the whole multipart body, so the cheapest
+    // door is Content-Length: nothing is parsed, so `formData()` must never run.
+    const formData = vi.fn(() => {
+      throw new Error("formData() must never be called for an oversized body");
+    });
+    const request = new Request("http://127.0.0.1/api/chat", {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=----wl1180",
+        "content-length": String(64 * 1024 * 1024),
+      },
+      body: "----wl1180--\r\n",
+    });
+    Object.defineProperty(request, "formData", { value: formData });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(formData).not.toHaveBeenCalled();
+  });
+
+  it("lets an ordinary JSON turn through — the ceiling only bites huge bodies", async () => {
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+    expect(response.status).toBe(200);
+  });
+
   it("rejects a wildly oversized attachment the same way (no partial read)", async () => {
     const { request, arrayBuffer } = oversizedAttachmentRequest(512 * 1024 * 1024);
 

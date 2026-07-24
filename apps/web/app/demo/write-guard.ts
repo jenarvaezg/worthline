@@ -18,6 +18,7 @@
 import { errorRedirectUrl } from "@web/intake";
 
 import { readStoreTarget } from "@web/read-store-target";
+import type { StoreTarget } from "@web/store-resolver";
 import { redirect } from "next/navigation";
 import {
   DEMO_DISABLED_MESSAGE,
@@ -38,22 +39,34 @@ export async function isImpersonating(): Promise<boolean> {
 }
 
 /**
+ * The ONE classifier both guards share (#1180): why this request may not write,
+ * as the Spanish message the blocked user should see — or null when it may.
+ *
+ * Pure over an already-resolved target, so the two guards below cannot drift
+ * apart: the redirecting form turns the message into a redirect, the predicate
+ * form just asks whether there is one. Before this, each spelled the same two
+ * conditions out and only a test kept them honest.
+ */
+export function blockedWriteMessage(target: StoreTarget): string | null {
+  if (target.kind === "demo") return DEMO_DISABLED_MESSAGE;
+  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
+    return IMPERSONATION_READONLY_MESSAGE;
+  }
+  return null;
+}
+
+/**
  * Whether this request must not write: the read-only demo, or an admin
  * impersonating a workspace (#1180). The non-redirecting form of
  * {@link guardDemoWrite}, for a mutating action that must refuse SILENTLY rather
  * than navigate — a `void` action fired mid-conversation from the client, where
- * throwing Next's redirect signal would be wrong. Same two conditions, so the
- * two guards can never disagree (asserted in `write-guard-impersonation.test.ts`).
+ * throwing Next's redirect signal would be wrong.
  *
  * An action that redirects should still use `guardDemoWrite`: the user gets the
  * honest Spanish message instead of a write that quietly did nothing.
  */
 export async function isWriteBlocked(): Promise<boolean> {
-  const target = await readStoreTarget();
-  return (
-    target.kind === "demo" ||
-    (target.kind === "authenticated" && target.impersonatedEmail !== undefined)
-  );
+  return blockedWriteMessage(await readStoreTarget()) !== null;
 }
 
 /**
@@ -63,13 +76,8 @@ export async function isWriteBlocked(): Promise<boolean> {
  * before opening a store.
  */
 export async function guardDemoWrite(currentUrl: string): Promise<void> {
-  const target = await readStoreTarget();
-
-  if (target.kind === "demo") {
-    redirect(errorRedirectUrl(currentUrl, { message: DEMO_DISABLED_MESSAGE }));
-  }
-
-  if (target.kind === "authenticated" && target.impersonatedEmail !== undefined) {
-    redirect(errorRedirectUrl(currentUrl, { message: IMPERSONATION_READONLY_MESSAGE }));
+  const message = blockedWriteMessage(await readStoreTarget());
+  if (message !== null) {
+    redirect(errorRedirectUrl(currentUrl, { message }));
   }
 }

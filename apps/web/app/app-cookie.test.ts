@@ -1,19 +1,16 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { appCookieOptions } from "./app-cookie";
+import { readSourceFiles, stripComments } from "./guardian-walk";
 
-const originalNodeEnv = process.env.NODE_ENV;
-
+/** The helper reads NODE_ENV at call time, so a test can drive both branches. */
 function setNodeEnv(value: string): void {
-  // NODE_ENV is readonly in the Next type surface; the guard reads it at call
-  // time precisely so a test can exercise both sides of the branch.
-  (process.env as Record<string, string>).NODE_ENV = value;
+  vi.stubEnv("NODE_ENV", value);
 }
 
 afterEach(() => {
-  setNodeEnv(originalNodeEnv ?? "test");
+  vi.unstubAllEnvs();
 });
 
 describe("app cookie options (#1180)", () => {
@@ -61,15 +58,14 @@ const APP_COOKIE_CONSTANTS = [
   "IMPERSONATE_COOKIE_NAME",
 ] as const;
 
-const SKIP_DIRECTORIES = new Set(["node_modules", ".next", "public", "test-results"]);
-
 /**
- * `.set(<COOKIE_CONSTANT>, …)` calls that do not hand the options to
- * {@link appCookieOptions}. `.delete(…)` is untouched — clearing a cookie carries
- * no transport posture. Empty array = passes.
+ * The app cookies this source sets WITHOUT handing the options to
+ * {@link appCookieOptions} — i.e. by spelling an options object out by hand.
+ * `.delete(…)` is untouched: clearing a cookie carries no transport posture.
+ * Empty array = passes.
  */
-export function inlineCookieOptions(source: string): string[] {
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+export function cookiesSetWithoutHelper(source: string): string[] {
+  const code = stripComments(source);
   return APP_COOKIE_CONSTANTS.filter((constant) =>
     // Every set-site for this constant is checked, not just the first: a file may
     // legitimately set the same cookie from two places.
@@ -79,27 +75,14 @@ export function inlineCookieOptions(source: string): string[] {
   );
 }
 
-function walkSourceFiles(root: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(root)) {
-    const fullPath = join(root, entry);
-    if (statSync(fullPath).isDirectory()) {
-      if (SKIP_DIRECTORIES.has(entry) || entry.startsWith(".")) continue;
-      files.push(...walkSourceFiles(fullPath));
-      continue;
-    }
-    if (!/\.(ts|tsx)$/.test(entry) || /\.test\.(ts|tsx)$/.test(entry)) continue;
-    files.push(fullPath);
-  }
-  return files;
-}
-
 describe("app cookie tripwire · nothing spells the options out by hand (#1180)", () => {
   const webRoot = join(import.meta.dirname, "..");
-  const sources = walkSourceFiles(webRoot);
+  const sources = readSourceFiles(webRoot);
 
-  test.each(sources)("sets app cookies through the helper: %s", (filePath) => {
-    const found = inlineCookieOptions(readFileSync(filePath, "utf8"));
+  test.each(
+    sources.map((s) => [s.filePath, s.source] as const),
+  )("sets app cookies through the helper: %s", (filePath, source) => {
+    const found = cookiesSetWithoutHelper(source);
     expect(
       found,
       `${filePath.slice(webRoot.length + 1)} must pass appCookieOptions() when setting ${found.join(", ")} — an inline options object is how \`secure\` went missing`,
@@ -108,7 +91,7 @@ describe("app cookie tripwire · nothing spells the options out by hand (#1180)"
 
   test("the walk is not vacuous and the known set-sites are in it", () => {
     expect(sources.length).toBeGreaterThan(100);
-    const relative = new Set(sources.map((f) => f.slice(webRoot.length + 1)));
+    const relative = new Set(sources.map((s) => s.filePath.slice(webRoot.length + 1)));
     for (const setSite of [
       "app/scope/route.ts",
       "app/privacy/route.ts",
@@ -123,7 +106,7 @@ describe("app cookie tripwire · nothing spells the options out by hand (#1180)"
 
   test("detects a hand-written options object (intentional red case)", () => {
     expect(
-      inlineCookieOptions(
+      cookiesSetWithoutHelper(
         `response.cookies.set(SCOPE_COOKIE_NAME, scopeId, {\n` +
           `  httpOnly: true,\n  path: "/",\n  sameSite: "lax",\n});\n`,
       ),
@@ -132,13 +115,13 @@ describe("app cookie tripwire · nothing spells the options out by hand (#1180)"
 
   test("the helper form passes, and clearing a cookie is not a set", () => {
     expect(
-      inlineCookieOptions(
+      cookiesSetWithoutHelper(
         `response.cookies.set(SCOPE_COOKIE_NAME, scopeId, appCookieOptions());\n`,
       ),
     ).toEqual([]);
 
-    expect(inlineCookieOptions(`response.cookies.delete(SCOPE_COOKIE_NAME);\n`)).toEqual(
-      [],
-    );
+    expect(
+      cookiesSetWithoutHelper(`response.cookies.delete(SCOPE_COOKIE_NAME);\n`),
+    ).toEqual([]);
   });
 });

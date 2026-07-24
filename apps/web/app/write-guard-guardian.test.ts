@@ -20,11 +20,14 @@
  *   - `runProposalConfirm` / `runProposalDiscard` — the proposal combinators run
  *     `guardProposalWrite` before touching a store.
  *   - `guardDemoWrite` / `guardProposalWrite` / `isWriteBlocked` — called by hand.
- *   - `guardAdmin` — a STRICTER gate, not a weaker one: it 404s anyone who is not
- *     the configured admin, and the demo never carries a real session, so a demo
- *     write cannot reach an admin action at all. The admin actions also write to
- *     the control plane rather than an impersonated workspace, so impersonation
- *     read-only is not the relevant axis there.
+ *   - `guardAdmin`, but ONLY inside {@link ADMIN_GATED_ROOT}. It 404s anyone who is
+ *     not the configured admin, and the demo never carries a real session, so a
+ *     demo write cannot reach an admin action at all; those actions write to the
+ *     CONTROL PLANE, not to an impersonated workspace, so impersonation
+ *     read-only is not the axis that applies. Scoped to `app/admin/` so an
+ *     ordinary surface cannot claim admin-ness as its write guard. LIMIT, stated
+ *     plainly: a future admin action that wrote to the *impersonated workspace*
+ *     would pass this gate and must call `guardDemoWrite` on top.
  *
  * Coverage is TRANSITIVE within a module: an exported action that delegates to a
  * module-local helper which itself runs a combinator is covered (the shape of
@@ -38,15 +41,13 @@
  * analysis. The mutation frontier they can reach is already fenced by
  * `authz-seam-guardian`: no surface opens a store on its own.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
+import { isServerActionModule, readSourceFiles, stripComments } from "./guardian-walk";
+
 const repoRoot = join(import.meta.dirname, "../../..");
 const webRoot = join(import.meta.dirname, "..");
-
-/** Build output / tooling / vendored dirs the walk must never descend. */
-const SKIP_DIRECTORIES = new Set(["node_modules", ".next", "public", "test-results"]);
 
 /**
  * Identifiers that constitute passing a write guard. See the module docblock for
@@ -60,8 +61,11 @@ const WRITE_GUARDS = [
   "guardDemoWrite",
   "guardProposalWrite",
   "isWriteBlocked",
-  "guardAdmin",
 ] as const;
+
+/** Where `guardAdmin` additionally counts as a write guard — see the docblock. */
+const ADMIN_GATED_ROOT = "apps/web/app/admin/";
+const ADMIN_GUARD = "guardAdmin";
 
 /**
  * Exported actions allowed to skip a write guard, keyed `path::action`, each with
@@ -82,10 +86,6 @@ interface Declaration {
   name: string;
   exported: boolean;
   body: string;
-}
-
-function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
 /**
@@ -128,16 +128,20 @@ function callsAny(body: string, names: readonly string[]): boolean {
  * passes. A source without a module-level `"use server"` is not an action module
  * and is never scanned.
  */
-export function unguardedActions(source: string): string[] {
-  if (!/^\s*"use server";/.test(source)) return [];
+export function unguardedActions(
+  source: string,
+  options: { adminGated?: boolean } = {},
+): string[] {
+  if (!isServerActionModule(source)) return [];
 
+  const accepted = options.adminGated ? [...WRITE_GUARDS, ADMIN_GUARD] : WRITE_GUARDS;
   const declarations = topLevelDeclarations(stripComments(source));
   const byName = new Map(declarations.map((d) => [d.name, d]));
 
   const covered = (declaration: Declaration, seen: Set<string>): boolean => {
     if (seen.has(declaration.name)) return false;
     seen.add(declaration.name);
-    if (callsAny(declaration.body, WRITE_GUARDS)) return true;
+    if (callsAny(declaration.body, accepted)) return true;
     // Transitive: delegating to a module-local helper that is itself covered.
     for (const [name, candidate] of byName) {
       if (name === declaration.name) continue;
@@ -153,40 +157,27 @@ export function unguardedActions(source: string): string[] {
     .map((declaration) => declaration.name);
 }
 
-function walkSourceFiles(root: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(root)) {
-    const fullPath = join(root, entry);
-    if (statSync(fullPath).isDirectory()) {
-      if (SKIP_DIRECTORIES.has(entry) || entry.startsWith(".")) continue;
-      files.push(...walkSourceFiles(fullPath));
-      continue;
-    }
-    if (!/\.(ts|tsx)$/.test(entry) || /\.test\.(ts|tsx)$/.test(entry)) continue;
-    files.push(fullPath);
-  }
-  return files;
-}
-
 function relativePath(absolute: string): string {
   return absolute.slice(repoRoot.length + 1);
 }
 
 describe('write-guard guardian · every "use server" action passes a guard (#1180)', () => {
-  const actionModules = walkSourceFiles(webRoot)
-    .map((filePath) => ({ filePath, source: readFileSync(filePath, "utf8") }))
-    .filter(({ source }) => /^\s*"use server";/.test(source));
+  const actionModules = readSourceFiles(webRoot).filter(({ source }) =>
+    isServerActionModule(source),
+  );
   const relativeModules = new Set(actionModules.map((m) => relativePath(m.filePath)));
 
   test.each(
     actionModules.map((m) => [relativePath(m.filePath), m.source] as const),
   )("every exported action reaches a write guard: %s", (rel, source) => {
-    const unguarded = unguardedActions(source).filter(
+    const adminGated = rel.startsWith(ADMIN_GATED_ROOT);
+    const unguarded = unguardedActions(source, { adminGated }).filter(
       (name) => EXEMPT[`${rel}::${name}`] === undefined,
     );
+    const accepted = adminGated ? [...WRITE_GUARDS, ADMIN_GUARD] : WRITE_GUARDS;
     expect(
       unguarded,
-      `${rel}: ${unguarded.join(", ")} must go through the formAction/proposal combinator or call a write guard (${WRITE_GUARDS.join(" / ")}) before touching a store`,
+      `${rel}: ${unguarded.join(", ")} must go through the formAction/proposal combinator or call a write guard (${accepted.join(" / ")}) before touching a store`,
     ).toEqual([]);
   });
 
@@ -228,6 +219,49 @@ describe('write-guard guardian · every "use server" action passes a guard (#118
           `}\n`,
       ),
     ).toEqual(["deleteEverythingAction"]);
+  });
+
+  test("an action module behind a leading docblock is still scanned (fail-open case)", () => {
+    // Next allows comments before the directive and this repo's house style is a
+    // leading docblock. Gating on the directive being the file's first token would
+    // drop exactly the most likely new action module and pass by not looking.
+    expect(
+      unguardedActions(
+        `/**\n * The nuevas acciones (#9999).\n */\n"use server";\n\n` +
+          `export async function deleteEverythingAction(formData: FormData) {\n` +
+          `  await withStore((store) => store.assets.hardDeleteAll());\n` +
+          `}\n`,
+      ),
+    ).toEqual(["deleteEverythingAction"]);
+  });
+
+  test("guardAdmin only counts inside app/admin/ (scoped coverage)", () => {
+    const source =
+      `"use server";\n` +
+      `export async function grantSomethingAction(formData: FormData) {\n` +
+      `  await guardAdmin();\n` +
+      `  await writeControlPlane(formData);\n` +
+      `}\n`;
+
+    expect(unguardedActions(source, { adminGated: true })).toEqual([]);
+    // An ordinary surface cannot claim admin-ness as its write guard.
+    expect(unguardedActions(source)).toEqual(["grantSomethingAction"]);
+  });
+
+  test("every admin action module actually lives under the admin root", () => {
+    // The scoping above is only sound if `guardAdmin` callers really are admin
+    // surfaces; a stray one elsewhere would be silently ungated by this test's
+    // own rule, so assert the population.
+    const strays = readSourceFiles(webRoot)
+      .filter(({ source }) => isServerActionModule(source))
+      .filter(({ source }) => stripComments(source).includes(`${ADMIN_GUARD}(`))
+      .map(({ filePath }) => relativePath(filePath))
+      .filter((rel) => !rel.startsWith(ADMIN_GATED_ROOT));
+
+    expect(
+      strays,
+      `${strays.join(", ")} calls ${ADMIN_GUARD} outside ${ADMIN_GATED_ROOT}`,
+    ).toEqual([]);
   });
 
   test("a guard named only in a comment does not count", () => {

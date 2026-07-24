@@ -23,16 +23,15 @@
  * is caught too, not just under `app/`) plus the package sources it consumes,
  * and skips `*.test.*`; `scripts/` and `e2e/` lie outside the walked roots.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as db from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
+import { walkSourceFiles } from "./guardian-walk";
+
 const repoRoot = join(import.meta.dirname, "../../..");
 const webRoot = join(import.meta.dirname, "..");
-
-/** Build output / tooling / vendored dirs the surface walk must never descend. */
-const SKIP_DIRECTORIES = new Set(["node_modules", ".next", "public", "test-results"]);
 
 /** The deliberately-unsafe raw store openers. */
 const RAW_OPENERS = ["createWorthlineStoreUnsafe", "withStoreUnsafe"] as const;
@@ -61,23 +60,6 @@ export function rawOpenerImports(source: string): string[] {
     );
   if (!linksToDb) return [];
   return RAW_OPENERS.filter((opener) => new RegExp(`\\b${opener}\\b`).test(code));
-}
-
-function walkSourceFiles(root: string): string[] {
-  const files: string[] = [];
-  for (const entry of readdirSync(root)) {
-    const fullPath = join(root, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      // Skip build output, vendored, and any dot-dir (.turbo/.vercel/.omc/…).
-      if (SKIP_DIRECTORIES.has(entry) || entry.startsWith(".")) continue;
-      files.push(...walkSourceFiles(fullPath));
-      continue;
-    }
-    if (!/\.(ts|tsx)$/.test(entry) || /\.test\.(ts|tsx)$/.test(entry)) continue;
-    files.push(fullPath);
-  }
-  return files;
 }
 
 function relativePath(absolute: string): string {
