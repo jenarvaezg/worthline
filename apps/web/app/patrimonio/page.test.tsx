@@ -123,3 +123,16 @@ describe('"Importar extracto" portfolio entry point (S3, #674)', () => {
     expect(html).toContain('href="/patrimonio/importar-extracto"');
   });
 });
+
+describe('"Repasar con el asistente" re-run entry point (S3, #1170)', () => {
+  test("is gated on an existing portfolio — absent on an empty workspace", async () => {
+    // The default mocks report no holdings; re-running the onboarding assistant
+    // over an empty portfolio makes no sense, so the shortcut is withheld (same
+    // hasHoldings gate as "Puesta al día"). "Importar extracto" is ungated.
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Repasar con el asistente");
+    expect(html).not.toContain("repasar=1");
+    expect(html).toContain("Importar extracto");
+  });
+});

@@ -450,6 +450,12 @@ describe("buildCurrentUrl", () => {
     expect(buildCurrentUrl({ ok: "saved", v_name: "x" })).toBe("/app");
     expect(buildCurrentUrl(undefined)).toBe("/app");
   });
+
+  test("strips the one-shot onboarding re-run flag so it never sticks to links (#1170)", () => {
+    expect(buildCurrentUrl({ repasar: "1", scope: "household" })).toBe(
+      "/app?scope=household",
+    );
+  });
 });
 
 describe("error redirect round-trip", () => {

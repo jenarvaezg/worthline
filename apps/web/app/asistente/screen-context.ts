@@ -68,7 +68,18 @@ export function isScreenContext(value: unknown): value is ScreenContext {
 }
 
 const SECTIONS = ["patrimonio", "historico", "objetivos", "ajustes"] as const;
-const VIEW_KEYS = ["view", "range", "exp", "hide"];
+
+/**
+ * The query flag that re-launches the onboarding assistant mode from the ordinary
+ * floating panel (PRD #1167 S3, #1170): «vuelve a repasar mi cartera con este
+ * extracto», the same mode without the /bienvenida estreno surface. Captured into
+ * `view` like any other URL-mirrored state so it flows to the system prompt with
+ * zero extra plumbing (mirrors how S2 derived the mode purely from the route).
+ */
+export const ONBOARDING_RERUN_PARAM = "repasar";
+const ONBOARDING_RERUN_VALUE = "1";
+
+const VIEW_KEYS = ["view", "range", "exp", "hide", ONBOARDING_RERUN_PARAM];
 
 /**
  * The dedicated onboarding route (PRD #1167 S1, #1168): the assistant in a
@@ -90,6 +101,26 @@ export function isAssistantSurface(pathname: string): boolean {
  */
 export function isOnboardingSurface(pathname: string): boolean {
   return pathname === ONBOARDING_PATH;
+}
+
+/**
+ * Whether the onboarding assistant mode applies to a turn, and in which flavour:
+ *  - `"first-run"` — the dedicated `/bienvenida` estreno surface (S1/S2, #1168/#1169),
+ *    a freshly-provisioned empty workspace.
+ *  - `"re-run"` — the same mode re-launched from the ordinary panel via the
+ *    {@link ONBOARDING_RERUN_PARAM} flag (S3, #1170), over a portfolio that already
+ *    exists. Returns `null` on every other turn.
+ *
+ * The system prompt keys the onboarding framing off this; the re-run flavour is
+ * a friendlier prompt only — the premium enforcement stays downstream at the
+ * ingestion gate (#1162), so a client-set flag can never buy premium tools.
+ */
+export type OnboardingMode = "first-run" | "re-run";
+
+export function onboardingModeForContext(context: ScreenContext): OnboardingMode | null {
+  if (isOnboardingSurface(context.route)) return "first-run";
+  if (context.view[ONBOARDING_RERUN_PARAM] === ONBOARDING_RERUN_VALUE) return "re-run";
+  return null;
 }
 
 export function deriveScreenContext(pathname: string, search: string): ScreenContext {

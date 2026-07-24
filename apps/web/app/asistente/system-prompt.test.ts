@@ -104,4 +104,40 @@ describe("buildChatSystemPrompt", () => {
       expect(buildChatSystemPrompt(null)).not.toMatch(/modo onboarding/i);
     });
   });
+
+  // #1170 — the SAME onboarding mode, re-launched from the ordinary panel via the
+  // `repasar` flag, over a portfolio that already exists (reconcile-first).
+  describe("onboarding re-run mode (#1170)", () => {
+    const rerunContext = {
+      route: "/patrimonio",
+      section: "patrimonio" as const,
+      holdingId: null,
+      view: { repasar: "1" },
+    };
+
+    it("adds the onboarding framing when the repasar flag is set", () => {
+      const prompt = buildChatSystemPrompt(rerunContext);
+
+      expect(prompt).toMatch(/modo onboarding/i);
+      // The re-run intro: the portfolio already exists, reconcile is primary,
+      // a from-scratch alta is the degenerate case.
+      expect(prompt).toMatch(/repaso/i);
+      expect(prompt).toMatch(/ya tiene una cartera/i);
+      expect(prompt).toMatch(/propose_reconcile/);
+      expect(prompt).toMatch(/caso degenerado/i);
+      // The shared present-state body still holds (ADR 0059, honest degradation).
+      expect(prompt).toMatch(/0059/);
+      expect(prompt).toMatch(/1130/);
+      expect(prompt).toMatch(/prefiero cargarlo a mano/i);
+    });
+
+    it("keeps the base contract underneath and does not use the first-run intro", () => {
+      const prompt = buildChatSystemPrompt(rerunContext);
+
+      expect(prompt).toMatch(/debes responder en español/i);
+      expect(prompt).toMatch(/suggest_actions/);
+      // The empty-workspace framing belongs only to first-run.
+      expect(prompt).not.toMatch(/acaba de registrarse/i);
+    });
+  });
 });
