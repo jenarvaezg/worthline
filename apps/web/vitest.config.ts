@@ -43,6 +43,10 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["app/**/*.test.{ts,tsx}"],
+    // Stub `next/cache` globally (#1191): the formAction combinator now calls
+    // `revalidatePath` on every successful mutation, which throws outside Next's
+    // request scope. See vitest.setup.ts.
+    setupFiles: ["./vitest.setup.ts"],
     coverage: vitestCoverage,
   },
 });

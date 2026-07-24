@@ -9,6 +9,7 @@ import { guardDemoWrite } from "@web/demo/write-guard";
 import { errorRedirectUrl, parseEntityId } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import { type Clock, systemClock } from "@worthline/domain";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 /**
@@ -96,6 +97,22 @@ async function resolveFrontMatter(
   }
 
   return { store, today: clock.today(), now: clock.now(), id, extra, missingExtra };
+}
+
+/**
+ * Bust the client Router Cache after a **successful** mutation (#1191). With
+ * `experimental.staleTimes.dynamic` set (30s), sibling tabs visited within the
+ * window keep serving cached figures unless a mutation revalidates: without this
+ * call, editing a holding would leave a "Resumen" tab seen 10s ago showing the
+ * old net worth for up to 30s. `revalidatePath("/", "layout")` drives Next's
+ * server-action reducer to `invalidateEntirePrefetchCache`, evicting every cached
+ * segment. It is the ONLY mechanism doing so — the repo has no other
+ * `revalidatePath`/`revalidateTag`/`router.refresh`; the redirect terminal alone
+ * only re-renders its own destination fresh, not the sibling tabs. Called on the
+ * success path only: an error or blocked write mutated nothing to invalidate.
+ */
+function invalidateRouterCache(): void {
+  revalidatePath("/", "layout");
 }
 
 /** Run the guarded command with the chosen store cycle (dated-fact-safe or plain). */
@@ -229,6 +246,7 @@ export function formAction<P = undefined, R = void>(
       redirect(config.onError({ id, extra, formData, error: result.error }));
     }
 
+    invalidateRouterCache();
     const committed = { id, extra, formData, value: result.value };
     if (config.afterCommit) {
       await config.afterCommit(committed);
@@ -330,6 +348,12 @@ export function formActionState<P = undefined, S extends object = Record<never, 
       return { ok: false, error: result.error ?? "No se pudo completar la acción." };
     }
 
+    // Same Router Cache invalidation as the redirect form (#1191): a successful
+    // mutation must evict sibling tabs' cached segments. `formActionState` has no
+    // callers today, but it IS a mutation combinator, so it gets identical
+    // treatment for correctness and consistency rather than becoming a stale-data
+    // trap the day it acquires its first caller.
+    invalidateRouterCache();
     return result;
   };
 }

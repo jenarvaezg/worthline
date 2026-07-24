@@ -27,8 +27,15 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+// Stub `next/cache` so the combinator's Router Cache invalidation (#1191) is
+// observable in a plain node test without Next's request scope. `vi.hoisted`
+// makes the spy available to the hoisted `vi.mock` factory.
+const { revalidatePathMock } = vi.hoisted(() => ({ revalidatePathMock: vi.fn() }));
+vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }));
+
 afterEach(() => {
   mockPersonaCookie = undefined;
+  revalidatePathMock.mockClear();
 });
 
 const TODAY = "2026-07-02";
@@ -91,6 +98,9 @@ describe("formAction — redirect form choreography", () => {
     expect(receivedToday).toBe(TODAY);
     expect(receivedParsed).toBe("payload");
     expect(url).toContain("ok=done");
+    // #1191: a committed mutation busts the client Router Cache so sibling tabs
+    // visited within staleTimes.dynamic don't keep serving stale figures.
+    expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
   });
 
   test("missing primary id: redirects to the section list with the missingId message, never runs", async () => {
@@ -174,6 +184,8 @@ describe("formAction — redirect form choreography", () => {
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(
       "No se encontró la deuda.",
     );
+    // #1191: an error path mutated nothing, so it must NOT invalidate the cache.
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   test("duplicate-date collision: a UNIQUE throw becomes the friendly duplicate message via onError", async () => {
@@ -212,6 +224,8 @@ describe("formAction — redirect form choreography", () => {
     );
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(DEMO_DISABLED_MESSAGE);
     expect(ran).toBe(false);
+    // #1191: a blocked demo write mutated nothing, so no cache invalidation.
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });
 
@@ -227,6 +241,9 @@ describe("formActionState — useActionState form choreography", () => {
 
     const state = await action(IDLE, form({ id: "e1", body: "x" }), fakeStore, CLOCK);
     expect(state).toEqual({ ok: true, id: "e1" });
+    // #1191: the state form is also a mutation combinator, so a successful run
+    // invalidates the Router Cache identically to the redirect form.
+    expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
   });
 
   test("parse failure: returns an error state with the message and refill values", async () => {
@@ -268,6 +285,8 @@ describe("formActionState — useActionState form choreography", () => {
 
     const state = await action(IDLE, form({ id: "e1" }), fakeStore, CLOCK);
     expect(state).toEqual({ ok: false, error: "No se encontró la deuda." });
+    // #1191: error path mutated nothing — no cache invalidation.
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 
   test("duplicate-date collision: returns the friendly duplicate message as an error state", async () => {
