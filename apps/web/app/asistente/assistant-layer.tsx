@@ -1558,6 +1558,7 @@ export default function AssistantLayer({
   mutationsDisabled = false,
   mutationsDisabledMessage = DEMO_DISABLED_MESSAGE,
   variant = "floating",
+  initialOpen = false,
   onboardingManualHref = "/patrimonio/anadir",
   onboardingSkipAction,
   onboardingCompleteAction,
@@ -1565,11 +1566,19 @@ export default function AssistantLayer({
   mutationsDisabled?: boolean;
   mutationsDisabledMessage?: string;
   variant?: "floating" | "onboarding";
+  /**
+   * Whether the floating panel opens on mount. The lazy launcher (#1192) passes
+   * this `true` when the panel is opened for the first time, so the heavy layer
+   * chunk — which only loads on that first open — comes up already showing the
+   * panel instead of its FAB. Once mounted, the layer owns its open/close state
+   * as before (the launcher hands over completely).
+   */
+  initialOpen?: boolean;
   onboardingManualHref?: string;
   onboardingSkipAction?: (formData: FormData) => void | Promise<void>;
   onboardingCompleteAction?: () => void | Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);

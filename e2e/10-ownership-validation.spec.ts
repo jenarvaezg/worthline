@@ -29,9 +29,13 @@ test("ownership: custom 60/40 split via real interactions, visible in minority s
 
   await ownershipFieldset.getByRole("radio", { name: /Personalizado/ }).check();
 
-  // Collect member scope buttons to identify the minority owner
+  // Collect member scope buttons to identify the minority owner. The scope bar
+  // streams in through its own <Suspense> (#1190), so wait for it before
+  // counting — `count()` does NOT auto-wait, and reading it before the boundary
+  // flushes on a cold/slow runner would spuriously see 0 buttons (flaky).
   const scopeNav = page.locator("[aria-label='Selector de ámbito']");
   const scopeButtons = scopeNav.getByRole("button");
+  await expect(scopeButtons.nth(1)).toBeVisible();
   const scopeCount = await scopeButtons.count();
   expect(scopeCount).toBeGreaterThanOrEqual(2);
 
@@ -90,9 +94,12 @@ test("ownership: even-split preset makes asset visible in both member scopes", a
   // Asset visible in default (Hogar) scope
   await expect(page.locator(`#${assetId}`)).toBeVisible();
 
-  // Switch to first individual member's scope — asset must be visible
+  // Switch to first individual member's scope — asset must be visible. Wait for
+  // the <Suspense>-streamed scope bar (#1190) before counting; `count()` does
+  // not auto-wait, so reading it too early on a cold/slow runner sees 0 (flaky).
   const scopeNav = page.locator("[aria-label='Selector de ámbito']");
   const scopeButtons = scopeNav.getByRole("button");
+  await expect(scopeButtons.nth(2)).toBeVisible();
   const scopeCount = await scopeButtons.count();
   expect(scopeCount).toBeGreaterThanOrEqual(2);
 
