@@ -16,7 +16,7 @@ import type { ExposureProfile, Workspace } from "@worthline/domain";
 import { listScopeOptions } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { loadPatrimonio } from "./load-patrimonio";
+import { deriveExposureAndReturns, loadPatrimonio } from "./load-patrimonio";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -103,13 +103,15 @@ describe("loadPatrimonio — empty workspace", () => {
     expect(result.hasHoldings).toBe(false);
     expect(result.hasPricedHoldings).toBe(false);
     expect(result.returnsById.size).toBe(0);
-    expect(result.returnsByClass).toBeNull();
     expect(result.operatedAssetIds.size).toBe(0);
     expect(result.warnings).toEqual([]);
     expect(result.trash).toEqual({ assets: [], liabilities: [] });
+
+    const derived = deriveExposureAndReturns(result.exposureContext, []);
+    expect(derived.returnsByClass).toBeNull();
     // The look-through still resolves — it simply classifies nothing.
-    expect(result.exposureFull.assetClass.coverage.classified.amountMinor).toBe(0);
-    expect(result.exposureEquity.assetClass.coverage.classified.amountMinor).toBe(0);
+    expect(derived.exposureFull.assetClass.coverage.classified.amountMinor).toBe(0);
+    expect(derived.exposureEquity.assetClass.coverage.classified.amountMinor).toBe(0);
 
     store.close();
   });
@@ -180,7 +182,8 @@ describe("loadPatrimonio — populated board", () => {
     expect(result.returnsById.has("asset_fund")).toBe(true);
     expect(result.operatedAssetIds.has("asset_fund")).toBe(true);
     // Its per-class decomposition is present now there is a market holding.
-    expect(result.returnsByClass).not.toBeNull();
+    const derived = deriveExposureAndReturns(result.exposureContext, []);
+    expect(derived.returnsByClass).not.toBeNull();
 
     store.close();
   });
@@ -235,16 +238,17 @@ describe("loadPatrimonio — exposure look-through", () => {
       selectedScope: householdScope(workspace),
       today: TODAY,
       selectedGroup: "direction",
-      readExposureProfiles: async () => profiles,
     });
+
+    const derived = deriveExposureAndReturns(result.exposureContext, profiles);
 
     // The ETF is now classified as equity — coverage is non-zero, and the
     // equity-restricted lens keeps the whole classified value.
     expect(
-      result.exposureFull.assetClass.coverage.classified.amountMinor,
+      derived.exposureFull.assetClass.coverage.classified.amountMinor,
     ).toBeGreaterThan(0);
     expect(
-      result.exposureEquity.assetClass.coverage.classified.amountMinor,
+      derived.exposureEquity.assetClass.coverage.classified.amountMinor,
     ).toBeGreaterThan(0);
 
     store.close();

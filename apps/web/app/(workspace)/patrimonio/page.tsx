@@ -10,14 +10,24 @@ import {
 import { refreshPricesAction } from "@web/inversiones/actions";
 import { resolvePageShell } from "@web/page-shell";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import { EXPOSURE_LENS_VIEW_PARAM, readViewParam } from "@web/view-state";
+import {
+  EXPOSURE_LENS_VIEW_PARAM,
+  type ExposureLens,
+  readViewParam,
+} from "@web/view-state";
 import type { PortfolioGroupKey } from "@worthline/domain";
 import { systemClock } from "@worthline/domain";
 import Link from "next/link";
+import { Suspense } from "react";
 import BalanceBoard from "./balance-board";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
-import { loadPatrimonio } from "./load-patrimonio";
+import {
+  deriveExposureAndReturns,
+  loadPatrimonio,
+  type PatrimonioExposureContext,
+} from "./load-patrimonio";
+import PatrimonioAnalyticsSkeleton from "./patrimonio-analytics-skeleton";
 import { PriceRefreshControl } from "./price-refresh-control";
 import ReturnsByClassSection from "./returns-by-class-section";
 
@@ -41,14 +51,15 @@ export default async function PatrimonioPage({
     await resolvePageShell({ searchParams: resolvedSearchParams });
 
   // The sibling read model owns every data assembly (#1119); the page renders.
+  // This is the synchronous half (#1195): the CRUD board + header + status
+  // bands render with the document, so the mutation flows below it never wait
+  // on the exposure-profile catalog read (see `PatrimonioAnalytics`).
   const {
-    exposureEquity,
-    exposureFull,
+    exposureContext,
     groups,
     hasHoldings,
     hasPricedHoldings,
     operatedAssetIds,
-    returnsByClass,
     returnsById,
     trash,
     warnings,
@@ -58,7 +69,6 @@ export default async function PatrimonioPage({
     selectedScope,
     today: systemClock().today(),
     selectedGroup,
-    readExposureProfiles: readExposureProfilesFromCatalog,
   });
 
   // The exposure lens is a pure view toggle over the two pre-rendered results
@@ -144,11 +154,50 @@ export default async function PatrimonioPage({
         warnings={warnings}
       />
 
+      <Suspense fallback={<PatrimonioAnalyticsSkeleton />}>
+        <PatrimonioAnalytics
+          currentUrl={currentUrl}
+          exposureContext={exposureContext}
+          initialLens={exposureLens}
+          privacyMode={privacyMode}
+        />
+      </Suspense>
+    </>
+  );
+}
+
+/**
+ * The two streamed /patrimonio analytics sub-sections (#1195): Exposición and
+ * Rentabilidad por clase. Reads the global exposure-profile catalog — the one
+ * I/O this page performs that the CRUD board above does not need — so this
+ * await is what lets the synchronous board flush to the client first; the
+ * derivation itself is shared with the read model's test via
+ * `deriveExposureAndReturns`.
+ */
+async function PatrimonioAnalytics({
+  currentUrl,
+  exposureContext,
+  initialLens,
+  privacyMode,
+}: {
+  currentUrl: string;
+  exposureContext: PatrimonioExposureContext;
+  initialLens: ExposureLens;
+  privacyMode: boolean;
+}) {
+  const profiles = await readExposureProfilesFromCatalog();
+  const { exposureFull, exposureEquity, returnsByClass } = deriveExposureAndReturns(
+    exposureContext,
+    profiles,
+  );
+
+  return (
+    <>
       <ExposureSection
         currentUrl={currentUrl}
         equity={exposureEquity}
         full={exposureFull}
-        initialLens={exposureLens}
+        initialLens={initialLens}
         privacyMode={privacyMode}
       />
 

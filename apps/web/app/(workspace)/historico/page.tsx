@@ -1,7 +1,9 @@
 import { resolvePageShell } from "@web/page-shell";
 import { valuationMethodOfAsset } from "@worthline/domain";
+import { Suspense } from "react";
 import { buildHistoricoBreakdownView } from "./build-historico-breakdown";
 import HistoricoBreakdown from "./historico-breakdown";
+import HistoricoSkeleton from "./historico-skeleton";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
 export const dynamic = "force-dynamic";
@@ -11,11 +13,26 @@ export default async function HistoricoPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // Lightweight preamble (#1195): auth + workspace context (memoized, already
+  // resolved by the shared layout) run before we emit anything, so any redirect
+  // fires here. The heavy snapshot/breakdown reads stream in the Suspense body
+  // below — the chrome + skeleton paint immediately on navigation.
   const resolvedSearchParams = (await searchParams) ?? {};
+  const shell = await resolvePageShell({ searchParams: resolvedSearchParams });
 
-  const { privacyMode, selectedScope, store, workspace } = await resolvePageShell({
-    searchParams: resolvedSearchParams,
-  });
+  return (
+    <Suspense fallback={<HistoricoSkeleton />}>
+      <HistoricoContent shell={shell} />
+    </Suspense>
+  );
+}
+
+export async function HistoricoContent({
+  shell,
+}: {
+  shell: Awaited<ReturnType<typeof resolvePageShell>>;
+}) {
+  const { privacyMode, selectedScope, store, workspace } = shell;
 
   const today = new Date().toISOString().slice(0, 10);
 
