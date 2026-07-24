@@ -17,14 +17,13 @@
  * because a successful import redirects away.
  */
 
-import type { WorkspaceExportSummary } from "@worthline/domain";
-import { startTransition, useActionState, useState } from "react";
-
 import {
   confirmImportAction,
   type ImportPreviewState,
   previewImportAction,
-} from "./ajustes/actions";
+} from "@web/ajustes/actions";
+import type { WorkspaceExportSummary } from "@worthline/domain";
+import { startTransition, useActionState, useState } from "react";
 
 export interface ImportWorkspaceFormProps {
   /**

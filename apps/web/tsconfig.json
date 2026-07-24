@@ -13,6 +13,16 @@
     // needed to resolve the transpiled package source these aliases appear in.
     // Do not remove them as "unused".
     "paths": {
+      // The workspace routes live in the `(workspace)` route group (#1190) for a
+      // shared chrome layout; the group folder is invisible to URLs but not to
+      // import paths, so these keep `@web/<route>/*` imports resolving with no
+      // churn across the codebase. More specific than `@web/*`, so they win.
+      "@web/app/*": ["./app/(workspace)/app/*"],
+      "@web/patrimonio/*": ["./app/(workspace)/patrimonio/*"],
+      "@web/historico/*": ["./app/(workspace)/historico/*"],
+      "@web/objetivos/*": ["./app/(workspace)/objetivos/*"],
+      "@web/ajustes/*": ["./app/(workspace)/ajustes/*"],
+      "@web/premium/*": ["./app/(workspace)/premium/*"],
       "@web/*": ["./app/*"],
       "@domain/*": ["../../packages/domain/src/*"],
       "@db/*": ["../../packages/db/src/*"],

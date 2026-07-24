@@ -13,6 +13,33 @@ export default defineConfig({
   oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: [
+      // Workspace routes live in the `(workspace)` route group (#1190); these
+      // specific aliases MUST precede the generic `@web/` so `@web/<route>/*`
+      // imports resolve. First match wins in vite's alias array.
+      {
+        find: /^@web\/app\//,
+        replacement: `${zone("../apps/web/app/(workspace)/app")}/`,
+      },
+      {
+        find: /^@web\/patrimonio\//,
+        replacement: `${zone("../apps/web/app/(workspace)/patrimonio")}/`,
+      },
+      {
+        find: /^@web\/historico\//,
+        replacement: `${zone("../apps/web/app/(workspace)/historico")}/`,
+      },
+      {
+        find: /^@web\/objetivos\//,
+        replacement: `${zone("../apps/web/app/(workspace)/objetivos")}/`,
+      },
+      {
+        find: /^@web\/ajustes\//,
+        replacement: `${zone("../apps/web/app/(workspace)/ajustes")}/`,
+      },
+      {
+        find: /^@web\/premium\//,
+        replacement: `${zone("../apps/web/app/(workspace)/premium")}/`,
+      },
       { find: /^@web\//, replacement: `${zone("../apps/web/app")}/` },
       { find: /^@domain\//, replacement: `${zone("../packages/domain/src")}/` },
       { find: /^@db\//, replacement: `${zone("../packages/db/src")}/` },
