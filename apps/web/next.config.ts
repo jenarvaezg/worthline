@@ -21,6 +21,23 @@ const nextConfig: NextConfig = {
     // components from 'react' can then animate named elements (ADR 0036 §5,
     // interaction-patterns §5).
     viewTransition: true,
+    // Router Cache reuse for recently-visited dynamic segments (#1191, perf
+    // umbrella #1189). Next 16 defaults `dynamic` to 0, so every re-visit of an
+    // already-seen tab repays a full RSC render against remote Turso. 30s lets
+    // the client router reuse a segment visited within the window — going back
+    // to a tab is instant, no server round-trip.
+    //
+    // Safety: this only governs client-side navigation reuse. It does NOT weaken
+    // post-mutation freshness. Every mutation runs through the `formAction`
+    // combinator (app/form-action.ts), whose redirect terminal follows a Server
+    // Action; Next's server-action reducer invalidates the entire prefetch cache
+    // on revalidation regardless of `staleTimes`, and the redirect target is
+    // rendered fresh as part of the action response. The only residual risk is
+    // out-of-session changes (another device, the daily cron) going unseen for
+    // up to 30s — acceptable for this data.
+    staleTimes: {
+      dynamic: 30,
+    },
   },
   transpilePackages: ["@worthline/db", "@worthline/domain", "@worthline/pricing"],
   // @libsql/client pulls in a native addon (the `libsql` package) for local
