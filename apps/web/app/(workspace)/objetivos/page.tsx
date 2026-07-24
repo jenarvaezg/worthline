@@ -194,18 +194,19 @@ export default async function ObjetivosPage({
     store.assets.readInvestmentAssetsWithMeta(),
     readExposureProfilesFromCatalog(),
     store.snapshots.readSnapshotHoldings({
+      includePositions: false,
       kind: "asset",
       scopeId: selectedScope?.id ?? "household",
     }),
   ]);
 
-  const contributionOperations = (
-    await Promise.all(
-      assets
-        .filter((asset) => asset.type === "investment")
-        .map((asset) => store.operations.readOperations(asset.id)),
-    )
-  ).flat();
+  // Derived from projectionContext.operationsByAsset (already read above via
+  // buildProjectionContext) instead of one readOperations query per investment
+  // asset — same rows, same per-asset order (readAllOperations sorts by
+  // executedAt, occurredAt, id, matching readOperations) (#1235).
+  const contributionOperations = assets
+    .filter((asset) => asset.type === "investment")
+    .flatMap((asset) => projectionContext.operationsByAsset.get(asset.id) ?? []);
 
   // Recorded payouts up to today, keyed by holding — the single source S1
   // owns, so this surface never re-derives a schedule.
