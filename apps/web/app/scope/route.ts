@@ -1,3 +1,4 @@
+import { appCookieOptions } from "@web/app-cookie";
 import { appendParam, SCOPE_COOKIE_NAME } from "@web/intake";
 import { parseReturnTo, seeOtherRedirect } from "@web/return-to";
 import type { NextRequest, NextResponse } from "next/server";
@@ -12,11 +13,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const response = seeOtherRedirect(scopedReturnTo);
 
   if (scopeId) {
-    response.cookies.set(SCOPE_COOKIE_NAME, scopeId, {
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
-    });
+    response.cookies.set(SCOPE_COOKIE_NAME, scopeId, appCookieOptions());
   }
 
   return response;

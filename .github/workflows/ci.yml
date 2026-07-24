@@ -6,6 +6,15 @@ on:
   push:
     branches: [main]
 
+# Mínimo privilegio (#1180). El `GITHUB_TOKEN` por defecto puede ser write-all
+# según la configuración de la organización, y CI no escribe nada en el repo: no
+# empuja, no comenta, no publica releases. Declararlo aquí acota el token que
+# heredan TODAS las acciones de terceros del workflow. Un job que necesite más
+# (hoy solo `changes`, para que paths-filter lea los ficheros del PR) lo pide a
+# nivel de job.
+permissions:
+  contents: read
+
 # Cancela ejecuciones anteriores en marcha sobre la misma ref (p. ej. al
 # empujar otro commit a un PR); la de main no se cancela entre sí porque cada
 # merge tiene su propio sha.
@@ -16,8 +25,12 @@ concurrency:
 env:
   NODE_VERSION: "26"
   BUN_VERSION: "1.3.14"
-  # Vercel Remote Cache — same token as deploy; team slug from `vercel teams ls`.
-  TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  # Vercel Remote Cache. Token acotado a la caché (#1180): `VERCEL_TOKEN` puede
+  # desplegar y mutar el proyecto entero, y CI corre en cada PR — no debe llevar
+  # un token con permiso de deploy solo para acertar una caché de build. El
+  # fallback existe hasta que `TURBO_CACHE_TOKEN` esté provisionado; el acotado va
+  # primero, así gana en cuanto se cree el secreto.
+  TURBO_TOKEN: ${{ secrets.TURBO_CACHE_TOKEN || secrets.VERCEL_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
 jobs:
@@ -29,6 +42,11 @@ jobs:
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    # paths-filter lee los ficheros cambiados del PR vía API en un evento
+    # `pull_request`; es el único job que necesita este scope extra (#1180).
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:

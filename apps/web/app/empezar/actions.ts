@@ -1,5 +1,6 @@
 "use server";
 
+import { appCookieOptions } from "@web/app-cookie";
 import { formAction } from "@web/form-action";
 import {
   errorRedirectUrl,
@@ -39,11 +40,7 @@ export async function initSoloAction(
     afterCommit: async ({ value }) => {
       if (value?.firstMemberId) {
         const jar = await cookies();
-        jar.set(SCOPE_COOKIE_NAME, value.firstMemberId, {
-          httpOnly: true,
-          path: "/",
-          sameSite: "lax",
-        });
+        jar.set(SCOPE_COOKIE_NAME, value.firstMemberId, appCookieOptions());
       }
       // No onboarded mark here (#1168): declaring who you are is not onboarding.
       // The full-screen onboarding owns `onboarded_at` — it is stamped when the

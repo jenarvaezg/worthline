@@ -1,6 +1,7 @@
 "use server";
 
 import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
+import { appCookieOptions } from "@web/app-cookie";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { formAction } from "@web/form-action";
 
@@ -327,11 +328,7 @@ export const confirmImportAction = formAction({
   afterCommit: async ({ value }) => {
     const jar = await cookies();
     if (value?.firstMemberId) {
-      jar.set(SCOPE_COOKIE_NAME, value.firstMemberId, {
-        httpOnly: true,
-        path: "/",
-        sameSite: "lax",
-      });
+      jar.set(SCOPE_COOKIE_NAME, value.firstMemberId, appCookieOptions());
     } else {
       jar.delete(SCOPE_COOKIE_NAME);
     }

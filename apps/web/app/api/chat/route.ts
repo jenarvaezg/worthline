@@ -4,6 +4,7 @@ import {
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
+import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
@@ -326,6 +327,16 @@ export async function POST(request: Request): Promise<Response> {
     if (isCourtesyQuotaExhausted(used)) {
       return paywallResponse(PAYWALL_COURTESY_MESSAGE);
     }
+  }
+
+  // Reject an oversized upload on its DECLARED size, before `arrayBuffer()`
+  // materializes the whole body in the JS heap (#1180). The contract's `maxBytes`
+  // cap (`checkAttachmentLimits`) also catches this, but only *after* buffering —
+  // so a caller could push arbitrarily large bodies through memory just to be
+  // told they were too large. Cheap DoS closed at the door: same threshold, same
+  // 4 MiB contract, checked one step earlier.
+  if (attachment && attachment.size > ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes) {
+    return jsonError("attachment_too_large", 413);
   }
 
   let currentPreview: AttachmentPreviewData | null = null;

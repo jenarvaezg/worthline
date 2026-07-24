@@ -17,6 +17,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Mínimo privilegio (#1180). El deploy autentica contra Vercel con `VERCEL_TOKEN`;
+# del repo solo necesita leer el código que empaqueta. Nada aquí empuja commits,
+# comenta ni publica releases, así que el `GITHUB_TOKEN` que heredan las acciones
+# de terceros va acotado a lectura independientemente del default de la org.
+permissions:
+  contents: read
+
 concurrency:
   group: deploy
   cancel-in-progress: true
@@ -38,7 +45,11 @@ env:
   # CJS. Bumps are now safe to test-and-adopt; keep this pinned so they stay
   # intentional. See docs/agents/incident-2026-07-10-vercel-cli-500.md (#848).
   VERCEL_CLI: "vercel@55.0.0"
-  TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  # Turbo Remote Cache con token acotado a la caché (#1180). Este workflow SÍ
+  # necesita `VERCEL_TOKEN` para desplegar, pero la caché de build no: mantener
+  # ambos separados evita que un futuro paso que solo lea la caché reciba un token
+  # con permiso de deploy. El fallback desaparece cuando exista TURBO_CACHE_TOKEN.
+  TURBO_TOKEN: ${{ secrets.TURBO_CACHE_TOKEN || secrets.VERCEL_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
   # Empty string when the secret is unset, so steps can gate on it.
   HAVE_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}

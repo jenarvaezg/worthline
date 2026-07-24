@@ -8,6 +8,7 @@ import {
   MCP_READ_SCOPE,
   type McpWorkspaceRef,
   selectSingleMcpWorkspace,
+  type VerifiedEmail,
   verifyMcpToken,
 } from "./verify-token";
 
@@ -38,7 +39,7 @@ async function localKeys() {
  */
 function buildVerify(
   publicKey: CryptoKey,
-  resolveEmail: (subject: string) => Promise<string | null> = async () => null,
+  resolveEmail: (subject: string) => Promise<VerifiedEmail | null> = async () => null,
 ) {
   return createVerifyMcpToken({
     verifyJwt: createJwtVerifier({
@@ -57,14 +58,27 @@ async function signToken(
   overrides: {
     /** `null` omits the email claim entirely (mirrors a WorkOS access token). */
     email?: string | null;
+    /** `email_verified`; defaults to true so only the hostile tests opt out. */
+    emailVerified?: boolean | "absent" | "truthy-string";
     subject?: string;
     issuer?: string;
     audience?: string;
     expirationTime?: string | number;
   } = {},
 ): Promise<string> {
+  const emailVerified = overrides.emailVerified ?? true;
   const payload =
-    overrides.email === null ? {} : { email: overrides.email ?? "ana@example.com" };
+    overrides.email === null
+      ? {}
+      : {
+          email: overrides.email ?? "ana@example.com",
+          ...(emailVerified === "absent"
+            ? {}
+            : {
+                email_verified:
+                  emailVerified === "truthy-string" ? "true" : emailVerified,
+              }),
+        };
   return new SignJWT(payload)
     .setProtectedHeader({ alg: ALG })
     .setIssuer(overrides.issuer ?? ISSUER)
@@ -98,7 +112,9 @@ describe("verifyMcpToken (injected JWKS verifier + directory + control-plane loo
     const { publicKey, privateKey } = await localKeys();
     // The directory is keyed by the token subject (the WorkOS user id).
     const resolveEmail = async (subject: string) =>
-      subject === "workos_user_ana" ? "ana@example.com" : null;
+      subject === "workos_user_ana"
+        ? { email: "ana@example.com", emailVerified: true }
+        : null;
     const token = await signToken(privateKey, { email: null });
     const auth = await buildVerify(publicKey, resolveEmail)(REQUEST, token);
 
@@ -154,6 +170,75 @@ describe("verifyMcpToken (injected JWKS verifier + directory + control-plane loo
     const { publicKey, privateKey } = await localKeys();
     const expired = await signToken(privateKey, { expirationTime: "-5m" });
     expect(await buildVerify(publicKey)(REQUEST, expired)).toBeUndefined();
+  });
+
+  test("a token whose email claim is not verified is rejected (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    // Tenancy is resolved BY EMAIL, so an unverified address is an
+    // account-takeover vector: whoever registers ana@example.com at the AS
+    // without confirming it would otherwise open Ana's workspace.
+    const unverified = await signToken(privateKey, { emailVerified: false });
+    expect(await buildVerify(publicKey)(REQUEST, unverified)).toBeUndefined();
+  });
+
+  test("an unverified email claim does NOT fall through to the directory (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    const resolveEmail = async () => {
+      throw new Error("an unverified email claim must be rejected, not re-resolved");
+    };
+    const unverified = await signToken(privateKey, { emailVerified: false });
+    expect(
+      await buildVerify(publicKey, resolveEmail)(REQUEST, unverified),
+    ).toBeUndefined();
+  });
+
+  test("a token that omits email_verified is rejected — verification is opt-IN (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    // Fail closed: an AS that simply does not emit the claim must not be read as
+    // "verified". Absent is treated exactly like false.
+    const absent = await signToken(privateKey, { emailVerified: "absent" });
+    expect(await buildVerify(publicKey)(REQUEST, absent)).toBeUndefined();
+  });
+
+  test("email_verified must be the boolean true, not a truthy string (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    const stringy = await signToken(privateKey, { emailVerified: "truthy-string" });
+    expect(await buildVerify(publicKey)(REQUEST, stringy)).toBeUndefined();
+  });
+
+  test("a directory email that is not verified is rejected (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    // The WorkOS-directory path is the one production actually takes (WorkOS
+    // access tokens carry no email claim), so it must assert verification too.
+    const resolveEmail = async () => ({
+      email: "ana@example.com",
+      emailVerified: false,
+    });
+    const token = await signToken(privateKey, { email: null });
+    expect(await buildVerify(publicKey, resolveEmail)(REQUEST, token)).toBeUndefined();
+  });
+
+  test("an unverified email never reaches the control-plane lookup (#1180)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    let lookups = 0;
+    const verify = createVerifyMcpToken({
+      verifyJwt: createJwtVerifier({
+        key: publicKey,
+        issuer: ISSUER,
+        audience: acceptedAudiences(AUDIENCE),
+        algorithms: [ALG],
+      }),
+      resolveEmail: async () => null,
+      resolveWorkspace: async (claims) => {
+        lookups += 1;
+        return resolveWorkspace(claims);
+      },
+    });
+
+    expect(
+      await verify(REQUEST, await signToken(privateKey, { emailVerified: false })),
+    ).toBeUndefined();
+    expect(lookups).toBe(0);
   });
 
   test("a valid token for a user with no granted workspace is rejected", async () => {

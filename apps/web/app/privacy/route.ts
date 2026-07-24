@@ -1,3 +1,4 @@
+import { appCookieOptions } from "@web/app-cookie";
 import { PRIVACY_COOKIE_NAME } from "@web/intake";
 import { parseReturnTo, seeOtherRedirect } from "@web/return-to";
 import type { NextRequest, NextResponse } from "next/server";
@@ -14,11 +15,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (isPrivacyMode) {
     response.cookies.delete(PRIVACY_COOKIE_NAME);
   } else {
-    response.cookies.set(PRIVACY_COOKIE_NAME, "1", {
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
-    });
+    response.cookies.set(PRIVACY_COOKIE_NAME, "1", appCookieOptions());
   }
 
   return response;

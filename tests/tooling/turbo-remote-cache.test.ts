@@ -16,7 +16,8 @@ const deployWorkflow = readFileSync(
 
 describe("Turbo Remote Cache in CI workflows", () => {
   test("ci.yml wires Vercel remote cache env and routes the build job through turbo", () => {
-    expect(ciWorkflow).toContain("TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
+    // Cache-scoped token since #1180; see `workflow-permissions.test.ts`.
+    expect(ciWorkflow).toContain("TURBO_TOKEN: ${{ secrets.TURBO_CACHE_TOKEN");
     expect(ciWorkflow).toContain("TURBO_TEAM: ${{ vars.TURBO_TEAM }}");
     expect(ciWorkflow).toMatch(/^\s+build:/m);
     expect(ciWorkflow).toContain("run: bun run build");
@@ -26,7 +27,7 @@ describe("Turbo Remote Cache in CI workflows", () => {
   });
 
   test("deploy.yml wires Vercel remote cache env", () => {
-    expect(deployWorkflow).toContain("TURBO_TOKEN: ${{ secrets.VERCEL_TOKEN }}");
+    expect(deployWorkflow).toContain("TURBO_TOKEN: ${{ secrets.TURBO_CACHE_TOKEN");
     expect(deployWorkflow).toContain("TURBO_TEAM: ${{ vars.TURBO_TEAM }}");
   });
 });

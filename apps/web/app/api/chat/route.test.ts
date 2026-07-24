@@ -14,7 +14,10 @@ import {
 import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
-import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
+import {
+  ATTACHMENT_EXTRACTION_LIMITS_V1,
+  parseExtractionResult,
+} from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
@@ -1312,5 +1315,104 @@ describe("POST /api/chat · token budget + global fuse (#1163)", () => {
     const streamed = await response.text();
     expect(streamed).not.toContain("data-paywall");
     expect(streamed).toContain("patrimonio neto");
+  });
+});
+
+describe("POST /api/chat · oversized-upload guard (#1180)", () => {
+  /**
+   * A multipart request whose attachment reports a hostile `size` without
+   * allocating the bytes, and whose `arrayBuffer()` explodes. `FormData` inside a
+   * real `Request` re-serializes the file (losing patched properties), so the
+   * instance's `formData()` is overridden to hand the route the very `File` object
+   * under test. That is what makes "rejected BEFORE buffering" observable: a test
+   * that only checked the status could pass while the route still materialized
+   * the whole body in memory.
+   */
+  function oversizedAttachmentRequest(
+    sizeBytes: number,
+    options: {
+      fileName?: string;
+      mimeType?: string;
+      /** False for the at-the-cap case, whose bytes are legitimately read. */
+      poisonArrayBuffer?: boolean;
+    } = {},
+  ): { request: Request; arrayBuffer: ReturnType<typeof vi.fn> } {
+    const { fileName = "extracto.csv", mimeType = "text/csv" } = options;
+    const arrayBuffer = vi.fn(() => {
+      throw new Error("arrayBuffer() must never be called for an oversized upload");
+    });
+    const file = new File(["ticker,cantidad\nSAN,10\n"], fileName, { type: mimeType });
+    Object.defineProperty(file, "size", { value: sizeBytes });
+    if (options.poisonArrayBuffer !== false) {
+      Object.defineProperty(file, "arrayBuffer", { value: arrayBuffer });
+    }
+
+    const request = new Request("http://127.0.0.1/api/chat", {
+      method: "POST",
+      // A real multipart content-type: the route branches on it before ever
+      // touching the body, so the header must be honest even though `formData()`
+      // is stubbed below.
+      headers: { "content-type": "multipart/form-data; boundary=----wl1180" },
+      body: "----wl1180--\r\n",
+    });
+    Object.defineProperty(request, "formData", {
+      value: async () => {
+        const form = new FormData();
+        form.set("messages", JSON.stringify([userMessage("¿qué ves aquí?")]));
+        form.set("screenContext", "null");
+        form.set("attachment", file);
+        return form;
+      },
+    });
+    return { arrayBuffer, request };
+  }
+
+  it("rejects an attachment above 4 MiB with 413 and never buffers it", async () => {
+    const { request, arrayBuffer } = oversizedAttachmentRequest(
+      ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes + 1,
+    );
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: "attachment_too_large" });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wildly oversized attachment the same way (no partial read)", async () => {
+    const { request, arrayBuffer } = oversizedAttachmentRequest(512 * 1024 * 1024);
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized image before it can reach the vision extractor", async () => {
+    const { request, arrayBuffer } = oversizedAttachmentRequest(
+      ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes * 2,
+      { fileName: "posiciones.png", mimeType: "image/png" },
+    );
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(413);
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(extractPositionsFromImage).not.toHaveBeenCalled();
+  });
+
+  it("lets an attachment exactly at the cap through to extraction", async () => {
+    // Exactly `maxBytes` is inside the contract, so the guard must not fire — an
+    // off-by-one here would reject every legitimate upload at the boundary. The
+    // poisoned `arrayBuffer` is dropped so the real (tiny) bytes are read.
+    const { request } = oversizedAttachmentRequest(
+      ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes,
+      { poisonArrayBuffer: false },
+    );
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
   });
 });

@@ -22,6 +22,7 @@ import {
   guardDemoWrite,
   IMPERSONATION_READONLY_MESSAGE,
   isImpersonating,
+  isWriteBlocked,
 } from "@web/demo/write-guard";
 import { deleteAssetAction } from "@web/patrimonio/actions";
 
@@ -111,5 +112,53 @@ describe("guardDemoWrite while impersonating", () => {
     expect(assets.some((a) => a.id === "asset_keep")).toBe(true);
 
     store.close();
+  });
+});
+
+describe("isWriteBlocked (#1180)", () => {
+  /**
+   * The non-redirecting form of the guard, for an action that must refuse
+   * silently instead of navigating (a `void` action fired mid-conversation).
+   * `guardDemoWrite` throws Next's redirect signal, which would be wrong there.
+   */
+  it("is false for a live request — the caller's own workspace, or local dev", async () => {
+    mockTarget = OWN_TARGET;
+    expect(await isWriteBlocked()).toBe(false);
+
+    mockTarget = { kind: "local" };
+    expect(await isWriteBlocked()).toBe(false);
+  });
+
+  it("is true for the read-only demo", async () => {
+    mockTarget = { kind: "demo", persona: "familia", now: "2026-07-24T00:00:00.000Z" };
+    expect(await isWriteBlocked()).toBe(true);
+  });
+
+  it("is true for an admin impersonating another workspace", async () => {
+    mockTarget = IMPERSONATED_TARGET;
+    expect(await isWriteBlocked()).toBe(true);
+  });
+
+  it("agrees with guardDemoWrite on every target (one source of truth)", async () => {
+    for (const target of [
+      OWN_TARGET,
+      IMPERSONATED_TARGET,
+      { kind: "local" } as StoreTarget,
+      {
+        kind: "demo",
+        persona: "familia",
+        now: "2026-07-24T00:00:00.000Z",
+      } as StoreTarget,
+    ]) {
+      mockTarget = target;
+      const blocked = await isWriteBlocked();
+      let redirected = false;
+      try {
+        await guardDemoWrite("/patrimonio");
+      } catch {
+        redirected = true;
+      }
+      expect(redirected).toBe(blocked);
+    }
   });
 });

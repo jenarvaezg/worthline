@@ -1,3 +1,4 @@
+import { appCookieOptions } from "@web/app-cookie";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
 import { parsePersonaId } from "@web/demo/persona";
 import { SCOPE_COOKIE_NAME } from "@web/intake";
@@ -11,6 +12,8 @@ import { type NextRequest, NextResponse } from "next/server";
  * GET serves the shareable deep-link (`/demo/persona?persona=…`); POST serves the
  * landing's selection forms. An unknown/absent persona falls back to familia.
  */
+const PERSONA_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+
 function selectPersona(raw: string | null): NextResponse {
   const persona = parsePersonaId(raw);
   // A RELATIVE Location ("/app") so the browser resolves it against the host it is
@@ -18,15 +21,14 @@ function selectPersona(raw: string | null): NextResponse {
   // proxy origin), and the freshly-set cookie — scoped to the request host —
   // would not be sent to the new host, silently dropping the persona switch.
   const response = new NextResponse(null, { status: 303, headers: { Location: "/app" } });
-  response.cookies.set(DEMO_PERSONA_COOKIE_NAME, persona, {
-    httpOnly: true,
+  response.cookies.set(
+    DEMO_PERSONA_COOKIE_NAME,
+    persona,
     // Bounded lifetime (ADR 0030): the cookie is what flips a logged-out request
     // into the demo, so a forgotten one must decay rather than silently shadow a
     // real local/dev workspace on the next visit.
-    maxAge: 60 * 60 * 12,
-    path: "/",
-    sameSite: "lax",
-  });
+    appCookieOptions({ maxAge: PERSONA_COOKIE_MAX_AGE_SECONDS }),
+  );
   response.cookies.delete(SCOPE_COOKIE_NAME);
   return response;
 }

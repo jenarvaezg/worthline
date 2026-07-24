@@ -2,6 +2,7 @@
 
 import { guardAdmin } from "@web/admin/guard-admin";
 import { IMPERSONATE_COOKIE_NAME } from "@web/admin/impersonate-cookie";
+import { appCookieOptions } from "@web/app-cookie";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -25,13 +26,11 @@ export async function impersonateWorkspaceAction(formData: FormData): Promise<ne
   }
 
   const jar = await cookies();
-  jar.set(IMPERSONATE_COOKIE_NAME, workspaceId, {
-    httpOnly: true,
-    maxAge: IMPERSONATE_COOKIE_MAX_AGE_SECONDS,
-    path: "/",
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-  });
+  jar.set(
+    IMPERSONATE_COOKIE_NAME,
+    workspaceId,
+    appCookieOptions({ maxAge: IMPERSONATE_COOKIE_MAX_AGE_SECONDS }),
+  );
   redirect("/app");
 }
 
