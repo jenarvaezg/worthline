@@ -2,13 +2,37 @@
 
 import dynamic from "next/dynamic";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   isAssistantSurface,
   isOnboardingSurface,
   ONBOARDING_RERUN_PARAM,
 } from "./screen-context";
+
+/**
+ * The closed-panel affordance: a floating action button that opens the
+ * assistant. Rendered eager by the launcher before the heavy layer loads, and
+ * reused (disabled) as the layer chunk's loading placeholder so the FAB never
+ * blinks out of existence — the affordance and its focus target stay put across
+ * the one-off first-open chunk load (a11y). Uses the same canonical
+ * `assistantFab` markup the layer renders once mounted, so nothing shifts on
+ * handover.
+ */
+function AssistantFab({ onOpen }: { onOpen?: () => void }) {
+  return (
+    <button
+      aria-busy={onOpen ? undefined : true}
+      aria-label="Abrir asistente"
+      className="assistantFab"
+      disabled={onOpen === undefined}
+      onClick={onOpen}
+      type="button"
+    >
+      ✳
+    </button>
+  );
+}
 
 /**
  * Lazy boundary for the floating assistant (#1192, perf umbrella #1189).
@@ -23,9 +47,9 @@ import {
  * the surface gate. The layer chunk is `next/dynamic`-imported and does not load
  * until the panel is actually opened — either by clicking the FAB or via the
  * `?repasar=1` deep-link that re-launches onboarding from the ordinary panel
- * (#1170). The first open pays a one-off, brief chunk load (no visible placeholder
- * beyond the FAB disappearing); once mounted, the layer keeps its own open/close
- * state and its conversation survives in-app navigation exactly as before.
+ * (#1170). The first open pays a one-off, brief chunk load, covered by a disabled
+ * FAB placeholder; once mounted, the layer keeps its own open/close state and its
+ * conversation survives in-app navigation exactly as before.
  *
  * `/bienvenida` does NOT go through here: that route imports `AssistantLayer`
  * directly in its `onboarding` variant, so the estreno surface loads eager with
@@ -33,7 +57,7 @@ import {
  */
 const AssistantLayer = dynamic(() => import("./assistant-layer"), {
   ssr: false,
-  loading: () => null,
+  loading: () => <AssistantFab />,
 });
 
 export default function AssistantLauncher({
@@ -49,14 +73,21 @@ export default function AssistantLauncher({
   // conversation persists across navigation (S0 decision #628) — handing over
   // entirely to the layer's own open/close, surface gate and FAB from here on.
   const [activated, setActivated] = useState(false);
-  const fabRef = useRef<HTMLButtonElement>(null);
+
+  // The floating layer never shows on the public landing or on the onboarding
+  // route (that surface owns the full-screen variant, mounted by the route).
+  const onFloatingAssistantSurface =
+    isAssistantSurface(pathname) && !isOnboardingSurface(pathname);
 
   // The re-run deep-link (#1170) opens the panel programmatically: activate the
-  // layer so its own effect can open it, seed the opening turn, and strip the flag.
+  // layer so its own effect can open it, seed the opening turn, and strip the
+  // flag. Gated on the surface FIRST so `/bienvenida?repasar=1` can never mount a
+  // hidden floating layer behind the estreno surface (defensive: unreachable via
+  // the product's own links today).
   const rerunRequested = searchParams.get(ONBOARDING_RERUN_PARAM) === "1";
   useEffect(() => {
-    if (rerunRequested) setActivated(true);
-  }, [rerunRequested]);
+    if (rerunRequested && onFloatingAssistantSurface) setActivated(true);
+  }, [rerunRequested, onFloatingAssistantSurface]);
 
   if (activated) {
     // Once activated the layer takes over completely — same instance across
@@ -70,22 +101,9 @@ export default function AssistantLauncher({
     );
   }
 
-  // Pre-activation gate mirrors the floating layer's own: never on the public
-  // landing, never on the onboarding route (that surface owns the full-screen
-  // variant). The FAB markup matches the layer's so nothing shifts on handover.
-  if (!isAssistantSurface(pathname) || isOnboardingSurface(pathname)) {
+  if (!onFloatingAssistantSurface) {
     return null;
   }
 
-  return (
-    <button
-      aria-label="Abrir asistente"
-      className="assistantFab"
-      onClick={() => setActivated(true)}
-      ref={fabRef}
-      type="button"
-    >
-      ✳
-    </button>
-  );
+  return <AssistantFab onOpen={() => setActivated(true)} />;
 }
