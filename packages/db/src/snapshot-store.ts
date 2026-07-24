@@ -69,6 +69,15 @@ export interface SnapshotHoldingQuery {
   to?: string;
   holdingId?: string;
   kind?: SnapshotHoldingKind;
+  /**
+   * Attach each connected holding's frozen per-position child rows (ADR 0035,
+   * `readPositionsByHolding`). Defaults to `true` so every existing caller keeps
+   * its current shape unchanged. Callers that only need the parent holding rows
+   * (e.g. deriving monthly closes) can pass `false` to skip that second indexed
+   * read entirely — same as the existing `holdingId` skip, but opt-in for the
+   * unscoped/multi-holding case where that read is comparatively larger (#1235).
+   */
+  includePositions?: boolean;
 }
 
 /** A frozen holding row joined with its snapshot's identity and date. */
@@ -437,8 +446,11 @@ export async function readSnapshotHoldings(
   // ripple/recalc hot paths over investments and housing — never connected coin
   // collections — and never render the drilldown, so the extra read (a wide
   // `IN (…snapshotIds)` over one holding's whole history) would be pure overhead.
+  // Also skipped when the caller explicitly opts out via `includePositions:
+  // false` (#1235) — e.g. a page that only derives monthly closes from the
+  // parent rows and never reads `positions`.
   const positionsByHolding =
-    query.holdingId !== undefined
+    query.holdingId !== undefined || query.includePositions === false
       ? new Map<string, SnapshotPositionRow[]>()
       : await readPositionsByHolding(db, [...new Set(rows.map((row) => row.snapshotId))]);
 
