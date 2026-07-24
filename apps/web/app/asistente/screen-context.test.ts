@@ -6,6 +6,8 @@ import {
   isOnboardingSurface,
   isScreenContext,
   ONBOARDING_PATH,
+  ONBOARDING_RERUN_PARAM,
+  onboardingModeForContext,
 } from "./screen-context";
 
 describe("isAssistantSurface", () => {
@@ -37,6 +39,29 @@ describe("isOnboardingSurface", () => {
   });
 });
 
+describe("onboardingModeForContext (#1169/#1170)", () => {
+  it("resolves first-run on the dedicated onboarding surface", () => {
+    expect(onboardingModeForContext(deriveScreenContext(ONBOARDING_PATH, ""))).toBe(
+      "first-run",
+    );
+  });
+
+  it("resolves re-run when the repasar flag is set off the onboarding surface", () => {
+    const ctx = deriveScreenContext("/patrimonio", `?${ONBOARDING_RERUN_PARAM}=1`);
+    expect(onboardingModeForContext(ctx)).toBe("re-run");
+  });
+
+  it("is null on an ordinary surface without the flag", () => {
+    expect(onboardingModeForContext(deriveScreenContext("/patrimonio", ""))).toBeNull();
+    expect(onboardingModeForContext(deriveScreenContext("/app", ""))).toBeNull();
+  });
+
+  it("ignores a non-matching flag value", () => {
+    const ctx = deriveScreenContext("/patrimonio", `?${ONBOARDING_RERUN_PARAM}=0`);
+    expect(onboardingModeForContext(ctx)).toBeNull();
+  });
+});
+
 describe("deriveScreenContext", () => {
   it("maps the dashboard to resumen", () => {
     expect(deriveScreenContext("/app", "")).toEqual({
@@ -56,6 +81,11 @@ describe("deriveScreenContext", () => {
   it("captures only known URL-mirrored view params", () => {
     const ctx = deriveScreenContext("/app", "?view=liquid&range=3y&utm_source=x");
     expect(ctx.view).toEqual({ view: "liquid", range: "3y" });
+  });
+
+  it("captures the onboarding re-run flag (#1170)", () => {
+    const ctx = deriveScreenContext("/patrimonio", `?${ONBOARDING_RERUN_PARAM}=1`);
+    expect(ctx.view[ONBOARDING_RERUN_PARAM]).toBe("1");
   });
 
   it("classifies unknown routes as otra without a holding id", () => {

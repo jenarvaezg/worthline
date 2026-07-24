@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 let pathname = "/bienvenida";
+let search = new URLSearchParams();
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: () => ({
@@ -15,12 +16,14 @@ vi.mock("@ai-sdk/react", () => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
   useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => search,
 }));
 
 import AssistantLayer from "./assistant-layer";
 
 afterEach(() => {
   pathname = "/bienvenida";
+  search = new URLSearchParams();
 });
 
 describe("AssistantLayer · onboarding variant (#1168)", () => {

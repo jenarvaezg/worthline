@@ -196,6 +196,9 @@ const ONE_SHOT_PARAMS = new Set([
   "pfName",
   "pfSymbol",
   "pfProvider",
+  // Onboarding re-run trigger (#1170): a one-shot activation flag consumed by the
+  // assistant layer; never carried into action-return URLs or the sibling links.
+  "repasar",
 ]);
 const PRESERVED_VALUE_PREFIX = "v_";
 

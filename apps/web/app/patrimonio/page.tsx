@@ -1,3 +1,4 @@
+import { ONBOARDING_RERUN_PARAM } from "@web/asistente/screen-context";
 import { isDemoMode } from "@web/demo/write-guard";
 import {
   appendParam,
@@ -109,6 +110,17 @@ export default async function PatrimonioPage({
           <Link className="actionLink" href="/patrimonio/importar-extracto">
             Importar extracto
           </Link>
+          {hasHoldings ? (
+            // Re-run the onboarding assistant over the existing portfolio (#1170):
+            // «repasar mi cartera con un extracto». Premium ingestion is gated
+            // downstream at the chat route (#1162); this is just the entry point.
+            <Link
+              className="actionLink"
+              href={appendParam(currentUrl, ONBOARDING_RERUN_PARAM, "1")}
+            >
+              Repasar con el asistente
+            </Link>
+          ) : null}
           {hasPricedHoldings ? (
             <PriceRefreshControl
               action={refreshPricesAction}

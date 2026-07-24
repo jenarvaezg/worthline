@@ -6,7 +6,7 @@ import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -102,6 +102,7 @@ import {
   deriveScreenContext,
   isAssistantSurface,
   isOnboardingSurface,
+  ONBOARDING_RERUN_PARAM,
   type ScreenSection,
 } from "./screen-context";
 import {
@@ -124,6 +125,15 @@ const SECTION_LABEL: Record<ScreenSection, string> = {
   ajustes: "Ajustes",
   otra: "worthline",
 };
+
+/**
+ * The opening turn seeded when the panel is entered in onboarding re-run mode
+ * (PRD #1167 S3, #1170) from the /patrimonio shortcut. The `repasar` flag in the
+ * URL puts the assistant in the reconcile-first onboarding mode (system prompt),
+ * and this first user turn kicks off the flow so the panel is not a silent box.
+ */
+const ONBOARDING_RERUN_SEED =
+  "Quiero repasar mi cartera y ponerla al día con un extracto o documento nuevo.";
 
 /**
  * The typed quick actions the model proposed on the CURRENT turn (#631, ADR
@@ -1568,6 +1578,8 @@ export default function AssistantLayer({
   });
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const rerunRequested = searchParams.get(ONBOARDING_RERUN_PARAM) === "1";
   const inputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const fabRef = useRef<HTMLButtonElement>(null);
@@ -1642,6 +1654,35 @@ export default function AssistantLayer({
   useEffect(() => {
     if (!isAssistantSurface(pathname) && open) setOpen(false);
   }, [open, pathname]);
+
+  // Re-run onboarding entry (#1170): the /patrimonio shortcut navigates here with
+  // `?repasar=1`, which puts the turn in the reconcile-first onboarding mode (the
+  // system prompt derives it from the flag in the screen context). Open the panel
+  // and, on a fresh conversation, seed the opening turn so it is not a silent box.
+  // The flag is a ONE-SHOT activation: once consumed we strip it from the URL so
+  // the re-run framing does not stick to every later /patrimonio turn. Since the
+  // transport reads `window.location` directly, this takes effect on the next
+  // turn. Never in the onboarding variant — the /bienvenida estreno surface owns
+  // its own full-screen entry.
+  const rerunConsumedRef = useRef(false);
+  useEffect(() => {
+    if (variant !== "floating" || !rerunRequested || rerunConsumedRef.current) return;
+    rerunConsumedRef.current = true;
+    setOpen(true);
+    if (messages.length === 0) {
+      void sendMessage({
+        role: "user",
+        parts: [{ type: "text", text: ONBOARDING_RERUN_SEED }],
+      });
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete(ONBOARDING_RERUN_PARAM);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+  }, [rerunRequested, variant, messages.length, sendMessage]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
