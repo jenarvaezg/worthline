@@ -27,6 +27,26 @@ export interface VerifiedToken {
   /** The `email` claim if the access token carries one; WorkOS does not, so this
    * is usually null and the email is fetched from userinfo instead. */
   email: string | null;
+  /** The `email_verified` claim, strictly boolean-true. False when the claim is
+   * absent, false, or any non-boolean value — see {@link VerifiedEmail}. */
+  emailVerified: boolean;
+}
+
+/**
+ * An email address plus whether its owner actually proved control of it (#1180).
+ *
+ * Both email sources — the token's own `email` claim and the WorkOS directory
+ * lookup — carry this pair, because tenancy is resolved BY EMAIL: the control
+ * plane maps `email → user → workspace`. An unverified address is therefore an
+ * account-takeover vector, not a cosmetic detail: whoever registers someone
+ * else's unconfirmed address at the Authorization Server would resolve to THEIR
+ * workspace. Verification is opt-IN and strictly boolean — an absent claim, a
+ * `false`, or a truthy-but-not-boolean value (`"true"`, `1`) all read as
+ * unverified, so an AS that simply does not emit the claim fails closed.
+ */
+export interface VerifiedEmail {
+  email: string;
+  emailVerified: boolean;
 }
 
 export interface McpTokenClaims {
@@ -37,6 +57,11 @@ export interface McpTokenClaims {
    * addresses (Google is the verified upstream IdP via WorkOS — ADR 0034). The
    * web sign-in keys the control plane by the same Google email (ADR 0030), so
    * MCP and web resolve the same user.
+   *
+   * Since #1180 that invariant is ASSERTED rather than assumed: nothing reaches
+   * this type until `email_verified` came back boolean-true from whichever source
+   * supplied the address (see {@link VerifiedEmail}). A caller holding these
+   * claims may treat the email as proven.
    */
   email: string;
 }
@@ -54,10 +79,12 @@ export interface VerifyMcpTokenDeps {
    * treats a throw as "reject".
    */
   verifyJwt: (token: string) => Promise<VerifiedToken | null>;
-  /** Resolve the caller's verified email from the subject (WorkOS user id) when
-   * the access token does not carry an email claim — WorkOS access tokens carry
-   * only the subject, and the control plane is keyed by the Google email. */
-  resolveEmail: (subject: string) => Promise<string | null>;
+  /** Resolve the caller's email — AND whether the directory considers it verified
+   * (#1180) — from the subject (WorkOS user id), when the access token does not
+   * carry an email claim. WorkOS access tokens carry only the subject, and the
+   * control plane is keyed by the Google email, so this is the path production
+   * actually takes. */
+  resolveEmail: (subject: string) => Promise<VerifiedEmail | null>;
   /** Map verified claims to the caller's workspace, or null when no grant exists. */
   resolveWorkspace: (claims: McpTokenClaims) => Promise<McpWorkspaceRef | null>;
 }
@@ -103,8 +130,39 @@ export function createJwtVerifier(config: {
       return null;
     }
     const email = typeof payload["email"] === "string" ? payload["email"] : null;
-    return { subject, email };
+    // Strict boolean-true only (#1180): `"true"`, `1` and an absent claim are all
+    // "not verified", so a misconfigured AS cannot smuggle an unproven address in.
+    return { subject, email, emailVerified: payload["email_verified"] === true };
   };
+}
+
+/**
+ * The caller's email, or null when it cannot be established as VERIFIED (#1180).
+ *
+ * The token's own claim wins when present — and is then rejected outright if
+ * unverified, rather than falling through to the directory: a token that asserts
+ * an email must assert it as proven, and re-resolving would let a bad claim
+ * silently succeed by another route. Only a token with NO email claim (the normal
+ * WorkOS access token) reaches the directory.
+ */
+async function resolveVerifiedEmail(
+  deps: VerifyMcpTokenDeps,
+  verified: VerifiedToken,
+): Promise<string | null> {
+  const source: VerifiedEmail | null =
+    verified.email === null
+      ? await deps.resolveEmail(verified.subject)
+      : { email: verified.email, emailVerified: verified.emailVerified };
+
+  if (source === null) return null;
+  if (!source.emailVerified) {
+    // No PII: neither the address nor the subject is logged.
+    console.warn("[mcp-auth] reject: the caller's email is not verified", {
+      source: verified.email === null ? "directory" : "token_claim",
+    });
+    return null;
+  }
+  return source.email;
 }
 
 /** Compose the seams into the `(req, bearerToken) => AuthInfo | undefined` MCP verifier. */
@@ -138,11 +196,14 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
 
     // WorkOS access tokens carry the subject but not the email; resolve it from
     // the WorkOS directory by subject when the token claim is absent (ADR 0034).
-    const email = verified.email ?? (await deps.resolveEmail(verified.subject));
+    // Either way the address must come back VERIFIED (#1180) — the tenant is
+    // resolved by email, so an unproven one must never reach the control plane.
+    const email = await resolveVerifiedEmail(deps, verified);
     if (!email) {
-      // No PII: the subject/email values are deliberately not logged.
+      // No PII: the subject/email values are deliberately not logged. The
+      // unverified case logged its own, more specific reason above.
       console.warn(
-        "[mcp-auth] reject: no email (token claim absent and directory returned none)",
+        "[mcp-auth] reject: no verified email (token claim absent or unverified, and the directory supplied none)",
       );
       return undefined;
     }
@@ -233,8 +294,12 @@ function envJwtVerifier(env: Env): VerifyMcpTokenDeps["verifyJwt"] | null {
  * WorkOS secret API key. This is scope-independent — unlike OIDC userinfo it does
  * not depend on the access token carrying `openid` — so it works for the minimal
  * scopes an MCP client requests. The control plane is keyed by this email.
+ *
+ * `email_verified` travels with the address (#1180) instead of being assumed:
+ * WorkOS returns it on the user object (snake_case over REST, camelCase via the
+ * SDK — both are read). Only boolean-true counts as verified.
  */
-async function envResolveEmail(subject: string, env: Env): Promise<string | null> {
+async function envResolveEmail(subject: string, env: Env): Promise<VerifiedEmail | null> {
   const apiKey = env["WORKOS_API_KEY"]?.trim();
   if (!apiKey) {
     console.warn("[mcp-auth] no WORKOS_API_KEY: cannot resolve email from subject");
@@ -250,8 +315,16 @@ async function envResolveEmail(subject: string, env: Env): Promise<string | null
       console.warn("[mcp-auth] WorkOS user lookup failed", { status: response.status });
       return null;
     }
-    const user = (await response.json()) as { email?: unknown };
-    return typeof user.email === "string" ? user.email : null;
+    const user = (await response.json()) as {
+      email?: unknown;
+      email_verified?: unknown;
+      emailVerified?: unknown;
+    };
+    if (typeof user.email !== "string") return null;
+    return {
+      email: user.email,
+      emailVerified: user.email_verified === true || user.emailVerified === true,
+    };
   } catch (error) {
     console.warn("[mcp-auth] WorkOS user lookup errored", {
       message: (error as { message?: string })?.message,

@@ -4,6 +4,7 @@ import {
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
+import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
@@ -86,6 +87,14 @@ const MAX_TOTAL_CHARS = 16_000;
 const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
 /** Read tool(s) + answer + suggest_actions (#631), with headroom for one extra read. */
 const MAX_STEPS = 6;
+/**
+ * Ceiling on the whole request body (#1180): the 4 MiB attachment cap plus room
+ * for the text conversation that rides along in the same multipart body
+ * ({@link MAX_TOTAL_CHARS} + {@link MAX_ATTACHMENT_HISTORY_CHARS}) and the
+ * multipart framing. A legitimate request can never approach it; a hostile one
+ * is refused before a byte is parsed.
+ */
+const MAX_REQUEST_BYTES = ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes + 512 * 1024;
 
 interface ChatBody {
   messages: UIMessage[];
@@ -242,6 +251,17 @@ export async function POST(request: Request): Promise<Response> {
       .get("content-type")
       ?.toLowerCase()
       .startsWith("multipart/form-data") ?? false;
+
+  // First bound, on the DECLARED body size, before anything is parsed (#1180).
+  // `request.formData()` materializes the whole multipart body, so checking only
+  // the attachment afterwards would still have paid for the first copy. Absent or
+  // unparseable `Content-Length` (a chunked body) falls through to the
+  // per-attachment cap below — this is a cheap door, not the only one.
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    return jsonError("attachment_too_large", 413);
+  }
+
   let input = isMultipart ? null : await readChatRequest(request);
   if (!isMultipart && !input) {
     return jsonError("invalid_body", 400);
@@ -326,6 +346,16 @@ export async function POST(request: Request): Promise<Response> {
     if (isCourtesyQuotaExhausted(used)) {
       return paywallResponse(PAYWALL_COURTESY_MESSAGE);
     }
+  }
+
+  // Reject an oversized upload on its DECLARED size, before `arrayBuffer()`
+  // materializes the whole body in the JS heap (#1180). The contract's `maxBytes`
+  // cap (`checkAttachmentLimits`) also catches this, but only *after* buffering —
+  // so a caller could push arbitrarily large bodies through memory just to be
+  // told they were too large. Cheap DoS closed at the door: same threshold, same
+  // 4 MiB contract, checked one step earlier.
+  if (attachment && attachment.size > ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes) {
+    return jsonError("attachment_too_large", 413);
   }
 
   let currentPreview: AttachmentPreviewData | null = null;

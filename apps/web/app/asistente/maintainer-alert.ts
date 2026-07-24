@@ -4,6 +4,8 @@ import type {
 } from "@web/agent-view/contract";
 import type { MaintainerAlertCategory } from "@worthline/db";
 
+import { boundExtractedData } from "./bound-extracted-data";
+
 /**
  * The maintainer-alert contract (#1050, decision #1038, ADR 0064). The chat
  * tool `raise_maintainer_alert` is the assistant's ONLY path to a maintainer
@@ -120,7 +122,11 @@ export function buildMaintainerAlertPayload(
       ? {}
       : { calculationTraceUnavailable: input.calculationTraceUnavailable }),
     ...(input.declared === undefined ? {} : { declared: input.declared }),
-    ...(input.extractedData === undefined ? {} : { extractedData: input.extractedData }),
+    // Bounded HERE, in the one shaping seam every caller goes through (#1180), so
+    // the control-plane row is what stays small — not just the /admin render.
+    ...(input.extractedData === undefined
+      ? {}
+      : { extractedData: boundExtractedData(input.extractedData) }),
     ...(input.conversationRef === undefined
       ? {}
       : { conversationRef: input.conversationRef }),

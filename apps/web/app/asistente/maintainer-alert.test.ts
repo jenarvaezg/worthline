@@ -4,6 +4,7 @@ import type {
 } from "@web/agent-view/contract";
 import { describe, expect, it } from "vitest";
 
+import { EXTRACTED_DATA_LIMITS } from "./bound-extracted-data";
 import {
   buildMaintainerAlertPayload,
   isMaintainerAlertCategory,
@@ -107,5 +108,35 @@ describe("buildMaintainerAlertPayload", () => {
     expect(payload.calculationTraceUnavailable).toMatch(/debt/);
     expect(payload).not.toHaveProperty("declared");
     expect(payload).not.toHaveProperty("extractedData");
+  });
+});
+
+describe("buildMaintainerAlertPayload · extractedData is bounded at the seam (#1180)", () => {
+  /** The base payload the tool passes through, with a hostile `extractedData`. */
+  function payloadWith(extractedData: unknown) {
+    return buildMaintainerAlertPayload({
+      category: "infidelity",
+      summary: "resumen",
+      raisedAt: "2026-07-24T10:00:00.000Z",
+      detail: DETAIL,
+      calculationTrace: TRACE,
+      extractedData,
+    });
+  }
+
+  it("bounds it as it enters the payload, not only at render time", () => {
+    // The cap must live in the shaping seam every caller goes through: the
+    // control-plane row is what must stay small, not just the /admin <pre>.
+    const payload = payloadWith({
+      nota: "z".repeat(EXTRACTED_DATA_LIMITS.maxStringChars * 4),
+    });
+
+    expect(JSON.stringify(payload.extractedData).length).toBeLessThanOrEqual(
+      EXTRACTED_DATA_LIMITS.maxSerializedChars,
+    );
+  });
+
+  it("keeps an absent extraction absent, so the key stays optional", () => {
+    expect("extractedData" in payloadWith(undefined)).toBe(false);
   });
 });

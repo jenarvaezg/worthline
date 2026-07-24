@@ -1,6 +1,7 @@
 "use server";
 
 import { markOnboardedBestEffort } from "@web/activation-marks";
+import { guardDemoWrite, isWriteBlocked } from "@web/demo/write-guard";
 import { redirect } from "next/navigation";
 
 /**
@@ -14,6 +15,10 @@ import { redirect } from "next/navigation";
  * stamp is a no-op and the user still lands on `/app`.
  */
 export async function skipOnboardingAction(): Promise<never> {
+  // The mark is a control-plane write on the RESOLVED workspace (#1180): an admin
+  // impersonating a tenant would otherwise stamp someone else's onboarding, and
+  // impersonation is read-only by contract. Guard first, like every other write.
+  await guardDemoWrite("/bienvenida");
   await markOnboardedBestEffort();
   redirect("/app");
 }
@@ -32,5 +37,8 @@ export async function skipOnboardingAction(): Promise<never> {
  * own persist seam; this is the explicit onboarding-complete signal on top.
  */
 export async function markOnboardingCompleteAction(): Promise<void> {
+  // Non-redirecting guard (#1180): this is fired from the client mid-conversation,
+  // so a blocked write refuses silently instead of navigating the user away.
+  if (await isWriteBlocked()) return;
   await markOnboardedBestEffort();
 }

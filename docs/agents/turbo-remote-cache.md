@@ -7,7 +7,14 @@ CI and deploy share Turborepo task outputs via [Vercel Remote Cache](https://tur
 
 ## One-time GitHub setup
 
-1. **`VERCEL_TOKEN`** (already configured for deploy) — Turbo reuses this secret; no separate `TURBO_TOKEN` needed.
+1. **`TURBO_CACHE_TOKEN`** — a Vercel access token scoped to the remote cache, **not** the deploy-capable `VERCEL_TOKEN` (#1180). CI runs on every pull request; it must not carry a token that can deploy or mutate the Vercel project just to hit a build cache.
+
+   ```bash
+   # Vercel → Account Settings → Tokens → Create, then:
+   gh secret set TURBO_CACHE_TOKEN -R jenarvaezg/worthline
+   ```
+
+   Both workflows read `${{ secrets.TURBO_CACHE_TOKEN || secrets.VERCEL_TOKEN }}`: **until `TURBO_CACHE_TOKEN` exists the fallback keeps the cache working with the deploy token** — i.e. the hardening is inert until the secret is provisioned. Setting it is the whole change; nothing else needs editing. `tests/tooling/workflow-permissions.test.ts` guards the wiring.
 
 2. **Repository variable** `TURBO_TEAM`  
    GitHub → Settings → Secrets and variables → Actions → Variables.  
