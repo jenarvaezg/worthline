@@ -90,7 +90,16 @@ export default defineConfig({
     navigationTimeout: isCI ? 30_000 : 15_000,
     // Don't carry browser state across test files (each spec gets a fresh context).
     // Within a spec, state is shared so journey steps build on each other.
-    trace: "on-first-retry",
+    //
+    // `on-first-retry` captured NOTHING here: `retries` is 0 by design, so there
+    // is never a first retry (#1250). A CI-only flake therefore left us with a
+    // stack line and nothing else — no way to tell a mutation that never
+    // dispatched from one that landed without repainting. Capture on failure
+    // instead. Cost is paid only by a red run, and the HTML reporter copies the
+    // attachments into `playwright-report/`, which CI already uploads.
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   projects: [
     {
