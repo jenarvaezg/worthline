@@ -1,13 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-import {
-  extractPositionsFromImage,
-  IMAGE_EXTRACTOR_DEFAULT_MODEL,
-} from "@web/asistente/attachment-image-extractor";
-import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractPositionsAndMovementsFromSpreadsheet } from "@web/asistente/attachment-positions-movements-extractor";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
+import {
+  extractDocumentFromVisionAttachment,
+  VISION_EXTRACTOR_MODEL,
+} from "@web/asistente/attachment-vision-extractor";
 
 import {
   type AdmissionCheck,
@@ -89,7 +88,9 @@ export function selectedFixtures(only?: readonly string[]): GoldenFixture[] {
   return EXTRACTOR_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
 }
 
-function selectedBalanceSeriesFixtures(only?: string[]): BalanceSeriesGoldenFixture[] {
+export function selectedBalanceSeriesFixtures(
+  only?: readonly string[],
+): BalanceSeriesGoldenFixture[] {
   if (!only || only.length === 0) return BALANCE_SERIES_GOLDEN_FIXTURES;
   const allowed = new Set(only);
   return BALANCE_SERIES_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
@@ -139,10 +140,11 @@ export async function runExtractorFixture(
     ]);
     const expected = parseGoldenExpected(JSON.parse(expectedRaw));
     const mimeType = attachmentMimeTypeForFileName(fixture.imageFile) || "image/png";
-    const result = await extractPositionsFromImage(
+    const result = await extractDocumentFromVisionAttachment(
       {
         bytes: new Uint8Array(bytes),
         fileName: fixture.imageFile,
+        kind: "image",
         mimeType,
       },
       { env },
@@ -186,7 +188,7 @@ export async function runBalanceSeriesFixture(
   const hasSource = await fileExists(sourcePath);
   const hasExpected = await fileExists(expectedPath);
   if (!hasSource || !hasExpected) {
-    const missing = [!hasSource ? "pdf" : null, !hasExpected ? "expected" : null]
+    const missing = [!hasSource ? "source" : null, !hasExpected ? "expected" : null]
       .filter((part): part is string => part !== null)
       .join(" + ");
     console.error(`SKIP  ${rowLabel} missing ${missing} under ${fixture.storage}`);
@@ -206,11 +208,17 @@ export async function runBalanceSeriesFixture(
       readFile(expectedPath, "utf8"),
     ]);
     const expected = parseBalanceSeriesGoldenExpected(JSON.parse(expectedRaw));
-    const result = await extractBalanceSeriesFromPdf(
+    // The balance-series track is no longer PDF-only (#1243): a committed screenshot
+    // grades the same document, so the transport follows the fixture's own file name.
+    const isPdf = fixture.sourceFile.toLowerCase().endsWith(".pdf");
+    const result = await extractDocumentFromVisionAttachment(
       {
         bytes: new Uint8Array(bytes),
         fileName: fixture.sourceFile,
-        mimeType: "application/pdf",
+        kind: isPdf ? "pdf" : "image",
+        mimeType:
+          attachmentMimeTypeForFileName(fixture.sourceFile) ||
+          (isPdf ? "application/pdf" : "image/png"),
       },
       { env },
     );
@@ -318,7 +326,7 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     ...process.env,
     ...(args.model ? { WORTHLINE_EXTRACTOR_MODEL: args.model } : {}),
   };
-  const model = env.WORTHLINE_EXTRACTOR_MODEL?.trim() || IMAGE_EXTRACTOR_DEFAULT_MODEL;
+  const model = env.WORTHLINE_EXTRACTOR_MODEL?.trim() || VISION_EXTRACTOR_MODEL;
   const startedAt = new Date().toISOString();
   const subset = args.only !== undefined && args.only.length > 0;
 

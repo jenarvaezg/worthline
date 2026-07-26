@@ -127,17 +127,24 @@ function verdictFields(
 /**
  * What actually happened to the document, per status. The distinction matters
  * because `unrecognized` is NOT "unreadable": the vision extractor DID look at
- * the pixels and concluded there was nothing it knows how to extract, and the
- * preview card says exactly that. Telling the model the document was never read
- * would contradict the card the user is reading and throw away the useful
- * signal — «esto no es una cartera, parece un cuadro de amortización» is the
- * conversation this slice exists to make possible (#1242).
+ * the pixels and concluded it could not extract anything, and the preview card says
+ * exactly that. Telling the model the document was never read would contradict the
+ * card the user is reading and throw away the useful signal — «esto no es una
+ * cartera, parece un cuadro de amortización» is the conversation this slice exists
+ * to make possible (#1242).
+ *
+ * The `unrecognized` wording deliberately covers BOTH facts that status now carries
+ * (#1243): the document was not identified at all, or it was identified and no row
+ * could be read. Claiming only the stronger one would let the model contradict a card
+ * that says «reconozco un listado de posiciones, pero no he podido leer ninguna
+ * fila». Which of the two it was is not in the envelope yet — #1246 needs that
+ * discriminant.
  */
 const VERDICT_EXPLANATION: Record<UnreadAttachmentStatus, string> = {
   failure: "worthline NO ha podido leerlo",
   out_of_limits: "worthline NO lo ha procesado: queda fuera de los límites admitidos",
   unrecognized:
-    "worthline lo ha revisado y NO ha reconocido nada que sepa extraer (ni posiciones, ni saldos fechados)",
+    "worthline lo ha revisado y NO ha extraído ninguna fila: o no ha reconocido el documento, o lo ha reconocido y no ha podido leer su contenido",
 };
 
 /**

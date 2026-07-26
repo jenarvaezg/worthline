@@ -20,6 +20,9 @@ export const ATTACHMENT_EXTRACTION_LIMITS_V1 = {
   // keeping every accepted upload inside the deployed transport boundary.
   maxBytes: 4 * MEBIBYTE,
   maxRows: 500,
+  // Honesty text, not payload: enough room for a per-row caveat on a small reading
+  // without letting an untrusted document push unbounded prose into chat context.
+  maxWarnings: 20,
   // A dated statement or amortization schedule that reads cleanly fits well under
   // this bound; the cap keeps a pathological multi-hundred-page PDF from being
   // handed to the vision model inside the request boundary.
@@ -254,7 +257,9 @@ export const positionsMovementsDocumentSchema = z
       .array(extractedMovementSchema)
       .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
     uncertain: z.boolean().optional(),
-    warnings: z.array(nonEmptyStringSchema).max(20),
+    warnings: z
+      .array(nonEmptyStringSchema)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings),
   })
   .strict();
 
@@ -277,7 +282,9 @@ export const positionsDocumentSchema = z
       .min(1)
       .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
     totalEur: extractedNumberSchema.optional(),
-    warnings: z.array(nonEmptyStringSchema).max(20),
+    warnings: z
+      .array(nonEmptyStringSchema)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings),
   })
   .strict();
 
@@ -294,7 +301,9 @@ export const balanceSeriesDocumentSchema = z
       .min(1)
       .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
     uncertain: z.boolean().optional(),
-    warnings: z.array(nonEmptyStringSchema).max(20),
+    warnings: z
+      .array(nonEmptyStringSchema)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings),
   })
   .strict();
 

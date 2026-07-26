@@ -1,10 +1,10 @@
 # Vision extractor golden set (#991)
 
 Local admission gate for `WORTHLINE_EXTRACTOR_MODEL`. The runner calls the same
-production seams — `extractPositionsFromImage` for screenshots and
-`extractBalanceSeriesFromPdf` for PDF statements/amortization schedules — compares
-the validated JSON against expected fixtures, and emits a machine-readable
-admit/reject report.
+production seams — `extractDocumentFromVisionAttachment` for screenshots *and* PDFs
+(since #1243 one seam identifies the document by its content, not by the file kind)
+and the deterministic spreadsheet extractor — compares the validated JSON against
+expected fixtures, and emits a machine-readable admit/reject report.
 
 This harness stays **outside CI**. Normal `bun run test` never needs
 `GOOGLE_GENERATIVE_AI_API_KEY` or private captures.
@@ -24,16 +24,17 @@ The manifest in `manifest.ts` covers every required scenario. `--only` takes the
 |---|---|---|
 | `desktop` | `synthetic-baseline` | committed |
 | `payment-screen` | `synthetic-payment-screen` | committed, **negative** (#1247) |
-| `amortization-schedule-screenshot` | `synthetic-amortization-schedule` | committed, **negative** (#1247) |
 | `mobile` | `mobile` | private |
 | `reflections` | `reflections` | private |
 | `misaligned-columns` | `misaligned-columns` | private |
 | `ticker-name-ambiguity` | `ticker-name-ambiguity` | private |
 | `thousand-separator` | `thousand-separator` | private (`1.000` vs `1,000`) |
 
-The three committed captures make the image track runnable with nothing but the API
-key — no `.local/extractor-golden/` needed — which is what makes #1243's "the
-extractor evals do not regress" verifiable by whoever implements it.
+Plus one committed capture on the balance-series track below
+(`synthetic-amortization-schedule`, scenario `amortization-schedule-screenshot`). The
+three committed captures make the vision tracks runnable with nothing but the API
+key — no `.local/extractor-golden/` needed — which is what makes "the extractor evals
+do not regress" verifiable without private data.
 
 ### Negative cases (#1247)
 
@@ -56,18 +57,21 @@ The grader collapses to a single check, `no alucina posiciones`:
   including the hallucinated tickers (`no alucina posiciones — inventó 2 posiciones:
   VWCE ×120, SXR8 ×18`), because that is the actionable part.
 
-Two committed captures are negative cases today:
+One committed capture is a negative case today:
 
 - `synthetic-payment-screen` — an invented bank "payment details" screen for an early
   loan repayment (the shape of capture that originated PRD #1241): amount paid now,
-  next installment with its date, and a note that the final installment shrinks.
-- `synthetic-amortization-schedule` — a small amortization table (date, installment,
-  interest, principal, outstanding balance).
+  next installment with its date, and a note that the final installment shrinks. It is
+  neither a portfolio nor a series of dated balances, so it is none of the documents the
+  seam knows how to extract — it stays negative after #1243.
 
-Both are negative **because the image seam only knows how to ask for `positions`**.
-When #1243 teaches the seam to identify the document, the amortization capture should
-be **re-pointed at the balance-series track** with a real dated-balance expected;
-until then, "does not hallucinate positions" is exactly the guarantee we want.
+`synthetic-amortization-schedule` **was** the second negative case, for the narrow reason
+that the image seam only knew how to ask for `positions`. #1243 removed that reason, so
+the capture was **re-pointed at the balance-series track** with a real dated-balance
+expected (six installments from 05/02/2026, balance 11.729,52 → 10.362,84 €) instead of
+having its expectation relaxed. `manifest.test.ts` pins that: the fixture must live on the
+balance-series track, its expected must parse as a real series, and it must *not* parse as
+the negative shape.
 
 **A run of negatives alone proves nothing.** `unrecognized` is also what a blank,
 black or truncated capture produces, and it is what a broken API key eventually looks
@@ -78,10 +82,13 @@ size and a minimum weight declared in `synthetic-fixtures.ts`, and a fixture tha
 errors now contributes a **failing** check instead of no checks, so a broken expected
 file can no longer disappear from the ratio and leave the run ADMITTED.
 
-The PDF **dated balance series** track (`balance_series` document, PRD #1048 S4)
-lives alongside it and is **always private** — real statements and amortization
-schedules are never committed:
+The **dated balance series** track (`balance_series` document, PRD #1048 S4) lives
+alongside it. Real statements and amortization schedules are never committed; the
+synthetic render is, because since #1243 the same document can arrive as an image:
 
+- `synthetic-amortization-schedule` — committed PNG (`fixtures/`), scenario
+  `amortization-schedule-screenshot`: the same debt document arriving as a screenshot
+  instead of a PDF, which is the crossing #1243 exists to make work
 - `debt-statement` — private PDF (`.local/extractor-golden/debt-statement.pdf`)
 - `amortization-schedule` — private PDF (only observed balances are graded, never
   inferred loan parameters)
@@ -117,10 +124,12 @@ Its expected JSON grades each holding's `fidelity` tier and the movement count:
 ### Known gap: no positions-PDF fixture
 
 Decision 9 of the #1241 grilling lifts ADR 0063's exclusion of **positions inside a
-PDF**, and the golden set does not cover that crossing yet: every PDF fixture grades
-the `balance_series` document, and every positions fixture is an image or a
-spreadsheet. Whoever ships that path owes this harness a fixture for it — ideally a
-committed synthetic one, since a rendered portfolio PDF needs no real data.
+PDF**, and #1243 shipped that path — but the golden set still does not cover the
+crossing: every PDF fixture grades the `balance_series` document, and every positions
+fixture is an image or a spreadsheet. The debt document now crosses formats in both
+directions (private PDFs plus the committed screenshot); positions crosses in code and in
+unit tests only. This harness is still owed a fixture for it — ideally a committed
+synthetic one, since a rendered portfolio PDF needs no real data.
 
 ## Prepare private fixtures
 
@@ -162,7 +171,7 @@ grading hints:
 - `warningIncludes` — each fragment must appear in at least one warning
   (case- and accent-insensitive).
 
-Balance-series fixtures use the parallel dated-balance shape (`.local` only):
+Balance-series fixtures use the parallel dated-balance shape:
 
 ```json
 {
@@ -233,6 +242,10 @@ loop while working on the seam, e.g. #1243), ask for the committed subset:
 bun run eval:extractor -- --only \
   synthetic-baseline synthetic-payment-screen synthetic-amortization-schedule
 ```
+
+That subset spans all three verdicts on purpose: a positive positions reading, a positive
+balance-series reading and a negative case — the combination that makes a green run mean
+something (see the tripwire note above).
 
 That is a `subset` verdict, not a model admission: the full gate still needs a human
 pass over the private captures.

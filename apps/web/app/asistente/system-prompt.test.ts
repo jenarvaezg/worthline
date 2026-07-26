@@ -45,7 +45,7 @@ describe("buildChatSystemPrompt", () => {
     // about what happened, asking what it contains, never faking a reading.
     expect(prompt).toMatch(/adjunto no procesado/i);
     // The three verdicts are distinct: «no reconocido» is not «ilegible».
-    expect(prompt).toMatch(/revisó sin reconocer nada/i);
+    expect(prompt).toMatch(/revisó sin extraer ninguna fila/i);
     expect(prompt).toMatch(/fuera de límites/i);
     expect(prompt).toMatch(/nunca finjas haberlo leído/i);
     expect(prompt).toMatch(/1130/);

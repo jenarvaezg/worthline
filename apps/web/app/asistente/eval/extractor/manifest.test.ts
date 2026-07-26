@@ -10,11 +10,13 @@ import {
   type GoldenExpected,
   isNegativeGoldenExpected,
   POSITIONS_MOVEMENTS_GOLDEN_FIXTURES,
+  parseBalanceSeriesGoldenExpected,
   parseGoldenExpected,
 } from "./manifest";
 import {
   localExtractorGoldenRoot,
   resolveBalanceSeriesExpectedPath,
+  resolveBalanceSeriesSourcePath,
   resolveFixtureExpectedPath,
   resolveFixtureImagePath,
 } from "./paths";
@@ -26,6 +28,33 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 function readPngSize(bytes: Buffer): { height: number; width: number } {
   return { height: bytes.readUInt32BE(20), width: bytes.readUInt32BE(16) };
 }
+
+/**
+ * Every capture git ships, across tracks. Since #1243 the committed set spans the
+ * positions track and the balance-series one, and the size/weight tripwire has to
+ * follow the captures — not the track they happen to be graded on.
+ */
+const COMMITTED_CAPTURES = [
+  ...EXTRACTOR_GOLDEN_FIXTURES.filter((fixture) => fixture.storage === "committed").map(
+    (fixture) => ({
+      expectedPath: resolveFixtureExpectedPath(fixture),
+      id: fixture.id,
+      imagePath: resolveFixtureImagePath(fixture),
+      // Each track validates its expected with its OWN parser: unifying the two
+      // tracks into one list must not cost the cheap CI coverage that catches a typo
+      // in a committed expected file before anyone spends model quota on it.
+      parseExpected: parseGoldenExpected,
+    }),
+  ),
+  ...BALANCE_SERIES_GOLDEN_FIXTURES.filter(
+    (fixture) => fixture.storage === "committed",
+  ).map((fixture) => ({
+    expectedPath: resolveBalanceSeriesExpectedPath(fixture),
+    id: fixture.id,
+    imagePath: resolveBalanceSeriesSourcePath(fixture),
+    parseExpected: parseBalanceSeriesGoldenExpected,
+  })),
+];
 
 const POSITIVE_EXPECTED = {
   positions: [
@@ -68,41 +97,68 @@ describe("extractor golden manifest", () => {
     }
   });
 
-  it("ships every committed fixture and its expected file inside the repo", async () => {
-    const committed = EXTRACTOR_GOLDEN_FIXTURES.filter(
-      (candidate) => candidate.storage === "committed",
-    );
-    expect(committed.length).toBeGreaterThanOrEqual(3);
-    for (const fixture of committed) {
-      const image = await readFile(resolveFixtureImagePath(fixture));
-      expect(image.subarray(0, PNG_MAGIC.length)).toEqual(PNG_MAGIC);
-      const raw = await readFile(resolveFixtureExpectedPath(fixture), "utf8");
-      expect(() => parseGoldenExpected(JSON.parse(raw))).not.toThrow();
+  it("ships every committed capture and parses its expected file with its own track's parser", async () => {
+    expect(COMMITTED_CAPTURES.length).toBeGreaterThanOrEqual(3);
+    for (const capture of COMMITTED_CAPTURES) {
+      const image = await readFile(capture.imagePath);
+      expect(image.subarray(0, PNG_MAGIC.length), capture.id).toEqual(PNG_MAGIC);
+      expect(capture.expectedPath).not.toMatch(localExtractorGoldenRoot());
+      const raw = await readFile(capture.expectedPath, "utf8");
+      expect(() => capture.parseExpected(JSON.parse(raw)), capture.id).not.toThrow();
     }
   });
 
-  it("declares the payment screen and the amortization capture as negative cases", async () => {
-    for (const id of ["synthetic-payment-screen", "synthetic-amortization-schedule"]) {
-      const fixture = EXTRACTOR_GOLDEN_FIXTURES.find((candidate) => candidate.id === id);
-      expect(fixture, `missing fixture ${id}`).toBeDefined();
-      expect(fixture?.storage).toBe("committed");
-      const raw = await readFile(resolveFixtureExpectedPath(fixture!), "utf8");
-      const expected = parseGoldenExpected(JSON.parse(raw));
-      expect(isNegativeGoldenExpected(expected)).toBe(true);
-    }
+  it("declares the payment screen as a negative case", async () => {
+    const fixture = EXTRACTOR_GOLDEN_FIXTURES.find(
+      (candidate) => candidate.id === "synthetic-payment-screen",
+    );
+    expect(fixture).toBeDefined();
+    expect(fixture?.storage).toBe("committed");
+    const raw = await readFile(resolveFixtureExpectedPath(fixture!), "utf8");
+    expect(isNegativeGoldenExpected(parseGoldenExpected(JSON.parse(raw)))).toBe(true);
+  });
+
+  /**
+   * #1243's easy way out was to leave the amortization capture as a negative case once
+   * the unified seam started identifying it. This pins the honest outcome instead: the
+   * capture grades a real dated balance series, with the balances that are legible in
+   * the image — so "does not hallucinate" can never quietly replace "reads it right".
+   */
+  it("grades the amortization capture as a real balance series, not as a negative case", async () => {
+    expect(
+      EXTRACTOR_GOLDEN_FIXTURES.some(
+        (fixture) => fixture.id === "synthetic-amortization-schedule",
+      ),
+    ).toBe(false);
+    const fixture = BALANCE_SERIES_GOLDEN_FIXTURES.find(
+      (candidate) => candidate.id === "synthetic-amortization-schedule",
+    );
+    expect(fixture).toBeDefined();
+    expect(fixture?.storage).toBe("committed");
+
+    const raw = await readFile(resolveBalanceSeriesExpectedPath(fixture!), "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    const expected = parseBalanceSeriesGoldenExpected(parsed);
+    expect(expected.balances).toHaveLength(6);
+    expect(expected.balances[0]).toEqual({
+      amount: 11729.52,
+      currency: "EUR",
+      date: "2026-02-05",
+    });
+    expect(expected.balances.at(-1)?.amount).toBe(10362.84);
+    // The negative shape is a different, closed schema: it must not parse here.
+    expect(() => parseGoldenExpected(parsed)).toThrow();
   });
 
   // A negative case passes on `unrecognized`, which is exactly what the model answers
   // for a blank, 1×1 or truncated capture. Without this, a broken PNG would grade
   // green in a vacuum.
   it("pins every committed capture to the size and weight of its HTML source", async () => {
-    for (const fixture of EXTRACTOR_GOLDEN_FIXTURES.filter(
-      (candidate) => candidate.storage === "committed",
-    )) {
-      const spec = syntheticFixtureSpec(fixture.id);
-      expect(spec, `no synthetic spec for ${fixture.id}`).toBeDefined();
-      const image = await readFile(resolveFixtureImagePath(fixture));
-      expect(readPngSize(image)).toEqual(spec?.capture);
+    for (const capture of COMMITTED_CAPTURES) {
+      const spec = syntheticFixtureSpec(capture.id);
+      expect(spec, `no synthetic spec for ${capture.id}`).toBeDefined();
+      const image = await readFile(capture.imagePath);
+      expect(readPngSize(image), capture.id).toEqual(spec?.capture);
       expect(image.byteLength).toBeGreaterThanOrEqual(MIN_SYNTHETIC_CAPTURE_BYTES);
     }
   });
@@ -112,12 +168,19 @@ describe("extractor golden manifest", () => {
     expect([...scenarios].sort()).toEqual([...BALANCE_SERIES_GOLDEN_SCENARIOS].sort());
   });
 
-  it("keeps every balance-series PDF fixture private under .local", () => {
-    for (const fixture of BALANCE_SERIES_GOLDEN_FIXTURES) {
-      expect(fixture.storage).toBe("local");
+  it("keeps every real bank document private under .local", () => {
+    for (const fixture of BALANCE_SERIES_GOLDEN_FIXTURES.filter(
+      (candidate) => candidate.storage === "local",
+    )) {
       expect(resolveBalanceSeriesExpectedPath(fixture)).toMatch(
         new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
       );
+    }
+    // Only synthetic renders may be committed: a real PDF statement never is.
+    for (const fixture of BALANCE_SERIES_GOLDEN_FIXTURES.filter(
+      (candidate) => candidate.storage === "committed",
+    )) {
+      expect(fixture.sourceFile).toMatch(/^fixtures\/synthetic-/);
     }
   });
 });

@@ -10,6 +10,18 @@ export const MAX_ATTACHMENT_FILE_NAME_CHARS = 255;
 export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
   "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.";
 
+/**
+ * Card message when the vision seam identifies no document it knows how to read
+ * (#1243). It sits next to {@link UNSTRUCTURED_SPREADSHEET_MESSAGE} for the same
+ * reason: it is a marker another module reads back off the envelope. Both shapes of
+ * "nothing extracted" stay `unrecognized` — the contract grows no fourth outcome —
+ * but only THIS one means "I did not identify a document", which is the drain
+ * #1246's descriptive reading hangs off. "Identified the document, read no rows"
+ * carries its own message instead, so the two can never be confused.
+ */
+export const UNIDENTIFIED_DOCUMENT_MESSAGE =
+  "No reconozco en este archivo ninguno de los documentos que sé leer.";
+
 /** Client-safe v1 type catalog shared by picker, transport and server validation. */
 export const ATTACHMENT_TYPES_V1 = [
   {
