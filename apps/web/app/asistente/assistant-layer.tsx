@@ -34,6 +34,7 @@ import AssistantAttachmentControl, {
   ASSISTANT_ATTACHMENT_ACCEPT,
 } from "./assistant-attachment-control";
 import { assistantChatTransport } from "./assistant-chat-transport";
+import { assistantErrorMessage } from "./assistant-error-message";
 import { AssistantTextPart } from "./assistant-markdown";
 import AssistantMessages from "./assistant-messages";
 import { parseAttachmentPreviewData } from "./attachment-chat";
@@ -1602,7 +1603,7 @@ function ConversationParts({
       ))}
       {error ? (
         <p className="assistantError" role="alert">
-          El asistente no ha podido responder. Vuelve a intentarlo.
+          {assistantErrorMessage(error)}
         </p>
       ) : null}
       <div ref={endRef} />

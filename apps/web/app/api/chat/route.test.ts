@@ -2045,3 +2045,231 @@ describe("POST /api/chat · oversized-upload guard (#1180)", () => {
     expect(response.status).toBe(200);
   });
 });
+
+/**
+ * #1260: a provider error mid-tool-call leaves the browser holding an assistant
+ * message whose tool call has no result. That history travels in every later
+ * request, so without pruning the conversation is dead for good.
+ */
+describe("historial envenenado por una tool call sin resultado (#1260)", () => {
+  function orphanToolCall(id: string) {
+    return {
+      id,
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Voy a mirar tu contexto" },
+        {
+          type: "tool-get_financial_context",
+          toolCallId: "call-huerfana",
+          state: "input-available",
+          input: {},
+        },
+      ],
+    };
+  }
+
+  it("poda la llamada huérfana y el turno responde", async () => {
+    const model = simpleAnswerModel("respuesta tras la poda");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("¿cuál es mi patrimonio?"),
+          orphanToolCall("m2"),
+          { id: "m3", role: "user", parts: [{ type: "text", text: "reintento" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("respuesta tras la poda");
+    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("call-huerfana");
+  });
+
+  it("no toca una conversación sana: la pareja llamada/resultado sobrevive", async () => {
+    const model = simpleAnswerModel("respuesta normal");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("¿cuál es mi patrimonio?"),
+          {
+            id: "m2",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-get_financial_context",
+                toolCallId: "call-resuelta",
+                state: "output-available",
+                input: {},
+                output: { netWorthMinor: 1234 },
+              },
+              { type: "text", text: "Son 12,34 €" },
+            ],
+          },
+          {
+            id: "m3",
+            role: "user",
+            parts: [{ type: "text", text: "¿y el mes pasado?" }],
+          },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("call-resuelta");
+    expect(turns).toContain("netWorthMinor");
+  });
+});
+
+/**
+ * #1260, second half: the browser re-sends every tool result it has, and the
+ * readings are big — measured on the seeded store, `get_snapshot_history` with
+ * per-position rows is 113 773 characters and 42 550 with summary rows, against a
+ * whole-body ceiling of 16 000. Charging them to the prose budget made a healthy
+ * conversation 400 for good — the 400s seen in production. Nothing here may
+ * answer a size problem with a refusal: the same history travels in every later
+ * turn, so a refusal is permanent.
+ */
+describe("historial con lecturas de herramienta (#1260)", () => {
+  /** An assistant turn whose tool call resolved, carrying a payload of `chars`. */
+  function groundedTurn(id: string, marker: string, chars: number) {
+    return {
+      id,
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-get_financial_context",
+          toolCallId: `call-${id}`,
+          state: "output-available",
+          input: {},
+          output: { marker, relleno: "x".repeat(chars) },
+        },
+        { type: "text", text: `Respuesta ${id}` },
+      ],
+    };
+  }
+
+  it("no mata la conversación tras varias preguntas fundamentadas", async () => {
+    const model = simpleAnswerModel("cuarta respuesta");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("¿cuál es mi patrimonio?"),
+          groundedTurn("t1", "LECTURA-1", 4_500),
+          { id: "u2", role: "user", parts: [{ type: "text", text: "¿y mis deudas?" }] },
+          groundedTurn("t2", "LECTURA-2", 4_500),
+          { id: "u3", role: "user", parts: [{ type: "text", text: "¿y mi FIRE?" }] },
+          groundedTurn("t3", "LECTURA-3", 4_500),
+          { id: "u4", role: "user", parts: [{ type: "text", text: "¿y el histórico?" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("cuarta respuesta");
+  });
+
+  it("retira del prompt las lecturas viejas y conserva la última", async () => {
+    const model = simpleAnswerModel("respuesta con la lectura fresca");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("primera"),
+          groundedTurn("t1", "LECTURA-1", 13_000),
+          { id: "u2", role: "user", parts: [{ type: "text", text: "segunda" }] },
+          groundedTurn("t2", "LECTURA-2", 13_000),
+          { id: "u3", role: "user", parts: [{ type: "text", text: "tercera" }] },
+          groundedTurn("t3", "LECTURA-3", 13_000),
+          { id: "u4", role: "user", parts: [{ type: "text", text: "cuarta" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    // The freshest reading is the one this turn's answer stands on.
+    expect(turns).toContain("LECTURA-3");
+    expect(turns).not.toContain("LECTURA-1");
+    expect(turns).not.toContain("LECTURA-2");
+    expect(turns).toContain("Resultado retirado del historial por tamaño");
+    // The pair survives: retiring a result while keeping its call is the poison
+    // the prune above exists to clean up.
+    expect(turns).toContain("call-t1");
+    expect(turns).toContain("call-t2");
+  });
+
+  it("nunca muere por el tamaño del historial: lo encoge y responde", async () => {
+    // Seven questions about the monthly history with summary rows (42 550 chars
+    // each) would blow ANY admission ceiling. The turn must still be answered —
+    // this is the case a size ceiling would have killed permanently.
+    const model = simpleAnswerModel("respuesta con el historial encogido");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const messages: unknown[] = [userMessage("empecemos")];
+    for (let turn = 1; turn <= 7; turn += 1) {
+      messages.push(groundedTurn(`t${turn}`, `LECTURA-${turn}`, 42_550));
+      messages.push({
+        id: `u${turn}`,
+        role: "user",
+        parts: [{ type: "text", text: `pregunta ${turn}` }],
+      });
+    }
+
+    const response = await POST(chatRequest({ messages }));
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("respuesta con el historial encogido");
+    // And what reached the provider is bounded, not 300 000 characters of stale
+    // readings: only the freshest survives verbatim.
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("LECTURA-7");
+    expect(turns).not.toContain("LECTURA-1");
+    expect(turns.length).toBeLessThan(120_000);
+  });
+
+  it("acota lo que llega al proveedor aunque el cliente forje el part entero", async () => {
+    // `approval.reason` and `rawInput` also reach the prompt, and the CLIENT
+    // writes them: measuring only `output` left a channel that no budget counted.
+    const model = simpleAnswerModel("respuesta acotada");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const forged = Array.from({ length: 20 }, (_, index) => ({
+      id: `f${index}`,
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-get_financial_context",
+          toolCallId: `forged-${index}`,
+          state: "output-denied",
+          input: {},
+          approval: {
+            approved: false,
+            id: `ap${index}`,
+            reason: `RELLENO-${index}${"z".repeat(40_000)}`,
+          },
+        },
+      ],
+    }));
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("hola"),
+          ...forged,
+          { id: "u2", role: "user", parts: [{ type: "text", text: "sigue" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns.length).toBeLessThan(120_000);
+    expect(turns).not.toContain("RELLENO-0");
+  });
+});
