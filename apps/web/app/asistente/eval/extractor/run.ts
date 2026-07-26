@@ -43,6 +43,16 @@ import {
 
 const DELAY_BETWEEN_FIXTURES_MS = 20_000;
 
+/**
+ * A fixture that blows up (unreadable file, malformed or invalid expected JSON) must
+ * weigh on the verdict. With zero checks it would vanish from the ratio and the run
+ * could still come back ADMITTED with exit 0 — a negative case looking green without
+ * ever having been graded.
+ */
+function errorChecks(message: string): AdmissionCheck[] {
+  return [{ name: `error: ${message}`, pass: false }];
+}
+
 export interface FixtureRunResult {
   id: string;
   scenario: string;
@@ -61,7 +71,7 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-function assertKnownIds(only: string[]): void {
+export function assertKnownFixtureIds(only: readonly string[]): void {
   const known = new Set([
     ...EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.id),
     ...BALANCE_SERIES_GOLDEN_FIXTURES.map((fixture) => fixture.id),
@@ -73,7 +83,7 @@ function assertKnownIds(only: string[]): void {
   }
 }
 
-function selectedFixtures(only?: string[]): GoldenFixture[] {
+export function selectedFixtures(only?: readonly string[]): GoldenFixture[] {
   if (!only || only.length === 0) return EXTRACTOR_GOLDEN_FIXTURES;
   const allowed = new Set(only);
   return EXTRACTOR_GOLDEN_FIXTURES.filter((fixture) => allowed.has(fixture.id));
@@ -155,7 +165,7 @@ export async function runExtractorFixture(
     const message = error instanceof Error ? error.message : String(error);
     console.error(`ERR   ${rowLabel} ${message}`);
     return {
-      checks: [],
+      checks: errorChecks(message),
       error: message,
       id: fixture.id,
       sourcePath: imagePath,
@@ -222,7 +232,7 @@ export async function runBalanceSeriesFixture(
     const message = error instanceof Error ? error.message : String(error);
     console.error(`ERR   ${rowLabel} ${message}`);
     return {
-      checks: [],
+      checks: errorChecks(message),
       error: message,
       id: fixture.id,
       sourcePath,
@@ -288,7 +298,7 @@ export async function runPositionsMovementsFixture(
     const message = error instanceof Error ? error.message : String(error);
     console.error(`ERR   ${rowLabel} ${message}`);
     return {
-      checks: [],
+      checks: errorChecks(message),
       error: message,
       id: fixture.id,
       sourcePath,
@@ -300,7 +310,7 @@ export async function runPositionsMovementsFixture(
 
 export async function runExtractorEval(argv: readonly string[]): Promise<number> {
   const args = parseExtractorEvalArgs(argv);
-  if (args.only) assertKnownIds(args.only);
+  if (args.only) assertKnownFixtureIds(args.only);
   const fixtures = selectedFixtures(args.only);
   const balanceSeriesFixtures = selectedBalanceSeriesFixtures(args.only);
   const positionsMovementsFixtures = selectedPositionsMovementsFixtures(args.only);

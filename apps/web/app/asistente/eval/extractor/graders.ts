@@ -1,9 +1,11 @@
 import type { AttachmentExtractionResult } from "@web/asistente/attachment-extraction-contract";
 
-import type {
-  BalanceSeriesGoldenExpected,
-  GoldenExpected,
-  PositionsMovementsGoldenExpected,
+import {
+  type BalanceSeriesGoldenExpected,
+  type GoldenExpected,
+  type GoldenExpectedPositive,
+  isNegativeGoldenExpected,
+  type PositionsMovementsGoldenExpected,
 } from "./manifest";
 
 export interface ExtractorCheck {
@@ -27,8 +29,8 @@ function warningMatches(fragment: string, warnings: readonly string[]): boolean 
 }
 
 function positionMatches(
-  actual: GoldenExpected["positions"][number],
-  expected: GoldenExpected["positions"][number],
+  actual: GoldenExpectedPositive["positions"][number],
+  expected: GoldenExpectedPositive["positions"][number],
 ): boolean {
   return (
     normalizeText(actual.ticker) === normalizeText(expected.ticker) &&
@@ -41,8 +43,8 @@ function positionMatches(
 }
 
 function positionsMatch(
-  actual: GoldenExpected["positions"],
-  expected: GoldenExpected["positions"],
+  actual: GoldenExpectedPositive["positions"],
+  expected: GoldenExpectedPositive["positions"],
 ): boolean {
   if (actual.length !== expected.length) return false;
   const remaining = [...actual];
@@ -56,14 +58,55 @@ function positionsMatch(
   });
 }
 
+/** The single check a negative fixture is graded on (#1247). */
+export const NO_HALLUCINATION_CHECK_NAME = "no alucina posiciones";
+
+const MAX_LISTED_HALLUCINATED_POSITIONS = 5;
+
+/** Name what the extractor answered, so a failing negative case is actionable. */
+function describeUnexpectedRecognition(result: AttachmentExtractionResult): string {
+  if (result.status !== "valid") return `devolvió «${result.status}»`;
+  if (result.data.documentType !== "positions") {
+    return `extrajo un documento «${result.data.documentType}»`;
+  }
+  const positions = result.data.positions;
+  const listed = positions
+    .slice(0, MAX_LISTED_HALLUCINATED_POSITIONS)
+    .map((position) => `${position.ticker} ×${position.units}`)
+    .join(", ");
+  const rest = positions.length - MAX_LISTED_HALLUCINATED_POSITIONS;
+  const suffix = rest > 0 ? ` y ${rest} más` : "";
+  return `inventó ${positions.length} posiciones: ${listed}${suffix}`;
+}
+
+/**
+ * Grade a negative fixture: the capture is not a portfolio, so the only honest
+ * answer is `unrecognized`. Anything else — an extraction, another document type,
+ * a provider failure — is a miss, and the check name says what came back instead.
+ */
+function gradeNegativeExpectation(result: AttachmentExtractionResult): ExtractorCheck[] {
+  if (result.status === "unrecognized") {
+    return [{ name: NO_HALLUCINATION_CHECK_NAME, pass: true }];
+  }
+  return [
+    {
+      name: `${NO_HALLUCINATION_CHECK_NAME} — ${describeUnexpectedRecognition(result)}`,
+      pass: false,
+    },
+  ];
+}
+
 /**
  * Grade one extractor result against the golden expected payload. Checks field
  * accuracy plus visibility of `uncertain` and `warnings`, not just schema validity.
+ * A negative expected inverts the question: nothing may be extracted at all.
  */
 export function gradeExtractionAgainstExpected(
   result: AttachmentExtractionResult,
   expected: GoldenExpected,
 ): ExtractorCheck[] {
+  if (isNegativeGoldenExpected(expected)) return gradeNegativeExpectation(result);
+
   const checks: ExtractorCheck[] = [
     {
       name: "extracción válida",
