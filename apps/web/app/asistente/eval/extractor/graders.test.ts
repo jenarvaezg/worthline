@@ -8,14 +8,16 @@ import {
   gradeBalanceSeriesAgainstExpected,
   gradeExtractionAgainstExpected,
   gradePositionsMovementsAgainstExpected,
+  NO_HALLUCINATION_CHECK_NAME,
 } from "./graders";
 import type {
   BalanceSeriesGoldenExpected,
-  GoldenExpected,
+  GoldenExpectedNegative,
+  GoldenExpectedPositive,
   PositionsMovementsGoldenExpected,
 } from "./manifest";
 
-const BASELINE: GoldenExpected = {
+const BASELINE: GoldenExpectedPositive = {
   positions: [
     {
       currency: "EUR",
@@ -36,7 +38,7 @@ const BASELINE: GoldenExpected = {
   warnings: [],
 };
 
-const validResult = (data: GoldenExpected): AttachmentExtractionResult => ({
+const validResult = (data: GoldenExpectedPositive): AttachmentExtractionResult => ({
   data: {
     documentType: "positions",
     positions: data.positions,
@@ -138,6 +140,74 @@ describe("gradeExtractionAgainstExpected", () => {
       name: "warnings visibles",
       pass: false,
     });
+  });
+});
+
+const NEGATIVE: GoldenExpectedNegative = { expect: "unrecognized" };
+
+describe("gradeExtractionAgainstExpected · negative case", () => {
+  it("passes when the extractor refuses to recognize the capture", () => {
+    const checks = gradeExtractionAgainstExpected(
+      {
+        message: "No reconozco posiciones de inversión en esta captura.",
+        status: "unrecognized",
+      },
+      NEGATIVE,
+    );
+
+    expect(checks).toEqual([{ name: NO_HALLUCINATION_CHECK_NAME, pass: true }]);
+  });
+
+  it("fails and names the hallucinated positions", () => {
+    const checks = gradeExtractionAgainstExpected(validResult(BASELINE), NEGATIVE);
+
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.pass).toBe(false);
+    expect(checks[0]!.name).toContain(NO_HALLUCINATION_CHECK_NAME);
+    expect(checks[0]!.name).toContain("VWCE");
+    expect(checks[0]!.name).toContain("SXR8");
+  });
+
+  it("fails when the extractor answers with another status than unrecognized", () => {
+    const checks = gradeExtractionAgainstExpected(
+      {
+        code: "extractor_unavailable",
+        failure: "transient",
+        message: "El extractor no está disponible.",
+        status: "failure",
+      },
+      NEGATIVE,
+    );
+
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.pass).toBe(false);
+    expect(checks[0]!.name).toContain("failure");
+  });
+
+  it("fails when the capture is rejected for being out of limits", () => {
+    const checks = gradeExtractionAgainstExpected(
+      {
+        message: "La imagen supera el tamaño admitido.",
+        reason: "size",
+        status: "out_of_limits",
+      },
+      NEGATIVE,
+    );
+
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.pass).toBe(false);
+    expect(checks[0]!.name).toContain("out_of_limits");
+  });
+
+  it("fails when the extractor returns another document type", () => {
+    const checks = gradeExtractionAgainstExpected(
+      validPositionsMovementsResult(POSITIONS_MOVEMENTS_BASELINE),
+      NEGATIVE,
+    );
+
+    expect(checks).toHaveLength(1);
+    expect(checks[0]!.pass).toBe(false);
+    expect(checks[0]!.name).toContain("positions_movements");
   });
 });
 

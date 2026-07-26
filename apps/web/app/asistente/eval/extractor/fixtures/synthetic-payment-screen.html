@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>worthline synthetic payment screen</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #eef1f5;
+        color: #10192a;
+      }
+      .frame {
+        width: 420px;
+        min-height: 760px;
+        margin: 0 auto;
+        background: #ffffff;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        background: #14315c;
+        color: #ffffff;
+        padding: 18px 20px 20px;
+      }
+      .brand {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.75;
+      }
+      h1 {
+        margin: 10px 0 0;
+        font-size: 19px;
+        font-weight: 600;
+      }
+      .sub {
+        margin: 4px 0 0;
+        font-size: 13px;
+        opacity: 0.8;
+      }
+      .amount {
+        padding: 26px 20px 22px;
+        border-bottom: 1px solid #e4e9f0;
+        text-align: center;
+      }
+      .amount .label {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5d6b80;
+      }
+      .amount .value {
+        margin-top: 8px;
+        font-size: 34px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      dl {
+        margin: 0;
+        padding: 18px 20px 6px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 9px 0;
+        border-bottom: 1px solid #eef1f5;
+        font-size: 14px;
+      }
+      .row dt {
+        color: #5d6b80;
+      }
+      .row dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+      }
+      .next {
+        margin: 18px 20px 0;
+        padding: 14px 16px;
+        background: #f5f8fc;
+        border: 1px solid #dde5f0;
+        border-radius: 10px;
+      }
+      .next .label {
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5d6b80;
+      }
+      .next .value {
+        margin-top: 6px;
+        font-size: 22px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .next .date {
+        margin-top: 2px;
+        font-size: 13px;
+        color: #5d6b80;
+      }
+      .note {
+        margin: 16px 20px 0;
+        font-size: 13px;
+        line-height: 1.45;
+        color: #3c4a60;
+      }
+      .actions {
+        margin-top: auto;
+        padding: 22px 20px 26px;
+      }
+      button {
+        width: 100%;
+        padding: 14px 16px;
+        font: inherit;
+        font-weight: 600;
+        color: #ffffff;
+        background: #14315c;
+        border: 0;
+        border-radius: 10px;
+      }
+      .legal {
+        margin: 12px 0 0;
+        font-size: 11px;
+        color: #7b869a;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <header>
+        <div class="brand">Banco Sintético</div>
+        <h1>Detalles del pago</h1>
+        <p class="sub">Amortización anticipada · Préstamo personal · ****4821</p>
+      </header>
+
+      <section class="amount">
+        <div class="label">Se paga ahora</div>
+        <div class="value">1.500,00 €</div>
+      </section>
+
+      <dl>
+        <div class="row">
+          <dt>Capital amortizado</dt>
+          <dd>1.482,35 €</dd>
+        </div>
+        <div class="row">
+          <dt>Intereses devengados</dt>
+          <dd>17,65 €</dd>
+        </div>
+        <div class="row">
+          <dt>Comisión por amortización</dt>
+          <dd>0,00 €</dd>
+        </div>
+        <div class="row">
+          <dt>Cuenta de cargo</dt>
+          <dd>ES00 0000 0000 0000 0000 0000</dd>
+        </div>
+      </dl>
+
+      <div class="next">
+        <div class="label">Próxima cuota</div>
+        <div class="value">312,48 €</div>
+        <div class="date">5 de agosto de 2026</div>
+      </div>
+
+      <p class="note">
+        Tras este pago, la última cuota del préstamo se reduce a 187,20 €. El resto de
+        las cuotas mantiene su importe y la fecha de vencimiento no cambia.
+      </p>
+
+      <div class="actions">
+        <button type="button">Confirmar pago</button>
+        <p class="legal">
+          Pantalla inventada para el golden set del extractor (#1247). Ni entidad ni
+          datos reales.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

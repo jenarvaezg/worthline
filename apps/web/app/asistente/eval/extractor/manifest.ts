@@ -11,14 +11,17 @@ export const EXTRACTOR_GOLDEN_SCENARIOS = [
   "misaligned-columns",
   "ticker-name-ambiguity",
   "thousand-separator",
+  "payment-screen",
+  "amortization-schedule-screenshot",
 ] as const;
 
 export type ExtractorGoldenScenario = (typeof EXTRACTOR_GOLDEN_SCENARIOS)[number];
 
 const nonEmptyMessageSchema = z.string().trim().min(1).max(300);
 
-const goldenExpectedSchema = z
+const goldenPositiveExpectedSchema = z
   .object({
+    expect: z.literal("positions").optional(),
     positions: z
       .array(extractedPositionSchema)
       .min(1)
@@ -30,7 +33,31 @@ const goldenExpectedSchema = z
   })
   .strict();
 
-export type GoldenExpected = z.infer<typeof goldenExpectedSchema>;
+/**
+ * A negative case declares the absence of an extraction explicitly (#1247). The
+ * shape is deliberately closed and separate from the positive one: relaxing
+ * `positions` to optional would let a mistyped positive expected pass as a
+ * negative case without anyone noticing.
+ */
+const goldenNegativeExpectedSchema = z
+  .object({ expect: z.literal("unrecognized") })
+  .strict();
+
+const goldenExpectedSchema = z.union([
+  goldenNegativeExpectedSchema,
+  goldenPositiveExpectedSchema,
+]);
+
+export type GoldenExpectedPositive = z.infer<typeof goldenPositiveExpectedSchema>;
+export type GoldenExpectedNegative = z.infer<typeof goldenNegativeExpectedSchema>;
+export type GoldenExpected = GoldenExpectedPositive | GoldenExpectedNegative;
+
+/** True when the fixture expects the extractor to recognize nothing at all. */
+export function isNegativeGoldenExpected(
+  expected: GoldenExpected,
+): expected is GoldenExpectedNegative {
+  return expected.expect === "unrecognized";
+}
 
 interface GoldenFixtureBase {
   id: string;
@@ -53,6 +80,26 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
     id: "synthetic-baseline",
     imageFile: "fixtures/synthetic-baseline.png",
     scenario: "desktop",
+    storage: "committed",
+  },
+  // Negative cases (#1247): screens that are *not* a portfolio. The image seam only
+  // knows how to ask for `positions`, so both must come back `unrecognized`; the
+  // guarantee under test is "does not hallucinate positions".
+  {
+    expectedFile: "expected/synthetic-payment-screen.json",
+    id: "synthetic-payment-screen",
+    imageFile: "fixtures/synthetic-payment-screen.png",
+    scenario: "payment-screen",
+    storage: "committed",
+  },
+  // #1243 will re-point this capture at the balance-series track once the seam can
+  // identify the document by itself; until then "does not hallucinate positions" is
+  // exactly the guarantee we want from an amortization schedule.
+  {
+    expectedFile: "expected/synthetic-amortization-schedule.json",
+    id: "synthetic-amortization-schedule",
+    imageFile: "fixtures/synthetic-amortization-schedule.png",
+    scenario: "amortization-schedule-screenshot",
     storage: "committed",
   },
   {

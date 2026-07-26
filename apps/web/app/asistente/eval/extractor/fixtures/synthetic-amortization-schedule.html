@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>worthline synthetic amortization schedule</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #f4f6f8;
+        color: #152033;
+      }
+      .frame {
+        width: 760px;
+        min-height: 520px;
+        margin: 0 auto;
+        background: #ffffff;
+        border: 1px solid #d7dde7;
+        box-shadow: 0 12px 32px rgba(21, 32, 51, 0.08);
+      }
+      header {
+        padding: 20px 24px 14px;
+        border-bottom: 1px solid #e6ebf2;
+      }
+      h1 {
+        margin: 0;
+        font-size: 19px;
+        font-weight: 600;
+      }
+      p {
+        margin: 6px 0 0;
+        color: #5b677a;
+        font-size: 13px;
+      }
+      table {
+        width: calc(100% - 48px);
+        margin: 20px 24px 24px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        border-bottom: 1px solid #e6ebf2;
+        text-align: left;
+      }
+      th {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #5b677a;
+      }
+      td.num,
+      th.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      tfoot td {
+        border-top: 2px solid #152033;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <header>
+        <h1>Cuadro de amortización · préstamo sintético</h1>
+        <p>
+          Importe inicial 12.000,00 € · TIN 4,20 % · 6 primeras cuotas. Datos inventados
+          para el golden set del extractor (#1247).
+        </p>
+      </header>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th class="num">Cuota</th>
+            <th class="num">Intereses</th>
+            <th class="num">Capital</th>
+            <th class="num">Saldo pendiente</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>05/02/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">42,00 €</td>
+            <td class="num">270,48 €</td>
+            <td class="num">11.729,52 €</td>
+          </tr>
+          <tr>
+            <td>05/03/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">41,05 €</td>
+            <td class="num">271,43 €</td>
+            <td class="num">11.458,09 €</td>
+          </tr>
+          <tr>
+            <td>05/04/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">40,10 €</td>
+            <td class="num">272,38 €</td>
+            <td class="num">11.185,71 €</td>
+          </tr>
+          <tr>
+            <td>05/05/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">39,15 €</td>
+            <td class="num">273,33 €</td>
+            <td class="num">10.912,38 €</td>
+          </tr>
+          <tr>
+            <td>05/06/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">38,19 €</td>
+            <td class="num">274,29 €</td>
+            <td class="num">10.638,09 €</td>
+          </tr>
+          <tr>
+            <td>05/07/2026</td>
+            <td class="num">312,48 €</td>
+            <td class="num">37,23 €</td>
+            <td class="num">275,25 €</td>
+            <td class="num">10.362,84 €</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total 6 cuotas</td>
+            <td class="num">1.874,88 €</td>
+            <td class="num">237,72 €</td>
+            <td class="num">1.637,16 €</td>
+            <td class="num">10.362,84 €</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </body>
+</html>

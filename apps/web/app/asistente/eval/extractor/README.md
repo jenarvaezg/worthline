@@ -17,14 +17,66 @@ This harness stays **outside CI**. Normal `bun run test` never needs
 | `apps/web/app/asistente/eval/extractor/expected/` | Expected JSON for committed fixtures |
 | `.local/extractor-golden/` | Private broker captures + their expected JSON (gitignored) |
 
-The manifest in `manifest.ts` covers every required scenario:
+The manifest in `manifest.ts` covers every required scenario. `--only` takes the **id**
+(second column), not the scenario:
 
-- `desktop` — committed synthetic baseline
-- `mobile` — private capture
-- `reflections` — private capture
-- `misaligned-columns` — private capture
-- `ticker-name-ambiguity` — private capture
-- `thousand-separator` — private capture (`1.000` vs `1,000`)
+| Scenario | Fixture id | Storage |
+|---|---|---|
+| `desktop` | `synthetic-baseline` | committed |
+| `payment-screen` | `synthetic-payment-screen` | committed, **negative** (#1247) |
+| `amortization-schedule-screenshot` | `synthetic-amortization-schedule` | committed, **negative** (#1247) |
+| `mobile` | `mobile` | private |
+| `reflections` | `reflections` | private |
+| `misaligned-columns` | `misaligned-columns` | private |
+| `ticker-name-ambiguity` | `ticker-name-ambiguity` | private |
+| `thousand-separator` | `thousand-separator` | private (`1.000` vs `1,000`) |
+
+The three committed captures make the image track runnable with nothing but the API
+key — no `.local/extractor-golden/` needed — which is what makes #1243's "the
+extractor evals do not regress" verifiable by whoever implements it.
+
+### Negative cases (#1247)
+
+A negative fixture asserts the failure that matters most to #1241: **the model must
+not hallucinate `positions` on a screen that is not a portfolio**. Its expected file
+declares the absence of an extraction explicitly:
+
+```json
+{ "expect": "unrecognized" }
+```
+
+This is a closed shape of its own, not a relaxed positive one — `parseGoldenExpected`
+takes a union, so a positive expected with an empty or missing `positions` array is a
+parse error instead of silently grading as a negative case.
+
+The grader collapses to a single check, `no alucina posiciones`:
+
+- **passes** when the extractor answers `status: "unrecognized"`;
+- **fails** for anything else, and the check name says what came back instead —
+  including the hallucinated tickers (`no alucina posiciones — inventó 2 posiciones:
+  VWCE ×120, SXR8 ×18`), because that is the actionable part.
+
+Two committed captures are negative cases today:
+
+- `synthetic-payment-screen` — an invented bank "payment details" screen for an early
+  loan repayment (the shape of capture that originated PRD #1241): amount paid now,
+  next installment with its date, and a note that the final installment shrinks.
+- `synthetic-amortization-schedule` — a small amortization table (date, installment,
+  interest, principal, outstanding balance).
+
+Both are negative **because the image seam only knows how to ask for `positions`**.
+When #1243 teaches the seam to identify the document, the amortization capture should
+be **re-pointed at the balance-series track** with a real dated-balance expected;
+until then, "does not hallucinate positions" is exactly the guarantee we want.
+
+**A run of negatives alone proves nothing.** `unrecognized` is also what a blank,
+black or truncated capture produces, and it is what a broken API key eventually looks
+like too, so a green negative only means something next to a green positive in the
+same run — always include `synthetic-baseline` (the subset recipe below does). Two
+tripwires back that up in CI: `manifest.test.ts` pins each committed PNG to the exact
+size and a minimum weight declared in `synthetic-fixtures.ts`, and a fixture that
+errors now contributes a **failing** check instead of no checks, so a broken expected
+file can no longer disappear from the ratio and leave the run ADMITTED.
 
 The PDF **dated balance series** track (`balance_series` document, PRD #1048 S4)
 lives alongside it and is **always private** — real statements and amortization
@@ -61,6 +113,14 @@ Its expected JSON grades each holding's `fidelity` tier and the movement count:
   "warningIncludes": ["isin"]
 }
 ```
+
+### Known gap: no positions-PDF fixture
+
+Decision 9 of the #1241 grilling lifts ADR 0063's exclusion of **positions inside a
+PDF**, and the golden set does not cover that crossing yet: every PDF fixture grades
+the `balance_series` document, and every positions fixture is an image or a
+spreadsheet. Whoever ships that path owes this harness a fixture for it — ideally a
+committed synthetic one, since a rendered portfolio PDF needs no real data.
 
 ## Prepare private fixtures
 
@@ -121,12 +181,26 @@ Here `mustBeUncertain` lists ISO dates instead of tickers; `date`, `amount` and
 
 Never commit real broker screenshots, bank PDFs or sensitive expected JSON.
 
-Regenerate the committed synthetic baseline after editing
-`fixtures/synthetic-baseline.html`:
+Regenerate the committed synthetic PNGs after editing their HTML sources in
+`fixtures/` (all of them, or a subset by id):
 
 ```bash
 bun scripts/generate-extractor-synthetic-fixture.ts
+bun scripts/generate-extractor-synthetic-fixture.ts synthetic-payment-screen
 ```
+
+Every committed fixture is a rendered HTML file in `fixtures/`, so it carries no real
+entity, no real brand and no real figure. Add a new one by writing
+`fixtures/<id>.html` with a `.frame` root element, then registering it twice:
+
+- its **render viewport** in that generator script;
+- its resulting **capture size** in `synthetic-fixtures.ts`, which is what
+  `manifest.test.ts` pins the committed PNG against.
+
+Editing an HTML source usually changes the capture size, so the `capture` numbers have
+to move with it — that failure in CI is the point: a resized or blanked fixture becomes
+a decision, not a silent drift. Finally add the manifest entry and its
+`expected/<id>.json`.
 
 ## Run the gate
 
@@ -150,6 +224,18 @@ treat that verdict as a full admission gate):
 ```bash
 bun run eval:extractor -- --only synthetic-baseline mobile
 ```
+
+Without `.local/extractor-golden/`, the private cases are skipped and the run exits
+non-zero as **incomplete** — by design. To exercise only what git ships (the useful
+loop while working on the seam, e.g. #1243), ask for the committed subset:
+
+```bash
+bun run eval:extractor -- --only \
+  synthetic-baseline synthetic-payment-screen synthetic-amortization-schedule
+```
+
+That is a `subset` verdict, not a model admission: the full gate still needs a human
+pass over the private captures.
 
 Credential: `GOOGLE_GENERATIVE_AI_API_KEY`. Model selection follows production:
 `WORTHLINE_EXTRACTOR_MODEL` from the environment, overridable with `--model`.
@@ -181,3 +267,7 @@ synthetic case passes.
 4. Only merge a model bump when the report is complete and `ADMITTED`.
 
 Pure grading logic is covered in CI via `graders.test.ts`; no live vision calls.
+`manifest.test.ts` also checks in CI that every committed PNG and expected file is
+readable and parses, and `run.test.ts` that fixture selection knows the new ids — so
+the negative-case guarantee (hallucinates → fails, `unrecognized` → passes) lives in
+the normal test suite, key or no key.
