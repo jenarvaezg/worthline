@@ -355,6 +355,16 @@ function imageAttachmentRequest(
   return attachmentRequest(contents, fileName, mimeType);
 }
 
+/**
+ * A model call's conversation turns, WITHOUT the system prompt. The prompt itself
+ * quotes the attachment fence sentinels («ADJUNTO NO ESTRUCTURADO», «ADJUNTO NO
+ * PROCESADO») to state the rules, so an absence assertion must look only at what
+ * the turn actually carried.
+ */
+function turnsOf(call: { prompt: readonly { role: string }[] }): string {
+  return JSON.stringify(call.prompt.filter((message) => message.role !== "system"));
+}
+
 function userMessage(text: string) {
   return { id: "m1", role: "user", parts: [{ type: "text", text }] };
 }
@@ -717,8 +727,8 @@ describe("POST /api/chat", () => {
     expect(countChatRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("renders invalid image output honestly without calling the conversational pool", async () => {
-    const model = simpleAnswerModel("no debe llamarse");
+  it("renders invalid image output honestly and still lets the model talk (#1242)", async () => {
+    const model = simpleAnswerModel("La lectura falló; ¿qué contiene la captura?");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
     vi.mocked(extractPositionsFromImage).mockResolvedValue(
       parseExtractionResult({
@@ -731,9 +741,89 @@ describe("POST /api/chat", () => {
     const streamed = await response.text();
 
     expect(response.status).toBe(200);
+    // The preview card still carries the honest message, once.
     expect(streamed).toContain("datos incompletos o malformados");
-    expect(model.doStreamCalls).toHaveLength(0);
+    // …and the turn survives: the model answers with the verdict alone.
+    expect(model.doStreamCalls).toHaveLength(1);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("ADJUNTO NO PROCESADO");
+    expect(turns).toContain("invalid_output");
+    expect(turns).not.toContain("SECRET-PIXELS");
+    expect(streamed).toContain("La lectura falló; ¿qué contiene la captura?");
     expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the extraction verdict even when every provider is in cooldown (#1242)", async () => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    vi.mocked(readProviderCooldowns).mockResolvedValue({
+      mode: "hosted",
+      deploymentKey: "production",
+      cooldowns: [{ provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" }],
+    });
+    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+      parseExtractionResult({
+        code: "extractor_unavailable",
+        failure: "transient",
+        message: "No he podido leer la captura ahora mismo. Puedes seguir conversando.",
+        status: "failure",
+      }),
+    );
+
+    const response = await POST(imageAttachmentRequest());
+    const streamed = await response.text();
+
+    // The vision call was already paid for, so its verdict must reach the user
+    // even though the conversational turn cannot happen (#1130). A bare 503 here
+    // becomes a generic Error in the transport and the message is lost.
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(streamed).toContain("No he podido leer la captura ahora mismo");
+    expect(model.doStreamCalls).toHaveLength(0);
+  });
+
+  it("shows the extraction verdict when every provider rejects the turn (#1242)", async () => {
+    const rejected = rejectedModel(providerError(503, "unavailable"));
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", rejected)]);
+    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+      parseExtractionResult({
+        message: "No reconozco posiciones de inversión en esta captura.",
+        status: "unrecognized",
+      }),
+    );
+
+    const response = await POST(imageAttachmentRequest());
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("No reconozco posiciones de inversión");
+    expect(rejected.doStreamCalls).toHaveLength(1);
+  });
+
+  it("shows a VALID extraction's card too when the model is unreachable (#1242)", async () => {
+    const model = simpleAnswerModel("no debe llamarse");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    vi.mocked(readProviderCooldowns).mockResolvedValue({
+      mode: "hosted",
+      deploymentKey: "production",
+      cooldowns: [{ provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" }],
+    });
+
+    const response = await POST(
+      attachmentRequest(
+        [
+          "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
+          'VWCE;"Fondo global";10,5;1.234,56;EUR',
+        ].join("\n"),
+      ),
+    );
+    const streamed = await response.text();
+
+    // Deliberately uniform: whatever the verdict, an extraction already paid for
+    // is never swallowed by an unreachable model.
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("VWCE");
+    expect(model.doStreamCalls).toHaveLength(0);
   });
 
   it("keeps chat operational after the image extractor exhausts transient retries", async () => {
@@ -753,14 +843,18 @@ describe("POST /api/chat", () => {
 
     expect(failedResponse.status).toBe(200);
     expect(failedStream).toContain("No he podido leer la captura ahora mismo");
-    expect(model.doStreamCalls).toHaveLength(0);
+    // The transient verdict reaches the model as a closed field, never as content.
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(JSON.stringify(model.doStreamCalls)).toContain("transient");
 
     const nextResponse = await POST(
       chatRequest({ messages: [userMessage("Sigamos sin la captura")] }),
     );
     expect(nextResponse.status).toBe(200);
     expect(await nextResponse.text()).toContain("Seguimos sin la captura.");
-    expect(model.doStreamCalls).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(2);
+    // The dead verdict does not follow the conversation into the next turn.
+    expect(turnsOf(model.doStreamCalls.at(-1)!)).not.toContain("ADJUNTO NO PROCESADO");
     expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -770,18 +864,19 @@ describe("POST /api/chat", () => {
 
     const response = await POST(attachmentRequest("Foo;Bar\nuno;dos"));
     const streamed = await response.text();
-    const modelInput = JSON.stringify(model.doStreamCalls);
 
     expect(response.status).toBe(200);
     // Preview card is present with the soft, non-dead-end message.
     expect(streamed).toContain("data-attachment-extraction");
     expect(streamed).toContain("Te comento lo que veo");
     expect(streamed).not.toContain("No reconozco");
-    // The model was called with the raw grid, framed as unvalidated.
+    // The model was called with the raw grid, framed as unvalidated. Asserted on
+    // the turn, not the whole call: the system prompt quotes the sentinel too.
     expect(model.doStreamCalls).toHaveLength(1);
-    expect(modelInput).toContain("ADJUNTO NO ESTRUCTURADO");
-    expect(modelInput).toContain("Foo");
-    expect(modelInput).toContain("uno");
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("ADJUNTO NO ESTRUCTURADO");
+    expect(turns).toContain("Foo");
+    expect(turns).toContain("uno");
     expect(streamed).toContain("Veo dos columnas, Foo y Bar.");
     expect(countChatRequest).toHaveBeenCalledTimes(1);
   });
@@ -817,7 +912,7 @@ describe("POST /api/chat", () => {
     message,
     mimeType,
   }) => {
-    const model = simpleAnswerModel("no debe llamarse");
+    const model = simpleAnswerModel("Cuéntame qué contiene y lo montamos a mano.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
 
     const response = await POST(attachmentRequest(contents, fileName, mimeType));
@@ -827,11 +922,17 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain(message);
     // The preview card carries the message once — no duplicate text bubble (#865).
     expect(streamed.split(message)).toHaveLength(2);
-    expect(model.doStreamCalls).toHaveLength(0);
+    // …and the assistant still speaks on top of the card (#1242).
+    expect(model.doStreamCalls).toHaveLength(1);
+    expect(streamed).toContain("Cuéntame qué contiene y lo montamos a mano.");
+    // The verdict travels; the message the user reads on the card does not, so
+    // the model can never echo text the extractor produced about the file.
+    expect(turnsOf(model.doStreamCalls[0]!)).toContain("ADJUNTO NO PROCESADO");
+    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain(message);
   });
 
-  it("keeps a non-unrecognized spreadsheet a canned dead-end, never conversational (#865)", async () => {
-    const model = simpleAnswerModel("no debe llamarse");
+  it("never routes a non-unrecognized spreadsheet through the unstructured path (#865)", async () => {
+    const model = simpleAnswerModel("La hoja es demasiado grande para leerla.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
     const oversized = [
       "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
@@ -845,9 +946,13 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(200);
     expect(streamed).toContain("500 filas");
-    // out_of_limits must not slip into the conversational render path.
-    expect(model.doStreamCalls).toHaveLength(0);
-    expect(JSON.stringify(model.doStreamCalls)).not.toContain("ADJUNTO NO ESTRUCTURADO");
+    // The turn reaches the model (#1242) but carries only the verdict: an
+    // out_of_limits sheet is never rendered as conversational grid material.
+    expect(model.doStreamCalls).toHaveLength(1);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).not.toContain("ADJUNTO NO ESTRUCTURADO");
+    expect(turns).toContain('\\"reason\\":\\"rows\\"');
+    expect(turns).not.toContain("T500");
   });
 
   it("reuses validated structured history without accepting a file or data URL", async () => {

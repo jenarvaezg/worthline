@@ -66,6 +66,7 @@ import {
   streamText,
   toUIMessageStream,
   type UIMessage,
+  type UIMessageChunk,
 } from "ai";
 import { after, NextResponse } from "next/server";
 
@@ -239,6 +240,35 @@ function paywallResponse(message: string): Response {
   });
 }
 
+/**
+ * The ONE place that writes the extraction preview card into a stream. Every exit
+ * that has already paid for an extraction must show its verdict — with the model
+ * turn merged in when there is one, alone when the model is unreachable (#1242).
+ */
+function attachmentCardStream(
+  preview: AttachmentPreviewData,
+  providerStream: ReadableStream<UIMessageChunk> | null,
+): ReadableStream<UIMessageChunk> {
+  return createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({ type: "data-attachment-extraction", data: preview });
+      if (providerStream) writer.merge(providerStream);
+    },
+  });
+}
+
+/**
+ * The model is unreachable, but the extraction verdict was already paid for and
+ * the user must read it (#1130): a 200 stream carrying just the card, never a
+ * bare 4xx/5xx that the transport turns into a generic Error.
+ */
+function previewOnlyResponse(preview: AttachmentPreviewData): Response {
+  return createUIMessageStreamResponse({
+    headers: NO_STORE,
+    stream: attachmentCardStream(preview, null),
+  });
+}
+
 function operationalCause(error: unknown): { name: string; message: string } {
   return error instanceof Error
     ? { name: error.name, message: error.message }
@@ -379,34 +409,24 @@ export async function POST(request: Request): Promise<Response> {
         : extractSpreadsheetDocument(extractionInput);
     currentPreview = { fileName, result };
 
-    if (result.status !== "valid") {
-      // A readable spreadsheet that is not a positions table becomes
-      // conversational material instead of a dead-end (#865): render the whole
-      // book and let the model describe it — never as validated figures.
-      if (isSpreadsheet && result.status === "unrecognized") {
-        const text = renderSpreadsheetForContext(extractionInput);
-        if (text) {
-          unstructuredAttachment = { fileName, text };
-          currentPreview = {
-            fileName,
-            result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
-          };
-        }
-      }
-      if (!unstructuredAttachment) {
-        // An honest dead-end (unreadable, too large): the preview card carries
-        // the message, so no redundant text bubble repeats it.
-        const preview = currentPreview;
-        return createUIMessageStreamResponse({
-          headers: NO_STORE,
-          stream: createUIMessageStream({
-            execute: ({ writer }) => {
-              writer.write({ type: "data-attachment-extraction", data: preview });
-            },
-          }),
-        });
+    // A readable spreadsheet that is not a positions table becomes
+    // conversational material instead of a dead-end (#865): render the whole
+    // book and let the model describe it — never as validated figures.
+    if (result.status === "unrecognized" && isSpreadsheet) {
+      const text = renderSpreadsheetForContext(extractionInput);
+      if (text) {
+        unstructuredAttachment = { fileName, text };
+        currentPreview = {
+          fileName,
+          result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
+        };
       }
     }
+    // Any other non-valid verdict (unreadable, unrecognized, out of limits) does
+    // NOT end the turn (#1242): the preview card still carries the message on the
+    // ordinary path below, and the conversational model gets the verdict alone —
+    // never content it never read — so it can say what happened, ask what the
+    // document is and offer the manual route instead of a single canned line.
   }
 
   let eligibleProviders = providers;
@@ -423,6 +443,7 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
   if (eligibleProviders.length === 0) {
+    if (currentPreview) return previewOnlyResponse(currentPreview);
     return jsonError("assistant_unavailable", 503);
   }
 
@@ -436,6 +457,7 @@ export async function POST(request: Request): Promise<Response> {
       ),
     );
   } catch {
+    if (currentPreview) return previewOnlyResponse(currentPreview);
     return jsonError("invalid_body", 400);
   }
 
@@ -508,6 +530,7 @@ export async function POST(request: Request): Promise<Response> {
     },
   });
   if (selected === null) {
+    if (currentPreview) return previewOnlyResponse(currentPreview);
     return jsonError("assistant_unavailable", 503);
   }
 
@@ -546,15 +569,7 @@ export async function POST(request: Request): Promise<Response> {
     },
   });
   const stream = currentPreview
-    ? createUIMessageStream({
-        execute: ({ writer }) => {
-          writer.write({
-            type: "data-attachment-extraction",
-            data: currentPreview,
-          });
-          writer.merge(providerStream);
-        },
-      })
+    ? attachmentCardStream(currentPreview, providerStream)
     : providerStream;
 
   return createUIMessageStreamResponse({

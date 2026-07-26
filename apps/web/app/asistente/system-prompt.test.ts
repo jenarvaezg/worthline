@@ -41,6 +41,14 @@ describe("buildChatSystemPrompt", () => {
     // #865: a readable-but-unvalidated attachment is analysed, not dead-ended.
     expect(prompt).toMatch(/adjunto no estructurado/i);
     expect(prompt).toMatch(/análisis rápido de lo que ves/i);
+    // #1242: an attachment that could not be read keeps the turn alive — honest
+    // about what happened, asking what it contains, never faking a reading.
+    expect(prompt).toMatch(/adjunto no procesado/i);
+    // The three verdicts are distinct: «no reconocido» is not «ilegible».
+    expect(prompt).toMatch(/revisó sin reconocer nada/i);
+    expect(prompt).toMatch(/fuera de límites/i);
+    expect(prompt).toMatch(/nunca finjas haberlo leído/i);
+    expect(prompt).toMatch(/1130/);
     // #1186: a market-instrument alta must resolve its price symbol first.
     expect(prompt).toMatch(/search_market_symbol/);
     expect(prompt).toMatch(/providerSymbol/);
