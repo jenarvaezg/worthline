@@ -57,7 +57,11 @@ export default defineConfig({
     baseURL: firstRunBaseUrl,
     actionTimeout: isCI ? 20_000 : 10_000,
     navigationTimeout: isCI ? 30_000 : 15_000,
-    trace: "on-first-retry",
+    // Capture on failure, not on first retry: with `retries: 0` there is no
+    // retry to capture on, so the old setting was dead (#1250).
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   projects: [
     {

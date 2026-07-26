@@ -29,10 +29,14 @@ test("disable then hard-delete a member with no holdings", async ({ page }) => {
   // 2. While active there is no hard-delete affordance
   await expect(row.getByText("Eliminar definitivamente")).toHaveCount(0);
 
-  // 3. Disable it (two-step confirm)
+  // 3. Disable it (two-step confirm). Waiting on the URL would prove nothing —
+  // the success redirect lands on the very URL we are already on — so wait on
+  // the mutation's own visible outcome: the row flips to «Inactivo». That is
+  // what step 4 needs to be true, and asserting it here localizes a failure to
+  // the disable instead of surfacing it as a timeout on the next click (#1250).
   await row.getByText("Desactivar", { exact: true }).click();
   await row.getByRole("button", { name: "Confirmar desactivación" }).click();
-  await expect(page).toHaveURL(/\/ajustes/);
+  await expect(rowByName().getByText("Inactivo")).toBeVisible();
 
   // 4. Now hard-delete it (two-step confirm)
   const disabledRow = rowByName();
