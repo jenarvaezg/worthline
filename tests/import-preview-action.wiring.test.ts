@@ -8,7 +8,7 @@
  */
 import { describe, expect, test, vi } from "vitest";
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
 // The preview must be DB-free by construction: the module under test imports
 // withStore for its sibling actions, so make any call to it blow up.

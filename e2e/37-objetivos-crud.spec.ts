@@ -32,7 +32,8 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   // After server-action redirect back to /objetivos the new goal should appear
   await expect(page).toHaveURL(/\/objetivos/);
   // The goals list now has an edit form. Scope to the goalRow containing our goal's
-  // name input (filters by HTML [value] attribute set by defaultValue on server render).
+  // name input. Safe to filter by the HTML [value] attribute here: this row was
+  // just server-rendered and nobody has typed into it (contrast step 4).
   const createdCard = page
     .locator(".goalRow")
     .filter({ has: page.locator(`input[name="name"][value="${goalName}"]`) });
@@ -46,11 +47,18 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   await expect(page).toHaveURL(/\/objetivos/);
 
   // ── 4. Delete the goal ────────────────────────────────────────────────────
-  // After the server-redirect the page re-renders: the edit form's Nombre input
-  // has defaultValue=editedName, so its HTML [value] attribute matches.
+  // Reload before locating by [value]. That selector matches the HTML ATTRIBUTE,
+  // and React deliberately does NOT overwrite the attribute of an input the user
+  // has typed into — so after a client-side re-render the node can still carry
+  // the pre-edit name even though the mutation persisted. Filtering on it was
+  // this spec's flake (#1180): ~15% of runs timed out here. A fresh document also
+  // makes the assertion stronger — it proves the edit reached the DB rather than
+  // that the DOM happened to paint it.
+  await page.reload();
   const goalCard = page
     .locator(".goalRow")
     .filter({ has: page.locator(`input[name="name"][value="${editedName}"]`) });
+  await expect(goalCard).toBeVisible();
   await goalCard.locator("details.confirmDelete summary").click();
   await goalCard.getByRole("button", { name: "Confirmar borrado" }).click();
 

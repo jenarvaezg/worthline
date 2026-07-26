@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
 import { updateAssetValuationAction } from "@web/patrimonio/actions";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";

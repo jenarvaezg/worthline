@@ -27,14 +27,25 @@ const nextConfig: NextConfig = {
     // the client router reuse a segment visited within the window — going back
     // to a tab is instant, no server round-trip.
     //
-    // Safety: this only governs client-side navigation reuse. It does NOT weaken
-    // post-mutation freshness. Every mutation runs through the `formAction`
-    // combinator (app/form-action.ts), whose redirect terminal follows a Server
-    // Action; Next's server-action reducer invalidates the entire prefetch cache
-    // on revalidation regardless of `staleTimes`, and the redirect target is
-    // rendered fresh as part of the action response. The only residual risk is
-    // out-of-session changes (another device, the daily cron) going unseen for
-    // up to 30s — acceptable for this data.
+    // Safety: this only governs client-side navigation reuse. Post-mutation
+    // freshness is kept by the `formAction` combinator (app/form-action.ts),
+    // which pairs `revalidatePath("/", "layout")` — evicting the prefetch cache,
+    // so OTHER tabs re-render — with `refresh()`, which re-renders the CURRENT
+    // tree from the action response.
+    //
+    // AMENDED after #1180: the original note here claimed `revalidatePath` alone
+    // made this safe "regardless of staleTimes". It did not. Next's server-action
+    // reducer invalidates the prefetch cache and then starts a re-prefetch
+    // cooldown, during which the current page does NOT re-render until a
+    // navigation occurs — and our terminal redirect is frequently to the
+    // byte-identical URL the user is already on, because `appendParam` uses
+    // `URLSearchParams.set` (two mutations sharing an `ok` token land on the same
+    // URL). The result was a mutation committed on the server while the DOM kept
+    // showing pre-mutation state: reproduced as a ~12% e2e failure rate, fixed by
+    // adding `refresh()`. Do not drop either call.
+    //
+    // Residual risk, unchanged: out-of-session changes (another device, the daily
+    // cron) can go unseen for up to 30s — acceptable for this data.
     staleTimes: {
       dynamic: 30,
     },
