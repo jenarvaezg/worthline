@@ -17,6 +17,11 @@ import {
 import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
+import {
+  collapseStaleToolOutputs,
+  pruneOrphanToolCalls,
+  withoutToolParts,
+} from "@web/asistente/chat-history";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
 import {
@@ -91,6 +96,19 @@ const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 16_000;
 const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
+/**
+ * Tool payloads in history are NOT charged to {@link MAX_TOTAL_CHARS} (#1260).
+ * They are not the user's text and they dwarf it: ONE `get_snapshot_history` with
+ * per-position rows measures 113 773 characters — seven times that ceiling — so
+ * charging it there killed a healthy conversation with a permanent 400, and the
+ * client re-sends the same history every turn, so there was no way back.
+ *
+ * There is deliberately NO size ceiling that refuses them either: a refusal is
+ * permanent for the same reason. Oversized history is SHRUNK instead, below.
+ */
+const MAX_TOOL_PROMPT_CHARS = 48_000;
+/** What the readings behind the freshest one share before being retired. */
+const MAX_STALE_TOOL_READ_CHARS = 24_000;
 /** Read tool(s) + answer + suggest_actions (#631), with headroom for one extra read. */
 const MAX_STEPS = 6;
 /**
@@ -99,6 +117,13 @@ const MAX_STEPS = 6;
  * ({@link MAX_TOTAL_CHARS} + {@link MAX_ATTACHMENT_HISTORY_CHARS}) and the
  * multipart framing. A legitimate request can never approach it; a hostile one
  * is refused before a byte is parsed.
+ *
+ * Tool payloads ride along without a ceiling of their own (#1260), so this is the
+ * one door a very long conversation can still reach: 40 turns — {@link
+ * MAX_MESSAGES} — of the largest reading measured (113 773 chars) land just under
+ * it. Deliberately not widened: this is the #1180 door against a hostile body, and
+ * the copy for its 413 says «la petición» rather than blaming a file that a
+ * JSON turn does not even carry.
  */
 const MAX_REQUEST_BYTES = ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes + 512 * 1024;
 
@@ -138,7 +163,10 @@ function messagesSizeForLimit(messages: unknown[]): {
       }),
     };
   });
-  return { attachmentChars, ordinaryChars: JSON.stringify(counted).length };
+  return {
+    attachmentChars,
+    ordinaryChars: JSON.stringify(withoutToolParts(counted)).length,
+  };
 }
 
 function parseChatBody(raw: unknown): ChatBody | null {
@@ -522,11 +550,33 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("assistant_unavailable", 503);
   }
 
+  // The history is repaired before it is converted (#1260). A tool call whose
+  // result never arrived — the provider died mid-stream — makes the SDK refuse
+  // the whole prompt, and since the browser re-sends that history every turn, the
+  // conversation would be dead for good. Both repairs are logged, never silent:
+  // the first counts how often a provider dies mid-tool-call, the second how much
+  // stale grounding a long conversation is dragging along.
+  const pruned = pruneOrphanToolCalls(body.messages);
+  if (pruned.orphanToolCallIds.length > 0) {
+    console.info("Assistant history orphan calls pruned", {
+      orphanToolCalls: pruned.orphanToolCallIds.length,
+    });
+  }
+  const collapsed = collapseStaleToolOutputs(pruned.messages, {
+    staleChars: MAX_STALE_TOOL_READ_CHARS,
+    totalChars: MAX_TOOL_PROMPT_CHARS,
+  });
+  if (collapsed.collapsedToolCallIds.length > 0) {
+    console.info("Assistant history shrunk to fit", {
+      retiredToolPayloads: collapsed.collapsedToolCallIds.length,
+    });
+  }
+
   let modelMessages;
   try {
     modelMessages = await convertToModelMessages(
       prepareAttachmentMessagesForModel(
-        body.messages,
+        collapsed.messages,
         currentPreview,
         unstructuredAttachment,
       ),
