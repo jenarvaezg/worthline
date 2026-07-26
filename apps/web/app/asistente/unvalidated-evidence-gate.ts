@@ -102,22 +102,29 @@ export const MAX_UNVALIDATED_PROPOSALS_PER_TURN = 1;
 /**
  * A bulk-import tool was called with only unvalidated evidence to stand on. The
  * copy never tells the user to upload the file again: the gate is open PRECISELY
- * because a sheet was already uploaded and could not be read as a table. It
+ * because a file was already uploaded and could not be read as a table. It
  * names why, shows where the expected format lives, and offers the one document
  * that would work — the original statement from the bank or broker.
+ *
+ * The noun is «ese archivo», deliberately NEUTRAL. Until #1246 only a spreadsheet
+ * could open this gate, so «esa hoja» was true by construction; the descriptive
+ * reading of a capture opens it too, and telling someone who uploaded a screenshot
+ * «esa hoja no la he podido leer» names a document that never existed. The
+ * boundary's own tests assert the wording now, so the next lane cannot make it
+ * lie again in silence.
  */
 export const UNVALIDATED_EVIDENCE_MESSAGE =
-  "Esa hoja no la he podido leer como tabla de posiciones o movimientos, así que no " +
-  "puedo llevarla en bloque al patrimonio. En /patrimonio/importar-extracto tienes el " +
+  "Ese archivo no lo he podido leer como tabla de posiciones o movimientos, así que no " +
+  "puedo llevarlo en bloque al patrimonio. En /patrimonio/importar-extracto tienes el " +
   "formato que sí reconozco; y si tienes el extracto original del banco o del broker, " +
   "ése sí puedo leerlo. Un dato puntual sí puedo prepararlo como propuesta para que lo " +
   "confirmes.";
 
 /** The per-turn cap: a second proposal out of the same unvalidated document. */
 export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =
-  "Ya he preparado una propuesta a partir de esa hoja sin validar y solo puedo hacer " +
-  "una por mensaje: varios apuntes de golpe son una importación, y esa hoja no la he " +
-  "podido leer como tabla. Para cargarla entera mira el formato de " +
+  "Ya he preparado una propuesta a partir de ese archivo sin validar y solo puedo hacer " +
+  "una por mensaje: varios apuntes de golpe son una importación, y ese archivo no lo he " +
+  "podido leer como tabla. Para cargarlo entero mira el formato de " +
   "/patrimonio/importar-extracto, o pásame el extracto original del banco o del broker.";
 
 /**

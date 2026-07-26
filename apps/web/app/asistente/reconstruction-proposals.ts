@@ -23,6 +23,7 @@ import {
   type CorrectionSeriesPoint,
   type ReconstructionCorrectionProposal,
 } from "./correction-proposal-contract";
+import { boundProposalSummary } from "./proposal-summary";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities"> & {
   assistantProposals: AssistantProposalStore;
@@ -135,7 +136,10 @@ export async function buildReconstructionProposal(
       mode: "reconstruir",
       proposalType: "correction",
       series,
-      summary: args.summary?.trim() || `Reconstrucción de «${projected.liability.name}»`,
+      summary: boundProposalSummary(
+        args.summary,
+        `Reconstrucción de «${projected.liability.name}»`,
+      ),
     },
   };
 }

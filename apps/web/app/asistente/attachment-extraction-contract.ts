@@ -4,6 +4,15 @@ import { ATTACHMENT_TYPES_V1, MAX_ATTACHMENT_FILE_NAME_CHARS } from "./attachmen
 
 const MEBIBYTE = 1024 * 1024;
 const ATTACHMENT_LIMIT_REASONS = ["rows", "size", "type", "pages"] as const;
+/**
+ * Why nothing was extracted — the two facts `unrecognized` carries since #1243. It is
+ * a closed field and not a comparison against the card's copy because #1246 BRANCHES
+ * on the distinction: only `unidentified_document` (no document recognized at all) is
+ * the drain a descriptive reading hangs off, while `empty_reading` means the document
+ * was recognized and no row could be read. Optional on purpose — previews already
+ * sitting in a client history predate it and must keep revalidating.
+ */
+const UNRECOGNIZED_REASONS = ["unidentified_document", "empty_reading"] as const;
 const EXTRACTOR_FAILURE_KINDS = ["permanent", "transient"] as const;
 const EXTRACTOR_FAILURE_CODES = [
   "extractor_rejected",
@@ -30,6 +39,7 @@ export const ATTACHMENT_EXTRACTION_LIMITS_V1 = {
 } as const;
 
 export type AttachmentLimitReason = (typeof ATTACHMENT_LIMIT_REASONS)[number];
+export type UnrecognizedReason = (typeof UNRECOGNIZED_REASONS)[number];
 export type ExtractorFailureKind = (typeof EXTRACTOR_FAILURE_KINDS)[number];
 export type ExtractorFailureCode = (typeof EXTRACTOR_FAILURE_CODES)[number];
 
@@ -46,7 +56,7 @@ export type AttachmentLimitInput =
 
 export type AttachmentExtractionResult =
   | { status: "valid"; data: ExtractedDocument }
-  | { status: "unrecognized"; message: string }
+  | { status: "unrecognized"; message: string; reason?: UnrecognizedReason | undefined }
   | { status: "out_of_limits"; reason: AttachmentLimitReason; message: string }
   | {
       status: "failure";
@@ -341,6 +351,7 @@ const extractionResultSchema = z.discriminatedUnion("status", [
     .object({
       status: z.literal("unrecognized"),
       message: nonEmptyMessageSchema,
+      reason: z.enum(UNRECOGNIZED_REASONS).optional(),
     })
     .strict(),
   z

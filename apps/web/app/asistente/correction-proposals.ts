@@ -20,6 +20,7 @@ import {
   type CorrectionProposal,
   type CorrectionProposalEditRow,
 } from "./correction-proposal-contract";
+import { boundProposalSummary } from "./proposal-summary";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities" | "assets"> & {
   assistantProposals: AssistantProposalStore;
@@ -409,7 +410,7 @@ async function persist(
       holding: { id: args.publicHoldingId, name: holdingName },
       mode: "solo-desde-hoy",
       proposalType: "correction",
-      summary: args.summary?.trim() || `Corrección de «${holdingName}»`,
+      summary: boundProposalSummary(args.summary, `Corrección de «${holdingName}»`),
     },
   };
 }

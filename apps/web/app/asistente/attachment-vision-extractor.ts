@@ -11,11 +11,10 @@ import { z } from "zod";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   type AttachmentExtractionResult,
-  checkAttachmentLimits,
   extractedDocumentSchema,
   INVALID_OUTPUT_FAILURE,
 } from "./attachment-extraction-contract";
-import { countPdfPages, looksLikePdf } from "./attachment-pdf-bytes";
+import { looksLikePdf } from "./attachment-pdf-bytes";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
 import {
   classifyVisionProviderFailure,
@@ -24,6 +23,8 @@ import {
   resolveVisionModelId,
   VISION_EXTRACTOR_DEFAULT_MODEL,
   VISION_EXTRACTOR_RETRY_DELAYS_MS,
+  type VisionAttachmentInput,
+  visionAttachmentLimitFailure,
   visionProviderStatusCode,
 } from "./attachment-vision";
 
@@ -115,16 +116,6 @@ export const EMPTY_BALANCE_SERIES_MESSAGE =
  */
 export const WHOLE_READING_UNCERTAIN_WARNING =
   "El extractor marcó la lectura completa como dudosa.";
-
-/** Which file family carries the document. It decides transport and guards only. */
-export type VisionAttachmentKind = "image" | "pdf";
-
-export interface VisionAttachmentInput {
-  bytes: Uint8Array;
-  fileName: string;
-  mimeType: string;
-  kind: VisionAttachmentKind;
-}
 
 interface VisionGenerationRequest {
   model: LanguageModel;
@@ -219,22 +210,6 @@ const VISION_EXTRACTION_INSTRUCTIONS = [
   "No inventes valores, importes, símbolos, fechas ni divisas. Marca uncertain (en la fila si la duda es de una fila, en el documento si dudas de la lectura completa) y añade un warning concreto ante cualquier duda.",
 ].join(" ");
 
-/** Type, byte-size and per-family bounds, before any model work. */
-function limitFailureFor(
-  input: VisionAttachmentInput,
-): Extract<AttachmentExtractionResult, { status: "out_of_limits" }> | null {
-  const base = {
-    fileName: input.fileName,
-    mimeType: input.mimeType,
-    sizeBytes: input.bytes.byteLength,
-  };
-  return checkAttachmentLimits(
-    input.kind === "pdf"
-      ? { ...base, kind: "pdf", pageCount: countPdfPages(input.bytes) ?? 0 }
-      : { ...base, kind: "image" },
-  );
-}
-
 /**
  * Turn one identified vision reading into the common envelope. Only the identified
  * document's own fields cross over, so a model that filled both tables cannot smuggle
@@ -242,13 +217,23 @@ function limitFailureFor(
  */
 function documentFrom(output: VisionOutput): AttachmentExtractionResult {
   if (output.documentType === "none") {
-    return { message: UNIDENTIFIED_DOCUMENT_MESSAGE, status: "unrecognized" };
+    // The drain #1246's descriptive reading hangs off, marked by a closed field so
+    // callers branch on the fact and never on the card's wording.
+    return {
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    };
   }
 
   if (output.documentType === "positions") {
     const positions = output.positions ?? [];
     if (positions.length === 0) {
-      return { message: EMPTY_POSITIONS_MESSAGE, status: "unrecognized" };
+      return {
+        message: EMPTY_POSITIONS_MESSAGE,
+        reason: "empty_reading",
+        status: "unrecognized",
+      };
     }
     return validate({
       documentType: "positions",
@@ -260,7 +245,11 @@ function documentFrom(output: VisionOutput): AttachmentExtractionResult {
 
   const balances = output.balances ?? [];
   if (balances.length === 0) {
-    return { message: EMPTY_BALANCE_SERIES_MESSAGE, status: "unrecognized" };
+    return {
+      message: EMPTY_BALANCE_SERIES_MESSAGE,
+      reason: "empty_reading",
+      status: "unrecognized",
+    };
   }
   return validate({
     balances,
@@ -301,7 +290,7 @@ export async function extractDocumentFromVisionAttachment(
   input: VisionAttachmentInput,
   dependencies: VisionExtractorDependencies = {},
 ): Promise<AttachmentExtractionResult> {
-  const limitFailure = limitFailureFor(input);
+  const limitFailure = visionAttachmentLimitFailure(input);
   if (limitFailure) return limitFailure;
   if (input.kind === "pdf" && !looksLikePdf(input.bytes)) {
     return UNSUPPORTED_DOCUMENT_FAILURE;

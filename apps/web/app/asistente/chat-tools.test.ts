@@ -1043,6 +1043,83 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     }
   });
 
+  /**
+   * The trash family stays `neutral` in the classification — born from ids already
+   * read, reversible through the papelera — and is capped anyway (#1246 review).
+   * Capping is not reclassifying: it took a LIST of holdings, which made it the one
+   * proposal family with no per-turn limit while unvalidated evidence was on the
+   * table, and «varios apuntes de golpe son una importación» applies to bajas too.
+   */
+  it("budgets a baja without moving it to the rejected side", async () => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store);
+    const ids = await publicIds(store);
+
+    // Not rejected outright — the class is unchanged, the proposal is prepared…
+    const removal = await tools["propose_holding_removal"]?.execute?.(
+      { holdingIds: [ids["cuenta"]] } as never,
+      toolCallContext(),
+    );
+    expect(removal).toMatchObject({ proposalType: "holding_removal" });
+
+    // …and it spends the turn's single slot like any other proposal, so a second
+    // family cannot ride along behind it. This is the asymmetry #1246 closes: a
+    // batch baja was the one prepared write with no per-turn limit.
+    const after = (await tools["propose_holding"]?.execute?.(
+      { ...CUENTA, name: "Otra cuenta" } as never,
+      toolCallContext(),
+    )) as { error?: string };
+    expect(after?.error).toBe("unvalidated_evidence_limit");
+  });
+
+  it("budgets a restauración too, without rejecting it", async () => {
+    const store = await workspaceStore();
+    const ids = await publicIds(store);
+
+    // Nothing is in the papelera in this fixture, so the builder answers with its
+    // own error — which is precisely why a restoration can never demonstrate the
+    // cap by itself: a builder failure rightly gives the slot back. What matters
+    // here is that the gate did NOT reject it.
+    const fresh = toolsWithEvidence(store);
+    const allowed = (await fresh["propose_holding_restoration"]?.execute?.(
+      { holdingIds: [ids["cuenta"]] } as never,
+      toolCallContext(),
+    )) as { error?: string };
+    expect(allowed?.error).not.toBe("unvalidated_evidence");
+    expect(allowed?.error).not.toBe("unvalidated_evidence_limit");
+
+    // And with the turn's slot already spent, it is capped — so it really does go
+    // through the budget wrapper rather than around it.
+    const spent = toolsWithEvidence(store);
+    expect(
+      await spent["propose_holding"]?.execute?.(
+        { ...CUENTA } as never,
+        toolCallContext(),
+      ),
+    ).toMatchObject({ proposalType: "holding_creation" });
+    const capped = (await spent["propose_holding_restoration"]?.execute?.(
+      { holdingIds: [ids["cuenta"]] } as never,
+      toolCallContext(),
+    )) as { error?: string };
+    expect(capped?.error).toBe("unvalidated_evidence_limit");
+  });
+
+  it("leaves the trash family uncapped on an ordinary turn", async () => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store, false);
+    const ids = await publicIds(store);
+
+    // The cap belongs to the boundary, not to the tool: with no unvalidated
+    // evidence in play, nothing about the ordinary papelera flow changes.
+    for (const id of [ids["cuenta"], ids["casa"]]) {
+      const result = (await tools["propose_holding_removal"]?.execute?.(
+        { holdingIds: [id] } as never,
+        toolCallContext(),
+      )) as { error?: string };
+      expect(result?.error).not.toBe("unvalidated_evidence_limit");
+    }
+  });
+
   it("accumulates with the premium ingestion gate instead of replacing it", async () => {
     const store = await workspaceStore();
     const tools = createChatTools({
