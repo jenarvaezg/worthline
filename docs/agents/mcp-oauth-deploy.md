@@ -69,6 +69,13 @@
 | `WORKOS_API_KEY`                | the environment's secret key (`sk_test_`/`sk_live_`)                                  | API Keys              |
 
 `AUTH_GOOGLE_ID/SECRET`, `WORTHLINE_CONTROL_PLANE_DB_URL`, `WORTHLINE_DB_AUTH_TOKEN` are already set.
+Those four plus `AUTH_SECRET`, `TURSO_ORG` and `TURSO_API_TOKEN` are **mandatory in Production**:
+`instrumentation.ts` refuses to boot a `VERCEL_ENV=production` deploy that is missing any of them
+(#1181), because without the auth pair the app falls back to local no-auth mode and serves every
+page — `/api/mcp` included — with no sign-in wall, and without the rest no workspace can be opened
+or provisioned. The failure names each missing var in the function logs; local and e2e runs are
+unaffected. Consequence to respect when editing Production env: **clearing one of those seven vars
+takes the next deploy down by design** — the app fails closed instead of open.
 The three `WORTHLINE_MCP_*` engage the verifier together — if any is missing it **fails closed**
 (accepts nobody). After changing any var, **redeploy** (env is baked per deployment): push to main
 (auto-deploy via `.github/workflows/deploy.yml`) or `gh workflow run deploy.yml`.

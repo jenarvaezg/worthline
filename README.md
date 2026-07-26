@@ -83,9 +83,16 @@ worthline can run in two modes:
   `AUTH_SECRET` are unset. The app opens a local SQLite file and works offline,
   exactly as before.
 - **Hosted mode**: set `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `AUTH_SECRET`,
-  `WORTHLINE_DB_URL`, and `WORTHLINE_DB_AUTH_TOKEN`. Signed-out visitors are
-  redirected to `/login`; signed-in users open the configured remote libSQL
-  workspace.
+  `WORTHLINE_CONTROL_PLANE_DB_URL`, `WORTHLINE_DB_AUTH_TOKEN`, `TURSO_ORG`, and
+  `TURSO_API_TOKEN`. Signed-out visitors are redirected to `/login`; signed-in
+  users open their own per-workspace libSQL database, provisioned on first login
+  through the control plane (ADR 0030).
+
+Setting only **one** of `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` is refused at
+startup: every gate reads that pair as absent, so the app would silently serve
+itself with no sign-in wall. A `VERCEL_ENV=production` deploy likewise refuses to
+boot until all seven hosted vars are set (#1181) — locally, an empty env stays
+local no-auth mode as before.
 
 To set up Google sign-in:
 
