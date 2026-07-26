@@ -78,10 +78,12 @@ exist in v1: the existing `positions` (images and spreadsheets) and a new
 currency, plus honesty `uncertain`/`warnings`. The dated balance series covers both a
 debt statement and an amortization schedule; from a schedule only *observed* balances
 are read, never parameters (rate, instalment, term) inferred by the model. Valuation and
-positions extraction from PDF are out of scope for v1.
+positions extraction from PDF are out of scope for v1 — *positions from PDF is lifted by
+the #1243 amendment below; valuation stays out.*
 
-PDF is a first-class attachment kind. It is read by a dedicated extractor over the same
-fixed, env-overridable vision model (`WORTHLINE_EXTRACTOR_MODEL`) outside the
+PDF is a first-class attachment kind. It is read by a dedicated extractor — *one shared
+vision seam for images and PDFs since the #1243 amendment below, not one extractor per
+kind* — over the same fixed, env-overridable vision model (`WORTHLINE_EXTRACTOR_MODEL`) outside the
 conversational pool, producing the same versioned contract and typed outcomes. PDF
 carries its own limits inside the existing 4 MiB request boundary: a dedicated page cap
 (`maxPdfPages`, surfaced as the new `pages` limit reason) enforced by a best-effort page
@@ -144,6 +146,53 @@ branded contract and reaching chat only through `JSON.stringify` framed as data,
 instructions (the #865 invariant). No workspace write capability is granted; any
 mutation stays behind the existing preview-and-confirm proposal boundary that S5 will
 build on.
+
+## Amendment — the file kind decides transport, the content decides the document (#1243)
+
+The question put to the extractor is **no longer fixed by the kind of file**. Until this
+amendment each vision route carried its own hard-coded question — a PDF was asked for a
+dated balance series, an image for positions — so the same debt capture produced
+`balance_series` when saved as a PDF and nothing at all when pasted as a screenshot.
+Format and document type are orthogonal, and soldering them produced something worse than
+"I don't know": a wrong answer in a valid shape.
+
+Images and PDFs now go through **one** vision seam that identifies the document and
+extracts it in a **single** model call. The file kind decides only transport and the
+per-family guards: the `%PDF-` magic-byte check, the page cap and `pages` limit reason
+still apply to PDFs and to nothing else, and the shared type/size limits are unchanged.
+The spreadsheet route is untouched and stays deterministic and model-free — a stronger
+boundary than vision, with no reason to weaken it. Latency is paid pre-stream and the
+user waits for it, so the identified path adds no second call; describing a file whose
+document was *not* identified is a separate concern (#1246).
+
+**Positions inside a PDF are in scope.** The v1 exclusion stated above was a scope
+boundary, not a product decision, and it is lifted: a PDF broker statement extracts
+`positions`. The golden set does not cover that crossing yet — every PDF fixture grades
+`balance_series` and every positions fixture is an image or a spreadsheet — and that gap
+is recorded in the harness README as owed work.
+
+**`positions_movements` remains out of the vision seam's reach**, deliberately and
+reversibly. Its contract carries the cost-basis **fidelity tier**, a mark *derived* from a
+deterministic spreadsheet reading (ADR 0048); letting a vision model stamp `fidelity`
+would invent provenance, which is precisely what that ADR forbids. A future document that
+needs a model-read holdings table must first say how its tier is honestly derived.
+
+`unrecognized` now covers two distinct facts, both keeping that same envelope status
+rather than growing a fourth outcome: **no document was identified** (the drain #1246's
+descriptive reading hangs off, marked by a dedicated exported message so another module
+can recognize it, the way the unstructured-spreadsheet marker already works) and **the
+document was identified but no row could be read**. Callers that only care that nothing
+was extracted keep working unchanged.
+
+The vision output schema keys on a `documentType` **enum discriminant** in a flat object
+rather than a JSON-schema union. A zod discriminated union reaches the provider as
+`anyOf`, which the vision model does not honor — asked for one it returned a correct
+discriminant beside an invented field, i.e. the discriminant without its branch. The
+branch is therefore assembled from the identified document's fields alone (so a reply
+that filled both tables cannot smuggle the other one through) and the branded common
+contract — a real discriminated union — remains the validation boundary. The
+prompt-injection boundary above is unchanged: the document is data, any instruction
+inside it is ignored, and the only text that survives is schema-bounded warnings.
 
 ## Consequences
 

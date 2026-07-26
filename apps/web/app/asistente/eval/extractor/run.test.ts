@@ -10,7 +10,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseExtractorEvalArgs } from "./args";
 import type { GoldenFixture } from "./manifest";
 import { extractorEvalRoot } from "./paths";
-import { assertKnownFixtureIds, runExtractorFixture, selectedFixtures } from "./run";
+import {
+  assertKnownFixtureIds,
+  runExtractorFixture,
+  selectedBalanceSeriesFixtures,
+  selectedFixtures,
+} from "./run";
 
 describe("parseExtractorEvalArgs", () => {
   it("defaults to a strict threshold and accepts model overrides", () => {
@@ -47,7 +52,14 @@ describe("selectedFixtures", () => {
     const ids = selectedFixtures().map((fixture) => fixture.id);
     expect(ids).toContain("synthetic-baseline");
     expect(ids).toContain("synthetic-payment-screen");
-    expect(ids).toContain("synthetic-amortization-schedule");
+    // Re-pointed by #1243: the amortization capture is graded on the balance-series
+    // track now, so the committed subset must still reach it through that selector.
+    expect(ids).not.toContain("synthetic-amortization-schedule");
+    expect(
+      selectedBalanceSeriesFixtures(["synthetic-amortization-schedule"]).map(
+        (fixture) => fixture.id,
+      ),
+    ).toEqual(["synthetic-amortization-schedule"]);
   });
 
   it("narrows to the requested ids", () => {

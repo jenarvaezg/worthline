@@ -18,8 +18,8 @@ import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   parseExtractionResult,
 } from "@web/asistente/attachment-extraction-contract";
-import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
+import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
@@ -52,8 +52,8 @@ import { POST } from "./route";
 
 vi.mock("@web/read-store-target", () => ({ readStoreTarget: vi.fn() }));
 vi.mock("@web/asistente/chat-model", () => ({ resolveChatModels: vi.fn() }));
-vi.mock("@web/asistente/attachment-image-extractor", () => ({
-  extractPositionsFromImage: vi.fn(),
+vi.mock("@web/asistente/attachment-vision-extractor", () => ({
+  extractDocumentFromVisionAttachment: vi.fn(),
 }));
 vi.mock("@web/asistente/provider-cooldown-store", () => ({
   readProviderCooldowns: vi.fn(),
@@ -688,7 +688,7 @@ describe("POST /api/chat", () => {
   it("extracts an image through the dedicated seam and grounds the pool only with validated JSON", async () => {
     const model = simpleAnswerModel("Revisaría la lectura de ACME.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("cerebras", model)]);
-    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
       parseExtractionResult({
         data: {
           documentType: "positions",
@@ -720,18 +720,52 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("Revisaría la lectura de ACME.");
     expect(modelInput).toContain("Acme Incorporated");
     expect(modelInput).not.toContain("SECRET-PIXELS");
-    expect(extractPositionsFromImage).toHaveBeenCalledWith({
+    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith({
       bytes: expect.any(Uint8Array),
       fileName: "posiciones.png",
+      kind: "image",
       mimeType: "image/png",
     });
     expect(countChatRequest).toHaveBeenCalledTimes(1);
   });
 
+  // #1243: the MIME type used to pick the *question* — a PDF was asked for balances and
+  // an image for positions, so the same debt capture produced a different document
+  // depending on how it was saved. Now it only picks the transport.
+  it("sends a PDF to the same vision seam, differing only in the transport (#1243)", async () => {
+    const model = simpleAnswerModel("Veo el cuadro de amortización.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("cerebras", model)]);
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      parseExtractionResult({
+        data: {
+          balances: [{ amount: 11729.52, currency: "EUR", date: "2026-02-05" }],
+          documentType: "balance_series",
+          warnings: [],
+        },
+        status: "valid",
+      }),
+    );
+
+    const response = await POST(
+      attachmentRequest("SECRET-PDF-BYTES", "amortizacion.pdf", "application/pdf"),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith({
+      bytes: expect.any(Uint8Array),
+      fileName: "amortizacion.pdf",
+      kind: "pdf",
+      mimeType: "application/pdf",
+    });
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(JSON.stringify(model.doStreamCalls)).not.toContain("SECRET-PDF-BYTES");
+  });
+
   it("renders invalid image output honestly and still lets the model talk (#1242)", async () => {
     const model = simpleAnswerModel("La lectura falló; ¿qué contiene la captura?");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
-    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
       parseExtractionResult({
         data: { positions: [{ name: "Falta el resto" }], warnings: [] },
         status: "valid",
@@ -762,7 +796,7 @@ describe("POST /api/chat", () => {
       deploymentKey: "production",
       cooldowns: [{ provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" }],
     });
-    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
       parseExtractionResult({
         code: "extractor_unavailable",
         failure: "transient",
@@ -786,7 +820,7 @@ describe("POST /api/chat", () => {
   it("shows the extraction verdict when every provider rejects the turn (#1242)", async () => {
     const rejected = rejectedModel(providerError(503, "unavailable"));
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", rejected)]);
-    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
       parseExtractionResult({
         message: "No reconozco posiciones de inversión en esta captura.",
         status: "unrecognized",
@@ -830,7 +864,7 @@ describe("POST /api/chat", () => {
   it("keeps chat operational after the image extractor exhausts transient retries", async () => {
     const model = simpleAnswerModel("Seguimos sin la captura.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("cerebras", model)]);
-    vi.mocked(extractPositionsFromImage).mockResolvedValue(
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
       parseExtractionResult({
         code: "extractor_unavailable",
         failure: "transient",
@@ -1070,6 +1104,17 @@ describe("POST /api/chat", () => {
   it.each([
     {
       contents: "no es una hoja",
+      // Since #1243 the magic-byte guard lives inside the vision seam, which this file
+      // mocks — so this row no longer exercises the guard, it states the verdict the
+      // guard produces and checks the route carries it. The guard itself is covered in
+      // `attachment-pdf-bytes.test.ts` (bytes) and `attachment-vision-extractor.test.ts`
+      // (the full type/size/pages/magic-byte battery), more thoroughly than here.
+      extraction: {
+        code: "unsupported_document",
+        failure: "permanent",
+        message: "El archivo no es un PDF legible.",
+        status: "failure",
+      },
       fileName: "posiciones.pdf",
       mimeType: "application/pdf",
       message: "no es un PDF legible",
@@ -1094,12 +1139,24 @@ describe("POST /api/chat", () => {
     },
   ])("keeps the conversation usable after $fileName is rejected", async ({
     contents,
+    extraction,
     fileName,
     message,
     mimeType,
+  }: {
+    contents: string;
+    extraction?: unknown;
+    fileName: string;
+    message: string;
+    mimeType: string;
   }) => {
     const model = simpleAnswerModel("Cuéntame qué contiene y lo montamos a mano.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    if (extraction) {
+      vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+        parseExtractionResult(extraction),
+      );
+    }
 
     const response = await POST(attachmentRequest(contents, fileName, mimeType));
     const streamed = await response.text();
@@ -1484,7 +1541,7 @@ describe("POST /api/chat · premium ingestion gate + courtesy quota (#1162)", ()
     expect(streamed).toContain("data-paywall");
     expect(streamed).toContain("adjuntos son premium");
     // …and the extractor was never invoked (no ingestion happened).
-    expect(vi.mocked(extractPositionsFromImage)).not.toHaveBeenCalled();
+    expect(vi.mocked(extractDocumentFromVisionAttachment)).not.toHaveBeenCalled();
   });
 
   it("streams the courtesy paywall once the free monthly quota is exhausted", async () => {
@@ -1717,7 +1774,7 @@ describe("POST /api/chat · oversized-upload guard (#1180)", () => {
 
     expect(response.status).toBe(413);
     expect(arrayBuffer).not.toHaveBeenCalled();
-    expect(extractPositionsFromImage).not.toHaveBeenCalled();
+    expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
   });
 
   it("lets an attachment exactly at the cap through to extraction", async () => {

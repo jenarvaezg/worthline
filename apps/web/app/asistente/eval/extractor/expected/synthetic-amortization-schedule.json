@@ -1,3 +1,11 @@
 {
-  "expect": "unrecognized"
+  "balances": [
+    { "date": "2026-02-05", "amount": 11729.52, "currency": "EUR" },
+    { "date": "2026-03-05", "amount": 11458.09, "currency": "EUR" },
+    { "date": "2026-04-05", "amount": 11185.71, "currency": "EUR" },
+    { "date": "2026-05-05", "amount": 10912.38, "currency": "EUR" },
+    { "date": "2026-06-05", "amount": 10638.09, "currency": "EUR" },
+    { "date": "2026-07-05", "amount": 10362.84, "currency": "EUR" }
+  ],
+  "warnings": []
 }

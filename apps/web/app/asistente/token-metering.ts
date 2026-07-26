@@ -11,8 +11,8 @@
  * so a finished turn is metered whether or not the client kept reading.
  *
  * Scope (#1163): this meters the assistant's own model turn — the recurring
- * cost. The eager attachment extractors (`extractPositionsFromImage`,
- * `extractBalanceSeriesFromPdf`, the spreadsheet dispatch) are separate model
+ * cost. The eager attachment extractors
+ * (`extractDocumentFromVisionAttachment`, the spreadsheet dispatch) are separate model
  * calls whose usage is NOT counted here: their contract deliberately hands
  * callers a validated JSON result and never provider output, so surfacing their
  * token usage is its own change. The pre-call gate still degrades them honestly

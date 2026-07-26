@@ -7,11 +7,10 @@ import {
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
-import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
-import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
 import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
 import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
+import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
@@ -403,11 +402,15 @@ export async function POST(request: Request): Promise<Response> {
       mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
     const isImage = mimeType.startsWith("image/");
     const isSpreadsheet = !isPdf && !isImage;
-    const result = isPdf
-      ? await extractBalanceSeriesFromPdf(extractionInput)
-      : isImage
-        ? await extractPositionsFromImage(extractionInput)
-        : extractSpreadsheetDocument(extractionInput);
+    // The MIME type picks the *transport* only (#1243): one vision seam identifies the
+    // document behind an image or a PDF by its content, while a spreadsheet keeps its
+    // stronger, deterministic, model-free route.
+    const result = isSpreadsheet
+      ? extractSpreadsheetDocument(extractionInput)
+      : await extractDocumentFromVisionAttachment({
+          ...extractionInput,
+          kind: isPdf ? "pdf" : "image",
+        });
     currentPreview = { fileName, result };
 
     // A readable spreadsheet that is not a positions table becomes

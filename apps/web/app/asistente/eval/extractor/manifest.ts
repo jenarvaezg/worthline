@@ -12,7 +12,6 @@ export const EXTRACTOR_GOLDEN_SCENARIOS = [
   "ticker-name-ambiguity",
   "thousand-separator",
   "payment-screen",
-  "amortization-schedule-screenshot",
 ] as const;
 
 export type ExtractorGoldenScenario = (typeof EXTRACTOR_GOLDEN_SCENARIOS)[number];
@@ -82,24 +81,14 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
     scenario: "desktop",
     storage: "committed",
   },
-  // Negative cases (#1247): screens that are *not* a portfolio. The image seam only
-  // knows how to ask for `positions`, so both must come back `unrecognized`; the
-  // guarantee under test is "does not hallucinate positions".
+  // Negative case (#1247): a payment screen is not a portfolio and not a dated balance
+  // series either, so it is none of the documents the seam knows how to extract. It stays
+  // negative after #1243 — the guarantee under test is "does not hallucinate positions".
   {
     expectedFile: "expected/synthetic-payment-screen.json",
     id: "synthetic-payment-screen",
     imageFile: "fixtures/synthetic-payment-screen.png",
     scenario: "payment-screen",
-    storage: "committed",
-  },
-  // #1243 will re-point this capture at the balance-series track once the seam can
-  // identify the document by itself; until then "does not hallucinate positions" is
-  // exactly the guarantee we want from an amortization schedule.
-  {
-    expectedFile: "expected/synthetic-amortization-schedule.json",
-    id: "synthetic-amortization-schedule",
-    imageFile: "fixtures/synthetic-amortization-schedule.png",
-    scenario: "amortization-schedule-screenshot",
     storage: "committed",
   },
   {
@@ -143,11 +132,12 @@ export function parseGoldenExpected(input: unknown): GoldenExpected {
   return goldenExpectedSchema.parse(input);
 }
 
-// --- Dated balance series (PDF) golden track (PRD #1048 S4) ---------------------
+// --- Dated balance series golden track (PRD #1048 S4, widened by #1243) ----------
 
 export const BALANCE_SERIES_GOLDEN_SCENARIOS = [
   "debt-statement",
   "amortization-schedule",
+  "amortization-schedule-screenshot",
 ] as const;
 
 export type BalanceSeriesGoldenScenario =
@@ -199,17 +189,29 @@ interface BalanceSeriesGoldenFixtureBase {
   expectedFile: string;
 }
 
-export type BalanceSeriesGoldenFixture = BalanceSeriesGoldenFixtureBase & {
-  storage: "local";
-};
+export type BalanceSeriesGoldenFixture =
+  | (BalanceSeriesGoldenFixtureBase & { storage: "committed" })
+  | (BalanceSeriesGoldenFixtureBase & { storage: "local" });
 
 /**
- * Balance-series PDF fixtures are private by nature (real bank statements and
- * amortization schedules). They live only under `.local/extractor-golden/` and
- * are never committed — the CLI eval skips any scenario whose files are absent,
- * exactly like #865's private capture set.
+ * Balance-series fixtures. The real bank statements and amortization schedules are
+ * private by nature: they live only under `.local/extractor-golden/` and are never
+ * committed — the CLI eval skips any scenario whose files are absent, exactly like
+ * #865's private capture set.
+ *
+ * Since #1243 the track is no longer PDF-only, because the document is no longer
+ * decided by the file kind: the synthetic amortization **screenshot** grades the same
+ * `balance_series` document from an image, and it is safe to commit. That crossing is
+ * the whole point of the slice, so it belongs in the set git ships.
  */
 export const BALANCE_SERIES_GOLDEN_FIXTURES: BalanceSeriesGoldenFixture[] = [
+  {
+    expectedFile: "expected/synthetic-amortization-schedule.json",
+    id: "synthetic-amortization-schedule",
+    scenario: "amortization-schedule-screenshot",
+    sourceFile: "fixtures/synthetic-amortization-schedule.png",
+    storage: "committed",
+  },
   {
     expectedFile: "debt-statement.expected.json",
     id: "debt-statement",
