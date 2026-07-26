@@ -62,12 +62,51 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/a qué holding se refiere, pregunta y no propongas/i);
     expect(prompt).toMatch(/dudas de la cifra, no propongas/i);
     // And it must not send the model at a bulk-import tool the boundary will
-    // reject: a reconstruction needs a document worthline actually validated.
+    // reject. A real run over the Revolut capture offered `propose_reconstruction`
+    // — which is on #1248's REJECT list, so the model would have had to walk it
+    // back in front of the user. Narrowing the wording to «validado» was not
+    // enough; the rule now says out loud that the descriptive lane has no
+    // reconstruction and no bulk import at all.
     expect(prompt).toMatch(/propose_reconstruction/);
-    expect(prompt).toMatch(/cuadro que worthline haya validado/i);
+    expect(prompt).toMatch(/worthline ha VALIDADO/);
+    expect(prompt).toMatch(/nunca de tu lectura de una captura/i);
+    expect(prompt).toMatch(
+      /NO hay reconstrucción de histórico ni importación en bloque/i,
+    );
+    expect(prompt).toMatch(/no las ofrezcas/i);
     // #1186: a market-instrument alta must resolve its price symbol first.
     expect(prompt).toMatch(/search_market_symbol/);
     expect(prompt).toMatch(/providerSymbol/);
+    // #1245: an observed, dated early repayment is registered as the FACT; the
+    // re-baseline is the last resort, not the first tool the protocol offers.
+    expect(prompt).toMatch(/propose_early_repayment/);
+    expect(prompt).toMatch(/pierde la causa/i);
+    expect(prompt).toMatch(/último recurso/i);
+    // A real run wrote «usando propose_correction» into its answer. Tool ids are
+    // internal plumbing: the user reads WHAT will happen, never the function name.
+    expect(prompt).toMatch(/nombres de tus tools son INTERNOS/);
+    expect(prompt).toMatch(/nunca los escribas al usuario/i);
+    expect(prompt).toMatch(/no cómo se llama la función/i);
+    // Same run repeated its guidance three times over. Concision is a rule, and
+    // «conclusión primero» alone did not stop the recap.
+    expect(prompt).toMatch(/no repitas la misma guía/i);
+    expect(prompt).toMatch(/ni cierres recapitulando/i);
+  });
+
+  /**
+   * PRD #1241, decision 8: what matters lives in code and is tested in CI, so the
+   * prompt is for tone and must NOT grow net. #1245 added the early-repayment rule
+   * and paid for it by cutting text the tools' own descriptions already carry.
+   * Raising this ceiling is a decision, not a detail — a slice that needs more
+   * prompt has to justify it here.
+   */
+  it("does not grow net (decision 8)", () => {
+    // 8383 is the pre-#1245 length. The slice added the early-repayment rule, the
+    // no-tool-names rule and the descriptive-lane routing, and paid for all three
+    // by cutting text the tools' own `description` fields already carry verbatim
+    // — it currently sits well under the ceiling. Raising this number is a
+    // decision, not a detail: a slice that needs more prompt justifies it here.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8383);
   });
 
   it("pins the core read-only contract", () => {

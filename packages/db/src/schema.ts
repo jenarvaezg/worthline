@@ -437,6 +437,13 @@ export const earlyRepayments = sqliteTable(
     repaymentDate: text("repayment_date").notNull(),
     amountMinor: integer("amount_minor").notNull(),
     mode: text("mode").$type<EarlyRepaymentMode>().notNull(),
+    /**
+     * Who wrote the fact (#1245): `manual` from the edit UI, `agent` from a
+     * confirmed assistant proposal. Sibling of `asset_valuations.source` and
+     * `liability_balance_rebaselines.source`; NOT a grade of evidence — the mark
+     * that a repayment was read off a capture dies in the preview (PRD #1241).
+     */
+    source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
     createdAt: timestamp("created_at"),
   },
   (table) => [
@@ -929,7 +936,8 @@ export type AssistantProposalKind =
   | "holding_creation"
   | "holding_removal"
   | "holding_restoration"
-  | "reconcile";
+  | "reconcile"
+  | "early_repayment";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";
 

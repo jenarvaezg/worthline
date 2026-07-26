@@ -36,6 +36,7 @@ describe("unvalidated-evidence classification (#1248)", () => {
       "propose_correction",
       "propose_property_valuation_anchor",
       "propose_holding",
+      "propose_early_repayment",
     ]) {
       expect(unvalidatedEvidenceClassFor(name), name).toBe("accepts");
     }

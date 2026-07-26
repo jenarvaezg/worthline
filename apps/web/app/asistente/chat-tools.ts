@@ -38,6 +38,7 @@ import {
   buildCorrectionProposal,
   type CorrectionInput,
 } from "@web/asistente/correction-proposals";
+import { buildEarlyRepaymentProposal } from "@web/asistente/early-repayment-proposals";
 import {
   buildHoldingCreationProposal,
   type HoldingCreationArgs,
@@ -648,6 +649,27 @@ const PROPERTY_VALUATION_PROPOSAL_SCHEMA = jsonSchema<{
     valueMinor: { type: "integer" },
   },
   required: ["assetId", "documentName", "documentSha256", "valuationDate", "valueMinor"],
+  additionalProperties: false,
+});
+
+const EARLY_REPAYMENT_PROPOSAL_SCHEMA = jsonSchema<{
+  liabilityId?: string;
+  repaymentDate?: string;
+  amountMinor?: number;
+  mode?: "reduce-payment" | "reduce-term";
+  observedMonthlyPaymentMinor?: number;
+  summary?: string;
+}>({
+  type: "object",
+  properties: {
+    liabilityId: { type: "string" },
+    repaymentDate: { type: "string" },
+    amountMinor: { type: "integer" },
+    mode: { enum: ["reduce-payment", "reduce-term"], type: "string" },
+    observedMonthlyPaymentMinor: { type: "integer" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
+  },
+  required: ["liabilityId", "repaymentDate", "amountMinor", "mode"],
   additionalProperties: false,
 });
 
@@ -1489,6 +1511,42 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
                 publicHoldingId: args.holdingId ?? "",
                 ...(args.summary === undefined ? {} : { summary: args.summary }),
               },
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
+    }),
+    propose_early_repayment: tool({
+      description:
+        "Prepara una propuesta para registrar UNA amortización anticipada YA HECHA sobre UNA deuda amortizable (liabilityId es el public id wl_hld_… de las tools de lectura). Es la reparación por CAUSA cuando el usuario dice que ha amortizado: registra el hecho fechado en vez de re-baselinizar desde hoy con propose_correction (declare_balance), que pierde la causa. " +
+        "amountMinor va en CÉNTIMOS enteros (91,32 € → 9132); si el importe que lees tiene decimales, conviértelo a céntimos exactos y no lo redondees. " +
+        "mode: 'reduce-term' (misma cuota, el préstamo acaba antes: la pantalla dice que se acorta el plazo o que se reduce la ÚLTIMA cuota) o 'reduce-payment' (mismo plazo, la cuota baja). Si la pantalla no lo dice, PREGUNTA al usuario: no lo elijas por él. " +
+        "observedMonthlyPaymentMinor: la cuota que se lee en la pantalla, en céntimos, si consta — la app la reconcilia con la que calcula el plan y avisa si no cuadran. " +
+        "No calcules tú el efecto: la app calcula saldo antes/después, cuota y fecha de fin resultantes, y avisa de que una anticipada se aplica en el LÍMITE DE MES (la fecha del pago no es necesariamente la cuota que el usuario cree). Solo deudas amortizables: en revolving/informal usa propose_correction (balance anchor). Editar o borrar una anticipada ya registrada NO está en el chat: sigue en /patrimonio.",
+      inputSchema: EARLY_REPAYMENT_PROPOSAL_SCHEMA,
+      // Whitelisted single fact (#1248): a dated lump is verifiable at a glance in
+      // the preview, so it may be born from unvalidated evidence — capped at one
+      // proposal per turn. NOT premium-gated at the tool, like its whitelist
+      // siblings: the attachment lane is already gated upstream in the chat route,
+      // and a repayment the user simply TELLS the assistant about is the same
+      // manual fact `/patrimonio/[id]/editar` takes for free.
+      execute: (args) =>
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals || !store.liabilities) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            const liabilityId = await resolveInternalHoldingId(
+              store.agentView,
+              args.liabilityId ?? "",
+            );
+            const built = await buildEarlyRepaymentProposal(
+              {
+                assistantProposals: store.assistantProposals,
+                liabilities: store.liabilities,
+              },
+              { ...args, liabilityId, publicHoldingId: args.liabilityId ?? "" },
               input.asOf,
             );
             return built.ok ? built.proposal : { error: built.error };

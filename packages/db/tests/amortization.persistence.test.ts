@@ -499,7 +499,27 @@ describe("early repayments — CRUD", () => {
       id: "e1",
       mode: "reduce-payment",
       repaymentDate: "2022-01-01",
+      // An unstated source is a hand-typed repayment (#1245).
+      source: "manual",
     });
+  });
+
+  test("records who wrote the repayment: manual by default, agent when declared", async () => {
+    const store = await createInMemoryStore();
+    await seedPlan(store);
+
+    await store.liabilities.addEarlyRepayment({
+      amountMinor: 9132,
+      id: "e_agent",
+      mode: "reduce-term",
+      planId: "plan1",
+      repaymentDate: "2022-03-01",
+      source: "agent",
+    });
+
+    expect(await store.liabilities.readEarlyRepayments("plan1")).toMatchObject([
+      { id: "e_agent", source: "agent" },
+    ]);
   });
 
   test("update a repayment's date, amount and mode in place", async () => {

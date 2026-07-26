@@ -306,6 +306,7 @@ CREATE TABLE \`early_repayments\` (
 	\`repayment_date\` text NOT NULL,
 	\`amount_minor\` integer NOT NULL,
 	\`mode\` text NOT NULL,
+	\`source\` text DEFAULT 'manual' NOT NULL,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	FOREIGN KEY (\`plan_id\`) REFERENCES \`amortization_plans\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );

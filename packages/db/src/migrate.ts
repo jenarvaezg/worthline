@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 52;
+export const SCHEMA_VERSION = 53;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1586,6 +1586,26 @@ export async function migrate(client: Client): Promise<MigrateResult> {
     );
     CREATE INDEX IF NOT EXISTS sync_run_source_created_idx ON sync_run (source_id, created_at);`);
     await writeSchemaVersion(client, 52);
+  }
+
+  if (version < 53) {
+    // #1245 / PRD #1241: `early_repayments.source` — the assistant can now propose
+    // a dated early repayment, so the fact must say whether it was written by hand
+    // or by a confirmed proposal. Same shape as v48 (rebaselines) and v49
+    // (valuations): existing rows default to `manual`, which is what they are. No
+    // new grade of evidence is introduced — the provenance of the capture the
+    // repayment was read from dies in the preview.
+    try {
+      const columns = await client.execute("PRAGMA table_info(early_repayments)");
+      if (columns.rows.length > 0 && !columns.rows.some((row) => row.name === "source")) {
+        await client.execute(
+          "ALTER TABLE early_repayments ADD COLUMN source TEXT DEFAULT 'manual' NOT NULL",
+        );
+      }
+    } catch (error) {
+      if (!String(error).includes("no such table")) throw error;
+    }
+    await writeSchemaVersion(client, 53);
   }
 
   return { ranV18Backfill, ranV33Backfill };

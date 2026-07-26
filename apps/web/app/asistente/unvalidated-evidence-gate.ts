@@ -29,6 +29,10 @@ export type UnvalidatedEvidenceClass = "accepts" | "rejects" | "neutral";
 export const UNVALIDATED_EVIDENCE_CLASSES = {
   // Single fact, verifiable at a glance, confirmed in a preview.
   propose_correction: "accepts",
+  // A dated lump against ONE debt (#1245): amount, date and mode fit in one line
+  // of preview, and the impact next to them is computed by the domain — the human
+  // eye validates it exactly as it validates a corrected balance.
+  propose_early_repayment: "accepts",
   propose_holding: "accepts",
   propose_property_valuation_anchor: "accepts",
   // Bulk import: the deterministic route owns these, always.

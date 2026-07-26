@@ -2,6 +2,7 @@ import type { ParsedStatementRow } from "@worthline/domain";
 import { and, asc, eq, max } from "drizzle-orm";
 
 import type { CorrectionPlan } from "./correction-plan";
+import type { EarlyRepaymentPlan } from "./early-repayment-plan";
 import type { HoldingCreationPlan } from "./holding-creation-plan";
 import {
   type AssistantDocumentProvenance,
@@ -42,6 +43,17 @@ export interface PropertyValuationAnchorFact {
 export interface HoldingCorrectionFact {
   kind: "holding_correction";
   row: CorrectionPlan;
+}
+
+/**
+ * A whole early-repayment plan (#1245) stored as one self-contained fact: the
+ * dated lump, its mode and the target debt. Chat-declared like the correction and
+ * alta facts — the capture it was read from is never persisted (PRD #1241: the
+ * mark that a figure came from a screenshot dies in the preview).
+ */
+export interface DebtEarlyRepaymentFact {
+  kind: "debt_early_repayment";
+  row: EarlyRepaymentPlan;
 }
 
 /**
@@ -120,7 +132,8 @@ export type AssistantProposalFact =
   | HoldingCorrectionFact
   | HoldingCreationFact
   | HoldingTrashActionFact
-  | HoldingReconcileFact;
+  | HoldingReconcileFact
+  | DebtEarlyRepaymentFact;
 
 export interface AssistantProposalDocument {
   id: string;
@@ -177,7 +190,8 @@ async function createProposal(
     input.kind !== "holding_creation" &&
     input.kind !== "holding_removal" &&
     input.kind !== "holding_restoration" &&
-    input.kind !== "reconcile"
+    input.kind !== "reconcile" &&
+    input.kind !== "early_repayment"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
   }
@@ -214,6 +228,9 @@ function normalizeFact(
     };
   }
   if (fact.kind === "holding_reconcile" && "row" in fact) {
+    return { kind: fact.kind, row: fact.row };
+  }
+  if (fact.kind === "debt_early_repayment" && "row" in fact) {
     return { kind: fact.kind, row: fact.row };
   }
   if (fact.kind === "property_valuation_anchor" && "row" in fact) {
@@ -358,7 +375,8 @@ async function readProposal(
           fact.kind !== "holding_correction" &&
           fact.kind !== "holding_creation" &&
           fact.kind !== "holding_trash_action" &&
-          fact.kind !== "holding_reconcile"
+          fact.kind !== "holding_reconcile" &&
+          fact.kind !== "debt_early_repayment"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
         }
@@ -366,6 +384,12 @@ async function readProposal(
           return {
             kind: fact.kind,
             row: JSON.parse(fact.payloadJson) as HoldingReconcileFact["row"],
+          };
+        }
+        if (fact.kind === "debt_early_repayment") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as DebtEarlyRepaymentFact["row"],
           };
         }
         if (fact.kind === "holding_correction") {

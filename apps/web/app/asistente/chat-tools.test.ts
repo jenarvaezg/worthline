@@ -786,6 +786,12 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       correction: { kind: "edit_config", name: "Cuenta renombrada" },
       holdingId: ids["cuenta"],
     }),
+    propose_early_repayment: (ids) => ({
+      amountMinor: 91_32,
+      liabilityId: ids["prestamo"],
+      mode: "reduce-term",
+      repaymentDate: "2026-05-20",
+    }),
     propose_holding: () => ({ ...CUENTA }),
     propose_property_valuation_anchor: (ids) => ({
       assetId: ids["casa"],
@@ -822,6 +828,29 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "real_estate",
     });
+    // An amortizable debt with a live plan, so `propose_early_repayment` has a real
+    // schedule to project against (#1245).
+    await store.liabilities.createLiability({
+      balanceMinor: 4_200_00,
+      currency: "EUR",
+      id: "prestamo",
+      name: "Préstamo Revolut",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "debt",
+    });
+    await store.liabilities.setDebtModel("prestamo", "amortizable");
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.089",
+        disbursementDate: "2025-08-15",
+        firstPaymentDate: "2025-09-15",
+        id: "prestamo_plan",
+        initialCapitalMinor: 5_000_00,
+        liabilityId: "prestamo",
+        termMonths: 36,
+      },
+      { today: AS_OF },
+    );
     return store;
   }
 
