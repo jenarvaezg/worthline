@@ -6,6 +6,8 @@ import {
   type CorrectionProposal,
   parseCorrectionProposalDraft,
 } from "./correction-proposal-contract";
+import type { EarlyRepaymentProposal } from "./early-repayment-proposal-contract";
+import { parseEarlyRepaymentProposalDraft } from "./early-repayment-proposal-contract";
 import {
   type HoldingCreationProposal,
   parseHoldingCreationProposalDraft,
@@ -423,6 +425,54 @@ export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposa
   )
     return null;
   return raw as unknown as BalanceHistoryProposal;
+}
+
+/**
+ * Trust boundary for an early-repayment proposal (#1245). Every rendered figure
+ * is a STRING the server already formatted, so the card cannot re-derive money or
+ * dates client-side; only the shape is checked here.
+ */
+export function parseEarlyRepaymentProposal(raw: unknown): EarlyRepaymentProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "early_repayment") return null;
+  const draft = parseEarlyRepaymentProposalDraft(raw.draft);
+  if (!draft.ok || !isRecord(raw.holding) || typeof raw.holding.name !== "string") {
+    return null;
+  }
+  if (!isRecord(raw.repayment) || typeof raw.summary !== "string") return null;
+  const { repayment } = raw;
+  if (
+    typeof repayment.date !== "string" ||
+    typeof repayment.boundaryDate !== "string" ||
+    typeof repayment.amount !== "string" ||
+    typeof repayment.modeLabel !== "string" ||
+    (repayment.mode !== "reduce-term" && repayment.mode !== "reduce-payment")
+  ) {
+    return null;
+  }
+  if (!Array.isArray(raw.rows) || !Array.isArray(raw.notes)) return null;
+  if (
+    !raw.rows.every(
+      (row) =>
+        isRecord(row) &&
+        typeof row.label === "string" &&
+        typeof row.before === "string" &&
+        typeof row.after === "string",
+    ) ||
+    !raw.notes.every((note) => typeof note === "string")
+  ) {
+    return null;
+  }
+  if (raw.reconciliation !== null) {
+    if (
+      !isRecord(raw.reconciliation) ||
+      typeof raw.reconciliation.observed !== "string" ||
+      typeof raw.reconciliation.plan !== "string" ||
+      typeof raw.reconciliation.matches !== "boolean"
+    ) {
+      return null;
+    }
+  }
+  return raw as unknown as EarlyRepaymentProposal;
 }
 
 export function parsePropertyValuationProposal(

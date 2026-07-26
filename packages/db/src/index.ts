@@ -23,6 +23,7 @@ export type {
   AssistantProposalDocumentRef,
   AssistantProposalFact,
   AssistantProposalStore,
+  DebtEarlyRepaymentFact,
   HoldingCorrectionFact,
   HoldingCreationFact,
   HoldingReconcileFact,
@@ -153,6 +154,7 @@ export {
   resolveDataDir,
   runBootstrapHealthcheck,
 } from "./database-target";
+export type { EarlyRepaymentPlan } from "./early-repayment-plan";
 export {
   deriveEffectivePlan,
   type EntitlementPlan,

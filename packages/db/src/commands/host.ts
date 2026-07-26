@@ -4,6 +4,7 @@ import type {
 } from "@db/assistant-proposal-store";
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
+import type { EarlyRepaymentPlan } from "@db/early-repayment-plan";
 import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
@@ -132,6 +133,17 @@ export interface CommandHost extends DatedFactAliases {
      */
     reconstruct?: { liabilityId: string; rebaselines: AddBalanceRebaselineInput[] };
   }) => Promise<void>;
+  /**
+   * Apply one early-repayment proposal (#1245) and resolve it in the SAME
+   * transaction. The write is reconstructed from the persisted fact, never from
+   * the caller: the web action passes only the proposal id, so the amount, date
+   * and mode that reach the engine are exactly the ones the user confirmed in the
+   * preview. `source: "agent"` is stamped here.
+   */
+  applyAssistantEarlyRepaymentProposal: (params: {
+    proposalId: string;
+    today: string;
+  }) => Promise<void>;
   importBalanceHistory: (command: ImportBalanceHistoryCommand) => Promise<number>;
 
   syncConnectedSource: ConnectedSourceSeams["syncConnectedSource"];
@@ -188,6 +200,42 @@ function correctionPlanOf(proposal: AssistantProposal): CorrectionPlan {
   return fact.row;
 }
 
+/** Extract the single early-repayment plan an `early_repayment` proposal carries. */
+function earlyRepaymentPlanOf(proposal: AssistantProposal): EarlyRepaymentPlan {
+  const fact = proposal.documents
+    .flatMap((document) => document.facts)
+    .find((item) => item.kind === "debt_early_repayment");
+  if (!fact || fact.kind !== "debt_early_repayment") {
+    throw new Error(
+      `Early-repayment proposal "${proposal.id}" carries no repayment plan.`,
+    );
+  }
+  return fact.row;
+}
+
+/**
+ * The staleness guard both debt-side proposals share (#1051/#1245): the live
+ * balance at the frozen `asOf` must still be what the draft was armed against.
+ * `asOf` is frozen at draft time, so confirming a day later is fine — only a fact
+ * that MOVED the curve in between fails, which is exactly the case where the
+ * previewed arithmetic no longer describes what would be written.
+ */
+async function assertLiveBalanceUnchanged(
+  liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">,
+  revalidation: { liabilityId: string; asOf: string; expectedBalanceMinor: number },
+): Promise<void> {
+  const live = await liabilityReads.debtBalanceAtDate(
+    revalidation.liabilityId,
+    revalidation.asOf,
+  );
+  if (live === revalidation.expectedBalanceMinor) return;
+  const error = new Error(
+    "El holding cambió desde que se preparó la propuesta. Vuelve a pedir la corrección.",
+  );
+  Object.assign(error, { code: "correction_draft_stale" });
+  throw error;
+}
+
 /**
  * Apply one correction plan (#1051) inside the caller's transaction: revalidate
  * against live data first (a stale draft fails honestly and nothing persists),
@@ -209,17 +257,7 @@ async function applyCorrectionPlan(
     throw new Error(`Correction plan mode "${plan.mode}" is not applied here.`);
   }
   if (plan.revalidation) {
-    const live = await liabilityReads.debtBalanceAtDate(
-      plan.revalidation.liabilityId,
-      plan.revalidation.asOf,
-    );
-    if (live !== plan.revalidation.expectedBalanceMinor) {
-      const error = new Error(
-        "El holding cambió desde que se preparó la propuesta. Vuelve a pedir la corrección.",
-      );
-      Object.assign(error, { code: "correction_draft_stale" });
-      throw error;
-    }
+    await assertLiveBalanceUnchanged(liabilityReads, plan.revalidation);
   }
   for (const edit of plan.edits) {
     await applyCorrectionEdit(ctx, datedFacts, edit, today);
@@ -433,6 +471,42 @@ export function createCommandHost(
           return proposal;
         },
         () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
+      ),
+    applyAssistantEarlyRepaymentProposal: async ({ proposalId, today }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "early_repayment") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" is not an early repayment.`,
+            );
+          }
+          return proposal;
+        },
+        async () => {
+          const proposal = await assistantProposals.read(proposalId);
+          if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
+          const plan = earlyRepaymentPlanOf(proposal);
+          await assertLiveBalanceUnchanged(liabilityReads, {
+            ...plan.revalidation,
+            liabilityId: plan.liabilityId,
+          });
+          // The dated-fact seam writes the repayment and ripples from its own
+          // cuota boundary, so the history BEFORE it is left verbatim.
+          await datedFacts.addEarlyRepaymentAndRipple(
+            {
+              amountMinor: plan.amountMinor,
+              id: ctx.newId(),
+              mode: plan.mode,
+              planId: plan.planId,
+              repaymentDate: plan.repaymentDate,
+              source: "agent",
+            },
+            { liabilityId: plan.liabilityId, today },
+          );
+        },
       ),
     applyAssistantCorrectionProposal: async ({ proposalId, today, reconstruct }) =>
       applyDraftAssistantProposal(

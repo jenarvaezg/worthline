@@ -137,12 +137,18 @@ export interface AddEarlyRepaymentInput {
   amountMinor: number;
   /** reduce-payment keeps the term; reduce-term keeps the cuota. */
   mode: EarlyRepaymentMode;
+  /**
+   * Who wrote the fact (#1245): `manual` (the default, the edit UI) or `agent` (a
+   * confirmed assistant proposal). Never a grade of evidence.
+   */
+  source?: "manual" | "agent";
 }
 
 /** A stored early repayment as read back from the store. */
 export interface EarlyRepaymentRecord extends EarlyRepayment {
   id: string;
   planId: string;
+  source: "manual" | "agent";
 }
 
 /** Fields that can be patched on an existing early repayment. */
@@ -881,6 +887,7 @@ async function addEarlyRepayment(
       mode: input.mode,
       planId: input.planId,
       repaymentDate: input.repaymentDate,
+      source: input.source ?? "manual",
     })
     .run();
 
@@ -889,6 +896,7 @@ async function addEarlyRepayment(
     mode: input.mode,
     repaymentDate: input.repaymentDate,
     repaymentId: input.id,
+    source: input.source ?? "manual",
   });
 }
 
@@ -909,6 +917,7 @@ async function readEarlyRepayments(
     mode: row.mode,
     planId: row.planId,
     repaymentDate: row.repaymentDate,
+    source: row.source,
   }));
 }
 
