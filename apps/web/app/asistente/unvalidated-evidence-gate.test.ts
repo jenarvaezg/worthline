@@ -163,6 +163,24 @@ describe("unvalidated proposal budget (#1248)", () => {
     expect(budget.reserve()).toBe(false);
   });
 
+  /**
+   * The copy names the file neutrally (#1246). Two lanes open this gate now — a
+   * readable spreadsheet (#865) and the descriptive reading of a capture — so
+   * «esa hoja», true by construction until #1246, would tell someone who uploaded
+   * a screenshot about a document that never existed.
+   */
+  it("never names the unvalidated evidence a spreadsheet", () => {
+    for (const { message } of [
+      unvalidatedEvidenceRejected(),
+      unvalidatedEvidenceCapReached(),
+    ]) {
+      expect(message).not.toMatch(/hoja/i);
+      expect(message).toMatch(/ese archivo/i);
+      // Routing survives the rewording: the way out is still the deterministic path.
+      expect(message).toContain("/patrimonio/importar-extracto");
+    }
+  });
+
   it("only counts a result that really is a prepared proposal", () => {
     // Positive contract: `proposalType` is what every proposal shape carries and
     // what the client parses. A builder failure — however it reports it — must

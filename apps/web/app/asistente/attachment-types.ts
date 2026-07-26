@@ -22,6 +22,21 @@ export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
 export const UNIDENTIFIED_DOCUMENT_MESSAGE =
   "No reconozco en este archivo ninguno de los documentos que sé leer.";
 
+/**
+ * Card message when the vision seam identified no document and the descriptive
+ * reading DID produce a description of what is on screen (#1246) — the image-side
+ * twin of {@link UNSTRUCTURED_SPREADSHEET_MESSAGE}, and a distinct constant for the
+ * same reason: it is the marker the unvalidated-evidence boundary reads back out of
+ * history (#1248). Without its own marker the descriptive path would open the
+ * two-turn bypass again, this time for captures.
+ *
+ * It is deliberately NOT {@link UNIDENTIFIED_DOCUMENT_MESSAGE}: that one is the
+ * dead-end (nothing identified and nothing described), and the model got no document
+ * at all, so it must not count as evidence.
+ */
+export const UNSTRUCTURED_VISION_MESSAGE =
+  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.";
+
 /** Client-safe v1 type catalog shared by picker, transport and server validation. */
 export const ATTACHMENT_TYPES_V1 = [
   {

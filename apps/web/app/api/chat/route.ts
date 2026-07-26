@@ -9,7 +9,12 @@ import {
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
 import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
-import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
+import {
+  UNIDENTIFIED_DOCUMENT_MESSAGE,
+  UNSTRUCTURED_SPREADSHEET_MESSAGE,
+  UNSTRUCTURED_VISION_MESSAGE,
+} from "@web/asistente/attachment-types";
+import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
@@ -258,14 +263,43 @@ function attachmentCardStream(
 }
 
 /**
+ * The card to show when there will be NO model turn under it.
+ *
+ * The unstructured lanes replace the verdict with a card that promises the
+ * conversation continues — «te comento lo que veo del archivo aquí debajo» (#865),
+ * «te cuento lo que veo aquí debajo» (#1246). That promise is only true when the
+ * model answers. On a model-unreachable exit the user would read it with nothing
+ * underneath, and on the #1246 lane they would have paid for TWO vision calls to
+ * get it. So the honest dead-end message takes its place: nothing was extracted,
+ * and this time nothing describes it either.
+ */
+function previewWithoutModelTurn(
+  preview: AttachmentPreviewData,
+  unstructured: UnstructuredAttachment | null,
+): AttachmentPreviewData {
+  if (!unstructured) return preview;
+  return {
+    fileName: preview.fileName,
+    result: {
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    },
+  };
+}
+
+/**
  * The model is unreachable, but the extraction verdict was already paid for and
  * the user must read it (#1130): a 200 stream carrying just the card, never a
  * bare 4xx/5xx that the transport turns into a generic Error.
  */
-function previewOnlyResponse(preview: AttachmentPreviewData): Response {
+function previewOnlyResponse(
+  preview: AttachmentPreviewData,
+  unstructured: UnstructuredAttachment | null,
+): Response {
   return createUIMessageStreamResponse({
     headers: NO_STORE,
-    stream: attachmentCardStream(preview, null),
+    stream: attachmentCardStream(previewWithoutModelTurn(preview, unstructured), null),
   });
 }
 
@@ -402,6 +436,7 @@ export async function POST(request: Request): Promise<Response> {
       mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
     const isImage = mimeType.startsWith("image/");
     const isSpreadsheet = !isPdf && !isImage;
+    const visionKind = isPdf ? "pdf" : "image";
     // The MIME type picks the *transport* only (#1243): one vision seam identifies the
     // document behind an image or a PDF by its content, while a spreadsheet keeps its
     // stronger, deterministic, model-free route.
@@ -409,7 +444,7 @@ export async function POST(request: Request): Promise<Response> {
       ? extractSpreadsheetDocument(extractionInput)
       : await extractDocumentFromVisionAttachment({
           ...extractionInput,
-          kind: isPdf ? "pdf" : "image",
+          kind: visionKind,
         });
     currentPreview = { fileName, result };
 
@@ -419,10 +454,44 @@ export async function POST(request: Request): Promise<Response> {
     if (result.status === "unrecognized" && isSpreadsheet) {
       const text = renderSpreadsheetForContext(extractionInput);
       if (text) {
-        unstructuredAttachment = { fileName, text };
+        unstructuredAttachment = { fileName, source: "spreadsheet_grid", text };
         currentPreview = {
           fileName,
           result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
+        };
+      }
+    }
+    // Parity for pixels (#1246): a capture whose document the seam did not identify
+    // had no drain at all, so it died on the card. A SECOND call to the same fixed
+    // model outside the pool says what is on screen, and it enters the turn through
+    // the very same unstructured lane, with the same defenses. Only this branch pays
+    // for it: an identified document — or one identified and read empty
+    // (`empty_reading`) — needs no description, and the user waits for it pre-stream.
+    // `!isSpreadsheet` is not redundant with the reason: the deterministic sheet route
+    // never stamps this discriminant today, and this keeps a future one that did from
+    // sending a workbook to a vision model and clobbering its own rendered grid.
+    if (
+      !isSpreadsheet &&
+      result.status === "unrecognized" &&
+      result.reason === "unidentified_document"
+    ) {
+      const description = await describeVisionAttachment({
+        ...extractionInput,
+        kind: visionKind,
+      });
+      if (description) {
+        unstructuredAttachment = {
+          fileName,
+          source: "vision_description",
+          text: description,
+        };
+        currentPreview = {
+          fileName,
+          result: {
+            message: UNSTRUCTURED_VISION_MESSAGE,
+            reason: "unidentified_document",
+            status: "unrecognized",
+          },
         };
       }
     }
@@ -447,7 +516,9 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
   if (eligibleProviders.length === 0) {
-    if (currentPreview) return previewOnlyResponse(currentPreview);
+    if (currentPreview) {
+      return previewOnlyResponse(currentPreview, unstructuredAttachment);
+    }
     return jsonError("assistant_unavailable", 503);
   }
 
@@ -461,7 +532,9 @@ export async function POST(request: Request): Promise<Response> {
       ),
     );
   } catch {
-    if (currentPreview) return previewOnlyResponse(currentPreview);
+    if (currentPreview) {
+      return previewOnlyResponse(currentPreview, unstructuredAttachment);
+    }
     return jsonError("invalid_body", 400);
   }
 
@@ -546,7 +619,9 @@ export async function POST(request: Request): Promise<Response> {
     },
   });
   if (selected === null) {
-    if (currentPreview) return previewOnlyResponse(currentPreview);
+    if (currentPreview) {
+      return previewOnlyResponse(currentPreview, unstructuredAttachment);
+    }
     return jsonError("assistant_unavailable", 503);
   }
 

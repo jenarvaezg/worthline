@@ -54,6 +54,7 @@ import {
 import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
+import { PROPOSAL_SUMMARY_MAX_CHARS } from "@web/asistente/proposal-summary";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
@@ -370,7 +371,7 @@ const RECONSTRUCTION_PROPOSAL_SCHEMA = jsonSchema<{
   type: "object",
   properties: {
     holdingId: { type: "string" },
-    summary: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
     documentName: { type: "string" },
     rows: {
       type: "array",
@@ -414,7 +415,7 @@ const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
   type: "object",
   properties: {
     holdingId: { type: "string" },
-    summary: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
     correction: {
       type: "object",
       properties: {
@@ -525,7 +526,7 @@ const HOLDING_TRASH_PROPOSAL_SCHEMA = jsonSchema<{
   type: "object",
   properties: {
     holdingIds: { type: "array", items: { type: "string" } },
-    summary: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
   },
   required: ["holdingIds"],
   additionalProperties: false,
@@ -664,7 +665,7 @@ const RAISE_MAINTAINER_ALERT_SCHEMA = jsonSchema<{
   properties: {
     holdingId: { type: "string" },
     category: { enum: ["infidelity", "residual", "sync_source"], type: "string" },
-    summary: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
     declaredBalanceMinor: { type: "integer" },
     declaredDate: { type: "string" },
     declaredSource: { type: "string" },
@@ -1548,36 +1549,54 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Prepara una propuesta de BAJA reversible (soft delete a la papelera) de UNO O VARIOS holdings manuales, por sus ids públicos wl_hld_… ya leídos. Es el caso «quita/borra estos activos». Se aplica en lote atómico tras confirmar; nada se pierde (se puede restaurar). " +
         "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
       inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
+      // `neutral` in the gate's classification and still budgeted (#1246 review).
+      // Classification and cap answer different questions: a trash proposal is born
+      // from ids already read and is reversible, so it does NOT belong on the reject
+      // list — but it also takes a LIST of holdings, which made it the one proposal
+      // family with no per-turn cap while unvalidated evidence was on the table.
+      // Capping is not reclassifying.
       execute: (args) =>
-        input.runWithStore(async (store) => {
-          if (!store.assistantProposals) {
-            return { error: "proposal_persistence_unavailable" };
-          }
-          const built = await buildHoldingRemovalProposal(
-            { agentView: store.agentView, assistantProposals: store.assistantProposals },
-            args.holdingIds ?? [],
-            input.asOf,
-          );
-          return built.ok ? built.proposal : { error: built.error };
-        }),
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            const built = await buildHoldingRemovalProposal(
+              {
+                agentView: store.agentView,
+                assistantProposals: store.assistantProposals,
+              },
+              args.holdingIds ?? [],
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
     }),
     propose_holding_restoration: tool({
       description:
         "Prepara una propuesta de RESTAURACIÓN (espejo de la baja) de UNO O VARIOS holdings que están EN LA PAPELERA, por sus ids públicos wl_hld_… (los que devuelve get_trash_summary). Se aplica en lote atómico tras confirmar. " +
         "Restaurar un holding que NO está en la papelera es un error; primero comprueba la papelera con get_trash_summary.",
       inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
+      // Budgeted for the same reason as its mirror above: `neutral` class, capped
+      // shape (#1246 review).
       execute: (args) =>
-        input.runWithStore(async (store) => {
-          if (!store.assistantProposals) {
-            return { error: "proposal_persistence_unavailable" };
-          }
-          const built = await buildHoldingRestorationProposal(
-            { agentView: store.agentView, assistantProposals: store.assistantProposals },
-            args.holdingIds ?? [],
-            input.asOf,
-          );
-          return built.ok ? built.proposal : { error: built.error };
-        }),
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            const built = await buildHoldingRestorationProposal(
+              {
+                agentView: store.agentView,
+                assistantProposals: store.assistantProposals,
+              },
+              args.holdingIds ?? [],
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
     }),
     propose_reconstruction: tool({
       description:

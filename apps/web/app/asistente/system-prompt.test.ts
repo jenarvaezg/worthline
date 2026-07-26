@@ -56,6 +56,11 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/un dato puntual/i);
     expect(prompt).toMatch(/importar-extracto/);
     expect(prompt).not.toMatch(/llevar al alta/i);
+    // #1246: the unstructured rule covers captures too, and names the two
+    // ambiguities that stop a proposal — identity (which holding) and the figure.
+    expect(prompt).toMatch(/descripción de una captura/i);
+    expect(prompt).toMatch(/a qué holding se refiere, pregunta y no propongas/i);
+    expect(prompt).toMatch(/dudas de la cifra, no propongas/i);
     // And it must not send the model at a bulk-import tool the boundary will
     // reject: a reconstruction needs a document worthline actually validated.
     expect(prompt).toMatch(/propose_reconstruction/);

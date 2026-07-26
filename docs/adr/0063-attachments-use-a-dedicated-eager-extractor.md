@@ -194,6 +194,87 @@ contract — a real discriminated union — remains the validation boundary. The
 prompt-injection boundary above is unchanged: the document is data, any instruction
 inside it is ignored, and the only text that survives is schema-bounded warnings.
 
+## Amendment — the descriptive reading of an unidentified attachment (#1246)
+
+Until this amendment, only text-shaped attachments had a drain. A spreadsheet worthline
+could not validate still became conversational material (#865): its grid renders as
+text, so the model could describe and discuss it. An image had nothing equivalent — no
+route produced text out of pixels — so every capture outside the known `documentType`s
+died on the preview card, which is exactly the Revolut screenshot that opened PRD #1241.
+The system was generic in transport and not in outcome.
+
+**When the vision seam identifies no document, a second call to the same fixed vision
+model produces a bounded description of what is on screen.** It runs only on that
+branch: an identified document — or one identified and read with no rows — pays for one
+call, as before. The description enters the turn through the SAME unstructured lane the
+#865 grid uses: one fence sentinel, `neutralizeFence` over the content and the
+user-controlled file name, the file name bounded to the contract's 255 characters, a
+hard character cap on the text enforced where the text is produced, and the same framing
+— it is data, not instructions, and its numbers are not workspace facts. A second,
+thinner lane for images was rejected for the obvious reason: it would be a second set of
+defenses to keep correct.
+
+The reading is **best effort and does not survive the turn**. Any failure returns no
+description and the turn degrades to the #1242 «not processed» verdict, honest about what
+happened. Nothing is persisted: the description is used in the turn that produced it and
+discarded with the binary. Persisting it was evaluated and rejected — it would widen the
+injection window in time to buy a confirmation ceremony the preview already provides, and
+a «describe → confirm → propose» flow would feed the proposal with the agent's paraphrase
+instead of with the document.
+
+`unrecognized` grows a **closed `reason` discriminant** (`unidentified_document` /
+`empty_reading`) instead of the message-literal comparison #1243 left behind. Behaviour
+branches on that field — only the first value is the drain — so the branch must not
+depend on user-facing copy. The field is optional so previews already sitting in a client
+history keep revalidating, and it is what lets the verdict handed to the conversational
+model say precisely which of the two facts happened rather than the loose sentence #1243
+had to settle for.
+
+**The trade-off, stated plainly: free text derived from an untrusted image now reaches
+the conversational pool.** That is the same risk #865 accepted for spreadsheets, contained
+by the same mechanisms, and it is accepted for the same reason — the alternative is a
+product that dead-ends on the most common way a person shows you a number.
+
+What does **not** change:
+
+- The pool still never sees the pixels. Handing the binary to the conversational model
+  remains rejected (see the options above); only bounded text crosses.
+- No write capability is granted. Any mutation stays behind preview-and-confirm.
+- The binary is still not persisted, and neither is the description.
+- **No validated figures come from this path.** The card says there was no validated
+  reading, and the descriptive text never becomes an `ExtractedDocument`. Turning it into
+  a `documentType` is out of scope (#1244).
+- The unvalidated-evidence boundary (#1248) stays enforced **in code**, not in the
+  prompt, and it now recognizes this path too: the descriptive card carries its own
+  marker, so the two-turn bypass (describe in turn one, bulk-import in turn two with no
+  attachment) is closed for captures exactly as it is for sheets.
+
+Two defences were **tightened** with this amendment, because it lowers the cost of the
+carrier (a forwarded screenshot is the most natural vehicle there is) even though
+neither hole is new to it:
+
+- **The assistant renders no images.** A remote `<img src>` in a markdown reply is an
+  outbound GET the browser makes with no click, so it was the one channel through which
+  a successful injection could exfiltrate workspace figures without any interaction —
+  reachable already from a #865 spreadsheet grid or from any untrusted text a tool
+  returns. The image element is dropped from the rendered markdown (its alt text still
+  reads); prose and links are untouched. There is no URL allowlist to get wrong.
+- **A model-written proposal headline is bounded, and a batch baja answers to the
+  per-turn cap.** `summary` is the one field on a confirmation card the model writes,
+  next to the button that applies the write, so its length is bounded where it is
+  consumed rather than only hinted in the tool schema. The trash family keeps its
+  `neutral` classification — born from ids already read, reversible — but it takes a
+  *list* of holdings, which had made it the one proposal family with no per-turn limit
+  while unvalidated evidence was in play. Capping is not reclassifying.
+
+**Cost.** An attachment whose document is not identified now costs **two** pre-stream
+vision calls instead of one. That is deliberate: it is the only branch that pays, and the
+alternative is a dead end. Consistently with the metering scope decided in #1163, neither
+extractor call is counted by the assistant's token meter — that meter covers the
+conversational turn, the recurring cost, and the eager extractors are outside it by
+design because their contract hands callers validated JSON and never provider output.
+Surfacing extractor token usage remains the documented follow-up it already was.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

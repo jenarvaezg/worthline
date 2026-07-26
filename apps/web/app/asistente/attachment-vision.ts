@@ -1,6 +1,12 @@
 import { createGoogle } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 
+import {
+  type AttachmentExtractionResult,
+  checkAttachmentLimits,
+} from "./attachment-extraction-contract";
+import { countPdfPages } from "./attachment-pdf-bytes";
+
 /**
  * Shared plumbing for the dedicated vision extractors (ADR 0063). Screenshots and
  * PDFs are read by the same fixed Google model, outside the conversational pool.
@@ -9,6 +15,40 @@ import type { LanguageModel } from "ai";
  */
 
 export const VISION_EXTRACTOR_DEFAULT_MODEL = "gemini-3.1-flash-lite";
+
+/** Which file family carries the document. It decides transport and guards only. */
+export type VisionAttachmentKind = "image" | "pdf";
+
+/** One attachment as the vision seam receives it, shared by every reading of it. */
+export interface VisionAttachmentInput {
+  bytes: Uint8Array;
+  fileName: string;
+  mimeType: string;
+  kind: VisionAttachmentKind;
+}
+
+/**
+ * Type, byte-size and per-family bounds, before any model work. It lives with the
+ * shared input type rather than inside one reading because EVERY reading of an
+ * attachment owes the same check: the extraction (#1243) and the descriptive reading
+ * (#1246) are separate exported entry points, so an order-of-calls convention is not
+ * a boundary. Re-running it is a handful of comparisons plus a page count over bytes
+ * already in memory — cheap enough that no caller has a reason to skip it.
+ */
+export function visionAttachmentLimitFailure(
+  input: VisionAttachmentInput,
+): Extract<AttachmentExtractionResult, { status: "out_of_limits" }> | null {
+  const base = {
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    sizeBytes: input.bytes.byteLength,
+  };
+  return checkAttachmentLimits(
+    input.kind === "pdf"
+      ? { ...base, kind: "pdf", pageCount: countPdfPages(input.bytes) ?? 0 }
+      : { ...base, kind: "image" },
+  );
+}
 
 /** Bounded backoff for a `503` (busy) provider. Every other error fails fast. */
 export const VISION_EXTRACTOR_RETRY_DELAYS_MS = [250, 750] as const;

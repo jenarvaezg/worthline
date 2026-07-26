@@ -275,8 +275,10 @@ describe("vision attachment extractor · the two shapes of unrecognized", () => 
       sleep: vi.fn(),
     });
 
+    // The closed discriminant, not the copy, is what #1246 branches on.
     expect(result).toEqual({
       message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
       status: "unrecognized",
     });
   });
@@ -293,6 +295,7 @@ describe("vision attachment extractor · the two shapes of unrecognized", () => 
 
     expect(result).toEqual({
       message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
       status: "unrecognized",
     });
   });
@@ -322,14 +325,17 @@ describe("vision attachment extractor · the two shapes of unrecognized", () => 
     });
 
     // Same envelope status — the contract does not grow a fourth outcome (#1247's
-    // negative case still grades on `unrecognized`) — but different messages, so
-    // #1246 can tell "nothing recognized" from "recognized, no rows".
+    // negative case still grades on `unrecognized`) — but a different `reason`, so
+    // #1246 can tell "nothing recognized" from "recognized, no rows" without
+    // comparing user-facing copy.
     expect(emptyPositions).toEqual({
       message: EMPTY_POSITIONS_MESSAGE,
+      reason: "empty_reading",
       status: "unrecognized",
     });
     expect(emptyBalances).toEqual({
       message: EMPTY_BALANCE_SERIES_MESSAGE,
+      reason: "empty_reading",
       status: "unrecognized",
     });
     expect(EMPTY_POSITIONS_MESSAGE).not.toBe(UNIDENTIFIED_DOCUMENT_MESSAGE);

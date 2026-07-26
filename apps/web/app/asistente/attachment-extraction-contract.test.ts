@@ -280,6 +280,48 @@ describe("attachment extraction contract", () => {
     expect(parseExtractionResult(input).status).toBe(status);
   });
 
+  /**
+   * The `unrecognized` discriminant (#1246). It exists because behaviour branches on
+   * WHICH of the two facts the status carries — only «no document identified» cascades
+   * into a descriptive reading — and a comparison against a message literal would tie
+   * that branch to user-facing copy.
+   */
+  describe("unrecognized reason discriminant (#1246)", () => {
+    test.each([
+      "unidentified_document",
+      "empty_reading",
+    ] as const)("preserves the closed %s reason", (reason) => {
+      const result = parseExtractionResult({
+        message: "Nada extraído.",
+        reason,
+        status: "unrecognized",
+      });
+      expect(result).toEqual({
+        message: "Nada extraído.",
+        reason,
+        status: "unrecognized",
+      });
+    });
+
+    test("still accepts an unrecognized envelope with no reason at all", () => {
+      // Previews already sitting in a client history predate the field, and
+      // `parseAttachmentPreviewData` revalidates them on every turn.
+      expect(
+        parseExtractionResult({ message: "Nada extraído.", status: "unrecognized" }),
+      ).toEqual({ message: "Nada extraído.", status: "unrecognized" });
+    });
+
+    test("refuses a reason outside the closed vocabulary", () => {
+      expect(
+        parseExtractionResult({
+          message: "Nada extraído.",
+          reason: "porque_yo_lo_digo",
+          status: "unrecognized",
+        }).status,
+      ).toBe("failure");
+    });
+  });
+
   test("accepts every v1 attachment family at the exact size and unit boundaries", () => {
     for (const input of [
       {
