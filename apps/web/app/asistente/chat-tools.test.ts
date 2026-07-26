@@ -10,6 +10,7 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { createChatTools } from "@web/asistente/chat-tools";
+import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
 import type { AgentViewReadStore, WorthlineStore } from "@worthline/db";
@@ -749,6 +750,348 @@ describe("createChatTools · premium ingestion gate (#1162)", () => {
     }
   });
 });
+
+/**
+ * The unvalidated-evidence boundary (#1248, PRD #1241) as code, not prompt: a
+ * single fact verifiable at a glance may feed a proposal; a bulk import from a
+ * document worthline never validated is routed to the deterministic path.
+ *
+ * Every list here is DERIVED from `UNVALIDATED_EVIDENCE_CLASSES`, so classifying
+ * a new tool without wiring its guard fails CI instead of shipping a hole.
+ */
+describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
+  const toolsOfClass = (kind: string) =>
+    Object.entries(UNVALIDATED_EVIDENCE_CLASSES)
+      .filter(([, value]) => value === kind)
+      .map(([name]) => name);
+  const REJECTED_TOOLS = toolsOfClass("rejects");
+  const WHITELIST_TOOLS = toolsOfClass("accepts");
+
+  const CUENTA = {
+    currentValueMinor: 2_500_00,
+    family: "stored",
+    instrument: "current_account",
+    name: "Cuenta BBVA",
+  };
+
+  /**
+   * One set of args that really builds a proposal, per whitelisted tool — so the
+   * cap is proven for ALL of them, not just the cheapest one to call.
+   */
+  const WHITELIST_ARGS: Record<
+    string,
+    (ids: Record<string, string>) => Record<string, unknown>
+  > = {
+    propose_correction: (ids) => ({
+      correction: { kind: "edit_config", name: "Cuenta renombrada" },
+      holdingId: ids["cuenta"],
+    }),
+    propose_holding: () => ({ ...CUENTA }),
+    propose_property_valuation_anchor: (ids) => ({
+      assetId: ids["casa"],
+      documentName: "tasacion.pdf",
+      documentSha256: "a".repeat(64),
+      valuationDate: "2020-06-15",
+      valueMinor: 220_000_00,
+    }),
+  };
+
+  async function workspaceStore(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 2_500_00,
+      id: "cuenta",
+      instrument: "current_account",
+      liquidityTier: "cash",
+      name: "Cuenta BBVA",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 300_000_00,
+      id: "casa",
+      isPrimaryResidence: true,
+      liquidityTier: "housing",
+      name: "Casa",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    return store;
+  }
+
+  /** entityId \u2192 public `wl_hld_\u2026` id, which is what the tools take. */
+  async function publicIds(store: WorthlineStore): Promise<Record<string, string>> {
+    const rows = await store.agentView.readPublicIds();
+    return Object.fromEntries(
+      rows
+        .filter((row) => row.entityType === "holding")
+        .map((row) => [row.entityId, row.publicId]),
+    );
+  }
+
+  function toolsWithEvidence(store: WorthlineStore, unvalidatedEvidence = true) {
+    return createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      unvalidatedEvidence,
+    });
+  }
+
+  it("has a real success fixture for every whitelisted tool", () => {
+    // Forces the next slice that whitelists a tool to prove it can build.
+    expect(Object.keys(WHITELIST_ARGS).sort()).toEqual([...WHITELIST_TOOLS].sort());
+  });
+
+  it.each(
+    REJECTED_TOOLS,
+  )("routes %s to the deterministic path, without touching the builder", async (name) => {
+    const store = await workspaceStore();
+    let storeReads = 0;
+    const tools = createChatTools({
+      runWithStore: (run) => {
+        storeReads += 1;
+        return run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        });
+      },
+      asOf: AS_OF,
+      unvalidatedEvidence: true,
+    });
+
+    const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
+      error?: string;
+      message?: string;
+    };
+
+    expect(result?.error, name).toBe("unvalidated_evidence");
+    // The message ROUTES to the deterministic surface instead of asking again
+    // for the very file the user just uploaded.
+    expect(result?.message, name).toMatch(/importar-extracto/);
+    expect(result?.message, name).not.toMatch(/sube el fichero/i);
+    // No proposal was ever prepared: the store was not even opened.
+    expect(storeReads, name).toBe(0);
+  });
+
+  it.each(WHITELIST_TOOLS)("keeps %s working in that same turn", async (name) => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store);
+
+    const result = (await tools[name]?.execute?.(
+      WHITELIST_ARGS[name]!(await publicIds(store)) as never,
+      toolCallContext(),
+    )) as { proposalType?: string };
+
+    // Every success carries `proposalType` — the positive contract the cap reads.
+    expect(result?.proposalType, name).toBeTruthy();
+  });
+
+  it.each(
+    WHITELIST_TOOLS,
+  )("spends the turn's single proposal slot when %s succeeds", async (name) => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store);
+    const ids = await publicIds(store);
+
+    const first = (await tools[name]?.execute?.(
+      WHITELIST_ARGS[name]!(ids) as never,
+      toolCallContext(),
+    )) as { proposalType?: string };
+    expect(first?.proposalType, name).toBeTruthy();
+
+    // The cap spans the several tool rounds of a turn and covers every
+    // whitelisted tool, not just the one that spent it.
+    for (const other of WHITELIST_TOOLS) {
+      const capped = (await tools[other]?.execute?.(
+        WHITELIST_ARGS[other]!(ids) as never,
+        toolCallContext(),
+      )) as { error?: string };
+      expect(capped?.error, `${name} \u2192 ${other}`).toBe("unvalidated_evidence_limit");
+    }
+  });
+
+  /**
+   * The cap must hold when the model fires several tool-calls in the SAME step:
+   * the AI SDK executes them with `Promise.all`, so a check-then-consume around
+   * an `await` would let all of them through with `used = 0` \u2014 the bulk import
+   * walking in through the door this slice claims to close.
+   */
+  it("holds the cap under concurrent tool calls in one step", async () => {
+    const store = await workspaceStore();
+    let drafts = 0;
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: {
+            ...store.assistantProposals,
+            create: (proposal) => {
+              drafts += 1;
+              return store.assistantProposals.create(proposal);
+            },
+          },
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      unvalidatedEvidence: true,
+    });
+
+    const results = (await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        tools["propose_holding"]?.execute?.(
+          { ...CUENTA, name: `Cuenta ${index}` },
+          toolCallContext(),
+        ),
+      ),
+    )) as { proposalType?: string; error?: string }[];
+
+    expect(results.filter((result) => result?.proposalType)).toHaveLength(1);
+    expect(
+      results.filter((result) => result?.error === "unvalidated_evidence_limit"),
+    ).toHaveLength(3);
+    // And only one draft ever reached the store.
+    expect(drafts).toBe(1);
+  });
+
+  it("does not spend the cap on a builder validation error", async () => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store);
+
+    const rejected = (await tools["propose_holding"]?.execute?.(
+      { family: "stored", instrument: "current_account", name: "" },
+      toolCallContext(),
+    )) as { error?: string };
+    expect(rejected?.error).toBeTruthy();
+    expect(rejected?.error).not.toBe("unvalidated_evidence_limit");
+
+    // The cup was never drunk: the real proposal still goes through.
+    const result = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
+    expect(result).toMatchObject({ proposalType: "holding_creation" });
+  });
+
+  it("gives the slot back when the builder throws", async () => {
+    const store = await workspaceStore();
+    const tools = toolsWithEvidence(store);
+
+    // An unknown id makes the id resolution throw, past the gate.
+    await expect(
+      tools["propose_correction"]?.execute?.(
+        { correction: { kind: "edit_config", name: "x" }, holdingId: "wl_hld_nope" },
+        toolCallContext(),
+      ),
+    ).rejects.toThrow();
+
+    const result = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
+    expect(result).toMatchObject({ proposalType: "holding_creation" });
+  });
+
+  // A turn with no unvalidated evidence behaves exactly as before the boundary
+  // existed \u2014 including the default (flag absent), which read-only fixtures and
+  // the evals rely on.
+  it.each([
+    { label: "explicit false", unvalidatedEvidence: false },
+    { label: "flag absent (the default)", unvalidatedEvidence: undefined },
+  ])("gates nothing on a turn with no unvalidated evidence \u00b7 $label", async ({
+    unvalidatedEvidence,
+  }) => {
+    const store = await workspaceStore();
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      ...(unvalidatedEvidence === undefined ? {} : { unvalidatedEvidence }),
+    });
+
+    for (const name of REJECTED_TOOLS) {
+      // Past the gate the builder may reject empty fixture args however it likes
+      // (envelope or throw) \u2014 what matters is that it RAN.
+      const result = await callToolSafely(tools, name);
+      expect(result?.error, name).not.toBe("unvalidated_evidence");
+    }
+    // And more than one single-fact proposal per turn stays possible: the cap
+    // exists only to stop a bulk import sneaking in through the side door.
+    for (const name of ["Cuenta 1", "Cuenta 2"]) {
+      const result = await tools["propose_holding"]?.execute?.(
+        { ...CUENTA, name },
+        toolCallContext(),
+      );
+      expect(result, name).toMatchObject({ proposalType: "holding_creation" });
+    }
+  });
+
+  it("accumulates with the premium ingestion gate instead of replacing it", async () => {
+    const store = await workspaceStore();
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      ingestionAllowed: false,
+      unvalidatedEvidence: true,
+    });
+
+    // Where the paywall applied, it still answers: the reason is different.
+    const premium = (await tools["propose_statement_import"]?.execute?.(
+      {},
+      toolCallContext(),
+    )) as { error?: string };
+    expect(premium?.error).toBe("premium_required");
+
+    // A bulk-import tool with no paywall of its own still hits the boundary.
+    const boundary = (await tools["propose_balance_history_import"]?.execute?.(
+      {},
+      toolCallContext(),
+    )) as { error?: string };
+    expect(boundary?.error).toBe("unvalidated_evidence");
+
+    // Free + unvalidated evidence: manual tracking of a single fact stays open.
+    const alta = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
+    expect(alta).toMatchObject({ proposalType: "holding_creation" });
+  });
+});
+
+/** Execute a tool tolerating a builder that throws on fixture-empty args. */
+async function callToolSafely(
+  tools: ReturnType<typeof createChatTools>,
+  name: string,
+): Promise<{ error?: string } | undefined> {
+  try {
+    return (await tools[name]?.execute?.({} as never, toolCallContext())) as {
+      error?: string;
+    };
+  } catch {
+    return { error: "builder_threw" };
+  }
+}
 
 function toolCallContext(): never {
   return { toolCallId: "call-1", messages: [] } as unknown as never;

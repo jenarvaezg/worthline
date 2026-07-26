@@ -59,6 +59,13 @@ import { buildReconstructionProposal } from "@web/asistente/reconstruction-propo
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import {
+  consumesUnvalidatedEvidenceBudget,
+  createUnvalidatedProposalBudget,
+  type UnvalidatedEvidenceError,
+  unvalidatedEvidenceCapReached,
+  unvalidatedEvidenceRejected,
+} from "@web/asistente/unvalidated-evidence-gate";
+import {
   PAYWALL_RECONCILE_MESSAGE,
   PAYWALL_STATEMENT_MESSAGE,
   premiumRequired,
@@ -124,6 +131,17 @@ export interface ChatToolsInput {
    * text-only ingestion attempt. Defaults to allowed for read-only fixtures.
    */
   ingestionAllowed?: boolean;
+  /**
+   * Whether this turn's only document is evidence worthline did NOT validate
+   * (#1248, PRD #1241) — computed by the chat route, which is what knows what the
+   * turn carries. When true, the bulk-import tools short-circuit with a typed
+   * envelope that routes to the deterministic path, the single-fact proposal
+   * tools stay open but capped at one per turn, and every read is untouched.
+   * Orthogonal to {@link ingestionAllowed}: the two gates ACCUMULATE, they never
+   * substitute one another. Defaults to «no unvalidated evidence», so read-only
+   * fixtures and the evals keep their exact behaviour.
+   */
+  unvalidatedEvidence?: boolean;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -668,6 +686,35 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
   // Premium document ingestion (#1162): false only for an authenticated free
   // workspace. The gated tools relay this honestly; manual tracking stays open.
   const ingestionGated = input.ingestionAllowed === false;
+
+  // The unvalidated-evidence boundary (#1248): the classification and the
+  // envelopes live in the pure gate module; here we only apply them. The budget
+  // is this turn's single piece of mutable state — `createChatTools` runs once
+  // per turn, so the cap spans every tool round `streamText` may take.
+  const unvalidatedEvidence = input.unvalidatedEvidence === true;
+  const proposalBudget = createUnvalidatedProposalBudget();
+
+  /**
+   * Wrap a single-fact proposal (the whitelist): allowed on unvalidated
+   * evidence, but only once per turn — repeating a puntual tool twelve times is
+   * the bulk import the frontier forbids. The slot is reserved BEFORE the await
+   * (the AI SDK runs a step's tool-calls concurrently) and handed back when no
+   * proposal came out, so a builder error or throw costs the user nothing.
+   */
+  const withProposalBudget = async <T>(
+    run: () => Promise<T>,
+  ): Promise<T | UnvalidatedEvidenceError> => {
+    if (!unvalidatedEvidence) return run();
+    if (!proposalBudget.reserve()) return unvalidatedEvidenceCapReached();
+    try {
+      const result = await run();
+      if (!consumesUnvalidatedEvidenceBudget(result)) proposalBudget.release();
+      return result;
+    } catch (error) {
+      proposalBudget.release();
+      throw error;
+    }
+  };
 
   return {
     get_financial_context: tool({
@@ -1336,6 +1383,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: STATEMENT_IMPORT_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals) {
             return { error: "proposal_persistence_unavailable" };
@@ -1364,8 +1412,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "No infieras capital, plazo ni cuota: envía solo fecha, saldo en céntimos y, si consta, tipo anual. " +
         "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
-      execute: (args) =>
-        input.runWithStore(async (store) => {
+      execute: (args) => {
+        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
+        return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
           }
@@ -1382,27 +1431,30 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
-        }),
+        });
+      },
     }),
     propose_property_valuation_anchor: tool({
       description:
         "Prepara una propuesta de ancla de tasación para un inmueble inequívoco a partir de un documento ya extraído por el seam de adjuntos. Pasa nombre y SHA-256 reales del documento, y extrae únicamente fecha y valor total en céntimos; la app calcula la curva y la marca como no verificada.",
       inputSchema: PROPERTY_VALUATION_PROPOSAL_SCHEMA,
       execute: (args) =>
-        input.runWithStore(async (store) => {
-          if (!store.assistantProposals || !store.assets)
-            return { error: "proposal_persistence_unavailable" };
-          const assetId = await resolveInternalHoldingId(
-            store.agentView,
-            args.assetId ?? "",
-          );
-          const built = await buildPropertyValuationProposal(
-            { assistantProposals: store.assistantProposals, assets: store.assets },
-            { ...args, assetId },
-            input.asOf,
-          );
-          return built.ok ? built.proposal : { error: built.error };
-        }),
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals || !store.assets)
+              return { error: "proposal_persistence_unavailable" };
+            const assetId = await resolveInternalHoldingId(
+              store.agentView,
+              args.assetId ?? "",
+            );
+            const built = await buildPropertyValuationProposal(
+              { assistantProposals: store.assistantProposals, assets: store.assets },
+              { ...args, assetId },
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
     }),
     propose_correction: tool({
       description:
@@ -1414,31 +1466,33 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Split, alta o baja → wizard o papelera, no esta tool.",
       inputSchema: CORRECTION_PROPOSAL_SCHEMA,
       execute: (args) =>
-        input.runWithStore(async (store) => {
-          if (!store.assistantProposals || !store.liabilities || !store.assets) {
-            return { error: "proposal_persistence_unavailable" };
-          }
-          if (!args.correction?.kind) return { error: "correction_kind_required" };
-          const internalId = await resolveInternalHoldingId(
-            store.agentView,
-            args.holdingId ?? "",
-          );
-          const built = await buildCorrectionProposal(
-            {
-              assets: store.assets,
-              assistantProposals: store.assistantProposals,
-              liabilities: store.liabilities,
-            },
-            {
-              correction: args.correction as unknown as CorrectionInput,
-              holdingId: internalId,
-              publicHoldingId: args.holdingId ?? "",
-              ...(args.summary === undefined ? {} : { summary: args.summary }),
-            },
-            input.asOf,
-          );
-          return built.ok ? built.proposal : { error: built.error };
-        }),
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals || !store.liabilities || !store.assets) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            if (!args.correction?.kind) return { error: "correction_kind_required" };
+            const internalId = await resolveInternalHoldingId(
+              store.agentView,
+              args.holdingId ?? "",
+            );
+            const built = await buildCorrectionProposal(
+              {
+                assets: store.assets,
+                assistantProposals: store.assistantProposals,
+                liabilities: store.liabilities,
+              },
+              {
+                correction: args.correction as unknown as CorrectionInput,
+                holdingId: internalId,
+                publicHoldingId: args.holdingId ?? "",
+                ...(args.summary === undefined ? {} : { summary: args.summary }),
+              },
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
     }),
     search_market_symbol: tool({
       description:
@@ -1464,28 +1518,30 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Un split no está soportado: dilo honestamente. Corregir o dar de baja un holding existente usan sus propias tools, no esta.",
       inputSchema: HOLDING_CREATION_PROPOSAL_SCHEMA,
       execute: (args) =>
-        input.runWithStore(async (store) => {
-          if (
-            !store.assistantProposals ||
-            !store.liabilities ||
-            !store.assets ||
-            !store.workspace
-          ) {
-            return { error: "proposal_persistence_unavailable" };
-          }
-          const built = await buildHoldingCreationProposal(
-            {
-              agentView: store.agentView,
-              assets: store.assets,
-              assistantProposals: store.assistantProposals,
-              liabilities: store.liabilities,
-              workspace: store.workspace,
-            },
-            args,
-            input.asOf,
-          );
-          return built.ok ? built.proposal : { error: built.error };
-        }),
+        withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (
+              !store.assistantProposals ||
+              !store.liabilities ||
+              !store.assets ||
+              !store.workspace
+            ) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            const built = await buildHoldingCreationProposal(
+              {
+                agentView: store.agentView,
+                assets: store.assets,
+                assistantProposals: store.assistantProposals,
+                liabilities: store.liabilities,
+                workspace: store.workspace,
+              },
+              args,
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        ),
     }),
     propose_holding_removal: tool({
       description:
@@ -1532,6 +1588,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
@@ -1566,6 +1623,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: MIXED_DOCUMENT_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
+        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities || !store.assets)
             return { error: "proposal_persistence_unavailable" };
@@ -1611,6 +1669,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: RECONCILE_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
+        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (
             !store.assistantProposals ||

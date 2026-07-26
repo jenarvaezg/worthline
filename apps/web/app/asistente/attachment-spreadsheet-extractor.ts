@@ -235,10 +235,6 @@ export function extractPositionsFromSpreadsheet(
   });
 }
 
-/** Card message when a readable spreadsheet is handed to the model to discuss. */
-export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
-  "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.";
-
 // Bounds keep an arbitrary workbook from flooding the model prompt. A quick
 // read of the shape is enough to converse; the whole book is not needed.
 const MAX_CONTEXT_SHEETS = 8;
