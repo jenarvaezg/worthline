@@ -18,7 +18,7 @@ import { describeVisionAttachment } from "@web/asistente/attachment-vision-descr
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
-  collapseStaleToolOutputs,
+  dropStaleToolPayloads,
   pruneOrphanToolCalls,
   withoutToolParts,
 } from "@web/asistente/chat-history";
@@ -107,8 +107,15 @@ const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
  * permanent for the same reason. Oversized history is SHRUNK instead, below.
  */
 const MAX_TOOL_PROMPT_CHARS = 48_000;
-/** What the readings behind the freshest one share before being retired. */
+/** What the readings behind the freshest one share before being dropped. */
 const MAX_STALE_TOOL_READ_CHARS = 24_000;
+/**
+ * And how many tool parts may survive at all, because characters alone do not
+ * bound the prompt: the SDK expands each kept part into a call AND a result, so
+ * 10 000 tiny parts fitted the character budget and still tripled it. Six steps
+ * per turn ({@link MAX_STEPS}) means this covers several turns of grounding.
+ */
+const MAX_TOOL_PARTS_IN_PROMPT = 40;
 /** Read tool(s) + answer + suggest_actions (#631), with headroom for one extra read. */
 const MAX_STEPS = 6;
 /**
@@ -119,11 +126,12 @@ const MAX_STEPS = 6;
  * is refused before a byte is parsed.
  *
  * Tool payloads ride along without a ceiling of their own (#1260), so this is the
- * one door a very long conversation can still reach: 40 turns — {@link
- * MAX_MESSAGES} — of the largest reading measured (113 773 chars) land just under
- * it. Deliberately not widened: this is the #1180 door against a hostile body, and
- * the copy for its 413 says «la petición» rather than blaming a file that a
- * JSON turn does not even carry.
+ * one door a very long conversation can still reach — and it CAN: 40 turns of the
+ * largest reading measured (113 773 chars) plus the other two budgets exceed it
+ * (4 822 920 > 4 718 592), and a single turn can carry up to {@link MAX_STEPS}
+ * readings, so ~9 multi-read turns suffice. Deliberately not widened: this is the
+ * #1180 door against a hostile body. What is fixed instead is the copy of its 413,
+ * which no longer blames a file that a JSON turn does not even carry.
  */
 const MAX_REQUEST_BYTES = ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes + 512 * 1024;
 
@@ -562,13 +570,14 @@ export async function POST(request: Request): Promise<Response> {
       orphanToolCalls: pruned.orphanToolCallIds.length,
     });
   }
-  const collapsed = collapseStaleToolOutputs(pruned.messages, {
+  const shrunk = dropStaleToolPayloads(pruned.messages, {
+    maxParts: MAX_TOOL_PARTS_IN_PROMPT,
     staleChars: MAX_STALE_TOOL_READ_CHARS,
     totalChars: MAX_TOOL_PROMPT_CHARS,
   });
-  if (collapsed.collapsedToolCallIds.length > 0) {
+  if (shrunk.droppedToolCallIds.length > 0) {
     console.info("Assistant history shrunk to fit", {
-      retiredToolPayloads: collapsed.collapsedToolCallIds.length,
+      droppedToolPayloads: shrunk.droppedToolCallIds.length,
     });
   }
 
@@ -576,7 +585,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     modelMessages = await convertToModelMessages(
       prepareAttachmentMessagesForModel(
-        collapsed.messages,
+        shrunk.messages,
         currentPreview,
         unstructuredAttachment,
       ),
