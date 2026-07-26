@@ -27,7 +27,12 @@ function toolCall(state: string, toolCallId: string, output?: unknown) {
   };
 }
 
-const BUDGET = { maxParts: 40, staleChars: 24_000, totalChars: 48_000 };
+const BUDGET = {
+  maxParts: 40,
+  proposalChars: 48_000,
+  staleChars: 24_000,
+  totalChars: 80_000,
+};
 
 describe("pruneOrphanToolCalls", () => {
   it("drops a call whose result never arrived and keeps the prose beside it", () => {
@@ -157,6 +162,7 @@ describe("dropStaleToolPayloads", () => {
 
     const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, {
       maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 400,
     });
@@ -182,6 +188,7 @@ describe("dropStaleToolPayloads", () => {
 
     const { messages } = dropStaleToolPayloads(history, {
       maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 700,
     });
@@ -212,6 +219,7 @@ describe("dropStaleToolPayloads", () => {
 
     const { messages } = dropStaleToolPayloads(history, {
       maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 1_000,
     });
@@ -282,10 +290,32 @@ describe("dropStaleToolPayloads", () => {
 
     const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, BUDGET);
 
-    expect(droppedToolCallIds).not.toContain("p1");
+    // BOTH survive: charging the proposal first starved the reading this turn's
+    // answer stands on, and charging it last made it vanish when it mattered.
+    expect(droppedToolCallIds).toEqual([]);
     expect(JSON.stringify(messages[0])).toContain("PROPUESTA");
-    // And the reading that took the rest of the room is the one that goes.
-    expect(droppedToolCallIds).toContain("c1");
+    expect(JSON.stringify(messages[2])).toContain("LECTURA");
+  });
+
+  it("drops a part whose tool name could not be one of ours", () => {
+    // The name is the ONE field the SDK writes twice — call and result — so a
+    // 47 000-character `type` fitted a 48 000 ceiling and landed 94 285 in the
+    // prompt. No real tool name is longer than ~34 characters.
+    const history = [
+      assistant("a1", {
+        type: `tool-${"A".repeat(47_000)}`,
+        toolCallId: "c1",
+        state: "output-available",
+        input: {},
+        output: { ok: true },
+      }),
+      user("u1", "sigue"),
+    ] as unknown as UIMessage[];
+
+    const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, BUDGET);
+
+    expect(droppedToolCallIds).toEqual(["c1"]);
+    expect(JSON.stringify(messages)).not.toContain("AAAA");
   });
 
   it("does nothing when everything fits, by identity", () => {
@@ -315,6 +345,7 @@ describe("dropStaleToolPayloads", () => {
 
     const { messages } = dropStaleToolPayloads(history, {
       maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 600,
     });
@@ -330,7 +361,12 @@ describe("dropStaleToolPayloads", () => {
     ];
     const before = JSON.parse(JSON.stringify(history));
 
-    dropStaleToolPayloads(history, { maxParts: 40, staleChars: 100, totalChars: 600 });
+    dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
+      staleChars: 100,
+      totalChars: 600,
+    });
 
     expect(history).toEqual(before);
   });

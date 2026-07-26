@@ -2,9 +2,11 @@
  * Repairs on the history the browser sends back with every turn (#1260).
  *
  * The client keeps the whole conversation and re-sends it, so anything the server
- * refuses once it refuses forever: a conversation does not fail, it dies. The
- * invariant these repairs buy is that **a conversation never dies because of its
- * own history** — the history is shrunk, never rejected.
+ * refuses once it refuses forever: a conversation does not fail, it dies. What
+ * these repairs buy is that its SIZE is never the reason: an oversized history is
+ * shrunk here, never rejected. Two ceilings in the route still refuse outright and
+ * are documented there — `MAX_MESSAGES` and the request's byte cap — so this is
+ * not an unconditional promise.
  */
 
 import { isToolUIPart, type UIMessage } from "ai";
@@ -104,17 +106,31 @@ export function toolPartChars(part: Part): number {
   return JSON.stringify(part).length;
 }
 
+/**
+ * A tool name longer than this cannot be one of ours (the longest is ~34 chars),
+ * and the name is the ONE field the SDK writes twice — into the `tool-call` and
+ * into the `tool-result`. Measured: a part with a 47 000-character `type` weighs
+ * 47 234 in the body, fits a 48 000 ceiling, and lands 94 285 characters in the
+ * prompt. Capping the name is what keeps the ceiling meaning what it says.
+ */
+const MAX_TOOL_NAME_CHARS = 64;
+
 export interface CollapseBudget {
   /** Hard ceiling on ALL tool payloads reaching the provider from history. */
   totalChars: number;
   /** What the readings behind the freshest one share. */
   staleChars: number;
   /**
+   * What ALL the proposals share, so a pile of them cannot starve the readings —
+   * and, being a sub-budget of `totalChars`, cannot starve them by accident either.
+   */
+  proposalChars: number;
+  /**
    * How many tool parts may survive at all. A ceiling in characters is not enough:
-   * the SDK expands every kept part into a `tool-call` PLUS a `tool-result`, with
-   * the tool name in both, so thousands of tiny parts fit the character budget and
-   * still triple it in the prompt. A real conversation carries at most
-   * `MAX_STEPS` readings per turn, so a few dozen is all the grounding there is.
+   * every kept part becomes a call plus a result, so thousands of tiny parts fit
+   * the character budget and still triple the prompt. A real conversation carries
+   * at most `MAX_STEPS` readings per turn, so a few dozen is all the grounding
+   * there is.
    */
   maxParts: number;
 }
@@ -130,17 +146,22 @@ export interface CollapseBudget {
  * single message turned a 619 000-character body into 2 338 652 characters of
  * prompt — a ceiling that inflates is not a ceiling.
  *
- * Two allowances, because the payloads are not worth the same, and PROPOSALS
- * reserve their room BEFORE the readings take it: a proposal the user is about to
- * confirm must still be visible when they say yes, and charging it after a fresh
- * reading is what made it disappear exactly when it mattered. The freshest reading
- * may then use what is left of {@link CollapseBudget.totalChars}, and everything
- * older is held to {@link CollapseBudget.staleChars} of the same running total.
+ * Three claims on the budget, in this order, because they are not worth the same:
  *
- * Since no part is kept beyond `totalChars` and no more than
- * {@link CollapseBudget.maxParts} survive at all, what history contributes is
- * bounded in both dimensions whatever arrives — the CLIENT writes these parts, so
- * this is a ceiling on a hostile payload as much as on a long conversation.
+ * 1. **The freshest reading**, which is what this turn's answer stands on.
+ * 2. **The proposals**, newest first, sharing {@link CollapseBudget.proposalChars}:
+ *    one the user is about to confirm must still be visible when they say yes.
+ * 3. **The older readings**, held to {@link CollapseBudget.staleChars}.
+ *
+ * The order matters and both extremes were wrong: charging the proposals last made
+ * one vanish exactly when it mattered, and charging them first starved the reading
+ * the answer needs today.
+ *
+ * Since no part is kept beyond `totalChars`, none survives with an implausible tool
+ * name, and no more than {@link CollapseBudget.maxParts} survive at all, what
+ * history contributes is bounded in every dimension whatever arrives — the CLIENT
+ * writes these parts, so this is a ceiling on a hostile payload as much as on a
+ * long conversation.
  */
 export function dropStaleToolPayloads(
   messages: UIMessage[],
@@ -161,16 +182,21 @@ export function dropStaleToolPayloads(
   let kept = 0;
   const admit = (
     entries: typeof located,
-    allowanceOf: (isFreshest: boolean) => number,
+    allowance: number,
+    groupCap = allowance,
   ): void => {
+    let group = 0;
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const { at, part } = entries[index]!;
       const size = toolPartChars(part);
       if (
         kept < budget.maxParts &&
-        spent + size <= allowanceOf(index === entries.length - 1)
+        toolName(part).length <= MAX_TOOL_NAME_CHARS &&
+        group + size <= groupCap &&
+        spent + size <= allowance
       ) {
         spent += size;
+        group += size;
         kept += 1;
         continue;
       }
@@ -178,14 +204,15 @@ export function dropStaleToolPayloads(
       droppedToolCallIds.push((part as { toolCallId: string }).toolCallId);
     }
   };
+  const readings = located.filter(({ part }) => !isProposalPart(part));
+  const freshestReading = readings.slice(-1);
+  admit(freshestReading, budget.totalChars);
   admit(
     located.filter(({ part }) => isProposalPart(part)),
-    () => budget.totalChars,
+    budget.totalChars,
+    budget.proposalChars,
   );
-  admit(
-    located.filter(({ part }) => !isProposalPart(part)),
-    (isFreshest) => (isFreshest ? budget.totalChars : budget.staleChars),
-  );
+  admit(readings.slice(0, -1), budget.staleChars);
   if (drop.size === 0) return { messages, droppedToolCallIds };
 
   return {

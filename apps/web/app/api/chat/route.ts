@@ -106,7 +106,14 @@ const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
  * There is deliberately NO size ceiling that refuses them either: a refusal is
  * permanent for the same reason. Oversized history is SHRUNK instead, below.
  */
-const MAX_TOOL_PROMPT_CHARS = 48_000;
+const MAX_TOOL_PROMPT_CHARS = 80_000;
+/**
+ * Room for the freshest reading AND a pending proposal at the same time: measured,
+ * `get_snapshot_history` with summary rows is 42 550 characters, so a tighter total
+ * meant one of the two had to go — the reading the answer stands on, or the
+ * proposal the user is about to confirm.
+ */
+const MAX_TOOL_PROPOSAL_CHARS = 48_000;
 /** What the readings behind the freshest one share before being dropped. */
 const MAX_STALE_TOOL_READ_CHARS = 24_000;
 /**
@@ -572,6 +579,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   const shrunk = dropStaleToolPayloads(pruned.messages, {
     maxParts: MAX_TOOL_PARTS_IN_PROMPT,
+    proposalChars: MAX_TOOL_PROPOSAL_CHARS,
     staleChars: MAX_STALE_TOOL_READ_CHARS,
     totalChars: MAX_TOOL_PROMPT_CHARS,
   });
