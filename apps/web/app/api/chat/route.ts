@@ -1,5 +1,7 @@
 import {
   type AttachmentPreviewData,
+  hasUnstructuredEvidenceInHistory,
+  isValidatedDocument,
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
@@ -8,10 +10,8 @@ import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extra
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
 import { extractBalanceSeriesFromPdf } from "@web/asistente/attachment-pdf-extractor";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
-import {
-  renderSpreadsheetForContext,
-  UNSTRUCTURED_SPREADSHEET_MESSAGE,
-} from "@web/asistente/attachment-spreadsheet-extractor";
+import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
+import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { createChatTools } from "@web/asistente/chat-tools";
@@ -48,6 +48,7 @@ import {
 } from "@web/asistente/token-budget";
 import { readAiTokenUsage, recordAiTokenUsage } from "@web/asistente/token-budget-store";
 import { meterAssistantStream } from "@web/asistente/token-metering";
+import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_ATTACHMENT_MESSAGE,
@@ -466,8 +467,20 @@ export async function POST(request: Request): Promise<Response> {
   // read-only and local dev has no control plane, so the closure is bound only
   // when authenticated; otherwise the tool reports the alert as unavailable.
   const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
+  // The unvalidated-evidence boundary (#1248, PRD #1241): only this route knows
+  // what the turn carries, so it derives the flag and the chat tools enforce it.
+  // An unreadable attachment is deliberately NOT evidence — the model then holds
+  // no document at all, so the source is the user's own text (the manual path).
+  // The history trace closes the two-turn bypass; the exemption is this turn's
+  // own extraction, never a client-supplied preview (see the gate module).
+  const unvalidatedEvidence = unvalidatedEvidenceGateApplies({
+    hasUnvalidatedEvidence:
+      unstructuredAttachment !== null || hasUnstructuredEvidenceInHistory(body.messages),
+    hasValidatedDocumentInThisTurn: isValidatedDocument(currentPreview),
+  });
   const tools = createChatTools({
     ingestionAllowed,
+    unvalidatedEvidence,
     runWithStore: (run) =>
       withStore(
         (store) =>

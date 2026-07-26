@@ -49,6 +49,17 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/fuera de límites/i);
     expect(prompt).toMatch(/nunca finjas haberlo leído/i);
     expect(prompt).toMatch(/1130/);
+    // #1248: the boundary itself is CODE now (unvalidated-evidence-gate.ts), so
+    // the prompt keeps only tone and routing — one puntual fact is fine, the
+    // whole document goes to the deterministic path — and no longer pretends to
+    // forbid the alta, which would contradict PRD #1241.
+    expect(prompt).toMatch(/un dato puntual/i);
+    expect(prompt).toMatch(/importar-extracto/);
+    expect(prompt).not.toMatch(/llevar al alta/i);
+    // And it must not send the model at a bulk-import tool the boundary will
+    // reject: a reconstruction needs a document worthline actually validated.
+    expect(prompt).toMatch(/propose_reconstruction/);
+    expect(prompt).toMatch(/cuadro que worthline haya validado/i);
     // #1186: a market-instrument alta must resolve its price symbol first.
     expect(prompt).toMatch(/search_market_symbol/);
     expect(prompt).toMatch(/providerSymbol/);

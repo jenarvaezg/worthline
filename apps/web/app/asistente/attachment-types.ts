@@ -1,5 +1,15 @@
 export const MAX_ATTACHMENT_FILE_NAME_CHARS = 255;
 
+/**
+ * Card message when a readable spreadsheet is handed to the model to discuss.
+ * It lives in this client-safe leaf because it is also the marker the
+ * unvalidated-evidence boundary reads back out of history (#1248): keeping it
+ * here lets the chat-context module recognize it without dragging the
+ * spreadsheet parser into the assistant's client bundle.
+ */
+export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
+  "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.";
+
 /** Client-safe v1 type catalog shared by picker, transport and server validation. */
 export const ATTACHMENT_TYPES_V1 = [
   {

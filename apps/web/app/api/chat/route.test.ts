@@ -19,6 +19,7 @@ import {
   parseExtractionResult,
 } from "@web/asistente/attachment-extraction-contract";
 import { extractPositionsFromImage } from "@web/asistente/attachment-image-extractor";
+import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
@@ -879,6 +880,191 @@ describe("POST /api/chat", () => {
     expect(turns).toContain("uno");
     expect(streamed).toContain("Veo dos columnas, Foo y Bar.");
     expect(countChatRequest).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The unvalidated-evidence boundary (#1248, PRD #1241). The route is what knows
+   * what the turn carries, so it derives the flag the chat tools enforce; the
+   * classification and the envelopes are unit-tested in the gate module.
+   *
+   * The composition is asymmetric: unvalidated evidence counts in this turn OR
+   * anywhere in history (the model's reading of a junk sheet outlives the grid),
+   * while the exemption counts only a document validated in THIS turn.
+   */
+  const VALID_SHEET = [
+    "Ticker;Nombre;Unidades;Valor de mercado EUR;Divisa",
+    "ACME;Acme;2;50;EUR",
+  ].join("\n");
+  const JUNK_SHEET = "Foo;Bar\nuno;dos";
+
+  const unstructuredHistory = {
+    id: "a1",
+    role: "assistant",
+    parts: [
+      {
+        type: "data-attachment-extraction",
+        data: {
+          fileName: "estados.xlsx",
+          result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
+        },
+      },
+    ],
+  };
+  const validatedHistory = {
+    id: "a1",
+    role: "assistant",
+    parts: [
+      {
+        type: "data-attachment-extraction",
+        data: {
+          fileName: "cartera.csv",
+          result: {
+            data: {
+              documentType: "positions",
+              positions: [
+                {
+                  currency: "EUR",
+                  marketValueEur: 50,
+                  name: "Acme",
+                  ticker: "ACME",
+                  units: 2,
+                },
+              ],
+              totalEur: 50,
+              warnings: [],
+            },
+            status: "valid",
+          },
+        },
+      },
+    ],
+  };
+
+  /** A turn with its own history, optionally carrying a new attachment. */
+  function turnRequest(
+    messages: unknown[],
+    attachment?: { contents: string; fileName: string },
+  ) {
+    const body = new FormData();
+    body.set("messages", JSON.stringify(messages));
+    body.set("screenContext", "null");
+    if (attachment) {
+      body.set(
+        "attachment",
+        new File([attachment.contents], attachment.fileName, { type: "text/csv" }),
+      );
+    }
+    return new Request("http://127.0.0.1/api/chat", { method: "POST", body });
+  }
+
+  it("routes a bulk import born from an unvalidated sheet to the deterministic path (#1248)", async () => {
+    const model = proposeToolModel("propose_reconcile", { holdings: [], movements: [] });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(attachmentRequest(JUNK_SHEET));
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("unvalidated_evidence");
+    // Routing, not just refusal: the deterministic import surface is named.
+    expect(streamed).toContain("importar-extracto");
+  });
+
+  it("lets an import through when THIS turn brings a validated document (#1248)", async () => {
+    const model = proposeToolModel("propose_reconcile", { holdings: [], movements: [] });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    // Turn 1 was a junk sheet; turn 2 uploads a real positions CSV.
+    const response = await POST(
+      turnRequest(
+        [
+          userMessage("mira esto"),
+          unstructuredHistory,
+          {
+            id: "u2",
+            role: "user",
+            parts: [{ type: "text", text: "y ahora mi cartera" }],
+          },
+        ],
+        { contents: VALID_SHEET, fileName: "cartera.csv" },
+      ),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).not.toContain("unvalidated_evidence");
+  });
+
+  it("rejects an import when a validated document is only in history (#1248)", async () => {
+    const model = proposeToolModel("propose_reconstruction", {
+      holdingId: "wl_hld_x",
+      rows: [{ balanceMinor: 100, date: "2026-05-08" }],
+    });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    // Turn 1 was a valid CSV; turn 2 attaches a junk sheet and says «reconstruye».
+    const response = await POST(
+      turnRequest(
+        [
+          userMessage("mira esto"),
+          validatedHistory,
+          { id: "u2", role: "user", parts: [{ type: "text", text: "reconstruye esto" }] },
+        ],
+        { contents: JUNK_SHEET, fileName: "estados.csv" },
+      ),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("unvalidated_evidence");
+  });
+
+  it("rejects an import on a later turn with no attachment after a junk sheet (#1248)", async () => {
+    const model = proposeToolModel("propose_reconcile", { holdings: [], movements: [] });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    // The two-turn bypass: the grid is stripped from history, but the model's
+    // own analysis of it is not — so the trace must keep the gate closed.
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("mira esto"),
+          unstructuredHistory,
+          {
+            id: "u2",
+            role: "user",
+            parts: [{ type: "text", text: "mételo al patrimonio" }],
+          },
+        ],
+      }),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("unvalidated_evidence");
+  });
+
+  it("keeps a later import over a validated document legitimate (#1248)", async () => {
+    const model = proposeToolModel("propose_reconcile", { holdings: [], movements: [] });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    // No unvalidated evidence anywhere in the conversation: nothing is gated.
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("mira mi cartera"),
+          validatedHistory,
+          { id: "u2", role: "user", parts: [{ type: "text", text: "conciliala" }] },
+          { id: "a2", role: "assistant", parts: [{ type: "text", text: "vale" }] },
+          { id: "u3", role: "user", parts: [{ type: "text", text: "hazlo ya" }] },
+        ],
+      }),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).not.toContain("unvalidated_evidence");
+    expect(JSON.stringify(model.doStreamCalls)).toContain("ACME");
   });
 
   it.each([
