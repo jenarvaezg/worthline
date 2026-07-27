@@ -25,6 +25,7 @@
  * on the tool output and is never written to the store. They do not contradict.
  */
 
+import { isProposalToolName } from "./tool-parts";
 import { consumesUnvalidatedEvidenceBudget } from "./unvalidated-evidence-gate";
 
 /**
@@ -34,25 +35,35 @@ import { consumesUnvalidatedEvidenceBudget } from "./unvalidated-evidence-gate";
 export const UNVALIDATED_PROVENANCE_LABEL = "Procedencia";
 
 /**
- * What the card says. It speaks about the TURN, which is what the server knows:
- * a proposal prepared alongside a file worthline could not read as data. Claiming
- * anything about the proposal's own contents would be a guess — hence the ask,
- * which is the only useful action here: check the figures against your document
- * before pressing confirm.
+ * What the card says. It speaks about the TURN, which is what the server knows: a
+ * proposal prepared in a message that also carried a file worthline could not read
+ * as data. Claiming anything about the proposal's own CONTENTS would be a guess —
+ * the same guess `UNVALIDATED_EVIDENCE_MESSAGE` refuses to make when it says «ese
+ * archivo» instead of naming a spreadsheet that may have been a screenshot (#1246).
+ * It must also stay true on a baja, which is born from ids already read: «comprueba
+ * los datos de esta tarjeta» works there, «compáralos con tu documento» would not.
  *
- * First person, like the rest of worthline's voice in the assistant (see
- * `UNVALIDATED_EVIDENCE_MESSAGE`), and «un archivo» deliberately neutral: a
- * spreadsheet, a PDF and a screenshot all open this door (#1246).
+ * Deliberately with no expiry in it. The card stays on screen after Confirmar with
+ * its own «Corrección aplicada.», and the stamp stays with it — where a proposal
+ * comes from does not change when it is applied — so a sentence ending in «antes de
+ * confirmar» would start lying the moment the button is pressed.
+ *
+ * First person, like the rest of worthline's voice in the assistant.
  */
 export const UNVALIDATED_PROVENANCE_NOTE =
-  "Preparada en un mensaje con un archivo que no he podido validar. Comprueba cada " +
-  "dato contra tu documento antes de confirmar.";
+  "Preparada en un mensaje con un archivo que no he podido validar. Nada de ese " +
+  "archivo lo he verificado yo: los datos de esta tarjeta los compruebas tú.";
 
 /**
- * The key the mark travels under, spelled exactly like the flag the chat route
+ * The key the mark travels under, spelled exactly like the fact the chat route
  * derives (#1248) so both ends of the wire share one noun.
  */
 const PROVENANCE_FIELD = "unvalidatedEvidence";
+
+/** The mark itself, so a stamped envelope's type says what it carries. */
+export interface UnvalidatedProvenanceMark {
+  unvalidatedEvidence: true;
+}
 
 /**
  * Stamp a tool result whose turn carried unvalidated evidence.
@@ -61,9 +72,51 @@ const PROVENANCE_FIELD = "unvalidatedEvidence";
  * card to mark. Returns a new object, so the proposal the store already persisted
  * is untouched: the mark exists only on the copy that travels to the client.
  */
-export function withUnvalidatedProvenance<T>(result: T): T {
+export function withUnvalidatedProvenance<T>(
+  result: T,
+): T | (T & UnvalidatedProvenanceMark) {
   if (!consumesUnvalidatedEvidenceBudget(result)) return result;
-  return { ...(result as object), [PROVENANCE_FIELD]: true } as T;
+  return { ...(result as object), [PROVENANCE_FIELD]: true } as T &
+    UnvalidatedProvenanceMark;
+}
+
+/** The shape this module needs of a tool: something that answers. */
+interface ExecutableTool {
+  execute?: (...args: never[]) => unknown;
+}
+
+/**
+ * Stamp EVERY proposal tool of a turn that carried unvalidated evidence, over the
+ * finished tool set.
+ *
+ * Applied here, by name, and not inside each tool's own wrapper, because the mark
+ * has to answer for tools nobody remembered: the per-turn cap only wraps the
+ * proposals #1248 had to budget, so a `propose_*` tool added later would render a
+ * card with no stamp and nothing would fail. The prefix is the same convention the
+ * evidence frontier and the fabricated-ceremony guard already lean on
+ * ({@link isProposalToolName}) — a write tool named otherwise walks past louder
+ * boundaries than this one.
+ *
+ * Everything else is returned untouched: a read is not a card, and
+ * {@link withUnvalidatedProvenance} is itself a no-op on anything that is not a
+ * proposal, so an error envelope from a gated tool passes through unmarked.
+ */
+export function stampProposalTools<T extends Record<string, ExecutableTool>>(
+  tools: T,
+): T {
+  const entries = Object.entries(tools).map(([name, tool]) => {
+    const { execute } = tool;
+    if (!isProposalToolName(name) || execute === undefined) return [name, tool];
+    return [
+      name,
+      {
+        ...tool,
+        execute: async (...args: never[]) =>
+          withUnvalidatedProvenance(await execute(...args)),
+      },
+    ];
+  });
+  return Object.fromEntries(entries) as T;
 }
 
 /**

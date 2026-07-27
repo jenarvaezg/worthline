@@ -1599,7 +1599,9 @@ function ProposalEntry({
   if (!marked) return children;
   return (
     <div className="assistantProposalOrigin">
-      <p className="assistantWarning">
+      {/* `note`, like the app's other aside about a proposal (#1262): it is worthline
+          speaking beside the card, not part of the model's turn. */}
+      <p className="assistantWarning" role="note">
         <strong>{UNVALIDATED_PROVENANCE_LABEL}.</strong> {UNVALIDATED_PROVENANCE_NOTE}
       </p>
       {children}

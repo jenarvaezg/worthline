@@ -494,6 +494,9 @@ describe("Libro mayor design-system guardian (#906)", () => {
       // The app contradicting a faked proposal ceremony (#1262) is set apart the
       // same way, so it cannot drift into a card either.
       ".assistantFakeProposal",
+      // The provenance mark (#1257) takes over the heavy rule of the proposal it
+      // stamps, so stamp and card are ONE paper entry — and neither becomes a card.
+      ".assistantProposalOrigin",
     ]) {
       const entry = assistantRule(selector);
       expect(entry?.declarations.get("border-top"), selector).toBe("var(--rule-heavy)");

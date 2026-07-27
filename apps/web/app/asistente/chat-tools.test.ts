@@ -1190,6 +1190,43 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     expect(hasUnvalidatedProvenance(result)).toBe(false);
   });
 
+  /**
+   * The mark answers the PREMISE, the gate answers the verdict — and this is the
+   * turn where they disagree: an unreadable file left its trace in the history and
+   * this message also brings a validated document, so nothing is gated (the bulk
+   * tools work, the cap is lifted) while the unvalidated grid is still in the
+   * model's context. A proposal here must carry the mark; hanging it off the gate's
+   * verdict would drop it on exactly the most confusable turn.
+   */
+  it("marks a turn whose gate a validated document lifted", async () => {
+    const store = await workspaceStore();
+    const tools = createChatTools({
+      groundedHoldingIds: Object.values(await publicIds(store)),
+      hasUnvalidatedEvidence: true,
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      unvalidatedEvidence: false,
+    });
+
+    // Not gated: two single-fact proposals in the same turn, no cap in sight…
+    for (const name of ["Cuenta 1", "Cuenta 2"]) {
+      const result = await tools["propose_holding"]?.execute?.(
+        { ...CUENTA, name },
+        toolCallContext(),
+      );
+      // …and both marked all the same.
+      expect(result, name).toMatchObject({ proposalType: "holding_creation" });
+      expect(hasUnvalidatedProvenance(result), name).toBe(true);
+    }
+  });
+
   it("budgets a restauración too, without rejecting it", async () => {
     const store = await workspaceStore();
     const ids = await publicIds(store);

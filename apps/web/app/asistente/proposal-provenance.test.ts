@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   hasUnvalidatedProvenance,
+  stampProposalTools,
   UNVALIDATED_PROVENANCE_NOTE,
   withUnvalidatedProvenance,
 } from "./proposal-provenance";
@@ -31,6 +32,53 @@ describe("withUnvalidatedProvenance (#1257)", () => {
 
     expect(withUnvalidatedProvenance(envelope)).toBe(envelope);
     expect(hasUnvalidatedProvenance(envelope)).toBe(false);
+  });
+});
+
+/**
+ * The mark is applied over the FINISHED tool set, by name, so it cannot be lost by
+ * forgetting a wrapper on the next `propose_*` tool someone adds.
+ */
+describe("stampProposalTools (#1257)", () => {
+  const toolSet = {
+    get_financial_context: { execute: async () => ({ netWorth: "1.000,00 €" }) },
+    // A read that happens to answer with something proposal-shaped must still not
+    // be marked: what the prefix says is «this tool prepares a write».
+    get_holding_detail: { execute: async () => ({ ...PROPOSAL }) },
+    propose_correction: { execute: async () => ({ ...PROPOSAL }) },
+    propose_statement_import: {
+      execute: async () => ({ error: "unvalidated_evidence", message: "…" }),
+    },
+    suggest_actions: { execute: async () => ({ actions: [] }) },
+  };
+
+  test("marks what every proposal tool answers", async () => {
+    const stamped = stampProposalTools(toolSet);
+
+    expect(hasUnvalidatedProvenance(await stamped.propose_correction.execute())).toBe(
+      true,
+    );
+  });
+
+  test.each([
+    "get_financial_context",
+    "get_holding_detail",
+    "suggest_actions",
+  ] as const)("leaves %s alone — a read is not a card", async (name) => {
+    const stamped = stampProposalTools(toolSet);
+
+    expect(hasUnvalidatedProvenance(await stamped[name].execute()), name).toBe(false);
+    // Untouched down to the identity, so nothing about a read changes here.
+    expect(stamped[name], name).toBe(toolSet[name]);
+  });
+
+  test("leaves a gated proposal's error envelope unmarked", async () => {
+    const stamped = stampProposalTools(toolSet);
+
+    const envelope = await stamped.propose_statement_import.execute();
+
+    expect(hasUnvalidatedProvenance(envelope)).toBe(false);
+    expect(envelope).toMatchObject({ error: "unvalidated_evidence" });
   });
 });
 
