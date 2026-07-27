@@ -8401,6 +8401,11 @@ td.rowActions > * {
   gap: 8px;
   padding: 0 16px 12px;
 }
+/* Two elements, one chip: a source action is an `<a>` (it navigates) and a
+   follow-up question is a `<button>` (it sends a message). Everything the button
+   base rule gives for free — weight, height, font — is restated here so the anchor
+   is indistinguishable from it, and `inline-flex` puts the in-flight `.navPending`
+   ring on the label's line without changing the chip's height. */
 .assistantChip {
   border: 1px solid var(--line);
   background: var(--paper);
@@ -8408,7 +8413,17 @@ td.rowActions > * {
   border-radius: var(--radius-sm);
   padding: 6px 12px;
   font-size: 0.82rem;
+  font-weight: 650;
+  min-height: 38px;
+  box-sizing: border-box;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.assistantChip .navPending {
+  margin-left: 0;
 }
 .assistantChip:hover {
   border-color: var(--line-strong);
