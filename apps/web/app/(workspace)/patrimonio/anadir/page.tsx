@@ -154,7 +154,7 @@ export default function AnadirHoldingPage({
 }) {
   return (
     <Suspense fallback={<FormRouteSkeleton label="Cargando añadir holding" />}>
-      <AnadirHoldingContent {...(searchParams !== undefined ? { searchParams } : {})} />
+      <AnadirHoldingContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -162,7 +162,7 @@ export default function AnadirHoldingPage({
 export async function AnadirHoldingContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);

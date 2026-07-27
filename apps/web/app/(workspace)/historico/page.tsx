@@ -17,7 +17,7 @@ export default function HistoricoPage({
 }) {
   return (
     <Suspense fallback={<HistoricoSkeleton />}>
-      <HistoricoContent {...(searchParams !== undefined ? { searchParams } : {})} />
+      <HistoricoContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -25,7 +25,7 @@ export default function HistoricoPage({
 export async function HistoricoContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const shell = await resolvePageShell({ searchParams: resolvedSearchParams });

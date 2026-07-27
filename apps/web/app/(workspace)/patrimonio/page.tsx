@@ -39,7 +39,7 @@ export default function PatrimonioPage({
 }) {
   return (
     <Suspense fallback={<PatrimonioSkeleton />}>
-      <PatrimonioContent {...(searchParams !== undefined ? { searchParams } : {})} />
+      <PatrimonioContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -47,7 +47,7 @@ export default function PatrimonioPage({
 export async function PatrimonioContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   // Demo skips optimistic mutations — the write-guard rejects them, so a faked

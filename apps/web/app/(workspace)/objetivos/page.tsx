@@ -156,7 +156,7 @@ export default function ObjetivosPage({
 }) {
   return (
     <Suspense fallback={<ObjetivosSkeleton />}>
-      <ObjetivosContent {...(searchParams !== undefined ? { searchParams } : {})} />
+      <ObjetivosContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -164,7 +164,7 @@ export default function ObjetivosPage({
 export async function ObjetivosContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const currentUrl = buildCurrentUrlFor("/objetivos", resolvedSearchParams);

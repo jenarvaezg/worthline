@@ -1,4 +1,5 @@
 import SectionNav from "@web/section-nav";
+import SectionNavFallback from "@web/section-nav-fallback";
 import SignOutButton from "@web/sign-out-button";
 import WorkspaceFooter from "@web/workspace-footer";
 import WorkspaceScopeBar from "@web/workspace-scope-bar";
@@ -36,8 +37,10 @@ export default function WorkspaceLayout({
           </div>
         </div>
         <div className="topbarEnd">
-          {/* usePathname() in SectionNav would otherwise block every shell (#1229). */}
-          <Suspense fallback={null}>
+          {/* usePathname() (SectionNav + ViewTransitionLink) would otherwise
+              blank the whole topnav until hydrate. Fallback paints the same
+              five links without active/transition state (#1229). */}
+          <Suspense fallback={<SectionNavFallback />}>
             <SectionNav />
           </Suspense>
           <Suspense fallback={null}>

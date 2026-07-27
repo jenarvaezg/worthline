@@ -44,7 +44,7 @@ export default function AjustesPage({
 }) {
   return (
     <Suspense fallback={<AjustesSkeleton />}>
-      <AjustesContent {...(searchParams !== undefined ? { searchParams } : {})} />
+      <AjustesContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -52,7 +52,7 @@ export default function AjustesPage({
 export async function AjustesContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);

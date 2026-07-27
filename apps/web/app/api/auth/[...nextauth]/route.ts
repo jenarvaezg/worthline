@@ -50,6 +50,8 @@ export async function GET(request: NextRequest): Promise<Response> {
   // next-auth@5 still nests its own `next` types; under Cache Components /
   // Next 16.3 preview the public NextRequest is structurally compatible but
   // not assignable under exactOptionalPropertyTypes. Bridge at this seam.
+  // TODO(#1229): drop the double cast once next-auth's peer covers 16.3 and
+  // stops nesting its own `next` copy (overrides alone don't erase the types).
   return gateAuthOAuthRequest(
     request,
     handlers.GET as unknown as (request: NextRequest) => Promise<Response>,

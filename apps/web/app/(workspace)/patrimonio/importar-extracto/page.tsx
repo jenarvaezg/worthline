@@ -23,9 +23,7 @@ export default function ImportarExtractoPage({
 }) {
   return (
     <Suspense fallback={<FormRouteSkeleton label="Cargando importar extracto" />}>
-      <ImportarExtractoContent
-        {...(searchParams !== undefined ? { searchParams } : {})}
-      />
+      <ImportarExtractoContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -33,7 +31,7 @@ export default function ImportarExtractoPage({
 export async function ImportarExtractoContent({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const isDemo = await isDemoMode();

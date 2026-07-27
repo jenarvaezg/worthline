@@ -20,7 +20,7 @@ export default function DashboardPage({
 }) {
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardBody {...(searchParams !== undefined ? { searchParams } : {})} />
+      <DashboardBody searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -28,7 +28,7 @@ export default function DashboardPage({
 export async function DashboardBody({
   searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
