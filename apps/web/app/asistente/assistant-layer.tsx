@@ -94,6 +94,11 @@ import {
 } from "./property-valuation-proposal-action";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import {
+  hasUnvalidatedProvenance,
+  UNVALIDATED_PROVENANCE_LABEL,
+  UNVALIDATED_PROVENANCE_NOTE,
+} from "./proposal-provenance";
+import {
   discardReconcileRow,
   effectiveDecision,
   isRowWritable,
@@ -1441,6 +1446,170 @@ function FabricatedProposalNote() {
 }
 
 /**
+ * The proposal card a tool answer unfolds into, or `null` when the answer is not a
+ * proposal (every read tool runs silently) or does not parse as one.
+ *
+ * A plain function and not a component because the caller has to KNOW there is a
+ * card before deciding what to wrap it in: the provenance mark of #1257 opens a
+ * paper entry, and an entry with a stamp and no card would be the app pointing at
+ * nothing.
+ */
+function proposalCardFor({
+  mutationsDisabled,
+  mutationsDisabledMessage,
+  name,
+  part,
+}: {
+  mutationsDisabled: boolean;
+  mutationsDisabledMessage: string;
+  name: string;
+  part: UIMessage["parts"][number];
+}): React.ReactNode | null {
+  if (name === "propose_statement_import" && "output" in part) {
+    const proposal = parseStatementImportProposal(part.output);
+    return proposal ? (
+      <StatementProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (
+    (name === "propose_correction" || name === "propose_reconstruction") &&
+    "output" in part
+  ) {
+    const proposal = parseCorrectionProposal(part.output);
+    if (!proposal) return null;
+    return proposal.mode === "reconstruir" ? (
+      <ReconstructionProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : (
+      <CorrectionProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    );
+  }
+  if (name === "propose_early_repayment" && "output" in part) {
+    const proposal = parseEarlyRepaymentProposal(part.output);
+    return proposal ? (
+      <EarlyRepaymentProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_holding" && "output" in part) {
+    const proposal = parseHoldingCreationProposal(part.output);
+    return proposal ? (
+      <HoldingCreationProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_holding_removal" && "output" in part) {
+    const proposal = parseHoldingTrashProposal(part.output, "holding_removal");
+    return proposal ? (
+      <HoldingTrashProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_holding_restoration" && "output" in part) {
+    const proposal = parseHoldingTrashProposal(part.output, "holding_restoration");
+    return proposal ? (
+      <HoldingTrashProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_balance_history_import" && "output" in part) {
+    const proposal = parseBalanceHistoryProposal(part.output);
+    return proposal ? (
+      <BalanceHistoryProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_property_valuation_anchor" && "output" in part) {
+    const proposal = parsePropertyValuationProposal(part.output);
+    return proposal ? (
+      <PropertyValuationProposalCard
+        mutationsDisabled={mutationsDisabled}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_reconcile" && "output" in part) {
+    const proposal = parseReconcileProposal(part.output);
+    return proposal ? (
+      <ReconcileProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  if (name === "propose_mixed_document_import" && "output" in part) {
+    const proposal = parseMixedDocumentProposal(part.output);
+    return proposal ? (
+      <MixedDocumentProposalCard
+        mutationsDisabled={mutationsDisabled}
+        mutationsDisabledMessage={mutationsDisabledMessage}
+        proposal={proposal}
+      />
+    ) : null;
+  }
+  // Read tools run silently; only proposal cards surface tool activity.
+  return null;
+}
+
+/**
+ * A proposal card, and the provenance mark above it when the server stamped the
+ * turn it was born in (#1257).
+ *
+ * Marked, the two become ONE paper entry: the wrapper takes over the heavy rule
+ * that opens a proposal (canon §4) so the stamp reads as the entry's first printed
+ * line — above the bold headline the model writes, where it cannot be pushed off the
+ * screen. Labelled in words, never by colour alone (canon §6: oro = aviso).
+ *
+ * Unmarked — the ordinary conversation — it renders the card and nothing else.
+ */
+function ProposalEntry({
+  children,
+  marked,
+}: {
+  children: React.ReactNode;
+  marked: boolean;
+}) {
+  if (!marked) return children;
+  return (
+    <div className="assistantProposalOrigin">
+      {/* `note`, like the app's other aside about a proposal (#1262): it is worthline
+          speaking beside the card, not part of the model's turn. */}
+      <p className="assistantWarning" role="note">
+        <strong>{UNVALIDATED_PROVENANCE_LABEL}.</strong> {UNVALIDATED_PROVENANCE_NOTE}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+/**
  * The rendered conversation turns — message parts and the proposal cards they
  * unfold into. Extracted so the floating panel (#628) and the full-screen
  * onboarding surface (#1168) render the SAME turns with zero duplication: every
@@ -1509,134 +1678,23 @@ function ConversationParts({
                 "toolName" in part ? String(part.toolName) : part.type.slice(5);
               // suggest_actions renders as chips below, not as tool activity.
               if (name === "suggest_actions") return null;
-              if (name === "propose_statement_import" && "output" in part) {
-                const proposal = parseStatementImportProposal(part.output);
-                return proposal ? (
-                  <StatementProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (
-                (name === "propose_correction" || name === "propose_reconstruction") &&
-                "output" in part
-              ) {
-                const proposal = parseCorrectionProposal(part.output);
-                if (!proposal) return null;
-                return proposal.mode === "reconstruir" ? (
-                  <ReconstructionProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : (
-                  <CorrectionProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                );
-              }
-              if (name === "propose_early_repayment" && "output" in part) {
-                const proposal = parseEarlyRepaymentProposal(part.output);
-                return proposal ? (
-                  <EarlyRepaymentProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_holding" && "output" in part) {
-                const proposal = parseHoldingCreationProposal(part.output);
-                return proposal ? (
-                  <HoldingCreationProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_holding_removal" && "output" in part) {
-                const proposal = parseHoldingTrashProposal(
-                  part.output,
-                  "holding_removal",
-                );
-                return proposal ? (
-                  <HoldingTrashProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_holding_restoration" && "output" in part) {
-                const proposal = parseHoldingTrashProposal(
-                  part.output,
-                  "holding_restoration",
-                );
-                return proposal ? (
-                  <HoldingTrashProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_balance_history_import" && "output" in part) {
-                const proposal = parseBalanceHistoryProposal(part.output);
-                return proposal ? (
-                  <BalanceHistoryProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_property_valuation_anchor" && "output" in part) {
-                const proposal = parsePropertyValuationProposal(part.output);
-                return proposal ? (
-                  <PropertyValuationProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_reconcile" && "output" in part) {
-                const proposal = parseReconcileProposal(part.output);
-                return proposal ? (
-                  <ReconcileProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              if (name === "propose_mixed_document_import" && "output" in part) {
-                const proposal = parseMixedDocumentProposal(part.output);
-                return proposal ? (
-                  <MixedDocumentProposalCard
-                    key={`${message.id}-${i}`}
-                    mutationsDisabled={mutationsDisabled}
-                    mutationsDisabledMessage={mutationsDisabledMessage}
-                    proposal={proposal}
-                  />
-                ) : null;
-              }
-              // Read tools run silently; only proposal cards surface tool activity.
-              return null;
+              const card = proposalCardFor({
+                mutationsDisabled,
+                mutationsDisabledMessage,
+                name,
+                part,
+              });
+              if (card === null) return null;
+              // The provenance mark (#1257) is read off the server's own tool output,
+              // by key — never from the prose the model wrote on the card.
+              return (
+                <ProposalEntry
+                  key={`${message.id}-${i}`}
+                  marked={"output" in part && hasUnvalidatedProvenance(part.output)}
+                >
+                  {card}
+                </ProposalEntry>
+              );
             }
             return null;
           })}

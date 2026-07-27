@@ -569,14 +569,19 @@ export async function POST(request: Request): Promise<Response> {
   // no document at all, so the source is the user's own text (the manual path).
   // The history trace closes the two-turn bypass; the exemption is this turn's
   // own extraction, never a client-supplied preview (see the gate module).
+  const hasUnvalidatedEvidence =
+    unstructuredAttachment !== null || hasUnstructuredEvidenceInHistory(body.messages);
   const unvalidatedEvidence = unvalidatedEvidenceGateApplies({
-    hasUnvalidatedEvidence:
-      unstructuredAttachment !== null || hasUnstructuredEvidenceInHistory(body.messages),
+    hasUnvalidatedEvidence,
     hasValidatedDocumentInThisTurn: isValidatedDocument(currentPreview),
   });
   const tools = createChatTools({
     ingestionAllowed,
     unvalidatedEvidence,
+    // The premise, not the verdict: the provenance mark on the card (#1257) marks
+    // the turn the proposal was born in, and a validated document lifts the gate
+    // without taking the unreadable file out of the model's context.
+    hasUnvalidatedEvidence,
     // Holding-id provenance (#1263): the ids worthline itself put in the history the
     // model is about to read. Taken from `shrunk.messages`, so what grounds a write
     // is exactly what the model can see — a tool payload dropped by the ceiling

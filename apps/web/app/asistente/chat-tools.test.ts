@@ -15,6 +15,7 @@ import {
   NON_HOLDING_ID_FIELDS,
   requiresGroundedHoldingIds,
 } from "@web/asistente/holding-id-provenance";
+import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
@@ -1126,6 +1127,104 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       toolCallContext(),
     )) as { error?: string };
     expect(after?.error).toBe("unvalidated_evidence_limit");
+  });
+
+  /**
+   * The provenance mark (#1257): a proposal born in a turn with unvalidated
+   * evidence travels to the client already stamped, so the card can say where it
+   * comes from without asking the model to admit it.
+   */
+  it.each(WHITELIST_TOOLS)("stamps %s with the provenance mark", async (name) => {
+    const store = await workspaceStore();
+    const tools = await toolsWithEvidence(store);
+
+    const result = await tools[name]?.execute?.(
+      WHITELIST_ARGS[name]!(await publicIds(store)) as never,
+      toolCallContext(),
+    );
+
+    expect(hasUnvalidatedProvenance(result), name).toBe(true);
+  });
+
+  it("stamps a baja born in that same turn", async () => {
+    const store = await workspaceStore();
+    const tools = await toolsWithEvidence(store);
+    const ids = await publicIds(store);
+
+    // `neutral` in the classification, stamped all the same: what the mark reports
+    // is the TURN the proposal was born in, and the text that talked the user into
+    // a baja can come out of the unvalidated file just as easily.
+    const removal = await tools["propose_holding_removal"]?.execute?.(
+      { holdingIds: [ids["cuenta"]] } as never,
+      toolCallContext(),
+    );
+
+    expect(hasUnvalidatedProvenance(removal)).toBe(true);
+  });
+
+  it("leaves an ordinary conversation unmarked", async () => {
+    const store = await workspaceStore();
+    const tools = await toolsWithEvidence(store, false);
+
+    const result = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
+
+    expect(result).toMatchObject({ proposalType: "holding_creation" });
+    expect(hasUnvalidatedProvenance(result)).toBe(false);
+  });
+
+  /**
+   * The mark is a server signal, and the model's only channel into a tool is its
+   * arguments — `jsonSchema()` carries no `validate`, so an undeclared field really
+   * does reach `execute`. It must die there: nothing the model writes may forge the
+   * stamp on a turn that never carried unvalidated evidence.
+   */
+  it("ignores a mark the model tries to pass in its arguments", async () => {
+    const store = await workspaceStore();
+    const tools = await toolsWithEvidence(store, false);
+
+    const result = await tools["propose_holding"]?.execute?.(
+      { ...CUENTA, unvalidatedEvidence: true } as never,
+      toolCallContext(),
+    );
+
+    expect(hasUnvalidatedProvenance(result)).toBe(false);
+  });
+
+  /**
+   * The mark answers the PREMISE, the gate answers the verdict — and this is the
+   * turn where they disagree: an unreadable file left its trace in the history and
+   * this message also brings a validated document, so nothing is gated (the bulk
+   * tools work, the cap is lifted) while the unvalidated grid is still in the
+   * model's context. A proposal here must carry the mark; hanging it off the gate's
+   * verdict would drop it on exactly the most confusable turn.
+   */
+  it("marks a turn whose gate a validated document lifted", async () => {
+    const store = await workspaceStore();
+    const tools = createChatTools({
+      groundedHoldingIds: Object.values(await publicIds(store)),
+      hasUnvalidatedEvidence: true,
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      unvalidatedEvidence: false,
+    });
+
+    // Not gated: two single-fact proposals in the same turn, no cap in sight…
+    for (const name of ["Cuenta 1", "Cuenta 2"]) {
+      const result = await tools["propose_holding"]?.execute?.(
+        { ...CUENTA, name },
+        toolCallContext(),
+      );
+      // …and both marked all the same.
+      expect(result, name).toMatchObject({ proposalType: "holding_creation" });
+      expect(hasUnvalidatedProvenance(result), name).toBe(true);
+    }
   });
 
   it("budgets a restauración too, without rejecting it", async () => {

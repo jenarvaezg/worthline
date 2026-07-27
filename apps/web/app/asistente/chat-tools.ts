@@ -59,6 +59,7 @@ import {
 import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
+import { stampProposalTools } from "@web/asistente/proposal-provenance";
 import { PROPOSAL_SUMMARY_MAX_CHARS } from "@web/asistente/proposal-summary";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
@@ -167,6 +168,15 @@ export interface ChatToolsInput {
    * fixtures and the evals keep their exact behaviour.
    */
   unvalidatedEvidence?: boolean;
+  /**
+   * Whether the turn CARRIES evidence worthline could not validate — the premise
+   * {@link unvalidatedEvidence} is the verdict of (#1248). Separate because the
+   * provenance mark of #1257 asks the first question and the gate asks the second:
+   * a turn that also brought a validated document lifts the gate while the
+   * unreadable file stays in the model's context, and that proposal must still say
+   * where it comes from. Defaults to the verdict when the caller does not know.
+   */
+  hasUnvalidatedEvidence?: boolean;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -764,6 +774,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
   // per turn, so the cap spans every tool round `streamText` may take.
   const unvalidatedEvidence = input.unvalidatedEvidence === true;
   const proposalBudget = createUnvalidatedProposalBudget();
+  // The premise behind that verdict, and the only thing the provenance mark of
+  // #1257 needs: unvalidated evidence is in play, gated or not. Defaults to the
+  // verdict so a caller that only knows about the gate (fixtures, the evals) still
+  // marks the turns it does gate.
+  const hasUnvalidatedEvidence = input.hasUnvalidatedEvidence ?? unvalidatedEvidence;
 
   // Holding-id provenance (#1263): the turn's second piece of mutable state, for the
   // same reason as the budget. Reads ground the ids they answer, writes are refused
@@ -776,6 +791,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
    * the bulk import the frontier forbids. The slot is reserved BEFORE the await
    * (the AI SDK runs a step's tool-calls concurrently) and handed back when no
    * proposal came out, so a builder error or throw costs the user nothing.
+   *
    */
   const withProposalBudget = async <T>(
     run: () => Promise<T>,
@@ -1961,5 +1977,16 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
   };
 
-  return withHoldingIdProvenance(tools, groundedHoldingIds, input.onUngroundedHoldingId);
+  const grounded = withHoldingIdProvenance(
+    tools,
+    groundedHoldingIds,
+    input.onUngroundedHoldingId,
+  );
+  // The provenance mark (#1257): stamped over the whole tool set when the turn
+  // CARRIES unvalidated evidence, which is a different question from whether the
+  // gate above bites — a turn that also brought a validated document is not gated,
+  // and the unreadable file is still in the model's context. The card says where the
+  // proposal comes from; the gate decides what may be written. Tying the mark to the
+  // gate's verdict would drop it on exactly the most confusable turn.
+  return hasUnvalidatedEvidence ? stampProposalTools(grounded) : grounded;
 }

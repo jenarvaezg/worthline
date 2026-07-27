@@ -93,6 +93,10 @@ rectangular, no un círculo flotante. Sus propuestas, la lectura de adjuntos y e
 aviso con el que la app desmiente una propuesta que el modelo se inventó (#1262)
 son entradas de papel abiertas por regla gruesa (`border-top: var(--rule-heavy)`),
 no tarjetas; el turno del usuario se anota con marginalia, no como burbuja de chat.
+Cuando una propuesta nace de evidencia que worthline no ha podido validar, su
+marca de procedencia (#1257) no abre una entrada nueva: el envoltorio
+`.assistantProposalOrigin` se queda con la regla gruesa y el sello pasa a ser la
+primera línea impresa de la MISMA entrada, en oro y nombrado con palabras.
 
 ## 5. Controles y navegación
 
