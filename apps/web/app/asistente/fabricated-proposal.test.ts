@@ -77,6 +77,52 @@ describe("claimsPreparedProposal", () => {
     expect(claimsPreparedProposal("¿Confirmas la propuesta?")).toBe(false);
   });
 
+  test("does NOT fire on a claim the model itself negates", () => {
+    // Found in review. The second one is the turn the model produces right AFTER
+    // being corrected, so without this the two seams feed each other: the history
+    // note provokes the sentence that trips the screen note.
+    for (const text of [
+      "No he preparado ninguna propuesta todavía, necesito el dato antes.",
+      "Tienes razón: no he preparado la propuesta. La preparo ahora.",
+      "Nunca he preparado esa propuesta.",
+    ]) {
+      expect(claimsPreparedProposal(text), text).toBe(false);
+    }
+  });
+
+  test("«aquí tienes» must be handing over the proposal, not just mentioning it", () => {
+    expect(
+      claimsPreparedProposal("Aquí tienes las opciones antes de montar una propuesta."),
+    ).toBe(false);
+    expect(claimsPreparedProposal("Aquí tienes la propuesta.")).toBe(true);
+  });
+
+  test("also reads the preterite and «ya tienes», which the first pass missed", () => {
+    expect(
+      claimsPreparedProposal("Preparé la propuesta con el saldo de 5.511,96 €."),
+    ).toBe(true);
+    expect(
+      claimsPreparedProposal("Ya tienes la propuesta preparada, solo falta confirmarla."),
+    ).toBe(true);
+  });
+
+  test("still fires when the claim points at a card from an EARLIER turn", () => {
+    // Deliberate, and the sharpest trade-off in this module. Such a turn is honest:
+    // the card exists, one message up. But «la propuesta está preparada» in a turn
+    // that carries no proposal is also exactly what a fabrication looks like AFTER a
+    // real proposal — the most dangerous case, because the user is already primed to
+    // confirm. Telling apart «that card» from «a different one I invented» needs a
+    // referent, which no regex has. So the note stays, and it is worded to be TRUE
+    // and useful in both worlds: it talks about this message and points at the
+    // button, never at what the model meant.
+    for (const text of [
+      "Como te decía, la propuesta está preparada; confírmala en la tarjeta.",
+      "La propuesta ya está lista arriba: pulsa Confirmar en la tarjeta.",
+    ]) {
+      expect(claimsPreparedProposal(text), text).toBe(true);
+    }
+  });
+
   test("ignores text with no proposal vocabulary at all", () => {
     expect(claimsPreparedProposal("Tu patrimonio neto es de 412.000 €.")).toBe(false);
     expect(claimsPreparedProposal("")).toBe(false);

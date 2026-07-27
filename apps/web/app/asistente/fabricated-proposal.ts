@@ -44,35 +44,54 @@ import { isProposalToolPart } from "./tool-parts";
  * is nothing to confirm» stays accurate.
  */
 export const FABRICATED_PROPOSAL_NOTE =
-  "Este mensaje dice haber preparado una propuesta, pero no lleva ninguna. " +
-  "En worthline un cambio solo se aplica desde su tarjeta, con su botón: si aquí " +
-  "no ves una, no hay nada que confirmar y responder «confirmo» no aplica nada. " +
-  "Pídeselo otra vez para que la prepare de verdad.";
+  "Este mensaje no lleva ninguna propuesta. En worthline un cambio solo se aplica " +
+  "desde la tarjeta de su propuesta, con su botón: escribir «confirmo» en el chat " +
+  "no aplica nada. Si no ves ninguna tarjeta, no hay nada preparado y tendrás que " +
+  "volver a pedírselo.";
 
 /**
  * What the model is told about its own previous turn, in the history it gets back.
  *
- * Framed like the other history repairs (#1260): a parenthetical statement of fact
- * from the app, never a rule about how to behave — the prompt is where behaviour
- * rules go, and this file exists because those did not hold.
+ * A statement of fact and NOTHING else, framed like the other history repairs
+ * (#1260). It used to end with «si hace falta, llama a la tool ahora», and review
+ * was right that this was the worst line in the change: an instruction on the write
+ * path, fired by a text heuristic, is how a regex match turns into a duplicate
+ * proposal. The prompt is where behaviour rules go — and this file exists because
+ * those did not hold.
  */
 export const FABRICATED_PROPOSAL_MODEL_NOTE =
-  "(No preparaste ninguna propuesta en ese turno: no llamaste a ninguna tool propose_*, " +
-  "así que el usuario no vio ninguna tarjeta y no hay nada que pueda confirmar. No la des " +
-  "por preparada: si hace falta, llama a la tool ahora.)";
+  "(En ese turno no llamaste a ninguna tool propose_*, así que no se preparó ninguna " +
+  "propuesta nueva y el usuario no vio ninguna tarjeta nueva.)";
 
 /**
- * Verbs that assert the proposal ALREADY exists. Deliberately only the perfect
- * forms and «aquí tienes»: Spanish uses the present for offers («te preparo la
- * propuesta», «puedo preparar una»), which is the honest turn and by far the more
- * common one. Flagging those would put a note on the path that works.
+ * Assertions that the proposal ALREADY exists. Deliberately only the perfect and
+ * preterite forms: Spanish uses the present to OFFER («te preparo la propuesta»,
+ * «puedo preparar una»), which is the honest turn and by far the more common one.
+ * Flagging those would put a note on the path that works.
  */
-const PREPARED_CLAIM =
-  /\b(he|hemos)\b[^.!?]{0,30}\b(preparado|creado|generado|elaborado|montado|dejado)\b|\baqu[íi] tienes\b/i;
+const CLAIM_PATTERNS = [
+  // «he preparado», «te he creado», «hemos dejado preparada», «preparé».
+  /\b(he|hemos)\b[^.!?]{0,30}\b(preparado|creado|generado|elaborado|montado|dejado)\b/i,
+  // No trailing \b: JS word boundaries do not see «é» as a word character, so
+  // «preparé» would never close one. And only the ACCENTED forms — unaccented
+  // «prepare» is the subjunctive of an offer («¿quieres que prepare una?»).
+  /\b(preparé|creé|dejé)/i,
+  // Handing it over — «aquí tienes la propuesta», «ya tienes la propuesta». The
+  // proposal has to be WHAT is handed over: «aquí tienes las opciones antes de
+  // montar una propuesta» is an offer, and review caught it being flagged.
+  /\b(aqu[íi]|ya) tienes\b[^.!?]{0,25}\bpropuestas?\b/i,
+  // «La propuesta está lista» — the same assertion without the first person.
+  /\bpropuestas?\b[^.!?]{0,40}\b(est[áa]|queda)\s+(lista|preparada|creada|hecha)\b/i,
+];
 
-/** «La propuesta está lista» — the same assertion without the first person. */
-const READY_CLAIM =
-  /\bpropuestas?\b[^.!?]{0,40}\b(est[áa]|queda)\s+(lista|preparada|creada|hecha)\b/i;
+/**
+ * A claim the model NEGATES is not a claim. Review found the case that matters:
+ * «Tienes razón: no he preparado la propuesta» is precisely the turn the model
+ * produces after reading {@link FABRICATED_PROPOSAL_MODEL_NOTE}, so without this
+ * the two seams feed each other — the history note provokes the sentence that
+ * trips the screen note, on every turn, for the rest of the conversation.
+ */
+const NEGATION = /\b(no|nunca|tampoco)\b/i;
 
 const PROPOSAL_WORD = /\bpropuestas?\b/i;
 
@@ -98,11 +117,13 @@ function sentences(text: string): string[] {
  * notes on honest turns, and those are what teach a user to ignore notes.
  */
 export function claimsPreparedProposal(text: string): boolean {
-  return sentences(text).some(
-    (sentence) =>
-      PROPOSAL_WORD.test(sentence) &&
-      (PREPARED_CLAIM.test(sentence) || READY_CLAIM.test(sentence)),
-  );
+  return sentences(text).some((sentence) => {
+    if (!PROPOSAL_WORD.test(sentence)) return false;
+    return CLAIM_PATTERNS.some((pattern) => {
+      const match = pattern.exec(sentence);
+      return match !== null && !NEGATION.test(sentence.slice(0, match.index));
+    });
+  });
 }
 
 /**

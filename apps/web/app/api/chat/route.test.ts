@@ -2149,7 +2149,7 @@ describe("ceremonia de propuesta falsificada (#1262)", () => {
 
     expect(response.status).toBe(200);
     const turns = turnsOf(model.doStreamCalls[0]!);
-    expect(turns).toContain("No preparaste ninguna propuesta");
+    expect(turns).toContain("no llamaste a ninguna tool propose_*");
     // The prose the user read stays; only the correction is added.
     expect(turns).toContain(CLAIM);
   });
@@ -2182,7 +2182,7 @@ describe("ceremonia de propuesta falsificada (#1262)", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("No preparaste ninguna");
+    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("no llamaste a ninguna tool");
   });
 });
 

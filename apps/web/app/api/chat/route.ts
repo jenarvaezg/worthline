@@ -579,8 +579,13 @@ export async function POST(request: Request): Promise<Response> {
   // a real proposal.
   const corrected = correctFabricatedProposalClaims(body.messages);
   if (corrected.correctedMessageIds.length > 0) {
+    // The ids, not just a count: the browser re-sends the whole history every turn,
+    // so one incident appears again in every later request. Counting DISTINCT ids is
+    // the only way to read a frequency out of this — a bare tally would grow with
+    // the length of the thread and hand #1254 an inflated number.
     console.info("Assistant claimed a proposal it never prepared", {
-      fabricatedProposalTurns: corrected.correctedMessageIds.length,
+      messageIds: corrected.correctedMessageIds,
+      turnsInThisHistory: corrected.correctedMessageIds.length,
     });
   }
   const pruned = pruneOrphanToolCalls(corrected.messages);
