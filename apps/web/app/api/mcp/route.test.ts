@@ -1,6 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { enforceMcpRateLimit } from "./rate-limit-store";
 import { GET, POST } from "./route";
+
+vi.mock("./rate-limit-store", () => ({
+  enforceMcpRateLimit: vi.fn(),
+}));
 
 // The persona cookie is what flips the store seam into the read-only demo
 // (ADR 0030 — the deploy-wide DEMO flag retired). Default: absent ⇒ live/stub.
@@ -30,6 +35,11 @@ vi.mock("./verify-token", () => ({
         }
       : undefined,
 }));
+
+beforeEach(() => {
+  vi.mocked(enforceMcpRateLimit).mockReset();
+  vi.mocked(enforceMcpRateLimit).mockResolvedValue("ok");
+});
 
 const MCP_URL = "http://localhost:3000/api/mcp";
 const PROTOCOL_VERSION = "2024-11-05";
@@ -392,6 +402,39 @@ describe("POST /api/mcp (hosted — auth configured)", () => {
       id: 1,
       result: { serverInfo: { name: "worthline" } },
     });
+  });
+
+  test("pre-auth IP rate limit rejects before the verifier runs", async () => {
+    vi.mocked(enforceMcpRateLimit).mockResolvedValue("limited");
+
+    const response = await mcpRequest(initialize, {
+      "x-real-ip": "203.0.113.99",
+    });
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "rate_limited" });
+  });
+
+  test("pre-auth IP rate limit is skipped when a bearer token is present", async () => {
+    vi.mocked(enforceMcpRateLimit).mockResolvedValue("limited");
+
+    const response = await mcpRequest(initialize, {
+      Authorization: `Bearer ${VALID_MCP_TOKEN}`,
+      "x-real-ip": "203.0.113.99",
+    });
+
+    expect(response.status).toBe(200);
+    expect(enforceMcpRateLimit).not.toHaveBeenCalled();
+  });
+
+  test("pre-auth store failure fails closed with 401", async () => {
+    vi.mocked(enforceMcpRateLimit).mockResolvedValue("store_unavailable");
+
+    const response = await mcpRequest(initialize, {
+      "x-real-ip": "203.0.113.99",
+    });
+
+    expect(response.status).toBe(401);
   });
 });
 

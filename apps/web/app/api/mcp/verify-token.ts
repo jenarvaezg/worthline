@@ -1,6 +1,8 @@
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { createControlPlaneStore, type TenancyDirectory } from "@worthline/db";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { mcpSubjectRatePlan } from "./rate-limit";
+import { enforceMcpRateLimit } from "./rate-limit-store";
 
 /**
  * Resolve a bearer token presented to the agent-view MCP endpoint into the MCP
@@ -87,6 +89,12 @@ export interface VerifyMcpTokenDeps {
   resolveEmail: (subject: string) => Promise<VerifiedEmail | null>;
   /** Map verified claims to the caller's workspace, or null when no grant exists. */
   resolveWorkspace: (claims: McpTokenClaims) => Promise<McpWorkspaceRef | null>;
+  /**
+   * Subject rate limit (#1183), applied after JWT verification and BEFORE
+   * resolveEmail / resolveWorkspace. Return `"reject"` to fail closed without
+   * calling WorkOS or the control plane for tenancy.
+   */
+  enforceSubjectRateLimit?: (subject: string) => Promise<"ok" | "reject">;
 }
 
 type JwtVerifierKey = CryptoKey | JWTVerifyGetKey;
@@ -193,6 +201,14 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
       return undefined;
     }
     if (!verified) return undefined; // already logged by the verifier
+
+    if (deps.enforceSubjectRateLimit) {
+      const rate = await deps.enforceSubjectRateLimit(verified.subject);
+      if (rate !== "ok") {
+        console.warn("[mcp-auth] reject: subject rate limit", { outcome: rate });
+        return undefined;
+      }
+    }
 
     // WorkOS access tokens carry the subject but not the email; resolve it from
     // the WorkOS directory by subject when the token claim is absent (ADR 0034).
@@ -385,5 +401,9 @@ export async function verifyMcpToken(
     verifyJwt,
     resolveEmail: (subject) => envResolveEmail(subject, process.env),
     resolveWorkspace: (claims) => envResolveWorkspace(claims, process.env),
+    enforceSubjectRateLimit: async (subject) => {
+      const outcome = await enforceMcpRateLimit(mcpSubjectRatePlan(subject));
+      return outcome === "ok" ? "ok" : "reject";
+    },
   })(req, bearerToken);
 }

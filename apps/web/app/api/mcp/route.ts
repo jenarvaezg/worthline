@@ -2,7 +2,8 @@ import type { Implementation } from "@modelcontextprotocol/sdk/types.js";
 import { createAgentViewInternalMcpToolCatalog } from "@web/agent-view/internal-catalog";
 import { createAgentViewMcpServer } from "@web/agent-view/mcp-server";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
-
+import { mcpPreAuthRatePlan } from "./rate-limit";
+import { enforceMcpRateLimit } from "./rate-limit-store";
 import { verifyMcpToken } from "./verify-token";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export const runtime = "nodejs";
 
 const MCP_METADATA_PATH = "/.well-known/oauth-protected-resource";
 const MCP_READ_SCOPE = "worthline:read";
+const NO_STORE = { "Cache-Control": "no-store" };
 
 // Public origin for client-facing metadata (the connector icon claude.ai shows).
 // Tracks the resource identifier in prod; falls back to the default alias locally.
@@ -58,11 +60,60 @@ function isAuthConfigured(): boolean {
   return Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 }
 
+function clientIp(request: Request): string | null {
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  return forwarded?.split(",").at(-1)?.trim() || null;
+}
+
+function hasBearerToken(request: Request): boolean {
+  const authHeader = request.headers.get("Authorization");
+  const [type, token] = authHeader?.split(" ") ?? [];
+  return type?.toLowerCase() === "bearer" && Boolean(token);
+}
+
+function preAuthRateLimitResponse(request: Request, status: 401 | 429): Response {
+  const resourceMetadataUrl = `${PUBLIC_ORIGIN}${MCP_METADATA_PATH}`;
+  const headers: Record<string, string> = {
+    ...NO_STORE,
+    "Content-Type": "application/json",
+    "WWW-Authenticate": `Bearer error="invalid_token", error_description="Request denied", resource_metadata="${resourceMetadataUrl}"`,
+  };
+  if (status === 429) {
+    headers["Retry-After"] = "3600";
+  }
+  return new Response(
+    JSON.stringify({ error: status === 429 ? "rate_limited" : "unauthorized" }),
+    {
+      status,
+      headers,
+    },
+  );
+}
+
 // Gate only the hosted multi-tenant deploy. The local no-auth mode and the
 // logged-out demo (persona cookie) MCP paths stay open and unchanged, mirroring
 // `resolveStoreTarget`'s `authConfigured` short-circuit (ADR 0030/0034).
-function handler(req: Request): Promise<Response> {
-  return isAuthConfigured() ? gatedHandler(req) : baseHandler(req);
+async function handler(req: Request): Promise<Response> {
+  if (!isAuthConfigured()) {
+    return baseHandler(req);
+  }
+
+  // Pre-auth IP limit applies only when no bearer is present — unauthenticated
+  // OAuth discovery and invalid-token bursts without a header. Authenticated MCP
+  // traffic is metered by subject after JWT verification (#1183).
+  if (!hasBearerToken(req)) {
+    const preAuth = await enforceMcpRateLimit(mcpPreAuthRatePlan(clientIp(req)));
+    if (preAuth === "limited") {
+      return preAuthRateLimitResponse(req, 429);
+    }
+    if (preAuth === "store_unavailable") {
+      return preAuthRateLimitResponse(req, 401);
+    }
+  }
+
+  return gatedHandler(req);
 }
 
 export { handler as GET, handler as POST };
