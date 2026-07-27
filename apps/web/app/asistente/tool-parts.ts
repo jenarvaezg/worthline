@@ -39,3 +39,28 @@ export function isProposalToolName(name: string): boolean {
 export function isProposalToolPart(part: Part): boolean {
   return isToolUIPart(part) && isProposalToolName(toolPartName(part));
 }
+
+/** One tool answer in a conversation: which tool spoke, and what it said. */
+export interface ToolOutput {
+  name: string;
+  output: unknown;
+}
+
+/**
+ * Every tool answer in a conversation, in order.
+ *
+ * Shared for the same reason as the rest of this module: two readings of the same
+ * history — the ids a write may point at and the names its prose may use (#1263) —
+ * must not disagree about which parts count as an answer. Deliberately paired with
+ * the tool's NAME, because what an output means depends on who wrote it: a read
+ * asserts a workspace fact, `suggest_actions` echoes the model's own words back.
+ */
+export function toolOutputsIn(messages: readonly UIMessage[]): ToolOutput[] {
+  return messages.flatMap((message) =>
+    message.parts.flatMap((part) =>
+      isToolUIPart(part) && "output" in part
+        ? [{ name: toolPartName(part), output: part.output }]
+        : [],
+    ),
+  );
+}

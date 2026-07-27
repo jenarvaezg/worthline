@@ -44,6 +44,10 @@ import {
   type HoldingCreationArgs,
 } from "@web/asistente/holding-creation-proposals";
 import {
+  createGroundedHoldingIds,
+  withHoldingIdProvenance,
+} from "@web/asistente/holding-id-provenance";
+import {
   buildHoldingRemovalProposal,
   buildHoldingRestorationProposal,
 } from "@web/asistente/holding-trash-proposals";
@@ -155,6 +159,24 @@ export interface ChatToolsInput {
     category: MaintainerAlertCategory;
     payload: unknown;
   }) => Promise<RaisedMaintainerAlert | null>;
+  /**
+   * Public holding ids worthline already surfaced EARLIER in this conversation
+   * (#1263) — the route reads them off the tool outputs in the history it is about
+   * to send. Together with this turn's own reads they are what grounds a write:
+   * anything else in an id field is something the model made up. Empty by default,
+   * so a fixture with no history grounds ids only through its reads.
+   */
+  groundedHoldingIds?: readonly string[];
+  /**
+   * A write was refused because it pointed at an id no read ever surfaced. The
+   * route logs it: the frequency of the invention is the signal for whether the
+   * pool's model is fit for the write path (ADR 0067), and it is invisible
+   * otherwise — the turn simply carries on without the proposal.
+   */
+  onUngroundedHoldingId?: (rejection: {
+    tool: string;
+    ungroundedHoldingIds: string[];
+  }) => void;
 }
 
 /** Holdings included in the compact context — enough to reason, cheap in tokens. */
@@ -281,6 +303,13 @@ function toChatFinancialContext(context: AgentViewFinancialContext) {
     })),
     exposure: context.exposure,
     holdings: context.holdings.items.map((holding) => ({
+      // The id travels with the holding (#1263). It used to be trimmed for tokens,
+      // which left the model needing a `wl_hld_…` for any write with none in front
+      // of it — an invitation to fill the gap, and it filled it with its own
+      // monologue. Ten ids are ~130 tokens against a 13.000-token floor, and the
+      // context already carried them for the exposure's top holdings, so this
+      // asymmetry only ever hid the ones a debt repair needs.
+      id: holding.id,
       label: holding.label,
       instrument: holding.instrument,
       direction: holding.direction,
@@ -717,6 +746,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
   const unvalidatedEvidence = input.unvalidatedEvidence === true;
   const proposalBudget = createUnvalidatedProposalBudget();
 
+  // Holding-id provenance (#1263): the turn's second piece of mutable state, for the
+  // same reason as the budget. Reads ground the ids they answer, writes are refused
+  // the ids nothing grounded — both applied once, over the whole set, at the end.
+  const groundedHoldingIds = createGroundedHoldingIds(input.groundedHoldingIds ?? []);
+
   /**
    * Wrap a single-fact proposal (the whitelist): allowed on unvalidated
    * evidence, but only once per turn — repeating a puntual tool twelve times is
@@ -739,7 +773,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }
   };
 
-  return {
+  const tools: ToolSet = {
     get_financial_context: tool({
       description:
         "Foto financiera actual del scope (por defecto el del hogar): patrimonio neto, " +
@@ -1907,4 +1941,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       },
     }),
   };
+
+  return withHoldingIdProvenance(tools, groundedHoldingIds, input.onUngroundedHoldingId);
 }

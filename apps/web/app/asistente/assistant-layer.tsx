@@ -66,6 +66,7 @@ import {
   discardHoldingCreationProposalAction,
 } from "./holding-creation-proposal-action";
 import type { HoldingCreationProposal } from "./holding-creation-proposal-contract";
+import { labelsByPublicHoldingId } from "./holding-id-prose";
 import {
   holdingTrashImpactHeader,
   holdingTrashWarnings,
@@ -1464,6 +1465,10 @@ function ConversationParts({
     () => messagesWithFabricatedProposal(messages, busy),
     [messages, busy],
   );
+  // The holding names this conversation read, so the assistant's prose can name a
+  // holding where it wrote its id (#1263). Memoised for the same reason: the panel
+  // re-renders on every keystroke and this walks every tool output of every turn.
+  const holdingLabels = useMemo(() => labelsByPublicHoldingId(messages), [messages]);
   return (
     <>
       {messages.map((message) => (
@@ -1473,6 +1478,7 @@ function ConversationParts({
               const { cleaned } = extractEmbeddedQuickActions(part.text);
               return (
                 <AssistantTextPart
+                  holdingLabels={holdingLabels}
                   key={`${message.id}-${i}`}
                   role={message.role}
                   text={cleaned}

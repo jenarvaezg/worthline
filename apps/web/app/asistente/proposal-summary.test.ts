@@ -52,4 +52,24 @@ describe("proposal summary bound (#1246)", () => {
     const longFallback = "x".repeat(PROPOSAL_SUMMARY_MAX_CHARS + 50);
     expect(boundProposalSummary(undefined, longFallback)).toBe(longFallback);
   });
+
+  /**
+   * The headline is prose a person reads, so it follows the #1263 rule: no public
+   * holding ids. It is stripped here rather than at render because this string is
+   * persisted with the draft, and the panel's prose filter only sees message text.
+   */
+  test("takes a public holding id out of the headline", () => {
+    const bounded = boundProposalSummary(
+      `Corrección del saldo de wl_hld_${"c5d97d4b".repeat(4)} a hoy`,
+      "fallback",
+    );
+
+    expect(bounded).not.toContain("wl_hld_");
+    expect(bounded).toBe("Corrección del saldo de (identificador interno) a hoy");
+  });
+
+  test("falls back when the id was the whole headline", () => {
+    expect(boundProposalSummary("Corrección", "fallback")).toBe("Corrección");
+    expect(boundProposalSummary("   ", "fallback")).toBe("fallback");
+  });
 });

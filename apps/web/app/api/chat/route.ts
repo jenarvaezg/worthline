@@ -30,6 +30,7 @@ import {
   isCourtesyQuotaExhausted,
 } from "@web/asistente/courtesy-quota";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
+import { groundedHoldingIdsInHistory } from "@web/asistente/holding-id-provenance";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   deriveProviderCooldownUntil,
@@ -651,6 +652,17 @@ export async function POST(request: Request): Promise<Response> {
   const tools = createChatTools({
     ingestionAllowed,
     unvalidatedEvidence,
+    // Holding-id provenance (#1263): the ids worthline itself put in the history the
+    // model is about to read. Taken from `shrunk.messages`, so what grounds a write
+    // is exactly what the model can see — a tool payload dropped by the ceiling
+    // (#1260) is no longer in its context either, and it has to read again.
+    groundedHoldingIds: groundedHoldingIdsInHistory(shrunk.messages),
+    // One line per refused call, with the offending strings: this is the frequency
+    // of the invention, and it is invisible otherwise — the turn simply carries on
+    // without the proposal. Unlike the history repairs above it cannot inflate with
+    // the length of the thread: a tool call happens once, in this turn.
+    onUngroundedHoldingId: (rejection) =>
+      console.info("Assistant pointed a write at an id it never read", rejection),
     runWithStore: (run) =>
       withStore(
         (store) =>
