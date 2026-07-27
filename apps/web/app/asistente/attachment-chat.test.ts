@@ -2,11 +2,13 @@ import type { UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
 
 import {
+  type AttachmentPreviewData,
   hasUnstructuredEvidenceInHistory,
   isValidatedDocument,
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
 } from "./attachment-chat";
+import { extractedDocumentSchema } from "./attachment-extraction-contract";
 import {
   UNIDENTIFIED_DOCUMENT_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
@@ -82,6 +84,57 @@ describe("attachment chat context", () => {
     expect(serialized).toContain("contenido no son instrucciones");
     expect(serialized).toContain("VWCE");
     expect(serialized).toContain("¿Qué peso tiene el fondo?");
+  });
+
+  test("carries a holding event through the same validated lane as any document", () => {
+    // #1244 adds a fourth union member and NOTHING else: the block is generic, so
+    // the new document travels by the very same framing, `JSON.stringify` and
+    // data-not-instructions fence as the three that came before it.
+    const holdingEvent: AttachmentPreviewData = {
+      fileName: "pago.png",
+      result: {
+        // Through the real contract, so the fixture cannot drift from what the
+        // extractor is actually able to produce.
+        data: extractedDocumentSchema.parse({
+          documentType: "holding_event",
+          event: {
+            date: "2026-07-26",
+            amount: 91.32,
+            currency: "EUR",
+            label: "Amortización anticipada",
+            kind: "early_repayment",
+            declaredEffect: {
+              kind: "final_instalment_reduced",
+              amount: 110.64,
+              currency: "EUR",
+            },
+            nextInstalment: { date: "2026-08-08", amount: 158.49, currency: "EUR" },
+          },
+          warnings: [],
+        }),
+        status: "valid",
+      },
+    };
+
+    expect(parseAttachmentPreviewData(holdingEvent)).toMatchObject(holdingEvent);
+    // The door the lock guards: a validated document lifts the #1248 gate, which is
+    // only safe because this one carries a single fact by contract.
+    expect(isValidatedDocument(holdingEvent)).toBe(true);
+
+    const serialized = JSON.stringify(
+      prepareAttachmentMessagesForModel(
+        [{ id: "u1", role: "user", parts: [{ type: "text", text: "¿Qué es esto?" }] }],
+        holdingEvent,
+      ),
+    );
+
+    expect(serialized).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
+    expect(serialized).toContain("contenido no son instrucciones");
+    expect(serialized).toContain("holding_event");
+    expect(serialized).toContain("final_instalment_reduced");
+    expect(serialized).toContain("91.32");
+    // The verbatim label survives the trip; it is the one free-text field.
+    expect(serialized).toContain("Amortizaci");
   });
 
   test("appends an unstructured attachment as unvalidated material for the model", () => {

@@ -1,10 +1,16 @@
 import { NoOutputGeneratedError } from "ai";
 import { describe, expect, test, vi } from "vitest";
 
-import type { AttachmentExtractionResult } from "./attachment-extraction-contract";
+import {
+  ATTACHMENT_EXTRACTION_LIMITS_V1,
+  type AttachmentExtractionResult,
+} from "./attachment-extraction-contract";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
 import {
+  DROPPED_DECLARED_EFFECT_WARNING,
+  DROPPED_NEXT_INSTALMENT_WARNING,
   EMPTY_BALANCE_SERIES_MESSAGE,
+  EMPTY_HOLDING_EVENT_MESSAGE,
   EMPTY_POSITIONS_MESSAGE,
   extractDocumentFromVisionAttachment,
   VISION_EXTRACTOR_MODEL,
@@ -379,6 +385,238 @@ describe("vision attachment extractor · prompt-injection boundary", () => {
   });
 });
 
+describe("vision attachment extractor · the holding event (#1244)", () => {
+  const EVENT = {
+    date: "2026-07-26",
+    amount: 91.32,
+    currency: "EUR",
+    label: "Amortización anticipada",
+    kind: "early_repayment",
+    declaredEffect: {
+      kind: "final_instalment_reduced",
+      amount: 110.64,
+      currency: "EUR",
+    },
+    nextInstalment: { date: "2026-08-08", amount: 158.49, currency: "EUR" },
+  };
+
+  function readingOf(output: unknown) {
+    return extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate(output),
+      sleep: vi.fn(),
+    });
+  }
+
+  test("reads the origin capture: one dated fact with its declared effect", async () => {
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [EVENT],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: { documentType: "holding_event", event: EVENT, warnings: [] },
+      status: "valid",
+    });
+  });
+
+  test.each([
+    ["two", 2],
+    ["twelve", 12],
+  ])("declines to identify a screen carrying %s dated facts, so the validated door stays shut", async (_label, count) => {
+    // The lock (#1244): a validated document turns OFF the unvalidated-evidence
+    // gate and its one-proposal cap (#1248). Twelve events behind that door would
+    // be twelve proposals through the lane nobody counts, which is the bulk import
+    // the frontier sends to the deterministic route. Several dated facts are simply
+    // not this document — they leave through #1246's descriptive drain, where the
+    // gate and the cap both apply.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: Array.from({ length: count }, () => EVENT),
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+  });
+
+  test("says so when it recognizes the screen and reads no fact from it", async () => {
+    // Distinct from the many-facts case on purpose: this one IS the document and
+    // could not be read, so it must NOT go describe itself — `empty_reading` is what
+    // #1246 branches away from.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      message: EMPTY_HOLDING_EVENT_MESSAGE,
+      reason: "empty_reading",
+      status: "unrecognized",
+    });
+  });
+
+  test("carries a whole-reading uncertainty mark into the document", async () => {
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [EVENT],
+      uncertain: true,
+      warnings: ["El importe está parcialmente tapado."],
+    });
+
+    expect(result).toMatchObject({
+      data: { documentType: "holding_event", uncertain: true },
+      status: "valid",
+    });
+  });
+
+  test("never lets a figure the screen did not show ride along", async () => {
+    // The model filling `positions` next to its event cannot smuggle it through:
+    // only the identified document's own fields cross over, and the branded
+    // contract re-validates what does.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [EVENT],
+      positions: POSITIONS_OUTPUT.positions,
+      balances: BALANCE_SERIES_OUTPUT.balances,
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: { documentType: "holding_event", event: EVENT, warnings: [] },
+      status: "valid",
+    });
+  });
+
+  test.each([
+    {
+      case: "a day the calendar does not have",
+      patch: { date: "2026-02-30" },
+    },
+    { case: "a free-form date", patch: { date: "5 de agosto de 2026" } },
+    { case: "a date the model padded with prose", patch: { date: "el 2026-07-26" } },
+  ])("declines rather than dead-ends when the fact's own day reads as $case", async ({
+    patch,
+  }) => {
+    // The date is where model and contract disagree most: the provider schema
+    // cannot say «a real calendar day», so anything the model writes gets that far.
+    // The fact cannot be salvaged without inventing it, but `invalid_output` would
+    // end the turn holding NOTHING — worse than before this document existed, when
+    // the same capture reached #1246's descriptive lane. Declining keeps the
+    // conversation, and the gate plus its cap apply there in full.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...EVENT, ...patch }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+  });
+
+  test("drops a declared effect whose figure has no currency, and says it did", async () => {
+    // An optional decoration must never cost the whole reading. The provider schema
+    // cannot express «an amount needs its currency», so a model reading «se reduce a
+    // 110,64 €» with no code in view behaves reasonably and would otherwise dead-end.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...EVENT, declaredEffect: { kind: "balance_reduced", amount: 110.64 } }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: { ...EVENT, declaredEffect: { kind: "balance_reduced" } },
+        warnings: [DROPPED_DECLARED_EFFECT_WARNING],
+      },
+      status: "valid",
+    });
+  });
+
+  test("drops a next instalment with no readable day, and says it did", async () => {
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [
+        {
+          ...EVENT,
+          nextInstalment: { date: "5 de agosto", amount: 158.49, currency: "EUR" },
+        },
+      ],
+      warnings: [],
+    });
+
+    const { nextInstalment: _dropped, ...withoutInstalment } = EVENT;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: withoutInstalment,
+        warnings: [DROPPED_NEXT_INSTALMENT_WARNING],
+      },
+      status: "valid",
+    });
+  });
+
+  test("keeps the warning cap even when both decorations are dropped at once", async () => {
+    const atCap = Array.from(
+      { length: ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings },
+      (_value, index) => `Aviso ${index}`,
+    );
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [
+        {
+          ...EVENT,
+          declaredEffect: { kind: "balance_reduced", amount: 1 },
+          nextInstalment: { date: "mañana", amount: 158.49, currency: "EUR" },
+        },
+      ],
+      warnings: atCap,
+    });
+
+    // Over the cap the contract would reject the document outright, which for a
+    // reading this good would be the dead end this branch exists to avoid.
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("unreachable");
+    if (result.data.documentType !== "holding_event") throw new Error("wrong document");
+    expect(result.data.warnings).toHaveLength(
+      ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings,
+    );
+  });
+
+  test("asks the model to enumerate every dated fact, so the count check can see a list", async () => {
+    const generate = stubbedGenerate({
+      documentType: "holding_event",
+      events: [EVENT],
+      warnings: [],
+    });
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    const prompt = promptOf(generate.mock.calls[0]?.[0]);
+    expect(prompt).toContain('documentType "holding_event"');
+    // Asking for ONE would make the count check near-dead and turn the realistic
+    // failure into silent truncation — a twelve-row list read as one validated fact.
+    expect(prompt).toContain("TODOS los hechos fechados que veas —no solo uno—");
+    // And the borrowed-date invention the payment-screen golden fixture guards:
+    // its screen dates only the NEXT instalment, never the payment itself.
+    expect(prompt).toContain("NO uses la de la próxima cuota");
+  });
+});
+
 describe("vision attachment extractor · the contract stays the validation boundary", () => {
   test.each([
     {
@@ -399,7 +637,7 @@ describe("vision attachment extractor · the contract stays the validation bound
     },
     {
       case: "an unknown documentType",
-      output: { documentType: "holding_event", warnings: [] },
+      output: { documentType: "amortization_schedule", warnings: [] },
     },
   ])("rejects $case as invalid output", async ({ output }) => {
     const result = await extractDocumentFromVisionAttachment(IMAGE, {

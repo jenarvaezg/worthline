@@ -106,20 +106,28 @@ const currencySchema = z
   .trim()
   .regex(/^[A-Z]{3}$/);
 
+/**
+ * True when `value` is `YYYY-MM-DD` AND a real day on the calendar. Exported so a
+ * caller can ASK before handing a date to the contract — the vision seam uses it to
+ * drop an unreadable optional date instead of failing an otherwise good reading.
+ */
+export function isIsoDay(value: string): boolean {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+  const [year, month, day] = trimmed.split("-").map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 /** An ISO calendar date (`YYYY-MM-DD`) that is also a real day. */
 const isoDateSchema = z
   .string()
   .trim()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((value) => {
-    const [year, month, day] = value.split("-").map(Number) as [number, number, number];
-    const date = new Date(Date.UTC(year, month - 1, day));
-    return (
-      date.getUTCFullYear() === year &&
-      date.getUTCMonth() === month - 1 &&
-      date.getUTCDate() === day
-    );
-  }, "La fecha debe ser un día válido en formato YYYY-MM-DD.");
+  .refine(isIsoDay, "La fecha debe ser un día válido en formato YYYY-MM-DD.");
 
 export const extractedPositionSchema = z
   .object({
@@ -318,6 +326,124 @@ export const balanceSeriesDocumentSchema = z
   .strict();
 
 /**
+ * What a dated fact observed on a holding's screen can be (#1244). A CLOSED enum,
+ * so the reading can never carry the model's own prose about what happened: the
+ * screen said «Amortización anticipada» and that sentence lives in `label`, while
+ * this field is the machine-readable half the agent may branch on.
+ */
+export const HOLDING_EVENT_KINDS = [
+  "payment",
+  "early_repayment",
+  "fee",
+  "interest",
+  "deposit",
+  "withdrawal",
+  "other",
+] as const;
+export type HoldingEventKind = (typeof HOLDING_EVENT_KINDS)[number];
+
+/**
+ * The effect the document itself DECLARES the event will have — «tu última cuota
+ * se reducirá en 110,64 €». Modelled as a bounded enum and never as free text
+ * because it is the one field an agent reads to infer an early repayment's `mode`
+ * without the extractor inferring anything (ADR 0048): the screen states it, we
+ * relay it, the domain computes the consequence.
+ */
+export const DECLARED_EFFECT_KINDS = [
+  "final_instalment_reduced",
+  "instalment_reduced",
+  "term_shortened",
+  "balance_reduced",
+] as const;
+export type DeclaredEffectKind = (typeof DECLARED_EFFECT_KINDS)[number];
+
+/**
+ * The declared effect, with the figure the screen put on it when it put one. The
+ * amount and its currency travel together or not at all: an amount with no
+ * currency to read it in cannot be rendered honestly, and a preview that guesses
+ * EUR would be inventing exactly what this document exists not to invent.
+ */
+const declaredEffectSchema = z
+  .object({
+    kind: z.enum(DECLARED_EFFECT_KINDS),
+    amount: extractedNumberSchema.optional(),
+    currency: currencySchema.optional(),
+  })
+  .strict()
+  .refine(
+    (effect) => (effect.amount === undefined) === (effect.currency === undefined),
+    "Un efecto declarado con importe necesita su divisa.",
+  );
+
+/** The next instalment the screen showed next to the event, when it showed one. */
+const nextInstalmentSchema = z
+  .object({
+    date: isoDateSchema,
+    amount: extractedNumberSchema,
+    currency: currencySchema,
+  })
+  .strict();
+
+/**
+ * ONE dated fact observed on a holding's screen (#1244) — a payment confirmation,
+ * a receipt, a movement, a settlement. Every field is *observed*: nothing here is
+ * principal, term, interest rate, resulting balance, or which holding it belongs
+ * to. Identifying the holding is the agent's job with its read tools, and the
+ * `.strict()` below is what makes that a boundary rather than a wish.
+ *
+ * `label` is the only free-text surface, carried verbatim from the screen and
+ * capped exactly like every other string in this contract — it reaches the model
+ * pool inside the structured block, so its bound is a real frontier, not a hint.
+ */
+const holdingEventSchema = z
+  .object({
+    date: isoDateSchema,
+    amount: extractedNumberSchema,
+    currency: currencySchema,
+    label: nonEmptyStringSchema,
+    kind: z.enum(HOLDING_EVENT_KINDS),
+    declaredEffect: declaredEffectSchema.optional(),
+    nextInstalment: nextInstalmentSchema.optional(),
+    uncertain: z.boolean().optional(),
+  })
+  .strict();
+
+/**
+ * The holding-event document: exactly ONE observed fact, deliberately not a list.
+ *
+ * The singular is the lock this slice waited for, and it is worth being precise
+ * about what it does and does not close. A validated document exempts its turn from
+ * the unvalidated-evidence gate *and* from that gate's one-proposal-per-turn cap
+ * (#1248, `unvalidatedEvidenceGateApplies`), so a `holding_event` carrying twelve
+ * events would have been twelve uncapped proposals in a single turn — the bulk
+ * import the frontier reserves for the deterministic route, walking through the one
+ * door nobody counts. With a single `event` that variant has no number to count.
+ *
+ * What it does NOT close: any validated document has always lifted the gate for its
+ * turn, so a conversation can still spend several turns bringing one validated
+ * document each and pay no cap. That is inherited, documented as an accepted cost
+ * on the gate itself, and unchanged here — what this shape removes is the way to do
+ * it in ONE turn, which was the new exposure this document would have added. The
+ * alternative lock (teaching the cap to count facts instead of reading provenance)
+ * stays available and is the one to reach for if the per-turn exemption ever needs
+ * closing too.
+ *
+ * A screen showing several dated facts is therefore NOT this document. It is not
+ * lost: the vision seam declines to identify it and it reaches the model through
+ * #1246's descriptive lane, where the gate and its cap apply in full.
+ */
+export const holdingEventDocumentSchema = z
+  .object({
+    documentType: z.literal("holding_event"),
+    event: holdingEventSchema,
+    uncertain: z.boolean().optional(),
+    warnings: z
+      .array(nonEmptyStringSchema)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings),
+  })
+  .strict();
+
+/**
  * The one validated payload shape reaching chat: a discriminated union of
  * document schemas. The envelope (valid/unrecognized/out_of_limits/failure) is
  * unchanged; only the shape of a valid extraction widened beyond positions.
@@ -327,6 +453,7 @@ export const extractedDocumentSchema = z
     positionsDocumentSchema,
     balanceSeriesDocumentSchema,
     positionsMovementsDocumentSchema,
+    holdingEventDocumentSchema,
   ])
   .brand<"ValidatedExtractedDocument">();
 
@@ -337,6 +464,7 @@ export type ExtractedBalanceSeriesDocument = z.infer<typeof balanceSeriesDocumen
 export type ExtractedPositionsMovementsDocument = z.infer<
   typeof positionsMovementsDocumentSchema
 >;
+export type ExtractedHoldingEventDocument = z.infer<typeof holdingEventDocumentSchema>;
 export type ExtractedDocument = z.infer<typeof extractedDocumentSchema>;
 
 const nonEmptyMessageSchema = z.string().trim().min(1);
