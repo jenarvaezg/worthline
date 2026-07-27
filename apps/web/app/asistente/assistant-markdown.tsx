@@ -1,9 +1,12 @@
 "use client";
 
 import type { UIMessage } from "ai";
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { Streamdown } from "streamdown";
 
 import { withoutPublicHoldingIds } from "./holding-id-prose";
+import { internalProseLinkHref } from "./prose-link";
 
 /**
  * Assistant replies arrive as markdown (bold, lists, headings, tables, code)
@@ -40,13 +43,63 @@ function AssistantMarkdown({ children }: { children: string }) {
  * Dropping the element is the whole fix, and it costs nothing real: the assistant
  * answers in prose, figures and links to worthline's own surfaces — it has never
  * had a reason to paint an image. This is a narrow, verifiable rule, not a
- * sanitizer to keep correct: there is no allowlist to get wrong. Prose and links
- * are untouched (`rehype-sanitize` already keeps `javascript:` out of hrefs), and
- * the alt text still reads, so an injected image cannot even hide its own body.
+ * sanitizer to keep correct: there is no allowlist to get wrong, and the alt text
+ * still reads, so an injected image cannot even hide its own body.
+ *
+ * Two notes that were true when this was written and are not any more. The CSP is
+ * no longer report-only: `img-src` and `connect-src` enforce since #1256 — this rule
+ * is now the first of two layers rather than the only one. And «prose and links are
+ * untouched» stopped being true with {@link ProseLink} (#1289).
  */
 const ASSISTANT_MARKDOWN_COMPONENTS = {
+  a: ProseLink,
   img: ({ alt }: { alt?: string | undefined }) => <>{alt ?? ""}</>,
 } as const;
+
+/**
+ * A link in the assistant's prose survives only if it points at worthline (#1289).
+ *
+ * The sibling of the no-images rule, and the same shape: an internal route keeps
+ * working, everything else keeps its TEXT and loses its href. The reasoning behind
+ * the two differs, though, and the difference is worth writing down — #1246 accepted
+ * links precisely because «a click is not a silent GET», which answers exfiltration
+ * without a click and says nothing about phishing. An injected turn could write a
+ * clickable link to any host inside worthline's own panel, and streamdown's pipeline
+ * allows every prefix and every protocol; its `linkSafety` modal is an English «are
+ * you sure», which is not a boundary. See {@link internalProseLinkHref} for what
+ * «internal» has to mean.
+ *
+ * The internal case also stops being second-class: `router.push` is what the typed
+ * chip does (ADR 0053), so the panel — mounted in the root layout — survives the
+ * navigation. Until now streamdown handed even `/patrimonio` to
+ * `window.open(_blank)`, which opened a second tab and called worthline an external
+ * website on the way. The `data-streamdown="link"` hook is kept deliberately: the
+ * styling in `globals.css` is written against that attribute and both channels
+ * should look alike.
+ */
+function ProseLink({
+  children,
+  href,
+}: {
+  children?: ReactNode;
+  href?: string | undefined;
+}) {
+  const router = useRouter();
+  const internalHref = internalProseLinkHref(href);
+  if (internalHref === null) return <>{children}</>;
+  return (
+    <a
+      data-streamdown="link"
+      href={internalHref}
+      onClick={(event) => {
+        event.preventDefault();
+        router.push(internalHref);
+      }}
+    >
+      {children}
+    </a>
+  );
+}
 
 /**
  * One text part of a chat turn. The assistant's prose is rendered as markdown;
