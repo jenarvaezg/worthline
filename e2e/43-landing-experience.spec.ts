@@ -6,6 +6,21 @@
  */
 import { expect, test } from "./fixtures";
 
+/**
+ * One frame of the typing animation, as the page recorded it. Declared out here
+ * (rather than with `declare global`) so nothing in this file widens the shared
+ * `Window` type for every other spec.
+ */
+interface ChatTypingFrame {
+  caret: boolean;
+  box: { x: number; y: number; width: number; height: number };
+  style: { fontFamily: string; fontWeight: string };
+}
+
+interface ChatTypingWindow extends Window {
+  chatTypingFrames?: ChatTypingFrame[];
+}
+
 async function holdSessionResponse(
   page: import("@playwright/test").Page,
   body: Record<string, unknown>,
@@ -172,41 +187,78 @@ test("normal motion starts without waiting for fonts and settles without a type 
   await page.evaluate(() => document.fonts.ready);
 
   const chat = page.locator("[data-chat-visual]");
+  // The typed amount is complete-but-still-typing for a WINDOW, not forever: the
+  // orchestrator retypes the line one character every 18 ms and drops the caret on
+  // the last one, so «1.847 €» reads complete for the ~800 ms it takes to type the
+  // rest of the sentence. Polling from the test sampled that window from outside
+  // and lost the race whenever a round-trip landed late — three consecutive reds on
+  // main with the run green on the same tree. So the page records every frame
+  // instead: a MutationObserver sees all of them, and the assertion runs on the
+  // film afterwards.
+  await page.evaluate(() => {
+    const visual = document.querySelector("[data-chat-visual]");
+    if (!visual) return;
+    const frames: ChatTypingFrame[] = [];
+    (window as ChatTypingWindow).chatTypingFrames = frames;
+    const record = () => {
+      const amount = visual.querySelector("strong");
+      if (!amount || amount.textContent !== "1.847 €") return;
+      // Skip frames while the entry is still sliding in. Its opacity finishes in
+      // 0.38s but the transform takes 0.55s, and the tail of that ease moves the
+      // amount by half a pixel — which is not the font swap this test is about.
+      const reveal = amount.closest("[data-reveal]");
+      if (reveal) {
+        const revealStyle = getComputedStyle(reveal);
+        if (Number.parseFloat(revealStyle.opacity) < 0.99) return;
+        const settled =
+          revealStyle.transform === "none" ||
+          revealStyle.transform === "matrix(1, 0, 0, 1, 0, 0)";
+        if (!settled) return;
+      }
+      const rect = amount.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const style = getComputedStyle(amount);
+      frames.push({
+        caret: visual.querySelector("[data-chat-caret]") !== null,
+        box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        style: { fontFamily: style.fontFamily, fontWeight: style.fontWeight },
+      });
+    };
+    new MutationObserver(record).observe(visual, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+  });
+
   await chat.scrollIntoViewIfNeeded();
   const typedAmount = chat.locator("strong");
-  let typingStyle: { fontFamily: string; fontWeight: string } | null = null;
-  let typingBox: { x: number; y: number; width: number; height: number } | null = null;
+  // Waiting on the caret's ABSENCE would be satisfied before a single character is
+  // typed. The recorded count only grows, so polling it can never miss its moment.
   await expect
     .poll(
-      async () => {
-        if ((await page.locator("[data-chat-caret]").count()) !== 1) return false;
-        const snapshot = await typedAmount.evaluate((element) => {
-          const reveal = element.closest("[data-reveal]");
-          if (reveal && Number.parseFloat(getComputedStyle(reveal).opacity) < 0.99)
-            return null;
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) return null;
-          if (element.textContent !== "1.847 €") return null;
-          return {
-            box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-            style: { fontFamily: style.fontFamily, fontWeight: style.fontWeight },
-          };
-        });
-        if (!snapshot) return false;
-        typingBox = snapshot.box;
-        typingStyle = snapshot.style;
-        return true;
-      },
-      { timeout: 4_000 },
+      () =>
+        page.evaluate(() => (window as ChatTypingWindow).chatTypingFrames?.length ?? 0),
+      { timeout: 8_000 },
     )
-    .toBe(true);
+    .toBeGreaterThan(0);
+  await expect(page.locator("[data-chat-caret]")).toHaveCount(0, { timeout: 8_000 });
+  await expect(typedAmount).toHaveText("1.847 €");
 
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(0, { timeout: 3_000 });
+  const typingFrames = await page.evaluate(
+    () =>
+      (window as ChatTypingWindow).chatTypingFrames?.filter((frame) => frame.caret) ?? [],
+  );
+  // Without this the test could pass by never having watched anything type.
+  expect(typingFrames.length).toBeGreaterThan(0);
+
   const finalStyle = await typedAmount.evaluate((element) => {
     const style = getComputedStyle(element);
     return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
   });
-  expect(finalStyle).toEqual(typingStyle);
-  expect(await typedAmount.boundingBox()).toEqual(typingBox);
+  const finalBox = await typedAmount.boundingBox();
+  for (const frame of typingFrames) {
+    expect(frame.style).toEqual(finalStyle);
+    expect(frame.box).toEqual(finalBox);
+  }
 });
