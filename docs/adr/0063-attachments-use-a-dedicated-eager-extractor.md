@@ -311,13 +311,15 @@ the document so there is nothing to count. The second was chosen because it need
 change to the boundary it protects and cannot be reopened by a later slice forgetting
 to pass a count.
 
-**What this lock does not close, stated plainly.** Any validated document has always
-lifted the gate for its own turn, so a conversation can still spend several turns
-bringing one validated document each and never meet the cap. That exposure is
-inherited, is documented as an accepted cost on the gate itself, and is unchanged here.
-What the singular removes is the way to do it in ONE turn, which is the new exposure
-this document would otherwise have added. The other lock stays on the shelf for the day
-the per-turn exemption needs closing too.
+**What this lock does not close, stated plainly.** Once a turn brings any validated
+document the gate short-circuits *before* the proposal budget is consulted, so that
+turn has no cap of any kind; and the context window keeps the last three validated
+documents, so by the third upload a turn holds three validated facts simultaneously and
+may propose against all of them. That exposure is inherited, is documented as an
+accepted cost on the gate itself, and is unchanged here. What the singular removes is
+bringing twelve facts through the door in a **single upload** — the new exposure this
+document would otherwise have added. The other lock stays on the shelf for the day the
+per-turn exemption needs closing too.
 
 A screen showing several dated facts is consequently **not this document**. It is not
 lost either: the vision seam declines to identify it and it leaves through #1246's
@@ -348,6 +350,14 @@ effect whose amount arrives with no currency keeps its `kind`, and a next instal
 with no readable day is dropped — each with a warning on the card saying so, because
 losing something the screen showed in silence is the dishonesty this document exists to
 avoid.
+
+One piece of copy is knowingly approximate as a result. A capture declined for a
+contract failure — the seam recognized a payment screen and could not read the fact's
+day — leaves with `unidentified_document`, whose card says worthline recognized no
+document it knows. For the multi-fact case that is literally true (a list of facts is
+not this document); for this one it is not, and the wording is kept anyway because the
+alternative is a fourth verdict whose only purpose is a shade of phrasing, on a path
+whose user-visible outcome is identical: the capture gets described and discussed.
 
 One consequence for the golden set (#1247): `synthetic-payment-screen` **stays a
 negative fixture**, and becomes a sharper one. Its screen dates only the next

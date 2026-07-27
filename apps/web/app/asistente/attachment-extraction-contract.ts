@@ -419,14 +419,15 @@ const holdingEventSchema = z
  * import the frontier reserves for the deterministic route, walking through the one
  * door nobody counts. With a single `event` that variant has no number to count.
  *
- * What it does NOT close: any validated document has always lifted the gate for its
- * turn, so a conversation can still spend several turns bringing one validated
- * document each and pay no cap. That is inherited, documented as an accepted cost
- * on the gate itself, and unchanged here — what this shape removes is the way to do
- * it in ONE turn, which was the new exposure this document would have added. The
+ * What it does NOT close, precisely: once a turn brings any validated document the
+ * gate short-circuits before the budget is even consulted, so that turn has NO cap
+ * of any kind — and `validatedDocumentsInContext` keeps the last three, so by the
+ * third upload a turn holds three validated facts at once and may propose against
+ * all of them. What this shape removes is bringing twelve facts through the door in
+ * a SINGLE upload; the per-turn exemption itself is inherited, is documented as an
+ * accepted cost on the gate, and is bounded only by that three-document window. The
  * alternative lock (teaching the cap to count facts instead of reading provenance)
- * stays available and is the one to reach for if the per-turn exemption ever needs
- * closing too.
+ * stays available and is the one to reach for if that exemption ever needs closing.
  *
  * A screen showing several dated facts is therefore NOT this document. It is not
  * lost: the vision seam declines to identify it and it reaches the model through

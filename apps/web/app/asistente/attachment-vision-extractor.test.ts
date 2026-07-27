@@ -566,7 +566,7 @@ describe("vision attachment extractor · the holding event (#1244)", () => {
     });
   });
 
-  test("keeps the warning cap even when both decorations are dropped at once", async () => {
+  test("never lets a noisy reading evict the disclosures of what it dropped", async () => {
     const atCap = Array.from(
       { length: ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings },
       (_value, index) => `Aviso ${index}`,
@@ -585,12 +585,39 @@ describe("vision attachment extractor · the holding event (#1244)", () => {
 
     // Over the cap the contract would reject the document outright, which for a
     // reading this good would be the dead end this branch exists to avoid.
-    expect(result.status).toBe("valid");
-    if (result.status !== "valid") throw new Error("unreachable");
-    if (result.data.documentType !== "holding_event") throw new Error("wrong document");
+    if (result.status !== "valid") throw new Error(`got ${result.status}`);
+    if (result.data.documentType !== "holding_event") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
     expect(result.data.warnings).toHaveLength(
       ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings,
     );
+    // The point of the test: staying under the cap must not be paid for by dropping
+    // the two lines that say what was lost. The model's own notes yield instead.
+    expect(result.data.warnings).toContain(DROPPED_DECLARED_EFFECT_WARNING);
+    expect(result.data.warnings).toContain(DROPPED_NEXT_INSTALMENT_WARNING);
+    expect(result.data.warnings).not.toContain(`Aviso ${atCap.length - 1}`);
+  });
+
+  test("drops a declared effect's stray currency without claiming a figure was lost", async () => {
+    // The mirror direction of the drop above, and it must NOT warn: a currency with
+    // no amount is not a figure, so nothing the screen showed goes missing — and
+    // announcing «un importe sin divisa» when there was no importe would be this
+    // card saying something the reading did not do.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...EVENT, declaredEffect: { kind: "term_shortened", currency: "EUR" } }],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: { ...EVENT, declaredEffect: { kind: "term_shortened" } },
+        warnings: [],
+      },
+      status: "valid",
+    });
   });
 
   test("asks the model to enumerate every dated fact, so the count check can see a list", async () => {

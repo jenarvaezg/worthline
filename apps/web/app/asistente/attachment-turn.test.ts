@@ -1,6 +1,7 @@
 import {
   UNIDENTIFIED_DOCUMENT_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
+  UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
 import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
@@ -124,7 +125,13 @@ describe("readAttachmentTurn", () => {
 
     // Unstructured, NOT validated: this is what keeps the gate and the cap biting.
     expect(reading.unstructured?.source).toBe("vision_description");
-    expect(reading.preview.result.status).not.toBe("valid");
+    // And the card carries the message `hasUnstructuredEvidenceInHistory` looks for,
+    // so the boundary still recognizes this turn one turn later (#1246). Asserting
+    // merely «not valid» would pass with a card the history lane cannot see.
+    expect(reading.preview.result).toMatchObject({
+      message: UNSTRUCTURED_VISION_MESSAGE,
+      status: "unrecognized",
+    });
   });
 
   it("pays for no description when the document WAS identified and read empty", async () => {
