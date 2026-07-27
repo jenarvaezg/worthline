@@ -83,6 +83,17 @@ de que la acción resuelva:
   muestra un **pending honesto e inline** en esa fila y se confirma con el dato
   real. Optimismo falso > sin feedback, pero un número inventado que luego salta
   al real es peor que un pending breve.
+- **Sospecha de un terminal que aterriza en la URL que ya se está viendo**
+  (#1250). `appendParam` usa `URLSearchParams.set`, así que dos mutaciones
+  seguidas con el mismo token `ok` producen la URL byte-idéntica a la actual (en
+  /ajustes «Añadir» y «Desactivar» emiten ambas `ok=saved`). Con el Router Cache
+  anterior a #1229 eso perdía el repintado entero: la escritura llegaba al
+  servidor y el DOM se quedaba congelado, sin error ni pista — medido bajo carga
+  de CPU, 8 pérdidas en 150 ciclos con URL idéntica y 0 en 300 con URL distinta.
+  **Cache Components + Partial Prefetching (#1229) lo tapan** (0/150 remedido en
+  esa base), así que no hay maquinaria defendiéndolo hoy. Si #1229 se revierte o
+  cambia de modelo, este es el primer sitio donde mirar: el síntoma es una
+  mutación que persiste y una pantalla que no se entera.
 
 ## 5. Navegación sin flash: View Transitions + scroll estable
 

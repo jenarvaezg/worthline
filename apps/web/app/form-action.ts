@@ -9,7 +9,7 @@ import { guardDemoWrite } from "@web/demo/write-guard";
 import { errorRedirectUrl, parseEntityId } from "@web/intake";
 import { type WorthlineStore } from "@web/store";
 import { type Clock, systemClock } from "@worthline/domain";
-import { refresh, revalidatePath } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 /**
@@ -110,24 +110,22 @@ async function resolveFrontMatter(
  * its own destination fresh, not the sibling tabs. Called on the success path
  * only: an error or blocked write mutated nothing to invalidate.
  *
- * `refresh()` is the second half, and it is NOT redundant (root cause of the
- * #1180 e2e flake). Next's server-action reducer invalidates the prefetch cache
- * and then **starts a re-prefetch cooldown**; per its own docs the current page
- * "does NOT re-render until a navigation or redirect occurs". Our terminal
- * redirect goes through `appendParam(currentUrl, "ok", …)`, which uses
- * `URLSearchParams.set` — so two consecutive mutations that emit the SAME `ok`
- * token redirect to the *byte-identical* URL the user is already on
- * («Añadir» then «Desactivar» in /ajustes both emit `ok=saved`). Navigating to
- * the current URL inside the cooldown window resolved from cache, so the
- * mutation landed on the server while the DOM kept showing pre-mutation state.
- * `refresh()` exists for exactly this ("dynamic data can be cached on the client
- * which won't be refreshed") and re-renders the current tree from the action
- * response, independently of the redirect. Both calls are needed: `revalidatePath`
- * evicts the OTHER tabs, `refresh` re-renders THIS one.
+ * A companion `refresh()` call lived here from #1180 until #1250, on the theory
+ * that `revalidatePath` left the CURRENT tab untouched until a navigation. It
+ * did not, and `refresh()` could not have changed that: in Next 16 the action
+ * handler picks the `x-action-revalidated` header from `pendingRevalidatedTags`
+ * FIRST (`revalidatePath` pushes a profile-less tag, so the header is already
+ * `ActionDidRevalidateStaticAndDynamic`) and only falls through to
+ * `workStore.pathWasRevalidated` when no tag was revalidated — which `refresh()`
+ * merely downgrades from "static and dynamic" to "dynamic only". Same header,
+ * same `skipPageRendering: false`, same seeded re-render in the response. The
+ * real cause of both flakes was elsewhere entirely — a mutation terminal landing
+ * on the byte-identical URL already on screen, see interaction-patterns §4 — so
+ * the inert call is gone rather than left standing as a justification that does
+ * not hold.
  */
 function invalidateRouterCache(): void {
   revalidatePath("/", "layout");
-  refresh();
 }
 
 /** Run the guarded command with the chosen store cycle (dated-fact-safe or plain). */
