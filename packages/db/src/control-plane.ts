@@ -417,6 +417,27 @@ export interface UsageLimits {
    */
   recordAssistantCourtesyUse(rateKey: string, monthKey: string): Promise<number>;
   /**
+   * The vision-extraction calls already paid for on (rateKey, windowKey) — the
+   * pre-call half of the attachment cost fuse (#1258). Zero when there is no row
+   * yet. Read-then-check rather than the increment-then-check of the counters
+   * above, because ONE attachment can cost more than one call: a capture whose
+   * document is not identified pays a second, descriptive reading (#1246), and
+   * the true number is only known once the reading finishes.
+   */
+  readAttachmentExtractionCalls(rateKey: string, windowKey: string): Promise<number>;
+  /**
+   * Add `calls` finished vision-extraction calls to (rateKey, windowKey) (#1258).
+   * Aggregate only — a count of model calls, never any document content (#1131).
+   * Recorded AFTER the reading, so a caller sitting just under the ceiling may
+   * overshoot it by one attachment before the next is refused; the same
+   * overshoot tolerance as the token meter.
+   */
+  recordAttachmentExtractionCalls(
+    rateKey: string,
+    windowKey: string,
+    calls: number,
+  ): Promise<void>;
+  /**
    * Add `tokens` of assistant AI usage to BOTH this workspace's and the shared
    * global daily counters (PRD #1160 S3, #1163) for `dayKey` (UTC "YYYY-MM-DD").
    * The per-plan workspace budget and the global daily fuse both read from these
@@ -801,6 +822,16 @@ CREATE TABLE IF NOT EXISTS mcp_usage (
   PRIMARY KEY (rate_key, window_key)
 );
 CREATE TABLE IF NOT EXISTS assistant_courtesy_usage (
+  rate_key TEXT NOT NULL,
+  window_key TEXT NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (rate_key, window_key)
+);
+-- Vision-extraction call counter (#1258): how many attachment readings a caller
+-- paid for in one UTC hour. Its own table, like every other quota, so the
+-- extractor fuse and the conversational counters can never interfere.
+CREATE TABLE IF NOT EXISTS attachment_extraction_usage (
   rate_key TEXT NOT NULL,
   window_key TEXT NOT NULL,
   count INTEGER NOT NULL DEFAULT 0,
@@ -1547,6 +1578,26 @@ async function buildControlPlaneStore(
         args: [rateKey, windowKey],
       });
       return Number(result.rows[0]?.["count"] ?? 1);
+    },
+    async readAttachmentExtractionCalls(rateKey, windowKey) {
+      const result = await client.execute({
+        sql: `SELECT count FROM attachment_extraction_usage
+              WHERE rate_key = ? AND window_key = ?`,
+        args: [rateKey, windowKey],
+      });
+      return Number(result.rows[0]?.["count"] ?? 0);
+    },
+    async recordAttachmentExtractionCalls(rateKey, windowKey, calls) {
+      if (calls <= 0) return;
+      // ponytail: stale hourly rows are never purged, exactly as `chat_usage`.
+      await client.execute({
+        sql: `INSERT INTO attachment_extraction_usage (rate_key, window_key, count)
+              VALUES (?, ?, ?)
+              ON CONFLICT(rate_key, window_key) DO UPDATE SET
+                count = count + excluded.count,
+                updated_at = CURRENT_TIMESTAMP`,
+        args: [rateKey, windowKey, calls],
+      });
     },
     async recordAiTokenUsage(workspaceId, dayKey, tokens) {
       if (tokens <= 0) return;

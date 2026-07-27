@@ -3,8 +3,10 @@ import { z } from "zod";
 
 import {
   defaultCreateVisionModel,
+  isUnbilledVisionFailure,
   resolveVisionModelId,
   type VisionAttachmentInput,
+  type VisionCallObserver,
   visionAttachmentLimitFailure,
 } from "./attachment-vision";
 
@@ -66,7 +68,7 @@ interface VisionDescriptionRequest {
   abortSignal: AbortSignal;
 }
 
-export interface VisionDescriptionDependencies {
+export interface VisionDescriptionDependencies extends VisionCallObserver {
   env?: Record<string, string | undefined>;
   createModel?: (input: { apiKey: string; modelId: string }) => LanguageModel;
   generate?: (request: VisionDescriptionRequest) => Promise<{ output: unknown }>;
@@ -164,14 +166,23 @@ export async function describeVisionAttachment(
       }),
       temperature: 0,
     });
+    // Billed: the SECOND vision call of the cascade, the one #1258 was filed about.
+    dependencies.onVisionCall?.();
     const parsed = visionDescriptionSchema.safeParse(generated.output);
     if (!parsed.success) return null;
     return boundedDescription(parsed.data.description);
-  } catch {
+  } catch (error) {
     // One landing place for every way this can fail — no usable output, a rejected
-    // or unavailable provider, a transport error. Unlike the extraction seam there
-    // is nothing to tell apart: the caller's only two options are «I have a
-    // description» and «I do not», and the second one is already handled honestly.
+    // or unavailable provider, a transport error, our own timeout. Unlike the
+    // extraction seam there is nothing to tell apart *for the caller*: its only two
+    // options are «I have a description» and «I do not».
+    //
+    // The MONEY question is a different one, and it does have two answers (#1258):
+    // everything here except a busy provider handed the document over and was paid
+    // for. The timeout is the case that matters — a 4 MiB, 20-page PDF is both the
+    // most expensive call and the likeliest to run out of the twelve seconds, so a
+    // fuse that skipped it would be a free lane for exactly the worst file.
+    if (!isUnbilledVisionFailure(error)) dependencies.onVisionCall?.();
     return null;
   }
 }

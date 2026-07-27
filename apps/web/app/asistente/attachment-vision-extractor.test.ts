@@ -447,6 +447,104 @@ describe("vision attachment extractor · provider mechanics", () => {
     });
   });
 
+  test("reports one billed vision call when the provider answers (#1258)", async () => {
+    const onVisionCall = vi.fn();
+
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate(POSITIONS_OUTPUT),
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("reports a billed call even when the answer is unusable", async () => {
+    // Malformed output costs exactly what a good reading costs.
+    const onVisionCall = vi.fn();
+
+    const result = await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate({ documentType: "nonsense" }),
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(result.status).toBe("failure");
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills nothing for the 503 attempts it retried through", async () => {
+    // A busy provider is weather, not spend: charging the caller for it would blow
+    // their extraction fuse during an outage they did not cause.
+    const onVisionCall = vi.fn();
+    const generate = vi
+      .fn()
+      .mockRejectedValueOnce({ statusCode: 503 })
+      .mockResolvedValueOnce({ output: POSITIONS_OUTPUT });
+
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills a rejection: the provider took the document and did the work", async () => {
+    // Only 503 is free. A 400 that read the file and gave nothing back is still
+    // spend, and a fuse that ignored it would be a lane the caller can pick.
+    const onVisionCall = vi.fn();
+
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: vi.fn().mockRejectedValue({ statusCode: 400 }),
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills output the model produced but could not shape", async () => {
+    const onVisionCall = vi.fn();
+
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: vi
+        .fn()
+        .mockRejectedValue(new NoOutputGeneratedError({ message: "no output" })),
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills nothing when the deploy has no extractor key at all", async () => {
+    const onVisionCall = vi.fn();
+
+    const result = await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: {},
+      generate: stubbedGenerate(POSITIONS_OUTPUT),
+      onVisionCall,
+      sleep: vi.fn(),
+    });
+
+    expect(result.status).toBe("failure");
+    expect(onVisionCall).not.toHaveBeenCalled();
+  });
+
   test("retries only 503 with bounded backoff and disables SDK retries", async () => {
     const sleep = vi.fn(async () => undefined);
     const generate = vi

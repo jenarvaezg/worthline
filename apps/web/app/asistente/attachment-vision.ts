@@ -19,6 +19,52 @@ export const VISION_EXTRACTOR_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /** Which file family carries the document. It decides transport and guards only. */
 export type VisionAttachmentKind = "image" | "pdf";
 
+/**
+ * Which vision lane an attachment travels in, or `null` when none does — a
+ * spreadsheet, whose deterministic model-free route owns it.
+ *
+ * Exported because the answer is needed BEFORE the reading runs as well as inside it:
+ * the chat route has to know whether this attachment is about to spend from the
+ * extraction budget (#1258), and it must reach that answer the same way the reading
+ * does. A second copy of the MIME rule would be a fuse that disagrees with the lane
+ * it guards. The extension fallback stands because a browser can send an empty type.
+ */
+export function visionAttachmentKind(
+  fileName: string,
+  mimeType: string,
+): VisionAttachmentKind | null {
+  const normalizedMime = mimeType.toLowerCase();
+  if (normalizedMime === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) {
+    return "pdf";
+  }
+  return normalizedMime.startsWith("image/") ? "image" : null;
+}
+
+/**
+ * Told once per vision model call this reading paid for (#1258).
+ *
+ * «Paid for» is *the provider did the work*, not *the answer was useful*. It fires on a
+ * good reading, on output that fails the schema, on a rejection, and on our own
+ * timeout — all of those handed the document to the model, and a fuse that only
+ * charged the successful ones would hand the caller a free lane: choose a file that
+ * reliably times out or defeats the schema and read for nothing. The single exception
+ * is a `503`, where the provider was too busy to start: charging that would blow a
+ * caller's fuse during an outage they did not cause.
+ *
+ * The observer lives in the shared plumbing rather than in each extractor because the
+ * cost of reading ONE attachment is spread across two entry points in cascade (#1246):
+ * only their sum is the number a fuse can be built on.
+ */
+export interface VisionCallObserver {
+  /** Invoked once per billed vision call. Optional: an unobserved reading still works. */
+  onVisionCall?: (() => void) | undefined;
+}
+
+/** True when a failure means the provider never got to work, so nothing was spent. */
+export function isUnbilledVisionFailure(error: unknown): boolean {
+  return visionProviderStatusCode(error) === 503;
+}
+
 /** One attachment as the vision seam receives it, shared by every reading of it. */
 export interface VisionAttachmentInput {
   bytes: Uint8Array;

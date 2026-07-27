@@ -20,10 +20,12 @@ import {
   classifyVisionProviderFailure,
   defaultCreateVisionModel,
   defaultVisionSleep,
+  isUnbilledVisionFailure,
   resolveVisionModelId,
   VISION_EXTRACTOR_DEFAULT_MODEL,
   VISION_EXTRACTOR_RETRY_DELAYS_MS,
   type VisionAttachmentInput,
+  type VisionCallObserver,
   visionAttachmentLimitFailure,
   visionProviderStatusCode,
 } from "./attachment-vision";
@@ -125,7 +127,7 @@ interface VisionGenerationRequest {
   temperature: 0;
 }
 
-interface VisionExtractorDependencies {
+interface VisionExtractorDependencies extends VisionCallObserver {
   env?: Record<string, string | undefined>;
   createModel?: (input: { apiKey: string; modelId: string }) => LanguageModel;
   generate?: (request: VisionGenerationRequest) => Promise<{ output: unknown }>;
@@ -343,10 +345,17 @@ export async function extractDocumentFromVisionAttachment(
   ) {
     try {
       const generated = await generate(request);
+      // Billed: the provider did the work. Counted before the output is judged —
+      // a malformed reading costs exactly the same as a good one (#1258).
+      dependencies.onVisionCall?.();
       const visionOutput = visionOutputSchema.safeParse(generated.output);
       if (!visionOutput.success) return INVALID_OUTPUT_FAILURE;
       return documentFrom(visionOutput.data);
     } catch (error) {
+      // Every failure below the 503 retry took the document to the provider, so it is
+      // spend even though it gave nothing back (#1258). Charging only the useful
+      // answers would leave an unbilled lane open to whoever picks the right file.
+      if (!isUnbilledVisionFailure(error)) dependencies.onVisionCall?.();
       if (
         NoOutputGeneratedError.isInstance(error) ||
         NoObjectGeneratedError.isInstance(error)

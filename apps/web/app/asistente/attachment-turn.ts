@@ -8,6 +8,7 @@ import {
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
+import { visionAttachmentKind } from "@web/asistente/attachment-vision";
 import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 
@@ -41,6 +42,17 @@ export interface AttachmentTurnReading {
    * so the caller derives that flag from this field rather than guessing from MIME.
    */
   unstructured: UnstructuredAttachment | null;
+  /**
+   * What reading this document cost: billed vision calls, 0 to 2 (#1258). A
+   * spreadsheet is 0 — no model touches it. An identified document is 1. A capture
+   * the seam does not identify is 2, because it also pays for a description.
+   *
+   * It belongs to the reading and not to the route because only the reading knows
+   * which branches it took, and because the eval harness runs this same seam: the
+   * cost of the cascade is measurable there for the same reason its behaviour is.
+   * What to DO about the number — whose budget it spends — stays with the caller.
+   */
+  visionCalls: number;
 }
 
 /**
@@ -54,16 +66,24 @@ export async function readAttachmentTurn(
   input: AttachmentTurnInput,
 ): Promise<AttachmentTurnReading> {
   const fileName = input.fileName.trim();
-  const mimeType = input.mimeType.toLowerCase();
   const extractionInput = { bytes: input.bytes, fileName, mimeType: input.mimeType };
-  const isPdf = mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
-  const isImage = mimeType.startsWith("image/");
-  const isSpreadsheet = !isPdf && !isImage;
-  const visionKind = isPdf ? "pdf" : "image";
+  const visionKind = visionAttachmentKind(fileName, input.mimeType);
+  const isSpreadsheet = visionKind === null;
 
-  const result = isSpreadsheet
-    ? extractSpreadsheetDocument(extractionInput)
-    : await extractDocumentFromVisionAttachment({ ...extractionInput, kind: visionKind });
+  // Every billed vision call of the cascade lands here, so the caller gets ONE number
+  // for what reading this document cost (#1258) instead of inferring it from the lane.
+  let visionCalls = 0;
+  const onVisionCall = (): void => {
+    visionCalls += 1;
+  };
+
+  const result =
+    visionKind === null
+      ? extractSpreadsheetDocument(extractionInput)
+      : await extractDocumentFromVisionAttachment(
+          { ...extractionInput, kind: visionKind },
+          { onVisionCall },
+        );
 
   // A readable spreadsheet that is not a positions table becomes conversational
   // material instead of a dead-end (#865): render the whole book and let the model
@@ -77,6 +97,7 @@ export async function readAttachmentTurn(
           result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
         },
         unstructured: { fileName, source: "spreadsheet_grid", text },
+        visionCalls,
       };
     }
   }
@@ -91,14 +112,14 @@ export async function readAttachmentTurn(
   // discriminant today, and this keeps a future one that did from sending a workbook to
   // a vision model and clobbering its own rendered grid.
   if (
-    !isSpreadsheet &&
+    visionKind !== null &&
     result.status === "unrecognized" &&
     result.reason === "unidentified_document"
   ) {
-    const description = await describeVisionAttachment({
-      ...extractionInput,
-      kind: visionKind,
-    });
+    const description = await describeVisionAttachment(
+      { ...extractionInput, kind: visionKind },
+      { onVisionCall },
+    );
     if (description) {
       return {
         preview: {
@@ -110,6 +131,7 @@ export async function readAttachmentTurn(
           },
         },
         unstructured: { fileName, source: "vision_description", text: description },
+        visionCalls,
       };
     }
   }
@@ -118,5 +140,5 @@ export async function readAttachmentTurn(
   // the turn (#1242): the preview card carries the message and the conversational model
   // gets the verdict alone — never content it never read — so it can say what happened,
   // ask what the document is and offer the manual route instead of a canned line.
-  return { preview: { fileName, result }, unstructured: null };
+  return { preview: { fileName, result }, unstructured: null, visionCalls };
 }

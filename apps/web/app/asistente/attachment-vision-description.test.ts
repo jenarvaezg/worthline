@@ -232,6 +232,62 @@ describe("vision attachment descriptive reading (#1246)", () => {
     ).toBeNull();
   });
 
+  test("reports the second billed vision call of the cascade (#1258)", async () => {
+    const onVisionCall = vi.fn();
+
+    await describeVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate({ description: "Una pantalla cualquiera." }),
+      onVisionCall,
+    });
+
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills the timeout, the most expensive file's likeliest failure (#1258)", async () => {
+    // A 4 MiB, 20-page PDF is both the priciest call and the one that runs out of
+    // the twelve seconds: if the timeout were free, it would be a free lane.
+    const onVisionCall = vi.fn();
+
+    await describeVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: vi.fn().mockRejectedValue(new DOMException("aborted", "TimeoutError")),
+      onVisionCall,
+    });
+
+    expect(onVisionCall).toHaveBeenCalledTimes(1);
+  });
+
+  test("bills nothing when the provider was too busy to start", async () => {
+    const onVisionCall = vi.fn();
+
+    await describeVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: vi.fn().mockRejectedValue({ statusCode: 503 }),
+      onVisionCall,
+    });
+
+    expect(onVisionCall).not.toHaveBeenCalled();
+  });
+
+  test("bills nothing when the description never leaves the process", async () => {
+    const onVisionCall = vi.fn();
+
+    await describeVisionAttachment(IMAGE, {
+      createModel: () => {
+        throw new Error("bad model id");
+      },
+      env: ENV,
+      generate: vi.fn(),
+      onVisionCall,
+    });
+
+    expect(onVisionCall).not.toHaveBeenCalled();
+  });
+
   test("honors the extractor model override, staying one fixed model", async () => {
     const createModel = vi.fn(() => ({ modelId: "m" }) as never);
 

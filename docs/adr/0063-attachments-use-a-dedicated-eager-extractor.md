@@ -286,7 +286,53 @@ alternative is a dead end. Consistently with the metering scope decided in #1163
 extractor call is counted by the assistant's token meter — that meter covers the
 conversational turn, the recurring cost, and the eager extractors are outside it by
 design because their contract hands callers validated JSON and never provider output.
-Surfacing extractor token usage remains the documented follow-up it already was.
+*Extraction spend is bounded by its own counter since the #1258 amendment below.*
+
+## Amendment — extraction answers to its own money fuse (#1258)
+
+The cost paragraph above described a gap and left it open, and #1246 doubled it. Every
+money bound the assistant had missed the eager extractors: the ADR 0050 Gateway ceiling
+is not wired in production (ADR 0051 already says so — production calls each provider
+directly with BYOK keys, and the vision seam does the same); the ADR 0051 rate limit
+counts **turns**, which stopped being a proxy for readings the moment one turn could pay
+for two vision calls; the #1163 token meter deliberately scopes itself to the
+conversational turn; and `demo` resolves to `premium`, so the premium ingestion paywall
+does not gate an anonymous visitor either. The result was a path to a paid provider that
+no counter watched, with the caller choosing how much it cost by choosing the file.
+
+**Vision extraction is metered and capped per caller, per fixed UTC hour, in calls.**
+Calls and not attachments, because the cascade makes them differ; calls and not tokens,
+because the extractor's contract hands back validated JSON and never provider usage, and
+inventing a token estimate would be a number nobody could trust.
+
+**A call is billed when the provider did the work, not when the answer was useful.** A
+good reading, output that fails the schema, a rejection and our own timeout are all
+charged: each one handed the document over. The single exception is a `503`, where the
+provider was too busy to start — that is weather, not spend, and charging it would blow
+a caller's fuse during an outage they did not cause. The distinction is not cosmetic: if
+only useful answers were charged, a file chosen to defeat the schema or to run past the
+descriptive call's twelve-second ceiling would read for free, and the 4 MiB twenty-page
+PDF that is the worst case per call is exactly the file most likely to do it.
+
+The counter is **its own** — its own control-plane table, its own module — and not a
+widening of the token meter, so #1163's semantics survive intact: that one still means
+«what the conversation costs», this one means «what reading files cost». Demo answers to
+two buckets at once (its IP and a shared demo bucket, the #1184 shape) and the ceilings
+there are much tighter, because that is the anonymous, free, unidentifiable surface.
+Local dev is unmetered — the developer owns the key.
+
+Read-then-check, so a caller may cross the ceiling by one attachment before the next is
+refused; the fuse bounds sustained abuse, not a single file. **A blown fuse does not kill
+the turn** (#1242): the attachment is simply not read, the preview card says so with a
+transient `extractor_budget_spent` failure, and the model still answers and can offer the
+manual route. Every reading also logs what it spent, which is the observability half —
+until now there was no way to know what extraction cost at all.
+
+Routing the extractor through the Vercel AI Gateway was the other candidate and is *not*
+rejected: it would put extraction under a real money ceiling denominated in euros. It is
+simply not available today, because nothing in production goes through the Gateway; when
+the conversational path moves there, this counter stays useful as the per-caller fuse the
+platform ceiling cannot express.
 
 ## Consequences
 

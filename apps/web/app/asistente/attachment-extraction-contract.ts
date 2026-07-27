@@ -17,6 +17,9 @@ const EXTRACTOR_FAILURE_KINDS = ["permanent", "transient"] as const;
 const EXTRACTOR_FAILURE_CODES = [
   "extractor_rejected",
   "extractor_unavailable",
+  // The caller's own hourly extraction budget, not the extractor's health (#1258):
+  // nothing was read because reading again would spend money nobody is watching.
+  "extractor_budget_spent",
   "invalid_output",
   "unsupported_document",
 ] as const;

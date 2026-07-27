@@ -15,6 +15,14 @@ import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import {
+  VISION_BUDGET_SPENT_FAILURE,
+  VISION_CALL_LIMITS,
+} from "@web/asistente/attachment-cost";
+import {
+  readVisionCallCounts,
+  recordVisionCalls,
+} from "@web/asistente/attachment-cost-store";
+import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   parseExtractionResult,
 } from "@web/asistente/attachment-extraction-contract";
@@ -68,6 +76,10 @@ vi.mock("@web/asistente/provider-cooldown-store", () => ({
   recordProviderCooldown: vi.fn(),
 }));
 vi.mock("@web/asistente/rate-limit-store", () => ({ countChatRequest: vi.fn() }));
+vi.mock("@web/asistente/attachment-cost-store", () => ({
+  readVisionCallCounts: vi.fn(),
+  recordVisionCalls: vi.fn(),
+}));
 vi.mock("@web/entitlements/read-effective-plan", () => ({ readEffectivePlan: vi.fn() }));
 vi.mock("@web/asistente/courtesy-quota-store", () => ({
   countAssistantCourtesyUse: vi.fn(),
@@ -428,6 +440,9 @@ beforeEach(() => {
   // Token metering is unmetered by default (local dev / no control-plane URL);
   // the #1163 gate has its own tests.
   vi.mocked(readAiTokenUsage).mockResolvedValue(null);
+  // The extraction fuse is unmetered by default (no control plane); #1258 has its
+  // own tests. A null read must never read as a spent budget.
+  vi.mocked(readVisionCallCounts).mockResolvedValue(null);
   vi.mocked(readProviderCooldowns).mockResolvedValue({
     mode: "hosted",
     deploymentKey: "preview-959",
@@ -778,12 +793,16 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("Revisaría la lectura de ACME.");
     expect(modelInput).toContain("Acme Incorporated");
     expect(modelInput).not.toContain("SECRET-PIXELS");
-    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith({
-      bytes: expect.any(Uint8Array),
-      fileName: "posiciones.png",
-      kind: "image",
-      mimeType: "image/png",
-    });
+    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith(
+      {
+        bytes: expect.any(Uint8Array),
+        fileName: "posiciones.png",
+        kind: "image",
+        mimeType: "image/png",
+      },
+      // The reading observes what the call costs, so the caller can charge it (#1258).
+      { onVisionCall: expect.any(Function) },
+    );
     expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
@@ -810,12 +829,15 @@ describe("POST /api/chat", () => {
     const streamed = await response.text();
 
     expect(response.status).toBe(200);
-    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith({
-      bytes: expect.any(Uint8Array),
-      fileName: "amortizacion.pdf",
-      kind: "pdf",
-      mimeType: "application/pdf",
-    });
+    expect(extractDocumentFromVisionAttachment).toHaveBeenCalledWith(
+      {
+        bytes: expect.any(Uint8Array),
+        fileName: "amortizacion.pdf",
+        kind: "pdf",
+        mimeType: "application/pdf",
+      },
+      { onVisionCall: expect.any(Function) },
+    );
     expect(streamed).toContain("data-attachment-extraction");
     expect(JSON.stringify(model.doStreamCalls)).not.toContain("SECRET-PDF-BYTES");
   });
@@ -1004,12 +1026,15 @@ describe("POST /api/chat", () => {
       expect(streamed).toContain("data-attachment-extraction");
       expect(streamed).toContain(UNSTRUCTURED_VISION_MESSAGE.slice(0, 40));
       // The description reaches the pool through the unstructured fence only.
-      expect(describeVisionAttachment).toHaveBeenCalledWith({
-        bytes: expect.any(Uint8Array),
-        fileName: "posiciones.png",
-        kind: "image",
-        mimeType: "image/png",
-      });
+      expect(describeVisionAttachment).toHaveBeenCalledWith(
+        {
+          bytes: expect.any(Uint8Array),
+          fileName: "posiciones.png",
+          kind: "image",
+          mimeType: "image/png",
+        },
+        { onVisionCall: expect.any(Function) },
+      );
       const turns = turnsOf(model.doStreamCalls[0]!);
       expect(turns).toContain("ADJUNTO NO ESTRUCTURADO");
       expect(turns).toContain("Pantalla de pago");
@@ -1156,6 +1181,205 @@ describe("POST /api/chat", () => {
       // uploaded a capture, and until #1246 this copy said «esa hoja».
       expect(streamed).toContain("Ese archivo");
       expect(streamed).not.toContain("hoja");
+    });
+  });
+
+  describe("extraction money fuse (#1258)", () => {
+    const unidentified = parseExtractionResult({
+      message: "No reconozco en este archivo ninguno de los documentos que sé leer.",
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+
+    /** An extractor that reports its call the way the real one does. */
+    function billingExtractor(result: ReturnType<typeof parseExtractionResult>) {
+      return async (
+        _input: unknown,
+        dependencies?: { onVisionCall?: (() => void) | undefined },
+      ) => {
+        dependencies?.onVisionCall?.();
+        return result;
+      };
+    }
+
+    it("charges the calls a cascade actually paid for, not the attachment", async () => {
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo una pantalla.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({
+        "demo:global": 0,
+        "demo:unknown": 0,
+      });
+      vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+        billingExtractor(unidentified),
+      );
+      vi.mocked(describeVisionAttachment).mockImplementation(
+        async (_input, dependencies) => {
+          dependencies?.onVisionCall?.();
+          return "Una pantalla con cifras.";
+        },
+      );
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      // Demo answers to its own IP bucket and to the shared one, and #1246's
+      // cascade costs two calls in a single turn — the whole point of the fuse.
+      expect(recordVisionCalls).toHaveBeenCalledWith(
+        ["demo:unknown", "demo:global"],
+        expect.any(String),
+        2,
+      );
+    });
+
+    it("charges one call for a document the seam identified", async () => {
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo tu cartera.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({
+        "demo:global": 0,
+        "demo:unknown": 0,
+      });
+      vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+        billingExtractor(
+          parseExtractionResult({
+            data: {
+              documentType: "positions",
+              positions: [
+                {
+                  currency: "EUR",
+                  marketValueEur: 50,
+                  name: "Acme",
+                  ticker: "ACME",
+                  units: 2,
+                },
+              ],
+              warnings: [],
+            },
+            status: "valid",
+          }),
+        ),
+      );
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      expect(recordVisionCalls).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(String),
+        1,
+      );
+    });
+
+    it("refuses to read another file once the hourly budget is spent", async () => {
+      const model = simpleAnswerModel("No he podido leer el archivo esta vez.");
+      vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({
+        "demo:unknown": VISION_CALL_LIMITS.demo,
+      });
+
+      const streamed = await (await POST(imageAttachmentRequest())).text();
+
+      // No provider call at all: that is the money the fuse saves.
+      expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
+      expect(describeVisionAttachment).not.toHaveBeenCalled();
+      expect(recordVisionCalls).not.toHaveBeenCalled();
+      // And the turn survives (#1242): honest card, model still answers.
+      expect(streamed).toContain(VISION_BUDGET_SPENT_FAILURE.message.slice(0, 30));
+      expect(streamed).toContain("No he podido leer el archivo esta vez.");
+      expect(turnsOf(model.doStreamCalls[0]!)).toContain("ADJUNTO NO PROCESADO");
+    });
+
+    it("blows on the shared demo bucket even when this visitor barely read", async () => {
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Ahora mismo no puedo leerlo.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({
+        "demo:global": VISION_CALL_LIMITS.demoGlobal,
+        "demo:unknown": 1,
+      });
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
+    });
+
+    it("never spends the extraction budget on a spreadsheet", async () => {
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo dos columnas.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({
+        "demo:global": 0,
+        "demo:unknown": 0,
+      });
+
+      await (await POST(attachmentRequest("Foo;Bar\nuno;dos"))).text();
+
+      // The deterministic sheet route pays no provider, so it answers to no fuse:
+      // the gate is asked about no bucket at all, and nothing is charged.
+      expect(readVisionCallCounts).toHaveBeenCalledWith([], expect.any(String));
+      expect(recordVisionCalls).not.toHaveBeenCalled();
+    });
+
+    it("keys an authenticated caller by workspace, not by IP", async () => {
+      vi.mocked(readStoreTarget).mockResolvedValue({
+        kind: "authenticated",
+        workspaceId: "wl-abc",
+        dbUrl: "libsql://x",
+        token: "t",
+      });
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo una pantalla.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue({ "ws:wl-abc": 0 });
+      vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+        billingExtractor(unidentified),
+      );
+      vi.mocked(describeVisionAttachment).mockResolvedValue(null);
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      expect(readVisionCallCounts).toHaveBeenCalledWith(
+        ["ws:wl-abc"],
+        expect.any(String),
+      );
+      expect(recordVisionCalls).toHaveBeenCalledWith(
+        ["ws:wl-abc"],
+        expect.any(String),
+        1,
+      );
+    });
+
+    it("leaves the local single-user target unmetered", async () => {
+      vi.mocked(readStoreTarget).mockResolvedValue({ kind: "local" });
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo una pantalla.")),
+      ]);
+      vi.mocked(readVisionCallCounts).mockResolvedValue(null);
+      vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+        billingExtractor(unidentified),
+      );
+      vi.mocked(describeVisionAttachment).mockResolvedValue(null);
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      // The developer owns the key (ADR 0051's bypass): read it, charge nobody.
+      expect(extractDocumentFromVisionAttachment).toHaveBeenCalled();
+      expect(recordVisionCalls).not.toHaveBeenCalled();
+    });
+
+    it("reads the file when the deploy has no control plane to count with", async () => {
+      vi.mocked(resolveChatModels).mockReturnValue([
+        resolvedModel("google", simpleAnswerModel("Veo una pantalla.")),
+      ]);
+      // Unmetered: a null read must never be mistaken for a spent budget.
+      vi.mocked(readVisionCallCounts).mockResolvedValue(null);
+      vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+        billingExtractor(unidentified),
+      );
+      vi.mocked(describeVisionAttachment).mockResolvedValue(null);
+
+      await (await POST(imageAttachmentRequest())).text();
+
+      expect(extractDocumentFromVisionAttachment).toHaveBeenCalled();
     });
   });
 

@@ -6,9 +6,23 @@ import {
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
+import {
+  isVisionCallBudgetSpent,
+  VISION_BUDGET_SPENT_FAILURE,
+  visionCallBuckets,
+  visionCallWindow,
+} from "@web/asistente/attachment-cost";
+import {
+  readVisionCallCounts,
+  recordVisionCalls,
+} from "@web/asistente/attachment-cost-store";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
-import { readAttachmentTurn } from "@web/asistente/attachment-turn";
+import {
+  type AttachmentTurnReading,
+  readAttachmentTurn,
+} from "@web/asistente/attachment-turn";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "@web/asistente/attachment-types";
+import { visionAttachmentKind } from "@web/asistente/attachment-vision";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
   correctFabricatedProposalClaims,
@@ -67,6 +81,7 @@ import {
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
 import { withStore } from "@web/store";
+import type { StoreTarget } from "@web/store-resolver";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -342,6 +357,100 @@ function previewOnlyResponse(
   });
 }
 
+/**
+ * Read one attachment, or refuse to pay for it — the caller half of the extraction
+ * money fuse (#1258), which is why it lives in the route beside the other quotas and
+ * not inside the reading seam.
+ *
+ * The eager vision extractors call a paid provider with the key directly: the Gateway
+ * ceiling (ADR 0050) is not wired, the token meter deliberately scopes itself to the
+ * conversational turn (#1163), and demo resolves to premium — so before this counter
+ * nothing bounded them but an hourly limit on TURNS. Since #1246 one turn can cost TWO
+ * vision calls and the caller picks which by choosing the file, so calls are the unit.
+ *
+ * Only the vision lane spends: a spreadsheet is read deterministically, with no model
+ * and no bill. The lane is resolved with the reading's own rule, never a copy of it.
+ */
+async function readAttachmentUnderBudget(
+  attachment: File,
+  target: StoreTarget,
+  ip: string | null,
+  nowIso: string,
+): Promise<AttachmentTurnReading> {
+  const fileName = attachment.name.trim();
+  const extractionWindow = visionCallWindow(nowIso);
+  const buckets =
+    visionAttachmentKind(fileName, attachment.type) === null
+      ? []
+      : visionCallBuckets(target, ip);
+  const bucketKeys = buckets.map((bucket) => bucket.key);
+
+  // Fails OPEN, and deliberately: a control-plane blip must not stop worthline from
+  // reading a document, exactly as it does not stop provider selection. The loss is
+  // one unmetered window, and the line below says so instead of hiding it.
+  let spentCounts: Record<string, number> | null = null;
+  try {
+    spentCounts = await readVisionCallCounts(bucketKeys, extractionWindow);
+  } catch (error) {
+    console.error("Assistant attachment extraction budget read failed", {
+      operation: "read",
+      cause: operationalCause(error),
+    });
+  }
+
+  if (spentCounts !== null && isVisionCallBudgetSpent(buckets, spentCounts)) {
+    // The turn survives (#1242): the file is simply not read, the card says so, and
+    // the model can offer the manual route. Never a 429 that swallows the question.
+    // Scopes, never keys — a demo key carries the visitor's IP (#1131).
+    console.info("Assistant attachment extraction budget spent", {
+      window: extractionWindow,
+      buckets: buckets.map((bucket) => ({
+        scope: bucket.scope,
+        limit: bucket.limit,
+        used: spentCounts?.[bucket.key] ?? 0,
+      })),
+    });
+    return {
+      preview: { fileName, result: VISION_BUDGET_SPENT_FAILURE },
+      unstructured: null,
+      visionCalls: 0,
+    };
+  }
+
+  const reading = await readAttachmentTurn({
+    bytes: new Uint8Array(await attachment.arrayBuffer()),
+    fileName: attachment.name,
+    mimeType: attachment.type,
+  });
+
+  // What extraction actually spent — the number #1258 said nobody had. One line per
+  // attachment, aggregate only (#1131): how many model calls, on how many bytes,
+  // never a word of the document.
+  console.info("Assistant attachment extraction spend", {
+    visionCalls: reading.visionCalls,
+    sizeBytes: attachment.size,
+    mimeType: attachment.type.toLowerCase(),
+    verdict: reading.preview.result.status,
+  });
+  // Charged before the turn continues rather than with `after()` as the token meter
+  // does: that one cannot know its number until the stream ends, this one knows it
+  // here, and the next request should meet an up-to-date counter rather than one that
+  // lands whenever the response finishes. It does NOT serialize concurrent uploads —
+  // read-then-check means two racing turns can still overshoot by one attachment each.
+  try {
+    if (reading.visionCalls > 0 && bucketKeys.length > 0) {
+      await recordVisionCalls(bucketKeys, extractionWindow, reading.visionCalls);
+    }
+  } catch (error) {
+    console.error("Assistant attachment extraction metering write failed", {
+      operation: "write",
+      cause: operationalCause(error),
+    });
+  }
+
+  return reading;
+}
+
 function operationalCause(error: unknown): { name: string; message: string } {
   return error instanceof Error
     ? { name: error.name, message: error.message }
@@ -381,7 +490,8 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("assistant_unavailable", 503);
   }
 
-  const plan = chatRatePlan(target, clientIp(request));
+  const ip = clientIp(request);
+  const plan = chatRatePlan(target, ip);
   const rateWindow = chatRateWindow(new Date().toISOString());
   if (plan.mode === "count") {
     const count = await countChatRequest(plan.key, rateWindow);
@@ -470,17 +580,12 @@ export async function POST(request: Request): Promise<Response> {
   // What the document IS, and the lane it travels in, is one seam (#1254) — shared
   // with the assistant eval so a run grades this behaviour rather than a copy of it.
   // The route keeps what is about the CALLER: quota, paywall, rate limits, cooldowns.
-  let currentPreview: AttachmentPreviewData | null = null;
-  let unstructuredAttachment: UnstructuredAttachment | null = null;
-  if (attachment) {
-    const reading = await readAttachmentTurn({
-      bytes: new Uint8Array(await attachment.arrayBuffer()),
-      fileName: attachment.name,
-      mimeType: attachment.type,
-    });
-    currentPreview = reading.preview;
-    unstructuredAttachment = reading.unstructured;
-  }
+  const reading = attachment
+    ? await readAttachmentUnderBudget(attachment, target, ip, nowIso)
+    : null;
+  const currentPreview: AttachmentPreviewData | null = reading?.preview ?? null;
+  const unstructuredAttachment: UnstructuredAttachment | null =
+    reading?.unstructured ?? null;
 
   let eligibleProviders = providers;
   try {

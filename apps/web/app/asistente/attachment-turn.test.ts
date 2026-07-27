@@ -67,6 +67,60 @@ describe("readAttachmentTurn", () => {
     expect(reading.preview.fileName).toBe("hoja.csv");
   });
 
+  it("reports what reading a document cost, so the caller can charge it (#1258)", async () => {
+    // The extractors report their own billed calls; the reading only sums them.
+    vi.mocked(extractDocumentFromVisionAttachment).mockImplementation(
+      async (_input, dependencies) => {
+        dependencies?.onVisionCall?.();
+        return {
+          message: "no lo reconozco",
+          reason: "unidentified_document",
+          status: "unrecognized",
+        };
+      },
+    );
+    vi.mocked(describeVisionAttachment).mockImplementation(
+      async (_input, dependencies) => {
+        dependencies?.onVisionCall?.();
+        return "Se ve una pantalla de pago.";
+      },
+    );
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "captura.png",
+      mimeType: "image/png",
+    });
+
+    // The #1246 cascade: one call to identify, a second to describe.
+    expect(reading.visionCalls).toBe(2);
+  });
+
+  it("charges nothing for a spreadsheet, which no model reads", async () => {
+    const reading = await readAttachmentTurn(csv(NOT_A_POSITIONS_TABLE_CSV));
+
+    expect(reading.visionCalls).toBe(0);
+  });
+
+  it("charges nothing when the extractor never reached the provider", async () => {
+    // A misconfigured deploy or an out-of-limits file returns a verdict without
+    // spending a cent, and the fuse must not pretend otherwise.
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      code: "extractor_unavailable",
+      failure: "permanent",
+      message: "sin configurar",
+      status: "failure",
+    });
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "captura.png",
+      mimeType: "image/png",
+    });
+
+    expect(reading.visionCalls).toBe(0);
+  });
+
   it("describes a capture whose document the seam did not identify", async () => {
     vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
       message: "no lo reconozco",

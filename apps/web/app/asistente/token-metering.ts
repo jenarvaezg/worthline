@@ -16,8 +16,13 @@
  * calls whose usage is NOT counted here: their contract deliberately hands
  * callers a validated JSON result and never provider output, so surfacing their
  * token usage is its own change. The pre-call gate still degrades them honestly
- * (a spent budget blocks extraction before it runs); metering that one-shot
- * ingestion cost is a documented follow-up, not part of this slice.
+ * (a spent budget blocks extraction before it runs).
+ *
+ * That one-shot ingestion cost now has its own fuse and its own counter
+ * (`attachment-cost.ts`, #1258), denominated in vision CALLS rather than tokens.
+ * Deliberately a second counter and not a widening of this one: mixing «what the
+ * conversation costs every day» with «what reading a file cost once» would leave
+ * neither number readable.
  */
 
 /** The AI SDK full-stream `finish` part shape we read — only the total we meter. */
