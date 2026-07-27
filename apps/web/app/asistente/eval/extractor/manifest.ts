@@ -4,6 +4,24 @@ import {
 } from "@web/asistente/attachment-extraction-contract";
 import { z } from "zod";
 
+/**
+ * The catalog of degradations worth grading — NOT the list of what is graded. Since
+ * #1254 those are deliberately different things: the fixture arrays below declare
+ * only captures git ships, and a scenario with no fixture is simply uncovered.
+ *
+ * It was the other way round until then, and that is how the set came to lie. Nine
+ * entries pointed at `.local/extractor-golden/`, a directory that existed in no
+ * checkout: every full run ended `incomplete` with exit 1, so the rojo was permanent
+ * noise instead of signal, the merge gate #1243 wrote («una corrida humana del set
+ * completo») could not be run by anybody, and reading the manifest suggested six
+ * graded image scenarios where there was one.
+ *
+ * Uncovered today, awaiting real captures — `mobile`, `reflections`,
+ * `misaligned-columns`, `ticker-name-ambiguity`, `thousand-separator`. They are kept
+ * here because they are what a real capture buys over a synthetic render (which is,
+ * in #1247's words, «more limpio que la vida»), and the README says what each one
+ * must show. Add the file first, then the fixture entry.
+ */
 export const EXTRACTOR_GOLDEN_SCENARIOS = [
   "desktop",
   "mobile",
@@ -70,8 +88,13 @@ export type GoldenFixture =
   | (GoldenFixtureBase & { storage: "local" });
 
 /**
- * Golden extractor fixtures (#991). Committed entries ship safe synthetic assets;
- * local entries reference private captures under `.local/extractor-golden/`.
+ * Golden extractor fixtures (#991) — every one of them a file this repo ships.
+ *
+ * The `local` storage arm stays in the type because private captures are the point
+ * of the uncovered scenarios above, and `run.ts` skips a declared fixture whose
+ * files are absent. What no longer happens is declaring one BEFORE its capture
+ * exists (#1254): an entry with no file on disk turns every full run red and makes
+ * the set claim coverage it does not have.
  */
 export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
   {
@@ -90,41 +113,6 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
     imageFile: "fixtures/synthetic-payment-screen.png",
     scenario: "payment-screen",
     storage: "committed",
-  },
-  {
-    expectedFile: "mobile.expected.json",
-    id: "mobile",
-    imageFile: "mobile.png",
-    scenario: "mobile",
-    storage: "local",
-  },
-  {
-    expectedFile: "reflections.expected.json",
-    id: "reflections",
-    imageFile: "reflections.png",
-    scenario: "reflections",
-    storage: "local",
-  },
-  {
-    expectedFile: "misaligned-columns.expected.json",
-    id: "misaligned-columns",
-    imageFile: "misaligned-columns.png",
-    scenario: "misaligned-columns",
-    storage: "local",
-  },
-  {
-    expectedFile: "ticker-name-ambiguity.expected.json",
-    id: "ticker-name-ambiguity",
-    imageFile: "ticker-name-ambiguity.png",
-    scenario: "ticker-name-ambiguity",
-    storage: "local",
-  },
-  {
-    expectedFile: "thousand-separator.expected.json",
-    id: "thousand-separator",
-    imageFile: "thousand-separator.png",
-    scenario: "thousand-separator",
-    storage: "local",
   },
 ];
 
@@ -194,15 +182,16 @@ export type BalanceSeriesGoldenFixture =
   | (BalanceSeriesGoldenFixtureBase & { storage: "local" });
 
 /**
- * Balance-series fixtures. The real bank statements and amortization schedules are
- * private by nature: they live only under `.local/extractor-golden/` and are never
- * committed — the CLI eval skips any scenario whose files are absent, exactly like
- * #865's private capture set.
+ * Balance-series fixtures. Since #1243 the track is no longer PDF-only, because the
+ * document is no longer decided by the file kind: the synthetic amortization
+ * **screenshot** grades the same `balance_series` document from an image, and it is
+ * safe to commit. That crossing is the whole point of the slice, so it belongs in the
+ * set git ships — and today it is the only fixture here.
  *
- * Since #1243 the track is no longer PDF-only, because the document is no longer
- * decided by the file kind: the synthetic amortization **screenshot** grades the same
- * `balance_series` document from an image, and it is safe to commit. That crossing is
- * the whole point of the slice, so it belongs in the set git ships.
+ * The `debt-statement` and `amortization-schedule` PDF scenarios above are uncovered
+ * (#1254). Real bank statements and amortization schedules are private by nature and
+ * are never committed, so covering them means putting the file under
+ * `.local/extractor-golden/` FIRST and declaring the fixture second.
  */
 export const BALANCE_SERIES_GOLDEN_FIXTURES: BalanceSeriesGoldenFixture[] = [
   {
@@ -211,20 +200,6 @@ export const BALANCE_SERIES_GOLDEN_FIXTURES: BalanceSeriesGoldenFixture[] = [
     scenario: "amortization-schedule-screenshot",
     sourceFile: "fixtures/synthetic-amortization-schedule.png",
     storage: "committed",
-  },
-  {
-    expectedFile: "debt-statement.expected.json",
-    id: "debt-statement",
-    scenario: "debt-statement",
-    sourceFile: "debt-statement.pdf",
-    storage: "local",
-  },
-  {
-    expectedFile: "amortization-schedule.expected.json",
-    id: "amortization-schedule",
-    scenario: "amortization-schedule",
-    sourceFile: "amortization-schedule.pdf",
-    storage: "local",
   },
 ];
 
@@ -291,27 +266,22 @@ export type PositionsMovementsGoldenFixture = PositionsMovementsGoldenFixtureBas
 };
 
 /**
- * Positions + movements XLSX/CSV fixtures are private by nature (a real portfolio
- * export). They live only under `.local/extractor-golden/` and are never committed.
- * The extractor is deterministic, so no API key is needed — but the documents stay
- * private, so the track runs outside CI like #865's private capture set.
+ * **Uncovered today (#1254).** Both scenarios were declared as `.local` XLSX fixtures
+ * that no checkout had, which is what made every full run incomplete; the track now
+ * declares nothing rather than pretending.
+ *
+ * Two ways back, and the second is the cheap one:
+ *  - a real portfolio export, private by nature, under `.local/extractor-golden/`;
+ *  - or a SYNTHETIC workbook committed like the vision captures — this extractor is
+ *    deterministic and needs no API key, so a safe synthetic book would grade the
+ *    fidelity tiers in CI itself. `portfolio-snapshot` even fits a plain CSV;
+ *    `portfolio-with-movements` needs a second sheet, so it needs an .xlsx.
+ *
+ * The grading logic is not idle meanwhile: `graders.test.ts` covers
+ * `gradePositionsMovementsAgainstExpected` in CI, and the extractor has its own unit
+ * tests. What is missing is an end-to-end reading of a real book.
  */
-export const POSITIONS_MOVEMENTS_GOLDEN_FIXTURES: PositionsMovementsGoldenFixture[] = [
-  {
-    expectedFile: "portfolio-snapshot.expected.json",
-    id: "portfolio-snapshot",
-    scenario: "portfolio-snapshot",
-    sourceFile: "portfolio-snapshot.xlsx",
-    storage: "local",
-  },
-  {
-    expectedFile: "portfolio-with-movements.expected.json",
-    id: "portfolio-with-movements",
-    scenario: "portfolio-with-movements",
-    sourceFile: "portfolio-with-movements.xlsx",
-    storage: "local",
-  },
-];
+export const POSITIONS_MOVEMENTS_GOLDEN_FIXTURES: PositionsMovementsGoldenFixture[] = [];
 
 export function parsePositionsMovementsGoldenExpected(
   input: unknown,

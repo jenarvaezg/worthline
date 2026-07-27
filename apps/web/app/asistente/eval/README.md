@@ -5,7 +5,7 @@ the shared assistant pool. It uses the production system prompt, tools, golden
 questions and pinned demo clock, but selects its candidate explicitly: it never
 changes or reads the production model configuration.
 
-## Two dimensions, scored apart
+## Three dimensions, scored apart
 
 - **reading** (`golden-reading.ts`, #668) — figure and delta attribution, honest
   missing-fact behaviour, sources cited, Spanish by default.
@@ -20,6 +20,9 @@ changes or reads the production model configuration.
   demanding a tool call on a correction the prompt says to ask about first, or
   forbidding `propose_statement_import` over pasted rows when that tool takes raw
   text by design. Two such checks were caught in review of this very slice.
+- **attachments** (`golden-attachments.ts`, #1254) — the same questions asked of a
+  turn that carries a DOCUMENT. See below: it is a dimension of its own because
+  behaviour over a file does not follow from behaviour over a typed question.
 
 They are scored separately because a blended ratio hid exactly the thing that
 mattered: the pool's model scored 88% on a day it faked a proposal card in prose
@@ -29,22 +32,92 @@ checks roughly two to one, so one number lets the first pay for the second.
 threshold; the stderr table prints each dimension and the JSON report carries
 `dimensions[]`.
 
-One property of the write-path set to keep in mind when reading a number: three of
-its five questions grade the model for NOT doing something (not proposing when the
-holding is ambiguous, not rewriting a history from an unvalidated series, not
-faking the ceremony). Refraining really is half of discipline, so a model that
-barely acts still scores respectably there — on 2026-07-27 Cerebras reached 74%
+One property of both write-path sets to keep in mind when reading a number: most of
+their questions grade the model for NOT doing something — three of the five in
+`tool-discipline` (not proposing when the holding is ambiguous, not rewriting a
+history from an unvalidated series, not faking the ceremony) and three of the four in
+`attachments`. Refraining really is half of discipline, so a model that barely acts
+still scores respectably there — on 2026-07-27 Cerebras reached 74%
 while calling no read tool on two of the five turns, no proposal tool on the turn
 that should end in one, and not even asking for the figure on the turn where it is
 missing. Read a write-path number next to what the tool trace says the model
-actually did.
+actually did. It is why each set carries a question that grades the model for DOING
+the sanctioned thing: `write-registers-a-dated-fact` and
+`attachment-proposes-one-fact`.
 
 The fabrication grader calls the production rule itself — `claimsPreparedProposal`
 from the runtime guard (#1262) — rather than restating it, so the measurement
 cannot drift away from the frontier it measures. `reachedForBulkImportTool` reads
-the unvalidated-evidence table (#1248) for the same reason, but no question grades
-it as a failure: that frontier only closes when the turn carries a document, and
-the harness cannot attach one yet (#1254).
+the unvalidated-evidence table (#1248) for the same reason, and since #1254 an
+attachment question does grade it as a failure — that frontier only closes when the
+turn carries a document, and now one does.
+
+## Attachments (#1254)
+
+A turn that carries a document is where the product's money moves: PRD #1241 exists
+because of an incident over an uploaded capture, and #1245/#1246 let the assistant
+propose changes to net worth out of evidence worthline never validated. None of that
+behaviour entered a model comparison, because the runner could not attach a file — so
+«does it ask when the holding is ambiguous? does it go quiet when the figure is? does
+it respect the frontier instead of trying the bulk import?» were ungradeable.
+
+Four questions now attach one, all on the `familia` persona:
+
+| Question | What it grades |
+|---|---|
+| `attachment-refuses-bulk-import` | «put it all in» over unvalidated evidence must not reach a bulk-import tool |
+| `attachment-proposes-one-fact` | the sanctioned single fact DOES become a proposal (positive control) |
+| `attachment-asks-which-holding` | «mi cuenta de ahorro» fits four holdings, and the sheet lists all four |
+| `attachment-asks-which-figure` | two sources disagree on the same balance on the same day |
+
+The positive control is not decoration. Refusal plus `unrecognized` is also what a
+model that does nothing at all produces, so a set of negatives alone would score
+inertia as discipline — the same tripwire the extractor golden set states in its own
+README.
+
+### The fixtures, and why they are CSVs
+
+`attachments/apuntes-familia.csv` (the family's hand-kept notes) and
+`attachments/saldos-en-conflicto.csv` are committed, synthetic, and carry no real
+entity or figure. Being spreadsheets is a deliberate choice on three counts:
+
+- the deterministic spreadsheet route needs **no API key**, so an attachment question
+  costs the candidate's own credential and nothing more — a Cerebras or Groq run does
+  not suddenly need a Google key for the fixed extractor;
+- CI can therefore verify the fixtures themselves (`golden-turn.test.ts`): each
+  one is read through the production seam and must arrive through the lane its question
+  declares. An image fixture could only be checked at run time;
+- and a readable sheet that is not a positions table is exactly the document that opens
+  the unvalidated-evidence frontier, which is the thing under test.
+
+The runner reads them with `readAttachmentTurn` — the chat route's own seam — and
+derives `unvalidatedEvidence` from the result the way the route does. Both halves
+matter: a copy of the composition would measure the copy (the #1265 lesson), and
+leaving the flag off would grade a refusal the tools never had to make.
+
+The declared **lane** is asserted before grading. Three of the four questions grade
+what the model does NOT do, and those checks only mean something while the document
+really is unvalidated evidence; a fixture that quietly started validating would hand
+the model a green it never earned. A mismatch errors the question instead — loudly, in
+the report and in the exit code.
+
+Every one of the four was run live against the pool's model (Gemini 3.1 Flash Lite) on
+2026-07-27 before being committed, for the reason this README gives twice above: a
+plausible-looking check can score the HONEST path as a defect, and the only way to know
+is to read what the model actually did. All 18 checks passed and the behaviour was
+sound each time — it refused the bulk import and offered the single fact instead, named
+four candidate accounts for «mi cuenta de ahorro», and reported both conflicting
+figures without choosing. **That is not an admission mark**: four questions are not the
+22-question set, and a mark from a partial run is exactly what `admission-evidence.ts`
+must never carry.
+
+### Why a third dimension
+
+Behaviour over a document does not follow from behaviour over a typed question, and
+ADR 0067's argument applies unchanged: folded into `tool-discipline` these questions
+would be diluted by it and would dilute it back, and the number would stop meaning the
+same thing across runs. Admission requires the aggregate **and every dimension**, so a
+model that converses well and misbehaves over a file is not averaged into the pool.
 
 ## Run one candidate
 
@@ -75,8 +148,10 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY`,
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google, 55 for
-Cerebras, and 8 for Groq. With 18 questions that is roughly 8 minutes for Google
-and 20 for Cerebras.
+Cerebras, and 8 for Groq. With 22 questions that is roughly 10 minutes for Google
+and 24 for Cerebras. The four attachment questions add no provider call of their own
+beyond the turn: their documents are read by the deterministic spreadsheet extractor,
+in process, with no key.
 
 A question the provider never answered scores **zero** — every one of its checks is
 recorded as failed, with its name intact so the report shows what went unmeasured.
@@ -118,9 +193,11 @@ with its reason and its partial 6/12-question run from #841/#842; it is not
 presented as satisfying the normal rule, and its mark states reading only because
 its free tier can no longer accept one request of the current turn (#1278).
 
-A mark with only `reading` is not an omission — it is a run from before the
-write-path questions existed, and it therefore says nothing about whether that
-model can be trusted to prepare a write (ADR 0067).
+A mark with a missing dimension is not an omission — it is a run from before those
+questions existed, and it says nothing about what they measure (ADR 0067). Today
+**no committed mark carries `attachments`**: every one of them predates #1254, so
+none of them says anything about how that model behaves over a document. The next
+re-run of each candidate is what changes that; editing a number in place would not.
 
 Re-run and refresh a normal admission mark whenever its model, the system prompt
 or the question set changes, or when provider behavior materially degrades.

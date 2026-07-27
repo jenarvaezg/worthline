@@ -15,9 +15,11 @@ interface EvidenceRun {
   executedQuestions: number;
   totalQuestions: number;
   /**
-   * The same checks broken down by dimension (#1265). A mark with only `reading`
-   * is not an omission: it is a run from before the write-path questions existed,
-   * so it states nothing about the write path (ADR 0067).
+   * The same checks broken down by dimension (#1265). A mark with a MISSING
+   * dimension is not an omission: it is a run from before those questions existed,
+   * so it states nothing about what they measure (ADR 0067). Two such gaps exist
+   * today — Groq's `tool-discipline`, and `attachments` in every mark, because all
+   * three runs predate #1254.
    */
   dimensions: readonly EvidenceDimension[];
 }
@@ -51,6 +53,11 @@ export type AdmissionEvidence = AdmittedEvidence | GrandfatheredEvidence;
  * One of Cerebras's eighteen questions died on tokens-per-minute even at 55 s of
  * pacing, and a dead question scores zero. Its reading number is therefore a floor,
  * not a measurement of how well it reads.
+ *
+ * All three runs predate the `attachments` dimension (#1254), so no mark here says
+ * anything about how its model behaves when the turn carries a document — the half of
+ * the write path where PRD #1241's incident actually happened. Refreshing that is a
+ * real re-run of the 22-question set, never an added line.
  */
 export const ADMISSION_EVIDENCE = [
   {

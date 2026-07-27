@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GOLDEN_QUESTIONS } from "./golden";
+import { ATTACHMENT_QUESTIONS } from "./golden-attachments";
 import { READING_QUESTIONS } from "./golden-reading";
 import { TOOL_DISCIPLINE_QUESTIONS } from "./golden-tool-discipline";
 import type { AssistantAnswer } from "./graders";
@@ -14,12 +15,14 @@ const EMPTY: AssistantAnswer = {
 const PERSONAS = new Set(["familia", "inversor", "joven"]);
 
 describe("golden question set", () => {
-  it("scores both dimensions, with enough questions in each to mean something", () => {
+  it("scores all three dimensions, with enough questions in each to mean something", () => {
     expect(READING_QUESTIONS.length).toBeGreaterThanOrEqual(10);
     expect(TOOL_DISCIPLINE_QUESTIONS.length).toBeGreaterThanOrEqual(5);
+    expect(ATTACHMENT_QUESTIONS.length).toBeGreaterThanOrEqual(3);
     expect(GOLDEN_QUESTIONS).toEqual([
       ...READING_QUESTIONS,
       ...TOOL_DISCIPLINE_QUESTIONS,
+      ...ATTACHMENT_QUESTIONS,
     ]);
   });
 
@@ -31,6 +34,22 @@ describe("golden question set", () => {
     }
     for (const question of TOOL_DISCIPLINE_QUESTIONS) {
       expect(question.dimension, question.id).toBe("tool-discipline");
+    }
+    for (const question of ATTACHMENT_QUESTIONS) {
+      expect(question.dimension, question.id).toBe("attachments");
+    }
+  });
+
+  it("keeps documents inside the attachment set", () => {
+    // A question in another set carrying a file would be graded by checks written for
+    // a turn with no document — and it would be scored on a dimension whose name says
+    // otherwise. The reverse is the #1254 defect in miniature: an attachment question
+    // with no attachment grades an ordinary turn while claiming to grade a document.
+    for (const question of ATTACHMENT_QUESTIONS) {
+      expect(question.attachment, question.id).toBeDefined();
+    }
+    for (const question of [...READING_QUESTIONS, ...TOOL_DISCIPLINE_QUESTIONS]) {
+      expect(question.attachment, question.id).toBeUndefined();
     }
   });
 
@@ -68,7 +87,7 @@ describe("golden question set", () => {
   it("makes every write-path question fail on a turn that says nothing and does nothing", () => {
     // Silence is not discipline. A question whose checks all passed on an empty
     // answer would inflate the dimension that decides the write path.
-    for (const question of TOOL_DISCIPLINE_QUESTIONS) {
+    for (const question of [...TOOL_DISCIPLINE_QUESTIONS, ...ATTACHMENT_QUESTIONS]) {
       expect(
         question.grade(EMPTY).some((check) => !check.pass),
         question.id,
