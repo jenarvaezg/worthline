@@ -20,11 +20,13 @@ import { expect, test } from "@playwright/test";
 /** Never resolves, so nothing leaves the machine even if the policy were absent. */
 const UNLISTED_HOST = "https://csp-probe.invalid";
 
-declare global {
-  interface Window {
-    __cspBlocked?: string[];
-  }
-}
+/**
+ * Where the page parks the violations it saw, read back by polling. Cast locally
+ * rather than declared on `Window`: a `declare global` here would widen the type
+ * for every spec in `tsconfig.e2e.json`, and the repo's habit is to return values
+ * out of `evaluate` (42-landing-static, 31-add-investment-saldo).
+ */
+type CspProbeWindow = Window & { __cspBlocked?: string[] };
 
 test.describe("CSP enforcement", () => {
   test("serves the enforced header alongside the full report-only policy", async ({
@@ -36,7 +38,7 @@ test.describe("CSP enforcement", () => {
     const enforced = headers["content-security-policy"] ?? "";
     expect(enforced).toContain("img-src ");
     expect(enforced).toContain("connect-src ");
-    // The back door: enforcing default-src would enforce script-src/style-src too.
+    // Why default-src must stay out: see ENFORCED_CSP_DIRECTIVES.
     expect(enforced).not.toContain("default-src");
 
     // The rest of the target policy keeps being observed, not dropped.
@@ -54,11 +56,11 @@ test.describe("CSP enforcement", () => {
     await page.goto("/");
 
     await page.evaluate(() => {
-      window.__cspBlocked = [];
+      const seen: string[] = [];
+      (window as Window & { __cspBlocked?: string[] }).__cspBlocked = seen;
+      // Not removed afterwards on purpose: the document dies with the test.
       document.addEventListener("securitypolicyviolation", (event) => {
-        if (event.disposition === "enforce") {
-          window.__cspBlocked?.push(event.effectiveDirective);
-        }
+        if (event.disposition === "enforce") seen.push(event.effectiveDirective);
       });
     });
 
@@ -79,7 +81,9 @@ test.describe("CSP enforcement", () => {
     // Polled, not slept: the violation events land asynchronously and a fixed wait
     // is a flake with `retries: 0` (#1250).
     await expect
-      .poll(async () => page.evaluate(() => window.__cspBlocked ?? []))
+      .poll(async () =>
+        page.evaluate(() => (window as CspProbeWindow).__cspBlocked ?? []),
+      )
       .toEqual(expect.arrayContaining(["img-src", "connect-src"]));
 
     expect(pageErrors, "a blocked request must not throw into the page").toEqual([]);
