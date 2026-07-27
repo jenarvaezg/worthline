@@ -6,9 +6,22 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildContentSecurityPolicy,
-  CSP_HEADER_NAME,
+  buildEnforcedContentSecurityPolicy,
+  CSP_ENFORCED_HEADER_NAME,
+  CSP_REPORT_ONLY_HEADER_NAME,
+  ENFORCED_CSP_DIRECTIVES,
   securityHeaders,
 } from "./security-headers";
+
+/** The directives a policy declares, as `name → value` (order-independent). */
+function directivesOf(policy: string): Map<string, string> {
+  return new Map(
+    policy.split(";").map((directive) => {
+      const [name, ...values] = directive.trim().split(/\s+/);
+      return [name ?? "", values.join(" ")];
+    }),
+  );
+}
 
 // next.config.ts lives one level up; the no-upward-import lint rule (#361)
 // forbids importing it, so the wiring guard reads its source instead.
@@ -43,12 +56,52 @@ describe("securityHeaders", () => {
     }
   });
 
-  test("ships the CSP report-only, never enforced yet", () => {
+  test("ships both CSP headers: the enforced subset and the full report-only policy (#1256)", () => {
     const headers = headerMap(false);
-    expect(headers.has(CSP_HEADER_NAME)).toBe(true);
-    expect(CSP_HEADER_NAME).toBe("Content-Security-Policy-Report-Only");
-    // Guard against accidentally enforcing before the observation window closes.
-    expect(headers.has("Content-Security-Policy")).toBe(false);
+
+    expect(CSP_ENFORCED_HEADER_NAME).toBe("Content-Security-Policy");
+    expect(CSP_REPORT_ONLY_HEADER_NAME).toBe("Content-Security-Policy-Report-Only");
+    expect(headers.get(CSP_ENFORCED_HEADER_NAME)).toBe(
+      buildEnforcedContentSecurityPolicy({ dev: false }),
+    );
+    expect(headers.get(CSP_REPORT_ONLY_HEADER_NAME)).toBe(
+      buildContentSecurityPolicy({ dev: false }),
+    );
+  });
+});
+
+describe("buildEnforcedContentSecurityPolicy (#1256)", () => {
+  test("enforces the two egress directives and NOTHING else", () => {
+    // Deliberately exact. Every other directive of the target policy can break a
+    // real surface (`script-src`/`style-src` without a nonce, `form-action` on the
+    // Google sign-in redirect), so promoting one is a decision with evidence
+    // behind it, never a drive-by edit.
+    expect([...ENFORCED_CSP_DIRECTIVES]).toEqual(["img-src", "connect-src"]);
+    expect([
+      ...directivesOf(buildEnforcedContentSecurityPolicy({ dev: false })).keys(),
+    ]).toEqual(["img-src", "connect-src"]);
+  });
+
+  test("never carries default-src, which would enforce the whole policy by the back door", () => {
+    // `default-src` is the fallback for script/style/font/frame/worker/manifest
+    // fetches: shipping it in the ENFORCED header would block everything the
+    // report-only header is still only observing.
+    for (const dev of [false, true]) {
+      expect(buildEnforcedContentSecurityPolicy({ dev })).not.toContain("default-src");
+    }
+  });
+
+  test("copies each enforced directive verbatim from the target policy", () => {
+    // One directive table, two headers. If the enforced copy could drift, the
+    // report-only header would stop being the preview of what enforcing means.
+    for (const dev of [false, true]) {
+      const target = directivesOf(buildContentSecurityPolicy({ dev }));
+      for (const [name, value] of directivesOf(
+        buildEnforcedContentSecurityPolicy({ dev }),
+      )) {
+        expect(value).toBe(target.get(name));
+      }
+    }
   });
 });
 
