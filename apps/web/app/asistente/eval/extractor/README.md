@@ -92,6 +92,34 @@ One committed capture is a negative case today:
   neither a portfolio nor a series of dated balances, so it is none of the documents the
   seam knows how to extract — it stays negative after #1243.
 
+  It stays negative after **#1244** as well, and that slice makes it a much sharper
+  test than it used to be. #1244 added `holding_event`, whose shape is *exactly* a
+  payment screen — so this capture now sits one step from being extractable, and is
+  not. The reason is precise: the only date on it belongs to «Próxima cuota», never to
+  the payment itself, and a `holding_event` requires the fact's **own** day. The way to
+  fail this fixture is therefore the most dangerous invention the new document can
+  make — borrowing the next installment's date for the payment — and the extractor
+  prompt forbids it in as many words. A red run names the document that came back, so
+  it says which lane did the inventing.
+
+  Note it can now go green two ways — the model answers `none`, or it tries and the
+  seam declines the reading downstream. Both are correct outcomes, but a green run no
+  longer tells you which happened; only a red one is precise, and it names the document
+  that came back.
+
+  **`holding_event` has no positive fixture yet**, and that gap is deliberate rather
+  than forgotten. #1254's rule is *add the capture first, then the fixture entry*, and
+  the asymmetry with the negative above is the reason a synthetic render will not do:
+  a negative is falsifiable by *any* recognition, so a clean render still tests
+  something real, whereas a positive pins figures that a render supplies trivially —
+  it would grade the render, not the reading ("más limpio que la vida", #1247). The
+  real positive for this document is the manual validation session that gates PRD
+  #1241.
+
+  What the shipped set *does* already guard is the reclassification risk this document
+  introduces: `synthetic-amortization-schedule` is a **positive `balance_series`**
+  fixture, so a debt capture drifting into the new lane shows up as a red run there.
+
 `synthetic-amortization-schedule` **was** the second negative case, for the narrow reason
 that the image seam only knew how to ask for `positions`. #1243 removed that reason, so
 the capture was **re-pointed at the balance-series track** with a real dated-balance

@@ -107,6 +107,15 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
   // Negative case (#1247): a payment screen is not a portfolio and not a dated balance
   // series either, so it is none of the documents the seam knows how to extract. It stays
   // negative after #1243 — the guarantee under test is "does not hallucinate positions".
+  //
+  // It stays negative after #1244 too, and for a SHARPER reason worth stating, because
+  // that slice added `holding_event` — a payment screen is exactly its shape. This
+  // capture is still none of them: the only date it shows belongs to «Próxima cuota»,
+  // never to the payment itself, and a `holding_event` needs the fact's OWN day. The
+  // honest answer is therefore `unrecognized`, and the way to fail this fixture is now
+  // the most dangerous invention the new document can make — borrowing the next
+  // instalment's date for the payment. `describeUnexpectedRecognition` names the
+  // document that came back, so a red run says which lane invented it.
   {
     expectedFile: "expected/synthetic-payment-screen.json",
     id: "synthetic-payment-screen",

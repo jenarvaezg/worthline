@@ -7,6 +7,7 @@ import {
   extractedDocumentSchema,
   extractedHoldingSchema,
   extractedMovementSchema,
+  holdingEventDocumentSchema,
   normalizeExtractedNumber,
   parseExtractionResult,
   positionsDocumentSchema,
@@ -626,5 +627,191 @@ describe("positions + movements document (PRD #1103 S4)", () => {
       warnings: [],
     });
     expect(parsed.documentType).toBe("positions_movements");
+  });
+});
+
+describe("holding_event document", () => {
+  /** The capture that originated PRD #1241: Revolut «Detalles del pago». */
+  const originCapture = {
+    documentType: "holding_event",
+    event: {
+      date: "2026-07-26",
+      amount: "91,32",
+      currency: "EUR",
+      label: "Amortización anticipada",
+      kind: "early_repayment",
+      declaredEffect: {
+        kind: "final_instalment_reduced",
+        amount: "110,64",
+        currency: "EUR",
+      },
+      nextInstalment: { date: "2026-08-08", amount: "158,49", currency: "EUR" },
+    },
+    warnings: [],
+  };
+
+  test("reads the origin capture as one dated fact, verbatim label included", () => {
+    const parsed = holdingEventDocumentSchema.parse(originCapture);
+
+    expect(parsed.event).toEqual({
+      date: "2026-07-26",
+      amount: 91.32,
+      currency: "EUR",
+      label: "Amortización anticipada",
+      kind: "early_repayment",
+      declaredEffect: {
+        kind: "final_instalment_reduced",
+        amount: 110.64,
+        currency: "EUR",
+      },
+      nextInstalment: { date: "2026-08-08", amount: 158.49, currency: "EUR" },
+    });
+  });
+
+  test("is a discriminated-union member the branded contract validates", () => {
+    const parsed = extractedDocumentSchema.parse(originCapture);
+    expect(parsed.documentType).toBe("holding_event");
+  });
+
+  test("carries ONE event and no array, so the validated door cannot pass a bulk import", () => {
+    // The lock decided before this contract was written (#1244): a validated
+    // document exempts the turn from the unvalidated-evidence gate AND its
+    // one-proposal cap (#1248), so twelve events behind that door would be twelve
+    // proposals through the lane nobody measures. There is no array to count.
+    expect("events" in holdingEventDocumentSchema.shape).toBe(false);
+    // A list rejected for the reason that matters — the extra key — and not merely
+    // because `event` went missing alongside it.
+    expect(
+      extractedDocumentSchema.safeParse({
+        ...originCapture,
+        events: [originCapture.event],
+      }).success,
+    ).toBe(false);
+  });
+
+  test.each([
+    ["capital", { principal: 4200 }],
+    ["plazo", { termMonths: 24 }],
+    ["tipo de interés", { interestRate: 5.9 }],
+    ["saldo resultante", { balanceAfter: 4108.68 }],
+    ["el holding al que pertenece", { holdingId: "h_123" }],
+  ])("rejects an inferred %s riding along on the event (ADR 0048)", (_label, extra) => {
+    expect(
+      extractedDocumentSchema.safeParse({
+        ...originCapture,
+        event: { ...originCapture.event, ...extra },
+      }).success,
+    ).toBe(false);
+  });
+
+  test.each([
+    // No date: a dated fact without its date is not one.
+    ["no date", { date: undefined }],
+    // Free-form date instead of a real day — never an invented one.
+    ["a free-form date", { date: "8 de agosto" }],
+    // Impossible calendar day.
+    ["an impossible day", { date: "2026-02-30" }],
+    // No amount.
+    ["no amount", { amount: undefined }],
+    // Unreadable amount.
+    ["an unreadable amount", { amount: "no consta" }],
+    // No currency, or one that is not an ISO code.
+    ["no currency", { currency: undefined }],
+    ["a currency that is not ISO", { currency: "euros" }],
+    // A kind outside the closed enum.
+    ["a kind outside the enum", { kind: "amortizacion" }],
+    // An empty verbatim label.
+    ["an empty label", { label: "   " }],
+    // A label past the contract's string cap.
+    ["a label past the cap", { label: "x".repeat(301) }],
+  ])("rejects an event with %s", (_case, patch) => {
+    expect(
+      extractedDocumentSchema.safeParse({
+        ...originCapture,
+        event: { ...originCapture.event, ...patch },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("keeps the declared effect a closed enum, never free text", () => {
+    expect(
+      holdingEventDocumentSchema.safeParse({
+        ...originCapture,
+        event: {
+          ...originCapture.event,
+          declaredEffect: { kind: "te bajamos la última cuota" },
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  test("refuses a declared effect amount with no currency to read it in", () => {
+    const withoutCurrency = holdingEventDocumentSchema.safeParse({
+      ...originCapture,
+      event: {
+        ...originCapture.event,
+        declaredEffect: { kind: "balance_reduced", amount: 110.64 },
+      },
+    });
+    expect(withoutCurrency.success).toBe(false);
+
+    // The effect with no figure at all is honest and stays legal: the screen said
+    // what it does without saying by how much.
+    expect(
+      holdingEventDocumentSchema.safeParse({
+        ...originCapture,
+        event: { ...originCapture.event, declaredEffect: { kind: "term_shortened" } },
+      }).success,
+    ).toBe(true);
+  });
+
+  test("accepts the bare observation: only the enum fields the screen showed", () => {
+    const parsed = holdingEventDocumentSchema.parse({
+      documentType: "holding_event",
+      event: {
+        date: "2026-07-08",
+        amount: 158.49,
+        currency: "EUR",
+        label: "Cuota mensual",
+        kind: "payment",
+        uncertain: true,
+      },
+      uncertain: true,
+      warnings: ["El importe estaba parcialmente tapado."],
+    });
+
+    expect(parsed.event.declaredEffect).toBeUndefined();
+    expect(parsed.event.nextInstalment).toBeUndefined();
+    expect(parsed.event.uncertain).toBe(true);
+    expect(parsed.uncertain).toBe(true);
+  });
+
+  test("caps warnings exactly like every other document", () => {
+    const overCap = Array.from(
+      { length: ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings + 1 },
+      (_value, index) => `Aviso ${index}`,
+    );
+    expect(
+      holdingEventDocumentSchema.safeParse({ ...originCapture, warnings: overCap })
+        .success,
+    ).toBe(false);
+    expect(
+      holdingEventDocumentSchema.safeParse({
+        ...originCapture,
+        warnings: overCap.slice(0, -1),
+      }).success,
+    ).toBe(true);
+  });
+
+  test("survives parseExtractionResult, the seam every extractor route shares", () => {
+    const result = parseExtractionResult({ data: originCapture, status: "valid" });
+    // Narrowed by THROWING, never by an `if` that would let the assertions below be
+    // skipped in silence and still score the test green.
+    if (result.status !== "valid") throw new Error(`got ${result.status}`);
+    if (result.data.documentType !== "holding_event") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
+    expect(result.data.event.amount).toBe(91.32);
+    expect(result.data.event.declaredEffect?.kind).toBe("final_instalment_reduced");
   });
 });

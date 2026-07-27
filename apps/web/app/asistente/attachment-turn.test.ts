@@ -1,4 +1,8 @@
-import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
+import {
+  UNIDENTIFIED_DOCUMENT_MESSAGE,
+  UNSTRUCTURED_SPREADSHEET_MESSAGE,
+  UNSTRUCTURED_VISION_MESSAGE,
+} from "@web/asistente/attachment-types";
 import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -93,6 +97,41 @@ describe("readAttachmentTurn", () => {
     expect(
       vi.mocked(extractDocumentFromVisionAttachment).mock.calls[0]?.[0],
     ).toMatchObject({ kind: "image" });
+  });
+
+  it("sends a screen of several dated facts down the descriptive lane (#1244)", async () => {
+    // The safety argument behind the holding-event lock, pinned end to end. A screen
+    // carrying more than one dated fact is declined rather than validated, precisely
+    // so it does NOT lift the unvalidated-evidence gate and its one-proposal cap
+    // (#1248) — and the verdict it is declined with has to be the one this drain
+    // branches on, or the capture dies on the card instead of being discussed.
+    //
+    // The two constants are the coupling: `declinedHoldingEvent` in the extractor
+    // returns exactly this envelope, and `readAttachmentTurn` keys off `reason`.
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+    vi.mocked(describeVisionAttachment).mockResolvedValue(
+      "Se ven doce apuntes con fecha e importe.",
+    );
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "movimientos.png",
+      mimeType: "image/png",
+    });
+
+    // Unstructured, NOT validated: this is what keeps the gate and the cap biting.
+    expect(reading.unstructured?.source).toBe("vision_description");
+    // And the card carries the message `hasUnstructuredEvidenceInHistory` looks for,
+    // so the boundary still recognizes this turn one turn later (#1246). Asserting
+    // merely «not valid» would pass with a card the history lane cannot see.
+    expect(reading.preview.result).toMatchObject({
+      message: UNSTRUCTURED_VISION_MESSAGE,
+      status: "unrecognized",
+    });
   });
 
   it("pays for no description when the document WAS identified and read empty", async () => {

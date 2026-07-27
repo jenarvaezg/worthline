@@ -2,9 +2,12 @@ import Link from "next/link";
 
 import type { AttachmentPreviewData } from "./attachment-chat";
 import type {
+  DeclaredEffectKind,
   ExtractedBalanceSeriesDocument,
+  ExtractedHoldingEventDocument,
   ExtractedPositionsDocument,
   ExtractedPositionsMovementsDocument,
+  HoldingEventKind,
   HoldingFidelity,
 } from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
@@ -117,6 +120,119 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
   );
 }
 
+/**
+ * `DD/MM/YYYY` from an ISO day. A local three-liner rather than an import of the
+ * assistant's `formatDayEs`: that one lives in `early-repayment-impact`, next to the
+ * amortization engine, and this component is rendered inside the `"use client"`
+ * assistant layer — pulling a server-side domain module across that boundary for
+ * string slicing is a bundle bet this repo's weight tripwire does not need taken.
+ */
+function isoDayEs(isoDay: string): string {
+  const [year, month, day] = isoDay.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * How each `kind` reads. It is the ONE field on this card the model classified
+ * rather than read, so the row is labelled as a reading of ours and the copy under
+ * the table says so — an amount sitting next to an authoritative «Amortización
+ * anticipada» the screen never wrote is precisely the invention ADR 0048 forbids.
+ */
+const HOLDING_EVENT_KIND_LABEL: Record<HoldingEventKind, string> = {
+  deposit: "Ingreso",
+  early_repayment: "Amortización anticipada",
+  fee: "Comisión",
+  interest: "Intereses",
+  other: "Movimiento",
+  payment: "Pago",
+  withdrawal: "Retirada",
+};
+
+/**
+ * How the screen's declared effect reads. Present tense and no figure of our own:
+ * the amount, when the document gave one, is rendered next to it verbatim. Nothing
+ * here claims the effect HAS happened in worthline — it is what the document says.
+ */
+const DECLARED_EFFECT_LABEL: Record<DeclaredEffectKind, string> = {
+  balance_reduced: "Reduce el saldo pendiente",
+  final_instalment_reduced: "Reduce la última cuota",
+  instalment_reduced: "Reduce la cuota",
+  term_shortened: "Acorta el plazo",
+};
+
+/**
+ * One dated fact read off a screen (#1244). Rendered as a label/value table rather
+ * than the row-per-item tables of the other documents because the document IS one
+ * fact — and it stays one by contract, which is what keeps the validated door from
+ * becoming a bulk-import lane (#1248).
+ *
+ * Only observed fields get a row: an absent declared effect or next instalment
+ * paints nothing at all, never a dash that could read as «no hay».
+ */
+function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) {
+  const { event } = data;
+  return (
+    <>
+      <div className="assistantAttachmentTableScroll">
+        <table>
+          <tbody>
+            <tr>
+              <th scope="row">Fecha</th>
+              <td>{isoDayEs(event.date)}</td>
+            </tr>
+            <tr>
+              <th scope="row">Concepto</th>
+              <td>
+                {event.label}
+                {event.uncertain ? <em>Revisar lectura</em> : null}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Importe</th>
+              <td>{formatAmount(event.amount, event.currency)}</td>
+            </tr>
+            <tr>
+              <th scope="row">Tipo</th>
+              <td>{HOLDING_EVENT_KIND_LABEL[event.kind]}</td>
+            </tr>
+            {event.declaredEffect ? (
+              <tr>
+                <th scope="row">Efecto declarado</th>
+                <td>
+                  {DECLARED_EFFECT_LABEL[event.declaredEffect.kind]}
+                  {event.declaredEffect.amount !== undefined &&
+                  event.declaredEffect.currency !== undefined
+                    ? ` · ${formatAmount(event.declaredEffect.amount, event.declaredEffect.currency)}`
+                    : ""}
+                </td>
+              </tr>
+            ) : null}
+            {event.nextInstalment ? (
+              <tr>
+                <th scope="row">Próxima cuota</th>
+                <td>
+                  {isoDayEs(event.nextInstalment.date)} ·{" "}
+                  {formatAmount(
+                    event.nextInstalment.amount,
+                    event.nextInstalment.currency,
+                  )}
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+      <p className="assistantAttachmentBridgeHint">
+        {data.uncertain ? "Lectura completa marcada como dudosa. " : ""}
+        Fecha, concepto e importe se leen del archivo; «Tipo» es una clasificación de la
+        lectura, no algo que ponga la pantalla. El apunte no dice a qué producto pertenece
+        ni qué saldo deja: eso se comprueba aparte. Revísalo: nada se guarda desde el
+        chat.
+      </p>
+    </>
+  );
+}
+
 const FIDELITY_LABEL: Record<HoldingFidelity, string> = {
   declared_cost: "Coste declarado",
   movements: "Coste real",
@@ -195,6 +311,8 @@ export default function AttachmentExtractionPreview({
         <PositionsPreview data={data} />
       ) : data.documentType === "balance_series" ? (
         <BalanceSeriesPreview data={data} />
+      ) : data.documentType === "holding_event" ? (
+        <HoldingEventPreview data={data} />
       ) : (
         <PositionsMovementsPreview data={data} />
       )}

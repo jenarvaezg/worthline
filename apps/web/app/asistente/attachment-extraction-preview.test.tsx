@@ -89,6 +89,95 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
   });
 
+  test("shows the dated fact, its verbatim label and the effect the screen declared", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        preview={{
+          fileName: "pago.png",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "holding_event",
+              event: {
+                date: "2026-07-26",
+                amount: 91.32,
+                currency: "EUR",
+                // Deliberately NOT the wording of the `kind` label: an assertion on
+                // "Amortización anticipada" would pass with `label` rendered as the
+                // empty string, since the kind map produces that same phrase.
+                label: "Pago único al préstamo",
+                kind: "early_repayment",
+                declaredEffect: {
+                  kind: "final_instalment_reduced",
+                  amount: 110.64,
+                  currency: "EUR",
+                },
+                nextInstalment: { date: "2026-08-08", amount: 158.49, currency: "EUR" },
+              },
+              warnings: ["El concepto se lee con dificultad."],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Lectura de pago.png");
+    expect(html).toContain("26/07/2026");
+    expect(html).toContain("91,32");
+    // The screen's own words survive the reading — that is the point of `label`.
+    expect(html).toContain("Pago único al préstamo");
+    // …and the model's classification is shown as ours, not as something the screen
+    // said: an amount under an authoritative «Amortización anticipada» the document
+    // never wrote is the invention ADR 0048 forbids.
+    expect(html).toContain("Amortización anticipada");
+    expect(html).toContain("«Tipo» es una clasificación de la lectura");
+    expect(html).toContain("110,64");
+    expect(html).toContain("08/08/2026");
+    expect(html).toContain("158,49");
+    expect(html).toContain("El concepto se lee con dificultad.");
+    // Nothing is written from the card, and the card adds no figure of its own to
+    // the four the document carried (ADR 0048): no principal, no term, no rate, no
+    // resulting balance. Pinned as an exact figure set rather than by keyword,
+    // because a *declared* effect may legitimately say «saldo» when the screen did.
+    expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
+    expect(html.match(/\d+,\d\d/g)).toEqual(["91,32", "110,64", "158,49"]);
+    expect(html).not.toContain("/patrimonio/anadir");
+  });
+
+  test("shows the bare observation without inventing the optional context", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        preview={{
+          fileName: "recibo.jpg",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "holding_event",
+              event: {
+                date: "2026-07-08",
+                amount: 158.49,
+                currency: "EUR",
+                label: "Cuota mensual",
+                kind: "payment",
+                uncertain: true,
+              },
+              // A reading the extractor itself doubted as a whole must say so on the
+              // card; the document-level flag is otherwise invisible to the user.
+              uncertain: true,
+              warnings: [],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Cuota mensual");
+    expect(html).toContain("Revisar lectura");
+    expect(html).toContain("Lectura completa marcada como dudosa.");
+    expect(html).not.toContain("Efecto declarado");
+    expect(html).not.toContain("Próxima cuota");
+  });
+
   test("renders typed nonfatal failures honestly", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview

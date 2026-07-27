@@ -288,6 +288,83 @@ conversational turn, the recurring cost, and the eager extractors are outside it
 design because their contract hands callers validated JSON and never provider output.
 Surfacing extractor token usage remains the documented follow-up it already was.
 
+## Amendment — the holding event, and the lock its door needed (#1244)
+
+The discriminated union gains a fourth document, `holding_event`: **one dated fact
+observed on a holding's screen** — a payment confirmation, a receipt, a movement, a
+settlement. It carries only what the screen showed: an ISO day, an amount and its
+currency, the screen's own words in a `label`, a `kind` from a closed enum, and two
+optional observed extras — the `declaredEffect` the document itself states («tu última
+cuota se reducirá en 110,64 €») as a bounded enum with its figure, and the
+`nextInstalment` when one is on screen. Nothing inferred crosses (ADR 0048): no
+principal, no term, no rate, no resulting balance, and **not which holding it belongs
+to** — identifying that is the agent's job with its read tools, and `.strict()` is what
+makes it a boundary instead of an instruction.
+
+**The document holds exactly one event, and the singular is the point.** A validated
+document exempts its turn from the unvalidated-evidence gate *and* from that gate's
+one-proposal-per-turn cap (#1248). A `holding_event` carrying twelve events would
+therefore be twelve proposals walking through the single door nobody counts — precisely
+the bulk import the frontier reserves for the deterministic route. Two locks were
+considered: teaching the cap to count facts instead of reading provenance, or shaping
+the document so there is nothing to count. The second was chosen because it needs no
+change to the boundary it protects and cannot be reopened by a later slice forgetting
+to pass a count.
+
+**What this lock does not close, stated plainly.** Once a turn brings any validated
+document the gate short-circuits *before* the proposal budget is consulted, so that
+turn has no cap of any kind; and the context window keeps the last three validated
+documents, so by the third upload a turn holds three validated facts simultaneously and
+may propose against all of them. That exposure is inherited, is documented as an
+accepted cost on the gate itself, and is unchanged here. What the singular removes is
+bringing twelve facts through the door in a **single upload** — the new exposure this
+document would otherwise have added. The other lock stays on the shelf for the day the
+per-turn exemption needs closing too.
+
+A screen showing several dated facts is consequently **not this document**. It is not
+lost either: the vision seam declines to identify it and it leaves through #1246's
+descriptive drain, where the gate and its cap both apply in full. That verdict is
+honest rather than evasive — `holding_event` is *defined* as one observed fact, so a
+multi-fact screen matches none of the documents this seam knows. Recognizing the
+document and reading no fact from it stays the separate `empty_reading` verdict, which
+does not go describe itself: paraphrasing what could not be read adds nothing.
+
+**The prompt asks for every dated fact on screen, not for one.** This looks backwards
+next to a contract that admits one, and it is the reason the lock works. Asking the
+model for a single event would make the count check near-dead and turn the realistic
+failure into *silent truncation*: a twelve-row movements list read as one event,
+validated, eleven rows dropped, and a card claiming to show the file «tal cual». Asking
+for all of them lets the CODE see that the screen is a list and decline it — which is
+what enforcing a frontier in code rather than in the prompt actually requires. The
+provider array is bounded by the shared row cap for the same reason: a model must be
+able to say «three» without the reading failing as malformed output.
+
+**No path through this document ends in a dead end.** Where the assembled fact does not
+satisfy the contract — an unreadable day being the case the provider schema cannot
+prevent — the seam returns `unidentified_document` rather than `invalid_output`, so the
+capture still reaches the descriptive lane instead of ending the turn with the model
+holding nothing. That was the outcome that opened PRD #1241 in the first place, and a
+new document type that reintroduced it for payment screens would be a regression
+dressed as a feature. The two optional decorations degrade rather than fail: a declared
+effect whose amount arrives with no currency keeps its `kind`, and a next instalment
+with no readable day is dropped — each with a warning on the card saying so, because
+losing something the screen showed in silence is the dishonesty this document exists to
+avoid.
+
+One piece of copy is knowingly approximate as a result. A capture declined for a
+contract failure — the seam recognized a payment screen and could not read the fact's
+day — leaves with `unidentified_document`, whose card says worthline recognized no
+document it knows. For the multi-fact case that is literally true (a list of facts is
+not this document); for this one it is not, and the wording is kept anyway because the
+alternative is a fourth verdict whose only purpose is a shade of phrasing, on a path
+whose user-visible outcome is identical: the capture gets described and discussed.
+
+One consequence for the golden set (#1247): `synthetic-payment-screen` **stays a
+negative fixture**, and becomes a sharper one. Its screen dates only the next
+instalment, never the payment, so the honest answer is still `unrecognized` — and the
+way to fail it is now exactly the invention this document most invites, borrowing that
+date for the payment.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers
