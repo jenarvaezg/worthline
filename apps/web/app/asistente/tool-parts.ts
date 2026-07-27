@@ -18,14 +18,24 @@ export function toolPartName(part: Part): string {
 }
 
 /**
- * A part that asked worthline to PREPARE a write.
+ * A tool that asks worthline to PREPARE a write.
  *
  * The `propose_*` prefix is a convention, not a type: nothing forces a new tool to
  * adopt it. Leaning on it is nonetheless the right call here, because the
  * unvalidated-evidence frontier (#1248) enumerates proposal tools the same way — a
  * write tool named otherwise would already walk past a boundary that guards money,
  * which is a far louder failure than this check missing it.
+ *
+ * Takes a bare name, not a part, because the eval harness (#1265) asks the same
+ * question about a `generateText` tool call: the number the admission gate reports
+ * for the write path and the guard that runs in production must not be able to
+ * disagree about what a proposal is.
  */
+export function isProposalToolName(name: string): boolean {
+  return name.startsWith("propose_");
+}
+
+/** {@link isProposalToolName} for a message part. */
 export function isProposalToolPart(part: Part): boolean {
-  return isToolUIPart(part) && toolPartName(part).startsWith("propose_");
+  return isToolUIPart(part) && isProposalToolName(toolPartName(part));
 }

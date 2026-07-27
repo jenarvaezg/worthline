@@ -12,7 +12,7 @@ import {
 } from "./graders";
 
 function answer(over: Partial<AssistantAnswer> = {}): AssistantAnswer {
-  return { text: "", toolNames: [], quickActions: [], ...over };
+  return { text: "", toolCalls: [], toolResults: [], quickActions: [], ...over };
 }
 
 describe("isSpanish", () => {
@@ -62,11 +62,15 @@ describe("mentions", () => {
 
 describe("usedReadTool", () => {
   it("is true when a grounding read tool ran", () => {
-    expect(usedReadTool(answer({ toolNames: ["get_financial_context"] }))).toBe(true);
+    expect(
+      usedReadTool(answer({ toolCalls: [{ input: {}, name: "get_financial_context" }] })),
+    ).toBe(true);
   });
 
   it("ignores suggest_actions, which is not a grounding read", () => {
-    expect(usedReadTool(answer({ toolNames: ["suggest_actions"] }))).toBe(false);
+    expect(
+      usedReadTool(answer({ toolCalls: [{ input: {}, name: "suggest_actions" }] })),
+    ).toBe(false);
   });
 });
 

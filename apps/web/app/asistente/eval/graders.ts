@@ -9,11 +9,29 @@ import type { QuickAction } from "@web/asistente/assistant-actions";
  * of the CI gate.
  */
 
+/** One tool the model invoked, with the arguments it chose. */
+export interface EvalToolCall {
+  name: string;
+  input: unknown;
+}
+
+/** What a tool handed back. */
+export interface EvalToolResult {
+  name: string;
+  output: unknown;
+}
+
 export interface AssistantAnswer {
   /** The assistant's final natural-language text. */
   text: string;
-  /** Names of the tools the model actually invoked this turn. */
-  toolNames: string[];
+  /**
+   * The tools the model actually invoked this turn, in order, WITH their input.
+   * The input is what makes tool discipline gradeable (#1265): whether the id a
+   * proposal points at came from a read is a question about arguments, not names.
+   */
+  toolCalls: EvalToolCall[];
+  /** What those tools returned — the reads a later argument can be grounded in. */
+  toolResults: EvalToolResult[];
   /** The typed quick actions it proposed (parsed through the S3 validator). */
   quickActions: QuickAction[];
 }
@@ -82,7 +100,7 @@ export function mentionsAny(text: string, terms: string[]): boolean {
 
 /** A grounding read tool ran — the answer is not ungrounded chatter. */
 export function usedReadTool(answer: AssistantAnswer): boolean {
-  return answer.toolNames.some((name) => name !== "suggest_actions");
+  return answer.toolCalls.some((call) => call.name !== "suggest_actions");
 }
 
 /** The model cited a clickable internal source (openInternalSource action). */

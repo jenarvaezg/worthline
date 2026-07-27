@@ -120,6 +120,7 @@ const passingBaseline: AdmissionQuestionResult = {
     name: `check ${index}`,
     pass: true,
   })),
+  dimension: "extraction",
   id: "synthetic-baseline",
   persona: "desktop",
   status: "completed",
@@ -150,6 +151,7 @@ describe("runExtractorFixture", () => {
       passingBaseline,
       {
         checks: result.checks,
+        dimension: "extraction",
         error: result.error ?? "",
         id: result.id,
         persona: result.scenario,
@@ -165,6 +167,7 @@ describe("runExtractorFixture", () => {
       passingBaseline,
       {
         checks: [],
+        dimension: "extraction",
         error: "boom",
         id: "synthetic-payment-screen",
         persona: "payment-screen",

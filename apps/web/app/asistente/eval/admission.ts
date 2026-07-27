@@ -6,6 +6,15 @@ export interface QuestionScore {
   total: number;
 }
 
+/** One dimension's score, computed on its own so it cannot be diluted. */
+export interface AdmissionDimensionScore {
+  dimension: string;
+  passed: number;
+  total: number;
+  ratio: number;
+  meetsThreshold: boolean;
+}
+
 export interface AdmissionVerdict {
   admitted: boolean;
   complete: boolean;
@@ -22,6 +31,7 @@ export interface AdmissionCheck {
 
 export interface AdmissionQuestionResult {
   id: string;
+  dimension: string;
   persona: string;
   status: "completed" | "error";
   checks: AdmissionCheck[];
@@ -29,7 +39,7 @@ export interface AdmissionQuestionResult {
 }
 
 export interface AdmissionReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   provider: string;
   model: string;
   startedAt: string;
@@ -41,6 +51,7 @@ export interface AdmissionReport {
       total: number;
     }
   >;
+  dimensions: AdmissionDimensionScore[];
   summary: Omit<AdmissionVerdict, "complete">;
 }
 
@@ -86,6 +97,44 @@ export function decideAdmission(input: {
   });
 }
 
+/**
+ * Each dimension scored on its own, in first-appearance order.
+ *
+ * Why this exists (#1265): a single ratio over a bag of checks lets a strong
+ * dimension pay for a broken one. The gate scored 0.88 for a model that failed
+ * every property of the write path, because thirty-odd reading checks outvoted
+ * them. Whatever the aggregate says, the per-dimension numbers are what answer
+ * «is this model fit for the path that writes».
+ */
+export function scoreDimensions(
+  questionResults: readonly (QuestionScore & { dimension: string })[],
+  threshold: number = DEFAULT_ADMISSION_THRESHOLD,
+): AdmissionDimensionScore[] {
+  const order: string[] = [];
+  const totals = new Map<string, { passed: number; total: number }>();
+  for (const result of questionResults) {
+    const running = totals.get(result.dimension);
+    if (running) {
+      running.passed += result.passed;
+      running.total += result.total;
+    } else {
+      order.push(result.dimension);
+      totals.set(result.dimension, { passed: result.passed, total: result.total });
+    }
+  }
+  return order.map((dimension) => {
+    const { passed, total } = totals.get(dimension) ?? { passed: 0, total: 0 };
+    const ratio = total === 0 ? 0 : passed / total;
+    return {
+      dimension,
+      passed,
+      total,
+      ratio,
+      meetsThreshold: total > 0 && ratio >= threshold,
+    };
+  });
+}
+
 export function buildAdmissionReport(input: {
   provider: string;
   model: string;
@@ -105,17 +154,22 @@ export function buildAdmissionReport(input: {
     questionResults: questions,
     ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
   });
+  const dimensions = scoreDimensions(questions, verdict.threshold);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     provider: input.provider,
     model: input.model,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
     complete: verdict.complete,
     questions,
+    dimensions,
     summary: {
-      admitted: verdict.admitted,
+      // Admission needs the aggregate AND every dimension: a model that reads well
+      // and cannot be trusted to write is not admitted, it is a routing question.
+      admitted:
+        verdict.admitted && dimensions.every((dimension) => dimension.meetsThreshold),
       passed: verdict.passed,
       total: verdict.total,
       ratio: verdict.ratio,

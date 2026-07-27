@@ -360,6 +360,9 @@ export async function runExtractorEval(argv: readonly string[]): Promise<number>
     questionResults: attempted.map(
       (result): AdmissionQuestionResult => ({
         checks: result.checks,
+        // One dimension: this harness only grades extraction, so the per-dimension
+        // breakdown the assistant gate needs (#1265) collapses to the aggregate.
+        dimension: "extraction",
         id: result.id,
         persona: result.scenario,
         status: result.status === "error" ? "error" : "completed",

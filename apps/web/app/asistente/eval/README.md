@@ -5,6 +5,37 @@ the shared assistant pool. It uses the production system prompt, tools, golden
 questions and pinned demo clock, but selects its candidate explicitly: it never
 changes or reads the production model configuration.
 
+## Two dimensions, scored apart
+
+- **reading** (`golden-reading.ts`, #668) — figure and delta attribution, honest
+  missing-fact behaviour, sources cited, Spanish by default.
+- **tool-discipline** (`golden-tool-discipline.ts`, #1265) — whether the turn
+  called the tool it claimed to call, whether an id it wrote came out of a read,
+  whether it reached for a bulk import over unvalidated evidence, and whether it
+  asks instead of guessing when the holding or the figure is ambiguous. Graded
+  from the tool trace, not from prose.
+
+They are scored separately because a blended ratio hid exactly the thing that
+mattered: the pool's model scored 88% on a day it faked a proposal card in prose
+and invented a holding id (#1262, #1263). Reading checks outnumber write-path
+checks roughly two to one, so one number lets the first pay for the second.
+**Admission now requires the aggregate AND every dimension** to clear the
+threshold; the stderr table prints each dimension and the JSON report carries
+`dimensions[]`.
+
+One property of the write-path set to keep in mind when reading a number: three of
+its five questions grade the model for NOT doing something (not proposing without
+an id, not bulk-importing pasted rows, not choosing among ambiguous holdings), so
+a provider that answers nothing still scores about 45% there. That is not a hole —
+refraining really is half of discipline, and the run is rejected anyway because
+the threshold is 60% and reading scores zero — but a mid-40s write-path number
+means «it said nothing», not «it behaved».
+
+Two graders deliberately call production code rather than restating it —
+`claimsPreparedProposal` from the runtime guard (#1262) and the
+unvalidated-evidence table (#1248) — so the measurement cannot drift away from
+the frontier it measures.
+
 ## Run one candidate
 
 The run sends the seeded demo personas' financial data to the selected external
@@ -34,7 +65,17 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY`,
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google, 55 for
-Cerebras, and 8 for Groq.
+Cerebras, and 8 for Groq. With 18 questions that is roughly 8 minutes for Google
+and 20 for Cerebras.
+
+The write-path questions run last. A provider that exhausts its free tier
+mid-run therefore leaves an INCOMPLETE report — never a complete-looking one whose
+missing dimension quietly scored zero.
+
+The store the runner wires is the same slice `api/chat/route.ts` wires. It used to
+forward three of six, which made every proposal tool answer
+`proposal_persistence_unavailable`: any write-path measurement would have been of
+the harness, not of the model.
 
 ## Output and decision
 

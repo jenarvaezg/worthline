@@ -28,15 +28,32 @@ import type { AssistantAnswer } from "./graders";
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
 const MAX_STEPS = 6;
 
-function suggestedActions(result: {
+/** The tool trace, flattened across every step of the turn. */
+function toolCalls(result: { toolCalls?: unknown[] }): AssistantAnswer["toolCalls"] {
+  return (result.toolCalls ?? []).map((raw) => {
+    const call = raw as { toolName?: string; input?: unknown };
+    return { input: call.input, name: call.toolName ?? "" };
+  });
+}
+
+function toolResults(result: {
   toolResults?: unknown[];
-}): AssistantAnswer["quickActions"] {
-  for (const raw of result.toolResults ?? []) {
+}): AssistantAnswer["toolResults"] {
+  return (result.toolResults ?? []).map((raw) => {
     const toolResult = raw as { toolName?: string; output?: unknown; result?: unknown };
-    if (toolResult.toolName !== "suggest_actions") continue;
-    const output = (toolResult.output ?? toolResult.result) as
-      | { actions?: unknown }
-      | undefined;
+    return {
+      name: toolResult.toolName ?? "",
+      output: toolResult.output ?? toolResult.result,
+    };
+  });
+}
+
+function suggestedActions(
+  results: AssistantAnswer["toolResults"],
+): AssistantAnswer["quickActions"] {
+  for (const toolResult of results) {
+    if (toolResult.name !== "suggest_actions") continue;
+    const output = toolResult.output as { actions?: unknown } | undefined;
     if (Array.isArray(output?.actions)) {
       return output.actions as AssistantAnswer["quickActions"];
     }
@@ -54,13 +71,21 @@ async function askAssistant(
     system: buildChatSystemPrompt(null),
     prompt: question,
     tools: createChatTools({
+      // The same slice of the store the chat route wires (`api/chat/route.ts`).
+      // It used to forward three of the six, which left every proposal tool
+      // answering `proposal_persistence_unavailable`: the write path could not be
+      // measured at all, because what came back was the harness's own hole rather
+      // than the model's behaviour (#1265).
       runWithStore: (run) =>
         withStore(
           (store) =>
             run({
               agentView: store.agentView,
+              assets: store.assets,
               assistantProposals: store.assistantProposals,
+              connectedSources: store.connectedSources,
               liabilities: store.liabilities,
+              workspace: store.workspace,
             }),
           persona,
         ),
@@ -69,12 +94,21 @@ async function askAssistant(
     stopWhen: stepCountIs(MAX_STEPS),
   });
 
+  const results = toolResults(result);
   return {
     text: result.text,
-    toolNames: (result.toolCalls ?? []).map((call) => call.toolName),
-    quickActions: suggestedActions(result),
+    toolCalls: toolCalls(result),
+    toolResults: results,
+    quickActions: suggestedActions(results),
   };
 }
+
+const EMPTY_ANSWER: AssistantAnswer = {
+  text: "",
+  toolCalls: [],
+  toolResults: [],
+  quickActions: [],
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -114,6 +148,7 @@ async function main(): Promise<void> {
       const green = passed === checks.length;
       questionResults.push({
         id: question.id,
+        dimension: question.dimension,
         persona: question.persona,
         status: "completed",
         checks,
@@ -126,9 +161,10 @@ async function main(): Promise<void> {
       const message = errorMessage(error);
       questionResults.push({
         id: question.id,
+        dimension: question.dimension,
         persona: question.persona,
         status: "error",
-        checks: question.grade({ text: "", toolNames: [], quickActions: [] }),
+        checks: question.grade(EMPTY_ANSWER),
         error: message,
       });
       console.error(`ERR   ${rowLabel} ${message}`);
@@ -150,6 +186,12 @@ async function main(): Promise<void> {
   if (args.output) await writeFile(args.output, json, "utf8");
 
   console.error("─".repeat(64));
+  for (const dimension of report.dimensions) {
+    console.error(
+      `${dimension.meetsThreshold ? "OK  " : "UNDER"} ${dimension.dimension.padEnd(18)} ` +
+        `${dimension.passed}/${dimension.total} · ${(dimension.ratio * 100).toFixed(0)}%`,
+    );
+  }
   console.error(
     `${report.summary.passed}/${report.summary.total} checks passed · ` +
       `${report.complete ? "complete" : "incomplete"} · ` +
