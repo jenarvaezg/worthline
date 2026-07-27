@@ -1,15 +1,37 @@
 import { describe, expect, it } from "vitest";
 
 import { GOLDEN_QUESTIONS } from "./golden";
+import { READING_QUESTIONS } from "./golden-reading";
+import { TOOL_DISCIPLINE_QUESTIONS } from "./golden-tool-discipline";
 import type { AssistantAnswer } from "./graders";
 
-const EMPTY: AssistantAnswer = { text: "", toolNames: [], quickActions: [] };
+const EMPTY: AssistantAnswer = {
+  text: "",
+  toolCalls: [],
+  toolResults: [],
+  quickActions: [],
+};
 const PERSONAS = new Set(["familia", "inversor", "joven"]);
 
 describe("golden question set", () => {
-  it("has 10–15 questions", () => {
-    expect(GOLDEN_QUESTIONS.length).toBeGreaterThanOrEqual(10);
-    expect(GOLDEN_QUESTIONS.length).toBeLessThanOrEqual(15);
+  it("scores both dimensions, with enough questions in each to mean something", () => {
+    expect(READING_QUESTIONS.length).toBeGreaterThanOrEqual(10);
+    expect(TOOL_DISCIPLINE_QUESTIONS.length).toBeGreaterThanOrEqual(5);
+    expect(GOLDEN_QUESTIONS).toEqual([
+      ...READING_QUESTIONS,
+      ...TOOL_DISCIPLINE_QUESTIONS,
+    ]);
+  });
+
+  it("tags every question with its own dimension", () => {
+    // The tag is what keeps the write path from being outvoted by reading (#1265),
+    // so a question that lands in the wrong set is a silent hole in the gate.
+    for (const question of READING_QUESTIONS) {
+      expect(question.dimension, question.id).toBe("reading");
+    }
+    for (const question of TOOL_DISCIPLINE_QUESTIONS) {
+      expect(question.dimension, question.id).toBe("tool-discipline");
+    }
   });
 
   it("has unique ids and valid personas with non-empty questions", () => {
@@ -41,5 +63,17 @@ describe("golden question set", () => {
         .some((c) => c.pass && /no exist|no hay|no consta/i.test(c.name)),
     );
     expect(missing.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("makes every write-path question fail on a turn that says nothing and does nothing", () => {
+    // Silence is not discipline. A question whose checks all passed on an empty
+    // answer would inflate the dimension that decides the write path — and a
+    // provider error grades exactly that empty answer.
+    for (const question of TOOL_DISCIPLINE_QUESTIONS) {
+      expect(
+        question.grade(EMPTY).some((check) => !check.pass),
+        question.id,
+      ).toBe(true);
+    }
   });
 });
