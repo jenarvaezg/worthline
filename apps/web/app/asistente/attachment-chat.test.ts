@@ -651,6 +651,35 @@ describe("attachment chat context", () => {
       expect(hasUnstructuredEvidenceInHistory(messages)).toBe(true);
     });
 
+    /**
+     * The copy of both markers changed in #1287. A conversation that was already
+     * open carries the OLD string in the history the browser re-sends, and a marker
+     * that stops being recognized is a gate that stops biting — for exactly the
+     * conversation that already has unvalidated evidence on the table.
+     */
+    test.each([
+      "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.",
+      "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.",
+    ])("still sees a card worded the way it was before #1287", (message) => {
+      const messages: UIMessage[] = [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-attachment-extraction",
+              data: {
+                fileName: "captura.png",
+                result: { message, status: "unrecognized" },
+              },
+            },
+          ],
+        },
+        { id: "u2", role: "user", parts: [{ type: "text", text: "mételo" }] },
+      ];
+      expect(hasUnstructuredEvidenceInHistory(messages)).toBe(true);
+    });
+
     test("does not count an unidentified capture that was never described (#1246)", () => {
       // The seam identified no document AND the descriptive reading did not happen
       // (reader down): the model got nothing at all, so this is the manual path.

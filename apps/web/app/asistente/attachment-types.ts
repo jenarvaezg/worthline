@@ -8,7 +8,7 @@ export const MAX_ATTACHMENT_FILE_NAME_CHARS = 255;
  * spreadsheet parser into the assistant's client bundle.
  */
 export const UNSTRUCTURED_SPREADSHEET_MESSAGE =
-  "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.";
+  "No es una tabla de posiciones para importar, así que no hay ninguna lectura validada: lo que te cuente de este archivo sale de mirar su contenido, no de datos comprobados.";
 
 /**
  * Card message when the vision seam identifies no document it knows how to read
@@ -33,9 +33,16 @@ export const UNIDENTIFIED_DOCUMENT_MESSAGE =
  * It is deliberately NOT {@link UNIDENTIFIED_DOCUMENT_MESSAGE}: that one is the
  * dead-end (nothing identified and nothing described), and the model got no document
  * at all, so it must not count as evidence.
+ *
+ * Neither this message nor its spreadsheet twin may promise a reading «aquí debajo»
+ * (#1287): the description is fed to the MODEL and the card renders none of it, so
+ * what follows on screen is the assistant's answer, not the reading. Both say what is
+ * true instead — there is no validated reading, and whatever comes next stands on
+ * looking rather than on checked data. Pinning the provenance in the card itself is a
+ * different job, and it needs the envelope to carry the text (#1261 first).
  */
 export const UNSTRUCTURED_VISION_MESSAGE =
-  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.";
+  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de esta imagen sale de mirarla, no de datos comprobados.";
 
 /** Client-safe v1 type catalog shared by picker, transport and server validation. */
 export const ATTACHMENT_TYPES_V1 = [
