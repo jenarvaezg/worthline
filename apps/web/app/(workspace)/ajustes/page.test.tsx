@@ -73,11 +73,11 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-import AjustesPage from "./page";
+import { AjustesContent } from "./page";
 
 describe("ajustes page data loading (#636)", () => {
   test("reuses store reads across the page render", async () => {
-    await AjustesPage({ searchParams: Promise.resolve({}) });
+    await AjustesContent({ searchParams: Promise.resolve({}) });
 
     expect(calls.resolvePageShell).toHaveBeenCalledTimes(1);
     expect(calls.listSources).toHaveBeenCalledTimes(1);

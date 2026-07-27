@@ -8,11 +8,11 @@ import { SITE_URL } from "./site-url";
  * landing from its provisional `/landing` home and RETIRES the S1 307 redirect
  * to `/app`: `/` no longer bounces logged-out visitors into the dashboard.
  *
- * `force-static` prerenders the route at build, so the root layout's cookie
- * reads resolve empty at build and NO visit reads cookies or opens the database.
- * The static tripwire lives in `./landing/landing-static.test.ts`.
+ * Under Cache Components (#1229) the route is static by construction: it reads
+ * no cookies or store. Root-layout session banners live in their own Suspense,
+ * so they don't force this page dynamic. The static tripwire lives in
+ * `./landing/landing-static.test.ts`.
  */
-export const dynamic = "force-static";
 
 const TITLE = "worthline — Evoluciona tu Excel";
 const DESCRIPTION =

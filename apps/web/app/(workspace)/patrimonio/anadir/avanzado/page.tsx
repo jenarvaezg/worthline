@@ -1,3 +1,4 @@
+import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import {
@@ -12,9 +13,7 @@ import { PendingSubmit } from "@web/pending-submit";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
 import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import Link from "next/link";
-import type { CSSProperties } from "react";
-
-export const dynamic = "force-dynamic";
+import { type CSSProperties, Suspense } from "react";
 
 interface InstrumentEntry {
   id: Instrument;
@@ -127,10 +126,22 @@ function tierVar(instrument: Instrument): string {
   return `var(--tier-${defaultsFor(instrument).rung})`;
 }
 
-export default async function AnadirHoldingPage({
+export default function AnadirHoldingPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<FormRouteSkeleton label="Cargando añadir avanzado" />}>
+      <AnadirAvanzadoContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function AnadirAvanzadoContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);

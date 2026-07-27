@@ -1,10 +1,14 @@
 import { guardAdmin } from "@web/admin/guard-admin";
 import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
-
 import { parseCatalogParams } from "./catalog-triage";
 import CatalogWorkbench from "./catalog-workbench";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

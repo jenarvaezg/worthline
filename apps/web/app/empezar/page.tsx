@@ -4,7 +4,12 @@ import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 import { initHogarAction, initSoloAction } from "./actions";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 interface EmpezarSearchParams {
   path?: string;

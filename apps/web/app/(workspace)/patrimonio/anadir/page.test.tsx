@@ -85,10 +85,10 @@ vi.mock("@web/patrimonio/anadir/symbol-search", () => ({
   default: () => null,
 }));
 
-import AnadirHoldingPage from "./page";
+import { AnadirHoldingContent } from "./page";
 
 async function renderedHtml(): Promise<string> {
-  const element = (await AnadirHoldingPage({
+  const element = (await AnadirHoldingContent({
     searchParams: Promise.resolve({}),
   })) as ReactElement;
   return renderToStaticMarkup(element);

@@ -167,7 +167,7 @@ import {
   allocationMonthKeys,
   formatAllocationMonthLabel,
 } from "./contribution-allocation-view";
-import ObjetivosPage from "./page";
+import { ObjetivosContent } from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -176,7 +176,7 @@ beforeEach(() => {
 async function renderedHtml(
   searchParams: Record<string, string | string[] | undefined> = {},
 ): Promise<string> {
-  const element = (await ObjetivosPage({
+  const element = (await ObjetivosContent({
     searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);

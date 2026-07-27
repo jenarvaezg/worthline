@@ -1,8 +1,6 @@
 import { cronBearerAuthorized } from "@web/cron-auth";
 import { productionSyncQueue } from "@web/sync-queue";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**

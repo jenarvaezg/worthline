@@ -8,7 +8,6 @@ import { SITE_URL } from "./site-url";
  * intentionally absent (they are also disallowed in `robots.ts`).
  * `force-static` keeps this prerendered alongside the static landing.
  */
-export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [

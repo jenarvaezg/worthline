@@ -1,3 +1,4 @@
+import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
@@ -21,9 +22,7 @@ import {
 import type { RegisteredSource } from "@worthline/pricing";
 import { fetchPriceNow } from "@worthline/pricing";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
-
-export const dynamic = "force-dynamic";
+import { type CSSProperties, type ReactNode, Suspense } from "react";
 
 type DrawerId = "dinero" | "inversion" | "inmueble" | "bien" | "deuda";
 
@@ -148,10 +147,22 @@ async function fetchPickedSymbolPrice(
   return fetched?.price ?? null;
 }
 
-export default async function AnadirHoldingPage({
+export default function AnadirHoldingPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<FormRouteSkeleton label="Cargando añadir holding" />}>
+      <AnadirHoldingContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function AnadirHoldingContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);

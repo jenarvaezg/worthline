@@ -14,9 +14,6 @@ import { metadataCorsOptionsRequestHandler, protectedResourceHandler } from "mcp
  * keeps the metadata shape valid until then.
  */
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 const PLACEHOLDER_AUTH_SERVER = "https://authorization-server.invalid/oauth";
 
 function authServerUrls(): string[] {

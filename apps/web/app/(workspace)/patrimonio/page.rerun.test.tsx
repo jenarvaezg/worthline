@@ -76,12 +76,12 @@ vi.mock("./returns-by-class-section", () => ({ default: () => null }));
 vi.mock("./group-controls", () => ({ default: () => null }));
 vi.mock("./price-refresh-control", () => ({ PriceRefreshControl: () => null }));
 
-import PatrimonioPage from "./page";
+import { PatrimonioContent } from "./page";
 
 async function renderedHtml(
   searchParams: Record<string, string | string[] | undefined>,
 ): Promise<string> {
-  const element = (await PatrimonioPage({
+  const element = (await PatrimonioContent({
     searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);

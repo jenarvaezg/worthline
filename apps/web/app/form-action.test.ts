@@ -106,7 +106,7 @@ describe("formAction — redirect form choreography", () => {
     expect(receivedParsed).toBe("payload");
     expect(url).toContain("ok=done");
     // #1191: a committed mutation busts the client Router Cache so sibling tabs
-    // visited within staleTimes.dynamic don't keep serving stale figures.
+    // sibling tabs don't keep serving stale figures after a mutation.
     expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
     // #1180: `revalidatePath` evicts the OTHER tabs but leaves the CURRENT one
     // alone until a navigation; our terminal redirect can be the byte-identical

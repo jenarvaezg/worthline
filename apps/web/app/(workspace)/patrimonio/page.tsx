@@ -28,15 +28,26 @@ import {
   type PatrimonioExposureContext,
 } from "./load-patrimonio";
 import PatrimonioAnalyticsSkeleton from "./patrimonio-analytics-skeleton";
+import PatrimonioSkeleton from "./patrimonio-skeleton";
 import { PriceRefreshControl } from "./price-refresh-control";
 import ReturnsByClassSection from "./returns-by-class-section";
 
-export const dynamic = "force-dynamic";
-
-export default async function PatrimonioPage({
+export default function PatrimonioPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<PatrimonioSkeleton />}>
+      <PatrimonioContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function PatrimonioContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   // Demo skips optimistic mutations — the write-guard rejects them, so a faked

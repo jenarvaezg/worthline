@@ -6,9 +6,6 @@ import { mcpPreAuthRatePlan } from "./rate-limit";
 import { enforceMcpRateLimit } from "./rate-limit-store";
 import { verifyMcpToken } from "./verify-token";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 const MCP_METADATA_PATH = "/.well-known/oauth-protected-resource";
 const MCP_READ_SCOPE = "worthline:read";
 const NO_STORE = { "Cache-Control": "no-store" };

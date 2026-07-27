@@ -3,23 +3,35 @@ import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import { PAYWALL_STATEMENT_MESSAGE } from "@web/entitlements/paywall-copy";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
+import FormRouteSkeleton from "@web/form-route-skeleton";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
+import { Suspense } from "react";
 import { confirmImportStatementAction, previewImportStatementAction } from "./actions";
 import { ImportStatementPreview } from "./import-statement-preview";
-
-export const dynamic = "force-dynamic";
 
 /**
  * "Importar extracto" — the portfolio-level statement import flow (PRD #669
  * S2, #673, ADR 0055). Its own isolated route/surface: S3 (#674) only wires
  * links to it from the portfolio page and the add-holding wizard.
  */
-export default async function ImportarExtractoPage({
+export default function ImportarExtractoPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<FormRouteSkeleton label="Cargando importar extracto" />}>
+      <ImportarExtractoContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function ImportarExtractoContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const isDemo = await isDemoMode();

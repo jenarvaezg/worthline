@@ -3,7 +3,12 @@ import { listAdminMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 import { maintainerAlertCategoryLabel } from "@web/asistente/maintainer-alert";
 import type { MaintainerAlertStatus } from "@worthline/db";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 function statusLabel(status: MaintainerAlertStatus): string {
   switch (status) {

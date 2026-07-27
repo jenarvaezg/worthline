@@ -12,7 +12,12 @@ import {
 import { listAdminAiTokenUsage } from "@web/admin/list-ai-token-usage";
 import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("es-ES", {

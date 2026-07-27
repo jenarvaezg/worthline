@@ -17,6 +17,7 @@ import {
   suggestMonthlySavingsCapacity,
 } from "@worthline/domain";
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   createMemberAction,
   disableMemberAction,
@@ -28,6 +29,7 @@ import {
   updateMemberAction,
   updateMemberProfileAction,
 } from "./actions";
+import AjustesSkeleton from "./ajustes-skeleton";
 import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
 import { aggregateSourceValueMinor, countNonDustTokens } from "./binance-helpers";
 import DisconnectBinanceFold from "./disconnect-binance-fold";
@@ -35,12 +37,22 @@ import DisconnectNumistaFold from "./disconnect-numista-fold";
 import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
 import { formatLastSync } from "./numista-helpers";
 
-export const dynamic = "force-dynamic";
-
-export default async function AjustesPage({
+export default function AjustesPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<AjustesSkeleton />}>
+      <AjustesContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function AjustesContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);

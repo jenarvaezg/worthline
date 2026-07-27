@@ -3,7 +3,12 @@ import { parseReturnTo } from "@web/return-to";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 /**
  * Sign-in landing (ADR 0030). The public entry point when auth is enabled:

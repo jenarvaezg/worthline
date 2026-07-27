@@ -8,20 +8,35 @@ import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
-export const dynamic = "force-dynamic";
-
-export default async function DashboardPage({
+/**
+ * /app — Stream (#1229). The page itself is sync; shell preamble + heavy body
+ * live inside Suspense so Partial Prefetching can ship DashboardSkeleton as the
+ * reusable per-route shell.
+ */
+export default function DashboardPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardBody searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function DashboardBody({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = await searchParams;
   const currentUrl = buildCurrentUrl(resolvedSearchParams);
 
   // The shell preamble loads only the lightweight data needed to render the
-  // frame immediately; the heavy dashboard body streams in via Suspense below.
-  // It also redirects to /empezar when the workspace has no record yet, so a
-  // freshly-provisioned hosted workspace declares who it is (solo/hogar) first.
+  // frame; the heavy dashboard body continues streaming below. It also redirects
+  // to /empezar when the workspace has no record yet, so a freshly-provisioned
+  // hosted workspace declares who it is (solo/hogar) first.
   const perfStartedAt = perfStart();
   const { privacyMode, requestedScopeId } = await resolvePageShell({
     searchParams: resolvedSearchParams,
@@ -39,13 +54,11 @@ export default async function DashboardPage({
   perfEnd("home-shell", perfStartedAt);
 
   return (
-    <Suspense fallback={<DashboardSkeleton />}>
-      <DashboardContent
-        privacyMode={privacyMode}
-        returnTo={currentUrl}
-        searchParams={resolvedSearchParams}
-        scopeId={requestedScopeId}
-      />
-    </Suspense>
+    <DashboardContent
+      privacyMode={privacyMode}
+      returnTo={currentUrl}
+      searchParams={resolvedSearchParams}
+      scopeId={requestedScopeId}
+    />
   );
 }

@@ -3,10 +3,9 @@ import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { readBillingEntitlement } from "@web/billing/read-billing-entitlement";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
-
+import { Suspense } from "react";
+import PremiumSkeleton from "./premium-skeleton";
 import { buildPremiumView } from "./premium-view";
-
-export const dynamic = "force-dynamic";
 
 /**
  * Los tres carriles de compra (#1126) con su copy — SIN cifras: los precios
@@ -41,7 +40,19 @@ const TIERS: { tier: BillingTier; label: string; detail: string }[] = [
  * Sin proveedor de billing configurado (el estado hasta S6) la página lo dice
  * honestamente en vez de fingir un checkout.
  */
-export default async function PremiumPage({
+export default function PremiumPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<PremiumSkeleton />}>
+      <PremiumContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function PremiumContent({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

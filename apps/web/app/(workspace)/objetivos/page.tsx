@@ -19,6 +19,7 @@ import {
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   buildExposureDriftProjection,
   exposureDriftTrajectories,
@@ -33,8 +34,7 @@ import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
-
-export const dynamic = "force-dynamic";
+import ObjetivosSkeleton from "./objetivos-skeleton";
 
 const dayFormatter = new Intl.DateTimeFormat("es-ES", {
   day: "numeric",
@@ -149,10 +149,22 @@ function FireLevelCard({
   );
 }
 
-export default async function ObjetivosPage({
+export default function ObjetivosPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<ObjetivosSkeleton />}>
+      <ObjetivosContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+export async function ObjetivosContent({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const resolvedSearchParams = (await searchParams) ?? {};
   const currentUrl = buildCurrentUrlFor("/objetivos", resolvedSearchParams);

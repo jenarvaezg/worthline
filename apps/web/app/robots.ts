@@ -7,7 +7,6 @@ import { SITE_URL } from "./site-url";
  * are crawlable; every authenticated workspace route stays out of the index.
  * `force-static` keeps this prerendered alongside the static landing.
  */
-export const dynamic = "force-static";
 
 // A denylist (not `Disallow: /` + allowlist) on purpose: Googlebot renders the
 // landing to index it, so `/_next/*` assets must stay crawlable — an allowlist

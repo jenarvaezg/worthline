@@ -10,8 +10,6 @@
 import { withStore } from "@web/store";
 import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
 /** Today's date in the server's local time zone, as YYYY-MM-DD. */
 function localDateStamp(now: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
