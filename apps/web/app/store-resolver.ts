@@ -26,9 +26,10 @@ export interface ResolveStoreTargetInput {
     /**
      * The user's own workspace, resolved at sign-in (control plane +
      * provision-on-first-login) and carried in the JWT (ADR 0030). Absent until
-     * a workspace has been provisioned.
+     * a workspace has been provisioned. `dbAuthToken` is the per-database Turso
+     * JWT (#1185); legacy JWTs may omit it until the next sign-in / backfill.
      */
-    workspace?: { id: string; dbUrl: string };
+    workspace?: { id: string; dbUrl: string; dbAuthToken?: string };
   } | null;
   /**
    * Raw value of the `wl_demo_persona` cookie (ADR 0030). A logged-out request
@@ -42,7 +43,10 @@ export interface ResolveStoreTargetInput {
    * workspace it may open arrives here — resolved by `verifyMcpToken` from the
    * control plane — rather than on `session.workspace`.
    */
-  mcpWorkspace?: { workspaceId: string; dbUrl: string } | null | undefined;
+  mcpWorkspace?:
+    | { workspaceId: string; dbUrl: string; dbAuthToken?: string | null }
+    | null
+    | undefined;
   /**
    * The impersonation target resolved from the `wl_impersonate` cookie's
    * workspace id (a control-plane lookup — see `lookupImpersonationTarget` in
@@ -55,7 +59,12 @@ export interface ResolveStoreTargetInput {
    * boolean passed in from the caller instead of recomputing it here (#697).
    */
   impersonateWorkspace?:
-    | { workspaceId: string; dbUrl: string; email: string }
+    | {
+        workspaceId: string;
+        dbUrl: string;
+        email: string;
+        dbAuthToken?: string | null;
+      }
     | null
     | undefined;
 }
@@ -72,14 +81,21 @@ export function normalizeAdminEmail(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/**
+ * Prefer the per-workspace Turso JWT (#1185); fall back to the shared group
+ * token only for pre-backfill workspaces / legacy JWTs that still lack one.
+ * The group token remains required for the control plane itself.
+ */
+function workspaceDbToken(scoped: string | null | undefined, groupToken: string): string {
+  return scoped && scoped.length > 0 ? scoped : groupToken;
+}
+
 export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget {
   const { env, session, personaCookie, mcpWorkspace, impersonateWorkspace } = input;
   const authConfigured = Boolean(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET);
 
-  // One shared Turso group token in env opens whichever per-workspace URL the
-  // request resolves to (from the session at web sign-in, or from a verified
-  // MCP token, ADR 0034). The OAuth token that identified the MCP caller is NOT
-  // this token — it never reaches the store seam.
+  // Control-plane / legacy fallback token. Workspace data-plane opens prefer
+  // the per-database JWT carried on the resolved workspace (#1185).
   const groupToken = env.WORTHLINE_DB_AUTH_TOKEN ?? "";
 
   // Admin impersonation (#697, ADR 0030): recomputed from THIS call's session
@@ -96,7 +112,7 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
       kind: "authenticated",
       workspaceId: impersonateWorkspace.workspaceId,
       dbUrl: impersonateWorkspace.dbUrl,
-      token: groupToken,
+      token: workspaceDbToken(impersonateWorkspace.dbAuthToken, groupToken),
       impersonatedEmail: impersonateWorkspace.email,
     };
   }
@@ -109,7 +125,7 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
       kind: "authenticated",
       workspaceId: workspace.id,
       dbUrl: workspace.dbUrl,
-      token: groupToken,
+      token: workspaceDbToken(workspace.dbAuthToken, groupToken),
     };
   }
 
@@ -120,7 +136,7 @@ export function resolveStoreTarget(input: ResolveStoreTargetInput): StoreTarget 
       kind: "authenticated",
       workspaceId: mcpWorkspace.workspaceId,
       dbUrl: mcpWorkspace.dbUrl,
-      token: groupToken,
+      token: workspaceDbToken(mcpWorkspace.dbAuthToken, groupToken),
     };
   }
 

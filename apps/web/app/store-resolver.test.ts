@@ -31,6 +31,30 @@ describe("resolveStoreTarget", () => {
       },
       session: {
         user: { email: "ana@example.com" },
+        workspace: {
+          id: "ws-ana",
+          dbUrl: "libsql://wl-ana.turso.io",
+          dbAuthToken: "scoped-ana",
+        },
+      },
+    });
+    expect(result).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "scoped-ana",
+    });
+  });
+
+  test("falls back to the group token when a legacy session omits the per-workspace JWT (#1185)", () => {
+    const result = resolveStoreTarget({
+      env: {
+        AUTH_GOOGLE_ID: "google-id",
+        AUTH_GOOGLE_SECRET: "google-secret",
+        WORTHLINE_DB_AUTH_TOKEN: "group-token",
+      },
+      session: {
+        user: { email: "ana@example.com" },
         workspace: { id: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
       },
     });
@@ -96,13 +120,17 @@ describe("resolveStoreTarget", () => {
         WORTHLINE_DB_AUTH_TOKEN: "group-token",
       },
       session: null,
-      mcpWorkspace: { workspaceId: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" },
+      mcpWorkspace: {
+        workspaceId: "ws-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+        dbAuthToken: "scoped-mcp",
+      },
     });
     expect(result).toEqual({
       kind: "authenticated",
       workspaceId: "ws-ana",
       dbUrl: "libsql://wl-ana.turso.io",
-      token: "group-token",
+      token: "scoped-mcp",
     });
   });
 
@@ -172,13 +200,14 @@ describe("resolveStoreTarget", () => {
         workspaceId: "ws-target",
         dbUrl: "libsql://wl-target.turso.io",
         email: "target@example.com",
+        dbAuthToken: "scoped-target",
       },
     });
     expect(result).toEqual({
       kind: "authenticated",
       workspaceId: "ws-target",
       dbUrl: "libsql://wl-target.turso.io",
-      token: "group-token",
+      token: "scoped-target",
       impersonatedEmail: "target@example.com",
     });
   });

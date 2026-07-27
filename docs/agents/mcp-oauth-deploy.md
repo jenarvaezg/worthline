@@ -114,7 +114,8 @@ the same WorkOS environment, or the directory lookup hits the wrong env and ever
 
 `vercel.json` schedules `GET /api/cron/snapshot` at `0 21 * * *` (21:00 UTC, close-of-day).
 The route captures today's snapshot for **every** workspace (it lists them from the control plane
-and opens each per-workspace DB with the existing `WORTHLINE_DB_AUTH_TOKEN`, no session).
+and opens each per-workspace DB with that workspace's scoped Turso JWT (#1185), falling back to
+`WORTHLINE_DB_AUTH_TOKEN` only for pre-backfill rows; no session).
 
 | Var           | Value                             | Notes                                                                                                                   |
 | ------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |

@@ -19,6 +19,7 @@ import {
 
 import type { WorkspaceBillingState } from "./billing";
 import { migrateControlPlane } from "./control-plane-migrate";
+import { openSecret, sealSecret } from "./crypto";
 import { trialEndsAtFrom, type WorkspaceEntitlement } from "./entitlements";
 import { type LibsqlUrlTarget, openLibsqlClient } from "./libsql-client";
 
@@ -41,6 +42,13 @@ export interface ControlPlaneWorkspace {
   id: string;
   dbName: string;
   dbUrl: string;
+  /**
+   * Per-database Turso JWT (#1185), or null for a pre-#1185 workspace that has
+   * not been backfilled yet. Callers that open the workspace DB must prefer this
+   * over the shared group token; the group token remains only as a temporary
+   * fallback until every row is filled.
+   */
+  dbAuthToken: string | null;
   createdAt: string;
 }
 
@@ -273,7 +281,14 @@ export interface TenancyDirectory {
   createWorkspace(input: {
     dbName: string;
     dbUrl: string;
+    /** Per-database Turso JWT (#1185). Omitted/undefined stores null (legacy). */
+    dbAuthToken?: string | null;
   }): Promise<ControlPlaneWorkspace>;
+  /**
+   * Persist (or replace) the per-database Turso JWT for an existing workspace
+   * (#1185 backfill). Sealed at rest when `WORTHLINE_ENCRYPTION_KEY` is set.
+   */
+  setWorkspaceDbAuthToken(workspaceId: string, dbAuthToken: string): Promise<void>;
   /**
    * Remove a workspace row. The provisioner's loser-side cleanup after losing
    * the first-login race (#733) — the loser never got a grant, so only the
@@ -693,6 +708,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
   db_name TEXT NOT NULL UNIQUE,
   db_url TEXT NOT NULL,
+  db_auth_token TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS grants (
@@ -893,10 +909,12 @@ function toUser(row: Record<string, unknown>): ControlPlaneUser {
 }
 
 function toWorkspace(row: Record<string, unknown>): ControlPlaneWorkspace {
+  const sealed = row["db_auth_token"];
   return {
     id: String(row["id"]),
     dbName: String(row["db_name"]),
     dbUrl: String(row["db_url"]),
+    dbAuthToken: sealed == null || sealed === "" ? null : openSecret(String(sealed)),
     createdAt: String(row["created_at"]),
   };
 }
@@ -1200,17 +1218,25 @@ async function buildControlPlaneStore(
       });
       return result.rows.length > 0 ? toUser(result.rows[0]!) : null;
     },
-    async createWorkspace({ dbName, dbUrl }) {
+    async createWorkspace({ dbName, dbUrl, dbAuthToken }) {
       const id = newId();
+      const sealed =
+        dbAuthToken == null || dbAuthToken === "" ? null : sealSecret(dbAuthToken);
       await client.execute({
-        sql: "INSERT INTO workspaces (id, db_name, db_url) VALUES (?, ?, ?)",
-        args: [id, dbName, dbUrl],
+        sql: "INSERT INTO workspaces (id, db_name, db_url, db_auth_token) VALUES (?, ?, ?, ?)",
+        args: [id, dbName, dbUrl, sealed],
       });
       const created = await client.execute({
-        sql: "SELECT id, db_name, db_url, created_at FROM workspaces WHERE id = ?",
+        sql: "SELECT id, db_name, db_url, db_auth_token, created_at FROM workspaces WHERE id = ?",
         args: [id],
       });
       return toWorkspace(created.rows[0]!);
+    },
+    async setWorkspaceDbAuthToken(workspaceId, dbAuthToken) {
+      await client.execute({
+        sql: "UPDATE workspaces SET db_auth_token = ? WHERE id = ?",
+        args: [sealSecret(dbAuthToken), workspaceId],
+      });
     },
     async deleteWorkspace(workspaceId) {
       await client.execute({
@@ -1238,7 +1264,7 @@ async function buildControlPlaneStore(
     },
     async listWorkspacesForUser(userId) {
       const result = await client.execute({
-        sql: `SELECT w.id, w.db_name, w.db_url, w.created_at
+        sql: `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at
               FROM workspaces w
               JOIN grants g ON g.workspace_id = w.id
               WHERE g.user_id = ?
@@ -1249,13 +1275,13 @@ async function buildControlPlaneStore(
     },
     async listAllWorkspaces() {
       const result = await client.execute(
-        "SELECT id, db_name, db_url, created_at FROM workspaces ORDER BY created_at ASC",
+        "SELECT id, db_name, db_url, db_auth_token, created_at FROM workspaces ORDER BY created_at ASC",
       );
       return result.rows.map((row) => toWorkspace(row));
     },
     async getWorkspaceWithOwner(workspaceId) {
       const result = await client.execute({
-        sql: `SELECT w.id, w.db_name, w.db_url, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+        sql: `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at, ${OWNER_EMAIL_SUBQUERY}
               FROM workspaces w
               WHERE w.id = ?`,
         args: [workspaceId],
@@ -1264,7 +1290,7 @@ async function buildControlPlaneStore(
     },
     async listWorkspacesWithOwners() {
       const result = await client.execute(
-        `SELECT w.id, w.db_name, w.db_url, w.created_at, ${OWNER_EMAIL_SUBQUERY}
+        `SELECT w.id, w.db_name, w.db_url, w.db_auth_token, w.created_at, ${OWNER_EMAIL_SUBQUERY}
          FROM workspaces w
          ORDER BY w.created_at ASC`,
       );

@@ -26,16 +26,24 @@ function fakeTurso(dir: string): {
   port: TursoPort;
   created: string[];
   deleted: string[];
+  tokens: string[];
 } {
   const created: string[] = [];
   const deleted: string[] = [];
+  const tokens: string[] = [];
   return {
     created,
     deleted,
+    tokens,
     port: {
       async createDatabase(name) {
         created.push(name);
         return { name, url: `file:${join(dir, `${name}.sqlite`)}` };
+      },
+      async createDatabaseToken(name) {
+        const jwt = `scoped-token-for-${name}`;
+        tokens.push(jwt);
+        return { jwt };
       },
       async deleteDatabase(name) {
         deleted.push(name);
@@ -71,6 +79,59 @@ describe("workspace provisioner", () => {
       );
       raw.close();
       expect(version).toBe(SCHEMA_VERSION);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("mints a per-workspace Turso token and stores it (#1185)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port, tokens } = fakeTurso(tempDir("worthline-provision-token-"));
+    const migrateTargets: Array<{ url: string; authToken?: string }> = [];
+    try {
+      const ws = await provisionWorkspaceForUser(
+        {
+          controlPlane: cp,
+          turso: port,
+          // A shared group token must NOT be what opens the fresh DB — the
+          // scoped per-database JWT is the blast-radius reduction (#1185).
+          groupAuthToken: "group-token-must-not-open-workspace",
+          openAndMigrate: async (target) => {
+            migrateTargets.push(target);
+          },
+        },
+        "ana@example.com",
+      );
+
+      expect(tokens).toEqual([`scoped-token-for-${ws.dbName}`]);
+      expect(ws.dbAuthToken).toBe(`scoped-token-for-${ws.dbName}`);
+      expect(migrateTargets).toEqual([
+        { url: ws.dbUrl, authToken: `scoped-token-for-${ws.dbName}` },
+      ]);
+
+      const listed = await cp.listAllWorkspaces();
+      expect(listed[0]?.dbAuthToken).toBe(`scoped-token-for-${ws.dbName}`);
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("two accounts get distinct per-workspace tokens (#1185)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    const { port } = fakeTurso(tempDir("worthline-provision-token-iso-"));
+    try {
+      const ana = await provisionWorkspaceForUser(
+        { controlPlane: cp, turso: port },
+        "ana@example.com",
+      );
+      const leo = await provisionWorkspaceForUser(
+        { controlPlane: cp, turso: port },
+        "leo@example.com",
+      );
+
+      expect(ana.dbAuthToken).toBeTruthy();
+      expect(leo.dbAuthToken).toBeTruthy();
+      expect(leo.dbAuthToken).not.toBe(ana.dbAuthToken);
     } finally {
       cp.close();
     }

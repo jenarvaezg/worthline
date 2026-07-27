@@ -68,7 +68,39 @@ describe("control-plane store", () => {
         id: ws.id,
         dbName: "wl-ana",
         dbUrl: "libsql://wl-ana.turso.io",
+        dbAuthToken: null,
       });
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("createWorkspace stores a per-workspace Turso auth token (#1185)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ws = await cp.createWorkspace({
+        dbAuthToken: "scoped-jwt-for-ana",
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      expect(ws.dbAuthToken).toBe("scoped-jwt-for-ana");
+      expect((await cp.listAllWorkspaces())[0]?.dbAuthToken).toBe("scoped-jwt-for-ana");
+    } finally {
+      cp.close();
+    }
+  });
+
+  test("setWorkspaceDbAuthToken backfills a missing token (#1185)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const ws = await cp.createWorkspace({
+        dbName: "wl-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+      });
+      expect(ws.dbAuthToken).toBeNull();
+
+      await cp.setWorkspaceDbAuthToken(ws.id, "backfilled-jwt");
+      expect((await cp.listAllWorkspaces())[0]?.dbAuthToken).toBe("backfilled-jwt");
     } finally {
       cp.close();
     }

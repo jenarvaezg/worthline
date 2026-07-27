@@ -24,7 +24,24 @@ describe("storeTargetFromMcpAuth", () => {
     expect(storeTargetFromMcpAuth(undefined)).toBeUndefined();
   });
 
-  test("a token's workspace claims ⇒ the authenticated target (group token from env)", () => {
+  test("a token's workspace claims ⇒ the authenticated target (per-workspace Turso JWT)", () => {
+    process.env.WORTHLINE_DB_AUTH_TOKEN = "group-token";
+    const target = storeTargetFromMcpAuth(
+      authInfo({
+        workspaceId: "ws-ana",
+        dbUrl: "libsql://wl-ana.turso.io",
+        dbAuthToken: "scoped-ana",
+      }),
+    );
+    expect(target).toEqual({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "scoped-ana",
+    });
+  });
+
+  test("falls back to the group token when the MCP claim omits a scoped JWT (#1185)", () => {
     process.env.WORTHLINE_DB_AUTH_TOKEN = "group-token";
     const target = storeTargetFromMcpAuth(
       authInfo({ workspaceId: "ws-ana", dbUrl: "libsql://wl-ana.turso.io" }),

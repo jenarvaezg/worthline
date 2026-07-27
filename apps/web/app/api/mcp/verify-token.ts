@@ -71,6 +71,8 @@ export interface McpTokenClaims {
 export interface McpWorkspaceRef {
   workspaceId: string;
   dbUrl: string;
+  /** Per-database Turso JWT (#1185), or null until backfilled. */
+  dbAuthToken: string | null;
 }
 
 export interface VerifyMcpTokenDeps {
@@ -234,7 +236,11 @@ export function createVerifyMcpToken(deps: VerifyMcpTokenDeps) {
       token: bearerToken,
       clientId: verified.subject,
       scopes: [MCP_READ_SCOPE],
-      extra: { workspaceId: workspace.workspaceId, dbUrl: workspace.dbUrl },
+      extra: {
+        workspaceId: workspace.workspaceId,
+        dbUrl: workspace.dbUrl,
+        dbAuthToken: workspace.dbAuthToken,
+      },
     };
   };
 }
@@ -377,6 +383,7 @@ async function envResolveWorkspace(
       workspaces.map((entry) => ({
         workspaceId: entry.id,
         dbUrl: entry.dbUrl,
+        dbAuthToken: entry.dbAuthToken,
       })),
     );
     if (!workspace) return null;
