@@ -2,9 +2,11 @@
  * Repairs on the history the browser sends back with every turn (#1260).
  *
  * The client keeps the whole conversation and re-sends it, so anything the server
- * refuses once it refuses forever: a conversation does not fail, it dies. The
- * invariant these repairs buy is that **a conversation never dies because of its
- * own history** — the history is shrunk, never rejected.
+ * refuses once it refuses forever: a conversation does not fail, it dies. What
+ * these repairs buy is that its SIZE is never the reason: an oversized history is
+ * shrunk here, never rejected. Two ceilings in the route still refuse outright and
+ * are documented there — `MAX_MESSAGES` and the request's byte cap — so this is
+ * not an unconditional promise.
  */
 
 import { isToolUIPart, type UIMessage } from "ai";
@@ -28,18 +30,26 @@ const RESULT_BEARING_STATES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * What the model reads in place of a tool result retired for size. It forbids
+ * Left ONCE per message whose tool payloads were dropped for size. It forbids
  * reusing the earlier figures on purpose: answering from its own previous prose
  * instead of reading again is what ADR 0048 exists to prevent.
+ *
+ * One note per message, not per payload: a marker per dropped part is a term that
+ * grows with the NUMBER of parts, which nothing bounds, and a client can send
+ * thousands of tiny ones in a single message.
  */
-export const RETIRED_TOOL_OUTPUT = {
-  retirado:
-    "Resultado retirado del historial por tamaño. No uses cifras de tu respuesta anterior: vuelve a llamar a la herramienta si necesitas el dato.",
-} as const;
+export const DROPPED_TOOL_PAYLOAD_NOTE =
+  "(Lecturas anteriores retiradas del historial por tamaño. No uses cifras de tus respuestas anteriores: vuelve a llamar a la herramienta si necesitas el dato.)";
 
-/** Left where an interrupted PROPOSAL was pruned, so its promise is not left standing. */
+/**
+ * Left where an interrupted PROPOSAL was pruned, so its promise is not left
+ * standing. It says «no llegó a mostrarse» and NOT «no existe»: the `propose_*`
+ * tools persist before returning, so a stream that died after `execute()` leaves a
+ * proposal that IS there. Claiming otherwise would be the repair inventing a fact
+ * about persisted state (ADR 0048), and no tool lets the model check.
+ */
 export const INTERRUPTED_PROPOSAL_NOTE =
-  "(La propuesta anterior se interrumpió: no llegó a prepararse y no existe. Si el usuario la quiere, vuelve a proponerla.)";
+  "(La propuesta anterior se interrumpió y no llegó a mostrarse. Si el usuario la quiere, vuelve a proponerla.)";
 
 function toolName(part: Part): string {
   const { type, toolName: dynamicName } = part as { type: string; toolName?: string };
@@ -97,97 +107,133 @@ export function toolPartChars(part: Part): number {
 }
 
 /**
- * A retired part, rebuilt from scratch rather than edited: `input`, `rawInput`,
- * `errorText` and `approval.reason` all reach the prompt too, so swapping only
- * `output` would leave both the payload and its cost untouched.
+ * A tool name longer than this cannot be one of ours (the longest is ~34 chars),
+ * and the name is the ONE field the SDK writes twice — into the `tool-call` and
+ * into the `tool-result`. Measured: a part with a 47 000-character `type` weighs
+ * 47 234 in the body, fits a 48 000 ceiling, and lands 94 285 characters in the
+ * prompt. Capping the name is what keeps the ceiling meaning what it says.
  */
-function retiredPart(part: Part): Part {
-  const {
-    type,
-    toolCallId,
-    toolName: dynamicName,
-  } = part as { type: string; toolCallId: string; toolName?: string };
-  return {
-    ...(type === "dynamic-tool" ? { type, toolName: dynamicName } : { type }),
-    toolCallId,
-    state: "output-available",
-    input: {},
-    output: RETIRED_TOOL_OUTPUT,
-  } as unknown as Part;
-}
+const MAX_TOOL_NAME_CHARS = 64;
 
 export interface CollapseBudget {
-  /** Hard ceiling on ALL tool payloads reaching the provider in one turn. */
+  /** Hard ceiling on ALL tool payloads reaching the provider from history. */
   totalChars: number;
   /** What the readings behind the freshest one share. */
   staleChars: number;
+  /**
+   * What ALL the proposals share, so a pile of them cannot starve the readings —
+   * and, being a sub-budget of `totalChars`, cannot starve them by accident either.
+   */
+  proposalChars: number;
+  /**
+   * How many tool parts may survive at all. A ceiling in characters is not enough:
+   * every kept part becomes a call plus a result, so thousands of tiny parts fit
+   * the character budget and still triple the prompt. A real conversation carries
+   * at most `MAX_STEPS` readings per turn, so a few dozen is all the grounding
+   * there is.
+   */
+  maxParts: number;
 }
 
 /**
- * Retires tool payloads, newest first, until the turn fits its budget.
+ * Drops the tool payloads that do not fit the turn's budget, newest first.
  *
- * The call/result PAIR always survives — only the payload is swapped — because
- * dropping a result while keeping its call is exactly the poison {@link
- * pruneOrphanToolCalls} exists to clean up.
+ * DROPS the whole part — call and result together — rather than replacing its
+ * payload. Removing both sides is safe (it is what {@link pruneOrphanToolCalls}
+ * already relies on); what is forbidden is removing a result and leaving its call.
+ * Replacing payloads instead would leave one part per dropped payload in the
+ * prompt, and the number of parts is bounded by nothing: 10 000 tiny parts in a
+ * single message turned a 619 000-character body into 2 338 652 characters of
+ * prompt — a ceiling that inflates is not a ceiling.
  *
- * The rule is cumulative: a part is kept only if everything kept so far PLUS
- * itself fits its allowance. Two allowances, because the payloads are not worth
- * the same — the freshest reading and any PROPOSAL may use the whole ceiling (the
- * first is what this turn's answer stands on; a proposal must still be visible
- * when the user says yes), and everything older is held to
- * {@link CollapseBudget.staleChars} of the same running total. So a large freshest
- * reading leaves the stale ones nothing, on purpose.
+ * Three claims on the budget, in this order, because they are not worth the same:
  *
- * Since no part is ever kept beyond `totalChars`, the total is bounded whatever
- * arrives — the CLIENT writes these parts, so this is a ceiling on a hostile
- * payload as much as on a long conversation.
+ * 1. **The freshest reading**, which is what this turn's answer stands on.
+ * 2. **The proposals**, newest first, sharing {@link CollapseBudget.proposalChars}:
+ *    one the user is about to confirm must still be visible when they say yes.
+ * 3. **The older readings**, held to {@link CollapseBudget.staleChars}.
+ *
+ * The order matters and both extremes were wrong: charging the proposals last made
+ * one vanish exactly when it mattered, and charging them first starved the reading
+ * the answer needs today.
+ *
+ * Since no part is kept beyond `totalChars`, none survives with an implausible tool
+ * name, and no more than {@link CollapseBudget.maxParts} survive at all, what
+ * history contributes is bounded in every dimension whatever arrives — the CLIENT
+ * writes these parts, so this is a ceiling on a hostile payload as much as on a
+ * long conversation.
  */
-export function collapseStaleToolOutputs(
+export function dropStaleToolPayloads(
   messages: UIMessage[],
   budget: CollapseBudget,
-): { messages: UIMessage[]; collapsedToolCallIds: string[] } {
-  const chronological: Array<{ at: string; part: Part }> = [];
-  messages.forEach((message, messageIndex) => {
-    if (message.role !== "assistant") return;
-    message.parts.forEach((part, partIndex) => {
-      if (isToolUIPart(part)) {
-        chronological.push({ at: `${messageIndex}:${partIndex}`, part });
-      }
-    });
-  });
+): { messages: UIMessage[]; droppedToolCallIds: string[] } {
+  const located = messages.flatMap((message, messageIndex) =>
+    message.role === "assistant"
+      ? message.parts.flatMap((part, partIndex) =>
+          isToolUIPart(part) ? [{ at: `${messageIndex}:${partIndex}`, part }] : [],
+        )
+      : [],
+  );
+  if (located.length === 0) return { messages, droppedToolCallIds: [] };
 
-  const retire = new Set<string>();
-  const collapsedToolCallIds: string[] = [];
+  const drop = new Set<string>();
+  const droppedToolCallIds: string[] = [];
   let spent = 0;
-  for (let index = chronological.length - 1; index >= 0; index -= 1) {
-    const { at, part } = chronological[index]!;
-    const allowance =
-      index === chronological.length - 1 || isProposalPart(part)
-        ? budget.totalChars
-        : budget.staleChars;
-    const size = toolPartChars(part);
-    if (spent + size <= allowance) {
-      spent += size;
-      continue;
+  let kept = 0;
+  const admit = (
+    entries: typeof located,
+    allowance: number,
+    groupCap = allowance,
+  ): void => {
+    let group = 0;
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const { at, part } = entries[index]!;
+      const size = toolPartChars(part);
+      if (
+        kept < budget.maxParts &&
+        toolName(part).length <= MAX_TOOL_NAME_CHARS &&
+        group + size <= groupCap &&
+        spent + size <= allowance
+      ) {
+        spent += size;
+        group += size;
+        kept += 1;
+        continue;
+      }
+      drop.add(at);
+      droppedToolCallIds.push((part as { toolCallId: string }).toolCallId);
     }
-    retire.add(at);
-    collapsedToolCallIds.push((part as { toolCallId: string }).toolCallId);
-  }
-  if (retire.size === 0) return { messages, collapsedToolCallIds };
+  };
+  const readings = located.filter(({ part }) => !isProposalPart(part));
+  const freshestReading = readings.slice(-1);
+  admit(freshestReading, budget.totalChars);
+  admit(
+    located.filter(({ part }) => isProposalPart(part)),
+    budget.totalChars,
+    budget.proposalChars,
+  );
+  admit(readings.slice(0, -1), budget.staleChars);
+  if (drop.size === 0) return { messages, droppedToolCallIds };
 
   return {
-    messages: messages.map((message, messageIndex) =>
-      message.role === "assistant" &&
-      message.parts.some((_, partIndex) => retire.has(`${messageIndex}:${partIndex}`))
-        ? {
-            ...message,
-            parts: message.parts.map((part, partIndex) =>
-              retire.has(`${messageIndex}:${partIndex}`) ? retiredPart(part) : part,
-            ),
-          }
-        : message,
-    ),
-    collapsedToolCallIds,
+    messages: messages
+      .map((message, messageIndex) => {
+        if (
+          message.role !== "assistant" ||
+          !message.parts.some((_, partIndex) => drop.has(`${messageIndex}:${partIndex}`))
+        ) {
+          return message;
+        }
+        const kept = message.parts.filter(
+          (_, partIndex) => !drop.has(`${messageIndex}:${partIndex}`),
+        );
+        return {
+          ...message,
+          parts: [...kept, { type: "text" as const, text: DROPPED_TOOL_PAYLOAD_NOTE }],
+        };
+      })
+      .filter((message) => message.parts.length > 0),
+    droppedToolCallIds,
   };
 }
 

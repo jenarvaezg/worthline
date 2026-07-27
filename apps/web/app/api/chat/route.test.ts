@@ -2199,11 +2199,11 @@ describe("historial con lecturas de herramienta (#1260)", () => {
     expect(turns).toContain("LECTURA-3");
     expect(turns).not.toContain("LECTURA-1");
     expect(turns).not.toContain("LECTURA-2");
-    expect(turns).toContain("Resultado retirado del historial por tamaño");
-    // The pair survives: retiring a result while keeping its call is the poison
-    // the prune above exists to clean up.
-    expect(turns).toContain("call-t1");
-    expect(turns).toContain("call-t2");
+    expect(turns).toContain("Lecturas anteriores retiradas del historial por tamaño");
+    // Call AND result go together: removing a result while keeping its call is the
+    // poison the prune above exists to clean up.
+    expect(turns).not.toContain("call-t1");
+    expect(turns).not.toContain("call-t2");
   });
 
   it("nunca muere por el tamaño del historial: lo encoge y responde", async () => {
@@ -2232,6 +2232,36 @@ describe("historial con lecturas de herramienta (#1260)", () => {
     expect(turns).toContain("LECTURA-7");
     expect(turns).not.toContain("LECTURA-1");
     expect(turns.length).toBeLessThan(120_000);
+  });
+
+  it("acota el prompt cuando el cliente manda MILES de parts diminutos", async () => {
+    // La dimensión que nada limita: `MAX_MESSAGES` cuenta mensajes, no parts. Con
+    // un marcador por part retirado esto INFLABA el prompt en vez de acotarlo.
+    const model = simpleAnswerModel("respuesta acotada por número");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const parts = Array.from({ length: 10_000 }, (_, index) => ({
+      type: "tool-get_financial_context",
+      toolCallId: `mini-${index}`,
+      state: "output-denied",
+    }));
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("hola"),
+          { id: "a1", role: "assistant", parts },
+          { id: "u2", role: "user", parts: [{ type: "text", text: "sigue" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns.length).toBeLessThan(20_000);
+    // El más nuevo sobrevive; los miles de viejos no llegan al proveedor.
+    expect(turns).toContain("mini-9999");
+    expect(turns).not.toContain('"mini-0"');
+    expect(turns).not.toContain('"mini-5000"');
   });
 
   it("acota lo que llega al proveedor aunque el cliente forje el part entero", async () => {

@@ -2,10 +2,10 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
-  collapseStaleToolOutputs,
+  DROPPED_TOOL_PAYLOAD_NOTE,
+  dropStaleToolPayloads,
   INTERRUPTED_PROPOSAL_NOTE,
   pruneOrphanToolCalls,
-  RETIRED_TOOL_OUTPUT,
   withoutToolParts,
 } from "./chat-history";
 
@@ -27,7 +27,12 @@ function toolCall(state: string, toolCallId: string, output?: unknown) {
   };
 }
 
-const BUDGET = { staleChars: 24_000, totalChars: 48_000 };
+const BUDGET = {
+  maxParts: 40,
+  proposalChars: 48_000,
+  staleChars: 24_000,
+  totalChars: 80_000,
+};
 
 describe("pruneOrphanToolCalls", () => {
   it("drops a call whose result never arrived and keeps the prose beside it", () => {
@@ -141,13 +146,13 @@ describe("pruneOrphanToolCalls", () => {
   });
 });
 
-describe("collapseStaleToolOutputs", () => {
+describe("dropStaleToolPayloads", () => {
   const reading = (marker: string, chars: number) => ({
     marker,
     relleno: "x".repeat(chars),
   });
 
-  it("retires the older readings and keeps the freshest one verbatim", () => {
+  it("drops the older readings and keeps the freshest one verbatim", () => {
     const history = [
       assistant("a1", toolCall("output-available", "c1", reading("VIEJA", 200))),
       user("u1", "sigue"),
@@ -155,40 +160,46 @@ describe("collapseStaleToolOutputs", () => {
       user("u2", "y más"),
     ];
 
-    const { messages, collapsedToolCallIds } = collapseStaleToolOutputs(history, {
+    const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 400,
     });
 
-    expect(collapsedToolCallIds).toEqual(["c1"]);
-    const parts = messages.map((message) => message.parts[0] as { output?: unknown });
-    expect(parts[0]?.output).toEqual(RETIRED_TOOL_OUTPUT);
-    expect(parts[2]?.output).toEqual(reading("FRESCA", 200));
+    expect(droppedToolCallIds).toEqual(["c1"]);
+    // The old part is gone — not swapped — and a single note takes its place.
+    expect(messages[0]?.parts).toEqual([
+      { type: "text", text: DROPPED_TOOL_PAYLOAD_NOTE },
+    ]);
+    expect(messages[2]?.parts[0]).toEqual(
+      expect.objectContaining({ output: reading("FRESCA", 200) }),
+    );
   });
 
-  it("keeps the call/result pair intact — only the payload is swapped", () => {
+  it("takes call AND result away together, never just the result", () => {
+    // Removing both sides is safe; removing a result and leaving its call is the
+    // poison `pruneOrphanToolCalls` exists to clean up.
     const history = [
       assistant("a1", toolCall("output-available", "c1", reading("VIEJA", 500))),
       user("u1", "sigue"),
       assistant("a2", toolCall("output-available", "c2", reading("FRESCA", 500))),
     ];
 
-    const { messages } = collapseStaleToolOutputs(history, {
+    const { messages } = dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 700,
     });
 
-    const retired = messages[0]?.parts[0] as {
-      state?: string;
-      toolCallId?: string;
-      type?: string;
-    };
-    expect(retired.state).toBe("output-available");
-    expect(retired.toolCallId).toBe("c1");
-    expect(retired.type).toBe("tool-get_financial_context");
+    const survivors = JSON.stringify(messages[0]);
+    expect(survivors).not.toContain("c1");
+    expect(survivors).not.toContain("VIEJA");
+    expect(JSON.stringify(messages[2])).toContain("c2");
   });
 
-  it("retires the whole part, not just its output", () => {
+  it("takes away every channel of the part, not just its output", () => {
     // Every one of these fields reaches the provider (`input` as the call's input,
     // `errorText` and `approval.reason` as the result), so swapping `output`
     // alone would leave the payload — and its cost — untouched.
@@ -206,22 +217,43 @@ describe("collapseStaleToolOutputs", () => {
       assistant("a2", toolCall("output-available", "c2", reading("FRESCA", 100))),
     ];
 
-    const { messages } = collapseStaleToolOutputs(history, {
+    const { messages } = dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 1_000,
     });
 
-    const retired = JSON.stringify(messages[0]?.parts[0]);
-    expect(retired).not.toContain("iiii");
-    expect(retired).not.toContain("rrrr");
-    expect(retired).not.toContain("eeee");
-    expect(retired).not.toContain("aaaa");
-    expect(retired.length).toBeLessThan(400);
+    const survivors = JSON.stringify(messages[0]);
+    expect(survivors).not.toContain("iiii");
+    expect(survivors).not.toContain("rrrr");
+    expect(survivors).not.toContain("eeee");
+    expect(survivors).not.toContain("aaaa");
+    expect(survivors.length).toBeLessThan(400);
   });
 
-  it("bounds the total whatever the client sends", () => {
-    // The client writes these parts. Forty of them, each under the per-part
-    // allowance, must not add up to an unbounded prompt.
+  it("bounds the total by the NUMBER of parts, not only by their size", () => {
+    // The dimension nothing caps: a client can put thousands of tiny parts in ONE
+    // message. Swapping payloads instead of dropping parts made this INFLATE — a
+    // 619 000-character body became 2 338 652 characters of prompt.
+    const parts = Array.from({ length: 10_000 }, (_, index) => ({
+      type: "tool-a",
+      toolCallId: `${index}`,
+      state: "output-denied",
+    }));
+    const history = [
+      assistant("a1", ...parts),
+      user("u1", "sigue"),
+    ] as unknown as UIMessage[];
+
+    const { messages } = dropStaleToolPayloads(history, BUDGET);
+
+    expect(JSON.stringify(messages).length).toBeLessThan(
+      BUDGET.totalChars + DROPPED_TOOL_PAYLOAD_NOTE.length + 500,
+    );
+  });
+
+  it("bounds the total by their size too", () => {
     const history = Array.from({ length: 40 }, (_, index) =>
       assistant(
         `a${index}`,
@@ -229,15 +261,20 @@ describe("collapseStaleToolOutputs", () => {
       ),
     );
 
-    const { messages } = collapseStaleToolOutputs(history, BUDGET);
+    const { messages } = dropStaleToolPayloads(history, BUDGET);
 
-    const kept = JSON.stringify(messages).length;
-    expect(kept).toBeLessThan(BUDGET.totalChars + 10_000);
+    // 40 notes at most, one per message — the term that used to be per PART.
+    expect(JSON.stringify(messages).length).toBeLessThan(
+      BUDGET.totalChars + 40 * (DROPPED_TOOL_PAYLOAD_NOTE.length + 40),
+    );
   });
 
   it("spares a proposal the user may be about to confirm", () => {
     // A retired proposal would leave the model unable to see what it proposed
     // when the user says «sí»: it could re-propose, or claim it is already done.
+    // With a REAL fresh reading in front of it: `get_snapshot_history` with summary
+    // rows is 42 550 characters, and charging the proposal after it is what made it
+    // vanish exactly when the user was about to confirm.
     const history = [
       assistant("a1", {
         type: "tool-propose_correction",
@@ -247,14 +284,38 @@ describe("collapseStaleToolOutputs", () => {
         output: reading("PROPUESTA", 20_000),
       }),
       user("u1", "déjame pensarlo"),
-      assistant("a2", toolCall("output-available", "c1", reading("LECTURA", 20_000))),
+      assistant("a2", toolCall("output-available", "c1", reading("LECTURA", 42_550))),
       user("u2", "sí, hazlo"),
     ];
 
-    const { messages, collapsedToolCallIds } = collapseStaleToolOutputs(history, BUDGET);
+    const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, BUDGET);
 
-    expect(collapsedToolCallIds).not.toContain("p1");
+    // BOTH survive: charging the proposal first starved the reading this turn's
+    // answer stands on, and charging it last made it vanish when it mattered.
+    expect(droppedToolCallIds).toEqual([]);
     expect(JSON.stringify(messages[0])).toContain("PROPUESTA");
+    expect(JSON.stringify(messages[2])).toContain("LECTURA");
+  });
+
+  it("drops a part whose tool name could not be one of ours", () => {
+    // The name is the ONE field the SDK writes twice — call and result — so a
+    // 47 000-character `type` fitted a 48 000 ceiling and landed 94 285 in the
+    // prompt. No real tool name is longer than ~34 characters.
+    const history = [
+      assistant("a1", {
+        type: `tool-${"A".repeat(47_000)}`,
+        toolCallId: "c1",
+        state: "output-available",
+        input: {},
+        output: { ok: true },
+      }),
+      user("u1", "sigue"),
+    ] as unknown as UIMessage[];
+
+    const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, BUDGET);
+
+    expect(droppedToolCallIds).toEqual(["c1"]);
+    expect(JSON.stringify(messages)).not.toContain("AAAA");
   });
 
   it("does nothing when everything fits, by identity", () => {
@@ -263,9 +324,9 @@ describe("collapseStaleToolOutputs", () => {
       user("u1", "sigue"),
     ];
 
-    const { messages, collapsedToolCallIds } = collapseStaleToolOutputs(history, BUDGET);
+    const { messages, droppedToolCallIds } = dropStaleToolPayloads(history, BUDGET);
 
-    expect(collapsedToolCallIds).toEqual([]);
+    expect(droppedToolCallIds).toEqual([]);
     expect(messages).toBe(history);
   });
 
@@ -282,7 +343,9 @@ describe("collapseStaleToolOutputs", () => {
       user("u3", "tres"),
     ];
 
-    const { messages } = collapseStaleToolOutputs(history, {
+    const { messages } = dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
       staleChars: 100,
       totalChars: 600,
     });
@@ -298,7 +361,12 @@ describe("collapseStaleToolOutputs", () => {
     ];
     const before = JSON.parse(JSON.stringify(history));
 
-    collapseStaleToolOutputs(history, { staleChars: 100, totalChars: 600 });
+    dropStaleToolPayloads(history, {
+      maxParts: 40,
+      proposalChars: 1_000,
+      staleChars: 100,
+      totalChars: 600,
+    });
 
     expect(history).toEqual(before);
   });
