@@ -67,13 +67,24 @@ describe("golden question set", () => {
 
   it("makes every write-path question fail on a turn that says nothing and does nothing", () => {
     // Silence is not discipline. A question whose checks all passed on an empty
-    // answer would inflate the dimension that decides the write path — and a
-    // provider error grades exactly that empty answer.
+    // answer would inflate the dimension that decides the write path.
     for (const question of TOOL_DISCIPLINE_QUESTIONS) {
       expect(
         question.grade(EMPTY).some((check) => !check.pass),
         question.id,
       ).toBe(true);
     }
+  });
+
+  it("never lets silence earn write-path credit, because most of it is abstention", () => {
+    // The trap this documents: three of the five write-path questions grade the
+    // model for NOT doing something, so an EMPTY answer still passes most of their
+    // checks. That is why `run.ts` scores an errored question as all-failed instead
+    // of grading the empty answer — otherwise a provider quota death would score in
+    // the model's favour on the dimension that decides the write path.
+    const silent = TOOL_DISCIPLINE_QUESTIONS.flatMap((question) => question.grade(EMPTY));
+    expect(silent.filter((check) => check.pass).length).toBeGreaterThan(
+      silent.length / 3,
+    );
   });
 });

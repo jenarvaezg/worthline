@@ -100,30 +100,20 @@ export function decideAdmission(input: {
 /**
  * Each dimension scored on its own, in first-appearance order.
  *
- * Why this exists (#1265): a single ratio over a bag of checks lets a strong
- * dimension pay for a broken one. The gate scored 0.88 for a model that failed
- * every property of the write path, because thirty-odd reading checks outvoted
- * them. Whatever the aggregate says, the per-dimension numbers are what answer
- * «is this model fit for the path that writes».
+ * A single ratio over a bag of checks lets a strong dimension pay for a broken one:
+ * thirty-odd reading checks outvoted every write-path property and the gate said
+ * 0.88 (#1265, ADR 0067). Whatever the aggregate says, these numbers are what
+ * answer «is this model fit for the path that writes».
  */
 export function scoreDimensions(
   questionResults: readonly (QuestionScore & { dimension: string })[],
   threshold: number = DEFAULT_ADMISSION_THRESHOLD,
 ): AdmissionDimensionScore[] {
-  const order: string[] = [];
-  const totals = new Map<string, { passed: number; total: number }>();
-  for (const result of questionResults) {
-    const running = totals.get(result.dimension);
-    if (running) {
-      running.passed += result.passed;
-      running.total += result.total;
-    } else {
-      order.push(result.dimension);
-      totals.set(result.dimension, { passed: result.passed, total: result.total });
-    }
-  }
+  const order = [...new Set(questionResults.map((result) => result.dimension))];
   return order.map((dimension) => {
-    const { passed, total } = totals.get(dimension) ?? { passed: 0, total: 0 };
+    const own = questionResults.filter((result) => result.dimension === dimension);
+    const passed = own.reduce((sum, result) => sum + result.passed, 0);
+    const total = own.reduce((sum, result) => sum + result.total, 0);
     const ratio = total === 0 ? 0 : passed / total;
     return {
       dimension,
