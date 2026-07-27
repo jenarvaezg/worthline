@@ -17,6 +17,12 @@
  *     capture is not the cuota the plan derives, the plan's parameters and reality
  *     disagree. The proposal WARNS and still lets the user confirm — it never
  *     quietly adopts the bank's number nor hides its own.
+ *  3. **A ceiling on the amount (#1266).** The parser catches the euros-for-cents
+ *     mistake downwards (`91.32` is rejected, never rounded) but only the live
+ *     balance can catch it upwards: `913200` for 91,32 € is a well-formed integer,
+ *     and the engine clamps the principal at 0, so it would preview — and persist —
+ *     a 9.132 € lump against a 4.200 € loan. A real cancellation is worth principal
+ *     plus the month's accrual, so anything past that is a unit slip, not a payoff.
  *
  * Pure: no store, no clock. `today` is a parameter.
  */
@@ -187,17 +193,8 @@ export function projectEarlyRepaymentImpact(
       error: `En ${formatDayEs(boundaryDate)} el préstamo ya está a cero, así que no hay saldo que amortizar.`,
     };
   }
-  const balanceAfterMinor = balanceAt(withProposed, boundaryDate);
-  const fullyRepaid = balanceAfterMinor === 0;
-
   const traceBefore = amortizationScheduleTrace({
     earlyRepayments: existing,
-    plan: schedule,
-    revisions,
-    targetDate: boundaryDate,
-  });
-  const traceAfter = amortizationScheduleTrace({
-    earlyRepayments: withProposed,
     plan: schedule,
     revisions,
     targetDate: boundaryDate,
@@ -214,6 +211,32 @@ export function projectEarlyRepaymentImpact(
     periods[periods.length - 1]?.date ?? boundaryDate;
 
   const monthlyPaymentBeforeMinor = paymentAfterBoundary(traceBefore.periods) ?? 0;
+
+  // #1266: the ceiling. One cuota over the live balance is the room a genuine
+  // cancellation needs (accrued interest + a cancellation fee); past that the
+  // engine's clamp at 0 would turn a unit slip into a plausible-looking payoff.
+  // On the loan's last boundary there is no next cuota, so the allowance falls
+  // back to the one being paid — never to zero, which would reject a real payoff.
+  const allowanceMinor =
+    monthlyPaymentBeforeMinor ||
+    (traceBefore.periods[traceBefore.periods.length - 1]?.paymentMinor ?? 0);
+  if (proposed.amountMinor > balanceBeforeMinor + allowanceMinor) {
+    return {
+      ok: false,
+      error: `El importe (${money(proposed.amountMinor, currency)}) supera el saldo vivo del préstamo en ${formatDayEs(boundaryDate)} (${money(balanceBeforeMinor, currency)}). Una cancelación total vale el principal más el devengo del mes, no diez veces el saldo: esto parece un error de unidad (euros escritos como céntimos). Comprueba la cifra antes de registrarla.`,
+    };
+  }
+
+  const balanceAfterMinor = balanceAt(withProposed, boundaryDate);
+  const fullyRepaid = balanceAfterMinor === 0;
+
+  const traceAfter = amortizationScheduleTrace({
+    earlyRepayments: withProposed,
+    plan: schedule,
+    revisions,
+    targetDate: boundaryDate,
+  });
+
   const monthlyPaymentAfterMinor = fullyRepaid
     ? 0
     : (paymentAfterBoundary(traceAfter.periods) ?? 0);
@@ -275,8 +298,22 @@ export function projectEarlyRepaymentImpact(
     proposed.repaymentDate <= input.today &&
     balanceTodayAfterMinor === balanceTodayBeforeMinor
   ) {
+    // ADR 0048: the cause is only named when it exists. A frozen today's figure
+    // has more than one explanation — a re-baseline that governs from a later
+    // date, or a loan already paid off — and asserting the first one when the
+    // workspace has no re-baseline invents a fact (#1266).
+    const governing = [...input.balanceRebaselines]
+      .filter(
+        (fact) =>
+          fact.baselineDate > proposed.repaymentDate && fact.baselineDate <= input.today,
+      )
+      .sort((a, b) => a.baselineDate.localeCompare(b.baselineDate))[0];
     notes.push(
-      `Esta anticipada no cambia el saldo de hoy: hay una recalibración posterior que manda sobre la curva a partir de su fecha, así que solo corrige el tramo anterior.`,
+      governing
+        ? `Esta anticipada no cambia el saldo de hoy: hay una recalibración posterior (${formatDayEs(governing.baselineDate)}) que manda sobre la curva a partir de su fecha, así que solo corrige el tramo anterior.`
+        : balanceTodayAfterMinor === 0
+          ? `Esta anticipada no cambia el saldo de hoy: el préstamo ya estaba liquidado antes de hoy, así que esto solo corrige el histórico.`
+          : `Esta anticipada no cambia el saldo de hoy, así que solo corrige el tramo anterior de la curva.`,
     );
   }
 

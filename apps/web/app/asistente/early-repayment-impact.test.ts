@@ -92,7 +92,32 @@ describe("early-repayment impact (#1245)", () => {
     expect(impact.appliesOnRepaymentDate).toBe(true);
   });
 
-  test("a lump above the live balance is a total repayment, and the preview says so", () => {
+  test("a lump that covers the live balance is a total repayment, and the preview says so", () => {
+    const base = projectEarlyRepaymentImpact(input());
+    expect(base.ok).toBe(true);
+    if (!base.ok) return;
+
+    const impact = projectEarlyRepaymentImpact(
+      input({
+        proposed: {
+          amountMinor: base.balanceBeforeMinor,
+          mode: "reduce-term",
+          repaymentDate: "2026-07-20",
+        },
+      }),
+    );
+
+    expect(impact.ok).toBe(true);
+    if (!impact.ok) return;
+    expect(impact.balanceAfterMinor).toBe(0);
+    expect(impact.fullyRepaid).toBe(true);
+    expect(impact.notes.join(" ")).toMatch(/cancela/i);
+  });
+
+  test("refuses an amount past the live balance plus one cuota: that is a unit slip (#1266)", () => {
+    // `913200` for 91,32 € is a well-formed integer the parser cannot catch. The
+    // engine would clamp the principal at 0 and preview a credible cancellation,
+    // so the ceiling has to live here, where the live balance is known.
     const impact = projectEarlyRepaymentImpact(
       input({
         proposed: {
@@ -103,11 +128,32 @@ describe("early-repayment impact (#1245)", () => {
       }),
     );
 
-    expect(impact.ok).toBe(true);
-    if (!impact.ok) return;
-    expect(impact.balanceAfterMinor).toBe(0);
-    expect(impact.fullyRepaid).toBe(true);
-    expect(impact.notes.join(" ")).toMatch(/cancela/i);
+    expect(impact.ok).toBe(false);
+    if (impact.ok) return;
+    expect(impact.error).toMatch(/supera el saldo vivo/i);
+    expect(impact.error).toMatch(/céntimos/i);
+  });
+
+  test("still accepts the room a real cancellation needs: balance plus one cuota", () => {
+    const base = projectEarlyRepaymentImpact(input());
+    expect(base.ok).toBe(true);
+    if (!base.ok) return;
+
+    const payoff = (extraMinor: number) =>
+      projectEarlyRepaymentImpact(
+        input({
+          proposed: {
+            amountMinor: base.balanceBeforeMinor + extraMinor,
+            mode: "reduce-term",
+            repaymentDate: "2026-07-20",
+          },
+        }),
+      );
+
+    // Principal + accrued interest + a cancellation fee fits; one cent past the
+    // allowance does not, so the boundary is exact and not a soft warning.
+    expect(payoff(base.monthlyPaymentBeforeMinor).ok).toBe(true);
+    expect(payoff(base.monthlyPaymentBeforeMinor + 1).ok).toBe(false);
   });
 
   test("reconciles the observed cuota against the plan's and flags a mismatch", () => {
@@ -260,6 +306,31 @@ describe("early-repayment impact (#1245)", () => {
     if (!impact.ok) return;
     expect(impact.balanceTodayAfterMinor).toBe(impact.balanceTodayBeforeMinor);
     expect(impact.notes.join(" ")).toMatch(/saldo de hoy/i);
+    // The cause is named only because it exists — with its date, so the user can
+    // go and look at it.
+    expect(impact.notes.join(" ")).toMatch(/recalibración posterior \(01\/08\/2026\)/);
+  });
+
+  test("never invents a re-baseline to explain a frozen figure (ADR 0048, #1266)", () => {
+    // Same symptom, different cause: the loan was simply already paid off before
+    // today. There is no re-baseline in the workspace, so the note must not claim
+    // one — it says what actually happened.
+    const impact = projectEarlyRepaymentImpact(
+      input({
+        today: "2028-06-01",
+        proposed: {
+          amountMinor: 1_000_00,
+          mode: "reduce-term",
+          repaymentDate: "2027-06-20",
+        },
+      }),
+    );
+
+    expect(impact.ok).toBe(true);
+    if (!impact.ok) return;
+    expect(impact.balanceTodayAfterMinor).toBe(impact.balanceTodayBeforeMinor);
+    expect(impact.notes.join(" ")).not.toMatch(/recalibración/i);
+    expect(impact.notes.join(" ")).toMatch(/liquidado antes de hoy/i);
   });
 
   test("refuses a repayment dated before the modelled window starts", () => {
