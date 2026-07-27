@@ -8260,6 +8260,25 @@ td.rowActions > * {
   font-size: 0.72rem;
   color: var(--muted);
 }
+/* Visible in-flight signal for a turn (#1286). Until it existed the only signal
+   was the srOnly live region, so a wait of tens of seconds — an unidentified
+   capture pays two serial vision calls before the stream opens — looked like a
+   frozen panel. Marginalia weight on purpose: it is scaffolding that disappears
+   the moment the answer starts, not part of the conversation. The ring is
+   .navPending (#607), reused so a slow turn and a slow navigation read alike;
+   only its nav-specific margin is dropped, the flex gap owns the spacing. */
+.assistantPending {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 0.88rem;
+  gap: 8px;
+  margin: 0;
+}
+.assistantPending .navPending {
+  margin-left: 0;
+}
+
 .assistantError {
   margin: 0;
   font-size: 0.88rem;

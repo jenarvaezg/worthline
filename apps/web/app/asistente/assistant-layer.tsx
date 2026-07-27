@@ -38,8 +38,10 @@ import { assistantChatTransport } from "./assistant-chat-transport";
 import { assistantErrorMessage } from "./assistant-error-message";
 import { AssistantTextPart } from "./assistant-markdown";
 import AssistantMessages from "./assistant-messages";
+import { assistantPendingLabel } from "./assistant-pending";
 import { parseAttachmentPreviewData } from "./attachment-chat";
 import AttachmentExtractionPreview from "./attachment-extraction-preview";
+import { userTurnText } from "./attachment-notice";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
@@ -1451,6 +1453,7 @@ function ConversationParts({
   mutationsDisabledMessage,
   endRef,
   busy,
+  pendingLabel,
 }: {
   messages: UIMessage[];
   error: Error | undefined;
@@ -1458,6 +1461,7 @@ function ConversationParts({
   mutationsDisabledMessage: string;
   endRef: React.RefObject<HTMLDivElement | null>;
   busy: boolean;
+  pendingLabel: string | null;
 }) {
   // Memoised because the panel re-renders on every keystroke in the composer, and
   // this reads every text part of every turn.
@@ -1639,6 +1643,7 @@ function ConversationParts({
           {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
         </div>
       ))}
+      {pendingLabel === null ? null : <AssistantPendingNotice label={pendingLabel} />}
       {error ? (
         <p className="assistantError" role="alert">
           {assistantErrorMessage(error)}
@@ -1646,6 +1651,23 @@ function ConversationParts({
       ) : null}
       <div ref={endRef} />
     </>
+  );
+}
+
+/**
+ * The visible twin of the panel's `srOnly` live region (#1286). `aria-hidden`
+ * precisely because that region already announces the same fact: a screen reader
+ * must hear «el asistente está respondiendo» once, not twice.
+ *
+ * Reuses the `.navPending` ring (#607) rather than inventing a second spinner
+ * idiom, so a slow turn and a slow navigation read the same way.
+ */
+function AssistantPendingNotice({ label }: { label: string }) {
+  return (
+    <p aria-hidden="true" className="assistantPending">
+      <span className="navPending" />
+      {label}
+    </p>
   );
 }
 
@@ -1758,6 +1780,9 @@ export default function AssistantLayer({
   const closingRef = useRef(false);
 
   const busy = status === "submitted" || status === "streaming";
+  // Computed once for both surfaces: the floating panel and the onboarding screen
+  // must not disagree about whether a turn is in flight (#1286).
+  const pendingLabel = assistantPendingLabel({ messages, status });
   const quickActions = currentQuickActions(messages);
   // Prompts depend only on the section, which comes from the pathname; recomputed
   // on every navigation so the starter set matches the surface underneath (#632).
@@ -1859,10 +1884,13 @@ export default function AssistantLayer({
     const text = draft.trim();
     if ((text === "" && attachment === null) || busy) return;
     const selectedAttachment = attachment;
-    const visibleText =
-      text || (selectedAttachment ? `Adjunto: ${selectedAttachment.name}` : "");
     void sendMessage(
-      { role: "user", parts: [{ type: "text", text: visibleText }] },
+      {
+        role: "user",
+        parts: [
+          { type: "text", text: userTurnText(text, selectedAttachment?.name ?? null) },
+        ],
+      },
       selectedAttachment ? { body: { attachment: selectedAttachment } } : undefined,
     );
     setDraft("");
@@ -1874,7 +1902,7 @@ export default function AssistantLayer({
   function sendAttachment(file: File) {
     if (busy) return;
     void sendMessage(
-      { role: "user", parts: [{ type: "text", text: `Adjunto: ${file.name}` }] },
+      { role: "user", parts: [{ type: "text", text: userTurnText("", file.name) }] },
       { body: { attachment: file } },
     );
   }
@@ -1970,6 +1998,7 @@ export default function AssistantLayer({
                 mutationsDisabled={mutationsDisabled}
                 mutationsDisabledMessage={mutationsDisabledMessage}
                 busy={busy}
+                pendingLabel={pendingLabel}
               />
             </ProposalAppliedContext.Provider>
           </AssistantMessages>
@@ -2087,6 +2116,7 @@ export default function AssistantLayer({
           mutationsDisabled={mutationsDisabled}
           mutationsDisabledMessage={mutationsDisabledMessage}
           busy={busy}
+          pendingLabel={pendingLabel}
         />
       </AssistantMessages>
 

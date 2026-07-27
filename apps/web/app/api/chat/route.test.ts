@@ -959,9 +959,11 @@ describe("POST /api/chat", () => {
     const streamed = await response.text();
 
     expect(response.status).toBe(200);
-    // Preview card is present with the soft, non-dead-end message.
+    // Preview card is present with the soft, non-dead-end message. Asserted
+    // through the constant, not a fragment of its wording: #1287 rewrote this copy
+    // and a literal here made a copy change look like a broken route.
     expect(streamed).toContain("data-attachment-extraction");
-    expect(streamed).toContain("Te comento lo que veo");
+    expect(streamed).toContain(UNSTRUCTURED_SPREADSHEET_MESSAGE);
     expect(streamed).not.toContain("No reconozco");
     // The model was called with the raw grid, framed as unvalidated. Asserted on
     // the turn, not the whole call: the system prompt quotes the sentinel too.
@@ -1169,7 +1171,10 @@ describe("POST /api/chat", () => {
     const streamed = await (await POST(attachmentRequest("Foo;Bar\nuno;dos"))).text();
 
     expect(model.doStreamCalls).toHaveLength(0);
-    expect(streamed).not.toContain("Te comento lo que veo");
+    // No model turn means nothing will comment on the sheet, so the card must be
+    // the dead-end verdict and never the unstructured one — whatever that one's
+    // current wording is (#1287).
+    expect(streamed).not.toContain(UNSTRUCTURED_SPREADSHEET_MESSAGE);
     expect(streamed).toContain("No reconozco en este archivo");
   });
 

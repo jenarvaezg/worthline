@@ -91,6 +91,13 @@ describe("buildChatSystemPrompt", () => {
     // «conclusión primero» alone did not stop the recap.
     expect(prompt).toMatch(/no repitas la misma guía/i);
     expect(prompt).toMatch(/ni cierres recapitulando/i);
+    // #1288: a real run wrote «que he convertido a 9132 céntimos para el sistema».
+    // Minor units are the same class as the ids — an argument, not prose — so the
+    // plumbing rule covers both. This one is a prompt nudge and nothing more: there
+    // is no way to tell an invented «9132 céntimos» from a legitimate number in the
+    // text, so unlike #1263's ids no boundary can close it.
+    expect(prompt).toMatch(/céntimos/i);
+    expect(prompt).toMatch(/importe en euros/i);
   });
 
   /**

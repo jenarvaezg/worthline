@@ -304,6 +304,20 @@ export function isValidatedDocument(
 }
 
 /**
+ * Wordings this marker has had before (#1287). They are here because the boundary
+ * reads the message out of HISTORY, and history comes from the browser: a
+ * conversation open when the copy changed carries the old string, and a marker that
+ * stops being recognized is a gate that stops biting — it fails OPEN, for exactly
+ * the conversation that already put unvalidated evidence on the table. Chats are
+ * ephemeral (ADR 0044), so each entry only has to outlive the tabs that were open at
+ * deploy time; it is still cheaper to keep them than to reason about that window.
+ */
+const LEGACY_UNSTRUCTURED_EVIDENCE_MESSAGES: readonly string[] = [
+  "No es una tabla de posiciones para importar. Te comento lo que veo del archivo aquí debajo.",
+  "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada. Te cuento lo que veo aquí debajo.",
+];
+
+/**
  * Every card that means «the model was handed evidence worthline did not validate».
  * One entry per unstructured lane, and adding a lane WITHOUT adding it here is the
  * mistake this list exists to make visible: the #1248 boundary would then be closed
@@ -312,6 +326,7 @@ export function isValidatedDocument(
 const UNSTRUCTURED_EVIDENCE_MESSAGES: readonly string[] = [
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
+  ...LEGACY_UNSTRUCTURED_EVIDENCE_MESSAGES,
 ];
 
 /**
