@@ -11,6 +11,12 @@
 
 import { isToolUIPart, type UIMessage } from "ai";
 
+import {
+  claimsPreparedProposal,
+  FABRICATED_PROPOSAL_MODEL_NOTE,
+} from "./fabricated-proposal";
+import { isProposalToolPart, toolPartName } from "./tool-parts";
+
 type Part = UIMessage["parts"][number];
 
 /**
@@ -51,15 +57,6 @@ export const DROPPED_TOOL_PAYLOAD_NOTE =
 export const INTERRUPTED_PROPOSAL_NOTE =
   "(La propuesta anterior se interrumpió y no llegó a mostrarse. Si el usuario la quiere, vuelve a proponerla.)";
 
-function toolName(part: Part): string {
-  const { type, toolName: dynamicName } = part as { type: string; toolName?: string };
-  return type === "dynamic-tool" ? (dynamicName ?? "") : type.slice("tool-".length);
-}
-
-function isProposalPart(part: Part): boolean {
-  return toolName(part).startsWith("propose_");
-}
-
 function isOrphanToolCall(part: Part): boolean {
   return isToolUIPart(part) && !RESULT_BEARING_STATES.has(part.state);
 }
@@ -91,7 +88,7 @@ export function pruneOrphanToolCalls(messages: UIMessage[]): {
       const kept = message.parts.filter((part) => !isOrphanToolCall(part));
       return {
         ...message,
-        parts: orphans.some(isProposalPart)
+        parts: orphans.some(isProposalToolPart)
           ? [...kept, { type: "text" as const, text: INTERRUPTED_PROPOSAL_NOTE }]
           : kept,
       };
@@ -99,6 +96,51 @@ export function pruneOrphanToolCalls(messages: UIMessage[]): {
     // A message whose only part was the orphan read carries nothing now.
     .filter((message) => message.parts.length > 0);
   return { messages: repaired, orphanToolCallIds };
+}
+
+/**
+ * Contradicts, in the model's own history, a turn that CLAIMED to have prepared a
+ * proposal without calling any proposal tool (#1262).
+ *
+ * ORDER MATTERS: this must run BEFORE {@link pruneOrphanToolCalls}. That repair
+ * removes a `propose_*` call whose stream died mid-flight, and a turn like that DID
+ * ask for a real proposal — running afterwards would accuse it of fabricating one.
+ * Its own test pins that difference.
+ *
+ * The claimed prose stays. It is what the user read, and rewriting the model's
+ * previous words would make the history disagree with the screen.
+ */
+export function correctFabricatedProposalClaims(messages: UIMessage[]): {
+  messages: UIMessage[];
+  correctedMessageIds: string[];
+} {
+  const fabricated = (message: UIMessage): boolean =>
+    message.role === "assistant" &&
+    !message.parts.some(isProposalToolPart) &&
+    claimsPreparedProposal(
+      message.parts
+        .filter((part) => part.type === "text")
+        .map((part) => (part as { text: string }).text)
+        .join("\n"),
+    );
+
+  const correctedMessageIds = messages.filter(fabricated).map((message) => message.id);
+  if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
+
+  return {
+    messages: messages.map((message) =>
+      fabricated(message)
+        ? {
+            ...message,
+            parts: [
+              ...message.parts,
+              { text: FABRICATED_PROPOSAL_MODEL_NOTE, type: "text" as const },
+            ],
+          }
+        : message,
+    ),
+    correctedMessageIds,
+  };
 }
 
 /** Every character of a tool part reaches the provider, not just its `output`. */
@@ -191,7 +233,7 @@ export function dropStaleToolPayloads(
       const size = toolPartChars(part);
       if (
         kept < budget.maxParts &&
-        toolName(part).length <= MAX_TOOL_NAME_CHARS &&
+        toolPartName(part).length <= MAX_TOOL_NAME_CHARS &&
         group + size <= groupCap &&
         spent + size <= allowance
       ) {
@@ -204,11 +246,11 @@ export function dropStaleToolPayloads(
       droppedToolCallIds.push((part as { toolCallId: string }).toolCallId);
     }
   };
-  const readings = located.filter(({ part }) => !isProposalPart(part));
+  const readings = located.filter(({ part }) => !isProposalToolPart(part));
   const freshestReading = readings.slice(-1);
   admit(freshestReading, budget.totalChars);
   admit(
-    located.filter(({ part }) => isProposalPart(part)),
+    located.filter(({ part }) => isProposalToolPart(part)),
     budget.totalChars,
     budget.proposalChars,
   );

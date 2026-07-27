@@ -18,6 +18,7 @@ import { describeVisionAttachment } from "@web/asistente/attachment-vision-descr
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
+  correctFabricatedProposalClaims,
   dropStaleToolPayloads,
   pruneOrphanToolCalls,
   withoutToolParts,
@@ -568,10 +569,21 @@ export async function POST(request: Request): Promise<Response> {
   // The history is repaired before it is converted (#1260). A tool call whose
   // result never arrived — the provider died mid-stream — makes the SDK refuse
   // the whole prompt, and since the browser re-sends that history every turn, the
-  // conversation would be dead for good. Both repairs are logged, never silent:
-  // the first counts how often a provider dies mid-tool-call, the second how much
-  // stale grounding a long conversation is dragging along.
-  const pruned = pruneOrphanToolCalls(body.messages);
+  // conversation would be dead for good. Every repair is logged, never silent:
+  // they count how often a provider dies mid-tool-call, how much stale grounding a
+  // long conversation is dragging along, and how often the model claims a proposal
+  // it never asked for — the last one is the frequency #1262 had no way to measure.
+  //
+  // The fabricated-claim correction runs FIRST, on the untouched history: the prune
+  // below removes an interrupted `propose_*` call, and a turn like that DID ask for
+  // a real proposal.
+  const corrected = correctFabricatedProposalClaims(body.messages);
+  if (corrected.correctedMessageIds.length > 0) {
+    console.info("Assistant claimed a proposal it never prepared", {
+      fabricatedProposalTurns: corrected.correctedMessageIds.length,
+    });
+  }
+  const pruned = pruneOrphanToolCalls(corrected.messages);
   if (pruned.orphanToolCallIds.length > 0) {
     console.info("Assistant history orphan calls pruned", {
       orphanToolCalls: pruned.orphanToolCallIds.length,

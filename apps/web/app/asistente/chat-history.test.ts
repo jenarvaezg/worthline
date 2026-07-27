@@ -2,12 +2,14 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  correctFabricatedProposalClaims,
   DROPPED_TOOL_PAYLOAD_NOTE,
   dropStaleToolPayloads,
   INTERRUPTED_PROPOSAL_NOTE,
   pruneOrphanToolCalls,
   withoutToolParts,
 } from "./chat-history";
+import { FABRICATED_PROPOSAL_MODEL_NOTE } from "./fabricated-proposal";
 
 function assistant(id: string, ...parts: unknown[]): UIMessage {
   return { id, role: "assistant", parts } as unknown as UIMessage;
@@ -411,5 +413,88 @@ describe("withoutToolParts", () => {
       {},
       { parts: "no" },
     ]);
+  });
+});
+
+describe("correctFabricatedProposalClaims (#1262)", () => {
+  const claim = "He preparado la propuesta de corrección para el saldo.";
+
+  it("tells the model it never prepared the proposal it claimed", () => {
+    // Without this the fabricated sentence IS the model's context next turn, and
+    // what it does with it is double down.
+    const { messages, correctedMessageIds } = correctFabricatedProposalClaims([
+      { id: "u1", parts: [{ text: "Actualiza el saldo", type: "text" }], role: "user" },
+      { id: "a1", parts: [{ text: claim, type: "text" }], role: "assistant" },
+    ]);
+
+    expect(correctedMessageIds).toEqual(["a1"]);
+    expect(messages[1]!.parts.at(-1)).toEqual({
+      text: FABRICATED_PROPOSAL_MODEL_NOTE,
+      type: "text",
+    });
+    // The original prose is kept: it is what the user read on screen.
+    expect(messages[1]!.parts[0]).toEqual({ text: claim, type: "text" });
+  });
+
+  it("says nothing when the turn really called a proposal tool", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        parts: [
+          { text: claim, type: "text" },
+          {
+            input: {},
+            output: { proposalId: "p1" },
+            state: "output-available",
+            toolCallId: "call-1",
+            type: "tool-propose_correction",
+          } as unknown as UIMessage["parts"][number],
+        ],
+        role: "assistant",
+      },
+    ];
+
+    const result = correctFabricatedProposalClaims(messages);
+
+    expect(result.correctedMessageIds).toEqual([]);
+    expect(result.messages).toBe(messages);
+  });
+
+  it("does not accuse a turn whose proposal call was cut off mid-stream", () => {
+    // The ordering hazard: `pruneOrphanToolCalls` REMOVES that part, so running
+    // this check after it would turn an interrupted real proposal into a
+    // fabrication. It calls the tool for real; the defect calls nothing.
+    const interrupted: UIMessage[] = [
+      {
+        id: "a1",
+        parts: [
+          { text: claim, type: "text" },
+          {
+            input: {},
+            state: "input-available",
+            toolCallId: "call-1",
+            type: "tool-propose_correction",
+          } as unknown as UIMessage["parts"][number],
+        ],
+        role: "assistant",
+      },
+    ];
+
+    expect(correctFabricatedProposalClaims(interrupted).correctedMessageIds).toEqual([]);
+    // And after the prune the part is gone, which is exactly why order matters.
+    const pruned = pruneOrphanToolCalls(interrupted).messages;
+    expect(correctFabricatedProposalClaims(pruned).correctedMessageIds).toEqual(["a1"]);
+  });
+
+  it("returns the same array when there is nothing to correct", () => {
+    const messages: UIMessage[] = [
+      {
+        id: "a1",
+        parts: [{ text: "Tu saldo es 100 €.", type: "text" }],
+        role: "assistant",
+      },
+    ];
+
+    expect(correctFabricatedProposalClaims(messages).messages).toBe(messages);
   });
 });
