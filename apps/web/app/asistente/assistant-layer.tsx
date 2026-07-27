@@ -903,7 +903,7 @@ function EarlyRepaymentProposalCard({
       <p className="assistantProposalKind">Amortización anticipada · Hecho fechado</p>
       <strong>{proposal.summary}</strong>
       <p>
-        {proposal.repayment.amount} · {proposal.repayment.date} ·{" "}
+        {proposal.repayment.amount} · {proposal.repayment.dateLabel} ·{" "}
         {proposal.repayment.modeLabel}
       </p>
       <ul>

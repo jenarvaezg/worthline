@@ -442,6 +442,7 @@ export function parseEarlyRepaymentProposal(raw: unknown): EarlyRepaymentProposa
   const { repayment } = raw;
   if (
     typeof repayment.date !== "string" ||
+    typeof repayment.dateLabel !== "string" ||
     typeof repayment.boundaryDate !== "string" ||
     typeof repayment.amount !== "string" ||
     typeof repayment.modeLabel !== "string" ||

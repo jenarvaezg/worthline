@@ -320,15 +320,31 @@ export async function buildEarlyRepaymentProposal(
         amount: euros(parsed.row.amountMinor),
         boundaryDate: impact.boundaryDate,
         date: parsed.row.repaymentDate,
+        dateLabel: formatDayEs(parsed.row.repaymentDate),
         mode: parsed.row.mode,
         modeLabel: earlyRepaymentModeLabel(parsed.row.mode),
       },
+      // The balance pair is the one at the repayment's MONTH BOUNDARY, so the row
+      // carries that date: for a lump paid eight months ago it is not the figure
+      // the bank's app shows today, and an undated «Saldo pendiente» next to a
+      // Confirmar button reads as if it were (#1266). When today's figure differs,
+      // it gets its own row — the impact already computes it.
       rows: [
         {
           after: euros(impact.balanceAfterMinor),
           before: euros(impact.balanceBeforeMinor),
-          label: "Saldo pendiente",
+          label: `Saldo pendiente (${formatDayEs(impact.boundaryDate)})`,
         },
+        ...(impact.balanceTodayBeforeMinor === impact.balanceBeforeMinor &&
+        impact.balanceTodayAfterMinor === impact.balanceAfterMinor
+          ? []
+          : [
+              {
+                after: euros(impact.balanceTodayAfterMinor),
+                before: euros(impact.balanceTodayBeforeMinor),
+                label: `Saldo hoy (${formatDayEs(today)})`,
+              },
+            ]),
         {
           after: impact.fullyRepaid ? "—" : euros(impact.monthlyPaymentAfterMinor),
           before: euros(impact.monthlyPaymentBeforeMinor),

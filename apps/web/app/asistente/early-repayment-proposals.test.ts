@@ -5,6 +5,7 @@ import {
   buildEarlyRepaymentProposal,
   earlyRepaymentPlanFromProposal,
   parseEarlyRepaymentInput,
+  projectEarlyRepaymentProposal,
 } from "./early-repayment-proposals";
 
 const TODAY = "2026-07-26";
@@ -160,9 +161,12 @@ describe("buildEarlyRepaymentProposal (#1245)", () => {
     // The month boundary is surfaced, not hidden behind the date the user gave.
     expect(proposal.repayment.boundaryDate).toBe("2026-07-15");
     expect(proposal.notes.join(" ")).toMatch(/15\/07\/2026/);
+    // The date the user paid is rendered es-ES, never as a raw ISO string.
+    expect(proposal.repayment.dateLabel).toBe("20/07/2026");
     // Balance before/after, resulting cuota and resulting end date, all present.
+    // The balance pair is dated: it is the figure at the month boundary (#1266).
     expect(proposal.rows.map((row) => row.label)).toEqual([
-      "Saldo pendiente",
+      "Saldo pendiente (15/07/2026)",
       "Cuota mensual",
       "Última cuota",
     ]);
@@ -244,12 +248,48 @@ describe("buildEarlyRepaymentProposal (#1245)", () => {
     store.close();
   });
 
-  test("says a total repayment out loud when the lump exceeds the live balance", async () => {
+  test("refuses a lump 100× the live balance instead of previewing a fake payoff (#1266)", async () => {
+    // 99.999 € against a 4.200 € loan: the domain clamps the principal at 0, so
+    // without a ceiling this proposes «la anticipada cancela el préstamo» and, on
+    // confirm, persists an arithmetically impossible fact forever.
     const store = await seed();
 
     const built = await buildEarlyRepaymentProposal(
       store,
       { ...VALID, amountMinor: 99_999_00, publicHoldingId: "wl_hld_loan" },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toMatch(/supera el saldo vivo/i);
+    // Nothing was drafted: a rejected amount leaves no proposal to confirm.
+    expect(await store.liabilities.readEarlyRepayments("plan")).toEqual([]);
+    store.close();
+  });
+
+  test("says a total repayment out loud when the lump really does cover the balance", async () => {
+    const store = await seed();
+    const projected = await projectEarlyRepaymentProposal(
+      store,
+      {
+        amountMinor: 1_00,
+        liabilityId: "loan",
+        mode: "reduce-term",
+        repaymentDate: "2026-07-20",
+      },
+      TODAY,
+    );
+    expect(projected.ok).toBe(true);
+    if (!projected.ok) return;
+
+    const built = await buildEarlyRepaymentProposal(
+      store,
+      {
+        ...VALID,
+        amountMinor: projected.impact.balanceBeforeMinor,
+        publicHoldingId: "wl_hld_loan",
+      },
       TODAY,
     );
 

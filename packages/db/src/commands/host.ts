@@ -230,7 +230,7 @@ async function assertLiveBalanceUnchanged(
   );
   if (live === revalidation.expectedBalanceMinor) return;
   const error = new Error(
-    "El holding cambió desde que se preparó la propuesta. Vuelve a pedir la corrección.",
+    "El holding cambió desde que se preparó la propuesta. Vuelve a pedirla con los datos de ahora.",
   );
   Object.assign(error, { code: "correction_draft_stale" });
   throw error;

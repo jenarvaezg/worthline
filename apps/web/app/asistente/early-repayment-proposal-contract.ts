@@ -38,6 +38,8 @@ export interface EarlyRepaymentProposal {
   repayment: {
     /** The date the user paid, YYYY-MM-DD. */
     date: string;
+    /** The same date rendered DD/MM/YYYY: the card never shows a raw ISO date. */
+    dateLabel: string;
     /** The month boundary the domain applies it at, YYYY-MM-DD. */
     boundaryDate: string;
     /** Rendered with cents: a repayment is exact to the cent. */
