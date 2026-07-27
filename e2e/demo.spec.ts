@@ -9,43 +9,70 @@
  */
 import { expect, test } from "@playwright/test";
 
+/** The cookie `/demo/persona` sets; putting it in place skips the picker. */
+const PERSONA_COOKIE = "wl_demo_persona";
+
 /**
- * Warm-navigation perf guard (#617, verifies #616). Proves the demo no longer
- * pays the full persona seed on every request: the first request for a persona
- * seeds (cold), a later navigation in the same warm server process reuses the
- * cached store (warm). Runs FIRST and uses `familia` (the richest seed, ~1s) so
- * its first load is a genuine cold seed and the cold↔warm gap is wide — the
- * journey below then reuses the warmed familia. Compares the two timings as a
- * ratio (robust under machine/CI load, unlike an absolute ceiling): a
- * reseed-per-request regression makes the warm reload cost ~the cold seed again,
- * blowing the margin. Network-free — the demo seeds in memory.
+ * Warm-navigation perf guard (#617, verifies #616; rewritten in #1299). Proves
+ * the demo does not pay the full persona seed on every request: the first
+ * request for a persona seeds it, and every later request in the same process
+ * reuses the cached store.
+ *
+ * #1229 (Cache Components + Partial Prefetching) broke the original guard twice
+ * over, and both traps are worth naming because either one alone turns this into
+ * a test that passes without proving anything:
+ *
+ *  1. **It waited for the shell, not for the figure.** `/app` is partially
+ *     prerendered now: the static shell already paints an EMPTY
+ *     `<strong class="skeletonFigure">` inside `.headline`, so a `.headline
+ *     strong` locator was satisfied — visible, and no «sin datos» text — before
+ *     the store was ever read. The locator below matches only the streamed
+ *     figure, and `toHaveText` fails loudly if that class ever goes away instead
+ *     of quietly timing an empty paint again.
+ *  2. **It compared two different operations.** Picking the persona is a
+ *     client-side navigation; `reload()` is a full document load with the
+ *     service worker and every asset. While the seed cost ~1s that gap was
+ *     buried; once trap 1 removed the seed from the measurement, all the guard
+ *     compared was nav-vs-reload, and it failed on a green tree (cold 116 ms,
+ *     warm 712 ms locally; 422/3040 in CI).
+ *
+ * So both measurements here are the SAME operation — a document load of `/app`
+ * with the persona cookie already set — taken after a throwaway load that pays
+ * for the browser cache, the route's first render and the familia seed. The only
+ * difference left between them is whether the process still has to seed.
+ * `inversor` is the cold side: with everything else warm its seed still costs
+ * ~680 ms against ~30 ms warm (measured against the production build), and that
+ * margin is what keeps the ratio robust under CI load. The throwaway load also
+ * leaves familia warm for the journey below. Network-free — seeds in memory.
  */
 test("demo: warm navigation reuses the seeded workspace (no reseed per request)", async ({
+  baseURL,
+  context,
   page,
 }) => {
-  const headline = page.locator(".headline strong").first();
+  // The streamed figure — never the shell's `.skeletonFigure` placeholder.
+  const figure = page.locator(".headline strong.totalRule").first();
 
-  // Cold: the first request for this persona in the process pays the full seed.
-  await page.goto("/demo");
-  const coldStart = Date.now();
-  await page.getByRole("button", { name: /Familia/ }).click();
-  await expect(page).toHaveURL(/\/app$/);
-  await expect(headline).toBeVisible();
-  expect(await headline.innerText()).not.toMatch(/sin datos/i);
-  const coldMs = Date.now() - coldStart;
+  const loadApp = async (persona: string): Promise<number> => {
+    await context.addCookies([
+      { name: PERSONA_COOKIE, url: String(baseURL), value: persona },
+    ]);
+    const startedAt = Date.now();
+    await page.goto("/app");
+    await expect(figure).toHaveText(/\d.*€/);
+    return Date.now() - startedAt;
+  };
 
-  // Warm: re-render the same page in the same process — the per-process store
-  // cache (#616) skips the seed, so this is dramatically cheaper.
-  const warmStart = Date.now();
-  await page.reload();
-  await expect(headline).toBeVisible();
-  expect(await headline.innerText()).not.toMatch(/sin datos/i);
-  const warmMs = Date.now() - warmStart;
+  await loadApp("familia");
+
+  const warmMs = await loadApp("familia");
+  const coldMs = await loadApp("inversor");
 
   expect(
     warmMs,
-    `warm reload (${warmMs}ms) should be far cheaper than the cold seed (${coldMs}ms); ` +
-      `a comparable cost means the warm path reseeded the persona`,
+    `an already-seeded persona (${warmMs}ms) should be far cheaper than one the ` +
+      `process must still seed (${coldMs}ms); a comparable cost means the warm ` +
+      `path reseeded the persona`,
   ).toBeLessThan(coldMs * 0.6);
 });
 
