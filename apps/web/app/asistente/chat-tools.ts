@@ -59,6 +59,7 @@ import {
 import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
+import { withUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { PROPOSAL_SUMMARY_MAX_CHARS } from "@web/asistente/proposal-summary";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
@@ -776,6 +777,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
    * the bulk import the frontier forbids. The slot is reserved BEFORE the await
    * (the AI SDK runs a step's tool-calls concurrently) and handed back when no
    * proposal came out, so a builder error or throw costs the user nothing.
+   *
+   * Also where the proposal that DOES come out is stamped with its provenance
+   * (#1257): this is the one place that both knows the turn's flag and holds the
+   * envelope on its way to the client, so the card can name where it comes from
+   * without the mark ever passing through the model.
    */
   const withProposalBudget = async <T>(
     run: () => Promise<T>,
@@ -785,7 +791,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     try {
       const result = await run();
       if (!consumesUnvalidatedEvidenceBudget(result)) proposalBudget.release();
-      return result;
+      return withUnvalidatedProvenance(result);
     } catch (error) {
       proposalBudget.release();
       throw error;

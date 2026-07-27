@@ -8308,6 +8308,21 @@ td.rowActions > * {
   padding-top: 12px;
 }
 
+/* La marca de procedencia (#1257) sella la propuesta nacida en un turno con
+   evidencia que worthline no ha podido validar. La regla gruesa que abre la
+   entrada pasa al envoltorio: sello y tarjeta son UNA entrada de papel, no dos
+   (canon §4), y el sello queda por encima del titular que redacta el modelo. */
+.assistantProposalOrigin {
+  display: grid;
+  gap: 10px;
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+.assistantProposalOrigin > .assistantProposal {
+  border-top: 0;
+  padding-top: 0;
+}
+
 /* La propuesta es una entrada de papel abierta por regla gruesa, no una
    tarjeta con borde perimetral, radio y fondo (#911, «sin heredar tarjeta»).
    Los cuatro estados del ciclo (pendiente/aplicada/bloqueada/descartada) siguen
