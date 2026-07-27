@@ -75,10 +75,17 @@ test("assistant: click a source navigates and the panel stays open", async ({ pa
   await page.getByRole("button", { name: "Enviar" }).click();
   await expect(panel.getByText("Tu patrimonio está estable.")).toBeVisible();
 
-  // The typed quick actions render as chips.
-  const sourceChip = page.getByRole("button", { name: "Ver histórico" });
+  // The typed quick actions render as chips — and the two kinds are two different
+  // elements (#1304): a source is a LINK (it goes somewhere, so it previews on
+  // hover and opens in a new tab), a follow-up question is a button (it sends a
+  // message). The href is the destination the server resolved, never the model's.
+  // Scoped to the chip row: now that a source is a link, its label can collide
+  // with the page's own links underneath the panel (/app has a «Ver histórico →»).
+  const chips = page.getByRole("group", { name: "Acciones sugeridas" });
+  const sourceChip = chips.getByRole("link", { name: "Ver histórico" });
   await expect(sourceChip).toBeVisible();
-  await expect(page.getByRole("button", { name: "¿Y mi liquidez?" })).toBeVisible();
+  await expect(sourceChip).toHaveAttribute("href", "/historico");
+  await expect(chips.getByRole("button", { name: "¿Y mi liquidez?" })).toBeVisible();
 
   // Clicking the source navigates AND the assistant layer survives the route change.
   await sourceChip.click();
