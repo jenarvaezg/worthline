@@ -241,6 +241,35 @@ describe("verifyMcpToken (injected JWKS verifier + directory + control-plane loo
     expect(lookups).toBe(0);
   });
 
+  test("subject rate limit rejects before resolveEmail or resolveWorkspace (#1183)", async () => {
+    const { publicKey, privateKey } = await localKeys();
+    let emailLookups = 0;
+    let workspaceLookups = 0;
+    const verify = createVerifyMcpToken({
+      verifyJwt: createJwtVerifier({
+        key: publicKey,
+        issuer: ISSUER,
+        audience: acceptedAudiences(AUDIENCE),
+        algorithms: [ALG],
+      }),
+      resolveEmail: async () => {
+        emailLookups += 1;
+        return { email: "ana@example.com", emailVerified: true };
+      },
+      resolveWorkspace: async (claims) => {
+        workspaceLookups += 1;
+        return resolveWorkspace(claims);
+      },
+      enforceSubjectRateLimit: async () => "reject",
+    });
+
+    expect(
+      await verify(REQUEST, await signToken(privateKey, { email: null })),
+    ).toBeUndefined();
+    expect(emailLookups).toBe(0);
+    expect(workspaceLookups).toBe(0);
+  });
+
   test("a valid token for a user with no granted workspace is rejected", async () => {
     const { publicKey, privateKey } = await localKeys();
     const ungranted = await signToken(privateKey, {
