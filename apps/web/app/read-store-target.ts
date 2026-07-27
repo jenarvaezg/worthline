@@ -83,7 +83,12 @@ export async function lookupImpersonationTarget(input: {
   openControlPlane?: () => Promise<
     Pick<TenancyDirectory, "getWorkspaceWithOwner"> & { close(): void }
   >;
-}): Promise<{ workspaceId: string; dbUrl: string; email: string } | null> {
+}): Promise<{
+  workspaceId: string;
+  dbUrl: string;
+  email: string;
+  dbAuthToken: string | null;
+} | null> {
   const { workspaceId, env } = input;
   if (!workspaceId) return null;
 
@@ -104,7 +109,12 @@ export async function lookupImpersonationTarget(input: {
   try {
     const found = await controlPlane.getWorkspaceWithOwner(workspaceId);
     if (!found || !found.ownerEmail) return null;
-    return { workspaceId: found.id, dbUrl: found.dbUrl, email: found.ownerEmail };
+    return {
+      workspaceId: found.id,
+      dbUrl: found.dbUrl,
+      email: found.ownerEmail,
+      dbAuthToken: found.dbAuthToken,
+    };
   } finally {
     controlPlane.close();
   }

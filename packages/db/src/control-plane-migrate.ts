@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 5;
+export const CP_SCHEMA_VERSION = 6;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -173,5 +173,29 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       PRIMARY KEY (provider, event_id)
     );`);
     await writeControlPlaneSchemaVersion(client, 5);
+  }
+
+  if (version < 6) {
+    // Per-workspace Turso DB tokens (#1185): each wl-* opens with a token
+    // scoped to that database, so a leaked JWT exposes one tenant — not the
+    // whole group. Nullable during backfill of pre-#1185 rows.
+    // Fresh installs already get the column from SCHEMA's CREATE TABLE; the
+    // ALTER is for pre-#1185 control planes. Tolerate the duplicate-column
+    // race the same way CREATE IF NOT EXISTS covers other ladder steps.
+    try {
+      await client.execute("ALTER TABLE workspaces ADD COLUMN db_auth_token TEXT");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Fresh SCHEMA already has the column; synthetic version-only fixtures
+      // in ladder tests may lack `workspaces` entirely (CREATE IF NOT EXISTS
+      // steps above never needed it). Real control planes always have the table.
+      if (
+        !/duplicate column name:\s*db_auth_token/i.test(message) &&
+        !/no such table:\s*workspaces/i.test(message)
+      ) {
+        throw err;
+      }
+    }
+    await writeControlPlaneSchemaVersion(client, 6);
   }
 }

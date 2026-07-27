@@ -36,12 +36,16 @@ describe("buildDailyCaptureDeps", () => {
       WORTHLINE_DB_AUTH_TOKEN: "group-token",
     });
 
-    await deps.openStore({ id: "wl-a", dbUrl: "libsql://wl-a.turso.io" });
+    await deps.openStore({
+      id: "wl-a",
+      dbUrl: "libsql://wl-a.turso.io",
+      authToken: "scoped-a",
+    });
 
     expect(openAuthorizedStore).toHaveBeenCalledTimes(1);
     expect(openAuthorizedStore).toHaveBeenCalledWith({
       kind: "system",
-      options: { url: "libsql://wl-a.turso.io", authToken: "group-token" },
+      options: { url: "libsql://wl-a.turso.io", authToken: "scoped-a" },
     });
   });
 
@@ -51,16 +55,27 @@ describe("buildDailyCaptureDeps", () => {
       WORTHLINE_DB_AUTH_TOKEN: "group-token",
     });
 
-    await deps.openStore({ id: "wl-a", dbUrl: "libsql://wl-a.turso.io" });
-    await deps.openStore({ id: "wl-b", dbUrl: "libsql://wl-b.turso.io" });
+    await deps.openStore({
+      id: "wl-a",
+      dbUrl: "libsql://wl-a.turso.io",
+      authToken: "scoped-a",
+    });
+    await deps.openStore({
+      id: "wl-b",
+      dbUrl: "libsql://wl-b.turso.io",
+      authToken: "scoped-b",
+    });
 
-    // Each call opens exactly the dbUrl it was iterated onto: A's open never
-    // carries B's url and vice versa (the `system` principal brings its own
-    // coordinates, it does not resolve them from anywhere shared).
-    const urls = openAuthorizedStore.mock.calls.map(
-      ([principal]) => (principal as { options: { url: string } }).options.url,
+    // Each call opens exactly the dbUrl + scoped token it was iterated onto:
+    // A's open never carries B's coordinates and vice versa.
+    const opens = openAuthorizedStore.mock.calls.map(
+      ([principal]) =>
+        (principal as { options: { url: string; authToken?: string } }).options,
     );
-    expect(urls).toEqual(["libsql://wl-a.turso.io", "libsql://wl-b.turso.io"]);
+    expect(opens).toEqual([
+      { url: "libsql://wl-a.turso.io", authToken: "scoped-a" },
+      { url: "libsql://wl-b.turso.io", authToken: "scoped-b" },
+    ]);
     for (const [principal] of openAuthorizedStore.mock.calls) {
       expect((principal as { kind: string }).kind).toBe("system");
     }

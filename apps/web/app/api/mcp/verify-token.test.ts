@@ -20,6 +20,7 @@ const REQUEST = new Request("https://worthline.example/api/mcp");
 const ANA_WORKSPACE: McpWorkspaceRef = {
   workspaceId: "wl_ws_ana",
   dbUrl: "libsql://wl-ana.turso.io",
+  dbAuthToken: "scoped-ana",
 };
 
 // The control-plane lookup, stubbed: only Ana has a granted workspace.
@@ -306,7 +307,11 @@ describe("selectSingleMcpWorkspace", () => {
     expect(
       selectSingleMcpWorkspace([
         ANA_WORKSPACE,
-        { workspaceId: "wl_ws_leo", dbUrl: "libsql://wl-leo.turso.io" },
+        {
+          workspaceId: "wl_ws_leo",
+          dbUrl: "libsql://wl-leo.turso.io",
+          dbAuthToken: "scoped-leo",
+        },
       ]),
     ).toBeNull();
   });

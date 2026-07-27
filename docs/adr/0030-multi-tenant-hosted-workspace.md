@@ -47,13 +47,15 @@ project. This is chosen deliberately for low traffic and minimal moving parts: t
 ## Consequences
 
 - **The store seam (`apps/web/app/store.ts`) becomes the request resolver** for three
-  states: an authenticated request opens the user's **workspace** database (URL looked up
-  in the control plane; one shared Turso **group token** in env); a logged-out `/demo`
-  request opens an **ephemeral in-memory libSQL** database seeded per request from the
-  existing persona specs (no Turso quota; "nothing the viewer does persists" by
-  construction); an unauthenticated non-demo request lands on a sign-in / "probar la demo"
-  page. The deploy-wide `DEMO` flag from ADR 0029 retires — demo is now per-request (the
-  persona cookie). The server-action **write-guard** stays, scoped to demo sessions.
+  states: an authenticated request opens the user's **workspace** database (URL +
+  per-database Turso JWT from the control plane / session, #1185; the shared group
+  token in env is for the control plane and as a temporary fallback for pre-backfill
+  rows only); a logged-out `/demo` request opens an **ephemeral in-memory libSQL**
+  database seeded per request from the existing persona specs (no Turso quota;
+  "nothing the viewer does persists" by construction); an unauthenticated non-demo
+  request lands on a sign-in / "probar la demo" page. The deploy-wide `DEMO` flag from
+  ADR 0029 retires — demo is now per-request (the persona cookie). The server-action
+  **write-guard** stays, scoped to demo sessions.
 - **Local dev and tests are preserved untouched.** `@libsql/client` speaks `:memory:`
   (tests), `file:` (local dev), and `libsql://` (prod) through one async API, so the
   driver swap is otherwise a URL change. An env short-circuit keeps a **no-auth local
@@ -61,11 +63,13 @@ project. This is chosen deliberately for low traffic and minimal moving parts: t
   deployment — so daily development and the offline vitest/e2e suites run exactly as
   before.
 - **Provisioning is on-first-login.** A Google identity with no access grant triggers
-  `databases.create()` → migrate the fresh database → insert `workspaces` + `grants` rows
-  → land in the existing `/empezar` onboarding. The control plane is itself one libSQL
-  database (`users`, `workspaces`, `grants`); JWT sessions mean there is no session table.
-  Future N-users-per-household (by **invitation**) is just new `grants` rows — no data
-  migration — because the database is keyed by workspace, never by user.
+  `databases.create()` → mint a per-database auth token (#1185) → migrate the fresh
+  database → insert `workspaces` + `grants` rows (with the scoped JWT sealed on the
+  workspace row) → land in the existing `/empezar` onboarding. The control plane is
+  itself one libSQL database (`users`, `workspaces`, `grants`); JWT sessions mean there
+  is no session table. Future N-users-per-household (by **invitation**) is just new
+  `grants` rows — no data migration — because the database is keyed by workspace, never
+  by user.
 - **Migrations run per workspace, on open, behind a version fast-path.** The bespoke
   idempotent `migrate.ts` (DDL _and_ data backfills) is unchanged; it runs against
   whichever workspace database is opened, short-circuited by a `user_version` check so
@@ -93,10 +97,13 @@ project. This is chosen deliberately for low traffic and minimal moving parts: t
   scope" stances; **extends** ADR 0016 (connected-source secrets) for the hosted
   deployment. Calculations are identical local or hosted — ADR 0009 server-rendering and
   the **ripple** seams are untouched.
-- **This is the low-traffic stage, explicitly.** Database-per-workspace, migrate-on-open,
-  and a single group token are right for a handful of users; hundreds would want per-
-  database tokens, a deploy-time migration runner, and possibly a heavier datastore. The
-  seam and control-plane indirection are shaped so that swap stays contained.
+- **This is the low-traffic stage, explicitly.** Database-per-workspace and
+  migrate-on-open are right for a handful of users; hundreds would want a
+  deploy-time migration runner and possibly a heavier datastore. Per-database
+  Turso tokens (#1185) replaced the original shared group token for workspace
+  opens — the group token remains for the control plane / provisioning only.
+  The seam and control-plane indirection are shaped so that further swaps stay
+  contained.
 - **Scaling trigger and the shared-table option (refined 2026-06-21).** The binding limit
   is Turso's free tier: **100 databases**, so the control plane + N per-workspace databases
   cap onboarding at ~99 users (the **demo** is ephemeral in-memory and consumes no quota).

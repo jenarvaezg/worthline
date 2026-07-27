@@ -22,6 +22,7 @@ function workspace(
     id,
     dbName: `wl-${id}`,
     dbUrl: `libsql://wl-${id}.turso.io`,
+    dbAuthToken: null,
     createdAt: "2026-05-01T00:00:00.000Z",
     ownerEmail,
   };

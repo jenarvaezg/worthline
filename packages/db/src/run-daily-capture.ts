@@ -4,10 +4,13 @@ import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
 import type { WorthlineStore } from "./store-types";
 import { dailyCaptureRunKey, type SyncJobResult } from "./sync-job";
 
-/** A workspace the cron must capture — its id and per-workspace database URL. */
+/** A workspace the cron must capture — its id, per-workspace database URL, and
+ *  the Turso JWT that opens that DB (#1185). `authToken` is optional so legacy
+ *  pre-backfill rows can still fall through to the shared group token. */
 export interface DailyCaptureWorkspace {
   id: string;
   dbUrl: string;
+  authToken?: string;
 }
 
 export interface DailyCapturePricePair {
@@ -39,7 +42,7 @@ interface WorkspaceCapturePlan {
 export interface RunDailyCaptureDeps {
   /** Enumerate every real workspace (control plane). */
   listAllWorkspaces: () => Promise<DailyCaptureWorkspace[]>;
-  /** Open a workspace's store with the shared group token, no session. */
+  /** Open a workspace's store with that workspace's Turso JWT (#1185). */
   openStore: (workspace: DailyCaptureWorkspace) => Promise<WorthlineStore>;
   /**
    * Fetch every distinct provider symbol once for the whole fleet. The runner

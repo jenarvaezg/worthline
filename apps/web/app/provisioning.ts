@@ -12,6 +12,8 @@ import { createControlPlaneStore, provisionWorkspaceForUser } from "@worthline/d
 export interface ResolvedWorkspace {
   id: string;
   dbUrl: string;
+  /** Per-database Turso JWT (#1185), or null until a legacy row is backfilled. */
+  dbAuthToken: string | null;
 }
 
 export async function provisionWorkspaceForEmail(
@@ -43,11 +45,14 @@ export async function provisionWorkspaceForEmail(
       {
         controlPlane,
         turso,
-        ...(groupToken ? { groupAuthToken: groupToken } : {}),
       },
       email,
     );
-    return { id: workspace.id, dbUrl: workspace.dbUrl };
+    return {
+      id: workspace.id,
+      dbUrl: workspace.dbUrl,
+      dbAuthToken: workspace.dbAuthToken,
+    };
   } finally {
     controlPlane.close();
   }

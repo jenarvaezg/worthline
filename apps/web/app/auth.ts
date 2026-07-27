@@ -10,9 +10,10 @@ import NextAuth from "next-auth";
  *
  * Provision-on-first-login happens in the `jwt` callback: on the sign-in event
  * (`account` present) we resolve the user's workspace — creating and migrating a
- * fresh one the first time — and pin its id + URL into the JWT. The `session`
- * callback exposes that to server code, so the store resolver reads the workspace
- * straight off the session with no per-request control-plane query.
+ * fresh one the first time — and pin its id + URL + per-database Turso token
+ * (#1185) into the JWT. The `session` callback exposes that to server code, so
+ * the store resolver reads the workspace straight off the session with no
+ * per-request control-plane query.
  */
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...config,
@@ -22,12 +23,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const workspace = await provisionWorkspaceForEmail(token.email);
         token.workspaceId = workspace.id;
         token.dbUrl = workspace.dbUrl;
+        if (workspace.dbAuthToken) {
+          token.dbAuthToken = workspace.dbAuthToken;
+        }
       }
       return token;
     },
     session({ session, token }) {
       if (token.workspaceId && token.dbUrl) {
-        session.workspace = { id: token.workspaceId, dbUrl: token.dbUrl };
+        session.workspace = {
+          id: token.workspaceId,
+          dbUrl: token.dbUrl,
+          ...(token.dbAuthToken ? { dbAuthToken: token.dbAuthToken } : {}),
+        };
       }
       return session;
     },
@@ -37,7 +45,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 declare module "next-auth" {
   interface Session {
     /** The signed-in user's workspace, resolved at sign-in (ADR 0030). */
-    workspace?: { id: string; dbUrl: string };
+    workspace?: { id: string; dbUrl: string; dbAuthToken?: string };
   }
 }
 
@@ -47,5 +55,6 @@ declare module "@auth/core/jwt" {
   interface JWT {
     workspaceId?: string;
     dbUrl?: string;
+    dbAuthToken?: string;
   }
 }

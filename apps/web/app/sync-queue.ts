@@ -93,8 +93,9 @@ function resolveTransport(
 
 /**
  * Open the target workspace store as a `system` actor (like the cron), resolving
- * its per-workspace database URL from the control plane by id. This is how a
- * leased `source-sync` job reaches the workspace whose `sync_run` it must update.
+ * its per-workspace database URL and scoped Turso JWT (#1185) from the control
+ * plane by id. This is how a leased `source-sync` job reaches the workspace
+ * whose `sync_run` it must update.
  */
 async function openWorkspaceStoreById(
   env: Env,
@@ -102,20 +103,23 @@ async function openWorkspaceStoreById(
 ): Promise<WorthlineStore> {
   const controlPlane = await openControlPlane(env);
   let dbUrl: string | null = null;
+  let dbAuthToken: string | null = null;
   try {
     const workspace = await controlPlane.getWorkspaceWithOwner(workspaceId);
     dbUrl = workspace?.dbUrl ?? null;
+    dbAuthToken = workspace?.dbAuthToken ?? null;
   } finally {
     controlPlane.close();
   }
   if (!dbUrl) {
     throw new Error(`Durable sync job targets unknown workspace ${workspaceId}.`);
   }
+  const authToken = dbAuthToken ?? env.WORTHLINE_DB_AUTH_TOKEN;
   return openAuthorizedStore({
     kind: "system",
     options: {
       url: dbUrl,
-      ...(env.WORTHLINE_DB_AUTH_TOKEN ? { authToken: env.WORTHLINE_DB_AUTH_TOKEN } : {}),
+      ...(authToken ? { authToken } : {}),
     },
   });
 }

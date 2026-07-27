@@ -11,9 +11,10 @@ import { migrate } from "./migrate";
 /**
  * Provision-on-first-login (ADR 0030). A signed-in Google identity with no
  * workspace gets a fresh, structurally-isolated one: create a database via the
- * Turso Platform API, migrate it to the current schema, then write the
- * `workspaces` + `grants` rows in the control plane. Idempotent — a user who
- * already owns a workspace keeps it, and no new database is created.
+ * Turso Platform API, mint a per-database auth token (#1185), migrate it to the
+ * current schema, then write the `workspaces` + `grants` rows in the control
+ * plane. Idempotent — a user who already owns a workspace keeps it, and no new
+ * database is created.
  *
  * The Turso Platform API is injected as a port so the whole flow runs in tests
  * against a local `file:` database with zero network.
@@ -22,6 +23,11 @@ import { migrate } from "./migrate";
 export interface TursoPort {
   /** Create a database and return its name and libSQL URL. */
   createDatabase(name: string): Promise<{ name: string; url: string }>;
+  /**
+   * Mint a JWT scoped to a single database (#1185). Prefer this over a shared
+   * group token when opening that workspace's libSQL URL.
+   */
+  createDatabaseToken(name: string): Promise<{ jwt: string }>;
   /**
    * Delete a database created by this port — best-effort cleanup of the
    * loser's orphan after a first-login race (#733). Optional: without it the
@@ -33,7 +39,10 @@ export interface TursoPort {
 export interface ProvisionDeps {
   controlPlane: TenancyDirectory & EntitlementDirectory;
   turso: TursoPort;
-  /** Shared Turso group token used to open `libsql://` workspace databases. */
+  /**
+   * @deprecated #1185 — workspace DBs open with a per-database token. Kept
+   * optional only so older call sites compile; the provisioner ignores it.
+   */
   groupAuthToken?: string;
   /**
    * Open the freshly created workspace database and run its migrations.
@@ -72,7 +81,6 @@ export async function provisionWorkspaceForUser(
   const {
     controlPlane,
     turso,
-    groupAuthToken,
     openAndMigrate = defaultOpenAndMigrate,
     newDbName = defaultDbName,
     now = () => new Date().toISOString(),
@@ -86,13 +94,15 @@ export async function provisionWorkspaceForUser(
   }
 
   const { name, url } = await turso.createDatabase(newDbName());
+  const { jwt } = await turso.createDatabaseToken(name);
   await openAndMigrate({
     url,
-    ...(groupAuthToken ? { authToken: groupAuthToken } : {}),
+    authToken: jwt,
   });
   const workspace = await controlPlane.createWorkspace({
     dbName: name,
     dbUrl: url,
+    dbAuthToken: jwt,
   });
   try {
     await controlPlane.recordGrant(user.id, workspace.id);

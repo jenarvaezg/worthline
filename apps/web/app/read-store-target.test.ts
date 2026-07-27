@@ -53,6 +53,31 @@ describe("lookupImpersonationTarget", () => {
       workspaceId: ws.id,
       dbUrl: "libsql://wl-target.turso.io",
       email: "target@example.com",
+      dbAuthToken: null,
+    });
+  });
+
+  test("carries the per-workspace Turso JWT when the control plane has one (#1185)", async () => {
+    const controlPlane = await createInMemoryControlPlaneStore();
+    const user = await controlPlane.findOrCreateUser("target@example.com");
+    const ws = await controlPlane.createWorkspace({
+      dbAuthToken: "scoped-target",
+      dbName: "wl-target",
+      dbUrl: "libsql://wl-target.turso.io",
+    });
+    await controlPlane.recordGrant(user.id, ws.id);
+
+    const result = await lookupImpersonationTarget({
+      workspaceId: ws.id,
+      env: { WORTHLINE_CONTROL_PLANE_DB_URL: "libsql://control-plane.turso.io" },
+      openControlPlane: async () => controlPlane,
+    });
+
+    expect(result).toEqual({
+      workspaceId: ws.id,
+      dbUrl: "libsql://wl-target.turso.io",
+      email: "target@example.com",
+      dbAuthToken: "scoped-target",
     });
   });
 

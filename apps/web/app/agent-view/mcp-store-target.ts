@@ -8,8 +8,8 @@ import { resolveStoreTarget, type StoreTarget } from "@web/store-resolver";
  * workspace — set by `verifyMcpToken` from the control plane — flows through the
  * same pure `resolveStoreTarget` the pages and server actions use, so "which
  * workspace this request opens" is decided in one place. The OAuth token that
- * identified the caller never reaches the store seam; the env Turso group token
- * inside the returned target is what opens the database.
+ * identified the caller never reaches the store seam; the per-database Turso
+ * JWT from the control plane (#1185) is what opens the database.
  */
 export function storeTargetFromMcpAuth(
   authInfo: AuthInfo | undefined,
@@ -29,9 +29,11 @@ export function storeTargetFromMcpAuth(
     // authenticated caller to demo/stub data (which would read as "no data").
     throw new Error("MCP token is missing usable workspace claims (workspaceId/dbUrl).");
   }
+  const dbAuthToken =
+    typeof extra?.["dbAuthToken"] === "string" ? extra["dbAuthToken"] : null;
   return resolveStoreTarget({
     env: process.env,
     session: null,
-    mcpWorkspace: { workspaceId, dbUrl },
+    mcpWorkspace: { workspaceId, dbUrl, dbAuthToken },
   });
 }
