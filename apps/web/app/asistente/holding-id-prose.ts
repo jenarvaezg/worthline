@@ -18,12 +18,18 @@
  * write path is guarded separately and for real in `holding-id-provenance.ts`.
  */
 
-import { isToolUIPart, type UIMessage } from "ai";
+import type { UIMessage } from "ai";
 
-import { isPublicHoldingId, replacePublicHoldingIdLookalikes } from "./public-holding-id";
+import {
+  isPublicHoldingId,
+  replacePublicHoldingIdLookalikes,
+  UNNAMED_HOLDING,
+} from "./public-holding-id";
+import { toolOutputsIn } from "./tool-parts";
+import { walkDeep } from "./walk-deep";
 
-/** What replaces an id the conversation never named. */
-export const UNNAMED_HOLDING = "(identificador interno)";
+/** Re-exported so a caller of this module never has to reach past it for the marker. */
+export { UNNAMED_HOLDING };
 
 /**
  * The holding names this conversation surfaced, by id.
@@ -36,33 +42,16 @@ export function labelsByPublicHoldingId(
   messages: readonly UIMessage[],
 ): ReadonlyMap<string, string> {
   const labels = new Map<string, string>();
-  for (const message of messages) {
-    for (const part of message.parts) {
-      if (isToolUIPart(part) && "output" in part) {
-        collectLabels(part.output, labels, new WeakSet());
+  for (const { output } of toolOutputsIn(messages)) {
+    walkDeep(output, (_key, value) => {
+      if (typeof value !== "object" || value === null) return;
+      const { id, label } = value as { id?: unknown; label?: unknown };
+      if (typeof id === "string" && typeof label === "string" && isPublicHoldingId(id)) {
+        labels.set(id, label);
       }
-    }
+    });
   }
   return labels;
-}
-
-function collectLabels(
-  value: unknown,
-  into: Map<string, string>,
-  seen: WeakSet<object>,
-): void {
-  if (typeof value !== "object" || value === null || seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) collectLabels(item, into, seen);
-    return;
-  }
-  const record = value as Record<string, unknown>;
-  const { id, label } = record;
-  if (typeof id === "string" && typeof label === "string" && isPublicHoldingId(id)) {
-    into.set(id, label);
-  }
-  for (const nested of Object.values(record)) collectLabels(nested, into, seen);
 }
 
 /**

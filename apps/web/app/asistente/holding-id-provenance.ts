@@ -13,23 +13,34 @@
  * appeared in a read» is an invariant, not a hope. A better model would only lower
  * the frequency of the invention, and the frontier would still be missing.
  *
- * Two sources ground an id, and both are worthline's own output:
- *  - the reads of THIS turn, recorded as they answer (`chat-tools.ts`);
- *  - the tool outputs still in the conversation the model gets back, which the
- *    route seeds from the history it is about to send.
- * The model's own prose is deliberately NOT a source: a fabricated id printed last
- * turn would otherwise ground itself. The cost is a turn where the assistant has to
- * read again before it can propose, which is the honest order anyway.
+ * Two sources ground an id:
+ *  - the reads of THIS turn, recorded as they answer;
+ *  - the tool answers still in the conversation the model gets back, which the route
+ *    seeds from the history it is about to send.
+ * Neither includes the model's own words. Its prose is not a source (a fabricated id
+ * printed last turn would ground itself), nor is a tool INPUT, nor an error envelope
+ * — an error can quote back what it was given — nor `suggest_actions`, whose output
+ * is the model's own follow-up text handed back. See {@link assertsHoldingIds}: only
+ * a tool asserting a workspace fact grounds anything. The cost is a turn where the
+ * assistant has to read again before it can propose, which is the honest order.
  *
- * What this does NOT do: decide whether the id is the RIGHT holding among several.
- * That is a failure of judgement, no server-side invariant can catch it, and it is
- * written down as one of the two things that would make routing by model worth it.
+ * The honest limit of «server-side»: the history arrives in the request, because chat
+ * messages are ephemeral by design (ADR 0044) and the browser re-sends them. So a
+ * crafted request can pre-ground an id — of its OWN workspace, since resolution is
+ * scoped and every builder resolves before writing, which is the same reach the user
+ * already has in the UI. What this closes is the failure #1263 is about: the MODEL
+ * cannot conjure an identifier out of nothing.
+ *
+ * What it does NOT do: decide whether the id is the RIGHT holding among several. That
+ * is a failure of judgement, no server-side invariant can catch it, and it is written
+ * down as one of the two things that would make routing by model worth it (ADR 0067).
  */
 
-import { isToolUIPart, type ToolSet, type UIMessage } from "ai";
+import type { ToolSet, UIMessage } from "ai";
 
 import { publicHoldingIdsIn } from "./public-holding-id";
-import { isProposalToolName } from "./tool-parts";
+import { isProposalToolName, toolOutputsIn } from "./tool-parts";
+import { walkDeep } from "./walk-deep";
 
 /**
  * The tools whose holding references must be grounded: everything that prepares a
@@ -46,20 +57,28 @@ export function requiresGroundedHoldingIds(toolName: string): boolean {
 }
 
 /**
- * Id-shaped fields that do NOT name a holding. `proposalId` is worthline's own
- * handle for a draft the model is accumulating into (`propose_statement_import`),
- * minted by a previous proposal rather than by a read.
+ * The fields that name a holding, enumerated rather than matched by pattern.
+ *
+ * A pattern was the first attempt and it was wrong: every `*Id` key read as a holding
+ * reference, so `propose_correction`'s `correction.ownership[].memberId` — a
+ * `wl_mbr_…`, which no holding read can ever ground — refused every ownership edit
+ * with a message about holdings. Enumerating is also how the sibling boundary declares
+ * itself (`UNVALIDATED_EVIDENCE_CLASSES`, #1248), and for the same reason: a list a
+ * new tool has to join, guarded by a test that reads the tool schemas.
  */
-const NON_HOLDING_ID_FIELDS = new Set(["proposalId"]);
+export const HOLDING_REFERENCE_FIELDS = new Set([
+  "holdingId",
+  "holdingIds",
+  "liabilityId",
+  "assetId",
+]);
 
 /**
- * Does this key name a holding reference? `holdingId`, `holdingIds`, `liabilityId`,
- * `assetId` today. The camelCase boundary is part of the pattern on purpose: a
- * case-insensitive `id$` also matches ordinary words like `valid`.
+ * Id-shaped fields that are declared NOT to name a holding, so the guardian test can
+ * tell «classified» from «forgotten». `proposalId` is worthline's own handle for a
+ * draft being accumulated into; `memberId` names a person, not a holding.
  */
-function isHoldingReferenceKey(key: string): boolean {
-  return /(^ids?|Ids?)$/.test(key) && !NON_HOLDING_ID_FIELDS.has(key);
-}
+export const NON_HOLDING_ID_FIELDS = new Set(["proposalId", "memberId"]);
 
 /**
  * Every holding a tool input points at, deduplicated in first-seen order.
@@ -78,28 +97,11 @@ function isHoldingReferenceKey(key: string): boolean {
  */
 export function holdingReferencesIn(input: unknown): string[] {
   const found: string[] = [];
-  collectReferences(input, found, new WeakSet());
+  walkDeep(input, (key, value) => {
+    if (key === null || !HOLDING_REFERENCE_FIELDS.has(key)) return;
+    if (typeof value === "string" && value.trim().length > 0) found.push(value);
+  });
   return [...new Set(found)];
-}
-
-function collectReferences(value: unknown, into: string[], seen: WeakSet<object>): void {
-  if (typeof value !== "object" || value === null || seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) collectReferences(item, into, seen);
-    return;
-  }
-  for (const [key, nested] of Object.entries(value)) {
-    if (isHoldingReferenceKey(key)) {
-      for (const reference of [nested].flat()) {
-        if (typeof reference === "string" && reference.trim().length > 0) {
-          into.push(reference);
-        }
-      }
-      continue;
-    }
-    collectReferences(nested, into, seen);
-  }
 }
 
 /** The ids worthline has actually surfaced in this conversation. */
@@ -138,21 +140,43 @@ export function ungroundedHoldingIds(
 }
 
 /**
- * The ids the model can legitimately use next turn: everything worthline's own tool
- * answers put in the history it is about to be sent.
+ * Does this tool answer ASSERT that a holding exists?
  *
- * Tool OUTPUTS only, never a tool input and never prose. A proposal's output counts
- * — it is built by the server after the id resolved, so it is worthline asserting
- * the holding exists — and leaving it out would reject the ordinary «cámbiale el
- * importe» follow-up on a card the user is looking at.
+ * Only an assertion grounds an id, and three kinds of answer are not assertions:
+ *  - an error envelope, because an error may quote back what it was handed —
+ *    `explain_figure({figure: "wl_hld_…"})` answers «Unknown figure: wl_hld_…», and a
+ *    refusal from this very module used to echo the invented id it refused, which
+ *    grounded it for the next turn. That is the invariant laundering itself;
+ *  - `suggest_actions`, whose output carries the model's own follow-up prompts back;
+ *  - a write, since its input is the thing under suspicion. A prepared proposal is a
+ *    server-built object whose id already resolved, but it needs no second grounding:
+ *    it is only ever built from an id that was already grounded.
+ */
+export function assertsHoldingIds(toolName: string, output: unknown): boolean {
+  if (requiresGroundedHoldingIds(toolName) || toolName === "suggest_actions")
+    return false;
+  return !isErrorEnvelope(output);
+}
+
+/** Every shape a chat tool refuses with carries `error` — envelope or bare code. */
+function isErrorEnvelope(output: unknown): boolean {
+  return typeof output === "object" && output !== null && "error" in output;
+}
+
+/**
+ * The ids the model may legitimately use next turn: those a tool answer ASSERTED in
+ * the history it is about to be sent.
+ *
+ * A proposal's own output is excluded with every other write (see
+ * {@link assertsHoldingIds}) and the ordinary «cámbiale el importe» follow-up survives
+ * anyway: the read that grounded the proposal in the first place is in the same
+ * history, and if the ceiling dropped it (#1260) the model has lost the id too.
  */
 export function groundedHoldingIdsInHistory(messages: readonly UIMessage[]): string[] {
   return [
     ...new Set(
-      messages.flatMap((message) =>
-        message.parts.flatMap((part) =>
-          isToolUIPart(part) && "output" in part ? publicHoldingIdsIn(part.output) : [],
-        ),
+      toolOutputsIn(messages).flatMap(({ name, output }) =>
+        assertsHoldingIds(name, output) ? publicHoldingIdsIn(output) : [],
       ),
     ),
   ];
@@ -173,22 +197,21 @@ export const UNGROUNDED_HOLDING_ID_MESSAGE =
   "detalle del holding y usa el identificador que te devuelva. Al usuario nómbrale el " +
   "holding por su nombre, nunca por su identificador.";
 
-/** The typed envelope, sibling of the unvalidated-evidence and paywall errors. */
+/**
+ * The typed envelope, sibling of the unvalidated-evidence and paywall errors.
+ *
+ * It deliberately does NOT name the id it refused. An earlier version echoed it, and
+ * that echo was a way out of the invariant: the refusal is itself a tool output, so
+ * the invented id landed in the history and grounded itself for the next turn. The
+ * ids go to the route's log instead, where they are read by a person.
+ */
 export interface UngroundedHoldingIdError {
   error: "ungrounded_holding_id";
   message: string;
-  /** The offending references, so the report says WHAT was rejected. */
-  ungroundedHoldingIds: string[];
 }
 
-export function ungroundedHoldingIdRejected(
-  ungrounded: readonly string[],
-): UngroundedHoldingIdError {
-  return {
-    error: "ungrounded_holding_id",
-    message: UNGROUNDED_HOLDING_ID_MESSAGE,
-    ungroundedHoldingIds: [...ungrounded],
-  };
+export function ungroundedHoldingIdRejected(): UngroundedHoldingIdError {
+  return { error: "ungrounded_holding_id", message: UNGROUNDED_HOLDING_ID_MESSAGE };
 }
 
 /**
@@ -220,11 +243,11 @@ export function withHoldingIdProvenance(
             const ungrounded = ungroundedHoldingIds(input, grounded);
             if (ungrounded.length === 0) return execute(input, options);
             onRejected?.({ tool: name, ungroundedHoldingIds: ungrounded });
-            return ungroundedHoldingIdRejected(ungrounded);
+            return ungroundedHoldingIdRejected();
           }
         : async (input, options) => {
             const output = await execute(input, options);
-            grounded.record(output);
+            if (assertsHoldingIds(name, output)) grounded.record(output);
             return output;
           };
       return [name, { ...tool, execute: wrapped }];

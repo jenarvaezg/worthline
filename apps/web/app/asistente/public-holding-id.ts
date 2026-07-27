@@ -1,12 +1,15 @@
 /**
  * Public holding ids (`wl_hld_…`) as they appear in text and in tool payloads.
  *
- * Its own module because two rules need the same primitive and must not be able to
+ * Its own module because three rules need the same primitive and must not be able to
  * disagree about what an id is: the write-path provenance gate
- * (`holding-id-provenance.ts`) and the render rule that keeps ids out of prose
- * (`holding-id-prose.ts`), both from #1263. One runs on the server and the other in
- * the browser; what they share is these 39 characters and nothing else.
+ * (`holding-id-provenance.ts`), the render rule that keeps ids out of prose
+ * (`holding-id-prose.ts`) and the bound on a proposal's headline
+ * (`proposal-summary.ts`), all from #1263. Two run on the server and one in the
+ * browser; what they share is these 39 characters and nothing else.
  */
+
+import { walkDeep } from "./walk-deep";
 
 /**
  * The shape `createAgentViewPublicId` mints: the prefix plus 32 lowercase hex.
@@ -32,27 +35,17 @@ export function isPublicHoldingId(value: string): boolean {
 /**
  * Every well-formed id anywhere inside a value, deduplicated in first-seen order.
  *
- * A recursive walk rather than a scan of `JSON.stringify`: tool payloads are
- * JSON-shaped in practice, but a serializer that throws (a cycle, a `BigInt`) would
- * turn a bookkeeping detail into a dead chat turn. The walk carries the same
- * promise, hence the visited set.
+ * A walk rather than a scan of `JSON.stringify`: tool payloads are JSON-shaped in
+ * practice, but a serializer that throws (a cycle, a `BigInt`) would turn a
+ * bookkeeping detail into a dead chat turn.
  */
 export function publicHoldingIdsIn(value: unknown): string[] {
   const found: string[] = [];
-  collectIds(value, found, new WeakSet());
+  walkDeep(value, (_key, nested) => {
+    if (typeof nested !== "string") return;
+    for (const match of nested.matchAll(PUBLIC_HOLDING_ID)) found.push(match[0]);
+  });
   return [...new Set(found)];
-}
-
-function collectIds(value: unknown, into: string[], seen: WeakSet<object>): void {
-  if (typeof value === "string") {
-    for (const match of value.matchAll(PUBLIC_HOLDING_ID)) into.push(match[0]);
-    return;
-  }
-  if (typeof value !== "object" || value === null || seen.has(value)) return;
-  seen.add(value);
-  for (const nested of Array.isArray(value) ? value : Object.values(value)) {
-    collectIds(nested, into, seen);
-  }
 }
 
 /**
@@ -62,6 +55,13 @@ function collectIds(value: unknown, into: string[], seen: WeakSet<object>): void
  * a name left inside code fences reads like a fragment of machinery rather than the
  * holding it now names.
  */
+/**
+ * What stands in for an id that cannot be named: no accusation, no machinery. It is
+ * also what a half-typed id becomes for a moment while an answer streams, so it has
+ * to read as ordinary parenthetical prose.
+ */
+export const UNNAMED_HOLDING = "(identificador interno)";
+
 export function replacePublicHoldingIdLookalikes(
   text: string,
   replace: (token: string) => string,

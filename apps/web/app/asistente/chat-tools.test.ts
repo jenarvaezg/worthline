@@ -10,6 +10,12 @@ import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import { createChatTools } from "@web/asistente/chat-tools";
+import {
+  HOLDING_REFERENCE_FIELDS,
+  NON_HOLDING_ID_FIELDS,
+  requiresGroundedHoldingIds,
+} from "@web/asistente/holding-id-provenance";
+import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -1207,6 +1213,57 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 });
 
 /**
+ * The vocabulary of holding references, derived from the tool schemas themselves.
+ *
+ * The guard reads named FIELDS, so a write tool that names a holding in a field
+ * nobody classified would walk past the invariant in silence. This is the #1248
+ * guardian's shape applied to the other frontier: every id-shaped property of every
+ * guarded tool must be declared either a holding reference or explicitly not one.
+ */
+describe("createChatTools · holding-reference fields are classified (#1263)", () => {
+  it(
+    "classifies every id-shaped field of every guarded tool",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+
+      const unclassified: string[] = [];
+      for (const [name, tool] of Object.entries(tools)) {
+        if (!requiresGroundedHoldingIds(name)) continue;
+        const schema = (tool.inputSchema as { jsonSchema?: unknown }).jsonSchema;
+        for (const field of idShapedFields(schema)) {
+          if (HOLDING_REFERENCE_FIELDS.has(field) || NON_HOLDING_ID_FIELDS.has(field)) {
+            continue;
+          }
+          unclassified.push(`${name}.${field}`);
+        }
+      }
+
+      expect(unclassified).toEqual([]);
+    },
+    SEED_TIMEOUT_MS,
+  );
+});
+
+/** Every `…Id`/`…Ids` property name in a JSON schema, at any depth. */
+function idShapedFields(schema: unknown): Set<string> {
+  const fields = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "properties" && typeof value === "object" && value !== null) {
+        for (const property of Object.keys(value)) {
+          if (/(^ids?|Ids?)$/.test(property)) fields.add(property);
+        }
+      }
+      walk(value);
+    }
+  };
+  walk(schema);
+  return fields;
+}
+
+/**
  * Holding-id provenance (#1263): an id that reaches a write came out of a read.
  *
  * The production incident, end to end — the model announced one id, then another
@@ -1228,7 +1285,9 @@ describe("createChatTools · holding-id provenance (#1263)", () => {
       // which is the gap the model filled with its own monologue.
       expect(context.holdings.length).toBeGreaterThan(0);
       for (const holding of context.holdings) {
-        expect(holding.id, holding.label).toMatch(/^wl_hld_[0-9a-f]{32}$/);
+        // Real minted ids, so this is also what pins `isPublicHoldingId` — the guard
+        // and the redaction both lean on it — to what the minter actually produces.
+        expect(isPublicHoldingId(holding.id), holding.label).toBe(true);
       }
     },
     SEED_TIMEOUT_MS,

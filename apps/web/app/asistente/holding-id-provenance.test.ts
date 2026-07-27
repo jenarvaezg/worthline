@@ -1,4 +1,5 @@
 import {
+  assertsHoldingIds,
   createGroundedHoldingIds,
   groundedHoldingIdsInHistory,
   holdingReferencesIn,
@@ -49,6 +50,29 @@ describe("holdingReferencesIn", () => {
     expect(holdingReferencesIn({ proposalId: "prop_1", rawText: "x" })).toEqual([]);
   });
 
+  it("ignores an id that names a person, not a holding", () => {
+    // The first version matched every `*Id` key, which refused every ownership edit:
+    // a `wl_mbr_…` can never be grounded by a holding read.
+    expect(
+      holdingReferencesIn({
+        holdingId: READ,
+        correction: {
+          kind: "edit_config",
+          ownership: [
+            { memberId: "wl_mbr_0e1d2c3b4a5960718293a4b5c6d7e8f9", shareBps: 10_000 },
+          ],
+        },
+      }),
+    ).toEqual([READ]);
+  });
+
+  it("ignores an id-shaped field inside a document payload", () => {
+    // `extractedData` is a document the model read, not a reference it is making.
+    expect(
+      holdingReferencesIn({ holdingId: READ, extractedData: { contratoId: "ABC-1" } }),
+    ).toEqual([READ]);
+  });
+
   it("ignores free text, so a pasted document is never a reference", () => {
     expect(
       holdingReferencesIn({ rawText: `saldo de ${NEVER_READ}`, summary: MONOLOGUE }),
@@ -63,6 +87,38 @@ describe("holdingReferencesIn", () => {
 
   it("does not mistake an ordinary word ending in «id» for a reference", () => {
     expect(holdingReferencesIn({ valid: "no" })).toEqual([]);
+  });
+});
+
+describe("assertsHoldingIds", () => {
+  it("grounds a read's answer", () => {
+    expect(assertsHoldingIds("get_financial_context", { holdings: [] })).toBe(true);
+  });
+
+  it("never grounds an error, which may quote back what it was given", () => {
+    // `explain_figure({figure: "wl_hld_…"})` answers «Unknown figure: wl_hld_…».
+    expect(
+      assertsHoldingIds("explain_figure", {
+        error: { code: "bad_request", message: `Unknown figure: ${NEVER_READ}` },
+      }),
+    ).toBe(false);
+    expect(assertsHoldingIds("get_holding_detail", { error: "empty_workspace" })).toBe(
+      false,
+    );
+  });
+
+  it("never grounds suggest_actions, which hands the model's own words back", () => {
+    expect(
+      assertsHoldingIds("suggest_actions", {
+        actions: [{ prompt: `¿Reviso ${NEVER_READ}?` }],
+      }),
+    ).toBe(false);
+  });
+
+  it("never grounds a write's own output", () => {
+    expect(assertsHoldingIds("propose_correction", { proposalType: "correction" })).toBe(
+      false,
+    );
   });
 });
 
@@ -127,7 +183,9 @@ describe("groundedHoldingIdsInHistory", () => {
     expect(groundedHoldingIdsInHistory(messages)).toEqual([READ]);
   });
 
-  it("grounds a proposal's output: the server built it after the id resolved", () => {
+  it("does not lean on a write's own output: only a read grounds", () => {
+    // A prepared proposal is server-built, but it is only ever built from an id that
+    // was already grounded, so the read that grounded it is in the same history.
     const messages = [
       messageWith([
         {
@@ -139,11 +197,26 @@ describe("groundedHoldingIdsInHistory", () => {
         } as unknown as UIMessage["parts"][number],
       ]),
     ];
-    expect(groundedHoldingIdsInHistory(messages)).toEqual([READ]);
+    expect(groundedHoldingIdsInHistory(messages)).toEqual([]);
   });
 
   it("never grounds an id the model only wrote in prose", () => {
     const messages = [messageWith([{ type: "text", text: `el ID es ${NEVER_READ}` }])];
+    expect(groundedHoldingIdsInHistory(messages)).toEqual([]);
+  });
+
+  it("never grounds an id a refusal named, which would launder the invention", () => {
+    const messages = [
+      messageWith([
+        {
+          type: "tool-propose_correction",
+          toolCallId: "c4",
+          state: "output-available",
+          input: {},
+          output: { error: "ungrounded_holding_id", ungroundedHoldingIds: [NEVER_READ] },
+        } as unknown as UIMessage["parts"][number],
+      ]),
+    ];
     expect(groundedHoldingIdsInHistory(messages)).toEqual([]);
   });
 
@@ -194,6 +267,20 @@ describe("withHoldingIdProvenance", () => {
     expect(grounded.has(READ)).toBe(true);
   });
 
+  it("does not ground a read that ERRORED, whatever its message quotes", async () => {
+    const grounded = createGroundedHoldingIds();
+    const guarded = withHoldingIdProvenance(
+      toolSetOver(() => ({
+        error: { code: "bad_request", message: `Unknown figure: ${NEVER_READ}` },
+      })),
+      grounded,
+    );
+
+    await call(guarded, "get_holding_detail", { holdingId: NEVER_READ });
+
+    expect(grounded.has(NEVER_READ)).toBe(false);
+  });
+
   it("rejects a write pointing at an id no read surfaced, before the tool body runs", async () => {
     const execute = vi.fn(() => ({ proposalType: "correction" }));
     const guarded = withHoldingIdProvenance(
@@ -203,10 +290,10 @@ describe("withHoldingIdProvenance", () => {
 
     const result = await call(guarded, "propose_correction", { holdingId: MONOLOGUE });
 
-    expect(result).toMatchObject({
-      error: "ungrounded_holding_id",
-      ungroundedHoldingIds: [MONOLOGUE],
-    });
+    expect(result).toMatchObject({ error: "ungrounded_holding_id" });
+    // And it does NOT name the id: the refusal is itself a tool output, so an echo
+    // would ground the invention for the next turn.
+    expect(JSON.stringify(result)).not.toContain(MONOLOGUE);
     expect(execute).not.toHaveBeenCalled();
   });
 

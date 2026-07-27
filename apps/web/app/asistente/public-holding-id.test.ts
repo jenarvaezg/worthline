@@ -5,6 +5,12 @@ import {
 } from "@web/asistente/public-holding-id";
 import { describe, expect, it } from "vitest";
 
+/**
+ * The shape is duplicated from `createAgentViewPublicId` (internal to
+ * `@worthline/db`). What pins the two together against real minted data is the seeded
+ * assertion in `chat-tools.test.ts`, which runs {@link isPublicHoldingId} over every
+ * id the demo persona's store actually produced.
+ */
 const REAL = "wl_hld_c5d97d4b4a1b9d7b42f2b7a976f0d14b";
 const OTHER = "wl_hld_3d4408012674258705c93c4e320f750d";
 

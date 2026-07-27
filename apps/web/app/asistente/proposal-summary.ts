@@ -21,6 +21,8 @@
  * it at the tool boundary. This is where it is enforced.
  */
 
+import { replacePublicHoldingIdLookalikes, UNNAMED_HOLDING } from "./public-holding-id";
+
 /**
  * One line on a card. Long enough for a real headline in Spanish («Corrección del
  * saldo de la hipoteca de Casarrubios a 1 de julio»), short enough that it cannot
@@ -33,16 +35,28 @@ const TRUNCATION_MARK = "…";
 
 /**
  * The headline to store for a proposal: the model's `summary` when it wrote a usable
- * one, bounded; otherwise the caller's deterministic fallback, which is built from
- * store facts and therefore needs no bound of its own.
+ * one, bounded and with any public holding id taken out; otherwise the caller's
+ * deterministic fallback, which is built from store facts and therefore needs neither.
+ *
+ * The ids go because this headline is prose a person reads, and #1263 is that an id in
+ * prose says nothing to the reader while giving an invented one a place to arrive
+ * dressed as a fact. It is stripped HERE, before the summary is persisted with the
+ * draft, so the card and the stored proposal agree — the panel's own prose filter
+ * runs on message text and never sees this field. The holding is named on the card
+ * anyway, by its own deterministic line, so the marker loses nothing.
  */
 export function boundProposalSummary(
   summary: string | undefined,
   fallback: string,
 ): string {
-  const trimmed = summary?.trim();
+  const trimmed = withoutPublicHoldingIds(summary ?? "").trim();
   if (!trimmed) return fallback;
   return trimmed.length > PROPOSAL_SUMMARY_MAX_CHARS
     ? `${trimmed.slice(0, PROPOSAL_SUMMARY_MAX_CHARS - TRUNCATION_MARK.length)}${TRUNCATION_MARK}`
     : trimmed;
+}
+
+/** Deliberately unnamed: the builder has one holding, the summary may mention any id. */
+function withoutPublicHoldingIds(summary: string): string {
+  return replacePublicHoldingIdLookalikes(summary, () => UNNAMED_HOLDING);
 }
