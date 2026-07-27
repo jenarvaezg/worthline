@@ -84,7 +84,15 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
+async function DemoModeBanner() {
+  return (await isDemoMode()) ? <DemoBanner /> : null;
+}
+
+async function ImpersonationModeBanner() {
+  return (await isImpersonating()) ? <ImpersonationBanner /> : null;
+}
+
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -92,8 +100,13 @@ export default async function RootLayout({
   return (
     <html className={`${sans.variable} ${mono.variable} ${display.variable}`} lang="es">
       <body>
-        {(await isDemoMode()) ? <DemoBanner /> : null}
-        {(await isImpersonating()) ? <ImpersonationBanner /> : null}
+        {/* Session banners must not block the static shell (#1229). */}
+        <Suspense fallback={null}>
+          <DemoModeBanner />
+        </Suspense>
+        <Suspense fallback={null}>
+          <ImpersonationModeBanner />
+        </Suspense>
         <ServiceWorkerRegister />
         <Suspense fallback={null}>
           <FormSubmitScrollKeeper />

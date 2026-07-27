@@ -6,32 +6,29 @@ import HistoricoBreakdown from "./historico-breakdown";
 import HistoricoSkeleton from "./historico-skeleton";
 import { buildHistoricoRows, HistoricoTable } from "./historico-table";
 
-export const dynamic = "force-dynamic";
-
-export default async function HistoricoPage({
+/**
+ * /historico — Stream (#1229). Sync page + Suspense body so Partial Prefetching
+ * can ship HistoricoSkeleton as the reusable per-route shell.
+ */
+export default function HistoricoPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  // Lightweight preamble (#1195): auth + workspace context (memoized, already
-  // resolved by the shared layout) run before we emit anything, so any redirect
-  // fires here. The heavy snapshot/breakdown reads stream in the Suspense body
-  // below — the chrome + skeleton paint immediately on navigation.
-  const resolvedSearchParams = (await searchParams) ?? {};
-  const shell = await resolvePageShell({ searchParams: resolvedSearchParams });
-
   return (
     <Suspense fallback={<HistoricoSkeleton />}>
-      <HistoricoContent shell={shell} />
+      <HistoricoContent {...(searchParams !== undefined ? { searchParams } : {})} />
     </Suspense>
   );
 }
 
 export async function HistoricoContent({
-  shell,
+  searchParams,
 }: {
-  shell: Awaited<ReturnType<typeof resolvePageShell>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const shell = await resolvePageShell({ searchParams: resolvedSearchParams });
   const { privacyMode, selectedScope, store, workspace } = shell;
 
   const today = new Date().toISOString().slice(0, 10);

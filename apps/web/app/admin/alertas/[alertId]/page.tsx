@@ -3,7 +3,12 @@ import { guardAdmin } from "@web/admin/guard-admin";
 import { MaintainerAlertDetail } from "@web/admin/maintainer-alert-detail";
 import { notFound } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 /**
  * The forensic detail of one maintainer alert (#1050, ADR 0064). Guarded like

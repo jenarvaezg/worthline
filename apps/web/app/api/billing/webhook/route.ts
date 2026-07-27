@@ -10,9 +10,6 @@
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { processBillingEvent } from "@web/billing/process-billing-event";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 export async function POST(request: Request): Promise<Response> {
   const adapter = getBillingAdapter();
   if (!adapter) {

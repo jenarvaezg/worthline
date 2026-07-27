@@ -100,15 +100,15 @@ async function resolveFrontMatter(
 }
 
 /**
- * Bust the client Router Cache after a **successful** mutation (#1191). With
- * `experimental.staleTimes.dynamic` set (30s), sibling tabs visited within the
- * window keep serving cached figures unless a mutation revalidates: without this
- * call, editing a holding would leave a "Resumen" tab seen 10s ago showing the
- * old net worth for up to 30s. `revalidatePath("/", "layout")` drives Next's
- * server-action reducer to `invalidateEntirePrefetchCache`, evicting every cached
- * segment — the redirect terminal alone only re-renders its own destination
- * fresh, not the sibling tabs. Called on the success path only: an error or
- * blocked write mutated nothing to invalidate.
+ * Bust the client navigation caches after a **successful** mutation (#1191,
+ * retained under #1229). With Cache Components + Partial Prefetching, sibling
+ * tabs keep a per-route shell (and any streamed payload still on the client)
+ * unless a mutation revalidates: without this call, editing a holding would
+ * leave a "Resumen" tab showing the old net worth. `revalidatePath("/", "layout")`
+ * drives Next's server-action reducer to `invalidateEntirePrefetchCache`,
+ * evicting every cached segment — the redirect terminal alone only re-renders
+ * its own destination fresh, not the sibling tabs. Called on the success path
+ * only: an error or blocked write mutated nothing to invalidate.
  *
  * `refresh()` is the second half, and it is NOT redundant (root cause of the
  * #1180 e2e flake). Next's server-action reducer invalidates the prefetch cache

@@ -89,10 +89,10 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-import PatrimonioPage from "./page";
+import { PatrimonioContent } from "./page";
 
 async function renderedHtml(): Promise<string> {
-  const element = (await PatrimonioPage({
+  const element = (await PatrimonioContent({
     searchParams: Promise.resolve({}),
   })) as ReactElement;
   return renderToStaticMarkup(element);

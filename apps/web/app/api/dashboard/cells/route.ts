@@ -7,9 +7,6 @@ import { listScopeOptions } from "@worthline/domain";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
-
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 /**

@@ -4,10 +4,14 @@ import { resolvePageShell } from "@web/page-shell";
 import { batchValueUpdateAction } from "@web/patrimonio/actions";
 import { formatMoneyInput, isValueUpdateEligible } from "@worthline/domain";
 import Link from "next/link";
-
 import PuestaAlDiaForm, { type PuestaFieldRow } from "./puesta-al-dia-form";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 export default async function PuestaAlDiaPage({
   searchParams,

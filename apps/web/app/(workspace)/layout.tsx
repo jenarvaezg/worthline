@@ -36,7 +36,10 @@ export default function WorkspaceLayout({
           </div>
         </div>
         <div className="topbarEnd">
-          <SectionNav />
+          {/* usePathname() in SectionNav would otherwise block every shell (#1229). */}
+          <Suspense fallback={null}>
+            <SectionNav />
+          </Suspense>
           <Suspense fallback={null}>
             <SignOutButton />
           </Suspense>

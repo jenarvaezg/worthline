@@ -12,8 +12,9 @@ import { describe, expect, test } from "vitest";
  * exception narrow instead of letting the route drift into dynamic rendering.
  *
  * Estreno (#954): the route file moved to `app/page.tsx` when the landing was
- * promoted to `/`, so the force-static assertion follows it to the root page;
- * the landing module (this directory) keeps holding the components.
+ * promoted to `/`. Under Cache Components (#1229) staticness is by construction
+ * (no request/store reads), not a `force-static` export; this tripwire still
+ * guards the landing sources.
  */
 
 const landingDir = dirname(fileURLToPath(import.meta.url));
@@ -37,8 +38,9 @@ const FORBIDDEN = [
 ];
 
 describe("landing static invariant (#951, estreno #954)", () => {
-  test("the root page opts into static rendering explicitly", () => {
-    expect(rootPage.text).toContain('export const dynamic = "force-static"');
+  test("the root page does not opt into dynamic rendering", () => {
+    expect(rootPage.text).not.toContain("force-dynamic");
+    expect(rootPage.text).not.toContain("export const dynamic");
   });
 
   test("neither the root page nor any landing source reads cookies, a store, or opts into dynamic rendering", () => {

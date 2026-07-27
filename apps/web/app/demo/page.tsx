@@ -2,7 +2,12 @@ import { isPersonaId, PERSONA_IDS, PERSONA_META } from "@web/demo/persona";
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+/**
+ * Block (#1229): this route opts out of Instant Navigations validation.
+ * Soft-click shell prefetching is not the goal here — see the route table on
+ * issue #1229 for the why.
+ */
+export const instant = false;
 
 /**
  * The /demo landing (PRD #297, ADR 0030): the public entry into the read-only

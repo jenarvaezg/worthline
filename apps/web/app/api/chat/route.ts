@@ -95,9 +95,6 @@ import { after, NextResponse } from "next/server";
  * call (ADR 0051).
  */
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
 const NO_STORE = { "Cache-Control": "no-store" };
 const MAX_MESSAGES = 40;
 const MAX_TOTAL_CHARS = 16_000;
