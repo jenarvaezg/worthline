@@ -9,7 +9,7 @@
 
 import { writeFile } from "node:fs/promises";
 import { chatAsOf } from "@web/asistente/chat-clock";
-import { createChatTools } from "@web/asistente/chat-tools";
+import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
 import { resolveProviderModel } from "@web/asistente/provider-model";
 import { buildChatSystemPrompt } from "@web/asistente/system-prompt";
 import { withStore } from "@web/store";
@@ -22,31 +22,11 @@ import {
   parseEvalArgs,
   shouldStopAfterProviderError,
 } from "./candidate-config";
-import { GOLDEN_QUESTIONS } from "./golden";
+import { type Check, GOLDEN_QUESTIONS, type GoldenQuestion } from "./golden";
 import type { AssistantAnswer } from "./graders";
 
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
 const MAX_STEPS = 6;
-
-/** The tool trace, flattened across every step of the turn. */
-function toolCalls(result: { toolCalls?: unknown[] }): AssistantAnswer["toolCalls"] {
-  return (result.toolCalls ?? []).map((raw) => {
-    const call = raw as { toolName?: string; input?: unknown };
-    return { input: call.input, name: call.toolName ?? "" };
-  });
-}
-
-function toolResults(result: {
-  toolResults?: unknown[];
-}): AssistantAnswer["toolResults"] {
-  return (result.toolResults ?? []).map((raw) => {
-    const toolResult = raw as { toolName?: string; output?: unknown; result?: unknown };
-    return {
-      name: toolResult.toolName ?? "",
-      output: toolResult.output ?? toolResult.result,
-    };
-  });
-}
 
 function suggestedActions(
   results: AssistantAnswer["toolResults"],
@@ -71,33 +51,29 @@ async function askAssistant(
     system: buildChatSystemPrompt(null),
     prompt: question,
     tools: createChatTools({
-      // The same slice of the store the chat route wires (`api/chat/route.ts`).
-      // It used to forward three of the six, which left every proposal tool
-      // answering `proposal_persistence_unavailable`: the write path could not be
-      // measured at all, because what came back was the harness's own hole rather
-      // than the model's behaviour (#1265).
-      runWithStore: (run) =>
-        withStore(
-          (store) =>
-            run({
-              agentView: store.agentView,
-              assets: store.assets,
-              assistantProposals: store.assistantProposals,
-              connectedSources: store.connectedSources,
-              liabilities: store.liabilities,
-              workspace: store.workspace,
-            }),
-          persona,
-        ),
+      // The chat route's own slice, not a copy of it (#1265): the harness used to
+      // forward three of six, which left every proposal tool answering
+      // `proposal_persistence_unavailable` — the write path could not be measured,
+      // because what came back was the harness's hole rather than the model.
+      runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf: chatAsOf(persona),
     }),
     stopWhen: stepCountIs(MAX_STEPS),
   });
 
-  const results = toolResults(result);
+  // Typed straight off the SDK result — `toolCalls` and `toolResults` already span
+  // every step of the turn, which is what makes an id's provenance gradeable: the
+  // read happens in one step and the proposal in another.
+  const results = result.toolResults.map((toolResult) => ({
+    name: toolResult.toolName,
+    output: toolResult.output,
+  }));
   return {
     text: result.text,
-    toolCalls: toolCalls(result),
+    toolCalls: result.toolCalls.map((call) => ({
+      input: call.input,
+      name: call.toolName,
+    })),
     toolResults: results,
     quickActions: suggestedActions(results),
   };
@@ -109,6 +85,21 @@ const EMPTY_ANSWER: AssistantAnswer = {
   toolResults: [],
   quickActions: [],
 };
+
+/**
+ * A question the provider never answered scores zero — every check failed, keeping
+ * the rule the README states («their question checks count as failed»).
+ *
+ * Grading the empty answer would not do it any more. Three of the five write-path
+ * checks are ABSTENTIONS — «no propone sin resolver de qué holding habla», «no
+ * finge una propuesta» — and silence satisfies all three, so a question killed by a
+ * provider quota would score 3/5 IN THE MODEL'S FAVOUR on the dimension that
+ * decides whether it can be trusted to write. The check names are kept so the
+ * report still shows what went unmeasured.
+ */
+function failedChecks(question: GoldenQuestion): Check[] {
+  return question.grade(EMPTY_ANSWER).map((check) => ({ name: check.name, pass: false }));
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -164,7 +155,7 @@ async function main(): Promise<void> {
         dimension: question.dimension,
         persona: question.persona,
         status: "error",
-        checks: question.grade(EMPTY_ANSWER),
+        checks: failedChecks(question),
         error: message,
       });
       console.error(`ERR   ${rowLabel} ${message}`);

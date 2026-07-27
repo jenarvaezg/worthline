@@ -10,12 +10,12 @@ error, and an empty pool preserves the `assistant_unavailable` 503 response.
 
 Admission is reviewed code, not live runtime state. A normal entry must carry a
 real, complete run of the assistant admission harness with non-empty checks and
-at least the default 60% score. **Amended by
-[ADR 0067](0067-assistant-write-path-is-guarded-by-code-not-by-model-choice.md):
-that score is now required per dimension, not only in aggregate, and the marks
-committed before the write-path dimension existed state a reading score only.** The committed Gemini and Cerebras marks satisfy
-that rule. Groq is the incumbent from before this gate and is explicitly
-grandfathered: its revalidation exhausted the free daily token allowance after
+at least the default 60% score — required in the aggregate and, since
+[ADR 0067](0067-assistant-write-path-is-guarded-by-code-not-by-model-choice.md),
+in every dimension the run measured. The committed Gemini and Cerebras marks
+satisfy that rule with complete two-dimension runs; a mark that names only
+`reading` predates the write-path questions and states nothing about writes.
+Groq is the incumbent from before this gate and is explicitly grandfathered: its revalidation exhausted the free daily token allowance after
 6 of 12 questions. Its partial 11/14 check result and the reason remain visible;
 it is not represented as a normal passing run. An automated guard checks that
 marks name the same provider/model, have coherent non-zero counts, and satisfy

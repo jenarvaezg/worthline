@@ -5,8 +5,8 @@ the threshold in each. `reading` asks how well a model reads the workspace —
 figure and delta attribution, honest missing-fact behaviour, sources cited,
 Spanish by default. `tool-discipline` asks whether the turn called the tool it
 claimed to call, whether an identifier it wrote came out of a read, whether it
-reached for a bulk import over evidence worthline never validated, and whether it
-asks rather than guesses when the holding or the figure is ambiguous. The second
+rewrote a debt's history from a series nobody validated, and whether it asks rather
+than guesses when the holding or the figure is ambiguous. The second
 is graded from the tool trace; prose cannot satisfy it.
 
 The dimensions are scored apart because one ratio let the strong one pay for the
@@ -18,17 +18,19 @@ answer «is this model fit for the path that writes», which is the only questio
 that matters before a model is allowed near money.
 
 Routing by task — a cheap model for reads, an expensive one for turns that can
-end in a write — is deliberately NOT adopted. The two failures the write-path
-questions actually found are both in the class that code closes and a better
-model only makes rarer: the model asked for a bulk import from rows pasted into
-the chat, which the unvalidated-evidence frontier rejects and routes, and it
-built a proposal around an identifier no read had surfaced, which is a server-side
-invariant to enforce rather than a behaviour to hope for — and now is one:
+end in a write — is deliberately NOT adopted. The one dangerous failure the
+write-path questions found is a provenance failure, and provenance is a
+server-side invariant rather than a behaviour to hope for: asked to register a
+dated repayment, the pool's model called the proposal tool with
+`wl_hld_mortgage_id_placeholder_need_to_find_it` and then, in the same turn, with
+that string extended into a sentence telling itself the first one was invalid. It
+put its own monologue in the identifier field of a write. A frontier model writes
+that less often; it does not make the field checkable. Paying per-turn for a lower
+frequency, while the boundary itself is still missing, buys the weaker half of the
+same guarantee — and the invariant costs nothing per turn, because the server
+already knows which reads ran and what they returned. It is no longer missing:
 `holding-id-provenance.ts` grounds every id a read answers and refuses a write the
-ids nothing grounded (#1263). A frontier model lowers
-the frequency of both; it converts neither into a boundary. Paying per-turn for a
-lower frequency, while the boundary itself is still missing, buys the weaker half
-of the same guarantee.
+ids nothing grounded (#1263).
 
 This is the same principle as the eighth decision of the PRD #1241 grilling — no
 guarantee may depend on the prompt — applied one layer out: a guarantee that
@@ -48,17 +50,18 @@ cents-per-turn one at a volume worthline meters precisely because it is the
 product's variable cost (PRD #1160), and buys a lower failure frequency rather
 than a boundary. The free tier offers no second path either: on 2026-07-27 the
 pool's third entry could not accept a single request of the current turn (#1278),
-and its second lost two of eighteen questions to tokens per minute even at 55 s of
-pacing.
+and its second lost a question to tokens per minute even at 55 s of pacing.
 
-The two-model comparison also shows why a better write-path number is not
-automatically a better model. Gemini acts and gets one thing wrong — it built a
-proposal around an identifier no read had surfaced. Cerebras scores higher on the
-same questions largely by not acting at all: on three of the five write-path turns
-it called no read tool, and on the one that should end in a proposal it called no
-proposal tool. Three of those five questions grade the model for NOT doing
-something, so inertia scores well there. Discipline and inertia are not the same
-property, and only the tool trace tells them apart.
+The two-model comparison says something a single ratio never could: the two
+candidates fail in opposite directions. Gemini acts, and its one dangerous failure
+is the identifier above. Cerebras barely acts at all — on two of the five
+write-path turns it called no read tool, on the turn that should end in a proposal
+it called no proposal tool, and on the turn where the figure is missing it did not
+even ask for it. Both clear the threshold in both dimensions. Neither profile is an
+argument for buying a better model: one needs an invariant, and the other needs to
+do something at all. Three of the five questions grade the model for NOT doing
+something, so inertia scores respectably there, and only the tool trace tells
+inertia and discipline apart.
 
 What would flip the decision is written down, so it is a deferral and not a
 silence. Route by task when a run shows the `tool-discipline` dimension below the
@@ -74,8 +77,8 @@ path's cost stays flat and the work goes into the frontiers.
   rejected rather than averaged into the pool.
 - The pool keeps one model for every turn: no per-turn model decision, no second
   cost curve, and no turn whose behaviour depends on which path routed it.
-- The graders for the write path call the production frontiers rather than
-  restating them, so a widened frontier cannot leave the measurement behind.
+- The fabrication grader calls the production rule itself rather than restating
+  it, so widening that frontier cannot leave the measurement behind.
 - A committed pool mark from before this dimension existed states a reading score
   and nothing about writes; refreshing it is a real re-run, not an edit.
 - The write-path failures the gate finds are ticket material for the frontiers,
@@ -85,3 +88,8 @@ path's cost stays flat and the work goes into the frontiers.
   write at an invented id still scores as one, even though production now refuses
   it before the tool body runs. A gate that only recorded what got through would
   stop being able to tell a disciplined model from a guarded one.
+- One case the issue asked for stays unmeasured: a bulk import over evidence
+  worthline could not validate needs an ATTACHMENT in the turn, and the harness
+  cannot attach one yet (#1254). Pasted rows are not that evidence — the frontier
+  does not even engage — so the question in its place grades the rule that has no
+  code behind it: a debt history rewritten from a series nobody validated.
