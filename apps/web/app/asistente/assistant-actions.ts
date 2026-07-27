@@ -67,9 +67,9 @@ export type SourceRef =
   | { kind: "figure"; figure: string };
 
 /** Cap the chips so a chatty model can't flood the panel. */
-const MAX_ACTIONS = 4;
-const MAX_LABEL = 120;
-const MAX_PROMPT = 280;
+export const MAX_ACTIONS = 4;
+export const MAX_LABEL = 120;
+export const MAX_PROMPT = 280;
 
 /** Product routes per section; `otra` has no single destination. */
 const SECTION_ROUTE: Record<ScreenSection, string | null> = {

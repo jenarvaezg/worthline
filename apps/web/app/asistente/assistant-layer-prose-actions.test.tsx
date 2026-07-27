@@ -1,0 +1,110 @@
+import type { UIMessage } from "ai";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+/**
+ * The wiring: the «Acciones recomendadas:» list the model writes in its own prose
+ * leaves the text and comes back as chips. The rule lives in `prose-actions.ts`;
+ * what this file proves is that the panel actually applies it — the reported bug
+ * was literal `[Ver detalle…](«Colección Numista»)` brackets in the reply, plus a
+ * follow-up question the reader had to retype by hand.
+ *
+ * Rendered through the onboarding variant like the #1286 test: the floating panel
+ * ships closed, and both surfaces share `ConversationParts` and the chip row.
+ */
+
+let chatMessages: UIMessage[] = [];
+
+vi.mock("@ai-sdk/react", () => ({
+  useChat: () => ({
+    messages: chatMessages,
+    sendMessage: vi.fn(),
+    status: "ready",
+    error: undefined,
+  }),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/bienvenida",
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+import AssistantLayer from "./assistant-layer";
+
+const PROSE = [
+  "La moneda más cara es la de 148 €.",
+  "",
+  "Acciones recomendadas:",
+  "- [Ver detalle de la Colección Numista](«Colección Numista»)",
+  "- ¿Cuál es el valor total de mi colección de monedas en Numista?",
+].join("\n");
+
+function assistantTurn(text: string, actions: unknown[]): UIMessage {
+  return {
+    id: "a1",
+    role: "assistant",
+    parts: [
+      { type: "text", text },
+      {
+        type: "tool-suggest_actions",
+        toolCallId: "t1",
+        state: "output-available",
+        input: {},
+        output: { actions },
+      },
+    ],
+  } as unknown as UIMessage;
+}
+
+function markup(): string {
+  return renderToStaticMarkup(<AssistantLayer variant="onboarding" />);
+}
+
+beforeEach(() => {
+  chatMessages = [];
+});
+
+describe("AssistantLayer · the action block never stays in the prose", () => {
+  test("trims the block and turns its items into chips", () => {
+    chatMessages = [
+      assistantTurn(PROSE, [
+        {
+          type: "openInternalSource",
+          label: "Ver detalle de la Colección Numista",
+          href: "/patrimonio/wl_hld_x/editar",
+        },
+      ]),
+    ];
+
+    const html = markup();
+
+    // The prose keeps the answer and loses the duplicate block…
+    expect(html).toContain("La moneda más cara es la de 148 €.");
+    expect(html).not.toContain("Acciones recomendadas");
+    expect(html).not.toContain("Colección Numista]");
+    // …and both items are buttons: the source, and the follow-up question.
+    expect(html).toContain('href="/patrimonio/wl_hld_x/editar"');
+    expect(html).toContain("¿Cuál es el valor total de mi colección de monedas");
+    expect(html.match(/assistantChip/g)).toHaveLength(2);
+  });
+
+  test("does not show the same source twice when the block repeats a chip", () => {
+    chatMessages = [
+      assistantTurn("Texto.\n\nAcciones recomendadas:\n- [Ver patrimonio](/patrimonio)", [
+        { type: "openInternalSource", label: "Ir a patrimonio", href: "/patrimonio" },
+      ]),
+    ];
+
+    expect(markup().match(/assistantChip/g)).toHaveLength(1);
+  });
+
+  test("leaves prose alone when there is no action block", () => {
+    chatMessages = [assistantTurn("Tus mayores posiciones:\n- Fondo A\n- Fondo B", [])];
+
+    const html = markup();
+
+    expect(html).toContain("Fondo A");
+    expect(html).toContain("Fondo B");
+  });
+});

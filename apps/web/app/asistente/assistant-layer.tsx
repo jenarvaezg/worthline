@@ -6,7 +6,7 @@ import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -98,6 +98,8 @@ import {
   UNVALIDATED_PROVENANCE_LABEL,
   UNVALIDATED_PROVENANCE_NOTE,
 } from "./proposal-provenance";
+import { mergeQuickActions, splitProseActionBlock } from "./prose-actions";
+import QuickActionChips from "./quick-action-chips";
 import {
   discardReconcileRow,
   effectiveDecision,
@@ -155,34 +157,62 @@ const SECTION_LABEL: Record<ScreenSection, string> = {
 const ONBOARDING_RERUN_SEED =
   "Quiero repasar mi cartera y ponerla al día con un extracto o documento nuevo.";
 
+/** The `suggest_actions` output of ONE message, re-validated client-side. */
+function toolQuickActions(message: UIMessage): QuickAction[] {
+  let actions: QuickAction[] = [];
+  for (const part of message.parts) {
+    if (part.type === "tool-suggest_actions" && "output" in part) {
+      actions = parseQuickActions((part.output as { actions?: unknown } | null)?.actions);
+    }
+  }
+  return actions;
+}
+
+/**
+ * The prose of one text part with both duplicate action channels removed, and the
+ * chips recovered from them: the trailing `{"actions":[…]}` JSON some turns print
+ * instead of calling the tool, and the «Acciones recomendadas:» markdown list the
+ * model writes ALONGSIDE the tool call. `toolActions` are that same message's
+ * chips, which is how a bullet repeating one of them resolves to it.
+ */
+function proseAndActions(
+  text: string,
+  toolActions: readonly QuickAction[],
+): { cleaned: string; prose: QuickAction[]; embedded: QuickAction[] } {
+  const embedded = extractEmbeddedQuickActions(text);
+  const prose = splitProseActionBlock(embedded.cleaned, toolActions);
+  return { cleaned: prose.cleaned, prose: prose.actions, embedded: embedded.actions };
+}
+
 /**
  * The typed quick actions the model proposed on the CURRENT turn (#631, ADR
  * 0053): the newest assistant message's `suggest_actions` output, re-validated
  * client-side so only the internal-only typed set ever renders. Older turns'
  * chips fall away as the conversation moves on.
+ *
+ * The prose block goes FIRST in the merge: those are the follow-ups in the order
+ * the reader just read them, and the ones they repeat collapse onto the tool's own
+ * chips rather than showing twice.
  */
 function currentQuickActions(messages: UIMessage[]): QuickAction[] {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message?.role !== "assistant") continue;
 
-    let toolActions: QuickAction[] = [];
-    let textActions: QuickAction[] = [];
+    const toolActions = toolQuickActions(message);
+    let prose: QuickAction[] = [];
+    let embedded: QuickAction[] = [];
 
     for (const part of message.parts) {
-      if (part.type === "tool-suggest_actions" && "output" in part) {
-        toolActions = parseQuickActions(
-          (part.output as { actions?: unknown } | null)?.actions,
-        );
-      }
       if (part.type === "text" && typeof part.text === "string") {
-        textActions = extractEmbeddedQuickActions(part.text).actions;
+        ({ prose, embedded } = proseAndActions(part.text, toolActions));
       }
     }
 
-    if (toolActions.length > 0) return toolActions;
-    if (textActions.length > 0) return textActions;
-    return [];
+    // The embedded JSON stays what it always was — a fallback for the turn that
+    // printed its actions instead of calling the tool, never an addition to them.
+    const fromText = prose.length > 0 ? prose : toolActions.length > 0 ? [] : embedded;
+    return mergeQuickActions(fromText, toolActions);
   }
   return [];
 }
@@ -1644,63 +1674,69 @@ function ConversationParts({
   const holdingLabels = useMemo(() => labelsByPublicHoldingId(messages), [messages]);
   return (
     <>
-      {messages.map((message) => (
-        <div className={`assistantMsg ${message.role}`} key={message.id}>
-          {message.parts.map((part, i) => {
-            if (part.type === "text") {
-              const { cleaned } = extractEmbeddedQuickActions(part.text);
-              return (
-                <AssistantTextPart
-                  holdingLabels={holdingLabels}
-                  key={`${message.id}-${i}`}
-                  role={message.role}
-                  text={cleaned}
-                />
-              );
-            }
-            if (part.type === "data-attachment-extraction") {
-              const preview = parseAttachmentPreviewData(part.data);
-              return preview ? (
-                <AttachmentExtractionPreview
-                  key={`${message.id}-${i}`}
-                  preview={preview}
-                />
-              ) : null;
-            }
-            if (part.type === "data-paywall") {
-              const paywall = parsePaywallPartData(part.data);
-              return paywall ? (
-                <PremiumNotice key={`${message.id}-${i}`} message={paywall.message} />
-              ) : null;
-            }
-            if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
-              const name =
-                "toolName" in part ? String(part.toolName) : part.type.slice(5);
-              // suggest_actions renders as chips below, not as tool activity.
-              if (name === "suggest_actions") return null;
-              const card = proposalCardFor({
-                mutationsDisabled,
-                mutationsDisabledMessage,
-                name,
-                part,
-              });
-              if (card === null) return null;
-              // The provenance mark (#1257) is read off the server's own tool output,
-              // by key — never from the prose the model wrote on the card.
-              return (
-                <ProposalEntry
-                  key={`${message.id}-${i}`}
-                  marked={"output" in part && hasUnvalidatedProvenance(part.output)}
-                >
-                  {card}
-                </ProposalEntry>
-              );
-            }
-            return null;
-          })}
-          {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
-        </div>
-      ))}
+      {messages.map((message) => {
+        // This turn's own chips, so a repeated bullet in its prose resolves to the
+        // chip it was describing instead of blocking the trim of the whole block.
+        const messageActions =
+          message.role === "assistant" ? toolQuickActions(message) : [];
+        return (
+          <div className={`assistantMsg ${message.role}`} key={message.id}>
+            {message.parts.map((part, i) => {
+              if (part.type === "text") {
+                const { cleaned } = proseAndActions(part.text, messageActions);
+                return (
+                  <AssistantTextPart
+                    holdingLabels={holdingLabels}
+                    key={`${message.id}-${i}`}
+                    role={message.role}
+                    text={cleaned}
+                  />
+                );
+              }
+              if (part.type === "data-attachment-extraction") {
+                const preview = parseAttachmentPreviewData(part.data);
+                return preview ? (
+                  <AttachmentExtractionPreview
+                    key={`${message.id}-${i}`}
+                    preview={preview}
+                  />
+                ) : null;
+              }
+              if (part.type === "data-paywall") {
+                const paywall = parsePaywallPartData(part.data);
+                return paywall ? (
+                  <PremiumNotice key={`${message.id}-${i}`} message={paywall.message} />
+                ) : null;
+              }
+              if (part.type.startsWith("tool-") || part.type === "dynamic-tool") {
+                const name =
+                  "toolName" in part ? String(part.toolName) : part.type.slice(5);
+                // suggest_actions renders as chips below, not as tool activity.
+                if (name === "suggest_actions") return null;
+                const card = proposalCardFor({
+                  mutationsDisabled,
+                  mutationsDisabledMessage,
+                  name,
+                  part,
+                });
+                if (card === null) return null;
+                // The provenance mark (#1257) is read off the server's own tool output,
+                // by key — never from the prose the model wrote on the card.
+                return (
+                  <ProposalEntry
+                    key={`${message.id}-${i}`}
+                    marked={"output" in part && hasUnvalidatedProvenance(part.output)}
+                  >
+                    {card}
+                  </ProposalEntry>
+                );
+              }
+              return null;
+            })}
+            {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
+          </div>
+        );
+      })}
       {pendingLabel === null ? null : <AssistantPendingNotice label={pendingLabel} />}
       {error ? (
         <p className="assistantError" role="alert">
@@ -1826,7 +1862,6 @@ export default function AssistantLayer({
   const { messages, sendMessage, status, error } = useChat({
     transport: assistantChatTransport,
   });
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const rerunRequested = searchParams.get(ONBOARDING_RERUN_PARAM) === "1";
@@ -1870,16 +1905,6 @@ export default function AssistantLayer({
   function seed(text: string) {
     if (busy) return;
     void sendMessage({ role: "user", parts: [{ type: "text", text }] });
-  }
-
-  function runAction(action: QuickAction) {
-    if (action.type === "openInternalSource") {
-      // Client navigation only — the panel is mounted in the root layout, so the
-      // conversation survives the route change underneath it (S0 decision).
-      router.push(action.href);
-      return;
-    }
-    seed(action.prompt);
   }
 
   useEffect(() => {
@@ -2061,24 +2086,7 @@ export default function AssistantLayer({
             </ProposalAppliedContext.Provider>
           </AssistantMessages>
 
-          {quickActions.length > 0 ? (
-            <div
-              aria-label="Acciones sugeridas"
-              className="assistantActions"
-              role="group"
-            >
-              {quickActions.map((action, i) => (
-                <button
-                  className={`assistantChip ${action.type}`}
-                  key={`${action.label}-${i}`}
-                  onClick={() => runAction(action)}
-                  type="button"
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <QuickActionChips actions={quickActions} onRun={seed} />
 
           <Composer
             attachment={attachment}
@@ -2178,20 +2186,7 @@ export default function AssistantLayer({
         />
       </AssistantMessages>
 
-      {quickActions.length > 0 ? (
-        <div aria-label="Acciones sugeridas" className="assistantActions" role="group">
-          {quickActions.map((action, i) => (
-            <button
-              className={`assistantChip ${action.type}`}
-              key={`${action.label}-${i}`}
-              onClick={() => runAction(action)}
-              type="button"
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <QuickActionChips actions={quickActions} onRun={seed} />
 
       <Composer
         attachment={attachment}
