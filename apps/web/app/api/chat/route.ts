@@ -24,7 +24,7 @@ import {
   withoutToolParts,
 } from "@web/asistente/chat-history";
 import { resolveChatModels } from "@web/asistente/chat-model";
-import { createChatTools } from "@web/asistente/chat-tools";
+import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
 import {
   courtesyMonthWindow,
   isCourtesyQuotaExhausted,
@@ -641,19 +641,7 @@ export async function POST(request: Request): Promise<Response> {
   const tools = createChatTools({
     ingestionAllowed,
     unvalidatedEvidence,
-    runWithStore: (run) =>
-      withStore(
-        (store) =>
-          run({
-            agentView: store.agentView,
-            assets: store.assets,
-            assistantProposals: store.assistantProposals,
-            connectedSources: store.connectedSources,
-            liabilities: store.liabilities,
-            workspace: store.workspace,
-          }),
-        target,
-      ),
+    runWithStore: (run) => withStore((store) => run(chatToolStores(store)), target),
     asOf: chatAsOf(target),
     ...(workspaceId === null
       ? {}

@@ -117,6 +117,25 @@ export interface ChatReadStore {
   connectedSources?: WorthlineStore["connectedSources"];
 }
 
+/**
+ * The slice of a workspace store the chat tools need, in ONE place.
+ *
+ * Both callers — the chat route and the admission harness (#1265) — used to list
+ * the fields by hand, and the harness listed three of the six: every proposal tool
+ * answered `proposal_persistence_unavailable`, so the write path could not be
+ * measured at all. A seventh field would have re-armed exactly that.
+ */
+export function chatToolStores(store: WorthlineStore): ChatReadStore {
+  return {
+    agentView: store.agentView,
+    assets: store.assets,
+    assistantProposals: store.assistantProposals,
+    connectedSources: store.connectedSources,
+    liabilities: store.liabilities,
+    workspace: store.workspace,
+  };
+}
+
 export interface ChatToolsInput {
   /** Runs one scoped tool operation against the caller's resolved workspace. */
   runWithStore: <T>(run: (store: ChatReadStore) => Promise<T>) => Promise<T>;

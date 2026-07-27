@@ -1,6 +1,8 @@
+import type { EvalDimension } from "./dimension";
+
 /** One dimension of a committed run, so a mark says WHAT it measured. */
 interface EvidenceDimension {
-  dimension: "reading" | "tool-discipline";
+  dimension: EvalDimension;
   passed: number;
   total: number;
 }
@@ -15,9 +17,7 @@ interface EvidenceRun {
   /**
    * The same checks broken down by dimension (#1265). A mark with only `reading`
    * is not an omission: it is a run from before the write-path questions existed,
-   * and it therefore states nothing about whether that model can be trusted to
-   * prepare a write. That distinction is the whole point of recording it —
-   * see ADR 0067.
+   * so it states nothing about the write path (ADR 0067).
    */
   dimensions: readonly EvidenceDimension[];
 }
@@ -48,9 +48,9 @@ export type AdmissionEvidence = AdmittedEvidence | GrandfatheredEvidence;
  * current turn outright — 12.000 tokens per minute against 13.017 requested — so
  * every question errored and its old mark stands, stating reading only (#1278).
  *
- * Two of Cerebras's eighteen questions died on tokens-per-minute even at 55 s of
- * pacing, and a dead question counts as failed checks. Its reading score is
- * therefore a floor, not a measurement of how well it reads.
+ * One of Cerebras's eighteen questions died on tokens-per-minute even at 55 s of
+ * pacing, and a dead question scores zero. Its reading number is therefore a floor,
+ * not a measurement of how well it reads.
  */
 export const ADMISSION_EVIDENCE = [
   {
@@ -61,12 +61,12 @@ export const ADMISSION_EVIDENCE = [
       evaluatedAt: "2026-07-27",
       complete: true,
       passed: 50,
-      total: 64,
+      total: 65,
       executedQuestions: 18,
       totalQuestions: 18,
       dimensions: [
-        { dimension: "reading", passed: 31, total: 42 },
-        { dimension: "tool-discipline", passed: 19, total: 22 },
+        { dimension: "reading", passed: 30, total: 42 },
+        { dimension: "tool-discipline", passed: 20, total: 23 },
       ],
     },
   },
@@ -77,13 +77,13 @@ export const ADMISSION_EVIDENCE = [
     run: {
       evaluatedAt: "2026-07-27",
       complete: true,
-      passed: 45,
-      total: 64,
+      passed: 49,
+      total: 65,
       executedQuestions: 18,
       totalQuestions: 18,
       dimensions: [
-        { dimension: "reading", passed: 28, total: 42 },
-        { dimension: "tool-discipline", passed: 17, total: 22 },
+        { dimension: "reading", passed: 32, total: 42 },
+        { dimension: "tool-discipline", passed: 17, total: 23 },
       ],
     },
   },

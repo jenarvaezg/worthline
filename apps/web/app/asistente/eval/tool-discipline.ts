@@ -41,14 +41,22 @@ export function fakesProposalCeremony(answer: AssistantAnswer): boolean {
   return claimsPreparedProposal(answer.text) && !calledProposalTool(answer);
 }
 
+/** The turn called this exact tool. */
+export function reachedForTool(answer: AssistantAnswer, name: string): boolean {
+  return answer.toolCalls.some((call) => call.name === name);
+}
+
 /**
- * The turn reached for a tool the unvalidated-evidence frontier rejects: a bulk
- * import whose place is the deterministic route, never a proposal built from what
- * the model read in a chat message (#1248).
+ * The turn reached for a tool the unvalidated-evidence frontier rejects (#1248).
  *
- * The frontier itself is code and holds regardless, so this measures the MODEL:
- * how often it tries the door. That frequency is the signal for routing, because
- * an attempt is a turn the user spent and a rejection they have to read.
+ * Read this number for what it is: **the frontier only closes when the turn
+ * carries a document**. `unvalidatedEvidenceGateApplies` needs an attachment (or
+ * its trace in history), so rows the user PASTES are not unvalidated evidence and
+ * these tools stay open — `propose_statement_import` even takes `rawText` by
+ * design. Which is why no golden question grades this predicate as a failure on
+ * its own: over pasted text, calling one of them can be the supported route.
+ * It stays exported because it is the honest way to ask «did the turn go for a
+ * bulk write», and the answer is worth having in a report either way.
  */
 export function reachedForBulkImportTool(answer: AssistantAnswer): boolean {
   return answer.toolCalls.some(

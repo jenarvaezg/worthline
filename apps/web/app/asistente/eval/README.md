@@ -11,9 +11,15 @@ changes or reads the production model configuration.
   missing-fact behaviour, sources cited, Spanish by default.
 - **tool-discipline** (`golden-tool-discipline.ts`, #1265) — whether the turn
   called the tool it claimed to call, whether an id it wrote came out of a read,
-  whether it reached for a bulk import over unvalidated evidence, and whether it
-  asks instead of guessing when the holding or the figure is ambiguous. Graded
+  whether it rewrote a debt's history from a series nobody validated, and whether
+  it asks instead of guessing when the holding or the figure is ambiguous. Graded
   from the tool trace, not from prose.
+
+  Every question is checked against the system prompt before it is graded as a
+  failure, because a plausible-looking check can score the HONEST path as a defect:
+  demanding a tool call on a correction the prompt says to ask about first, or
+  forbidding `propose_statement_import` over pasted rows when that tool takes raw
+  text by design. Two such checks were caught in review of this very slice.
 
 They are scored separately because a blended ratio hid exactly the thing that
 mattered: the pool's model scored 88% on a day it faked a proposal card in prose
@@ -24,17 +30,21 @@ threshold; the stderr table prints each dimension and the JSON report carries
 `dimensions[]`.
 
 One property of the write-path set to keep in mind when reading a number: three of
-its five questions grade the model for NOT doing something (not proposing without
-an id, not bulk-importing pasted rows, not choosing among ambiguous holdings), so
-a provider that answers nothing still scores about 45% there. That is not a hole —
-refraining really is half of discipline, and the run is rejected anyway because
-the threshold is 60% and reading scores zero — but a mid-40s write-path number
-means «it said nothing», not «it behaved».
+its five questions grade the model for NOT doing something (not proposing when the
+holding is ambiguous, not rewriting a history from an unvalidated series, not
+faking the ceremony). Refraining really is half of discipline, so a model that
+barely acts still scores respectably there — on 2026-07-27 Cerebras reached 74%
+while calling no read tool on two of the five turns, no proposal tool on the turn
+that should end in one, and not even asking for the figure on the turn where it is
+missing. Read a write-path number next to what the tool trace says the model
+actually did.
 
-Two graders deliberately call production code rather than restating it —
-`claimsPreparedProposal` from the runtime guard (#1262) and the
-unvalidated-evidence table (#1248) — so the measurement cannot drift away from
-the frontier it measures.
+The fabrication grader calls the production rule itself — `claimsPreparedProposal`
+from the runtime guard (#1262) — rather than restating it, so the measurement
+cannot drift away from the frontier it measures. `reachedForBulkImportTool` reads
+the unvalidated-evidence table (#1248) for the same reason, but no question grades
+it as a failure: that frontier only closes when the turn carries a document, and
+the harness cannot attach one yet (#1254).
 
 ## Run one candidate
 
@@ -68,9 +78,13 @@ deliberately more conservative than `60 / RPM`: 20 seconds for Google, 55 for
 Cerebras, and 8 for Groq. With 18 questions that is roughly 8 minutes for Google
 and 20 for Cerebras.
 
-The write-path questions run last. A provider that exhausts its free tier
-mid-run therefore leaves an INCOMPLETE report — never a complete-looking one whose
-missing dimension quietly scored zero.
+A question the provider never answered scores **zero** — every one of its checks is
+recorded as failed, with its name intact so the report shows what went unmeasured.
+That is not bookkeeping: three of the five write-path checks are abstentions, and
+silence satisfies them, so grading the empty answer would hand a quota death 3/5
+in the model's favour on the dimension that decides the write path. The run still
+reports `complete` (every question was attempted); what sinks is the score, per
+question and per dimension, which is where a provider problem must be visible.
 
 The store the runner wires is the same slice `api/chat/route.ts` wires. It used to
 forward three of six, which made every proposal tool answer
@@ -89,21 +103,27 @@ to stdout and, when `--output` is supplied, to that file. It contains:
 - an explicit `complete` flag.
 
 The default threshold is 60% and can be raised with `--threshold 0.7`. Admission
-requires both a complete run and a score at or above the threshold. A partial
+requires a complete run and a score at or above the threshold **in the aggregate
+and in every dimension**. A partial
 run, a zero-check run, or a score below the threshold exits non-zero. Provider
 errors remain visible per question and their question checks count as failed.
 
 ## Committed evidence
 
-`admission-evidence.ts` contains the reviewed results from #841/#842 in the
-shape needed by the pool allowlist in #957. Gemini and Cerebras are normal
-admissions because their runs were complete and cleared 60%. The incumbent
-Groq model is represented separately as `grandfathered`, with the reason and
-its partial 6/12-question run; it is not presented as satisfying the normal
-rule.
+`admission-evidence.ts` holds the reviewed runs in the shape the pool allowlist
+needs (#957), each broken down by dimension so a mark says WHAT it measured.
+Gemini and Cerebras are normal admissions from complete two-dimension runs of
+2026-07-27. The incumbent Groq model is represented separately as `grandfathered`,
+with its reason and its partial 6/12-question run from #841/#842; it is not
+presented as satisfying the normal rule, and its mark states reading only because
+its free tier can no longer accept one request of the current turn (#1278).
 
-Re-run and refresh a normal admission mark whenever its model or the system
-prompt changes, or when provider behavior materially degrades.
+A mark with only `reading` is not an omission — it is a run from before the
+write-path questions existed, and it therefore says nothing about whether that
+model can be trusted to prepare a write (ADR 0067).
+
+Re-run and refresh a normal admission mark whenever its model, the system prompt
+or the question set changes, or when provider behavior materially degrades.
 
 ## Production pool
 
