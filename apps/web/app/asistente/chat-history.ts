@@ -12,8 +12,8 @@
 import { isToolUIPart, type UIMessage } from "ai";
 
 import {
-  claimsPreparedProposal,
   FABRICATED_PROPOSAL_MODEL_NOTE,
+  messagesWithFabricatedProposal,
 } from "./fabricated-proposal";
 import { isProposalToolPart, toolPartName } from "./tool-parts";
 
@@ -114,22 +114,14 @@ export function correctFabricatedProposalClaims(messages: UIMessage[]): {
   messages: UIMessage[];
   correctedMessageIds: string[];
 } {
-  const fabricated = (message: UIMessage): boolean =>
-    message.role === "assistant" &&
-    !message.parts.some(isProposalToolPart) &&
-    claimsPreparedProposal(
-      message.parts
-        .filter((part) => part.type === "text")
-        .map((part) => (part as { text: string }).text)
-        .join("\n"),
-    );
-
-  const correctedMessageIds = messages.filter(fabricated).map((message) => message.id);
+  // The history is never in flight, so no message is exempt here.
+  const corrected = messagesWithFabricatedProposal(messages, false);
+  const correctedMessageIds = [...corrected];
   if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
 
   return {
     messages: messages.map((message) =>
-      fabricated(message)
+      corrected.has(message.id)
         ? {
             ...message,
             parts: [

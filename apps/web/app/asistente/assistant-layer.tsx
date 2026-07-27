@@ -10,6 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -1448,16 +1449,21 @@ function ConversationParts({
   mutationsDisabled,
   mutationsDisabledMessage,
   endRef,
-  streaming,
+  busy,
 }: {
   messages: UIMessage[];
   error: Error | undefined;
   mutationsDisabled: boolean;
   mutationsDisabledMessage: string;
   endRef: React.RefObject<HTMLDivElement | null>;
-  streaming: boolean;
+  busy: boolean;
 }) {
-  const fabricated = messagesWithFabricatedProposal(messages, streaming);
+  // Memoised because the panel re-renders on every keystroke in the composer, and
+  // this reads every text part of every turn.
+  const fabricated = useMemo(
+    () => messagesWithFabricatedProposal(messages, busy),
+    [messages, busy],
+  );
   return (
     <>
       {messages.map((message) => (
@@ -1957,7 +1963,7 @@ export default function AssistantLayer({
                 messages={messages}
                 mutationsDisabled={mutationsDisabled}
                 mutationsDisabledMessage={mutationsDisabledMessage}
-                streaming={busy}
+                busy={busy}
               />
             </ProposalAppliedContext.Provider>
           </AssistantMessages>
@@ -2074,7 +2080,7 @@ export default function AssistantLayer({
           messages={messages}
           mutationsDisabled={mutationsDisabled}
           mutationsDisabledMessage={mutationsDisabledMessage}
-          streaming={busy}
+          busy={busy}
         />
       </AssistantMessages>
 

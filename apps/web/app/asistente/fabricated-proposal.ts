@@ -106,26 +106,43 @@ export function claimsPreparedProposal(text: string): boolean {
 }
 
 /**
+ * THE decision, in one place: an assistant turn that claims a prepared proposal
+ * and carries no proposal part.
+ *
+ * Exported because both audiences ask the same question — the panel to print the
+ * warning, the route to correct the model's history — and a second copy of this
+ * rule would let the two drift apart in silence the day it is widened (#1254).
+ */
+export function isFabricatedProposalTurn(message: UIMessage): boolean {
+  if (message.role !== "assistant") return false;
+  if (message.parts.some(isProposalToolPart)) return false;
+  return claimsPreparedProposal(
+    message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => (part as { text: string }).text)
+      .join("\n"),
+  );
+}
+
+/**
  * The ids of the assistant turns that claim a proposal they never asked for.
  *
  * The in-flight message is left alone while the turn streams: prose can land
  * before the tool call within one turn, so judging it early would flash an
- * accusation and then withdraw it — worse than being one moment late.
+ * accusation and then withdraw it — worse than being one moment late. That rule
+ * belongs to the screen only; the history the model gets back is never in flight.
  */
 export function messagesWithFabricatedProposal(
   messages: UIMessage[],
   streaming: boolean,
 ): ReadonlySet<string> {
-  const flagged = new Set<string>();
-  messages.forEach((message, index) => {
-    if (message.role !== "assistant") return;
-    if (streaming && index === messages.length - 1) return;
-    if (message.parts.some(isProposalToolPart)) return;
-    const text = message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { text: string }).text)
-      .join("\n");
-    if (claimsPreparedProposal(text)) flagged.add(message.id);
-  });
-  return flagged;
+  return new Set(
+    messages
+      .filter(
+        (message, index) =>
+          !(streaming && index === messages.length - 1) &&
+          isFabricatedProposalTurn(message),
+      )
+      .map((message) => message.id),
+  );
 }
