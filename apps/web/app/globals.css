@@ -8099,8 +8099,10 @@ td.rowActions > * {
    no usa Tailwind, así que las clases de utilidad de streamdown son inertes: su
    HTML se estila a mano con tokens, acotado bajo .assistantMarkdown para no
    pisar otras superficies. Streamdown emite elementos reales para casi todo,
-   pero marca la negrita como <span data-streamdown="strong"> y los enlaces como
-   <button data-streamdown="link">, así que esos van por atributo. El turno del
+   pero marca la negrita como <span data-streamdown="strong">, así que esa va por
+   atributo. Los enlaces también van por atributo, pero desde #1289 el elemento es
+   NUESTRO: un <a data-streamdown="link"> hacia una ruta de worthline y nada más
+   (antes era un <button> de streamdown que abría su modal en inglés). El turno del
    usuario sigue en texto plano (.assistantMsg.user p). */
 .assistantMarkdown {
   color: var(--ink);

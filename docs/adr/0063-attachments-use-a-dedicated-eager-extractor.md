@@ -258,7 +258,20 @@ neither hole is new to it:
   a successful injection could exfiltrate workspace figures without any interaction —
   reachable already from a #865 spreadsheet grid or from any untrusted text a tool
   returns. The image element is dropped from the rendered markdown (its alt text still
-  reads); prose and links are untouched. There is no URL allowlist to get wrong.
+  reads); prose is untouched. There is no URL allowlist to get wrong.
+- **The assistant links to worthline or to nothing (#1289, amending the line above).**
+  «Links are untouched» was this amendment's own carve-out, argued from «a click is not
+  a silent GET». That answers exfiltration without interaction and says nothing about
+  the other half: an injected turn could write a clickable link to any host *inside
+  worthline's own panel*, because streamdown's pipeline ships `allowedLinkPrefixes:
+  ["*"]` and `allowedProtocols: ["*"]` and guards them with its own English «Open
+  external link?» modal — which is a nag, and which also called worthline's `/patrimonio`
+  an external website on the way to `window.open(_blank)`. So the anchor is worthline's
+  now, on the same shape as the image rule: an internal route navigates like the typed
+  chip (`router.push`, panel intact), anything else keeps its text and loses its href.
+  Still no host allowlist, and the prose channel gains no capability `suggest_actions`
+  lacks. What «internal» means is code with tests (`prose-link.ts`), because
+  `//evil.tld/x` starts with a slash and the URL parser deletes tabs before resolving.
 - **A model-written proposal headline is bounded, and a batch baja answers to the
   per-turn cap.** `summary` is the one field on a confirmation card the model writes,
   next to the button that applies the write, so its length is bounded where it is

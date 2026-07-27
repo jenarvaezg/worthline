@@ -1,5 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+// The prose-link rule (#1289) navigates internal routes the way the typed chip
+// does, so the component reaches for the app router.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { AssistantTextPart } from "./assistant-markdown";
 
@@ -8,7 +12,10 @@ import { AssistantTextPart } from "./assistant-markdown";
  * we never reinterpret what they typed as markup.
  */
 describe("AssistantTextPart markdown rendering (#1047)", () => {
-  const markdown = "Hola **mundo**, mira `código` y [enlace](https://example.com).";
+  // The link is internal because an external one is no longer rendered as a link at
+  // all (#1289); what this fixture is here to prove is that markdown becomes
+  // structured nodes, and an internal route proves it just as well.
+  const markdown = "Hola **mundo**, mira `código` y [enlace](/patrimonio).";
 
   test("renders an assistant turn as formatted markdown, not raw markup", () => {
     const html = renderToStaticMarkup(
@@ -83,13 +90,84 @@ describe("AssistantTextPart markdown rendering (#1047)", () => {
       // The alt text still reads, so an injected image cannot hide its own body.
       expect(html).toContain("fuga");
     });
+  });
 
-    test("keeps links working, which are a click and not a silent GET", () => {
+  /**
+   * #1289 revises what #1246 decided about links. That review kept them on the
+   * grounds that «a click is not a silent GET» — true about exfiltration without
+   * interaction, and silent about phishing: an injected turn could put a clickable
+   * link to any host inside worthline's own panel, because streamdown allows every
+   * prefix and every protocol and guards them with an English «are you sure» modal.
+   * So the rule becomes the image rule: worthline's own routes survive, the rest keep
+   * their text and lose their href.
+   */
+  describe("prose links point at worthline or nowhere (#1289)", () => {
+    test("keeps an internal route clickable", () => {
       const html = renderToStaticMarkup(
-        <AssistantTextPart role="assistant" text="[enlace](https://example.com)" />,
+        <AssistantTextPart
+          role="assistant"
+          text="Se corrige en [tu patrimonio](/patrimonio/debt_x/editar)."
+        />,
       );
 
-      expect(html).toMatch(/data-streamdown="link"[^>]*>enlace</);
+      expect(html).toMatch(/data-streamdown="link"[^>]*>tu patrimonio</);
+      expect(html).toContain('href="/patrimonio/debt_x/editar"');
+    });
+
+    /**
+     * The invariant that matters, and the one worth asserting at this level: no
+     * foreign destination survives in the markup, whatever shape it arrived in. The
+     * shapes themselves are enumerated over the pure rule in `prose-link.test.ts`.
+     *
+     * `//evil.tld/phish` is the interesting one. It never reaches this component as
+     * written: streamdown's own pipeline runs with `defaultOrigin: undefined` and
+     * hands over `/phish`, authority already stripped — so the link that survives
+     * points at a route of ours that does not exist, which is harmless and NOT the
+     * phishing destination. The rule rejects the raw form too (that is the unit
+     * test), so the boundary holds whichever way a future streamdown resolves it.
+     */
+    test.each([
+      { label: "another host", url: "https://evil.tld/phish" },
+      {
+        label: "our own host spelled absolutely",
+        url: "https://worthline.app/patrimonio",
+      },
+      { label: "a mail draft", url: "mailto:jose@example.com" },
+    ])("drops the href of $label and keeps the text", ({ url }) => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart
+          role="assistant"
+          text={`Confirma tu cuenta [aquí mismo](${url}).`}
+        />,
+      );
+
+      // The bait still reads — an injected link cannot hide its own body — but
+      // there is nothing to click and no destination in the markup.
+      expect(html).toContain("aquí mismo");
+      expect(html).not.toContain(url);
+      expect(html).not.toContain('data-streamdown="link"');
+      expect(html).not.toContain("<a ");
+    });
+
+    test("no foreign host survives, even protocol-relative", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart
+          role="assistant"
+          text="Confirma tu cuenta [aquí mismo](//evil.tld/phish)."
+        />,
+      );
+
+      expect(html).toContain("aquí mismo");
+      expect(html).not.toContain("evil.tld");
+    });
+
+    test("a bare external URL in the prose is not clickable either", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart role="assistant" text="Mira https://evil.tld/phish" />,
+      );
+
+      expect(html).not.toContain('data-streamdown="link"');
+      expect(html).not.toContain("<a ");
     });
   });
 
