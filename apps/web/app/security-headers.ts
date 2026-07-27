@@ -37,12 +37,15 @@ const HSTS_MAX_AGE_SECONDS = 63_072_000;
 /**
  * External image CDNs the app renders directly via `<img>` (ADR 0009).
  *
- * These are provider-supplied values stored per row, not URLs this repo builds, and
- * `snapshot_position_holdings.image_url` is frozen at capture — so a provider that
- * moves its CDN leaves the old host in old rows forever, and now that `img-src`
- * blocks, such a row renders a broken thumbnail. The fix is to add the legacy host
- * here (a declared exception), never to widen this to a wildcard: the point of the
- * directive is that an allowed host is one we can name.
+ * OPEN GAP, declared rather than closed: these are provider-supplied values stored
+ * per row, not URLs this repo builds, and `snapshot_position_holdings.image_url` is
+ * frozen at capture — so a provider that moves its CDN leaves the old host in old
+ * rows forever, and now that `img-src` blocks, such a row renders a broken
+ * thumbnail. No test can see it: the enumeration above reads the code, and no e2e
+ * journey loads a remote image. What closes it is reading the data — the distinct
+ * origins in `positions.image_url` and `snapshot_position_holdings.image_url` across
+ * the real workspace DBs. Whatever that turns up gets NAMED here, never turned into
+ * a wildcard: the point of the directive is that an allowed host is one we can name.
  *
  * Numista's thumbnails live on `en.numista.com` regardless of the `lang=es` the
  * client requests (verified in `packages/pricing/src/__fixtures__/numista`), so only
@@ -74,16 +77,22 @@ export const CSP_REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only"
  * the reports: the policy declares no `report-uri`/`report-to`, so «observed
  * clean» was never something this app could observe. What replaces the reports:
  *
- *  - `img-src`: the only remote images are the two CDN hosts below, rendered by
+ *  - `img-src`: the only remote images are {@link IMAGE_CDN_HOSTS}, rendered by
  *    three `<img>` call sites (a coin thumb, a token logo, the histórico row).
  *    Nothing builds `blob:`/`createObjectURL` image sources.
  *  - `connect-src`: no client-side dependency reaches a third party — no analytics,
  *    no Speed Insights, no browser-side Paddle (`@paddle/paddle-node-sdk` is
  *    server-only), and no hardcoded cross-origin `fetch` in the app tree.
  *
- * And what keeps it true: a blocked request logs a console error, and every e2e
- * journey fails on console errors (`e2e/fixtures.ts`), so the whole suite is the
- * observation window — executable in CI, unlike a report endpoint nobody reads.
+ * What keeps it true, and what does not. A blocked request logs a console error and
+ * `e2e/fixtures.ts` fails any journey that reports one, so the journeys built on that
+ * fixture are the observation window — executable in CI, unlike a report endpoint
+ * nobody reads. But it only observes what the journeys exercise: `connect-src` is
+ * covered by every page they load, while `img-src` is NOT, because no journey ever
+ * loads a remote image (the demo personas seed `imageUrl: null` and the fake
+ * CoinGecko serves no logos). So the suite catches a cross-origin URL newly
+ * hardcoded in the app; it cannot catch a stale host sitting in a row of real data.
+ * Only reading the data closes that one — see {@link IMAGE_CDN_HOSTS}.
  *
  * `default-src` must NEVER be added here: it is the fallback for script, style,
  * font, frame, worker and manifest fetches, so enforcing it would enforce the
@@ -97,8 +106,9 @@ export const ENFORCED_CSP_DIRECTIVES = ["img-src", "connect-src"] as const;
  * has been previewing.
  *
  * @param dev - When true (i.e. `next dev`), `'unsafe-eval'` is added to
- *   `script-src` for HMR/turbopack. Production omits it so the observed
- *   report-only violations reflect the real deployed policy.
+ *   `script-src` for HMR/turbopack, which the production bundle does not need.
+ *   Both headers are built from this same table, so a dev-only relaxation can
+ *   never leak into what the deployed policy enforces.
  */
 function contentSecurityPolicyDirectives({
   dev,
@@ -125,20 +135,21 @@ function contentSecurityPolicyDirectives({
   ];
 }
 
-function serialize(directives: Array<[string, string[]]>): string {
+function serializeDirectives(directives: Array<[string, string[]]>): string {
   return directives.map(([name, values]) => `${name} ${values.join(" ")}`).join("; ");
 }
 
 /** The full target policy, for the report-only header. */
 export function buildContentSecurityPolicy({ dev }: { dev: boolean }): string {
-  return serialize(contentSecurityPolicyDirectives({ dev }));
+  return serializeDirectives(contentSecurityPolicyDirectives({ dev }));
 }
+
+const ENFORCED: ReadonlySet<string> = new Set(ENFORCED_CSP_DIRECTIVES);
 
 /** The blocking subset: {@link ENFORCED_CSP_DIRECTIVES}, verbatim from the table. */
 export function buildEnforcedContentSecurityPolicy({ dev }: { dev: boolean }): string {
-  const enforced: ReadonlySet<string> = new Set(ENFORCED_CSP_DIRECTIVES);
-  return serialize(
-    contentSecurityPolicyDirectives({ dev }).filter(([name]) => enforced.has(name)),
+  return serializeDirectives(
+    contentSecurityPolicyDirectives({ dev }).filter(([name]) => ENFORCED.has(name)),
   );
 }
 

