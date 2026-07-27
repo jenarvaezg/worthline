@@ -3,6 +3,8 @@
 import type { UIMessage } from "ai";
 import { Streamdown } from "streamdown";
 
+import { withoutPublicHoldingIds } from "./holding-id-prose";
+
 /**
  * Assistant replies arrive as markdown (bold, lists, headings, tables, code)
  * over an AI SDK stream, so we render them with streamdown (#1047): it closes
@@ -50,14 +52,30 @@ const ASSISTANT_MARKDOWN_COMPONENTS = {
  * One text part of a chat turn. The assistant's prose is rendered as markdown;
  * the user's turn stays literal text in its marginalia paragraph — we never
  * reinterpret what the user typed as markup (#1047).
+ *
+ * The assistant's prose also never shows a public holding id (#1263): it is
+ * machinery, it says nothing to the reader, and printing it is how an invented id
+ * reached the user dressed as a verified fact. `holdingLabels` names the ones this
+ * conversation read; the rest become a neutral marker. Sibling of the no-images
+ * rule above — narrow, verifiable, and applied to the assistant only.
  */
 export function AssistantTextPart({
   role,
   text,
+  holdingLabels,
 }: {
   role: UIMessage["role"];
   text: string;
+  holdingLabels?: ReadonlyMap<string, string>;
 }) {
-  if (role === "assistant") return <AssistantMarkdown>{text}</AssistantMarkdown>;
+  if (role === "assistant") {
+    return (
+      <AssistantMarkdown>
+        {withoutPublicHoldingIds(text, holdingLabels ?? EMPTY_HOLDING_LABELS)}
+      </AssistantMarkdown>
+    );
+  }
   return <p>{text}</p>;
 }
+
+const EMPTY_HOLDING_LABELS: ReadonlyMap<string, string> = new Map();

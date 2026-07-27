@@ -39,10 +39,14 @@ async function seededStore() {
   return store;
 }
 
-function toolsOver(agentView: AgentViewReadStore) {
+function toolsOver(agentView: AgentViewReadStore, groundedHoldingIds: string[] = []) {
   return createChatTools({
     runWithStore: (run) => run({ agentView }),
     asOf: AS_OF,
+    // What the route seeds from the conversation's own tool outputs (#1263). A
+    // fixture that hands an id straight to a write tool is, to the guard, a model
+    // inventing one — so a test about another boundary says where its id came from.
+    groundedHoldingIds,
   });
 }
 
@@ -460,6 +464,7 @@ describe("createChatTools · propose_reconstruction (#1053)", () => {
     );
     const tools = createChatTools({
       asOf: AS_OF,
+      groundedHoldingIds: [holding?.publicId ?? ""],
       runWithStore: (run) =>
         run({
           agentView: store.agentView,
@@ -582,6 +587,7 @@ describe("createChatTools · propose_holding_removal (#1106)", () => {
           workspace: store.workspace,
         }),
       asOf: AS_OF,
+      groundedHoldingIds: [publicId],
     });
 
     const result = await tools["propose_holding_removal"]?.execute?.(
@@ -605,7 +611,7 @@ describe("createChatTools · propose_holding_removal (#1106)", () => {
 describe("createChatTools · raise_maintainer_alert (#1050)", () => {
   it("reports the alert as unavailable when no raise callback is bound", async () => {
     const store = await seededStore();
-    const tools = toolsOver(store.agentView);
+    const tools = toolsOver(store.agentView, ["wl_hld_x"]);
 
     const result = await tools["raise_maintainer_alert"]?.execute?.(
       { holdingId: "wl_hld_x", category: "infidelity", summary: "algo huele mal" },
@@ -625,6 +631,10 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
     const tools = createChatTools({
       runWithStore: (run) => run({ agentView: store.agentView }),
       asOf: AS_OF,
+      // Grounded but no longer resolvable — a holding the conversation surfaced and
+      // that has since gone. It is the state this test needs: the payload records a
+      // null trace with a reason instead of inventing the arithmetic.
+      groundedHoldingIds: ["wl_hld_unknown"],
       raiseMaintainerAlert: async (alert) => {
         raised.push(alert);
         return {
@@ -682,6 +692,7 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
     const tools = createChatTools({
       runWithStore: (run) => run({ agentView: store.agentView }),
       asOf: AS_OF,
+      groundedHoldingIds: ["wl_hld_x"],
       raiseMaintainerAlert: async () => null,
     });
 
@@ -864,8 +875,16 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     );
   }
 
-  function toolsWithEvidence(store: WorthlineStore, unvalidatedEvidence = true) {
+  async function toolsWithEvidence(
+    store: WorthlineStore,
+    unvalidatedEvidence = true,
+    alsoGrounded: string[] = [],
+  ) {
     return createChatTools({
+      // This block is about the evidence frontier, not about provenance (#1263):
+      // its fixtures read the id table directly, so they declare those ids as
+      // already surfaced.
+      groundedHoldingIds: [...Object.values(await publicIds(store)), ...alsoGrounded],
       runWithStore: (run) =>
         run({
           agentView: store.agentView,
@@ -920,7 +939,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 
   it.each(WHITELIST_TOOLS)("keeps %s working in that same turn", async (name) => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store);
+    const tools = await toolsWithEvidence(store);
 
     const result = (await tools[name]?.execute?.(
       WHITELIST_ARGS[name]!(await publicIds(store)) as never,
@@ -935,7 +954,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     WHITELIST_TOOLS,
   )("spends the turn's single proposal slot when %s succeeds", async (name) => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store);
+    const tools = await toolsWithEvidence(store);
     const ids = await publicIds(store);
 
     const first = (await tools[name]?.execute?.(
@@ -1002,7 +1021,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 
   it("does not spend the cap on a builder validation error", async () => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store);
+    const tools = await toolsWithEvidence(store);
 
     const rejected = (await tools["propose_holding"]?.execute?.(
       { family: "stored", instrument: "current_account", name: "" },
@@ -1018,9 +1037,11 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 
   it("gives the slot back when the builder throws", async () => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store);
+    // A holding the conversation surfaced and that no longer resolves — a deleted
+    // one. Since #1263 that is the only way past the evidence gate into a throw:
+    // an id nothing ever surfaced is refused before resolution is even attempted.
+    const tools = await toolsWithEvidence(store, true, ["wl_hld_nope"]);
 
-    // An unknown id makes the id resolution throw, past the gate.
     await expect(
       tools["propose_correction"]?.execute?.(
         { correction: { kind: "edit_config", name: "x" }, holdingId: "wl_hld_nope" },
@@ -1081,7 +1102,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
    */
   it("budgets a baja without moving it to the rejected side", async () => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store);
+    const tools = await toolsWithEvidence(store);
     const ids = await publicIds(store);
 
     // Not rejected outright — the class is unchanged, the proposal is prepared…
@@ -1109,7 +1130,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     // own error — which is precisely why a restoration can never demonstrate the
     // cap by itself: a builder failure rightly gives the slot back. What matters
     // here is that the gate did NOT reject it.
-    const fresh = toolsWithEvidence(store);
+    const fresh = await toolsWithEvidence(store);
     const allowed = (await fresh["propose_holding_restoration"]?.execute?.(
       { holdingIds: [ids["cuenta"]] } as never,
       toolCallContext(),
@@ -1119,7 +1140,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 
     // And with the turn's slot already spent, it is capped — so it really does go
     // through the budget wrapper rather than around it.
-    const spent = toolsWithEvidence(store);
+    const spent = await toolsWithEvidence(store);
     expect(
       await spent["propose_holding"]?.execute?.(
         { ...CUENTA } as never,
@@ -1135,7 +1156,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
 
   it("leaves the trash family uncapped on an ordinary turn", async () => {
     const store = await workspaceStore();
-    const tools = toolsWithEvidence(store, false);
+    const tools = await toolsWithEvidence(store, false);
     const ids = await publicIds(store);
 
     // The cap belongs to the boundary, not to the tool: with no unvalidated
@@ -1183,6 +1204,129 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     const alta = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
     expect(alta).toMatchObject({ proposalType: "holding_creation" });
   });
+});
+
+/**
+ * Holding-id provenance (#1263): an id that reaches a write came out of a read.
+ *
+ * The production incident, end to end — the model announced one id, then another
+ * «he verificado los datos», and called a write tool with a string it had made up.
+ */
+describe("createChatTools · holding-id provenance (#1263)", () => {
+  it(
+    "hands the model each holding's id in the compact context",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+
+      const context = (await tools["get_financial_context"]?.execute?.(
+        {},
+        toolCallContext(),
+      )) as { holdings: Array<{ id: string; label: string }> };
+
+      // Without this, a write needs an id the always-first read never showed —
+      // which is the gap the model filled with its own monologue.
+      expect(context.holdings.length).toBeGreaterThan(0);
+      for (const holding of context.holdings) {
+        expect(holding.id, holding.label).toMatch(/^wl_hld_[0-9a-f]{32}$/);
+      }
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it(
+    "refuses a write whose id no read surfaced, without opening the store",
+    async () => {
+      const store = await seededStore();
+      let storeReads = 0;
+      const tools = createChatTools({
+        runWithStore: (run) => {
+          storeReads += 1;
+          return run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            liabilities: store.liabilities,
+          });
+        },
+        asOf: AS_OF,
+      });
+
+      // The exact string the pool model sent to a write tool.
+      const result = (await tools["propose_correction"]?.execute?.(
+        {
+          correction: { kind: "edit_config", name: "x" },
+          holdingId: "wl_hld_mortgage_id_placeholder_need_to_find_it",
+        },
+        toolCallContext(),
+      )) as { error?: string; message?: string };
+
+      expect(result?.error).toBe("ungrounded_holding_id");
+      expect(result?.message).toMatch(/identificador/);
+      // It never reached id resolution, so the turn does not die on an internal
+      // error the user has to read — and nothing was written.
+      expect(storeReads).toBe(0);
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it(
+    "refuses an ungrounded id on the maintainer alert too",
+    async () => {
+      const store = await seededStore();
+      let raised = 0;
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        raiseMaintainerAlert: async () => {
+          raised += 1;
+          return null;
+        },
+      });
+
+      const result = (await tools["raise_maintainer_alert"]?.execute?.(
+        { holdingId: "wl_hld_invented", category: "infidelity", summary: "x" },
+        toolCallContext(),
+      )) as { error?: string };
+
+      expect(result?.error).toBe("ungrounded_holding_id");
+      expect(raised).toBe(0);
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it(
+    "lets the write through once a read in the same turn surfaced the id",
+    async () => {
+      const store = await seededStore();
+      const tools = createChatTools({
+        runWithStore: (run) =>
+          run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            liabilities: store.liabilities,
+          }),
+        asOf: AS_OF,
+      });
+
+      // The honest order, with no seeded history: read first, propose after.
+      const context = (await tools["get_financial_context"]?.execute?.(
+        {},
+        toolCallContext(),
+      )) as { holdings: Array<{ id: string }> };
+      const holdingId = context.holdings[0]?.id;
+
+      const result = (await tools["propose_correction"]?.execute?.(
+        { correction: { kind: "edit_config", name: "Renombrado" }, holdingId },
+        toolCallContext(),
+      )) as { error?: string };
+
+      // Whatever the builder makes of it, the gate is not what stopped it.
+      expect(result?.error).not.toBe("ungrounded_holding_id");
+    },
+    SEED_TIMEOUT_MS,
+  );
 });
 
 /** Execute a tool tolerating a builder that throws on fixture-empty args. */

@@ -23,7 +23,9 @@ questions actually found are both in the class that code closes and a better
 model only makes rarer: the model asked for a bulk import from rows pasted into
 the chat, which the unvalidated-evidence frontier rejects and routes, and it
 built a proposal around an identifier no read had surfaced, which is a server-side
-invariant to enforce rather than a behaviour to hope for. A frontier model lowers
+invariant to enforce rather than a behaviour to hope for — and now is one:
+`holding-id-provenance.ts` grounds every id a read answers and refuses a write the
+ids nothing grounded (#1263). A frontier model lowers
 the frequency of both; it converts neither into a boundary. Paying per-turn for a
 lower frequency, while the boundary itself is still missing, buys the weaker half
 of the same guarantee.
@@ -76,5 +78,10 @@ path's cost stays flat and the work goes into the frontiers.
   restating them, so a widened frontier cannot leave the measurement behind.
 - A committed pool mark from before this dimension existed states a reading score
   and nothing about writes; refreshing it is a real re-run, not an edit.
-- The write-path failures the gate finds are ticket material for the frontiers
-  (#1263 for identifier provenance), not an argument to change models.
+- The write-path failures the gate finds are ticket material for the frontiers,
+  not an argument to change models: the identifier one became the provenance
+  invariant (#1263) three hours after the gate reproduced it.
+- The eval graders keep measuring the MODEL, not the boundary: a turn that points a
+  write at an invented id still scores as one, even though production now refuses
+  it before the tool body runs. A gate that only recorded what got through would
+  stop being able to tell a disciplined model from a guarded one.

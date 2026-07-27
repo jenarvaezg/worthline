@@ -373,8 +373,38 @@ function turnsOf(call: { prompt: readonly { role: string }[] }): string {
   return JSON.stringify(call.prompt.filter((message) => message.role !== "system"));
 }
 
+/**
+ * Fake but WELL-FORMED public holding ids: prefix + 32 lowercase hex, the shape
+ * `createAgentViewPublicId` mints. Since #1263 the shape matters in a fixture — a
+ * read can only ground an id worthline could have minted.
+ */
+const FAKE_LOAN_HOLDING_ID = `wl_hld_${"a1b2c3d4".repeat(4)}`;
+const FAKE_HOLDING_ID = `wl_hld_${"9f8e7d6c".repeat(4)}`;
+
 function userMessage(text: string) {
   return { id: "m1", role: "user", parts: [{ type: "text", text }] };
+}
+
+/**
+ * An earlier turn where worthline's own read surfaced a holding, which is what
+ * grounds an id for a later write (#1263). Without it a write tool is refused
+ * before its body runs, so a test about any OTHER boundary has to say where the
+ * model got its id — exactly as a real conversation does.
+ */
+function groundedHoldingHistory(holdingId: string) {
+  return {
+    id: "a-read",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-get_financial_context",
+        toolCallId: "call-read",
+        state: "output-available",
+        input: {},
+        output: { holdings: [{ id: holdingId, label: "Hipoteca", object: "holding" }] },
+      },
+    ],
+  };
 }
 
 beforeAll(async () => {
@@ -1237,7 +1267,7 @@ describe("POST /api/chat", () => {
 
   it("rejects an import when a validated document is only in history (#1248)", async () => {
     const model = proposeToolModel("propose_reconstruction", {
-      holdingId: "wl_hld_x",
+      holdingId: FAKE_HOLDING_ID,
       rows: [{ balanceMinor: 100, date: "2026-05-08" }],
     });
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
@@ -1248,6 +1278,7 @@ describe("POST /api/chat", () => {
         [
           userMessage("mira esto"),
           validatedHistory,
+          groundedHoldingHistory(FAKE_HOLDING_ID),
           { id: "u2", role: "user", parts: [{ type: "text", text: "reconstruye esto" }] },
         ],
         { contents: JUNK_SHEET, fileName: "estados.csv" },
@@ -1607,7 +1638,7 @@ describe("POST /api/chat", () => {
       alert: {
         id: "alert-1",
         workspaceId: "ws-ana",
-        holdingId: "wl_hld_loan",
+        holdingId: FAKE_LOAN_HOLDING_ID,
         category: "infidelity",
         status: "open",
         occurrenceCount: 1,
@@ -1626,7 +1657,7 @@ describe("POST /api/chat", () => {
       resolvedModel(
         "google",
         maintainerAlertModel({
-          holdingId: "wl_hld_loan",
+          holdingId: FAKE_LOAN_HOLDING_ID,
           category: "infidelity",
           summary: "El saldo pintado no coincide con el recomputado.",
         }),
@@ -1634,7 +1665,12 @@ describe("POST /api/chat", () => {
     ]);
 
     const response = await POST(
-      chatRequest({ messages: [userMessage("el préstamo pinta mal")] }),
+      chatRequest({
+        messages: [
+          userMessage("el préstamo pinta mal"),
+          groundedHoldingHistory(FAKE_LOAN_HOLDING_ID),
+        ],
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -1647,7 +1683,7 @@ describe("POST /api/chat", () => {
     const call = vi.mocked(raiseMaintainerAlert).mock.calls[0]![0];
     expect(call.workspaceId).toBe("ws-ana");
     expect(call.category).toBe("infidelity");
-    expect(call.holdingId).toBe("wl_hld_loan");
+    expect(call.holdingId).toBe(FAKE_LOAN_HOLDING_ID);
     expect(call.payload).toMatchObject({
       category: "infidelity",
       summary: "El saldo pintado no coincide con el recomputado.",
@@ -1661,7 +1697,7 @@ describe("POST /api/chat", () => {
       resolvedModel(
         "google",
         maintainerAlertModel({
-          holdingId: "wl_hld_loan",
+          holdingId: FAKE_LOAN_HOLDING_ID,
           category: "infidelity",
           summary: "x",
         }),
@@ -1702,7 +1738,12 @@ describe("POST /api/chat", () => {
     ]);
 
     const response = await POST(
-      chatRequest({ messages: [userMessage("esto está mal escrito")] }),
+      chatRequest({
+        messages: [
+          userMessage("esto está mal escrito"),
+          groundedHoldingHistory(holdingId as string),
+        ],
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -1710,6 +1751,48 @@ describe("POST /api/chat", () => {
     expect(streamed).toContain("propose_correction");
     // The tool output — a superficie C proposal in "solo-desde-hoy" mode.
     expect(streamed).toContain("solo-desde-hoy");
+  });
+
+  /**
+   * The production incident of #1263: the same turn, with the id invented instead of
+   * read. Nothing in the conversation ever surfaced it, so no proposal is prepared.
+   */
+  it("refuses a proposal whose holding id no read surfaced (#1263)", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-ana",
+      dbUrl: "libsql://wl-ana.turso.io",
+      token: "token-ana",
+    });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel(
+        "google",
+        proposeCorrectionModel({
+          correction: { kind: "edit_config", name: "Nombre corregido" },
+          holdingId: FAKE_HOLDING_ID,
+          summary: "Renombrar el holding",
+        }),
+      ),
+    ]);
+
+    const response = await POST(
+      chatRequest({ messages: [userMessage("cambia el nombre de mi hipoteca")] }),
+    );
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("ungrounded_holding_id");
+    expect(streamed).not.toContain("solo-desde-hoy");
+    // Logged, because the frequency of the invention is the signal for ADR 0067.
+    expect(info).toHaveBeenCalledWith(
+      "Assistant pointed a write at an id it never read",
+      {
+        tool: "propose_correction",
+        ungroundedHoldingIds: [FAKE_HOLDING_ID],
+      },
+    );
+    info.mockRestore();
   });
 
   it("streams a reconstruct proposal part through propose_reconstruction (#1053)", async () => {
@@ -1762,7 +1845,10 @@ describe("POST /api/chat", () => {
 
     const response = await POST(
       chatRequest({
-        messages: [userMessage("reconstruye mi préstamo con este extracto")],
+        messages: [
+          userMessage("reconstruye mi préstamo con este extracto"),
+          groundedHoldingHistory(holdingId as string),
+        ],
       }),
     );
 

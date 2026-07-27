@@ -93,6 +93,49 @@ describe("AssistantTextPart markdown rendering (#1047)", () => {
     });
   });
 
+  /**
+   * The other half of #1263: the id is machinery, and printing it is how an
+   * invention reached the user dressed as «he verificado los datos».
+   */
+  describe("no public holding ids in the prose (#1263)", () => {
+    const READ_ID = `wl_hld_${"c5d97d4b".repeat(4)}`;
+    const labels = new Map([[READ_ID, "Préstamos Revolut"]]);
+
+    test("names the holding where the model wrote its id", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart
+          holdingLabels={labels}
+          role="assistant"
+          text={`El ID de tu préstamo es \`${READ_ID}\`.`}
+        />,
+      );
+
+      expect(html).not.toContain("wl_hld_");
+      expect(html).toContain("Préstamos Revolut");
+    });
+
+    test("replaces an id nobody read with a neutral marker", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart
+          holdingLabels={labels}
+          role="assistant"
+          text={`He verificado los datos y el ID correcto es wl_hld_${"3d440801".repeat(4)}.`}
+        />,
+      );
+
+      expect(html).not.toContain("wl_hld_");
+      expect(html).toContain("identificador interno");
+    });
+
+    test("leaves the user's own text literal, ids included", () => {
+      const html = renderToStaticMarkup(
+        <AssistantTextPart holdingLabels={labels} role="user" text={READ_ID} />,
+      );
+
+      expect(html).toContain(READ_ID);
+    });
+  });
+
   test("keeps the user turn as a plain-text paragraph", () => {
     const html = renderToStaticMarkup(<AssistantTextPart role="user" text={markdown} />);
 
