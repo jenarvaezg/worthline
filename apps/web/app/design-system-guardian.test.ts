@@ -488,7 +488,13 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // Proposals and the attachment reading are paper entries opened by a heavy
     // rule — the slice's core demand: "sin heredar tarjeta". No perimeter
     // border, no radius, no paper fill.
-    for (const selector of [".assistantProposal", ".assistantAttachmentPreview"]) {
+    for (const selector of [
+      ".assistantProposal",
+      ".assistantAttachmentPreview",
+      // The app contradicting a faked proposal ceremony (#1262) is set apart the
+      // same way, so it cannot drift into a card either.
+      ".assistantFakeProposal",
+    ]) {
       const entry = assistantRule(selector);
       expect(entry?.declarations.get("border-top"), selector).toBe("var(--rule-heavy)");
       expect(entry?.declarations.get("border"), selector).toBeUndefined();

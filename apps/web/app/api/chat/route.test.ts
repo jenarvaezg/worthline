@@ -2126,6 +2126,67 @@ describe("historial envenenado por una tool call sin resultado (#1260)", () => {
 });
 
 /**
+ * #1262: the model wrote the whole proposal ceremony in prose — «He preparado la
+ * propuesta…» plus a bulleted list and a request to confirm — without calling any
+ * tool. Nothing was written, and the user answered «Confirmo» twice.
+ */
+describe("ceremonia de propuesta falsificada (#1262)", () => {
+  const CLAIM = "He preparado la propuesta de corrección para el saldo de hoy.";
+
+  it("le dice al modelo, en su propio historial, que no preparó nada", async () => {
+    const model = simpleAnswerModel("segunda respuesta");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("actualiza el saldo del préstamo"),
+          { id: "m2", role: "assistant", parts: [{ type: "text", text: CLAIM }] },
+          { id: "m3", role: "user", parts: [{ type: "text", text: "Confirmo" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("no llamaste a ninguna tool propose_*");
+    // The prose the user read stays; only the correction is added.
+    expect(turns).toContain(CLAIM);
+  });
+
+  it("no corrige el turno que sí llamó a la tool de propuesta", async () => {
+    const model = simpleAnswerModel("respuesta normal");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("actualiza el saldo del préstamo"),
+          {
+            id: "m2",
+            role: "assistant",
+            parts: [
+              { type: "text", text: CLAIM },
+              {
+                type: "tool-propose_correction",
+                toolCallId: "call-propuesta",
+                state: "output-available",
+                input: { holdingId: "wl_hld_1" },
+                output: { proposalId: "p1", mode: "declare_balance" },
+              },
+            ],
+          },
+          { id: "m3", role: "user", parts: [{ type: "text", text: "Confirmo" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("no llamaste a ninguna tool");
+  });
+});
+
+/**
  * #1260, second half: the browser re-sends every tool result it has, and the
  * readings are big — measured on the seeded store, `get_snapshot_history` with
  * per-position rows is 113 773 characters and 42 550 with summary rows, against a

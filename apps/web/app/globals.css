@@ -8279,6 +8279,14 @@ td.rowActions > * {
   color: var(--gold);
 }
 
+/* El desmentido de una ceremonia falsa (#1262) se separa de la prosa del modelo
+   con la misma regla gruesa que abre una propuesta: es la app hablando, no el
+   modelo. Sin borde perimetral, radio ni fondo — canon §4. */
+.assistantFakeProposal {
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+
 /* La propuesta es una entrada de papel abierta por regla gruesa, no una
    tarjeta con borde perimetral, radio y fondo (#911, «sin heredar tarjeta»).
    Los cuatro estados del ciclo (pendiente/aplicada/bloqueada/descartada) siguen

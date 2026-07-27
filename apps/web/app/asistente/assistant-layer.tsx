@@ -10,6 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -56,6 +57,10 @@ import {
   discardEarlyRepaymentProposalAction,
 } from "./early-repayment-proposal-action";
 import type { EarlyRepaymentProposal } from "./early-repayment-proposal-contract";
+import {
+  FABRICATED_PROPOSAL_NOTE,
+  messagesWithFabricatedProposal,
+} from "./fabricated-proposal";
 import {
   confirmHoldingCreationProposalAction,
   discardHoldingCreationProposalAction,
@@ -1415,6 +1420,24 @@ function PropertyValuationProposalCard({
 }
 
 /**
+ * The app contradicting its own assistant (#1262).
+ *
+ * Printed when a turn CLAIMS to have prepared a proposal and carries none. It is
+ * the app speaking, not the model, so it is set apart the way a proposal is — a
+ * paper entry opened by a heavy rule (canon §4) — and labelled in words, never by
+ * colour alone (canon §6: oro = aviso).
+ */
+function FabricatedProposalNote() {
+  return (
+    <div className="assistantFakeProposal" role="note">
+      <p className="assistantWarning">
+        <strong>Aviso de worthline.</strong> {FABRICATED_PROPOSAL_NOTE}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The rendered conversation turns — message parts and the proposal cards they
  * unfold into. Extracted so the floating panel (#628) and the full-screen
  * onboarding surface (#1168) render the SAME turns with zero duplication: every
@@ -1426,13 +1449,21 @@ function ConversationParts({
   mutationsDisabled,
   mutationsDisabledMessage,
   endRef,
+  busy,
 }: {
   messages: UIMessage[];
   error: Error | undefined;
   mutationsDisabled: boolean;
   mutationsDisabledMessage: string;
   endRef: React.RefObject<HTMLDivElement | null>;
+  busy: boolean;
 }) {
+  // Memoised because the panel re-renders on every keystroke in the composer, and
+  // this reads every text part of every turn.
+  const fabricated = useMemo(
+    () => messagesWithFabricatedProposal(messages, busy),
+    [messages, busy],
+  );
   return (
     <>
       {messages.map((message) => (
@@ -1599,6 +1630,7 @@ function ConversationParts({
             }
             return null;
           })}
+          {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
         </div>
       ))}
       {error ? (
@@ -1931,6 +1963,7 @@ export default function AssistantLayer({
                 messages={messages}
                 mutationsDisabled={mutationsDisabled}
                 mutationsDisabledMessage={mutationsDisabledMessage}
+                busy={busy}
               />
             </ProposalAppliedContext.Provider>
           </AssistantMessages>
@@ -2047,6 +2080,7 @@ export default function AssistantLayer({
           messages={messages}
           mutationsDisabled={mutationsDisabled}
           mutationsDisabledMessage={mutationsDisabledMessage}
+          busy={busy}
         />
       </AssistantMessages>
 
