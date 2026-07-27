@@ -70,10 +70,20 @@ const POSITIVE_EXPECTED = {
 };
 
 describe("extractor golden manifest", () => {
-  it("covers every required scenario exactly once", () => {
+  /**
+   * Rewritten by #1254. It used to demand a fixture for every scenario in the
+   * catalog, and that demand is what rewarded the lie: five image scenarios had no
+   * capture, so five entries were declared pointing at files nobody had, and the
+   * test went green on a set that could not run. Coverage of a scenario is a
+   * capture on disk, never a line in an array — so what is pinned now is that no
+   * fixture claims a scenario twice and none claims one the catalog does not know.
+   */
+  it("grades each scenario it declares at most once, and none the catalog lacks", () => {
     const scenarios = EXTRACTOR_GOLDEN_FIXTURES.map((fixture) => fixture.scenario);
-    // Compare the full list, not a Set: a duplicated scenario must fail too.
-    expect([...scenarios].sort()).toEqual([...EXTRACTOR_GOLDEN_SCENARIOS].sort());
+    expect(new Set(scenarios).size).toBe(scenarios.length);
+    for (const scenario of scenarios) {
+      expect(EXTRACTOR_GOLDEN_SCENARIOS).toContain(scenario);
+    }
   });
 
   it("keeps every fixture id unique across the three tracks", () => {
@@ -87,14 +97,48 @@ describe("extractor golden manifest", () => {
     expect(ids.length).toBe(new Set(ids).size);
   });
 
-  it("keeps private fixtures under .local/extractor-golden", () => {
-    for (const fixture of EXTRACTOR_GOLDEN_FIXTURES.filter(
-      (candidate) => candidate.storage === "local",
-    )) {
-      expect(resolveFixtureExpectedPath(fixture)).toMatch(
-        new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
-      );
-    }
+  /**
+   * The #1254 guarantee: a fixture the manifest DECLARES is a fixture a run can
+   * actually read. Nine entries once pointed at `.local/extractor-golden/`, a
+   * directory that existed nowhere — so every full run came back `incomplete` with
+   * exit 1, the merge gate of #1243 was unrunnable by anyone, and the set read as
+   * six graded image scenarios where there was one.
+   *
+   * Adding a private capture must break this test on purpose: declaring one means
+   * the full gate needs data git does not ship again, and that belongs in the README
+   * table next to it — the declaration and its documentation move together or the
+   * manifest starts overpromising a second time.
+   */
+  it("declares only fixtures git ships, so a full run needs no private capture", () => {
+    const declared = [
+      ...EXTRACTOR_GOLDEN_FIXTURES,
+      ...BALANCE_SERIES_GOLDEN_FIXTURES,
+      ...POSITIONS_MOVEMENTS_GOLDEN_FIXTURES,
+    ];
+    expect(
+      declared.filter((fixture) => fixture.storage !== "committed").map((f) => f.id),
+    ).toEqual([]);
+  });
+
+  it("keeps a private fixture under .local/extractor-golden when one is declared", () => {
+    // Tested against a fixture built here rather than by iterating the manifest: the
+    // manifest declares none today (#1254) and a loop over an empty list asserts
+    // nothing, so the machinery a returning private capture depends on would go
+    // untested exactly while it is unused.
+    const local = {
+      expectedFile: "mobile.expected.json",
+      id: "mobile",
+      imageFile: "mobile.png",
+      scenario: "mobile",
+      storage: "local",
+    } as const;
+
+    expect(resolveFixtureExpectedPath(local)).toMatch(
+      new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
+    );
+    expect(resolveFixtureImagePath(local)).toMatch(
+      new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
+    );
   });
 
   it("ships every committed capture and parses its expected file with its own track's parser", async () => {
@@ -163,19 +207,30 @@ describe("extractor golden manifest", () => {
     }
   });
 
-  it("covers every balance-series scenario exactly once", () => {
+  it("grades each balance-series scenario at most once, and none the catalog lacks", () => {
     const scenarios = BALANCE_SERIES_GOLDEN_FIXTURES.map((fixture) => fixture.scenario);
-    expect([...scenarios].sort()).toEqual([...BALANCE_SERIES_GOLDEN_SCENARIOS].sort());
+    expect(new Set(scenarios).size).toBe(scenarios.length);
+    for (const scenario of scenarios) {
+      expect(BALANCE_SERIES_GOLDEN_SCENARIOS).toContain(scenario);
+    }
   });
 
   it("keeps every real bank document private under .local", () => {
-    for (const fixture of BALANCE_SERIES_GOLDEN_FIXTURES.filter(
-      (candidate) => candidate.storage === "local",
-    )) {
-      expect(resolveBalanceSeriesExpectedPath(fixture)).toMatch(
-        new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
-      );
-    }
+    // Same shape as the positions track above: the private PDFs are not declared
+    // today (#1254), so the invariant is asserted against a fixture built here.
+    const local = {
+      expectedFile: "debt-statement.expected.json",
+      id: "debt-statement",
+      scenario: "debt-statement",
+      sourceFile: "debt-statement.pdf",
+      storage: "local",
+    } as const;
+    expect(resolveBalanceSeriesExpectedPath(local)).toMatch(
+      new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
+    );
+    expect(resolveBalanceSeriesSourcePath(local)).toMatch(
+      new RegExp(`${localExtractorGoldenRoot().replaceAll("/", "\\/")}/`),
+    );
     // Only synthetic renders may be committed: a real PDF statement never is.
     for (const fixture of BALANCE_SERIES_GOLDEN_FIXTURES.filter(
       (candidate) => candidate.storage === "committed",

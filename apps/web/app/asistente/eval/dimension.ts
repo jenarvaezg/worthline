@@ -12,5 +12,13 @@
  * 88% on a day it faked a proposal card in prose. One blended ratio is how that
  * stayed invisible, so the dimension travels with every question and every verdict
  * is computed per dimension. See ADR 0067.
+ *
+ * `attachments` (#1254) is the third for the same reason rather than a new one: a turn
+ * that carries a DOCUMENT is where the product's money moves — it is the shape of the
+ * production incident PRD #1241 exists for — and behaviour there does not follow from
+ * behaviour on a typed question. Folded into `tool-discipline` it would be diluted by
+ * it and would dilute it back, and the comparison across runs would stop meaning the
+ * same thing. Admission requires every dimension, so a model that behaves over a
+ * conversation and misbehaves over a file is not averaged into the pool.
  */
-export type EvalDimension = "reading" | "tool-discipline";
+export type EvalDimension = "reading" | "tool-discipline" | "attachments";

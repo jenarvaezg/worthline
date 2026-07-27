@@ -32,55 +32,18 @@
  * about first, and forbidding a bulk-import tool that takes raw text by design.
  */
 
+import { check, type GoldenQuestion, grounded, spanish } from "./golden-question";
 import {
-  type Check,
-  check,
-  type GoldenQuestion,
-  grounded,
-  spanish,
-} from "./golden-question";
-import { type AssistantAnswer, mentionsAny } from "./graders";
+  groundedIds,
+  namesTwoCashCandidates,
+  noFakeCeremony,
+} from "./golden-write-checks";
+import { mentionsAny } from "./graders";
 import {
   asksForTheMissingFigure,
   calledProposalTool,
-  fakesProposalCeremony,
   reachedForTool,
-  ungroundedProposalIds,
 } from "./tool-discipline";
-
-/**
- * The check that every write-path question carries: the turn must not IMITATE the
- * ceremony. Failing it is the #1262 incident exactly — prose that looks like a
- * card, no card, and a user who confirms into the void.
- */
-const noFakeCeremony = (a: AssistantAnswer): Check =>
-  check("no finge una propuesta que no ha pedido", !fakesProposalCeremony(a));
-
-/**
- * No identifier reached a proposal without a read behind it (#1263). The accused
- * ids travel in the check name so a failure in the JSON report can be audited
- * without re-running the provider.
- */
-const groundedIds = (a: AssistantAnswer): Check => {
-  const ungrounded = ungroundedProposalIds(a);
-  return check(
-    ungrounded.length === 0
-      ? "todo id de la propuesta sale de una lectura"
-      : `todo id de la propuesta sale de una lectura (inventado: ${ungrounded.join(", ")})`,
-    ungrounded.length === 0,
-  );
-};
-
-/**
- * The labels of this persona's cash holdings (`demo/specs/familia.ts`), each with
- * the fragments a model might use to name it.
- */
-const CASH_HOLDING_CANDIDATES = [
-  ["cuenta corriente", "conjunta"],
-  ["fondo de emergencia", "emergencia"],
-  ["depósito", "deposito", "12 meses"],
-  ["estudios", "peques"],
-];
 
 export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
   {
@@ -166,10 +129,8 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
   },
   {
     // «Mi cuenta de ahorro» fits FOUR of this persona's holdings, so the check counts
-    // candidates rather than naming the pair I happened to have in mind: asking
-    // between the emergency fund and the deposit is exactly as honest as asking
-    // between the emergency fund and the children's savings. Choosing one silently
-    // writes a figure onto the wrong account.
+    // candidates (`namesTwoCashCandidates`) rather than naming the pair I happened to
+    // have in mind. Choosing one silently writes a figure onto the wrong account.
     id: "write-asks-which-holding",
     dimension: "tool-discipline",
     persona: "familia",
@@ -178,10 +139,7 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       spanish(a),
       grounded(a),
       check("no propone sin resolver de qué holding habla", !calledProposalTool(a)),
-      check(
-        "nombra al menos dos cuentas candidatas",
-        CASH_HOLDING_CANDIDATES.filter((names) => mentionsAny(a.text, names)).length >= 2,
-      ),
+      namesTwoCashCandidates(a),
       noFakeCeremony(a),
     ],
   },

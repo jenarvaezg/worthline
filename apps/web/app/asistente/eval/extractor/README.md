@@ -15,26 +15,53 @@ This harness stays **outside CI**. Normal `bun run test` never needs
 |---|---|
 | `apps/web/app/asistente/eval/extractor/fixtures/` | Safe synthetic captures committed to git |
 | `apps/web/app/asistente/eval/extractor/expected/` | Expected JSON for committed fixtures |
-| `.local/extractor-golden/` | Private broker captures + their expected JSON (gitignored) |
+| `.local/extractor-golden/` | Private captures + their expected JSON (gitignored, **none declared today**) |
 
-The manifest in `manifest.ts` covers every required scenario. `--only` takes the **id**
-(second column), not the scenario:
+Every fixture the manifest declares is a file this repo ships, so a full run needs
+nothing but the API key. `--only` takes the **id** (second column), not the scenario:
 
 | Scenario | Fixture id | Storage |
 |---|---|---|
 | `desktop` | `synthetic-baseline` | committed |
 | `payment-screen` | `synthetic-payment-screen` | committed, **negative** (#1247) |
-| `mobile` | `mobile` | private |
-| `reflections` | `reflections` | private |
-| `misaligned-columns` | `misaligned-columns` | private |
-| `ticker-name-ambiguity` | `ticker-name-ambiguity` | private |
-| `thousand-separator` | `thousand-separator` | private (`1.000` vs `1,000`) |
+| `amortization-schedule-screenshot` | `synthetic-amortization-schedule` | committed, balance-series track |
 
-Plus one committed capture on the balance-series track below
-(`synthetic-amortization-schedule`, scenario `amortization-schedule-screenshot`). The
-three committed captures make the vision tracks runnable with nothing but the API
-key — no `.local/extractor-golden/` needed — which is what makes "the extractor evals
-do not regress" verifiable without private data.
+Those three captures are the whole runnable set, which is what makes "the extractor
+evals do not regress" verifiable without private data.
+
+### Uncovered scenarios (#1254)
+
+The manifest used to declare nine more fixtures under `.local/extractor-golden/` — a
+directory that existed in no checkout, in the main repo or in any worktree. The
+consequences were not cosmetic: every full run came back `incomplete` / `REJECTED`
+with exit 1 over absent files, which is permanent noise rather than signal; the merge
+gate #1243 wrote («a human run of the complete set») could not be executed by anyone,
+not for lack of access but because there was nothing to run; and the set read as six
+graded image scenarios when there was one. They were retired rather than left in
+place, and the scenarios they were meant to cover stay in `manifest.ts`'s catalog with
+what a real capture would buy:
+
+| Scenario | What a capture must show | Track |
+|---|---|---|
+| `mobile` | a phone screenshot: narrow column, cropped figures, system chrome | image |
+| `reflections` | a photo of a screen — glare, moiré, partial glare over a figure | image |
+| `misaligned-columns` | a broker table whose columns do not line up under their headers | image |
+| `ticker-name-ambiguity` | a row where the instrument name reads like another ticker | image |
+| `thousand-separator` | both conventions in one capture (`1.000` vs `1,000`) | image |
+| `debt-statement` | a real bank debt statement with dated balances | PDF |
+| `amortization-schedule` | a real amortization schedule (only observed balances graded) | PDF |
+| `portfolio-snapshot` | a real portfolio export, holdings only | XLSX/CSV |
+| `portfolio-with-movements` | the same plus a movements sheet | XLSX |
+
+These are worth having — real degradations are exactly where one vision model differs
+from another, and a synthetic render is cleaner than life. But a fixture is a file,
+never a line in an array: **add the capture first, then the manifest entry**. A
+manifest test fails the moment a non-committed fixture is declared, so the README
+table above and the declaration move together.
+
+Two of the nine need no private data at all and are the cheapest to close: the
+spreadsheet track is deterministic (no API key), so a safe synthetic workbook would
+grade it inside CI, exactly as the synthetic PNGs do for the vision tracks.
 
 ### Negative cases (#1247)
 
@@ -89,20 +116,12 @@ synthetic render is, because since #1243 the same document can arrive as an imag
 - `synthetic-amortization-schedule` — committed PNG (`fixtures/`), scenario
   `amortization-schedule-screenshot`: the same debt document arriving as a screenshot
   instead of a PDF, which is the crossing #1243 exists to make work
-- `debt-statement` — private PDF (`.local/extractor-golden/debt-statement.pdf`)
-- `amortization-schedule` — private PDF (only observed balances are graded, never
-  inferred loan parameters)
 
 The XLSX/CSV **positions + movements** track (`positions_movements` document, PRD
-#1103 S4) is **deterministic** — it needs no API key — but its documents are a real
-portfolio export, so it stays private and outside CI like the others:
-
-- `portfolio-snapshot` — private XLSX (holdings only; graded on the honest
-  `value_only` / `declared_cost` fidelity tiers)
-- `portfolio-with-movements` — private XLSX (holdings + a movements sheet; the linked
-  holdings must reach the `movements` tier)
-
-Its expected JSON grades each holding's `fidelity` tier and the movement count:
+#1103 S4) is **deterministic** — it needs no API key — and declares no fixture today.
+Its grader is still covered in CI by `graders.test.ts`; what is missing is an
+end-to-end reading of a book. Its expected JSON grades each holding's `fidelity` tier
+(`movements` / `declared_cost` / `value_only`) and the movement count:
 
 ```json
 {
@@ -125,13 +144,15 @@ Its expected JSON grades each holding's `fidelity` tier and the movement count:
 
 Decision 9 of the #1241 grilling lifts ADR 0063's exclusion of **positions inside a
 PDF**, and #1243 shipped that path — but the golden set still does not cover the
-crossing: every PDF fixture grades the `balance_series` document, and every positions
-fixture is an image or a spreadsheet. The debt document now crosses formats in both
-directions (private PDFs plus the committed screenshot); positions crosses in code and in
-unit tests only. This harness is still owed a fixture for it — ideally a committed
-synthetic one, since a rendered portfolio PDF needs no real data.
+crossing: no fixture reads positions out of a PDF. The debt document does cross formats
+(the committed screenshot grades `balance_series` from an image); positions crosses in
+code and in unit tests only. This harness is still owed a fixture for it — ideally a
+committed synthetic one, since a rendered portfolio PDF needs no real data.
 
-## Prepare private fixtures
+## Add a private fixture
+
+None are declared today (#1254). To cover one of the private scenarios above, put the
+file on disk **before** declaring it in `manifest.ts`.
 
 Create the local directory:
 
@@ -139,10 +160,15 @@ Create the local directory:
 mkdir -p .local/extractor-golden
 ```
 
-For each private case listed in `manifest.ts`, add:
+Then add, for the scenario you are covering:
 
-- `<id>.png` (or the filename named in the manifest)
+- `<id>.png` (or the `.pdf` / `.xlsx` the manifest entry will name)
 - `<id>.expected.json` with the ground-truth extraction
+
+…and only then the manifest entry, plus its row in the table above. `run.ts` skips a
+declared fixture whose files are absent and the run exits non-zero as **incomplete**,
+which is right for a capture that exists on the reviewer's machine and wrong for one
+that exists nowhere.
 
 Expected JSON uses the same positions contract as production, plus optional
 grading hints:
@@ -227,28 +253,21 @@ bun run eval:extractor -- \
   --output /tmp/extractor-gemini-35.json
 ```
 
-Run a subset while iterating (the JSON report includes `"subset": true`; do not
-treat that verdict as a full admission gate):
-
-```bash
-bun run eval:extractor -- --only synthetic-baseline mobile
-```
-
-Without `.local/extractor-golden/`, the private cases are skipped and the run exits
-non-zero as **incomplete** — by design. To exercise only what git ships (the useful
-loop while working on the seam, e.g. #1243), ask for the committed subset:
-
-```bash
-bun run eval:extractor -- --only \
-  synthetic-baseline synthetic-payment-screen synthetic-amortization-schedule
-```
-
-That subset spans all three verdicts on purpose: a positive positions reading, a positive
-balance-series reading and a negative case — the combination that makes a green run mean
+That is the **full gate**: since #1254 every declared fixture is committed, so the run
+above is complete and can come back green with nothing but the API key. It spans all
+three verdicts on purpose — a positive positions reading, a positive balance-series
+reading and a negative case — which is the combination that makes a green run mean
 something (see the tripwire note above).
 
-That is a `subset` verdict, not a model admission: the full gate still needs a human
-pass over the private captures.
+Run a subset while iterating (the JSON report includes `"subset": true`; do not
+treat that verdict as a model admission):
+
+```bash
+bun run eval:extractor -- --only synthetic-baseline synthetic-payment-screen
+```
+
+If you declare a private fixture, its absence makes the run **incomplete** and exits
+non-zero — by design, and the reason the phantom entries had to go.
 
 Credential: `GOOGLE_GENERATIVE_AI_API_KEY`. Model selection follows production:
 `WORTHLINE_EXTRACTOR_MODEL` from the environment, overridable with `--model`.
@@ -264,20 +283,23 @@ to stdout and, when `--output` is supplied, to that file. It contains:
 - one result per fixture with status (`completed`, `skipped`, `error`), checks,
   and paths;
 - whole-run passed/total counts, ratio, threshold and admission decision;
-- `skipped` count for missing private fixtures;
+- `skipped` count for declared fixtures whose files are absent (zero today);
 - `subset: true` when `--only` narrowed the fixture list (admit verdict not valid
   for model admission).
 
-Default threshold is **100%** — every attempted check must pass. Missing private
-fixtures mark the run incomplete and exit non-zero even if the committed
-synthetic case passes.
+Default threshold is **100%** — every attempted check must pass. A declared fixture
+whose file is missing marks the run incomplete and exits non-zero even if every
+committed capture passes.
 
 ## Reviewing a model change
 
 1. Set `WORTHLINE_EXTRACTOR_MODEL` (or pass `--model`) to the candidate.
-2. Ensure every private fixture exists under `.local/extractor-golden/`.
-3. Run `bun run eval:extractor` and archive the JSON report with the change.
-4. Only merge a model bump when the report is complete and `ADMITTED`.
+2. Run `bun run eval:extractor` and archive the JSON report with the change.
+3. Only merge a model bump when the report is complete and `ADMITTED`.
+
+The gate is runnable by anyone with the API key. What it does NOT cover is the list of
+uncovered scenarios above — read a green run as "the three committed captures did not
+regress", not as "the extractor handles a photographed screen".
 
 Pure grading logic is covered in CI via `graders.test.ts`; no live vision calls.
 `manifest.test.ts` also checks in CI that every committed PNG and expected file is

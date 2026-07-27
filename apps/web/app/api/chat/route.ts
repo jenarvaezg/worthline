@@ -7,15 +7,8 @@ import {
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
-import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
-import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
-import {
-  UNIDENTIFIED_DOCUMENT_MESSAGE,
-  UNSTRUCTURED_SPREADSHEET_MESSAGE,
-  UNSTRUCTURED_VISION_MESSAGE,
-} from "@web/asistente/attachment-types";
-import { describeVisionAttachment } from "@web/asistente/attachment-vision-description";
-import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
+import { readAttachmentTurn } from "@web/asistente/attachment-turn";
+import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "@web/asistente/attachment-types";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
   correctFabricatedProposalClaims,
@@ -474,84 +467,19 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("attachment_too_large", 413);
   }
 
+  // What the document IS, and the lane it travels in, is one seam (#1254) — shared
+  // with the assistant eval so a run grades this behaviour rather than a copy of it.
+  // The route keeps what is about the CALLER: quota, paywall, rate limits, cooldowns.
   let currentPreview: AttachmentPreviewData | null = null;
   let unstructuredAttachment: UnstructuredAttachment | null = null;
   if (attachment) {
-    const fileName = attachment.name.trim();
-    const mimeType = attachment.type.toLowerCase();
-    const extractionInput = {
+    const reading = await readAttachmentTurn({
       bytes: new Uint8Array(await attachment.arrayBuffer()),
-      fileName,
+      fileName: attachment.name,
       mimeType: attachment.type,
-    };
-    const isPdf =
-      mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
-    const isImage = mimeType.startsWith("image/");
-    const isSpreadsheet = !isPdf && !isImage;
-    const visionKind = isPdf ? "pdf" : "image";
-    // The MIME type picks the *transport* only (#1243): one vision seam identifies the
-    // document behind an image or a PDF by its content, while a spreadsheet keeps its
-    // stronger, deterministic, model-free route.
-    const result = isSpreadsheet
-      ? extractSpreadsheetDocument(extractionInput)
-      : await extractDocumentFromVisionAttachment({
-          ...extractionInput,
-          kind: visionKind,
-        });
-    currentPreview = { fileName, result };
-
-    // A readable spreadsheet that is not a positions table becomes
-    // conversational material instead of a dead-end (#865): render the whole
-    // book and let the model describe it — never as validated figures.
-    if (result.status === "unrecognized" && isSpreadsheet) {
-      const text = renderSpreadsheetForContext(extractionInput);
-      if (text) {
-        unstructuredAttachment = { fileName, source: "spreadsheet_grid", text };
-        currentPreview = {
-          fileName,
-          result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
-        };
-      }
-    }
-    // Parity for pixels (#1246): a capture whose document the seam did not identify
-    // had no drain at all, so it died on the card. A SECOND call to the same fixed
-    // model outside the pool says what is on screen, and it enters the turn through
-    // the very same unstructured lane, with the same defenses. Only this branch pays
-    // for it: an identified document — or one identified and read empty
-    // (`empty_reading`) — needs no description, and the user waits for it pre-stream.
-    // `!isSpreadsheet` is not redundant with the reason: the deterministic sheet route
-    // never stamps this discriminant today, and this keeps a future one that did from
-    // sending a workbook to a vision model and clobbering its own rendered grid.
-    if (
-      !isSpreadsheet &&
-      result.status === "unrecognized" &&
-      result.reason === "unidentified_document"
-    ) {
-      const description = await describeVisionAttachment({
-        ...extractionInput,
-        kind: visionKind,
-      });
-      if (description) {
-        unstructuredAttachment = {
-          fileName,
-          source: "vision_description",
-          text: description,
-        };
-        currentPreview = {
-          fileName,
-          result: {
-            message: UNSTRUCTURED_VISION_MESSAGE,
-            reason: "unidentified_document",
-            status: "unrecognized",
-          },
-        };
-      }
-    }
-    // Any other non-valid verdict (unreadable, unrecognized, out of limits) does
-    // NOT end the turn (#1242): the preview card still carries the message on the
-    // ordinary path below, and the conversational model gets the verdict alone —
-    // never content it never read — so it can say what happened, ask what the
-    // document is and offer the manual route instead of a single canned line.
+    });
+    currentPreview = reading.preview;
+    unstructuredAttachment = reading.unstructured;
   }
 
   let eligibleProviders = providers;

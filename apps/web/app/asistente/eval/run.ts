@@ -23,6 +23,11 @@ import {
   shouldStopAfterProviderError,
 } from "./candidate-config";
 import { type Check, GOLDEN_QUESTIONS, type GoldenQuestion } from "./golden";
+import {
+  buildTurnMessages,
+  readGoldenAttachmentTurn,
+  unvalidatedEvidenceFor,
+} from "./golden-turn";
 import type { AssistantAnswer } from "./graders";
 
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
@@ -44,12 +49,18 @@ function suggestedActions(
 async function askAssistant(
   model: LanguageModel,
   persona: StoreTarget & { kind: "demo" },
-  question: string,
+  question: GoldenQuestion,
 ): Promise<AssistantAnswer> {
+  // Read through the production seam, and asserted against the lane the question
+  // declares: a fixture that stopped being unvalidated evidence would make the
+  // frontier checks green for a gate that never engaged.
+  const reading = question.attachment
+    ? await readGoldenAttachmentTurn(question.attachment)
+    : null;
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
-    prompt: question,
+    messages: await buildTurnMessages(question, reading),
     tools: createChatTools({
       // The chat route's own slice, not a copy of it (#1265): the harness used to
       // forward three of six, which left every proposal tool answering
@@ -57,6 +68,11 @@ async function askAssistant(
       // because what came back was the harness's hole rather than the model.
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf: chatAsOf(persona),
+      // Derived from this turn's own extraction exactly as the route derives it
+      // (#1248). Without it the bulk-import tools would stay open and the harness
+      // would grade a refusal production makes for the model — measuring the
+      // harness's hole again, in the other direction.
+      unvalidatedEvidence: unvalidatedEvidenceFor(reading),
     }),
     stopWhen: stepCountIs(MAX_STEPS),
   });
@@ -133,7 +149,7 @@ async function main(): Promise<void> {
     const rowLabel = `${question.persona}/${question.id}`.padEnd(36);
 
     try {
-      const answer = await askAssistant(model, target, question.question);
+      const answer = await askAssistant(model, target, question);
       const checks = question.grade(answer);
       const passed = checks.filter((check) => check.pass).length;
       const green = passed === checks.length;

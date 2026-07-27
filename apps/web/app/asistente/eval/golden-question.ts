@@ -16,11 +16,32 @@ export interface Check {
   pass: boolean;
 }
 
+/**
+ * A committed file a question carries into the turn (#1254). The runner reads it
+ * through the production seam, so the model sees exactly what a real upload puts in
+ * front of it — the extraction verdict, the lane, and the frontier that lane opens.
+ *
+ * `lane` is not documentation: the runner ASSERTS it before grading. A question that
+ * grades «did not attempt a bulk import» is only meaningful if the turn's document
+ * actually opened the unvalidated-evidence gate, and a fixture that quietly started
+ * validating (a header alias widened, say) would score a green the model never
+ * earned. Declaring the lane turns that into a loud error instead — the same lesson
+ * this issue took from a golden set that promised nine captures it did not have.
+ */
+export interface GoldenAttachment {
+  /** File name under `eval/attachments/`, committed and free of real data. */
+  file: string;
+  /** `unstructured`: worthline could not validate it. `validated`: it could. */
+  lane: "unstructured" | "validated";
+}
+
 export interface GoldenQuestion {
   id: string;
   dimension: EvalDimension;
   persona: PersonaId;
   question: string;
+  /** The document this turn arrives with, if any (#1254). */
+  attachment?: GoldenAttachment;
   grade: (answer: AssistantAnswer) => Check[];
 }
 

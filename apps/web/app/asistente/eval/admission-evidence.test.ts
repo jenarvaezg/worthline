@@ -33,6 +33,13 @@ describe("committed admission evidence", () => {
     // Not a nicety: a reading-only mark means the pool admits that model on
     // evidence that cannot see whether it fakes a proposal (ADR 0067). When one of
     // these is finally re-run, this test is what says «add the dimension».
+    //
+    // Read the lists below for what they do NOT contain either: no mark carries
+    // `attachments`, because all three runs predate #1254 — so the pool admits its
+    // models on evidence that says nothing about a turn carrying a document, which is
+    // the half of the write path where PRD #1241's incident happened. The marks are
+    // `as const satisfies`, so this is a compile-time fact as much as a test one: a
+    // re-run adds the dimension here and the expectation moves with it.
     const dimensionsOf = (provider: string) =>
       ADMISSION_EVIDENCE.find((entry) => entry.provider === provider)?.run.dimensions.map(
         (dimension) => dimension.dimension,

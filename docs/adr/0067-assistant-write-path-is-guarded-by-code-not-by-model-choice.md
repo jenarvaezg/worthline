@@ -1,13 +1,17 @@
 # The assistant's write path is guarded by code, not by the choice of model
 
-The admission gate scores two dimensions and admits only a candidate that clears
+The admission gate scores three dimensions and admits only a candidate that clears
 the threshold in each. `reading` asks how well a model reads the workspace —
 figure and delta attribution, honest missing-fact behaviour, sources cited,
 Spanish by default. `tool-discipline` asks whether the turn called the tool it
 claimed to call, whether an identifier it wrote came out of a read, whether it
 rewrote a debt's history from a series nobody validated, and whether it asks rather
-than guesses when the holding or the figure is ambiguous. The second
-is graded from the tool trace; prose cannot satisfy it.
+than guesses when the holding or the figure is ambiguous. `attachments` (#1254) asks
+the same questions of a turn that carries a DOCUMENT, which is where the product's
+money moves: whether the model respects the unvalidated-evidence frontier instead of
+reaching for the bulk import, whether the one sanctioned single fact still becomes a
+proposal, and whether it asks when the file leaves the holding or the figure
+ambiguous. The last two are graded from the tool trace; prose cannot satisfy them.
 
 The dimensions are scored apart because one ratio let the strong one pay for the
 broken one. A live run scored the pool's first model at 88% on a day it had faked
@@ -88,8 +92,24 @@ path's cost stays flat and the work goes into the frontiers.
   write at an invented id still scores as one, even though production now refuses
   it before the tool body runs. A gate that only recorded what got through would
   stop being able to tell a disciplined model from a guarded one.
-- One case the issue asked for stays unmeasured: a bulk import over evidence
-  worthline could not validate needs an ATTACHMENT in the turn, and the harness
-  cannot attach one yet (#1254). Pasted rows are not that evidence — the frontier
-  does not even engage — so the question in its place grades the rule that has no
-  code behind it: a debt history rewritten from a series nobody validated.
+- The case that stayed unmeasured is measured now: a bulk import over evidence
+  worthline could not validate needs an ATTACHMENT in the turn, and #1254 gave the
+  harness one — a committed CSV, read through the production seam, arriving as
+  unvalidated evidence with the frontier armed. Pasted rows never engaged that gate,
+  so the tool-discipline question in its place still grades what has no code behind
+  it: a debt history rewritten from a series nobody validated.
+- Attachment questions are a third dimension rather than more tool-discipline ones,
+  for the reason this ADR gives for the second: behaviour over a document does not
+  follow from behaviour over a typed question, and one ratio would let either pay for
+  the other. Every mark committed before the dimension existed therefore says nothing
+  about documents — the same way a reading-only mark says nothing about writes — and a
+  re-run is what changes that, not an edit. That is the state today: all three pool
+  marks predate it, so the pool runs on evidence that has not been asked this question
+  yet. The rule is not weakened for them (the allowlist guard has always checked the
+  aggregate, and `admission.ts` scores dimensions per RUN); what is true is that their
+  silence about documents is now visible, which is the point of scoring apart.
+- The two failures this ADR names as what would flip the routing decision — a
+  proposal that names a real but WRONG holding among ambiguous candidates, and a
+  figure invented rather than asked for — are now each asked twice: once over a typed
+  question and once over a document. If routing by task ever becomes the answer, it
+  will be these numbers that say so.
