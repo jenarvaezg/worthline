@@ -149,16 +149,28 @@ test("normal motion never hides reveal content before scrolling", async ({ page 
 test("normal motion starts without waiting for fonts and settles without a type jump", async ({
   page,
 }) => {
+  // Room for the generous per-step ceilings below to actually be ceilings: at
+  // Playwright's default 30 s per test they would be unreachable, and the real
+  // deadline would go back to being the wall clock under load — the very thing
+  // this test must not depend on.
+  test.setTimeout(4 * 60_000);
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.route("**/api/auth/session", (route) =>
     route.fulfill({ contentType: "application/json", json: {}, status: 200 }),
   );
 
+  // Hold every web font indefinitely. `heldFonts` is what makes the hold
+  // OBSERVABLE: if the gate ever stops matching — a warm HTTP cache serving the
+  // woff2 without a network request, a change in how they are subset or named —
+  // `document.fonts` would resolve immediately and every assertion below would
+  // pass while proving nothing. Asserting the count turns that into a failure.
   let releaseFonts = () => {};
+  let heldFonts = 0;
   const fontsGate = new Promise<void>((resolve) => {
     releaseFonts = resolve;
   });
   await page.route("**/*.woff2", async (route) => {
+    heldFonts += 1;
     await fontsGate;
     await route.continue();
   });
@@ -169,19 +181,36 @@ test("normal motion starts without waiting for fonts and settles without a type 
   const primaryCta = page.getByRole("link", { name: "Empezar con mis datos" }).first();
   const primaryCtaStage = primaryCta.locator("..");
 
-  await expect.poll(() => page.evaluate(() => document.fonts.status)).toBe("loading");
+  // What this test claims is «the cover plays without waiting for the fonts»,
+  // and the gate above is what proves it: while a woff2 is held, anything the
+  // page manages to paint happened without them. NONE of the waits below may
+  // carry a deadline that encodes how fast the machine is — that was the #1250
+  // half of this spec: the count-up used to get 2 s to finish, which is ample
+  // on an idle laptop and a coin flip on a loaded 4-vCPU runner, and losing it
+  // said nothing about fonts. The budgets here are generous ceilings against a
+  // hang; the assertions themselves stay true at any speed, because the fonts
+  // cannot arrive until `releaseFonts()`.
+  const UNHURRIED_MS = 30_000;
   await expect
-    .poll(() => headline.evaluate((element) => getComputedStyle(element).opacity))
+    .poll(() => page.evaluate(() => document.fonts.status), { timeout: UNHURRIED_MS })
+    .toBe("loading");
+  await expect
+    .poll(() => headline.evaluate((element) => getComputedStyle(element).opacity), {
+      timeout: UNHURRIED_MS,
+    })
     .toBe("1");
   await expect
-    .poll(() =>
-      primaryCtaStage.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { opacity: style.opacity, transitionDuration: style.transitionDuration };
-      }),
+    .poll(
+      () =>
+        primaryCtaStage.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { opacity: style.opacity, transitionDuration: style.transitionDuration };
+        }),
+      { timeout: UNHURRIED_MS },
     )
     .toEqual({ opacity: "1", transitionDuration: "0.38s, 0.38s" });
-  await expect(net).toHaveText("251.527 €", { timeout: 2_000 });
+  await expect(net).toHaveText("251.527 €", { timeout: UNHURRIED_MS });
+  expect(heldFonts).toBeGreaterThan(0);
   expect(await page.evaluate(() => document.fonts.status)).toBe("loading");
   releaseFonts();
   await page.evaluate(() => document.fonts.ready);
@@ -239,11 +268,13 @@ test("normal motion starts without waiting for fonts and settles without a type 
     .poll(
       () =>
         page.evaluate(() => (window as ChatTypingWindow).chatTypingFrames?.length ?? 0),
-      { timeout: 8_000 },
+      { timeout: UNHURRIED_MS },
     )
     .toBeGreaterThan(0);
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(0, { timeout: 8_000 });
-  await expect(typedAmount).toHaveText("1.847 €");
+  await expect(page.locator("[data-chat-caret]")).toHaveCount(0, {
+    timeout: UNHURRIED_MS,
+  });
+  await expect(typedAmount).toHaveText("1.847 €", { timeout: UNHURRIED_MS });
 
   const typingFrames = await page.evaluate(
     () =>
