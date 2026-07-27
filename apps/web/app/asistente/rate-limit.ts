@@ -8,14 +8,24 @@ import type { StoreTarget } from "@web/store-resolver";
  * unit-tests without a database.
  *
  * Fixed UTC-hour windows: a denied caller rolls over at the top of the hour.
- * The Gateway spend ceiling (ADR 0050) backstops everything.
+ *
+ * ADR 0050's Vercel AI Gateway spend ceiling is a platform-level backstop on
+ * hosted provider traffic. Production today calls each admitted provider
+ * directly through the AI SDK factories (BYOK keys in env); the gateway ceiling
+ * is configured in the Vercel AI Gateway console when routing through the
+ * gateway, and is not a substitute for the per-IP or demo-global limits here.
  */
 
 export const CHAT_RATE_LIMITS = {
   /** Authenticated usage, per workspace, per hour. */
   workspace: 30,
   /** Coarse fallback (demo or unauthenticated), per IP, per hour. */
-  coarse: 10,
+  coarse: 5,
+  /**
+   * Demo traffic aggregate, all IPs combined, per hour (#1184). Stops a botnet
+   * from multiplying the per-IP ceiling; each demo turn increments both buckets.
+   */
+  demoGlobal: 60,
 } as const;
 
 export type ChatRatePlan =
@@ -54,4 +64,13 @@ export function chatRatePlan(target: StoreTarget, ip: string | null): ChatRatePl
         limit: CHAT_RATE_LIMITS.coarse,
       };
   }
+}
+
+/** Shared hourly bucket for all anonymous demo assistant traffic (#1184). */
+export function demoGlobalRatePlan(): Extract<ChatRatePlan, { mode: "count" }> {
+  return {
+    mode: "count",
+    key: "demo:global",
+    limit: CHAT_RATE_LIMITS.demoGlobal,
+  };
 }

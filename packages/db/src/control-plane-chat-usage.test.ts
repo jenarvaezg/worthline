@@ -28,4 +28,26 @@ describe("control plane chat usage counter", () => {
 
     store.close();
   });
+
+  it("tracks the demo global bucket separately from per-IP demo buckets", async () => {
+    const store: UsageLimitsStore = await createInMemoryControlPlaneStore();
+
+    expect(await store.recordChatRequest("demo:1.2.3.4", "2026-07-04T10")).toBe(1);
+    expect(await store.recordChatRequest("demo:global", "2026-07-04T10")).toBe(1);
+    expect(await store.recordChatRequest("demo:5.6.7.8", "2026-07-04T10")).toBe(1);
+    expect(await store.recordChatRequest("demo:global", "2026-07-04T10")).toBe(2);
+
+    store.close();
+  });
+
+  it("replenishes the demo global bucket in a new UTC hour window", async () => {
+    const store: UsageLimitsStore = await createInMemoryControlPlaneStore();
+
+    await store.recordChatRequest("demo:global", "2026-07-04T10");
+    await store.recordChatRequest("demo:global", "2026-07-04T10");
+
+    expect(await store.recordChatRequest("demo:global", "2026-07-04T11")).toBe(1);
+
+    store.close();
+  });
 });

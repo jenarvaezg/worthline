@@ -1,7 +1,12 @@
 import type { StoreTarget } from "@web/store-resolver";
 import { describe, expect, it } from "vitest";
 
-import { CHAT_RATE_LIMITS, chatRatePlan, chatRateWindow } from "./rate-limit";
+import {
+  CHAT_RATE_LIMITS,
+  chatRatePlan,
+  chatRateWindow,
+  demoGlobalRatePlan,
+} from "./rate-limit";
 
 const AUTH_TARGET: StoreTarget = {
   kind: "authenticated",
@@ -54,5 +59,19 @@ describe("chatRatePlan", () => {
 
   it("workspace limit is more generous than the coarse fallback", () => {
     expect(CHAT_RATE_LIMITS.workspace).toBeGreaterThan(CHAT_RATE_LIMITS.coarse);
+  });
+});
+
+describe("demoGlobalRatePlan", () => {
+  it("keys all demo traffic into one shared hourly bucket", () => {
+    expect(demoGlobalRatePlan()).toEqual({
+      mode: "count",
+      key: "demo:global",
+      limit: CHAT_RATE_LIMITS.demoGlobal,
+    });
+  });
+
+  it("global demo budget caps aggregate traffic below N per-IP buckets", () => {
+    expect(CHAT_RATE_LIMITS.demoGlobal).toBeLessThan(CHAT_RATE_LIMITS.coarse * 20);
   });
 });

@@ -36,6 +36,7 @@ import type {
   AssistantProvider,
   ProviderCredentialEnvKey,
 } from "@web/asistente/provider-pool";
+import { CHAT_RATE_LIMITS } from "@web/asistente/rate-limit";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { deriveScreenContext } from "@web/asistente/screen-context";
 import {
@@ -451,6 +452,26 @@ describe("POST /api/chat", () => {
     expect(model.doStreamCalls.length).toBe(0);
   });
 
+  it("returns 429 when the demo global hourly budget is exhausted", async () => {
+    vi.mocked(countChatRequest)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(CHAT_RATE_LIMITS.demoGlobal + 1);
+    const model = fakeChatModel();
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(chatRequest({ messages: [userMessage("hola")] }));
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "rate_limited" });
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
+    expect(countChatRequest).toHaveBeenNthCalledWith(
+      2,
+      "demo:global",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}$/),
+    );
+    expect(model.doStreamCalls.length).toBe(0);
+  });
+
   it("returns 401 for unauthenticated callers without touching the provider", async () => {
     vi.mocked(readStoreTarget).mockResolvedValue({ kind: "unauthenticated" });
     const model = fakeChatModel();
@@ -518,7 +539,7 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("respuesta del segundo proveedor");
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
     expect(first.doStreamCalls).toHaveLength(1);
     expect(second.doStreamCalls).toHaveLength(1);
     expect(recordProviderCooldown).toHaveBeenCalledWith("google", expect.any(Date));
@@ -637,7 +658,7 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "assistant_unavailable" });
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
     expect(first.doStreamCalls).toHaveLength(1);
     expect(second.doStreamCalls).toHaveLength(1);
   });
@@ -689,7 +710,7 @@ describe("POST /api/chat", () => {
       "DATOS ESTRUCTURADOS DE ADJUNTOS",
     );
     expect(JSON.stringify(model.doStreamCalls)).toContain("1234.56");
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
   it("extracts an image through the dedicated seam and grounds the pool only with validated JSON", async () => {
@@ -733,7 +754,7 @@ describe("POST /api/chat", () => {
       kind: "image",
       mimeType: "image/png",
     });
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
   // #1243: the MIME type used to pick the *question* — a PDF was asked for balances and
@@ -792,7 +813,7 @@ describe("POST /api/chat", () => {
     expect(turns).toContain("invalid_output");
     expect(turns).not.toContain("SECRET-PIXELS");
     expect(streamed).toContain("La lectura falló; ¿qué contiene la captura?");
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
   it("shows the extraction verdict even when every provider is in cooldown (#1242)", async () => {
@@ -897,7 +918,7 @@ describe("POST /api/chat", () => {
     expect(model.doStreamCalls).toHaveLength(2);
     // The dead verdict does not follow the conversation into the next turn.
     expect(turnsOf(model.doStreamCalls.at(-1)!)).not.toContain("ADJUNTO NO PROCESADO");
-    expect(countChatRequest).toHaveBeenCalledTimes(2);
+    expect(countChatRequest).toHaveBeenCalledTimes(4);
   });
 
   it("hands an unrecognized spreadsheet to the model as unstructured material (#865)", async () => {
@@ -920,7 +941,7 @@ describe("POST /api/chat", () => {
     expect(turns).toContain("Foo");
     expect(turns).toContain("uno");
     expect(streamed).toContain("Veo dos columnas, Foo y Bar.");
-    expect(countChatRequest).toHaveBeenCalledTimes(1);
+    expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
   /**

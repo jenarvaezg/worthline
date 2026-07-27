@@ -43,7 +43,11 @@ import {
   classifyPreOutputProviderError,
   streamWithProviderFailover,
 } from "@web/asistente/provider-failover";
-import { chatRatePlan, chatRateWindow } from "@web/asistente/rate-limit";
+import {
+  chatRatePlan,
+  chatRateWindow,
+  demoGlobalRatePlan,
+} from "@web/asistente/rate-limit";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import {
   isAssistantSurface,
@@ -387,12 +391,17 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const plan = chatRatePlan(target, clientIp(request));
+  const rateWindow = chatRateWindow(new Date().toISOString());
   if (plan.mode === "count") {
-    const count = await countChatRequest(
-      plan.key,
-      chatRateWindow(new Date().toISOString()),
-    );
+    const count = await countChatRequest(plan.key, rateWindow);
     if (count !== null && count > plan.limit) {
+      return jsonError("rate_limited", 429);
+    }
+  }
+  if (target.kind === "demo") {
+    const globalPlan = demoGlobalRatePlan();
+    const globalCount = await countChatRequest(globalPlan.key, rateWindow);
+    if (globalCount !== null && globalCount > globalPlan.limit) {
       return jsonError("rate_limited", 429);
     }
   }
@@ -429,10 +438,11 @@ export async function POST(request: Request): Promise<Response> {
   // A null read is unmetered (local dev) — the pure predicates never fire.
   //
   // demo/local deliberately bypass the meter, exactly as S2's courtesy quota and
-  // ingestion gates do: demo is already coarsely IP-rate-limited (ADR 0051) and
-  // its shared spend is capped by the Gateway money ceiling (ADR 0050); local
-  // dev owns its own key. The token fuse governs the authenticated shared spend
-  // the trial opens up — the abuse surface it was designed for (plan §4.2).
+  // ingestion gates do: demo is IP-rate-limited plus a shared hourly global budget
+  // (#1184, ADR 0051); its provider spend is also backstopped by the Gateway money
+  // ceiling (ADR 0050); local dev owns its own key. The token fuse governs the
+  // authenticated shared spend the trial opens up — the abuse surface it was
+  // designed for (plan §4.2).
   if (target.kind === "authenticated") {
     const usage = await readAiTokenUsage(target.workspaceId, tokenDayWindow(nowIso));
     if (usage && isGlobalTokenFuseBlown(usage.globalTokens)) {
