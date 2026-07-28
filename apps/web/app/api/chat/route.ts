@@ -7,7 +7,7 @@ import {
   type UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
-import { readAttachmentTurn } from "@web/asistente/attachment-turn";
+import { isVisionAttachment, readAttachmentTurn } from "@web/asistente/attachment-turn";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "@web/asistente/attachment-types";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
@@ -57,12 +57,24 @@ import {
 import { readAiTokenUsage, recordAiTokenUsage } from "@web/asistente/token-budget-store";
 import { meterAssistantStream } from "@web/asistente/token-metering";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
+import {
+  isGlobalVisionCallFuseBlown,
+  isVisionCallBudgetExhausted,
+  visionCallDayWindow,
+  visionCallPlan,
+} from "@web/asistente/vision-call-budget";
+import {
+  readVisionCallUsage,
+  recordVisionCalls,
+} from "@web/asistente/vision-call-budget-store";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
 import {
   PAYWALL_ATTACHMENT_MESSAGE,
   PAYWALL_COURTESY_MESSAGE,
   PAYWALL_GLOBAL_FUSE_MESSAGE,
   PAYWALL_TOKEN_BUDGET_MESSAGE,
+  PAYWALL_VISION_BUDGET_MESSAGE,
+  PAYWALL_VISION_FUSE_MESSAGE,
 } from "@web/entitlements/paywall-copy";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
 import { readStoreTarget } from "@web/read-store-target";
@@ -381,7 +393,8 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("assistant_unavailable", 503);
   }
 
-  const plan = chatRatePlan(target, clientIp(request));
+  const ip = clientIp(request);
+  const plan = chatRatePlan(target, ip);
   const rateWindow = chatRateWindow(new Date().toISOString());
   if (plan.mode === "count") {
     const count = await countChatRequest(plan.key, rateWindow);
@@ -467,6 +480,40 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("attachment_too_large", 413);
   }
 
+  // The eager extractor's own money fuse (#1258). Every gate above is blind to it:
+  // the vision seam calls a paid provider BEFORE the conversational turn, its
+  // contract returns validated JSON and never provider usage (so the token meter
+  // has nothing to read), and `demo` resolves to `premium`, so the ingestion
+  // paywall does not fire for an anonymous visitor either. #1246 then doubled the
+  // worst case — an unidentified attachment costs two vision calls, and the caller
+  // chooses whether to pay by uploading something the seam cannot type.
+  //
+  // So: its OWN daily counter, in calls, checked here before a byte is read and
+  // recorded after the reading. Nothing about `token-metering.ts` changes — that
+  // one still means the conversational turn (#1163).
+  const visionPlan = visionCallPlan(target, ip);
+  const visionDayKey = visionCallDayWindow(nowIso);
+  // Null when there is nothing to meter: no attachment, a spreadsheet (the
+  // deterministic route never reaches a model, so braking one would refuse a free
+  // upload with a message about a cost it does not have), or the local target where
+  // the developer owns the key (ADR 0051). It carries the scope through to the
+  // recording below, so the gate and the counter can never disagree on the key.
+  const visionMeter =
+    attachment &&
+    isVisionAttachment({ fileName: attachment.name, mimeType: attachment.type }) &&
+    visionPlan.mode === "count"
+      ? visionPlan
+      : null;
+  if (visionMeter) {
+    const usage = await readVisionCallUsage(visionMeter.scopeKey, visionDayKey);
+    if (usage && isGlobalVisionCallFuseBlown(usage.globalCalls)) {
+      return paywallResponse(PAYWALL_VISION_FUSE_MESSAGE);
+    }
+    if (usage && isVisionCallBudgetExhausted(usage.scopeCalls, visionMeter.dailyLimit)) {
+      return paywallResponse(PAYWALL_VISION_BUDGET_MESSAGE);
+    }
+  }
+
   // What the document IS, and the lane it travels in, is one seam (#1254) — shared
   // with the assistant eval so a run grades this behaviour rather than a copy of it.
   // The route keeps what is about the CALLER: quota, paywall, rate limits, cooldowns.
@@ -480,6 +527,32 @@ export async function POST(request: Request): Promise<Response> {
     });
     currentPreview = reading.preview;
     unstructuredAttachment = reading.unstructured;
+    if (reading.visionCalls > 0) {
+      // Visible even where nothing is metered (local dev, demo without a control
+      // plane): «how much do we spend on extraction» had no answer at all before
+      // this, and one line per reading is the cheapest half of one. Aggregate
+      // only — a count and the kind of caller, never the file or the scope key.
+      console.info("Assistant attachment vision calls", {
+        targetKind: target.kind,
+        visionCalls: reading.visionCalls,
+      });
+    }
+    if (visionMeter && reading.visionCalls > 0) {
+      const { scopeKey } = visionMeter;
+      const calls = reading.visionCalls;
+      // After the response, like the token meter: the reading is already paid for,
+      // and the user must not wait on a control-plane write to see their card.
+      after(async () => {
+        try {
+          await recordVisionCalls(scopeKey, visionDayKey, calls);
+        } catch (error) {
+          console.error("Assistant vision call metering write failed", {
+            operation: "write",
+            cause: operationalCause(error),
+          });
+        }
+      });
+    }
   }
 
   let eligibleProviders = providers;

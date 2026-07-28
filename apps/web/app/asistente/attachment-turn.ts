@@ -41,6 +41,46 @@ export interface AttachmentTurnReading {
    * so the caller derives that flag from this field rather than guessing from MIME.
    */
   unstructured: UnstructuredAttachment | null;
+  /**
+   * How many vision model calls this reading paid for (#1258) — the number the
+   * caller's fuse counts. Zero for the deterministic spreadsheet route, one for a
+   * document the seam identified, two when the descriptive cascade also ran.
+   *
+   * The seam reports it because only the seam knows: the extractors hand back a
+   * validated verdict and never provider usage, and a policy layer reading MIME
+   * types would be guessing at the branch that was actually taken.
+   */
+  visionCalls: number;
+}
+
+/** Which transport a file travels in — the MIME type picks it, and only it (#1243). */
+function visionTransport(input: {
+  fileName: string;
+  mimeType: string;
+}): "image" | "pdf" | null {
+  const mimeType = input.mimeType.toLowerCase();
+  if (mimeType === "application/pdf" || input.fileName.toLowerCase().endsWith(".pdf")) {
+    return "pdf";
+  }
+  return mimeType.startsWith("image/") ? "image" : null;
+}
+
+/**
+ * Will this file reach a vision model at all? Exported for the caller's money fuse
+ * (#1258), which must not brake an upload that costs nothing: a spreadsheet takes
+ * the deterministic, model-free route, so refusing one on a spent allowance would
+ * be both a lie and a needless dead end. The transport decision lives HERE, in the
+ * seam that acts on it, so the gate and the reading can never disagree about which
+ * lane a file is in.
+ */
+export function isVisionAttachment(input: {
+  fileName: string;
+  mimeType: string;
+}): boolean {
+  return (
+    visionTransport({ fileName: input.fileName.trim(), mimeType: input.mimeType }) !==
+    null
+  );
 }
 
 /**
@@ -54,16 +94,27 @@ export async function readAttachmentTurn(
   input: AttachmentTurnInput,
 ): Promise<AttachmentTurnReading> {
   const fileName = input.fileName.trim();
-  const mimeType = input.mimeType.toLowerCase();
   const extractionInput = { bytes: input.bytes, fileName, mimeType: input.mimeType };
-  const isPdf = mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
-  const isImage = mimeType.startsWith("image/");
-  const isSpreadsheet = !isPdf && !isImage;
-  const visionKind = isPdf ? "pdf" : "image";
+  const visionKind = visionTransport({ fileName, mimeType: input.mimeType });
+  const isSpreadsheet = visionKind === null;
 
   const result = isSpreadsheet
     ? extractSpreadsheetDocument(extractionInput)
     : await extractDocumentFromVisionAttachment({ ...extractionInput, kind: visionKind });
+
+  // What this reading owes the money fuse (#1258). Three outcomes cost nothing and
+  // must not spend the caller's daily allowance: the deterministic sheet route, a
+  // file the contract refused on its size or page count, and a "PDF" whose bytes are
+  // not a PDF — all three decided over bytes already in memory, before any provider
+  // is reached. Every other outcome is charged as one call, INCLUDING an unconfigured
+  // deploy, whose failure envelope is indistinguishable from a request the provider
+  // really did reject: over-counting a broken install is the safe direction for a
+  // fuse, and under-counting is the one that stops it from holding.
+  const reachedNoProvider =
+    isSpreadsheet ||
+    result.status === "out_of_limits" ||
+    (result.status === "failure" && result.code === "unsupported_document");
+  const extractionCalls = reachedNoProvider ? 0 : 1;
 
   // A readable spreadsheet that is not a positions table becomes conversational
   // material instead of a dead-end (#865): render the whole book and let the model
@@ -77,6 +128,7 @@ export async function readAttachmentTurn(
           result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
         },
         unstructured: { fileName, source: "spreadsheet_grid", text },
+        visionCalls: 0,
       };
     }
   }
@@ -90,33 +142,36 @@ export async function readAttachmentTurn(
   // redundant with the reason: the deterministic sheet route never stamps this
   // discriminant today, and this keeps a future one that did from sending a workbook to
   // a vision model and clobbering its own rendered grid.
-  if (
+  const describes =
     !isSpreadsheet &&
     result.status === "unrecognized" &&
-    result.reason === "unidentified_document"
-  ) {
-    const description = await describeVisionAttachment({
-      ...extractionInput,
-      kind: visionKind,
-    });
-    if (description) {
-      return {
-        preview: {
-          fileName,
-          result: {
-            message: UNSTRUCTURED_VISION_MESSAGE,
-            reason: "unidentified_document",
-            status: "unrecognized",
-          },
+    result.reason === "unidentified_document";
+  const description = describes
+    ? await describeVisionAttachment({ ...extractionInput, kind: visionKind })
+    : null;
+  // Charged on the ASK, not on the answer (#1258): a description the provider failed
+  // to give back still cost a request, and it is the branch below — not the outcome —
+  // that the abuse the fuse guards against reaches for.
+  const visionCalls = extractionCalls + (describes ? 1 : 0);
+
+  if (description) {
+    return {
+      preview: {
+        fileName,
+        result: {
+          message: UNSTRUCTURED_VISION_MESSAGE,
+          reason: "unidentified_document",
+          status: "unrecognized",
         },
-        unstructured: { fileName, source: "vision_description", text: description },
-      };
-    }
+      },
+      unstructured: { fileName, source: "vision_description", text: description },
+      visionCalls,
+    };
   }
 
   // Any other non-valid verdict (unreadable, unrecognized, out of limits) does NOT end
   // the turn (#1242): the preview card carries the message and the conversational model
   // gets the verdict alone — never content it never read — so it can say what happened,
   // ask what the document is and offer the manual route instead of a canned line.
-  return { preview: { fileName, result }, unstructured: null };
+  return { preview: { fileName, result }, unstructured: null, visionCalls };
 }

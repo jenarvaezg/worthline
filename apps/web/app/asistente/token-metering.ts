@@ -14,10 +14,15 @@
  * cost. The eager attachment extractors
  * (`extractDocumentFromVisionAttachment`, the spreadsheet dispatch) are separate model
  * calls whose usage is NOT counted here: their contract deliberately hands
- * callers a validated JSON result and never provider output, so surfacing their
- * token usage is its own change. The pre-call gate still degrades them honestly
- * (a spent budget blocks extraction before it runs); metering that one-shot
- * ingestion cost is a documented follow-up, not part of this slice.
+ * callers a validated JSON result and never provider output, so there is no
+ * token total to read. That semantics is unchanged.
+ *
+ * The follow-up it left open is now closed elsewhere, not here (#1258): the
+ * one-shot ingestion cost has its OWN counter, `vision-call-budget.ts`,
+ * denominated in vision CALLS — the unit that seam can honestly report — with its
+ * own per-scope allowance and its own global daily fuse. Two counters on purpose:
+ * a call is not a token, and folding the extractor into this one would have made
+ * «the recurring cost of a conversation» unreadable.
  */
 
 /** The AI SDK full-stream `finish` part shape we read — only the total we meter. */

@@ -54,6 +54,24 @@ export const PAYWALL_GLOBAL_FUSE_MESSAGE =
   "El asistente comparte un presupuesto de IA diario que hoy se ha agotado. " +
   "Vuelve más tarde; tus datos y todas las lentes siguen disponibles.";
 
+/**
+ * This caller spent its daily allowance of document readings (#1258). Its own
+ * counter, so its own copy: the assistant itself keeps working — only the machine
+ * reading of new files pauses until tomorrow.
+ */
+export const PAYWALL_VISION_BUDGET_MESSAGE =
+  "Has alcanzado el límite de lecturas de documentos de hoy. Puedes seguir " +
+  "conversando y añadiendo cifras a mano; mañana vuelvo a leer archivos por ti.";
+
+/**
+ * The shared daily fuse over document readings blew (#1258) — the whole
+ * deployment's extractor pauses. Honest capacity limit, never a wall in front of
+ * the user's own data.
+ */
+export const PAYWALL_VISION_FUSE_MESSAGE =
+  "La lectura de documentos comparte un presupuesto diario que hoy se ha agotado. " +
+  "Puedes seguir conversando y añadiendo cifras a mano; vuelve mañana con el archivo.";
+
 /** A free workspace has connected sources that are now paused (premium lapsed). */
 export const PAYWALL_SOURCES_PAUSED_MESSAGE =
   "Tus fuentes conectadas están en pausa: dejaron de sincronizar al terminar premium. " +

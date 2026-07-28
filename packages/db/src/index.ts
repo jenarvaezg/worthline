@@ -128,6 +128,8 @@ export {
   type UpdateMaintainerAlertStatusInput,
   type UpdateWorkspaceBillingInput,
   type UsageLimits,
+  type VisionCallDailyUsage,
+  type VisionCallUsage,
   type WorkspaceDailyTokenUsage,
 } from "./control-plane";
 export type {
