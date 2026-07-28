@@ -37,14 +37,44 @@ const HSTS_MAX_AGE_SECONDS = 63_072_000;
 /**
  * External image CDNs the app renders directly via `<img>` (ADR 0009).
  *
- * OPEN GAP, tracked in #1272: these are provider-supplied values stored per row, not
- * URLs this repo builds, and `snapshot_position_holdings.image_url` is frozen at
- * capture — so a provider that moves its CDN leaves the old host in old rows forever,
- * and now that `img-src` blocks, such a row renders a broken thumbnail. No test can
- * see it: the enumeration above reads the code, and no e2e journey loads a remote
- * image. Only reading the real data closes it, and whatever it turns up gets NAMED
- * here, never turned into a wildcard: the point of the directive is that an allowed
- * host is one we can name.
+ * MEASURED, not read off the code (#1272). These are provider-supplied values stored
+ * per row, and `snapshot_position_holdings.image_url` is frozen at capture, so a
+ * provider that moves its CDN leaves the old host in old rows forever — and now that
+ * `img-src` blocks, such a row would render a broken thumbnail. Nothing in the suite
+ * can see that: the enumeration of the *code* cannot reach a host sitting in a row,
+ * and no e2e journey loads a remote image. So the real workspace DBs were read
+ * instead, with `.local/scripts/csp-image-hosts-audit.ts` (hostnames and counts only,
+ * never a URL or a label):
+ *
+ *   2026-07-28 — 2 workspaces, 5233 stored values, 181 distinct URLs, TWO origins:
+ *     https://en.numista.com              5191  (233 live + 4958 frozen)   HEAD 200
+ *     https://coin-images.coingecko.com     42  (frozen only)              HEAD 200
+ *
+ * Both were already named below, so the allowlist needed no new entry — the audit's
+ * result is that claim, which nothing had established before. Three findings worth
+ * keeping:
+ *
+ *  - No `assets.coingecko.com`. The pre-migration host this gap was opened for
+ *    survives in NO row, and both origins that do survive still SERVE (a `HEAD` on
+ *    a real stored path per origin, since a hostname keeps looking fine long after
+ *    it stops answering). So there is no dead CDN to decide about: nothing to
+ *    backfill, and the glyph fallback never comes up. Should a `404` ever show up
+ *    there, the frozen column is what gets backfilled — a dead host cannot be
+ *    re-fetched, so the alternative is accepting the glyph for those rows.
+ *  - `positions.image_url` (the live CoinGecko logo) is empty today, so all 42
+ *    CoinGecko values live ONLY in frozen snapshots. That is exactly why the entry
+ *    stays: `historico-table.tsx` still renders them from the frozen column, and no
+ *    live sync would ever rewrite a row to a new host.
+ *  - The audit itself had to grow to see this. It first read only the two
+ *    `image_url` columns and missed `positions.obverse_thumb_url` — the LIVE Numista
+ *    thumb, which the capture maps into `image_url` (`connected-source.ts`). Reading
+ *    only the frozen side enumerates yesterday's hosts.
+ *
+ * Whatever a future re-run turns up gets NAMED here, never turned into a wildcard:
+ * the point of the directive is that an allowed host is one we can name. What keeps
+ * the audit honest between runs are the two guardians in `security-headers.test.ts`:
+ * they pin the `<img>` call sites and the schema columns that can hold an image URL,
+ * so a fourth of either fails the suite instead of silently outdating these numbers.
  *
  * Numista's thumbnails live on `en.numista.com` regardless of the `lang=es` the
  * client requests (verified in `packages/pricing/src/__fixtures__/numista`), so only
@@ -91,7 +121,9 @@ export const CSP_REPORT_ONLY_HEADER_NAME = "Content-Security-Policy-Report-Only"
  * loads a remote image (the demo personas seed `imageUrl: null` and the fake
  * CoinGecko serves no logos). So the suite catches a cross-origin URL newly
  * hardcoded in the app; it cannot catch a stale host sitting in a row of real data.
- * Only reading the data closes that one — see {@link IMAGE_CDN_HOSTS}.
+ * That second one is not closed by a test but by a MEASUREMENT of the real data,
+ * which #1272 ran — see {@link IMAGE_CDN_HOSTS} for what it found and what pins the
+ * audited surface until the next run.
  *
  * `default-src` must NEVER be added here: it is the fallback for script, style,
  * font, frame, worker and manifest fetches, so enforcing it would enforce the

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
 
+import { readSourceFiles, stripComments } from "./guardian-walk";
 import {
   buildContentSecurityPolicy,
   buildEnforcedContentSecurityPolicy,
@@ -130,6 +131,98 @@ describe("buildContentSecurityPolicy", () => {
   test("adds 'unsafe-eval' to script-src only in dev (HMR), never in prod", () => {
     expect(buildContentSecurityPolicy({ dev: true })).toContain("'unsafe-eval'");
     expect(buildContentSecurityPolicy({ dev: false })).not.toContain("'unsafe-eval'");
+  });
+});
+
+/**
+ * The audited surface of #1272 — what a test CAN pin about `IMAGE_CDN_HOSTS`.
+ *
+ * The allowlist itself is NOT derivable from the code: the values are
+ * provider-supplied and stored per row, so only reading the real data enumerates
+ * them (`.local/scripts/csp-image-hosts-audit.ts`). What the code DOES decide is the
+ * SURFACE that audit has to cover — which `<img>` tags exist, and which columns can
+ * reach one. A fourth of either means the enumeration is stale and the audit has to
+ * run again, so both are pinned here.
+ */
+const REMOTE_IMAGE_RENDER_SITES = [
+  "app/(workspace)/historico/historico-table.tsx",
+  "app/(workspace)/patrimonio/[id]/editar/_surfaces/binance-holding-section.tsx",
+  "app/(workspace)/patrimonio/[id]/editar/_surfaces/coin-collection-section.tsx",
+] as const;
+
+/** Table → the columns holding a URL, as the audit reads them. */
+const AUDITED_IMAGE_COLUMNS = [
+  ["positions", ["obverse_thumb_url", "image_url"]],
+  ["snapshotPositionHoldings", ["image_url"]],
+] as const;
+
+/** Every `<img` in `source` that is code rather than prose. */
+function imgTagCount(source: string): number {
+  return stripComments(source).split("<img").length - 1;
+}
+
+describe("stored image hosts (#1272)", () => {
+  const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+  test("renders <img> from exactly the audited call sites", () => {
+    // The whole app, not just `app/`: an `<img>` added beside it would otherwise slip
+    // past a guardian that only looked at the routes. Comments are stripped by the
+    // shared walk, so PROSE about the tag never counts as a call site —
+    // `assistant-markdown.tsx` documents stripping remote images, the exact opposite
+    // of rendering one.
+    const sites = readSourceFiles(webRoot)
+      .filter(({ source }) => imgTagCount(source) > 0)
+      .map(({ filePath }) => filePath.slice(webRoot.length + 1))
+      .sort();
+
+    // Deliberately ALL `<img>`, not just the ones with a remote `src`: a local-asset
+    // tag tripping this is the cheap failure (read it, add it), while narrowing the
+    // match to something that looks provider-supplied is how the stored-host case
+    // goes silent. `next/image` is unused in this app; were a stored URL ever routed
+    // through it, this guardian would not see it and the audit note would go stale.
+    expect(
+      sites,
+      "a new <img> means a stored, provider-supplied host may now reach the browser " +
+        "through a surface the #1272 audit never enumerated — re-run " +
+        "`.local/scripts/csp-image-hosts-audit.ts` and update IMAGE_CDN_HOSTS",
+    ).toEqual([...REMOTE_IMAGE_RENDER_SITES].sort());
+  });
+
+  test("audits every schema column that can hold an image URL", () => {
+    // The audit's own first version read only the two `image_url` columns and missed
+    // `positions.obverse_thumb_url`, the LIVE Numista thumb — so the column list is
+    // pinned against the schema, not trusted to a comment.
+    const schema = stripComments(
+      readFileSync(join(webRoot, "..", "..", "packages/db/src/schema.ts"), "utf8"),
+    );
+
+    for (const [table, expectedColumns] of AUDITED_IMAGE_COLUMNS) {
+      const start = schema.indexOf(`export const ${table} = sqliteTable(`);
+      expect(start, `${table} not found in schema.ts`).toBeGreaterThan(-1);
+      const nextExport = schema.indexOf("\nexport ", start + 1);
+      const body = schema.slice(start, nextExport === -1 ? undefined : nextExport);
+
+      const urlColumns = [...body.matchAll(/text\("([a-z_]*url[a-z_]*)"\)/g)].map(
+        (match) => match[1],
+      );
+      expect(
+        urlColumns.sort(),
+        `${table} gained or lost a URL column — the #1272 audit enumerates ` +
+          "hostnames per column, so its script has to cover this one too",
+      ).toEqual([...expectedColumns].sort());
+    }
+  });
+
+  describe("the scan itself", () => {
+    test("counts a real tag", () => {
+      expect(imgTagCount(`<img alt="" src={p.imageUrl} />`)).toBe(1);
+      expect(imgTagCount(`<img src="a" />\n<img src="b" />`)).toBe(2);
+    });
+
+    test("ignores images named in prose", () => {
+      expect(imgTagCount(`/** A remote \`<img src>\` is an outbound GET. */`)).toBe(0);
+      expect(imgTagCount(`// biome-ignore: external <img> thumb\nconst a = 1;`)).toBe(0);
+    });
   });
 });
 
