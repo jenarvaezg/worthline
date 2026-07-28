@@ -2,9 +2,8 @@ import type { DecimalString } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
-import { selectInvestmentPrice } from "./investment-valuation";
+import { deriveInvestmentValuation } from "./investment-valuation";
 import type { CurrencyCode, MoneyMinor } from "./money";
-import { derivePosition } from "./positions";
 import type {
   DatedPayout,
   IrrResult,
@@ -229,22 +228,25 @@ export interface InvestmentReturnsContext {
   valuationDate: string;
 }
 
-/** A holding's operations paired with the current market value (0 when unpriced). */
+/**
+ * A holding's current value, through the SAME authority the net-worth math uses
+ * (`deriveInvestmentValuation`, ADR 0006): units × price when a price is known,
+ * the cost basis when none is. Valuing an unpriced holding at 0 fabricated a
+ * −100% simple gain on any alta whose first quote had not landed yet, right
+ * beside the row the valuation was already showing at cost (#1314).
+ */
 function holdingMarketValueMinor(
   assetId: string,
   operations: readonly InvestmentOperation[],
   ctx: InvestmentReturnsContext,
 ): number {
-  const price = selectInvestmentPrice({
-    cachedPrice: ctx.cachedPriceByAsset.get(assetId),
-    manualPrice: ctx.manualPriceByAsset.get(assetId),
-  });
-  const position = derivePosition([...operations], {
+  return deriveInvestmentValuation({
     assetId,
+    cachedPrice: ctx.cachedPriceByAsset.get(assetId),
     currency: ctx.currency,
-    ...(price ? { currentPricePerUnit: price.pricePerUnit } : {}),
-  });
-  return position.marketValue?.amountMinor ?? 0;
+    manualPrice: ctx.manualPriceByAsset.get(assetId),
+    operations: [...operations],
+  }).valueMinor;
 }
 
 /**

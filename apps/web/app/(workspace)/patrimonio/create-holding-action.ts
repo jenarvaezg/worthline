@@ -5,6 +5,7 @@ import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
 } from "@web/ensure-exposure-catalog-stubs";
+import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { formAction } from "@web/form-action";
 import {
   errorRedirectUrl,
@@ -26,6 +27,7 @@ import {
   createLiabilitySafe,
   defaultsFor,
 } from "@worthline/domain";
+import type { InvestmentAssetRef } from "@worthline/pricing";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
@@ -364,12 +366,16 @@ export async function createHoldingAction(
   const returnUrl = parseReturnUrl(formData.get("returnTo"));
   return formAction<
     undefined,
-    { redirectUrl: string; catalog?: ExposureCatalogStubCandidate }
+    {
+      redirectUrl: string;
+      catalog?: ExposureCatalogStubCandidate;
+      firstQuote?: { asset: InvestmentAssetRef; nowIso: string };
+    }
   >({
     requireId: false,
     datedFact: false,
     guardUrl: () => returnUrl,
-    run: async (store, { today }) => {
+    run: async (store, { today, now }) => {
       const normalized = normalizeSimpleDrawerForm(formData, today);
       const actionFormData = normalized.formData;
       const instrument = normalized.instrument;
@@ -555,7 +561,27 @@ export async function createHoldingAction(
               )
             : successUrl("investment_added", parsed.command.id);
 
-        return { ok: true, value: { redirectUrl, catalog } };
+        // The pricing coordinates of the just-created investment, threaded out so
+        // its FIRST quote is asked for in afterCommit (#1314) — the holding would
+        // otherwise sit unpriced until the 21:00 capture.
+        const firstQuote = {
+          asset: {
+            currency: parsed.command.currency,
+            id: parsed.command.id,
+            ...(parsed.command.liquidityTier
+              ? { liquidityTier: parsed.command.liquidityTier }
+              : {}),
+            ...(parsed.command.priceProvider
+              ? { priceProvider: parsed.command.priceProvider }
+              : {}),
+            ...(parsed.command.providerSymbol
+              ? { providerSymbol: parsed.command.providerSymbol }
+              : {}),
+          },
+          nowIso: now,
+        };
+
+        return { ok: true, value: { redirectUrl, catalog, firstQuote } };
       }
 
       // Debts — the catalog fixes the type + default debt model so the holding's
@@ -715,6 +741,9 @@ export async function createHoldingAction(
     afterCommit: async ({ value }) => {
       if (value?.catalog) {
         await ensureExposureCatalogStubs([value.catalog]);
+      }
+      if (value?.firstQuote) {
+        await fetchFirstQuoteBestEffort(value.firstQuote.asset, value.firstQuote.nowIso);
       }
       // First patrimonio write → stamp the set-once activation mark (#1131).
       await markFirstHoldingBestEffort();

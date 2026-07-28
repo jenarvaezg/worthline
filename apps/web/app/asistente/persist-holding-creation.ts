@@ -14,6 +14,7 @@ import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
 } from "@web/ensure-exposure-catalog-stubs";
+import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { createStableId, mapDomainViolation } from "@web/intake";
 import type { ManualAssetCreation } from "@web/patrimonio/persist-holding";
 import { persistManualAssetCreation } from "@web/patrimonio/persist-holding";
@@ -39,6 +40,7 @@ export async function persistHoldingCreation(
   plan: HoldingCreationPlan,
   seed: number,
   today: string,
+  nowIso: string,
 ): Promise<PersistHoldingCreationResult> {
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return { error: "Workspace no inicializado.", ok: false };
@@ -143,6 +145,20 @@ export async function persistHoldingCreation(
     if (!safe.ok) return { error: mapDomainViolation(safe.violations[0]!), ok: false };
     await store.command.recordInvestmentOperation(safe.value, { today });
   }
+
+  // An alta with a provider symbol lands with no cached quote, so it renders at
+  // cost and its returns have nothing to work with. Ask for the first quote here
+  // instead of waiting for the 21:00 capture (#1314) — deferred, never blocking.
+  await fetchFirstQuoteBestEffort(
+    {
+      currency: "EUR",
+      id,
+      liquidityTier: defaults.rung,
+      ...(defaults.priceProvider ? { priceProvider: defaults.priceProvider } : {}),
+      ...(plan.providerSymbol ? { providerSymbol: plan.providerSymbol } : {}),
+    },
+    nowIso,
+  );
 
   // Register the (possibly empty) global-catalog row so the holding surfaces in
   // /admin/catalogo «por categorizar» (#1097). Best-effort: never blocks.

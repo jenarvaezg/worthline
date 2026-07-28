@@ -231,6 +231,23 @@ describe("investmentReturnsById", () => {
     expect(views.has("a1")).toBe(false);
   });
 
+  test("an unpriced holding is valued at cost, never a fabricated −100% (#1314)", () => {
+    const views = investmentReturnsById({
+      // A just-created holding with a symbol whose first quote has not landed yet:
+      // no cache row, no manual quote.
+      operationsByAsset: new Map([["a1", [op("buy", "10", "100", "2026-07-01", "a1")]]]),
+      instrumentByAsset: new Map([["a1", "etf"]]),
+      cachedPriceByAsset: new Map(),
+      manualPriceByAsset: new Map(),
+      currency,
+      valuationDate,
+    });
+
+    const view = views.get("a1")!;
+    expect(view.totalGain).toEqual(money(0, "EUR"));
+    expect(view.totalReturnRatio).toBe(0);
+  });
+
   test("folds a holding's recorded payouts into its figures and caveat (#657)", () => {
     const views = investmentReturnsById({
       operationsByAsset: new Map([["a1", [op("buy", "10", "100", "2024-01-01", "a1")]]]),
@@ -274,6 +291,24 @@ describe("portfolioReturnsView", () => {
     // invested 1000 + 1000 = 2000; value 1500 + 1000 = 2500 → +25%.
     expect(view!.totalReturnRatio).toBeCloseTo(0.25, 6);
     expect(view!.twr!.rate).toBeCloseTo(0.25, 6);
+  });
+
+  test("an unpriced holding enters at cost, never dragging the portfolio down (#1314)", () => {
+    const view = portfolioReturnsView({
+      operationsByAsset: new Map([
+        ["a1", [op("buy", "10", "100", "2024-01-01", "a1")]],
+        ["a2", [op("buy", "10", "100", "2024-01-01", "a2")]],
+      ]),
+      // a2 is the fresh holding with no quote yet: it must contribute its cost,
+      // not zero — the whole portfolio would otherwise read −50%.
+      cachedPriceByAsset: new Map([["a1", "100"]]),
+      manualPriceByAsset: new Map(),
+      currency: "EUR",
+      valuationDate: "2026-07-04",
+    });
+
+    expect(view!.totalReturnRatio).toBe(0);
+    expect(view!.totalGain).toEqual(money(0, "EUR"));
   });
 
   test("is null when there are no operation-bearing holdings", () => {
