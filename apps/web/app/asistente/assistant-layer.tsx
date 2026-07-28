@@ -39,7 +39,7 @@ import { assistantErrorMessage } from "./assistant-error-message";
 import { AssistantTextPart } from "./assistant-markdown";
 import AssistantMessages from "./assistant-messages";
 import { assistantPendingLabel } from "./assistant-pending";
-import { parseAttachmentPreviewData } from "./attachment-chat";
+import { parseAttachmentPreviewCard } from "./attachment-chat";
 import AttachmentExtractionPreview from "./attachment-extraction-preview";
 import { userTurnText } from "./attachment-notice";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
@@ -1694,12 +1694,11 @@ function ConversationParts({
                 );
               }
               if (part.type === "data-attachment-extraction") {
-                const preview = parseAttachmentPreviewData(part.data);
-                return preview ? (
-                  <AttachmentExtractionPreview
-                    key={`${message.id}-${i}`}
-                    preview={preview}
-                  />
+                // Never `null` for a payload with anything paintable in it: a card
+                // from a newer server degrades rather than disappearing (#1261).
+                const card = parseAttachmentPreviewCard(part.data);
+                return card ? (
+                  <AttachmentExtractionPreview card={card} key={`${message.id}-${i}`} />
                 ) : null;
               }
               if (part.type === "data-paywall") {

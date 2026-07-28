@@ -44,6 +44,19 @@ export const UNIDENTIFIED_DOCUMENT_MESSAGE =
 export const UNSTRUCTURED_VISION_MESSAGE =
   "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de esta imagen sale de mirarla, no de datos comprobados.";
 
+/**
+ * Card message when this client cannot fully validate the payload of a reading and
+ * the payload carries no message of its own to paint — a document written by a newer
+ * worthline, so its table cannot be rendered here (#1261). It names the real cause
+ * instead of apologizing, because the fix is a reload and only the user can do it.
+ *
+ * It lives among the other card messages for discoverability, but unlike them it is
+ * NOT a marker anyone reads back off history, and it must never join
+ * `UNSTRUCTURED_EVIDENCE_MESSAGES`: this card means the model got no document at all.
+ */
+export const PREVIEW_VERSION_SKEW_MESSAGE =
+  "Esta lectura la ha generado una versión más reciente de worthline. Recarga la página para verla completa.";
+
 /** Client-safe v1 type catalog shared by picker, transport and server validation. */
 export const ATTACHMENT_TYPES_V1 = [
   {

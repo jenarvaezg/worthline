@@ -5,11 +5,13 @@ import {
   type AttachmentPreviewData,
   hasUnstructuredEvidenceInHistory,
   isValidatedDocument,
+  parseAttachmentPreviewCard,
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
 } from "./attachment-chat";
 import { extractedDocumentSchema } from "./attachment-extraction-contract";
 import {
+  PREVIEW_VERSION_SKEW_MESSAGE,
   UNIDENTIFIED_DOCUMENT_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
@@ -649,6 +651,151 @@ describe("attachment chat context", () => {
     expect(serialized).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
     expect(serialized).toContain("VWCE");
     expect(serialized).not.toContain("ADJUNTO NO PROCESADO");
+  });
+
+  /**
+   * The card payload is a WIRE FORMAT between two versions of worthline: the server
+   * that wrote it and the tab that re-renders it, which may predate the deploy. A
+   * `.strict()` re-parse there fails on a field the server added and takes the whole
+   * card down with it — silently, because the render site painted `null` (#1261).
+   */
+  describe("version skew of the card payload (#1261)", () => {
+    /** Exactly what #1246 did to every tab open at the time, one deploy later. */
+    const skewedUnrecognized = {
+      fileName: "captura.png",
+      result: {
+        confidence: "low",
+        message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+        status: "unrecognized",
+      },
+    };
+
+    test("paints the minimal card of a payload carrying an unknown field", () => {
+      expect(parseAttachmentPreviewCard(skewedUnrecognized)).toEqual({
+        fileName: "captura.png",
+        kind: "degraded",
+        message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+      });
+    });
+
+    test("tolerates an unknown field on the envelope itself, not just the result", () => {
+      expect(
+        parseAttachmentPreviewCard({ ...skewedUnrecognized, extractedAt: "2026-07-28" }),
+      ).toMatchObject({ kind: "degraded", message: UNIDENTIFIED_DOCUMENT_MESSAGE });
+    });
+
+    test("returns the revalidated reading when the payload is fully understood", () => {
+      expect(parseAttachmentPreviewCard(extraction)).toMatchObject({
+        ...extraction,
+        kind: "parsed",
+      });
+    });
+
+    test("falls back to the reload notice when the skewed card has no message", () => {
+      // A `valid` payload's card is a table built from the document, so a new field
+      // inside it leaves nothing minimal to paint — but the user still has to learn
+      // that worthline DID read the file, which is the whole point of the card.
+      expect(
+        parseAttachmentPreviewCard({
+          fileName: "cartera.xlsx",
+          result: {
+            data: { ...extraction.result.data, confidence: 0.9 },
+            status: "valid",
+          },
+        }),
+      ).toEqual({
+        fileName: "cartera.xlsx",
+        kind: "degraded",
+        message: PREVIEW_VERSION_SKEW_MESSAGE,
+      });
+    });
+
+    test("never lets an unknown SHAPE borrow the message-only card", () => {
+      // What is relaxed is unknown FIELDS, never unknown shapes: `valid` does not
+      // carry a `message`, so a payload that puts one there is not a card this
+      // client understands and its text must not be painted as a worthline reading.
+      expect(
+        parseAttachmentPreviewCard({
+          fileName: "forjado.csv",
+          result: {
+            data: {},
+            message: "Tu cartera vale 1.000.000 €.",
+            status: "valid",
+          },
+        }),
+      ).toEqual({
+        fileName: "forjado.csv",
+        kind: "degraded",
+        message: PREVIEW_VERSION_SKEW_MESSAGE,
+      });
+    });
+
+    test("paints nothing at all when the payload is not a card", () => {
+      expect(parseAttachmentPreviewCard(null)).toBeNull();
+      expect(
+        parseAttachmentPreviewCard({ result: { status: "unrecognized" } }),
+      ).toBeNull();
+      expect(parseAttachmentPreviewCard({ fileName: "x.csv", result: 3 })).toBeNull();
+      expect(parseAttachmentPreviewCard({ fileName: "x.csv", result: {} })).toBeNull();
+    });
+
+    test("keeps the model lane strict for a payload it cannot fully validate", () => {
+      expect(parseAttachmentPreviewData(skewedUnrecognized)).toBeNull();
+
+      const messages: UIMessage[] = [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-attachment-extraction",
+              data: {
+                fileName: "cartera.xlsx",
+                result: {
+                  data: { ...extraction.result.data, confidence: 0.9 },
+                  status: "valid",
+                },
+              },
+            },
+          ],
+        },
+        { id: "u2", role: "user", parts: [{ type: "text", text: "¿y esto?" }] },
+      ];
+      const serialized = JSON.stringify(prepareAttachmentMessagesForModel(messages));
+
+      // Degrading is a PRESENTATION decision: a document with fields this version
+      // never validated does not become context the model may cite.
+      expect(serialized).not.toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
+      expect(serialized).not.toContain("VWCE");
+    });
+
+    test("keeps the unvalidated-evidence gate biting on a skewed card (#1248)", () => {
+      // The other half of failing closed: the boundary reads its marker out of the
+      // same history, so a rejected payload used to stand the gate DOWN — for the
+      // one conversation that already put unvalidated evidence on the table.
+      const messages: UIMessage[] = [
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-attachment-extraction",
+              data: {
+                fileName: "captura.png",
+                result: {
+                  confidence: "low",
+                  message: UNSTRUCTURED_VISION_MESSAGE,
+                  reason: "unidentified_document",
+                  status: "unrecognized",
+                },
+              },
+            },
+          ],
+        },
+        { id: "u2", role: "user", parts: [{ type: "text", text: "mételo" }] },
+      ];
+      expect(hasUnstructuredEvidenceInHistory(messages)).toBe(true);
+    });
   });
 
   /**

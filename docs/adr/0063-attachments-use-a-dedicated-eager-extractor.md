@@ -365,6 +365,44 @@ instalment, never the payment, so the honest answer is still `unrecognized` — 
 way to fail it is now exactly the invention this document most invites, borrowing that
 date for the payment.
 
+## Amendment — the card payload is a wire format between two deploys (#1261)
+
+The envelope is validated at two very different boundaries, and this ADR had been
+treating them as one. Server-side it guards **untrusted extractor output**, and
+`.strict()` there is the whole point. But the card payload is also persisted in the
+client's conversation and re-validated on every render — and there the writer is *our
+own server, possibly a version ahead*: a tab left open across a deploy re-parses a
+payload written by newer code. Rejecting the unknown is right for a hostile emitter and
+wrong for that one. `.strict()` made an added field fatal, so #1246's optional `reason`
+made the whole card **vanish** in every open tab: no error, no gap, just an assistant
+discussing a document nothing had apparently processed.
+
+So the client lane splits by *what is being decided*, not by who is asking:
+
+- **Painting the card** tolerates unknown FIELDS and never unknown SHAPES. When the
+  strict re-parse fails, the payload is re-read loosely and the minimal card — file
+  name plus the envelope's own message — is painted. `message` is trusted only for the
+  statuses whose card genuinely is message-only (`unrecognized`, `out_of_limits`,
+  `failure`); a payload claiming `valid` with prose where the document belongs gets a
+  «recarga la página» notice instead of its own text, so no unknown shape can borrow
+  the reading card. A `valid` document that grew a field also gets that notice: the
+  table cannot be rendered here, and saying so beats disappearing.
+- **Everything downstream stays strict.** What enters the prompt and what feeds a
+  proposal still goes through the unchanged strict parse, so a payload this version
+  cannot fully validate reaches neither. Degrading is a decision about pixels only.
+- **The #1248 evidence marker is read loosely too, and that direction is
+  deliberate.** The gate finds its marker in the same history, so a rejected payload
+  used to stand the boundary DOWN — failing *open* for exactly the conversation that
+  already has unvalidated evidence on the table. A loose read of `status` + `message`
+  can only ever make the gate apply; it compares against closed literals of ours and
+  nothing it reads reaches the model.
+
+Versioning the payload and asking the client to reload when it does not understand the
+version was considered and left on the shelf: it is the more honest long-term answer,
+and it can be built on top of this without undoing it. What could not wait is that the
+next added field would have done the same thing again — which is also why pinning an
+attachment's provenance *on the card* needed this first.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

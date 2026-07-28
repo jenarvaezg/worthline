@@ -5,15 +5,18 @@ import {
 } from "@web/asistente/attachment-extraction-contract";
 import {
   MAX_ATTACHMENT_FILE_NAME_CHARS,
+  PREVIEW_VERSION_SKEW_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
 import type { UIMessage } from "ai";
 import { z } from "zod";
 
+const fileNameSchema = z.string().trim().min(1).max(MAX_ATTACHMENT_FILE_NAME_CHARS);
+
 const attachmentPreviewEnvelopeSchema = z
   .object({
-    fileName: z.string().trim().min(1).max(255),
+    fileName: fileNameSchema,
     result: z.unknown(),
   })
   .strict();
@@ -45,6 +48,18 @@ type UnreadAttachmentStatus = Exclude<
   { status: "valid" }
 >["status"];
 
+/**
+ * The statuses whose card is ONLY a file name and a message — the shape a client can
+ * still paint without understanding anything else about the payload. A `Record` and
+ * not a list so a fifth status cannot be added without deciding, right here, whether
+ * its card degrades to that minimum.
+ */
+const MESSAGE_ONLY_CARD_STATUSES: Record<UnreadAttachmentStatus, true> = {
+  failure: true,
+  out_of_limits: true,
+  unrecognized: true,
+};
+
 /** Revalidate persistent UI data before it can return to model context. */
 export function parseAttachmentPreviewData(input: unknown): AttachmentPreviewData | null {
   const envelope = attachmentPreviewEnvelopeSchema.safeParse(input);
@@ -59,6 +74,75 @@ export function parseAttachmentPreviewData(input: unknown): AttachmentPreviewDat
     return null;
   }
   return { fileName: envelope.data.fileName, result };
+}
+
+/**
+ * A card payload as the UI must treat it: either a fully revalidated reading, or the
+ * minimum still paintable from a payload this version does not entirely understand.
+ * There is no third «nothing» branch by design (#1261) — see
+ * {@link parseAttachmentPreviewCard}.
+ */
+export type AttachmentPreviewCard =
+  | ({ kind: "parsed" } & AttachmentPreviewData)
+  | { kind: "degraded"; fileName: string; message: string };
+
+/**
+ * The envelope read WITHOUT rejecting unknown keys, at both levels: a newer server
+ * may add a field to the envelope as easily as to the result. Nothing read here is
+ * trusted beyond what it is used for — painting text the user's own browser sent
+ * back, and comparing a status and a message against closed literals of ours.
+ */
+const looseEnvelopeSchema = z.looseObject({
+  fileName: fileNameSchema,
+  result: z.looseObject({
+    status: z.string().trim().min(1),
+    message: z.string().trim().min(1).optional(),
+  }),
+});
+
+type LooseEnvelope = z.infer<typeof looseEnvelopeSchema>;
+
+function parseLooseEnvelope(input: unknown): LooseEnvelope | null {
+  const parsed = looseEnvelopeSchema.safeParse(input);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The card to paint for a persisted payload — never `null` when there is anything
+ * honest to paint.
+ *
+ * The distinction this makes is «no reconozco esta FORMA» versus «no reconozco este
+ * CAMPO» (#1261). The payload is a wire format between the server that wrote it and
+ * the tab re-rendering it, and those are different versions of worthline every time a
+ * deploy lands on an open conversation — the ordinary case for a panel people leave
+ * open. Rejecting the whole card over a field the server added took away the only
+ * surface that says what worthline read of the document, and took it away silently:
+ * the user saw the assistant discuss a document nothing had apparently processed.
+ *
+ * So an unknown FIELD degrades to the minimal card. An unknown SHAPE still does not
+ * paint a reading: `message` is only trusted for the statuses whose card really is
+ * message-only ({@link MESSAGE_ONLY_CARD_STATUSES}), so a payload claiming `valid`
+ * with prose where the document belongs gets the reload notice, not its own text.
+ *
+ * What does NOT relax is everything downstream: {@link parseAttachmentPreviewData}
+ * stays strict, so a degraded payload reaches neither the model's context nor a
+ * proposal. Degrading is a decision about pixels only.
+ */
+export function parseAttachmentPreviewCard(input: unknown): AttachmentPreviewCard | null {
+  const preview = parseAttachmentPreviewData(input);
+  if (preview) return { kind: "parsed", ...preview };
+
+  const envelope = parseLooseEnvelope(input);
+  if (!envelope) return null;
+  const { message, status } = envelope.result;
+  return {
+    fileName: envelope.fileName,
+    kind: "degraded",
+    message:
+      message !== undefined && Object.hasOwn(MESSAGE_ONLY_CARD_STATUSES, status)
+        ? message
+        : PREVIEW_VERSION_SKEW_MESSAGE,
+  };
 }
 
 function isCanonicalInvalidOutput(input: unknown): boolean {
@@ -79,6 +163,13 @@ function isAttachmentPart(part: UIMessage["parts"][number]): boolean {
 function previewFromPart(part: UIMessage["parts"][number]): AttachmentPreviewData | null {
   return part.type === "data-attachment-extraction"
     ? parseAttachmentPreviewData(part.data)
+    : null;
+}
+
+/** The same dispatch as {@link previewFromPart}, for the lane that reads loosely. */
+function looseEnvelopeFromPart(part: UIMessage["parts"][number]): LooseEnvelope | null {
+  return part.type === "data-attachment-extraction"
+    ? parseLooseEnvelope(part.data)
     : null;
 }
 
@@ -340,14 +431,23 @@ const UNSTRUCTURED_EVIDENCE_MESSAGES: readonly string[] = [
  * Only an unstructured card counts, identified by its own message: an honest dead-end
  * (unreadable, too large, or a capture nobody could describe) means the model got NO
  * document at all, so the source is the user's own text — the ordinary manual path.
+ *
+ * The marker is read through the LOOSE envelope, and for the same reason the legacy
+ * wordings above are kept: a payload this version cannot fully revalidate — a card
+ * written by a newer server, #1261 — used to be rejected outright and stood the gate
+ * DOWN, which is failing open for exactly the conversation that already has
+ * unvalidated evidence on the table. Reading only `status` and `message` here adds no
+ * surface: both are compared against closed literals of ours, a forged card can only
+ * ever CLOSE this gate, and nothing read here reaches the model.
  */
 export function hasUnstructuredEvidenceInHistory(messages: UIMessage[]): boolean {
   return messages.some((message) =>
     message.parts.some((part) => {
-      const preview = previewFromPart(part);
+      const envelope = looseEnvelopeFromPart(part);
       return (
-        preview?.result.status === "unrecognized" &&
-        UNSTRUCTURED_EVIDENCE_MESSAGES.includes(preview.result.message)
+        envelope?.result.status === "unrecognized" &&
+        envelope.result.message !== undefined &&
+        UNSTRUCTURED_EVIDENCE_MESSAGES.includes(envelope.result.message)
       );
     }),
   );
