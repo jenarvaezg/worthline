@@ -527,6 +527,15 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // early repayment (#1245).
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
     expect(kindTitles.length).toBe(10);
+
+    // The ledger FOOTER is a different line from the folio label above (canon §3):
+    // the atomic-batch statement («1 propuesta · 1 holding · 1 lote atómico»), which
+    // only the three atomic cards print — correction, reconstruction and early
+    // repayment. The alta, baja and reconcile cards used to print their own kind
+    // string there instead, so the reader met the same words twice in one card
+    // (#1317). A footer that merely repeats the header is the mistake this pins.
+    const footers = layer.match(/className="assistantProposalFolio"/g) ?? [];
+    expect(footers.length).toBe(3);
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {
