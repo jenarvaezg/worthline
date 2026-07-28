@@ -180,6 +180,81 @@ describe("buildHoldingCreationProposal (#1105) · families", () => {
   });
 });
 
+describe("buildHoldingCreationProposal (#1315) · títulos y comisión", () => {
+  test("declared units and fee reach the card, valued at units × price", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      feesMinor: 1_00,
+      instrument: "stock",
+      name: "Acciones ACS",
+      openingValueMinor: 164_64,
+      pricePerUnit: "54,545",
+      units: "3",
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    // The commission is cost basis, not market value: net worth moves by 163,64 €.
+    expect(built.proposal.impact.deltaMinor).toBe(163_64);
+    // Cents kept on the commission (1,00 €, never «1 €») and the NAV keeps its
+    // three decimals; the € sign carries Intl's narrow no-break space.
+    expect(built.proposal.holding.opening?.fees).toContain("1,00");
+    expect(built.proposal.holding.opening?.pricePerUnit).toContain("54,545");
+    expect(built.proposal.holding.opening?.units).toBe("3");
+    expect(built.proposal.openingMismatchWarning).toBeUndefined();
+    store.close();
+  });
+
+  test("terms that do not add up warn on the card without blocking", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      feesMinor: 1_00,
+      instrument: "stock",
+      name: "Acciones descuadradas",
+      openingValueMinor: 500_00,
+      pricePerUnit: "54,545",
+      units: "3",
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.openingMismatchWarning).toContain("500,00");
+    expect(built.proposal.holding.opening?.units).toBe("3");
+    store.close();
+  });
+
+  test("without units the alta still shows the derived ones", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      instrument: "fund",
+      name: "Fondo Índice",
+      openingValueMinor: 1_500_00,
+      pricePerUnit: "150",
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.impact.deltaMinor).toBe(1_500_00);
+    expect(built.proposal.holding.opening?.units).toBe("10");
+    expect(built.proposal.holding.opening?.pricePerUnit).toContain("150");
+    store.close();
+  });
+
+  test("rejects a commission in euros instead of cents", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      feesMinor: 1.5,
+      instrument: "stock",
+      name: "Acciones con comisión rara",
+      pricePerUnit: "54,545",
+      units: "3",
+    });
+    expect(built.ok).toBe(false);
+    store.close();
+  });
+});
+
 describe("buildHoldingCreationProposal (#1105) · duplicate warning", () => {
   test("0 matches → no duplicate", async () => {
     const store = await seedWorkspace();
@@ -322,6 +397,46 @@ describe("holding-creation server actions (#1105)", () => {
     const created = investments.find((i) => i.name === "Fondo Índice");
     expect(created).toBeDefined();
     expect(await store.operations.readOperations(created!.id)).toHaveLength(1);
+    store.close();
+  });
+
+  /**
+   * The #1315 regression, verbatim from the issue: a broker confirmation of 3
+   * títulos × 54,545 € with 1,00 € de comisión (164,64 € efectivos). Before the
+   * fix the alta persisted 3,01814849 unidades @ 54,55 € and fees 0 — false units
+   * forever and a cost basis missing the commission.
+   */
+  test("confirm persists the declared títulos and the comisión, not derived units", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      feesMinor: 1_00,
+      instrument: "stock",
+      name: "Acciones ACS",
+      openingValueMinor: 164_64,
+      pricePerUnit: "54,545",
+      units: "3",
+    });
+    if (!built.ok) throw new Error(built.error);
+
+    const result = await confirmHoldingCreationProposalAction(
+      built.proposal.draft,
+      store,
+      clock,
+    );
+
+    expect(result).toEqual({ status: "applied" });
+    const created = (await store.assets.readInvestmentAssetsWithMeta()).find(
+      (i) => i.name === "Acciones ACS",
+    );
+    const operations = await store.operations.readOperations(created!.id);
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      feesMinor: 1_00,
+      kind: "buy",
+      pricePerUnit: "54.545",
+      units: "3",
+    });
     store.close();
   });
 

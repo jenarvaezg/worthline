@@ -7,6 +7,7 @@
 
 import type { HoldingCreationFamily } from "@worthline/db";
 import type { HoldingCreationImpact } from "./holding-creation-impact";
+import type { OpeningCardBreakdown } from "./holding-creation-opening";
 
 /** The folio the alta card states (its `assistantProposalKind` label). */
 export const HOLDING_CREATION_FOLIO = "Propuesta de alta · Por estado actual";
@@ -37,6 +38,13 @@ export interface HoldingCreationProposal {
     /** Formatted current value / balance detail (e.g. "12.500 €"). */
     detail: string;
     /**
+     * The opening BUY broken down for confirmation (#1315): the títulos and unit
+     * price that will be persisted, plus the commission when the document stated
+     * one. Present for an investment alta with an opening — derived units
+     * included, so a suspicious 3,018148 is visible BEFORE confirming.
+     */
+    opening?: OpeningCardBreakdown;
+    /**
      * The resolved price symbol for an investment alta (#1186), surfaced so the
      * user confirms/corrects it before applying. Absent for non-investment
      * families and for an investment created without a resolved symbol.
@@ -51,6 +59,14 @@ export interface HoldingCreationProposal {
    * by the daily capture / stale-price refresh until a symbol is assigned.
    */
   priceTrackingWarning?: string;
+  /**
+   * Informative opening-coherence warning (never blocks, #1315): set when the
+   * declared cash amount and `títulos × precio + comisión` disagree by more than a
+   * cent of rounding. The alta still applies with the declared terms — the figures
+   * are the user's, and a document that does not add up is a fact about the
+   * document (same reading as `propose_early_repayment`'s cuota reconciliation).
+   */
+  openingMismatchWarning?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

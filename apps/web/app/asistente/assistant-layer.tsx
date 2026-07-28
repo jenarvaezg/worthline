@@ -287,12 +287,23 @@ function HoldingCreationProposalCard({
           <strong>{proposal.holding.name}</strong>{" "}
           <span>
             {proposal.holding.instrumentLabel} · {proposal.holding.detail}
+            {/* Títulos, precio y comisión de la apertura (#1315): lo que se
+                persiste, visible antes de confirmar. */}
+            {proposal.holding.opening
+              ? ` · ${proposal.holding.opening.units} uds. × ${proposal.holding.opening.pricePerUnit}`
+              : ""}
+            {proposal.holding.opening?.fees
+              ? ` · Comisión ${proposal.holding.opening.fees}`
+              : ""}
             {proposal.holding.providerSymbol
               ? ` · Símbolo ${proposal.holding.providerSymbol}`
               : ""}
           </span>
         </li>
       </ul>
+      {proposal.openingMismatchWarning ? (
+        <p className="assistantWarning">{proposal.openingMismatchWarning}</p>
+      ) : null}
       {proposal.priceTrackingWarning ? (
         <p className="assistantWarning">{proposal.priceTrackingWarning}</p>
       ) : null}

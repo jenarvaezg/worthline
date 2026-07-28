@@ -613,6 +613,33 @@ describe("createChatTools · propose_holding (#1105)", () => {
     });
     store.close();
   });
+
+  /**
+   * The schema is the model's only channel: a term of the opening it cannot NAME
+   * is a term it cannot pass, which is exactly how #1315 lost the títulos and the
+   * comisión. `additionalProperties: false` is what makes this a real frontier.
+   */
+  it("declares units and feesMinor for the opening, and nothing undeclared", async () => {
+    const store = await createInMemoryStore();
+    const tools = createChatTools({
+      runWithStore: (run) => run({ agentView: store.agentView }),
+      asOf: AS_OF,
+    });
+
+    const schema = (
+      tools["propose_holding"]?.inputSchema as {
+        jsonSchema: {
+          additionalProperties: boolean;
+          properties: Record<string, { type: string }>;
+        };
+      }
+    ).jsonSchema;
+
+    expect(schema.properties["units"]).toEqual({ type: "string" });
+    expect(schema.properties["feesMinor"]).toEqual({ type: "integer" });
+    expect(schema.additionalProperties).toBe(false);
+    store.close();
+  });
 });
 
 describe("createChatTools · propose_holding_removal (#1106)", () => {
