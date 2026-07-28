@@ -10,7 +10,11 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"],
-      "inputs": ["$TURBO_DEFAULT$", ".env.production", ".env"]
+      "inputs": ["$TURBO_DEFAULT$", ".env.production", ".env"],
+      // The e2e build (`build:e2e`) turns on the Instant Navigation Testing API,
+      // which changes the emitted bundle. Part of the hash so a cache entry from
+      // one flavour can never be replayed as the other (#1229).
+      "env": ["WORTHLINE_EXPOSE_TESTING_API"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"],

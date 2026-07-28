@@ -30,6 +30,18 @@ const nextConfig: NextConfig = {
     // components from 'react' can then animate named elements (ADR 0036 §5,
     // interaction-patterns §5).
     viewTransition: true,
+    // Instant Navigation Testing API (#1229). `instant()` from @next/playwright
+    // is a cookie the CLIENT BUNDLE must be compiled to honour: Next inlines
+    // `__NEXT_EXPOSE_TESTING_API` as `dev || exposeTestingApiInProductionBuild`,
+    // so in a production build without this flag the navigation lock is dead
+    // code and the helper silently does nothing — journey 48 then asserted a
+    // race (skeleton vs. dynamic data) instead of the shell, and lost it in CI
+    // wherever the server was warm enough to answer first.
+    //
+    // Gated on an env var because the flag exposes a testing hook: only the e2e
+    // build turns it on (`bun run --filter @worthline/web build:e2e`, which CI's
+    // `E2E setup` job runs). A deploy build never sets it.
+    exposeTestingApiInProductionBuild: process.env.WORTHLINE_EXPOSE_TESTING_API === "1",
   },
   transpilePackages: ["@worthline/db", "@worthline/domain", "@worthline/pricing"],
   // @libsql/client pulls in a native addon (the `libsql` package) for local
