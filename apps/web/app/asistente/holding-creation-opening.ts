@@ -23,7 +23,7 @@
  * frontier, and silently rounding would write a figure nobody read (ADR 0048).
  */
 
-import { normalizeNonNegativeDecimalString } from "@web/intake";
+import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import type { InvestmentHoldingCreationPlan } from "@worthline/db";
 import { type DecimalString, multiplyToMinor } from "@worthline/domain";
