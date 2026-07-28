@@ -69,8 +69,20 @@ export interface InvestmentHoldingCreationPlan extends HoldingCreationPlanBase {
   family: "investment";
   providerSymbol?: string;
   isin?: string;
-  /** The opening BUY dated today (units × price = value), when the user declared it. */
-  opening?: { units: string; pricePerUnit: string; valueMinor: number };
+  /**
+   * The opening BUY dated today, when the user declared it. `units` and
+   * `pricePerUnit` are persisted on the operation verbatim; `valueMinor` is the
+   * position's MARKET value (units × price) — the figure the impact header moves.
+   * `feesMinor` is the broker commission (#1315): cost basis, never market value,
+   * so it is never folded into `valueMinor` (the domain adds it: units × price +
+   * fees). Absent when the document declared no commission.
+   */
+  opening?: {
+    units: string;
+    pricePerUnit: string;
+    valueMinor: number;
+    feesMinor?: number;
+  };
 }
 
 /** The declarative alta plan the `holding_creation` fact carries, by family. */

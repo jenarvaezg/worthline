@@ -11,7 +11,6 @@
 
 import { createHash } from "node:crypto";
 import { resolveOwnershipSplit } from "@web/intake";
-import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
@@ -28,6 +27,11 @@ import {
   reassignToNew,
 } from "@worthline/domain";
 import { holdingCreationImpact } from "./holding-creation-impact";
+import {
+  type OpeningCardBreakdown,
+  openingCardBreakdown,
+  resolveHoldingCreationOpening,
+} from "./holding-creation-opening";
 import {
   HOLDING_CREATION_FOLIO,
   type HoldingCreationDuplicate,
@@ -60,10 +64,17 @@ export interface HoldingCreationArgs {
   providerSymbol?: string;
   /** investment: the ISIN, when the holding has one. */
   isin?: string;
-  /** investment: the current euro balance to seed the opening BUY, in minor units. */
+  /** investment: the cash amount of the opening BUY, in minor units. */
   openingValueMinor?: number;
-  /** investment: the unit price (es-ES decimal string) to derive the opening units. */
+  /** investment: the unit price, as an es-ES decimal string. */
   pricePerUnit?: string;
+  /**
+   * investment: the units the document states (es-ES decimal string), persisted
+   * verbatim. Absent → derived from the amount (#1315).
+   */
+  units?: string;
+  /** investment: the broker commission of the opening BUY, in minor units (#1315). */
+  feesMinor?: number;
 }
 
 type BuildResult =
@@ -103,7 +114,9 @@ function isPositiveMinor(value: number | undefined): value is number {
 function buildPlan(
   args: HoldingCreationArgs,
   ownership: HoldingCreationPlan["ownership"],
-): { ok: true; plan: HoldingCreationPlan } | { ok: false; error: string } {
+):
+  | { ok: true; plan: HoldingCreationPlan; openingMismatchWarning?: string }
+  | { ok: false; error: string } {
   const name = (args.name ?? "").trim();
   if (!name) return { ok: false, error: "Falta el nombre del holding a crear." };
 
@@ -176,10 +189,10 @@ function buildPlan(
     };
   }
 
-  // investment: an optional opening BUY dated today (units × price = value). When
-  // neither the value nor the price is given the alta creates an empty container
-  // (no 0 € valuation invented); when one is given without the other it fails
-  // honestly rather than guessing.
+  // investment: an optional opening BUY dated today, resolved by the one module
+  // that owns `importe = títulos × precio + comisión` (#1315). Nothing declared →
+  // an empty container (no 0 € valuation invented); a half-declared opening fails
+  // honestly rather than guessing; declared terms that disagree warn, never block.
   const base: HoldingCreationPlan = {
     family: "investment",
     instrument,
@@ -188,36 +201,22 @@ function buildPlan(
     ...(args.isin ? { isin: args.isin.trim() } : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
-  const hasOpeningInput =
-    args.openingValueMinor !== undefined || args.pricePerUnit !== undefined;
-  if (!hasOpeningInput) {
-    return { ok: true, plan: base };
-  }
-  const derived = deriveOpeningUnits({
-    priceRaw: String(args.pricePerUnit ?? ""),
-    saldoRaw: isPositiveMinor(args.openingValueMinor)
-      ? (args.openingValueMinor / 100).toString()
-      : "",
+  const resolved = resolveHoldingCreationOpening({
+    ...(args.feesMinor === undefined ? {} : { feesMinor: args.feesMinor }),
+    ...(args.openingValueMinor === undefined
+      ? {}
+      : { openingValueMinor: args.openingValueMinor }),
+    ...(args.pricePerUnit === undefined ? {} : { pricePerUnit: args.pricePerUnit }),
+    ...(args.units === undefined ? {} : { units: args.units }),
   });
-  if (!derived.ok) {
-    return {
-      ok: false,
-      error:
-        derived.reason === "price"
-          ? "Necesito el precio por unidad para valorar la inversión, o créala sin apertura."
-          : "Indica cuánto tienes hoy en euros, o crea la inversión sin apertura.",
-    };
-  }
+  if (!resolved.ok) return resolved;
+  if (resolved.opening === null) return { ok: true, plan: base };
   return {
     ok: true,
-    plan: {
-      ...base,
-      opening: {
-        pricePerUnit: derived.price,
-        units: derived.units,
-        valueMinor: args.openingValueMinor!,
-      },
-    },
+    plan: { ...base, opening: resolved.opening },
+    ...(resolved.mismatchWarning === undefined
+      ? {}
+      : { openingMismatchWarning: resolved.mismatchWarning }),
   };
 }
 
@@ -308,6 +307,15 @@ function detailOf(plan: HoldingCreationPlan): string {
   }
 }
 
+/**
+ * The títulos × precio (+ comisión) the card shows next to the value, for an
+ * investment alta with an opening (#1315). Absent otherwise.
+ */
+function openingOf(plan: HoldingCreationPlan): OpeningCardBreakdown | undefined {
+  if (plan.family !== "investment" || !plan.opening) return undefined;
+  return openingCardBreakdown(plan.opening);
+}
+
 export async function buildHoldingCreationProposal(
   store: ProposalStore,
   args: HoldingCreationArgs,
@@ -339,6 +347,7 @@ export async function buildHoldingCreationProposal(
 
   const providerSymbol = providerSymbolOf(plan);
   const priceTrackingWarning = priceTrackingWarningOf(plan);
+  const opening = openingOf(plan);
 
   const proposal = await store.assistantProposals.create({ kind: "holding_creation" });
   await store.assistantProposals.appendDocument(proposal.id, {
@@ -360,11 +369,15 @@ export async function buildHoldingCreationProposal(
         detail: detailOf(plan),
         instrumentLabel: instrumentLabel(plan.instrument, plan.instrument),
         name: plan.name,
+        ...(opening ? { opening } : {}),
         ...(providerSymbol ? { providerSymbol } : {}),
       },
       impact,
       proposalType: "holding_creation",
       ...(duplicate ? { duplicate } : {}),
+      ...(built.openingMismatchWarning === undefined
+        ? {}
+        : { openingMismatchWarning: built.openingMismatchWarning }),
       ...(priceTrackingWarning ? { priceTrackingWarning } : {}),
     },
   };

@@ -123,7 +123,9 @@ export async function persistHoldingCreation(
 
   if (plan.opening) {
     // The opening BUY dated today, so the holding lands valued — same seam the
-    // operations editor and the wizard's "saldo de hoy" path use.
+    // operations editor and the wizard's "saldo de hoy" path use. The commission
+    // rides on the operation (#1315): the domain folds it into the cost basis
+    // (units × price + fees), which is what keeps the return honest.
     const op: CreateInvestmentOperationInput = {
       assetId: id,
       currency: "EUR",
@@ -133,6 +135,9 @@ export async function persistHoldingCreation(
       pricePerUnit: plan.opening.pricePerUnit,
       source: "opening",
       units: plan.opening.units,
+      ...(plan.opening.feesMinor === undefined
+        ? {}
+        : { feesMinor: plan.opening.feesMinor }),
     };
     const safe = createInvestmentOperationSafe(op);
     if (!safe.ok) return { error: mapDomainViolation(safe.violations[0]!), ok: false };
