@@ -11,6 +11,7 @@ import {
 } from "@web/admin/list-admin-entitlements";
 import { listAdminAiTokenUsage } from "@web/admin/list-ai-token-usage";
 import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
+import { listAdminVisionCallUsage } from "@web/admin/list-vision-call-usage";
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -27,7 +28,7 @@ function formatDate(iso: string): string {
   });
 }
 
-const tokenFormatter = new Intl.NumberFormat("es-ES");
+const numberFormatter = new Intl.NumberFormat("es-ES");
 
 const PLAN_LABEL: Record<AdminEntitlementRow["effectivePlan"], string> = {
   free: "Free",
@@ -67,11 +68,12 @@ export default async function AdminPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await guardAdmin();
-  const [{ entError }, rows, openAlerts, tokenUsage] = await Promise.all([
+  const [{ entError }, rows, openAlerts, tokenUsage, visionUsage] = await Promise.all([
     searchParams,
     listAdminEntitlements(),
     countAdminOpenMaintainerAlerts(),
     listAdminAiTokenUsage(),
+    listAdminVisionCallUsage(),
   ]);
 
   return (
@@ -137,7 +139,7 @@ export default async function AdminPage({
                       </>
                     ) : null}
                   </td>
-                  <td>{tokenFormatter.format(row.tokensToday)}</td>
+                  <td>{numberFormatter.format(row.tokensToday)}</td>
                   <td className="rowActions">
                     <form action={impersonateWorkspaceAction}>
                       <input name="workspaceId" type="hidden" value={row.workspaceId} />
@@ -197,7 +199,34 @@ export default async function AdminPage({
               {tokenUsage.map((day) => (
                 <tr key={day.dayKey}>
                   <td>{day.dayKey}</td>
-                  <td>{tokenFormatter.format(day.tokens)}</td>
+                  <td>{numberFormatter.format(day.tokens)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Extraction spend (#1258): its own section, not a column of the table
+          above. The unit is different (readings, not tokens), the model is
+          different, and it is the spend that had no counter at all until now. */}
+      <section className="adminList section">
+        <h2>Lectura de documentos · llamadas/día (global)</h2>
+        {visionUsage.length === 0 ? (
+          <p className="demoLede">Aún no hay lecturas de documentos registradas.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Día</th>
+                <th>Llamadas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visionUsage.map((day) => (
+                <tr key={day.dayKey}>
+                  <td>{day.dayKey}</td>
+                  <td>{numberFormatter.format(day.calls)}</td>
                 </tr>
               ))}
             </tbody>

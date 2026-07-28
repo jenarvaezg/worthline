@@ -44,6 +44,11 @@ import {
   TRIAL_PREMIUM_DAILY_TOKEN_BUDGET,
 } from "@web/asistente/token-budget";
 import { readAiTokenUsage } from "@web/asistente/token-budget-store";
+import { VISION_CALL_LIMITS } from "@web/asistente/vision-call-budget";
+import {
+  readVisionCallUsage,
+  recordVisionCalls,
+} from "@web/asistente/vision-call-budget-store";
 import { seedPersona } from "@web/demo/seed-persona";
 import { JOVEN_SPEC } from "@web/demo/specs/joven";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
@@ -76,8 +81,24 @@ vi.mock("@web/asistente/token-budget-store", () => ({
   readAiTokenUsage: vi.fn(),
   recordAiTokenUsage: vi.fn(),
 }));
+vi.mock("@web/asistente/vision-call-budget-store", () => ({
+  readVisionCallUsage: vi.fn(),
+  recordVisionCalls: vi.fn(),
+}));
 vi.mock("@web/asistente/maintainer-alert-store", () => ({
   raiseMaintainerAlert: vi.fn(),
+}));
+// `after()` defers work past the response, which is exactly what makes the vision
+// meter's write invisible to a test that only reads the stream. Running the
+// callback inline is the only way to assert that a reading reaches its counter —
+// the acceptance #1258 was filed for. File-wide, but the only other `after()` on
+// this route is the token meter's, which these tests never reach: it is gated on a
+// control-plane URL that is unset here.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (callback: () => unknown) => {
+    void callback();
+  },
 }));
 vi.mock("@web/store", () => ({
   withStore: <T>(run: (store: WorthlineStore) => Promise<T>) => run(currentStore),
@@ -348,12 +369,18 @@ function attachmentRequest(
   mimeType = fileName.endsWith(".xlsx")
     ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     : "text/csv",
+  // The platform-set header the rate limit and the vision fuse key demo callers on.
+  ip?: string,
 ): Request {
   const body = new FormData();
   body.set("messages", JSON.stringify([userMessage("¿Qué ves en estas posiciones?")]));
   body.set("screenContext", "null");
   body.set("attachment", new File([contents], fileName, { type: mimeType }));
-  return new Request("http://127.0.0.1/api/chat", { method: "POST", body });
+  return new Request("http://127.0.0.1/api/chat", {
+    method: "POST",
+    body,
+    ...(ip ? { headers: { "x-real-ip": ip } } : {}),
+  });
 }
 
 function imageAttachmentRequest(
@@ -362,6 +389,11 @@ function imageAttachmentRequest(
   mimeType = "image/png",
 ): Request {
   return attachmentRequest(contents, fileName, mimeType);
+}
+
+/** The same image upload, arriving from a known client IP. */
+function imageAttachmentRequestFromIp(ip: string): Request {
+  return attachmentRequest("SECRET-PIXELS", "posiciones.png", "image/png", ip);
 }
 
 /**
@@ -428,6 +460,9 @@ beforeEach(() => {
   // Token metering is unmetered by default (local dev / no control-plane URL);
   // the #1163 gate has its own tests.
   vi.mocked(readAiTokenUsage).mockResolvedValue(null);
+  // Same for the vision-call meter (#1258): unmetered by default, own tests below.
+  vi.mocked(readVisionCallUsage).mockResolvedValue(null);
+  vi.mocked(recordVisionCalls).mockResolvedValue(undefined);
   vi.mocked(readProviderCooldowns).mockResolvedValue({
     mode: "hosted",
     deploymentKey: "preview-959",
@@ -2029,6 +2064,130 @@ describe("POST /api/chat · token budget + global fuse (#1163)", () => {
     const streamed = await response.text();
     expect(streamed).not.toContain("data-paywall");
     expect(streamed).toContain("patrimonio neto");
+  });
+});
+
+describe("POST /api/chat · vision-call fuse (#1258)", () => {
+  const POSITIONS_SHEET = [
+    "Símbolo;Nombre;Unidades;Valor de mercado EUR;Divisa",
+    "VWCE;All-World;1;10;EUR",
+  ].join("\n");
+
+  /** An unidentified capture: the #1246 cascade, the two-call worst case. */
+  function unidentifiedCapture(): void {
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      message: "no lo reconozco",
+      reason: "unidentified_document",
+      status: "unrecognized",
+    });
+    vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una pantalla de pago.");
+  }
+
+  it("refuses the reading once this scope spent its daily readings", async () => {
+    unidentifiedCapture();
+    vi.mocked(readVisionCallUsage).mockResolvedValue({
+      scopeCalls: VISION_CALL_LIMITS.demo,
+      globalCalls: VISION_CALL_LIMITS.demo,
+    });
+
+    const response = await POST(imageAttachmentRequest());
+
+    expect(response.status).toBe(200);
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("límite de lecturas de documentos de hoy");
+    // The brake bites BEFORE the provider: that is the whole point of the fuse.
+    expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
+    expect(describeVisionAttachment).not.toHaveBeenCalled();
+  });
+
+  it("refuses the reading once the shared daily fuse blows", async () => {
+    unidentifiedCapture();
+    vi.mocked(readVisionCallUsage).mockResolvedValue({
+      scopeCalls: 0,
+      globalCalls: VISION_CALL_LIMITS.global,
+    });
+
+    const response = await POST(imageAttachmentRequest());
+
+    const streamed = await response.text();
+    expect(streamed).toContain("data-paywall");
+    expect(streamed).toContain("presupuesto diario que hoy se ha agotado");
+    expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
+  });
+
+  it("keeps the conversation itself working when the fuse is blown", async () => {
+    // The fuse pauses the machine reading of files, never the assistant: a turn
+    // with no attachment must not even ask the counter.
+    vi.mocked(readVisionCallUsage).mockResolvedValue({
+      scopeCalls: VISION_CALL_LIMITS.demo,
+      globalCalls: VISION_CALL_LIMITS.global,
+    });
+
+    const response = await POST(chatRequest({ messages: [userMessage("¿cómo voy?")] }));
+
+    const streamed = await response.text();
+    expect(streamed).not.toContain("data-paywall");
+    expect(streamed).toContain("patrimonio neto");
+    expect(readVisionCallUsage).not.toHaveBeenCalled();
+  });
+
+  it("counts a demo visitor by IP, and charges the cascade its two calls", async () => {
+    unidentifiedCapture();
+    await (await POST(imageAttachmentRequestFromIp("203.0.113.7"))).text();
+
+    // demo resolves to `premium`, so nothing above this gate bounds an anonymous
+    // caller's document reading — the IP scope is what does.
+    expect(readVisionCallUsage).toHaveBeenCalledWith(
+      "demo:203.0.113.7",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
+    expect(recordVisionCalls).toHaveBeenCalledWith(
+      "demo:203.0.113.7",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      2,
+    );
+  });
+
+  it("charges an authenticated workspace's own counter one call for an identified document", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-premium",
+      dbUrl: "libsql://wl-premium.turso.io",
+      token: "token-premium",
+    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      message: "no he podido leer ninguna fila",
+      reason: "empty_reading",
+      status: "unrecognized",
+    });
+
+    await (await POST(imageAttachmentRequest())).text();
+
+    expect(recordVisionCalls).toHaveBeenCalledWith("ws:ws-premium", expect.anything(), 1);
+  });
+
+  it("charges nothing for a spreadsheet, which never reaches a vision model", async () => {
+    await (await POST(attachmentRequest(POSITIONS_SHEET))).text();
+
+    expect(recordVisionCalls).not.toHaveBeenCalled();
+  });
+
+  it("still reads a spreadsheet with the allowance spent AND the fuse blown", async () => {
+    // The brake is on the vision model, not on attachments: the deterministic sheet
+    // route costs nothing, so refusing it would deny a free upload with a message
+    // about a cost it does not have — and the counter must not even be consulted.
+    vi.mocked(readVisionCallUsage).mockResolvedValue({
+      scopeCalls: VISION_CALL_LIMITS.demo,
+      globalCalls: VISION_CALL_LIMITS.global,
+    });
+
+    const streamed = await (await POST(attachmentRequest(POSITIONS_SHEET))).text();
+
+    expect(streamed).not.toContain("data-paywall");
+    expect(streamed).toContain("data-attachment-extraction");
+    expect(readVisionCallUsage).not.toHaveBeenCalled();
+    expect(recordVisionCalls).not.toHaveBeenCalled();
   });
 });
 

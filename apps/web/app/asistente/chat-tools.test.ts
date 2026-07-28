@@ -551,21 +551,25 @@ describe("createChatTools · propose_reconstruction (#1053)", () => {
 });
 
 describe("createChatTools · search_market_symbol (#1186)", () => {
-  it("is a read tool wired over resolveMarketSymbolCandidates (blank query → no matches)", async () => {
-    const store = await seededStore();
-    const tools = toolsOver(store.agentView);
-    const tool = tools["search_market_symbol"];
-    expect(tool).toBeDefined();
+  it(
+    "is a read tool wired over resolveMarketSymbolCandidates (blank query → no matches)",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+      const tool = tools["search_market_symbol"];
+      expect(tool).toBeDefined();
 
-    // A blank query short-circuits before any network call — deterministic wiring
-    // check; the routing/disambiguation logic is covered in market-symbol-search.test.
-    const result = await tool?.execute?.(
-      { query: "   ", instrument: "etf" },
-      toolCallContext(),
-    );
+      // A blank query short-circuits before any network call — deterministic wiring
+      // check; the routing/disambiguation logic is covered in market-symbol-search.test.
+      const result = await tool?.execute?.(
+        { query: "   ", instrument: "etf" },
+        toolCallContext(),
+      );
 
-    expect(result).toEqual({ matches: [] });
-  });
+      expect(result).toEqual({ matches: [] });
+    },
+    SEED_TIMEOUT_MS,
+  );
 });
 
 describe("createChatTools · propose_holding (#1105)", () => {
@@ -663,100 +667,116 @@ describe("createChatTools · propose_holding_removal (#1106)", () => {
 });
 
 describe("createChatTools · raise_maintainer_alert (#1050)", () => {
-  it("reports the alert as unavailable when no raise callback is bound", async () => {
-    const store = await seededStore();
-    const tools = toolsOver(store.agentView, ["wl_hld_x"]);
+  it(
+    "reports the alert as unavailable when no raise callback is bound",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView, ["wl_hld_x"]);
 
-    const result = await tools["raise_maintainer_alert"]?.execute?.(
-      { holdingId: "wl_hld_x", category: "infidelity", summary: "algo huele mal" },
-      toolCallContext(),
-    );
+      const result = await tools["raise_maintainer_alert"]?.execute?.(
+        { holdingId: "wl_hld_x", category: "infidelity", summary: "algo huele mal" },
+        toolCallContext(),
+      );
 
-    expect(result).toEqual({ error: "maintainer_alert_unavailable" });
-  });
+      expect(result).toEqual({ error: "maintainer_alert_unavailable" });
+    },
+    SEED_TIMEOUT_MS,
+  );
 
-  it("assembles the forensic payload and routes it to the bound raise callback", async () => {
-    const store = await seededStore();
-    const raised: Array<{
-      holdingId: string;
-      category: string;
-      payload: unknown;
-    }> = [];
-    const tools = createChatTools({
-      runWithStore: (run) => run({ agentView: store.agentView }),
-      asOf: AS_OF,
-      // Grounded but no longer resolvable — a holding the conversation surfaced and
-      // that has since gone. It is the state this test needs: the payload records a
-      // null trace with a reason instead of inventing the arithmetic.
-      groundedHoldingIds: ["wl_hld_unknown"],
-      raiseMaintainerAlert: async (alert) => {
-        raised.push(alert);
-        return {
-          alert: {
-            id: "alert-1",
-            workspaceId: "ws-x",
-            holdingId: alert.holdingId,
-            category: alert.category,
-            status: "open",
-            occurrenceCount: 1,
-            firstSeenAt: "2026-06-19T00:00:00.000Z",
-            lastSeenAt: "2026-06-19T00:00:00.000Z",
-            resolutionNote: null,
-            resolutionLink: null,
-            resolvedAt: null,
-            supersedesAlertId: null,
-            createdAt: "2026-06-19T00:00:00.000Z",
-            updatedAt: "2026-06-19T00:00:00.000Z",
-          },
-          created: true,
-        };
-      },
-    });
+  it(
+    "assembles the forensic payload and routes it to the bound raise callback",
+    async () => {
+      const store = await seededStore();
+      const raised: Array<{
+        holdingId: string;
+        category: string;
+        payload: unknown;
+      }> = [];
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        // Grounded but no longer resolvable — a holding the conversation surfaced and
+        // that has since gone. It is the state this test needs: the payload records a
+        // null trace with a reason instead of inventing the arithmetic.
+        groundedHoldingIds: ["wl_hld_unknown"],
+        raiseMaintainerAlert: async (alert) => {
+          raised.push(alert);
+          return {
+            alert: {
+              id: "alert-1",
+              workspaceId: "ws-x",
+              holdingId: alert.holdingId,
+              category: alert.category,
+              status: "open",
+              occurrenceCount: 1,
+              firstSeenAt: "2026-06-19T00:00:00.000Z",
+              lastSeenAt: "2026-06-19T00:00:00.000Z",
+              resolutionNote: null,
+              resolutionLink: null,
+              resolvedAt: null,
+              supersedesAlertId: null,
+              createdAt: "2026-06-19T00:00:00.000Z",
+              updatedAt: "2026-06-19T00:00:00.000Z",
+            },
+            created: true,
+          };
+        },
+      });
 
-    const result = await tools["raise_maintainer_alert"]?.execute?.(
-      {
+      const result = await tools["raise_maintainer_alert"]?.execute?.(
+        {
+          holdingId: "wl_hld_unknown",
+          category: "infidelity",
+          summary: "El saldo pintado no coincide con el recomputado.",
+          conversationRef: "msg-42",
+        },
+        toolCallContext(),
+      );
+
+      // The alert reached the callback with the raw category + holding id.
+      expect(raised).toHaveLength(1);
+      expect(raised[0]).toMatchObject({
         holdingId: "wl_hld_unknown",
+        category: "infidelity",
+      });
+      // The payload is assembled server-side: the model's summary + conversation
+      // ref, and a null trace with a documented reason when the holding is not a
+      // traceable debt (the tool never fabricates the arithmetic).
+      expect(raised[0]?.payload).toMatchObject({
         category: "infidelity",
         summary: "El saldo pintado no coincide con el recomputado.",
         conversationRef: "msg-42",
-      },
-      toolCallContext(),
-    );
+        calculationTrace: null,
+      });
+      expect(result).toMatchObject({
+        status: "raised",
+        alertId: "alert-1",
+        created: true,
+      });
+    },
+    SEED_TIMEOUT_MS,
+  );
 
-    // The alert reached the callback with the raw category + holding id.
-    expect(raised).toHaveLength(1);
-    expect(raised[0]).toMatchObject({
-      holdingId: "wl_hld_unknown",
-      category: "infidelity",
-    });
-    // The payload is assembled server-side: the model's summary + conversation
-    // ref, and a null trace with a documented reason when the holding is not a
-    // traceable debt (the tool never fabricates the arithmetic).
-    expect(raised[0]?.payload).toMatchObject({
-      category: "infidelity",
-      summary: "El saldo pintado no coincide con el recomputado.",
-      conversationRef: "msg-42",
-      calculationTrace: null,
-    });
-    expect(result).toMatchObject({ status: "raised", alertId: "alert-1", created: true });
-  });
+  it(
+    "rejects an unknown category",
+    async () => {
+      const store = await seededStore();
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        groundedHoldingIds: ["wl_hld_x"],
+        raiseMaintainerAlert: async () => null,
+      });
 
-  it("rejects an unknown category", async () => {
-    const store = await seededStore();
-    const tools = createChatTools({
-      runWithStore: (run) => run({ agentView: store.agentView }),
-      asOf: AS_OF,
-      groundedHoldingIds: ["wl_hld_x"],
-      raiseMaintainerAlert: async () => null,
-    });
+      const result = await tools["raise_maintainer_alert"]?.execute?.(
+        { holdingId: "wl_hld_x", category: "nonsense", summary: "x" } as never,
+        toolCallContext(),
+      );
 
-    const result = await tools["raise_maintainer_alert"]?.execute?.(
-      { holdingId: "wl_hld_x", category: "nonsense", summary: "x" } as never,
-      toolCallContext(),
-    );
-
-    expect(result).toMatchObject({ error: { code: "bad_request" } });
-  });
+      expect(result).toMatchObject({ error: { code: "bad_request" } });
+    },
+    SEED_TIMEOUT_MS,
+  );
 });
 
 /** Minimal execution options the AI SDK passes to execute — unused by our tools. */
@@ -768,52 +788,64 @@ describe("createChatTools · premium ingestion gate (#1162)", () => {
     "propose_reconcile",
   ];
 
-  it("refuses each document-ingestion tool for a free workspace, honestly", async () => {
-    const store = await seededStore();
-    const tools = createChatTools({
-      runWithStore: (run) => run({ agentView: store.agentView }),
-      asOf: AS_OF,
-      ingestionAllowed: false,
-    });
+  it(
+    "refuses each document-ingestion tool for a free workspace, honestly",
+    async () => {
+      const store = await seededStore();
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        ingestionAllowed: false,
+      });
 
-    for (const name of GATED_TOOLS) {
-      const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
-        error?: string;
-        message?: string;
-      };
-      expect(result?.error, name).toBe("premium_required");
-      expect((result?.message ?? "").length, name).toBeGreaterThan(0);
-    }
-  });
+      for (const name of GATED_TOOLS) {
+        const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
+          error?: string;
+          message?: string;
+        };
+        expect(result?.error, name).toBe("premium_required");
+        expect((result?.message ?? "").length, name).toBeGreaterThan(0);
+      }
+    },
+    SEED_TIMEOUT_MS,
+  );
 
-  it("leaves reads and manual tracking open for a free workspace", async () => {
-    const store = await seededStore();
-    const tools = createChatTools({
-      runWithStore: (run) => run({ agentView: store.agentView }),
-      asOf: AS_OF,
-      ingestionAllowed: false,
-    });
+  it(
+    "leaves reads and manual tracking open for a free workspace",
+    async () => {
+      const store = await seededStore();
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        ingestionAllowed: false,
+      });
 
-    const read = (await tools["get_financial_context"]?.execute?.(
-      {},
-      toolCallContext(),
-    )) as { error?: string };
-    expect(read?.error).not.toBe("premium_required");
-  });
+      const read = (await tools["get_financial_context"]?.execute?.(
+        {},
+        toolCallContext(),
+      )) as { error?: string };
+      expect(read?.error).not.toBe("premium_required");
+    },
+    SEED_TIMEOUT_MS,
+  );
 
-  it("allows the ingestion tools when premium (the default)", async () => {
-    const store = await seededStore();
-    const tools = toolsOver(store.agentView);
+  it(
+    "allows the ingestion tools when premium (the default)",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
 
-    for (const name of GATED_TOOLS) {
-      const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
-        error?: string;
-      };
-      // Past the gate: the persistence-unavailable fixture error is fine — what
-      // matters is that it is NOT the premium wall.
-      expect(result?.error, name).not.toBe("premium_required");
-    }
-  });
+      for (const name of GATED_TOOLS) {
+        const result = (await tools[name]?.execute?.({}, toolCallContext())) as {
+          error?: string;
+        };
+        // Past the gate: the persistence-unavailable fixture error is fine — what
+        // matters is that it is NOT the premium wall.
+        expect(result?.error, name).not.toBe("premium_required");
+      }
+    },
+    SEED_TIMEOUT_MS,
+  );
 });
 
 /**

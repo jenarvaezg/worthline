@@ -373,6 +373,22 @@ export interface WorkspaceDailyTokenUsage {
 }
 
 /**
+ * The day's accumulated vision-extraction readings read by the pre-extraction
+ * gate (#1258): this scope's own calls (against its daily allowance) and the
+ * shared global total (against the daily fuse). Zero when a scope has no row yet.
+ */
+export interface VisionCallUsage {
+  scopeCalls: number;
+  globalCalls: number;
+}
+
+/** One day's GLOBAL vision-call total — the extraction spend series for /admin (#1258). */
+export interface VisionCallDailyUsage {
+  dayKey: string;
+  calls: number;
+}
+
+/**
  * Serverless-shared usage limits: the chat and connected-source-sync rate
  * counters (ADR 0051), provider cooldowns, and the AI token meter + daily fuse
  * (#1163). All are operational limits shared by every serverless instance of one
@@ -444,6 +460,33 @@ export interface UsageLimits {
    * simply absent.
    */
   listWorkspaceAiTokenUsage(dayKey: string): Promise<WorkspaceDailyTokenUsage[]>;
+  /**
+   * Add `calls` vision-extraction readings to BOTH this scope's and the shared
+   * global daily counters (#1258) for `dayKey` (UTC "YYYY-MM-DD"). `scopeKey`
+   * arrives fully formed — `ws:<workspaceId>` or `demo:<ip>` — because the eager
+   * extractor is reachable by an anonymous demo caller, which the token meter's
+   * workspace-only scope could not express.
+   *
+   * The unit is CALLS, not tokens: the extractor's contract hands back validated
+   * JSON and never provider usage, so counting readings is what this seam can
+   * honestly count — and it is enough for a fuse, because a reading is bounded
+   * (4 MiB, 20 pages) and therefore so is its cost. Aggregate only, never any
+   * content (#1131). Recorded AFTER the reading, so a caller may overshoot by one
+   * turn before the next is refused — the ADR 0051 increment-then-check tolerance.
+   */
+  recordVisionCalls(scopeKey: string, dayKey: string, calls: number): Promise<void>;
+  /**
+   * The day's accumulated readings for the pre-extraction gate (#1258): this
+   * scope's own calls (against its daily allowance) and the global shared total
+   * (against the daily fuse). Zero for a scope with no row yet.
+   */
+  readVisionCallUsage(scopeKey: string, dayKey: string): Promise<VisionCallUsage>;
+  /**
+   * Global daily vision-call totals from `sinceDayKey` onward (inclusive), newest
+   * first — the extraction spend series /admin renders (#1258). Global scope only;
+   * no per-scope rows, so no demo IP ever leaves the control plane.
+   */
+  readRecentGlobalVisionCallUsage(sinceDayKey: string): Promise<VisionCallDailyUsage[]>;
 }
 
 /** Global exposure-profile catalog (PRD #711 S1 / #940). */
@@ -814,6 +857,19 @@ CREATE TABLE IF NOT EXISTS ai_token_usage (
   scope_key TEXT NOT NULL,
   day_key TEXT NOT NULL,
   tokens INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (scope_key, day_key)
+);
+-- Attachment extraction meter (#1258): vision model CALLS per scope per UTC day,
+-- the eager extractors' own counter. Separate table from ai_token_usage on
+-- purpose: that one means the conversational turn (#1163), this one the one-shot
+-- ingestion cost, and the two must never interfere. scope_key is 'global' (the
+-- shared daily fuse), 'ws:<workspaceId>' or 'demo:<ip>'. Same tiny self-expiring
+-- rows; no sweep.
+CREATE TABLE IF NOT EXISTS vision_call_usage (
+  scope_key TEXT NOT NULL,
+  day_key TEXT NOT NULL,
+  calls INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (scope_key, day_key)
 );
@@ -1600,6 +1656,51 @@ async function buildControlPlaneStore(
         // scope_key is 'ws:<workspaceId>' — strip the 3-char prefix.
         workspaceId: String(row["scope_key"]).slice(3),
         tokens: Number(row["tokens"] ?? 0),
+      }));
+    },
+    async recordVisionCalls(scopeKey, dayKey, calls) {
+      if (calls <= 0) return;
+      // Same two-upsert, no-transaction shape as the token meter: the scope's own
+      // allowance and the shared fuse both read a live running total, and metering
+      // stays best-effort and overshoot-tolerant (ADR 0051). The guard matters here
+      // in a way it does not there: this port takes the scope key already formed,
+      // so a caller passing 'global' would otherwise count itself twice and blow
+      // the fuse at half the real usage.
+      const upsert = `INSERT INTO vision_call_usage (scope_key, day_key, calls)
+                      VALUES (?, ?, ?)
+                      ON CONFLICT(scope_key, day_key) DO UPDATE SET
+                        calls = calls + excluded.calls,
+                        updated_at = CURRENT_TIMESTAMP`;
+      await client.execute({ sql: upsert, args: [scopeKey, dayKey, calls] });
+      if (scopeKey !== "global") {
+        await client.execute({ sql: upsert, args: ["global", dayKey, calls] });
+      }
+    },
+    async readVisionCallUsage(scopeKey, dayKey) {
+      const result = await client.execute({
+        sql: `SELECT scope_key, calls FROM vision_call_usage
+              WHERE day_key = ? AND scope_key IN (?, 'global')`,
+        args: [dayKey, scopeKey],
+      });
+      let scopeCalls = 0;
+      let globalCalls = 0;
+      for (const row of result.rows) {
+        const calls = Number(row["calls"] ?? 0);
+        if (String(row["scope_key"]) === "global") globalCalls = calls;
+        if (String(row["scope_key"]) === scopeKey) scopeCalls = calls;
+      }
+      return { scopeCalls, globalCalls };
+    },
+    async readRecentGlobalVisionCallUsage(sinceDayKey) {
+      const result = await client.execute({
+        sql: `SELECT day_key, calls FROM vision_call_usage
+              WHERE scope_key = 'global' AND day_key >= ?
+              ORDER BY day_key DESC`,
+        args: [sinceDayKey],
+      });
+      return result.rows.map((row) => ({
+        dayKey: String(row["day_key"]),
+        calls: Number(row["calls"] ?? 0),
       }));
     },
     async createGlobalExposureProfile(input) {

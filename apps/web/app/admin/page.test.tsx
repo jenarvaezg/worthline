@@ -26,10 +26,15 @@ vi.mock("@web/admin/list-ai-token-usage", () => ({
   listAdminAiTokenUsage: vi.fn(),
 }));
 
+vi.mock("@web/admin/list-vision-call-usage", () => ({
+  listAdminVisionCallUsage: vi.fn(),
+}));
+
 import { guardAdmin } from "@web/admin/guard-admin";
 import { listAdminEntitlements } from "@web/admin/list-admin-entitlements";
 import { listAdminAiTokenUsage } from "@web/admin/list-ai-token-usage";
 import { countAdminOpenMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
+import { listAdminVisionCallUsage } from "@web/admin/list-vision-call-usage";
 
 import AdminPage from "./page";
 
@@ -59,6 +64,7 @@ describe("AdminPage", () => {
     vi.clearAllMocks();
     vi.mocked(countAdminOpenMaintainerAlerts).mockResolvedValue(0);
     vi.mocked(listAdminAiTokenUsage).mockResolvedValue([]);
+    vi.mocked(listAdminVisionCallUsage).mockResolvedValue([]);
     vi.mocked(listAdminEntitlements).mockResolvedValue([]);
     vi.mocked(guardAdmin).mockResolvedValue({ email: "admin@example.com" });
   });
@@ -130,6 +136,29 @@ describe("AdminPage", () => {
   test("shows an empty-state line when no AI spend is recorded yet", async () => {
     const html = renderToStaticMarkup(await AdminPage({ searchParams: noSearchParams }));
     expect(html).toContain("Aún no hay consumo de IA registrado");
+  });
+
+  test("renders the extraction spend as its OWN series, next to the token one", async () => {
+    // Two counters, two sections (#1258): document readings are a different unit
+    // and a different model, and merging them would hide the one that had no
+    // counter at all.
+    vi.mocked(listAdminAiTokenUsage).mockResolvedValue([
+      { dayKey: "2026-07-28", tokens: 900 },
+    ]);
+    vi.mocked(listAdminVisionCallUsage).mockResolvedValue([
+      { dayKey: "2026-07-28", calls: 17 },
+    ]);
+
+    const html = renderToStaticMarkup(await AdminPage({ searchParams: noSearchParams }));
+
+    expect(html).toContain("Gasto de IA");
+    expect(html).toContain("Lectura de documentos");
+    expect(html).toContain(">17<");
+  });
+
+  test("shows an empty-state line when no document reading is recorded yet", async () => {
+    const html = renderToStaticMarkup(await AdminPage({ searchParams: noSearchParams }));
+    expect(html).toContain("Aún no hay lecturas de documentos registradas");
   });
 
   test("shows an em-dash for a dangling workspace with no owner", async () => {
