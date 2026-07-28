@@ -1,3 +1,4 @@
+import { parseDecimalStrict } from "@worthline/domain";
 import {
   generateText,
   type LanguageModel,
@@ -53,6 +54,26 @@ const visionCurrencySchema = z
   .regex(/^[A-Z]{3}$/);
 
 /**
+ * A figure the PROVIDER writes as TEXT, never as a JSON number.
+ *
+ * The document that opened #1316 — a broker's trade confirmation — reads correctly
+ * and then dies on the way out: asked for `units` as a number, `gemini-3.1-flash-lite`
+ * writes `"units": 3.0000…` and keeps padding zeros for the whole 65 520-token
+ * ceiling. `finishReason: MAX_TOKENS`, no object, `invalid_output`, and ~140 s of a
+ * user waiting pre-stream for a reading that never arrives. At `temperature: 0` the
+ * decode is greedy, so the pit is not a bad roll: it reproduced 5/5.
+ *
+ * Reading every printed figure as text takes the same document back to ~1,6 s and
+ * 114 output tokens (2/2). Nothing else came close: flattening the pairs still burned
+ * 65 520 tokens, raising the temperature stayed broken, and a newer model closed the
+ * JSON with `"units": 3e+99` — a corrupt reading that passes `.finite()`. The seam
+ * parses each figure with the domain's own `parseDecimalStrict`, so «54,545» and
+ * «1.234,56» land as the number the paper printed and anything else is dropped like
+ * any other unusable decoration.
+ */
+const visionPrintedNumberSchema = z.string().trim().min(1).max(32);
+
+/**
  * A printed figure and its currency as the PROVIDER may send them (#1316). Both
  * halves are optional here and required by the contract on purpose: the JSON schema
  * reaching the model cannot say «an amount needs its currency», so requiring the pair
@@ -63,7 +84,7 @@ const visionCurrencySchema = z
  */
 const visionMoneySchema = z
   .object({
-    amount: z.number().finite().optional(),
+    amount: visionPrintedNumberSchema.optional(),
     currency: visionCurrencySchema.optional(),
   })
   .strict();
@@ -141,7 +162,7 @@ const visionOutputSchema = z
              * that is otherwise complete.
              */
             isin: z.string().trim().min(1).max(64).optional(),
-            units: z.number().finite().optional(),
+            units: visionPrintedNumberSchema.optional(),
             pricePerUnit: visionMoneySchema.optional(),
             fees: visionMoneySchema.optional(),
             declaredEffect: z
@@ -201,13 +222,39 @@ export const EMPTY_HOLDING_EVENT_MESSAGE =
 export const WHOLE_READING_UNCERTAIN_WARNING =
   "El extractor marcó la lectura completa como dudosa.";
 
+/**
+ * Ceilings on ONE extraction call. `maxRetries: 0` bounded how many attempts run and
+ * nothing bounded their size or duration — which is how #1316's digit loop turned a
+ * ~1,6 s reading into 140 s of a model padding zeros, with the user waiting pre-stream
+ * the whole time and the deploy paying for 65 520 output tokens.
+ *
+ * The token ceiling bounds the BILL: it sits above the largest reading this contract
+ * admits (500 rows, against ~114 output tokens for a one-fact document), so no real
+ * document is truncated into `invalid_output` by it.
+ *
+ * The clock bounds the WAIT, and it is the one that fires first on a runaway. Longer
+ * than the descriptive call's 12 s because this call may legitimately read a
+ * multi-page statement, and short enough that a turn still happens: a reading that
+ * needed more than this was not going to be useful pre-stream anyway, and it fails
+ * as transient — «vuelve a intentarlo más tarde» — rather than as a bad reading.
+ * Per attempt, since a `503` retry deserves its own budget and not the leftovers of
+ * the attempt that failed.
+ */
+export const VISION_EXTRACTOR_MAX_OUTPUT_TOKENS = 24_000;
+export const VISION_EXTRACTOR_TIMEOUT_MS = 45_000;
+
 interface VisionGenerationRequest {
   model: LanguageModel;
   messages: ModelMessage[];
   output: ReturnType<typeof Output.object<VisionOutput>>;
+  maxOutputTokens: number;
   maxRetries: 0;
   temperature: 0;
+  abortSignal: AbortSignal;
 }
+
+/** The request minus the per-attempt clock, built once and stamped on each try. */
+type VisionGenerationRequestBase = Omit<VisionGenerationRequest, "abortSignal">;
 
 interface VisionExtractorDependencies {
   env?: Record<string, string | undefined>;
@@ -293,6 +340,7 @@ const VISION_EXTRACTION_INSTRUCTIONS = [
   'Un saldo pendiente es "balance_series"; un importe que se paga, se cobra o se mueve es "holding_event".',
   'Rellena declaredEffect solo si la pantalla DICE el efecto ("tu última cuota se reducirá en…"); si das su importe, da también su divisa. Rellena nextInstalment solo si la pantalla muestra la próxima cuota con su fecha. Nunca infieras capital, plazo, tipo de interés, saldo resultante ni a qué producto pertenece.',
   "Si el documento es una confirmación de compra o venta de valores, rellena isin, units, pricePerUnit y fees SOLO con lo que esté impreso (ISIN, número de títulos, precio unitario, comisión), y cada importe con su divisa. No los calcules ni los deduzcas del importe total: si el precio unitario o la comisión no aparecen impresos, deja el campo vacío.",
+  'Escribe units, pricePerUnit.amount y fees.amount como TEXTO con la cifra tal cual está impresa ("3", "54,545"), sin ceros de relleno.',
   "Mantén ticker y nombre en campos separados; no uses el nombre como ticker.",
   "marketValueEur y totalEur son importes en EUR; no inventes conversiones que no aparezcan en pantalla.",
   "Cada saldo lleva fecha en formato ISO YYYY-MM-DD, importe numérico y divisa ISO de 3 letras.",
@@ -380,9 +428,39 @@ export const DROPPED_PRICE_PER_UNIT_WARNING =
   "El precio por título no traía importe y divisa completos; no se recoge.";
 export const DROPPED_FEES_WARNING =
   "La comisión no traía importe y divisa completos; no se recoge.";
+/** The cost of reading the figures as text: one of them may not read as a number. */
+export const DROPPED_UNITS_WARNING =
+  "El número de títulos del documento no se lee como una cifra; no se recoge.";
 
 type VisionHoldingEvent = NonNullable<VisionOutput["events"]>[number];
 type VisionMoney = z.infer<typeof visionMoneySchema>;
+/** A printed pair the contract will take: the figure parsed, its currency intact. */
+interface PrintedMoney {
+  amount: number;
+  currency: string;
+}
+/** The event as the CONTRACT wants it, once the printed figures read as numbers. */
+type ContractHoldingEvent = Omit<
+  VisionHoldingEvent,
+  "fees" | "pricePerUnit" | "units"
+> & {
+  units?: number;
+  pricePerUnit?: PrintedMoney;
+  fees?: PrintedMoney;
+};
+
+/**
+ * One printed figure as the number the paper showed, or nothing.
+ *
+ * `parseDecimalStrict` is the domain's own reader, so «54,545» and «1.234,56» mean
+ * here exactly what they mean everywhere else in the app instead of whatever a second
+ * hand-rolled parser would decide.
+ */
+function printedNumber(printed: string | undefined): number | undefined {
+  if (printed === undefined) return undefined;
+  const value = parseDecimalStrict(printed);
+  return value === null || !Number.isFinite(value) ? undefined : value;
+}
 
 /**
  * The printed pair the contract will take, or nothing.
@@ -392,21 +470,34 @@ type VisionMoney = z.infer<typeof visionMoneySchema>;
  * not be recovered without asserting which half the paper carried. An entirely empty
  * pair is silent: nothing was read, so nothing was lost, which is the same
  * distinction {@link usableEvent} draws for a declared effect's stray currency.
+ *
+ * An amount that does not read as a number takes the same exit as a missing currency,
+ * and for the same reason: the figure could not be recovered. Which half failed is
+ * not something the card can honestly assert.
  */
 function usableMoney(money: VisionMoney | undefined): {
-  money: VisionMoney | undefined;
+  money: PrintedMoney | undefined;
   dropped: boolean;
 } {
-  const halves = [money?.amount, money?.currency].filter((half) => half !== undefined);
-  if (halves.length === 2) return { dropped: false, money };
-  return { dropped: halves.length === 1, money: undefined };
+  const { amount: printed, currency } = money ?? {};
+  if (printed === undefined || currency === undefined) {
+    return {
+      dropped: printed !== undefined || currency !== undefined,
+      money: undefined,
+    };
+  }
+  const amount = printedNumber(printed);
+  return amount === undefined
+    ? { dropped: true, money: undefined }
+    : { dropped: false, money: { amount, currency } };
 }
 
 function usableEvent(event: VisionHoldingEvent): {
-  event: VisionHoldingEvent;
+  event: ContractHoldingEvent;
   warnings: string[];
 } {
-  const { declaredEffect, fees, isin, nextInstalment, pricePerUnit, ...rest } = event;
+  const { declaredEffect, fees, isin, nextInstalment, pricePerUnit, units, ...rest } =
+    event;
   const warnings: string[] = [];
 
   // Only the direction that LOSES a figure gets a warning. The contract wants the
@@ -438,9 +529,16 @@ function usableEvent(event: VisionHoldingEvent): {
   const fee = usableMoney(fees);
   if (fee.dropped) warnings.push(DROPPED_FEES_WARNING);
 
+  // Same treatment as every other decoration: a títulos count the paper printed but
+  // this seam cannot read is lost out loud, never at the cost of the whole capture.
+  const readUnits = printedNumber(units);
+  if (units !== undefined && readUnits === undefined)
+    warnings.push(DROPPED_UNITS_WARNING);
+
   return {
     event: {
       ...rest,
+      ...(readUnits === undefined ? {} : { units: readUnits }),
       ...(isinReads && isin !== undefined ? { isin } : {}),
       ...(price.money === undefined ? {} : { pricePerUnit: price.money }),
       ...(fee.money === undefined ? {} : { fees: fee.money }),
@@ -485,6 +583,25 @@ function holdingEventFrom(output: VisionOutput): AttachmentExtractionResult {
       status: "unrecognized",
     };
   }
+
+  // THE BORROWED DAY, caught in code. The prompt has forbidden this invention in
+  // writing since #1244 — «NO uses la de la próxima cuota» — and the payment-screen
+  // golden fixture exists to watch for it. The model does it anyway, 2/2: shown a
+  // repayment screen whose only date belongs to «Próxima cuota», it returns that day
+  // as the fact's own and declares the instalment carrying the very same date.
+  //
+  // A fact dated on the day of the NEXT instalment is not a reading, it is the
+  // borrowed date wearing the fact's clothes: the next instalment is by definition
+  // still to come, so it cannot fall on the day of a payment already made. Declining
+  // costs nothing — the capture still reaches #1246's descriptive lane and the
+  // conversation continues — while accepting it would stamp a validated document,
+  // switch off the unvalidated-evidence gate and put an invented date behind a
+  // one-click proposal.
+  //
+  // It catches only the model that SAYS which day it borrowed. One that steals the
+  // date and stays quiet about the instalment is invisible here, and the prompt
+  // remains the only defense against that — which is exactly why the fixture stays.
+  if (first.nextInstalment?.date === first.date) return declinedHoldingEvent();
 
   const { event, warnings } = usableEvent(first);
   const result = validate({
@@ -571,7 +688,8 @@ export async function extractDocumentFromVisionAttachment(
     return EXTRACTOR_CONFIGURATION_FAILURE;
   }
 
-  const request: VisionGenerationRequest = {
+  const request: VisionGenerationRequestBase = {
+    maxOutputTokens: VISION_EXTRACTOR_MAX_OUTPUT_TOKENS,
     maxRetries: 0,
     messages: [
       {
@@ -602,7 +720,10 @@ export async function extractDocumentFromVisionAttachment(
     attempt += 1
   ) {
     try {
-      const generated = await generate(request);
+      const generated = await generate({
+        ...request,
+        abortSignal: AbortSignal.timeout(VISION_EXTRACTOR_TIMEOUT_MS),
+      });
       const visionOutput = visionOutputSchema.safeParse(generated.output);
       if (!visionOutput.success) return INVALID_OUTPUT_FAILURE;
       return documentFrom(visionOutput.data);
