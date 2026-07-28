@@ -375,6 +375,20 @@ const declaredEffectSchema = z
     "Un efecto declarado con importe necesita su divisa.",
   );
 
+/**
+ * A figure the document PRINTS together with the currency it is printed in. Both
+ * halves are required and there is no XOR to refine: an amount with no currency to
+ * read it in cannot be rendered honestly, and defaulting to EUR would invent exactly
+ * what this contract exists not to invent. An incomplete pair is the vision seam's
+ * problem, and it drops the pair with a warning rather than sinking the reading.
+ */
+const observedMoneySchema = z
+  .object({
+    amount: extractedNumberSchema,
+    currency: currencySchema,
+  })
+  .strict();
+
 /** The next instalment the screen showed next to the event, when it showed one. */
 const nextInstalmentSchema = z
   .object({
@@ -402,6 +416,20 @@ const holdingEventSchema = z
     currency: currencySchema,
     label: nonEmptyStringSchema,
     kind: z.enum(HOLDING_EVENT_KINDS),
+    /**
+     * What a securities trade confirmation PRINTS next to the settled amount (#1316):
+     * ISIN, títulos, precio bruto por título, comisión. These do not relax the
+     * frontier above — they are ink on the document, as observed as `amount` itself,
+     * and every one of them is optional because most events (a receipt, a loan
+     * payment) print none. What stays forbidden is unchanged: nothing here is
+     * derived, `units × pricePerUnit` is never computed, and the ISIN identifies the
+     * INSTRUMENT the paper names, never which holding of the user's it belongs to —
+     * that remains the agent's job with its read tools.
+     */
+    isin: isinSchema.optional(),
+    units: extractedNumberSchema.optional(),
+    pricePerUnit: observedMoneySchema.optional(),
+    fees: observedMoneySchema.optional(),
     declaredEffect: declaredEffectSchema.optional(),
     nextInstalment: nextInstalmentSchema.optional(),
     uncertain: z.boolean().optional(),

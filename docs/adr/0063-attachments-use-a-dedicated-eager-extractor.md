@@ -403,6 +403,45 @@ and it can be built on top of this without undoing it. What could not wait is th
 next added field would have done the same thing again — which is also why pinning an
 attachment's provenance *on the card* needed this first.
 
+## Amendment — the trade confirmation prints the instrument, so the event carries it (#1316)
+
+A broker's operation confirmation states the **ISIN, the number of títulos, the gross
+price per title and the commission**, and none of it reached the model: the capture is
+shaped exactly like a `holding_event`, so it validated as one and arrived with the
+settled amount alone. The alta that followed was born with no ISIN and with units
+derived from a division nobody printed — the invention this whole seam exists to
+prevent, arrived at by omission.
+
+`holdingEventSchema` therefore gains four **optional** fields — `isin`, `units`,
+`pricePerUnit` and `fees`, each amount with its own currency — and the frontier of the
+#1244 amendment is unchanged. These are ink on the paper, as observed as `amount`
+itself; what stays forbidden is what was always forbidden: nothing is derived (the
+extractor never computes `units × pricePerUnit`, and a field for that product is
+rejected by `.strict()`), and the ISIN identifies **the instrument the document names**,
+never which holding of the user's it is — that remains the agent's job with its read
+tools. The considered alternative was a fifth `documentType` (`trade_confirmation`)
+rather than widening the generic event; it was rejected because it would duplicate the
+whole one-fact lock for a document that differs from a receipt only in which optional
+fields it prints, and the repo's owner decided the shape before implementation.
+
+Two seam details follow from the same rule as the earlier decorations. Each figure
+reaches the provider schema as a *tolerant* pair (amount and currency both optional)
+and is completed or dropped in code, because the JSON schema handed to the model cannot
+say «an amount needs its currency» and the ordinary reading — a price column whose
+currency sits in a header — would otherwise fail the entire capture. An incomplete pair
+is dropped with **one warning that reads correctly in both directions**, saying the
+figure could not be recovered without asserting which half the paper carried; a pair
+with neither half stays silent, since nothing was read and nothing was lost. And the
+`isin` arrives as a loose string, checked against the ISIN shape here and dropped with
+a warning if it is really a ticker: the contract would otherwise reject the event and
+the seam would decline the whole capture over a decoration.
+
+The preview card grows a row per printed field, because the card is where the user
+*confirms* the reading — a value the agent could act on but the user never saw would
+make that confirmation a formality. The unit price keeps the four decimals the document
+printed rather than the currency's usual two: rounding a stated figure is the one thing
+the reading may not do.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers
