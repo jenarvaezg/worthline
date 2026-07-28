@@ -31,6 +31,17 @@ import { listAgentViewScopes } from "./scopes";
 export const DEFAULT_SNAPSHOT_LIMIT = 100;
 export const MAX_SNAPSHOT_LIMIT = 500;
 
+/**
+ * Page-size ceiling for a page that carries frozen holding rows (#1268). The
+ * per-position decomposition of a whole default page is by far the costliest
+ * read in the agent surface (~28k tokens under `full`, ~10k under `summary`,
+ * against ~3.7k for the headline series), and nothing about the question asked
+ * makes the whole series worth reading position by position. So the window is
+ * enforced here, in code, for every surface — a guarantee never lives in the
+ * prompt. The rest of the series stays one `meta.nextCursor` away.
+ */
+export const HOLDING_ROWS_SNAPSHOT_LIMIT = 12;
+
 /** Cash-first liquidity ladder, matching the live `liquidityBreakdown` order. */
 const LIQUIDITY_LADDER: readonly AgentViewLiquidityTier[] = [
   "cash",
@@ -114,8 +125,9 @@ export async function buildSnapshotHistory(
     ? dropAfterCursor(sorted, decodeCursor(options.cursor), options.sort, snapshotKey)
     : sorted;
 
-  const page = afterCursor.slice(0, options.limit);
-  const hasNext = afterCursor.length > options.limit;
+  const limit = effectiveLimit(options);
+  const page = afterCursor.slice(0, limit);
+  const hasNext = afterCursor.length > limit;
   const last = page[page.length - 1];
   const nextCursor =
     hasNext && last ? encodeCursor(last.snapshot.dateKey, last.publicId) : undefined;
@@ -136,10 +148,28 @@ export async function buildSnapshotHistory(
     ),
     meta: {
       hasNext,
-      limit: options.limit,
+      limit,
+      ...(limit === options.limit
+        ? {}
+        : {
+            holdingRowsWindow: {
+              appliedLimit: limit,
+              requestedLimit: options.limit,
+            },
+          }),
       ...(nextCursor === undefined ? {} : { nextCursor }),
     },
   };
+}
+
+/**
+ * The page size actually served: the requested `limit`, narrowed to the short
+ * holding-rows window whenever the page carries a decomposition (#1268).
+ */
+function effectiveLimit(options: BuildSnapshotHistoryOptions): number {
+  return options.includeHoldingRows === "none"
+    ? options.limit
+    : Math.min(options.limit, HOLDING_ROWS_SNAPSHOT_LIMIT);
 }
 
 async function toEntry(

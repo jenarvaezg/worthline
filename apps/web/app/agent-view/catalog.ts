@@ -493,7 +493,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_snapshot_history: {
       description:
-        "Get a scope's net-worth snapshot history (monthly closes by default; raw on request), with date filters, cursor pagination, and optional frozen holding rows.",
+        "Get a scope's net-worth snapshot history (monthly closes by default; raw on request), with date filters, cursor pagination, and optional frozen holding rows. includeHoldingRows sets the cost of the read: none (default, cheapest) for the shape of the series; summary (~3x) when the per-liquidity-rung composition matters; full (~8x) only to look position by position. Under summary or full the page is narrowed to a short window of closes (meta.holdingRowsWindow reports it; the rest of the series stays behind meta.nextCursor) — for one position's detail use get_holding_detail instead of the whole history.",
       inputSchema: {
         additionalProperties: false,
         properties: {

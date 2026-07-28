@@ -1335,7 +1335,23 @@ export interface AgentViewSnapshotEntry {
 /** Cursor-paginated snapshot history for a scope (PRD #328, #336). */
 export interface AgentViewSnapshotHistory {
   entries: AgentViewSnapshotEntry[];
-  meta: AgentViewPaginationMeta;
+  meta: AgentViewSnapshotHistoryMeta;
+}
+
+/**
+ * Snapshot-history pagination, plus the narrowing a per-position decomposition
+ * forces (#1268): asking for holding rows caps the page at a short window of
+ * closes, so a single read can never carry the whole series position by
+ * position. Present only when the cap actually bit — the rest of the series is
+ * reachable through `nextCursor`, unchanged.
+ */
+export interface AgentViewSnapshotHistoryMeta extends AgentViewPaginationMeta {
+  holdingRowsWindow?: {
+    /** The page size asked for, before the window applied. */
+    requestedLimit: number;
+    /** The window served — the same value as `meta.limit`. */
+    appliedLimit: number;
+  };
 }
 
 /**
