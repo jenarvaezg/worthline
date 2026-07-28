@@ -65,10 +65,45 @@ export function holdingRow(page: import("@playwright/test").Page, name: string) 
   return page.locator(".balanceRow", { hasText: name });
 }
 
+/**
+ * Wait until React OWNS an element before interacting with it.
+ *
+ * Since #1229 the workspace chrome paints from the prefetched shell while the
+ * route's own body streams in, so a server-rendered control is visible — and
+ * clickable — before React hydrates it. Under `next dev`, where the route's
+ * chunk compiles on demand, that window is hundreds of milliseconds wide; a
+ * production build closes it fast enough that a person never lands in it (which
+ * is why CI, serving `next start`, never saw this).
+ *
+ * Clicking inside the window is not harmless for a native `<details>` (ADR 0009,
+ * zero-client-JS folds): the browser toggles the `open` attribute behind React's
+ * back, and the later hydration reports an attribute mismatch it explicitly
+ * refuses to patch up — a real `console.error` this file's fixture (rightly)
+ * fails the journey on.
+ *
+ * React tags every host node it hydrates with an internal `__reactFiber$…`
+ * property, so its presence is an EXACT per-element hydration signal. We poll
+ * for that instead of sleeping: no arbitrary timeout to tune, and the wait ends
+ * the moment the node is genuinely interactive.
+ */
+export async function waitForHydration(locator: import("@playwright/test").Locator) {
+  await expect(locator).toBeAttached();
+  await expect
+    .poll(
+      () =>
+        locator.evaluate((el) =>
+          Object.keys(el).some((key) => key.startsWith("__reactFiber$")),
+        ),
+      { message: "React never hydrated the element" },
+    )
+    .toBe(true);
+}
+
 /** Expand the edit page's progressive-disclosure block before using advanced forms. */
 export async function openAdvancedSettings(page: import("@playwright/test").Page) {
   const advanced = page.locator("details.editAdvanced");
   await expect(advanced).toBeVisible();
+  await waitForHydration(advanced);
   if (!(await advanced.evaluate((el: HTMLDetailsElement) => el.open))) {
     await advanced.getByText("Configuración avanzada", { exact: true }).click();
   }

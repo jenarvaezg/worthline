@@ -19,7 +19,7 @@
 import { demoNowDate } from "@web/demo/demo-clock";
 import { runBootstrapHealthcheck, type WorthlineStore } from "@worthline/db";
 import type { LocalPersistenceStatus } from "@worthline/domain";
-import { after } from "next/server";
+import { after, connection } from "next/server";
 import { cache } from "react";
 
 import { openAuthorizedStore, type Principal, withAuthorizedStore } from "./principal";
@@ -80,10 +80,28 @@ function workspaceHealthcheck(dbUrl: string): LocalPersistenceStatus {
   };
 }
 
-/** Bootstrap healthcheck — pinned to the authenticated workspace or demo clock. */
+/**
+ * Bootstrap healthcheck — pinned to the authenticated workspace or demo clock.
+ *
+ * Every branch below stamps the request's wall clock (`checkedAt`), and the local
+ * branch writes that stamp to the database. Under Cache Components (#1229) a
+ * clock read that happens while prerendering is an error
+ * (`blocking-prerender-current-time`): the framework can't tell an intentional
+ * per-request stamp from a value about to be frozen into the static shell.
+ * `connection()` is how we declare the difference — it stalls the prerender
+ * here, so the `<Suspense>` fallback around each consumer (the footer, the
+ * dashboard body) ships in the shell and the stamp is computed at request time.
+ *
+ * Declaring it at the seam rather than at each caller means no consumer can
+ * reintroduce the error by reading `persistence` from a place that prerenders:
+ * the timestamp is request data by construction. Callers outside a request
+ * (unit tests) must therefore stub `next/server`.
+ */
 export async function bootstrapHealthcheck(
   target?: StoreTarget,
 ): Promise<LocalPersistenceStatus> {
+  await connection();
+
   // Reuse the request-scoped principal resolution (single reachability guard):
   // a resolved principal shares its shape with the reachable target, so we read
   // the same `dbUrl`/`now` fields off it without a second resolve or assert.
