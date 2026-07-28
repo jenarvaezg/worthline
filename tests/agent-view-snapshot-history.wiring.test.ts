@@ -1,5 +1,9 @@
 import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
+import {
+  DEFAULT_SNAPSHOT_LIMIT,
+  MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
+} from "@web/agent-view/snapshot-history";
 import { GET as getSnapshots } from "@web/api/v1/agent-view/scopes/[scopeId]/snapshots/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
@@ -392,6 +396,66 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
     );
     expect(response.status).toBe(200);
     expect(body.meta.limit).toBe(500);
+  });
+
+  test("asking for holding rows narrows the page to the short window (#1268)", async () => {
+    const points = Array.from({ length: 15 }, (_, index) => ({
+      date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+      valueMinor: 100_000_00 + index * 1_000_00,
+    }));
+    await seedSnapshots(points);
+    const scopeId = await householdScopeId();
+
+    // Without rows the requested page size stands: the headline series is cheap.
+    const plain = await snapshots(scopeId, "?granularity=raw");
+    expect((plain.body.data as unknown[]).length).toBe(15);
+    expect(plain.body.meta.limit).toBe(DEFAULT_SNAPSHOT_LIMIT);
+    expect(plain.body.meta.holdingRowsWindow).toBeUndefined();
+
+    // With rows the page is capped in code, and the response says so.
+    for (const mode of ["summary", "full"] as const) {
+      const { body } = await snapshots(
+        scopeId,
+        `?granularity=raw&includeHoldingRows=${mode}`,
+      );
+      expect((body.data as unknown[]).length, mode).toBe(
+        MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
+      );
+      expect(body.meta.limit, mode).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+      expect(body.meta.holdingRowsWindow, mode).toEqual({
+        requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
+      });
+      // The rest of the series stays reachable — narrowed, never truncated.
+      expect(body.meta.hasNext, mode).toBe(true);
+      expect(typeof body.meta.nextCursor, mode).toBe("string");
+    }
+
+    // Which end of the series lands in the window is still the caller's choice.
+    const newest = await snapshots(
+      scopeId,
+      "?granularity=raw&includeHoldingRows=full&sort=-date",
+    );
+    expect((newest.body.data as Array<{ date: string }>)[0]!.date).toBe("2026-06-15");
+
+    // The window binds through MCP too, not just over HTTP.
+    const catalog = createAgentViewMcpToolCatalog(routeClient);
+    const viaMcp = await catalog.get_snapshot_history.invoke({
+      granularity: "raw",
+      includeHoldingRows: "full",
+    });
+    expect(viaMcp.data.length).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+    expect(viaMcp.meta.holdingRowsWindow).toEqual({
+      requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
+    });
+
+    // A limit already under the window is honoured as asked, with no notice.
+    const short = await snapshots(
+      scopeId,
+      "?granularity=raw&includeHoldingRows=full&limit=3",
+    );
+    expect((short.body.data as unknown[]).length).toBe(3);
+    expect(short.body.meta.limit).toBe(3);
+    expect(short.body.meta.holdingRowsWindow).toBeUndefined();
   });
 
   test("includeHoldingRows=summary returns a per-rung decomposition", async () => {

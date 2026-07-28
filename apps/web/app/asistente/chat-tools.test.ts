@@ -9,6 +9,10 @@ import { buildFinancialContext } from "@web/agent-view/financial-context";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
+import {
+  DEFAULT_SNAPSHOT_LIMIT,
+  MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
+} from "@web/agent-view/snapshot-history";
 import { createChatTools } from "@web/asistente/chat-tools";
 import {
   HOLDING_REFERENCE_FIELDS,
@@ -258,6 +262,49 @@ describe("createChatTools · full read catalog (#630)", () => {
     },
     SEED_TIMEOUT_MS,
   );
+
+  it(
+    "caps the per-position decomposition to a short window, not the whole series (#1268)",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+
+      const shape = await tools["get_snapshot_history"]?.execute?.({}, toolCallContext());
+      const detailed = await tools["get_snapshot_history"]?.execute?.(
+        { includeHoldingRows: "full" },
+        toolCallContext(),
+      );
+
+      // The cheap read still walks the whole default page — the seed has more
+      // closes than the window, so the cap has something to bite on.
+      expect(shape.entries.length).toBeGreaterThan(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+      expect(detailed.entries.length).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+      expect(detailed.meta.holdingRowsWindow).toEqual({
+        requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
+      });
+      // Narrowed, never truncated: the rest of the series is one cursor away.
+      expect(detailed.meta.hasNext).toBe(true);
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it("tells the model what each holding-rows mode costs (#1268)", () => {
+    const description = createChatTools({
+      runWithStore: (run) => run({ agentView: {} as AgentViewReadStore }),
+      asOf: AS_OF,
+    })["get_snapshot_history"]?.description;
+
+    // The most expensive read in the assistant cannot be chosen blind: the
+    // description names the modes, the window they force, and how to pick which
+    // snapshots land inside it.
+    expect(description).toContain("includeHoldingRows");
+    for (const mode of ["none", "summary", "full"]) {
+      expect(description, mode).toContain(mode);
+    }
+    expect(description).toContain(String(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS));
+    expect(description).toContain("sort=-date");
+    expect(description).toContain("get_holding_detail");
+  });
 });
 
 describe("createChatTools · suggest_actions (#631)", () => {
