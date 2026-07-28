@@ -32,7 +32,7 @@ export async function confirmHoldingCreationProposalAction(
         ? { ok: true, proposalId: draft.proposalId, data: undefined }
         : { ok: false, message: PROPOSAL_UNRECOGNIZED_MESSAGE };
     },
-    apply: async ({ store, proposal, today }) => {
+    apply: async ({ store, proposal, today, now }) => {
       const plan = holdingCreationPlanOf(proposal);
       if (!plan) return { status: "error", message: "La propuesta no contiene un alta." };
 
@@ -41,7 +41,7 @@ export async function confirmHoldingCreationProposalAction(
       // (a re-confirm would then create a duplicate — the informative duplicate
       // warning is the mitigation, not a lock). We accept this small window rather
       // than thread the resolution through the create seam's transaction.
-      const persisted = await persistHoldingCreation(store, plan, Date.now(), today);
+      const persisted = await persistHoldingCreation(store, plan, Date.now(), today, now);
       if (!persisted.ok) return { status: "error", message: persisted.error };
       await store.assistantProposals.markApplied(proposal.id);
       return { status: "applied" };

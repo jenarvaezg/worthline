@@ -379,19 +379,24 @@ export default async function EditarPage({
   // coin/Binance holding mirrors positions, not operations, so it carries none.
   const isMarketInvestment =
     Boolean(asset) && method === "derived" && !isCoinCollection && !isBinanceHolding;
+  // An unpriced position (a symbol whose first quote has not landed yet) enters the
+  // engine at its cost basis — the valuation authority's own fallback — so the panel
+  // never fabricates a −100% while the valuation beside it reads the cost (#1314).
+  const returnsMarketValueMinor =
+    position?.marketValue?.amountMinor ?? position?.costBasis.amountMinor ?? 0;
   const returnsView =
     isMarketInvestment && asset
       ? buildHoldingReturnsView({
           instrument: instrumentOfAsset(asset),
           irr: holdingIrr({
             currency: asset.currency,
-            marketValueMinor: position?.marketValue?.amountMinor ?? 0,
+            marketValueMinor: returnsMarketValueMinor,
             operations,
             valuationDate: today,
           }),
           simpleGain: simpleGain({
             currency: asset.currency,
-            marketValueMinor: position?.marketValue?.amountMinor ?? 0,
+            marketValueMinor: returnsMarketValueMinor,
             operations,
             valuationDate: today,
           }),
