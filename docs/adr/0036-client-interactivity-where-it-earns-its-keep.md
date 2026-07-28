@@ -60,3 +60,24 @@ client JS" to **"client interactivity where it earns its keep,"** staying RSC-fi
 - **Escalation stays contained.** Nothing here forecloses moving a single surface to the
   hybrid client model later if it proves server-bound; the boundary is per-surface, like
   ADR 0009's chart escape hatch.
+
+## Amendment (#1270): a native fold's `open` belongs to the DOM, and says so
+
+The folds this ADR keeps — native `<details>`, no client JS — are toggled by the
+**browser**, not by React. A person can open one before the page hydrates (slow
+network, cold route), and React then finds an attribute it did not write: _"A tree
+hydrated but some attributes of the server rendered HTML didn't match the client
+properties. This won't be patched up."_ A real `console.error`, in a real person's
+console, for behaviour that was entirely correct — their click.
+
+So every `<details>` in the app carries `suppressHydrationWarning`: not a silencer, a
+statement of ownership. `apps/web/app/fold-hydration-guardian.test.ts` enforces it and
+`e2e/49-fold-before-hydration.spec.ts` proves it holds — reproducing the window by
+holding the route's JS chunks, so it guards the production build too.
+
+The rule is unconditional **because no fold here derives `open` from client state**:
+`open={editing}` reads a server-side form error and `open` is a literal, so the browser
+owns the toggle in both cases — and a fold sent open mismatches in the other direction
+when it is clicked shut early. A fold whose `open` ever came from `useState` would make
+React the owner; that is the moment to revisit this rule, not a reason to carve an
+exemption into it now.

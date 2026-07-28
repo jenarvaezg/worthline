@@ -89,14 +89,23 @@ export function holdingRow(page: import("@playwright/test").Page, name: string) 
 export async function waitForHydration(locator: import("@playwright/test").Locator) {
   await expect(locator).toBeAttached();
   await expect
-    .poll(
-      () =>
-        locator.evaluate((el) =>
-          Object.keys(el).some((key) => key.startsWith("__reactFiber$")),
-        ),
-      { message: "React never hydrated the element" },
-    )
+    .poll(() => isHydrated(locator), { message: "React never hydrated the element" })
     .toBe(true);
+}
+
+/**
+ * Whether React owns this element RIGHT NOW — one sample, no waiting.
+ *
+ * This is the suite's only hydration signal, so it lives here instead of being
+ * inlined at call sites: `waitForHydration` polls it for the true case, and journey
+ * 49 asserts the false case to prove it is really inside the pre-hydration window.
+ */
+export async function isHydrated(
+  locator: import("@playwright/test").Locator,
+): Promise<boolean> {
+  return locator.evaluate((el) =>
+    Object.keys(el).some((key) => key.startsWith("__reactFiber$")),
+  );
 }
 
 /** Expand the edit page's progressive-disclosure block before using advanced forms. */

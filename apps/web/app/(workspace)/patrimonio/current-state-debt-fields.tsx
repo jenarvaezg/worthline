@@ -250,7 +250,7 @@ export function CurrentStateDebtFields({
         </div>
       </div>
 
-      <details className="anchorEdit">
+      <details suppressHydrationWarning className="anchorEdit">
         <summary>Firma original (opcional)</summary>
         <label>
           <span>Fecha de firma original</span>

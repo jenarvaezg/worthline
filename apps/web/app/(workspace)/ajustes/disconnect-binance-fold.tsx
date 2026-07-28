@@ -25,7 +25,7 @@ export default function DisconnectBinanceFold({
     <form action={disconnectBinanceAction}>
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="sourceId" type="hidden" value={sourceId} />
-      <details className="confirmDelete">
+      <details suppressHydrationWarning className="confirmDelete">
         <summary>{summary}</summary>
         <p className="dangerExplain">
           La clave de API se borra de este dispositivo; tu cuenta en Binance no se toca.

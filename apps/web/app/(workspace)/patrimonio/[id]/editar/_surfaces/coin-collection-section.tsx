@@ -137,6 +137,7 @@ export function CoinCollectionSection({
               const coins = metalCoinCount(row.positions);
               return (
                 <details
+                  suppressHydrationWarning
                   className="coinMetalRow"
                   key={row.metal ?? "sin-metal"}
                   style={{ ["--coin-tone" as string]: row.identity.tone }}

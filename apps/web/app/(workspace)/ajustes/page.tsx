@@ -193,7 +193,7 @@ export async function AjustesContent({
                   <form action={disableMemberAction}>
                     <input name="currentUrl" type="hidden" value={currentUrl} />
                     <input name="id" type="hidden" value={member.id} />
-                    <details className="confirmDelete">
+                    <details suppressHydrationWarning className="confirmDelete">
                       <summary>Desactivar</summary>
                       <button type="submit">Confirmar desactivación</button>
                     </details>
@@ -208,7 +208,7 @@ export async function AjustesContent({
                     <form action={hardDeleteMemberAction}>
                       <input name="currentUrl" type="hidden" value={currentUrl} />
                       <input name="id" type="hidden" value={member.id} />
-                      <details className="confirmDelete">
+                      <details suppressHydrationWarning className="confirmDelete">
                         <summary>Eliminar definitivamente</summary>
                         <button type="submit">Confirmar borrado definitivo</button>
                       </details>
@@ -367,7 +367,7 @@ export async function AjustesContent({
                   activo. Rellena para forzar un valor fijo (anula la estimación).
                 </small>
               </label>
-              <details>
+              <details suppressHydrationWarning>
                 <summary className="muted">
                   Retornos reales por tipo de activo (opcional)
                 </summary>
@@ -795,7 +795,7 @@ export async function AjustesContent({
                   <input name="entityId" type="hidden" value={override.entityId} />
                   <span className="overrideCode">{override.code}</span>
                   <span className="overrideEntity">{override.entityId}</span>
-                  <details className="confirmDelete">
+                  <details suppressHydrationWarning className="confirmDelete">
                     <summary>Retirar</summary>
                     <button type="submit">Confirmar retirada</button>
                   </details>
@@ -828,7 +828,7 @@ export async function AjustesContent({
 
           <form action={resetWorkspaceAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
-            <details className="confirmDelete">
+            <details suppressHydrationWarning className="confirmDelete">
               <summary>Borrar todo</summary>
               <label>
                 Escribe <strong>borrar todo</strong> para confirmar

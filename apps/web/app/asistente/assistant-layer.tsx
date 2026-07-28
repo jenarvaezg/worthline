@@ -1195,7 +1195,7 @@ function ReconstructionProposalCard({
             : "No cuadra en el extremo"}
         </p>
       ) : null}
-      <details>
+      <details suppressHydrationWarning>
         <summary>Detalle punto a punto ({series.length})</summary>
         <ul>
           {series.map((point, index) => (

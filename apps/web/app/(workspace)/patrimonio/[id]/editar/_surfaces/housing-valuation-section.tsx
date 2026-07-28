@@ -79,7 +79,7 @@ export function HousingValuationSection({
         <button type="submit">Guardar tasa</button>
       </form>
 
-      <details className="anchorEdit">
+      <details suppressHydrationWarning className="anchorEdit">
         <summary>Avanzado</summary>
         <form action={setHousingValuationCadenceAction} className="stackForm">
           <input name="currentUrl" type="hidden" value={currentUrl} />
@@ -193,7 +193,7 @@ function AnchorFields({ max, values }: { max: string; values: Record<string, str
   );
 }
 
-/** One anchor row: data + inline edit (<details>) + two-step delete (<details>). */
+/** One anchor row: data + inline edit (<details suppressHydrationWarning>) + two-step delete (<details suppressHydrationWarning>). */
 function AnchorRow({
   anchor,
   assetId,
@@ -230,7 +230,7 @@ function AnchorRow({
       </td>
       <td>{anchor.adjustsPriorCurve ? "Tasación" : "Mejora"}</td>
       <td className="rowActions">
-        <details className="anchorEdit" open={editing}>
+        <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
           <form
             action={updateValuationAnchorAction}
@@ -250,7 +250,7 @@ function AnchorRow({
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={assetId} />
           <input name="anchorId" type="hidden" value={anchor.id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar</summary>
             <button type="submit">Confirmar</button>
           </details>

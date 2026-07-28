@@ -546,7 +546,11 @@ export default async function DashboardContent({
             {pyramid.map((tier, idx) => {
               const pct = tierPercents[idx] ?? 0;
               return (
-                <details className={`tier ${tier.tier}`} key={tier.tier}>
+                <details
+                  suppressHydrationWarning
+                  className={`tier ${tier.tier}`}
+                  key={tier.tier}
+                >
                   <summary>
                     <span className="tierName">{LIQUIDITY_TIER_LABELS[tier.tier]}</span>
                     <b className={moneySign(tier.netValue) === "neg" ? "neg" : undefined}>

@@ -263,7 +263,7 @@ export default function OperationsEditor({
       </form>
 
       {optimisticOps.length > 0 ? (
-        <details className="recentOpsPanel" open>
+        <details suppressHydrationWarning className="recentOpsPanel" open>
           <summary>Todas las operaciones ({optimisticOps.length})</summary>
           <div className="tableScroll">
             <table>
@@ -305,7 +305,7 @@ export default function OperationsEditor({
                         <form action={deleteAction} onSubmit={onDelete(op.id)}>
                           <input name="currentUrl" type="hidden" value={currentUrl} />
                           <input name="operationId" type="hidden" value={op.id} />
-                          <details className="confirmDelete">
+                          <details suppressHydrationWarning className="confirmDelete">
                             <summary>Eliminar</summary>
                             <button type="submit">Confirmar</button>
                           </details>

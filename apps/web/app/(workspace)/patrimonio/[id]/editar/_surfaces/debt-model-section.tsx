@@ -181,7 +181,7 @@ export function DebtModelSection({
       </form>
 
       {debtModel === "amortizable" || debtModel === "revolving" ? (
-        <details className="anchorEdit">
+        <details suppressHydrationWarning className="anchorEdit">
           <summary>Avanzado</summary>
           <form action={setValuationCadenceAction} className="stackForm">
             <input name="currentUrl" type="hidden" value={currentUrl} />
@@ -366,7 +366,7 @@ function AmortizablePlanEditor({
             />
           </form>
 
-          <details className="anchorEdit">
+          <details suppressHydrationWarning className="anchorEdit">
             <summary>¿Tienes los datos originales del préstamo?</summary>
             <form
               action={saveAmortizationPlanAction}
@@ -389,7 +389,7 @@ function AmortizablePlanEditor({
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={liabilityId} />
           <input name="planId" type="hidden" value={plan.id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar plan</summary>
             <button type="submit">Confirmar</button>
           </details>
@@ -399,7 +399,7 @@ function AmortizablePlanEditor({
       {plan ? <PlanCuotaSummary plan={plan} privacyMode={privacyMode} /> : null}
 
       {plan && currentModelledBalanceMinor !== null ? (
-        <details className="anchorEdit">
+        <details suppressHydrationWarning className="anchorEdit">
           <summary>Recalibrar con saldo real</summary>
           <p className="infoNote">
             Saldo modelado a día de hoy:{" "}
@@ -583,7 +583,7 @@ function RevisionFields({
   );
 }
 
-/** One revision row: data + inline edit (<details>) + two-step delete. */
+/** One revision row: data + inline edit (<details suppressHydrationWarning>) + two-step delete. */
 function RevisionRow({
   currentUrl,
   formError,
@@ -613,7 +613,7 @@ function RevisionRow({
       <td>{revision.revisionDate}</td>
       <td className="numCol">{rateToPercent(revision.newAnnualInterestRate)} %</td>
       <td className="rowActions">
-        <details className="anchorEdit" open={editing}>
+        <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
           <form
             action={updateInterestRateRevisionAction}
@@ -635,7 +635,7 @@ function RevisionRow({
           <input name="id" type="hidden" value={liabilityId} />
           <input name="planId" type="hidden" value={planId} />
           <input name="revisionId" type="hidden" value={revision.id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar</summary>
             <button type="submit">Confirmar</button>
           </details>
@@ -702,7 +702,7 @@ function EarlyRepaymentFields({
   );
 }
 
-/** One early-repayment row: data + inline edit (<details>) + two-step delete. */
+/** One early-repayment row: data + inline edit (<details suppressHydrationWarning>) + two-step delete. */
 function EarlyRepaymentRow({
   currentUrl,
   formError,
@@ -741,7 +741,7 @@ function EarlyRepaymentRow({
       </td>
       <td>{EARLY_REPAYMENT_MODE_LABELS[repayment.mode]}</td>
       <td className="rowActions">
-        <details className="anchorEdit" open={editing}>
+        <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
           <form
             action={updateEarlyRepaymentAction}
@@ -763,7 +763,7 @@ function EarlyRepaymentRow({
           <input name="id" type="hidden" value={liabilityId} />
           <input name="planId" type="hidden" value={planId} />
           <input name="repaymentId" type="hidden" value={repayment.id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar</summary>
             <button type="submit">Confirmar</button>
           </details>
@@ -880,7 +880,7 @@ function BalanceAnchorEditor({
   );
 }
 
-/** One balance-anchor row: data + inline edit (<details>) + two-step delete. */
+/** One balance-anchor row: data + inline edit (<details suppressHydrationWarning>) + two-step delete. */
 function BalanceAnchorRow({
   anchor,
   currentUrl,
@@ -915,7 +915,7 @@ function BalanceAnchorRow({
         )}
       </td>
       <td className="rowActions">
-        <details className="anchorEdit" open={editing}>
+        <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
           <form
             action={updateBalanceAnchorAction}
@@ -935,7 +935,7 @@ function BalanceAnchorRow({
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={liabilityId} />
           <input name="anchorId" type="hidden" value={anchor.id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar</summary>
             <button type="submit">Confirmar</button>
           </details>

@@ -486,7 +486,7 @@ export default async function EditarPage({
           ) : null}
         </section>
 
-        <details className="editAdvanced">
+        <details suppressHydrationWarning className="editAdvanced">
           <summary>Configuración avanzada</summary>
           <div className="editAdvancedBody">
             {/* ── Method-dispatched configuration surface (#152, ADR 0014) ───── */}
@@ -681,7 +681,7 @@ export default async function EditarPage({
             <form action={deleteAssetAction}>
               <input name="currentUrl" type="hidden" value={currentUrl} />
               <input name="id" type="hidden" value={id} />
-              <details className="confirmDelete">
+              <details suppressHydrationWarning className="confirmDelete">
                 <summary>Eliminar activo</summary>
                 <p>El activo se moverá a la Papelera y podrás recuperarlo.</p>
                 <button type="submit">Confirmar eliminación</button>
@@ -691,7 +691,7 @@ export default async function EditarPage({
             <form action={deleteLiabilityAction}>
               <input name="currentUrl" type="hidden" value={currentUrl} />
               <input name="id" type="hidden" value={id} />
-              <details className="confirmDelete">
+              <details suppressHydrationWarning className="confirmDelete">
                 <summary>Eliminar deuda</summary>
                 <p>La deuda se moverá a la Papelera y podrás recuperarla.</p>
                 <button type="submit">Confirmar eliminación</button>

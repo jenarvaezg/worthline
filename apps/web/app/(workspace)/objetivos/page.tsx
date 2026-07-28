@@ -491,7 +491,7 @@ export async function ObjetivosContent({
               {/* «¿Qué cuenta como elegible?» disclosure — derived from the
                     same rule FIRE uses: all scope assets except isPrimaryResidence
                     and manually excluded ones (config.excludedAssetIds). */}
-              <details className="fireEligibleNote">
+              <details suppressHydrationWarning className="fireEligibleNote">
                 <summary>¿Qué cuenta como activo elegible?</summary>
                 <p className="fireEligibleRule">
                   Cuentan todos los activos del ámbito excepto la{" "}
@@ -780,7 +780,7 @@ export async function ObjetivosContent({
                       <form action={deleteGoalAction}>
                         <input name="currentUrl" type="hidden" value={currentUrl} />
                         <input name="id" type="hidden" value={goal.id} />
-                        <details className="confirmDelete">
+                        <details suppressHydrationWarning className="confirmDelete">
                           <summary>Eliminar</summary>
                           <PendingSubmit pendingLabel="Borrando…">
                             Confirmar borrado
