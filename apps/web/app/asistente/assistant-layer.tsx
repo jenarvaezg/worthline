@@ -120,6 +120,7 @@ import {
   type ReconcileProposal,
   reconcileFolio,
 } from "./reconcile-proposal-contract";
+import { withoutRepeatedProse } from "./repeated-prose";
 import {
   deriveScreenContext,
   isAssistantSurface,
@@ -182,6 +183,34 @@ function proseAndActions(
   const embedded = extractEmbeddedQuickActions(text);
   const prose = splitProseActionBlock(embedded.cleaned, toolActions);
   return { cleaned: prose.cleaned, prose: prose.actions, embedded: embedded.actions };
+}
+
+/**
+ * The prose to print for each text part of ONE turn, by part index.
+ *
+ * Two trims, in the order the reader's eye needs them: each part loses its duplicate
+ * action channels, and then the TURN loses the blocks it wrote twice (#1317) — a
+ * proposal turn restates its whole summary in the step the SDK opens after
+ * `suggest_actions`. De-duplicating the CLEANED text is what makes the two agree: an
+ * action block trimmed off one copy must not be what stops it from matching the other.
+ *
+ * Assistant turns only. The user's own words are never reinterpreted (#1047), and a
+ * person who repeats themselves is not a defect to correct.
+ */
+function printableProseByPart(
+  message: UIMessage,
+  toolActions: readonly QuickAction[],
+): Map<number, string> {
+  const indices: number[] = [];
+  const cleaned: string[] = [];
+  message.parts.forEach((part, index) => {
+    if (part.type !== "text") return;
+    indices.push(index);
+    cleaned.push(proseAndActions(part.text, toolActions).cleaned);
+  });
+  const printable =
+    message.role === "assistant" ? withoutRepeatedProse(cleaned) : cleaned;
+  return new Map(indices.map((index, at) => [index, printable[at] ?? ""]));
 }
 
 /**
@@ -316,7 +345,6 @@ function HoldingCreationProposalCard({
           . Puedes crearlo igualmente si es otro distinto.
         </p>
       ) : null}
-      <p className="assistantProposalFolio">{proposal.folio}</p>
       {result ? (
         <p
           aria-live="polite"
@@ -419,7 +447,6 @@ function HoldingTrashProposalCard({
           {warning}
         </p>
       ))}
-      <p className="assistantProposalFolio">{proposal.folio}</p>
       {result ? (
         <p
           aria-live="polite"
@@ -587,7 +614,6 @@ function ReconcileProposalCard({
           </li>
         ))}
       </ul>
-      <p className="assistantProposalFolio">{folio}</p>
       {result ? (
         <p
           aria-live="polite"
@@ -1690,17 +1716,21 @@ function ConversationParts({
         // chip it was describing instead of blocking the trim of the whole block.
         const messageActions =
           message.role === "assistant" ? toolQuickActions(message) : [];
+        const prose = printableProseByPart(message, messageActions);
         return (
           <div className={`assistantMsg ${message.role}`} key={message.id}>
             {message.parts.map((part, i) => {
               if (part.type === "text") {
-                const { cleaned } = proseAndActions(part.text, messageActions);
+                const text = prose.get(i) ?? "";
+                // Nothing left to print: the part was a repeat, or was entirely the
+                // action block that became chips.
+                if (text.trim() === "") return null;
                 return (
                   <AssistantTextPart
                     holdingLabels={holdingLabels}
                     key={`${message.id}-${i}`}
                     role={message.role}
-                    text={cleaned}
+                    text={text}
                   />
                 );
               }
