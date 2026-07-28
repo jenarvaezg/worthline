@@ -1,4 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+// `bootstrapHealthcheck` declares its clock read as request data with
+// `connection()` (#1229); outside a request scope that throws, so a test that
+// calls the seam directly stubs it. `after()` is only ever called inside a
+// request, so a no-op stands in for it too.
+vi.mock("next/server", () => ({
+  after: () => {},
+  connection: async () => {},
+}));
 
 import { bootstrapHealthcheck } from "./store";
 
