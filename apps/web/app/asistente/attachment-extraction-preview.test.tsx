@@ -8,7 +8,8 @@ describe("AttachmentExtractionPreview", () => {
   test("shows every position, total, uncertainty and warnings before any bridge", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview
-        preview={{
+        card={{
+          kind: "parsed",
           fileName: "cartera.xlsx",
           result: {
             data: extractedDocumentSchema.parse({
@@ -61,7 +62,8 @@ describe("AttachmentExtractionPreview", () => {
   test("shows a dated balance series with uncertainty, warnings and no wizard bridge", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview
-        preview={{
+        card={{
+          kind: "parsed",
           fileName: "prestamo.pdf",
           result: {
             data: extractedDocumentSchema.parse({
@@ -92,7 +94,8 @@ describe("AttachmentExtractionPreview", () => {
   test("shows the dated fact, its verbatim label and the effect the screen declared", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview
-        preview={{
+        card={{
+          kind: "parsed",
           fileName: "pago.png",
           result: {
             data: extractedDocumentSchema.parse({
@@ -147,7 +150,8 @@ describe("AttachmentExtractionPreview", () => {
   test("shows the bare observation without inventing the optional context", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview
-        preview={{
+        card={{
+          kind: "parsed",
           fileName: "recibo.jpg",
           result: {
             data: extractedDocumentSchema.parse({
@@ -181,7 +185,8 @@ describe("AttachmentExtractionPreview", () => {
   test("renders typed nonfatal failures honestly", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview
-        preview={{
+        card={{
+          kind: "parsed",
           fileName: "desconocido.csv",
           result: {
             message: "No reconozco las cabeceras de esta hoja.",
@@ -192,6 +197,30 @@ describe("AttachmentExtractionPreview", () => {
     );
 
     expect(html).toContain("No reconozco las cabeceras de esta hoja.");
+    expect(html).toContain('role="status"');
+  });
+
+  /**
+   * The card is the ONLY surface telling the user what worthline read of their
+   * document, so a payload written by a newer server must still paint something in a
+   * tab that predates the deploy (#1261) — the failure this replaces was the card
+   * silently not being there at all.
+   */
+  test("paints a degraded card rather than nothing at all (#1261)", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          fileName: "captura.png",
+          kind: "degraded",
+          message: "No reconozco en este archivo ninguno de los documentos que sé leer.",
+        }}
+      />,
+    );
+
+    expect(html).toContain("Lectura de captura.png");
+    expect(html).toContain(
+      "No reconozco en este archivo ninguno de los documentos que sé leer.",
+    );
     expect(html).toContain('role="status"');
   });
 });

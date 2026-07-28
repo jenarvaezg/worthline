@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { AttachmentPreviewData } from "./attachment-chat";
+import type { AttachmentPreviewCard } from "./attachment-chat";
 import type {
   DeclaredEffectKind,
   ExtractedBalanceSeriesDocument,
@@ -284,29 +284,42 @@ function PositionsMovementsPreview({
   );
 }
 
+/**
+ * The whole card for everything that is not a rendered document: a file name and one
+ * honest sentence. It serves the three message-only verdicts AND the degraded payload
+ * of a client that predates the server's card (#1261) — one markup for both, because
+ * the user's need is identical and there is nothing extra to say about the second.
+ */
+function MessageOnlyCard({ fileName, message }: { fileName: string; message: string }) {
+  return (
+    <section className="assistantAttachmentPreview" role="status">
+      <strong>Lectura de {fileName}</strong>
+      <p>{message}</p>
+    </section>
+  );
+}
+
 export default function AttachmentExtractionPreview({
-  preview,
+  card,
 }: {
-  preview: AttachmentPreviewData;
+  card: AttachmentPreviewCard;
 }) {
-  if (preview.result.status !== "valid") {
-    return (
-      <section className="assistantAttachmentPreview" role="status">
-        <strong>Lectura de {preview.fileName}</strong>
-        <p>{preview.result.message}</p>
-      </section>
-    );
+  if (card.kind === "degraded") {
+    return <MessageOnlyCard fileName={card.fileName} message={card.message} />;
+  }
+  if (card.result.status !== "valid") {
+    return <MessageOnlyCard fileName={card.fileName} message={card.result.message} />;
   }
 
-  const { data } = preview.result;
+  const { data } = card.result;
   return (
     <section
-      aria-label={`Lectura de ${preview.fileName}`}
+      aria-label={`Lectura de ${card.fileName}`}
       aria-live="polite"
       className="assistantAttachmentPreview"
       role="status"
     >
-      <strong>Lectura de {preview.fileName}</strong>
+      <strong>Lectura de {card.fileName}</strong>
       {data.documentType === "positions" ? (
         <PositionsPreview data={data} />
       ) : data.documentType === "balance_series" ? (
