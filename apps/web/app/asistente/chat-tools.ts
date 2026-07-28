@@ -25,8 +25,8 @@ import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import {
   DEFAULT_SNAPSHOT_LIMIT,
-  HOLDING_ROWS_SNAPSHOT_LIMIT,
   MAX_SNAPSHOT_LIMIT,
+  MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
 } from "@web/agent-view/snapshot-history";
 import { DEFAULT_TRASH_LIMIT, MAX_TRASH_LIMIT } from "@web/agent-view/trash-summary";
 import {
@@ -1003,9 +1003,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "`includeHoldingRows` decide el coste de la lectura: `none` (por defecto, la más " +
         "barata) para la forma de la serie; `summary` (≈3× más caro) cuando importe la " +
         "composición por tramo de liquidez; `full` (≈8×) solo para mirar posición a " +
-        `posición. Con \`summary\` o \`full\` la página se acota a ${HOLDING_ROWS_SNAPSHOT_LIMIT} ` +
-        "cierres (meta.holdingRowsWindow lo dice y el resto sigue en meta.nextCursor); para " +
-        "el detalle de UNA posición usa get_holding_detail, no el histórico entero.",
+        `posición. Con \`summary\` o \`full\` la página se acota a ${MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS} ` +
+        "snapshots (meta.holdingRowsWindow lo dice y el resto sigue en meta.nextCursor), así " +
+        "que elige QUÉ snapshots desglosas: sort=-date para los más recientes, o from/to " +
+        "para el rango que te interesa. Para el detalle de UNA posición usa " +
+        "get_holding_detail, no el histórico entero.",
       inputSchema: jsonSchema<{
         scopeId?: string;
         granularity?: "monthly-close" | "raw";

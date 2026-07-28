@@ -1347,10 +1347,8 @@ export interface AgentViewSnapshotHistory {
  */
 export interface AgentViewSnapshotHistoryMeta extends AgentViewPaginationMeta {
   holdingRowsWindow?: {
-    /** The page size asked for, before the window applied. */
+    /** The page size asked for; `meta.limit` is the window actually served. */
     requestedLimit: number;
-    /** The window served — the same value as `meta.limit`. */
-    appliedLimit: number;
   };
 }
 

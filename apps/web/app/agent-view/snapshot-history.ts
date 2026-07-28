@@ -38,9 +38,11 @@ export const MAX_SNAPSHOT_LIMIT = 500;
  * against ~3.7k for the headline series), and nothing about the question asked
  * makes the whole series worth reading position by position. So the window is
  * enforced here, in code, for every surface — a guarantee never lives in the
- * prompt. The rest of the series stays one `meta.nextCursor` away.
+ * prompt. Which snapshots land inside the window is still the caller's choice
+ * (`sort`, `from`/`to`, `cursor`); the rest of the series stays one
+ * `meta.nextCursor` away.
  */
-export const HOLDING_ROWS_SNAPSHOT_LIMIT = 12;
+export const MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS = 12;
 
 /** Cash-first liquidity ladder, matching the live `liquidityBreakdown` order. */
 const LIQUIDITY_LADDER: readonly AgentViewLiquidityTier[] = [
@@ -54,7 +56,11 @@ const LIQUIDITY_LADDER: readonly AgentViewLiquidityTier[] = [
 export interface BuildSnapshotHistoryOptions {
   granularity: AgentViewSnapshotGranularity;
   sort: AgentViewSnapshotSort;
-  /** Page size, already clamped to `[1, MAX_SNAPSHOT_LIMIT]` by the caller. */
+  /**
+   * Requested page size, already clamped to `[1, MAX_SNAPSHOT_LIMIT]` by the
+   * caller. A page carrying holding rows serves at most
+   * `MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS` of it (#1268).
+   */
   limit: number;
   includeHoldingRows: AgentViewIncludeHoldingRows;
   /** Inclusive `YYYY-MM-DD` lower bound on snapshot date. */
@@ -151,12 +157,7 @@ export async function buildSnapshotHistory(
       limit,
       ...(limit === options.limit
         ? {}
-        : {
-            holdingRowsWindow: {
-              appliedLimit: limit,
-              requestedLimit: options.limit,
-            },
-          }),
+        : { holdingRowsWindow: { requestedLimit: options.limit } }),
       ...(nextCursor === undefined ? {} : { nextCursor }),
     },
   };
@@ -169,7 +170,7 @@ export async function buildSnapshotHistory(
 function effectiveLimit(options: BuildSnapshotHistoryOptions): number {
   return options.includeHoldingRows === "none"
     ? options.limit
-    : Math.min(options.limit, HOLDING_ROWS_SNAPSHOT_LIMIT);
+    : Math.min(options.limit, MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
 }
 
 async function toEntry(

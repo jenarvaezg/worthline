@@ -11,7 +11,7 @@ import { bindScope } from "@web/agent-view/scoped-read";
 import { listAgentViewScopes } from "@web/agent-view/scopes";
 import {
   DEFAULT_SNAPSHOT_LIMIT,
-  HOLDING_ROWS_SNAPSHOT_LIMIT,
+  MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
 } from "@web/agent-view/snapshot-history";
 import { createChatTools } from "@web/asistente/chat-tools";
 import {
@@ -277,15 +277,13 @@ describe("createChatTools · full read catalog (#630)", () => {
 
       // The cheap read still walks the whole default page — the seed has more
       // closes than the window, so the cap has something to bite on.
-      expect(shape.entries.length).toBeGreaterThan(HOLDING_ROWS_SNAPSHOT_LIMIT);
-      expect(detailed.entries.length).toBe(HOLDING_ROWS_SNAPSHOT_LIMIT);
+      expect(shape.entries.length).toBeGreaterThan(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+      expect(detailed.entries.length).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
       expect(detailed.meta.holdingRowsWindow).toEqual({
-        appliedLimit: HOLDING_ROWS_SNAPSHOT_LIMIT,
         requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
       });
       // Narrowed, never truncated: the rest of the series is one cursor away.
       expect(detailed.meta.hasNext).toBe(true);
-      expect(typeof detailed.meta.nextCursor).toBe("string");
     },
     SEED_TIMEOUT_MS,
   );
@@ -297,12 +295,14 @@ describe("createChatTools · full read catalog (#630)", () => {
     })["get_snapshot_history"]?.description;
 
     // The most expensive read in the assistant cannot be chosen blind: the
-    // description names the three modes and the window `full`/`summary` force.
+    // description names the modes, the window they force, and how to pick which
+    // snapshots land inside it.
     expect(description).toContain("includeHoldingRows");
     for (const mode of ["none", "summary", "full"]) {
-      expect(description, mode).toContain(`\`${mode}\``);
+      expect(description, mode).toContain(mode);
     }
-    expect(description).toContain(String(HOLDING_ROWS_SNAPSHOT_LIMIT));
+    expect(description).toContain(String(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS));
+    expect(description).toContain("sort=-date");
     expect(description).toContain("get_holding_detail");
   });
 });

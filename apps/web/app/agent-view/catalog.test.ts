@@ -6,6 +6,7 @@ import {
   createAgentViewCatalog,
 } from "./catalog";
 import type { AgentViewEnvelope, AgentViewScope } from "./contract";
+import { MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS } from "./snapshot-history";
 
 const SCOPES: AgentViewEnvelope<AgentViewScope[]> = {
   data: [
@@ -133,6 +134,22 @@ describe("agent-view catalog · single source of truth (#576)", () => {
       "goal-reservation-adjusted",
     );
     expect(catalog.get_contribution_plan.description).toContain("forecast metadata");
+  });
+
+  test("get_snapshot_history states the cost of each holding-rows mode (#1268)", () => {
+    const catalog = createAgentViewCatalog();
+    const tool = catalog.get_snapshot_history;
+    const window = String(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+
+    // The costliest read in the surface cannot be chosen blind, and the published
+    // limit schema must not promise a clamp the holding-rows window overrides.
+    expect(tool.description).toContain("includeHoldingRows");
+    expect(tool.description).toContain(window);
+    expect(tool.description).toContain("sort=-date");
+    expect(tool.description).toContain("get_holding_detail");
+    expect(
+      (tool.inputSchema.properties.limit as { description: string }).description,
+    ).toContain(window);
   });
 });
 

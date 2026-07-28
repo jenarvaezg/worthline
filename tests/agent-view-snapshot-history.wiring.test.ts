@@ -2,7 +2,7 @@ import type { AgentViewApiClient } from "@web/agent-view/mcp";
 import { createAgentViewMcpToolCatalog } from "@web/agent-view/mcp";
 import {
   DEFAULT_SNAPSHOT_LIMIT,
-  HOLDING_ROWS_SNAPSHOT_LIMIT,
+  MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
 } from "@web/agent-view/snapshot-history";
 import { GET as getSnapshots } from "@web/api/v1/agent-view/scopes/[scopeId]/snapshots/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
@@ -418,16 +418,35 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/snapshots", () => {
         scopeId,
         `?granularity=raw&includeHoldingRows=${mode}`,
       );
-      expect((body.data as unknown[]).length, mode).toBe(HOLDING_ROWS_SNAPSHOT_LIMIT);
-      expect(body.meta.limit, mode).toBe(HOLDING_ROWS_SNAPSHOT_LIMIT);
+      expect((body.data as unknown[]).length, mode).toBe(
+        MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
+      );
+      expect(body.meta.limit, mode).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
       expect(body.meta.holdingRowsWindow, mode).toEqual({
-        appliedLimit: HOLDING_ROWS_SNAPSHOT_LIMIT,
         requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
       });
       // The rest of the series stays reachable — narrowed, never truncated.
       expect(body.meta.hasNext, mode).toBe(true);
       expect(typeof body.meta.nextCursor, mode).toBe("string");
     }
+
+    // Which end of the series lands in the window is still the caller's choice.
+    const newest = await snapshots(
+      scopeId,
+      "?granularity=raw&includeHoldingRows=full&sort=-date",
+    );
+    expect((newest.body.data as Array<{ date: string }>)[0]!.date).toBe("2026-06-15");
+
+    // The window binds through MCP too, not just over HTTP.
+    const catalog = createAgentViewMcpToolCatalog(routeClient);
+    const viaMcp = await catalog.get_snapshot_history.invoke({
+      granularity: "raw",
+      includeHoldingRows: "full",
+    });
+    expect(viaMcp.data.length).toBe(MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS);
+    expect(viaMcp.meta.holdingRowsWindow).toEqual({
+      requestedLimit: DEFAULT_SNAPSHOT_LIMIT,
+    });
 
     // A limit already under the window is honoured as asked, with no notice.
     const short = await snapshots(

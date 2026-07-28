@@ -32,6 +32,7 @@ import type {
 } from "./contract";
 import { AgentViewHttpError } from "./contract";
 import { FIGURE_NAMES } from "./figure-explanations";
+import { MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS } from "./snapshot-history";
 
 /**
  * The agent-view MCP catalog: ONE source of truth for every tool's name,
@@ -371,6 +372,16 @@ const EMPTY_INPUT_SCHEMA: AgentViewMcpInputSchema = {
 const HOLDING_LIMIT_INPUT_SCHEMA = clampedPositiveIntegerSchema("holdings cap", 100);
 const PAGE_LIMIT_INPUT_SCHEMA = clampedPositiveIntegerSchema("page size", 500);
 
+/**
+ * The snapshot page size states its second ceiling (#1268): a page carrying
+ * frozen holding rows is narrowed further, so the published schema must not
+ * promise the plain clamp it would otherwise imply.
+ */
+const SNAPSHOT_PAGE_LIMIT_INPUT_SCHEMA = {
+  ...PAGE_LIMIT_INPUT_SCHEMA,
+  description: `${PAGE_LIMIT_INPUT_SCHEMA.description} With includeHoldingRows=summary|full the page is narrowed to ${MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS}.`,
+};
+
 function clampedPositiveIntegerSchema(label: string, max: number) {
   return {
     description: `Positive integer ${label}; values above ${max} are accepted and clamped to ${max}.`,
@@ -492,8 +503,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
       },
     },
     get_snapshot_history: {
-      description:
-        "Get a scope's net-worth snapshot history (monthly closes by default; raw on request), with date filters, cursor pagination, and optional frozen holding rows. includeHoldingRows sets the cost of the read: none (default, cheapest) for the shape of the series; summary (~3x) when the per-liquidity-rung composition matters; full (~8x) only to look position by position. Under summary or full the page is narrowed to a short window of closes (meta.holdingRowsWindow reports it; the rest of the series stays behind meta.nextCursor) — for one position's detail use get_holding_detail instead of the whole history.",
+      description: `Get a scope's net-worth snapshot history (monthly closes by default; raw on request), with date filters, cursor pagination, and optional frozen holding rows. includeHoldingRows sets the cost of the read: none (default, cheapest) for the shape of the series; summary (~3x) when the per-liquidity-rung composition matters; full (~8x) only to look position by position. Under summary or full the page is narrowed to ${MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS} snapshots (meta.holdingRowsWindow reports it; the rest of the series stays behind meta.nextCursor), so choose WHICH snapshots you decompose: sort=-date for the most recent ones, or from/to for the range you care about. For one position's detail use get_holding_detail instead of the whole history.`,
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -501,7 +511,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
           from: { type: "string" },
           granularity: { enum: ["monthly-close", "raw"], type: "string" },
           includeHoldingRows: { enum: ["none", "summary", "full"], type: "string" },
-          limit: PAGE_LIMIT_INPUT_SCHEMA,
+          limit: SNAPSHOT_PAGE_LIMIT_INPUT_SCHEMA,
           scopeId: { type: "string" },
           sort: { enum: ["date", "-date"], type: "string" },
           to: { type: "string" },
