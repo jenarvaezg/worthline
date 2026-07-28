@@ -16,6 +16,7 @@ import {
   HOLDING_EVENT_KINDS,
   INVALID_OUTPUT_FAILURE,
   isIsoDay,
+  isValidIsin,
 } from "./attachment-extraction-contract";
 import { looksLikePdf } from "./attachment-pdf-bytes";
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
@@ -50,6 +51,22 @@ const visionCurrencySchema = z
   .string()
   .trim()
   .regex(/^[A-Z]{3}$/);
+
+/**
+ * A printed figure and its currency as the PROVIDER may send them (#1316). Both
+ * halves are optional here and required by the contract on purpose: the JSON schema
+ * reaching the model cannot say «an amount needs its currency», so requiring the pair
+ * at this seam would turn the ordinary reading — a price column whose currency sits
+ * in a header the model did not carry down — into a definitive failure. The pair is
+ * completed or dropped in {@link usableEvent}, where dropping it costs a warning
+ * instead of the whole capture.
+ */
+const visionMoneySchema = z
+  .object({
+    amount: z.number().finite().optional(),
+    currency: visionCurrencySchema.optional(),
+  })
+  .strict();
 
 /**
  * The vision reading, keyed by the `documentType` the model identifies itself.
@@ -116,6 +133,17 @@ const visionOutputSchema = z
             currency: visionCurrencySchema,
             label: z.string().trim().min(1).max(300),
             kind: z.enum(HOLDING_EVENT_KINDS),
+            /**
+             * What a trade confirmation prints about the instrument (#1316). `isin`
+             * is a loose string here for the same reason the dates are: the provider
+             * schema cannot express the check-digit shape, so a ticker written into
+             * this field must be droppable at the seam instead of failing a reading
+             * that is otherwise complete.
+             */
+            isin: z.string().trim().min(1).max(64).optional(),
+            units: z.number().finite().optional(),
+            pricePerUnit: visionMoneySchema.optional(),
+            fees: visionMoneySchema.optional(),
             declaredEffect: z
               .object({
                 kind: z.enum(DECLARED_EFFECT_KINDS),
@@ -264,6 +292,7 @@ const VISION_EXTRACTION_INSTRUCTIONS = [
   'Cada evento necesita SU PROPIA fecha, leída de la pantalla junto a ese importe. Si el hecho no lleva fecha, NO uses la de la próxima cuota ni ninguna otra ni la de hoy: entonces no es este documento y respondes "none".',
   'Un saldo pendiente es "balance_series"; un importe que se paga, se cobra o se mueve es "holding_event".',
   'Rellena declaredEffect solo si la pantalla DICE el efecto ("tu última cuota se reducirá en…"); si das su importe, da también su divisa. Rellena nextInstalment solo si la pantalla muestra la próxima cuota con su fecha. Nunca infieras capital, plazo, tipo de interés, saldo resultante ni a qué producto pertenece.',
+  "Si el documento es una confirmación de compra o venta de valores, rellena isin, units, pricePerUnit y fees SOLO con lo que esté impreso (ISIN, número de títulos, precio unitario, comisión), y cada importe con su divisa. No los calcules ni los deduzcas del importe total: si el precio unitario o la comisión no aparecen impresos, deja el campo vacío.",
   "Mantén ticker y nombre en campos separados; no uses el nombre como ticker.",
   "marketValueEur y totalEur son importes en EUR; no inventes conversiones que no aparezcan en pantalla.",
   "Cada saldo lleva fecha en formato ISO YYYY-MM-DD, importe numérico y divisa ISO de 3 letras.",
@@ -340,13 +369,44 @@ export const DROPPED_DECLARED_EFFECT_WARNING =
 export const DROPPED_NEXT_INSTALMENT_WARNING =
   "La próxima cuota que aparece en pantalla no traía una fecha legible; no se recoge.";
 
+/**
+ * The trade-confirmation fields (#1316) that reached the seam unusable. Same
+ * contract as the two above: a decoration never costs the whole reading, and losing
+ * it is always said out loud.
+ */
+export const DROPPED_ISIN_WARNING =
+  "El ISIN del documento no se lee como un ISIN válido; no se recoge.";
+export const DROPPED_PRICE_PER_UNIT_WARNING =
+  "El precio por título no traía importe y divisa completos; no se recoge.";
+export const DROPPED_FEES_WARNING =
+  "La comisión no traía importe y divisa completos; no se recoge.";
+
 type VisionHoldingEvent = NonNullable<VisionOutput["events"]>[number];
+type VisionMoney = z.infer<typeof visionMoneySchema>;
+
+/**
+ * The printed pair the contract will take, or nothing.
+ *
+ * ONE message serves BOTH directions of an incomplete pair — an amount with no
+ * currency and a currency with no amount — because it reports that the figure could
+ * not be recovered without asserting which half the paper carried. An entirely empty
+ * pair is silent: nothing was read, so nothing was lost, which is the same
+ * distinction {@link usableEvent} draws for a declared effect's stray currency.
+ */
+function usableMoney(money: VisionMoney | undefined): {
+  money: VisionMoney | undefined;
+  dropped: boolean;
+} {
+  const halves = [money?.amount, money?.currency].filter((half) => half !== undefined);
+  if (halves.length === 2) return { dropped: false, money };
+  return { dropped: halves.length === 1, money: undefined };
+}
 
 function usableEvent(event: VisionHoldingEvent): {
   event: VisionHoldingEvent;
   warnings: string[];
 } {
-  const { declaredEffect, nextInstalment, ...rest } = event;
+  const { declaredEffect, fees, isin, nextInstalment, pricePerUnit, ...rest } = event;
   const warnings: string[] = [];
 
   // Only the direction that LOSES a figure gets a warning. The contract wants the
@@ -369,9 +429,21 @@ function usableEvent(event: VisionHoldingEvent): {
       ? { kind: declaredEffect.kind }
       : declaredEffect;
 
+  // A ticker or a mistyped code written into `isin` would sink the whole capture at
+  // the contract, so it is checked here and dropped like any other decoration.
+  const isinReads = isin === undefined || isValidIsin(isin);
+  if (!isinReads) warnings.push(DROPPED_ISIN_WARNING);
+  const price = usableMoney(pricePerUnit);
+  if (price.dropped) warnings.push(DROPPED_PRICE_PER_UNIT_WARNING);
+  const fee = usableMoney(fees);
+  if (fee.dropped) warnings.push(DROPPED_FEES_WARNING);
+
   return {
     event: {
       ...rest,
+      ...(isinReads && isin !== undefined ? { isin } : {}),
+      ...(price.money === undefined ? {} : { pricePerUnit: price.money }),
+      ...(fee.money === undefined ? {} : { fees: fee.money }),
       ...(keptEffect === undefined ? {} : { declaredEffect: keptEffect }),
       ...(nextInstalment === undefined || instalmentLosesItsDay
         ? {}

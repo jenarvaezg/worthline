@@ -8,7 +8,10 @@ import {
 import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "./attachment-types";
 import {
   DROPPED_DECLARED_EFFECT_WARNING,
+  DROPPED_FEES_WARNING,
+  DROPPED_ISIN_WARNING,
   DROPPED_NEXT_INSTALMENT_WARNING,
+  DROPPED_PRICE_PER_UNIT_WARNING,
   EMPTY_BALANCE_SERIES_MESSAGE,
   EMPTY_HOLDING_EVENT_MESSAGE,
   EMPTY_POSITIONS_MESSAGE,
@@ -641,6 +644,155 @@ describe("vision attachment extractor · the holding event (#1244)", () => {
     // And the borrowed-date invention the payment-screen golden fixture guards:
     // its screen dates only the NEXT instalment, never the payment itself.
     expect(prompt).toContain("NO uses la de la próxima cuota");
+  });
+});
+
+describe("vision attachment extractor · the securities trade confirmation (#1316)", () => {
+  const TRADE = {
+    date: "2026-07-24",
+    amount: 1004.6,
+    currency: "EUR",
+    label: "Compra VANGUARD GLOBAL STOCK INDEX FUND",
+    kind: "other",
+    isin: "IE00B03HCZ61",
+    units: 62.3418,
+    pricePerUnit: { amount: 16.0184, currency: "EUR" },
+    fees: { amount: 1.5, currency: "EUR" },
+  };
+
+  function readingOf(output: unknown) {
+    return extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate(output),
+      sleep: vi.fn(),
+    });
+  }
+
+  test("carries the ISIN, the units and the printed figures into the document", async () => {
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [TRADE],
+      warnings: [],
+    });
+
+    expect(result).toEqual({
+      data: { documentType: "holding_event", event: TRADE, warnings: [] },
+      status: "valid",
+    });
+  });
+
+  test("drops a code that is not an ISIN and keeps the rest of the reading", async () => {
+    // The realistic slip: the model writes the ticker or the internal reference into
+    // `isin`. The contract would reject the event and the seam would then decline the
+    // whole capture — so the field is checked here and lost with a warning instead.
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...TRADE, isin: "VWCE" }],
+      warnings: [],
+    });
+
+    const { isin: _dropped, ...withoutIsin } = TRADE;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: withoutIsin,
+        warnings: [DROPPED_ISIN_WARNING],
+      },
+      status: "valid",
+    });
+  });
+
+  test.each([
+    {
+      case: "a price with no currency",
+      field: "pricePerUnit",
+      patch: { pricePerUnit: { amount: 16.0184 } },
+      warning: DROPPED_PRICE_PER_UNIT_WARNING,
+    },
+    {
+      case: "a price with a currency and no amount",
+      field: "pricePerUnit",
+      patch: { pricePerUnit: { currency: "EUR" } },
+      warning: DROPPED_PRICE_PER_UNIT_WARNING,
+    },
+    {
+      case: "a fee with no currency",
+      field: "fees",
+      patch: { fees: { amount: 1.5 } },
+      warning: DROPPED_FEES_WARNING,
+    },
+    {
+      case: "a fee with a currency and no amount",
+      field: "fees",
+      patch: { fees: { currency: "EUR" } },
+      warning: DROPPED_FEES_WARNING,
+    },
+  ])("drops $case and says so — both directions of the pair", async ({
+    field,
+    patch,
+    warning,
+  }) => {
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...TRADE, ...patch }],
+      warnings: [],
+    });
+
+    if (result.status !== "valid") throw new Error(`got ${result.status}`);
+    if (result.data.documentType !== "holding_event") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
+    expect(result.data.event).toEqual(
+      Object.fromEntries(Object.entries(TRADE).filter(([key]) => key !== field)),
+    );
+    // The message is the same in both directions on purpose: it reports that the
+    // figure could not be recovered without claiming which half the paper carried.
+    expect(result.data.warnings).toEqual([warning]);
+  });
+
+  test("stays silent about a pair that carried nothing at all", async () => {
+    // Neither half read means nothing was lost, so there is nothing to announce —
+    // the same distinction the declared effect's stray currency draws (#1244).
+    const result = await readingOf({
+      documentType: "holding_event",
+      events: [{ ...TRADE, fees: {} }],
+      warnings: [],
+    });
+
+    const { fees: _absent, ...withoutFees } = TRADE;
+    expect(result).toEqual({
+      data: {
+        documentType: "holding_event",
+        event: withoutFees,
+        warnings: [],
+      },
+      status: "valid",
+    });
+  });
+
+  test("asks for the printed trade fields and keeps every earlier instruction", async () => {
+    const generate = stubbedGenerate({
+      documentType: "holding_event",
+      events: [TRADE],
+      warnings: [],
+    });
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    const prompt = promptOf(generate.mock.calls[0]?.[0]);
+    expect(prompt).toContain("isin, units, pricePerUnit y fees SOLO con lo que esté");
+    expect(prompt).toContain("No los calcules ni los deduzcas del importe total");
+    // The #1244 lesson, pinned: rewriting this array once deleted the definition of
+    // `documentType "none"` — the ONLY entry to #1246's descriptive lane — and no
+    // test noticed. Every documentType the seam knows is asserted here.
+    for (const documentType of ["positions", "balance_series", "holding_event", "none"]) {
+      expect(prompt).toContain(`documentType "${documentType}"`);
+    }
   });
 });
 

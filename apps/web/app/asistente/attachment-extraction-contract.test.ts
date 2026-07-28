@@ -782,8 +782,101 @@ describe("holding_event document", () => {
 
     expect(parsed.event.declaredEffect).toBeUndefined();
     expect(parsed.event.nextInstalment).toBeUndefined();
+    // The trade-confirmation fields (#1316) are optional in the same way: an event
+    // that prints none of them is unchanged by their existence.
+    expect(parsed.event.isin).toBeUndefined();
+    expect(parsed.event.units).toBeUndefined();
+    expect(parsed.event.pricePerUnit).toBeUndefined();
+    expect(parsed.event.fees).toBeUndefined();
     expect(parsed.event.uncertain).toBe(true);
     expect(parsed.uncertain).toBe(true);
+  });
+
+  describe("the securities trade confirmation (#1316)", () => {
+    /** A MyInvestor buy confirmation: ISIN, títulos, precio bruto and comisión. */
+    const tradeConfirmation = {
+      documentType: "holding_event",
+      event: {
+        date: "2026-07-24",
+        amount: "1.004,60",
+        currency: "EUR",
+        label: "Compra VANGUARD GLOBAL STOCK INDEX FUND",
+        kind: "other",
+        isin: "IE00B03HCZ61",
+        units: "62,3418",
+        pricePerUnit: { amount: "16,0184", currency: "EUR" },
+        fees: { amount: "1,50", currency: "EUR" },
+      },
+      warnings: [],
+    };
+
+    test("reads the instrument identity the paper printed, nothing derived", () => {
+      const parsed = holdingEventDocumentSchema.parse(tradeConfirmation);
+
+      expect(parsed.event).toEqual({
+        date: "2026-07-24",
+        amount: 1004.6,
+        currency: "EUR",
+        label: "Compra VANGUARD GLOBAL STOCK INDEX FUND",
+        kind: "other",
+        isin: "IE00B03HCZ61",
+        units: 62.3418,
+        pricePerUnit: { amount: 16.0184, currency: "EUR" },
+        fees: { amount: 1.5, currency: "EUR" },
+      });
+    });
+
+    test("uppercases the ISIN and rejects anything that is not one", () => {
+      const lowercase = holdingEventDocumentSchema.parse({
+        ...tradeConfirmation,
+        event: { ...tradeConfirmation.event, isin: "ie00b03hcz61" },
+      });
+      expect(lowercase.event.isin).toBe("IE00B03HCZ61");
+
+      // A ticker, a fund name or a truncated code can never masquerade as an ISIN —
+      // it would travel to `propose_holding` as an identity nobody verified.
+      for (const notAnIsin of ["VWCE", "IE00B03HCZ6", "IE00B03HCZ611", "IE00B03HCZ6X"]) {
+        expect(
+          holdingEventDocumentSchema.safeParse({
+            ...tradeConfirmation,
+            event: { ...tradeConfirmation.event, isin: notAnIsin },
+          }).success,
+        ).toBe(false);
+      }
+    });
+
+    test.each([
+      ["a price with no currency", { pricePerUnit: { amount: 16.0184 } }],
+      ["a price with no amount", { pricePerUnit: { currency: "EUR" } }],
+      ["a fee with no currency", { fees: { amount: 1.5 } }],
+      ["a fee with no amount", { fees: { currency: "EUR" } }],
+      ["an unreadable number of units", { units: "no consta" }],
+      ["a fee that is not a number", { fees: { amount: "gratis", currency: "EUR" } }],
+      // The derivation the extractor may never do, spelled as a field: the total is
+      // `amount`, and a second one computed from units × price is not observed.
+      ["a computed gross amount", { grossAmount: 998.6 }],
+    ])("rejects %s", (_case, patch) => {
+      expect(
+        extractedDocumentSchema.safeParse({
+          ...tradeConfirmation,
+          event: { ...tradeConfirmation.event, ...patch },
+        }).success,
+      ).toBe(false);
+    });
+
+    test("takes the trade figures in a currency of their own", () => {
+      // A confirmation that settles in EUR may still print the price in the market's
+      // currency. Each pair carries its own code precisely so neither is assumed.
+      const parsed = holdingEventDocumentSchema.parse({
+        ...tradeConfirmation,
+        event: {
+          ...tradeConfirmation.event,
+          pricePerUnit: { amount: 18.42, currency: "USD" },
+        },
+      });
+      expect(parsed.event.pricePerUnit).toEqual({ amount: 18.42, currency: "USD" });
+      expect(parsed.event.currency).toBe("EUR");
+    });
   });
 
   test("caps warnings exactly like every other document", () => {

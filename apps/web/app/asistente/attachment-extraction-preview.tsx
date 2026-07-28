@@ -18,9 +18,23 @@ const euros = new Intl.NumberFormat("es-ES", {
   style: "currency",
 });
 
-function formatAmount(amount: number, currency: string): string {
+/**
+ * An amount in its own currency. `maximumFractionDigits` widens the currency's own
+ * default for a figure the document printed with more precision than money usually
+ * carries — a fund NAV of 12,3456 € rounded to two decimals would be a figure this
+ * card invented, and rounding is the one thing the reading may not do.
+ */
+function formatAmount(
+  amount: number,
+  currency: string,
+  options: { maximumFractionDigits?: number } = {},
+): string {
   try {
-    return new Intl.NumberFormat("es-ES", { currency, style: "currency" }).format(amount);
+    return new Intl.NumberFormat("es-ES", {
+      currency,
+      style: "currency",
+      ...options,
+    }).format(amount);
   } catch {
     // A currency the runtime cannot format still reads honestly as number + code.
     return `${number.format(amount)} ${currency}`;
@@ -166,8 +180,11 @@ const DECLARED_EFFECT_LABEL: Record<DeclaredEffectKind, string> = {
  * fact — and it stays one by contract, which is what keeps the validated door from
  * becoming a bulk-import lane (#1248).
  *
- * Only observed fields get a row: an absent declared effect or next instalment
- * paints nothing at all, never a dash that could read as «no hay».
+ * Only observed fields get a row: an absent declared effect, next instalment or trade
+ * figure (#1316) paints nothing at all, never a dash that could read as «no hay». The
+ * card is where the user CONFIRMS the reading, so every field the contract carries
+ * must be visible here — a value the agent can act on but the user never saw would
+ * make the confirmation a formality.
  */
 function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) {
   const { event } = data;
@@ -187,10 +204,41 @@ function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) 
                 {event.uncertain ? <em>Revisar lectura</em> : null}
               </td>
             </tr>
+            {event.isin ? (
+              <tr>
+                <th scope="row">ISIN</th>
+                <td>{event.isin}</td>
+              </tr>
+            ) : null}
             <tr>
               <th scope="row">Importe</th>
               <td>{formatAmount(event.amount, event.currency)}</td>
             </tr>
+            {event.units !== undefined ? (
+              <tr>
+                <th scope="row">Títulos</th>
+                <td>{number.format(event.units)}</td>
+              </tr>
+            ) : null}
+            {event.pricePerUnit ? (
+              <tr>
+                <th scope="row">Precio por título</th>
+                <td>
+                  {formatAmount(
+                    event.pricePerUnit.amount,
+                    event.pricePerUnit.currency,
+                    // The document's own precision, never rounded down to two.
+                    { maximumFractionDigits: 4 },
+                  )}
+                </td>
+              </tr>
+            ) : null}
+            {event.fees ? (
+              <tr>
+                <th scope="row">Comisión</th>
+                <td>{formatAmount(event.fees.amount, event.fees.currency)}</td>
+              </tr>
+            ) : null}
             <tr>
               <th scope="row">Tipo</th>
               <td>{HOLDING_EVENT_KIND_LABEL[event.kind]}</td>
@@ -224,10 +272,10 @@ function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) 
       </div>
       <p className="assistantAttachmentBridgeHint">
         {data.uncertain ? "Lectura completa marcada como dudosa. " : ""}
-        Fecha, concepto e importe se leen del archivo; «Tipo» es una clasificación de la
-        lectura, no algo que ponga la pantalla. El apunte no dice a qué producto pertenece
-        ni qué saldo deja: eso se comprueba aparte. Revísalo: nada se guarda desde el
-        chat.
+        Fecha, concepto, importe y los datos de la operación se leen del archivo; «Tipo»
+        es una clasificación de la lectura, no algo que ponga la pantalla. El apunte no
+        dice a qué producto pertenece ni qué saldo deja: eso se comprueba aparte.
+        Revísalo: nada se guarda desde el chat.
       </p>
     </>
   );

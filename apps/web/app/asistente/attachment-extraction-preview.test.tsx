@@ -180,6 +180,58 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).toContain("Lectura completa marcada como dudosa.");
     expect(html).not.toContain("Efecto declarado");
     expect(html).not.toContain("Próxima cuota");
+    // A receipt prints no instrument identity (#1316) and the card must invent no row
+    // for it — an empty «ISIN» or «Títulos» would read as «no consta».
+    expect(html).not.toContain("ISIN");
+    expect(html).not.toContain("Títulos");
+    expect(html).not.toContain("Precio por título");
+    expect(html).not.toContain("Comisión");
+  });
+
+  test("shows the instrument identity a trade confirmation printed (#1316)", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "confirmacion.pdf",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "holding_event",
+              event: {
+                date: "2026-07-24",
+                amount: 1004.6,
+                currency: "EUR",
+                label: "Compra VANGUARD GLOBAL STOCK INDEX FUND",
+                // `other` on purpose: its label is «Movimiento», so no assertion
+                // below can pass on the strength of the kind row's wording.
+                kind: "other",
+                isin: "IE00B03HCZ61",
+                units: 62.3418,
+                pricePerUnit: { amount: 16.0184, currency: "EUR" },
+                fees: { amount: 1.5, currency: "EUR" },
+              },
+              warnings: [],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    // The user CONFIRMS this card, so every field the contract carried is on it.
+    expect(html).toContain('<th scope="row">ISIN</th><td>IE00B03HCZ61</td>');
+    expect(html).toContain("62,3418");
+    expect(html).toContain("1,50");
+    expect(html).toContain("1004,60");
+    expect(html).toContain("Compra VANGUARD GLOBAL STOCK INDEX FUND");
+    // The unit price keeps the four decimals the paper printed: rounded to 16,02 €
+    // the card would be showing a figure the document never stated.
+    expect(html).toContain("16,0184");
+    expect(html).not.toContain("16,02");
+    // And the card still computes nothing of its own — no units × price total beside
+    // the settled amount, which is the derivation the contract forbids.
+    expect(html).not.toContain("998,60");
+    expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
   });
 
   test("renders typed nonfatal failures honestly", () => {
