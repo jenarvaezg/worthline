@@ -213,8 +213,13 @@ jobs:
       # web app once here. Child jobs restore this artifact instead of rebuilding.
       # Run Next directly — a Turbo remote-cache hit can skip writing `.next` to
       # disk, which leaves the upload step with nothing to publish.
+      #
+      # `build:e2e`, not `build`: it sets WORTHLINE_EXPOSE_TESTING_API=1 so the
+      # Instant Navigation Testing API ships in the bundle. Without it journey 48's
+      # `instant()` is compiled out and the spec races the server instead of
+      # asserting the shell (#1229). Deploy builds keep using plain `build`.
       - name: Build web app
-        run: bun run --filter @worthline/web build
+        run: bun run --filter @worthline/web build:e2e
 
       - name: Upload web build
         uses: actions/upload-artifact@v7

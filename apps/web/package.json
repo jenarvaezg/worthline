@@ -39,6 +39,7 @@
   },
   "scripts": {
     "build": "bun ../../scripts/link-web-typescript-deps.ts && bun --bun next build && bun ../../scripts/emit-next-server-cjs-marker.ts",
+    "build:e2e": "WORTHLINE_EXPOSE_TESTING_API=1 bun run build",
     "dev": "bun --bun next dev --hostname 127.0.0.1",
     "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "eval:extractor": "tsx --env-file-if-exists=.env.local app/asistente/eval/extractor/run.ts",
