@@ -378,7 +378,7 @@ export function ImportStatementPreview({
                               </ul>
                             ) : null}
                             {fund.bucket === "matched" ? (
-                              <details>
+                              <details suppressHydrationWarning>
                                 <summary>Ver fusión</summary>
                                 <p>
                                   {pluralize(

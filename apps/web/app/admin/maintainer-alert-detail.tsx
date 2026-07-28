@@ -191,7 +191,7 @@ function OccurrenceView({
             ) : (
               // A stored trace whose shape drifted or was corrupted still shows
               // its raw JSON instead of crashing the whole detail page (#1050).
-              <details className="alertExtracted">
+              <details suppressHydrationWarning className="alertExtracted">
                 <summary>Traza de cálculo (formato no reconocido)</summary>
                 <pre>{JSON.stringify(payload.calculationTrace, null, 2)}</pre>
               </details>
@@ -205,7 +205,7 @@ function OccurrenceView({
             </p>
           )}
           {payload.extractedData !== undefined ? (
-            <details className="alertExtracted">
+            <details suppressHydrationWarning className="alertExtracted">
               <summary>Datos extraídos del documento</summary>
               <pre>{JSON.stringify(payload.extractedData, null, 2)}</pre>
             </details>

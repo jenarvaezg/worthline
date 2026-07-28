@@ -211,6 +211,7 @@ export function HistoricoTable({
           <Fragment key={snapshot.id}>
             {showYearRule ? <div className="historicoYearRule">{year}</div> : null}
             <details
+              suppressHydrationWarning
               className={`historicoDrillRow${isMonthlyClose ? " monthlyClose" : ""}`}
             >
               <summary>
@@ -291,7 +292,11 @@ export function HistoricoTable({
                       );
                     }
                     return (
-                      <details key={m.holdingId} className="historicoMoverDetails">
+                      <details
+                        suppressHydrationWarning
+                        key={m.holdingId}
+                        className="historicoMoverDetails"
+                      >
                         <summary className="historicoBridgeRow historicoMoverSummary">
                           {label}
                           {track}

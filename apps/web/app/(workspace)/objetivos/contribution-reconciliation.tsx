@@ -117,7 +117,7 @@ export function ContributionReconciliation({
         <span>previsión → realidad, siempre de forma explícita</span>
       </div>
 
-      <details className="contributionPlanEditor">
+      <details suppressHydrationWarning className="contributionPlanEditor">
         <summary>Editar plan recurrente</summary>
         {plan.contributions.map((contribution) => (
           <div className="contributionPlanRule" key={contribution.id}>

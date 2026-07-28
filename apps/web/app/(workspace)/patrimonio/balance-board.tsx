@@ -315,7 +315,7 @@ function HoldingRow({
         ) : null}
       </div>
 
-      <details className="balanceActions">
+      <details suppressHydrationWarning className="balanceActions">
         <summary aria-label={`Acciones para ${h.name}`}>⋯</summary>
         <div className="balanceMenu">
           <Link href={h.detailHref}>Editar</Link>
@@ -335,7 +335,7 @@ function HoldingRow({
           >
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="id" type="hidden" value={h.id} />
-            <details className="confirmDelete balanceMenuDelete">
+            <details suppressHydrationWarning className="confirmDelete balanceMenuDelete">
               <summary>Eliminar</summary>
               <button disabled={readOnly} type="submit">
                 Confirmar
@@ -477,7 +477,7 @@ function Pane({
           (ficha, realized returns, delete) — just not buried among the live
           ones. Their value is 0, so no sum or bar above changes. */}
       {closedRows.length > 0 ? (
-        <details className="balanceClosed">
+        <details suppressHydrationWarning className="balanceClosed">
           <summary>Posiciones cerradas ({closedRows.length})</summary>
           {closedRows.map((h, index) => (
             <HoldingRow
@@ -545,7 +545,7 @@ function TrashRow({
         >
           <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={id} />
-          <details className="confirmDelete">
+          <details suppressHydrationWarning className="confirmDelete">
             <summary>Eliminar definitivamente</summary>
             <button disabled={readOnly} type="submit">
               Confirmar borrado definitivo
@@ -715,7 +715,7 @@ export default function BalanceBoard({
         </div>
       </div>
 
-      <details className="balanceTrash">
+      <details suppressHydrationWarning className="balanceTrash">
         <summary>Papelera ({trashCount})</summary>
         {trashCount === 0 ? (
           <p className="balanceTrashEmpty">La papelera está vacía.</p>
@@ -754,7 +754,7 @@ export default function BalanceBoard({
             onSubmit={optimisticSubmit({ kind: "emptyTrash" }, emptyTrashAction)}
           >
             <input name="currentUrl" type="hidden" value={currentUrl} />
-            <details className="confirmDelete">
+            <details suppressHydrationWarning className="confirmDelete">
               <summary>Vaciar papelera</summary>
               <button disabled={readOnly} type="submit">
                 Confirmar vaciado de papelera

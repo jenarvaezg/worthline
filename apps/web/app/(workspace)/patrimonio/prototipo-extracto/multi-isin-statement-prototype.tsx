@@ -428,7 +428,7 @@ export default function MultiIsinStatementPrototype() {
                         </span>
                       </td>
                       <td>
-                        <details className={styles.mergeDetails}>
+                        <details suppressHydrationWarning className={styles.mergeDetails}>
                           <summary>Ver merge</summary>
                           <p>{fund.reason}</p>
                           <ul>

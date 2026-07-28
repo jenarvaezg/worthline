@@ -24,7 +24,7 @@ export default function DisconnectNumistaFold({
     <form action={disconnectNumistaAction}>
       <input name="currentUrl" type="hidden" value={currentUrl} />
       <input name="sourceId" type="hidden" value={sourceId} />
-      <details className="confirmDelete">
+      <details suppressHydrationWarning className="confirmDelete">
         <summary>{summary}</summary>
         <p className="dangerExplain">
           La clave de API se borra de este dispositivo; tu colección en Numista no se
