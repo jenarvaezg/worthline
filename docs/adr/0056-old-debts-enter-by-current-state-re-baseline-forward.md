@@ -68,3 +68,10 @@ re-entering the plan.
 - The wizard's debt drawer and the advanced edit surface both offer the
   current-state mode; the recalibrate action lives on the existing debt's
   editing surface.
+- Because a re-baseline (or a plan, or an anchor) makes the curve the source of
+  the balance, the liability's stored balance field stops being a door for that
+  debt: the raw "Saldo pendiente" form is not rendered and the write is refused
+  server-side, so the only repair is a re-baseline or an anchor (#1290). A debt
+  with no curve data yet keeps that field — there it is the only balance there
+  is. The rule lives beside the dispatcher it mirrors
+  (`storedBalanceGovernsDebtFigure`, `packages/domain/src/debt-balance.ts`).

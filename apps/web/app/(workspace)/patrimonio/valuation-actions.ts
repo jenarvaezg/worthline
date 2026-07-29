@@ -25,6 +25,7 @@ import {
   checkManualValuationViolation,
   isHousingAsset,
   isValueUpdateEligible,
+  storedBalanceGovernsDebtFigure,
 } from "@worthline/domain";
 import { baseUrl, editUrl, findAsset, findLiability } from "./action-helpers";
 
@@ -82,6 +83,16 @@ export async function updateAssetValuationAction(
   })(formData, ..._testArgs);
 }
 
+/**
+ * Hand-set `liabilities.current_balance_minor` — the ONLY balance a debt without
+ * a modelled curve has (#1290).
+ *
+ * The form is rendered only for such a debt, and this guard is the server half of
+ * that rule: a debt with a plan, a re-baseline or an anchor takes its figure from
+ * the curve, so writing the stored field would "save" with no figure moving. A
+ * stale tab opened before the curve existed can still post here, and it must be
+ * told where the real door is instead of silently succeeding.
+ */
 export async function updateLiabilityBalanceAction(
   formData: FormData,
   ..._testArgs: unknown[]
@@ -105,6 +116,26 @@ export async function updateLiabilityBalanceAction(
       return { ok: true, value: balance };
     },
     run: async (store, { id, parsed: balance }) => {
+      const debtModel = await store.liabilities.readDebtModel(id);
+      const [plan, rebaselines, anchors] = await Promise.all([
+        store.liabilities.readAmortizationPlan(id),
+        store.liabilities.readBalanceRebaselines(id),
+        store.liabilities.readBalanceAnchors(id),
+      ]);
+      if (
+        !storedBalanceGovernsDebtFigure({
+          debtModel,
+          hasAmortizationPlan: plan !== null,
+          hasBalanceAnchors: anchors.length > 0,
+          hasBalanceRebaselines: rebaselines.length > 0,
+        })
+      ) {
+        return {
+          error: mapDomainViolation({ code: "debt_balance_governed_by_curve" }),
+          ok: false,
+        };
+      }
+
       await store.liabilities.updateLiabilityBalance(id, balance);
       return { ok: true };
     },

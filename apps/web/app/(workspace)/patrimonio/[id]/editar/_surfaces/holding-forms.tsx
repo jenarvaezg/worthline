@@ -304,12 +304,21 @@ export function LiabilityEditForm({
   liability,
   members,
   scopeMemberId,
+  showRawBalanceForm,
   values,
 }: {
   assets: ManualAsset[];
   liability: Liability;
   members: Member[];
   scopeMemberId: string | undefined;
+  /**
+   * Whether `liabilities.current_balance_minor` still governs this debt's figure
+   * (#1290). Decided server-side with `storedBalanceGovernsDebtFigure`: a debt
+   * with a modelled curve (plan / re-baseline / anchors) takes its balance from
+   * the curve, so the raw form would be a silent write into the void — the
+   * repair door there is «Recalibrar con saldo real» or a new anchor (ADR 0056).
+   */
+  showRawBalanceForm: boolean;
   values: Record<string, string>;
 }) {
   return (
@@ -375,24 +384,26 @@ export function LiabilityEditForm({
         </div>
       </form>
 
-      <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
-        <input
-          name="currentUrl"
-          type="hidden"
-          value={`/patrimonio/${liability.id}/editar`}
-        />
-        <input name="id" type="hidden" value={liability.id} />
-        <label>
-          Saldo pendiente (EUR)
+      {showRawBalanceForm ? (
+        <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
           <input
-            aria-label="Saldo pendiente en EUR"
-            defaultValue={formatMoneyInput(liability.currentBalance.amountMinor)}
-            inputMode="decimal"
-            name="balance"
+            name="currentUrl"
+            type="hidden"
+            value={`/patrimonio/${liability.id}/editar`}
           />
-        </label>
-        <PendingSubmit pendingLabel="Actualizando…">Actualizar saldo</PendingSubmit>
-      </form>
+          <input name="id" type="hidden" value={liability.id} />
+          <label>
+            Saldo pendiente (EUR)
+            <input
+              aria-label="Saldo pendiente en EUR"
+              defaultValue={formatMoneyInput(liability.currentBalance.amountMinor)}
+              inputMode="decimal"
+              name="balance"
+            />
+          </label>
+          <PendingSubmit pendingLabel="Actualizando…">Actualizar saldo</PendingSubmit>
+        </form>
+      ) : null}
     </>
   );
 }

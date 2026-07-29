@@ -257,6 +257,77 @@ describe("updateLiabilityBalanceAction", () => {
 
     store.close();
   });
+
+  /**
+   * Since #1290 the raw balance form only renders for a debt WITHOUT a modelled
+   * curve, so these cases are only reachable from a stale tab — and they must fail
+   * loudly instead of "saving" a figure the engine ignores.
+   */
+  test("refuses the write for an amortizable debt with a plan", async () => {
+    const store = await seedLiability();
+    await store.liabilities.setDebtModel("prestamo", "amortizable");
+    await store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.0589",
+      disbursementDate: "2026-06-21",
+      firstPaymentDate: "2026-07-21",
+      id: "plan_prestamo",
+      initialCapitalMinor: 6_000_00,
+      liabilityId: "prestamo",
+      termMonths: 42,
+    });
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ id: "prestamo", balance: "8.000,00" }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(
+      "Recalibrar con saldo real",
+    );
+    expect(await liabilityBalance(store, "prestamo")).toBe(10_000_00);
+
+    store.close();
+  });
+
+  test("refuses the write for an anchored debt with at least one anchor", async () => {
+    const store = await seedLiability();
+    await store.liabilities.setDebtModel("prestamo", "informal");
+    await store.liabilities.addBalanceAnchor({
+      anchorDate: "2026-07-01",
+      balanceMinor: 9_000_00,
+      id: "anchor_1",
+      liabilityId: "prestamo",
+    });
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ id: "prestamo", balance: "8.000,00" }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(await liabilityBalance(store, "prestamo")).toBe(10_000_00);
+
+    store.close();
+  });
+
+  test("still writes for a modelled debt that has no curve data yet", async () => {
+    const store = await seedLiability();
+    await store.liabilities.setDebtModel("prestamo", "informal");
+
+    const url = await runAction(
+      updateLiabilityBalanceAction,
+      form({ id: "prestamo", balance: "8.000,00" }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("saved");
+    expect(await liabilityBalance(store, "prestamo")).toBe(8_000_00);
+
+    store.close();
+  });
 });
 
 describe("addValuationAnchorAction", () => {

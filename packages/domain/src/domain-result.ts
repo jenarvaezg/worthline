@@ -13,6 +13,7 @@ export type DomainViolation =
   | { code: "investment_manual_valuation_rejected" }
   | { code: "connected_manual_valuation_rejected" }
   | { code: "value_update_investment_holding" }
+  | { code: "debt_balance_governed_by_curve" }
   | { code: "duplicate_primary_residence"; existingName: string };
 
 /**

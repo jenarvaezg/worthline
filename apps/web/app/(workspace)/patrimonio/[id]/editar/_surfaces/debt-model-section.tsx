@@ -398,7 +398,12 @@ function AmortizablePlanEditor({
 
       {plan ? <PlanCuotaSummary plan={plan} privacyMode={privacyMode} /> : null}
 
-      {plan && currentModelledBalanceMinor !== null ? (
+      {/* Gated on the CURVE, not the plan row — same rule as the action's own
+          guard (#678): an imported current-state debt has a governing re-baseline
+          with no plan row and is still recalibrable. Since #1290 removed the raw
+          balance form for a curved debt, this is also the only place its balance
+          is shown, so it must not hide when the plan row is absent. */}
+      {currentModelledBalanceMinor !== null ? (
         <details suppressHydrationWarning className="anchorEdit">
           <summary>Recalibrar con saldo real</summary>
           <p className="infoNote">

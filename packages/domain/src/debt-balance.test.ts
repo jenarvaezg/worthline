@@ -5,7 +5,11 @@ import {
   amortizationPlanFromBalanceRebaseline,
 } from "./amortization";
 import type { DebtBalanceAtDateInput } from "./debt-balance";
-import { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
+import {
+  debtBalanceAtDate,
+  effectiveAmortizationPlan,
+  storedBalanceGovernsDebtFigure,
+} from "./debt-balance";
 
 /**
  * Pure debt-balance dispatcher (PRD #109, slice 8). The single "balance of a debt
@@ -493,5 +497,104 @@ describe("debtBalanceAtDate — null / unmodelled", () => {
         targetDate: "2024-07-01",
       }),
     ).toBe(12_345_67);
+  });
+});
+
+describe("storedBalanceGovernsDebtFigure (#1290)", () => {
+  const base = {
+    hasAmortizationPlan: false,
+    hasBalanceAnchors: false,
+    hasBalanceRebaselines: false,
+  };
+
+  test("an unmodelled debt is governed by the stored field", () => {
+    expect(storedBalanceGovernsDebtFigure({ ...base, debtModel: null })).toBe(true);
+  });
+
+  test("amortizable with neither plan nor re-baseline still falls back", () => {
+    expect(storedBalanceGovernsDebtFigure({ ...base, debtModel: "amortizable" })).toBe(
+      true,
+    );
+  });
+
+  test("amortizable with a plan is governed by the curve", () => {
+    expect(
+      storedBalanceGovernsDebtFigure({
+        ...base,
+        debtModel: "amortizable",
+        hasAmortizationPlan: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("amortizable with a re-baseline and no plan row is governed by the curve", () => {
+    expect(
+      storedBalanceGovernsDebtFigure({
+        ...base,
+        debtModel: "amortizable",
+        hasBalanceRebaselines: true,
+      }),
+    ).toBe(false);
+  });
+
+  test.each([
+    "revolving",
+    "informal",
+  ] as const)("%s with no anchors falls back to the stored field", (debtModel) => {
+    expect(storedBalanceGovernsDebtFigure({ ...base, debtModel })).toBe(true);
+  });
+
+  test.each([
+    "revolving",
+    "informal",
+  ] as const)("%s with at least one anchor is governed by the anchors", (debtModel) => {
+    expect(
+      storedBalanceGovernsDebtFigure({ ...base, debtModel, hasBalanceAnchors: true }),
+    ).toBe(false);
+  });
+
+  test("agrees with the dispatcher on the states the write side can reach", () => {
+    // The contract that matters: whenever the predicate says the stored field
+    // governs, `debtBalanceAtDate` returns it verbatim; whenever it says the
+    // curve governs, the dispatcher ignores it.
+    const anchored: DebtBalanceAtDateInput = {
+      anchors: [{ anchorDate: "2026-01-01", balanceMinor: 500_00 }],
+      currentBalanceMinor: 999_99,
+      debtModel: "informal",
+      targetDate: "2026-07-01",
+    };
+    expect(
+      storedBalanceGovernsDebtFigure({
+        ...base,
+        debtModel: "informal",
+        hasBalanceAnchors: true,
+      }),
+    ).toBe(false);
+    expect(debtBalanceAtDate(anchored)).toBe(500_00);
+
+    const bare: DebtBalanceAtDateInput = {
+      anchors: [],
+      currentBalanceMinor: 999_99,
+      debtModel: "informal",
+      targetDate: "2026-07-01",
+    };
+    expect(storedBalanceGovernsDebtFigure({ ...base, debtModel: "informal" })).toBe(true);
+    expect(debtBalanceAtDate(bare)).toBe(999_99);
+  });
+
+  test("a future-dated informal anchor is the state the dateless reading excludes", () => {
+    // Documented, not endorsed: `parseBalanceAnchorStrict` rejects a future anchor
+    // date, so this input cannot be persisted. If that guard ever went, the
+    // predicate would have to take a target date — the dispatcher steps to
+    // nothing here and hands back the stored field.
+    const futureOnly: DebtBalanceAtDateInput = {
+      anchors: [{ anchorDate: "2027-01-01", balanceMinor: 500_00 }],
+      currentBalanceMinor: 999_99,
+      debtModel: "informal",
+      targetDate: "2026-07-01",
+    };
+    expect(debtBalanceAtDate(futureOnly)).toBe(999_99);
+    // Revolving needs no such invariant: it is flat before its first anchor.
+    expect(debtBalanceAtDate({ ...futureOnly, debtModel: "revolving" })).toBe(500_00);
   });
 });
