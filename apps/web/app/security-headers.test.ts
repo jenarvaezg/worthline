@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,20 +71,43 @@ describe("securityHeaders", () => {
   });
 });
 
-describe("buildEnforcedContentSecurityPolicy (#1256)", () => {
-  test("enforces the two egress directives and NOTHING else", () => {
-    // Deliberately exact. Every other directive of the target policy can break a
-    // real surface (`script-src`/`style-src` without a nonce, `form-action` on the
-    // Google sign-in redirect), so promoting one is a decision with evidence
-    // behind it, never a drive-by edit.
-    expect([...ENFORCED_CSP_DIRECTIVES]).toEqual(["img-src", "connect-src"]);
+/** Everything the enforced header blocks, in serialization order (#1256, #1273). */
+const ENFORCED_DIRECTIVE_ORDER = [
+  "img-src",
+  "font-src",
+  "connect-src",
+  "object-src",
+  "base-uri",
+  "form-action",
+  "frame-ancestors",
+] as const;
+
+describe("buildEnforcedContentSecurityPolicy (#1256, #1273)", () => {
+  test("enforces the audited directives and NOTHING else", () => {
+    // Deliberately exact. What is missing is the point: `script-src` and
+    // `style-src` need `'unsafe-inline'` for Next's inline bootstrap and
+    // styled-jsx, and `default-src` is their fallback (ADR 0068). Promoting one
+    // is a decision with evidence behind it, never a drive-by edit.
+    expect([...ENFORCED_CSP_DIRECTIVES]).toEqual([...ENFORCED_DIRECTIVE_ORDER]);
     expect([
       ...directivesOf(buildEnforcedContentSecurityPolicy({ dev: false })).keys(),
-    ]).toEqual(["img-src", "connect-src"]);
+    ]).toEqual([...ENFORCED_DIRECTIVE_ORDER]);
+  });
+
+  test("leaves the framework's inline output observing, never blocking", () => {
+    const enforced = directivesOf(buildEnforcedContentSecurityPolicy({ dev: false }));
+    for (const observed of ["script-src", "style-src", "default-src"]) {
+      expect(enforced.has(observed)).toBe(false);
+    }
+    // …and the report-only header keeps previewing all three.
+    const preview = directivesOf(buildContentSecurityPolicy({ dev: false }));
+    for (const observed of ["script-src", "style-src", "default-src"]) {
+      expect(preview.has(observed)).toBe(true);
+    }
   });
 
   test("never carries default-src, which would enforce the whole policy by the back door", () => {
-    // `default-src` is the fallback for script/style/font/frame/worker/manifest
+    // `default-src` is the fallback for script/style/frame/worker/manifest
     // fetches: shipping it in the ENFORCED header would block everything the
     // report-only header is still only observing.
     for (const dev of [false, true]) {
@@ -113,7 +136,16 @@ describe("buildContentSecurityPolicy", () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'self'");
-    expect(csp).toContain("form-action 'self'");
+  });
+
+  test("form-action allows the sign-in destination and nothing else (#1273)", () => {
+    // MEASURED, not reasoned: a no-JS click on /login is a native POST whose 303 to
+    // accounts.google.com the browser follows as part of the submission, so
+    // `form-action 'self'` alone blocked the app's front door. Naming the one
+    // destination keeps every OTHER cross-origin form POST refused.
+    expect(
+      directivesOf(buildContentSecurityPolicy({ dev: false })).get("form-action"),
+    ).toBe("'self' https://accounts.google.com");
   });
 
   test("scopes img-src to self, data URIs and the two external CDNs", () => {
@@ -222,6 +254,138 @@ describe("stored image hosts (#1272)", () => {
     test("ignores images named in prose", () => {
       expect(imgTagCount(`/** A remote \`<img src>\` is an outbound GET. */`)).toBe(0);
       expect(imgTagCount(`// biome-ignore: external <img> thumb\nconst a = 1;`)).toBe(0);
+    });
+  });
+});
+
+/**
+ * The evidence behind the directives #1273 promoted.
+ *
+ * Each of these four was verified by READING the code, the way #1256 verified the two
+ * egress ones. A test is what keeps that reading true: the claim «the app renders no
+ * `<object>`» is only worth a blocking directive for as long as nobody adds one, and
+ * the failure mode of a stale claim here is a surface that silently stops working in
+ * production while every test stays green.
+ */
+const FONT_LOADER_MODULE = "app/layout.tsx";
+
+/** Every `<object>`/`<embed>`/`<applet>`/`<base>` in `source` that is an ELEMENT. */
+function pluginElementCount(source: string): number {
+  // `[^\w$]` before the `<` is what separates JSX from a generic type argument:
+  // `WeakSet<object>` has an identifier character there, `  <object data=…>` does
+  // not. Without it the guardian would fire on `walk-deep.ts` forever and get
+  // deleted for crying wolf.
+  return (
+    stripComments(source).match(/(^|[^\w$])<(object|embed|applet|base)\b/g)?.length ?? 0
+  );
+}
+
+/** Every `.css` under `root`, skipping build output — the TS walk cannot see these. */
+function walkStylesheets(root: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const fullPath = join(root, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      files.push(...walkStylesheets(fullPath));
+      continue;
+    }
+    if (entry.name.endsWith(".css")) files.push(fullPath);
+  }
+  return files;
+}
+
+describe("the promoted directives' evidence (#1273)", () => {
+  const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+  test("object-src/base-uri: the app renders no plugin element and no <base>", () => {
+    const offenders = readSourceFiles(webRoot)
+      .filter(({ source }) => pluginElementCount(source) > 0)
+      .map(({ filePath }) => filePath.slice(webRoot.length + 1));
+
+    expect(
+      offenders,
+      "`object-src 'none'` and `base-uri 'self'` BLOCK now — an <object>/<embed> " +
+        "will not load and a <base> will be ignored. Decide the directive before " +
+        "shipping the element, not after the surface breaks in production",
+    ).toEqual([]);
+  });
+
+  test("font-src: every face is loaded from the app's own bundle", () => {
+    const fontImporters = readSourceFiles(webRoot)
+      .filter(({ source }) => stripComments(source).includes("next/font"))
+      .map(({ filePath }) => filePath.slice(webRoot.length + 1));
+    expect(
+      fontImporters,
+      "a second next/font call site means the font-src evidence covers only half " +
+        "the faces — `next/font/google` in particular self-hosts at build time, but " +
+        "verify it rather than assume it",
+    ).toEqual([FONT_LOADER_MODULE]);
+
+    const layout = readFileSync(join(webRoot, FONT_LOADER_MODULE), "utf8");
+    expect(layout).toContain('from "next/font/local"');
+    const paths = [...layout.matchAll(/path:\s*"([^"]+)"/g)].map(
+      (match) => match[1] ?? "",
+    );
+    expect(paths.length).toBeGreaterThan(0);
+    for (const path of paths) {
+      expect(path.startsWith("./fonts/"), `${path} is not a local font file`).toBe(true);
+      // Named, not globbed: a path that no longer resolves is a face the browser
+      // would fetch from somewhere else.
+      expect(existsSync(join(webRoot, "app", path.slice(2)))).toBe(true);
+    }
+  });
+
+  test("font-src: no stylesheet declares a face of its own", () => {
+    // This is the WHOLE of the CSS side of the evidence: a font can only be fetched
+    // through an `@font-face`, so with none hand-written, the next/font reading above
+    // enumerates every face the browser asks for. A new one is not forbidden — its
+    // `src` just stops being covered, and `font-src 'self'` BLOCKS now.
+    for (const filePath of walkStylesheets(join(webRoot, "app"))) {
+      expect(
+        readFileSync(filePath, "utf8"),
+        `${filePath.slice(webRoot.length + 1)} declares an @font-face the font-src audit never read`,
+      ).not.toContain("@font-face");
+    }
+  });
+
+  test("no stylesheet fetches from an off-origin host", () => {
+    // Not a font check — a `url()` in CSS is an IMAGE or a mask, and `img-src` has
+    // been blocking since #1256. `data:` is deliberately allowed: the paper-grain
+    // texture in globals.css is an inline SVG background, which is exactly why the
+    // `data:` token is in the img-src allowlist and asserted above.
+    for (const filePath of walkStylesheets(join(webRoot, "app"))) {
+      const css = readFileSync(filePath, "utf8");
+      expect(
+        [...css.matchAll(/url\(\s*['"]?((?:https?:)?\/\/[^)'"]+)/g)].map((m) => m[1]),
+        `${filePath.slice(webRoot.length + 1)} reaches an absolute host — img-src blocks any origin outside IMAGE_CDN_HOSTS`,
+      ).toEqual([]);
+    }
+  });
+
+  test("form-action: Google is the only sign-in destination configured", () => {
+    // The allowlist is a NAVIGATION destination (accounts.google.com). A second
+    // provider is a second destination, and the failure of forgetting it is that
+    // nobody can sign in — so the provider set is pinned, not trusted to a comment.
+    const authConfig = stripComments(
+      readFileSync(join(webRoot, "app/auth.config.ts"), "utf8"),
+    );
+    expect(
+      [...authConfig.matchAll(/from "next-auth\/providers\/([\w-]+)"/g)].map((m) => m[1]),
+    ).toEqual(["google"]);
+    expect(/providers:\s*\[Google\]/.test(authConfig)).toBe(true);
+  });
+
+  describe("the plugin-element scan itself", () => {
+    test("counts a real element", () => {
+      expect(pluginElementCount(`<object data="/a.pdf" />`)).toBe(1);
+      expect(pluginElementCount(`<embed src="a" />\n<base href="/" />`)).toBe(2);
+    });
+
+    test("ignores a generic type argument and prose", () => {
+      expect(pluginElementCount(`seen: WeakSet<object>,`)).toBe(0);
+      expect(pluginElementCount(`const m = new Map<object, string>();`)).toBe(0);
+      expect(pluginElementCount(`/** No <object> or <embed> anywhere. */`)).toBe(0);
     });
   });
 });
