@@ -98,6 +98,20 @@ describe("buildChatSystemPrompt", () => {
     // text, so unlike #1263's ids no boundary can close it.
     expect(prompt).toMatch(/céntimos/i);
     expect(prompt).toMatch(/importe en euros/i);
+    // #1326: a real free-tier run burned its whole monthly quota looping «¿me das
+    // el OK y lo ejecuto?» / «Estado: Preparado para alta» without ever calling a
+    // proposal tool. The card is the confirmation; a chat-level pre-OK is never
+    // asked for, and «I will apply it» is never claimed.
+    expect(prompt).toMatch(/tarjeta ES la confirmación/);
+    expect(prompt).toMatch(/nunca pidas un «OK» previo/i);
+    expect(prompt).toMatch(/sin haber llamado a su tool/i);
+    // #1326: the same run invented which fund an in-flight subscription belonged
+    // to (and its amount). Unlinked figures are asked about, never dealt out.
+    expect(prompt).toMatch(/no haya vinculado explícitamente/i);
+    expect(prompt).toMatch(/pregunta en vez de repartirla/i);
+    // #1326: «(He corregido la presentación de las acciones sugeridas…)» reached
+    // a real user. Interface/format meta-commentary is out.
+    expect(prompt).toMatch(/cero meta-comentarios/i);
   });
 
   /**
@@ -108,12 +122,15 @@ describe("buildChatSystemPrompt", () => {
    * prompt has to justify it here.
    */
   it("does not grow net (decision 8)", () => {
-    // 8383 is the pre-#1245 length. The slice added the early-repayment rule, the
-    // no-tool-names rule and the descriptive-lane routing, and paid for all three
-    // by cutting text the tools' own `description` fields already carry verbatim
-    // — it currently sits well under the ceiling. Raising this number is a
-    // decision, not a detail: a slice that needs more prompt justifies it here.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8383);
+    // 8383 was the pre-#1245 ceiling. #1326 raises it to 9100: a real free-tier
+    // transcript showed three behaviour failures the code cannot fully close
+    // (chat-level pre-OK loops instead of emitting the card, amounts dealt out to
+    // holdings the user never linked, interface meta-commentary), and the slice
+    // already paid what it could by carrying the duplicate-warning rule in
+    // `propose_holding`'s own description instead of here. Raising this number
+    // remains a decision, not a detail: a slice that needs more prompt justifies
+    // it in this comment.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_100);
   });
 
   it("pins the core read-only contract", () => {

@@ -70,8 +70,12 @@ export const FABRICATED_PROPOSAL_MODEL_NOTE =
  * Flagging those would put a note on the path that works.
  */
 const CLAIM_PATTERNS = [
-  // «he preparado», «te he creado», «hemos dejado preparada», «preparé».
-  /\b(he|hemos)\b[^.!?]{0,30}\b(preparado|creado|generado|elaborado|montado|dejado)\b/i,
+  // «he preparado», «te he creado», «hemos dejado preparada», «preparé». The
+  // second alternation gained ajustado/corregido/actualizado/rectificado from a
+  // measured run (#1327): «estas son las propuestas … que hemos ajustado» looped
+  // for five turns without a card and without tripping this. In the turn that
+  // DOES carry the corrected card, the proposal-part check skips it anyway.
+  /\b(he|hemos)\b[^.!?]{0,30}\b(preparado|creado|generado|elaborado|montado|dejado|ajustado|corregido|actualizado|rectificado)\b/i,
   // No trailing \b: JS word boundaries do not see «é» as a word character, so
   // «preparé» would never close one. And only the ACCENTED forms — unaccented
   // «prepare» is the subjunctive of an offer («¿quieres que prepare una?»).
@@ -82,6 +86,24 @@ const CLAIM_PATTERNS = [
   /\b(aqu[íi]|ya) tienes\b[^.!?]{0,25}\bpropuestas?\b/i,
   // «La propuesta está lista» — the same assertion without the first person.
   /\bpropuestas?\b[^.!?]{0,40}\b(est[áa]|queda)\s+(lista|preparada|creada|hecha)\b/i,
+];
+
+/**
+ * The ceremony faked WITHOUT the word «propuesta» — the widening the scope note
+ * below reserved for measured cases, and #1327 measured them: a real run painted
+ * card-shaped prose fichas («ISIN: … · Valor a registrar: … · Estado: Preparado
+ * para alta.») and claimed «el segundo registro está listo», turn after turn,
+ * with no card in sight. These carry their own noun, so they skip the
+ * {@link PROPOSAL_WORD} gate; the negation guard still applies. The vocabulary
+ * stays deliberately narrow — a status label and «registro listo/preparado» —
+ * because the note's cost model (true even on a false positive) buys width, not
+ * a blank cheque.
+ */
+const SELF_CONTAINED_CLAIM_PATTERNS = [
+  // «Estado: Preparado para alta» — the status line of a prose-imitated card.
+  /\bestado\s*:\s*preparad/i,
+  // «el segundo registro está listo», «el registro queda preparado».
+  /\bregistros?\b[^.!?]{0,40}\b(est[áa]|queda)\s+(list[oa]s?|preparad[oa]s?)\b/i,
 ];
 
 /**
@@ -110,16 +132,19 @@ function sentences(text: string): string[] {
 /**
  * Does this text assert that a proposal has been prepared?
  *
- * Scope, stated plainly: it reads the ceremony's own vocabulary («propuesta»). A
- * model that claimed «he dejado listo el registro de la amortización» without ever
- * naming a proposal would slip through. Widening it is a decision to take with
- * measured cases (#1254), not by guessing at synonyms — the cost of guessing is
- * notes on honest turns, and those are what teach a user to ignore notes.
+ * Scope, stated plainly: it reads the ceremony's own vocabulary — «propuesta» for
+ * the gated patterns, plus the two prose-ficha shapes a measured run used to
+ * dodge it (#1327: «Estado: Preparado para alta», «el registro está listo»).
+ * Widening further remains a decision to take with measured cases, not by
+ * guessing at synonyms — the cost of guessing is notes on honest turns, and
+ * those are what teach a user to ignore notes.
  */
 export function claimsPreparedProposal(text: string): boolean {
   return sentences(text).some((sentence) => {
-    if (!PROPOSAL_WORD.test(sentence)) return false;
-    return CLAIM_PATTERNS.some((pattern) => {
+    const claims = PROPOSAL_WORD.test(sentence)
+      ? [...CLAIM_PATTERNS, ...SELF_CONTAINED_CLAIM_PATTERNS]
+      : SELF_CONTAINED_CLAIM_PATTERNS;
+    return claims.some((pattern) => {
       const match = pattern.exec(sentence);
       return match !== null && !NEGATION.test(sentence.slice(0, match.index));
     });

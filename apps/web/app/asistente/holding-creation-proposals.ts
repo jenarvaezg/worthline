@@ -26,6 +26,7 @@ import {
   matchHoldings,
   reassignToNew,
 } from "@worthline/domain";
+import { fetchPriceNow, type RegisteredSource } from "@worthline/pricing";
 import { holdingCreationImpact } from "./holding-creation-impact";
 import {
   type OpeningCardBreakdown,
@@ -201,14 +202,19 @@ function buildPlan(
     ...(args.isin ? { isin: args.isin.trim() } : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
-  const resolved = resolveHoldingCreationOpening({
-    ...(args.feesMinor === undefined ? {} : { feesMinor: args.feesMinor }),
-    ...(args.openingValueMinor === undefined
-      ? {}
-      : { openingValueMinor: args.openingValueMinor }),
-    ...(args.pricePerUnit === undefined ? {} : { pricePerUnit: args.pricePerUnit }),
-    ...(args.units === undefined ? {} : { units: args.units }),
-  });
+  const resolved = resolveHoldingCreationOpening(
+    {
+      ...(args.feesMinor === undefined ? {} : { feesMinor: args.feesMinor }),
+      ...(args.openingValueMinor === undefined
+        ? {}
+        : { openingValueMinor: args.openingValueMinor }),
+      ...(args.pricePerUnit === undefined ? {} : { pricePerUnit: args.pricePerUnit }),
+      ...(args.units === undefined ? {} : { units: args.units }),
+    },
+    // Value-only resolves as 1 participación × valor only without a symbol
+    // (#1325): with one, a live quote derives the units upstream instead.
+    { allowValueOnly: base.providerSymbol === undefined },
+  );
   if (!resolved.ok) return resolved;
   if (resolved.opening === null) return { ok: true, plan: base };
   return {
@@ -316,10 +322,68 @@ function openingOf(plan: HoldingCreationPlan): OpeningCardBreakdown | undefined 
   return openingCardBreakdown(plan.opening);
 }
 
+/** Live unit price for a symbol-ful, value-only alta — or null when unquotable. */
+export type QuoteUnitPrice = (
+  instrument: Instrument,
+  symbol: string,
+) => Promise<string | null>;
+
+const REGISTERED_SOURCES: readonly RegisteredSource[] = [
+  "yahoo",
+  "stooq",
+  "coingecko",
+  "finect",
+];
+
+function isRegisteredSource(value: string | undefined): value is RegisteredSource {
+  return value !== undefined && (REGISTERED_SOURCES as readonly string[]).includes(value);
+}
+
+/**
+ * The default quote seam (#1325): the same live-price prefill the «Añadir holding»
+ * wizard runs when a symbol is picked, so the chat alta derives its units from the
+ * exact figure the wizard would have shown. Null (provider missing, no quote)
+ * degrades to an honest rejection upstream — never to an empty container.
+ */
+async function liveUnitPrice(
+  instrument: Instrument,
+  symbol: string,
+): Promise<string | null> {
+  const provider = defaultsFor(instrument).priceProvider;
+  if (!isRegisteredSource(provider)) return null;
+  const fetched = await fetchPriceNow(provider, {
+    assetId: "alta-chat-preview",
+    currency: "EUR",
+    nowIso: new Date().toISOString(),
+    symbol,
+  });
+  return fetched?.price ?? null;
+}
+
+/**
+ * A symbol-ful investment alta declaring ONLY the cash amount (#1325): the units
+ * must come from a live quote — the 1-unit encoding would revalue to one share's
+ * NAV the moment the symbol's real price lands.
+ */
+function needsLiveQuote(
+  args: HoldingCreationArgs,
+  instrument: Instrument | null,
+): instrument is Instrument {
+  return (
+    instrument !== null &&
+    FAMILY_BY_INSTRUMENT[instrument] === "investment" &&
+    (args.providerSymbol ?? "").trim() !== "" &&
+    args.openingValueMinor !== undefined &&
+    args.pricePerUnit === undefined &&
+    args.units === undefined
+  );
+}
+
 export async function buildHoldingCreationProposal(
   store: ProposalStore,
   args: HoldingCreationArgs,
   today: string,
+  quoteUnitPrice: QuoteUnitPrice = liveUnitPrice,
 ): Promise<BuildResult> {
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return { ok: false, error: "Workspace no inicializado." };
@@ -335,7 +399,25 @@ export async function buildHoldingCreationProposal(
     shortfall: "complete-to-full-ownership",
   });
 
-  const built = buildPlan(args, ownership);
+  let effectiveArgs = args;
+  const parsedInstrument = parseInstrument(args.instrument);
+  if (needsLiveQuote(args, parsedInstrument)) {
+    const symbol = args.providerSymbol!.trim();
+    const quoted = await quoteUnitPrice(parsedInstrument, symbol);
+    if (quoted === null) {
+      return {
+        ok: false,
+        error:
+          `No hay cotización disponible ahora mismo para «${symbol}», así que no puedo ` +
+          "derivar los títulos desde el importe: pásame los títulos o el precio por " +
+          "unidad del documento, o crea el alta sin símbolo para registrarla por su " +
+          "valor total (sin actualización automática de precio).",
+      };
+    }
+    effectiveArgs = { ...args, pricePerUnit: quoted };
+  }
+
+  const built = buildPlan(effectiveArgs, ownership);
   if (!built.ok) return built;
   const plan = built.plan;
 
