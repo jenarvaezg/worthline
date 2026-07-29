@@ -272,7 +272,11 @@ export type {
   DebtBalanceAtDateInput,
   EffectiveAmortizationPlan,
 } from "./debt-balance";
-export { debtBalanceAtDate, effectiveAmortizationPlan } from "./debt-balance";
+export {
+  debtBalanceAtDate,
+  effectiveAmortizationPlan,
+  storedBalanceGovernsDebtFigure,
+} from "./debt-balance";
 export type { DecimalString } from "./decimal";
 export {
   addUnits,

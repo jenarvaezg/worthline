@@ -549,6 +549,8 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "El valor de un activo conectado se actualiza al sincronizar — no puedes fijarlo a mano.";
     case "value_update_investment_holding":
       return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
+    case "debt_balance_governed_by_curve":
+      return "Esta deuda toma su saldo de la curva modelada — declara el saldo real en «Recalibrar con saldo real» o añade un saldo declarado.";
     case "duplicate_primary_residence":
       return `Ya hay una vivienda habitual («${violation.existingName}»). Solo puede haber una — desmárcala primero.`;
   }

@@ -158,8 +158,19 @@ describe("DebtModelSection — «recalibrar con saldo real» (ADR 0056, PRD #670
     expect(markup).toContain("Recalibrar saldo");
   });
 
-  test("does NOT show the recalibrate action when there is no plan yet", () => {
+  test("does NOT show the recalibrate action when there is no curve yet", () => {
     const markup = render(null, null);
     expect(markup).not.toContain("Recalibrar con saldo real");
+  });
+
+  test("a curve with no plan row still shows its modelled balance and recalibrates", () => {
+    // Imported current-state debt: the `startsAtBaseline` re-baseline governs the
+    // curve with no plan row (#678). Since #1290 hid the raw balance form for any
+    // curved debt, this block is the only balance the detail shows — it must not
+    // hide just because the plan row is absent.
+    const markup = render(null, 5_494_98);
+    expect(markup).toContain("Recalibrar con saldo real");
+    expect(markup).toContain("Saldo modelado a día de hoy");
+    expect(markup).toContain("5495");
   });
 });

@@ -3,8 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
-  readAmortizationPlan: vi.fn(async () => null),
+  debtBalanceAtDate: vi.fn(async () => 174_500_00),
+  readAmortizationPlan: vi.fn(async (): Promise<unknown> => null),
   readAssets: vi.fn(async () => []),
+  readBalanceAnchors: vi.fn(async (): Promise<unknown[]> => []),
+  readBalanceRebaselines: vi.fn(async (): Promise<unknown[]> => []),
   readDebtModel: vi.fn(async () => "amortizable"),
   readEarlyRepayments: vi.fn(async () => []),
   readInterestRateRevisions: vi.fn(async () => []),
@@ -44,7 +47,10 @@ const calls = vi.hoisted(() => ({
       store: {
         assets: { readAssets: calls.readAssets },
         liabilities: {
+          debtBalanceAtDate: calls.debtBalanceAtDate,
           readAmortizationPlan: calls.readAmortizationPlan,
+          readBalanceAnchors: calls.readBalanceAnchors,
+          readBalanceRebaselines: calls.readBalanceRebaselines,
           readDebtModel: calls.readDebtModel,
           readEarlyRepayments: calls.readEarlyRepayments,
           readInterestRateRevisions: calls.readInterestRateRevisions,
@@ -112,5 +118,97 @@ describe("EditarPage progressive disclosure (#604)", () => {
 
     const basicMarkup = html.slice(basic, advanced);
     expect(basicMarkup.match(/<form/g)?.length).toBe(2);
+  });
+});
+
+/**
+ * A debt with a modelled curve takes its figure from the curve; the raw
+ * `current_balance_minor` form is then a write into the void (#1290).
+ */
+describe("EditarPage — the raw balance door follows the engine (#1290)", () => {
+  const PLAN = {
+    annualInterestRate: "0.0589",
+    disbursementDate: "2026-06-21",
+    firstPaymentDate: "2026-07-21",
+    id: "plan_revolut",
+    initialCapitalMinor: 6_000_00,
+    liabilityId: "liability_mortgage",
+    originalSigningDate: null,
+    termMonths: 42,
+  };
+
+  test("with no plan and no re-baseline the stored balance is the only figure", async () => {
+    calls.readAmortizationPlan.mockResolvedValueOnce(null);
+    calls.readBalanceRebaselines.mockResolvedValueOnce([]);
+    const html = await renderedHtml();
+
+    expect(html).toContain("Saldo pendiente (EUR)");
+    expect(html).toContain('name="balance"');
+    expect(html).toContain("Actualizar saldo");
+  });
+
+  test("an amortizable debt with a plan exposes no raw balance form", async () => {
+    calls.readAmortizationPlan.mockResolvedValueOnce(PLAN);
+    calls.readBalanceRebaselines.mockResolvedValueOnce([]);
+    const html = await renderedHtml();
+
+    // "Saldo pendiente hoy" (the current-state form) is a different door; what
+    // must be gone is the raw `current_balance_minor` input and its submit.
+    expect(html).not.toContain("Saldo pendiente (EUR)");
+    expect(html).not.toContain('name="balance"');
+    expect(html).not.toContain("Actualizar saldo");
+    // The modelled figure is the one on screen, and it is not the stored 180.000.
+    expect(html).toContain("Saldo modelado a día de hoy");
+    expect(html).toContain("174.500");
+  });
+
+  test("an anchored debt with at least one anchor exposes no raw balance form", async () => {
+    calls.readDebtModel.mockResolvedValueOnce("informal");
+    calls.readBalanceAnchors.mockResolvedValueOnce([
+      {
+        anchorDate: "2026-07-01",
+        balanceMinor: 9_000_00,
+        id: "anchor_1",
+        liabilityId: "liability_mortgage",
+      },
+    ]);
+    const html = await renderedHtml();
+
+    // `name="balance"` is not discriminating here — the anchor form uses it too;
+    // the raw door is identified by its label + submit.
+    expect(html).not.toContain("Saldo pendiente (EUR)");
+    expect(html).not.toContain("Actualizar saldo");
+    // The declared balances are the figure on screen for an anchored debt.
+    expect(html).toContain("Saldos declarados");
+  });
+
+  test("an anchored debt with no anchors yet keeps the raw balance form", async () => {
+    calls.readDebtModel.mockResolvedValueOnce("informal");
+    calls.readBalanceAnchors.mockResolvedValueOnce([]);
+    const html = await renderedHtml();
+
+    expect(html).toContain("Saldo pendiente (EUR)");
+    expect(html).toContain("Actualizar saldo");
+  });
+
+  test("a re-baseline alone (no plan row) also retires the raw balance form", async () => {
+    calls.readAmortizationPlan.mockResolvedValueOnce(null);
+    calls.readBalanceRebaselines.mockResolvedValueOnce([
+      {
+        annualInterestRate: "0.0589",
+        baselineDate: "2026-06-21",
+        endDate: "2029-12-21",
+        id: "rebaseline_1",
+        liabilityId: "liability_mortgage",
+        nextPaymentDate: "2026-07-21",
+        outstandingBalanceMinor: 6_000_00,
+        startsAtBaseline: true,
+      },
+    ]);
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Saldo pendiente (EUR)");
+    expect(html).not.toContain('name="balance"');
+    expect(html).toContain("Saldo modelado a día de hoy");
   });
 });

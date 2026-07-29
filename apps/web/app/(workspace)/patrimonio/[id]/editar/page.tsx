@@ -44,6 +44,7 @@ import {
   instrumentOfAsset,
   monthlyCloseValuesFromSnapshotRows,
   simpleGain,
+  storedBalanceGovernsDebtFigure,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
@@ -235,10 +236,16 @@ export default async function EditarPage({
 
   // amortized / anchored: the debt-model data (PRD #109).
   const debtModel = liability ? await store.liabilities.readDebtModel(id) : null;
-  const amortizationPlan =
+  // Plan + re-baselines are independent reads off the liability id — one wave.
+  // Both are needed: a re-baseline alone can govern the curve with no plan row
+  // (ADR 0056; the #678 review's imported-current-state case).
+  const [amortizationPlan, balanceRebaselines] =
     liability && debtModel === "amortizable"
-      ? await store.liabilities.readAmortizationPlan(id)
-      : null;
+      ? await Promise.all([
+          store.liabilities.readAmortizationPlan(id),
+          store.liabilities.readBalanceRebaselines(id),
+        ])
+      : [null, []];
   // Revisions + early repayments both hang off the plan id and are independent
   // of each other — one wave once the plan is known (#446).
   const [rateRevisions, earlyRepayments] = amortizationPlan
@@ -257,10 +264,24 @@ export default async function EditarPage({
     : null;
   // The current MODELLED balance, shown beside "Recalibrar con saldo real"
   // (ADR 0056, PRD #670 S3, #678) so the drift against the bank's real figure
-  // is visible at the moment of repair — only meaningful once a plan exists.
-  const currentModelledBalanceMinor = amortizationPlan
-    ? await store.liabilities.debtBalanceAtDate(id, new Date().toISOString().slice(0, 10))
-    : null;
+  // is visible at the moment of repair — meaningful as soon as a CURVE exists,
+  // plan row or re-baseline alike (#1290: with the raw balance form gone for a
+  // curved debt, this is the only balance the detail shows).
+  const currentModelledBalanceMinor =
+    amortizationPlan || balanceRebaselines.length > 0
+      ? await store.liabilities.debtBalanceAtDate(
+          id,
+          new Date().toISOString().slice(0, 10),
+        )
+      : null;
+  // Which door repairs this debt's balance (#1290): the raw
+  // `current_balance_minor` form only when the engine still reads that field.
+  const showRawBalanceForm = storedBalanceGovernsDebtFigure({
+    debtModel,
+    hasAmortizationPlan: amortizationPlan !== null,
+    hasBalanceAnchors: balanceAnchors.length > 0,
+    hasBalanceRebaselines: balanceRebaselines.length > 0,
+  });
 
   const activeMembers = workspace.members.filter((m) => !m.disabledAt);
   const assets = allAssets.filter((a) => a.type !== "investment");
@@ -486,6 +507,7 @@ export default async function EditarPage({
               liability={liability}
               members={activeMembers}
               scopeMemberId={ownershipScopeMemberId}
+              showRawBalanceForm={showRawBalanceForm}
               values={formError?.formId === "edit" ? formError.values : {}}
             />
           ) : null}

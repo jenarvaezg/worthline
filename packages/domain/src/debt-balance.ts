@@ -296,3 +296,41 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
 
   return currentBalanceMinor;
 }
+
+/**
+ * Does the stored `currentBalanceMinor` still govern this debt's figure? (#1290)
+ *
+ * Presence-only reading of the fallback rule in `debtBalanceAtDate` above, kept in
+ * the SAME file so the two cannot drift: the stored field is read only when the
+ * model has no curve to walk. The edit surface consumes this to decide whether the
+ * raw «Saldo pendiente» form is a real door or a write into the void — with a
+ * curve present the engine ignores the field, so offering it invites a repair that
+ * moves no figure (the correct door is then «Recalibrar con saldo real» or an
+ * anchor).
+ *
+ * Deliberately DATELESS, which is exact only under two invariants the write side
+ * enforces, not this file:
+ *  - A balance anchor is never future-dated (`parseBalanceAnchorStrict` rejects
+ *    it). Were one, `informal` would step to nothing and fall back to the stored
+ *    field today while this said otherwise. `revolving` is flat before its first
+ *    anchor, so it never falls back once any anchor exists.
+ *  - `informal` also falls back to `initialCapitalMinor` when declared, but that
+ *    field only ever travels with an amortization plan — no caller passes it for
+ *    an informal debt — so the anchors alone decide here.
+ */
+export function storedBalanceGovernsDebtFigure(input: {
+  debtModel: DebtModel | null;
+  hasAmortizationPlan: boolean;
+  hasBalanceRebaselines: boolean;
+  hasBalanceAnchors: boolean;
+}): boolean {
+  if (input.debtModel === null) {
+    return true;
+  }
+
+  if (input.debtModel === "amortizable") {
+    return !input.hasAmortizationPlan && !input.hasBalanceRebaselines;
+  }
+
+  return !input.hasBalanceAnchors;
+}
