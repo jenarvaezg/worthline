@@ -1,5 +1,6 @@
 /**
- * Journey 47: the CSP's egress directives actually BLOCK, in a real browser (#1256)
+ * Journey 47: the CSP's enforced directives actually BLOCK, in a real browser
+ * (#1256, widened to the audited set in #1273)
  *
  * Imports from "@playwright/test" instead of "./fixtures" on purpose: this journey
  * provokes CSP violations, and a blocked request logs a console error, which the
@@ -36,15 +37,31 @@ test.describe("CSP enforcement", () => {
     const headers = response?.headers() ?? {};
 
     const enforced = headers["content-security-policy"] ?? "";
-    expect(enforced).toContain("img-src ");
-    expect(enforced).toContain("connect-src ");
-    // Why default-src must stay out: see ENFORCED_CSP_DIRECTIVES.
-    expect(enforced).not.toContain("default-src");
+    for (const directive of [
+      "img-src ",
+      "font-src ",
+      "connect-src ",
+      "object-src ",
+      "base-uri ",
+      "form-action ",
+      "frame-ancestors ",
+    ]) {
+      expect(enforced).toContain(directive);
+    }
+    // The sign-in destination has to reach the BROWSER, not just the unit test: a
+    // no-JS click on /login is a native POST whose 303 goes here, and `'self'`
+    // alone blocks it (#1273).
+    expect(enforced).toContain("form-action 'self' https://accounts.google.com");
+    // Why these three must stay out: ADR 0068 / ENFORCED_CSP_DIRECTIVES.
+    for (const observing of ["default-src", "script-src", "style-src"]) {
+      expect(enforced).not.toContain(observing);
+    }
 
-    // The rest of the target policy keeps being observed, not dropped.
-    expect(headers["content-security-policy-report-only"] ?? "").toContain(
-      "default-src ",
-    );
+    // …and they keep being observed, not dropped.
+    const reportOnly = headers["content-security-policy-report-only"] ?? "";
+    for (const observing of ["default-src ", "script-src ", "style-src "]) {
+      expect(reportOnly).toContain(observing);
+    }
   });
 
   test("blocks a remote image and a cross-origin fetch to an unlisted host", async ({
@@ -87,5 +104,39 @@ test.describe("CSP enforcement", () => {
       .toEqual(expect.arrayContaining(["img-src", "connect-src"]));
 
     expect(pageErrors, "a blocked request must not throw into the page").toEqual([]);
+  });
+
+  test("blocks a form submission to an unlisted host (#1273)", async ({ page }) => {
+    // Kept apart from the egress test on purpose: this one SUBMITS a form, and a
+    // submission that were NOT blocked would navigate the page away and take the
+    // violation collector with it. Staying put is half the assertion.
+    await page.goto("/");
+
+    await page.evaluate((host) => {
+      const seen: string[] = [];
+      (window as CspProbeWindow).__cspBlocked = seen;
+      document.addEventListener("securitypolicyviolation", (event) => {
+        if (event.disposition === "enforce") seen.push(event.effectiveDirective);
+      });
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = `${host}/collect`;
+      document.body.appendChild(form);
+      // `form.submit()`, not a click: it bypasses any handler and validation, so what
+      // stops the POST is the policy and nothing else.
+      form.submit();
+    }, UNLISTED_HOST);
+
+    // Polled, not slept, for the same reason as the egress test: the violation lands
+    // asynchronously and a fixed wait is a flake with `retries: 0` (#1250).
+    await expect
+      .poll(async () =>
+        page.evaluate(() => (window as CspProbeWindow).__cspBlocked ?? []),
+      )
+      .toContain("form-action");
+    expect(
+      new URL(page.url()).pathname,
+      "the blocked submission must not have navigated",
+    ).toBe("/");
   });
 });
