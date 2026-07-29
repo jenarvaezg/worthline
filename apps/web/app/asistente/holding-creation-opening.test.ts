@@ -157,6 +157,81 @@ describe("resolveHoldingCreationOpening (#1315) · derivation fallback", () => {
   });
 });
 
+describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
+  test("only the amount, allowed → 1 participación at the total value", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { openingValueMinor: 574_48 },
+      { allowValueOnly: true },
+    );
+
+    expect(resolved).toEqual({
+      ok: true,
+      opening: { pricePerUnit: "574.48", units: "1", valueMinor: 574_48 },
+      // The marker the card's tracking warning keys on: assigning a symbol
+      // over the fake unit would revalue the holding to one share's NAV.
+      valueOnly: true,
+    });
+  });
+
+  test("a commission is carved out of the 1-unit value too", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { feesMinor: 1_00, openingValueMinor: 574_48 },
+      { allowValueOnly: true },
+    );
+
+    expect(resolved).toEqual({
+      ok: true,
+      opening: {
+        feesMinor: 1_00,
+        pricePerUnit: "573.48",
+        units: "1",
+        valueMinor: 573_48,
+      },
+      valueOnly: true,
+    });
+  });
+
+  test("only the amount, NOT allowed (symbol-ful alta) → still asks for the price", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { openingValueMinor: 574_48 },
+      { allowValueOnly: false },
+    );
+
+    expect(resolved).toMatchObject({ ok: false });
+    if (resolved.ok) return;
+    expect(resolved.error).toMatch(/precio por unidad/);
+  });
+
+  test("a declared price that does not parse never falls back to value-only", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { openingValueMinor: 574_48, pricePerUnit: "unos 54 euros" },
+      { allowValueOnly: true },
+    );
+
+    expect(resolved).toMatchObject({ ok: false });
+  });
+
+  test("declared units keep needing their price even when value-only is allowed", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { openingValueMinor: 574_48, units: "3" },
+      { allowValueOnly: true },
+    );
+
+    expect(resolved).toMatchObject({ ok: false });
+    if (resolved.ok) return;
+    expect(resolved.error).toMatch(/precio por unidad/);
+  });
+
+  test("a commission that swallows the whole value-only amount is rejected", () => {
+    const resolved = resolveHoldingCreationOpening(
+      { feesMinor: 600_00, openingValueMinor: 574_48 },
+      { allowValueOnly: true },
+    );
+
+    expect(resolved).toMatchObject({ ok: false });
+  });
+});
+
 describe("resolveHoldingCreationOpening (#1315) · rejections", () => {
   test("rejects an amount in euros instead of cents rather than rounding it", () => {
     const resolved = resolveHoldingCreationOpening({

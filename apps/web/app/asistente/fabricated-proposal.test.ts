@@ -127,6 +127,35 @@ describe("claimsPreparedProposal", () => {
     expect(claimsPreparedProposal("Tu patrimonio neto es de 412.000 €.")).toBe(false);
     expect(claimsPreparedProposal("")).toBe(false);
   });
+
+  test("recognises the ceremony loop a measured run used to dodge it (#1327)", () => {
+    // Verbatim from the 2026-07-28 transcript: five turns of prose-imitated cards
+    // that burned a free user's whole monthly quota without one card on screen.
+    for (const text of [
+      "Estas son las propuestas para los fondos con operaciones en vuelo que hemos ajustado según tus indicaciones (incluyendo el ISIN y el valor total).",
+      "ISIN: IE000N51F726. Valor a registrar: 294,80 €. Estado: Preparado para alta.",
+      "Excelente, el segundo registro está listo.",
+      "He corregido las propuestas de alta siguiendo estrictamente tu indicación.",
+    ]) {
+      expect(claimsPreparedProposal(text), text).toBe(true);
+    }
+  });
+
+  test("the widened vocabulary still spares the honest turns (#1327)", () => {
+    for (const text of [
+      // Offers and questions around the new verbs.
+      "¿Quieres que ajuste la propuesta antes de emitirla?",
+      "Puedo corregir la propuesta si me confirmas el importe.",
+      // «registrado» (participle) is not the noun «registro»: preference talk.
+      "Perfecto, tu preferencia queda registrada.",
+      // A negated claim keeps not being a claim, also for the new patterns.
+      "No, el registro no está listo todavía: falta el importe.",
+      // Plain financial prose around the word «estado».
+      "El estado de tu cartera es saludable.",
+    ]) {
+      expect(claimsPreparedProposal(text), text).toBe(false);
+    }
+  });
 });
 
 describe("messagesWithFabricatedProposal", () => {

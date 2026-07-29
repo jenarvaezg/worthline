@@ -255,6 +255,144 @@ describe("buildHoldingCreationProposal (#1315) · títulos y comisión", () => {
   });
 });
 
+describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
+  test("value-only without a symbol → 1 participación at the total value", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      instrument: "fund",
+      name: "iShares US Equity Index Fund",
+      openingValueMinor: 574_48,
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    // The transcript's failure mode: this used to build an EMPTY container (+0 €).
+    expect(built.proposal.impact.deltaMinor).toBe(574_48);
+    expect(built.proposal.holding.detail).toContain("574");
+    expect(built.proposal.holding.opening?.units).toBe("1");
+    // The value-only warning must NOT invite assigning a symbol: a real quote
+    // over the 1-unit encoding would revalue the holding to one share's NAV.
+    expect(built.proposal.priceTrackingWarning).toContain("1 participación");
+    expect(built.proposal.priceTrackingWarning).not.toContain("hasta asignarle uno");
+    store.close();
+  });
+
+  test("blank-string optionals from the model do not re-open the dead end", async () => {
+    const store = await seedWorkspace();
+    const quote = vi.fn(async () => "999");
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "fund",
+        isin: "",
+        name: "Fondo con blancos",
+        openingValueMinor: 574_48,
+        pricePerUnit: "",
+        providerSymbol: "  ",
+        units: "",
+      },
+      TODAY,
+      quote,
+    );
+    // A blank symbol is NO symbol: no quote round-trip, value-only applies.
+    expect(quote).not.toHaveBeenCalled();
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.impact.deltaMinor).toBe(574_48);
+    expect(built.proposal.holding.opening?.units).toBe("1");
+    store.close();
+  });
+
+  test("a quote the resolver cannot read fails honestly, like no quote at all", async () => {
+    const store = await seedWorkspace();
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "crypto",
+        name: "Microcoin",
+        openingValueMinor: 100_00,
+        providerSymbol: "microcoin",
+      },
+      TODAY,
+      async () => "1.2e-8",
+    );
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toMatch(/cotización/i);
+    store.close();
+  });
+
+  test("value-only with a symbol derives the units from the live quote", async () => {
+    const store = await seedWorkspace();
+    const quote = vi.fn(async () => "150");
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "etf",
+        name: "Vanguard S&P 500",
+        openingValueMinor: 1_500_00,
+        providerSymbol: "VUSA.L",
+      },
+      TODAY,
+      quote,
+    );
+    expect(quote).toHaveBeenCalledWith("etf", "VUSA.L");
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.impact.deltaMinor).toBe(1_500_00);
+    expect(built.proposal.holding.opening?.units).toBe("10");
+    expect(built.proposal.openingMismatchWarning).toBeUndefined();
+    store.close();
+  });
+
+  test("value-only with a symbol and NO quote fails honestly, never empty", async () => {
+    const store = await seedWorkspace();
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "etf",
+        name: "ETF sin cotización viva",
+        openingValueMinor: 1_500_00,
+        providerSymbol: "VUSA.L",
+      },
+      TODAY,
+      async () => null,
+    );
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toMatch(/cotización/i);
+    expect(built.error).toMatch(/títulos|precio/);
+    store.close();
+  });
+
+  test("a declared price never triggers the live quote", async () => {
+    const store = await seedWorkspace();
+    const quote = vi.fn(async () => "999");
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "etf",
+        name: "ETF con NAV del documento",
+        openingValueMinor: 1_500_00,
+        pricePerUnit: "150",
+        providerSymbol: "VUSA.L",
+      },
+      TODAY,
+      quote,
+    );
+    expect(quote).not.toHaveBeenCalled();
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.holding.opening?.units).toBe("10");
+    store.close();
+  });
+});
+
 describe("buildHoldingCreationProposal (#1105) · duplicate warning", () => {
   test("0 matches → no duplicate", async () => {
     const store = await seedWorkspace();
