@@ -20,7 +20,12 @@ export default function HeroDataHealthAlert({ health }: { health: HeroHealthView
 
   const isError = health.impact === "error";
 
+  // The role below IS declared, but as a conditional expression: biome only reads
+  // literal role values, so it treats this element as roleless and flags the
+  // label (#1275). Both branches — `alert` and `status` — do map an author name,
+  // and hero-data-health-alert.test.tsx pins the (role, label) pair for each.
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: false positive — the role is a conditional expression biome cannot evaluate; both `alert` and `status` support aria-label (see the comment above and this file's test).
     <div
       aria-label={isError ? "Alerta de salud de datos" : "Aviso de salud de datos"}
       className={`heroHealthAlert ${isError ? "heroHealthAlert--error" : "heroHealthAlert--warning"}`}

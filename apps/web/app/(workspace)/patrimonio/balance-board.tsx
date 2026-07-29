@@ -142,10 +142,14 @@ function RowReturns({
   const positive = returns.totalReturnRatio >= 0;
   const lines = returnsTooltipLines(returns);
 
+  // The row is tabbable, so focusing it has to say what it is. On a bare div
+  // (role `generic`) ARIA maps no author name: it took focus and announced
+  // nothing. `group` is the role that carries the label (#1275).
   return (
     <div
       className={`balanceRowReturns returnsHint ${positive ? "pos" : "neg"}`}
       tabIndex={0}
+      role="group"
       aria-label={`Rentabilidad: ${lines.join(". ")}`}
     >
       <span aria-hidden="true">{positive ? "▲" : "▼"}</span>{" "}

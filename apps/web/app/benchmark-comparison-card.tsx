@@ -38,7 +38,11 @@ export default function BenchmarkComparisonCard({
 }) {
   if (!result.comparison) {
     return (
-      <div className="benchmarkCard benchmarkEmpty" aria-label="Comparación con IPC">
+      <div
+        className="benchmarkCard benchmarkEmpty"
+        role="group"
+        aria-label="Comparación con IPC"
+      >
         <span>Patrimonio real</span>
         <p>{emptyMessage(result.unavailableReason)}</p>
       </div>
@@ -48,8 +52,10 @@ export default function BenchmarkComparisonCard({
   const { comparison } = result;
   const sign = comparison.realAnnualGrowth >= 0 ? "pos" : "neg";
 
+  // `group` gives each card a role that maps its name; a bare div is `generic`,
+  // where ARIA ignores aria-label outright (#1275).
   return (
-    <div className="benchmarkCard" aria-label="Comparación con IPC">
+    <div className="benchmarkCard" role="group" aria-label="Comparación con IPC">
       <div className="benchmarkVerdict">
         <span>Patrimonio real</span>
         <strong className={sign}>{formatPpPerYear(comparison.realAnnualGrowth)}</strong>

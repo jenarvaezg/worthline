@@ -53,4 +53,17 @@ describe("CurrentStateDebtFields — required only on the edit surface (#677 fin
       expect(inputTag(markup, name)).toContain("required");
     }
   });
+
+  // #1275: "Alcance histórico" named a bare <div>, whose implicit `generic`
+  // role maps no author name — the two-column explainer was unnamed.
+  test("the baseline timeline is a named group", () => {
+    const markup = renderToStaticMarkup(
+      <CurrentStateDebtFields baselineDate="2026-07-02" idPrefix="wizard-deuda" />,
+    );
+
+    const timeline =
+      /<div[^>]*class="debtBaselineTimeline"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(timeline).toContain('role="group"');
+    expect(timeline).toContain('aria-label="Alcance histórico"');
+  });
 });

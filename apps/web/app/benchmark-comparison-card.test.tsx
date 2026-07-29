@@ -22,6 +22,11 @@ describe("BenchmarkComparisonCard", () => {
       <BenchmarkComparisonCard result={{ comparison }} />,
     );
 
+    // The card's own name needs a role that maps it (#1275): a bare <div> is
+    // `generic`, which drops aria-label.
+    const card = /<div[^>]*class="benchmarkCard"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(card).toContain('role="group"');
+    expect(card).toContain('aria-label="Comparación con IPC"');
     expect(markup).toContain("Patrimonio real");
     expect(markup).toContain("incluye aportaciones");
     expect(markup).toContain("+5,8 pp/año real");

@@ -63,6 +63,11 @@ describe("CompositionChart", () => {
       />,
     );
 
+    // The legend is a named group (#1275): on a bare <div> the implicit
+    // `generic` role drops the aria-label, leaving the legend unnamed.
+    const legend = /<div[^>]*class="compositionLegend"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(legend).toContain('role="group"');
+    expect(legend).toContain('aria-label="Bandas de composición"');
     // Legend names every band with page-wide color semantics.
     expect(markup).toContain("Caja");
     expect(markup).toContain("Vivienda");

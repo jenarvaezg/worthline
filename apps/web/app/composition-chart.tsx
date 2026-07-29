@@ -162,7 +162,9 @@ export default function CompositionChart({
 
   return (
     <>
-      <div className="compositionLegend" aria-label="Bandas de composición">
+      {/* `group` carries the name; on a bare div (role `generic`) ARIA drops it
+          and the legend goes unnamed (#1275). */}
+      <div className="compositionLegend" role="group" aria-label="Bandas de composición">
         {/* All bands are listed (not just the shown ones) so Vivienda stays a
             visible, dimmed cue while hidden. */}
         {COMPOSITION_ASSET_BANDS.map((band) => {

@@ -8,6 +8,13 @@
  *
  * No session data lives here — it is the stable per-route shell Instant
  * Navigations will prefetch (#1229).
+ *
+ * `status`, like the other four workspace-tab skeletons (#1275): a named
+ * <section> is a `region` landmark, which is the wrong shape for a frame that
+ * exists for a few hundred milliseconds. Its name did reach assistive tech
+ * (unlike the roleless ones), so this half is consistency, not a bug fix. The
+ * sub-route skeletons (premium, the form routes, patrimonio analytics) keep
+ * `region` — they are page sections, not whole-tab shells.
  */
 export default function HistoricoSkeleton() {
   return (
@@ -15,6 +22,7 @@ export default function HistoricoSkeleton() {
       aria-busy="true"
       aria-label="Cargando histórico"
       className="historicoPanel section"
+      role="status"
     >
       <div className="panelHeader">
         <h2>Histórico</h2>

@@ -152,6 +152,20 @@ describe("BalanceBoard returns (#551)", () => {
     const html = render();
     expect(html).not.toContain("returnsHint");
   });
+
+  // #1275: the row is tabbable, so focusing it must say what it is. On a bare
+  // <div> (implicit role `generic`) the aria-label is not mapped at all — the
+  // hint took focus and announced nothing.
+  test("the tabbable returns hint carries a role that maps its label", () => {
+    const html = render({
+      returnsById: new Map([["a_big", marketReturns(5_039_00, 0.299)]]),
+    });
+
+    const hint = /<div[^>]*class="balanceRowReturns[^>]*>/.exec(html)?.[0] ?? "";
+    expect(hint).toContain('tabindex="0"');
+    expect(hint).toContain('role="group"');
+    expect(hint).toContain('aria-label="Rentabilidad:');
+  });
 });
 
 describe("BalanceBoard (#271)", () => {

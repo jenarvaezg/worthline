@@ -115,7 +115,12 @@ export default function DrilldownPanel({
       {stackCopy ? (
         stack ? (
           <>
-            <div className="decompositionLegend" aria-label={stackCopy.legendAria}>
+            {/* `group` so the name is mapped — `generic` ignores it (#1275). */}
+            <div
+              className="decompositionLegend"
+              role="group"
+              aria-label={stackCopy.legendAria}
+            >
               {stack.bands.map((band) => (
                 <span className={band.band} key={band.band}>
                   <i aria-hidden="true" />
@@ -180,7 +185,7 @@ export default function DrilldownPanel({
       ) : null}
 
       {holdings.length > 0 ? (
-        <div className="drillMultiples" aria-label={copy.multiplesAria}>
+        <div className="drillMultiples" role="group" aria-label={copy.multiplesAria}>
           {holdings.map((holding) => (
             <div className="drillMultiple" key={holding.holdingId}>
               <span className="drillMultipleLabel">{holding.label}</span>

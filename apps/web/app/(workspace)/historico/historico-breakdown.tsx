@@ -94,9 +94,12 @@ export default function HistoricoBreakdown({
         <h2>Origen del cambio</h2>
       </div>
 
+      {/* `group` carries the name; on a bare div (role `generic`) ARIA drops it
+          and the legend goes unnamed (#1275). */}
       <div
         aria-label="Bandas del desglose"
         className="decompositionLegend historicoBreakdownLegend"
+        role="group"
       >
         {legendBands.map((band) => (
           <span

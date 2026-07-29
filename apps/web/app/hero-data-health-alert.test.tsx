@@ -27,7 +27,12 @@ describe("HeroDataHealthAlert", () => {
       hiddenCount: 0,
       impact: "error",
     });
-    expect(html).toContain('role="alert"');
+    // Role AND label on the SAME element — that pair is what makes the biome
+    // suppression in this file a false positive rather than a silenced bug, so
+    // assert it on the opening tag, not twice against the whole markup (#1275).
+    const alert = /<div[^>]*class="heroHealthAlert[^>]*>/.exec(html)?.[0] ?? "";
+    expect(alert).toContain('role="alert"');
+    expect(alert).toContain('aria-label="Alerta de salud de datos"');
     expect(html).toContain("heroHealthAlert--error");
     // Explicit text — not colour alone.
     expect(html).toContain("Revisa esto antes de fiarte del número de hoy");
@@ -51,7 +56,9 @@ describe("HeroDataHealthAlert", () => {
       hiddenCount: 0,
       impact: "warning",
     });
-    expect(html).toContain('role="status"');
+    const status = /<div[^>]*class="heroHealthAlert[^>]*>/.exec(html)?.[0] ?? "";
+    expect(status).toContain('role="status"');
+    expect(status).toContain('aria-label="Aviso de salud de datos"');
     expect(html).toContain("heroHealthAlert--warning");
     expect(html).toContain("Datos por revisar");
     expect(html).toContain('href="/patrimonio/actualizar"');

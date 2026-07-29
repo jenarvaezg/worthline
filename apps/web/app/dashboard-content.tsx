@@ -128,7 +128,11 @@ function FireGlanceCard({
   return (
     <div className="fireResults">
       <div className="fireProgress">
-        <p className="fireBig" aria-label="Porcentaje financiado">
+        {/* The bare figure needs words around it, and a <p> (role `paragraph`)
+            maps no author name — so the label is real sr-only text, not an
+            aria-label that ARIA would ignore (#1275). */}
+        <p className="fireBig">
+          <span className="srOnly">Porcentaje financiado: </span>
           {glance.percentFunded.toFixed(1).replace(".", ",")} %
         </p>
         <div className="fireBar">
@@ -240,7 +244,7 @@ function HeroFraming({
         ) : null}
 
         {showDeltas ? (
-          <div className="deltaChips" aria-label="Cambios de snapshots">
+          <div className="deltaChips" role="group" aria-label="Cambios de snapshots">
             <DeltaChip
               delta={headlineDeltas.sincePrevious}
               label="vs anterior"
@@ -484,13 +488,16 @@ export default async function DashboardContent({
           />
           {/* Portfolio returns line (#551, ADR 0040): one small line INSIDE the hero
             cell — never a new dashGrid child (that broke the layout in #562). The
-            hover explains the three measures + honest caveats. */}
+            hover explains the three measures + honest caveats. It is tabbable, so
+            it carries `group` — `paragraph` maps no author name and the label was
+            never announced on focus (#1275). */}
           {hasHoldings &&
           state.portfolioReturns &&
           state.portfolioReturns.totalReturnRatio !== null ? (
             <p
               className="heroReturns returnsHint"
               tabIndex={0}
+              role="group"
               aria-label={`Rentabilidad: ${returnsTooltipLines(state.portfolioReturns).join(". ")}`}
             >
               Rentabilidad{" "}

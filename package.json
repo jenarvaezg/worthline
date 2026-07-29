@@ -17,8 +17,8 @@
   "scripts": {
     "dev": "bun run --filter @worthline/web dev",
     "build": "turbo run build",
-    "verify": "turbo run typecheck && bun run typecheck:e2e && biome ci && bun run test",
-    "lint": "biome ci",
+    "verify": "turbo run typecheck && bun run typecheck:e2e && bun run lint && bun run test",
+    "lint": "biome ci --error-on-warnings",
     "test": "turbo run test --concurrency=1",
     "test:coverage": "turbo run test:coverage --concurrency=1",
     "test:globs": "tsx scripts/check-test-globs.ts",
