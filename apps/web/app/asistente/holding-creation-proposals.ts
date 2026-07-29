@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { resolveOwnershipSplit } from "@web/intake";
+import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
@@ -116,7 +117,13 @@ function buildPlan(
   args: HoldingCreationArgs,
   ownership: HoldingCreationPlan["ownership"],
 ):
-  | { ok: true; plan: HoldingCreationPlan; openingMismatchWarning?: string }
+  | {
+      ok: true;
+      plan: HoldingCreationPlan;
+      openingMismatchWarning?: string;
+      /** The opening is the 1-participación encoding of a value-only alta (#1325). */
+      valueOnlyOpening?: true;
+    }
   | { ok: false; error: string } {
   const name = (args.name ?? "").trim();
   if (!name) return { ok: false, error: "Falta el nombre del holding a crear." };
@@ -223,6 +230,7 @@ function buildPlan(
     ...(resolved.mismatchWarning === undefined
       ? {}
       : { openingMismatchWarning: resolved.mismatchWarning }),
+    ...(resolved.valueOnly === undefined ? {} : { valueOnlyOpening: true }),
   };
 }
 
@@ -292,9 +300,19 @@ function providerSymbolOf(plan: HoldingCreationPlan): string | undefined {
  * search tool's `MARKET_INSTRUMENTS` set: it is deliberately broader (a
  * pension_plan reprices by its Finect symbol too), so it warns for every
  * symbol-less investment alta. Never blocks: the alta still applies.
+ *
+ * A value-only alta (#1325) gets a DIFFERENT warning: the standard one invites
+ * the user to assign a symbol, and doing that over the 1-participación encoding
+ * would revalue the holding to a single share's NAV on the first real quote.
  */
-function priceTrackingWarningOf(plan: HoldingCreationPlan): string | undefined {
+function priceTrackingWarningOf(
+  plan: HoldingCreationPlan,
+  valueOnlyOpening: boolean,
+): string | undefined {
   if (plan.family !== "investment" || plan.providerSymbol) return undefined;
+  if (valueOnlyOpening) {
+    return "Registrado como 1 participación al valor total: se pone al día editando su precio. No le asignes un símbolo de mercado sin corregir antes los títulos — el valor pasaría a ser el de una sola participación.";
+  }
   return "Sin símbolo de mercado: el valor no se actualizará automáticamente hasta asignarle uno.";
 }
 
@@ -340,10 +358,19 @@ function isRegisteredSource(value: string | undefined): value is RegisteredSourc
 }
 
 /**
+ * Ceiling for the live-quote round-trip: the fetch runs INSIDE the chat turn, and
+ * the provider chain's own retries can add up to ~17 s — blocking the stream that
+ * long for a doomed quote is worse than the honest rejection the caller already
+ * knows how to phrase.
+ */
+const QUOTE_TIMEOUT_MS = 5_000;
+
+/**
  * The default quote seam (#1325): the same live-price prefill the «Añadir holding»
  * wizard runs when a symbol is picked, so the chat alta derives its units from the
- * exact figure the wizard would have shown. Null (provider missing, no quote)
- * degrades to an honest rejection upstream — never to an empty container.
+ * exact figure the wizard would have shown. Null (provider missing, timeout, no
+ * quote, non-EUR quote) degrades to an honest rejection upstream — never to an
+ * empty container.
  */
 async function liveUnitPrice(
   instrument: Instrument,
@@ -351,19 +378,30 @@ async function liveUnitPrice(
 ): Promise<string | null> {
   const provider = defaultsFor(instrument).priceProvider;
   if (!isRegisteredSource(provider)) return null;
-  const fetched = await fetchPriceNow(provider, {
-    assetId: "alta-chat-preview",
-    currency: "EUR",
-    nowIso: new Date().toISOString(),
-    symbol,
-  });
-  return fetched?.price ?? null;
+  const fetched = await Promise.race([
+    fetchPriceNow(provider, {
+      assetId: "alta-chat-preview",
+      currency: "EUR",
+      nowIso: new Date().toISOString(),
+      symbol,
+    }),
+    new Promise<null>((resolve) => {
+      setTimeout(resolve, QUOTE_TIMEOUT_MS, null);
+    }),
+  ]);
+  // Units minted from a non-EUR quote would be false forever (the #1315 lesson),
+  // and the guard belongs to this seam's contract, not to the current provider
+  // list: finect stamps `currency: "EUR"` today without converting anything.
+  if (fetched === null || fetched.currency !== "EUR") return null;
+  return fetched.price;
 }
 
 /**
  * A symbol-ful investment alta declaring ONLY the cash amount (#1325): the units
  * must come from a live quote — the 1-unit encoding would revalue to one share's
- * NAV the moment the symbol's real price lands.
+ * NAV the moment the symbol's real price lands. The cheap-shape checks (name,
+ * family agreement, integer positive amount) run FIRST so an alta `buildPlan` is
+ * going to reject anyway never pays the provider round-trip.
  */
 function needsLiveQuote(
   args: HoldingCreationArgs,
@@ -372,19 +410,44 @@ function needsLiveQuote(
   return (
     instrument !== null &&
     FAMILY_BY_INSTRUMENT[instrument] === "investment" &&
+    (args.family === undefined || args.family === "investment") &&
+    (args.name ?? "").trim() !== "" &&
     (args.providerSymbol ?? "").trim() !== "" &&
-    args.openingValueMinor !== undefined &&
+    Number.isSafeInteger(args.openingValueMinor) &&
+    (args.openingValueMinor as number) > 0 &&
     args.pricePerUnit === undefined &&
     args.units === undefined
   );
 }
 
+/**
+ * Blank-string optionals arrive from the model as `""` or `"  "` — that is «not
+ * declared», never a value. `jsonSchema()` does not validate at runtime, so this
+ * is the frontier: without it a blank `pricePerUnit` re-opens the MISSING_PRICE
+ * dead end #1325 exists to close, and a blank `providerSymbol` makes the two
+ * symbol gates (buildPlan's truthy check, needsLiveQuote's trim) disagree. A
+ * non-blank unreadable price still fails honestly downstream.
+ */
+function withoutBlankOptionals(args: HoldingCreationArgs): HoldingCreationArgs {
+  const isBlank = (value: string | undefined): boolean =>
+    value === undefined || value.trim() === "";
+  const { isin, pricePerUnit, providerSymbol, units, ...rest } = args;
+  return {
+    ...rest,
+    ...(isBlank(isin) ? {} : { isin }),
+    ...(isBlank(pricePerUnit) ? {} : { pricePerUnit }),
+    ...(isBlank(providerSymbol) ? {} : { providerSymbol }),
+    ...(isBlank(units) ? {} : { units }),
+  };
+}
+
 export async function buildHoldingCreationProposal(
   store: ProposalStore,
-  args: HoldingCreationArgs,
+  rawArgs: HoldingCreationArgs,
   today: string,
   quoteUnitPrice: QuoteUnitPrice = liveUnitPrice,
 ): Promise<BuildResult> {
+  const args = withoutBlankOptionals(rawArgs);
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return { ok: false, error: "Workspace no inicializado." };
 
@@ -402,19 +465,22 @@ export async function buildHoldingCreationProposal(
   let effectiveArgs = args;
   const parsedInstrument = parseInstrument(args.instrument);
   if (needsLiveQuote(args, parsedInstrument)) {
-    const symbol = args.providerSymbol!.trim();
+    const symbol = (args.providerSymbol ?? "").trim();
     const quoted = await quoteUnitPrice(parsedInstrument, symbol);
-    if (quoted === null) {
+    // A quote the resolver cannot read (CoinGecko can print 1.2e-8 for a
+    // micro-priced coin) is as unusable as no quote at all — same honest exit.
+    const usable = quoted === null ? null : normalizeNonNegativeDecimalString(quoted);
+    if (usable === null || Number.parseFloat(usable) === 0) {
       return {
         ok: false,
         error:
-          `No hay cotización disponible ahora mismo para «${symbol}», así que no puedo ` +
+          `No hay cotización utilizable ahora mismo para «${symbol}», así que no puedo ` +
           "derivar los títulos desde el importe: pásame los títulos o el precio por " +
           "unidad del documento, o crea el alta sin símbolo para registrarla por su " +
           "valor total (sin actualización automática de precio).",
       };
     }
-    effectiveArgs = { ...args, pricePerUnit: quoted };
+    effectiveArgs = { ...args, pricePerUnit: usable };
   }
 
   const built = buildPlan(effectiveArgs, ownership);
@@ -428,7 +494,10 @@ export async function buildHoldingCreationProposal(
   const impact = holdingCreationImpact(netWorthBeforeMinor, plan);
 
   const providerSymbol = providerSymbolOf(plan);
-  const priceTrackingWarning = priceTrackingWarningOf(plan);
+  const priceTrackingWarning = priceTrackingWarningOf(
+    plan,
+    built.valueOnlyOpening === true,
+  );
   const opening = openingOf(plan);
 
   const proposal = await store.assistantProposals.create({ kind: "holding_creation" });

@@ -167,6 +167,9 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
     expect(resolved).toEqual({
       ok: true,
       opening: { pricePerUnit: "574.48", units: "1", valueMinor: 574_48 },
+      // The marker the card's tracking warning keys on: assigning a symbol
+      // over the fake unit would revalue the holding to one share's NAV.
+      valueOnly: true,
     });
   });
 
@@ -184,6 +187,7 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
         units: "1",
         valueMinor: 573_48,
       },
+      valueOnly: true,
     });
   });
 

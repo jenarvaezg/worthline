@@ -270,7 +270,57 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
     expect(built.proposal.impact.deltaMinor).toBe(574_48);
     expect(built.proposal.holding.detail).toContain("574");
     expect(built.proposal.holding.opening?.units).toBe("1");
-    expect(built.proposal.priceTrackingWarning).toMatch(/símbolo de mercado/i);
+    // The value-only warning must NOT invite assigning a symbol: a real quote
+    // over the 1-unit encoding would revalue the holding to one share's NAV.
+    expect(built.proposal.priceTrackingWarning).toContain("1 participación");
+    expect(built.proposal.priceTrackingWarning).not.toContain("hasta asignarle uno");
+    store.close();
+  });
+
+  test("blank-string optionals from the model do not re-open the dead end", async () => {
+    const store = await seedWorkspace();
+    const quote = vi.fn(async () => "999");
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "fund",
+        isin: "",
+        name: "Fondo con blancos",
+        openingValueMinor: 574_48,
+        pricePerUnit: "",
+        providerSymbol: "  ",
+        units: "",
+      },
+      TODAY,
+      quote,
+    );
+    // A blank symbol is NO symbol: no quote round-trip, value-only applies.
+    expect(quote).not.toHaveBeenCalled();
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.impact.deltaMinor).toBe(574_48);
+    expect(built.proposal.holding.opening?.units).toBe("1");
+    store.close();
+  });
+
+  test("a quote the resolver cannot read fails honestly, like no quote at all", async () => {
+    const store = await seedWorkspace();
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "crypto",
+        name: "Microcoin",
+        openingValueMinor: 100_00,
+        providerSymbol: "microcoin",
+      },
+      TODAY,
+      async () => "1.2e-8",
+    );
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toMatch(/cotización/i);
     store.close();
   });
 

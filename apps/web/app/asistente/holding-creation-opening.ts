@@ -70,6 +70,13 @@ export type OpeningResolution =
       opening: OpeningPlan | null;
       /** Informative, never blocking: the declared terms do not add up. */
       mismatchWarning?: string;
+      /**
+       * Set when the opening is the 1-participación encoding of a value-only
+       * declaration (#1325) — the card's tracking warning must then STOP inviting
+       * the user to assign a symbol, because a real quote would revalue the fake
+       * unit to a single share's NAV.
+       */
+      valueOnly?: true;
     }
   | { ok: false; error: string };
 
@@ -175,6 +182,7 @@ export function resolveHoldingCreationOpening(
         valueMinor: netMinor,
         ...(fees === undefined ? {} : { feesMinor: fees }),
       },
+      valueOnly: true,
     };
   }
 
