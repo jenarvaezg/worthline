@@ -22,8 +22,8 @@ Run the fast verification gate (inner-loop and default CI check):
 bun run verify
 ```
 
-`verify` runs `typecheck` + `biome ci` + `test` without invoking a full
-`next build`. Typecheck and test are orchestrated by Turborepo, so unchanged
+`verify` runs `typecheck` + `typecheck:e2e` + `biome ci` + `test` without invoking
+a full `next build`. Typecheck and test are orchestrated by Turborepo, so unchanged
 packages are skipped across runs ("FULL TURBO" cache hit). Biome (lint + format)
 runs at the repo root.
 

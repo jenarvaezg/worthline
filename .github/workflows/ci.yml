@@ -100,6 +100,13 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      # `turbo run typecheck` solo cubre workspaces, y `e2e/` no lo es: su
+      # tsconfig lo lee Playwright, que compila con esbuild y borra los tipos
+      # sin comprobarlos (#1274). Este paso es el único que pone los specs y los
+      # configs de Playwright bajo el compilador.
+      - name: Typecheck e2e tree
+        run: bun run typecheck:e2e
+
       - name: Biome (lint + format)
         run: bun run lint
 

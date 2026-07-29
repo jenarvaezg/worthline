@@ -3,8 +3,13 @@
 ## Scripts
 
 - `bun run verify` — fast inner-loop and default CI gate.
-  Runs `typecheck` → `biome ci` → `test`.
+  Runs `typecheck` → `typecheck:e2e` → `biome ci` → `test`.
   Does **not** run `next build`.
+- `bun run typecheck:e2e` — `tsc --noEmit -p tsconfig.e2e.json`.
+  Separate step because `typecheck` is `turbo run typecheck`, i.e. the per-workspace
+  task, and the `e2e/` tree is not a workspace: its tsconfig is only read by
+  Playwright, which compiles with esbuild — types erased, never checked (#1274).
+  Bare `tsc`, so it stays outside the Turbo cache.
 - `bun run lint` — `biome ci` (lint + format check).
 - `bun run format` — `biome format --write .` (fix formatting locally).
 - `bun run build` — full production gate, including `apps/web`'s `bun --bun next build`.
