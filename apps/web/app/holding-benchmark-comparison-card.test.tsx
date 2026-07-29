@@ -51,5 +51,10 @@ describe("HoldingBenchmarkComparisonCard", () => {
 
     expect(markup).toContain("Sin datos del índice todavía");
     expect(markup).not.toContain("pp/año");
+    // Even the empty card keeps a name that assistive tech can read (#1275).
+    const card =
+      /<div[^>]*class="benchmarkCard benchmarkEmpty"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(card).toContain('role="group"');
+    expect(card).toContain('aria-label="Comparación con MSCI World"');
   });
 });

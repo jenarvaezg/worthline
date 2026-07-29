@@ -63,6 +63,13 @@ export default function FormSubmitScrollKeeper() {
     return () => document.removeEventListener("submit", onSubmit, true);
   }, []);
 
+  // `search` is a deliberate re-run trigger, not a value the effect reads (#1275).
+  // Mutations routinely land back on the SAME pathname with a different query
+  // (?ok=…, filters, ?anchor=…); with only `pathname` in the list the effect would
+  // not re-run and the saved scroll would never be restored — the whole point of
+  // this island. Biome's fix is tagged unsafe (so `check --write` leaves it
+  // alone), but applying it by hand would delete that behaviour.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `search` is an intentional re-run trigger (see the comment above); dropping it breaks scroll restoration on same-pathname, query-only navigations.
   useEffect(() => {
     const saved = readSavedScroll();
     removeSavedScroll();

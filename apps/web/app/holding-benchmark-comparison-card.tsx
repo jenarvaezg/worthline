@@ -47,11 +47,13 @@ export default function HoldingBenchmarkComparisonCard({
   result: HoldingBenchmarkComparisonResult;
   trackedIndex: string;
 }) {
+  // The card is a named `group`: on a bare div (role `generic`) ARIA maps no
+  // author name and this label never reached the screen reader (#1275).
   const ariaLabel = `Comparación con ${trackedIndex}`;
 
   if (!result.comparison) {
     return (
-      <div className="benchmarkCard benchmarkEmpty" aria-label={ariaLabel}>
+      <div className="benchmarkCard benchmarkEmpty" role="group" aria-label={ariaLabel}>
         <span>vs {trackedIndex}</span>
         <p>{emptyMessage(result.unavailableReason)}</p>
       </div>
@@ -62,7 +64,7 @@ export default function HoldingBenchmarkComparisonCard({
   const sign = comparison.realAnnualGrowth >= 0 ? "pos" : "neg";
 
   return (
-    <div className="benchmarkCard" aria-label={ariaLabel}>
+    <div className="benchmarkCard" role="group" aria-label={ariaLabel}>
       <div className="benchmarkVerdict">
         <span>vs {trackedIndex}</span>
         <strong className={sign}>{formatPpPerYear(comparison.realAnnualGrowth)}</strong>

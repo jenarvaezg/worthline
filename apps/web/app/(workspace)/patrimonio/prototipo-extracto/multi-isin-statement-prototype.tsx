@@ -272,7 +272,7 @@ export default function MultiIsinStatementPrototype() {
             que puede crearse con búsqueda FAKE y lo que queda fuera. No hay datos reales
             de broker en este prototipo.
           </p>
-          <div className={styles.fixtureMeta} aria-label="Forma del fichero">
+          <div className={styles.fixtureMeta} role="group" aria-label="Forma del fichero">
             <span>CRLF</span>
             <span>dd/mm/yyyy</span>
             <span>coma decimal</span>
@@ -339,7 +339,9 @@ export default function MultiIsinStatementPrototype() {
             </div>
             <span>{FIXTURE_LINES.length - 1} órdenes</span>
           </div>
-          <pre className={styles.fixtureCode} aria-label="Contenido del CSV sintético">
+          {/* No aria-label here: <pre> maps no author name, and the panel is
+              already named by its visible "Texto del fichero" heading (#1275). */}
+          <pre className={styles.fixtureCode}>
             {FIXTURE_LINES.map((line, index) => (
               <code key={line}>
                 {line}

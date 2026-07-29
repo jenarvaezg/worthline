@@ -239,7 +239,8 @@ export function CurrentStateDebtFields({
         </div>
       )}
 
-      <div className="debtBaselineTimeline" aria-label="Alcance histórico">
+      {/* `group` so the name is mapped — `generic` ignores it (#1275). */}
+      <div className="debtBaselineTimeline" role="group" aria-label="Alcance histórico">
         <div>
           <span>Antes de hoy</span>
           <strong>Sin saldos inventados</strong>

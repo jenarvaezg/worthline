@@ -39,9 +39,16 @@ This is the single most important step. Every change must pass:
 bun run verify
 ```
 
-`verify` runs `typecheck` → `typecheck:e2e` → `biome ci` → `test` (Turborepo-cached
+`verify` runs `typecheck` → `typecheck:e2e` → `lint` → `test` (Turborepo-cached
 for typecheck/test; the e2e typecheck is bare `tsc`, since `e2e/` is not a workspace).
 Biome covers lint and format in one step. Run `bun run format` to auto-fix formatting locally.
+
+`bun run lint` is `biome ci --error-on-warnings`: **a warning fails the gate**. This is
+deliberate (#1275). Warnings that do not break CI are not read, and 22 of them piled up
+over months — 21 of which were `aria-label`s on roleless elements, i.e. labels written to
+be announced that never reached a screen reader. There is no warning tier left to sit in:
+fix the finding, or suppress it with a `biome-ignore` comment that states why.
+Suppressions themselves are checked (`suppressions/unused`), so a stale one also fails.
 
 For anything that touches `apps/web` routes or pages, also run the full gate:
 

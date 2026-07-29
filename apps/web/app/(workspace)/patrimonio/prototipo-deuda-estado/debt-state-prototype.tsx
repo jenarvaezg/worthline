@@ -276,7 +276,7 @@ export default function DebtStatePrototype() {
             </div>
           </dl>
 
-          <div className={styles.timeline} aria-label="Alcance histórico">
+          <div className={styles.timeline} role="group" aria-label="Alcance histórico">
             <div>
               <span>Antes de hoy</span>
               <strong>Sin saldos inventados</strong>

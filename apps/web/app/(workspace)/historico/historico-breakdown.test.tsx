@@ -244,6 +244,11 @@ describe("HistoricoBreakdown render", () => {
     expect(html).toContain("Mercado");
     expect(html).toContain("Ahorro neto");
     expect(html).toContain("historicoBreakdownBand--payouts");
+    // #1275: the legend's name only reaches assistive tech if the wrapper has a
+    // role that maps it — `generic` (a bare <div>) does not.
+    const legend = /<div[^>]*class="decompositionLegend[^>]*>/.exec(html)?.[0] ?? "";
+    expect(legend).toContain('role="group"');
+    expect(legend).toContain('aria-label="Bandas del desglose"');
   });
 
   test("omits cobros from the legend when no payouts exist", () => {

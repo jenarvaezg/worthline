@@ -2,10 +2,20 @@
  * Loading skeleton for the dashboard body while the heavy data streams in.
  * Matches the grid structure of the real dashboard so the shell does not
  * reflow when content arrives.
+ *
+ * The root is a `status` region, not a bare <div>: ARIA maps no author name onto
+ * the implicit `generic` role, so on a plain div the "Cargando…" label never
+ * reached assistive tech at all. As `status` the name is exposed (verified in
+ * Chromium's a11y tree) and the frame is a polite live region (#1275).
  */
 export default function DashboardSkeleton() {
   return (
-    <div className="dashGrid" aria-busy="true" aria-label="Cargando panel de resumen">
+    <div
+      className="dashGrid"
+      role="status"
+      aria-busy="true"
+      aria-label="Cargando panel de resumen"
+    >
       <section className="summaryBand heroPanel">
         <div className="resumenHeader">
           <div className="framingTabs">

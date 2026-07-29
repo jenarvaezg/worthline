@@ -162,4 +162,28 @@ describe("DrilldownPanel — Papelera vs retired holdings (#268)", () => {
     expect(markup).toContain("<rect");
     expect(markup).toContain('class="drillTotalLine"');
   });
+
+  // #1275: both wrappers carried an aria-label on a bare <div>, where the
+  // implicit `generic` role maps no author name and the label was dropped.
+  test("the stack legend and the holdings grid are named groups", () => {
+    const drilldown = buildLiquidDrilldown({
+      currentHoldingIds: ["a_live"],
+      rows: [
+        assetRow("2026-06-01", "a_live", "Cuenta", 100, "cash"),
+        assetRow("2026-06-03", "a_live", "Cuenta", 200, "cash"),
+      ],
+    });
+
+    const markup = renderToStaticMarkup(
+      <DrilldownPanel backHref="/" currency="EUR" drilldown={drilldown} />,
+    );
+
+    const legend = /<div[^>]*class="decompositionLegend"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(legend).toContain('role="group"');
+    expect(legend).toContain('aria-label="Capas del grupo líquido"');
+
+    const multiples = /<div[^>]*class="drillMultiples"[^>]*>/.exec(markup)?.[0] ?? "";
+    expect(multiples).toContain('role="group"');
+    expect(multiples).toContain('aria-label="Posiciones del grupo líquido"');
+  });
 });
