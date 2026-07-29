@@ -21,5 +21,8 @@
       "@scripts/*": ["./scripts/*"]
     }
   },
-  "include": ["e2e/**/*.ts", "playwright.config.ts"]
+  // Todo el árbol e2e y los CUATRO configs de Playwright (main, first-run, demo,
+  // routing). Este proyecto es lo que corre `bun run typecheck:e2e` en CI —
+  // `turbo run typecheck` no lo alcanza porque `e2e/` no es un workspace (#1274).
+  "include": ["e2e/**/*.ts", "playwright.config.ts", "playwright.*.config.ts"]
 }

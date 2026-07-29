@@ -17,7 +17,7 @@
   "scripts": {
     "dev": "bun run --filter @worthline/web dev",
     "build": "turbo run build",
-    "verify": "turbo run typecheck && biome ci && bun run test",
+    "verify": "turbo run typecheck && bun run typecheck:e2e && biome ci && bun run test",
     "lint": "biome ci",
     "test": "turbo run test --concurrency=1",
     "test:coverage": "turbo run test:coverage --concurrency=1",
@@ -39,6 +39,7 @@
     "sync:push": "tsx scripts/sync-push.ts",
     "subset:fonts": "scripts/subset-web-fonts.sh",
     "typecheck": "turbo run typecheck",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "format": "biome format --write .",
     "prepare": "husky || true"
   },

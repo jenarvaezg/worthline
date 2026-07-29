@@ -1,4 +1,4 @@
-import { createControlPlaneStore } from "@worthline/db";
+import { createAdminControlPlaneStore } from "@worthline/db";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 import { captureValuedNetWorthSnapshot } from "@worthline/domain";
 
@@ -18,7 +18,12 @@ export default async function globalSetup(): Promise<void> {
     );
   }
 
-  const controlPlane = await createControlPlaneStore({ url: `file:${controlPlanePath}` });
+  // Curation writes live off the narrow request-scoped port on purpose (#1123):
+  // seeding a catalog row is an admin capability, so it gets asked for by name
+  // instead of cast onto the base store.
+  const controlPlane = await createAdminControlPlaneStore({
+    url: `file:${controlPlanePath}`,
+  });
   await controlPlane.createGlobalExposureProfile({
     identity: { priceProvider: "yahoo", providerSymbol: BENCHMARK_ETF_SYMBOL },
     breakdowns: { assetClass: { equity: "1" } },

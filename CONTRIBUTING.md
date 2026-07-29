@@ -39,7 +39,8 @@ This is the single most important step. Every change must pass:
 bun run verify
 ```
 
-`verify` runs `typecheck` → `biome ci` → `test` (Turborepo-cached for typecheck/test).
+`verify` runs `typecheck` → `typecheck:e2e` → `biome ci` → `test` (Turborepo-cached
+for typecheck/test; the e2e typecheck is bare `tsc`, since `e2e/` is not a workspace).
 Biome covers lint and format in one step. Run `bun run format` to auto-fix formatting locally.
 
 For anything that touches `apps/web` routes or pages, also run the full gate:
