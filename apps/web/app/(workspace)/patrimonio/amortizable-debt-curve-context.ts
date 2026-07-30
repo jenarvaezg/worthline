@@ -1,5 +1,5 @@
 import type { WorthlineStore } from "@worthline/db";
-import type { AmortizationPlanInput } from "@worthline/domain";
+import type { AmortizationPlanInput, EarlyRepayment } from "@worthline/domain";
 
 import type { RecalibrationRevision } from "./recalibrate-debt";
 
@@ -14,6 +14,12 @@ export interface AmortizableDebtCurveReads {
     ReturnType<WorthlineStore["liabilities"]["readBalanceRebaselines"]>
   >;
   revisions: readonly RecalibrationRevision[];
+  /**
+   * The plan's early repayments (#1292). Needed by anything that VALUES the curve
+   * rather than only re-deriving its rate/end date — a lump moves the balance, so
+   * omitting them would price the debt above where it actually stands.
+   */
+  earlyRepayments: readonly EarlyRepayment[];
   currentBalanceMinor: number;
 }
 
@@ -27,9 +33,13 @@ export async function readAmortizableDebtCurveContext(
     store.liabilities.readLiabilities(),
   ]);
   const liability = liabilities.find((row) => row.id === liabilityId);
-  const revisions = plan
-    ? await store.liabilities.readInterestRateRevisions(plan.id)
-    : [];
+  // Both hang off the plan id and are independent of each other — one wave.
+  const [revisions, earlyRepayments] = plan
+    ? await Promise.all([
+        store.liabilities.readInterestRateRevisions(plan.id),
+        store.liabilities.readEarlyRepayments(plan.id),
+      ])
+    : [[], []];
 
   const planInput: AmortizationPlanInput | undefined = plan
     ? {
@@ -44,6 +54,11 @@ export async function readAmortizableDebtCurveContext(
   return {
     balanceRebaselines: rebaselines,
     currentBalanceMinor: liability?.currentBalance.amountMinor ?? 0,
+    earlyRepayments: earlyRepayments.map((repayment) => ({
+      amountMinor: repayment.amountMinor,
+      mode: repayment.mode,
+      repaymentDate: repayment.repaymentDate,
+    })),
     ...(planInput ? { plan: planInput } : {}),
     revisions,
   };

@@ -267,12 +267,15 @@ export {
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
+export type { AccruedInterestAtDate } from "./debt-accrual";
+export { accruedInterestAtDate } from "./debt-accrual";
 export type {
   DebtBalanceAnchor,
   DebtBalanceAtDateInput,
   EffectiveAmortizationPlan,
 } from "./debt-balance";
 export {
+  debtAccrualAtDate,
   debtBalanceAtDate,
   effectiveAmortizationPlan,
   storedBalanceGovernsDebtFigure,

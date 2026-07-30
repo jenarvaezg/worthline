@@ -34,7 +34,12 @@ import type {
   EarlyRepaymentRecord,
   InterestRateRevisionRecord,
 } from "@worthline/db";
-import type { DebtModel, EarlyRepaymentMode, ValuationCadence } from "@worthline/domain";
+import type {
+  AccruedInterestAtDate,
+  DebtModel,
+  EarlyRepaymentMode,
+  ValuationCadence,
+} from "@worthline/domain";
 import {
   daysBetween,
   firstCuota,
@@ -125,6 +130,7 @@ const DEBT_MODEL_LABELS: Record<DebtModel, string> = {
 export function DebtModelSection({
   amortizationPlan,
   balanceAnchors,
+  currentDebtAccrual,
   currentModelledBalanceMinor,
   debtModel,
   earlyRepayments,
@@ -137,6 +143,9 @@ export function DebtModelSection({
 }: {
   amortizationPlan: AmortizationPlanRecord | null;
   balanceAnchors: BalanceAnchorRecord[];
+  /** Interest accrued since the last cuota (#1292) — what separates the modelled
+   *  capital from the settlement amount the bank shows. Null with no running cycle. */
+  currentDebtAccrual: AccruedInterestAtDate | null;
   /** Current modelled balance as of today (ADR 0056, PRD #670 S3, #678) — shown
    *  beside "Recalibrar con saldo real" so drift against the bank's real figure
    *  is visible at the moment of repair. Null until a plan exists. */
@@ -208,6 +217,7 @@ export function DebtModelSection({
 
       {debtModel === "amortizable" ? (
         <AmortizablePlanEditor
+          currentDebtAccrual={currentDebtAccrual}
           currentModelledBalanceMinor={currentModelledBalanceMinor}
           currentUrl={currentUrl}
           earlyRepayments={earlyRepayments}
@@ -289,6 +299,7 @@ function PlanFields({ max, values }: { max: string; values: Record<string, strin
  * its early repayments (amortización anticipada, PRD #146 / #150).
  */
 function AmortizablePlanEditor({
+  currentDebtAccrual,
   currentModelledBalanceMinor,
   currentUrl,
   earlyRepayments,
@@ -299,6 +310,7 @@ function AmortizablePlanEditor({
   rateRevisions,
   today,
 }: {
+  currentDebtAccrual: AccruedInterestAtDate | null;
   currentModelledBalanceMinor: number | null;
   currentUrl: string;
   earlyRepayments: EarlyRepaymentRecord[];
@@ -413,10 +425,39 @@ function AmortizablePlanEditor({
                 { amountMinor: currentModelledBalanceMinor, currency: "EUR" },
                 privacyMode,
               )}
-            </strong>
-            . Si el saldo real de tu banco difiere, decláralo con su fecha para recalibrar
-            el plan hacia delante — el pasado no se toca.
+            </strong>{" "}
+            — capital pendiente. Si el saldo real de tu banco difiere, decláralo con su
+            fecha para recalibrar el plan hacia delante — el pasado no se toca.
           </p>
+          {/* The two magnitudes, side by side, at the moment of repair (#1292):
+              the bank shows the settlement amount and this form writes PRINCIPAL,
+              so pasting the former buries accrued interest inside the capital and
+              ripples it into every snapshot from that date. */}
+          {currentDebtAccrual && currentDebtAccrual.accruedInterestMinor > 0 ? (
+            <p className="infoNote">
+              Tu banco suele enseñar el <strong>importe de liquidación</strong>: ese mismo
+              capital más el interés corrido desde la última cuota (
+              {currentDebtAccrual.cycleStartDate}), unos{" "}
+              {formatMoneyMinorPrivacy(
+                {
+                  amountMinor: currentDebtAccrual.accruedInterestMinor,
+                  currency: "EUR",
+                },
+                privacyMode,
+              )}{" "}
+              a día de hoy — es decir, cerca de{" "}
+              {formatMoneyMinorPrivacy(
+                {
+                  amountMinor: currentDebtAccrual.settlementEstimateMinor,
+                  currency: "EUR",
+                },
+                privacyMode,
+              )}
+              . Las dos cifras son correctas. Aquí se declara el{" "}
+              <strong>capital pendiente</strong>: si pegas el importe de liquidación, esos
+              intereses se quedan dentro del capital y ya no salen.
+            </p>
+          ) : null}
           <form
             action={recalibrateDebtBalanceAction}
             aria-label="Recalibrar saldo real"

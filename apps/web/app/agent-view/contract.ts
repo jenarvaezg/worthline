@@ -996,6 +996,35 @@ export interface AgentViewAmortizationSchedule {
   /** The date the effective plan takes over (a re-baseline's baseline, or the plan's disbursement). */
   effectiveFrom: string;
   frontiers: AgentViewAmortizationScheduleFrontier[];
+  /** Principal vs the figure the user's bank shows (#1292); null with no running cycle. */
+  settlement: AgentViewDebtSettlement | null;
+}
+
+/**
+ * The two magnitudes of an amortizable debt on the trace's as-of date (#1292):
+ * the `principal` worthline models and paints everywhere, and the
+ * `settlementEstimate` a bank quotes — principal plus the interest accrued since
+ * the last cuota. Both are correct; comparing across them is what makes a
+ * healthy loan look like a bug.
+ *
+ * Served so a reading agent never rebuilds this arithmetic in tokens (the lesson
+ * of #1034): NORMALIZE the magnitude against a user-cited figure before
+ * diagnosing drift. `accruedInterest` is an estimate — the day-count basis and
+ * value-dating are the bank's, so the last cents will differ.
+ */
+export interface AgentViewDebtSettlement {
+  /** The date these figures are read on, `YYYY-MM-DD`. */
+  asOf: string;
+  /** Outstanding principal — the app's figure, on the loan's own terms. */
+  principal: AgentViewMoney;
+  /** Interest run up since `lastPaymentDate`. An estimate. */
+  accruedInterest: AgentViewMoney;
+  /** `principal + accruedInterest` — what a bank's "pending" figure compares to. */
+  settlementEstimate: AgentViewMoney;
+  /** Start of the running cycle: the last cuota, or the disbursement in the stub. */
+  lastPaymentDate: string;
+  /** The cuota that closes the running cycle. */
+  nextPaymentDate: string;
 }
 
 /**

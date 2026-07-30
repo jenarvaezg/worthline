@@ -15,7 +15,7 @@
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
-import { type Clock, fixedClock } from "@worthline/domain";
+import { type Clock, fixedClock, formatMoneyInput } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { recalibrateDebtBalanceAction } from "./actions";
 
@@ -395,6 +395,67 @@ describe("recalibrateDebtBalanceAction — demo write-gating", () => {
     );
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(DEMO_DISABLED_MESSAGE);
     expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+
+    store.close();
+  });
+});
+
+/**
+ * The settlement-vs-principal warning (#1292). A bank quotes principal + interest
+ * accrued since the last cuota; this form persists PRINCIPAL. Pasting the former
+ * writes that interest into the capital, where it ripples into every snapshot
+ * from that date and never comes back out. The action warns and still writes —
+ * a balance in that window can be a legitimate repair.
+ */
+describe("recalibrateDebtBalanceAction — names the magnitude the user pasted (#1292)", () => {
+  // Five days into the 2026-06-15 → 2026-07-15 cycle, so interest has accrued.
+  const BALANCE_DATE = "2026-06-20";
+
+  async function recalibrateWith(store: WorthlineStore, overMinor: number) {
+    const principalMinor = await store.liabilities.debtBalanceAtDate(
+      "mortgage",
+      BALANCE_DATE,
+    );
+    const url = await runAction(
+      form({
+        id: "mortgage",
+        rbBalanceDate: BALANCE_DATE,
+        rbOutstandingBalance: formatMoneyInput(principalMinor + overMinor),
+      }),
+      store,
+      CLOCK,
+    );
+    return { principalMinor, url };
+  }
+
+  test("warns when the declared figure sits one accrual above the modelled capital", async () => {
+    const store = await seedAmortizableMortgage();
+    // ~148.500 € at 3 % accrues ~371 € a month, ~62 € in five days: 40 € over
+    // the principal is squarely inside the settlement window.
+    const { url } = await recalibrateWith(store, 40_00);
+
+    expect(url).toContain("debt_recalibrated_settlement");
+    // The warning is not a rejection: the balance the user declared went in.
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+
+    store.close();
+  });
+
+  test("stays quiet on genuine drift, far above what accrual explains", async () => {
+    const store = await seedAmortizableMortgage();
+    const { url } = await recalibrateWith(store, 5_000_00);
+
+    expect(url).toContain("debt_recalibrated");
+    expect(url).not.toContain("debt_recalibrated_settlement");
+
+    store.close();
+  });
+
+  test("stays quiet when the declared balance is below the modelled capital", async () => {
+    const store = await seedAmortizableMortgage();
+    const { url } = await recalibrateWith(store, -1_000_00);
+
+    expect(url).not.toContain("debt_recalibrated_settlement");
 
     store.close();
   });

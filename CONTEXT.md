@@ -351,6 +351,20 @@ back as an honesty check) — amortizing forward only from a **balance
 re-baseline**, the original signing date kept as optional metadata and the years
 before left unmodelled (ADR 0056).
 
+**Settlement amount** (importe de liquidación):
+What a bank shows as "pending" on a loan: the **outstanding principal** plus the
+interest accrued since the last cuota. Worthline's figure — everywhere, from net
+worth to the cuadro — is the principal; the settlement amount is derived on demand
+and shown as a labelled estimate beside it (#1292). Both are correct, and the gap
+between them (a fraction of one cuota) is what makes a healthy loan look like a
+bug when the user compares screens. The accrual prorates the running cuota's own
+interest by elapsed days: no second day-count basis is introduced, so it can never
+disagree with the schedule on screen. A **balance re-baseline** takes PRINCIPAL —
+declaring the settlement amount there buries the accrued interest in the capital,
+where it ripples forward and never comes out; the surface says so, warns when a
+declared figure has that shape, and still lets it through.
+_Avoid_: "saldo total", which names neither.
+
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
 specific date. The system recalculates the monthly payment from that date forward
