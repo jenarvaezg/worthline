@@ -27,22 +27,28 @@ import {
   isValueUpdateEligible,
   storedBalanceGovernsDebtFigure,
 } from "@worthline/domain";
-import { baseUrl, editUrl, findAsset, findLiability } from "./action-helpers";
+import {
+  baseUrl,
+  boardAnchorResult,
+  findAsset,
+  findLiability,
+  holdingBoardAnchor,
+} from "./action-helpers";
 
 export async function updateAssetValuationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  return formAction<number>({
+  return formAction<number, string>({
     datedFact: false,
     missingId: "Identificador de activo no encontrado.",
     missingIdUrl: baseUrl,
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const currentValue = parseMoneyMinorField(formData, "currentValue");
       if (currentValue === null) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(`/patrimonio/${id}/editar`, {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "edit",
             message: "El valor del activo no es válido.",
             values: preserveFields(formData, ["currentValue"]),
@@ -71,15 +77,15 @@ export async function updateAssetValuationAction(
       } else {
         await store.assets.updateAssetValuation(id, currentValue);
       }
-      return { ok: true };
+      return boardAnchorResult(await holdingBoardAnchor(store, id));
     },
-    onError: ({ id, formData, error }) =>
-      errorRedirectUrl(`/patrimonio/${id}/editar`, {
+    onError: ({ formData, error }) =>
+      errorRedirectUrl(baseUrl(formData), {
         formId: "edit",
         message: error,
         values: preserveFields(formData, ["currentValue"]),
       }),
-    onSuccess: ({ id }) => successRedirectUrl("/patrimonio", "saved", id),
+    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
   })(formData, ..._testArgs);
 }
 
@@ -97,16 +103,16 @@ export async function updateLiabilityBalanceAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  return formAction<number>({
+  return formAction<number, string>({
     datedFact: false,
     missingId: "Identificador de deuda no encontrado.",
     missingIdUrl: baseUrl,
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const balance = parseMoneyMinorField(formData, "balance");
       if (balance === null) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(`/patrimonio/${id}/editar`, {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "edit",
             message: "El saldo de la deuda no es válido.",
             values: preserveFields(formData, ["balance"]),
@@ -137,15 +143,15 @@ export async function updateLiabilityBalanceAction(
       }
 
       await store.liabilities.updateLiabilityBalance(id, balance);
-      return { ok: true };
+      return boardAnchorResult(await holdingBoardAnchor(store, id));
     },
-    onError: ({ id, formData, error }) =>
-      errorRedirectUrl(`/patrimonio/${id}/editar`, {
+    onError: ({ formData, error }) =>
+      errorRedirectUrl(baseUrl(formData), {
         formId: "edit",
         message: error,
         values: preserveFields(formData, ["balance"]),
       }),
-    onSuccess: ({ id }) => successRedirectUrl("/patrimonio", "saved", id),
+    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
   })(formData, ..._testArgs);
 }
 
@@ -236,12 +242,12 @@ export async function setAppreciationRateAction(
   return formAction({
     datedFact: false,
     missingId: "Identificador de activo no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const parsed = parseAppreciationRateStrict(formData);
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "rate",
             message: parsed.error,
             values: preserveFields(formData, ["rate"]),
@@ -268,9 +274,9 @@ export async function setAppreciationRateAction(
       });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "rate", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "rate_saved", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "rate", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "rate_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -285,7 +291,7 @@ export async function addValuationAnchorAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "anchor",
             message: parsed.error,
             values: preserveFields(formData, [
@@ -309,9 +315,9 @@ export async function addValuationAnchorAction(
       await executeAddValuationAnchorCommand(store, { input: parsed, today });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "anchor", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "anchor_added", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "anchor", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_added"),
   })(formData, ..._testArgs);
 }
 
@@ -327,7 +333,7 @@ export async function updateValuationAnchorAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `anchor-${extra.anchorId}`,
             message: parsed.error,
             values: preserveFields(formData, [
@@ -366,11 +372,11 @@ export async function updateValuationAnchorAction(
       return { ok: true };
     },
     onError: ({ id, extra, error }) =>
-      errorRedirectUrl(editUrl(id), {
+      errorRedirectUrl(baseUrl(formData), {
         formId: `anchor-${extra.anchorId}`,
         message: error,
       }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "anchor_saved", id),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -401,8 +407,8 @@ export async function deleteValuationAnchorAction(
       }
       return { ok: true };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "anchor_deleted", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_deleted"),
   })(formData, ..._testArgs);
 }
 
@@ -413,12 +419,12 @@ export async function setValuationCadenceAction(
   return formAction({
     datedFact: false,
     missingId: "Identificador de deuda no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const parsed = parseValuationCadenceStrict(formData);
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "cadence",
             message: parsed.error,
           }),
@@ -436,9 +442,9 @@ export async function setValuationCadenceAction(
       await store.command.setLiabilityValuationCadence(id, cadence, { today });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "cadence", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "valuation_cadence_saved", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "cadence", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "valuation_cadence_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -449,12 +455,12 @@ export async function setHousingValuationCadenceAction(
   return formAction({
     datedFact: false,
     missingId: "Identificador de activo no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const parsed = parseValuationCadenceStrict(formData);
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "cadence",
             message: parsed.error,
           }),
@@ -480,8 +486,8 @@ export async function setHousingValuationCadenceAction(
       });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "cadence", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "valuation_cadence_saved", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "cadence", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "valuation_cadence_saved"),
   })(formData, ..._testArgs);
 }

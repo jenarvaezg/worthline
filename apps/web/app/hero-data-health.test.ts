@@ -1,6 +1,20 @@
 import type { DataQualitySignal, WarningOverride } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 import { HERO_HEALTH_MAX_ALERTS, selectHeroHealth } from "./hero-data-health";
+import { holdingPublicIdIndex } from "./holding-route";
+
+/**
+ * The public-id registry the fix links are built from (#1318). Every `h*` id the
+ * fixtures use is registered; `s*` (connected sources) and `sc*` (scopes) are
+ * not holdings and link elsewhere.
+ */
+const publicIds = holdingPublicIdIndex(
+  Array.from({ length: 12 }, (_, i) => ({
+    entityId: `h${i}`,
+    entityType: "holding" as const,
+    publicId: `wl_hld_h${i}`,
+  })),
+);
 
 /** Build a signal with sensible defaults; override per-case. */
 function signal(overrides: Partial<DataQualitySignal>): DataQualitySignal {
@@ -21,7 +35,7 @@ function signal(overrides: Partial<DataQualitySignal>): DataQualitySignal {
 
 describe("selectHeroHealth", () => {
   it("renders nothing when there are no signals (clean)", () => {
-    const view = selectHeroHealth([], []);
+    const view = selectHeroHealth([], [], publicIds);
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
     expect(view.hiddenCount).toBe(0);
@@ -39,10 +53,11 @@ describe("selectHeroHealth", () => {
         }),
       ],
       [],
+      publicIds,
     );
     expect(view.impact).toBe("error");
     expect(view.alerts).toHaveLength(1);
-    expect(view.alerts[0]?.href).toBe("/patrimonio/h1/editar");
+    expect(view.alerts[0]?.href).toBe("/patrimonio/wl_hld_h1/editar");
   });
 
   it("is a warning when only medium/low signals are present", () => {
@@ -55,6 +70,7 @@ describe("selectHeroHealth", () => {
         }),
       ],
       [],
+      publicIds,
     );
     expect(view.impact).toBe("warning");
     expect(view.alerts).toHaveLength(1);
@@ -73,7 +89,7 @@ describe("selectHeroHealth", () => {
       code: "STALE_MANUAL_VALUE",
       severity: "medium",
     });
-    const view = selectHeroHealth([medium, high], []);
+    const view = selectHeroHealth([medium, high], [], publicIds);
     expect(view.impact).toBe("error");
     expect(view.alerts.map((a) => a.severity)).toEqual(["high"]);
   });
@@ -92,7 +108,7 @@ describe("selectHeroHealth", () => {
       code: "MISSING_PROVIDER_SYMBOL",
       severity: "medium",
     });
-    const view = selectHeroHealth([stale, warn], []);
+    const view = selectHeroHealth([stale, warn], [], publicIds);
     expect(view.alerts.map((a) => a.key)).toEqual([warn.naturalKey, stale.naturalKey]);
   });
 
@@ -108,6 +124,7 @@ describe("selectHeroHealth", () => {
         }),
       ],
       [overridden],
+      publicIds,
     );
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
@@ -126,6 +143,7 @@ describe("selectHeroHealth", () => {
         }),
       ],
       [{ code: "FAILED_PRICE", entityId: "h1" }],
+      publicIds,
     );
     expect(view.impact).toBe("error");
     expect(view.alerts).toHaveLength(1);
@@ -141,7 +159,7 @@ describe("selectHeroHealth", () => {
         severity: "high",
       }),
     );
-    const view = selectHeroHealth(many, []);
+    const view = selectHeroHealth(many, [], publicIds);
     expect(view.alerts).toHaveLength(HERO_HEALTH_MAX_ALERTS);
     expect(view.hiddenCount).toBe(2);
   });
@@ -154,7 +172,7 @@ describe("selectHeroHealth", () => {
           code: "ZERO_VALUE_ASSET",
           affected: { id: "h1", label: "A", object: "holding" },
         },
-        "/patrimonio/h1/editar",
+        "/patrimonio/wl_hld_h1/editar",
       ],
       [
         {
@@ -171,7 +189,7 @@ describe("selectHeroHealth", () => {
           severity: "medium",
           affected: { id: "h1", label: "A", object: "holding" },
         },
-        "/patrimonio/h1/editar",
+        "/patrimonio/wl_hld_h1/editar",
       ],
       [
         {
@@ -188,7 +206,7 @@ describe("selectHeroHealth", () => {
           code: "MISSING_DEBT_MODEL",
           affected: { id: "h9", label: "Hipoteca", object: "holding" },
         },
-        "/patrimonio/h9/editar",
+        "/patrimonio/wl_hld_h9/editar",
       ],
       [
         {
@@ -200,7 +218,7 @@ describe("selectHeroHealth", () => {
       ],
     ];
     for (const [partial, expectedHref] of cases) {
-      const view = selectHeroHealth([signal(partial)], []);
+      const view = selectHeroHealth([signal(partial)], [], publicIds);
       expect(view.alerts[0]?.href, `${partial.code}`).toBe(expectedHref);
     }
   });
@@ -226,7 +244,7 @@ describe("selectHeroHealth", () => {
         affected: { id: "sc1", label: "Hogar", object: "scope" },
       }),
     ];
-    const view = selectHeroHealth(nonFigure, []);
+    const view = selectHeroHealth(nonFigure, [], publicIds);
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
   });

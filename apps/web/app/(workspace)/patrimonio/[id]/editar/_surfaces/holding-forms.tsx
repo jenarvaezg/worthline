@@ -26,6 +26,8 @@ type FormAction = (formData: FormData) => void | Promise<void>;
 
 export function AssetEditForm({
   asset,
+  boardHref,
+  currentUrl,
   investment,
   isBinanceHolding = false,
   isCoinCollection = false,
@@ -37,6 +39,10 @@ export function AssetEditForm({
   values,
 }: {
   asset: ManualAsset;
+  /** The board, anchored at this holding's row — the «Cancelar» destination. */
+  boardHref: string;
+  /** The holding's own public `wl_hld_…` URL, where every form here returns. */
+  currentUrl: string;
   investment?: InvestmentAssetFull | null;
   isBinanceHolding?: boolean;
   isCoinCollection?: boolean;
@@ -57,11 +63,7 @@ export function AssetEditForm({
     return (
       <>
         <form action={editAssetAction} className="stackForm">
-          <input
-            name="currentUrl"
-            type="hidden"
-            value={`/patrimonio/${asset.id}/editar`}
-          />
+          <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={asset.id} />
           <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
           <input name="name" type="hidden" value={asset.name} />
@@ -89,7 +91,7 @@ export function AssetEditForm({
 
           <div className="formActions">
             <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
-            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+            <Link href={boardHref}>Cancelar</Link>
           </div>
         </form>
       </>
@@ -100,11 +102,7 @@ export function AssetEditForm({
     return (
       <>
         <form action={updateInvestmentAction} className="stackForm">
-          <input
-            name="currentUrl"
-            type="hidden"
-            value={`/patrimonio/${asset.id}/editar`}
-          />
+          <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="unitSymbol" type="hidden" value={investment.unitSymbol ?? ""} />
 
           <label>
@@ -180,7 +178,7 @@ export function AssetEditForm({
 
           <div className="formActions">
             <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
-            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+            <Link href={boardHref}>Cancelar</Link>
           </div>
         </form>
       </>
@@ -190,7 +188,7 @@ export function AssetEditForm({
   return (
     <>
       <form action={editAssetAction} className="stackForm">
-        <input name="currentUrl" type="hidden" value={`/patrimonio/${asset.id}/editar`} />
+        <input name="currentUrl" type="hidden" value={currentUrl} />
         <input name="id" type="hidden" value={asset.id} />
         <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
 
@@ -261,7 +259,7 @@ export function AssetEditForm({
         {!isInvestment ? (
           <div className="formActions">
             <PendingSubmit pendingLabel="Guardando…">Guardar cambios</PendingSubmit>
-            <Link href={`/patrimonio#${asset.id}`}>Cancelar</Link>
+            <Link href={boardHref}>Cancelar</Link>
           </div>
         ) : null}
       </form>
@@ -277,11 +275,7 @@ export function AssetEditForm({
         // appraisals are additive via HousingValuationSection). Only derived
         // holdings (units × price) hide it (ADR 0006).
         <form action={updateAssetValuationAction} className="stackForm updateValueForm">
-          <input
-            name="currentUrl"
-            type="hidden"
-            value={`/patrimonio/${asset.id}/editar`}
-          />
+          <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={asset.id} />
           <label>
             Valor actual (EUR)
@@ -301,6 +295,8 @@ export function AssetEditForm({
 
 export function LiabilityEditForm({
   assets,
+  boardHref,
+  currentUrl,
   liability,
   members,
   scopeMemberId,
@@ -308,6 +304,10 @@ export function LiabilityEditForm({
   values,
 }: {
   assets: ManualAsset[];
+  /** The board, anchored at this holding's row — the «Cancelar» destination. */
+  boardHref: string;
+  /** The holding's own public `wl_hld_…` URL, where every form here returns. */
+  currentUrl: string;
   liability: Liability;
   members: Member[];
   scopeMemberId: string | undefined;
@@ -324,11 +324,7 @@ export function LiabilityEditForm({
   return (
     <>
       <form action={editAssetAction} className="stackForm">
-        <input
-          name="currentUrl"
-          type="hidden"
-          value={`/patrimonio/${liability.id}/editar`}
-        />
+        <input name="currentUrl" type="hidden" value={currentUrl} />
         <input name="id" type="hidden" value={liability.id} />
         <input name="scopeMemberId" type="hidden" value={scopeMemberId ?? ""} />
         <input name="isLiability" type="hidden" value="true" />
@@ -380,17 +376,13 @@ export function LiabilityEditForm({
 
         <div className="formActions">
           <button type="submit">Guardar cambios</button>
-          <Link href={`/patrimonio#${liability.id}`}>Cancelar</Link>
+          <Link href={boardHref}>Cancelar</Link>
         </div>
       </form>
 
       {showRawBalanceForm ? (
         <form action={updateLiabilityBalanceAction} className="stackForm updateValueForm">
-          <input
-            name="currentUrl"
-            type="hidden"
-            value={`/patrimonio/${liability.id}/editar`}
-          />
+          <input name="currentUrl" type="hidden" value={currentUrl} />
           <input name="id" type="hidden" value={liability.id} />
           <label>
             Saldo pendiente (EUR)

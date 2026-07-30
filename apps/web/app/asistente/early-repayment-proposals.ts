@@ -209,7 +209,11 @@ export async function projectEarlyRepaymentProposal(
   if (existing.some((item) => item.repaymentDate === row.repaymentDate)) {
     return {
       ok: false as const,
-      error: `Esa anticipada ya está registrada: ${liability.name} tiene una del ${formatDayEs(row.repaymentDate)}. No sumo importes ni la duplico; si la cifra registrada es otra, se corrige en /patrimonio/${liability.id}/editar.`,
+      // No id in the URL on purpose (#1318): this text reaches the model, and an
+      // internal `liability_…` id is one it can neither use nor hand to the user
+      // — that is exactly how it ended up asking people to copy ids out of the
+      // address bar. The route is named the way the user navigates it instead.
+      error: `Esa anticipada ya está registrada: ${liability.name} tiene una del ${formatDayEs(row.repaymentDate)}. No sumo importes ni la duplico; si la cifra registrada es otra, se corrige en la ficha de esa deuda, dentro de Patrimonio.`,
     };
   }
 

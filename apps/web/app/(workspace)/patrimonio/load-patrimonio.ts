@@ -22,6 +22,7 @@
  */
 
 import { resolveFxAggregation } from "@web/fx-context";
+import { holdingPublicIdIndex } from "@web/holding-route";
 import type { InvestmentAssetMeta, TrashView, WorthlineStore } from "@worthline/db";
 import type {
   AssetClassResolution,
@@ -100,6 +101,11 @@ export interface LoadPatrimonioResult {
   returnsById: Map<string, HoldingReturnsView>;
   /** Asset ids with at least one recorded operation — the board's fold guard. */
   operatedAssetIds: Set<string>;
+  /**
+   * Public `wl_hld_…` id per internal holding id (#1318) — the board's rows are
+   * links, and a holding is named in a URL only by its public id.
+   */
+  publicIdByHolding: Readonly<Record<string, string>>;
   /** Modelling/data warnings surfaced on the board (minus overridden ones). */
   warnings: DomainWarning[];
   /** Soft-deleted holdings (#268) for the board's papelera. */
@@ -143,6 +149,7 @@ export async function loadPatrimonio(
     returnSnapshotRows,
     payoutRecords,
     payoutSchedules,
+    publicIds,
   ] = await Promise.all([
     store.operations.readAllPriceCacheEntries(),
     store.assets.readInvestmentAssetsWithMeta(),
@@ -152,6 +159,7 @@ export async function loadPatrimonio(
     store.snapshots.readSnapshotHoldings({ kind: "asset", scopeId: "household" }),
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
+    store.agentView.readPublicIds(),
   ]);
 
   // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
@@ -277,6 +285,13 @@ export async function loadPatrimonio(
     hasHoldings: assets.length > 0 || liabilities.length > 0,
     hasPricedHoldings,
     operatedAssetIds,
+    // The board turns a holding into a link, and a holding is named in a URL by
+    // its public `wl_hld_…` id (#1318) — never by the internal storage id the
+    // projection rows carry. Hand the board the translation, not the URLs, so
+    // the domain stays out of routing.
+    publicIdByHolding: Object.fromEntries(
+      holdingPublicIdIndex(publicIds).publicByInternal,
+    ),
     returnsById,
     trash,
     warnings,

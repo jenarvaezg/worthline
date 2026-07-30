@@ -1,3 +1,4 @@
+import { holdingDetailHref, isPublicHoldingId } from "@web/holding-route";
 import {
   type BalanceHistoryProposal,
   parseBalanceHistoryProposalDraft,
@@ -62,7 +63,7 @@ export type QuickAction = OpenInternalSourceAction | RunSuggestedAnalysisAction;
 
 /** A cited source the tool resolved, before we know if it maps to a surface. */
 export type SourceRef =
-  | { kind: "holding"; internalId: string }
+  | { kind: "holding"; publicId: string }
   | { kind: "section"; section: ScreenSection }
   | { kind: "figure"; figure: string };
 
@@ -186,7 +187,7 @@ export function resolveModelQuickActions(raw: unknown): QuickAction[] {
         const figure = boundedString(item["figure"], MAX_LABEL);
         let href: string | null = null;
         if (holding !== null) {
-          href = sourceHref({ kind: "holding", internalId: holding });
+          href = sourceHref({ kind: "holding", publicId: holding });
         } else if (section !== null) {
           href = sourceHref({ kind: "section", section });
         } else if (figure !== null) {
@@ -602,10 +603,19 @@ function isMixedDocumentSection(value: unknown): value is MixedDocumentSection {
 export function sourceHref(ref: SourceRef): string | null {
   switch (ref.kind) {
     case "holding":
-      // Internal id lands verbatim in the URL; reject anything with a slash so a
-      // resolver miss can never forge a path segment.
-      return ref.internalId !== "" && !ref.internalId.includes("/")
-        ? `/patrimonio/${ref.internalId}/editar`
+      // The public `wl_hld_…` id lands verbatim in the URL — the same id the
+      // model reads from every tool, and since #1318 the same one the route
+      // takes. (It used to be spliced in as an INTERNAL id, so a chip pointing
+      // at a holding built a URL the router never accepted.)
+      //
+      // The shape check is the cheap half of the guard, and it earns its keep:
+      // #1318 records the model INVENTING `asset_fidelity_s_p_500_index_fund_…`
+      // after watching the URL bar. A chip is a link the user will click, so an
+      // id in the retired vocabulary is dropped here rather than rendered as a
+      // guaranteed 404. Slashes are rejected with it, so a miss upstream can
+      // never forge extra path segments.
+      return isPublicHoldingId(ref.publicId) && !ref.publicId.includes("/")
+        ? holdingDetailHref(ref.publicId)
         : null;
     case "section":
       return SECTION_ROUTE[ref.section];

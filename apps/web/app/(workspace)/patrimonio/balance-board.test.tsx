@@ -37,7 +37,6 @@ function assetRow(
     valueIsDerived: opts.derived ?? false,
     priceFetchedAt: opts.priceFetchedAt ?? null,
     priceSource: opts.priceSource ?? null,
-    detailHref: `/patrimonio/${id}/editar`,
     ownership: { shares: [], totalShareBps: opts.shareBps ?? 10_000 },
   };
 }
@@ -56,7 +55,6 @@ function liabilityRow(
     tier: opts.tier ?? "housing",
     tierLabel: opts.tierLabel ?? "Vivienda",
     instrument: "mortgage",
-    detailHref: `/patrimonio/${id}/editar`,
     ownership: { shares: [], totalShareBps: 10_000 },
   };
 }
@@ -91,17 +89,31 @@ function fixtureGroups(): PortfolioGroup[] {
 
 const emptyTrash = { assets: [], liabilities: [] };
 
+/**
+ * Every rendered holding's public `wl_hld_…` id — the only id the board is
+ * allowed to put in a URL (#1318). Derived from whatever groups a case renders
+ * so a new fixture holding is registered by construction, never silently
+ * unlinked.
+ */
+function publicIdsFor(groups: PortfolioGroup[]): Record<string, string> {
+  return Object.fromEntries(
+    groups.flatMap((g) => g.holdings.map((h) => [h.id, `wl_hld_${h.id}`])),
+  );
+}
+
 function render(props: Partial<Parameters<typeof BalanceBoard>[0]> = {}) {
+  const groups = props.groups ?? fixtureGroups();
   return renderToStaticMarkup(
     <BalanceBoard
       currentUrl="/patrimonio"
-      groups={fixtureGroups()}
       isHousehold={false}
       nowIso="2026-06-10T12:00:00.000Z"
       privacyMode={false}
       trash={emptyTrash}
       warnings={[]}
       {...props}
+      groups={groups}
+      publicIdByHolding={props.publicIdByHolding ?? publicIdsFor(groups)}
     />,
   );
 }
@@ -216,6 +228,7 @@ describe("BalanceBoard (#271)", () => {
         isHousehold={false}
         nowIso="2026-06-10T12:00:00.000Z"
         privacyMode={false}
+        publicIdByHolding={{ a_manual: "wl_hld_manual", a_priced: "wl_hld_priced" }}
         trash={emptyTrash}
         warnings={[]}
       />,
@@ -239,6 +252,7 @@ describe("BalanceBoard (#271)", () => {
         isHousehold={false}
         nowIso="2026-06-10T12:00:00.000Z"
         privacyMode={false}
+        publicIdByHolding={{ a_manual: "wl_hld_manual", a_priced: "wl_hld_priced" }}
         trash={emptyTrash}
         warnings={[]}
       />,
@@ -341,7 +355,7 @@ describe("BalanceBoard closed positions", () => {
     expect(foldAt).toBeGreaterThan(html.indexOf("Fondo Vivo"));
     expect(html.indexOf("Fondo Vendido A")).toBeGreaterThan(foldAt);
     expect(html.indexOf("Fondo Vendido A")).toBeLessThan(html.indexOf("Fondo Vendido B"));
-    expect(html).toContain('href="/patrimonio/a_sold_a/editar"');
+    expect(html).toContain('href="/patrimonio/wl_hld_a_sold_a/editar"');
     // The stored zero-value asset is NOT folded away.
     expect(html.indexOf("Cuenta A Cero")).toBeLessThan(foldAt);
   });

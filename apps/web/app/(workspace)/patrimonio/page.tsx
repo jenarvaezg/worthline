@@ -71,6 +71,7 @@ export async function PatrimonioContent({
     hasHoldings,
     hasPricedHoldings,
     operatedAssetIds,
+    publicIdByHolding,
     returnsById,
     trash,
     warnings,
@@ -159,6 +160,7 @@ export async function PatrimonioContent({
         nowIso={persistence.checkedAt}
         operatedAssetIds={operatedAssetIds}
         privacyMode={privacyMode}
+        publicIdByHolding={publicIdByHolding}
         readOnly={isDemo}
         returnsById={returnsById}
         trash={trash}

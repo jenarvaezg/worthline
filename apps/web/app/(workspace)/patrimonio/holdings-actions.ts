@@ -15,10 +15,13 @@ import {
 import { checkSinglePrimaryResidence } from "@worthline/domain";
 import {
   baseUrl,
+  boardAnchorResult,
   editAssetErrorUrl,
+  holdingBoardAnchor,
   mapOwnershipSplitCommandResult,
   parseAssetType,
   parseLiquidityTier,
+  withBoardAnchor,
 } from "./action-helpers";
 
 export async function deleteAssetAction(
@@ -139,11 +142,11 @@ export async function restoreAssetAction(
             ok: false,
             error: "No se encontró el elemento — puede que ya no esté en papelera.",
           }
-        : { ok: true };
+        : boardAnchorResult(await holdingBoardAnchor(store, id));
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl("/patrimonio", "restored", id),
+    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "restored", value),
   })(formData, ..._testArgs);
 }
 
@@ -162,11 +165,11 @@ export async function restoreLiabilityAction(
             ok: false,
             error: "No se encontró el elemento — puede que ya no esté en papelera.",
           }
-        : { ok: true };
+        : boardAnchorResult(await holdingBoardAnchor(store, id));
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl("/patrimonio", "restored", id),
+    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "restored", value),
   })(formData, ..._testArgs);
 }
 
@@ -174,7 +177,7 @@ export async function acknowledgeWarningAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  return formAction<{ code: string; entityId: string }, { entityId: string }>({
+  return formAction<{ code: string; entityId: string }, string>({
     requireId: false,
     datedFact: false,
     parse: ({ formData }) => {
@@ -192,12 +195,12 @@ export async function acknowledgeWarningAction(
     },
     run: async (store, { parsed }) => {
       await store.acknowledgeWarning(parsed.code, parsed.entityId);
-      return { ok: true, value: { entityId: parsed.entityId } };
+      return boardAnchorResult(await holdingBoardAnchor(store, parsed.entityId));
     },
     onError: ({ formData, error }) =>
       errorRedirectUrl(baseUrl(formData), { message: error }),
     onSuccess: ({ value }) =>
-      successRedirectUrl("/patrimonio", "warning_acknowledged", value?.entityId),
+      successRedirectUrl("/patrimonio", "warning_acknowledged", value),
   })(formData, ..._testArgs);
 }
 
@@ -205,17 +208,16 @@ export async function editAssetAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  return formAction<{ name: string; isLiability: boolean }>({
+  return formAction<{ name: string; isLiability: boolean }, string>({
     datedFact: false,
     missingId: "Identificador no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const isLiability = formData.get("isLiability") === "true";
       const name = String(formData.get("name") ?? "").trim();
       if (!name) {
         return {
           ok: false,
           redirect: editAssetErrorUrl(
-            id,
             formData,
             isLiability
               ? "El nombre de la deuda es obligatorio."
@@ -256,7 +258,7 @@ export async function editAssetAction(
           allowKnownPartial,
           patch: { name, type: liabilityType, associatedAssetId, ownership },
         });
-        return mapOwnershipSplitCommandResult(commandResult);
+        return withBoardAnchor(store, id, mapOwnershipSplitCommandResult(commandResult));
       }
 
       const type = parseAssetType(formData.get("type"));
@@ -282,9 +284,9 @@ export async function editAssetAction(
         allowKnownPartial: type === "real_estate",
         patch: { name, type, liquidityTier, isPrimaryResidence, ownership },
       });
-      return mapOwnershipSplitCommandResult(commandResult);
+      return withBoardAnchor(store, id, mapOwnershipSplitCommandResult(commandResult));
     },
-    onError: ({ id, formData, error }) => editAssetErrorUrl(id, formData, error),
-    onSuccess: ({ id }) => successRedirectUrl("/patrimonio", "saved", id),
+    onError: ({ formData, error }) => editAssetErrorUrl(formData, error),
+    onSuccess: ({ value }) => successRedirectUrl("/patrimonio", "saved", value),
   })(formData, ..._testArgs);
 }

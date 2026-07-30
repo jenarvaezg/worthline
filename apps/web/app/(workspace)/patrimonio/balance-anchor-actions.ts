@@ -7,7 +7,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
-import { editUrl, requireDebtModel } from "./action-helpers";
+import { baseUrl, requireDebtModel } from "./action-helpers";
 
 /**
  * Balance-anchor actions (revolving/informal debt, ADR 0020 / 0025) — the #1112
@@ -28,7 +28,7 @@ export async function addBalanceAnchorAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "balanceAnchor",
             message: parsed.error,
             values: preserveFields(formData, ["anchorDate", "balance"]),
@@ -47,9 +47,9 @@ export async function addBalanceAnchorAction(
       await store.command.addBalanceAnchor(parsed, { today });
       return { ok: true as const };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "balanceAnchor", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_added", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "balanceAnchor", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "balance_anchor_added"),
   })(formData, ..._testArgs);
 }
 
@@ -65,7 +65,7 @@ export async function updateBalanceAnchorAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `balanceAnchor-${extra.anchorId}`,
             message: parsed.error,
             values: preserveFields(formData, ["anchorDate", "balance"]),
@@ -99,11 +99,11 @@ export async function updateBalanceAnchorAction(
       return { ok: true as const };
     },
     onError: ({ id, extra, error }) =>
-      errorRedirectUrl(editUrl(id), {
+      errorRedirectUrl(baseUrl(formData), {
         formId: `balanceAnchor-${extra.anchorId}`,
         message: error,
       }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_saved", id),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "balance_anchor_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -133,7 +133,7 @@ export async function deleteBalanceAnchorAction(
       }
       return { ok: true as const };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "balance_anchor_deleted", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "balance_anchor_deleted"),
   })(formData, ..._testArgs);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-format";
+import { holdingDetailHref } from "@web/holding-route";
 import { PendingSubmit } from "@web/pending-submit";
 import { boardRefreshHover } from "@web/price-refresh";
 import type { TrashView } from "@worthline/db";
@@ -114,6 +115,9 @@ function ownershipLabel(h: UnifiedHolding, isHousehold: boolean): string | null 
 }
 
 /** Per-holding returns keyed by asset id (#551) — market investments only. */
+/** Public `wl_hld_…` id per internal holding id — see {@link BalanceBoardProps}. */
+type PublicIdByHolding = Readonly<Record<string, string>>;
+
 type ReturnsById = ReadonlyMap<string, HoldingReturnsView>;
 
 /**
@@ -233,6 +237,7 @@ function HoldingRow({
   isHousehold,
   warnings,
   currentUrl,
+  publicIdByHolding,
   sectionDenom,
   showTierLabel,
   nowIso,
@@ -248,6 +253,7 @@ function HoldingRow({
   isHousehold: boolean;
   warnings: DomainWarning[];
   currentUrl: string;
+  publicIdByHolding: PublicIdByHolding;
   sectionDenom: number;
   showTierLabel: boolean;
   nowIso: string;
@@ -274,11 +280,22 @@ function HoldingRow({
   const own = ownershipLabel(h, isHousehold);
   const pct = (magnitude(h) / sectionDenom) * 100;
   const deleteAction = isAsset ? deleteAssetAction : deleteLiabilityAction;
+  // The row is addressed by the holding's public `wl_hld_…` id (#1318): both the
+  // ficha link and the anchor a mutation lands on. The internal id stays in the
+  // hidden fields below, where it is storage plumbing and not a URL.
+  //
+  // A holding with no registry row cannot happen (every creation path mints one)
+  // and there is deliberately no fallback to the internal id: linking to it would
+  // re-open the leak this issue closed, for a URL that no longer resolves anyway.
+  // The row still renders — with its name unlinked — so a registry gap costs one
+  // door, not the whole board.
+  const publicId = publicIdByHolding[h.id];
+  const detailHref = publicId ? holdingDetailHref(publicId) : null;
 
   return (
-    <div className={`balanceRow${banded ? " band" : ""}`} id={h.id}>
+    <div className={`balanceRow${banded ? " band" : ""}`} id={publicId ?? undefined}>
       <div className="balanceRowName">
-        <Link href={h.detailHref}>{h.name}</Link>
+        {detailHref ? <Link href={detailHref}>{h.name}</Link> : <span>{h.name}</span>}
         {rowWarnings.length > 0 ? (
           <span
             className="warningBadge"
@@ -322,7 +339,7 @@ function HoldingRow({
       <details suppressHydrationWarning className="balanceActions">
         <summary aria-label={`Acciones para ${h.name}`}>⋯</summary>
         <div className="balanceMenu">
-          <Link href={h.detailHref}>Editar</Link>
+          {detailHref ? <Link href={detailHref}>Editar</Link> : null}
           {ack ? (
             <form action={acknowledgeWarningAction}>
               <input name="currentUrl" type="hidden" value={currentUrl} />
@@ -371,6 +388,7 @@ function Pane({
   isHousehold,
   warnings,
   currentUrl,
+  publicIdByHolding,
   nowIso,
   privacyMode,
   optimisticSubmit,
@@ -387,6 +405,7 @@ function Pane({
   isHousehold: boolean;
   warnings: DomainWarning[];
   currentUrl: string;
+  publicIdByHolding: PublicIdByHolding;
   nowIso: string;
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
@@ -465,6 +484,7 @@ function Pane({
                   nowIso={nowIso}
                   optimisticSubmit={optimisticSubmit}
                   privacyMode={privacyMode}
+                  publicIdByHolding={publicIdByHolding}
                   readOnly={readOnly}
                   returns={returnsById.get(h.id)}
                   sectionDenom={secDenom}
@@ -495,6 +515,7 @@ function Pane({
               nowIso={nowIso}
               optimisticSubmit={optimisticSubmit}
               privacyMode={privacyMode}
+              publicIdByHolding={publicIdByHolding}
               readOnly={readOnly}
               returns={returnsById.get(h.id)}
               sectionDenom={1}
@@ -567,6 +588,11 @@ export interface BalanceBoardProps {
   warnings: DomainWarning[];
   trash: TrashView;
   currentUrl: string;
+  /**
+   * Public `wl_hld_…` id per internal holding id (#1318) — the board is where a
+   * holding becomes a link, so this is where the two id spaces meet.
+   */
+  publicIdByHolding: PublicIdByHolding;
   /** Server render instant — anchors the derived-value badge's relative date (#303). */
   nowIso: string;
   privacyMode: boolean;
@@ -588,6 +614,7 @@ export default function BalanceBoard({
   warnings,
   trash,
   currentUrl,
+  publicIdByHolding,
   nowIso,
   privacyMode,
   readOnly = false,
@@ -668,6 +695,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        publicIdByHolding={publicIdByHolding}
         readOnly={readOnly}
         returnsById={returns}
         sections={assetSections}
@@ -683,6 +711,7 @@ export default function BalanceBoard({
         nowIso={nowIso}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
+        publicIdByHolding={publicIdByHolding}
         readOnly={readOnly}
         returnsById={returns}
         sections={debtSections}

@@ -6,8 +6,11 @@
  * guaranteed to equal the grossAssets / debts figures that calculateNetWorth
  * reports for the same scope (reconciliation invariant).
  *
- * Every row is a first-class, fully-actionable holding: it carries a `detailHref`
- * to its ficha (edit/manage) and participates in the normal row actions. An
+ * Every row is a first-class, fully-actionable holding: it links to its ficha
+ * (edit/manage) and participates in the normal row actions. The link itself is
+ * built by the web layer, which is the only place that knows a holding is named
+ * in a URL by its public `wl_hld_…` id (#1318); the projection stays on the
+ * internal id and out of the routing business. An
  * investment's VALUE stays derived (units × price, ADR 0006) — the row flags this
  * via `valueIsDerived` so the UI renders the value read-only — but the row itself
  * is no longer a ghost (#154, S8). Each row also exposes its `instrument` and
@@ -86,8 +89,6 @@ export interface ProjectedAssetRow {
    * the raw code to a display label.
    */
   priceSource: PriceSource | null;
-  /** Every row links to its ficha — the single place a holding is edited/managed (#154). */
-  detailHref: string;
   ownership: RowOwnership;
 }
 
@@ -101,8 +102,6 @@ export interface ProjectedLiabilityRow {
   tierLabel: string;
   /** Coarse instrument (mortgage vs loan) for grouping — refined surfaces live on the ficha. */
   instrument: Instrument;
-  /** Every liability links to its ficha — the single place it is edited/managed (#154). */
-  detailHref: string;
   ownership: RowOwnership;
 }
 
@@ -240,10 +239,6 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       valueIsDerived: asset.type === "investment",
       priceFetchedAt: priceMeta?.fetchedAt ?? null,
       priceSource: priceMeta?.source ?? null,
-      // Every holding's ficha is /patrimonio/[id]/editar — the single place it is
-      // managed since S6 (#152) dispatches by valuation method (investments get
-      // the operations editor, not the transitional /inversiones view).
-      detailHref: `/patrimonio/${asset.id}/editar`,
       ownership,
     });
 
@@ -301,7 +296,6 @@ export function projectPortfolio(input: PortfolioProjectionInput): PortfolioProj
       // debt is a loan. The revolving/informal refinement needs the debt model
       // (only on the ficha), and the list only distinguishes Hipoteca/Deuda.
       instrument: defaultInstrumentForLiability(liability.type, null),
-      detailHref: `/patrimonio/${liability.id}/editar`,
       ownership,
     });
 

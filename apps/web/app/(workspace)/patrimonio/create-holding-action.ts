@@ -7,6 +7,7 @@ import {
 } from "@web/ensure-exposure-catalog-stubs";
 import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { formAction } from "@web/form-action";
+import { holdingDetailHref } from "@web/holding-route";
 import {
   errorRedirectUrl,
   mapDomainViolation,
@@ -28,6 +29,7 @@ import {
   defaultsFor,
 } from "@worthline/domain";
 import type { InvestmentAssetRef } from "@worthline/pricing";
+import { holdingBoardAnchor } from "./action-helpers";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
@@ -418,10 +420,18 @@ export async function createHoldingAction(
       // server can read — the #anchor is client-only), so first runs chain adds
       // without friction. The avanzado flow keeps landing on the holdings list; the
       // investment-import route below is exempt (it goes to «Cargar movimientos»).
-      const successUrl = (okKey: string, id: string): string =>
-        returnUrl === ADD_URL
-          ? `${successRedirectUrl(ADD_URL, okKey)}&added=${id}`
-          : successRedirectUrl("/patrimonio", okKey, id);
+      // The holding is named by its public `wl_hld_…` id here (#1318) — both as
+      // the `added=` param the success panel turns into a ficha link and as the
+      // board anchor. Creation registers it, so the miss below is unreachable;
+      // if it ever happens the alta still succeeded, so the screen drops the
+      // ficha link (the panel already renders without one) rather than 500 over
+      // a holding that is safely on disk.
+      const successUrl = async (okKey: string, id: string): Promise<string> => {
+        const publicId = await holdingBoardAnchor(store, id);
+        return returnUrl === ADD_URL
+          ? `${successRedirectUrl(ADD_URL, okKey)}${publicId ? `&added=${publicId}` : ""}`
+          : successRedirectUrl("/patrimonio", okKey, publicId);
+      };
 
       // The catalog owns every per-instrument storage decision: the rung, valuation
       // method and provider, plus the legacy AssetType a stored asset persists as
@@ -468,7 +478,10 @@ export async function createHoldingAction(
           return { ok: false, error: errorUrl(result.error) };
         }
 
-        return { ok: true, value: { redirectUrl: successUrl("asset_added", result.id) } };
+        return {
+          ok: true,
+          value: { redirectUrl: await successUrl("asset_added", result.id) },
+        };
       }
 
       // Derived investments — value is units × price; the provider comes from the
@@ -553,13 +566,17 @@ export async function createHoldingAction(
 
         // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
         // (#173) so the broker CSV's historical orders are the only operations.
+        // «Importar extracto» routes straight to the ficha, so here the public id
+        // IS the destination; without it there is no ficha URL to send anyone to
+        // and the board is the honest landing.
+        const importTarget = await holdingBoardAnchor(store, parsed.command.id);
         const redirectUrl =
           invMode === "import"
             ? successRedirectUrl(
-                `/patrimonio/${parsed.command.id}/editar`,
+                importTarget ? holdingDetailHref(importTarget) : "/patrimonio",
                 "investment_import_ready",
               )
-            : successUrl("investment_added", parsed.command.id);
+            : await successUrl("investment_added", parsed.command.id);
 
         // The pricing coordinates of the just-created investment, threaded out so
         // its FIRST quote is asked for in afterCommit (#1314) — the holding would
@@ -729,7 +746,7 @@ export async function createHoldingAction(
 
         return {
           ok: true,
-          value: { redirectUrl: successUrl("liability_added", resolved.id) },
+          value: { redirectUrl: await successUrl("liability_added", resolved.id) },
         };
       }
 

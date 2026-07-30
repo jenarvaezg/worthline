@@ -82,10 +82,12 @@ describe("groupPortfolio — by direction (default)", () => {
     expect(pasivos.holdings.map((h) => h.id)).toEqual(["debt_mortgage"]);
   });
 
-  test("every holding carries a ficha detailHref and a direction discriminant", () => {
+  test("every holding carries its id and a direction discriminant", () => {
     for (const group of groups) {
       for (const h of group.holdings) {
-        expect(h.detailHref).toBe(`/patrimonio/${h.id}/editar`);
+        // No ficha href here on purpose (#1318): the web layer builds it from the
+        // holding's public `wl_hld_…` id, the only id that may appear in a URL.
+        expect(h.id).not.toBe("");
         expect(h.direction === "asset" || h.direction === "liability").toBe(true);
       }
     }

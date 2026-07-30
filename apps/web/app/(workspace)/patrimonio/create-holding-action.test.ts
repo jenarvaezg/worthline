@@ -53,6 +53,14 @@ async function runAction(fd: FormData, store: WorthlineStore): Promise<string> {
   }
 }
 
+/** The holding's public `wl_hld_…` id — the only id the product puts in a URL (#1318). */
+async function publicIdOf(store: WorthlineStore, internalId: string): Promise<string> {
+  const row = (await store.agentView.readPublicIds()).find(
+    (entry) => entry.entityType === "holding" && entry.entityId === internalId,
+  );
+  return row!.publicId;
+}
+
 async function seedStore(): Promise<WorthlineStore> {
   const store = await createInMemoryStore();
   await store.workspace.initializeWorkspace({
@@ -215,9 +223,11 @@ describe("createHoldingAction — success loop on the simple wizard (#600)", () 
     // Back to the wizard (not the holdings list) so the success screen can loop.
     expect(url).toContain("/patrimonio/anadir");
     expect(url).toContain("ok=asset_added");
-    // The new holding's id rides a query param (not the #hash, which is
-    // client-only) so the wizard can build its links server-side.
-    const added = (await store.assets.readAssets())[0]!.id;
+    // The new holding's PUBLIC id rides a query param (not the #hash, which is
+    // client-only) so the wizard can build its links server-side — and it is the
+    // public one because that is the only id a URL may carry (#1318).
+    const added = await publicIdOf(store, (await store.assets.readAssets())[0]!.id);
+    expect(added).toMatch(/^wl_hld_/);
     expect(url).toContain(`added=${added}`);
   });
 
@@ -567,8 +577,9 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     // No synthetic opening — the broker CSV's orders will be the only operations.
     expect(await store.operations.readOperations(meta[0]!.id)).toHaveLength(0);
 
-    // Routed to the holding's edit page, where «Cargar movimientos» lives (#173).
-    expect(url).toContain(`/patrimonio/${meta[0]!.id}/editar`);
+    // Routed to the holding's edit page, where «Cargar movimientos» lives (#173),
+    // addressed by its public `wl_hld_…` id (#1318).
+    expect(url).toContain(`/patrimonio/${await publicIdOf(store, meta[0]!.id)}/editar`);
     expect(url).toContain("ok=investment_import_ready");
   });
 

@@ -17,6 +17,7 @@ const calls = vi.hoisted(() => ({
   readFireConfig: vi.fn(async () => ({})),
   readOperations: vi.fn(async () => []),
   readPositions: vi.fn(async () => []),
+  readPublicIds: vi.fn(async () => []),
   readSourceAssetIds: vi.fn(async () => []),
   readWarningOverrides: vi.fn(async () => []),
   readWorkspace: vi.fn(async () => ({
@@ -41,6 +42,7 @@ const calls = vi.hoisted(() => ({
       scopes,
       selectedScope: scopes[0],
       store: {
+        agentView: { readPublicIds: calls.readPublicIds },
         assets: { readAssets: calls.readAssets },
         connectedSources: {
           listSources: calls.listSources,

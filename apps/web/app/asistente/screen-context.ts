@@ -18,7 +18,13 @@ export interface ScreenContext {
   route: string;
   /** Top-level product section derived from the route. */
   section: ScreenSection;
-  /** Holding id when the route is a /patrimonio/[id] drilldown. */
+  /**
+   * The holding's PUBLIC `wl_hld_…` id when the route is a /patrimonio/[id]
+   * drilldown — the same id every assistant tool takes (#1318). This object is
+   * embedded verbatim in the system prompt, so before the route spoke the public
+   * id the model was handed the one identifier no tool would accept, and it
+   * spent turns asking the user to copy it out of the address bar.
+   */
   holdingId: string | null;
   /** Ephemeral view state mirrored in the URL (framing/range/lens…). */
   view: Record<string, string>;

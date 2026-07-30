@@ -1,5 +1,6 @@
 "use client";
 
+import { holdingDetailHref } from "@web/holding-route";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
@@ -17,6 +18,7 @@ export function AddSuccessPanel({
   message,
   netWorthLabel,
 }: {
+  /** The new holding's public `wl_hld_…` id (#1318) — what the action redirects with. */
   addedId: string | undefined;
   isInvestment: boolean;
   message: string;
@@ -41,7 +43,7 @@ export function AddSuccessPanel({
           + Añadir otra
         </Link>
         {isInvestment && addedId ? (
-          <Link className="actionLink" href={`/patrimonio/${addedId}/editar`}>
+          <Link className="actionLink" href={holdingDetailHref(addedId)}>
             Añadir movimientos / Importar extracto
           </Link>
         ) : null}

@@ -35,6 +35,7 @@ export function HousingValuationSection({
   anchors,
   appreciationRate,
   assetId,
+  currentUrl,
   formError,
   privacyMode = false,
   today,
@@ -42,14 +43,16 @@ export function HousingValuationSection({
 }: {
   anchors: ValuationAnchorRecord[];
   appreciationRate: string | null;
+  /** Internal storage id — hidden form plumbing, never a URL (#1318). */
   assetId: string;
+  /** The holding's own public `wl_hld_…` URL, where every form here returns. */
+  currentUrl: string;
   formError: FormErrorContext | null;
   privacyMode?: boolean;
   today: string;
   /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
   valuationCadence: ValuationCadence | null;
 }) {
-  const currentUrl = `/patrimonio/${assetId}/editar`;
   const rateValues = formError?.formId === "rate" ? formError.values : {};
   const anchorValues = formError?.formId === "anchor" ? formError.values : {};
   const sorted = [...anchors].sort((a, b) =>

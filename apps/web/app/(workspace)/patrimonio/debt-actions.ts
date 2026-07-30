@@ -12,7 +12,7 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import { debtAccrualAtDate, effectiveAmortizationPlan } from "@worthline/domain";
-import { editUrl, findLiability, requireDebtModel } from "./action-helpers";
+import { baseUrl, findLiability, requireDebtModel } from "./action-helpers";
 import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
@@ -48,12 +48,12 @@ export async function setDebtModelAction(
   return formAction({
     datedFact: false,
     missingId: "Identificador de deuda no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       const parsed = parseDebtModelStrict(formData);
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "debtModel",
             message: parsed.error,
           }),
@@ -69,9 +69,9 @@ export async function setDebtModelAction(
       await store.liabilities.setDebtModel(id, model);
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "debtModel", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "debt_model_saved", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "debtModel", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "debt_model_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -90,8 +90,8 @@ export async function saveCurrentStateAmortizationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  const currentStateErrorUrl = (id: string, formData: FormData, message: string) =>
-    errorRedirectUrl(editUrl(id), {
+  const currentStateErrorUrl = (formData: FormData, message: string) =>
+    errorRedirectUrl(baseUrl(formData), {
       formId: "currentStateDebt",
       message,
       values: preserveFields(formData, [...CURRENT_STATE_DEBT_FIELD_NAMES]),
@@ -128,7 +128,7 @@ export async function saveCurrentStateAmortizationAction(
       if (!derived.ok) {
         return {
           ok: false,
-          redirect: currentStateErrorUrl(id, formData, derived.error),
+          redirect: currentStateErrorUrl(formData, derived.error),
         };
       }
       return {
@@ -163,9 +163,8 @@ export async function saveCurrentStateAmortizationAction(
       );
       return { ok: true };
     },
-    onError: ({ id, formData, error }) => currentStateErrorUrl(id, formData, error),
-    onSuccess: ({ id }) =>
-      successRedirectUrl(editUrl(id), "current_state_debt_saved", id),
+    onError: ({ formData, error }) => currentStateErrorUrl(formData, error),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "current_state_debt_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -195,7 +194,7 @@ export async function recalibrateDebtBalanceAction(
       if (!validated.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "recalibrateDebt",
             message: validated.error,
             values: preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]),
@@ -284,17 +283,20 @@ export async function recalibrateDebtBalanceAction(
 
       return { ok: true as const, value: { settlementSuspected } };
     },
-    onError: ({ id, error, formData }) =>
-      errorRedirectUrl(editUrl(id), {
+    onError: ({ error, formData }) =>
+      errorRedirectUrl(baseUrl(formData), {
         formId: "recalibrateDebt",
         message: error,
         values: preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]),
       }),
-    onSuccess: ({ id, value }) =>
+    // #1292's two ok-keys survive the #1318 swap: which message the band shows
+    // is the point of that change, and it is orthogonal to how the page is
+    // named. The trailing `#id` anchor does not survive — it pointed at the
+    // internal id, and on the ficha it never matched an element anyway.
+    onSuccess: ({ value }) =>
       successRedirectUrl(
-        editUrl(id),
+        baseUrl(formData),
         value?.settlementSuspected ? "debt_recalibrated_settlement" : "debt_recalibrated",
-        id,
       ),
   })(formData, ..._testArgs);
 }
@@ -311,14 +313,14 @@ export async function importBalanceHistoryAction(
 ): Promise<never> {
   return formAction({
     missingId: "Identificador de deuda no encontrado.",
-    parse: ({ formData, id }) => {
+    parse: ({ formData }) => {
       let rawRows: unknown;
       try {
         rawRows = JSON.parse(String(formData.get("rows") ?? "[]"));
       } catch {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             message: BALANCE_HISTORY_MESSAGES.invalidSeries,
           }),
         };
@@ -327,7 +329,7 @@ export async function importBalanceHistoryAction(
       if (!parsedRows.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), { message: parsedRows.error }),
+          redirect: errorRedirectUrl(baseUrl(formData), { message: parsedRows.error }),
         };
       }
       return { ok: true, value: parsedRows.rows };
@@ -350,9 +352,8 @@ export async function importBalanceHistoryAction(
       const created = await persistBalanceHistoryImport(store, id, plan.composed, today);
       return { created, ok: true as const, skipped };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) =>
-      successRedirectUrl(editUrl(id), "balance_history_imported", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "balance_history_imported"),
   })(formData, ..._testArgs);
 }
 
@@ -368,7 +369,7 @@ export async function saveAmortizationPlanAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "plan",
             message: parsed.error,
             values: preserveFields(formData, [
@@ -408,9 +409,9 @@ export async function saveAmortizationPlanAction(
       }
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "plan", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "plan_saved", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "plan", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "plan_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -443,8 +444,8 @@ export async function deleteAmortizationPlanAction(
       }
       return { ok: true };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "plan_deleted", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "plan_deleted"),
   })(formData, ..._testArgs);
 }
 
@@ -465,7 +466,7 @@ export async function addInterestRateRevisionAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "revision",
             message: parsed.error,
             values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
@@ -482,9 +483,9 @@ export async function addInterestRateRevisionAction(
       await store.command.addInterestRateRevision(parsed, { liabilityId: id, today });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "revision", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "revision_added", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "revision", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "revision_added"),
   })(formData, ..._testArgs);
 }
 
@@ -505,7 +506,7 @@ export async function updateInterestRateRevisionAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `revision-${extra.revisionId}`,
             message: parsed.error,
             values: preserveFields(formData, ["revisionDate", "newAnnualInterestRate"]),
@@ -536,11 +537,11 @@ export async function updateInterestRateRevisionAction(
       return { ok: true };
     },
     onError: ({ id, extra, error }) =>
-      errorRedirectUrl(editUrl(id), {
+      errorRedirectUrl(baseUrl(formData), {
         formId: `revision-${extra.revisionId}`,
         message: error,
       }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "revision_saved", id),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "revision_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -568,8 +569,8 @@ export async function deleteInterestRateRevisionAction(
       }
       return { ok: true };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "revision_deleted", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "revision_deleted"),
   })(formData, ..._testArgs);
 }
 
@@ -590,7 +591,7 @@ export async function addEarlyRepaymentAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: "repayment",
             message: parsed.error,
             values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
@@ -607,9 +608,9 @@ export async function addEarlyRepaymentAction(
       await store.command.addEarlyRepayment(parsed, { liabilityId: id, today });
       return { ok: true };
     },
-    onError: ({ id, error }) =>
-      errorRedirectUrl(editUrl(id), { formId: "repayment", message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "repayment_added", id),
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "repayment", message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "repayment_added"),
   })(formData, ..._testArgs);
 }
 
@@ -630,7 +631,7 @@ export async function updateEarlyRepaymentAction(
       if (!parsed.ok) {
         return {
           ok: false,
-          redirect: errorRedirectUrl(editUrl(id), {
+          redirect: errorRedirectUrl(baseUrl(formData), {
             formId: `repayment-${extra.repaymentId}`,
             message: parsed.error,
             values: preserveFields(formData, ["repaymentDate", "amount", "mode"]),
@@ -662,11 +663,11 @@ export async function updateEarlyRepaymentAction(
       return { ok: true };
     },
     onError: ({ id, extra, error }) =>
-      errorRedirectUrl(editUrl(id), {
+      errorRedirectUrl(baseUrl(formData), {
         formId: `repayment-${extra.repaymentId}`,
         message: error,
       }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "repayment_saved", id),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "repayment_saved"),
   })(formData, ..._testArgs);
 }
 
@@ -694,7 +695,7 @@ export async function deleteEarlyRepaymentAction(
       }
       return { ok: true };
     },
-    onError: ({ id, error }) => errorRedirectUrl(editUrl(id), { message: error }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "repayment_deleted", id),
+    onError: ({ error }) => errorRedirectUrl(baseUrl(formData), { message: error }),
+    onSuccess: () => successRedirectUrl(baseUrl(formData), "repayment_deleted"),
   })(formData, ..._testArgs);
 }

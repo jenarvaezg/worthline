@@ -292,9 +292,10 @@ interface ProposedAction {
 
 /**
  * Resolve one proposed `openInternalSource` reference to an internal href, or
- * null if it points nowhere we can navigate. The model supplies a PUBLIC
- * holding id; we resolve it to the internal id the product route uses (an
- * unknown id resolves to null, so the action is simply dropped — never a guess).
+ * null if it points nowhere we can navigate. The model supplies a PUBLIC holding
+ * id, which since #1318 is also what the product route takes — so the resolve
+ * here is purely an existence check: a hallucinated id throws, the action is
+ * dropped, and no chip ever points at a holding that is not there.
  */
 async function resolveActionHref(
   store: ChatReadStore,
@@ -302,8 +303,8 @@ async function resolveActionHref(
 ): Promise<string | null> {
   if (action.holding !== undefined) {
     try {
-      const internalId = await resolveInternalHoldingId(store.agentView, action.holding);
-      return sourceHref({ kind: "holding", internalId });
+      await resolveInternalHoldingId(store.agentView, action.holding);
+      return sourceHref({ kind: "holding", publicId: action.holding });
     } catch {
       return null;
     }

@@ -11,6 +11,7 @@
  * clean-is-empty) without a DOM.
  */
 
+import { type HoldingPublicIdIndex, holdingDetailHref } from "@web/holding-route";
 import {
   compareDataQualitySignals,
   type DataQualityCategory,
@@ -72,6 +73,7 @@ const SEVERITY_RANK: Record<DataQualitySeverity, number> = {
 export function selectHeroHealth(
   signals: readonly DataQualitySignal[],
   overrides: readonly WarningOverride[],
+  publicIds: HoldingPublicIdIndex,
 ): HeroHealthView {
   const overridden = new Set(
     overrides.map((override) => `${override.code}:${override.entityId}`),
@@ -96,7 +98,7 @@ export function selectHeroHealth(
   const shown = tier.slice(0, HERO_HEALTH_MAX_ALERTS);
 
   return {
-    alerts: shown.map(toAlert),
+    alerts: shown.map((signal) => toAlert(signal, publicIds)),
     hiddenCount: tier.length - shown.length,
     impact: topSeverity === "high" ? "error" : "warning",
   };
@@ -131,8 +133,11 @@ function isAcknowledged(
   return overridden.has(`${signal.code}:${signal.affected.id}`);
 }
 
-function toAlert(signal: DataQualitySignal): HeroHealthAlert {
-  const fix = fixSurface(signal);
+function toAlert(
+  signal: DataQualitySignal,
+  publicIds: HoldingPublicIdIndex,
+): HeroHealthAlert {
+  const fix = fixSurface(signal, publicIds);
   return {
     affectedLabel: signal.affected?.label,
     fixLabel: fix?.label,
@@ -148,30 +153,40 @@ function toAlert(signal: DataQualitySignal): HeroHealthAlert {
  * are one step apart (PRD #654). Non-fixable, no-destination signals (a sparse
  * history the user cannot backfill) return null so the alert renders as text.
  */
-function fixSurface(signal: DataQualitySignal): { href: string; label: string } | null {
+function fixSurface(
+  signal: DataQualitySignal,
+  publicIds: HoldingPublicIdIndex,
+): { href: string; label: string } | null {
   const affected = signal.affected;
+  // A signal names its holding by the internal storage id; the link must name it
+  // by the public `wl_hld_…` one (#1318). No public id → no link, never a link
+  // to an id the router no longer accepts.
+  const fichaHref = (): string | null => {
+    const publicId = affected ? publicIds.publicByInternal.get(affected.id) : undefined;
+    return publicId ? holdingDetailHref(publicId) : null;
+  };
   switch (signal.category) {
-    case "warning":
-      return affected
-        ? { href: `/patrimonio/${affected.id}/editar`, label: "Ver activo" }
-        : null;
+    case "warning": {
+      const href = fichaHref();
+      return href ? { href, label: "Ver activo" } : null;
+    }
     case "manual_value_freshness":
       return { href: "/patrimonio/actualizar", label: "Actualizar valor" };
-    case "price_freshness":
+    case "price_freshness": {
       // The holding's edit surface — there is no standalone `/patrimonio/[id]`
       // detail route; editing is where its price provider/value is fixed.
-      return affected
-        ? { href: `/patrimonio/${affected.id}/editar`, label: "Ver activo" }
-        : null;
+      const href = fichaHref();
+      return href ? { href, label: "Ver activo" } : null;
+    }
     case "source_freshness":
     case "projection_gap":
       return { href: "/ajustes", label: "Ver fuentes" };
-    case "missing_configuration":
+    case "missing_configuration": {
       // Only MISSING_DEBT_MODEL reaches the hero — MISSING_FIRE_CONFIG is
       // filtered out upstream (it does not bear on today's figure).
-      return affected
-        ? { href: `/patrimonio/${affected.id}/editar`, label: "Ver deuda" }
-        : null;
+      const href = fichaHref();
+      return href ? { href, label: "Ver deuda" } : null;
+    }
     case "history_coverage":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.
       return null;

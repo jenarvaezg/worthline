@@ -2,6 +2,12 @@ import OperationsEditor from "@web/_components/operations-editor";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import { isDemoMode } from "@web/demo/write-guard";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
+import {
+  holdingBoardHref,
+  holdingDetailHref,
+  holdingPublicIdIndex,
+  resolveHoldingRoute,
+} from "@web/holding-route";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import {
   confirmPriceBackfillAction,
@@ -84,7 +90,7 @@ export default async function EditarPage({
   params: Params;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const { id: publicId } = await params;
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
@@ -93,11 +99,23 @@ export default async function EditarPage({
     await resolvePageShell({ searchParams: resolvedSearchParams });
 
   // Independent base reads — one wave instead of serial round-trips (#446).
-  const [allAssets, liabilities, overrides] = await Promise.all([
+  const [allAssets, liabilities, overrides, publicIds] = await Promise.all([
     store.assets.readAssets(),
     store.liabilities.readLiabilities(),
     store.readWarningOverrides(),
+    store.agentView.readPublicIds(),
   ]);
+
+  // The route names the holding by its public `wl_hld_…` id (#1318) — the same
+  // id the agent view and the MCP take, so what the user (or the assistant
+  // reading `screenContext`) has in the URL bar is directly actionable. The
+  // internal storage id is resolved here and never leaves the server.
+  const resolvedId = resolveHoldingRoute(publicId, holdingPublicIdIndex(publicIds));
+
+  if (resolvedId === null) {
+    notFound();
+  }
+  const id: string = resolvedId;
 
   const asset = allAssets.find((a) => a.id === id) ?? null;
   const liability = liabilities.find((l) => l.id === id) ?? null;
@@ -334,7 +352,8 @@ export default async function EditarPage({
     notFound();
   }
 
-  const currentUrl = `/patrimonio/${id}/editar`;
+  const currentUrl = holdingDetailHref(publicId);
+  const boardHref = holdingBoardHref(publicId);
   // Demo skips optimistic mutations — the write-guard rejects them (§10).
   const isDemo = await isDemoMode();
 
@@ -494,7 +513,7 @@ export default async function EditarPage({
       <section className="formPage" aria-label="Editar holding">
         <div className="panelHeader">
           <h2>Editar {asset ? "activo" : "deuda"}</h2>
-          <Link href={`/patrimonio#${id}`}>← Volver</Link>
+          <Link href={holdingBoardHref(publicId)}>← Volver</Link>
         </div>
 
         {/* Active warnings for this holding */}
@@ -533,6 +552,8 @@ export default async function EditarPage({
           {asset ? (
             <AssetEditForm
               asset={asset}
+              boardHref={boardHref}
+              currentUrl={currentUrl}
               investment={investment}
               isBinanceHolding={isBinanceHolding}
               isCoinCollection={isCoinCollection}
@@ -546,6 +567,8 @@ export default async function EditarPage({
           ) : liability ? (
             <LiabilityEditForm
               assets={assets}
+              boardHref={boardHref}
+              currentUrl={currentUrl}
               liability={liability}
               members={activeMembers}
               scopeMemberId={ownershipScopeMemberId}
@@ -717,6 +740,7 @@ export default async function EditarPage({
                 anchors={anchors}
                 appreciationRate={appreciationRate}
                 assetId={asset.id}
+                currentUrl={currentUrl}
                 formError={formError}
                 privacyMode={privacyMode}
                 today={today}
@@ -733,6 +757,7 @@ export default async function EditarPage({
                 currentModelledBalanceMinor={currentModelledBalanceMinor}
                 debtModel={debtModel}
                 earlyRepayments={earlyRepayments}
+                currentUrl={currentUrl}
                 formError={formError}
                 liabilityId={id}
                 privacyMode={privacyMode}

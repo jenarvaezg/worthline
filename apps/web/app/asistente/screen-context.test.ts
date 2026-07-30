@@ -1,3 +1,4 @@
+import { holdingDetailHref } from "@web/holding-route";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -76,6 +77,18 @@ describe("deriveScreenContext", () => {
     const ctx = deriveScreenContext("/patrimonio/wl_hld_abc", "");
     expect(ctx.section).toBe("patrimonio");
     expect(ctx.holdingId).toBe("wl_hld_abc");
+  });
+
+  it("hands the model the very id the tools accept (#1318)", () => {
+    // The two ends of the round trip: the href the product builds for a holding,
+    // and what the assistant reads back off the URL. They must be the same public
+    // `wl_hld_…` id — this file already assumed so above while the route in fact
+    // carried the internal one, which is the whole defect #1318 closes.
+    const publicId = "wl_hld_85dde33ac805421d984f3fc05aabd26b";
+    const ctx = deriveScreenContext(holdingDetailHref(publicId), "");
+
+    expect(ctx.holdingId).toBe(publicId);
+    expect(ctx.holdingId).toMatch(/^wl_hld_/);
   });
 
   it("captures only known URL-mirrored view params", () => {
