@@ -1,4 +1,8 @@
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+import {
+  captureDailySnapshotForWorkspace,
+  createInMemoryStore,
+  type WorthlineStore,
+} from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -108,24 +112,34 @@ describe("confirmEarlyRepaymentProposalAction (#1245)", () => {
     store.close();
   });
 
-  test("the ripple rewrites the persisted snapshots from the repayment's boundary on", async () => {
+  test("the ripple rewrites the persisted snapshots from the repayment on", async () => {
     // The derived read above proves the curve; this proves the STORED history the
-    // product reads — the ripple ran, and only forward.
+    // product reads — the ripple ran, and only forward. The captured snapshot of
+    // today (after the 20-jul repayment) is the one that must move; the cuota
+    // boundary the lump belongs to (15-jul) is BEFORE the money left, so its
+    // figure is untouchable history (#1291).
     const store = await seed();
     await store.command.backfillHistoricalSnapshots(TODAY);
+    await captureDailySnapshotForWorkspace(store, clock.now());
     const debtsAt = async (dateKey: string) =>
       (await store.snapshots.readSnapshots()).find((snap) => snap.dateKey === dateKey)
         ?.debts.amountMinor;
     const beforeJune = await debtsAt("2026-06-15");
     const beforeJuly = await debtsAt("2026-07-15");
+    const beforeToday = await debtsAt(TODAY);
     expect(beforeJune).toBeGreaterThan(0);
     expect(beforeJuly).toBeGreaterThan(0);
+    expect(beforeToday).toBeGreaterThan(0);
     const proposal = await draft(store);
 
     await confirmEarlyRepaymentProposalAction(proposal.draft, store, clock);
 
     expect(await debtsAt("2026-06-15")).toBe(beforeJune);
-    expect(await debtsAt("2026-07-15")).toBe((beforeJuly ?? 0) - 9132);
+    expect(await debtsAt("2026-07-15")).toBe(beforeJuly);
+    // The repayment's own date gets a fresh snapshot (ADR 0012), carrying the step …
+    expect(await debtsAt("2026-07-20")).toBe((beforeJuly ?? 0) - 9132);
+    // … and the snapshot already captured after it is recomputed, not left stale.
+    expect(await debtsAt(TODAY)).toBe((beforeToday ?? 0) - 9132);
     store.close();
   });
 

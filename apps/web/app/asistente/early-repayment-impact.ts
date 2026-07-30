@@ -8,11 +8,12 @@
  *
  * Two honesty duties this module owns, both of them the review focus of the slice:
  *
- *  1. **The month boundary.** An `EarlyRepayment` is applied at the largest month
- *     start ≤ its date (#182), the same granularity as a rate revision. A lump
- *     paid on the 20th therefore lands on the 15th's cuota boundary, so the date
- *     the user believes is NOT necessarily the month the curve moves in. When the
- *     two differ the preview says so.
+ *  1. **The month boundary.** The balance drops on the repayment date itself
+ *     (#1291), but the CUOTA is recomputed for the cycle the date falls in — the
+ *     largest month start ≤ its date (#182), the same granularity as a rate
+ *     revision. A lump paid on the 20th therefore lowers the balance that day while
+ *     the recalculated cuota is the one of the 15th's cycle. When the two dates
+ *     differ the preview says so.
  *  2. **Reconciliation against what was observed.** If the cuota read off the
  *     capture is not the cuota the plan derives, the plan's parameters and reality
  *     disagree. The proposal WARNS and still lets the user confirm — it never
@@ -68,11 +69,16 @@ export interface EarlyRepaymentReconciliation {
 
 export interface EarlyRepaymentImpact {
   ok: true;
-  /** The month boundary the domain applies the lump at. */
+  /** The cuota cycle the domain recomputes the payment for (the lump's boundary). */
   boundaryDate: string;
-  /** False when the boundary is not the repayment's own date. */
-  appliesOnRepaymentDate: boolean;
+  /**
+   * True when that cuota is dated on the repayment day itself, i.e. the balance step
+   * and the recomputed cuota share one date and there are no two dates to explain.
+   */
+  boundaryIsRepaymentDate: boolean;
+  /** Live balance ON the repayment date, before the lump (#1291). */
   balanceBeforeMinor: number;
+  /** Live balance ON the repayment date, with the lump applied. */
   balanceAfterMinor: number;
   monthlyPaymentBeforeMinor: number;
   /** 0 when the lump closes the loan. */
@@ -186,11 +192,14 @@ export function projectEarlyRepaymentImpact(
       targetDate,
     });
 
-  const balanceBeforeMinor = balanceAt(existing, boundaryDate);
+  // The pair is read ON the repayment date: that is where the curve steps down
+  // (#1291) and the balance the amount is actually paid against — the figure the
+  // ceiling below must judge, and the one the preview shows.
+  const balanceBeforeMinor = balanceAt(existing, proposed.repaymentDate);
   if (balanceBeforeMinor === 0) {
     return {
       ok: false,
-      error: `En ${formatDayEs(boundaryDate)} el préstamo ya está a cero, así que no hay saldo que amortizar.`,
+      error: `En ${formatDayEs(proposed.repaymentDate)} el préstamo ya está a cero, así que no hay saldo que amortizar.`,
     };
   }
   const traceBefore = amortizationScheduleTrace({
@@ -223,11 +232,11 @@ export function projectEarlyRepaymentImpact(
   if (proposed.amountMinor > balanceBeforeMinor + allowanceMinor) {
     return {
       ok: false,
-      error: `El importe (${money(proposed.amountMinor, currency)}) supera el saldo vivo del préstamo en ${formatDayEs(boundaryDate)} (${money(balanceBeforeMinor, currency)}). Una cancelación total vale el principal más el devengo del mes, no diez veces el saldo: esto parece un error de unidad (euros escritos como céntimos). Comprueba la cifra antes de registrarla.`,
+      error: `El importe (${money(proposed.amountMinor, currency)}) supera el saldo vivo del préstamo en ${formatDayEs(proposed.repaymentDate)} (${money(balanceBeforeMinor, currency)}). Una cancelación total vale el principal más el devengo del mes, no diez veces el saldo: esto parece un error de unidad (euros escritos como céntimos). Comprueba la cifra antes de registrarla.`,
     };
   }
 
-  const balanceAfterMinor = balanceAt(withProposed, boundaryDate);
+  const balanceAfterMinor = balanceAt(withProposed, proposed.repaymentDate);
   const fullyRepaid = balanceAfterMinor === 0;
 
   const traceAfter = amortizationScheduleTrace({
@@ -271,7 +280,7 @@ export function projectEarlyRepaymentImpact(
   const notes: string[] = [];
   if (boundaryDate !== proposed.repaymentDate) {
     notes.push(
-      `worthline aplica una anticipada en el límite de mes: la registro con fecha ${formatDayEs(proposed.repaymentDate)}, pero su efecto sobre la curva empieza en la cuota del ${formatDayEs(boundaryDate)}.`,
+      `El saldo baja el mismo ${formatDayEs(proposed.repaymentDate)}, pero la anticipada cae dentro de la cuota del ${formatDayEs(boundaryDate)}: es esa cuota la que se recalcula con el saldo ya reducido.`,
     );
   }
   if (fullyRepaid) {
@@ -286,7 +295,7 @@ export function projectEarlyRepaymentImpact(
   );
   for (const repayment of sameBoundary) {
     notes.push(
-      `Ya hay una anticipada del ${formatDayEs(repayment.repaymentDate)} (${money(repayment.amountMinor, currency)}) en esa misma cuota: las dos se aplican en el mismo límite de mes, así que el saldo baja la suma de ambas.`,
+      `Ya hay una anticipada del ${formatDayEs(repayment.repaymentDate)} (${money(repayment.amountMinor, currency)}) en esa misma cuota: cada una baja el saldo en su propia fecha, y la cuota se recalcula con las dos ya restadas.`,
     );
   }
   if (reconciliation && !reconciliation.matches && monthlyPaymentAfterMinor > 0) {
@@ -318,7 +327,7 @@ export function projectEarlyRepaymentImpact(
   }
 
   return {
-    appliesOnRepaymentDate: boundaryDate === proposed.repaymentDate,
+    boundaryIsRepaymentDate: boundaryDate === proposed.repaymentDate,
     balanceAfterMinor,
     balanceBeforeMinor,
     balanceTodayAfterMinor,

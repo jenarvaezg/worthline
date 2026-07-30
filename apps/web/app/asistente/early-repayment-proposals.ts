@@ -324,7 +324,7 @@ export async function buildEarlyRepaymentProposal(
         mode: parsed.row.mode,
         modeLabel: earlyRepaymentModeLabel(parsed.row.mode),
       },
-      // The balance pair is the one at the repayment's MONTH BOUNDARY, so the row
+      // The balance pair is the one ON THE REPAYMENT DATE (#1291), so the row
       // carries that date: for a lump paid eight months ago it is not the figure
       // the bank's app shows today, and an undated «Saldo pendiente» next to a
       // Confirmar button reads as if it were (#1266). When today's figure differs,
@@ -333,7 +333,7 @@ export async function buildEarlyRepaymentProposal(
         {
           after: euros(impact.balanceAfterMinor),
           before: euros(impact.balanceBeforeMinor),
-          label: `Saldo pendiente (${formatDayEs(impact.boundaryDate)})`,
+          label: `Saldo pendiente (${formatDayEs(parsed.row.repaymentDate)})`,
         },
         ...(impact.balanceTodayBeforeMinor === impact.balanceBeforeMinor &&
         impact.balanceTodayAfterMinor === impact.balanceAfterMinor

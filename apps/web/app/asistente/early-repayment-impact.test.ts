@@ -39,26 +39,27 @@ function input(
 }
 
 describe("early-repayment impact (#1245)", () => {
-  test("applies the lump at its month boundary, not at the date the user believes", () => {
-    // 2026-07-20 is five days after the July cuota, so the domain resolves it to
-    // the 2026-07-15 boundary. The preview must say so instead of implying the
-    // balance drops on the 20th.
+  test("names the cuota the lump falls in, not only the date the user believes", () => {
+    // 2026-07-20 is five days after the July cuota, so the balance drops on the
+    // 20th (#1291) while the cuota recomputed with the reduced balance is the
+    // 2026-07-15 one. The preview must say so instead of leaving the user to guess
+    // which of the two dates moved what.
     const impact = projectEarlyRepaymentImpact(input());
 
     expect(impact.ok).toBe(true);
     if (!impact.ok) return;
     expect(impact.boundaryDate).toBe("2026-07-15");
-    expect(impact.appliesOnRepaymentDate).toBe(false);
+    expect(impact.boundaryIsRepaymentDate).toBe(false);
     expect(impact.notes.join(" ")).toMatch(/15\/07\/2026/);
   });
 
-  test("reports the domain's own before/after balances at that boundary", () => {
+  test("reports the domain's own before/after balances on the repayment date", () => {
     const impact = projectEarlyRepaymentImpact(input());
 
     expect(impact.ok).toBe(true);
     if (!impact.ok) return;
-    // The lump is exactly 1 000 € off the boundary balance — the engine's figure,
-    // not a re-derivation here.
+    // The lump is exactly 1 000 € off the balance of its own day (#1291) — the
+    // engine's figure, not a re-derivation here.
     expect(impact.balanceBeforeMinor - impact.balanceAfterMinor).toBe(1_000_00);
     expect(impact.balanceBeforeMinor).toBeGreaterThan(0);
   });
@@ -89,7 +90,7 @@ describe("early-repayment impact (#1245)", () => {
       impact.monthlyPaymentBeforeMinor,
     );
     expect(impact.endDateAfter).toBe(impact.endDateBefore);
-    expect(impact.appliesOnRepaymentDate).toBe(true);
+    expect(impact.boundaryIsRepaymentDate).toBe(true);
   });
 
   test("a lump that covers the live balance is a total repayment, and the preview says so", () => {
@@ -376,7 +377,7 @@ describe("early-repayment impact (#1245)", () => {
     expect(impact.error).toMatch(/última cuota|fuera del plazo/i);
   });
 
-  test("notes that a second lump in the same month stacks on the same boundary", () => {
+  test("notes a second lump in the same cuota, each dated on its own day", () => {
     const impact = projectEarlyRepaymentImpact(
       input({
         existing: [
@@ -388,7 +389,12 @@ describe("early-repayment impact (#1245)", () => {
     expect(impact.ok).toBe(true);
     if (!impact.ok) return;
     expect(impact.notes.join(" ")).toMatch(/16\/07\/2026/);
-    // Both lumps land on the same boundary: the drop is the SUM, never silent.
+    // The earlier lump (16-jul) is already in the balance of the 20th, so the pair
+    // moves by THIS lump alone — never by the sum, never silently.
     expect(impact.balanceBeforeMinor - impact.balanceAfterMinor).toBe(1_000_00);
+    const alone = projectEarlyRepaymentImpact(input());
+    expect(alone.ok).toBe(true);
+    if (!alone.ok) return;
+    expect(alone.balanceBeforeMinor - impact.balanceBeforeMinor).toBe(500_00);
   });
 });

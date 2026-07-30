@@ -119,3 +119,26 @@ refinement left to the chart layer, not part of this decision.
   a new **Valuation cadence** term is added.
 - The cadence rides the export/import contract (ADR 0010 / 0015) like any other
   part of a holding's model, so a smooth-curve opt-in survives a round-trip.
+
+## Amendment (#1291): an early repayment is an event date of its own
+
+The `amortized` bullet above says the event dates are the payment boundaries, with
+no intra-month proration. That is the *ordinary* movement of the curve; a declared
+**early repayment** is an extra event date on top of it, dated on the day the money
+left — the same exception `appreciating` already makes for a declared market
+appraisal ("a step on the day it is declared").
+
+The curve therefore reads, inside the cycle a lump falls in: the balance the
+previous cuota closed at until the repayment date, then that balance minus the
+lump. Under `interpolated` the cycle's ordinary amortization is still prorated by
+calendar day, with the lump as a step laid over it.
+
+It was implemented the other way round first: the lump was imputed to the cycle's
+own boundary, i.e. to the closing of the PREVIOUS cuota, which showed the balance
+reduced weeks before the payment existed and made a snapshot taken in that window
+irreproducible against the live recompute (#1291).
+
+What the boundary still owns is the **schedule**: the cuota recomputed on the
+reduced balance, and the period's interest, belong to the cycle the lump falls in —
+a monthly table has no sub-monthly period. That split is deliberate: the money
+moves on its day, the table keeps its month.

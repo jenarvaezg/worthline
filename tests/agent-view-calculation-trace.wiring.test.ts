@@ -279,8 +279,11 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => 
     expect(data.fidelity.faithful).toBe(false);
     expect(data.fidelity.divergences.length).toBeGreaterThanOrEqual(1);
 
-    // The repayment shows on its frontier in the schedule.
+    // The repayment shows on the frontier whose figures it moves (#1291). Paid ON the
+    // 2021-02-01 cuota, that is that cuota's own frontier: its closing balance carries
+    // the drop, and the next frontier opens at exactly that figure.
     const lumpFrontier = data.schedule!.frontiers.find((f) => f.date === "2021-02-01")!;
+    const nextFrontier = data.schedule!.frontiers.find((f) => f.date === "2021-03-01")!;
     expect(lumpFrontier.events).toEqual([
       {
         amount: { amountMinor: 30_000_00, currency: "EUR" },
@@ -289,6 +292,78 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => 
         mode: "reduce-payment",
       },
     ]);
+    expect(nextFrontier.events).toEqual([]);
+    expect(nextFrontier.openingBalance.amountMinor).toBe(
+      lumpFrontier.closingBalance.amountMinor,
+    );
+  });
+
+  /**
+   * The acceptance criterion of #1291, on the issue's own case. A snapshot frozen on
+   * 2026-06-30 and a mid-cycle repayment paid on 2026-07-03: the trace used to report
+   * `fidelity.faithful: false` with a −154,34 € difference on a date BEFORE the
+   * payment, an infidelity nobody had caused — the persisted history simply was not
+   * reproducible. The fix must make the June point reconcile without anyone touching
+   * the snapshot, while the days from the payment on do carry the lump.
+   */
+  test("a mid-cycle repayment leaves an earlier snapshot faithful (#1291)", async () => {
+    const store = await freshStore("worthline-agent-view-trace-1291-");
+    await store.liabilities.createLiability({
+      balanceMinor: 6_000_00,
+      currency: "EUR",
+      id: "revolut",
+      name: "Préstamos Revolut",
+      ownership: owner,
+      type: "debt",
+    });
+    await store.liabilities.setDebtModel("revolut", "amortizable");
+    await store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.0589",
+      disbursementDate: "2026-05-08",
+      firstPaymentDate: "2026-06-08",
+      id: "plan_revolut",
+      initialCapitalMinor: 6_000_00,
+      liabilityId: "revolut",
+      termMonths: 42,
+    });
+    // Freeze the end of June and a day after the payment, then register the 154,34 €
+    // paid on the 3rd of July through the command layer, so the ripple runs exactly as
+    // it does in the product.
+    await captureAt(store, "2026-06-30", "snap_1291_june");
+    await captureAt(store, "2026-07-04", "snap_1291_july");
+    await store.command.addEarlyRepayment(
+      {
+        amountMinor: 154_34,
+        id: "erp_1291",
+        mode: "reduce-term",
+        planId: "plan_revolut",
+        repaymentDate: "2026-07-03",
+      },
+      { liabilityId: "revolut", today: "2026-07-29" },
+    );
+    store.close();
+
+    const holdingId = await holdingIdByLabel(
+      await householdScopeId(),
+      "Préstamos Revolut",
+    );
+    const { body } = await trace(holdingId);
+    const data = body.data as TraceBody;
+
+    const june = data.reconciliation.find((p) => p.date === "2026-06-30")!;
+    expect(june.persisted!.amountMinor).toBe(5_871_01);
+    expect(june.live.amountMinor).toBe(5_871_01);
+    expect(june.difference!.amountMinor).toBe(0);
+    expect(june.diverges).toBe(false);
+    expect(data.fidelity.faithful).toBe(true);
+    expect(data.fidelity.divergences).toHaveLength(0);
+
+    // …and the days from the payment on do reflect it: the 4th of July was captured
+    // before the fact existed, so the ripple recalculated its stored figure to the
+    // post-payment one — persisted and live agree there too.
+    const july = data.reconciliation.find((p) => p.date === "2026-07-04")!;
+    expect(july.live.amountMinor).toBe(5_871_01 - 154_34);
+    expect(july.persisted!.amountMinor).toBe(july.live.amountMinor);
   });
 
   test("computes the modeling-tolerance band and a declared-figure verdict", async () => {

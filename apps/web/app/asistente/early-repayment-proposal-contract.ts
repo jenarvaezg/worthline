@@ -40,7 +40,11 @@ export interface EarlyRepaymentProposal {
     date: string;
     /** The same date rendered DD/MM/YYYY: the card never shows a raw ISO date. */
     dateLabel: string;
-    /** The month boundary the domain applies it at, YYYY-MM-DD. */
+    /**
+     * The cuota boundary the domain reshapes the plan from, YYYY-MM-DD (#182). The
+     * balance itself drops on `date` (#1291); this is where the recomputed cuota /
+     * shortened term is derived.
+     */
     boundaryDate: string;
     /** Rendered with cents: a repayment is exact to the cent. */
     amount: string;

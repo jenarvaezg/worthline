@@ -9,15 +9,20 @@ import { rippleHistoricalSnapshotsForDebt } from "./ripple-engine";
 
 /**
  * The from-date a ripple for an amortization-plan event (early repayment or rate
- * revision) must use (#1042): the schedule boundary the event anchors to, NOT its
- * raw date. The live curve buckets an event by the boundary it falls in (#182).
- * For an early repayment the lump lands on that boundary, so the whole window
- * `[boundary, eventDate)` shows the post-lump balance; rippling from the raw date
- * would leave the persisted snapshots in that window at their pre-lump value
- * forever, diverging from the live curve, and a later ripple crossing the window
- * would silently rewrite figures the user already saw. A rate revision does not
- * move the in-window balance (it changes the payment from the next cuota on), so
- * for revisions this alignment is a consistency guarantee, not a divergence fix.
+ * revision) must RECALCULATE from (#1042): the schedule boundary the event anchors
+ * to, NOT its raw date. The live curve buckets an event by the boundary it falls in
+ * (#182), and both event types reshape that whole cycle — the lump changes its
+ * interest and recomputed cuota, a revision its payment — so under `interpolated`
+ * every date in the cycle is redrawn and the boundary is the earliest one that can
+ * move. Rippling from the raw date would leave those in-window snapshots diverging
+ * from the live curve forever, and a later ripple crossing the window would
+ * silently rewrite figures the user already saw.
+ *
+ * It is NOT where a repayment's own snapshot is generated: the curve steps down on
+ * the repayment date (#1291), so that date is the dated fact's generate-at date
+ * (ADR 0012) and travels separately as `eventDateKey`. Under the default `step`
+ * cadence the recalculated in-window snapshots simply land back on the value they
+ * already held.
  *
  * Shares the single source of truth (`eventBoundaryDate`) with the curve's own
  * bucketing so the two can never drift. The whether-to-ripple guard (ADR 0012:
@@ -247,8 +252,9 @@ export function createDebtPlanCommands(
     },
     addEarlyRepaymentAndRipple: async (input, opts) => {
       const today = opts.today ?? new Date().toISOString().slice(0, 10);
-      // A past repayment is a dated fact: generate the snapshot at its date and
-      // recalculate the ones after it (the "amortizable-repayment" kind).
+      // A past repayment is a dated fact: generate the snapshot at its own date —
+      // where the curve steps (#1291) — and recalculate from its cuota boundary
+      // forward (the "amortizable-repayment" kind).
       await ctx.transaction(async () => {
         await stores.liabilities.addEarlyRepayment(input);
         // Guard (ADR 0012) stays on the raw date; the from-date moves to the
@@ -261,6 +267,7 @@ export function createDebtPlanCommands(
           workspace,
           stores.snapshots.saveSnapshot,
           {
+            eventDateKey: input.repaymentDate,
             fromDateKey: await amortizationEventRippleFromDate(
               stores.liabilities,
               opts.liabilityId,
@@ -304,6 +311,10 @@ export function createDebtPlanCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
+                // The snapshot is generated where the curve steps NOW (#1291): the
+                // new date. The old one keeps its snapshot and is recalculated, since
+                // the recalc floor is the boundary of the earlier of the two dates.
+                eventDateKey: newDate,
                 fromDateKey: await amortizationEventRippleFromDate(
                   stores.liabilities,
                   liabilityId,

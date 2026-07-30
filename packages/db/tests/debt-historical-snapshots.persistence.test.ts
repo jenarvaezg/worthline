@@ -334,18 +334,34 @@ describe("historical snapshots from amortizable plans", () => {
     );
 
     // Every snapshot in the cycle — including 03-15 and 03-18, both dated BEFORE the
-    // raw 03-20 event — now matches the live curve (post-lump). Rippling from the
-    // raw date would have left these at the pre-lump value forever (the bug).
+    // raw 03-20 event — still matches the live curve. Rippling from the boundary is
+    // what keeps that true: the recompute lands on the very same figure, so no
+    // snapshot in the window is left diverging from the curve (the bug).
     for (const dateKey of CYCLE) {
       expect(await debtsAt(store, dateKey)).toBe(
         await store.liabilities.debtBalanceAtDate("mortgage", dateKey),
       );
       expect(await holdingsReconcile(store, dateKey)).toBe(true);
     }
-    // The in-window snapshot genuinely moved by the lump — proof the ripple reached
-    // back to the cuota boundary rather than stopping at the raw event date.
+    // And the window is UNCHANGED: the lump is dated 03-20, so it cannot show up in
+    // a figure the user saw on 03-18 (#1291).
     const postLump = (await debtsAt(store, "2026-03-18"))!;
-    expect(preLump - postLump).toBeGreaterThan(19_000_00);
+    expect(postLump).toBe(preLump);
+
+    // Where it DOES show is from its own date on. The repayment date is the dated
+    // fact's own date, so the ripple generates the snapshot there (ADR 0012) — the
+    // history must carry the step on the day the money left, not only from the next
+    // cuota.
+    expect(await debtsAt(store, "2026-03-20")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-03-20"),
+    );
+    expect(preLump - (await debtsAt(store, "2026-03-20"))!).toBeGreaterThan(19_000_00);
+    expect(await holdingsReconcile(store, "2026-03-20")).toBe(true);
+    // …and the next cuota carries it too.
+    expect(await debtsAt(store, "2026-04-15")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-04-15"),
+    );
+    expect(preLump - (await debtsAt(store, "2026-04-15"))!).toBeGreaterThan(19_000_00);
 
     // A later unrelated whole-plan ripple crossing the window does NOT rewrite any
     // figure the user already saw: the persisted history already equals the live
@@ -381,9 +397,10 @@ describe("historical snapshots from amortizable plans", () => {
 
     // TODAY is 2026-06-13; a lump dated exactly today anchors to the 2026-05-15
     // cuota boundary (the largest boundary ≤ today). The ADR-0012 guard keys on the
-    // RAW date, so a today-dated fact is allowed to ripple, but the from-date is the
-    // PAST boundary — so its already-persisted boundary snapshot must reflect the
-    // lump, while no future snapshot is ever fabricated.
+    // RAW date, so a today-dated fact is allowed to ripple, and the from-date is the
+    // PAST boundary — so the recompute reaches that snapshot and must land it back on
+    // the live curve, without fabricating any future snapshot. The lump itself is
+    // dated today, so it moves today's figure and nothing dated before it (#1291).
     const beforeBoundary = (await debtsAt(store, "2026-05-15"))!;
     await store.command.addEarlyRepayment(
       {
@@ -396,14 +413,16 @@ describe("historical snapshots from amortizable plans", () => {
       { liabilityId: "mortgage", today: TODAY },
     );
 
-    // The past cuota-boundary snapshot now carries the lump and matches the live
-    // curve; the prior cuota (04-15) is untouched; no history beyond today.
+    // The past cuota-boundary snapshot still matches the live curve and is unchanged
+    // — the money left today, not on 05-15 — while today's figure carries the lump.
+    // No history beyond today is fabricated.
     expect(await debtsAt(store, "2026-05-15")).toBe(
       await store.liabilities.debtBalanceAtDate("mortgage", "2026-05-15"),
     );
-    expect(beforeBoundary - (await debtsAt(store, "2026-05-15"))!).toBeGreaterThan(
-      19_000_00,
-    );
+    expect(await debtsAt(store, "2026-05-15")).toBe(beforeBoundary);
+    expect(
+      beforeBoundary - (await store.liabilities.debtBalanceAtDate("mortgage", TODAY)),
+    ).toBeGreaterThan(19_000_00);
     expect(await snapAt(store, "2026-06-15")).toBeUndefined();
     store.close();
   });

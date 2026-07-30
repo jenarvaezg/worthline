@@ -14,6 +14,7 @@ import {
   remainingMonthlyPayments,
   suggestFirstPaymentDate,
 } from "./amortization";
+import type { ValuationCadence } from "./valuation-cadence";
 
 /**
  * Pure French-amortization balance curve (PRD #109, slice 7).
@@ -691,7 +692,15 @@ describe("eventBoundaryDate — ripple from-date shares the curve's bucketing (#
     expect(eventBoundaryDate(DAY8_LOAN, EVENT_DATE)).toBe(CYCLE_BOUNDARY);
   });
 
-  test("the helper agrees with the curve: the live balance is flat and post-lump across [boundary, eventDate)", () => {
+  /**
+   * The from-date stays at the CYCLE BOUNDARY even though the step-cadence curve
+   * no longer moves before the repayment date (#1291): under `interpolated` the
+   * whole cycle is redrawn (its upper anchor is the new post-lump closing), so the
+   * boundary is the earliest date any cadence can shift. Rippling from there is a
+   * superset — the step-cadence dates in [boundary, eventDate) re-derive the exact
+   * same value they already hold.
+   */
+  test("the helper agrees with the curve: [boundary, eventDate) is untouched, the drop lands on the event date", () => {
     const lump = 20_000_00;
     const repayments: EarlyRepayment[] = [
       { amountMinor: lump, mode: "reduce-payment", repaymentDate: EVENT_DATE },
@@ -704,19 +713,15 @@ describe("eventBoundaryDate — ripple from-date shares the curve's bucketing (#
           : { plan: DAY8_LOAN, targetDate },
       );
 
-    // Post-lump value the ripple-from-boundary would persist at the cycle start.
-    const postLumpAtBoundary = balanceAt(boundary, true);
-    expect(balanceAt(boundary, false) - postLumpAtBoundary).toBe(lump);
-
-    // Every date in [boundary, eventDate) carries that SAME post-lump value in the
-    // live curve (step-by-default within a cuota cycle) — so recalculating those
-    // existing snapshots from the boundary re-derives exactly what the curve shows.
-    for (const dateInWindow of [boundary, "2022-02-20", "2022-03-02"]) {
-      expect(balanceAt(dateInWindow, true)).toBe(postLumpAtBoundary);
-      // …and each pre-lump value (what a stale snapshot keeps if the ripple starts
-      // at the raw event date) diverges from the live curve — the bug this fixes.
-      expect(balanceAt(dateInWindow, false)).not.toBe(postLumpAtBoundary);
+    // Every date from the cycle's cuota up to (not including) the repayment keeps
+    // the balance the previous cuota closed at: the lump has not been paid yet.
+    for (const dateBeforeLump of [boundary, "2022-02-20", "2022-03-02"]) {
+      expect(balanceAt(dateBeforeLump, true)).toBe(balanceAt(boundary, false));
     }
+    // On the repayment date the balance steps down by exactly the lump …
+    expect(balanceAt(boundary, false) - balanceAt(EVENT_DATE, true)).toBe(lump);
+    // … and stays there through the rest of the cycle (step-by-default).
+    expect(balanceAt("2022-03-07", true)).toBe(balanceAt(EVENT_DATE, true));
   });
 
   test("an event on a boundary anchors to that boundary itself", () => {
@@ -730,6 +735,206 @@ describe("eventBoundaryDate — ripple from-date shares the curve's bucketing (#
     expect(eventBoundaryDate(DAY8_LOAN, DAY8_LOAN.disbursementDate)).toBe(
       DAY8_LOAN.disbursementDate,
     );
+  });
+});
+
+/**
+ * Regression for #1291. An early repayment used to be imputed to the CLOSING OF
+ * THE PREVIOUS CUOTA: the cycle's boundary balance was overwritten with the
+ * post-lump figure, so under `step` (the default, ADR 0031) the balance appeared
+ * reduced weeks before the payment existed. Two measurable consequences: the
+ * history stopped being reproducible (a snapshot taken in that window diverged
+ * from the live recompute, and the trace called it an infidelity that no user
+ * correction explains), and the drop was dated wrong on every debt curve.
+ *
+ * The contract now: the money leaves on its own day. The cycle's boundary keeps
+ * what the previous cuota closed at, the curve steps down on the repayment date,
+ * and the following cuota closes exactly where it did before — the lump is
+ * reflected ONCE.
+ *
+ * Deliberately unchanged (noted in the issue as a separate model question): the
+ * period's interest is still accrued on the post-lump opening balance, so the
+ * cuota the bank charges for the cycle the lump falls in is the reduced one.
+ */
+describe("early repayment dating: the drop lands on the repayment date (#1291)", () => {
+  // The real case (workspace de Jose, `Préstamos Revolut`): 6.000 € at 5,89 % over
+  // 42 months, disbursed 2026-05-08, first cuota 2026-06-08 of 158,44 €, with a
+  // 154,34 € reduce-plazo lump on 2026-07-03.
+  const REVOLUT: AmortizationPlanInput = {
+    annualInterestRate: "0.0589",
+    initialCapitalMinor: 6_000_00,
+    disbursementDate: "2026-05-08",
+    firstPaymentDate: "2026-06-08",
+    termMonths: 42,
+  };
+  const LUMP: EarlyRepayment = {
+    amountMinor: 154_34,
+    mode: "reduce-term",
+    repaymentDate: "2026-07-03",
+  };
+  // First cuota: interest = 6.000 × 0.0589/12 = 29,45; principal = 158,44 − 29,45
+  // = 128,99 → the June cuota closes at 5.871,01 €.
+  const JUNE_CLOSING = 5_871_01;
+  // The cuota that closes the cycle the lump falls in (cuotas are on day 8).
+  const NEXT_CUOTA = "2026-07-08";
+
+  const balanceAt = (
+    targetDate: string,
+    options: { repayments?: readonly EarlyRepayment[]; cadence?: ValuationCadence } = {},
+  ) =>
+    amortizableBalanceAtDate({
+      earlyRepayments: options.repayments ?? [LUMP],
+      plan: REVOLUT,
+      targetDate,
+      ...(options.cadence ? { cadence: options.cadence } : {}),
+    });
+
+  test("reproduction: the window between the cuota and the payment keeps the cuota's closing", () => {
+    // The whole window is the balance the June cuota actually closed at — the
+    // figure a snapshot taken on any of these days must reproduce.
+    for (const dateBeforeLump of ["2026-06-08", "2026-06-30", "2026-07-02"]) {
+      expect(balanceAt(dateBeforeLump)).toBe(JUNE_CLOSING);
+      // …and it is the same as the curve without the lump at all: nothing has
+      // been paid yet, so the two curves cannot differ here.
+      expect(balanceAt(dateBeforeLump, { repayments: [] })).toBe(JUNE_CLOSING);
+    }
+  });
+
+  test("on the repayment date the balance drops by exactly the lump", () => {
+    expect(balanceAt("2026-07-03")).toBe(JUNE_CLOSING - LUMP.amountMinor);
+    // Flat from there to the next cuota (step-by-default within a cycle).
+    expect(balanceAt("2026-07-07")).toBe(JUNE_CLOSING - LUMP.amountMinor);
+  });
+
+  test("the following cuota closes where it always did: the lump counts once", () => {
+    // The lump falls in the cycle [2026-06-08, 2026-07-08), whose cuota is the one
+    // dated 2026-07-08. That period opens post-lump at 5.716,67 €, accrues
+    // 5.716,67 × 0.0589/12 = 28,06 € of interest and keeps the 158,44 € cuota
+    // (reduce-plazo), so it retires 130,37 € of principal and closes at
+    // 5.586,30 € — the same closing the engine produced before the fix. The
+    // dating changed; the forward schedule did not.
+    expect(balanceAt(NEXT_CUOTA)).toBe(5_586_30);
+    // The drop across the whole cycle is the lump plus the cuota's principal,
+    // never twice the lump.
+    expect(JUNE_CLOSING - balanceAt(NEXT_CUOTA)).toBe(LUMP.amountMinor + 130_37);
+  });
+
+  test("two lumps in the same cycle each land on their own date", () => {
+    // Both inside [2026-06-08, 2026-07-08) — the case the real workspace does not
+    // have (its 3-jul and 24-jul fall in different cycles) and that must be pinned.
+    const first: EarlyRepayment = {
+      amountMinor: 100_00,
+      mode: "reduce-term",
+      repaymentDate: "2026-06-20",
+    };
+    const second = LUMP; // 154,34 € on 2026-07-03
+    const both = [first, second];
+
+    expect(balanceAt("2026-06-19", { repayments: both })).toBe(JUNE_CLOSING);
+    expect(balanceAt("2026-06-20", { repayments: both })).toBe(
+      JUNE_CLOSING - first.amountMinor,
+    );
+    expect(balanceAt("2026-07-02", { repayments: both })).toBe(
+      JUNE_CLOSING - first.amountMinor,
+    );
+    expect(balanceAt("2026-07-03", { repayments: both })).toBe(
+      JUNE_CLOSING - first.amountMinor - second.amountMinor,
+    );
+    // Input order must not matter: the curve applies them by date.
+    expect(balanceAt("2026-07-02", { repayments: [second, first] })).toBe(
+      JUNE_CLOSING - first.amountMinor,
+    );
+    // Each is reflected exactly once in the cuota's closing: it falls by the extra
+    // lump plus the month's interest that lump no longer accrues (100 € × 0.0589/12
+    // = 0,49 € at full precision, 0,50 € once rounded at the edge), never by twice
+    // either lump.
+    const closingWithBoth = balanceAt(NEXT_CUOTA, { repayments: both });
+    expect(balanceAt(NEXT_CUOTA) - closingWithBoth).toBe(100_50);
+  });
+
+  test("a lump on the cuota date itself still lands on that date", () => {
+    const onCuota: EarlyRepayment = {
+      amountMinor: 154_34,
+      mode: "reduce-term",
+      repaymentDate: NEXT_CUOTA,
+    };
+    // 2026-07-08 is the second cuota: the balance there is that cuota's closing
+    // minus the lump, and the day before still belongs to the June cycle.
+    expect(balanceAt("2026-07-07", { repayments: [onCuota] })).toBe(JUNE_CLOSING);
+    expect(balanceAt(NEXT_CUOTA, { repayments: [onCuota] })).toBe(
+      balanceAt(NEXT_CUOTA, { repayments: [] }) - onCuota.amountMinor,
+    );
+  });
+
+  test("a lump paid inside the disbursement→first-payment stub shows from its date", () => {
+    // The stub is flat at the initial capital (ADR 0019), but a lump paid inside
+    // it is real money: it must show from its day, not wait for the first cuota.
+    const inStub: EarlyRepayment = {
+      amountMinor: 500_00,
+      mode: "reduce-term",
+      repaymentDate: "2026-05-20",
+    };
+    expect(balanceAt("2026-05-19", { repayments: [inStub] })).toBe(6_000_00);
+    expect(balanceAt("2026-05-20", { repayments: [inStub] })).toBe(6_000_00 - 500_00);
+    expect(balanceAt("2026-06-07", { repayments: [inStub] })).toBe(6_000_00 - 500_00);
+  });
+
+  test("the schedule hangs the lump on the period whose figures it moves", () => {
+    // The issue's other half of the evidence: the frontier dated 2026-06-08 (period
+    // 1) carried the 2026-07-03 event. It is period 2 (the 2026-07-08 cuota) that
+    // opens on the reduced balance and closes below it, so that is the row the event
+    // belongs to — otherwise one row moves 154,34 € with no event while another
+    // lists an event that moves nothing.
+    const trace = amortizationScheduleTrace({
+      earlyRepayments: [LUMP],
+      plan: REVOLUT,
+      targetDate: "2026-07-03",
+    });
+    const june = trace.periods.find((p) => p.date === "2026-06-08")!;
+    const july = trace.periods.find((p) => p.date === NEXT_CUOTA)!;
+
+    expect(june.events).toEqual([]);
+    expect(june.closingBalanceMinor).toBe(JUNE_CLOSING);
+    expect(july.events).toEqual([
+      {
+        amountMinor: LUMP.amountMinor,
+        date: LUMP.repaymentDate,
+        kind: "early_repayment",
+        mode: "reduce-term",
+      },
+    ]);
+    // The row it rides is the one that opens post-lump: opening = the previous
+    // closing minus the lump, so the table adds up within its own row.
+    expect(july.openingBalanceMinor).toBe(JUNE_CLOSING - LUMP.amountMinor);
+    // And every closing still equals the curve on its own date.
+    for (const period of trace.periods) {
+      expect(period.closingBalanceMinor).toBe(balanceAt(period.date));
+    }
+  });
+
+  test("interpolated draws its line between the real dates, with the lump as a step", () => {
+    const interpolated = { cadence: "interpolated" as ValuationCadence };
+    // The cycle opens at the June closing under either cadence …
+    expect(balanceAt("2026-06-08", interpolated)).toBe(JUNE_CLOSING);
+    // … the line only amortizes before the lump (a few euros, never the lump) …
+    const dayBefore = balanceAt("2026-07-02", interpolated);
+    expect(dayBefore).toBeLessThan(JUNE_CLOSING);
+    expect(dayBefore).toBeGreaterThan(JUNE_CLOSING - 150_00);
+    // … and it tracks the no-lump line to within the residue of the deferred
+    // accrual: the period's ordinary principal is computed on the post-lump balance
+    // (the model change the issue leaves out), so prorating it makes the pre-payment
+    // stretch amortize a hair faster. Cents here, against 154,34 € of backdating
+    // before the fix — and exactly zero under the default `step` cadence.
+    const noLump = balanceAt("2026-07-02", { cadence: "interpolated", repayments: [] });
+    expect(noLump - dayBefore).toBeLessThan(1_00);
+    expect(noLump - dayBefore).toBeGreaterThan(0);
+    // … the lump is a step of its own size on its date (plus that one day of
+    // ordinary amortization the line keeps drawing) …
+    const stepOverTheLump = dayBefore - balanceAt("2026-07-03", interpolated);
+    expect(stepOverTheLump).toBeGreaterThan(154_00);
+    expect(stepOverTheLump).toBeLessThan(160_00);
+    // … and the cycle still ends exactly on the next cuota's closing.
+    expect(balanceAt(NEXT_CUOTA, interpolated)).toBe(balanceAt(NEXT_CUOTA));
   });
 });
 
