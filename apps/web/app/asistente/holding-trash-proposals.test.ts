@@ -153,6 +153,37 @@ describe("buildHoldingRemovalProposal (#1106)", () => {
     const built = await buildHoldingRemovalProposal(store, ["wl_hld_ghost"], TODAY);
     expect(built.ok).toBe(false);
   });
+
+  /**
+   * The connected-source frontier, in code (uso real 2026-07-30): the sync would re-project a
+   * sync-owned holding the moment it ran, so a baja is not a reversible batch there
+   * — it is a lie. Refuse it, name the source, point at the one path that works.
+   */
+  test("a sync-owned holding is refused, and the batch it was in writes nothing", async () => {
+    const store = await seed();
+    await createCash(store, "a1", "Cuenta BBVA", 2_500_00);
+    const { assetId } = await store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: "test-key" }),
+      label: "Colección de monedas",
+      ownership: SOLO,
+    });
+
+    const built = await buildHoldingRemovalProposal(
+      store,
+      [await publicIdOf(store, "a1"), await publicIdOf(store, assetId)],
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("Colección de monedas");
+    expect(built.error).toContain("numista");
+    expect(built.error).toContain("/ajustes");
+    // All-or-nothing: the manual holding in the same batch is untouched, and no
+    // draft was persisted for a batch that can never be applied.
+    expect(await store.agentView.readTrashedHoldings()).toHaveLength(0);
+  });
 });
 
 describe("holding baja server action (#1106)", () => {

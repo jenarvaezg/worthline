@@ -25,6 +25,11 @@ import { buildFireProjection } from "./fire-projection-context";
 import { buildGoals } from "./goals-context";
 import { buildHoldingDetail } from "./holding-detail";
 import { buildHoldingOperations } from "./holding-operations";
+import {
+  buildHoldingSearch,
+  DEFAULT_HOLDING_MATCH_LIMIT,
+  MAX_HOLDING_MATCH_LIMIT,
+} from "./holding-search";
 import { clampPositiveLimit } from "./pagination";
 import { buildPriceFreshness } from "./price-freshness";
 import { bindScope } from "./scoped-read";
@@ -125,6 +130,18 @@ export function createReadStoreBackend(
         limit: pageLimit(params.limit),
       });
       return pageEnvelope(summary.holdings, summary.meta);
+    },
+    findHoldings: async (scopeId, params) => {
+      const page = await buildHoldingSearch(bindScope(agentView, scopeId), {
+        asOf,
+        limit: clampPositiveLimit(params.limit, {
+          defaultLimit: DEFAULT_HOLDING_MATCH_LIMIT,
+          maxLimit: MAX_HOLDING_MATCH_LIMIT,
+          onInvalid: "default",
+        }),
+        query: params.query,
+      });
+      return pageEnvelope(page.matches, page.meta);
     },
     holdingDetail: async (holdingId) =>
       successEnvelope(

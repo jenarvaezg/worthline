@@ -26,6 +26,10 @@ import {
   reassignToNew,
 } from "@worthline/domain";
 import {
+  connectedSourceRemovalRejection,
+  readConnectedSourceOwners,
+} from "./connected-source-write-guard";
+import {
   type HoldingTrashImpact,
   holdingTrashImpact,
   signedContributionMinor,
@@ -136,6 +140,9 @@ export async function buildHoldingRemovalProposal(
 
   const { assets, liabilities } = await store.agentView.readCurveValuedHoldings(today);
   const publicByInternal = publicIdMap(await store.agentView.readPublicIds(), "holding");
+  // The connected-source frontier, in code (uso real 2026-07-30): a sync-owned holding cannot be
+  // sent to the papelera — the next sync would project it right back.
+  const connectedOwners = await readConnectedSourceOwners(store.agentView);
 
   const assetByPublic = new Map(
     assets.map((asset) => [publicByInternal.get(asset.id), asset]),
@@ -152,6 +159,10 @@ export async function buildHoldingRemovalProposal(
     const asset = assetByPublic.get(publicId);
     const liability = liabilityByPublic.get(publicId);
     if (asset) {
+      const owner = connectedOwners.get(asset.id);
+      if (owner) {
+        return { error: connectedSourceRemovalRejection(owner, asset.name), ok: false };
+      }
       const bps = totalOwnershipBps(asset.ownership);
       lines.push({
         contributionMinor: signedContributionMinor(

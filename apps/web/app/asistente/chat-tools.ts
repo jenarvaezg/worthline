@@ -19,6 +19,10 @@ import {
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
 } from "@web/agent-view/holding-operations";
+import {
+  DEFAULT_HOLDING_MATCH_LIMIT,
+  MAX_HOLDING_MATCH_LIMIT,
+} from "@web/agent-view/holding-search";
 import { clampPositiveLimit } from "@web/agent-view/pagination";
 import { isAgentViewErrorEnvelope, runCatalogRead } from "@web/agent-view/read-backend";
 import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
@@ -345,6 +349,10 @@ function toChatFinancialContext(context: AgentViewFinancialContext) {
       direction: holding.direction,
       liquidityTier: holding.liquidityTier,
       currentValue: holding.currentValue,
+      // Procedencia travels ON the row (uso real 2026-07-30). Trimming it is what let the free
+      // pool's model read the `connectedSources` block, fail to join it to the
+      // holding, and offer to declare a Numista collection's value by hand.
+      ...(holding.connectedSource ? { connectedSource: holding.connectedSource } : {}),
     })),
     omittedHoldings:
       context.holdings.omittedCount > 0
@@ -1156,6 +1164,48 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         }),
     }),
 
+    find_holdings: tool({
+      description:
+        "Busca posiciones VIVAS del scope por nombre, símbolo o ISIN (subcadena, sin distinguir " +
+        "mayúsculas ni acentos) sobre TODAS las posiciones, incluidas las que valen 0 € — que " +
+        "get_financial_context ordena últimas y deja fuera de su corte. Úsala SIEMPRE que el " +
+        "usuario nombre una posición que no hayas visto en una lectura («el fondo a 0 €», un " +
+        "ticker, parte de una etiqueta): devuelve el id público wl_hld_… que necesita una " +
+        "corrección o una baja, la etiqueta, dirección, instrumento, valor, por qué campo casó, " +
+        "símbolo/ISIN si constan y `connectedSource` cuando el dueño del valor es el sync (a esas " +
+        "no se les escribe). Nunca concluyas que una posición no existe sin haberla buscado aquí. " +
+        "Ordena por valor absoluto descendente y acota los resultados (meta.truncated avisa si el " +
+        "tope dejó fuera coincidencias: afina la búsqueda). La papelera NO se busca aquí, sino con " +
+        "get_trash_summary. Solo lectura.",
+      inputSchema: jsonSchema<{ query: string; scopeId?: string; limit?: number }>({
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          scopeId: { type: "string" },
+          limit: { maximum: MAX_HOLDING_MATCH_LIMIT, minimum: 1, type: "integer" },
+        },
+        required: ["query"],
+        additionalProperties: false,
+      }),
+      execute: (args) =>
+        chatRead(input, async (store) => {
+          const scopeId = await resolveScopeId(store, args.scopeId);
+          if (!scopeId) return EMPTY_WORKSPACE;
+          const limit = clampPositiveLimit(args.limit, {
+            defaultLimit: DEFAULT_HOLDING_MATCH_LIMIT,
+            maxLimit: MAX_HOLDING_MATCH_LIMIT,
+            onInvalid: "reject",
+          });
+          const result = await catalogRead(
+            catalog.find_holdings,
+            { limit, query: args.query ?? "", scopeId },
+            store.agentView,
+          );
+          if (isAgentViewErrorEnvelope(result)) return result;
+          return { matches: result.data, meta: result.meta };
+        }),
+    }),
+
     get_holding_detail: tool({
       description:
         "Detalle completo de una posición por su id `wl_hld_…`: valor, propiedad, instrumento, " +
@@ -1566,7 +1616,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "'declare_value' (activo: valueMinor real de hoy → valuation anchor), " +
         "'change_debt_model' (debtModel destino cuando el modelo era el error), " +
         "'edit_config' (name, ownership, cadence, o plan.{annualInterestRate,termMonths,firstPaymentDate}). " +
-        "No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Split, alta o baja → wizard o papelera, no esta tool.",
+        "Los holdings de fuente conectada (Binance/Numista) están RECHAZADOS por la app, no solo desaconsejados: ahí el dueño es el sync (la ficha del holding lo marca con `connectedSource`), y la propuesta vuelve con un error que explica el camino. Split, alta o baja → wizard o papelera, no esta tool.",
       inputSchema: CORRECTION_PROPOSAL_SCHEMA,
       execute: (args) =>
         withProposalBudget(() =>
@@ -1581,6 +1631,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             );
             const built = await buildCorrectionProposal(
               {
+                agentView: store.agentView,
                 assets: store.assets,
                 assistantProposals: store.assistantProposals,
                 liabilities: store.liabilities,
@@ -1688,7 +1739,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     propose_holding_removal: tool({
       description:
         "Prepara una propuesta de BAJA reversible (soft delete a la papelera) de UNO O VARIOS holdings manuales, por sus ids públicos wl_hld_… ya leídos. Es el caso «quita/borra estos activos». Se aplica en lote atómico tras confirmar; nada se pierde (se puede restaurar). " +
-        "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
+        "Si el usuario nombra una posición que no has leído (típico: «el fondo que está a 0 €», que get_financial_context ordena última y deja fuera de su corte), búscala PRIMERO con find_holdings y usa el id que devuelva; no inventes ids ni le pidas al usuario que los busque. " +
+        "Los holdings de fuente conectada (Binance/Numista) están RECHAZADOS por la app: ahí el dueño es el sync (`connectedSource` en la ficha) y la propuesta vuelve con un error que explica el camino. El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
       inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
       // `neutral` in the gate's classification and still budgeted (#1246 review).
       // Classification and cap answer different questions: a trash proposal is born

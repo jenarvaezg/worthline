@@ -178,6 +178,116 @@ describe("buildCorrectionProposal (#1051)", () => {
   });
 });
 
+/**
+ * The connected-source frontier, in code (uso real 2026-07-30).
+ *
+ * From a real free-tier transcript: the model announced the user's Numista
+ * collection «no se actualiza automáticamente» and prepared a `declare_value`. The
+ * only thing standing in its way was a sentence in the tool description — so a
+ * confirm would have planted a `valuation_anchor` on an asset whose owner is the
+ * sync.
+ */
+describe("buildCorrectionProposal · connected sources are sync-owned (uso real 2026-07-30)", () => {
+  const SOLO = [{ memberId: "m", shareBps: 10_000 }];
+
+  async function seedWorkspace(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m", name: "Titular" }],
+      mode: "individual",
+    });
+    return store;
+  }
+
+  test("declare_value on a sync-owned asset is refused, naming the source and the way out", async () => {
+    const store = await seedWorkspace();
+    const { assetId } = await store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: "test-key" }),
+      label: "Colección de monedas",
+      ownership: SOLO,
+    });
+
+    const built = await buildCorrectionProposal(
+      store,
+      {
+        correction: { kind: "declare_value", valueMinor: 4_800_00 },
+        holdingId: assetId,
+        publicHoldingId: "wl_hld_coins",
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    // Honest and actionable: which source owns it, and where the repair lives.
+    expect(built.error).toContain("Colección de monedas");
+    expect(built.error).toContain("numista");
+    expect(built.error).toContain("/ajustes");
+    // And nothing was persisted: no draft, no anchor.
+    expect(await store.assets.readValuationAnchors(assetId)).toHaveLength(0);
+    store.close();
+  });
+
+  test("edit_config on a sync-owned asset is refused too (the name comes from the source)", async () => {
+    const store = await seedWorkspace();
+    const { assetId } = await store.connectedSources.connect({
+      adapter: "binance",
+      credentialsJson: JSON.stringify({ apiKey: "test-key" }),
+      label: "Binance principal",
+      ownership: SOLO,
+    });
+
+    const built = await buildCorrectionProposal(
+      store,
+      {
+        correction: { kind: "edit_config", name: "Cripto a mano" },
+        holdingId: assetId,
+        publicHoldingId: "wl_hld_crypto",
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("Binance principal");
+    store.close();
+  });
+
+  test("a hand-maintained asset still takes its declared value", async () => {
+    const store = await seedWorkspace();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 12_000_00,
+      id: "manual-metal",
+      instrument: "precious_metal",
+      liquidityTier: "illiquid",
+      name: "Monedas de plata",
+      ownership: SOLO,
+      type: "manual",
+    });
+
+    const built = await buildCorrectionProposal(
+      store,
+      {
+        correction: { kind: "declare_value", valueMinor: 13_500_00 },
+        holdingId: "manual-metal",
+        publicHoldingId: "wl_hld_metal",
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const fact = (await store.assistantProposals.read(built.proposal.draft.proposalId))
+      ?.documents[0]?.facts[0];
+    if (fact?.kind !== "holding_correction") throw new Error("expected correction fact");
+    if (fact.row.mode !== "anchor-only") throw new Error("expected anchor-only plan");
+    expect(fact.row.edits[0]?.kind).toBe("valuation_anchor");
+    store.close();
+  });
+});
+
 describe("correction proposal server actions (#1051)", () => {
   const clock = { today: () => TODAY };
 

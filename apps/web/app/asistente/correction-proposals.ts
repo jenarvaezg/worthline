@@ -16,6 +16,11 @@ import type {
 } from "@worthline/db";
 import { formatMoneyMinor, type ValuationCadence } from "@worthline/domain";
 import {
+  type ConnectedSourceProvenanceReads,
+  connectedSourceValueRejection,
+  readConnectedSourceOwners,
+} from "./connected-source-write-guard";
+import {
   CORRECTION_FOLIO,
   type CorrectionProposal,
   type CorrectionProposalEditRow,
@@ -24,6 +29,11 @@ import { boundProposalSummary } from "./proposal-summary";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities" | "assets"> & {
   assistantProposals: AssistantProposalStore;
+  /**
+   * Required, not optional: the connected-source frontier is enforced in code
+   * (uso real 2026-07-30), and an optional dependency would let a caller silently opt out of it.
+   */
+  agentView: ConnectedSourceProvenanceReads;
 };
 
 /** The correction the model declares, discriminated by `kind`. */
@@ -253,6 +263,14 @@ async function buildAssetCorrection(
   const currency = asset.currency;
   const edits: CorrectionEdit[] = [];
   const rows: CorrectionProposalEditRow[] = [];
+
+  // A sync-owned asset is off limits for EVERY correction, not just the value: its
+  // name, ownership and cadence come from the source too, and a rename would drift
+  // away on the next sync. Refuse before touching anything (uso real 2026-07-30).
+  const owner = (await readConnectedSourceOwners(store.agentView)).get(asset.id);
+  if (owner) {
+    return { ok: false, error: connectedSourceValueRejection(owner, asset.name) };
+  }
 
   if (correction.kind === "declare_value") {
     if (!Number.isFinite(correction.valueMinor)) {

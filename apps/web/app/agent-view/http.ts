@@ -4,6 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import {
   createAgentViewCatalog,
+  type FindHoldingsInput,
   type GetConnectedSourcePositionsInput,
   type GetContributionPlanInput,
   type GetDataQualityInput,
@@ -28,6 +29,7 @@ import {
 import { DEFAULT_DATA_QUALITY_LIMIT, MAX_DATA_QUALITY_LIMIT } from "./data-quality";
 import { isFigureName } from "./figure-explanations";
 import { DEFAULT_OPERATION_LIMIT, MAX_OPERATION_LIMIT } from "./holding-operations";
+import { DEFAULT_HOLDING_MATCH_LIMIT, MAX_HOLDING_MATCH_LIMIT } from "./holding-search";
 import { pagedHttpEnvelope, parsePositiveLimit } from "./pagination";
 import { isAgentViewErrorEnvelope, runCatalogRead } from "./read-backend";
 import { DEFAULT_SNAPSHOT_LIMIT, MAX_SNAPSHOT_LIMIT } from "./snapshot-history";
@@ -289,6 +291,42 @@ export async function handleGetTrashSummary(
       catalogPagedJson(
         request,
         runCatalogRead(catalog.get_trash_summary, input, store.agentView),
+      ),
+    );
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+const FIND_HOLDINGS_QUERY_PARAMS = ["query", "limit"];
+
+/**
+ * Look up a scope's live holdings by name/symbol (uso real 2026-07-30). `query` is required — a
+ * missing or blank one is the builder's documented `422`, never an unbounded list
+ * of every holding.
+ */
+export async function handleFindHoldings(
+  request: NextRequest,
+  scopeId: string,
+  runWithStore: StoreRunner,
+): Promise<NextResponse> {
+  try {
+    guardAgentViewRequest(request, FIND_HOLDINGS_QUERY_PARAMS);
+
+    const params = new URL(request.url).searchParams;
+    const input: FindHoldingsInput = {
+      limit: parsePositiveLimit(params.get("limit"), {
+        defaultLimit: DEFAULT_HOLDING_MATCH_LIMIT,
+        maxLimit: MAX_HOLDING_MATCH_LIMIT,
+      }),
+      query: params.get("query") ?? "",
+      scopeId,
+    };
+
+    return await runWithStore((store) =>
+      catalogPagedJson(
+        request,
+        runCatalogRead(catalog.find_holdings, input, store.agentView),
       ),
     );
   } catch (error) {
