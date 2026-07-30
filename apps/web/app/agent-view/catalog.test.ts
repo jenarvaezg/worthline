@@ -62,6 +62,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
     snapshotHistory: record("snapshotHistory"),
     dataQuality: record("dataQuality"),
     trashSummary: record("trashSummary"),
+    findHoldings: record("findHoldings"),
     holdingDetail: record("holdingDetail"),
     calculationTrace: record("calculationTrace"),
     priceFreshness: record("priceFreshness"),
@@ -83,7 +84,7 @@ function recordingBackend(overrides: Partial<AgentViewBackend> = {}): {
 }
 
 describe("agent-view catalog · single source of truth (#576)", () => {
-  test("exposes exactly the 20 agent-view tools, each with matching metadata", () => {
+  test("exposes exactly the 21 agent-view tools, each with matching metadata", () => {
     const catalog = createAgentViewCatalog();
     const names = Object.values(catalog)
       .map((tool) => tool.name)
@@ -92,6 +93,7 @@ describe("agent-view catalog · single source of truth (#576)", () => {
     expect(names).toEqual(
       [
         "explain_figure",
+        "find_holdings",
         "get_calculation_trace",
         "get_connected_source_positions",
         "get_contribution_plan",
@@ -151,6 +153,34 @@ describe("agent-view catalog · single source of truth (#576)", () => {
       (tool.inputSchema.properties.limit as { description: string }).description,
     ).toContain(window);
   });
+
+  test("get_financial_context warns that its holdings block is a top-N and marks procedencia (uso real 2026-07-30)", () => {
+    const catalog = createAgentViewCatalog();
+    const description = catalog.get_financial_context.description;
+
+    // A user asked to delete a fund worth 0 €. It sorts LAST and fell outside the
+    // default cut, so the model concluded it did not exist. The description must
+    // name the cut, the 0-value consequence, and the way out.
+    expect(description).toContain("holdingLimit");
+    expect(description).toContain("omittedCount");
+    expect(description).toContain("find_holdings");
+    // And the value's owner travels on the row, so the model never has to join the
+    // holdings block to the connectedSources block to know a sync owns a holding.
+    expect(description).toContain("connectedSource");
+    expect(description).toMatch(/sync owns/i);
+  });
+
+  test("find_holdings is the lookup that reaches a 0-value holding (uso real 2026-07-30)", () => {
+    const catalog = createAgentViewCatalog();
+    const tool = catalog.find_holdings;
+
+    expect(tool.inputSchema.required).toEqual(["query"]);
+    expect(tool.description).toContain("including holdings");
+    expect(tool.description).toContain("wl_hld_");
+    expect(tool.description).toContain("connectedSource");
+    // Trash is a separate lens; the lookup must not be mistaken for it.
+    expect(tool.description).toContain("get_trash_summary");
+  });
 });
 
 describe("agent-view catalog · scope defaulting", () => {
@@ -197,6 +227,19 @@ describe("agent-view catalog · scope defaulting", () => {
     await expect(catalog.get_financial_context.run({}, backend)).rejects.toThrow(
       /no agent-view scopes/i,
     );
+  });
+
+  test("defaults find_holdings to the household scope and forwards the query", async () => {
+    const catalog = createAgentViewCatalog();
+    const { backend, calls } = recordingBackend();
+
+    await catalog.find_holdings.run({ query: "0P0001", limit: 5 }, backend);
+
+    expect(calls[0]?.method).toBe("listScopes");
+    expect(calls[1]).toEqual({
+      method: "findHoldings",
+      args: ["wl_scp_home", { query: "0P0001", limit: 5 }],
+    });
   });
 
   test("strips scopeId before handing pagination params to the backend", async () => {

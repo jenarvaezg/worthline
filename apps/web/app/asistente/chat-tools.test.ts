@@ -1593,6 +1593,105 @@ describe("createChatTools · holding-id provenance (#1263)", () => {
   );
 });
 
+/**
+ * «Hay un fondo a 0 €, elimínalo» resolves in ONE turn (uso real 2026-07-30).
+ *
+ * From a real free-tier transcript: the fund sorted last in the compact context and
+ * fell outside its cut, no read took a name or a ticker, and the turn died with the
+ * user pasting the exact symbol at an assistant that had nothing to do with it.
+ */
+describe("createChatTools · find_holdings and the connected-source frontier (uso real 2026-07-30)", () => {
+  const SOLO = [{ memberId: "m", shareBps: 10_000 }];
+
+  async function seedTinyWorkspace(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m", name: "Titular" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "closed-fund",
+      instrument: "fund",
+      name: "Fondo Cerrado Global",
+      ownership: SOLO,
+      providerSymbol: "0P0000TEST.F",
+    });
+    return store;
+  }
+
+  function chatToolsOver(store: WorthlineStore) {
+    return createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+        }),
+      asOf: AS_OF,
+    });
+  }
+
+  it("looks up the 0 € fund by ticker and grounds the baja it enables", async () => {
+    const store = await seedTinyWorkspace();
+    const tools = chatToolsOver(store);
+
+    const found = (await tools["find_holdings"]?.execute?.(
+      { query: "0P0000TEST.F" },
+      toolCallContext(),
+    )) as { matches: Array<{ id: string; label: string; currentValue: string }> };
+
+    expect(found.matches).toHaveLength(1);
+    const match = found.matches[0]!;
+    expect(match.label).toBe("Fondo Cerrado Global");
+    expect(isPublicHoldingId(match.id)).toBe(true);
+    // Money is formatted at the chat boundary like every other read (#629).
+    expect(match.currentValue).toMatch(/€/);
+
+    // Same turn: the id the lookup surfaced is grounded, so the baja goes through.
+    const proposal = (await tools["propose_holding_removal"]?.execute?.(
+      { holdingIds: [match.id] },
+      toolCallContext(),
+    )) as { error?: string; proposalType?: string };
+
+    expect(proposal.error).toBeUndefined();
+    expect(proposal.proposalType).toBe("holding_removal");
+  });
+
+  it("relays the sync-owned refusal instead of preparing a hand-declared value", async () => {
+    const store = await seedTinyWorkspace();
+    const { assetId } = await store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: "test-key" }),
+      label: "Colección de monedas",
+      ownership: SOLO,
+    });
+    const tools = chatToolsOver(store);
+
+    const found = (await tools["find_holdings"]?.execute?.(
+      { query: "monedas" },
+      toolCallContext(),
+    )) as {
+      matches: Array<{ id: string; connectedSource?: { adapter: string } }>;
+    };
+    const match = found.matches[0]!;
+    expect(match.connectedSource?.adapter).toBe("numista");
+
+    const refused = (await tools["propose_correction"]?.execute?.(
+      {
+        correction: { kind: "declare_value", valueMinor: 4_800_00 },
+        holdingId: match.id,
+      },
+      toolCallContext(),
+    )) as { error?: string };
+
+    expect(refused.error).toContain("Colección de monedas");
+    // And the sync's asset kept its derived value: nothing was anchored.
+    expect(await store.assets.readValuationAnchors(assetId)).toHaveLength(0);
+  });
+});
+
 /** Execute a tool tolerating a builder that throws on fixture-empty args. */
 async function callToolSafely(
   tools: ReturnType<typeof createChatTools>,

@@ -16,6 +16,7 @@ import type {
   AgentViewFireProjection,
   AgentViewGoal,
   AgentViewHoldingDetail,
+  AgentViewHoldingMatch,
   AgentViewIncludeHoldingRows,
   AgentViewMemberProfile,
   AgentViewOperation,
@@ -32,6 +33,7 @@ import type {
 } from "./contract";
 import { AgentViewHttpError } from "./contract";
 import { FIGURE_NAMES } from "./figure-explanations";
+import { DEFAULT_HOLDING_MATCH_LIMIT, MAX_HOLDING_MATCH_LIMIT } from "./holding-search";
 import { MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS } from "./snapshot-history";
 
 /**
@@ -132,6 +134,15 @@ export interface GetDataQualityInput {
   limit?: number;
   /** Opaque cursor from a previous page's `meta.nextCursor`. */
   cursor?: string;
+}
+
+export interface FindHoldingsInput {
+  /** Part of a name, or a symbol/ISIN. Case- and accent-insensitive. */
+  query: string;
+  /** Public scope ID; defaults to the household scope when omitted. */
+  scopeId?: string;
+  /** Max matches (default 10, max 50). */
+  limit?: number;
 }
 
 export interface GetTrashSummaryInput {
@@ -240,6 +251,10 @@ export interface AgentViewBackend {
     scopeId: string,
     params: Omit<GetTrashSummaryInput, "scopeId">,
   ): Promise<AgentViewEnvelope<AgentViewTrashedHolding[]>>;
+  findHoldings(
+    scopeId: string,
+    params: Omit<FindHoldingsInput, "scopeId">,
+  ): Promise<AgentViewEnvelope<AgentViewHoldingMatch[]>>;
   holdingDetail(holdingId: string): Promise<AgentViewEnvelope<AgentViewHoldingDetail>>;
   calculationTrace(
     params: GetCalculationTraceInput,
@@ -311,6 +326,10 @@ export interface AgentViewCatalog {
   get_trash_summary: AgentViewCatalogTool<
     GetTrashSummaryInput,
     AgentViewEnvelope<AgentViewTrashedHolding[]>
+  >;
+  find_holdings: AgentViewCatalogTool<
+    FindHoldingsInput,
+    AgentViewEnvelope<AgentViewHoldingMatch[]>
   >;
   get_holding_detail: AgentViewCatalogTool<
     GetHoldingDetailInput,
@@ -444,7 +463,15 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_financial_context: {
       description:
-        "Get the compact current financial context for a scope (defaults to the household scope).",
+        "Get the compact current financial context for a scope (defaults to the household scope). " +
+        "The holdings block is a TOP-N: holdings are sorted by ABSOLUTE current value descending and " +
+        "cut at holdingLimit (default 25, max 100) — the rest are reported only as " +
+        "omittedCount/omittedTotalValue. A holding worth 0 therefore sorts LAST and is normally OUTSIDE the " +
+        "cut, so never conclude a holding does not exist from its absence here: look it up by name or symbol " +
+        "with find_holdings (or raise holdingLimit). " +
+        "A holding materialized by a connected source carries connectedSource {adapter, label}: the SYNC owns " +
+        "that value. Never declare, correct, or remove such a holding — it is refused; the repair path is " +
+        "syncing or re-mapping the source in /ajustes/conexiones. No mark means the holding is hand-maintained.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -573,6 +600,39 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         const { scopeId, ...rest } = input;
         const resolved = await resolveScopeId(scopeId, backend);
         return backend.trashSummary(resolved, rest);
+      },
+    },
+    find_holdings: {
+      description:
+        "Find a scope's LIVE holdings by name, price symbol, or ISIN (defaults to the household scope): " +
+        "case- and accent-insensitive substring match over EVERY holding in the scope — including holdings " +
+        "worth 0, which get_financial_context sorts last and normally leaves outside its cut. Use it whenever " +
+        'the user names a holding you have not seen in a read ("the fund at 0 €", a ticker, part of a label): ' +
+        "it returns the public id (wl_hld_…) a correction or a baja needs, the label, direction, instrument, " +
+        "current value, which field matched, the symbol/ISIN when known, and connectedSource {adapter, label} " +
+        "when a sync owns the holding (never write to those). Ranked by absolute value descending and capped " +
+        `(default ${DEFAULT_HOLDING_MATCH_LIMIT}, max ${MAX_HOLDING_MATCH_LIMIT}); meta.truncated says the cap ` +
+        "dropped matches — narrow the query rather than guessing. An empty query is a 422. Trashed holdings are " +
+        "NOT searched (they live in get_trash_summary). Reads are side-effect-free.",
+      inputSchema: {
+        additionalProperties: false,
+        properties: {
+          limit: clampedPositiveIntegerSchema("match cap", MAX_HOLDING_MATCH_LIMIT),
+          query: {
+            description:
+              "Part of a holding's name, or its price symbol / ISIN. Case- and accent-insensitive.",
+            type: "string",
+          },
+          scopeId: { type: "string" },
+        },
+        required: ["query"],
+        type: "object",
+      },
+      name: "find_holdings",
+      run: async (input, backend) => {
+        const { scopeId, ...rest } = input;
+        const resolved = await resolveScopeId(scopeId, backend);
+        return backend.findHoldings(resolved, rest);
       },
     },
     get_holding_detail: {

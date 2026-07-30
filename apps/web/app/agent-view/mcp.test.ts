@@ -4,6 +4,7 @@ import type {
   AgentViewEnvelope,
   AgentViewFireProjection,
   AgentViewGoal,
+  AgentViewHoldingMatch,
   AgentViewMemberProfile,
   AgentViewPriceFreshnessResult,
   AgentViewScope,
@@ -75,6 +76,42 @@ describe("agent-view MCP tools", () => {
       required: ["holdingId"],
       type: "object",
     });
+  });
+
+  test("find_holdings hits the scoped holdings path with its query and cap", async () => {
+    const response: AgentViewEnvelope<AgentViewHoldingMatch[]> = {
+      data: [
+        {
+          id: "wl_hld_abc123",
+          object: "holding",
+          direction: "asset",
+          label: "Fondo cerrado",
+          instrument: "fund",
+          currentValue: { amountMinor: 0, currency: "EUR" },
+          matchedOn: "symbol",
+          symbol: "0P0000TEST.F",
+        },
+      ],
+    };
+    const calls: string[] = [];
+    const catalog = createAgentViewMcpToolCatalog({
+      get: async <T>(path: string): Promise<T> => {
+        calls.push(path);
+        return response as T;
+      },
+    });
+
+    await expect(
+      catalog.find_holdings.invoke({
+        scopeId: "wl_scp_abc123",
+        query: "0P0000TEST.F",
+        limit: 5,
+      }),
+    ).resolves.toEqual(response);
+    expect(calls).toEqual([
+      "/api/v1/agent-view/scopes/wl_scp_abc123/holdings?query=0P0000TEST.F&limit=5",
+    ]);
+    expect(catalog.find_holdings.inputSchema.required).toEqual(["query"]);
   });
 
   test("list_connected_sources takes no input and hits the connected-sources path", async () => {

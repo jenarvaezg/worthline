@@ -3,6 +3,7 @@ import {
   type AgentViewCatalog,
   type AgentViewCatalogTool,
   createAgentViewCatalog,
+  type FindHoldingsInput,
   type GetCalculationTraceInput,
   type GetContributionPlanInput,
   type GetDataQualityInput,
@@ -14,6 +15,7 @@ import {
 export type {
   AgentViewMcpInputSchema,
   ExplainFigureInput,
+  FindHoldingsInput,
   GetCalculationTraceInput,
   GetConnectedSourcePositionsInput,
   GetConnectedSourcePositionsOutput,
@@ -133,6 +135,13 @@ export function createAgentViewApiBackend(client: AgentViewApiClient): AgentView
         `${scope(scopeId)}/trash-summary${queryString([
           ["limit", params.limit],
           ["cursor", params.cursor],
+        ])}`,
+      ),
+    findHoldings: (scopeId, params: Omit<FindHoldingsInput, "scopeId">) =>
+      client.get(
+        `${scope(scopeId)}/holdings${queryString([
+          ["query", params.query],
+          ["limit", params.limit],
         ])}`,
       ),
     holdingDetail: (holdingId) => client.get(holding(holdingId)),

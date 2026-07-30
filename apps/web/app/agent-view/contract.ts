@@ -105,6 +105,21 @@ export interface AgentViewOperationSummary {
   feesTotal: AgentViewMoney;
 }
 
+/**
+ * The connected source that MATERIALIZES a holding — its procedencia. Present
+ * only when the holding is the projection of a `connected_sources` row; absent
+ * for a hand-maintained one. Its presence means the SYNC owns the value: no
+ * correction, valuation anchor, or baja may be written against that holding, and
+ * the repair path is /ajustes/conexiones (sync or re-map), never a declared
+ * figure.
+ */
+export interface AgentViewHoldingProvenance {
+  /** The provider adapter behind the sync (e.g. `binance`, `numista`). */
+  adapter: string;
+  /** The source's human label, as the user named the connection. */
+  label: string;
+}
+
 /** A scope-weighted holding summary in the compact context. */
 export interface AgentViewHoldingSummary {
   id: string;
@@ -118,6 +133,49 @@ export interface AgentViewHoldingSummary {
   ownership: AgentViewOwnershipShare[];
   /** Present only for investment holdings with recorded operations. */
   operationSummary?: AgentViewOperationSummary;
+  /** Present only when a connected source materializes this holding. */
+  connectedSource?: AgentViewHoldingProvenance;
+}
+
+/**
+ * One holding matched by name/symbol lookup (`find_holdings`). Deliberately
+ * narrow: the identity a write needs (public id), what it is, what it is worth,
+ * where it came from, and WHY it matched — never the whole context row. It is the
+ * only read that reaches a holding the compact context drops: a holding at 0 €
+ * sorts last there and falls outside the default cap, which is precisely the
+ * holding someone asks to delete.
+ */
+export interface AgentViewHoldingMatch {
+  id: string;
+  object: "holding";
+  direction: AgentViewHoldingDirection;
+  label: string;
+  instrument: string;
+  currentValue: AgentViewMoney;
+  /** Which field the query hit, so the caller can judge the match. */
+  matchedOn: "label" | "symbol" | "isin";
+  /** The price-provider ticker, when the holding has one. */
+  symbol?: string;
+  isin?: string;
+  /** Present only when a connected source materializes this holding. */
+  connectedSource?: AgentViewHoldingProvenance;
+}
+
+/** What a holding lookup echoes back about its own bounds — no cursor: it is a top-N. */
+export interface AgentViewHoldingSearchMeta {
+  /** The query as searched (trimmed), echoed so the caller can cite it. */
+  query: string;
+  limit: number;
+  /** How many holdings matched in total, before the cap. */
+  totalMatches: number;
+  /** True when the cap dropped matches — narrow the query or raise `limit`. */
+  truncated: boolean;
+}
+
+/** A bounded holding lookup result (`find_holdings`). */
+export interface AgentViewHoldingSearchPage {
+  matches: AgentViewHoldingMatch[];
+  meta: AgentViewHoldingSearchMeta;
 }
 
 /**

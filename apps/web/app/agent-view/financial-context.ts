@@ -1,5 +1,5 @@
 import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
-import type { AgentViewReadStore } from "@worthline/db";
+import type { AgentViewConnectedSource, AgentViewReadStore } from "@worthline/db";
 import type {
   AssetClassResolution,
   ExposureAllocationSlice,
@@ -30,6 +30,7 @@ import {
   resolveAssetClassBreakdown,
 } from "@worthline/domain";
 import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
+import { connectedSourceByAssetId } from "./connected-source-provenance";
 import {
   type AgentViewAllocationSlice,
   type AgentViewConnectedSourceSummary,
@@ -39,6 +40,7 @@ import {
   type AgentViewFinancialContext,
   type AgentViewFinancialSummary,
   type AgentViewHoldingDirection,
+  type AgentViewHoldingProvenance,
   type AgentViewHoldingSummary,
   type AgentViewHoldingsBlock,
   AgentViewHttpError,
@@ -143,12 +145,19 @@ export async function buildFinancialContext(
     scope: scopeOption,
     workspace,
   });
+  // Connected sources are read ONCE per context and serve two consumers: the
+  // per-row procedencia mark (uso real 2026-07-30) and the `connectedSources` block below. One
+  // read, one mapping — the block and the rows can never disagree about who owns a
+  // holding's value.
+  const connectedSources = await store.readConnectedSources();
+  const provenanceByAssetId = connectedSourceByAssetId(connectedSources);
   const holdingSummaries = await buildHoldingSummaries(
     store,
     workspace,
     scopeOption,
     assets,
     liabilities,
+    provenanceByAssetId,
   );
 
   // Meta (ISIN / provider symbol) + the global exposure catalog (PRD #711 S3, ADR
@@ -186,7 +195,11 @@ export async function buildFinancialContext(
   return {
     asOf: options.asOf,
     baseCurrency: workspace.baseCurrency,
-    connectedSources: await buildConnectedSources(store, holdingSummaries),
+    connectedSources: await buildConnectedSources(
+      store,
+      connectedSources,
+      holdingSummaries,
+    ),
     dataQuality: await buildDataQualitySummary(scoped),
     exposure: buildExposure(holdingSummaries, summary.grossAssets, lookthrough),
     fire: await buildFireSummary(scoped),
@@ -314,6 +327,7 @@ async function buildHoldingSummaries(
   scope: ScopeOption,
   assets: ManualAsset[],
   liabilities: Liability[],
+  provenanceByAssetId: ReadonlyMap<string, AgentViewHoldingProvenance>,
 ): Promise<AgentViewHoldingSummary[]> {
   const publicIds = await store.readPublicIds();
   const holdingPublicIds = publicIdMap(publicIds, "holding");
@@ -324,7 +338,13 @@ async function buildHoldingSummaries(
   const currency = workspace.baseCurrency;
 
   const projection = projectPortfolio({ assets, liabilities, scope, workspace });
-  const common = { currency, holdingPublicIds, memberLabels, memberPublicIds };
+  const common = {
+    currency,
+    holdingPublicIds,
+    memberLabels,
+    memberPublicIds,
+    provenanceByAssetId,
+  };
   const investmentAssetIds = new Set(
     assets.filter((asset) => asset.type === "investment").map((asset) => asset.id),
   );
@@ -359,10 +379,13 @@ async function buildHoldingSummaries(
 /**
  * Connected sources backing holdings in this scope, with the holdings they
  * materialized. Credentials never appear (the read port strips them) and the
- * full position lens lives in the #339 drilldown.
+ * full position lens lives in the #339 drilldown. The `sources` argument is the
+ * ONE read the caller already made — the same rows that stamped each holding's
+ * procedencia mark.
  */
 async function buildConnectedSources(
   store: AgentViewReadStore,
+  sources: readonly AgentViewConnectedSource[],
   holdingSummaries: AgentViewHoldingSummary[],
 ): Promise<AgentViewConnectedSourceSummary[]> {
   const labelByPublicId = new Map(
@@ -370,8 +393,8 @@ async function buildConnectedSources(
   );
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
 
-  const sources = await Promise.all(
-    (await store.readConnectedSources()).map(async (source) => ({
+  const summaries = await Promise.all(
+    sources.map(async (source) => ({
       adapter: source.adapter,
       freshness: toFreshnessSummary(
         source,
@@ -397,7 +420,7 @@ async function buildConnectedSources(
     })),
   );
 
-  return sources.filter((source) => source.projectedHoldings.length > 0);
+  return summaries.filter((source) => source.projectedHoldings.length > 0);
 }
 
 function toHoldingsBlock(
@@ -623,7 +646,12 @@ function toHoldingSummary(input: {
   memberPublicIds: Map<string, string>;
   memberLabels: Map<string, string>;
   operationSummary?: AgentViewOperationSummary | undefined;
+  provenanceByAssetId: ReadonlyMap<string, AgentViewHoldingProvenance>;
 }): AgentViewHoldingSummary {
+  // The procedencia mark travels on the row (uso real 2026-07-30): a model that only reads the
+  // holdings block must still know the sync owns this value.
+  const connectedSource = input.provenanceByAssetId.get(input.row.id);
+
   return {
     currentValue: moneyOf(input.valueMinor, input.currency),
     direction: input.direction,
@@ -639,6 +667,7 @@ function toHoldingSummary(input: {
     ),
     valuationMethod: defaultsFor(input.row.instrument).valuationMethod,
     ...(input.operationSummary ? { operationSummary: input.operationSummary } : {}),
+    ...(connectedSource ? { connectedSource } : {}),
   };
 }
 
