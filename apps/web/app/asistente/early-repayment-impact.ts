@@ -71,8 +71,11 @@ export interface EarlyRepaymentImpact {
   ok: true;
   /** The cuota cycle the domain recomputes the payment for (the lump's boundary). */
   boundaryDate: string;
-  /** False when that boundary is not the repayment's own date. */
-  appliesOnRepaymentDate: boolean;
+  /**
+   * True when that cuota is dated on the repayment day itself, i.e. the balance step
+   * and the recomputed cuota share one date and there are no two dates to explain.
+   */
+  boundaryIsRepaymentDate: boolean;
   /** Live balance ON the repayment date, before the lump (#1291). */
   balanceBeforeMinor: number;
   /** Live balance ON the repayment date, with the lump applied. */
@@ -324,7 +327,7 @@ export function projectEarlyRepaymentImpact(
   }
 
   return {
-    appliesOnRepaymentDate: boundaryDate === proposed.repaymentDate,
+    boundaryIsRepaymentDate: boundaryDate === proposed.repaymentDate,
     balanceAfterMinor,
     balanceBeforeMinor,
     balanceTodayAfterMinor,

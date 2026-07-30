@@ -136,6 +136,9 @@ describe("confirmEarlyRepaymentProposalAction (#1245)", () => {
 
     expect(await debtsAt("2026-06-15")).toBe(beforeJune);
     expect(await debtsAt("2026-07-15")).toBe(beforeJuly);
+    // The repayment's own date gets a fresh snapshot (ADR 0012), carrying the step …
+    expect(await debtsAt("2026-07-20")).toBe((beforeJuly ?? 0) - 9132);
+    // … and the snapshot already captured after it is recomputed, not left stale.
     expect(await debtsAt(TODAY)).toBe((beforeToday ?? 0) - 9132);
     store.close();
   });

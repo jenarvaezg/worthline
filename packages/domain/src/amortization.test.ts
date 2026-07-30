@@ -879,6 +879,39 @@ describe("early repayment dating: the drop lands on the repayment date (#1291)",
     expect(balanceAt("2026-06-07", { repayments: [inStub] })).toBe(6_000_00 - 500_00);
   });
 
+  test("the schedule hangs the lump on the period whose figures it moves", () => {
+    // The issue's other half of the evidence: the frontier dated 2026-06-08 (period
+    // 1) carried the 2026-07-03 event. It is period 2 (the 2026-07-08 cuota) that
+    // opens on the reduced balance and closes below it, so that is the row the event
+    // belongs to — otherwise one row moves 154,34 € with no event while another
+    // lists an event that moves nothing.
+    const trace = amortizationScheduleTrace({
+      earlyRepayments: [LUMP],
+      plan: REVOLUT,
+      targetDate: "2026-07-03",
+    });
+    const june = trace.periods.find((p) => p.date === "2026-06-08")!;
+    const july = trace.periods.find((p) => p.date === NEXT_CUOTA)!;
+
+    expect(june.events).toEqual([]);
+    expect(june.closingBalanceMinor).toBe(JUNE_CLOSING);
+    expect(july.events).toEqual([
+      {
+        amountMinor: LUMP.amountMinor,
+        date: LUMP.repaymentDate,
+        kind: "early_repayment",
+        mode: "reduce-term",
+      },
+    ]);
+    // The row it rides is the one that opens post-lump: opening = the previous
+    // closing minus the lump, so the table adds up within its own row.
+    expect(july.openingBalanceMinor).toBe(JUNE_CLOSING - LUMP.amountMinor);
+    // And every closing still equals the curve on its own date.
+    for (const period of trace.periods) {
+      expect(period.closingBalanceMinor).toBe(balanceAt(period.date));
+    }
+  });
+
   test("interpolated draws its line between the real dates, with the lump as a step", () => {
     const interpolated = { cadence: "interpolated" as ValuationCadence };
     // The cycle opens at the June closing under either cadence …
@@ -887,6 +920,14 @@ describe("early repayment dating: the drop lands on the repayment date (#1291)",
     const dayBefore = balanceAt("2026-07-02", interpolated);
     expect(dayBefore).toBeLessThan(JUNE_CLOSING);
     expect(dayBefore).toBeGreaterThan(JUNE_CLOSING - 150_00);
+    // … and it tracks the no-lump line to within the residue of the deferred
+    // accrual: the period's ordinary principal is computed on the post-lump balance
+    // (the model change the issue leaves out), so prorating it makes the pre-payment
+    // stretch amortize a hair faster. Cents here, against 154,34 € of backdating
+    // before the fix — and exactly zero under the default `step` cadence.
+    const noLump = balanceAt("2026-07-02", { cadence: "interpolated", repayments: [] });
+    expect(noLump - dayBefore).toBeLessThan(1_00);
+    expect(noLump - dayBefore).toBeGreaterThan(0);
     // … the lump is a step of its own size on its date (plus that one day of
     // ordinary amortization the line keeps drawing) …
     const stepOverTheLump = dayBefore - balanceAt("2026-07-03", interpolated);

@@ -903,12 +903,21 @@ export async function rippleHistoricalSnapshotsForDebt(
     | { liabilityId: string; kind: "amortizable-plan"; today: string }
     | {
         liabilityId: string;
-        kind:
-          | "amortizable-revision"
-          | "anchor"
-          | "amortizable-repayment"
-          | "amortizable-rebaseline";
+        kind: "amortizable-revision" | "anchor" | "amortizable-rebaseline";
         fromDateKey: string;
+        today: string;
+      }
+    | {
+        liabilityId: string;
+        kind: "amortizable-repayment";
+        /** The cuota boundary the lump lands in: where the RECALCULATION starts (#1042). */
+        fromDateKey: string;
+        /**
+         * The repayment's own date: where the curve steps down (#1291), so where the
+         * dated fact GENERATES its snapshot (ADR 0012). The two differ for any lump
+         * paid mid-cycle, which is why the kind carries both.
+         */
+        eventDateKey: string;
         today: string;
       },
 ): Promise<void> {
@@ -948,13 +957,18 @@ export async function rippleHistoricalSnapshotsForDebt(
   } else {
     const { fromDateKey } = params;
     // A revision never generates new dates; an anchor and an early repayment are
-    // dated facts that generate the snapshot at their own date when in the past
-    // (ADR 0012), then recalculate from it forward.
-    generateDates =
-      (params.kind === "anchor" || params.kind === "amortizable-repayment") &&
-      fromDateKey < today
-        ? [fromDateKey]
-        : [];
+    // dated facts that generate the snapshot at their OWN date when in the past
+    // (ADR 0012), then recalculate from `recalcFrom` forward. For a repayment those
+    // are two different dates: the curve steps on the repayment date (#1291) — so
+    // the history needs a point THERE — while the recalculation still starts at the
+    // cuota boundary, the earliest date the cycle's redraw can move (#1042).
+    const generateAt =
+      params.kind === "anchor"
+        ? fromDateKey
+        : params.kind === "amortizable-repayment"
+          ? params.eventDateKey
+          : null;
+    generateDates = generateAt !== null && generateAt < today ? [generateAt] : [];
     recalcFrom = fromDateKey;
   }
 

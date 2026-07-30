@@ -441,18 +441,20 @@ interface MonthlyBoundary {
 /**
  * A lump that falls STRICTLY INSIDE a payment cycle — dated after the cycle's own
  * boundary date and before the next cuota (#1291). The curve steps down by
- * `reductionMinor` from this date on; the cycle's boundary balance stays at the
+ * `reduction` from this date on; the cycle's boundary balance stays at the
  * pre-lump figure, which is what the previous cuota actually closed at.
  *
- * `reductionMinor` is the EFFECTIVE reduction (the nominal amount clamped to the
+ * `reduction` is the EFFECTIVE reduction (the nominal amount clamped to the
  * live balance), so adding the cycle's reductions back to a post-lump balance
- * recovers the pre-lump one exactly, with no second clamp to reason about.
+ * recovers the pre-lump one exactly, with no second clamp to reason about. Carried
+ * at full big.js precision like every other balance here; the caller rounds at the
+ * edge.
  */
 interface IntraCycleLump {
   /** YYYY-MM-DD the lump is paid; strictly after the cycle's boundary date. */
   date: string;
-  /** Principal actually removed on that date, minor units at full precision. */
-  reductionMinor: Big;
+  /** Principal actually removed on that date, minor units. */
+  reduction: Big;
 }
 
 /**
@@ -467,9 +469,9 @@ function cycleLumpTotals(
   let applied = new Big(0);
   let total = new Big(0);
   for (const lump of lumps ?? []) {
-    total = total.plus(lump.reductionMinor);
+    total = total.plus(lump.reduction);
     if (lump.date <= targetDate) {
-      applied = applied.plus(lump.reductionMinor);
+      applied = applied.plus(lump.reduction);
     }
   }
   return { applied, total };
@@ -630,7 +632,7 @@ function applyCycleLumps(input: {
     if (repayment.repaymentDate > input.cycleStart) {
       intra.push({
         date: repayment.repaymentDate,
-        reductionMinor: before.minus(balance),
+        reduction: before.minus(balance),
       });
     } else {
       boundaryBalance = balance;
@@ -947,20 +949,32 @@ export function amortizationScheduleTrace(
     }))
     .sort((a, b) => a.monthIndex - b.monthIndex);
 
-  // Events are attached to the FRONTIER they land on (the largest boundary ≤ the
-  // event date, #182). A boundary `k ≥ 1` is the closing of schedule period `k`
-  // (dated `boundaryDate(k)`); a boundary-0 event (a lump on/before the first
-  // payment) has no period of its own, so it rides period 1 — its effect shows in
-  // that period's opening balance.
+  // An event is attached to the period whose interval CONTAINS its date — period
+  // `p` spans boundary `p − 1` → `p` and is dated `boundaryDate(p)`, so the period
+  // that contains a date is the one closing on or after it. That is the row whose
+  // figures the event moves, which is what keeps the table addable: no row balances
+  // only if you know about an event listed on another one (#1291).
+  //
+  // For an event dated ON a boundary that is period `monthIndex` (its closing date:
+  // a lump there drops the closing, a revision there re-bases the next cuota). For
+  // one dated strictly INSIDE the cycle it is period `monthIndex + 1` — the cuota
+  // that opens on the reduced balance and closes below it. A boundary-0 event (on or
+  // inside the disbursement→first-payment stub) has no period of its own either way,
+  // so it rides period 1.
   const eventsByPeriod = new Map<number, AmortizationScheduleEvent[]>();
-  const attach = (monthIndex: number, event: AmortizationScheduleEvent): void => {
-    const period = monthIndex === 0 ? 1 : monthIndex;
+  const attach = (
+    monthIndex: number,
+    eventDate: string,
+    event: AmortizationScheduleEvent,
+  ): void => {
+    const insideCycle = eventDate > boundaryDate(plan, monthIndex);
+    const period = monthIndex === 0 ? 1 : insideCycle ? monthIndex + 1 : monthIndex;
     const list = eventsByPeriod.get(period) ?? [];
     list.push(event);
     eventsByPeriod.set(period, list);
   };
   for (const revision of sortedRevisions) {
-    attach(revision.monthIndex, {
+    attach(revision.monthIndex, revision.date, {
       annualInterestRate: revision.rate,
       date: revision.date,
       kind: "rate_revision",
@@ -969,7 +983,7 @@ export function amortizationScheduleTrace(
   const repaymentsByMonth = repaymentsByMonthFor(plan, input.earlyRepayments);
   for (const [monthIndex, repayments] of repaymentsByMonth) {
     for (const repayment of repayments) {
-      attach(monthIndex, {
+      attach(monthIndex, repayment.repaymentDate, {
         amountMinor: repayment.amountMinor,
         date: repayment.repaymentDate,
         kind: "early_repayment",
@@ -1069,8 +1083,9 @@ export function amortizationScheduleTrace(
 
 /**
  * Outstanding principal on `targetDate`, in integer minor units (cents, half up).
- * Before the first payment → the full initial capital (flat — covers both the
- * pre-disbursement window and the disbursement→first-payment stub, ADR 0019). On
+ * Before the first payment → the initial capital, flat (covers both the
+ * pre-disbursement window and the disbursement→first-payment stub, ADR 0019), less
+ * any lump already paid inside the stub — see below. On
  * or after the final payment → 0. Otherwise the balance read between the boundary
  * the target falls in and the next, by the holding's valuation cadence (ADR 0031,
  * #390): `step` (default) holds the last cuota's balance flat until the next

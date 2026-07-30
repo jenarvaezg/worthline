@@ -49,7 +49,7 @@ describe("early-repayment impact (#1245)", () => {
     expect(impact.ok).toBe(true);
     if (!impact.ok) return;
     expect(impact.boundaryDate).toBe("2026-07-15");
-    expect(impact.appliesOnRepaymentDate).toBe(false);
+    expect(impact.boundaryIsRepaymentDate).toBe(false);
     expect(impact.notes.join(" ")).toMatch(/15\/07\/2026/);
   });
 
@@ -90,7 +90,7 @@ describe("early-repayment impact (#1245)", () => {
       impact.monthlyPaymentBeforeMinor,
     );
     expect(impact.endDateAfter).toBe(impact.endDateBefore);
-    expect(impact.appliesOnRepaymentDate).toBe(true);
+    expect(impact.boundaryIsRepaymentDate).toBe(true);
   });
 
   test("a lump that covers the live balance is a total repayment, and the preview says so", () => {
@@ -393,6 +393,8 @@ describe("early-repayment impact (#1245)", () => {
     // moves by THIS lump alone — never by the sum, never silently.
     expect(impact.balanceBeforeMinor - impact.balanceAfterMinor).toBe(1_000_00);
     const alone = projectEarlyRepaymentImpact(input());
-    expect(alone.ok && alone.balanceBeforeMinor - impact.balanceBeforeMinor).toBe(500_00);
+    expect(alone.ok).toBe(true);
+    if (!alone.ok) return;
+    expect(alone.balanceBeforeMinor - impact.balanceBeforeMinor).toBe(500_00);
   });
 });

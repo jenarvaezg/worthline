@@ -344,10 +344,20 @@ describe("historical snapshots from amortizable plans", () => {
       expect(await holdingsReconcile(store, dateKey)).toBe(true);
     }
     // And the window is UNCHANGED: the lump is dated 03-20, so it cannot show up in
-    // a figure the user saw on 03-18 (#1291). Where it does show is from its own
-    // date on — the next cuota's snapshot drops by the lump.
+    // a figure the user saw on 03-18 (#1291).
     const postLump = (await debtsAt(store, "2026-03-18"))!;
     expect(postLump).toBe(preLump);
+
+    // Where it DOES show is from its own date on. The repayment date is the dated
+    // fact's own date, so the ripple generates the snapshot there (ADR 0012) — the
+    // history must carry the step on the day the money left, not only from the next
+    // cuota.
+    expect(await debtsAt(store, "2026-03-20")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-03-20"),
+    );
+    expect(preLump - (await debtsAt(store, "2026-03-20"))!).toBeGreaterThan(19_000_00);
+    expect(await holdingsReconcile(store, "2026-03-20")).toBe(true);
+    // …and the next cuota carries it too.
     expect(await debtsAt(store, "2026-04-15")).toBe(
       await store.liabilities.debtBalanceAtDate("mortgage", "2026-04-15"),
     );
