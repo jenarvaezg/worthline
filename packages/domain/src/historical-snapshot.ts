@@ -1340,6 +1340,11 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
    * captured AT RIPPLE TIME and frozen (ADR 0017): worthline never fetches a
    * coin's historical price, so a later price move never rewrites this. The new
    * per-scope contribution is this value re-weighted by the collection's split.
+   *
+   * Used only for a row that carries NO per-position breakdown (a legacy capture
+   * predating ADR 0035, or a fresh row with no trades to attach). When the row does
+   * carry children, the increment is Σ of the children appended from `newTrades`
+   * instead — see the decision comment in the body.
    */
   globalDeltaMinor: number;
   workspace: Workspace;
@@ -1353,7 +1358,10 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
   /**
    * The newly-acquired coins rippling on this snapshot date (ADR 0035). Each
    * trade's GLOBAL value is scope-allocated into one frozen position child row;
-   * existing position rows on the holding are preserved verbatim.
+   * existing position rows on the holding are preserved verbatim, and a trade
+   * already frozen under the same `positionKey` is skipped (a re-delivery never
+   * duplicates a child nor double-counts its value). Ignored for a row that
+   * carries no breakdown — see {@link globalDeltaMinor}.
    */
   newTrades?: readonly {
     purchaseDate: string;
@@ -1413,17 +1421,33 @@ export function recalculateSnapshotForCoinAcquisition(
       },
       targetDate: input.snapshot.dateKey,
     });
-    const existingPositions = existingRow?.positions ?? [];
-    const existingPositionKeys = new Set(existingPositions.map((row) => row.positionKey));
+    // Does this row CARRY a frozen breakdown (ADR 0035)? `undefined` means it does
+    // not: either a legacy capture predating ADR 0035 — which froze the per-position
+    // children going-forward only, so an older snapshot has the collection's row
+    // with a value and no children — or a row an earlier ripple added before the
+    // children existed. The distinction drives everything below, because the
+    // per-position invariant (#181) applies ONLY to a row that carries children.
+    const frozenPositions = existingRow?.positions;
+    const seenPositionKeys = new Set(
+      (frozenPositions ?? []).map((row) => row.positionKey),
+    );
     const newPositionRows: SnapshotPositionRow[] = [];
+    // Σ of the per-trade scope allocations of the children ACTUALLY appended — the
+    // one figure the row's value grows by when the row carries a breakdown.
+    let appendedPositionsMinor = 0;
     for (const trade of input.newTrades ?? []) {
       if (
         trade.purchaseDate > input.snapshot.dateKey ||
         trade.position.valueMinor <= 0 ||
-        existingPositionKeys.has(trade.position.positionKey)
+        seenPositionKeys.has(trade.position.positionKey)
       ) {
         continue;
       }
+      // A trade this scope owns nothing of contributes no child row — and no value
+      // either: ownership is a property of the COLLECTION, not of the trade, so
+      // `totalShareBps === 0` here means the aggregate's share is 0 too and its
+      // allocation is 0. The skip is therefore not an asymmetry in value; it only
+      // avoids writing 0-valued children into a scope with no stake at all.
       const scoped = allocateScopedHolding(trade.position.valueMinor, {
         ownership: input.asset.ownership,
         scopeMemberIds,
@@ -1438,8 +1462,43 @@ export function recalculateSnapshotForCoinAcquisition(
         metal: trade.position.metal,
         imageUrl: trade.position.imageUrl,
       });
-      existingPositionKeys.add(trade.position.positionKey);
+      appendedPositionsMinor += scoped.ownedMinor;
+      seenPositionKeys.add(trade.position.positionKey);
     }
+
+    // A row with NO frozen breakdown never grows a PARTIAL one: appending only the
+    // new coins would make the row "carry positions" while the older coins baked
+    // into its value have no children, and the per-position invariant — which
+    // exempts a childless row explicitly — would then demand the new coins alone
+    // sum to the whole row and fail the ripple (the sync that rolled back on every
+    // retry: `sum to 7960 but the holding value is 331162`). Reconstructing the
+    // missing children is impossible here: a coin's frozen historical value is not
+    // recoverable (worthline never fetches a coin's past price, ADR 0017), so the
+    // row stays childless and only its value grows, exactly as before ADR 0035.
+    const positions =
+      existingRow !== undefined && frozenPositions === undefined
+        ? []
+        : [...(frozenPositions ?? []), ...newPositionRows];
+    const carriesBreakdown = positions.length > 0;
+
+    // DECISION (#181 invariant vs ADR 0017 allocation): when the row carries a
+    // breakdown, its value grows by Σ of the children appended above — never by
+    // `allocateScopedHolding(globalDeltaMinor)`, this scope's share of the
+    // AGGREGATE delta. Rounding the aggregate once and rounding each trade
+    // separately can differ by a cent per trade under a fractional split (3333 /
+    // 6667 bps), and the two figures also disagree whenever a trade is skipped
+    // (already frozen by `positionKey` on a re-delivery, or non-positive), so
+    // deriving the increment from the children is the only way sum and value
+    // cannot desynchronize. The cost is that a scope's frozen coin value is the
+    // sum of per-coin roundings rather than one rounding of the total — cents
+    // apart at most, and the breakdown is what the drilldown renders, so the
+    // children are the truth. A childless row keeps the aggregate allocation: it
+    // has no children to derive an increment from, and no invariant to satisfy.
+    const incrementMinor = carriesBreakdown
+      ? appendedPositionsMinor
+      : totalShareBps > 0
+        ? ownedMinor
+        : 0;
 
     rows.push({
       countsAsHousing: identity.countsAsHousing,
@@ -1448,10 +1507,8 @@ export function recalculateSnapshotForCoinAcquisition(
       label: existingRow?.label ?? input.asset.name,
       liquidityTier: identity.liquidityTier,
       securesHousing: identity.securesHousing,
-      valueMinor: (existingRow?.valueMinor ?? 0) + (totalShareBps > 0 ? ownedMinor : 0),
-      ...(existingPositions.length > 0 || newPositionRows.length > 0
-        ? { positions: [...existingPositions, ...newPositionRows] }
-        : {}),
+      valueMinor: (existingRow?.valueMinor ?? 0) + incrementMinor,
+      ...(carriesBreakdown ? { positions } : {}),
     });
   }
 
