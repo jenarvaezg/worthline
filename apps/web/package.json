@@ -9,7 +9,6 @@
   "dependencies": {
     "@ai-sdk/cerebras": "^3.0.7",
     "@ai-sdk/google": "^4.0.12",
-    "@ai-sdk/groq": "^4.0.5",
     "@ai-sdk/react": "^4.0.15",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@paddle/paddle-node-sdk": "^3.8.0",
@@ -43,6 +42,7 @@
     "dev": "bun --bun next dev --hostname 127.0.0.1",
     "eval:assistant": "tsx --env-file-if-exists=.env.local app/asistente/eval/run.ts",
     "eval:extractor": "tsx --env-file-if-exists=.env.local app/asistente/eval/extractor/run.ts",
+    "eval:floor": "tsx --env-file-if-exists=.env.local app/asistente/eval/floor.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:coverage": "vitest run --config vitest.config.ts --coverage",
     "start": "bun --bun next start --hostname 127.0.0.1",

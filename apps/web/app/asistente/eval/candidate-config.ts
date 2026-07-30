@@ -14,7 +14,6 @@ export interface EvalArgs {
 const POLICIES: Record<EvalProvider, { delayBetweenQuestionsMs: number }> = {
   google: { delayBetweenQuestionsMs: 20_000 },
   cerebras: { delayBetweenQuestionsMs: 55_000 },
-  groq: { delayBetweenQuestionsMs: 8_000 },
 };
 
 export function candidatePolicy(provider: EvalProvider) {

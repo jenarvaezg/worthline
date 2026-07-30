@@ -17,13 +17,18 @@ interface EvidenceRun {
   /**
    * The same checks broken down by dimension (#1265). A mark with a MISSING
    * dimension is not an omission: it is a run from before those questions existed,
-   * so it states nothing about what they measure (ADR 0067). Two such gaps exist
-   * today — Groq's `tool-discipline`, and `attachments` in every mark, because all
-   * three runs predate #1254.
+   * so it states nothing about what they measure (ADR 0067). One such gap remains
+   * today — `attachments`, absent from both marks, because both runs predate #1254.
    */
   dimensions: readonly EvidenceDimension[];
 }
 
+/**
+ * The only shape a mark can have since #1278. There used to be a second,
+ * `grandfathered`, carrying Groq as the incumbent from before the gate; retiring
+ * that entry retired the exception with it, so «admitted» and «in the pool» are now
+ * the same statement.
+ */
 interface AdmittedEvidence {
   status: "admitted";
   provider: "google" | "cerebras";
@@ -31,30 +36,22 @@ interface AdmittedEvidence {
   run: EvidenceRun & { complete: true };
 }
 
-interface GrandfatheredEvidence {
-  status: "grandfathered";
-  provider: "groq";
-  model: string;
-  reason: string;
-  run: EvidenceRun & { complete: false };
-}
-
-export type AdmissionEvidence = AdmittedEvidence | GrandfatheredEvidence;
+export type AdmissionEvidence = AdmittedEvidence;
 
 /**
  * Reviewed evidence, shaped for the committed pool marks in #957. Scores are the
  * real results, not a claim that every check was green.
  *
  * Gemini and Cerebras were re-run against the two-dimension set on 2026-07-27
- * (#1265). Groq could not be: its free tier rejects a single request of the
- * current turn outright — 12.000 tokens per minute against 13.017 requested — so
- * every question errored and its old mark stands, stating reading only (#1278).
+ * (#1265). Groq could not be, and is no longer in the pool (#1278): its free tier
+ * rejects a single request of the current turn outright — 12.000 tokens per minute
+ * against 14.285 measured on 2026-07-30 — so every question errored.
  *
  * One of Cerebras's eighteen questions died on tokens-per-minute even at 55 s of
  * pacing, and a dead question scores zero. Its reading number is therefore a floor,
  * not a measurement of how well it reads.
  *
- * All three runs predate the `attachments` dimension (#1254), so no mark here says
+ * Both runs predate the `attachments` dimension (#1254), so no mark here says
  * anything about how its model behaves when the turn carries a document — the half of
  * the write path where PRD #1241's incident actually happened. Refreshing that is a
  * real re-run of the 22-question set, never an added line.
@@ -92,22 +89,6 @@ export const ADMISSION_EVIDENCE = [
         { dimension: "reading", passed: 32, total: 42 },
         { dimension: "tool-discipline", passed: 17, total: 23 },
       ],
-    },
-  },
-  {
-    status: "grandfathered",
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
-    reason:
-      "Titular anterior al gate: la revalidación agotó el TPD gratuito tras 6 de 12 preguntas.",
-    run: {
-      evaluatedAt: "2026-07-10",
-      complete: false,
-      passed: 11,
-      total: 14,
-      executedQuestions: 6,
-      totalQuestions: 12,
-      dimensions: [{ dimension: "reading", passed: 11, total: 14 }],
     },
   },
 ] as const satisfies readonly AdmissionEvidence[];

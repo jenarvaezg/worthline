@@ -345,7 +345,6 @@ function resolvedModel(
   const credentialEnvKeys: Record<AssistantProvider, ProviderCredentialEnvKey> = {
     google: "GOOGLE_GENERATIVE_AI_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
-    groq: "GROQ_API_KEY",
   };
   return {
     provider,

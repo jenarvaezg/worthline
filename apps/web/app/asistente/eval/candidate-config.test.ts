@@ -28,18 +28,21 @@ describe("parseEvalArgs", () => {
   });
 
   it("requires both provider and model", () => {
-    expect(() => parseEvalArgs(["--provider", "groq"])).toThrow(/--model/);
-    expect(() => parseEvalArgs(["--model", "llama-3.3-70b-versatile"])).toThrow(
-      /--provider/,
-    );
+    expect(() => parseEvalArgs(["--provider", "cerebras"])).toThrow(/--model/);
+    expect(() => parseEvalArgs(["--model", "gpt-oss-120b"])).toThrow(/--provider/);
   });
 
   it("rejects unsupported providers and invalid thresholds", () => {
     expect(() => parseEvalArgs(["--provider", "unknown", "--model", "model"])).toThrow(
       /provider/i,
     );
+    // A retired provider is an unsupported one (#1278): the harness cannot be
+    // pointed at a candidate the pool no longer knows.
     expect(() =>
-      parseEvalArgs(["--provider", "groq", "--model", "model", "--threshold", "1.1"]),
+      parseEvalArgs(["--provider", "groq", "--model", "llama-3.3-70b-versatile"]),
+    ).toThrow(/provider/i);
+    expect(() =>
+      parseEvalArgs(["--provider", "cerebras", "--model", "model", "--threshold", "1.1"]),
     ).toThrow(/threshold/i);
   });
 });
@@ -51,9 +54,6 @@ describe("candidatePolicy", () => {
     });
     expect(candidatePolicy("cerebras")).toEqual({
       delayBetweenQuestionsMs: 55_000,
-    });
-    expect(candidatePolicy("groq")).toEqual({
-      delayBetweenQuestionsMs: 8_000,
     });
   });
 });

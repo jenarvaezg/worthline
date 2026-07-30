@@ -82,8 +82,8 @@ README.
 entity or figure. Being spreadsheets is a deliberate choice on three counts:
 
 - the deterministic spreadsheet route needs **no API key**, so an attachment question
-  costs the candidate's own credential and nothing more — a Cerebras or Groq run does
-  not suddenly need a Google key for the fixed extractor;
+  costs the candidate's own credential and nothing more — a Cerebras run does not
+  suddenly need a Google key for the fixed extractor;
 - CI can therefore verify the fixtures themselves (`golden-turn.test.ts`): each
   one is read through the production seam and must arrive through the lane its question
   declares. An image fixture could only be checked at run time;
@@ -134,22 +134,16 @@ bun run eval:assistant -- \
   --provider cerebras \
   --model gpt-oss-120b \
   --output /tmp/cerebras-admission.json
-
-bun run eval:assistant -- \
-  --provider groq \
-  --model llama-3.3-70b-versatile \
-  --output /tmp/groq-admission.json
 ```
 
-The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY`,
-`CEREBRAS_API_KEY`, and `GROQ_API_KEY`. The web workspace loads
-`apps/web/.env.local` when present.
+The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
+`CEREBRAS_API_KEY`. The web workspace loads `apps/web/.env.local` when present.
 
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
-deliberately more conservative than `60 / RPM`: 20 seconds for Google, 55 for
-Cerebras, and 8 for Groq. With 22 questions that is roughly 10 minutes for Google
-and 24 for Cerebras. The four attachment questions add no provider call of their own
+deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
+Cerebras. With 22 questions that is roughly 10 minutes for Google and 24 for
+Cerebras. The four attachment questions add no provider call of their own
 beyond the turn: their documents are read by the deterministic spreadsheet extractor,
 in process, with no key.
 
@@ -183,15 +177,40 @@ and in every dimension**. A partial
 run, a zero-check run, or a score below the threshold exits non-zero. Provider
 errors remain visible per question and their question checks count as failed.
 
+## What a turn costs before it starts (#1278)
+
+`floor.ts` is a second, much cheaper meter, and it answers a different question:
+not how well a candidate answers, but whether it can accept the request at all.
+
+```bash
+bun run eval:floor            # deterministic, offline, no credential
+bun run eval:floor -- --live  # + one minimal request per credential-backed entry
+```
+
+The offline half prints the floor of a bare turn — the system prompt plus the
+name, description and JSON schema of every tool, before a word of conversation —
+in characters, attributed per tool and ranked, which is where slimming would have
+to aim. Characters and not tokens on purpose: each provider tokenizes with its own
+BPE, so a token count computed here would be a fourth tokenizer's opinion. On
+2026-07-30 that floor is **35.390 characters**, 26.359 of them the 34 tools'
+descriptions and schemas and 9.031 the system prompt, and `turn-floor.test.ts`
+holds it under a reviewed ceiling so it cannot drift up unnoticed.
+
+`--live` sends one real request with a one-token answer cap and reads
+`usage.inputTokens`, which is the only honest source of a token figure. The same
+floor measured 9.231 tokens for Gemini, 7.732 for Cerebras, and was rejected
+outright by Groq with «Limit 12000, Requested 14285» — the measurement behind
+#1278.
+
 ## Committed evidence
 
 `admission-evidence.ts` holds the reviewed runs in the shape the pool allowlist
 needs (#957), each broken down by dimension so a mark says WHAT it measured.
 Gemini and Cerebras are normal admissions from complete two-dimension runs of
-2026-07-27. The incumbent Groq model is represented separately as `grandfathered`,
-with its reason and its partial 6/12-question run from #841/#842; it is not
-presented as satisfying the normal rule, and its mark states reading only because
-its free tier can no longer accept one request of the current turn (#1278).
+2026-07-27, and they are the whole pool: the third entry, Groq, was retired in
+#1278 because its free tier can no longer accept one request of the current turn
+(12.000 tokens per minute against 14.285 measured), which also retired the one
+`grandfathered` mark the pool used to carry.
 
 A mark with a missing dimension is not an omission — it is a run from before those
 questions existed, and it says nothing about what they measure (ADR 0067). Today
@@ -206,10 +225,10 @@ or the question set changes, or when provider behavior materially degrades.
 
 `provider-pool.ts` owns the production allowlist and ordering policy;
 `provider-model.ts` is the shared chat/eval resolution seam for candidate,
-provider credential, SDK model, and label. The default priority is Google,
-Cerebras, then Groq in every environment, including demo.
+provider credential, SDK model, and label. The default priority is Google then
+Cerebras in every environment, including demo.
 `WORTHLINE_CHAT_PROVIDER_ORDER` accepts a comma-separated reordering of those
-provider IDs (for example `groq,google,cerebras`); unknown IDs, duplicate IDs,
+provider IDs (for example `cerebras,google`); unknown IDs, duplicate IDs,
 and the former arbitrary `WORTHLINE_CHAT_MODEL` setting cannot introduce a
 model. Entries without their declared provider credential are omitted, and no
 entries means the chat returns `assistant_unavailable` with status 503.
@@ -232,4 +251,5 @@ The runner deliberately remains able to resolve an explicit pre-admission
 candidate. Production calls the stricter allowlisted path through that same
 resolver, so a model can be evaluated before its reviewed evidence is
 committed without making the admission process circular. The revalidation
-events and the one Groq exception are recorded in ADR 0061.
+events are recorded in ADR 0061, together with the measured reason the pool is
+two entries deep.

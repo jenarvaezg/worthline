@@ -45,16 +45,17 @@ model we hope to buy.
 
 So both paths keep the same model: the pool's first credential-backed entry,
 today Gemini 3.1 Flash Lite, for reads and for writes alike. What the runs fix is
-the shape of the bill if that ever changes. One turn's floor is about 13.000 input
-tokens — measured, not estimated: Groq's free tier rejects the request outright
-with «Limit 12000, Requested 13017» — and it is a floor because it is the system
-prompt plus the tool schemas, before a single word of conversation. Routing the
-write turns to a paid frontier model therefore trades a free turn for a
-cents-per-turn one at a volume worthline meters precisely because it is the
-product's variable cost (PRD #1160), and buys a lower failure frequency rather
-than a boundary. The free tier offers no second path either: on 2026-07-27 the
-pool's third entry could not accept a single request of the current turn (#1278),
-and its second lost a question to tokens per minute even at 55 s of pacing.
+the shape of the bill if that ever changes. One turn's floor is 35.390 characters
+— the system prompt plus the name, description and schema of the 34 tools, before
+a single word of conversation — which the providers charge as 9.231 input tokens
+(Gemini) and 7.732 (Cerebras), measured rather than estimated with
+`bun run eval:floor -- --live` on 2026-07-30. Routing the write turns to a paid
+frontier model therefore trades a free turn for a cents-per-turn one at a volume
+worthline meters precisely because it is the product's variable cost (PRD #1160),
+and buys a lower failure frequency rather than a boundary. The free tier offers no
+second path either: the pool's third entry counted that same floor as 14.285
+tokens against a 12.000 ceiling and left the pool for it (#1278), and its second
+lost a question to tokens per minute even at 55 s of pacing.
 
 The two-model comparison says something a single ratio never could: the two
 candidates fail in opposite directions. Gemini acts, and its one dangerous failure

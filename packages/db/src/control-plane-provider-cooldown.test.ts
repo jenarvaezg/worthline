@@ -49,12 +49,20 @@ describe("control plane provider cooldowns", () => {
     const second: UsageLimitsStore = await createControlPlaneStore({ url });
     try {
       await Promise.all([
-        first.recordProviderCooldown("production", "groq", "2026-07-13T00:00:00.000Z"),
-        second.recordProviderCooldown("production", "groq", "2026-07-12T10:01:00.000Z"),
+        first.recordProviderCooldown(
+          "production",
+          "cerebras",
+          "2026-07-13T00:00:00.000Z",
+        ),
+        second.recordProviderCooldown(
+          "production",
+          "cerebras",
+          "2026-07-12T10:01:00.000Z",
+        ),
       ]);
 
       expect(await first.readProviderCooldowns("production")).toEqual([
-        { provider: "groq", cooldownUntil: "2026-07-13T00:00:00.000Z" },
+        { provider: "cerebras", cooldownUntil: "2026-07-13T00:00:00.000Z" },
       ]);
     } finally {
       first.close();
