@@ -40,6 +40,10 @@ import {
  *     (the default) holds the boundary's balance flat until the next cuota, while
  *     `interpolated` prorates that month's amortization linearly by calendar
  *     days. The stub (boundary 0→1) is never interpolated — it is flat.
+ *  5. An early repayment is a STEP on its own date (#1291), laid over the cycle's
+ *     ordinary movement: the balance before it is what the previous cuota closed
+ *     at, never the reduced figure. Its month boundary only decides which cuota's
+ *     interest and recomputed payment the lump belongs to.
  *
  * Rounding: all arithmetic is carried at full big.js precision; only the final
  * balance is rounded to a whole minor unit (cent), half up. This mirrors the
@@ -61,13 +65,17 @@ export type EarlyRepaymentMode = "reduce-payment" | "reduce-term";
 
 /**
  * A lump-sum early repayment (amortización anticipada) against the principal.
- * Applied at its month boundary — the largest month start ≤ the repayment date,
- * the same boundary the balance locator resolves that date to (#182), the same
- * granularity as a rate revision: the live balance drops by `amountMinor`
- * (clamped at 0, so a lump ≥ the balance is a total repayment that closes the
- * loan), then either the cuota is recomputed over the remaining term
- * (`reduce-payment`, the end date is kept) or the cuota is held and the loan
- * reaches 0 earlier (`reduce-term`).
+ * The balance drops by `amountMinor` (clamped at 0, so a lump ≥ the balance is a
+ * total repayment that closes the loan) **on the repayment date itself** (#1291),
+ * and the cuota is recomputed for the payment cycle the date falls in — the
+ * largest month start ≤ the repayment date, the same boundary the balance locator
+ * resolves that date to (#182): either over the remaining term on the reduced
+ * balance (`reduce-payment`, the end date is kept) or held so the loan reaches 0
+ * earlier (`reduce-term`).
+ *
+ * The two granularities are deliberate: the money leaves on its day (so the curve
+ * steps down there, never at the previous cuota), while the schedule is a monthly
+ * table whose period the lump belongs to.
  */
 export interface EarlyRepayment {
   /** YYYY-MM-DD the repayment is made. */
@@ -132,7 +140,7 @@ export interface AmortizableBalanceAtDateInput {
   plan: AmortizationPlanInput;
   /** Rate revisions in any order; applied from each revision's month boundary. */
   revisions?: readonly InterestRateRevision[];
-  /** Early repayments in any order; applied from each repayment's month boundary. */
+  /** Early repayments in any order; each drops the balance on its own date (#1291). */
   earlyRepayments?: readonly EarlyRepayment[];
   /** The date to value the outstanding balance on, YYYY-MM-DD. */
   targetDate: string;
@@ -430,6 +438,51 @@ interface MonthlyBoundary {
   balance: Big;
 }
 
+/**
+ * A lump that falls STRICTLY INSIDE a payment cycle — dated after the cycle's own
+ * boundary date and before the next cuota (#1291). The curve steps down by
+ * `reductionMinor` from this date on; the cycle's boundary balance stays at the
+ * pre-lump figure, which is what the previous cuota actually closed at.
+ *
+ * `reductionMinor` is the EFFECTIVE reduction (the nominal amount clamped to the
+ * live balance), so adding the cycle's reductions back to a post-lump balance
+ * recovers the pre-lump one exactly, with no second clamp to reason about.
+ */
+interface IntraCycleLump {
+  /** YYYY-MM-DD the lump is paid; strictly after the cycle's boundary date. */
+  date: string;
+  /** Principal actually removed on that date, minor units at full precision. */
+  reductionMinor: Big;
+}
+
+/**
+ * The mid-cycle lumps of one payment cycle, summed for a target date: `applied`
+ * is what has already been paid by then (`date ≤ targetDate`), `total` the whole
+ * cycle's. Both are zero when the cycle has no mid-cycle lump.
+ */
+function cycleLumpTotals(
+  lumps: readonly IntraCycleLump[] | undefined,
+  targetDate: string,
+): { applied: Big; total: Big } {
+  let applied = new Big(0);
+  let total = new Big(0);
+  for (const lump of lumps ?? []) {
+    total = total.plus(lump.reductionMinor);
+    if (lump.date <= targetDate) {
+      applied = applied.plus(lump.reductionMinor);
+    }
+  }
+  return { applied, total };
+}
+
+/** The date-independent curve of a loan: month boundaries + intra-cycle lumps. */
+interface BoundaryCurve {
+  /** Balance at each month boundary `[0..termMonths]`, pre intra-cycle lumps. */
+  boundaries: MonthlyBoundary[];
+  /** By month index, the lumps dated strictly inside that cycle, in date order. */
+  intraCycleLumps: Map<number, IntraCycleLump[]>;
+}
+
 /** Round a Big minor-unit value to a whole integer minor unit, half up. */
 function toMinorInt(value: Big): number {
   const rounded = value.lt(0) ? new Big(0) : value.round(0, Big.roundHalfUp);
@@ -453,7 +506,7 @@ function toMinorInt(value: Big): number {
  * Bounded so it can never grow without limit across a long-lived server process.
  */
 const MAX_BOUNDARY_CACHE_ENTRIES = 64;
-const boundaryCache = new Map<string, MonthlyBoundary[]>();
+const boundaryCache = new Map<string, BoundaryCurve>();
 
 /** Stable value-key for the inputs `buildBoundaries` depends on (not the date). */
 function boundaryCacheKey(input: AmortizableBalanceAtDateInput): string {
@@ -484,14 +537,14 @@ function boundaryCacheKey(input: AmortizableBalanceAtDateInput): string {
  * Memoised by the date-independent loan key (#158): repeated calls for the same
  * loan reuse the curve instead of rebuilding the O(termMonths) big.js schedule.
  */
-function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[] {
+function buildBoundaries(input: AmortizableBalanceAtDateInput): BoundaryCurve {
   const cacheKey = boundaryCacheKey(input);
   const cached = boundaryCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
-  const boundaries = computeBoundaries(input);
+  const curve = computeBoundaries(input);
 
   // Simple bounded LRU-ish eviction: drop the oldest entry once full.
   if (boundaryCache.size >= MAX_BOUNDARY_CACHE_ENTRIES) {
@@ -500,11 +553,97 @@ function buildBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[
       boundaryCache.delete(oldest);
     }
   }
-  boundaryCache.set(cacheKey, boundaries);
-  return boundaries;
+  boundaryCache.set(cacheKey, curve);
+  return curve;
 }
 
-function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundary[] {
+/**
+ * The lumps landing on each month boundary, in payment order: by date first (a
+ * lump paid earlier is applied earlier, which is what the clamp at 0 depends on),
+ * then by input order for same-day lumps, so the curve stays deterministic.
+ */
+function repaymentsByMonthFor(
+  plan: AmortizationPlanInput,
+  earlyRepayments: readonly EarlyRepayment[] | undefined,
+): Map<number, EarlyRepayment[]> {
+  const byMonth = new Map<number, EarlyRepayment[]>();
+  for (const repayment of earlyRepayments ?? []) {
+    const monthIndex = monthIndexForDate(plan, repayment.repaymentDate);
+    const list = byMonth.get(monthIndex) ?? [];
+    list.push(repayment);
+    byMonth.set(monthIndex, list);
+  }
+  for (const list of byMonth.values()) {
+    list.sort((a, b) =>
+      a.repaymentDate < b.repaymentDate ? -1 : a.repaymentDate > b.repaymentDate ? 1 : 0,
+    );
+  }
+  return byMonth;
+}
+
+/** The outcome of applying one payment cycle's lumps to the live balance. */
+interface AppliedCycleLumps {
+  /** Live balance after every lump of the cycle — the period's opening balance. */
+  balance: Big;
+  /**
+   * Balance ON the cycle's boundary date: only the lumps dated that very day are
+   * applied, so a mid-cycle lump does not backdate itself to the previous cuota
+   * (#1291).
+   */
+  boundaryBalance: Big;
+  /** Lumps dated strictly inside the cycle, in date order. */
+  intra: IntraCycleLump[];
+  /**
+   * Balance the cuota must be recomputed on — the balance right after the LAST
+   * `reduce-payment` lump of the cycle. Null when no such lump landed here (the
+   * cuota is then held: `reduce-term`, or no lump at all).
+   */
+  paymentBasis: Big | null;
+}
+
+/**
+ * Apply a cycle's lumps to the live balance, in payment order. Each lump drops
+ * the principal (clamped at 0 → total repayment) and, when `reduce-payment`,
+ * re-bases the cuota over the remaining term; `reduce-term` holds the cuota so
+ * the loan ends earlier.
+ *
+ * The cycle keeps TWO readings of the same arithmetic (#1291): the period's
+ * opening balance (all lumps applied — the figure that period's interest is
+ * accrued on) and the balance on the boundary date itself (only that day's
+ * lumps), with the mid-cycle ones handed back as dated steps so the curve drops
+ * on the day the money left.
+ */
+function applyCycleLumps(input: {
+  balance: Big;
+  cycleStart: string;
+  repayments: readonly EarlyRepayment[];
+}): AppliedCycleLumps {
+  let balance = input.balance;
+  let boundaryBalance = input.balance;
+  let paymentBasis: Big | null = null;
+  const intra: IntraCycleLump[] = [];
+
+  for (const repayment of input.repayments) {
+    const before = balance;
+    balance = balance.minus(repayment.amountMinor);
+    if (balance.lt(0)) balance = new Big(0);
+    if (repayment.repaymentDate > input.cycleStart) {
+      intra.push({
+        date: repayment.repaymentDate,
+        reductionMinor: before.minus(balance),
+      });
+    } else {
+      boundaryBalance = balance;
+    }
+    if (repayment.mode === "reduce-payment") {
+      paymentBasis = balance;
+    }
+  }
+
+  return { balance, boundaryBalance, intra, paymentBasis };
+}
+
+function computeBoundaries(input: AmortizableBalanceAtDateInput): BoundaryCurve {
   const { plan } = input;
   const { initialCapitalMinor, annualInterestRate, termMonths } = plan;
 
@@ -516,15 +655,9 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
     .sort((a, b) => a.monthIndex - b.monthIndex);
 
   // Early repayments grouped by the month boundary they land on — the same
-  // boundary the balance locator resolves their date to (#182). Input order
-  // within a month is preserved for determinism.
-  const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
-  for (const repayment of input.earlyRepayments ?? []) {
-    const monthIndex = monthIndexForDate(plan, repayment.repaymentDate);
-    const list = repaymentsByMonth.get(monthIndex) ?? [];
-    list.push(repayment);
-    repaymentsByMonth.set(monthIndex, list);
-  }
+  // boundary the balance locator resolves their date to (#182).
+  const repaymentsByMonth = repaymentsByMonthFor(plan, input.earlyRepayments);
+  const intraCycleLumps = new Map<number, IntraCycleLump[]>();
 
   const boundaries: MonthlyBoundary[] = [{ balance: new Big(initialCapitalMinor) }];
   let balance = new Big(initialCapitalMinor);
@@ -545,25 +678,34 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
       payment = monthlyPayment(balance, new Big(activeRate).div(12), remainingTerm);
     }
 
-    // Apply any early repayments landing on this boundary, before the month's
-    // amortization. The lump drops the principal (clamped at 0 → total
-    // repayment); reduce-payment recomputes the cuota over the remaining term on
-    // the new balance, reduce-term keeps the cuota so the loan ends earlier.
+    // Apply this cycle's early repayments before the month's amortization: the
+    // period opens on the reduced balance (so the cuota and the interest are the
+    // ones the bank charges for the period the lump falls in), while the boundary
+    // date keeps the balance the previous cuota closed at and the mid-cycle drops
+    // are recorded on their own dates (#1291).
     const repayments = repaymentsByMonth.get(monthIndex);
     if (repayments) {
-      for (const repayment of repayments) {
-        balance = balance.minus(repayment.amountMinor);
-        if (balance.lt(0)) balance = new Big(0);
-        if (repayment.mode === "reduce-payment") {
-          const remainingTerm = termMonths - monthIndex;
-          payment = monthlyPayment(balance, new Big(activeRate).div(12), remainingTerm);
-        }
+      const applied = applyCycleLumps({
+        balance,
+        cycleStart: boundaryDate(plan, monthIndex),
+        repayments,
+      });
+      balance = applied.balance;
+      if (applied.paymentBasis !== null) {
+        const remainingTerm = termMonths - monthIndex;
+        payment = monthlyPayment(
+          applied.paymentBasis,
+          new Big(activeRate).div(12),
+          remainingTerm,
+        );
       }
-      // The lump lands at the start of this month, so the balance ON the
-      // boundary date itself reflects it — overwrite the pre-lump start-of-month
-      // value the previous iteration pushed. (Guarded: the no-repayment path is
-      // left byte-identical to the revisions-only curve.)
-      boundaries[monthIndex] = { balance };
+      // Overwrite the pre-lump start-of-month value the previous iteration
+      // pushed. (Guarded: the no-repayment path is left byte-identical to the
+      // revisions-only curve.)
+      boundaries[monthIndex] = { balance: applied.boundaryBalance };
+      if (applied.intra.length > 0) {
+        intraCycleLumps.set(monthIndex, applied.intra);
+      }
     }
 
     const monthlyRate = new Big(activeRate).div(12);
@@ -574,7 +716,7 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): MonthlyBoundar
     boundaries.push({ balance });
   }
 
-  return boundaries;
+  return { boundaries, intraCycleLumps };
 }
 
 /**
@@ -630,16 +772,16 @@ function monthIndexForDate(plan: AmortizationPlanInput, eventDate: string): numb
  * (#182) and the historical ripple's from-date must both use, so they can never
  * drift.
  *
- * Both event types are bucketed to this boundary by the locator. For an early
- * repayment `computeBoundaries` additionally overwrites the boundary's balance
- * with the post-lump value, so the whole window `[boundary, eventDate)` shows the
- * lump; rippling from the raw event date would leave the persisted snapshots in
- * that window at their pre-lump value forever, diverging from the live curve — the
- * bug (#1042) this from-date fixes. A rate revision does not overwrite the
- * boundary balance (it changes the payment, so the balance moves only from the
- * next cuota on), so aligning its from-date here is a consistency guarantee rather
- * than a divergence fix. Floored at boundary 0 (the disbursement) for events on or
- * before the first payment.
+ * Both event types are bucketed to this boundary by the locator, and both reshape
+ * the cycle they land in: the lump changes the interest and the recomputed cuota of
+ * that period, a revision changes its payment. So under `interpolated` the whole
+ * cycle is redrawn — its upper anchor is the new closing — and the boundary is the
+ * earliest date any cadence can shift. Rippling from here is therefore a superset
+ * of what moved: under `step` the dates in `[boundary, eventDate)` re-derive the
+ * value they already hold (since #1291 the curve no longer backdates the lump to
+ * the boundary), while rippling from the raw event date would leave the
+ * interpolated window stale — the bug (#1042) this from-date fixes. Floored at
+ * boundary 0 (the disbursement) for events on or before the first payment.
  */
 export function eventBoundaryDate(
   plan: AmortizationPlanInput,
@@ -740,10 +882,12 @@ export interface AmortizationScheduleEvent {
 
 /**
  * One period of the amortization schedule (#1049): the `index`-th cuota, spanning
- * boundary `index − 1` → `index`. `openingBalanceMinor` is the outstanding
- * principal at the start of the month (after any lump repaid on this boundary);
- * `closingBalanceMinor` is the balance at the period's payment date and is
- * byte-identical to {@link amortizableBalanceAtDate} on that date. Interest and
+ * boundary `index − 1` → `index`. `openingBalanceMinor` is the principal this
+ * period's interest is accrued on — the start of the month with EVERY lump of the
+ * period already applied, including one paid mid-cycle, which is why it can sit
+ * below the previous period's closing (#1291); `closingBalanceMinor` is the balance
+ * at the period's payment date and is byte-identical to
+ * {@link amortizableBalanceAtDate} on that date. Interest and
  * principal are each rounded to the cent (half up) for display, mirroring
  * {@link firstCuota}; their rounded parts may differ from the rounded payment by a
  * cent, exactly as the components of the first cuota can.
@@ -784,10 +928,10 @@ export interface AmortizationScheduleTrace {
  * Build the amortization schedule with a per-cuota interest/principal split and
  * the dated events attached to their boundaries (#1049). Mirrors the boundary
  * curve {@link computeBoundaries} step for step — payment recomputed at every rate
- * revision and `reduce-payment` lump, lumps applied on their boundary before that
- * month's amortization — so each period's `closingBalanceMinor` equals
- * {@link amortizableBalanceAtDate} on the period's date. Pure and cache-free (it is
- * a rare diagnostic read, not the hot ripple path).
+ * revision and `reduce-payment` lump, the cycle's lumps applied before that month's
+ * amortization but never backdated to its boundary (#1291) — so each period's
+ * `closingBalanceMinor` equals {@link amortizableBalanceAtDate} on the period's
+ * date. Pure and cache-free (it is a rare diagnostic read, not the hot ripple path).
  */
 export function amortizationScheduleTrace(
   input: AmortizableBalanceAtDateInput,
@@ -822,18 +966,16 @@ export function amortizationScheduleTrace(
       kind: "rate_revision",
     });
   }
-  const repaymentsByMonth = new Map<number, EarlyRepayment[]>();
-  for (const repayment of input.earlyRepayments ?? []) {
-    const monthIndex = monthIndexForDate(plan, repayment.repaymentDate);
-    const list = repaymentsByMonth.get(monthIndex) ?? [];
-    list.push(repayment);
-    repaymentsByMonth.set(monthIndex, list);
-    attach(monthIndex, {
-      amountMinor: repayment.amountMinor,
-      date: repayment.repaymentDate,
-      kind: "early_repayment",
-      mode: repayment.mode,
-    });
+  const repaymentsByMonth = repaymentsByMonthFor(plan, input.earlyRepayments);
+  for (const [monthIndex, repayments] of repaymentsByMonth) {
+    for (const repayment of repayments) {
+      attach(monthIndex, {
+        amountMinor: repayment.amountMinor,
+        date: repayment.repaymentDate,
+        kind: "early_repayment",
+        mode: repayment.mode,
+      });
+    }
   }
 
   // Replay the boundary curve exactly like `computeBoundaries` (lump applied on
@@ -871,18 +1013,23 @@ export function amortizationScheduleTrace(
 
     const repayments = repaymentsByMonth.get(monthIndex);
     if (repayments) {
-      for (const repayment of repayments) {
-        balance = balance.minus(repayment.amountMinor);
-        if (balance.lt(0)) balance = new Big(0);
-        if (repayment.mode === "reduce-payment") {
-          payment = monthlyPayment(
-            balance,
-            new Big(activeRate).div(12),
-            termMonths - monthIndex,
-          );
-        }
+      const applied = applyCycleLumps({
+        balance,
+        cycleStart: boundaryDate(plan, monthIndex),
+        repayments,
+      });
+      balance = applied.balance;
+      if (applied.paymentBasis !== null) {
+        payment = monthlyPayment(
+          applied.paymentBasis,
+          new Big(activeRate).div(12),
+          termMonths - monthIndex,
+        );
       }
-      boundaries[monthIndex] = balance;
+      // Mid-cycle lumps do not backdate to this boundary (#1291): the period's
+      // closing figure stays the one the curve reports on the boundary date, while
+      // the opening (below) is the post-lump balance the interest accrues on.
+      boundaries[monthIndex] = applied.boundaryBalance;
     }
 
     const opening = balance;
@@ -930,16 +1077,29 @@ export function amortizationScheduleTrace(
  * cuota; `interpolated` prorates that month's amortization linearly by calendar
  * day. The stub (boundary 0→1) is never interpolated — `targetDate <
  * firstPaymentDate` short-circuits to flat.
+ *
+ * On top of that, an early repayment paid inside the cycle (or inside the stub)
+ * steps the balance down on ITS OWN DATE and not before (#1291) — under either
+ * cadence, and in the stub too.
  */
 export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): number {
   const { plan, targetDate } = input;
   const { initialCapitalMinor, termMonths, firstPaymentDate } = plan;
 
   if (targetDate < firstPaymentDate) {
-    return initialCapitalMinor;
+    // Flat stub (ADR 0019), minus any lump already paid inside it (#1291). Two
+    // fast exits keep the common case free of curve building: a loan with no
+    // lumps at all, and the pre-disbursement window — the debt does not exist
+    // yet there, so no lump of it can have moved the figure.
+    if (!input.earlyRepayments?.length || targetDate < plan.disbursementDate) {
+      return initialCapitalMinor;
+    }
+    const stub = buildBoundaries(input);
+    const paidInStub = cycleLumpTotals(stub.intraCycleLumps.get(0), targetDate).applied;
+    return toMinorInt(stub.boundaries[0]!.balance.minus(paidInStub));
   }
 
-  const boundaries = buildBoundaries(input);
+  const { boundaries, intraCycleLumps } = buildBoundaries(input);
   const endDate = boundaryDate(plan, termMonths);
   if (targetDate >= endDate) {
     return 0;
@@ -968,14 +1128,24 @@ export function amortizableBalanceAtDate(input: AmortizableBalanceAtDateInput): 
   const startBalance = boundaries[monthIndex]!.balance;
   const endBalance = boundaries[monthIndex + 1]!.balance;
 
+  // A lump paid inside this cycle is a STEP on its own date (#1291), laid over the
+  // cycle's ordinary amortization: the cadence draws the ordinary movement between
+  // the boundary balance and where the cuota would have closed without the lumps
+  // (`endBalance + total`), and the lumps already paid by the target are then
+  // deducted. Both totals are zero on a cycle with no mid-cycle lump, so that path
+  // stays byte-identical. At the cycle's end the deduction cancels the offset
+  // exactly, so the next cuota still closes at `endBalance` — the lump is
+  // reflected once, never twice.
+  const lumps = cycleLumpTotals(intraCycleLumps.get(monthIndex), targetDate);
+
   const span = daysBetween(monthStart, monthEnd);
   const offset = daysBetween(monthStart, targetDate);
   const value = interpolateOrStep({
     lower: startBalance,
-    upper: endBalance,
+    upper: endBalance.plus(lumps.total),
     span,
     offset,
     cadence: cadenceOrDefault(input.cadence),
   });
-  return toMinorInt(value);
+  return toMinorInt(value.minus(lumps.applied));
 }

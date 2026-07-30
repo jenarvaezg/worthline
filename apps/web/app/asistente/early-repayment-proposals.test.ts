@@ -164,9 +164,10 @@ describe("buildEarlyRepaymentProposal (#1245)", () => {
     // The date the user paid is rendered es-ES, never as a raw ISO string.
     expect(proposal.repayment.dateLabel).toBe("20/07/2026");
     // Balance before/after, resulting cuota and resulting end date, all present.
-    // The balance pair is dated: it is the figure at the month boundary (#1266).
+    // The balance pair is dated on the REPAYMENT date — where the curve steps down
+    // (#1291) — never undated next to a Confirmar button (#1266).
     expect(proposal.rows.map((row) => row.label)).toEqual([
-      "Saldo pendiente (15/07/2026)",
+      "Saldo pendiente (20/07/2026)",
       "Cuota mensual",
       "Última cuota",
     ]);
