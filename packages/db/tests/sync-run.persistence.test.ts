@@ -21,6 +21,19 @@ import { afterEach, describe, expect, test } from "vitest";
 
 const MEMBER_ID = "mJ";
 
+/**
+ * A deterministic ATTEMPT clock. The run's `started_at`/`finished_at` are wall-clock
+ * stamps of the attempt (never the payload's `syncedAt`, which a retried job repeats
+ * verbatim), so they are pinned here: `tick(n)` is the n-th clock read, one second
+ * apart. Each attempt reads it twice — once opening, once finalizing.
+ */
+const CLOCK_BASE = Date.parse("2026-08-01T00:00:00.000Z");
+const tick = (nth: number): string => new Date(CLOCK_BASE + nth * 1_000).toISOString();
+function attemptClock(): () => string {
+  let reads = 0;
+  return () => tick(reads++);
+}
+
 interface SyncRunRow {
   id: string;
   source_id: string;
@@ -37,7 +50,7 @@ async function setup(): Promise<{
   sourceId: string;
 }> {
   const client = openLibsqlClient(":memory:");
-  const store = await createStoreFromSqlite(client);
+  const store = await createStoreFromSqlite(client, { clock: attemptClock() });
   await store.workspace.initializeWorkspace({
     members: [{ id: MEMBER_ID, name: "Jose" }],
     mode: "individual",
@@ -116,8 +129,11 @@ describe("sync-run lifecycle", () => {
     expect(run!.status).toBe("ok");
     expect(run!.trigger).toBe("manual");
     expect(run!.error_json).toBeNull();
-    expect(run!.started_at).toBe("2026-07-01T09:00:00.000Z");
-    expect(run!.finished_at).toBe("2026-07-01T09:00:00.000Z");
+    // The attempt's own wall clock brackets the run — not the payload's `syncedAt`.
+    expect(run!.started_at).toBe(tick(0));
+    expect(run!.finished_at).toBe(tick(1));
+    // …while the freshness stamp stays on the DATA instant the sync persisted.
+    expect(await readLastSyncAt(client, sourceId)).toBe("2026-07-01T09:00:00.000Z");
   });
 
   test("`last_sync_at` derives from the latest `ok` run", async () => {
@@ -163,8 +179,8 @@ describe("sync-run lifecycle", () => {
     expect(runs).toHaveLength(1);
     const [run] = runs;
     expect(run!.status).toBe("error");
-    expect(run!.finished_at).toBe("2026-07-01T09:00:00.000Z");
-    expect(run!.started_at).toBe("2026-07-01T09:00:00.000Z");
+    expect(run!.started_at).toBe(tick(0));
+    expect(run!.finished_at).toBe(tick(1));
     const error = JSON.parse(run!.error_json!) as {
       code: string;
       message: string;
@@ -222,10 +238,42 @@ describe("sync-run lifecycle", () => {
     const runs = await readRuns(client, sourceId);
     expect(runs).toHaveLength(SYNC_RUN_RETENTION_LIMIT);
     // The retained window is the newest N: the oldest surviving run is #6 (the
-    // first five were pruned), and the last-sync stamp reflects the final sync.
-    expect(runs[0]!.finished_at).toBe("2026-07-06T09:00:00.000Z");
+    // first five were pruned) — its attempt opened on the 11th clock read (two per
+    // attempt) — and the last-sync stamp reflects the final sync's data instant.
+    expect(runs[0]!.started_at).toBe(tick(10));
     expect(await readLastSyncAt(client, sourceId)).toBe(
       `2026-07-${String(total).padStart(2, "0")}T09:00:00.000Z`,
     );
+  });
+
+  // Regression (#885 nit, production 2026-07-29): three queue retries of ONE failing
+  // job produced three runs with a `started_at` identical to the millisecond,
+  // because the executor stamped them with `payload.syncedAt` — the user's click,
+  // repeated verbatim on every re-enqueue — instead of each attempt's own clock.
+  test("two attempts of the same job stamp their own start/finish, not the payload's syncedAt", async () => {
+    const { client, store, sourceId } = await freshSetup();
+
+    // A deterministic persist failure, so the same payload can be retried like the
+    // durable queue does (each attempt opens and finalizes its own run).
+    await client.execute("DROP TABLE positions");
+
+    const syncedAt = "2026-07-01T09:00:00.000Z";
+    const payload = {
+      positions: [token()],
+      sourceId,
+      syncedAt,
+      trigger: "manual" as const,
+    };
+    await expect(store.command.syncConnectedSource(payload)).rejects.toThrow();
+    await expect(store.command.syncConnectedSource(payload)).rejects.toThrow();
+
+    const runs = await readRuns(client, sourceId);
+    expect(runs).toHaveLength(2);
+    expect(runs.map((run) => run.status)).toEqual(["error", "error"]);
+    // Each attempt is individually locatable in time…
+    expect(runs.map((run) => run.started_at)).toEqual([tick(0), tick(2)]);
+    expect(runs.map((run) => run.finished_at)).toEqual([tick(1), tick(3)]);
+    // …and none of the stamps is the (shared) semantic instant of the data sync.
+    expect(runs.some((run) => run.started_at === syncedAt)).toBe(false);
   });
 });

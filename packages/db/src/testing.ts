@@ -5,6 +5,7 @@ import type { ConnectedSourceStore } from "./connected-source-store";
 import {
   createInMemoryStore as createPublicInMemoryStore,
   createStoreFromSqlite as createPublicStoreFromSqlite,
+  type StoreBuildDeps,
 } from "./index";
 import type { LiabilityStore } from "./liability-store";
 import type { OperationsStore } from "./operations-store";
@@ -30,6 +31,7 @@ export async function createInMemoryStore(): Promise<PersistenceTestStore> {
 
 export async function createStoreFromSqlite(
   client: Client,
+  deps: StoreBuildDeps = {},
 ): Promise<PersistenceTestStore> {
-  return (await createPublicStoreFromSqlite(client)) as PersistenceTestStore;
+  return (await createPublicStoreFromSqlite(client, deps)) as PersistenceTestStore;
 }

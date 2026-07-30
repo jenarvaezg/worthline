@@ -65,14 +65,32 @@ export interface SyncRunStore {
   beginRun(params: {
     sourceId: string;
     trigger: SyncTrigger;
+    /**
+     * This ATTEMPT's own wall-clock instant — `created_at` + `started_at`. Never
+     * the payload's `syncedAt`: a retried job carries the same one, which made
+     * three attempts share a `started_at` to the millisecond (#885 nit).
+     */
     at: string;
   }): Promise<{ runId: string } | null>;
   /**
-   * Finalize a run as `ok` and derive `connected_sources.last_sync_at` from the
-   * latest `ok` run (the run is the truth; the column is a cache). Prunes the
-   * source's runs to the retention limit. Its own transaction.
+   * Finalize a run as `ok` and stamp `connected_sources.last_sync_at` with the
+   * instant the persisted DATA belongs to (the run is what MOVES the column — only
+   * an `ok` run writes it — while the column stays a freshness-of-valuation cache).
+   * Prunes the source's runs to the retention limit. Its own transaction.
    */
-  finishRun(params: { runId: string; sourceId: string; at: string }): Promise<void>;
+  finishRun(params: {
+    runId: string;
+    sourceId: string;
+    /** This attempt's own wall-clock finish instant — the run's `finished_at`. */
+    at: string;
+    /**
+     * The semantic instant of the DATA sync (the one the positions were mirrored
+     * under). Kept apart from `at` so a retry's wall clock never drags the
+     * user-visible "última sincronización" off the instant the data belongs to —
+     * the demo seeds it deliberately backdated. Defaults to `at`.
+     */
+    syncedAt?: string;
+  }): Promise<void>;
   /**
    * Finalize a run as `error` with a structured `{ code, message, retriable }`, so
    * a failure never leaves a `running` run dangling. Does NOT touch
@@ -83,6 +101,7 @@ export interface SyncRunStore {
     runId: string;
     sourceId: string;
     error: SyncRunError;
+    /** This attempt's own wall-clock finish instant — the run's `finished_at`. */
     at: string;
   }): Promise<void>;
   /** Every retained run for a source, newest first. */
@@ -175,7 +194,7 @@ export function createSyncRunStore(ctx: StoreContext): SyncRunStore {
         const runId = ctx.newId();
         // Insert `pending`, then move to `running`: the modeled opening transition
         // (#885), atomic within this one committed transaction. `createdAt` is set
-        // explicitly to the millisecond-precision trigger time rather than the
+        // explicitly to the millisecond-precision ATTEMPT time rather than the
         // second-granularity CURRENT_TIMESTAMP default: it is the ordering key for
         // retention and the newest-first reads, and single-flight (one open run per
         // source) plus serial finalization make it distinct and monotonic per
@@ -193,7 +212,7 @@ export function createSyncRunStore(ctx: StoreContext): SyncRunStore {
         return { runId };
       }),
 
-    finishRun: ({ runId, sourceId, at }) =>
+    finishRun: ({ runId, sourceId, at, syncedAt }) =>
       ctx.transaction(async () => {
         await db
           .update(syncRuns)
@@ -201,21 +220,23 @@ export function createSyncRunStore(ctx: StoreContext): SyncRunStore {
           .where(eq(syncRuns.id, runId))
           .run();
 
-        // Derive the cached `last_sync_at` from the latest `ok` run (the run is the
-        // truth; the column is a cache). `syncPositions` also stamps this column as
-        // part of its own standalone contract (it has direct callers), so on the
-        // happy path this re-writes the same value — but deriving it HERE is what
-        // makes the run authoritative (#885): the column follows the run history,
-        // not a value passed straight through. Freshness-of-valuation in
-        // `asset_price_cache` is a separate axis and is never touched here.
-        const derived = await latestOkAt(sourceId);
-        if (derived !== null) {
-          await db
-            .update(connectedSources)
-            .set({ lastSyncAt: derived, updatedAt: sql`CURRENT_TIMESTAMP` })
-            .where(eq(connectedSources.id, sourceId))
-            .run();
-        }
+        // Stamp the cached `last_sync_at` HERE, on the `ok` transition — that is
+        // what makes the run authoritative (#885): the column moves only when a run
+        // succeeds, never on a value passed straight through by a caller.
+        // `syncPositions` also stamps it as part of its own standalone contract (it
+        // has direct callers), so on the happy path this re-writes the same value.
+        //
+        // The value is the DATA instant, not this attempt's `finished_at`: the run
+        // row's clock is now per-attempt wall time (so three retries are
+        // distinguishable), while `last_sync_at` answers "how fresh is this
+        // valuation?" — which must stay pinned to the instant the mirrored
+        // positions belong to (the demo seeds it deliberately backdated).
+        // Freshness in `asset_price_cache` is a separate axis, never touched here.
+        await db
+          .update(connectedSources)
+          .set({ lastSyncAt: syncedAt ?? at, updatedAt: sql`CURRENT_TIMESTAMP` })
+          .where(eq(connectedSources.id, sourceId))
+          .run();
 
         await pruneRetention(sourceId);
       }),
