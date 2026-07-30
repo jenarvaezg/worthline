@@ -164,6 +164,33 @@ describe("attachment chat context", () => {
     expect(serialized).not.toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
   });
 
+  /**
+   * The conduct rule that goes with the honest truncation notice (#865). A real 91-row
+   * workbook reached the model cut at row 60 and it presented that row's balance as the
+   * document's closing figure. The count lives in the rendered text; the rule about how
+   * to read a cut lives HERE, above the fence, where the document cannot rewrite it.
+   */
+  test("forbids reading the last visible line as the document's end (#865)", () => {
+    const prepared = prepareAttachmentMessagesForModel(
+      [{ id: "u1", role: "user", parts: [{ type: "text", text: "¿cuál es el saldo?" }] }],
+      null,
+      {
+        fileName: "movimientos.xlsx",
+        source: "spreadsheet_grid",
+        text: "Hoja «Movimientos» (91 fila(s) × 2 columna(s)):\n04/04/2026 | 4,51\n(ATENCIÓN, LECTURA PARCIAL: se muestran 60 de 91 filas.)",
+      },
+    );
+    const serialized = JSON.stringify(prepared);
+
+    expect(serialized).toContain("SOLO UNA PARTE del contenido");
+    expect(serialized).toContain("LECTURA PARCIAL");
+    expect(serialized).toContain("NUNCA trates la última línea visible como el final");
+    expect(serialized).toContain("no la presentes como saldo final, total, ni fecha");
+    // The rule sits BEFORE the content, so the document cannot displace it.
+    const text = promptTextOf(prepared);
+    expect(text.indexOf("SOLO UNA PARTE")).toBeLessThan(text.indexOf("04/04/2026"));
+  });
+
   test("neutralizes a forged fence sentinel in unstructured content (#865)", () => {
     const messages: UIMessage[] = [
       { id: "u1", role: "user", parts: [{ type: "text", text: "¿Qué ves?" }] },

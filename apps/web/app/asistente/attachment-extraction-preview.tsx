@@ -41,7 +41,18 @@ function formatAmount(
   }
 }
 
+/**
+ * A position that printed neither symbol nor units — the ordinary row of a bank's
+ * composition tab. It is not an incomplete reading and the card must not paint it as one:
+ * what it means is that the alta goes in by its total value (#1325), which is what the
+ * hint below says once any row arrives this way.
+ */
+function isValueOnly(position: ExtractedPositionsDocument["positions"][number]): boolean {
+  return position.units === undefined && position.ticker === undefined;
+}
+
 function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
+  const someValueOnly = data.positions.some(isValueOnly);
   return (
     <>
       <div className="assistantAttachmentTableScroll">
@@ -57,12 +68,18 @@ function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
           </thead>
           <tbody>
             {data.positions.map((position, index) => (
-              <tr key={`${position.ticker}-${index}`}>
+              <tr key={`${position.ticker ?? position.name}-${index}`}>
                 <th scope="row">
-                  {position.ticker} · {position.name}
+                  {position.ticker === undefined
+                    ? position.name
+                    : `${position.ticker} · ${position.name}`}
                   {position.uncertain ? <em>Revisar lectura</em> : null}
                 </th>
-                <td>{number.format(position.units)}</td>
+                {/* «—» and not a blank cell: the document printed no units, and saying so
+                    is different from a reading that failed to fill the column. */}
+                <td>
+                  {position.units === undefined ? "—" : number.format(position.units)}
+                </td>
                 <td>{euros.format(position.marketValueEur)}</td>
                 <td>{position.currency}</td>
                 <td>
@@ -93,6 +110,9 @@ function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
         </table>
       </div>
       <p className="assistantAttachmentBridgeHint">
+        {someValueOnly
+          ? "Las filas sin participaciones («—») son las que el documento da solo por su valor: se llevan al alta por ese importe, como 1 participación a ese precio. "
+          : ""}
         Revisa cada lectura. «Llevar al alta» abre el asistente de alta con los datos
         rellenos para que confirmes tú; nada se guarda desde el chat.
       </p>

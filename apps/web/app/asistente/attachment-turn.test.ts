@@ -1,6 +1,8 @@
+import { hasUnstructuredEvidenceInHistory } from "@web/asistente/attachment-chat";
 import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
 import {
   UNIDENTIFIED_DOCUMENT_MESSAGE,
+  UNSTRUCTURED_EMPTY_READING_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
@@ -153,12 +155,94 @@ describe("readAttachmentTurn", () => {
     });
   });
 
-  it("pays for no description when the document WAS identified and read empty", async () => {
-    // `empty_reading` means the seam knew what it was looking at, so a second vision
-    // call would buy nothing — and the user waits for it pre-stream.
+  it("describes a document it DID identify and could not read a row of (#1246)", async () => {
+    // The regression, from the real capture: MyInvestor's «Composición» tab came back
+    // `empty_reading` and the turn reached the model with nothing at all — not the total
+    // printed at the top of the screen, not one fund name. «Describing it would be
+    // paraphrasing» was the argument for skipping the drain, and it was backwards: a
+    // reading that failed is exactly the one with everything left to describe.
     vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
       message: "no he podido leer ninguna fila",
       reason: "empty_reading",
+      status: "unrecognized",
+    });
+    vi.mocked(describeVisionAttachment).mockResolvedValue(
+      "Se ve una cartera con dos fondos y un total de 1.413,63 €.",
+    );
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "composicion.png",
+      mimeType: "image/png",
+    });
+
+    expect(reading.unstructured).toEqual({
+      fileName: "composicion.png",
+      source: "vision_description",
+      text: "Se ve una cartera con dos fondos y un total de 1.413,63 €.",
+    });
+    // Its own card, and its own verdict: claiming «no reconozco ningún documento» would
+    // deny the one thing the seam DID manage to do.
+    expect(reading.preview.result).toEqual({
+      message: UNSTRUCTURED_EMPTY_READING_MESSAGE,
+      reason: "empty_reading",
+      status: "unrecognized",
+    });
+    expect(UNSTRUCTURED_EMPTY_READING_MESSAGE).not.toBe(UNSTRUCTURED_VISION_MESSAGE);
+  });
+
+  it("keeps the described empty reading visible to the #1248 history boundary", () => {
+    // The coupling that makes the new lane safe: the card it writes has to be a marker
+    // `hasUnstructuredEvidenceInHistory` recognizes, or the unvalidated-evidence gate
+    // fails OPEN one turn later for a conversation that already has evidence on it.
+    expect(
+      hasUnstructuredEvidenceInHistory([
+        {
+          id: "a1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-attachment-extraction",
+              data: {
+                fileName: "composicion.png",
+                result: {
+                  message: UNSTRUCTURED_EMPTY_READING_MESSAGE,
+                  reason: "empty_reading",
+                  status: "unrecognized",
+                },
+              },
+            },
+          ],
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  it("charges the second call the new drain adds (#1258 stays coherent)", async () => {
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      message: "no he podido leer ninguna fila",
+      reason: "empty_reading",
+      status: "unrecognized",
+    });
+    vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una cartera.");
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "composicion.png",
+      mimeType: "image/png",
+    });
+
+    // Two calls, counted on the ASK exactly as the unidentified lane counts them: the
+    // content this buys is not free, and the fuse must see what it cost.
+    expect(reading.visionCalls).toBe(2);
+  });
+
+  it("still describes nothing when the verdict carries no reason at all", async () => {
+    // Only the vision seam stamps the discriminant. A route that cannot say which of the
+    // two facts held cannot say a description would help either, and a workbook must
+    // never reach a vision model (it would clobber its own rendered grid).
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+      message: "nada",
       status: "unrecognized",
     });
 
@@ -170,6 +254,7 @@ describe("readAttachmentTurn", () => {
 
     expect(reading.unstructured).toBeNull();
     expect(describeVisionAttachment).not.toHaveBeenCalled();
+    expect(reading.visionCalls).toBe(1);
   });
 
   it("leaves the extractor's own verdict standing when nothing describes the capture", async () => {

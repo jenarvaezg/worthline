@@ -55,6 +55,53 @@ describe("attachment extraction contract", () => {
     });
   });
 
+  /**
+   * The reading that had no legal shape until this widening. MyInvestor's «Composición» tab
+   * prints the fund's name and its value in euros — no símbolo, no participaciones — and
+   * the vision model read it right; the contract then rejected every row and the capture
+   * degraded to «no he podido leer ninguna fila», so the chat received neither the total
+   * nor a single fund name.
+   */
+  test("accepts a value-only positions row: name + value + currency (#1325)", () => {
+    const parsed = positionsDocumentSchema.parse({
+      documentType: "positions",
+      positions: [
+        { currency: "EUR", marketValueEur: "574,48", name: "Fondo Índice Metal" },
+        { currency: "EUR", marketValueEur: "839,15", name: "Fondo Índice Global" },
+      ],
+      totalEur: "1.413,63",
+      warnings: ["La pantalla no imprime las participaciones de cada fondo."],
+    });
+
+    expect(parsed.positions.map((position) => position.marketValueEur)).toEqual([
+      574.48, 839.15,
+    ]);
+    // Absent, never zero: a units of 0 next to a positive value would be a figure this
+    // contract invented, and the alta bridge reads the absence as «by total value».
+    expect(parsed.positions[0]?.units).toBeUndefined();
+    expect(parsed.positions[0]?.ticker).toBeUndefined();
+    expect(parsed.totalEur).toBe(1413.63);
+  });
+
+  test("takes a row that prints one of the two optional fields but not the other", () => {
+    const parsed = positionsDocumentSchema.parse({
+      documentType: "positions",
+      positions: [
+        { currency: "EUR", marketValueEur: 100, name: "Solo símbolo", ticker: "VWCE" },
+        { currency: "EUR", marketValueEur: 200, name: "Solo unidades", units: "3" },
+      ],
+      warnings: [],
+    });
+
+    expect(parsed.positions[0]).toEqual({
+      currency: "EUR",
+      marketValueEur: 100,
+      name: "Solo símbolo",
+      ticker: "VWCE",
+    });
+    expect(parsed.positions[1]?.units).toBe(3);
+  });
+
   test("preserves visible uncertainty and warnings on positions", () => {
     const parsed = positionsDocumentSchema.parse({
       documentType: "positions",
@@ -79,9 +126,26 @@ describe("attachment extraction contract", () => {
 
   test.each([
     { documentType: "positions", positions: [], warnings: [] },
+    // The irreducible row is name + value + currency (#1325): `ticker` and `units` may
+    // be absent because a composition tab prints neither, but a row with no NAME names
+    // nothing, and one with no value carries no reading.
     {
       documentType: "positions",
-      positions: [{ currency: "EUR", marketValueEur: 10, name: "Incomplete", units: 1 }],
+      positions: [{ currency: "EUR", marketValueEur: 10, ticker: "NONAME", units: 1 }],
+      warnings: [],
+    },
+    {
+      documentType: "positions",
+      positions: [{ currency: "EUR", name: "Sin valor", ticker: "NOVAL", units: 1 }],
+      warnings: [],
+    },
+    // An EMPTY ticker is not «no ticker»: the seam drops the blank before the contract
+    // sees it, so a blank arriving here means something upstream stopped cleaning.
+    {
+      documentType: "positions",
+      positions: [
+        { currency: "EUR", marketValueEur: 10, name: "Ticker en blanco", ticker: "  " },
+      ],
       warnings: [],
     },
     {

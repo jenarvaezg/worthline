@@ -230,6 +230,144 @@ describe("vision attachment extractor · identify and extract", () => {
   });
 });
 
+/**
+ * The reading a real capture produced, and the dead end it used to hit (#1325).
+ *
+ * MyInvestor's «Composición» tab shows a fund's name, its value in euros and its return
+ * — no símbolo, no participaciones. Run against that PNG, `gemini-3.1-flash-lite`
+ * answered exactly this: the right document, the right total, `uncertain: false`, and a
+ * warning saying the units were not on screen. With `ticker` and `units` required, no row
+ * could be built, the seam reported `empty_reading`, and the assistant went on to ask the
+ * user for a total that was printed on the very capture they had just uploaded.
+ */
+describe("vision attachment extractor · the value-only positions screen (#1325)", () => {
+  const VALUE_ONLY_OUTPUT = {
+    documentType: "positions",
+    positions: [
+      { currency: "EUR", marketValueEur: 574.48, name: "Fondo Índice Metal" },
+      { currency: "EUR", marketValueEur: 839.15, name: "Fondo Índice Global" },
+    ],
+    totalEur: 1413.63,
+    uncertain: false,
+    warnings: [
+      "The number of units for each position is not explicitly stated in the document, only the market value in EUR.",
+    ],
+  };
+
+  function readingOf(output: unknown) {
+    return extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedGenerate(output),
+      sleep: vi.fn(),
+    });
+  }
+
+  test("validates a screen that prints only name and value", async () => {
+    const result = await readingOf(VALUE_ONLY_OUTPUT);
+
+    expect(result).toEqual({
+      data: {
+        documentType: "positions",
+        positions: VALUE_ONLY_OUTPUT.positions,
+        totalEur: 1413.63,
+        warnings: VALUE_ONLY_OUTPUT.warnings,
+      },
+      status: "valid",
+    });
+  });
+
+  test("no longer degrades that reading to «no he leído ninguna fila»", async () => {
+    const result = await readingOf(VALUE_ONLY_OUTPUT);
+
+    // The regression in one line: the total and the fund names reach the chat instead
+    // of dying on the card behind an `empty_reading` verdict.
+    expect(result).not.toMatchObject({ reason: "empty_reading" });
+    expect(result.status).toBe("valid");
+  });
+
+  test("drops a blank ticker instead of failing the whole capture", async () => {
+    // The provider schema cannot say «omit the field»; a model answering `""` to
+    // «déjalo vacío» is being reasonable, and it must not cost the reading.
+    const result = await readingOf({
+      documentType: "positions",
+      positions: [
+        {
+          currency: "EUR",
+          marketValueEur: 574.48,
+          name: "Fondo Índice Metal",
+          ticker: "",
+        },
+        {
+          currency: "EUR",
+          marketValueEur: 839.15,
+          name: "Fondo Índice Global",
+          ticker: "   ",
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("unreachable");
+    if (result.data.documentType !== "positions") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
+    expect(result.data.positions.every((position) => position.ticker === undefined)).toBe(
+      true,
+    );
+  });
+
+  test("reads a zero units count as «not printed», not as zero participaciones", async () => {
+    const result = await readingOf({
+      documentType: "positions",
+      positions: [
+        { currency: "EUR", marketValueEur: 574.48, name: "Fondo Índice Metal", units: 0 },
+      ],
+      warnings: [],
+    });
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("unreachable");
+    if (result.data.documentType !== "positions") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
+    // Zero participaciones holding 574,48 € is not a reading of anything: kept
+    // verbatim it would paint «0» on the card and refuse to price the alta.
+    expect(result.data.positions[0]?.units).toBeUndefined();
+  });
+
+  test("keeps a real units count exactly as read", async () => {
+    const result = await readingOf(POSITIONS_OUTPUT);
+
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("unreachable");
+    if (result.data.documentType !== "positions") {
+      throw new Error(`got ${result.data.documentType}`);
+    }
+    expect(result.data.positions[0]).toEqual(POSITIONS_OUTPUT.positions[0]);
+  });
+
+  test("tells the model to extract the row anyway and never to invent the two fields", async () => {
+    const generate = stubbedGenerate(VALUE_ONLY_OUTPUT);
+    await extractDocumentFromVisionAttachment(IMAGE, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    const prompt = promptOf(generate.mock.calls[0]?.[0]);
+    expect(prompt).toContain("Una posición necesita solo nombre, valor y divisa");
+    expect(prompt).toContain(
+      "DEJA units y ticker sin rellenar y extrae la fila igualmente",
+    );
+    expect(prompt).toContain("No los inventes ni los deduzcas del valor.");
+    // The widening is about what MAY be absent, never about what may be made up.
+    expect(prompt).toContain("no uses el nombre como ticker");
+  });
+});
+
 describe("vision attachment extractor · document-level honesty marks", () => {
   test.each([
     { expected: true, uncertain: true },

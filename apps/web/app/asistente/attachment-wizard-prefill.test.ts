@@ -47,8 +47,42 @@ describe("buildWizardPrefillParams", () => {
 
     expect(derived.ok).toBe(true);
     if (derived.ok) {
-      expect(Number.parseFloat(derived.units)).toBeCloseTo(pos.units, 3);
+      expect(Number.parseFloat(derived.units)).toBeCloseTo(pos.units!, 3);
     }
+  });
+
+  /**
+   * The row of a bank's composition tab (#1325): a name and a value, nothing else.
+   * It must reach the wizard PRICED, because the alternative measured in the real
+   * transcript is a user retyping a figure printed on the capture they just uploaded.
+   */
+  test("prices a value-only row as 1 participación at its total (#1325)", () => {
+    const params = buildWizardPrefillParams(
+      position({ ticker: undefined, units: undefined }),
+    );
+
+    expect(params.symbol_fund).toBeUndefined();
+    expect(params.saldo_fund).toBeDefined();
+    expect(params.price_fund).toBe(params.saldo_fund);
+
+    // The same helper the server action runs must derive exactly one participación:
+    // this is the wizard's own value-only encoding, not a second one.
+    const derived = deriveOpeningUnits({
+      priceRaw: params.price_fund!,
+      saldoRaw: params.saldo_fund!,
+    });
+    expect(derived.ok).toBe(true);
+    if (derived.ok) expect(Number.parseFloat(derived.units)).toBeCloseTo(1, 6);
+  });
+
+  test("leaves the price pending when a row names a symbol but no units", () => {
+    // The #1325 gate, applied here too: with a symbol a live quote will arrive, and a
+    // single fake participación would revalue to one share's NAV. The wizard asks.
+    const params = buildWizardPrefillParams(position({ units: undefined }));
+
+    expect(params.symbol_fund).toBe("VWCE");
+    expect(params.saldo_fund).toBeDefined();
+    expect(params.price_fund).toBeUndefined();
   });
 
   test("leaves the price pending when units are zero (never invents one)", () => {

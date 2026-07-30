@@ -45,6 +45,31 @@ export const UNSTRUCTURED_VISION_MESSAGE =
   "No reconozco aquí ningún documento que sepa extraer, así que no hay ninguna lectura validada: lo que te cuente de esta imagen sale de mirarla, no de datos comprobados.";
 
 /**
+ * Card message when the vision seam DID identify the document, could not read a single
+ * row, and the descriptive reading then said what is on screen — #1246's drain, widened
+ * to both shapes of `unrecognized`.
+ *
+ * It is a THIRD marker and not a reuse of {@link UNSTRUCTURED_VISION_MESSAGE} because the
+ * two facts are different and the user reads the difference: that one says «no reconozco
+ * ningún documento», which would be a lie on a capture whose document we did recognize.
+ * Like its two siblings it is a marker the unvalidated-evidence boundary reads back out of
+ * history (#1248), so it MUST stay in `UNSTRUCTURED_EVIDENCE_MESSAGES` — a described
+ * capture is evidence worthline never validated, whichever verdict sent it down the lane.
+ */
+export const UNSTRUCTURED_EMPTY_READING_MESSAGE =
+  "Reconozco el documento, pero no he podido leer ninguna de sus filas, así que no hay ninguna lectura validada: lo que te cuente de este archivo sale de mirarlo, no de datos comprobados.";
+
+/**
+ * Card message for the dead end of that same case: the document was identified, no row
+ * could be read, and no model turn follows either (#1246). The twin of
+ * {@link UNIDENTIFIED_DOCUMENT_MESSAGE} for the other shape of `unrecognized`, and like
+ * it — and unlike the message above — it must NEVER join `UNSTRUCTURED_EVIDENCE_MESSAGES`:
+ * nothing was handed to the model, so nothing may close the gate on its account.
+ */
+export const EMPTY_READING_MESSAGE =
+  "Reconozco el documento, pero no he podido leer ninguna de sus filas.";
+
+/**
  * Card message when this client cannot fully validate the payload of a reading and
  * the payload carries no message of its own to paint — a document written by a newer
  * worthline, so its table cannot be rendered here (#1261). It names the real cause
