@@ -27,6 +27,7 @@ import type {
   Workspace,
 } from "./index";
 import {
+  assertSnapshotHoldingsReconcile,
   calculateNetWorth,
   captureValuedNetWorthSnapshot,
   createLiability,
@@ -2470,6 +2471,224 @@ describe("recalculateSnapshotForCoinAcquisition", () => {
     expect(row.valueMinor).toBe(500_00);
     expect(result.snapshot.grossAssets.amountMinor).toBe(1_500_00);
     expect(result.snapshot.liquidNetWorth.amountMinor).toBe(1_000_00);
+  });
+
+  // ── The legacy-row regression (production, 2026-07-29) ─────────────────────
+  // A workspace with snapshots captured BEFORE ADR 0035 (the per-position
+  // breakdown is frozen going-forward only) has the coin-collection row with a
+  // value but NO position children. Attaching only the newly-acquired coin as a
+  // child made that row "carry positions", and the per-position invariant then
+  // demanded the single child sum to the whole row — throwing
+  // `position rows … sum to 7960 but the holding value is 331162` and rolling
+  // back the entire sync (deterministically, on every retry).
+  test("a legacy row with no frozen breakdown stays without positions (never a partial one)", () => {
+    const workspace = makeWorkspace();
+    const legacyCoinRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_coins",
+      kind: "asset",
+      label: "Colección Numista",
+      liquidityTier: "illiquid",
+      securesHousing: false,
+      valueMinor: 323_202, // frozen pre-ADR-0035: a value, no children
+    };
+    const result = recalculateSnapshotForCoinAcquisition({
+      asset: coinCollection(workspace),
+      frozenHoldings: [cashRow(1_000_00), legacyCoinRow],
+      globalDeltaMinor: 7_960,
+      newTrades: [
+        {
+          purchaseDate: "2020-03-15", // long before the snapshot date
+          position: {
+            imageUrl: null,
+            label: "Moneda nueva",
+            metal: "silver",
+            positionKey: "wl_coin_new",
+            valueMinor: 7_960,
+          },
+        },
+      ],
+      snapshot: {
+        ...cashSnapshot(1_000_00),
+        grossAssets: eur(1_000_00 + 323_202),
+        totalNetWorth: eur(1_000_00 + 323_202),
+      },
+      workspace,
+    })!;
+
+    const row = result.holdings.find((h) => h.holdingId === "asset_coins")!;
+    // No partial breakdown is attached, so the per-position invariant does not
+    // apply to this row at all — and the value grows by the acquisition as before.
+    expect(row.positions).toBeUndefined();
+    expect(row.valueMinor).toBe(331_162);
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_000_00 + 331_162);
+    // The recalculated rows reconcile: the sync persists instead of rolling back.
+    expect(() =>
+      assertSnapshotHoldingsReconcile(result.holdings, {
+        debtsMinor: result.snapshot.debts.amountMinor,
+        grossAssetsMinor: result.snapshot.grossAssets.amountMinor,
+        housingEquityMinor: result.snapshot.housingEquity.amountMinor,
+        liquidNetWorthMinor: result.snapshot.liquidNetWorth.amountMinor,
+        totalNetWorthMinor: result.snapshot.totalNetWorth.amountMinor,
+      }),
+    ).not.toThrow();
+  });
+
+  test("a row WITH a breakdown grows by the per-trade sum, exact under rounding-hostile ownership", () => {
+    // Two members, a split that cannot be represented exactly in cents: the
+    // member scope owns 3333 bps, so allocating the AGGREGATE delta and summing
+    // the per-trade allocations disagree by a cent.
+    const workspace = createWorkspace({
+      baseCurrency: "EUR",
+      members: [
+        { id: "mJ", name: "Jose" },
+        { id: "mA", name: "Ana" },
+      ],
+      mode: "household",
+    });
+    const collection = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_coins",
+      instrument: "coin_collection",
+      liquidityTier: "illiquid",
+      name: "Colección Numista",
+      ownership: [
+        { memberId: "mJ", shareBps: 3_333 },
+        { memberId: "mA", shareBps: 6_667 },
+      ],
+      type: "manual",
+    });
+    // Jose's scope already froze one coin (global 100,00 → 33,33 owned), with its
+    // child row: a post-ADR-0035 capture whose row and breakdown agree.
+    const coinRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_coins",
+      kind: "asset",
+      label: "Colección Numista",
+      liquidityTier: "illiquid",
+      positions: [
+        {
+          imageUrl: null,
+          label: "Moneda vieja",
+          metal: "gold",
+          positionKey: "wl_coin_old",
+          valueMinor: 3_333,
+        },
+      ],
+      securesHousing: false,
+      valueMinor: 3_333,
+    };
+    // Three odd-valued coins: each allocates to 652 (1955 × 3333 bps, half-up),
+    // so Σ per trade = 1956 — one cent MORE than allocating the 5865 aggregate
+    // (1955). The row must follow the breakdown, never the aggregate.
+    const trades = ["a", "b", "c"].map((suffix) => ({
+      purchaseDate: "2021-11-02",
+      position: {
+        imageUrl: null,
+        label: `Moneda ${suffix}`,
+        metal: "silver",
+        positionKey: `wl_coin_${suffix}`,
+        valueMinor: 1_955,
+      },
+    }));
+    const result = recalculateSnapshotForCoinAcquisition({
+      asset: collection,
+      frozenHoldings: [coinRow],
+      globalDeltaMinor: 5_865,
+      newTrades: trades,
+      snapshot: {
+        capturedAt: "2024-06-01T12:00:00.000Z",
+        dateKey: "2024-06-01",
+        debts: eur(0),
+        grossAssets: eur(3_333),
+        housingEquity: eur(0),
+        id: "snap_mJ",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(0),
+        monthKey: "2024-06",
+        scopeId: "mJ",
+        scopeLabel: "Jose",
+        totalNetWorth: eur(3_333),
+        warnings: [],
+      },
+      workspace,
+    })!;
+
+    const row = result.holdings.find((h) => h.holdingId === "asset_coins")!;
+    expect(row.positions).toHaveLength(4);
+    expect(row.positions!.map((p) => p.valueMinor)).toEqual([3_333, 652, 652, 652]);
+    // Value == Σ children, EXACTLY — 3333 + 1956, not the aggregate's 3333 + 1955.
+    expect(row.valueMinor).toBe(5_289);
+    expect(row.positions!.reduce((sum, p) => sum + p.valueMinor, 0)).toBe(row.valueMinor);
+    expect(() =>
+      assertSnapshotHoldingsReconcile(result.holdings, {
+        debtsMinor: result.snapshot.debts.amountMinor,
+        grossAssetsMinor: result.snapshot.grossAssets.amountMinor,
+        housingEquityMinor: result.snapshot.housingEquity.amountMinor,
+        liquidNetWorthMinor: result.snapshot.liquidNetWorth.amountMinor,
+        totalNetWorthMinor: result.snapshot.totalNetWorth.amountMinor,
+      }),
+    ).not.toThrow();
+  });
+
+  test("a trade already frozen by positionKey is neither duplicated nor counted twice", () => {
+    const workspace = makeWorkspace();
+    const coinRow: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_coins",
+      kind: "asset",
+      label: "Colección Numista",
+      liquidityTier: "illiquid",
+      positions: [
+        {
+          imageUrl: null,
+          label: "Moneda nueva",
+          metal: "silver",
+          positionKey: "wl_coin_new",
+          valueMinor: 7_960,
+        },
+      ],
+      securesHousing: false,
+      valueMinor: 7_960,
+    };
+    const result = recalculateSnapshotForCoinAcquisition({
+      asset: coinCollection(workspace),
+      frozenHoldings: [cashRow(1_000_00), coinRow],
+      globalDeltaMinor: 7_960, // the same trade re-delivered by a repeated sync
+      newTrades: [
+        {
+          purchaseDate: "2020-03-15",
+          position: {
+            imageUrl: null,
+            label: "Moneda nueva",
+            metal: "silver",
+            positionKey: "wl_coin_new",
+            valueMinor: 7_960,
+          },
+        },
+      ],
+      snapshot: {
+        ...cashSnapshot(1_000_00),
+        grossAssets: eur(1_000_00 + 7_960),
+        totalNetWorth: eur(1_000_00 + 7_960),
+      },
+      workspace,
+    })!;
+
+    const row = result.holdings.find((h) => h.holdingId === "asset_coins")!;
+    expect(row.positions).toHaveLength(1);
+    expect(row.valueMinor).toBe(7_960); // not 15_920
+    expect(result.snapshot.grossAssets.amountMinor).toBe(1_000_00 + 7_960);
+    expect(() =>
+      assertSnapshotHoldingsReconcile(result.holdings, {
+        debtsMinor: result.snapshot.debts.amountMinor,
+        grossAssetsMinor: result.snapshot.grossAssets.amountMinor,
+        housingEquityMinor: result.snapshot.housingEquity.amountMinor,
+        liquidNetWorthMinor: result.snapshot.liquidNetWorth.amountMinor,
+        totalNetWorthMinor: result.snapshot.totalNetWorth.amountMinor,
+      }),
+    ).not.toThrow();
   });
 });
 

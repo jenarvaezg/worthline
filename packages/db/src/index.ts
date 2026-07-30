@@ -245,7 +245,11 @@ export type {
  * only behind the internal `@worthline/db/unsafe-store` subpath so no ordinary
  * importer of this barrel can reach a principal-less store by accident.
  */
-export { createInMemoryStore, createStoreFromSqlite } from "./store-opener";
+export {
+  createInMemoryStore,
+  createStoreFromSqlite,
+  type StoreBuildDeps,
+} from "./store-opener";
 export type {
   ApplyStatementImportParams,
   AuditLogEntry,

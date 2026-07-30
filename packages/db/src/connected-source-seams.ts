@@ -366,7 +366,17 @@ export function createConnectedSourceSeams(
     snapshots: SnapshotStore;
     syncRuns: SyncRunStore;
   },
+  deps: {
+    /**
+     * Wall clock (ISO) for the observable run's own timestamps — injectable so
+     * tests are deterministic (same shape as the job queue's `clock`). Defaults to
+     * the real clock; never `Date.now()` inline, so a test can pin every attempt.
+     */
+    clock?: () => string;
+  } = {},
 ): ConnectedSourceSeams {
+  const clock = deps.clock ?? (() => new Date().toISOString());
+
   // The persist + ripple half of the sync, in one transaction so the wholesale
   // replace and every coin ripple commit or roll back together. Extracted so the
   // observable-run lifecycle (begin → this → finish|fail) can wrap it WITHOUT
@@ -445,8 +455,15 @@ export function createConnectedSourceSeams(
         // committed step (#885). A run already in flight for this source → run
         // nothing rather than open an overlapping one (no storm); reported as a
         // benign skip so the executor releases the dedupe key cleanly.
+        //
+        // The run is stamped with THIS ATTEMPT's wall clock, not `payload.syncedAt`:
+        // a re-enqueued job carries the same `syncedAt` (the semantic instant of the
+        // data sync, pinned at enqueue and what persists the positions), so stamping
+        // the run with it made N retries of one job indistinguishable — three rows
+        // sharing a `started_at` to the millisecond, which is exactly what an
+        // observable run exists to tell apart.
         const begun = await stores.syncRuns.beginRun({
-          at: payload.syncedAt,
+          at: clock(),
           sourceId: payload.sourceId,
           trigger: payload.trigger,
         });
@@ -455,9 +472,10 @@ export function createConnectedSourceSeams(
         try {
           await persistSync(payload);
           await stores.syncRuns.finishRun({
-            at: payload.syncedAt,
+            at: clock(),
             runId: begun.runId,
             sourceId: payload.sourceId,
+            syncedAt: payload.syncedAt,
           });
           return { status: "ok" };
         } catch (cause) {
@@ -472,7 +490,7 @@ export function createConnectedSourceSeams(
             retriable: true,
           });
           await stores.syncRuns.failRun({
-            at: payload.syncedAt,
+            at: clock(),
             error,
             runId: begun.runId,
             sourceId: payload.sourceId,

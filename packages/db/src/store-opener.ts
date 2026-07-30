@@ -59,15 +59,28 @@ export async function createInMemoryStore(): Promise<WorthlineStore> {
 }
 
 /**
+ * Injectable substrate a test can pin when building a store. Only the clock so
+ * far: the observable `sync_run` stamps each ATTEMPT with wall time, which a test
+ * asserting those stamps needs to control (same shape as the job queue's `clock`).
+ */
+export interface StoreBuildDeps {
+  /** Wall clock (ISO) for attempt-level stamps. Defaults to the real clock. */
+  clock?: () => string;
+}
+
+/**
  * Open an existing SQLite connection as a WorthlineStore, running the migration
  * ladder (and any post-migrate re-ripples) on it. Useful in tests that seed a
  * legacy-schema database and then need to verify the store behaves correctly
  * after migration — without going through the file-path lifecycle of
  * `createWorthlineStoreUnsafe`.
  */
-export async function createStoreFromSqlite(client: Client): Promise<WorthlineStore> {
+export async function createStoreFromSqlite(
+  client: Client,
+  deps: StoreBuildDeps = {},
+): Promise<WorthlineStore> {
   const migrateResult = await migrate(client);
-  return buildStore(client, migrateResult);
+  return buildStore(client, migrateResult, deps);
 }
 
 /**
@@ -143,6 +156,7 @@ export async function createWorthlineStoreUnsafe(
 async function buildStore(
   client: Client,
   migrateResult: MigrateResult,
+  deps: StoreBuildDeps = {},
 ): Promise<WorthlineStore> {
   // Shared substrate for the extracted *-Store slices (R1–R5, PRD #120): the
   // connection, id generation, transaction wrapping, audit logging, and the
@@ -229,11 +243,15 @@ async function buildStore(
     operations: operationsStore,
     contributionPlan: contributionPlanStore,
   });
-  const connectedSourceSeams = createConnectedSourceSeams(ctx, {
-    connectedSources: connectedSourceStore,
-    snapshots: snapshotStore,
-    syncRuns: syncRunStore,
-  });
+  const connectedSourceSeams = createConnectedSourceSeams(
+    ctx,
+    {
+      connectedSources: connectedSourceStore,
+      snapshots: snapshotStore,
+      syncRuns: syncRunStore,
+    },
+    { ...(deps.clock ? { clock: deps.clock } : {}) },
+  );
   const snapshotOrchestrator = createSnapshotOrchestrator(ctx, {
     snapshots: snapshotStore,
   });
