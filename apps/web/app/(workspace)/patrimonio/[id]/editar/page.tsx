@@ -33,10 +33,16 @@ import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { CoinPosition, ValuationMethod } from "@worthline/domain";
+import type {
+  CoinPosition,
+  DebtBalanceAtDateInput,
+  ValuationMethod,
+} from "@worthline/domain";
 import {
   buildHoldingReturnsView,
   collectWarnings,
+  debtAccrualAtDate,
+  debtBalanceAtDate,
   detectSingleAssetBackfillCandidate,
   getPriceFreshness,
   holdingIrr,
@@ -262,18 +268,55 @@ export default async function EditarPage({
   const valuationCadence = liability
     ? await store.liabilities.readValuationCadence(id)
     : null;
+  const today = new Date().toISOString().slice(0, 10);
+  // The curve inputs of an amortizable debt, assembled ONCE from the rows read
+  // above. Both figures below come out of this same object, so the balance and
+  // its accrual provably describe one curve — and the second figure costs no
+  // extra I/O, where `store.liabilities.debtBalanceAtDate` would re-read every
+  // row this page already holds (#1292).
+  const debtCurveInput =
+    liability &&
+    debtModel === "amortizable" &&
+    (amortizationPlan || balanceRebaselines.length > 0)
+      ? ({
+          balanceRebaselines,
+          currentBalanceMinor: liability.currentBalance.amountMinor,
+          debtModel,
+          earlyRepayments: earlyRepayments.map((repayment) => ({
+            amountMinor: repayment.amountMinor,
+            mode: repayment.mode,
+            repaymentDate: repayment.repaymentDate,
+          })),
+          revisions: rateRevisions.map((revision) => ({
+            newAnnualInterestRate: revision.newAnnualInterestRate,
+            revisionDate: revision.revisionDate,
+          })),
+          targetDate: today,
+          ...(amortizationPlan
+            ? {
+                plan: {
+                  annualInterestRate: amortizationPlan.annualInterestRate,
+                  disbursementDate: amortizationPlan.disbursementDate,
+                  firstPaymentDate: amortizationPlan.firstPaymentDate,
+                  initialCapitalMinor: amortizationPlan.initialCapitalMinor,
+                  termMonths: amortizationPlan.termMonths,
+                },
+              }
+            : {}),
+          ...(valuationCadence != null ? { cadence: valuationCadence } : {}),
+        } satisfies DebtBalanceAtDateInput)
+      : null;
   // The current MODELLED balance, shown beside "Recalibrar con saldo real"
   // (ADR 0056, PRD #670 S3, #678) so the drift against the bank's real figure
   // is visible at the moment of repair — meaningful as soon as a CURVE exists,
   // plan row or re-baseline alike (#1290: with the raw balance form gone for a
   // curved debt, this is the only balance the detail shows).
-  const currentModelledBalanceMinor =
-    amortizationPlan || balanceRebaselines.length > 0
-      ? await store.liabilities.debtBalanceAtDate(
-          id,
-          new Date().toISOString().slice(0, 10),
-        )
-      : null;
+  const currentModelledBalanceMinor = debtCurveInput
+    ? debtBalanceAtDate(debtCurveInput)
+    : null;
+  // …and what has accrued on it since the last cuota, so the surface can name
+  // WHICH magnitude the user is comparing with the bank's screen (#1292).
+  const currentDebtAccrual = debtCurveInput ? debtAccrualAtDate(debtCurveInput) : null;
   // Which door repairs this debt's balance (#1290): the raw
   // `current_balance_minor` form only when the engine still reads that field.
   const showRawBalanceForm = storedBalanceGovernsDebtFigure({
@@ -291,7 +334,6 @@ export default async function EditarPage({
     notFound();
   }
 
-  const today = new Date().toISOString().slice(0, 10);
   const currentUrl = `/patrimonio/${id}/editar`;
   // Demo skips optimistic mutations — the write-guard rejects them (§10).
   const isDemo = await isDemoMode();
@@ -687,6 +729,7 @@ export default async function EditarPage({
               <DebtModelSection
                 amortizationPlan={amortizationPlan}
                 balanceAnchors={balanceAnchors}
+                currentDebtAccrual={currentDebtAccrual}
                 currentModelledBalanceMinor={currentModelledBalanceMinor}
                 debtModel={debtModel}
                 earlyRepayments={earlyRepayments}

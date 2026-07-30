@@ -168,6 +168,14 @@ interface TraceBody {
         mode?: string;
       }>;
     }>;
+    settlement: {
+      asOf: string;
+      principal: { amountMinor: number };
+      accruedInterest: { amountMinor: number };
+      settlementEstimate: { amountMinor: number };
+      lastPaymentDate: string;
+      nextPaymentDate: string;
+    } | null;
   };
   balanceAnchors?: { interpolation: string; anchors: unknown[] };
   reconciliation: Array<{
@@ -223,6 +231,22 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/calculation-trace", () => 
     );
     // The final cuota closes the loan.
     expect(data.schedule!.frontiers.at(-1)!.closingBalance.amountMinor).toBe(0);
+
+    // Principal vs the figure the user's bank shows (#1292), served so a reading
+    // agent normalizes the magnitude instead of rebuilding the accrual itself.
+    // The loan runs to 2040, so a cycle is always live at test time.
+    const settlement = data.schedule!.settlement!;
+    expect(settlement).not.toBeNull();
+    expect(settlement.principal.amountMinor).toBeGreaterThan(0);
+    expect(settlement.accruedInterest.amountMinor).toBeGreaterThan(0);
+    expect(settlement.settlementEstimate.amountMinor).toBe(
+      settlement.principal.amountMinor + settlement.accruedInterest.amountMinor,
+    );
+    // The running cycle brackets the as-of date: last cuota < asOf ≤ next cuota.
+    expect(settlement.lastPaymentDate < settlement.asOf).toBe(true);
+    expect(settlement.asOf < settlement.nextPaymentDate).toBe(true);
+    // Cuotas fall on the 1st, inherited from the first-payment date.
+    expect(settlement.nextPaymentDate.endsWith("-01")).toBe(true);
   });
 
   test("reconciles a faithful loan: the persisted snapshot matches the live recomputation", async () => {

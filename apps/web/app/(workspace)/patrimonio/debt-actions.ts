@@ -11,7 +11,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
-import { effectiveAmortizationPlan } from "@worthline/domain";
+import { debtAccrualAtDate, effectiveAmortizationPlan } from "@worthline/domain";
 import { editUrl, findLiability, requireDebtModel } from "./action-helpers";
 import { readAmortizableDebtCurveContext } from "./amortizable-debt-curve-context";
 import {
@@ -30,6 +30,7 @@ import {
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 import {
   deriveRecalibrationRebaseline,
+  looksLikeSettlementAmount,
   RECALIBRATE_DEBT_FIELD_NAMES,
   validateRecalibrateDebt,
 } from "./recalibrate-debt";
@@ -242,6 +243,31 @@ export async function recalibrateDebtBalanceAction(
         return derived;
       }
 
+      // Read the curve as it stands BEFORE the write: is the declared figure the
+      // bank's settlement amount (principal + accrued interest) rather than the
+      // principal this form persists? (#1292) Evaluated at the DECLARED date, the
+      // one the user was comparing against. A warning, never a rejection — the
+      // write goes through either way.
+      const accrual = debtAccrualAtDate({
+        balanceRebaselines: curve.balanceRebaselines,
+        currentBalanceMinor: curve.currentBalanceMinor,
+        debtModel: "amortizable",
+        earlyRepayments: curve.earlyRepayments,
+        revisions: curve.revisions.map((revision) => ({
+          newAnnualInterestRate: revision.newAnnualInterestRate,
+          revisionDate: revision.revisionDate,
+        })),
+        targetDate: parsed.balanceDate,
+        ...(curve.plan ? { plan: curve.plan } : {}),
+      });
+      const settlementSuspected =
+        accrual !== null &&
+        looksLikeSettlementAmount({
+          accruedInterestMinor: accrual.accruedInterestMinor,
+          declaredMinor: parsed.outstandingBalanceMinor,
+          principalMinor: accrual.principalMinor,
+        });
+
       await store.command.addBalanceRebaseline(
         {
           annualInterestRate: derived.annualInterestRate,
@@ -256,7 +282,7 @@ export async function recalibrateDebtBalanceAction(
         { today },
       );
 
-      return { ok: true as const };
+      return { ok: true as const, value: { settlementSuspected } };
     },
     onError: ({ id, error, formData }) =>
       errorRedirectUrl(editUrl(id), {
@@ -264,7 +290,12 @@ export async function recalibrateDebtBalanceAction(
         message: error,
         values: preserveFields(formData, [...RECALIBRATE_DEBT_FIELD_NAMES]),
       }),
-    onSuccess: ({ id }) => successRedirectUrl(editUrl(id), "debt_recalibrated", id),
+    onSuccess: ({ id, value }) =>
+      successRedirectUrl(
+        editUrl(id),
+        value?.settlementSuspected ? "debt_recalibrated_settlement" : "debt_recalibrated",
+        id,
+      ),
   })(formData, ..._testArgs);
 }
 

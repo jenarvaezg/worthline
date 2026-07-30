@@ -4,8 +4,10 @@ import {
   amortizableBalanceAtDate,
   amortizationPlanFromBalanceRebaseline,
 } from "./amortization";
+import { accruedInterestAtDate } from "./debt-accrual";
 import type { DebtBalanceAtDateInput } from "./debt-balance";
 import {
+  debtAccrualAtDate,
   debtBalanceAtDate,
   effectiveAmortizationPlan,
   storedBalanceGovernsDebtFigure,
@@ -596,5 +598,92 @@ describe("storedBalanceGovernsDebtFigure (#1290)", () => {
     expect(debtBalanceAtDate(futureOnly)).toBe(999_99);
     // Revolving needs no such invariant: it is flat before its first anchor.
     expect(debtBalanceAtDate({ ...futureOnly, debtModel: "revolving" })).toBe(500_00);
+  });
+});
+
+describe("debtAccrualAtDate — the settlement magnitude (#1292)", () => {
+  const PLAN = {
+    annualInterestRate: "0.12",
+    disbursementDate: "2026-01-01",
+    firstPaymentDate: "2026-02-01",
+    initialCapitalMinor: 12_000_00,
+    termMonths: 12,
+  };
+
+  test("amortizable: principal plus what has run up since the last cuota", () => {
+    const targetDate = "2026-03-16";
+    const input: DebtBalanceAtDateInput = {
+      currentBalanceMinor: 0,
+      debtModel: "amortizable",
+      plan: PLAN,
+      targetDate,
+    };
+
+    const accrual = debtAccrualAtDate(input)!;
+    expect(accrual).not.toBeNull();
+    // The principal is the very figure the dispatcher paints — one curve, two readings.
+    expect(accrual.principalMinor).toBe(debtBalanceAtDate(input));
+    expect(accrual.settlementEstimateMinor).toBeGreaterThan(accrual.principalMinor);
+    expect(accrual.cycleStartDate).toBe("2026-03-01");
+    expect(accrual.cycleEndDate).toBe("2026-04-01");
+  });
+
+  test("a re-baseline governs the accrual too, not just the balance", () => {
+    // Same precedence rule as `debtBalanceAtDate`: the re-baseline's derived plan
+    // is what accrues, so the two can never disagree about which schedule is live.
+    const rebaseline = {
+      annualInterestRate: "0.02",
+      baselineDate: "2026-07-02",
+      endDate: "2027-08-05",
+      nextPaymentDate: "2026-08-05",
+      outstandingBalanceMinor: 120_000_00,
+    };
+    const targetDate = "2026-09-20";
+
+    expect(
+      debtAccrualAtDate({
+        balanceRebaselines: [rebaseline],
+        currentBalanceMinor: 0,
+        debtModel: "amortizable",
+        plan: PLAN,
+        targetDate,
+      }),
+    ).toEqual(
+      accruedInterestAtDate({
+        plan: amortizationPlanFromBalanceRebaseline(rebaseline),
+        targetDate,
+      }),
+    );
+  });
+
+  test("no accrual for the models whose anchors already carry the interest", () => {
+    const anchors = [{ anchorDate: "2026-01-01", balanceMinor: 5_000_00 }];
+    for (const debtModel of ["revolving", "informal"] as const) {
+      expect(
+        debtAccrualAtDate({
+          anchors,
+          currentBalanceMinor: 5_000_00,
+          debtModel,
+          targetDate: "2026-06-01",
+        }),
+      ).toBeNull();
+    }
+    expect(
+      debtAccrualAtDate({
+        currentBalanceMinor: 5_000_00,
+        debtModel: null,
+        targetDate: "2026-06-01",
+      }),
+    ).toBeNull();
+  });
+
+  test("an amortizable debt with no curve at all has nothing to accrue on", () => {
+    expect(
+      debtAccrualAtDate({
+        currentBalanceMinor: 5_000_00,
+        debtModel: "amortizable",
+        targetDate: "2026-06-01",
+      }),
+    ).toBeNull();
   });
 });

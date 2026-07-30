@@ -42,6 +42,7 @@ const PAYLOAD: MaintainerAlertPayload = {
       termMonths: 60,
       initialCapital: { amountMinor: 1_000_000, currency: "EUR" },
       effectiveFrom: "2024-01-01",
+      settlement: null,
       frontiers: [
         {
           index: 1,

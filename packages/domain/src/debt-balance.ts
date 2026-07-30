@@ -9,6 +9,7 @@ import {
   type InterestRateRevision,
 } from "./amortization";
 import { daysBetween } from "./dates";
+import { type AccruedInterestAtDate, accruedInterestAtDate } from "./debt-accrual";
 import {
   cadenceOrDefault,
   interpolateOrStep,
@@ -295,6 +296,50 @@ export function debtBalanceAtDate(input: DebtBalanceAtDateInput): number {
   }
 
   return currentBalanceMinor;
+}
+
+/**
+ * Interest accrued since the last cuota on `targetDate`, or `null` when the debt
+ * has no running amortization cycle there (#1292).
+ *
+ * The accrual sibling of {@link debtBalanceAtDate}: same input, same resolution
+ * of which schedule governs the date (plan vs re-baseline, ADR 0056), so a
+ * surface that already knows how to ask for the balance can ask for the
+ * settlement magnitude without re-deriving that precedence rule.
+ *
+ * Null for every non-amortizable model on purpose. A `revolving` / `informal`
+ * anchor carries the TOTAL owed on its date with interest already baked in (the
+ * declared figure is used AS IS), so there is nothing to add to it — and no rate
+ * to accrue with.
+ */
+export function debtAccrualAtDate(
+  input: DebtBalanceAtDateInput,
+): AccruedInterestAtDate | null {
+  if (input.debtModel !== "amortizable") {
+    return null;
+  }
+
+  const effective = effectiveAmortizationPlan(input);
+  if (effective === null || "startsAfterTarget" in effective) {
+    return null;
+  }
+
+  const revisions =
+    input.revisions !== undefined
+      ? onOrAfter(input.revisions, effective.effectiveFrom)
+      : undefined;
+  const earlyRepayments =
+    input.earlyRepayments !== undefined
+      ? onOrAfter(input.earlyRepayments, effective.effectiveFrom)
+      : undefined;
+
+  return accruedInterestAtDate({
+    cadence: cadenceOrDefault(input.cadence),
+    plan: effective.plan,
+    targetDate: input.targetDate,
+    ...(revisions !== undefined ? { revisions } : {}),
+    ...(earlyRepayments !== undefined ? { earlyRepayments } : {}),
+  });
 }
 
 /**

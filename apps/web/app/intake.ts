@@ -480,6 +480,10 @@ export function okMessage(key: string | undefined): string | null {
     current_state_debt_saved: "Deuda dada de alta por estado actual.",
     debt_model_saved: "Modelo de deuda guardado.",
     debt_recalibrated: "Deuda recalibrada con el saldo real.",
+    // Soft warning, not a rejection (#1292): the figure went in, but it sits one
+    // accrual above the modelled capital — the shape of a bank's settlement amount.
+    debt_recalibrated_settlement:
+      "Deuda recalibrada. Ojo: la cifra declarada supera al capital modelado justo en el entorno del interés corrido desde la última cuota. Si la copiaste del importe de liquidación de tu banco, vuelve a recalibrar con el capital pendiente.",
     deleted_recoverable: "Eliminado — recuperable en Papelera.",
     fire_saved: "Configuración FIRE guardada.",
     hard_deleted: "Eliminado definitivamente.",

@@ -158,8 +158,13 @@ describe("EditarPage — the raw balance door follows the engine (#1290)", () =>
     expect(html).not.toContain('name="balance"');
     expect(html).not.toContain("Actualizar saldo");
     // The modelled figure is the one on screen, and it is not the stored 180.000.
+    // Since #1292 the page derives it from the rows it already read instead of
+    // asking the store again, so this pins the figure the PLAN actually produces
+    // (6.000 € at 5,89 % closes its first cuota at 5.871,01 €) rather than
+    // whatever the store stub was told to return.
     expect(html).toContain("Saldo modelado a día de hoy");
-    expect(html).toContain("174.500");
+    expect(html).toContain("5871");
+    expect(html).not.toContain("180.000");
   });
 
   test("an anchored debt with at least one anchor exposes no raw balance form", async () => {

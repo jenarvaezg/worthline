@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   deriveRecalibrationRebaseline,
+  looksLikeSettlementAmount,
   validateRecalibrateDebt,
 } from "./recalibrate-debt";
 
@@ -203,5 +204,61 @@ describe("deriveRecalibrationRebaseline", () => {
       error: "Esta deuda no tiene un plan de amortización que recalibrar.",
       ok: false,
     });
+  });
+});
+
+describe("looksLikeSettlementAmount (#1292)", () => {
+  const principalMinor = 5_494_98;
+  const accruedInterestMinor = 17_08;
+
+  test("flags a figure sitting one accrual above the modelled principal", () => {
+    // The real case: the bank's «queda por amortizar» on the same date.
+    expect(
+      looksLikeSettlementAmount({
+        accruedInterestMinor,
+        declaredMinor: 5_512_85,
+        principalMinor,
+      }),
+    ).toBe(true);
+  });
+
+  test("the 25 % headroom covers the bank's own day-count, and stops there", () => {
+    const ceiling = principalMinor + Math.round(accruedInterestMinor * 1.25);
+    expect(
+      looksLikeSettlementAmount({
+        accruedInterestMinor,
+        declaredMinor: ceiling,
+        principalMinor,
+      }),
+    ).toBe(true);
+    expect(
+      looksLikeSettlementAmount({
+        accruedInterestMinor,
+        declaredMinor: ceiling + 1,
+        principalMinor,
+      }),
+    ).toBe(false);
+  });
+
+  test("stays quiet on a real repair: at or below the principal, or far above it", () => {
+    for (const declaredMinor of [principalMinor, principalMinor - 500_00, 6_200_00]) {
+      expect(
+        looksLikeSettlementAmount({
+          accruedInterestMinor,
+          declaredMinor,
+          principalMinor,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  test("nothing accrued means nothing to confuse it with", () => {
+    expect(
+      looksLikeSettlementAmount({
+        accruedInterestMinor: 0,
+        declaredMinor: principalMinor + 50,
+        principalMinor,
+      }),
+    ).toBe(false);
   });
 });

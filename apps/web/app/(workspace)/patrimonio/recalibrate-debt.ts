@@ -180,3 +180,35 @@ export function deriveRecalibrationRebaseline(input: {
     ok: true,
   };
 }
+
+/**
+ * Does a declared balance look like the BANK's settlement amount rather than
+ * outstanding principal? (#1292)
+ *
+ * The trap this catches: a bank quotes principal + interest accrued since the
+ * last cuota, worthline models principal, and the recalibration form takes the
+ * user's figure AS the new principal. Paste the settlement amount and that
+ * accrued interest is written into the capital, ripples into every snapshot from
+ * that date, and never comes out again.
+ *
+ * Deliberately a soft signal, not a guard: a balance in this window is perfectly
+ * legitimate (a missed cuota, a fee capitalised, a figure the user knows better
+ * than the model does), so the caller warns and lets the write through. Blocking
+ * would reject real repairs to prevent a mistake the user can undo.
+ *
+ * The window is `principal < declared ≤ principal + 1,25 × accrued`. The 25 %
+ * headroom absorbs the bank's own day-count basis and value-dating, which the
+ * accrual estimate cannot reproduce; past that, the gap is bigger than accrual
+ * explains and the declared figure is treated as genuine drift.
+ */
+export function looksLikeSettlementAmount(input: {
+  declaredMinor: number;
+  principalMinor: number;
+  accruedInterestMinor: number;
+}): boolean {
+  if (input.accruedInterestMinor <= 0) {
+    return false;
+  }
+  const ceiling = input.principalMinor + Math.round(input.accruedInterestMinor * 1.25);
+  return input.declaredMinor > input.principalMinor && input.declaredMinor <= ceiling;
+}

@@ -7,6 +7,7 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
+  accruedInterestAtDate,
   amortizationScheduleTrace,
   deriveMonthlyCloses,
   effectiveAmortizationPlan,
@@ -336,12 +337,17 @@ async function buildSchedule(
     (repayment) => repayment.repaymentDate >= effective.effectiveFrom,
   );
 
-  const trace = amortizationScheduleTrace({
+  const scheduleInput = {
     earlyRepayments,
     plan: effective.plan,
     revisions,
     targetDate: asOf,
-  });
+  };
+  const trace = amortizationScheduleTrace(scheduleInput);
+  // The magnitude the user's bank shows, derived from the SAME input as the
+  // schedule (#1292) — so a reading agent can normalize a cited figure against
+  // principal instead of re-deriving the accrual from the frontiers itself.
+  const accrual = accruedInterestAtDate(scheduleInput);
 
   return {
     disbursementDate: effective.plan.disbursementDate,
@@ -359,6 +365,16 @@ async function buildSchedule(
       principal: money(period.principalMinor, currency),
     })),
     initialCapital: money(effective.plan.initialCapitalMinor, currency),
+    settlement: accrual
+      ? {
+          accruedInterest: money(accrual.accruedInterestMinor, currency),
+          asOf,
+          lastPaymentDate: accrual.cycleStartDate,
+          nextPaymentDate: accrual.cycleEndDate,
+          principal: money(accrual.principalMinor, currency),
+          settlementEstimate: money(accrual.settlementEstimateMinor, currency),
+        }
+      : null,
     termMonths: effective.plan.termMonths,
   };
 }
