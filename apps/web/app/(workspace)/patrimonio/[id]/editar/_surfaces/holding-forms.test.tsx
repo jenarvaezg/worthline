@@ -8,6 +8,8 @@ describe("AssetEditForm — investment settings", () => {
   test("renders provider symbol controls for investment holdings", () => {
     const markup = renderToStaticMarkup(
       <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar"
         asset={
           {
             currency: "EUR",
@@ -50,6 +52,8 @@ describe("AssetEditForm — edit wording", () => {
   test("does not expose raw asset types in editable copy", () => {
     const markup = renderToStaticMarkup(
       <AssetEditForm
+        boardHref="/patrimonio#wl_hld_a"
+        currentUrl="/patrimonio/wl_hld_a/editar"
         asset={{
           currency: "EUR",
           currentValue: { amountMinor: 120_000_00, currency: "EUR" },
@@ -147,6 +151,8 @@ describe("LiabilityEditForm — raw balance door (#1290)", () => {
     renderToStaticMarkup(
       <LiabilityEditForm
         assets={[]}
+        boardHref="/patrimonio#wl_hld_liab"
+        currentUrl="/patrimonio/wl_hld_liab/editar"
         liability={liability}
         members={[{ id: "m1", name: "Jose" }]}
         scopeMemberId="m1"

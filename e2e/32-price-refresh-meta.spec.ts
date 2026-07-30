@@ -39,7 +39,7 @@ test("price refresh: board hover + detail caption show date + provider for a cac
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
-  const assetId = page.url().match(/\/patrimonio\/([^/]+)\/editar/)![1]!;
+  const publicId = page.url().match(/\/patrimonio\/([^/]+)\/editar/)![1]!;
 
   // 3. Seed a cached provider price for this asset (a yahoo refresh 2 days ago),
   //    writing straight to the run's DB through the store — the same seam the
@@ -47,6 +47,11 @@ test("price refresh: board hover + detail caption show date + provider for a cac
   const databasePath = process.env.WORTHLINE_DB_PATH!;
   const fetchedAt = new Date(Date.now() - 2 * 86_400_000).toISOString();
   const store = await createWorthlineStoreUnsafe({ databasePath });
+  // The URL names the holding by its PUBLIC `wl_hld_…` id (#1318); a direct store
+  // write is on the other side of that boundary and needs the internal one.
+  const assetId = (await store.agentView.readPublicIds()).find(
+    (row) => row.entityType === "holding" && row.publicId === publicId,
+  )!.entityId;
   await store.operations.upsertPrice({
     assetId,
     currency: "EUR",

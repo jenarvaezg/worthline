@@ -6,6 +6,11 @@ import {
 } from "@web/entitlements/paywall-copy";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
 import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
+import {
+  holdingDetailHref,
+  holdingPublicIdOf,
+  readHoldingPublicIdIndex,
+} from "@web/holding-route";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
@@ -66,6 +71,15 @@ export async function AjustesContent({
     await resolvePageShell({ searchParams: resolvedSearchParams });
 
   const sources = await store.connectedSources.listSources();
+  // A connected source's «Ver» link opens the mirrored holding's ficha, which is
+  // addressed by its public `wl_hld_…` id (#1318) — never the internal one. A
+  // holding with no registry row simply loses its link here rather than taking
+  // the whole settings page down with it.
+  const publicIds = await readHoldingPublicIdIndex(store);
+  const fichaHref = (internalId: string): string | null => {
+    const publicId = holdingPublicIdOf(publicIds, internalId);
+    return publicId ? holdingDetailHref(publicId) : null;
+  };
   const allAssets = await store.assets.readAssets();
   const overrides = await store.readWarningOverrides();
 
@@ -123,6 +137,16 @@ export async function AjustesContent({
         valueMinor: binanceValueMinor,
       }
     : null;
+
+  // The overrides list used to print the raw internal id (`asset_activo_cero_…`)
+  // at the user. It reads as noise to a human and it is the retired vocabulary on
+  // display (#1318), so the row names the holding. An override left behind by a
+  // deleted holding has no name to show and keeps the stored id, which is the only
+  // thing that still identifies it.
+  const holdingNameById = new Map(allAssets.map((asset) => [asset.id, asset.name]));
+
+  const numistaFichaHref = numistaSource ? fichaHref(numistaSource.assetId) : null;
+  const binanceFichaHref = binanceSource ? fichaHref(binanceSource.assetId) : null;
 
   // Monthly savings capacity suggestion (#425): the historical average of net
   // money invested, offered as the default in the FIRE form. Workspace-wide
@@ -647,12 +671,11 @@ export async function AjustesContent({
                     Sincronizar Numista
                   </PendingSubmit>
                 </form>
-                <Link
-                  className="actionLink"
-                  href={`/patrimonio/${numistaSource.assetId}/editar`}
-                >
-                  Ver colección →
-                </Link>
+                {numistaFichaHref ? (
+                  <Link className="actionLink" href={numistaFichaHref}>
+                    Ver colección →
+                  </Link>
+                ) : null}
                 <DisconnectNumistaFold
                   currentUrl={currentUrl}
                   sourceId={numistaSource.id}
@@ -723,12 +746,11 @@ export async function AjustesContent({
                     Sincronizar Binance
                   </PendingSubmit>
                 </form>
-                <Link
-                  className="actionLink"
-                  href={`/patrimonio/${binanceSource.assetId}/editar`}
-                >
-                  Ver →
-                </Link>
+                {binanceFichaHref ? (
+                  <Link className="actionLink" href={binanceFichaHref}>
+                    Ver →
+                  </Link>
+                ) : null}
                 <DisconnectBinanceFold
                   currentUrl={currentUrl}
                   sourceId={binanceSource.id}
@@ -794,7 +816,9 @@ export async function AjustesContent({
                   <input name="code" type="hidden" value={override.code} />
                   <input name="entityId" type="hidden" value={override.entityId} />
                   <span className="overrideCode">{override.code}</span>
-                  <span className="overrideEntity">{override.entityId}</span>
+                  <span className="overrideEntity">
+                    {holdingNameById.get(override.entityId) ?? override.entityId}
+                  </span>
                   <details suppressHydrationWarning className="confirmDelete">
                     <summary>Retirar</summary>
                     <button type="submit">Confirmar retirada</button>

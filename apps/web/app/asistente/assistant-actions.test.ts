@@ -184,9 +184,9 @@ describe("parseCorrectionProposal (#1051/#1053)", () => {
 });
 
 describe("sourceHref", () => {
-  it("maps a holding to its worthline detail surface", () => {
-    expect(sourceHref({ kind: "holding", internalId: "abc" })).toBe(
-      "/patrimonio/abc/editar",
+  it("maps a holding to its worthline detail surface by its PUBLIC id (#1318)", () => {
+    expect(sourceHref({ kind: "holding", publicId: "wl_hld_abc" })).toBe(
+      "/patrimonio/wl_hld_abc/editar",
     );
   });
 
@@ -205,7 +205,12 @@ describe("sourceHref", () => {
   it("returns null for an unresolvable reference (stays textual)", () => {
     expect(sourceHref({ kind: "section", section: "otra" })).toBeNull();
     expect(sourceHref({ kind: "figure", figure: "not_a_figure" })).toBeNull();
-    expect(sourceHref({ kind: "holding", internalId: "" })).toBeNull();
-    expect(sourceHref({ kind: "holding", internalId: "a/b" })).toBeNull();
+    expect(sourceHref({ kind: "holding", publicId: "" })).toBeNull();
+    expect(sourceHref({ kind: "holding", publicId: "wl_hld_a/b" })).toBeNull();
+    // A hallucinated id in the retired internal vocabulary — the exact string
+    // shape #1318 caught the model inventing — never becomes a clickable chip.
+    expect(
+      sourceHref({ kind: "holding", publicId: "asset_fidelity_s_p_500_index_fund" }),
+    ).toBeNull();
   });
 });

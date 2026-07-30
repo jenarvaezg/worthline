@@ -20,7 +20,8 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   await expect(page).toHaveURL(/\/patrimonio/);
   await expect(page.getByRole("status")).toHaveText("Activo añadido.");
 
-  // Extract the new asset's ID from the URL hash (e.g. /patrimonio?ok=asset_added#asset_activo_cero_...)
+  // Extract the new asset's PUBLIC id from the URL hash (#1318 — e.g.
+  // /patrimonio?ok=asset_added#wl_hld_…); it is also the board row's DOM id.
   const createdUrl = page.url();
   const assetId = new URL(createdUrl).hash.slice(1); // strip '#'
   expect(assetId).toBeTruthy();
@@ -65,10 +66,11 @@ test("warning lifecycle: zero asset → warning badge → override → listed in
   const afterCount = await page.locator(".overrideRow").count();
   expect(afterCount).toBe(beforeCount + 1);
 
-  // 8. Find and retract the newly added override (it's for our asset ID).
+  // 8. Find and retract the newly added override (it's for our asset).
   //    The confirmDelete <details> must be open for the button to be clickable.
-  //    Use filter to pin to the exact override row containing our entity id.
-  const ourOverride = page.locator(".overrideRow").filter({ hasText: assetId });
+  //    The row names the holding (#1318 retired the raw internal id it used to
+  //    print), so pin it by name.
+  const ourOverride = page.locator(".overrideRow").filter({ hasText: "Activo Cero" });
   await expect(ourOverride).toBeVisible();
   // Force-open the <details> via JS so the submit button is reachable
   await ourOverride

@@ -134,6 +134,7 @@ export function DebtModelSection({
   currentModelledBalanceMinor,
   debtModel,
   earlyRepayments,
+  currentUrl,
   formError,
   liabilityId,
   privacyMode = false,
@@ -152,7 +153,10 @@ export function DebtModelSection({
   currentModelledBalanceMinor: number | null;
   debtModel: DebtModel | null;
   earlyRepayments: EarlyRepaymentRecord[];
+  /** The holding's own public `wl_hld_…` URL, where every form here returns. */
+  currentUrl: string;
   formError: FormErrorContext | null;
+  /** Internal storage id — hidden form plumbing, never a URL (#1318). */
   liabilityId: string;
   privacyMode?: boolean;
   rateRevisions: InterestRateRevisionRecord[];
@@ -160,8 +164,6 @@ export function DebtModelSection({
   /** Stored valuation cadence (ADR 0031); null reads as the default `step`. */
   valuationCadence: ValuationCadence | null;
 }) {
-  const currentUrl = `/patrimonio/${liabilityId}/editar`;
-
   return (
     <section className="debtModel" aria-label="Modelo de deuda">
       <h3>Modelo de deuda</h3>

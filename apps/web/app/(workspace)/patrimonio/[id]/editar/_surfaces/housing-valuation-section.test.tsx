@@ -16,6 +16,7 @@ function renderFor(valuationCadence: ValuationCadence | null) {
       anchors={[]}
       appreciationRate={null}
       assetId="a_home"
+      currentUrl="/patrimonio/wl_hld_a_home/editar"
       formError={null}
       today="2026-06-14"
       valuationCadence={valuationCadence}

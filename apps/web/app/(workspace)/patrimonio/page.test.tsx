@@ -24,6 +24,7 @@ const calls = vi.hoisted(() => ({
   readExposureProfiles: vi.fn(async () => []),
   readInvestmentAssetsWithMeta: vi.fn(async () => []),
   readPayouts: vi.fn(async () => []),
+  readPublicIds: vi.fn(async () => []),
   readPayoutSchedules: vi.fn(async () => []),
   readSnapshotHoldings: vi.fn(async () => []),
   readTrash: vi.fn(async () => ({ assets: [], liabilities: [] })),
@@ -50,6 +51,7 @@ const calls = vi.hoisted(() => ({
       scopes,
       selectedScope: scopes[0],
       store: {
+        agentView: { readPublicIds: calls.readPublicIds },
         assets: {
           readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
         },

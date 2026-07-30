@@ -43,6 +43,7 @@ function render(
       currentModelledBalanceMinor={currentModelledBalanceMinor}
       debtModel="amortizable"
       earlyRepayments={[]}
+      currentUrl="/patrimonio/wl_hld_l_mortgage/editar"
       formError={null}
       liabilityId="l_mortgage"
       rateRevisions={[]}
@@ -65,6 +66,7 @@ function renderFor(
       currentModelledBalanceMinor={null}
       debtModel={debtModel}
       earlyRepayments={[]}
+      currentUrl="/patrimonio/wl_hld_l_mortgage/editar"
       formError={null}
       liabilityId="l_mortgage"
       rateRevisions={[]}

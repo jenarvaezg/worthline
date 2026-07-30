@@ -340,7 +340,10 @@ describe("createChatTools · suggest_actions (#631)", () => {
         {
           type: "openInternalSource",
           label: "Ver posición",
-          href: `/patrimonio/${holding.entityId}/editar`,
+          // The chip's href carries the PUBLIC id (#1318) — the same one the
+          // model cited and the one the route now takes; it used to splice in
+          // the internal id, so the link never resolved.
+          href: `/patrimonio/${holding.publicId}/editar`,
         },
         { type: "openInternalSource", label: "Histórico", href: "/historico" },
         {

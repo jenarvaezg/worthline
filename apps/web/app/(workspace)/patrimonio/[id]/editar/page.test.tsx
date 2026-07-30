@@ -11,6 +11,13 @@ const calls = vi.hoisted(() => ({
   readDebtModel: vi.fn(async () => "amortizable"),
   readEarlyRepayments: vi.fn(async () => []),
   readInterestRateRevisions: vi.fn(async () => []),
+  readPublicIds: vi.fn(async () => [
+    {
+      entityId: "liability_mortgage",
+      entityType: "holding" as const,
+      publicId: "wl_hld_mortgage",
+    },
+  ]),
   readLiabilities: vi.fn(async () => [
     {
       currency: "EUR",
@@ -45,6 +52,7 @@ const calls = vi.hoisted(() => ({
       scopes,
       selectedScope: scopes[0],
       store: {
+        agentView: { readPublicIds: calls.readPublicIds },
         assets: { readAssets: calls.readAssets },
         liabilities: {
           debtBalanceAtDate: calls.debtBalanceAtDate,
@@ -92,13 +100,59 @@ vi.mock("@web/pending-submit", () => ({
 
 import EditarPage from "./page";
 
-async function renderedHtml(): Promise<string> {
+/**
+ * The route addresses the holding by its public `wl_hld_…` id (#1318) — the same
+ * id the agent view and the MCP take. `liability_mortgage` is the internal
+ * storage id it resolves to.
+ */
+const PUBLIC_ID = "wl_hld_mortgage";
+
+async function renderedHtml(
+  routeId: string = PUBLIC_ID,
+  searchParams: Record<string, string> = {},
+): Promise<string> {
   const element = (await EditarPage({
-    params: Promise.resolve({ id: "liability_mortgage" }),
-    searchParams: Promise.resolve({}),
+    params: Promise.resolve({ id: routeId }),
+    searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
 }
+
+describe("EditarPage — one id vocabulary (#1318)", () => {
+  test("the ficha is addressed by the holding's public id, and links back with it", async () => {
+    const html = await renderedHtml();
+
+    // Every URL the page emits — the return-here field every form posts, and the
+    // «Volver» anchor — names the holding by its public id.
+    expect(html).toContain(`value="/patrimonio/${PUBLIC_ID}/editar"`);
+    expect(html).toContain(`href="/patrimonio#${PUBLIC_ID}"`);
+    // …and never by the internal storage id, which is what the assistant used to
+    // read out of the URL bar and hand to tools that reject it.
+    expect(html).not.toContain("/patrimonio/liability_mortgage/editar");
+    expect(html).not.toContain("/patrimonio#liability_mortgage");
+    // It still travels as the hidden form id: storage plumbing, not a URL.
+    expect(html).toContain('value="liability_mortgage"');
+  });
+
+  test("a mutation's ok band still lands on the public URL", async () => {
+    // Every debt/housing action now returns to the `currentUrl` the form posted
+    // instead of rebuilding the path from the storage id, so the success band
+    // has to survive that swap — it is the only thing the user sees confirming
+    // the write.
+    const html = await renderedHtml(PUBLIC_ID, { ok: "debt_model_saved" });
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Modelo de deuda guardado.");
+  });
+
+  test("the internal storage id is not a route — it is a 404, not a second door", async () => {
+    await expect(renderedHtml("liability_mortgage")).rejects.toThrow();
+  });
+
+  test("a public id nobody owns is a 404", async () => {
+    await expect(renderedHtml("wl_hld_doesnotexist")).rejects.toThrow();
+  });
+});
 
 describe("EditarPage progressive disclosure (#604)", () => {
   test("keeps mortgage basics open, machinery collapsed, and danger last", async () => {

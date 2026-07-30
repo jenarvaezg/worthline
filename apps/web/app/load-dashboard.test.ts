@@ -1362,7 +1362,14 @@ describe("loadDashboard — hero data-health alert", () => {
 
     expect(result.heroHealth.impact).toBe("warning");
     expect(result.heroHealth.alerts).toHaveLength(1);
-    expect(result.heroHealth.alerts[0]?.href).toBe("/patrimonio/asset_zero/editar");
+    // The fix link names the holding by its public `wl_hld_…` id (#1318), read
+    // back from the registry the alta minted — the internal `asset_zero` is not
+    // a route any more.
+    const publicId = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding" && row.entityId === "asset_zero",
+    )?.publicId;
+    expect(publicId).toMatch(/^wl_hld_/);
+    expect(result.heroHealth.alerts[0]?.href).toBe(`/patrimonio/${publicId}/editar`);
 
     store.close();
   });

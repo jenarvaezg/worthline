@@ -63,6 +63,7 @@ import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matri
 import { resolveFxAggregation } from "./fx-context";
 import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
 import { type HeroHealthView, selectHeroHealth } from "./hero-data-health";
+import { holdingPublicIdIndex } from "./holding-route";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
@@ -308,7 +309,7 @@ export async function loadDashboard(
   // TX-safety: these reads run after any saveSnapshot() above has committed its
   // own transaction, so no interactive tx is open here. ctx.getWorkspace() is
   // promise-memoized (Step 0), making concurrent internal calls safe.
-  const [overrides, fireConfig, goals, contributionPlan] = await Promise.all([
+  const [overrides, fireConfig, goals, contributionPlan, publicIds] = await Promise.all([
     store.readWarningOverrides(),
     store.readFireConfig(),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
@@ -316,6 +317,9 @@ export async function loadDashboard(
     selectedScope
       ? store.contributionPlan.readContributionPlan(selectedScope.id)
       : Promise.resolve(null),
+    // The hero alert's fix links name each holding by its public `wl_hld_…` id
+    // (#1318); riding this wave keeps it off the GET's serial budget (#446/#783).
+    store.agentView.readPublicIds(),
   ]);
 
   // The ranges worth offering: bounded ranges only when the history exceeds
@@ -490,7 +494,13 @@ export async function loadDashboard(
         workspace,
       })
     : [];
-  const heroHealth = selectHeroHealth(dataQualitySignals, overrides);
+  // The signals carry the internal storage id; the links must carry the public
+  // one, so the selection gets the registry translation read above.
+  const heroHealth = selectHeroHealth(
+    dataQualitySignals,
+    overrides,
+    holdingPublicIdIndex(publicIds),
+  );
 
   // ── 4f. FX context for non-EUR holdings (#1065) ───────────────────────────
   // Hard-gated inside resolveFxAggregation: it hits ECB only when a foreign

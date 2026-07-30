@@ -82,6 +82,12 @@ const EDIT_INVESTMENT_FIELDS = [
 // the unified Patrimonio list and on each holding's ficha. These fallbacks only
 // fire when a form omits currentUrl (the kept surfaces always set it), so they
 // default to the surviving investment homes rather than the removed list.
+//
+// They used to fall back to the ficha path built out of `routeAssetId` — the
+// INTERNAL storage id, which is how that id leaked into the address bar (#1318).
+// A holding is named in a URL only by its public `wl_hld_…` id now, and an
+// action holds the internal one, so the honest fallback is the list: the ficha's
+// own URL arrives in `currentUrl` or not at all.
 function currentUrlOf(formData: FormData, fallback = "/patrimonio"): string {
   return (formData.get("currentUrl") as string) || fallback;
 }
@@ -148,7 +154,7 @@ export async function recordOperationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "operation",
@@ -273,7 +279,7 @@ export async function previewStatementAction(
   ..._testArgs: unknown[]
 ): Promise<StatementPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData));
   const read = await readStatementFromForm(formData);
   if (!read.ok) {
     return { message: read.message, status: "error" };
@@ -322,7 +328,7 @@ export async function confirmStatementAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
   const statementErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, { formId: "statement", message });
 
@@ -448,8 +454,8 @@ export async function updateInvestmentAction(
 ) {
   const _store = testStoreFromActionArgs(_testArgs);
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  await guardDemoWrite(currentUrlOf(formData));
+  const returnUrl = currentUrlOf(formData);
   const editErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "edit",
@@ -504,7 +510,7 @@ export async function deleteOperationAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,
@@ -603,7 +609,7 @@ export async function previewPriceBackfillAction(
 ): Promise<PriceBackfillPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData));
   const today = _clock.today();
 
   const candidate = await runActionWithStore(
@@ -658,8 +664,8 @@ export async function confirmPriceBackfillAction(
 ) {
   const _store = testStoreFromActionArgs(_testArgs);
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  await guardDemoWrite(currentUrlOf(formData));
+  const returnUrl = currentUrlOf(formData);
   const today = _clock.today();
 
   const candidate = await runActionWithStore(
@@ -789,7 +795,7 @@ export async function previewSnapshotPriceCorrectionAction(
 ): Promise<SnapshotPriceCorrectionPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
   const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
-  await guardDemoWrite(currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`));
+  await guardDemoWrite(currentUrlOf(formData));
 
   const planned = await runActionWithStore(
     (store) => planCorrectionFromForm(store, routeAssetId, formData, _clock.today()),
@@ -830,7 +836,7 @@ export async function confirmSnapshotPriceCorrectionAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction<undefined, { dateKey: string }>({
     datedFact: false,
@@ -890,7 +896,7 @@ export async function createPayoutAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,
@@ -924,7 +930,7 @@ export async function deletePayoutAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,
@@ -947,7 +953,7 @@ export async function createPayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,
@@ -989,7 +995,7 @@ export async function updatePayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,
@@ -1033,7 +1039,7 @@ export async function deletePayoutScheduleAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
-  const returnUrl = currentUrlOf(formData, `/patrimonio/${routeAssetId}/editar`);
+  const returnUrl = currentUrlOf(formData);
 
   return formAction({
     datedFact: false,

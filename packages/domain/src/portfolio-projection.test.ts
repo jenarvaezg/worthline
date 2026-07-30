@@ -120,11 +120,15 @@ describe("projectPortfolio — household scope", () => {
     expect(cash.valueIsDerived).toBe(false);
   });
 
-  test("EVERY asset row carries its ficha detail link — investments are no longer ghosts (#154)", () => {
+  test("EVERY asset row is a first-class holding — investments are no longer ghosts (#154)", () => {
     const result = projectPortfolio(input);
     const assets = result.sections[0]!.rows as ProjectedAssetRow[];
+    // The row carries the identity its ficha link is built from; the link itself
+    // belongs to the web layer, which knows a holding is addressed by its public
+    // `wl_hld_…` id (#1318) and not by the internal one the projection carries.
+    expect(assets.map((row) => row.id)).toContain("asset_broker");
     for (const row of assets) {
-      expect(row.detailHref).toBe(`/patrimonio/${row.id}/editar`);
+      expect(row.id).not.toBe("");
     }
   });
 
