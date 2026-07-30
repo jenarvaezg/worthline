@@ -324,7 +324,8 @@ The calculation method for a liability's historical balance. Three kinds:
 **amortizable** (French amortization schedule from declared conditions),
 **revolving** (manual balance with **balance anchors**) and **informal** (partial
 payments as balance anchors). All three step between their events by default — the
-balance holds the last cuota or anchor and moves only on the next; see **Valuation
+balance holds the last cuota or anchor and moves only on the next, an **early
+repayment** counting as an event on its own date (ADR 0031, #1291); see **Valuation
 cadence** for the per-holding `interpolated` opt-in. Stored on the liability.
 The liability's own **stored balance** (UI: "Saldo pendiente") is the figure only
 while the model has no curve to walk: once an **amortization plan**, a **balance
@@ -359,8 +360,10 @@ with the new rate and remaining term.
 A declared payment against an **amortized** debt's principal at a specific date, partial
 or total, that recalculates the schedule from that date forward — either lowering the
 payment (term unchanged) or shortening the term (payment unchanged), chosen per repayment;
-a total early repayment closes the debt. Like an **interest rate revision** it is a dated
-fact about the past and triggers a **ripple recalculation** (ADR 0012).
+a total early repayment closes the debt. The balance drops on the payment's **own date**;
+what is monthly is the reshaping of the plan, derived at the cuota the payment falls in
+and first visible in the following cuota (#1291). Like an **interest rate revision** it is
+a dated fact about the past and triggers a **ripple recalculation** (ADR 0012).
 UI label: "Amortización anticipada".
 _Avoid_: overpayment.
 
@@ -386,10 +389,11 @@ between anchors via its **valuation cadence**. An **informal** debt is always a 
 **Valuation cadence**:
 Whether a **holding** whose value comes from a model changes in **steps** on its event
 dates (the default) or by **linear interpolation** between them (an opt-in). Applies to
-the modeled **valuation methods**: an **amortizable** debt steps on each cuota, a
-**revolving** debt on each **balance anchor**, and a real-estate asset's drift is
-resampled on the first of each month. It is ignored for market-priced holdings, whose
-daily movement is a real **price**, not interpolation, and for **informal** debts, which
+the modeled **valuation methods**: an **amortizable** debt steps on each cuota and on
+each **early repayment**'s own date, a **revolving** debt on each **balance anchor**,
+and a real-estate asset's drift is resampled on the first of each month. It is ignored
+for market-priced holdings, whose daily movement is a real **price**, not
+interpolation, and for **informal** debts, which
 are always a step. Set per holding in its advanced editing surface; absent means `step`.
 A backdated change re-derives history like any parameter edit (**ripple recalculation**).
 See ADR 0031.

@@ -879,9 +879,13 @@ export interface AgentViewHoldingDetail {
 export type AgentViewCalculationTraceModel = "amortizable" | "revolving" | "informal";
 
 /**
- * One dated event on the amortization schedule, attached to the frontier it lands
- * on (PRD #1049). A `rate_revision` carries the new `annualInterestRate`; an
- * `early_repayment` carries the `amount` repaid and its `mode`.
+ * One dated event on the amortization schedule, attached to the frontier whose
+ * window CONTAINS its date (PRD #1049, #1291): frontier `k` closes the window that
+ * runs from the previous cuota up to and including its own, so an event dated
+ * exactly on a cuota rides that cuota's frontier and one paid mid-window rides the
+ * frontier that closes it. That is the frontier whose figures the event moves. A
+ * `rate_revision` carries the new `annualInterestRate`; an `early_repayment`
+ * carries the `amount` repaid and its `mode`.
  */
 export interface AgentViewAmortizationScheduleEvent {
   kind: "rate_revision" | "early_repayment";
@@ -899,8 +903,11 @@ export interface AgentViewAmortizationScheduleEvent {
  * One cuota of the amortization schedule (PRD #1049): the frontier date with its
  * opening/closing balances and the interest/principal split of the payment.
  * `closingBalance` is what the engine reports on `date` (it matches the balance
- * the dashboard curve reads). `events` are the dated events applied on this
- * frontier. All money on the loan's OWN (unscoped) terms.
+ * the dashboard curve reads). `events` are the dated events whose date falls in this
+ * frontier's window. An early repayment paid mid-window shows as `openingBalance`
+ * sitting below the previous frontier's `closingBalance`, by the lump: the curve
+ * only drops on the day it was paid (#1291). All money on the loan's OWN (unscoped)
+ * terms.
  */
 export interface AgentViewAmortizationScheduleFrontier {
   index: number;
