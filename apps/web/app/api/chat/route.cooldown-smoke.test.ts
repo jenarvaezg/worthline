@@ -9,9 +9,10 @@ import {
 } from "@ai-sdk/provider";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import type { ResolvedProviderModel } from "@web/asistente/provider-model";
-import type {
-  AssistantProvider,
-  ProviderCredentialEnvKey,
+import {
+  type AssistantProvider,
+  DEFAULT_PROVIDER_ALLOWLIST,
+  type ProviderCredentialEnvKey,
 } from "@web/asistente/provider-pool";
 import { countChatRequest } from "@web/asistente/rate-limit-store";
 import { readStoreTarget } from "@web/read-store-target";
@@ -103,7 +104,6 @@ function resolved(
   const keys: Record<AssistantProvider, ProviderCredentialEnvKey> = {
     google: "GOOGLE_GENERATIVE_AI_API_KEY",
     cerebras: "CEREBRAS_API_KEY",
-    groq: "GROQ_API_KEY",
   };
   return {
     provider,
@@ -181,19 +181,23 @@ describe("provider cooldown controlled demo smoke", () => {
   });
 
   it("isolates another deployment and returns 503 when its pool exhausts", async () => {
+    // Driven by the REAL allowlist, not by a hardcoded pair (#1278): the pool lost
+    // its third entry, and what happens when every remaining one is cooling down is
+    // the same deliberate answer as an empty pool. Written this way, the assertion
+    // follows the pool's depth instead of quietly measuring yesterday's.
     process.env["WORTHLINE_CHAT_DEPLOYMENT_KEY"] = "another-demo";
-    const first = rejectedModel("quota exhausted");
-    const second = rejectedModel("quota exhausted");
-    vi.mocked(resolveChatModels).mockReturnValue([
-      resolved("google", first),
-      resolved("cerebras", second),
-    ]);
+    const models = DEFAULT_PROVIDER_ALLOWLIST.map(() => rejectedModel("quota exhausted"));
+    vi.mocked(resolveChatModels).mockReturnValue(
+      DEFAULT_PROVIDER_ALLOWLIST.map((entry, index) =>
+        resolved(entry.provider, models[index] as MockLanguageModelV4),
+      ),
+    );
 
     const response = await POST(request());
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: "assistant_unavailable" });
-    expect(first.doStreamCalls).toHaveLength(1);
-    expect(second.doStreamCalls).toHaveLength(1);
+    expect(models).not.toHaveLength(0);
+    for (const model of models) expect(model.doStreamCalls).toHaveLength(1);
   });
 });

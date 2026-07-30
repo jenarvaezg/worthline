@@ -2,24 +2,49 @@
 
 The shared financial assistant resolves models from one committed allowlist. Its
 default priority is strict: Google Gemini 3.1 Flash Lite, then Cerebras GPT OSS
-120B, then Groq Llama 3.3 70B. The first entry whose own provider credential is
-present is selected. Local, preview, production, and demo use this same default;
+120B. The first entry whose own provider credential is present is selected.
+Local, preview, production, and demo use this same default;
 `WORTHLINE_CHAT_PROVIDER_ORDER` may only reorder providers already in the
 allowlist. Missing credentials remove entries rather than producing a provider
 error, and an empty pool preserves the `assistant_unavailable` 503 response.
 
-Admission is reviewed code, not live runtime state. A normal entry must carry a
+Admission is reviewed code, not live runtime state. Every entry must carry a
 real, complete run of the assistant admission harness with non-empty checks and
 at least the default 60% score — required in the aggregate and, since
 [ADR 0067](0067-assistant-write-path-is-guarded-by-code-not-by-model-choice.md),
 in every dimension the run measured. The committed Gemini and Cerebras marks
-satisfy that rule with complete two-dimension runs; a mark that names only
-`reading` predates the write-path questions and states nothing about writes.
-Groq is the incumbent from before this gate and is explicitly grandfathered: its revalidation exhausted the free daily token allowance after
-6 of 12 questions. Its partial 11/14 check result and the reason remain visible;
-it is not represented as a normal passing run. An automated guard checks that
-marks name the same provider/model, have coherent non-zero counts, and satisfy
-either normal admission or this one named exception.
+satisfy that rule with complete two-dimension runs; a mark naming only `reading`
+would predate the write-path questions and state nothing about writes. An
+automated guard checks that marks name the same provider/model, have coherent
+non-zero counts, and satisfy normal admission. There is no named exception: the
+one that existed — Groq Llama 3.3 70B, the incumbent from before this gate,
+carried as `grandfathered` with a partial 11/14 run — was retired with its
+provider (#1278), so «admitted» and «in the pool» are now the same statement.
+
+**A pool entry must be able to accept one turn, and that is a measured fact
+(#1278).** Groq did not leave for quality: its free tier rejects the request
+outright. The bare turn — system prompt plus the name, description and JSON
+schema of the 34 tools, before a word of conversation — measures 35.390
+characters, which the three tokenizers read very differently: 9.231 input tokens
+for Gemini, 7.732 for Cerebras, and 14.285 for Llama 3.3 — whose free tier allows
+12.000 tokens per minute and refuses on arrival any single request that alone
+exceeds that allowance. Slimming the prompt would not have saved it either: the
+allowance is per *minute*, and one turn issues up to six requests inside it, each
+re-sending the floor plus everything read so far. As the
+third entry, Groq was only ever reached when the first two were cooling down —
+so what looked like a fallback was a guaranteed failure with one extra round trip
+of latency, and a `request too large` rejection deliberately persists no cooldown,
+so every request tried it again. `bun run eval:floor` is the meter, `--live` adds
+the per-provider token figure, and a CI test holds the character floor under a
+reviewed ceiling so it cannot drift up unnoticed.
+
+The pool is therefore two entries deep, and what happens when both are cooling
+down is unchanged and deliberate: `assistant_unavailable` with status 503, the
+same answer an empty pool has always given. Widening the pool again means either
+a new provider that passes normal admission, or a second entry on an existing
+provider — quotas are per model, so two Cerebras models would genuinely multiply
+the margin — which is a change in the shape of the allowlist (one entry per
+provider today) and needs its own decision.
 
 Production chat and the live eval runner share one provider resolution seam: it
 binds the candidate, its provider credential, SDK model, and stable label.
@@ -63,10 +88,10 @@ rather than turning a control-plane incident into total assistant failure.
 Revalidation is event-driven: rerun the harness and review a fresh mark whenever
 a model ID, provider behavior, assistant system prompt, tool contract,
 golden-question contract, or admission threshold changes, and when production
-evidence suggests a material quality regression. A normally admitted entry that
-cannot be revalidated must leave the pool. The Groq exception must be removed or
-replaced by a normal mark once a complete run is available; it must not be copied
-to another provider or model.
+evidence suggests a material quality regression. An admitted entry that cannot be
+revalidated must leave the pool — which is what finally happened to Groq: a
+candidate that cannot accept the turn cannot be re-run, so it cannot hold a mark.
+No named exception may be reintroduced for another provider or model.
 
 ## Operations
 

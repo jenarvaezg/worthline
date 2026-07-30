@@ -13,7 +13,8 @@
   agregación bancaria ni ejecución de órdenes. La app ya tiene **borrado total (reset)** y
   **exportación**. Datos tratados por: Vercel (hosting), Turso (BD), WorkOS (auth), Resend
   (email transaccional), Sentry (errores, previsto) y proveedores LLM del asistente
-  (Google Gemini, Cerebras, Groq vía Vercel AI Gateway). **Sin analítica ni telemetría**
+  (Google Gemini y Cerebras vía Vercel AI Gateway; Groq salió del pool el 2026-07-30,
+  #1278, así que ya no recibe dato alguno). **Sin analítica ni telemetría**
   (postura deliberada: solo facturación/entitlements + marcas de tiempo de *onboarding* y
   primer holding).
 - **Método:** fuentes primarias — AEPD, BOE/EUR-Lex (RGPD, LOPDGDD, LSSI-CE, TRLGDCU), CNMV,
@@ -170,7 +171,7 @@ uno** y listarlos en la política de privacidad:
 | **Resend** (EE. UU.) | Email transaccional | DPA publicado; GDPR-compliant | <https://resend.com/legal/dpa> |
 | **Sentry** (EE. UU.) | Errores (previsto) | DPA 5.1.0 con **SCC** (Módulos 2 y 3) y **DPF** como mecanismo, SCC de respaldo | <https://sentry.io/legal/dpa/> |
 | **Google Gemini API** | LLM del asistente | Términos de API de pago: **no** entrena con tus datos (ver abajo) | <https://ai.google.dev/gemini-api/docs/logs-policy> |
-| **Groq** | LLM del asistente | **No** entrena; sin retención por defecto; opción ZDR | <https://console.groq.com/docs/your-data> |
+| ~~**Groq**~~ | ~~LLM del asistente~~ — **retirado del pool** el 2026-07-30 (#1278): no se le envía nada, no procede declararlo como encargado | ~~**No** entrena; sin retención por defecto; opción ZDR~~ | <https://console.groq.com/docs/your-data> |
 | **Cerebras** | LLM del asistente | **No** retiene ni entrena con inputs/outputs | <https://www.cerebras.ai/privacy-policy> · <https://support.cerebras.net/articles/1811589793-does-cerebras-retain-my-data> |
 
 **Transferencias internacionales (EE. UU.).** Todos los de arriba son proveedores de EE. UU. El
@@ -193,9 +194,11 @@ entrena con esos datos por defecto** y que puedes ejercer supresión. Verificado
   las condiciones de pago aplican también a los niveles no de pago. Fuente:
   <https://ai.google.dev/gemini-api/docs/logs-policy>. (Evita el AI Studio gratuito, que **sí** puede
   usar el contenido.)
-- **Groq:** «no está permitido usar inputs u outputs para entrenar o afinar modelos» salvo permiso
-  del cliente; **sin retención por defecto** (logs temporales de hasta 30 días solo para depurar/abuso)
-  y opción **Zero Data Retention**. Fuente: <https://console.groq.com/docs/your-data>.
+- **Groq (histórico, ya no aplica):** se retiró del pool el 2026-07-30 (#1278) porque su free tier
+  no admite ni un turno, así que no es encargado y **no debe** figurar en la política. Lo verificado
+  entonces, por si volviera: «no está permitido usar inputs u outputs para entrenar o afinar modelos»
+  salvo permiso del cliente; **sin retención por defecto** (logs temporales de hasta 30 días solo para
+  depurar/abuso) y opción **Zero Data Retention**. Fuente: <https://console.groq.com/docs/your-data>.
 - **Cerebras:** **no retiene** inputs/outputs de inferencia y **no entrena** con datos de usuario.
   Fuente: <https://support.cerebras.net/articles/1811589793-does-cerebras-retain-my-data>.
 

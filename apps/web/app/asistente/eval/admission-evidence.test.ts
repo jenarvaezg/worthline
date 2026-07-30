@@ -35,7 +35,7 @@ describe("committed admission evidence", () => {
     // these is finally re-run, this test is what says «add the dimension».
     //
     // Read the lists below for what they do NOT contain either: no mark carries
-    // `attachments`, because all three runs predate #1254 — so the pool admits its
+    // `attachments`, because both runs predate #1254 — so the pool admits its
     // models on evidence that says nothing about a turn carrying a document, which is
     // the half of the write path where PRD #1241's incident happened. The marks are
     // `as const satisfies`, so this is a compile-time fact as much as a test one: a
@@ -47,9 +47,6 @@ describe("committed admission evidence", () => {
 
     expect(dimensionsOf("google")).toEqual(["reading", "tool-discipline"]);
     expect(dimensionsOf("cerebras")).toEqual(["reading", "tool-discipline"]);
-    // Groq's is the one mark that predates the dimension, because its free tier
-    // cannot accept a single request of the current turn (#1278).
-    expect(dimensionsOf("groq")).toEqual(["reading"]);
   });
 
   it("requires the write-path dimension itself to clear the threshold where it exists", () => {
@@ -64,20 +61,17 @@ describe("committed admission evidence", () => {
     }
   });
 
-  it("represents incumbent Groq as grandfathered with its partial run and reason", () => {
-    const groq = ADMISSION_EVIDENCE.find((entry) => entry.provider === "groq");
-
-    expect(groq).toMatchObject({
-      status: "grandfathered",
-      model: "llama-3.3-70b-versatile",
-      run: {
-        complete: false,
-        passed: 11,
-        total: 14,
-        executedQuestions: 6,
-        totalQuestions: 12,
-      },
-    });
-    expect(groq && "reason" in groq ? groq.reason.length : 0).toBeGreaterThan(0);
+  it("carries no grandfathered mark at all", () => {
+    // #1278 retired the one entry that had one (Groq, whose free tier cannot accept
+    // a single request of the current turn). «Admitted» and «in the pool» are the
+    // same statement now, and this is what says so if a mark is ever pasted back.
+    for (const entry of ADMISSION_EVIDENCE) {
+      expect(entry.status, entry.provider).toBe("admitted");
+      expect(entry.run.executedQuestions, entry.provider).toBe(entry.run.totalQuestions);
+    }
+    expect(ADMISSION_EVIDENCE.map((entry) => entry.provider)).toEqual([
+      "google",
+      "cerebras",
+    ]);
   });
 });

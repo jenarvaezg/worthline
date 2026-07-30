@@ -55,7 +55,6 @@ describe("shared provider model resolution", () => {
     expect(
       resolveFirstAllowedProviderModel({
         CEREBRAS_API_KEY: "cerebras-key",
-        GROQ_API_KEY: "groq-key",
       }),
     ).toMatchObject({
       provider: "cerebras",
@@ -67,7 +66,7 @@ describe("shared provider model resolution", () => {
 
   it("returns null when the candidate credential is absent", () => {
     expect(
-      resolveProviderModel({ provider: "groq", modelId: "candidate" }, {}),
+      resolveProviderModel({ provider: "cerebras", modelId: "candidate" }, {}),
     ).toBeNull();
     expect(resolveFirstAllowedProviderModel({})).toBeNull();
   });
@@ -77,13 +76,11 @@ describe("shared provider model resolution", () => {
       resolveAllowedProviderModels({
         GOOGLE_GENERATIVE_AI_API_KEY: "google-key",
         CEREBRAS_API_KEY: "cerebras-key",
-        GROQ_API_KEY: "groq-key",
         WORTHLINE_CHAT_PROVIDER_ORDER: "cerebras,google",
       }).map(({ provider, modelId }) => ({ provider, modelId })),
     ).toEqual([
       { provider: "cerebras", modelId: "gpt-oss-120b" },
       { provider: "google", modelId: "gemini-3.1-flash-lite" },
-      { provider: "groq", modelId: "llama-3.3-70b-versatile" },
     ]);
   });
 });

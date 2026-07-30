@@ -1,13 +1,12 @@
 import { decideSummarizedAdmission } from "./eval/admission";
 import { ADMISSION_EVIDENCE, type AdmissionEvidence } from "./eval/admission-evidence";
 
-export const PROVIDERS = ["google", "cerebras", "groq"] as const;
+export const PROVIDERS = ["google", "cerebras"] as const;
 export type AssistantProvider = (typeof PROVIDERS)[number];
 
 export type ProviderCredentialEnvKey =
   | "GOOGLE_GENERATIVE_AI_API_KEY"
-  | "CEREBRAS_API_KEY"
-  | "GROQ_API_KEY";
+  | "CEREBRAS_API_KEY";
 
 export interface ProviderPoolEntry {
   provider: AssistantProvider;
@@ -24,6 +23,14 @@ export const PROVIDER_ORDER_ENV_KEY = "WORTHLINE_CHAT_PROVIDER_ORDER";
  * The production allowlist and its environment-independent default priority.
  * Each mark is the reviewed output of the admission harness, not a synthetic
  * assertion maintained separately from the run evidence.
+ *
+ * Two entries since #1278, and every one of them a normal admission: the third,
+ * Groq's Llama 3.3 70B, was retired because it can no longer accept a turn at all.
+ * Its free tier allows 12.000 tokens per minute and refuses on arrival any single
+ * request that alone exceeds that allowance; the bare turn measures 14.285 in its
+ * own tokenizer. Even a turn that fitted would need up to six such requests inside
+ * the same minute (the chat route's step ceiling), so no amount of prompt slimming
+ * brings it back. Measured, not estimated: `bun run eval:floor -- --live`.
  */
 export const DEFAULT_PROVIDER_ALLOWLIST = [
   {
@@ -37,12 +44,6 @@ export const DEFAULT_PROVIDER_ALLOWLIST = [
     modelId: "gpt-oss-120b",
     envKey: "CEREBRAS_API_KEY",
     validation: ADMISSION_EVIDENCE[1],
-  },
-  {
-    provider: "groq",
-    modelId: "llama-3.3-70b-versatile",
-    envKey: "GROQ_API_KEY",
-    validation: ADMISSION_EVIDENCE[2],
   },
 ] as const satisfies readonly ProviderPoolEntry[];
 
@@ -121,27 +122,18 @@ export function validateProviderAllowlist(value: unknown): void {
       validationError(`validation mark for ${provider} is empty or incoherent`);
     }
 
-    if (provider === "groq") {
-      if (
-        validation["status"] !== "grandfathered" ||
-        run["complete"] !== false ||
-        typeof validation["reason"] !== "string" ||
-        validation["reason"].trim().length === 0
-      ) {
-        validationError("Groq must carry its explicit grandfathered exception");
-      }
-    } else {
-      const verdict = decideSummarizedAdmission({
-        complete:
-          validation["status"] === "admitted" &&
-          run["complete"] === true &&
-          run["executedQuestions"] === run["totalQuestions"],
-        passed: run["passed"],
-        total: run["total"],
-      });
-      if (!verdict.admitted) {
-        validationError(`${provider} does not satisfy normal admission`);
-      }
+    // One rule for every entry since #1278 retired Groq: the pool no longer
+    // carries a named exception, so an incomplete run cannot admit anything.
+    const verdict = decideSummarizedAdmission({
+      complete:
+        validation["status"] === "admitted" &&
+        run["complete"] === true &&
+        run["executedQuestions"] === run["totalQuestions"],
+      passed: run["passed"],
+      total: run["total"],
+    });
+    if (!verdict.admitted) {
+      validationError(`${provider} does not satisfy normal admission`);
     }
   }
 }

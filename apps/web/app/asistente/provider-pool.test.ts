@@ -13,7 +13,6 @@ describe("validated assistant provider allowlist", () => {
     ).toEqual([
       { provider: "google", modelId: "gemini-3.1-flash-lite" },
       { provider: "cerebras", modelId: "gpt-oss-120b" },
-      { provider: "groq", modelId: "llama-3.3-70b-versatile" },
     ]);
     expect(() => validateProviderAllowlist(DEFAULT_PROVIDER_ALLOWLIST)).not.toThrow();
   });
@@ -58,6 +57,45 @@ describe("validated assistant provider allowlist", () => {
     expect(() => validateProviderAllowlist(allowlist)).toThrow();
   });
 
+  it("admits nothing on an incomplete run, with no named exception left", () => {
+    // #1278 retired the pool's one grandfathered entry (Groq), and with it the
+    // branch that let an incomplete run admit anything. A mark shaped like that
+    // exception is now just an incomplete run: rejected, whatever it names.
+    const incomplete = [
+      {
+        ...DEFAULT_PROVIDER_ALLOWLIST[0],
+        validation: {
+          ...DEFAULT_PROVIDER_ALLOWLIST[0].validation,
+          status: "grandfathered",
+          reason: "Titular anterior al gate.",
+          run: {
+            ...DEFAULT_PROVIDER_ALLOWLIST[0].validation.run,
+            complete: false,
+            executedQuestions: 6,
+            totalQuestions: 18,
+          },
+        },
+      },
+    ];
+
+    expect(() => validateProviderAllowlist(incomplete)).toThrow(/admission/i);
+  });
+
+  it("cannot re-admit the retired provider", () => {
+    // The pair is outside the reviewed allowlist now, so neither the model nor a
+    // resurrected mark can put Groq back (#1278).
+    expect(() =>
+      validateProviderAllowlist([
+        {
+          provider: "groq",
+          modelId: "llama-3.3-70b-versatile",
+          envKey: "GROQ_API_KEY",
+          validation: DEFAULT_PROVIDER_ALLOWLIST[0].validation,
+        },
+      ]),
+    ).toThrow(/allowlist/i);
+  });
+
   it("uses the canonical admission threshold instead of a pool-local copy", () => {
     const total = 1_000;
     const atThreshold = Math.ceil(DEFAULT_ADMISSION_THRESHOLD * total);
@@ -93,14 +131,13 @@ describe("availableProviderEntries", () => {
     [{}, []],
     [{ GOOGLE_GENERATIVE_AI_API_KEY: "google" }, ["google"]],
     [{ CEREBRAS_API_KEY: "cerebras" }, ["cerebras"]],
-    [{ GROQ_API_KEY: "groq" }, ["groq"]],
+    [{ GROQ_API_KEY: "groq" }, []],
     [
       {
         GOOGLE_GENERATIVE_AI_API_KEY: "google",
         CEREBRAS_API_KEY: "cerebras",
-        GROQ_API_KEY: "groq",
       },
-      ["google", "cerebras", "groq"],
+      ["google", "cerebras"],
     ],
   ])("filters the credential combination %#", (env, providers) => {
     expect(availableProviderEntries(env).map((entry) => entry.provider)).toEqual(
@@ -112,14 +149,12 @@ describe("availableProviderEntries", () => {
     const env = {
       GOOGLE_GENERATIVE_AI_API_KEY: "google",
       CEREBRAS_API_KEY: "cerebras",
-      GROQ_API_KEY: "groq",
-      WORTHLINE_CHAT_PROVIDER_ORDER: "groq,google",
+      WORTHLINE_CHAT_PROVIDER_ORDER: "cerebras",
     };
 
     expect(availableProviderEntries(env).map((entry) => entry.provider)).toEqual([
-      "groq",
-      "google",
       "cerebras",
+      "google",
     ]);
   });
 
@@ -127,15 +162,15 @@ describe("availableProviderEntries", () => {
     const env = {
       GOOGLE_GENERATIVE_AI_API_KEY: "google",
       CEREBRAS_API_KEY: "cerebras",
-      GROQ_API_KEY: "groq",
-      WORTHLINE_CHAT_PROVIDER_ORDER: "evil,groq,groq,unreviewed",
+      // `groq` is now one of the arbitrary names too (#1278): a retired provider
+      // cannot be re-ordered back into the pool from the environment.
+      WORTHLINE_CHAT_PROVIDER_ORDER: "evil,groq,cerebras,cerebras,unreviewed",
       WORTHLINE_CHAT_MODEL: "evil/arbitrary-model",
     };
 
     expect(availableProviderEntries(env).map((entry) => entry.provider)).toEqual([
-      "groq",
-      "google",
       "cerebras",
+      "google",
     ]);
   });
 
@@ -143,7 +178,6 @@ describe("availableProviderEntries", () => {
     const credentials = {
       GOOGLE_GENERATIVE_AI_API_KEY: "google",
       CEREBRAS_API_KEY: "cerebras",
-      GROQ_API_KEY: "groq",
     };
     for (const environment of [
       { NODE_ENV: "development" },
@@ -155,7 +189,7 @@ describe("availableProviderEntries", () => {
         availableProviderEntries({ ...credentials, ...environment }).map(
           (entry) => entry.provider,
         ),
-      ).toEqual(["google", "cerebras", "groq"]);
+      ).toEqual(["google", "cerebras"]);
     }
   });
 

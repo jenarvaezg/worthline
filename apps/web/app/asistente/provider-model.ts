@@ -1,6 +1,5 @@
 import { createCerebras } from "@ai-sdk/cerebras";
 import { createGoogle } from "@ai-sdk/google";
-import { createGroq } from "@ai-sdk/groq";
 import type { LanguageModel } from "ai";
 
 import {
@@ -36,8 +35,6 @@ function createProviderModel(
       return createGoogle({ apiKey })(candidate.modelId);
     case "cerebras":
       return createCerebras({ apiKey })(candidate.modelId);
-    case "groq":
-      return createGroq({ apiKey })(candidate.modelId);
   }
 }
 

@@ -13,8 +13,8 @@
  * Every question here attaches a committed CSV, on purpose:
  *
  *  - the deterministic spreadsheet route needs no API key, so an attachment question
- *    costs the candidate's own credential and nothing else — a Cerebras or Groq run
- *    does not suddenly require a Google key for the fixed extractor;
+ *    costs the candidate's own credential and nothing else — a Cerebras run does
+ *    not suddenly require a Google key for the fixed extractor;
  *  - the same determinism lets CI verify in `golden-turn.test.ts` that each fixture
  *    arrives through the lane its question claims, which an image could only be
  *    checked for at run time;
