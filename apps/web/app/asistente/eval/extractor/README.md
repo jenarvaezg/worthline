@@ -220,8 +220,9 @@ grading hints:
 }
 ```
 
-- `mustBeUncertain` — the gate fails unless those tickers arrive with
-  `uncertain: true`.
+- `mustBeUncertain` — the gate fails unless those rows arrive with
+  `uncertain: true`. A row is named by its ticker or, on a screen that prints
+  none (a value-only composition tab), by its name.
 - `warningIncludes` — each fragment must appear in at least one warning
   (case- and accent-insensitive).
 

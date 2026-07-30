@@ -2,9 +2,11 @@ import type {
   AttachmentPreviewData,
   UnstructuredAttachment,
 } from "@web/asistente/attachment-chat";
+import type { UnrecognizedReason } from "@web/asistente/attachment-extraction-contract";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
 import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
 import {
+  UNSTRUCTURED_EMPTY_READING_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
@@ -52,6 +54,20 @@ export interface AttachmentTurnReading {
    */
   visionCalls: number;
 }
+
+/**
+ * The card a DESCRIBED capture gets, per verdict that sent it down the lane (#1246).
+ *
+ * A `Record` over the closed reason set, so a third `unrecognized` fact cannot be added
+ * without deciding what its card says. Both entries are markers the unvalidated-evidence
+ * boundary reads back out of history (#1248) and both are registered there — the card is
+ * what tells a later turn that this conversation already has unvalidated evidence on the
+ * table, so a message missing from that list is a gate that quietly stops biting.
+ */
+const DESCRIBED_CARD_MESSAGE: Record<UnrecognizedReason, string> = {
+  empty_reading: UNSTRUCTURED_EMPTY_READING_MESSAGE,
+  unidentified_document: UNSTRUCTURED_VISION_MESSAGE,
+};
 
 /** Which transport a file travels in — the MIME type picks it, and only it (#1243). */
 function visionTransport(input: {
@@ -133,34 +149,47 @@ export async function readAttachmentTurn(
     }
   }
 
-  // Parity for pixels (#1246): a capture whose document the seam did not identify had
-  // no drain at all, so it died on the card. A SECOND call to the same fixed model
-  // outside the pool says what is on screen, and it enters the turn through the very
-  // same unstructured lane, with the same defenses. Only this branch pays for it: an
-  // identified document — or one identified and read empty (`empty_reading`) — needs no
-  // description, and the user waits for it pre-stream. `!isSpreadsheet` is not
-  // redundant with the reason: the deterministic sheet route never stamps this
-  // discriminant today, and this keeps a future one that did from sending a workbook to
-  // a vision model and clobbering its own rendered grid.
-  const describes =
-    !isSpreadsheet &&
-    result.status === "unrecognized" &&
-    result.reason === "unidentified_document";
-  const description = describes
-    ? await describeVisionAttachment({ ...extractionInput, kind: visionKind })
-    : null;
+  // Parity for pixels (#1246): a capture the seam extracted nothing from had no drain at
+  // all, so it died on the card. A SECOND call to the same fixed model outside the pool
+  // says what is on screen, and it enters the turn through the very same unstructured
+  // lane, with the same defenses.
+  //
+  // BOTH shapes of `unrecognized` take that drain. Only `unidentified_document` used to,
+  // on the argument that describing a document we HAD identified would merely paraphrase
+  // what could not be read — and a real capture disproved it. MyInvestor's «Composición»
+  // tab came back `empty_reading` (the positions contract had no shape for a row without
+  // units, widened in the same pass) and the turn reached the model with NOTHING: not the
+  // total printed at the top of the screen, not the name of a single fund. What the
+  // description would have carried is precisely the content the rows could not, so the
+  // paraphrase argument was backwards: a reading that failed leaves the MOST to describe,
+  // not the least.
+  //
+  // The transport check is not redundant with the reason: the deterministic sheet route
+  // never stamps this discriminant today, and this keeps a future one that did from
+  // sending a workbook to a vision model and clobbering its own rendered grid. A verdict
+  // with NO reason is still not described — only the vision seam stamps one, and a route
+  // that cannot say which of the two facts held cannot say a description would help.
+  const describedReason =
+    visionKind !== null && result.status === "unrecognized" && result.reason !== undefined
+      ? result.reason
+      : null;
+  const description =
+    describedReason !== null && visionKind !== null
+      ? await describeVisionAttachment({ ...extractionInput, kind: visionKind })
+      : null;
   // Charged on the ASK, not on the answer (#1258): a description the provider failed
-  // to give back still cost a request, and it is the branch below — not the outcome —
-  // that the abuse the fuse guards against reaches for.
-  const visionCalls = extractionCalls + (describes ? 1 : 0);
+  // to give back still cost a request, and it is the branch above — not the outcome —
+  // that the abuse the fuse guards against reaches for. Two calls now cover one verdict
+  // more than they did, which is what the content above costs.
+  const visionCalls = extractionCalls + (describedReason ? 1 : 0);
 
-  if (description) {
+  if (description && describedReason) {
     return {
       preview: {
         fileName,
         result: {
-          message: UNSTRUCTURED_VISION_MESSAGE,
-          reason: "unidentified_document",
+          message: DESCRIBED_CARD_MESSAGE[describedReason],
+          reason: describedReason,
           status: "unrecognized",
         },
       },

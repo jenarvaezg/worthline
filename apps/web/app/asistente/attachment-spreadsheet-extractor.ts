@@ -244,6 +244,27 @@ const MAX_CONTEXT_CELL_CHARS = 120;
 const MAX_CONTEXT_CHARS = 12_000;
 
 /**
+ * What a cut says about itself (#865). The bounds above are old; what changed is how
+ * loudly they are announced, because a timid «(y 31 fila(s) más)» was read as decoration.
+ *
+ * The measured case, a 91-row movements workbook: the model presented row 60 —
+ * «04/04/2026, saldo 4,51 €» — as the document's closing balance, while the file ends on
+ * 29/07/2026 at 58,48 €. Nothing lied to it; it simply took the last line it could see as
+ * the last line there was, which is what any reader does unless told otherwise. So the
+ * notice now states BOTH numbers and says the document continues, and the framing carries
+ * the conduct rule that goes with it (`attachment-chat.ts`).
+ *
+ * These lines are generated HERE, by code, and land inside the document's own fence — so
+ * a hostile sheet can print a lookalike. That direction is harmless (a forged notice only
+ * claims a cut that did not happen), and the direction that would matter — convincing the
+ * model nothing was cut — is not available to it: the RULE lives in the framing, outside
+ * the fence, where `neutralizeFence` guarantees the document cannot forge our markers.
+ */
+function truncatedRowsNotice(shown: number, total: number): string {
+  return `\n(ATENCIÓN, LECTURA PARCIAL: se muestran ${shown} de ${total} filas. El documento CONTINÚA más allá de lo visible; la última fila mostrada NO es la última del documento ni su estado más reciente.)`;
+}
+
+/**
  * Render a readable-but-unrecognized spreadsheet as bounded plain text so the
  * assistant can describe what it sees instead of dead-ending (#865). Reads
  * every worksheet of an .xlsx, or the delimited grid of a CSV. Returns null
@@ -269,10 +290,13 @@ export function renderSpreadsheetForContext(
 
   const rendered = nonEmpty.slice(0, MAX_CONTEXT_SHEETS).map(renderSheet).join("\n\n");
   const extraSheets = nonEmpty.length - MAX_CONTEXT_SHEETS;
-  const suffix = extraSheets > 0 ? `\n\n(y ${extraSheets} hoja(s) más sin mostrar)` : "";
+  const suffix =
+    extraSheets > 0
+      ? `\n\n(ATENCIÓN, LECTURA PARCIAL: se muestran ${MAX_CONTEXT_SHEETS} de ${nonEmpty.length} hojas; ${extraSheets} no se muestran.)`
+      : "";
   const text = `${rendered}${suffix}`;
   return text.length > MAX_CONTEXT_CHARS
-    ? `${text.slice(0, MAX_CONTEXT_CHARS)}\n(contenido truncado)`
+    ? `${text.slice(0, MAX_CONTEXT_CHARS)}\n(ATENCIÓN, LECTURA PARCIAL: el texto se ha cortado aquí por tamaño. El documento CONTINÚA más allá de lo visible; lo último que se lee NO es el final del documento.)`
     : text;
 }
 
@@ -295,8 +319,10 @@ function renderSheet(sheet: WorkbookSheet, index: number): string {
     .join("\n");
 
   const title = sheet.name.trim() || `Hoja ${index + 1}`;
-  const extraRows = dataRows.length - shown.length;
-  const more = extraRows > 0 ? `\n(y ${extraRows} fila(s) más)` : "";
+  const more =
+    dataRows.length > shown.length
+      ? truncatedRowsNotice(shown.length, dataRows.length)
+      : "";
   return `Hoja «${title}» (${dataRows.length} fila(s) × ${cols} columna(s)):\n${body}${more}`;
 }
 

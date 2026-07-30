@@ -16,6 +16,15 @@ import type { ExtractedPosition } from "./attachment-extraction-contract";
  * Insufficient data is never invented: with no euro value the saldo stays blank,
  * and without positive units the unit price stays blank, so the wizard leaves
  * the field pending instead of guessing.
+ *
+ * A VALUE-ONLY row (neither símbolo nor participaciones on screen, the ordinary
+ * shape of a bank's composition tab) lands as the wizard's own value-only encoding: the
+ * total as the unit price, so the wizard derives 1 participación (#1325, ADR 0006 — an
+ * investment is always units × price, and putting the value up to date later is editing
+ * that price). The gate is the SAME one the chat tool applies, and for the same reason:
+ * only a row with no ticker may do this, because the moment a real quote can arrive the
+ * single fake unit would revalue to one share's NAV. A row that names a symbol but
+ * prints no units therefore leaves the price blank and the wizard asks.
  */
 
 const WIZARD_PATH = "/patrimonio/anadir";
@@ -40,7 +49,7 @@ export function buildWizardPrefillParams(
     invMode_fund: "saldo",
     name_fund: position.name,
     simpleDrawer: WIZARD_DRAWER,
-    symbol_fund: position.ticker,
+    ...(position.ticker === undefined ? {} : { symbol_fund: position.ticker }),
   };
 
   const hasValue =
@@ -51,8 +60,12 @@ export function buildWizardPrefillParams(
 
   // Units ride into this instrument as the derived unit price (the wizard has no
   // direct units field in the saldo path; it recomputes units = saldo ÷ price).
-  if (hasValue && Number.isFinite(position.units) && position.units > 0) {
-    params.price_fund = toFieldValue(position.marketValueEur / position.units);
+  const units = position.units;
+  if (hasValue && units !== undefined && Number.isFinite(units) && units > 0) {
+    params.price_fund = toFieldValue(position.marketValueEur / units);
+  } else if (hasValue && units === undefined && position.ticker === undefined) {
+    // Value-only: the total IS the price of the single participación (see module doc).
+    params.price_fund = toFieldValue(position.marketValueEur);
   }
 
   return params;

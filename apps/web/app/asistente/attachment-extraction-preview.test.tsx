@@ -59,6 +59,45 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).not.toMatch(/<form|<button/);
   });
 
+  test("paints a value-only row as a reading, not as a hole (#1325)", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "composicion.png",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "positions",
+              positions: [
+                {
+                  currency: "EUR",
+                  marketValueEur: 574.48,
+                  name: "Fondo Índice Metal",
+                },
+              ],
+              totalEur: 574.48,
+              warnings: [],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    // The name carries the row on its own: no stray separator where a ticker was.
+    expect(html).toContain("Fondo Índice Metal");
+    expect(html).not.toContain("· Fondo Índice Metal");
+    expect(html).not.toContain("undefined");
+    // The empty column says «the document printed none», and the hint says what the
+    // alta will therefore do — 1 participación at that value (#1325).
+    expect(html).toContain("—");
+    expect(html).toContain("sin participaciones");
+    // And the bridge still works: this is the row the widening exists to carry through.
+    expect(html).toContain("name_fund=Fondo+%C3%8Dndice+Metal");
+    expect(html).not.toContain("symbol_fund");
+    expect(html).toContain("price_fund=574.48");
+  });
+
   test("shows a dated balance series with uncertainty, warnings and no wizard bridge", () => {
     const html = renderToStaticMarkup(
       <AttachmentExtractionPreview

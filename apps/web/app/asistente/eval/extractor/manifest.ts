@@ -45,7 +45,11 @@ const goldenPositiveExpectedSchema = z
       .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
     totalEur: z.number().finite().optional(),
     warnings: z.array(nonEmptyMessageSchema).max(20),
-    mustBeUncertain: z.array(z.string().trim().min(1).max(64)).max(20).optional(),
+    /**
+     * Which rows must come back marked doubtful, named by ticker or — on a value-only
+     * screen that prints none (#1325) — by name, hence the wider bound of the two.
+     */
+    mustBeUncertain: z.array(z.string().trim().min(1).max(240)).max(20).optional(),
     warningIncludes: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
   })
   .strict();

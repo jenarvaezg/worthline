@@ -8,7 +8,10 @@ import {
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
 import { isVisionAttachment, readAttachmentTurn } from "@web/asistente/attachment-turn";
-import { UNIDENTIFIED_DOCUMENT_MESSAGE } from "@web/asistente/attachment-types";
+import {
+  EMPTY_READING_MESSAGE,
+  UNIDENTIFIED_DOCUMENT_MESSAGE,
+} from "@web/asistente/attachment-types";
 import { chatAsOf } from "@web/asistente/chat-clock";
 import {
   correctFabricatedProposalClaims,
@@ -329,13 +332,25 @@ function previewWithoutModelTurn(
   unstructured: UnstructuredAttachment | null,
 ): AttachmentPreviewData {
   if (!unstructured) return preview;
+  // Which dead end, though: an `empty_reading` capture is described too now (#1246), and
+  // telling that user «no reconozco ninguno de los documentos que sé leer» would deny a
+  // document the seam DID identify. The verdict is preserved and only the promise of a
+  // conversation is withdrawn.
+  const emptyReading =
+    preview.result.status === "unrecognized" && preview.result.reason === "empty_reading";
   return {
     fileName: preview.fileName,
-    result: {
-      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
-      reason: "unidentified_document",
-      status: "unrecognized",
-    },
+    result: emptyReading
+      ? {
+          message: EMPTY_READING_MESSAGE,
+          reason: "empty_reading",
+          status: "unrecognized",
+        }
+      : {
+          message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+          reason: "unidentified_document",
+          status: "unrecognized",
+        },
   };
 }
 

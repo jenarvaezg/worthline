@@ -19,6 +19,7 @@ import {
   parseExtractionResult,
 } from "@web/asistente/attachment-extraction-contract";
 import {
+  UNSTRUCTURED_EMPTY_READING_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
@@ -1081,8 +1082,8 @@ describe("POST /api/chat", () => {
       expect(describeVisionAttachment).not.toHaveBeenCalled();
     });
 
-    it("never pays the second call for a document read with no rows", async () => {
-      const model = simpleAnswerModel("Reconozco el listado pero está vacío.");
+    it("describes a document read with no rows too, end to end (#1246)", async () => {
+      const model = simpleAnswerModel("Tu cartera suma 1.413,63 € en dos fondos.");
       vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
       vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
         parseExtractionResult({
@@ -1092,12 +1093,20 @@ describe("POST /api/chat", () => {
           status: "unrecognized",
         }),
       );
+      vi.mocked(describeVisionAttachment).mockResolvedValue(
+        "Cartera con dos fondos y un total de 1.413,63 €.",
+      );
 
-      await POST(imageAttachmentRequest());
+      const streamed = await (await POST(imageAttachmentRequest())).text();
 
-      // «Identificado pero vacío» is not the drain: the document WAS recognized.
-      expect(describeVisionAttachment).not.toHaveBeenCalled();
-      expect(turnsOf(model.doStreamCalls[0]!)).toContain("ADJUNTO NO PROCESADO");
+      // «Identificado pero vacío» used to die on the card with the model holding only a
+      // verdict. It now travels the same unstructured lane, with the same defenses.
+      expect(describeVisionAttachment).toHaveBeenCalledTimes(1);
+      const turns = turnsOf(model.doStreamCalls[0]!);
+      expect(turns).toContain("ADJUNTO NO ESTRUCTURADO");
+      expect(turns).toContain("1.413,63");
+      expect(turns).not.toContain("ADJUNTO NO PROCESADO");
+      expect(streamed).toContain(UNSTRUCTURED_EMPTY_READING_MESSAGE.slice(0, 40));
     });
 
     it("never sends a spreadsheet to the vision reader", async () => {
@@ -1172,6 +1181,33 @@ describe("POST /api/chat", () => {
       expect(streamed).toContain("No reconozco en este archivo");
       // The description never leaks into the card either.
       expect(streamed).not.toContain("Una pantalla con cifras");
+    });
+
+    it("keeps that dead-end card honest about a document it DID identify (#1246)", async () => {
+      const model = simpleAnswerModel("no debe llamarse");
+      vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+      vi.mocked(readProviderCooldowns).mockResolvedValue({
+        mode: "hosted",
+        deploymentKey: "preview-959",
+        cooldowns: [{ provider: "google", cooldownUntil: "2999-01-01T00:00:00.000Z" }],
+      });
+      vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
+        message: "no he podido leer ninguna fila",
+        reason: "empty_reading",
+        status: "unrecognized",
+      });
+      vi.mocked(describeVisionAttachment).mockResolvedValue(
+        "Una cartera con dos fondos.",
+      );
+
+      const streamed = await (await POST(imageAttachmentRequest())).text();
+
+      expect(model.doStreamCalls).toHaveLength(0);
+      // The promise of a commentary is withdrawn; the verdict is not rewritten into
+      // «no reconozco ningún documento», which this capture would contradict.
+      expect(streamed).toContain("Reconozco el documento");
+      expect(streamed).not.toContain("No reconozco en este archivo");
+      expect(streamed).not.toContain("Una cartera con dos fondos");
     });
 
     it("closes the unvalidated-evidence gate in the very turn it describes", async () => {
@@ -2156,15 +2192,51 @@ describe("POST /api/chat · vision-call fuse (#1258)", () => {
       dbUrl: "libsql://wl-premium.turso.io",
       token: "token-premium",
     });
+    // A document the seam READ is the one-call case. It used to be «identified and
+    // empty», which now pays for its description too (the case below).
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      parseExtractionResult({
+        data: {
+          documentType: "positions",
+          positions: [
+            {
+              currency: "EUR",
+              marketValueEur: 50,
+              name: "Acme",
+              ticker: "ACME",
+              units: 2,
+            },
+          ],
+          warnings: [],
+        },
+        status: "valid",
+      }),
+    );
+
+    await (await POST(imageAttachmentRequest())).text();
+
+    expect(recordVisionCalls).toHaveBeenCalledWith("ws:ws-premium", expect.anything(), 1);
+    expect(describeVisionAttachment).not.toHaveBeenCalled();
+  });
+
+  it("charges the empty reading its two calls, description included (#1246)", async () => {
+    vi.mocked(readStoreTarget).mockResolvedValue({
+      kind: "authenticated",
+      workspaceId: "ws-premium",
+      dbUrl: "libsql://wl-premium.turso.io",
+      token: "token-premium",
+    });
     vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
       message: "no he podido leer ninguna fila",
       reason: "empty_reading",
       status: "unrecognized",
     });
+    vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una cartera.");
 
     await (await POST(imageAttachmentRequest())).text();
 
-    expect(recordVisionCalls).toHaveBeenCalledWith("ws:ws-premium", expect.anything(), 1);
+    // The widened drain is not free, and the fuse has to see what it cost.
+    expect(recordVisionCalls).toHaveBeenCalledWith("ws:ws-premium", expect.anything(), 2);
   });
 
   it("charges nothing for a spreadsheet, which never reaches a vision model", async () => {

@@ -28,14 +28,30 @@ function warningMatches(fragment: string, warnings: readonly string[]): boolean 
   return warnings.some((warning) => normalizeText(warning).includes(needle));
 }
 
+/**
+ * An optional field grades on BOTH sides at once (#1325): a fixture that states a ticker
+ * fails a reading that omitted it, and a fixture that omits one fails a reading that
+ * invented it. Anything looser would grade the value-only row — the reason the contract
+ * widened — as «whatever came back».
+ */
+function optionalTextMatches(actual?: string, expected?: string): boolean {
+  if (actual === undefined || expected === undefined) return actual === expected;
+  return normalizeText(actual) === normalizeText(expected);
+}
+
+function optionalNumbersClose(actual?: number, expected?: number): boolean {
+  if (actual === undefined || expected === undefined) return actual === expected;
+  return numbersClose(actual, expected);
+}
+
 function positionMatches(
   actual: GoldenExpectedPositive["positions"][number],
   expected: GoldenExpectedPositive["positions"][number],
 ): boolean {
   return (
-    normalizeText(actual.ticker) === normalizeText(expected.ticker) &&
+    optionalTextMatches(actual.ticker, expected.ticker) &&
     normalizeText(actual.name) === normalizeText(expected.name) &&
-    numbersClose(actual.units, expected.units) &&
+    optionalNumbersClose(actual.units, expected.units) &&
     numbersClose(actual.marketValueEur, expected.marketValueEur) &&
     actual.currency === expected.currency &&
     (expected.uncertain === undefined || actual.uncertain === expected.uncertain)
@@ -72,7 +88,12 @@ function describeUnexpectedRecognition(result: AttachmentExtractionResult): stri
   const positions = result.data.positions;
   const listed = positions
     .slice(0, MAX_LISTED_HALLUCINATED_POSITIONS)
-    .map((position) => `${position.ticker} ×${position.units}`)
+    // A value-only invention is named by what it DID carry (#1325); printing
+    // «undefined ×undefined» would hide which row the model made up.
+    .map(
+      (position) =>
+        `${position.ticker ?? position.name} ×${position.units ?? "sin unidades"}`,
+    )
     .join(", ");
   const rest = positions.length - MAX_LISTED_HALLUCINATED_POSITIONS;
   const suffix = rest > 0 ? ` y ${rest} más` : "";
@@ -137,10 +158,13 @@ export function gradeExtractionAgainstExpected(
     name: "uncertain visible",
     pass:
       mustBeUncertain.length === 0 ||
-      mustBeUncertain.every((ticker) =>
+      // A fixture names the doubtful row by its ticker or, on a value-only screen that
+      // prints none (#1325), by its name — the only key such a row has.
+      mustBeUncertain.every((key) =>
         data.positions.some(
           (position) =>
-            normalizeText(position.ticker) === normalizeText(ticker) &&
+            (optionalTextMatches(position.ticker, key) ||
+              normalizeText(position.name) === normalizeText(key)) &&
             position.uncertain === true,
         ),
       ),
