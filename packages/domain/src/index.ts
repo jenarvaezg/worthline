@@ -600,6 +600,7 @@ export {
   assertMinorInteger,
   formatMoneyInput,
   formatMoneyMinor,
+  formatMoneyMinorExact,
   formatMoneyMinorPrivacy,
   maskMoneyString,
   money,

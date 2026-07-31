@@ -225,10 +225,11 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
     expect(resolved.error).toMatch(/precio por unidad/);
   });
 
-  test("a commission bigger than the balance is a cost, not an impossibility (#1329)", () => {
+  test("a commission bigger than the balance applies, but WARNS (#1329)", () => {
     // Under the balance reading there is no arithmetic to break: the position is
-    // worth what the user says it is worth, and an outsized fee simply lands in
-    // the cost basis, where the return reports it as the loss it is.
+    // worth what the user says it is worth, and an outsized fee lands in the cost
+    // basis. The old rejection still caught a euros-for-cents transcription
+    // though, so the tripwire survives as a warning instead of a refusal.
     const resolved = resolveHoldingCreationOpening(
       { feesMinor: 600_00, openingValueMinor: 574_48 },
       { allowValueOnly: true },
@@ -238,6 +239,34 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
       ok: true,
       opening: { feesMinor: 600_00, units: "1", valueMinor: 574_48 },
     });
+    if (!resolved.ok) return;
+    expect(resolved.mismatchWarning).toMatch(/comisión/i);
+    expect(resolved.mismatchWarning).toMatch(/céntimos/i);
+  });
+
+  test("the same sentence with a symbol keeps the balance whole too (#1329)", () => {
+    // The symbol-ful path arrives here with the quote already in `pricePerUnit`.
+    // Netting the fee out would make «tengo 574,48 €» mean 573,48 € only because
+    // the alta had a symbol — the inconsistency the balance decision exists to end.
+    const resolved = resolveHoldingCreationOpening(
+      { feesMinor: 1_00, openingValueMinor: 574_48, pricePerUnit: "11.90" },
+      { valueIsBalance: true },
+    );
+
+    expect(resolved).toMatchObject({
+      ok: true,
+      opening: { feesMinor: 1_00, valueMinor: 574_48 },
+    });
+  });
+
+  test("an ORDER still derives its units net of the commission (#1315)", () => {
+    const resolved = resolveHoldingCreationOpening({
+      feesMinor: 1_00,
+      openingValueMinor: 574_48,
+      pricePerUnit: "11.90",
+    });
+
+    expect(resolved).toMatchObject({ ok: true, opening: { valueMinor: 573_48 } });
   });
 });
 

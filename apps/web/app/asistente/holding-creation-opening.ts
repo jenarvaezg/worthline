@@ -37,7 +37,11 @@
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import type { InvestmentHoldingCreationPlan } from "@worthline/db";
-import { type DecimalString, multiplyToMinor } from "@worthline/domain";
+import {
+  type DecimalString,
+  formatMoneyMinorExact,
+  multiplyToMinor,
+} from "@worthline/domain";
 
 export type OpeningPlan = NonNullable<InvestmentHoldingCreationPlan["opening"]>;
 
@@ -56,11 +60,20 @@ export interface OpeningDeclaration {
 export interface OpeningResolutionOptions {
   /**
    * Whether a value-only declaration (amount, no price, no units) may resolve as
-   * 1 participación × net value (#1325). The builder passes `true` only for an
-   * alta WITHOUT `providerSymbol` — with one, a real quote would revalue the fake
-   * unit to a single share's NAV, so the units must come from that quote instead.
+   * 1 participación × the declared value (#1325). The builder passes `true` only
+   * for an alta WITHOUT `providerSymbol` — with one, a real quote would revalue
+   * the fake unit to a single share's NAV, so the units must come from that quote
+   * instead.
    */
   allowValueOnly?: boolean;
+  /**
+   * Whether `openingValueMinor` is a BALANCE («tengo 574,48 € hoy») rather than an
+   * order's cash out (#1329). The builder sets it for the symbol-ful value-only
+   * alta, where it filled `pricePerUnit` from a live quote: the user declared the
+   * same sentence as the symbol-less case, so the commission must not shrink the
+   * figure in one and not the other.
+   */
+  valueIsBalance?: boolean;
 }
 
 export type OpeningResolution =
@@ -91,12 +104,7 @@ const RECONCILIATION_TOLERANCE_MINOR = 1;
 
 /** Cents-precise es-ES euros: a commission of 1,00 € may not read as «1 €». */
 function euros(amountMinor: number): string {
-  return new Intl.NumberFormat("es-ES", {
-    currency: "EUR",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
-  }).format(amountMinor / 100);
+  return formatMoneyMinorExact({ amountMinor, currency: "EUR" });
 }
 
 function positiveDecimal(raw: string): DecimalString | null {
@@ -188,6 +196,7 @@ export function resolveHoldingCreationOpening(
         ...(fees === undefined ? {} : { feesMinor: fees }),
       },
       valueOnly: true,
+      ...oversizedFeeWarning(openingValueMinor, fees),
     };
   }
 
@@ -224,10 +233,14 @@ export function resolveHoldingCreationOpening(
     };
   }
 
-  // No units declared: derive them from the cash amount NET of the commission, the
-  // same invariant read backwards, so the fee stops inflating the unit count.
+  // No units declared: derive them from the cash amount. For an ORDER the amount
+  // includes the commission, so the derivation nets it out and the fee stops
+  // inflating the unit count. For a BALANCE (the symbol-ful value-only alta, whose
+  // price the builder filled from a live quote) it does not: the same sentence must
+  // not mean 574,48 € without a symbol and 573,48 € with one (#1329).
   if (openingValueMinor === undefined) return { ok: false, error: MISSING_VALUE };
-  const netMinor = openingValueMinor - (fees ?? 0);
+  const netMinor =
+    options.valueIsBalance === true ? openingValueMinor : openingValueMinor - (fees ?? 0);
   if (netMinor <= 0) {
     return {
       ok: false,
@@ -250,6 +263,26 @@ export function resolveHoldingCreationOpening(
       valueMinor: netMinor,
       ...(fees === undefined ? {} : { feesMinor: fees }),
     },
+    ...(options.valueIsBalance === true
+      ? oversizedFeeWarning(openingValueMinor, fees)
+      : {}),
+  };
+}
+
+/**
+ * The tripwire the balance reading would otherwise lose (#1329): under the order
+ * reading a commission ≥ the amount was arithmetically impossible and got
+ * rejected, which is what caught a euros-for-cents transcription («600» read as
+ * 600,00 € next to a 574,48 € balance). A balance cannot be contradicted by a
+ * fee, so the alta APPLIES — but it says so, the same way a mismatch does.
+ */
+function oversizedFeeWarning(
+  valueMinor: number,
+  fees: number | undefined,
+): { mismatchWarning?: string } {
+  if (fees === undefined || fees < valueMinor) return {};
+  return {
+    mismatchWarning: `La comisión (${euros(fees)}) iguala o supera el valor declarado (${euros(valueMinor)}). Doy de alta las dos cifras tal cual, pero comprueba si la comisión venía en céntimos.`,
   };
 }
 

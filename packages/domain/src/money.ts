@@ -78,6 +78,21 @@ export function formatMoneyMinor(value: MoneyMinor): string {
 }
 
 /**
+ * Cents-precise es-ES money, for the figures a user is asked to CHECK against a
+ * document: a commission of 1,00 € may not read as «1 €», and a guard comparing
+ * 574,48 € with 11,90 € cannot round either side (#1315, #1329). Display figures
+ * keep using {@link formatMoneyMinor} — whole euros are the app's reading voice.
+ */
+export function formatMoneyMinorExact(value: MoneyMinor): string {
+  return new Intl.NumberFormat("es-ES", {
+    currency: value.currency,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: "currency",
+  }).format(value.amountMinor / 100);
+}
+
+/**
  * Classify a money value's sign so the UI can color gains/losses without
  * re-deriving the rule in place. Color must never be the only signal — pair it
  * with the minus sign that formatMoneyMinor already renders for negatives.

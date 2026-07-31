@@ -3,18 +3,25 @@
  * into prose (#1329). Four surfaces kept their own copy of this switch (the
  * investment editor's rejection message, the wizard's symbol search, the
  * advanced-alta table, the chat alta's quote provenance), so a fifth caller was
- * the moment to make it shared. The key itself is the fallback: an unknown
- * source prints honestly rather than as an empty label.
+ * the moment to make it shared.
+ *
+ * Keyed on the domain union rather than `string`, so adding a source breaks the
+ * build here instead of silently printing its raw key at the user.
  */
 
-const LABELS: Record<string, string> = {
+import type { PriceSource } from "@worthline/domain";
+
+const LABELS: Record<PriceSource, string> = {
+  binance: "Binance",
   coingecko: "CoinGecko",
   ecb: "BCE",
   finect: "Finect",
+  manual: "Manual",
+  numista: "Numista",
   stooq: "Stooq",
   yahoo: "Yahoo Finance",
 };
 
-export function priceSourceLabel(source: string): string {
-  return LABELS[source] ?? source;
+export function priceSourceLabel(source: PriceSource): string {
+  return LABELS[source];
 }

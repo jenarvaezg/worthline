@@ -20,7 +20,7 @@
  */
 
 import type { DecimalString, InvestmentOperation } from "@worthline/domain";
-import { multiplyToMinor } from "@worthline/domain";
+import { formatMoneyMinorExact, multiplyToMinor } from "@worthline/domain";
 
 export interface ValueOnlyOpening {
   /** The single participación's price — which IS the declared total value. */
@@ -52,17 +52,12 @@ export function detectValueOnlyOpening(
 }
 
 /**
- * Cents-precise es-ES euros: this guard exists to compare two figures, and
- * `formatMoneyMinor`'s whole-euro rounding would print «574 € → 12 €» — close
- * enough to read as an approximation of the same number.
+ * Cents-precise: this guard exists to compare two figures, and whole-euro
+ * rounding would print «574 € → 12 €» — close enough to read as an
+ * approximation of the same number.
  */
 function euros(amountMinor: number): string {
-  return new Intl.NumberFormat("es-ES", {
-    currency: "EUR",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
-  }).format(amountMinor / 100);
+  return formatMoneyMinorExact({ amountMinor, currency: "EUR" });
 }
 
 /** The es-ES label of the acknowledgement checkbox — quoted inside the guard. */

@@ -279,7 +279,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
 
   test("blank-string optionals from the model do not re-open the dead end", async () => {
     const store = await seedWorkspace();
-    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" }));
+    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" as const }));
     const built = await buildHoldingCreationProposal(
       store,
       {
@@ -316,7 +316,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
         providerSymbol: "microcoin",
       },
       TODAY,
-      async () => ({ pricePerUnit: "1.2e-8", source: "coingecko" }),
+      async () => ({ pricePerUnit: "1.2e-8", source: "coingecko" as const }),
     );
     expect(built.ok).toBe(false);
     if (built.ok) return;
@@ -329,7 +329,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
     const quote = vi.fn(async () => ({
       priceDate: "2026-07-24",
       pricePerUnit: "150",
-      source: "yahoo",
+      source: "yahoo" as const,
     }));
     const built = await buildHoldingCreationProposal(
       store,
@@ -368,7 +368,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
         providerSymbol: "VUSA.L",
       },
       TODAY,
-      async () => ({ pricePerUnit: "150", source: "stooq" }),
+      async () => ({ pricePerUnit: "150", source: "stooq" as const }),
     );
     expect(built.ok).toBe(true);
     if (!built.ok) return;
@@ -420,7 +420,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
 
   test("a declared price never triggers the live quote", async () => {
     const store = await seedWorkspace();
-    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" }));
+    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" as const }));
     const built = await buildHoldingCreationProposal(
       store,
       {

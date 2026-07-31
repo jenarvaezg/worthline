@@ -26,6 +26,7 @@ import {
   type MatchCandidateRow,
   type MatchPortfolioHolding,
   matchHoldings,
+  type PriceSource,
   reassignToNew,
 } from "@worthline/domain";
 import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
@@ -117,6 +118,12 @@ function isPositiveMinor(value: number | undefined): value is number {
 function buildPlan(
   args: HoldingCreationArgs,
   ownership: HoldingCreationPlan["ownership"],
+  /**
+   * The declared amount is a BALANCE, not an order's cash: set when this builder
+   * filled `pricePerUnit` from a live quote for a value-only alta (#1329), so the
+   * commission does not shrink the figure the user read off the statement.
+   */
+  valueIsBalance = false,
 ):
   | {
       ok: true;
@@ -221,7 +228,7 @@ function buildPlan(
     },
     // Value-only resolves as 1 participación × valor only without a symbol
     // (#1325): with one, a live quote derives the units upstream instead.
-    { allowValueOnly: base.providerSymbol === undefined },
+    { allowValueOnly: base.providerSymbol === undefined, valueIsBalance },
   );
   if (!resolved.ok) return resolved;
   if (resolved.opening === null) return { ok: true, plan: base };
@@ -352,7 +359,7 @@ export interface LiveUnitQuote {
   /** Decimal string, the provider's reported unit price in EUR. */
   pricePerUnit: string;
   /** Who actually delivered it, fallback-aware (`yahoo`, `stooq`, …). */
-  source: string;
+  source: PriceSource;
   /** The provider's own as-of date (YYYY-MM-DD), when it gave one. */
   priceDate?: string;
 }
@@ -495,6 +502,8 @@ export async function buildHoldingCreationProposal(
 
   let effectiveArgs = args;
   let quoteNote: string | undefined;
+  // The declared amount is a balance the quote turns into units, not order cash.
+  let valueIsBalance = false;
   const parsedInstrument = parseInstrument(args.instrument);
   if (needsLiveQuote(args, parsedInstrument)) {
     const symbol = (args.providerSymbol ?? "").trim();
@@ -516,9 +525,10 @@ export async function buildHoldingCreationProposal(
     effectiveArgs = { ...args, pricePerUnit: usable };
     // `quoted` is non-null here: `usable` derives from it.
     quoteNote = quoteProvenanceNote(quoted as LiveUnitQuote);
+    valueIsBalance = true;
   }
 
-  const built = buildPlan(effectiveArgs, ownership);
+  const built = buildPlan(effectiveArgs, ownership, valueIsBalance);
   if (!built.ok) return built;
   const plan = built.plan;
 
