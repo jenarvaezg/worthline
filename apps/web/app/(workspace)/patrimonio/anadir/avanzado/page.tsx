@@ -10,6 +10,7 @@ import {
 import SymbolSearch from "@web/patrimonio/anadir/symbol-search";
 import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
+import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
 import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
 import Link from "next/link";
@@ -80,13 +81,6 @@ const METHOD_LABEL: Record<ValuationMethod, string> = {
   appreciating: "Revalorización + tasaciones",
   amortized: "Amortización francesa",
   anchored: "Saldos declarados",
-};
-
-const PROVIDER_LABEL: Record<string, string> = {
-  yahoo: "Yahoo Finance",
-  stooq: "Stooq",
-  finect: "Finect",
-  coingecko: "CoinGecko",
 };
 
 interface Placeholders {
@@ -326,9 +320,7 @@ function InstrumentPane({
           <div>
             <dt>Proveedor de precios</dt>
             <dd>
-              {defaults.priceProvider
-                ? (PROVIDER_LABEL[defaults.priceProvider] ?? defaults.priceProvider)
-                : "—"}
+              {defaults.priceProvider ? priceSourceLabel(defaults.priceProvider) : "—"}
             </dd>
           </div>
         </dl>

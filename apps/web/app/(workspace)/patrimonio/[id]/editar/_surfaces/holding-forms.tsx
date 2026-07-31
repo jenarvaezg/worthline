@@ -16,6 +16,11 @@ import {
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
 } from "@web/patrimonio/actions";
+import {
+  VALUE_ONLY_ACK_LABEL,
+  type ValueOnlyOpening,
+  valueOnlySymbolFormNotice,
+} from "@web/patrimonio/value-only-opening";
 import { PendingSubmit } from "@web/pending-submit";
 import type { InvestmentAssetFull } from "@worthline/db";
 import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
@@ -36,6 +41,7 @@ export function AssetEditForm({
   privacyMode,
   scopeMemberId,
   updateInvestmentAction,
+  valueOnlyOpening = null,
   values,
 }: {
   asset: ManualAsset;
@@ -51,6 +57,12 @@ export function AssetEditForm({
   privacyMode: boolean;
   scopeMemberId: string | undefined;
   updateInvestmentAction?: FormAction;
+  /**
+   * Set when this investment's whole position is the 1-participación «alta por
+   * valor total» and it still has no symbol (#1329) — the one state where
+   * assigning one silently trades the declared value for a single share's quote.
+   */
+  valueOnlyOpening?: ValueOnlyOpening | null;
   values: Record<string, string>;
 }) {
   const isInvestment = asset.type === "investment";
@@ -149,6 +161,23 @@ export function AssetEditForm({
               name="providerSymbol"
             />
           </label>
+
+          {/* #1329: la posición nacida «por valor total» avisa ANTES de que el
+              símbolo entregue la valoración a la cotización, y ofrece la única
+              salida honesta que no es corregir la apertura. */}
+          {valueOnlyOpening ? (
+            <div className="warningBand">
+              <span>{valueOnlySymbolFormNotice(valueOnlyOpening)}</span>
+              <label className="checkLine">
+                <input
+                  defaultChecked={values["valueOnlySymbolAck"] === "on"}
+                  name="valueOnlySymbolAck"
+                  type="checkbox"
+                />{" "}
+                {VALUE_ONLY_ACK_LABEL}: guardar el símbolo sin tocar los títulos.
+              </label>
+            </div>
+          ) : null}
 
           <label>
             ISIN <small>(opcional)</small>

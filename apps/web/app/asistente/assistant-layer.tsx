@@ -330,6 +330,12 @@ function HoldingCreationProposalCard({
           </span>
         </li>
       </ul>
+      {/* La procedencia de la cotización que mintió los títulos (#1329): dato de
+          auditoría, no aviso — el usuario decide si un cierre de hace días le
+          vale para dar de alta la posición. */}
+      {proposal.openingQuoteNote ? (
+        <p className="assistantQuoteNote">{proposal.openingQuoteNote}</p>
+      ) : null}
       {proposal.openingMismatchWarning ? (
         <p className="assistantWarning">{proposal.openingMismatchWarning}</p>
       ) : null}

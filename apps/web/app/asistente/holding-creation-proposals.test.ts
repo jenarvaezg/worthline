@@ -279,7 +279,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
 
   test("blank-string optionals from the model do not re-open the dead end", async () => {
     const store = await seedWorkspace();
-    const quote = vi.fn(async () => "999");
+    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" as const }));
     const built = await buildHoldingCreationProposal(
       store,
       {
@@ -316,7 +316,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
         providerSymbol: "microcoin",
       },
       TODAY,
-      async () => "1.2e-8",
+      async () => ({ pricePerUnit: "1.2e-8", source: "coingecko" as const }),
     );
     expect(built.ok).toBe(false);
     if (built.ok) return;
@@ -326,7 +326,11 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
 
   test("value-only with a symbol derives the units from the live quote", async () => {
     const store = await seedWorkspace();
-    const quote = vi.fn(async () => "150");
+    const quote = vi.fn(async () => ({
+      priceDate: "2026-07-24",
+      pricePerUnit: "150",
+      source: "yahoo" as const,
+    }));
     const built = await buildHoldingCreationProposal(
       store,
       {
@@ -345,6 +349,51 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
     expect(built.proposal.impact.deltaMinor).toBe(1_500_00);
     expect(built.proposal.holding.opening?.units).toBe("10");
     expect(built.proposal.openingMismatchWarning).toBeUndefined();
+    // #1329: los títulos son del proveedor y de SU fecha, no de «ahora mismo».
+    expect(built.proposal.openingQuoteNote).toBe(
+      "Títulos derivados de la cotización de Yahoo Finance del 24/07/2026.",
+    );
+    store.close();
+  });
+
+  test("a quote with no provider date says so instead of stamping today (#1329)", async () => {
+    const store = await seedWorkspace();
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "etf",
+        name: "Vanguard S&P 500",
+        openingValueMinor: 1_500_00,
+        providerSymbol: "VUSA.L",
+      },
+      TODAY,
+      async () => ({ pricePerUnit: "150", source: "stooq" as const }),
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.openingQuoteNote).toBe(
+      "Títulos derivados de la cotización de Stooq sin fecha del proveedor.",
+    );
+    store.close();
+  });
+
+  test("units from the document carry no quote provenance (#1329)", async () => {
+    const store = await seedWorkspace();
+    const built = await buildHoldingCreationProposal(
+      store,
+      {
+        family: "investment",
+        instrument: "fund",
+        name: "Fondo del documento",
+        pricePerUnit: "54,545",
+        units: "3",
+      },
+      TODAY,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.proposal.openingQuoteNote).toBeUndefined();
     store.close();
   });
 
@@ -371,7 +420,7 @@ describe("buildHoldingCreationProposal (#1325) · alta por valor total", () => {
 
   test("a declared price never triggers the live quote", async () => {
     const store = await seedWorkspace();
-    const quote = vi.fn(async () => "999");
+    const quote = vi.fn(async () => ({ pricePerUnit: "999", source: "yahoo" as const }));
     const built = await buildHoldingCreationProposal(
       store,
       {

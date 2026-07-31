@@ -15,7 +15,7 @@
  *
  * A VALUE-ONLY declaration (#1325) — «tengo 574,48 € en este fondo», no units, no
  * NAV, the one thing a managed-portfolio statement states per fund — resolves as
- * **1 participación × the net value**, the same encoding a wizard user reaches by
+ * **1 participación × the declared value**, the same encoding a wizard user reaches by
  * typing the total as the price (ADR 0006: an investment is always units × price,
  * so updating the value later is editing that price). It is gated by the CALLER on
  * the alta having no `providerSymbol`: the moment a real quote can arrive, the fake
@@ -37,7 +37,11 @@
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
 import type { InvestmentHoldingCreationPlan } from "@worthline/db";
-import { type DecimalString, multiplyToMinor } from "@worthline/domain";
+import {
+  type DecimalString,
+  formatMoneyMinorExact,
+  multiplyToMinor,
+} from "@worthline/domain";
 
 export type OpeningPlan = NonNullable<InvestmentHoldingCreationPlan["opening"]>;
 
@@ -56,11 +60,20 @@ export interface OpeningDeclaration {
 export interface OpeningResolutionOptions {
   /**
    * Whether a value-only declaration (amount, no price, no units) may resolve as
-   * 1 participación × net value (#1325). The builder passes `true` only for an
-   * alta WITHOUT `providerSymbol` — with one, a real quote would revalue the fake
-   * unit to a single share's NAV, so the units must come from that quote instead.
+   * 1 participación × the declared value (#1325). The builder passes `true` only
+   * for an alta WITHOUT `providerSymbol` — with one, a real quote would revalue
+   * the fake unit to a single share's NAV, so the units must come from that quote
+   * instead.
    */
   allowValueOnly?: boolean;
+  /**
+   * Whether `openingValueMinor` is a BALANCE («tengo 574,48 € hoy») rather than an
+   * order's cash out (#1329). The builder sets it for the symbol-ful value-only
+   * alta, where it filled `pricePerUnit` from a live quote: the user declared the
+   * same sentence as the symbol-less case, so the commission must not shrink the
+   * figure in one and not the other.
+   */
+  valueIsBalance?: boolean;
 }
 
 export type OpeningResolution =
@@ -91,12 +104,7 @@ const RECONCILIATION_TOLERANCE_MINOR = 1;
 
 /** Cents-precise es-ES euros: a commission of 1,00 € may not read as «1 €». */
 function euros(amountMinor: number): string {
-  return new Intl.NumberFormat("es-ES", {
-    currency: "EUR",
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency",
-  }).format(amountMinor / 100);
+  return formatMoneyMinorExact({ amountMinor, currency: "EUR" });
 }
 
 function positiveDecimal(raw: string): DecimalString | null {
@@ -154,35 +162,41 @@ export function resolveHoldingCreationOpening(
   const fees = feesMinor !== undefined && feesMinor > 0 ? feesMinor : undefined;
 
   // Value-only (#1325): nothing but the cash amount (and maybe a commission) was
-  // declared, and the caller allows it — 1 participación at the net value. Gated
-  // on `pricePerUnit === undefined`, not on it failing to parse: a declared price
-  // that does not read is a transcription problem to surface, never to paper over.
+  // declared, and the caller allows it — 1 participación at the declared value.
+  // Gated on `pricePerUnit === undefined`, not on it failing to parse: a declared
+  // price that does not read is a transcription problem to surface, never to
+  // paper over.
+  //
+  // The commission does NOT come off the value here (#1329, the explicit decision
+  // the #1328 review asked for), and this is the ONE branch where it doesn't. The
+  // other branches read an ORDER — «pagué 164,64 € por 3 títulos» — where the cash
+  // out includes the fee, so the position is worth the amount net of it. A
+  // value-only declaration is a BALANCE: «tengo 574,48 € hoy en este fondo», a
+  // figure the user is reading off a statement, and any commission was already
+  // paid before that number existed. Carving it out would make the app disagree
+  // with the document by a euro — the worst possible lie, because it is small
+  // enough to look like the app's own arithmetic. The fee still rides on the
+  // operation, so the cost basis (units × price + fees) keeps it and the return
+  // shows the euro as what it is: a cost, not a shrunken position.
   if (
     options.allowValueOnly === true &&
     pricePerUnit === undefined &&
     units === undefined &&
     openingValueMinor !== undefined
   ) {
-    const netMinor = openingValueMinor - (fees ?? 0);
-    if (netMinor <= 0) {
-      return {
-        ok: false,
-        error:
-          "La comisión no puede igualar ni superar el importe de la apertura: comprueba las dos cifras.",
-      };
-    }
-    const valueAsPrice = positiveDecimal((netMinor / 100).toString());
-    // Unreachable with a validated positive net, but never assume a parse.
+    const valueAsPrice = positiveDecimal((openingValueMinor / 100).toString());
+    // Unreachable with a validated positive amount, but never assume a parse.
     if (valueAsPrice === null) return { ok: false, error: MISSING_VALUE };
     return {
       ok: true,
       opening: {
         pricePerUnit: valueAsPrice,
         units: "1",
-        valueMinor: netMinor,
+        valueMinor: openingValueMinor,
         ...(fees === undefined ? {} : { feesMinor: fees }),
       },
       valueOnly: true,
+      ...oversizedFeeWarning(openingValueMinor, fees),
     };
   }
 
@@ -219,10 +233,14 @@ export function resolveHoldingCreationOpening(
     };
   }
 
-  // No units declared: derive them from the cash amount NET of the commission, the
-  // same invariant read backwards, so the fee stops inflating the unit count.
+  // No units declared: derive them from the cash amount. For an ORDER the amount
+  // includes the commission, so the derivation nets it out and the fee stops
+  // inflating the unit count. For a BALANCE (the symbol-ful value-only alta, whose
+  // price the builder filled from a live quote) it does not: the same sentence must
+  // not mean 574,48 € without a symbol and 573,48 € with one (#1329).
   if (openingValueMinor === undefined) return { ok: false, error: MISSING_VALUE };
-  const netMinor = openingValueMinor - (fees ?? 0);
+  const netMinor =
+    options.valueIsBalance === true ? openingValueMinor : openingValueMinor - (fees ?? 0);
   if (netMinor <= 0) {
     return {
       ok: false,
@@ -245,6 +263,26 @@ export function resolveHoldingCreationOpening(
       valueMinor: netMinor,
       ...(fees === undefined ? {} : { feesMinor: fees }),
     },
+    ...(options.valueIsBalance === true
+      ? oversizedFeeWarning(openingValueMinor, fees)
+      : {}),
+  };
+}
+
+/**
+ * The tripwire the balance reading would otherwise lose (#1329): under the order
+ * reading a commission ≥ the amount was arithmetically impossible and got
+ * rejected, which is what caught a euros-for-cents transcription («600» read as
+ * 600,00 € next to a 574,48 € balance). A balance cannot be contradicted by a
+ * fee, so the alta APPLIES — but it says so, the same way a mismatch does.
+ */
+function oversizedFeeWarning(
+  valueMinor: number,
+  fees: number | undefined,
+): { mismatchWarning?: string } {
+  if (fees === undefined || fees < valueMinor) return {};
+  return {
+    mismatchWarning: `La comisión (${euros(fees)}) iguala o supera el valor declarado (${euros(valueMinor)}). Doy de alta las dos cifras tal cual, pero comprueba si la comisión venía en céntimos.`,
   };
 }
 

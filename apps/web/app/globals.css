@@ -8291,6 +8291,14 @@ td.rowActions > * {
   font-size: 0.88rem;
   color: var(--green);
 }
+/* La procedencia de una cotización (#1329) es dato, no aviso: muted y menor que
+   el cuerpo, nunca oro — el oro es para lo que el usuario debe decidir. */
+.assistantQuoteNote {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 /* Informative proposal warnings (aviso): oro, never red — red is movement/error,
    oro is caution (design-system §color). Used by the baja/restauración warnings
    (#1106): orphan debt↔asset pair, shared ownership, restore duplicate. */

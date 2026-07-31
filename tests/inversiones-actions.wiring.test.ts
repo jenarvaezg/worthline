@@ -236,3 +236,160 @@ describe("updateInvestmentAction wiring", () => {
     );
   });
 });
+
+// ===================================== the value-only opening guard (#1329) ==
+
+/**
+ * A holding born «por valor total» (#1325): its ENTIRE position is one
+ * participación priced at the whole declared value. Handing it a symbol makes
+ * the quote govern the valuation, so 574,48 € silently become one share.
+ */
+async function setupValueOnlyHolding(): Promise<void> {
+  await setupStoreWithInvestment();
+  await store.command.recordInvestmentOperation(
+    {
+      assetId: INVESTMENT_ID,
+      currency: "EUR",
+      executedAt: "2026-07-28",
+      feesMinor: 0,
+      id: "op_opening",
+      kind: "buy",
+      pricePerUnit: "574.48",
+      source: "opening",
+      units: "1",
+    },
+    { today: "2026-07-28" },
+  );
+}
+
+/** A Stooq CSV the pricing seam reads as a valid quote at `close`. */
+function stooqQuote(symbol: string, close: string): string {
+  return `Symbol,Date,Time,Open,High,Low,Close,Volume\n${symbol},2026-07-28,16:00:00,${close},${close},${close},${close},1000`;
+}
+
+function stubYahooMissStooqHit(close: string): void {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false } as Response)
+      .mockResolvedValue({
+        ok: true,
+        text: async () => stooqQuote("SAN", close),
+      } as unknown as Response),
+  );
+}
+
+describe("updateInvestmentAction · value-only opening guard (#1329)", () => {
+  test("assigning a symbol over the 1-participación alta is blocked, with both figures", async () => {
+    await setupValueOnlyHolding();
+    stubYahooMissStooqHit("11.90");
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          { name: "Index Fund", priceProvider: "yahoo", providerSymbol: "SAN.MC" },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    // Query-encoded spaces («+») and Intl's non-breaking ones both flatten here.
+    const message = decodeURIComponent(url).replace(/[+\s]/g, " ");
+    expect(url).toContain("error=");
+    expect(message).toContain("574,48 €");
+    expect(message).toContain("11,90 €");
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.providerSymbol,
+    ).toBeUndefined();
+  });
+
+  test("the acknowledgement («es una participación real») lets the save through", async () => {
+    await setupValueOnlyHolding();
+    stubYahooMissStooqHit("11.90");
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          {
+            name: "Index Fund",
+            priceProvider: "yahoo",
+            providerSymbol: "SAN.MC",
+            valueOnlySymbolAck: "on",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+    expect(
+      (await store.assets.readInvestmentAssetById(INVESTMENT_ID))?.providerSymbol,
+    ).toBe("SAN.MC");
+  });
+
+  test("a real ledger (units derived from a price) is never blocked", async () => {
+    await setupStoreWithInvestment();
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: INVESTMENT_ID,
+        currency: "EUR",
+        executedAt: "2026-07-28",
+        feesMinor: 0,
+        id: "op_opening",
+        kind: "buy",
+        pricePerUnit: "11.90",
+        source: "opening",
+        units: "48.275630",
+      },
+      { today: "2026-07-28" },
+    );
+    stubYahooMissStooqHit("11.90");
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          { name: "Index Fund", priceProvider: "yahoo", providerSymbol: "SAN.MC" },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+  });
+
+  test("editing a holding that ALREADY has the symbol is not the guard's business", async () => {
+    await setupValueOnlyHolding();
+    await store.assets.updateInvestmentAsset({
+      id: INVESTMENT_ID,
+      liquidityTier: "market",
+      name: "Index Fund",
+      priceProvider: "yahoo",
+      providerSymbol: "SAN.MC",
+    });
+    stubYahooMissStooqHit("11.90");
+
+    const url = await catchRedirect(() =>
+      updateInvestmentAction(
+        INVESTMENT_ID,
+        fd(
+          {
+            name: "Index Fund Renamed",
+            priceProvider: "yahoo",
+            providerSymbol: "SAN.MC",
+          },
+          "/inversiones",
+        ),
+        store,
+      ),
+    );
+
+    expect(url).toContain("ok=saved");
+  });
+});

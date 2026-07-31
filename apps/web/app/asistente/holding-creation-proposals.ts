@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { resolveOwnershipSplit } from "@web/intake";
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
+import { priceSourceLabel } from "@web/price-source-label";
 import type {
   AgentViewReadStore,
   AssistantProposalStore,
@@ -25,9 +26,10 @@ import {
   type MatchCandidateRow,
   type MatchPortfolioHolding,
   matchHoldings,
+  type PriceSource,
   reassignToNew,
 } from "@worthline/domain";
-import { fetchPriceNow, type RegisteredSource } from "@worthline/pricing";
+import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
 import { holdingCreationImpact } from "./holding-creation-impact";
 import {
   type OpeningCardBreakdown,
@@ -116,6 +118,12 @@ function isPositiveMinor(value: number | undefined): value is number {
 function buildPlan(
   args: HoldingCreationArgs,
   ownership: HoldingCreationPlan["ownership"],
+  /**
+   * The declared amount is a BALANCE, not an order's cash: set when this builder
+   * filled `pricePerUnit` from a live quote for a value-only alta (#1329), so the
+   * commission does not shrink the figure the user read off the statement.
+   */
+  valueIsBalance = false,
 ):
   | {
       ok: true;
@@ -220,7 +228,7 @@ function buildPlan(
     },
     // Value-only resolves as 1 participación × valor only without a symbol
     // (#1325): with one, a live quote derives the units upstream instead.
-    { allowValueOnly: base.providerSymbol === undefined },
+    { allowValueOnly: base.providerSymbol === undefined, valueIsBalance },
   );
   if (!resolved.ok) return resolved;
   if (resolved.opening === null) return { ok: true, plan: base };
@@ -340,22 +348,27 @@ function openingOf(plan: HoldingCreationPlan): OpeningCardBreakdown | undefined 
   return openingCardBreakdown(plan.opening);
 }
 
+/**
+ * A live quote WITH its provenance (#1329): who delivered it and the as-of date
+ * the provider itself stated. The units of a value-only alta are minted from
+ * this number, so the card has to be able to say where it came from — a Yahoo
+ * close can be days old, and «10 uds.» is not the same claim as «10 uds. según
+ * el cierre de Yahoo del 24/07».
+ */
+export interface LiveUnitQuote {
+  /** Decimal string, the provider's reported unit price in EUR. */
+  pricePerUnit: string;
+  /** Who actually delivered it, fallback-aware (`yahoo`, `stooq`, …). */
+  source: PriceSource;
+  /** The provider's own as-of date (YYYY-MM-DD), when it gave one. */
+  priceDate?: string;
+}
+
 /** Live unit price for a symbol-ful, value-only alta — or null when unquotable. */
 export type QuoteUnitPrice = (
   instrument: Instrument,
   symbol: string,
-) => Promise<string | null>;
-
-const REGISTERED_SOURCES: readonly RegisteredSource[] = [
-  "yahoo",
-  "stooq",
-  "coingecko",
-  "finect",
-];
-
-function isRegisteredSource(value: string | undefined): value is RegisteredSource {
-  return value !== undefined && (REGISTERED_SOURCES as readonly string[]).includes(value);
-}
+) => Promise<LiveUnitQuote | null>;
 
 /**
  * Ceiling for the live-quote round-trip: the fetch runs INSIDE the chat turn, and
@@ -375,7 +388,7 @@ const QUOTE_TIMEOUT_MS = 5_000;
 async function liveUnitPrice(
   instrument: Instrument,
   symbol: string,
-): Promise<string | null> {
+): Promise<LiveUnitQuote | null> {
   const provider = defaultsFor(instrument).priceProvider;
   if (!isRegisteredSource(provider)) return null;
   const fetched = await Promise.race([
@@ -393,7 +406,32 @@ async function liveUnitPrice(
   // and the guard belongs to this seam's contract, not to the current provider
   // list: finect stamps `currency: "EUR"` today without converting anything.
   if (fetched === null || fetched.currency !== "EUR") return null;
-  return fetched.price;
+  return {
+    pricePerUnit: fetched.price,
+    source: fetched.source,
+    ...(fetched.priceDate ? { priceDate: fetched.priceDate } : {}),
+  };
+}
+
+/**
+ * The provenance line for units minted from a live quote (#1329): which source
+ * delivered the price and the date IT claims for it. Without the date the card
+ * would imply «ahora mismo» for what can be a several-day-old close; without the
+ * source the user cannot tell a NAV from a market close. When the provider gives
+ * no date, say so — never stamp today's.
+ */
+function quoteProvenanceNote(quote: LiveUnitQuote): string {
+  const when = quote.priceDate
+    ? `del ${formatIsoDateEs(quote.priceDate)}`
+    : "sin fecha del proveedor";
+  return `Títulos derivados de la cotización de ${priceSourceLabel(quote.source)} ${when}.`;
+}
+
+/** YYYY-MM-DD → DD/MM/YYYY, leaving anything unexpected verbatim. */
+function formatIsoDateEs(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
 /**
@@ -463,13 +501,17 @@ export async function buildHoldingCreationProposal(
   });
 
   let effectiveArgs = args;
+  let quoteNote: string | undefined;
+  // The declared amount is a balance the quote turns into units, not order cash.
+  let valueIsBalance = false;
   const parsedInstrument = parseInstrument(args.instrument);
   if (needsLiveQuote(args, parsedInstrument)) {
     const symbol = (args.providerSymbol ?? "").trim();
     const quoted = await quoteUnitPrice(parsedInstrument, symbol);
     // A quote the resolver cannot read (CoinGecko can print 1.2e-8 for a
     // micro-priced coin) is as unusable as no quote at all — same honest exit.
-    const usable = quoted === null ? null : normalizeNonNegativeDecimalString(quoted);
+    const usable =
+      quoted === null ? null : normalizeNonNegativeDecimalString(quoted.pricePerUnit);
     if (usable === null || Number.parseFloat(usable) === 0) {
       return {
         ok: false,
@@ -481,9 +523,12 @@ export async function buildHoldingCreationProposal(
       };
     }
     effectiveArgs = { ...args, pricePerUnit: usable };
+    // `quoted` is non-null here: `usable` derives from it.
+    quoteNote = quoteProvenanceNote(quoted as LiveUnitQuote);
+    valueIsBalance = true;
   }
 
-  const built = buildPlan(effectiveArgs, ownership);
+  const built = buildPlan(effectiveArgs, ownership, valueIsBalance);
   if (!built.ok) return built;
   const plan = built.plan;
 
@@ -529,6 +574,7 @@ export async function buildHoldingCreationProposal(
       ...(built.openingMismatchWarning === undefined
         ? {}
         : { openingMismatchWarning: built.openingMismatchWarning }),
+      ...(quoteNote ? { openingQuoteNote: quoteNote } : {}),
       ...(priceTrackingWarning ? { priceTrackingWarning } : {}),
     },
   };
