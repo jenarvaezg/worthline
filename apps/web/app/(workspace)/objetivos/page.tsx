@@ -620,9 +620,7 @@ export async function ObjetivosContent({
           operations={contributionOperations}
           plan={contributionPlan}
           projection={contributionProjection}
-          suggestedPriceByHoldingId={Object.fromEntries(
-            priceCache.map((entry) => [entry.assetId, entry.price]),
-          )}
+          suggestedPriceByHoldingId={unitPrices}
           {...(typeof resolvedSearchParams.reconcile === "string"
             ? { selectedOccurrenceId: resolvedSearchParams.reconcile }
             : {})}

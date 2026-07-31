@@ -57,6 +57,7 @@ import {
   projectPortfolio,
   resolveAssetClassBreakdown,
   returnsByAssetClassView,
+  usableCachedPrice,
 } from "@worthline/domain";
 
 export interface LoadPatrimonioInput {
@@ -219,11 +220,16 @@ export async function loadPatrimonio(
   // which source each cached unit price was last fetched, keyed by asset id. The
   // projection attaches it to investment rows only; non-investment entries are
   // ignored downstream.
+  // Only rows that ARE a price carry the badge: attributing a cost-basis figure
+  // to "actualizado el X por Yahoo" would credit the provider for a number it
+  // never supplied — the failed row's own attempt (#1330).
   const priceMetaByAsset = new Map<string, PriceRefreshMeta>(
-    priceCacheEntries.map((entry) => [
-      entry.assetId,
-      { fetchedAt: entry.fetchedAt, source: entry.source },
-    ]),
+    priceCacheEntries
+      .filter((entry) => usableCachedPrice(entry) !== null)
+      .map((entry) => [
+        entry.assetId,
+        { fetchedAt: entry.fetchedAt, source: entry.source },
+      ]),
   );
 
   // Whether the manual "Actualizar precios" trigger (#405) has anything to do:

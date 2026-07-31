@@ -59,6 +59,7 @@ import {
   netUnitsByAsset,
   simpleGain,
   storedBalanceGovernsDebtFigure,
+  usableCachedPrice,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "@worthline/domain";
@@ -471,6 +472,10 @@ export default async function EditarPage({
     method === "derived" && priceCache
       ? getPriceFreshness(priceCache, persistence.checkedAt)
       : null;
+  // The cached row's price when it IS a price: a `failed` row carries "0" as the
+  // marker for "no price known" (#1330), and showing that zero as this holding's
+  // last price contradicts the cost-basis figure beside it.
+  const usablePrice = priceCache ? usableCachedPrice(priceCache) : null;
 
   // Returns surface for a market investment (#551, ADR 0040): fold this holding's
   // operations + current market value through the return engine, framed by
@@ -667,7 +672,10 @@ export default async function EditarPage({
                   ...(position ? { currentUnits: position.currentUnits } : {}),
                   ...(priceCache
                     ? {
-                        unitPrice: priceCache.price,
+                        // A `failed` row carries price "0" as the marker for "no
+                        // price known" (#1330): show the failure, never the zero
+                        // as if it were this holding's last price.
+                        ...(usablePrice !== null ? { unitPrice: usablePrice } : {}),
                         priceFreshness: freshness,
                         // Visible caption (#303): when + by which source the cached
                         // unit price was last refreshed (absolute es-ES date). Null for
@@ -727,7 +735,7 @@ export default async function EditarPage({
                 currentUrl={currentUrl}
                 previewAction={boundPreviewSnapshotPriceCorrectionAction}
                 today={today}
-                {...(priceCache?.price ? { defaultUnitPrice: priceCache.price } : {})}
+                {...(usablePrice !== null ? { defaultUnitPrice: usablePrice } : {})}
               />
             ) : null}
 

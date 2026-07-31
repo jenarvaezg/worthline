@@ -292,6 +292,7 @@ export {
   averageUnitCost,
   compareUnits,
   divideUnits,
+  isPositiveDecimal,
   multiplyToMinor,
   normalizeDecimal,
   proportionMinor,
@@ -709,12 +710,14 @@ export {
   INVESTMENT_PRICE_PROVIDERS,
   isInvestmentPriceProvider,
   isPriceStale,
+  isProviderSymbolShaped,
   isRetiredInvestmentPriceProvider,
   PRICE_TTL_DAYS,
   RETIRED_INVESTMENT_PRICE_PROVIDERS,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   selectStalePrices,
   unitPriceMajorByHoldingId,
+  usableCachedPrice,
 } from "./prices";
 export type {
   BenchmarkSeriesAvailability,

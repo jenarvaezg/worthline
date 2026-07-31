@@ -18,6 +18,7 @@ import {
   derivePosition,
   findStatementTypeConflict,
   isIsinShaped,
+  isProviderSymbolShaped,
   isStatementBroker,
   latestOperationPrice,
   multiplyToMinor,
@@ -298,12 +299,20 @@ async function bucketToPreviewRow(
     skippedCount: bucket.skipped.length,
     suggestedName: lookup.status === "found" ? lookup.name : (bucket.name ?? ""),
     suggestedSymbol:
-      lookup.status === "found"
-        ? lookup.symbol
-        : isIsinShaped(bucket.isin)
-          ? ""
-          : bucket.isin,
+      lookup.status === "found" ? lookup.symbol : identifierAsSymbol(bucket.isin),
   };
+}
+
+/**
+ * The identifier itself as a provider-symbol suggestion, when the lookup found
+ * nothing. An ISIN is not a symbol (no provider quotes by ISIN), and neither is
+ * a fund NAME — the identifier a statement without ISINs groups by. Stamping a
+ * name as the symbol condemned the holding to a daily impossible lookup that
+ * kept rewriting a `failed` price row (#1330); no symbol values it at cost.
+ */
+function identifierAsSymbol(identifier: string): string {
+  if (isIsinShaped(identifier)) return "";
+  return isProviderSymbolShaped(identifier) ? identifier : "";
 }
 
 export interface BuildStatementImportPreviewOptions {

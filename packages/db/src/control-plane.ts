@@ -13,6 +13,7 @@ import type {
 import {
   createValidatedGlobalExposureProfileInput,
   globalExposureProfileIdentityKey,
+  isPositiveDecimal,
   resolveGlobalExposureProfileIdentity,
   validateGlobalExposureProfileContent,
 } from "@worthline/domain";
@@ -1028,11 +1029,6 @@ function isBenchmarkDateKey(value: string): boolean {
 }
 
 /** A benchmark row's value must be a finite, strictly positive decimal (#1354). */
-function isPositiveDecimal(value: string): boolean {
-  const parsed = Number(value);
-  return value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
-}
-
 function toMaintainerAlert(row: Record<string, unknown>): MaintainerAlert {
   return {
     id: String(row["id"]),

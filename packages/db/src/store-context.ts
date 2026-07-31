@@ -10,7 +10,7 @@ import type {
   RawAssetRow,
   Workspace,
 } from "@worthline/domain";
-import { createLiability, projectAssets } from "@worthline/domain";
+import { createLiability, projectAssets, usableCachedPrice } from "@worthline/domain";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
 import { openDrizzle } from "./libsql-client";
@@ -301,13 +301,23 @@ export async function readInvestmentMeta(
   }, new Map<string, InvestmentMeta>());
 }
 
+/**
+ * Cached prices usable for VALUATION, keyed by asset id.
+ *
+ * Rows that only record a failure are left out — `usableCachedPrice` owns that
+ * rule — so the valuation falls back to cost basis instead of multiplying units
+ * by the marker zero (#1330). The rows themselves stay in the table: the
+ * freshness and salud de datos surfaces read them through
+ * `readAllPriceCacheEntries` and need both the state and its `stale_reason`.
+ */
 export async function readAllPriceCache(
   db: StoreDb,
 ): Promise<Map<string, { price: string }>> {
   const rows = await db.select().from(assetPriceCache).all();
 
   return rows.reduce((map, row) => {
-    map.set(row.assetId, { price: row.price });
+    const price = usableCachedPrice(row);
+    if (price !== null) map.set(row.assetId, { price });
     return map;
   }, new Map<string, { price: string }>());
 }

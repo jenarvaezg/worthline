@@ -58,6 +58,17 @@ export interface OperationsEditorContext {
 }
 
 /**
+ * What the "Último precio" cell reads: the price, masked under privacy mode, or
+ * "Sin precio" when the caller has none to show — a holding whose fetch failed
+ * keeps the row (its state chip is the news) but never renders a zero as if it
+ * were the last price (#1330).
+ */
+function shownUnitPrice(unitPrice: string | undefined, privacyMode: boolean): string {
+  if (!unitPrice) return "Sin precio";
+  return privacyMode ? maskMoneyString(unitPrice) : unitPrice;
+}
+
+/**
  * Render the operations editor for a `derived` holding. `currentUrl` is the page
  * the bound actions return to (so it works identically from either route); the
  * record/delete actions are already bound to the asset id by the caller.
@@ -147,13 +158,14 @@ export default function OperationsEditor({
           <>
             <span className="contextLabel">Unidades actuales</span>
             <span>{context.currentUnits}</span>
-            {context.unitPrice !== undefined ? (
+            {/* A holding whose fetch failed has no price but DOES have a state to
+                show: keep the row, say "Sin precio", never render a zero as if it
+                were the last price (#1330). */}
+            {context.unitPrice !== undefined || context.priceFreshness ? (
               <>
                 <span className="contextLabel">Último precio</span>
                 <span>
-                  {context.unitPrice && privacyMode
-                    ? maskMoneyString(context.unitPrice)
-                    : context.unitPrice}{" "}
+                  {shownUnitPrice(context.unitPrice, privacyMode)}{" "}
                   <small className={`priceStatus ${context.priceFreshness ?? "unknown"}`}>
                     {priceFreshnessLabel(context.priceFreshness ?? null)}
                   </small>
