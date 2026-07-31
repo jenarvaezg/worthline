@@ -24,6 +24,7 @@ import { PendingSubmit } from "@web/pending-submit";
 import type { CoinPosition, PriceFreshnessState } from "@worthline/domain";
 import {
   coinValue,
+  coinValueGap,
   formatMoneyMinorPrivacy,
   groupPositionsByMetal,
 } from "@worthline/domain";
@@ -162,7 +163,7 @@ export function CoinCollectionSection({
                   <div className="coinList">
                     {row.positions.map((position) => {
                       const valuation = coinValue(position);
-                      const tag = basisTag(valuation.basis);
+                      const tag = basisTag(valuation.basis, coinValueGap(position));
                       const year = coinYear(position);
                       const numistaUrl = coinNumistaUrl(position.catalogueId);
                       return (
@@ -211,7 +212,9 @@ export function CoinCollectionSection({
                           <span className="coinQty coinNum">×{position.quantity}</span>
                           <span className="coinAmount coinNum">
                             <strong>{eur(valuation.minor)}</strong>
-                            <span className={`coinTag ${tag.cls}`}>{tag.label}</span>
+                            <span className={`coinTag ${tag.cls}`} title={tag.hint}>
+                              {tag.label}
+                            </span>
                           </span>
                         </div>
                       );

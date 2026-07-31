@@ -92,6 +92,39 @@ function tokenPosition(externalId: string, name: string): SourcePosition {
   };
 }
 
+/** A coin of a Numista collection: base metal, graded, and unvalued by default (no
+ *  melt value, no estimate, no purchase price) — each test overrides the one input
+ *  it is about. */
+function coinPosition(
+  externalId: string,
+  overrides: Partial<Extract<SourcePosition, { kind: "coin" }>> = {},
+): SourcePosition {
+  return {
+    catalogueId: "1493",
+    currency: "EUR",
+    externalId,
+    finenessMillis: null,
+    grade: "XF",
+    id: `pos_${externalId}`,
+    issueId: 42,
+    kind: "coin",
+    liquidityTier: "illiquid",
+    metal: null,
+    metalValueMinor: null,
+    name: `Moneda ${externalId}`,
+    numismaticFetchedAt: null,
+    numismaticValueMinor: null,
+    obverseThumbUrl: null,
+    purchaseDate: null,
+    purchasePriceMinor: null,
+    quantity: 1,
+    sourceId: "src_numista",
+    weightGrams: null,
+    year: 2020,
+    ...overrides,
+  };
+}
+
 function seededInput() {
   const { asset, input } = fixture();
   return input({
@@ -406,6 +439,132 @@ describe("collectDataQualitySignals", () => {
     );
 
     expect(signals.some((signal) => signal.code === "STALE_MANUAL_VALUE")).toBe(false);
+  });
+});
+
+describe("collectDataQualitySignals — UNVALUED_POSITION aggregated per source (#1356)", () => {
+  const collection = (positions: SourcePosition[]) => {
+    const { asset, input } = fixture();
+    return collectDataQualitySignals(
+      input({
+        assets: [
+          asset({ id: "asset_coins", liquidityTier: "illiquid", name: "Monedas" }),
+        ],
+        connectedSources: [
+          {
+            assetIds: ["asset_coins"],
+            id: "src_numista",
+            label: "Colección Numista",
+            lastSyncAt: "2026-07-11T10:00:00.000Z",
+          },
+        ],
+        positionsBySourceId: new Map([["src_numista", positions]]),
+      }),
+    ).filter((signal) => signal.category === "projection_gap");
+  };
+
+  test("a collection with many unvalued coins raises ONE signal, not one per coin", () => {
+    const signals = collection([
+      coinPosition("1", { grade: "" }),
+      coinPosition("2", { grade: "" }),
+      coinPosition("3", { metal: "silver", weightGrams: 31.1 }),
+      coinPosition("4", { metalValueMinor: 4_000 }),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.code).toBe("UNVALUED_POSITION");
+    // The source, not the position, is the identity — so the key is stable while
+    // coins come and go from the collection.
+    expect(signals[0]!.naturalKey).toBe("projection_gap:UNVALUED_POSITION:src_numista");
+    expect(signals[0]!.affected).toEqual({
+      id: "src_numista",
+      label: "Colección Numista",
+      object: "connected_source",
+    });
+  });
+
+  test("the label counts the unvalued coins against the whole collection and says what is missing", () => {
+    const signals = collection([
+      coinPosition("1", { grade: "" }),
+      coinPosition("2", { grade: "" }),
+      coinPosition("3", { metal: "silver", weightGrams: 31.1 }),
+      coinPosition("4", { metalValueMinor: 4_000 }),
+    ]);
+
+    expect(signals[0]!.label).toBe(
+      '3 de 4 monedas de "Colección Numista" sin valor, a 0 € en tu patrimonio.' +
+        " Lo que falta: 2 sin grado en Numista, 1 sin la ley del metal en el catálogo.",
+    );
+  });
+
+  test("a fully valued collection raises nothing", () => {
+    expect(collection([coinPosition("1", { metalValueMinor: 4_000 })])).toEqual([]);
+  });
+
+  test("counts coins, not lines: a ×N line stands for N coins", () => {
+    // What the catalogue view shows as "5 monedas" must not read as "2" here.
+    const signals = collection([
+      coinPosition("1", { grade: "", quantity: 3 }),
+      coinPosition("2", { metalValueMinor: 4_000, quantity: 2 }),
+    ]);
+
+    expect(signals[0]!.label).toBe(
+      '3 de 5 monedas de "Colección Numista" sin valor, a 0 € en tu patrimonio.' +
+        " Lo que falta: 3 sin grado en Numista.",
+    );
+  });
+
+  test("unpriced tokens aggregate the same way, in their own words", () => {
+    const { asset, input } = fixture();
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [asset({ id: "asset_crypto", name: "Cripto" })],
+        connectedSources: [
+          {
+            assetIds: ["asset_crypto"],
+            id: "src_binance",
+            label: "Binance",
+            lastSyncAt: "2026-07-11T10:00:00.000Z",
+          },
+        ],
+        positionsBySourceId: new Map([
+          [
+            "src_binance",
+            [
+              tokenPosition("SHIB:spot", "SHIB"),
+              tokenPosition("LUNA:spot", "LUNA"),
+              { ...tokenPosition("BTC:spot", "BTC"), unitPrice: "90000" },
+            ],
+          ],
+        ]),
+      }),
+    ).filter((signal) => signal.category === "projection_gap");
+
+    expect(signals).toHaveLength(1);
+    // No "what's missing" breakdown: an unpriced token has exactly one cause.
+    expect(signals[0]!.label).toBe(
+      '2 de 3 tokens de "Binance" sin fuente de precio, a 0 € en tu patrimonio.',
+    );
+  });
+
+  test("the noun follows the count, so a one-position source reads in singular", () => {
+    expect(collection([coinPosition("1", { grade: "" })])[0]!.label).toBe(
+      '1 de 1 moneda de "Colección Numista" sin valor, a 0 € en tu patrimonio.' +
+        " Lo que falta: 1 sin grado en Numista.",
+    );
+  });
+
+  test("a mixed source reads generically and drops the breakdown that would only cover half", () => {
+    // No adapter mirrors both kinds today, but a breakdown that explained the
+    // coins while the count also carried tokens would not add up.
+    const signals = collection([
+      coinPosition("1", { grade: "" }),
+      { ...tokenPosition("SHIB:spot", "SHIB"), sourceId: "src_numista" },
+    ]);
+
+    expect(signals[0]!.label).toBe(
+      '2 de 2 posiciones de "Colección Numista" sin valor, a 0 € en tu patrimonio.',
+    );
   });
 });
 

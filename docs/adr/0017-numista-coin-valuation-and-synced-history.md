@@ -33,6 +33,27 @@ worth its collector estimate when that exceeds the metal. Concretely:
   estimate), the coin falls back to its **purchase price**; absent even that, it
   is 0 and raises the existing "value at 0" **warning**.
 
+### A zero is named, never papered over (#1356)
+
+A missing input is **never assumed**: an unknown fineness is not defaulted to
+999, an unknown weight is not inferred from the denomination. A fabricated melt
+value would move the net-worth figure with no way for the user to tell, which is
+worse than a coin visibly reading 0 €.
+
+What the zero owes the user is an **address**. `coinValueGap` (domain) names the
+ONE input that, supplied, would rescue the coin most cheaply — the melt rung first
+(`fineness` → `weight` → `spot`, because a weight and a ley rescue a coin whatever
+Numista estimates), then the numismatic rung (`grade` → `issue` → `estimate`). One
+coin reports one gap, so a collection's gap counts partition its unvalued coins
+and the panel can say "62 sin grado en Numista, 15 sin la ley del metal".
+
+That diagnosis is also why `UNVALUED_POSITION` is raised **once per connected
+source**, not once per position: measured on a real 178-coin collection, 77
+identical lines pushed everything actionable out of the panel. The affected object
+was already the source, so the count folds into the same natural key, and the
+per-coin detail stays where the coins are (the collection view, the agent view's
+positions endpoint).
+
 ## History: purchase date ripples, value frozen at ripple time
 
 A coin's **purchase date** (from its Numista trade) is a **dated fact about the

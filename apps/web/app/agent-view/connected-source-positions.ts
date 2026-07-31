@@ -4,7 +4,7 @@ import type {
   AgentViewSourceFreshness,
 } from "@worthline/db";
 import type { CoinPosition, SourcePosition, TokenPosition } from "@worthline/domain";
-import { coinValue, positionValue } from "@worthline/domain";
+import { coinValue, coinValueGap, positionValue } from "@worthline/domain";
 
 import {
   type AgentViewConnectedSourcePosition,
@@ -284,14 +284,21 @@ interface ValuedPosition {
   qualitySignals: string[];
 }
 
-/** Value a coin: `max(metal, numismatic)` → purchase fallback → 0 (ADR 0017). */
+/** Value a coin: `max(metal, numismatic)` → purchase fallback → 0 (ADR 0017).
+ *  An unvalued coin also reports WHICH input is missing (#1356) as the domain's
+ *  stable gap key — the same diagnosis the human panel counts, not a second
+ *  translation of it. */
 function valueCoin(position: CoinPosition): ValuedPosition {
   const { minor, basis } = coinValue(position);
   if (basis === "zero") {
+    const gap = coinValueGap(position);
     return {
       basis: "unvalued",
       minor: 0,
-      qualitySignals: ["No value could be derived; reported at 0."],
+      qualitySignals: [
+        "No value could be derived; reported at 0.",
+        ...(gap === null ? [] : [`Missing input: ${gap}.`]),
+      ],
       quantity: String(position.quantity),
     };
   }

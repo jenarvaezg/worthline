@@ -75,6 +75,12 @@ export {
 } from "./classification";
 export type { Clock } from "./clock";
 export { fixedClock, systemClock } from "./clock";
+export type { CoinValueGap, CoinValueGapInput } from "./coin-value-gap";
+export {
+  COIN_VALUE_GAP_LABEL,
+  coinValueGap,
+  summarizeCoinValueGaps,
+} from "./coin-value-gap";
 export type {
   BuildCompositionSeriesInput,
   CompositionAssetBandId,

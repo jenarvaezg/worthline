@@ -100,6 +100,20 @@ describe("basisTag", () => {
     expect(basisTag("purchase").label).toBe("Compra");
     expect(basisTag("zero")).toEqual({ label: "Sin valor", cls: "coinTagZero" });
   });
+
+  test("an unvalued coin names the missing input in the tag itself (#1356)", () => {
+    // Visible text, not only a hover title: a phone has no hover.
+    expect(basisTag("zero", "grade")).toEqual({
+      label: "Sin grado",
+      cls: "coinTagZero",
+      hint: "Cuenta como 0 €: sin grado en Numista",
+    });
+    expect(basisTag("zero", "fineness").label).toBe("Sin ley");
+    // No diagnosis (a coin valued by another rung, or an undiagnosable zero) keeps
+    // the plain tag.
+    expect(basisTag("zero", null)).toEqual({ label: "Sin valor", cls: "coinTagZero" });
+    expect(basisTag("metal", null).hint).toBeUndefined();
+  });
 });
 
 describe("formatSharePct", () => {

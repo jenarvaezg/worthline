@@ -543,7 +543,9 @@ export interface AgentViewFireSummary {
  *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
  *    config, an amortized liability's debt model, …).
  *  - `history_coverage`: sparse snapshots or a snapshot with no frozen holding rows.
- *  - `projection_gap`: a connected-source position that could not be valued.
+ *  - `projection_gap`: a connected source's positions that could not be valued —
+ *    ONE signal per source carrying the count and what is missing, never one per
+ *    position (#1356); the per-position detail lives in the positions endpoint.
  */
 export type AgentViewDataQualityCategory =
   | "warning"
