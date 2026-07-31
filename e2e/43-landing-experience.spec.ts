@@ -4,7 +4,7 @@
  * already-complete server HTML. Session responses are intercepted so both
  * states stay deterministic without involving Google's OAuth UI.
  */
-import { expect, test } from "./fixtures";
+import { expect, test, wholeDocument } from "./fixtures";
 
 /**
  * One frame of the typing animation, as the page recorded it. Declared out here
@@ -112,7 +112,7 @@ test("motion off is final and static, including live preference changes", async 
   const semanticAnswer = page.locator("[data-chat-semantic]");
   await expect(semanticAnswer).toContainText("En 2025 cobraste 1.847 €");
   const semanticHtml = await semanticAnswer.innerHTML();
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(0);
+  await expect(wholeDocument(page).locator("[data-chat-caret]")).toHaveCount(0);
   expect(
     await page
       .locator("header")
@@ -126,7 +126,7 @@ test("motion off is final and static, including live preference changes", async 
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.locator("[data-net-figure]")).toHaveText("251.527 €");
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(0);
+  await expect(wholeDocument(page).locator("[data-chat-caret]")).toHaveCount(0);
   expect(await semanticAnswer.innerHTML()).toBe(semanticHtml);
 });
 
@@ -271,7 +271,7 @@ test("normal motion starts without waiting for fonts and settles without a type 
       { timeout: UNHURRIED_MS },
     )
     .toBeGreaterThan(0);
-  await expect(page.locator("[data-chat-caret]")).toHaveCount(0, {
+  await expect(wholeDocument(page).locator("[data-chat-caret]")).toHaveCount(0, {
     timeout: UNHURRIED_MS,
   });
   await expect(typedAmount).toHaveText("1.847 €", { timeout: UNHURRIED_MS });

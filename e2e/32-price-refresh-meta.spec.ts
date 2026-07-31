@@ -19,7 +19,7 @@
 
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
 
-import { addHolding, expect, holdingRow, test } from "./fixtures";
+import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
 
 test("price refresh: board hover + detail caption show date + provider for a cached investment (#303)", async ({
   page,
@@ -78,6 +78,9 @@ test("price refresh: board hover + detail caption show date + provider for a cac
     .first()
     .click();
   await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/);
+  // The operations context lives inside the advanced block, folded shut on
+  // arrival: a person opens it to read the caption, so the journey does too.
+  await openAdvancedSettings(page);
   const ctx = page.locator(".operacionContext");
   await expect(ctx).toContainText(/Precio actualizado el \d{1,2} \w+\.? \d{4} · Yahoo/);
 });

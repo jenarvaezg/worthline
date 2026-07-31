@@ -109,6 +109,36 @@ pierde la posición de scroll**:
   animación (cambio directo, igual sin flash). El movimiento es un lujo, no un
   requisito.
 
+### 5.1 La ruta que dejas sigue en el documento (contrato de `<Activity>`)
+
+Con `cacheComponents` (#1229) Next **no desmonta** la página al navegar: la
+esconde con React [`<Activity mode="hidden">`][activity] (`display: none`) y
+**conserva hasta 3 rutas** en el documento, para que sobrevivan el borrador de un
+formulario, el scroll, un `<details>` abierto o un vídeo en marcha. Es
+comportamiento **documentado** —
+`apps/web/node_modules/next/dist/docs/01-app/02-guides/preserving-ui-state.md` —
+no un bug, y tiene tres consecuencias que muerden:
+
+1. **El documento se acorta a mitad de intercambio.** La saliente pasa a
+   `display:none` en el primer frame y la entrante tarda ~250 ms en pintar; en ese
+   hueco el navegador **recorta** cualquier scroll que no alcance. Quien escriba
+   scroll ahí lo pierde en silencio — fue la causa de #1296, y por eso
+   `form-submit-scroll.ts` **espera** a que el offset sea alcanzable en vez de
+   escribir a ciegas.
+2. **El estado ya no se resetea al navegar.** `useState`, valores de inputs y
+   resultados de `useActionState` sobreviven a ir y volver. Lo que dependía del
+   desmontaje para limpiarse (un diálogo, un mensaje de éxito rancio) hay que
+   resetearlo a mano.
+3. **Una consulta al documento puede encontrar la página anterior.** Vale para el
+   código de la app y sobre todo para los e2e: de las queries de Playwright **solo
+   `getByRole` filtra por visibilidad** — `locator`, `getByLabel`, `getByText` y
+   `getByPlaceholder` devuelven el nodo oculto (medido; `e2e/visible-page.ts`, y la
+   jornada 50 lo vuelve a medir en cada corrida). Por eso el `page` de la suite va
+   **acotado a lo visible** y preguntar por el documento es explícito
+   (`wholeDocument(page)`).
+
+[activity]: https://react.dev/reference/react/Activity
+
 ## 6. Las gráficas son islands que envuelven geometría pura
 
 - La **geometría y la matemática** (puntos, arcos, barras, escalas) siguen siendo
@@ -199,6 +229,7 @@ ADR 0036 eligió este camino en parte para **no** enviar «materialmente más JS
 - [ ] ¿El estado de vista se lee de la URL al cargar y se espeja con `pushState` al conmutar? ¿Deep-link y Atrás funcionan? (§3)
 - [ ] ¿Las mutaciones son optimistas (o pending honesto si el resultado no es predecible), con revert+error si fallan y `aria-live` de guardado? (§4)
 - [ ] ¿La navegación va sin flash ni salto de scroll, con degradado limpio y respetando `prefers-reduced-motion`? (§5)
+- [ ] ¿Nada asume que la ruta anterior se desmontó — ni el reset de estado, ni una consulta al documento, ni un e2e? (§5.1)
 - [ ] ¿La gráfica interactiva envuelve geometría pura de `packages/domain`, no la sustituye? (§6)
 - [ ] ¿La lógica (reducer/merge/elegibilidad) está en un módulo puro con `.test.ts` y el componente es una cáscara fina? (§7)
 - [ ] ¿Teclado, foco visible, ARIA anunciado y **foco gestionado** al conmutar en cliente? (§8)

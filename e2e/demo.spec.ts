@@ -7,7 +7,9 @@
  * /login with the banner gone. Runs against a DEMO=1 build with a pinned clock, so
  * every figure is deterministic (see playwright.demo.config.ts).
  */
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+
+import { visibilityScopedTest as test, wholeDocument } from "./visible-page";
 
 /** The cookie `/demo/persona` sets; putting it in place skips the picker. */
 const PERSONA_COOKIE = "wl_demo_persona";
@@ -99,7 +101,9 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // 3. Attempting an edit is blocked with the demo message — and the irreversible
   //    affordances are not even offered.
   await page.goto("/ajustes");
-  await expect(page.getByText("Zona de peligro")).toHaveCount(0);
+  // «Not even offered» means never rendered, so ask the document: a screen-scoped
+  // count would also pass for a danger zone tucked inside a closed fold (#1351).
+  await expect(wholeDocument(page).getByText("Zona de peligro")).toHaveCount(0);
   await page.getByRole("button", { name: "Guardar configuración FIRE" }).click();
   await expect(page.getByText(/deshabilitada en la demo/i)).toBeVisible();
 
