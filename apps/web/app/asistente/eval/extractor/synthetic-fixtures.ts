@@ -19,6 +19,7 @@ export const SYNTHETIC_FIXTURE_SPECS: readonly SyntheticFixtureSpec[] = [
   { capture: { height: 642, width: 822 }, id: "synthetic-baseline" },
   { capture: { height: 760, width: 420 }, id: "synthetic-payment-screen" },
   { capture: { height: 522, width: 762 }, id: "synthetic-amortization-schedule" },
+  { capture: { height: 644, width: 422 }, id: "synthetic-value-only-composition" },
 ];
 
 /**

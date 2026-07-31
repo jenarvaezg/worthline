@@ -24,10 +24,20 @@ nothing but the API key. `--only` takes the **id** (second column), not the scen
 |---|---|---|
 | `desktop` | `synthetic-baseline` | committed |
 | `payment-screen` | `synthetic-payment-screen` | committed, **negative** (#1247) |
+| `value-only-composition` | `synthetic-value-only-composition` | committed (#1345) |
 | `amortization-schedule-screenshot` | `synthetic-amortization-schedule` | committed, balance-series track |
 
-Those three captures are the whole runnable set, which is what makes "the extractor
+Those four captures are the whole runnable set, which is what makes "the extractor
 evals do not regress" verifiable without private data.
+
+`synthetic-value-only-composition` is the one added by **#1345**, and it earns its place
+by having been red on the code that shipped before it: a bank's «Composición» tab, seven
+funds printing a name and a value in euros and nothing else, two names cut off with «…».
+It grades the value-only row of #1325 *and* the schema-complexity pathology of #1345 —
+the reading came back with the right `documentType`, the right total and an empty
+`positions` array, 3/3 runs at `temperature: 0`. That is why the fix had to reach the
+schema and not the prompt, and why a synthetic render is enough here even though the
+failure was found on a real capture: what fails is not the pixels.
 
 ### Uncovered scenarios (#1254)
 
@@ -284,9 +294,9 @@ bun run eval:extractor -- \
 
 That is the **full gate**: since #1254 every declared fixture is committed, so the run
 above is complete and can come back green with nothing but the API key. It spans all
-three verdicts on purpose — a positive positions reading, a positive balance-series
-reading and a negative case — which is the combination that makes a green run mean
-something (see the tripwire note above).
+three verdicts on purpose — two positive positions readings (one of them value-only), a
+positive balance-series reading and a negative case — which is the combination that
+makes a green run mean something (see the tripwire note above).
 
 Run a subset while iterating (the JSON report includes `"subset": true`; do not
 treat that verdict as a model admission):

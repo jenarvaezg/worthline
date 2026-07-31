@@ -1,5 +1,8 @@
 import { hasUnstructuredEvidenceInHistory } from "@web/asistente/attachment-chat";
-import { parseExtractionResult } from "@web/asistente/attachment-extraction-contract";
+import {
+  type AttachmentExtractionResult,
+  parseExtractionResult,
+} from "@web/asistente/attachment-extraction-contract";
 import {
   UNIDENTIFIED_DOCUMENT_MESSAGE,
   UNSTRUCTURED_EMPTY_READING_MESSAGE,
@@ -18,6 +21,18 @@ vi.mock("@web/asistente/attachment-vision-extractor", () => ({
 vi.mock("@web/asistente/attachment-vision-description", () => ({
   describeVisionAttachment: vi.fn(),
 }));
+
+/**
+ * What the vision seam hands back since #1345: the verdict, plus the number of vision
+ * calls it charged. The policy behind that number lives — and is graded — in the seam;
+ * what this file grades is that the turn carries it through and adds its own cascade.
+ */
+function visionReading(
+  result: AttachmentExtractionResult,
+  visionCalls = 1,
+): { result: AttachmentExtractionResult; visionCalls: number } {
+  return { result, visionCalls };
+}
 
 function csv(text: string): { bytes: Uint8Array; fileName: string; mimeType: string } {
   return {
@@ -93,11 +108,13 @@ describe("readAttachmentTurn", () => {
   });
 
   it("describes a capture whose document the seam did not identify", async () => {
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no lo reconozco",
-      reason: "unidentified_document",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no lo reconozco",
+        reason: "unidentified_document",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una pantalla de pago.");
 
     const reading = await readAttachmentTurn({
@@ -127,13 +144,15 @@ describe("readAttachmentTurn", () => {
     // (#1248) — and the verdict it is declined with has to be the one this drain
     // branches on, or the capture dies on the card instead of being discussed.
     //
-    // The two constants are the coupling: `declinedHoldingEvent` in the extractor
+    // The two constants are the coupling: `unidentifiedDocument` in the extractor
     // returns exactly this envelope, and `readAttachmentTurn` keys off `reason`.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: UNIDENTIFIED_DOCUMENT_MESSAGE,
-      reason: "unidentified_document",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+        reason: "unidentified_document",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue(
       "Se ven doce apuntes con fecha e importe.",
     );
@@ -161,11 +180,13 @@ describe("readAttachmentTurn", () => {
     // printed at the top of the screen, not one fund name. «Describing it would be
     // paraphrasing» was the argument for skipping the drain, and it was backwards: a
     // reading that failed is exactly the one with everything left to describe.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no he podido leer ninguna fila",
-      reason: "empty_reading",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no he podido leer ninguna fila",
+        reason: "empty_reading",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue(
       "Se ve una cartera con dos fondos y un total de 1.413,63 €.",
     );
@@ -219,11 +240,13 @@ describe("readAttachmentTurn", () => {
   });
 
   it("charges the second call the new drain adds (#1258 stays coherent)", async () => {
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no he podido leer ninguna fila",
-      reason: "empty_reading",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no he podido leer ninguna fila",
+        reason: "empty_reading",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una cartera.");
 
     const reading = await readAttachmentTurn({
@@ -241,10 +264,12 @@ describe("readAttachmentTurn", () => {
     // Only the vision seam stamps the discriminant. A route that cannot say which of the
     // two facts held cannot say a description would help either, and a workbook must
     // never reach a vision model (it would clobber its own rendered grid).
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "nada",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "nada",
+        status: "unrecognized",
+      }),
+    );
 
     const reading = await readAttachmentTurn({
       bytes: new Uint8Array([1, 2, 3]),
@@ -258,11 +283,13 @@ describe("readAttachmentTurn", () => {
   });
 
   it("leaves the extractor's own verdict standing when nothing describes the capture", async () => {
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no lo reconozco",
-      reason: "unidentified_document",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no lo reconozco",
+        reason: "unidentified_document",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue(null);
 
     const reading = await readAttachmentTurn({
@@ -278,10 +305,12 @@ describe("readAttachmentTurn", () => {
   it("routes a PDF through the same vision seam as a picture", async () => {
     // The MIME type picks the transport only (#1243): one seam identifies the document
     // behind an image or a PDF by its content.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "nada",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "nada",
+        status: "unrecognized",
+      }),
+    );
 
     await readAttachmentTurn({
       bytes: new Uint8Array([1, 2, 3]),
@@ -303,22 +332,29 @@ describe("readAttachmentTurn", () => {
     );
   });
 
-  it("charges one call for a document the seam identified", async () => {
+  it.each([1, 2])("carries the %i call(s) the seam says it made", async (calls) => {
+    // The seam owns the number now (#1345): a `holding_event` costs two calls and every
+    // other identified document one, and the turn cannot tell them apart from the
+    // verdict — the card is identical. Deriving it here would under-count the branch
+    // that spends the most, which is the direction that stops a fuse from holding.
     vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
-      parseExtractionResult({
-        data: {
-          documentType: "holding_event",
-          event: {
-            amount: 91.32,
-            currency: "EUR",
-            date: "2026-07-26",
-            kind: "payment",
-            label: "Cuota de julio",
+      visionReading(
+        parseExtractionResult({
+          data: {
+            documentType: "holding_event",
+            event: {
+              amount: 91.32,
+              currency: "EUR",
+              date: "2026-07-26",
+              kind: "payment",
+              label: "Cuota de julio",
+            },
+            warnings: [],
           },
-          warnings: [],
-        },
-        status: "valid",
-      }),
+          status: "valid",
+        }),
+        calls,
+      ),
     );
 
     const reading = await readAttachmentTurn({
@@ -327,15 +363,44 @@ describe("readAttachmentTurn", () => {
       mimeType: "image/png",
     });
 
-    expect(reading.visionCalls).toBe(1);
+    expect(reading.visionCalls).toBe(calls);
+    expect(describeVisionAttachment).not.toHaveBeenCalled();
+  });
+
+  it("adds the descriptive call on top of a detail read that was declined", async () => {
+    // The worst case, and the reason it is worth stating out loud: a screen typed as a
+    // dated fact, read in detail, and then declined pays for three vision calls. The
+    // alternative is the dead end PRD #1241 opened against, so it is a price, not a bug.
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading(
+        {
+          message: UNIDENTIFIED_DOCUMENT_MESSAGE,
+          reason: "unidentified_document",
+          status: "unrecognized",
+        },
+        2,
+      ),
+    );
+    vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una pantalla de pago.");
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "captura.png",
+      mimeType: "image/png",
+    });
+
+    expect(reading.visionCalls).toBe(3);
+    expect(reading.unstructured?.source).toBe("vision_description");
   });
 
   it("charges TWO calls for the descriptive cascade — the cost #1246 added", async () => {
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no lo reconozco",
-      reason: "unidentified_document",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no lo reconozco",
+        reason: "unidentified_document",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue("Se ve una pantalla de pago.");
 
     const reading = await readAttachmentTurn({
@@ -350,11 +415,13 @@ describe("readAttachmentTurn", () => {
   it("still charges the description the provider never answered", async () => {
     // The request was made. Counting only successful answers would hand an abuser a
     // free lane precisely when the provider is struggling.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "no lo reconozco",
-      reason: "unidentified_document",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "no lo reconozco",
+        reason: "unidentified_document",
+        status: "unrecognized",
+      }),
+    );
     vi.mocked(describeVisionAttachment).mockResolvedValue(null);
 
     const reading = await readAttachmentTurn({
@@ -369,12 +436,17 @@ describe("readAttachmentTurn", () => {
   it("charges nothing for a «PDF» whose bytes are not a PDF", async () => {
     // Decided by `looksLikePdf` over bytes already in memory, before the API key is
     // even read. Charging it would let a caller burn their allowance for free.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      code: "unsupported_document",
-      failure: "permanent",
-      message: "El archivo no es un PDF legible.",
-      status: "failure",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading(
+        {
+          code: "unsupported_document",
+          failure: "permanent",
+          message: "El archivo no es un PDF legible.",
+          status: "failure",
+        },
+        0,
+      ),
+    );
 
     const reading = await readAttachmentTurn({
       bytes: new Uint8Array([1, 2, 3]),
@@ -388,11 +460,16 @@ describe("readAttachmentTurn", () => {
   it("charges nothing for a file the contract refused before any provider", async () => {
     // An oversized upload is decided over bytes already in memory. Charging it would
     // let a user burn their own daily allowance on files no model ever saw.
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "El archivo es demasiado grande.",
-      reason: "size",
-      status: "out_of_limits",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading(
+        {
+          message: "El archivo es demasiado grande.",
+          reason: "size",
+          status: "out_of_limits",
+        },
+        0,
+      ),
+    );
 
     const reading = await readAttachmentTurn({
       bytes: new Uint8Array([1, 2, 3]),
@@ -405,10 +482,12 @@ describe("readAttachmentTurn", () => {
   });
 
   it("treats a PDF by extension even when the browser sends no MIME type", async () => {
-    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue({
-      message: "nada",
-      status: "unrecognized",
-    });
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading({
+        message: "nada",
+        status: "unrecognized",
+      }),
+    );
 
     await readAttachmentTurn({
       bytes: new Uint8Array([1, 2, 3]),

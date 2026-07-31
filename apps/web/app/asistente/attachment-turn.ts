@@ -46,7 +46,10 @@ export interface AttachmentTurnReading {
   /**
    * How many vision model calls this reading paid for (#1258) — the number the
    * caller's fuse counts. Zero for the deterministic spreadsheet route, one for a
-   * document the seam identified, two when the descriptive cascade also ran.
+   * document the seam identified in a single call, two when either cascade ran (the
+   * detail read of a dated fact, #1345, or the descriptive drain, #1246) and three in
+   * the one case that runs both: a dated fact identified, read in detail, and then
+   * declined — the detail is what the descriptive lane exists to rescue.
    *
    * The seam reports it because only the seam knows: the extractors hand back a
    * validated verdict and never provider usage, and a policy layer reading MIME
@@ -114,23 +117,17 @@ export async function readAttachmentTurn(
   const visionKind = visionTransport({ fileName, mimeType: input.mimeType });
   const isSpreadsheet = visionKind === null;
 
-  const result = isSpreadsheet
-    ? extractSpreadsheetDocument(extractionInput)
+  // What this reading owes the money fuse (#1258) comes from the seam that did the
+  // asking, because only it knows which branch was taken: zero for the deterministic
+  // sheet route and for a file refused over bytes already in memory, one for an
+  // identified document, and TWO when an identified dated fact also paid for its
+  // detail call (#1345). Deriving it here from the verdict instead would be guessing
+  // — a `holding_event` card looks the same whether it cost one call or two.
+  const extraction = isSpreadsheet
+    ? { result: extractSpreadsheetDocument(extractionInput), visionCalls: 0 }
     : await extractDocumentFromVisionAttachment({ ...extractionInput, kind: visionKind });
-
-  // What this reading owes the money fuse (#1258). Three outcomes cost nothing and
-  // must not spend the caller's daily allowance: the deterministic sheet route, a
-  // file the contract refused on its size or page count, and a "PDF" whose bytes are
-  // not a PDF — all three decided over bytes already in memory, before any provider
-  // is reached. Every other outcome is charged as one call, INCLUDING an unconfigured
-  // deploy, whose failure envelope is indistinguishable from a request the provider
-  // really did reject: over-counting a broken install is the safe direction for a
-  // fuse, and under-counting is the one that stops it from holding.
-  const reachedNoProvider =
-    isSpreadsheet ||
-    result.status === "out_of_limits" ||
-    (result.status === "failure" && result.code === "unsupported_document");
-  const extractionCalls = reachedNoProvider ? 0 : 1;
+  const { result } = extraction;
+  const extractionCalls = extraction.visionCalls;
 
   // A readable spreadsheet that is not a positions table becomes conversational
   // material instead of a dead-end (#865): render the whole book and let the model
@@ -181,6 +178,11 @@ export async function readAttachmentTurn(
   // to give back still cost a request, and it is the branch above — not the outcome —
   // that the abuse the fuse guards against reaches for. Two calls now cover one verdict
   // more than they did, which is what the content above costs.
+  //
+  // This is also where the worst case became three (#1345): a screen typed as a dated
+  // fact whose detail read is then declined pays for identification, detail and
+  // description. It is the least common branch of the least common document, and the
+  // alternative — no description — is the dead end PRD #1241 opened against.
   const visionCalls = extractionCalls + (describedReason ? 1 : 0);
 
   if (description && describedReason) {

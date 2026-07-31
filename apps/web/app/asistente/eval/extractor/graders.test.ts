@@ -95,6 +95,56 @@ describe("gradeExtractionAgainstExpected", () => {
     });
   });
 
+  it("reads a truncated name through either spelling of the ellipsis", () => {
+    // What the value-only composition capture actually does (#1345): the screen cuts
+    // two fund names with «…» and the model types the same truncation as «...». The
+    // fund WAS read, so failing it would grade the encoding of a printed mark — the
+    // fold sits next to the diacritics one, which exists for the same reason.
+    const truncated = {
+      currency: "EUR",
+      marketValueEur: 154.1,
+      name: "Fondo Índice Mercados Emergent…",
+    };
+    const checks = gradeExtractionAgainstExpected(
+      validResult({
+        positions: [{ ...truncated, name: "Fondo Indice Mercados Emergent..." }],
+        warnings: [],
+      }),
+      { positions: [truncated], warnings: [] },
+    );
+
+    expect(checks.every((check) => check.pass)).toBe(true);
+  });
+
+  it("still fails when the truncation itself is not what the screen printed", () => {
+    const checks = gradeExtractionAgainstExpected(
+      validResult({
+        positions: [
+          {
+            currency: "EUR",
+            marketValueEur: 154.1,
+            name: "Fondo Índice Mercados Emergentes Globales",
+          },
+        ],
+        warnings: [],
+      }),
+      {
+        positions: [
+          {
+            currency: "EUR",
+            marketValueEur: 154.1,
+            name: "Fondo Índice Mercados Emergent…",
+          },
+        ],
+        warnings: [],
+      },
+    );
+
+    expect(
+      checks.some((check) => check.name === "posiciones coinciden" && !check.pass),
+    ).toBe(true);
+  });
+
   it("fails when a position field drifts", () => {
     const checks = gradeExtractionAgainstExpected(
       validResult({

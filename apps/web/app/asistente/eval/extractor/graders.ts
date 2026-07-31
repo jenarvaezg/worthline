@@ -19,8 +19,20 @@ function numbersClose(left: number, right: number): boolean {
   return Math.abs(left - right) < MONEY_EPSILON;
 }
 
+/**
+ * Compare text the way the diacritics fold already does: on the fact, not on the
+ * glyph. The ellipsis fold is here for the value-only composition capture (#1345),
+ * whose screen truncates two fund names with «…» and whose reading comes back with
+ * «...» — the same truncation typed with the keys the model reached for. Failing that
+ * would grade the encoding of a printed mark, not whether the fund was read.
+ */
 function normalizeText(value: string): string {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/…/g, "...")
+    .toLowerCase()
+    .trim();
 }
 
 function warningMatches(fragment: string, warnings: readonly string[]): boolean {
