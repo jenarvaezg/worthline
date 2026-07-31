@@ -380,9 +380,10 @@ export interface LiabilityStore {
   /**
    * Ids of the liabilities whose figure comes from a modelled curve — a plan, a
    * re-baseline or a declared balance — so their stored balance is a dead field
-   * (#1290 / #1334). The bulk reading of `storedBalanceGovernsDebtFigure`, in one
-   * pass over the curve tables: a surface that lists EVERY debt (the «puesta al
-   * día») decides who gets a balance input without a read per row.
+   * (#1290 / #1334). The one way the app asks `storedBalanceGovernsDebtFigure`, in
+   * one pass over the curve tables: the surface that lists EVERY debt (the «puesta
+   * al día») decides who gets a balance input without a read per row, and the two
+   * write actions refuse with the same answer.
    */
   readCurveGovernedLiabilityIds: () => Promise<Set<string>>;
 }

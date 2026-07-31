@@ -278,16 +278,17 @@ export async function readDebtBalanceInputs(
  * Which liabilities take their figure from a modelled curve — so their stored
  * `current_balance_minor` is a dead field (#1290 / #1334).
  *
- * The bulk sibling of the per-debt reading in `updateLiabilityBalanceAction`: ONE
- * pass per curve table instead of 3-4 reads per row, so a surface that lists every
- * debt (the «puesta al día») can crib the ones whose balance input would be a
- * write into the void without an N+1. The RULE itself is not restated here — the
- * domain predicate `storedBalanceGovernsDebtFigure` decides, exactly as it does
- * for one debt on the ficha.
+ * ONE pass per curve table, whatever the number of debts, so the surfaces that ask
+ * — the «puesta al día», which lists every debt, and both write actions — never do
+ * 3-4 reads per row. The RULE itself is not restated here: the domain predicate
+ * `storedBalanceGovernsDebtFigure` decides. Every surface that needs the answer
+ * WITHOUT the curve in hand comes through here; the ficha is the exception that
+ * asks the predicate directly, because it already read the plan, the re-baselines
+ * and the anchors to render them.
  *
- * It asks presence only, which is all that predicate needs, so it selects ids and
- * never whole plan rows; `readDebtBalanceInputs` above is the sibling that reads
- * the full curve when the FIGURE is what's wanted. Trashed liabilities are
+ * It asks presence only, which is all that predicate needs, so it selects distinct
+ * ids and never whole plan rows; `readDebtBalanceInputs` above is the sibling that
+ * reads the full curve when the FIGURE is what's wanted. Trashed liabilities are
  * included and inert: callers intersect the set with the live rows they hold.
  */
 export async function readCurveGovernedLiabilityIds(db: StoreDb): Promise<Set<string>> {
@@ -297,15 +298,15 @@ export async function readCurveGovernedLiabilityIds(db: StoreDb): Promise<Set<st
       .from(liabilities)
       .all(),
     db
-      .select({ liabilityId: amortizationPlans.liabilityId })
+      .selectDistinct({ liabilityId: amortizationPlans.liabilityId })
       .from(amortizationPlans)
       .all(),
     db
-      .select({ liabilityId: liabilityBalanceRebaselines.liabilityId })
+      .selectDistinct({ liabilityId: liabilityBalanceRebaselines.liabilityId })
       .from(liabilityBalanceRebaselines)
       .all(),
     db
-      .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+      .selectDistinct({ liabilityId: liabilityBalanceAnchors.liabilityId })
       .from(liabilityBalanceAnchors)
       .all(),
   ]);
@@ -322,9 +323,8 @@ export async function readCurveGovernedLiabilityIds(db: StoreDb): Promise<Set<st
       hasBalanceAnchors: withAnchor.has(row.id),
       hasBalanceRebaselines: withRebaseline.has(row.id),
     });
-    if (!storedGoverns) {
-      governed.add(row.id);
-    }
+    if (storedGoverns) continue;
+    governed.add(row.id);
   }
 
   return governed;

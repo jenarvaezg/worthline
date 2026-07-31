@@ -25,7 +25,6 @@ import {
   checkManualValuationViolation,
   isHousingAsset,
   isValueUpdateEligible,
-  storedBalanceGovernsDebtFigure,
 } from "@worthline/domain";
 import {
   baseUrl,
@@ -98,6 +97,10 @@ export async function updateAssetValuationAction(
  * the curve, so writing the stored field would "save" with no figure moving. A
  * stale tab opened before the curve existed can still post here, and it must be
  * told where the real door is instead of silently succeeding.
+ *
+ * The question is asked through the SAME seam the batch pass uses
+ * (`readCurveGovernedLiabilityIds`, #1334), so the two write surfaces cannot come
+ * to different answers about the same debt.
  */
 export async function updateLiabilityBalanceAction(
   formData: FormData,
@@ -122,20 +125,7 @@ export async function updateLiabilityBalanceAction(
       return { ok: true, value: balance };
     },
     run: async (store, { id, parsed: balance }) => {
-      const debtModel = await store.liabilities.readDebtModel(id);
-      const [plan, rebaselines, anchors] = await Promise.all([
-        store.liabilities.readAmortizationPlan(id),
-        store.liabilities.readBalanceRebaselines(id),
-        store.liabilities.readBalanceAnchors(id),
-      ]);
-      if (
-        !storedBalanceGovernsDebtFigure({
-          debtModel,
-          hasAmortizationPlan: plan !== null,
-          hasBalanceAnchors: anchors.length > 0,
-          hasBalanceRebaselines: rebaselines.length > 0,
-        })
-      ) {
+      if ((await store.liabilities.readCurveGovernedLiabilityIds()).has(id)) {
         return {
           error: mapDomainViolation({ code: "debt_balance_governed_by_curve" }),
           ok: false,
