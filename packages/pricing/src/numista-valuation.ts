@@ -11,7 +11,7 @@
  *
  * Every external read is injected, so this is a pure unit of work testable without
  * the network: the web layer wires the real readers (with the API key + token) and
- * a Stooq/ECB spot resolver. Type details, per-metal spot, and per-issue estimates
+ * a Yahoo/ECB spot resolver. Type details, per-metal spot, and per-issue estimates
  * are deduped to stay within Numista's request cap (ADR 0017).
  */
 
@@ -22,7 +22,7 @@ import {
 } from "@pricing/coin-valuation";
 import type { PriceProvider } from "@pricing/index";
 import type { MetalKind } from "@pricing/metal";
-import { parseComposition, STOOQ_METAL_SYMBOL } from "@pricing/metal";
+import { parseComposition, YAHOO_METAL_SYMBOL } from "@pricing/metal";
 import type {
   NumistaCollectedItem,
   NumistaPrices,
@@ -58,7 +58,7 @@ export interface NumistaSyncDeps {
 export interface RevalueDeps {
   /** Per-grade estimates for an issue, or null when unavailable (Numista-capped). */
   prices: (typeId: number, issueId: number) => Promise<NumistaPrices | null>;
-  /** Metal spot in EUR per troy ounce, or null on outage (free: Stooq + ECB). */
+  /** Metal spot in EUR per troy ounce, or null on outage (free: Yahoo + ECB). */
   spotPerOzEur: (metal: MetalKind) => Promise<number | null>;
 }
 
@@ -444,7 +444,7 @@ export async function refreshCoinValuations(
   return results;
 }
 
-// ── The metal spot resolver (Stooq × ECB) ─────────────────────────────────────
+// ── The metal spot resolver (Yahoo futures × ECB) ─────────────────────────────
 
 /** A provider result that carries a usable numeric price. */
 function priceOf(
@@ -458,42 +458,39 @@ function priceOf(
 }
 
 /**
- * The EUR-per-troy-ounce spot for a metal: Stooq's USD spot (e.g. XAGUSD) times
- * the ECB EUR/USD rate (ADR 0017 — no new credentialed dependency). Returns null
- * on any failure so a transient outage leaves the metal value unresolved (the
- * coin then leans on its numismatic estimate) rather than throwing.
+ * The EUR-per-troy-ounce spot for a metal: Yahoo's front-month futures quote
+ * (e.g. `SI=F`), already carried into EUR by the provider's own ECB leg (ADR 0017
+ * amended in #1354 — still no new credentialed dependency). Returns null on any
+ * failure so a transient outage leaves the metal value unresolved (the coin then
+ * leans on its numismatic estimate) rather than throwing.
+ *
+ * Was Stooq's `XAGUSD` × ECB until Stooq went dark behind anti-bot protection and
+ * this returned null for every metal — leaving coins with a known weight and
+ * fineness valued at 0 €. The composition pipeline is now a single leg because
+ * the Yahoo provider owns the USD→EUR conversion; asking ECB again here would
+ * apply the rate twice.
  */
 export async function fetchMetalSpotEur(
   metal: MetalKind,
   nowIso: string,
 ): Promise<number | null> {
   try {
-    // Resolve both legs through the registry (issue #243) so no cross-provider
-    // import is buried here; the metal spot stays a composition pipeline (both
-    // legs must succeed), NOT a fallback chain.
-    const usdPerOz = priceOf(
-      await resolveProvider("stooq").fetchPrice({
+    // Resolved through the registry (issue #243) so no cross-provider import is
+    // buried here. Deliberately the PROVIDER, not `fetchWithFallback`: a metal
+    // spot has no second source to rescue it, and a wrong rescue would silently
+    // price silver off some other instrument.
+    return priceOf(
+      await resolveProvider("yahoo").fetchPrice({
         assetId: "metal-spot",
-        symbol: STOOQ_METAL_SYMBOL[metal],
+        symbol: YAHOO_METAL_SYMBOL[metal],
+        // USD, not EUR: the provider converts with `meta.currency ?? ctx.currency`,
+        // so declaring EUR here would make a payload that omits `meta.currency`
+        // skip the conversion and store a USD/oz figure as euros — a ~15% high
+        // melt value with no failure anywhere. Metal futures quote in USD.
         currency: "USD",
         nowIso,
       }),
     );
-    if (usdPerOz === null) {
-      return null;
-    }
-    const eurPerUsd = priceOf(
-      await resolveProvider("ecb").fetchPrice({
-        assetId: "fx",
-        symbol: "USD",
-        currency: "EUR",
-        nowIso,
-      }),
-    );
-    if (eurPerUsd === null) {
-      return null;
-    }
-    return usdPerOz * eurPerUsd;
   } catch {
     return null;
   }

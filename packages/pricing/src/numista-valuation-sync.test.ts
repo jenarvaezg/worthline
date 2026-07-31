@@ -256,7 +256,7 @@ describe("syncNumistaCollection — reuses persisted detail (ADR 0017 request-ca
   });
 });
 
-describe("fetchMetalSpotEur — Stooq (USD/oz) × ECB (EUR/USD)", () => {
+describe("fetchMetalSpotEur — Yahoo futures (USD/oz) × ECB (EUR/USD)", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
   });
@@ -264,11 +264,27 @@ describe("fetchMetalSpotEur — Stooq (USD/oz) × ECB (EUR/USD)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("converts the USD spot to EUR via the ECB rate", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nXAGUSD,2026-06-15,12:00,29,31,28,30,1000";
+  /** A Yahoo daily-chart body quoting `close` in USD on 2026-06-15. */
+  function yahooUsdQuote(close: number): Response {
+    return {
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: { currency: "USD" },
+              timestamp: [Date.UTC(2026, 5, 15) / 1000],
+              indicators: { quote: [{ close: [close] }] },
+            },
+          ],
+        },
+      }),
+    } as Response;
+  }
+
+  it("converts the USD futures spot to EUR via the ECB rate", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response)
+      .mockResolvedValueOnce(yahooUsdQuote(30))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -282,8 +298,25 @@ describe("fetchMetalSpotEur — Stooq (USD/oz) × ECB (EUR/USD)", () => {
     expect(eur).toBeCloseTo(27.2727, 2);
   });
 
+  it("asks Yahoo for the metal's futures symbol, not a dead Stooq pair (#1354)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(yahooUsdQuote(4109.9))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [{ series: { "0:0:0:0:0": { observations: { "0": [1] } } } }],
+        }),
+      } as Response);
+
+    await fetchMetalSpotEur("gold", "2026-06-15T12:00:00.000Z");
+
+    const url = String(vi.mocked(fetch).mock.calls[0]![0]);
+    expect(url).toContain("query2.finance.yahoo.com");
+    expect(url).toContain(encodeURIComponent("GC=F"));
+  });
+
   it("degrades to null when the spot fetch fails (never throws)", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 503 } as Response);
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 503 } as Response);
 
     expect(await fetchMetalSpotEur("gold", "2026-06-15T12:00:00.000Z")).toBeNull();
   });

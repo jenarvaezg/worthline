@@ -84,8 +84,9 @@ export const coingeckoHistoricalSource: HistoricalPriceSource = {
 
 /**
  * Resolve an investment's configured price provider to its historical source
- * (#923). Yahoo and CoinGecko fetch real series; providers without a long-range
- * API yet degrade to an empty map (gaps stay gaps, never invented).
+ * (#923). Yahoo and CoinGecko fetch real series; a provider without a long-range
+ * API — and the retired `stooq`, which has no API at all since #1354 — degrades
+ * to an empty map (gaps stay gaps, never invented).
  */
 export function resolveHistoricalPriceSource(
   priceProvider: InvestmentPriceProvider,

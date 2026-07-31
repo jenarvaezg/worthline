@@ -77,3 +77,10 @@ The three callers collapse onto it:
 - **A reason-carrying path still exists.** Callers needing _why_ a fetch failed (the refresh banner, #137) keep `fetchAndCachePrice`/`staleReason`. `fetchPriceNow` is intentionally reasonless; if a future caller needs the reason without the cache row, expose a `fetchPriceNowDetailed` returning the raw three-state rather than overloading the simple verb. The refactor of `fetchAndCachePrice` must keep surfacing the chain's **last failure reason** (`runFallbackChain` already returns it verbatim, `registry.ts:102`), so splitting the success unwrap into `fetchPriceNow` must not drop that — the `failed`-row branch reads `fetchWithFallback`'s raw return, not `fetchPriceNow`'s collapsed `null`.
 - **No new domain noun.** "Fetch now", "fallback chain", "delivering source", and "price cache" already name these concepts (ADR 0011, `registry.ts`, `prices.ts`). `FetchedPrice` is an implementation type for the cache-free result, parallel to `SymbolCandidate` (`search.ts:10`), not a new term in CONTEXT.md.
 - **Test surface.** `fetchPriceNow` is unit-testable with a stubbed `fallbackChains`/provider, no cache fixtures. The #317 tests that assert on `forcedStaleCache` move to asserting honest stale-select + persist, shrinking the action's test toward parse-and-delegate.
+
+> **Amended 2026-07-31 (#1354):** two claims above are now historical. Stooq is
+> retired, so validating through `fetchPriceNow` no longer "gains Yahoo→Stooq
+> fallback for free" — it gains whatever chain the registry declares, which today is
+> none. The seam itself is unaffected: routing a validation through the same
+> fallback engine as the refresh path is still the point, and it is what made this
+> retirement a registry edit instead of a hunt through provider bodies.

@@ -1,7 +1,7 @@
 import type { ExposureProfile } from "./exposure-lookthrough";
 import type { GlobalExposureProfile } from "./global-exposure-profile";
 import { defaultsFor, type Instrument } from "./instrument-catalog";
-import type { InvestmentPriceProvider } from "./prices";
+import { INVESTMENT_PRICE_PROVIDERS, type InvestmentPriceProvider } from "./prices";
 
 /**
  * The identity of an exposure-catalog row (#940, #1097, ADR 0058): a security is
@@ -37,12 +37,10 @@ export const INVESTMENT_PROFILE_INSTRUMENTS: ReadonlySet<Instrument> =
   new Set<Instrument>(["fund", "etf", "stock", "index", "pension_plan"]);
 
 const ISIN_PATTERN = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
-const INVESTMENT_PRICE_PROVIDERS = new Set<InvestmentPriceProvider>([
-  "yahoo",
-  "stooq",
-  "finect",
-  "coingecko",
-]);
+/** The provider vocabulary as a set, derived from the single list in `./prices`. */
+const PROVIDER_SET: ReadonlySet<InvestmentPriceProvider> = new Set(
+  INVESTMENT_PRICE_PROVIDERS,
+);
 
 /**
  * The providers a look-through instrument can carry. Deliberately excludes
@@ -257,7 +255,7 @@ function trimToNull(value: string | null | undefined): string | null {
 }
 
 function assertInvestmentPriceProvider(value: string): InvestmentPriceProvider {
-  if (!INVESTMENT_PRICE_PROVIDERS.has(value as InvestmentPriceProvider)) {
+  if (!PROVIDER_SET.has(value as InvestmentPriceProvider)) {
     throw new Error(`Unknown price provider "${value}".`);
   }
   return value as InvestmentPriceProvider;

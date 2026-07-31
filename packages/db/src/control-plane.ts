@@ -1020,6 +1020,19 @@ function toBenchmarkPrice(row: Record<string, unknown>): BenchmarkPrice {
   };
 }
 
+/** A benchmark row's date must be a real `YYYY-MM-DD` day key (#1354). */
+function isBenchmarkDateKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed);
+}
+
+/** A benchmark row's value must be a finite, strictly positive decimal (#1354). */
+function isPositiveDecimal(value: string): boolean {
+  const parsed = Number(value);
+  return value.trim() !== "" && Number.isFinite(parsed) && parsed > 0;
+}
+
 function toMaintainerAlert(row: Record<string, unknown>): MaintainerAlert {
   return {
     id: String(row["id"]),
@@ -1519,6 +1532,15 @@ async function buildControlPlaneStore(
     },
     async upsertBenchmarkPrices(seriesId, prices) {
       for (const price of prices) {
+        // Shape guard at the write boundary (#1354): a series row must be a real
+        // day key and a finite positive number. This table once stored a row
+        // keyed `"(async(-01"` — an anti-bot page that a CSV parser had split by
+        // commas — and it fed the «vs índice» lens for weeks. Whatever a future
+        // provider hands us, a malformed point is dropped here rather than
+        // persisted as data.
+        if (!isBenchmarkDateKey(price.dateKey) || !isPositiveDecimal(price.value)) {
+          continue;
+        }
         await client.execute({
           sql: `INSERT INTO benchmark_prices (series_id, date, value)
                 VALUES (?, ?, ?)

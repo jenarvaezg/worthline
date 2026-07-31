@@ -25,3 +25,13 @@ const LABELS: Record<PriceSource, string> = {
 export function priceSourceLabel(source: PriceSource): string {
   return LABELS[source];
 }
+
+/**
+ * The label for a provider that no longer fetches (#1354), for the one place a
+ * retired provider is still offered: the edit form of a holding that already
+ * carries it. Lives here so the "(retirado)" suffix is prose in the prose module,
+ * not a string spliced into JSX.
+ */
+export function retiredPriceSourceLabel(source: PriceSource): string {
+  return `${LABELS[source]} (retirado)`;
+}

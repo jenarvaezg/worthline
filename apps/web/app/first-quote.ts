@@ -15,7 +15,7 @@ import { after } from "next/server";
  * at creation time, from both altas: the wizard and the assistant's confirm.
  *
  * Deferred past the response with `after()`: the provider chain retries and falls
- * back (Yahoo → Stooq) over tens of seconds in the bad case, and the confirm of an
+ * back over tens of seconds in the bad case, and the confirm of an
  * alta must never wait on it. The deferred pass opens its OWN store — the caller's
  * connection closes with the response — against the target resolved while the
  * request scope is still alive, so nothing reads cookies after the fact.

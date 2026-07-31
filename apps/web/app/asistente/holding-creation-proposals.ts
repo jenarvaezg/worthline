@@ -358,7 +358,7 @@ function openingOf(plan: HoldingCreationPlan): OpeningCardBreakdown | undefined 
 export interface LiveUnitQuote {
   /** Decimal string, the provider's reported unit price in EUR. */
   pricePerUnit: string;
-  /** Who actually delivered it, fallback-aware (`yahoo`, `stooq`, …). */
+  /** Who actually delivered it, fallback-aware (`yahoo`, `coingecko`, …). */
   source: PriceSource;
   /** The provider's own as-of date (YYYY-MM-DD), when it gave one. */
   priceDate?: string;

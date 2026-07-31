@@ -51,6 +51,7 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
+  isRetiredInvestmentPriceProvider,
   isStatementBroker,
   parseStatement,
   planSnapshotPriceCorrection,
@@ -141,10 +142,17 @@ async function validateInvestmentProviderSymbol(input: {
     return { ok: true, quotedPricePerUnit: null };
   }
 
+  // A retired provider (Stooq, #1354) can no longer confirm anything, and blocking
+  // here would refuse an edit that has nothing to do with the symbol — a legacy
+  // holding could not even be renamed. It saves; the refresh pass is what reports
+  // the retirement, with an actionable reason in salud de datos.
+  if (isRetiredInvestmentPriceProvider(priceProvider)) {
+    return { ok: true, quotedPricePerUnit: null };
+  }
+
   // Route validation through the pricing seam (ADR 0026): a non-null price means
-  // the symbol resolves. This gains the registry's Yahoo→Stooq fallback for free
-  // (a transient Yahoo miss no longer rejects a symbol Stooq can still price) and
-  // drops the bespoke provider switch + the throwaway cache-row read.
+  // the symbol resolves, applying whatever fallback chain the registry declares,
+  // and dropping the bespoke provider switch + the throwaway cache-row read.
   const price = await fetchPriceNow(priceProvider, {
     assetId: input.assetId,
     currency: input.currency,

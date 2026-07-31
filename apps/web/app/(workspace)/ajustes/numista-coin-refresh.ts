@@ -16,7 +16,7 @@ import { parseNumistaToken, readApiKey } from "./numista-helpers";
 /**
  * Production wiring for the decoupled coin-valuation refresh (PRD #166, ADR 0017).
  *
- * Binds the real Numista/Stooq network behind {@link refreshStaleCoinValuations}:
+ * Binds the real Numista/Yahoo network behind {@link refreshStaleCoinValuations}:
  * for each connected Numista source whose `numista` freshness row has lapsed, it
  * mints/reuses the OAuth token, refetches the per-grade estimate (only past its
  * long TTL — {@link refreshCoinValuations} owns that gate) and the daily metal

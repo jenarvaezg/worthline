@@ -2,7 +2,15 @@
 
 worthline shows how you have grown, but growth in a vacuum ("+12% en dos años") says nothing about whether that is _good_. The benchmark layer adds the verdict — am I keeping pace, or do I need to up my game? — and it is a **present-time, non-figure lens** in the same family as returns (ADR 0040), exposure profiles (ADR 0039/0058) and the contribution plan (ADR 0041): it is derived on read, never frozen into a snapshot, and never read by the net-worth / snapshot / ripple math (ADR 0008 untouched). The only thing persisted is the raw benchmark **series**, cached like a price — not a figure.
 
-Benchmark series live in a **shared catalog in the control plane** (`benchmark_prices(series_id, date, value)`, one row per series per month), not per workspace: a series (Spanish CPI, a market index) is tenant-independent, so the fleet fetches it once — the same principle that moved exposure profiles to the control plane (ADR 0058). Cadence is **monthly** (CPI is monthly; it aligns with the monthly closes TWR rides in ADR 0040; daily would be overkill). Sources are **INE** (IPC general) for inflation and **Stooq** for index proxies, ingested by a **best-effort, isolated** phase on the daily-capture cron (ADR 0037 / #528) with **lazy idempotent backfill** — fetch only the missing months, first run fills the existing window — so a source outage never blocks snapshot capture.
+Benchmark series live in a **shared catalog in the control plane** (`benchmark_prices(series_id, date, value)`, one row per series per month), not per workspace: a series (Spanish CPI, a market index) is tenant-independent, so the fleet fetches it once — the same principle that moved exposure profiles to the control plane (ADR 0058). Cadence is **monthly** (CPI is monthly; it aligns with the monthly closes TWR rides in ADR 0040; daily would be overkill). Sources are **INE** (IPC general) for inflation and **Yahoo** for index proxies
+(Stooq until #1354, where it was retired for anti-bot protection — its CSV endpoint
+had in fact been feeding every index series a single fabricated row keyed
+`date = "(async(-01"`, the challenge page split by commas, since 2026-07-10; the
+migration purges those rows and the write boundary now refuses a malformed point;
+the catalog field was RENAMED `stooqSymbol` → `yahooSymbol` rather than generalised to
+`{provider, symbol}` — every market series comes from one provider and the CPI series
+is routed by its `series_id`, so a provider field would be a constant carried on ten
+rows, added for a second provider that does not exist), ingested by a **best-effort, isolated** phase on the daily-capture cron (ADR 0037 / #528) with **lazy idempotent backfill** — fetch only the missing months, first run fills the existing window — so a source outage never blocks snapshot capture.
 
 **Global comparison — two real-terms lenses behind a toggle.** The naive "net-worth growth vs inflation" is misleading, because `Δ net worth = investment return + net contributions`: someone who only saves and never invests appears to "beat inflation" purely by adding money. So the global verdict is **two distinct, both-honest lenses**, selectable with a view toggle (RSC-first, ADR 0036), both expressed in **real terms** (deflated by CPI) and **annualized**:
 

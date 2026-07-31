@@ -22,9 +22,15 @@ import {
   valueOnlySymbolFormNotice,
 } from "@web/patrimonio/value-only-opening";
 import { PendingSubmit } from "@web/pending-submit";
+import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
 import type { InvestmentAssetFull } from "@worthline/db";
 import type { Liability, ManualAsset, Member, ValuationMethod } from "@worthline/domain";
-import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
+import {
+  formatMoneyInput,
+  formatMoneyMinorPrivacy,
+  isRetiredInvestmentPriceProvider,
+  SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
+} from "@worthline/domain";
 import Link from "next/link";
 
 type FormAction = (formData: FormData) => void | Promise<void>;
@@ -145,10 +151,19 @@ export function AssetEditForm({
               defaultValue={values["priceProvider"] ?? investment.priceProvider}
               name="priceProvider"
             >
-              <option value="yahoo">Yahoo Finance</option>
-              <option value="stooq">Stooq</option>
-              <option value="finect">Finect</option>
-              <option value="coingecko">CoinGecko</option>
+              {SELECTABLE_INVESTMENT_PRICE_PROVIDERS.map((provider) => (
+                <option key={provider} value={provider}>
+                  {priceSourceLabel(provider)}
+                </option>
+              ))}
+              {/* #1354: un proveedor retirado sigue apareciendo SI la posición ya
+                  lo tiene, etiquetado como tal. Ocultarlo cambiaría el proveedor
+                  guardado en silencio al primer guardado del formulario. */}
+              {isRetiredInvestmentPriceProvider(investment.priceProvider) ? (
+                <option value={investment.priceProvider}>
+                  {retiredPriceSourceLabel(investment.priceProvider)}
+                </option>
+              ) : null}
             </select>
           </label>
 

@@ -165,21 +165,11 @@ describe("updateInvestmentAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/precio/i);
   });
 
-  test("Yahoo miss rescued by Stooq: symbol validates through the seam (ok=saved)", async () => {
-    // Validation routes through fetchPriceNow now (ADR 0026), so it gains the
-    // Yahoo→Stooq fallback for free: a transient Yahoo miss no longer rejects a
-    // symbol Stooq can still price. Under the old Yahoo-only validation this
-    // would have error-redirected.
+  test("a symbol Yahoo can quote validates through the seam (ok=saved)", async () => {
+    // Validation routes through fetchPriceNow (ADR 0026); a quoted symbol saves.
+    // It used to be allowed to ride a Yahoo→Stooq rescue, retired in #1354.
     await setupStoreWithInvestment();
-    const stooqOk =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: false } as Response)
-        .mockResolvedValueOnce({ ok: true, text: async () => stooqOk } as Response),
-    );
+    stubYahooQuote("4.25");
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -204,15 +194,7 @@ describe("updateInvestmentAction wiring", () => {
 
   test("invalid Yahoo provider symbol: error redirect, asset unchanged", async () => {
     await setupStoreWithInvestment();
-    const stooqNoData =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nBAD,N/D,N/D,N/D,N/D,N/D,N/D,0";
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce({ ok: false } as Response)
-        .mockResolvedValueOnce({ ok: true, text: async () => stooqNoData } as Response),
-    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false } as Response));
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -262,28 +244,35 @@ async function setupValueOnlyHolding(): Promise<void> {
   );
 }
 
-/** A Stooq CSV the pricing seam reads as a valid quote at `close`. */
-function stooqQuote(symbol: string, close: string): string {
-  return `Symbol,Date,Time,Open,High,Low,Close,Volume\n${symbol},2026-07-28,16:00:00,${close},${close},${close},${close},1000`;
-}
-
-function stubYahooMissStooqHit(close: string): void {
+/**
+ * Stub the pricing seam with a Yahoo quote at `close`. The as-of timestamp is
+ * NOW because the provider rejects a market date older than a week (#730) and
+ * these actions read the real clock.
+ */
+function stubYahooQuote(close: string): void {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValue({
-        ok: true,
-        text: async () => stooqQuote("SAN", close),
-      } as unknown as Response),
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [
+            {
+              meta: { currency: "EUR" },
+              timestamp: [Math.floor(Date.now() / 1000)],
+              indicators: { quote: [{ close: [Number(close)] }] },
+            },
+          ],
+        },
+      }),
+    } as unknown as Response),
   );
 }
 
 describe("updateInvestmentAction · value-only opening guard (#1329)", () => {
   test("assigning a symbol over the 1-participación alta is blocked, with both figures", async () => {
     await setupValueOnlyHolding();
-    stubYahooMissStooqHit("11.90");
+    stubYahooQuote("11.90");
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -308,7 +297,7 @@ describe("updateInvestmentAction · value-only opening guard (#1329)", () => {
 
   test("the acknowledgement («es una participación real») lets the save through", async () => {
     await setupValueOnlyHolding();
-    stubYahooMissStooqHit("11.90");
+    stubYahooQuote("11.90");
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -348,7 +337,7 @@ describe("updateInvestmentAction · value-only opening guard (#1329)", () => {
       },
       { today: "2026-07-28" },
     );
-    stubYahooMissStooqHit("11.90");
+    stubYahooQuote("11.90");
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(
@@ -373,7 +362,7 @@ describe("updateInvestmentAction · value-only opening guard (#1329)", () => {
       priceProvider: "yahoo",
       providerSymbol: "SAN.MC",
     });
-    stubYahooMissStooqHit("11.90");
+    stubYahooQuote("11.90");
 
     const url = await catchRedirect(() =>
       updateInvestmentAction(

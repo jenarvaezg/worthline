@@ -42,6 +42,8 @@ export interface PriceProviderFailure {
 export const PRICE_FAILURE_REASONS = {
   symbolNotFound: "Símbolo no encontrado en el proveedor",
   noQuote: "El proveedor no devolvió cotización",
+  /** A retired source (#1354): the holding needs a symbol on a live provider. */
+  providerRetired: "Proveedor retirado: asigna un símbolo de Yahoo a esta posición",
   httpError: (status: number) => `El proveedor respondió con un error (${status})`,
   currencyMismatch: (providerCurrency: string, assetCurrency: string) =>
     `La divisa del proveedor (${providerCurrency}) no coincide con la del activo (${assetCurrency})`,
@@ -291,7 +293,7 @@ export {
 export type { BenchmarkPricePoint } from "./ine-cpi";
 export { fetchSpanishCpi, INE_SPANISH_CPI_TABLE_ID } from "./ine-cpi";
 export type { MetalKind, MetalValueInput, ParsedComposition } from "./metal";
-export { metalValueMinor, parseComposition, STOOQ_METAL_SYMBOL } from "./metal";
+export { metalValueMinor, parseComposition, YAHOO_METAL_SYMBOL } from "./metal";
 export type {
   CollectedItemDraft,
   NumistaCollectedItem,
@@ -342,5 +344,5 @@ export {
 } from "./registry";
 export type { SymbolCandidate } from "./search";
 export { searchSymbols } from "./search";
-export { fetchStooqMonthlyBenchmark } from "./stooq-benchmark";
+export { fetchYahooMonthlyBenchmark } from "./yahoo-benchmark";
 export { fetchYahooHistoryEur, yahooHistoricalSource } from "./yahoo-historical";

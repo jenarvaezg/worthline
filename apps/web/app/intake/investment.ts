@@ -12,6 +12,7 @@ import type {
   Member,
   OperationKind,
 } from "@worthline/domain";
+import { isInvestmentPriceProvider } from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
 
 /**
@@ -249,13 +250,18 @@ function isLiquidityTier(value: string): value is LiquidityTier {
   );
 }
 
+/**
+ * Parse a submitted price provider: `undefined` for an absent field, `null` for a
+ * value outside the vocabulary. Accepts RETIRED providers (#1354) on purpose —
+ * the edit form re-submits whatever a legacy holding already carries, and
+ * rejecting it here would refuse a save that changes something else entirely.
+ * The retired provider simply never fetches (see `retiredPriceProvider`).
+ */
 function parseInvestmentPriceProvider(
   value: FormDataEntryValue | null,
 ): InvestmentPriceProvider | null | undefined {
   const raw = String(value ?? "").trim();
   if (!raw) return undefined;
 
-  return raw === "yahoo" || raw === "stooq" || raw === "finect" || raw === "coingecko"
-    ? raw
-    : null;
+  return isInvestmentPriceProvider(raw) ? raw : null;
 }

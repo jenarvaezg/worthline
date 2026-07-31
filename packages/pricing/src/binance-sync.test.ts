@@ -275,21 +275,31 @@ describe("fetchCoinGeckoPriceEur — the real live-price seam (ADR 0021 consiste
     // The revalue now goes through fetchPriceNow("coingecko", ctx) (ADR 0026),
     // so a token price participates in any chain declared for coingecko — under
     // the old direct resolveProvider("coingecko") call a miss returned null
-    // regardless of any fallback. Declare a temporary coingecko→stooq chain and
-    // confirm a CoinGecko miss is rescued by Stooq's EUR quote.
+    // regardless of any fallback. Declare a temporary coingecko→yahoo chain and
+    // confirm a CoinGecko miss is rescued by Yahoo's EUR quote. (It rode a
+    // coingecko→stooq chain until #1354 retired Stooq; the seam is the point.)
     const previous = fallbackChains.coingecko;
-    fallbackChains.coingecko = ["stooq"];
+    fallbackChains.coingecko = ["yahoo"];
     try {
       vi.mocked(fetch)
         // CoinGecko /simple/price miss (429) — retried up to 3 times before the chain moves on:
         .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
         .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
         .mockResolvedValueOnce({ ok: false, status: 429 } as Response)
-        // Stooq rescue with a valid EUR close:
+        // Yahoo rescue with a valid EUR close:
         .mockResolvedValueOnce({
           ok: true,
-          text: async () =>
-            "Symbol,Date,Time,Open,High,Low,Close,Volume\nBTC,2026-06-16,16:00:00,49000,51000,48000,50000,123",
+          json: async () => ({
+            chart: {
+              result: [
+                {
+                  meta: { currency: "EUR" },
+                  timestamp: [Math.floor(Date.parse("2026-06-16T00:00:00Z") / 1000)],
+                  indicators: { quote: [{ close: [50_000] }] },
+                },
+              ],
+            },
+          }),
         } as Response);
 
       expect(await fetchCoinGeckoPriceEur("bitcoin", "2026-06-16T00:00:00.000Z")).toBe(
