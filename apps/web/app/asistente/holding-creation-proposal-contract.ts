@@ -24,6 +24,12 @@ export interface HoldingCreationProposalDraft {
 export interface HoldingCreationDuplicate {
   name: string;
   confidence: "strong" | "weak";
+  /**
+   * How many OTHER current holdings also look like this one (#1331) — the same fund
+   * at two brokers makes the "ya tienes uno" warning a "ya tienes varios". Absent
+   * when {@link name} is the only candidate; informative, like the whole warning.
+   */
+  otherCandidates?: number;
 }
 
 export interface HoldingCreationProposal {

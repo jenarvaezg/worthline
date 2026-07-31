@@ -138,3 +138,40 @@ take the ledger at that point, not grow a second filter.
 
 Related: the connected-source exemption (#685) is the same shape — a Binance or
 Numista holding never carries a provider symbol because its source prices it.
+
+## Amendment (#1331): an ISIN identifies the instrument, not the holding
+
+Decision 1 above resolves a group to _matched_ when "an existing investment carries
+that ISIN". That sentence hides an assumption this ADR never stated and the data model
+never enforced: that **at most one** holding carries it. `investment_assets.isin` is
+not unique, and the same instrument at two brokers is a legitimate, real portfolio —
+the father's `IE00B1G3DH73` lives both in a CLOSED position of an old broker (97,65
+uds bought and sold in full) and in the LIVE Cartera Indexada holding that keeps
+receiving contributions.
+
+Under a first-wins index, the second claimant is unreachable and the first wins by
+creation order — which in that real case is the dead holding. So:
+
+- **An ISIN (or the provider symbol that plays its role for pension plans and crypto,
+  #695) identifies the instrument. It does not identify the holding.** A key claimed
+  by more than one holding resolves the instrument and leaves the holding open.
+- The assistant's S1 matcher (`holding-matcher.ts`, PRD #1103) indexes **every**
+  claimant and, when a key has several, degrades the match from `strong` to a ranked
+  proposal `ambiguous` flag included: the row still defaults to the best claimant, but
+  it is never "safe to apply unattended", and the preview names how many holdings
+  share the key so the user picks. The reconcile preview already knew how to reassign
+  a candidate, so no new surface was needed.
+- **Ranking, never resolution.** Two cheap disambiguators order the claimants: the
+  holding whose name the document also matches, then a live position before a closed
+  one. Closed is `isClosedPosition` — the one definition from the #1348 amendment
+  above, net units over a real ledger; a value-is-zero guess would demote precisely
+  the live-but-unpriced holding it exists to promote (a symbol-less investment values
+  at cost basis, decision 3).
+- **The document's own scope is not available.** "Which broker/portfolio is this row
+  from" would be the strongest disambiguator, but the extraction contract carries no
+  broker or scope per holding, so it is not part of the ranking today.
+
+The statement router itself (`resolveStatementImportBuckets`) still first-wins a
+duplicated ISIN, and there it can `delete`/`overwrite` operations of the holding it
+picked: tracked as **#1366**, deferred because fixing it changes the importer's
+preview surface (a bucket needs candidates, not one `assetId`).

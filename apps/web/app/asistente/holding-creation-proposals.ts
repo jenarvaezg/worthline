@@ -42,6 +42,7 @@ import {
   type HoldingCreationProposal,
 } from "./holding-creation-proposal-contract";
 import { instrumentLabel } from "./instrument-labels";
+import { projectMatcherPortfolio } from "./matcher-portfolio";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 
 type ProposalStore = Pick<WorthlineStore, "assets" | "liabilities" | "workspace"> & {
@@ -242,31 +243,6 @@ function buildPlan(
   };
 }
 
-/** Project the current portfolio into matcher holdings for the duplicate warning. */
-async function projectHoldings(store: ProposalStore): Promise<MatchPortfolioHolding[]> {
-  const assets = await store.assets.readAssets();
-  const investmentMeta = await store.assets.readInvestmentAssetsWithMeta();
-  const isinBy = new Map(investmentMeta.map((meta) => [meta.id, meta]));
-  const assetHoldings: MatchPortfolioHolding[] = assets.map((asset) => {
-    const meta = isinBy.get(asset.id);
-    return {
-      holdingId: asset.id,
-      name: asset.name,
-      ...(asset.instrument ? { instrument: asset.instrument } : {}),
-      ...(meta?.isin ? { isin: meta.isin } : {}),
-      ...((asset.providerSymbol ?? meta?.providerSymbol)
-        ? { providerSymbol: asset.providerSymbol ?? meta?.providerSymbol ?? null }
-        : {}),
-    };
-  });
-  const liabilities = await store.liabilities.readLiabilities();
-  const liabilityHoldings: MatchPortfolioHolding[] = liabilities.map((liability) => ({
-    holdingId: liability.id,
-    name: liability.name,
-  }));
-  return [...assetHoldings, ...liabilityHoldings];
-}
-
 /** The informative duplicate warning for the alta, or undefined when unique. */
 function duplicateOf(
   plan: HoldingCreationPlan,
@@ -286,9 +262,13 @@ function duplicateOf(
   const created = reassignToNew(matchHoldings([row], holdings)[0]!);
   const duplicate = created.possibleDuplicate;
   if (!duplicate) return undefined;
+  // Several holdings can legitimately share the ISIN (two brokers, #1331): name the
+  // best candidate and count the rest, instead of pretending there is only one.
+  const others = created.candidates.length - 1;
   return {
     confidence: duplicate.confidence === "strong" ? "strong" : "weak",
     name: duplicate.name,
+    ...(others > 0 ? { otherCandidates: others } : {}),
   };
 }
 
@@ -532,8 +512,7 @@ export async function buildHoldingCreationProposal(
   if (!built.ok) return built;
   const plan = built.plan;
 
-  const holdings = await projectHoldings(store);
-  const duplicate = duplicateOf(plan, holdings);
+  const duplicate = duplicateOf(plan, await projectMatcherPortfolio(store));
 
   const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
   const impact = holdingCreationImpact(netWorthBeforeMinor, plan);

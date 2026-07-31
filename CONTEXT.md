@@ -141,7 +141,10 @@ _Avoid_: ticker (too narrow — Finect codes are not tickers).
 The International Securities Identification Number of an investment. Stored as
 reference metadata only — it does not participate in price fetching. The
 **provider symbol** is the sole lookup key. It is also the shared key of an
-**exposure profile**.
+**exposure profile**. It identifies the **instrument**, never the **holding**: the
+same fund at two brokers is two holdings carrying the same ISIN, so a match on it
+resolves *what* the row is and leaves *which holding* open (ADR 0055, amendment
+#1331).
 
 **Exposure**:
 The composition of a scope's portfolio across axes — its largest **holdings**, its

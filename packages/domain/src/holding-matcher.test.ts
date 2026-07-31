@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  countKeyClaimants,
   discardRow,
   type MatchCandidateRow,
   type MatchPortfolioHolding,
@@ -298,6 +299,156 @@ describe("matchHoldings — duplicate warning (S2 underpin)", () => {
       key: "isin",
       confidence: "strong",
     });
+  });
+});
+
+describe("matchHoldings — the same instrument in two brokers (#1331)", () => {
+  // The real workspace case: IE00B1G3DH73 lives twice — a CLOSED position of an old
+  // portfolio and the LIVE one of the Cartera Indexada that keeps receiving
+  // contributions. First-wins would apply the new movements to the dead holding at
+  // `strong` confidence, unattended and with no signal at all.
+  const closedOld = holding({
+    holdingId: "closed",
+    name: "Vanguard U.S. 500 Stk Idx € H Acc",
+    isin: "IE00B1G3DH73",
+    instrument: "fund",
+    closed: true,
+  });
+  const liveIndexed = holding({
+    holdingId: "live",
+    name: "Vanguard US Equity Index Fund EUR Hedged",
+    isin: "IE00B1G3DH73",
+    instrument: "fund",
+  });
+  const documentRow = row({
+    rowId: "r1",
+    isin: "IE00B1G3DH73",
+    name: "Vanguard US Equity Index Fund EUR Hedged",
+    instrument: "fund",
+  });
+
+  test("an ISIN two holdings share never resolves as strong — it goes to review", () => {
+    const match = only(matchHoldings([documentRow], [closedOld, liveIndexed]));
+
+    expect(match.confidence).toBe("weak");
+    expect(match.confidence).not.toBe("strong");
+    expect(match.ambiguous).toBe(true);
+    expect(match.key).toBe("isin");
+  });
+
+  test("the preview offers BOTH holdings, the live one first", () => {
+    const match = only(matchHoldings([documentRow], [closedOld, liveIndexed]));
+
+    expect(match.candidates.map((candidate) => candidate.holdingId)).toEqual([
+      "live",
+      "closed",
+    ]);
+    // The closed position — the one first-wins picked — is no longer the default.
+    expect(match.target).toBe("live");
+    expect(countKeyClaimants(match)).toBe(2);
+  });
+
+  test("a closed position ranks last even when nothing else tells them apart", () => {
+    const match = only(
+      matchHoldings(
+        [row({ rowId: "r1", isin: "IE00B1G3DH73" })],
+        [closedOld, holding({ holdingId: "live", isin: "IE00B1G3DH73" })],
+      ),
+    );
+    expect(match.candidates.map((candidate) => candidate.holdingId)).toEqual([
+      "live",
+      "closed",
+    ]);
+  });
+
+  test("the exact name breaks the tie between two live holdings", () => {
+    const otherLive = holding({
+      holdingId: "other",
+      name: "Otro Vanguard",
+      isin: "IE00B1G3DH73",
+      instrument: "fund",
+    });
+    const match = only(matchHoldings([documentRow], [otherLive, liveIndexed]));
+    expect(match.target).toBe("live");
+    expect(match.ambiguous).toBe(true);
+  });
+
+  test("portfolio order decides when no disambiguator applies — deterministic, still review", () => {
+    const match = only(
+      matchHoldings(
+        [row({ rowId: "r1", isin: "IE00B1G3DH73" })],
+        [
+          holding({ holdingId: "first", isin: "IE00B1G3DH73" }),
+          holding({ holdingId: "second", isin: "IE00B1G3DH73" }),
+        ],
+      ),
+    );
+    expect(match.target).toBe("first");
+    expect(match.confidence).toBe("weak");
+    expect(match.ambiguous).toBe(true);
+  });
+
+  test("a duplicated provider symbol degrades the same way (#695 keys)", () => {
+    const match = only(
+      matchHoldings(
+        [row({ rowId: "r1", providerSymbol: "N5115" })],
+        [
+          holding({ holdingId: "h1", providerSymbol: "N5115", closed: true }),
+          holding({ holdingId: "h2", providerSymbol: "n5115" }),
+        ],
+      ),
+    );
+    expect(match).toMatchObject({
+      decision: "update",
+      target: "h2",
+      confidence: "weak",
+      key: "provider_symbol",
+      ambiguous: true,
+    });
+  });
+
+  test("picking one by hand resolves the review at that key's own strength", () => {
+    const match = only(matchHoldings([documentRow], [closedOld, liveIndexed]));
+    const resolved = reassignToCandidate(match, "closed");
+
+    expect(resolved).toMatchObject({
+      decision: "update",
+      target: "closed",
+      confidence: "strong",
+      key: "isin",
+    });
+    // The user chose; the row is no longer pending review.
+    expect(resolved.ambiguous).toBeUndefined();
+    expect(match.target).toBe("live"); // input untouched
+  });
+
+  test("a uniquely held ISIN is untouched: still strong, no review flag", () => {
+    const match = only(matchHoldings([documentRow], [liveIndexed]));
+    expect(match).toMatchObject({ confidence: "strong", target: "live" });
+    expect(match.ambiguous).toBeUndefined();
+  });
+
+  test("a closed holding is still a legitimate target when it is the only holder", () => {
+    const match = only(matchHoldings([documentRow], [closedOld]));
+    expect(match).toMatchObject({
+      decision: "update",
+      target: "closed",
+      confidence: "strong",
+    });
+    expect(match.ambiguous).toBeUndefined();
+  });
+
+  test("two same-name weak candidates are flagged for review too", () => {
+    const match = only(
+      matchHoldings(
+        [row({ rowId: "r1", name: "Depósito", instrument: "term_deposit" })],
+        [
+          holding({ holdingId: "h1", name: "Depósito", instrument: "term_deposit" }),
+          holding({ holdingId: "h2", name: "Depósito", instrument: "term_deposit" }),
+        ],
+      ),
+    );
+    expect(match).toMatchObject({ confidence: "weak", ambiguous: true, target: "h1" });
   });
 });
 

@@ -1,10 +1,11 @@
-import type { MatchPortfolioHolding } from "@worthline/domain";
+import { countKeyClaimants, type MatchPortfolioHolding } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 import type { ExtractedPositionsMovementsDocument } from "./attachment-extraction-contract";
 import {
   buildReconcileRows,
   discardReconcileRow,
   effectiveDecision,
+  isRowWritable,
   reassignRowToCandidate,
   reassignRowToNew,
   reconcileImpact,
@@ -115,6 +116,88 @@ describe("buildReconcileRows", () => {
     expect(rows[1]!.uncertain).toBe(true);
     // Uncertain never forces a decision: both are still create (no portfolio).
     expect(rows.every((row) => row.match.decision === "create")).toBe(true);
+  });
+});
+
+describe("buildReconcileRows — el mismo fondo en dos brokers (#1331)", () => {
+  // The real workspace case: the ISIN lives in a CLOSED position of an old portfolio
+  // and in the LIVE holding of the Cartera Indexada that keeps receiving
+  // contributions. The document's movements belong to the live one, and the row must
+  // never claim to have resolved that on its own.
+  const SHARED = "IE00B1G3DH73";
+  const document = doc({
+    holdings: [
+      {
+        name: "Vanguard US Equity Index Fund EUR Hedged",
+        type: "Fondo",
+        isin: SHARED,
+        value: 15000,
+        currency: "EUR",
+        fidelity: "movements",
+      },
+    ],
+    movements: [
+      {
+        date: "2026-01-10",
+        kind: "buy",
+        isin: SHARED,
+        units: 10,
+        amount: 1000,
+        currency: "EUR",
+      },
+    ],
+  });
+  const portfolio: MatchPortfolioHolding[] = [
+    {
+      holdingId: "asset-closed",
+      name: "Vanguard U.S. 500 Stk Idx € H Acc",
+      isin: SHARED,
+      instrument: "fund",
+      closed: true,
+    },
+    {
+      holdingId: "asset-live",
+      name: "Vanguard US Equity Index Fund EUR Hedged",
+      isin: SHARED,
+      instrument: "fund",
+    },
+  ];
+
+  it("never resolves the shared ISIN as strong — it goes to review with both candidates", () => {
+    const [row] = buildReconcileRows(document, portfolio);
+    expect(row!.match.confidence).toBe("weak");
+    expect(row!.match.confidence).not.toBe("strong");
+    expect(row!.match.ambiguous).toBe(true);
+    expect(row!.match.candidates.map((candidate) => candidate.holdingId)).toEqual([
+      "asset-live",
+      "asset-closed",
+    ]);
+    expect(countKeyClaimants(row!.match)).toBe(2);
+  });
+
+  it("defaults to the live holding, so the contributions never land on the closed one", () => {
+    const [row] = buildReconcileRows(document, portfolio);
+    expect(row!.match.target).toBe("asset-live");
+    expect(row!.movementsCount).toBe(1);
+    // It still writes: review means "check which one", not "drop the row".
+    expect(isRowWritable(row!)).toBe(true);
+  });
+
+  it("reassigning to the other candidate resolves the review", () => {
+    const rows = reassignRowToCandidate(
+      buildReconcileRows(document, portfolio),
+      "row-0",
+      "asset-closed",
+    );
+    expect(rows[0]!.match.target).toBe("asset-closed");
+    expect(rows[0]!.match.ambiguous).toBeUndefined();
+  });
+
+  it("a uniquely held ISIN keeps resolving strong", () => {
+    const [row] = buildReconcileRows(document, [portfolio[1]!]);
+    expect(row!.match.confidence).toBe("strong");
+    expect(row!.match.ambiguous).toBeUndefined();
+    expect(countKeyClaimants(row!.match)).toBe(1);
   });
 });
 

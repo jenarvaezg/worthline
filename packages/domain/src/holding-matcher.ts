@@ -10,8 +10,11 @@
  * (see {@link ./statement-import-plan}) to two match keys with distinct strength:
  *
  * - **Strong key** — ISIN (or the provider symbol that plays ISIN's role for
- *   pension plans and crypto, #695): globally unique, so an exact hit *resolves*
- *   the row on its own with high confidence.
+ *   pension plans and crypto, #695): globally unique *as an instrument id*, so an
+ *   exact hit resolves the row on its own — **as long as one holding claims it**.
+ *   The same instrument held at two brokers is a legitimate, real portfolio (#1331),
+ *   and then the key identifies the instrument but not *which* holding: the match is
+ *   degraded to review with every claimant offered, never silently resolved.
  * - **Weak key** — normalized name **plus** instrument: two real holdings can
  *   share a name, so an exact hit only *proposes* the best candidate. The
  *   instrument must be compatible (a "fund" row never matches a "current_account"
@@ -74,6 +77,14 @@ export interface MatchPortfolioHolding {
   isin?: string | null;
   providerSymbol?: string | null;
   instrument?: Instrument | null;
+  /**
+   * The position holds nothing today — fully sold, zero balance (the caller's cheap
+   * liveness signal; omit it when unknown). Read ONLY to **rank** the claimants of an
+   * ambiguous key (#1331): new movements almost never belong to a holding that was
+   * emptied, so a closed position ranks last. Never a gate — a closed holding that
+   * uniquely claims the key is still a legitimate, `strong` match target.
+   */
+  closed?: boolean;
 }
 
 /** One existing holding a row could resolve to, ranked best-first. */
@@ -96,7 +107,8 @@ export interface RowMatch {
    * verdict: the apply MUST gate on {@link confidence} and never auto-apply a weak
    * update without user confirmation, or a coincidental name would silently rewrite
    * the wrong holding (the invariant the whole module exists to protect). Only a
-   * `strong` update is safe to apply unattended.
+   * `strong` update is safe to apply unattended — and a strong key claimed by two
+   * holdings is never one: see {@link ambiguous}.
    */
   decision: MatchDecision;
   /** The holding an `update` writes to; absent for `create` / `leave`. */
@@ -119,6 +131,15 @@ export interface RowMatch {
    * running the row through {@link reassignToNew} and reading this field.
    */
   possibleDuplicate?: MatchCandidate;
+  /**
+   * The key backing this match hit **more than one** holding, so it identifies the
+   * instrument but not the holding (#1331): the same fund at two brokers, or two
+   * holdings sharing a name. The decision is a ranked proposal pending review — the
+   * surface must say so and the apply must never treat it as resolved. Set only by
+   * {@link matchHoldings}; the reassignment API drops it, because picking a candidate
+   * by hand *is* the review.
+   */
+  ambiguous?: boolean;
 }
 
 const ISIN_SHAPE = /^[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]$/;
@@ -160,45 +181,108 @@ function instrumentsCompatible(
 }
 
 interface StrongIndex {
-  byKey: Map<string, MatchPortfolioHolding>;
+  byKey: Map<string, MatchPortfolioHolding[]>;
   /** Lowercased provider-symbol index so "Bitcoin" finds "bitcoin" (#695). */
-  bySymbolLower: Map<string, MatchPortfolioHolding>;
+  bySymbolLower: Map<string, MatchPortfolioHolding[]>;
 }
 
+/** Append to a multi-map bucket, keeping portfolio order within the key. */
+function claim(
+  index: Map<string, MatchPortfolioHolding[]>,
+  key: string,
+  holding: MatchPortfolioHolding,
+): void {
+  const bucket = index.get(key);
+  if (bucket) bucket.push(holding);
+  else index.set(key, [holding]);
+}
+
+/**
+ * Index the portfolio by strong key. **Every** claimant of a key is kept, in
+ * portfolio order: a key claimed twice is real (#1331) and the matcher must be able
+ * to see it, which first-wins made structurally impossible.
+ */
 function buildStrongIndex(holdings: MatchPortfolioHolding[]): StrongIndex {
-  const byKey = new Map<string, MatchPortfolioHolding>();
-  const bySymbolLower = new Map<string, MatchPortfolioHolding>();
+  const byKey = new Map<string, MatchPortfolioHolding[]>();
+  const bySymbolLower = new Map<string, MatchPortfolioHolding[]>();
   for (const holding of holdings) {
     const isin = normalizeStrongKey(holding.isin);
-    // First claim wins, so a duplicated key resolves deterministically.
-    if (isin && !byKey.has(isin)) byKey.set(isin, holding);
+    if (isin) claim(byKey, isin, holding);
     const symbol = normalizeStrongKey(holding.providerSymbol);
     if (symbol) {
-      if (!byKey.has(symbol)) byKey.set(symbol, holding);
-      const lower = symbol.toLowerCase();
-      if (!bySymbolLower.has(lower)) bySymbolLower.set(lower, holding);
+      claim(byKey, symbol, holding);
+      claim(bySymbolLower, symbol.toLowerCase(), holding);
     }
   }
   return { byKey, bySymbolLower };
 }
 
-/** The strong-key hit for a row, with the key that produced it, or null. */
-function findStrongMatch(
+/** Concatenate holding lists, dropping the ids already seen. */
+function dedupeById(...lists: MatchPortfolioHolding[][]): MatchPortfolioHolding[] {
+  const seen = new Set<string>();
+  const merged: MatchPortfolioHolding[] = [];
+  for (const holding of lists.flat()) {
+    if (seen.has(holding.holdingId)) continue;
+    seen.add(holding.holdingId);
+    merged.push(holding);
+  }
+  return merged;
+}
+
+/**
+ * Every holding a row's strong keys hit, with the key that produced them, or null.
+ * ISIN resolves before the provider symbol (an ISIN is the more specific claim); a
+ * symbol hit merges the exact-case and lowercased indexes, so "N5115" and "n5115" in
+ * the same portfolio are seen as the two claimants they are rather than one.
+ */
+function findStrongMatches(
   row: MatchCandidateRow,
   index: StrongIndex,
-): { holding: MatchPortfolioHolding; key: MatchKey } | null {
+): { holdings: MatchPortfolioHolding[]; key: MatchKey } | null {
   const isin = normalizeStrongKey(row.isin);
   if (isin) {
     const byIsin = index.byKey.get(isin);
-    if (byIsin) return { holding: byIsin, key: "isin" };
+    if (byIsin && byIsin.length > 0) return { holdings: byIsin, key: "isin" };
   }
   const symbol = normalizeStrongKey(row.providerSymbol);
   if (symbol) {
-    const bySymbol =
-      index.byKey.get(symbol) ?? index.bySymbolLower.get(symbol.toLowerCase());
-    if (bySymbol) return { holding: bySymbol, key: "provider_symbol" };
+    const bySymbol = dedupeById(
+      index.byKey.get(symbol) ?? [],
+      index.bySymbolLower.get(symbol.toLowerCase()) ?? [],
+    );
+    if (bySymbol.length > 0) return { holdings: bySymbol, key: "provider_symbol" };
   }
   return null;
+}
+
+/**
+ * Rank the claimants of an ambiguous strong key, best-first (#1331). Two cheap,
+ * honest disambiguators — never a resolution, only an order:
+ *
+ * 1. the holding whose **name** the row also matches (a document that names the
+ *    Cartera Indexada's fund means that one, not the old broker's closed copy) —
+ *    deliberately the stronger signal, so a document that names the closed position
+ *    resolves to it rather than to a live namesake;
+ * 2. among holdings the name cannot tell apart, a **live** position before a `closed`
+ *    one (new movements do not belong to a holding that was emptied).
+ *
+ * Ties keep portfolio order, so the default target is deterministic. `sort` is
+ * stable per spec and the input is never mutated.
+ */
+function rankStrongClaimants(
+  row: MatchCandidateRow,
+  holdings: MatchPortfolioHolding[],
+): MatchPortfolioHolding[] {
+  if (holdings.length < 2) return holdings;
+  const rowName = normalizeName(row.name);
+  const score = (holding: MatchPortfolioHolding): number => {
+    const nameMatches =
+      rowName !== null &&
+      normalizeName(holding.name) === rowName &&
+      instrumentsCompatible(row.instrument, holding.instrument);
+    return (nameMatches ? 2 : 0) + (holding.closed === true ? 0 : 1);
+  };
+  return [...holdings].sort((a, b) => score(b) - score(a));
 }
 
 /**
@@ -231,9 +315,11 @@ function toCandidate(
  * Match candidate rows against the current portfolio (PRD #1103 S1).
  *
  * Default decision per row:
- * - a **strong** key hit → `update` that holding, `strong`;
+ * - a **strong** key hit on exactly one holding → `update` that holding, `strong`;
+ * - a strong key hit on **several** holdings → `update` the best-ranked one but
+ *   `weak` and `ambiguous`: the key names the instrument, not the holding (#1331);
  * - otherwise a **weak** name+instrument hit → `update` the best candidate,
- *   `weak` (proposed, editable — never blocking);
+ *   `weak` (proposed, editable — never blocking), `ambiguous` when several share it;
  * - otherwise → `create`.
  *
  * All candidates found are returned ranked best-first so the surface can offer a
@@ -247,26 +333,39 @@ export function matchHoldings(
   const index = buildStrongIndex(holdings);
 
   return rows.map((row) => {
-    const strong = findStrongMatch(row, index);
+    const strongHit = findStrongMatches(row, index);
+    const strong = strongHit
+      ? { holdings: rankStrongClaimants(row, strongHit.holdings), key: strongHit.key }
+      : null;
     const weak = findWeakMatches(row, holdings);
 
-    // Candidates are ranked strong-first; the strong hit is deduped out of the
-    // weak list so it is not listed twice.
+    // Candidates are ranked strong-first; a strong claimant is deduped out of the
+    // weak list so it is not listed twice. Each strong claimant keeps its own key
+    // strength — the ISIN really did match it — while the ROW below records that the
+    // key did not resolve which one, which is what gates the apply.
     const candidates: MatchCandidate[] = [];
-    if (strong) candidates.push(toCandidate(strong.holding, strong.key, "strong"));
+    const strongIds = new Set<string>();
+    if (strong) {
+      for (const holding of strong.holdings) {
+        strongIds.add(holding.holdingId);
+        candidates.push(toCandidate(holding, strong.key, "strong"));
+      }
+    }
     for (const holding of weak) {
-      if (strong && holding.holdingId === strong.holding.holdingId) continue;
+      if (strongIds.has(holding.holdingId)) continue;
       candidates.push(toCandidate(holding, "name", "weak"));
     }
 
     if (strong) {
+      const ambiguous = strong.holdings.length > 1;
       return {
         rowId: row.rowId,
         decision: "update",
-        target: strong.holding.holdingId,
+        target: strong.holdings[0]!.holdingId,
         candidates,
-        confidence: "strong",
+        confidence: ambiguous ? "weak" : "strong",
         key: strong.key,
+        ...(ambiguous ? { ambiguous: true } : {}),
       };
     }
 
@@ -279,6 +378,7 @@ export function matchHoldings(
         candidates,
         confidence: "weak",
         key: "name",
+        ...(weak.length > 1 ? { ambiguous: true } : {}),
       };
     }
 
@@ -290,6 +390,15 @@ export function matchHoldings(
       key: "none",
     };
   });
+}
+
+/**
+ * How many holdings claim the key backing this match — more than one exactly when
+ * the match is {@link RowMatch.ambiguous}. The surface reads it to say *how many* the
+ * user is choosing between; 0 for a row that matched nothing.
+ */
+export function countKeyClaimants(match: RowMatch): number {
+  return match.candidates.filter((candidate) => candidate.key === match.key).length;
 }
 
 /**
