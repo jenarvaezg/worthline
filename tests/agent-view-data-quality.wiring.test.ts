@@ -655,6 +655,175 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
   });
 });
 
+describe("MISSING_PROVIDER_SYMBOL on closed positions (#1348)", () => {
+  /**
+   * A symbol-less fund with a ledger: bought whole, then optionally sold whole.
+   * `soldOut` is the only thing that varies, so the assertions below isolate the
+   * closed-position filter from every other reason a warning could appear.
+   */
+  async function seedSymbollessFund(soldOut: boolean): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-closed-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo sin símbolo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    if (soldOut) {
+      await store.operations.recordOperation({
+        assetId: "asset_fund",
+        currency: "EUR",
+        executedAt: "2026-06-10",
+        feesMinor: 0,
+        id: "op_sell_all",
+        kind: "sell",
+        pricePerUnit: "120",
+        units: "10",
+      });
+    }
+    store.close();
+  }
+
+  async function symbolSignals(): Promise<Signal[]> {
+    const scopeId = await householdScopeId();
+    return (await signals(scopeId, "?limit=500")).filter(
+      (signal) => signal.code === "MISSING_PROVIDER_SYMBOL",
+    );
+  }
+
+  /**
+   * The symbol'd sibling: this fund never raised MISSING_PROVIDER_SYMBOL, but its
+   * cached price keeps failing after the position is sold out — and FAILED_PRICE
+   * is `high`, so it reddens the hero over a holding worth 0.
+   */
+  async function seedSymbolledFundWithFailedPrice(soldOut: boolean): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-closed-price-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_etf",
+      liquidityTier: "market",
+      name: "ETF con símbolo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      providerSymbol: "SOLD.MI",
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_etf",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    if (soldOut) {
+      await store.operations.recordOperation({
+        assetId: "asset_etf",
+        currency: "EUR",
+        executedAt: "2026-06-10",
+        feesMinor: 0,
+        id: "op_sell_all",
+        kind: "sell",
+        pricePerUnit: "120",
+        units: "10",
+      });
+    }
+    await store.operations.upsertPrice({
+      assetId: "asset_etf",
+      currency: "EUR",
+      fetchedAt: "2026-02-01T00:00:00.000Z",
+      freshnessState: "failed",
+      price: "100",
+      source: "yahoo",
+      staleReason: "Proveedor caído",
+    });
+    store.close();
+  }
+
+  async function priceSignals(): Promise<Signal[]> {
+    const scopeId = await householdScopeId();
+    return (await signals(scopeId, "?limit=500")).filter(
+      (signal) => signal.category === "price_freshness",
+    );
+  }
+
+  test("a fund sold in full stops reporting a missing price symbol", async () => {
+    await seedSymbollessFund(true);
+    expect(await symbolSignals()).toEqual([]);
+  });
+
+  test("the same fund still open reports it, so the filter is not blanket silence", async () => {
+    await seedSymbollessFund(false);
+    const found = await symbolSignals();
+
+    expect(found).toHaveLength(1);
+    expect(found[0]!.affected?.label).toBe("Fondo sin símbolo");
+  });
+
+  test("reopening a closed position with a new buy brings the signal back", async () => {
+    await seedSymbollessFund(true);
+    expect(await symbolSignals()).toEqual([]);
+
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-07-01",
+      feesMinor: 0,
+      id: "op_rebuy",
+      kind: "buy",
+      pricePerUnit: "130",
+      units: "4",
+    });
+    store.close();
+
+    expect(await symbolSignals()).toHaveLength(1);
+  });
+
+  test("a sold-out position stops reporting its failed price too", async () => {
+    await seedSymbolledFundWithFailedPrice(true);
+    expect(await priceSignals()).toEqual([]);
+  });
+
+  test("the same position still open reports the failed price", async () => {
+    await seedSymbolledFundWithFailedPrice(false);
+    const found = await priceSignals();
+
+    expect(found).toHaveLength(1);
+    expect(found[0]!.code).toBe("FAILED_PRICE");
+    expect(found[0]!.severity).toBe("high");
+  });
+});
+
 describe("main financial context data-quality summary (#341)", () => {
   test("folds counts by severity and by category plus the top signals", async () => {
     await seedAllCategories();

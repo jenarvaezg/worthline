@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AssetType, ManualAsset } from "./index";
-import { collectWarnings } from "./warnings";
+import { CLOSED_POSITION_UNITS_EPSILON, collectWarnings } from "./warnings";
 
 function asset(
   id: string,
@@ -133,5 +133,51 @@ describe("collectWarnings — MISSING_PROVIDER_SYMBOL (ADR 0055)", () => {
         [{ code: "OTHER_CODE", entityId: "inv1" }],
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("collectWarnings — closed positions do not need a symbol (#1348)", () => {
+  const symbolless = asset("inv1", "Fondo vendido entero", 0, "investment");
+  const codes = (assets: ManualAsset[], netUnits?: [string, string][]): string[] =>
+    collectWarnings(
+      assets,
+      [],
+      netUnits ? { netUnitsByAssetId: new Map(netUnits) } : {},
+    ).map((warning) => warning.code);
+
+  test("a fully-sold position is silent — it contributes nothing to today's figure", () => {
+    expect(codes([symbolless], [["inv1", "0"]])).toEqual([]);
+  });
+
+  test("an open position without a symbol still warns", () => {
+    expect(codes([symbolless], [["inv1", "12.5"]])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("a closed position that reopens with a new buy warns again", () => {
+    expect(codes([symbolless], [["inv1", "0"]])).toEqual([]);
+    expect(codes([symbolless], [["inv1", "3"]])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("sub-threshold dust left by a rounded sell reads as closed", () => {
+    expect(codes([symbolless], [["inv1", "0.00001"]])).toEqual([]);
+    expect(codes([symbolless], [["inv1", "-0.00001"]])).toEqual([]);
+  });
+
+  test("units at the threshold are still held, so the warning stands", () => {
+    expect(codes([symbolless], [["inv1", CLOSED_POSITION_UNITS_EPSILON]])).toEqual([
+      "MISSING_PROVIDER_SYMBOL",
+    ]);
+  });
+
+  test("a holding absent from the map is read as open (caller read no ledger)", () => {
+    expect(codes([symbolless])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+    expect(codes([symbolless], [["other", "0"]])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("net units never silence a non-provider-symbol warning", () => {
+    // A `stored` holding at 0 is a genuine misconfiguration whatever its units say.
+    expect(codes([asset("a1", "Cuenta", 0, "cash")], [["a1", "0"]])).toEqual([
+      "ZERO_VALUE_ASSET",
+    ]);
   });
 });

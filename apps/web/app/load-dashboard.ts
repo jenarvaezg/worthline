@@ -487,6 +487,7 @@ export async function loadDashboard(
         fireConfigByScopeId: fireConfig,
         holdingRows,
         liabilities,
+        operationsByAsset: projectionContext.operationsByAsset,
         overrides,
         priceCache,
         scope: selectedScope,

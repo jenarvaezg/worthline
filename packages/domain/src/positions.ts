@@ -238,3 +238,50 @@ export function derivePosition(
     unrealizedPnl: subtractMoney(marketValue, summary.costBasis),
   };
 }
+
+/**
+ * Net units still held after folding a holding's buy/sell ledger — the units half
+ * of {@link derivePosition}, for callers that only need "is anything still held?"
+ * and have no currency in hand (#1348, the closed-position warning filter).
+ */
+export function netUnitsFromOperations(
+  operations: readonly InvestmentOperation[],
+): DecimalString {
+  const [first] = operations;
+
+  if (first === undefined) {
+    return "0";
+  }
+
+  // Every operation of a holding shares its id and currency, so `first` names
+  // both. Going through `derivePosition` (whose money output this caller
+  // discards) keeps ONE ledger fold — and one over-sell clamp — instead of a
+  // units-only copy that could drift from it.
+  return derivePosition([...operations], {
+    assetId: first.assetId,
+    currency: first.currency,
+  }).currentUnits;
+}
+
+/**
+ * Net units held per holding, folded from a whole-ledger operations map (#1348).
+ *
+ * Holdings with no recorded operation are LEFT OUT: for the warnings engine an
+ * absent entry means "open / unstarted", which is the right reading for a
+ * freshly created investment — only a holding that has operations and nets to
+ * ~0 is a closed position.
+ */
+export function netUnitsByAsset(
+  operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>,
+): Map<string, DecimalString> {
+  const netUnits = new Map<string, DecimalString>();
+
+  for (const [assetId, operations] of operationsByAsset) {
+    if (operations.length === 0) {
+      continue;
+    }
+    netUnits.set(assetId, netUnitsFromOperations(operations));
+  }
+
+  return netUnits;
+}

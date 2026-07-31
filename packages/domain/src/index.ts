@@ -670,6 +670,8 @@ export {
   createInvestmentOperationSafe,
   derivePosition,
   latestOperationPrice,
+  netUnitsByAsset,
+  netUnitsFromOperations,
 } from "./positions";
 export type {
   DetectPriceBackfillInput,
@@ -880,7 +882,12 @@ export {
 } from "./valuation-cadence";
 export type { ManualValuePoint } from "./value-history";
 export { lastKnownValueAtDate, lastManualValueUpdateDateKey } from "./value-history";
-export type { DomainWarning, WarningOverride, WarningSeverity } from "./warnings";
+export type {
+  CollectWarningsOptions,
+  DomainWarning,
+  WarningOverride,
+  WarningSeverity,
+} from "./warnings";
 export { collectWarnings } from "./warnings";
 export type {
   ExportedAmortizationPlan,

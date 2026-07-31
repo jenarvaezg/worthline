@@ -83,3 +83,58 @@ unchanged from ADR 0018.
   when the shared engine unifies them.
 - Real broker exports never enter the repository (public repo): test fixtures
   are synthetic files with the same shape.
+
+## Amendment (#1348): a closed position has no pending task
+
+Decision 3 above says a symbol-less investment "raises an overrideable
+`MISSING_PROVIDER_SYMBOL` warning — a pending task". The pending task exists only
+while the position is **open**. A fund sold in full is kept as history: it holds
+no units, contributes nothing to today's figure, and no symbol would ever be
+looked up for it — yet the warning regenerated on every daily read, buried the
+actionable ones (open holdings with no price), and pushed the user to trash
+legitimate history just to silence the noise.
+
+So the warning is not emitted for a **closed** position: a `derived` holding that
+has at least one recorded operation and whose net units are within
+`CLOSED_POSITION_UNITS_EPSILON` (`0.0001`, dust from a rounded sell) of zero.
+Two boundaries matter:
+
+- **No operation yet ≠ closed.** A freshly created investment also holds 0 units,
+  but its missing symbol is a genuine pending task, so it still warns. The rule
+  keys off "has a ledger that nets to ~0", not off "holds nothing".
+- **Reopening restores it.** A new buy puts units back and the warning returns —
+  no state is stored, the filter is derived from the ledger on every read.
+
+One definition, `isClosedPosition` in `warnings.ts`, and every consumer that
+*shows* the warning feeds it the ledger it already has: the home hero and the
+agent view's `get_data_quality` through the shared `#654` engine — where
+`netUnitsByAssetId` is a **required** input precisely so neither can drift — plus
+the /patrimonio board, the holding ficha, and `get_holding_detail`.
+
+Two `collectWarnings` callers are deliberately left unfiltered, and neither shows
+anything: `captureNetWorthSnapshot` writes `snapshot.warnings` into each frozen
+capture, and `prepareDashboardState` fills `DashboardState.warnings`. Nothing
+renders either field today. Threading the ledger into snapshot capture would
+change what every historical reconstruction path persists (the ripple engine, the
+gap-fill, the backfill) for a column no surface reads — so the closed-position
+filter stops at the read surfaces. If either field ever gains a reader, it must
+take the ledger at that point, not grow a second filter.
+
+### Boundaries this filter deliberately does not police
+
+- **Price freshness rides along.** `STALE_PRICE` / `FAILED_PRICE` are the same
+  noise one step over: a sold-out position keeps its price-cache row, so its
+  quote goes stale forever, and `FAILED_PRICE` is `high` — it turns the home
+  hero red over a holding worth 0. A price nothing multiplies cannot compromise
+  today's figure, so the data-quality engine skips those two for a closed
+  position as well. This is why the agent view folds net units for **every**
+  `derived` holding rather than only the symbol-less ones: a map narrowed to one
+  code's candidates would under-populate the moment a second code reads it.
+- **An over-sold ledger reads as closed.** `derivePosition` clamps a sell that
+  exceeds the units held, so a mis-imported ledger nets to `0` and is silenced
+  here. That is accepted, not ignored: over-selling raises its own position
+  warning ("la venta de N unidades supera las M disponibles"), which is the
+  honest signal for a data problem — a missing price symbol is not.
+
+Related: the connected-source exemption (#685) is the same shape — a Binance or
+Numista holding never carries a provider symbol because its source prices it.

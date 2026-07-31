@@ -5,7 +5,12 @@ import type {
   InvestmentOperation,
   OperationKind,
 } from "./index";
-import { createInvestmentOperation, derivePosition } from "./positions";
+import {
+  createInvestmentOperation,
+  derivePosition,
+  netUnitsByAsset,
+  netUnitsFromOperations,
+} from "./positions";
 
 function op(
   kind: OperationKind,
@@ -282,5 +287,38 @@ describe("createInvestmentOperation", () => {
 
   test("rejects negative fees", () => {
     expect(() => createInvestmentOperation({ ...base, feesMinor: -1 })).toThrow("fees");
+  });
+});
+
+describe("netUnitsFromOperations / netUnitsByAsset (#1348)", () => {
+  test("folds a ledger to what is still held", () => {
+    expect(netUnitsFromOperations([buy("10", "100"), sell("4", "120")])).toBe("6");
+  });
+
+  test("a fully-sold position nets to exactly zero", () => {
+    expect(netUnitsFromOperations([buy("10", "100"), sell("10", "120")])).toBe("0");
+  });
+
+  test("an over-sell clamps like derivePosition rather than going negative", () => {
+    expect(netUnitsFromOperations([buy("10", "100"), sell("12", "120")])).toBe("0");
+  });
+
+  test("an empty ledger holds nothing", () => {
+    expect(netUnitsFromOperations([])).toBe("0");
+  });
+
+  test("keys the map by holding and leaves operation-less holdings out", () => {
+    const netUnits = netUnitsByAsset(
+      new Map([
+        ["open", [buy("3", "50")]],
+        ["closed", [buy("3", "50"), sell("3", "60")]],
+        ["unstarted", []],
+      ]),
+    );
+
+    expect([...netUnits]).toEqual([
+      ["open", "3"],
+      ["closed", "0"],
+    ]);
   });
 });

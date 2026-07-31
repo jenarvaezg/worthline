@@ -50,6 +50,7 @@ const KEY_EXPORTS = [
   // positions
   "createInvestmentOperation",
   "derivePosition",
+  "netUnitsByAsset",
   // returns (#548)
   "operationCashflows",
   "operationTwrCashflows",

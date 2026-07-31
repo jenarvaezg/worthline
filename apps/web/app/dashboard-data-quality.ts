@@ -20,9 +20,11 @@ import {
   type DatedSnapshotHoldingRow,
   type DebtModel,
   type FireScopeConfig,
+  type InvestmentOperation,
   type Liability,
   type ManualAsset,
   type NetWorthSnapshot,
+  netUnitsByAsset,
   type ScopeOption,
   type WarningOverride,
   type Workspace,
@@ -42,6 +44,12 @@ export interface DashboardDataQualityInput {
   /** Windowed frozen holding rows (already read) — the has-holdings evidence. */
   holdingRows: readonly DatedSnapshotHoldingRow[];
   overrides: readonly WarningOverride[];
+  /**
+   * The whole investment ledger the dashboard already read (the shared projection
+   * context) — folded here into net units per holding so a fully-sold position
+   * stops emitting MISSING_PROVIDER_SYMBOL (#1348). No extra I/O.
+   */
+  operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>;
   fireConfigByScopeId: Readonly<Record<string, FireScopeConfig | undefined>>;
   /** Refreshed price cache — the freshness signals read this, not new I/O. */
   priceCache: readonly AssetPrice[];
@@ -129,6 +137,7 @@ export async function collectDashboardDataQualitySignals(
     fireConfigByScopeId: input.fireConfigByScopeId,
     liabilities: input.liabilities,
     manualValueHistoryByAssetId,
+    netUnitsByAssetId: netUnitsByAsset(input.operationsByAsset),
     positionsBySourceId,
     priceFreshnessByAssetId,
     scope: { internalScopeId: input.scope.id, scopeLabel: input.scope.label },

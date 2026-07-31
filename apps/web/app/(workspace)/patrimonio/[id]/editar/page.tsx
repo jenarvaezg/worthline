@@ -56,6 +56,7 @@ import {
   holdingTwr,
   instrumentOfAsset,
   monthlyCloseValuesFromSnapshotRows,
+  netUnitsByAsset,
   simpleGain,
   storedBalanceGovernsDebtFigure,
   valuationMethodOfAsset,
@@ -371,7 +372,15 @@ export default async function EditarPage({
     ? assetMethod!
     : valuationMethodOfLiability(debtModel);
 
-  const warnings = asset ? collectWarnings([asset], overrides) : [];
+  // Reads the same closed-position filter as the board and the health engine
+  // (#1348): once the position is sold out, the ficha stops asking for a price
+  // symbol it no longer needs. `operations` is empty for a non-derived holding,
+  // which `netUnitsByAsset` leaves out of the map — absent means open.
+  const warnings = asset
+    ? collectWarnings([asset], overrides, {
+        netUnitsByAssetId: netUnitsByAsset(new Map([[id, operations]])),
+      })
+    : [];
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
