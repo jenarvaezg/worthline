@@ -10,6 +10,7 @@
 import type { SourcePosition } from "./connected-source";
 import { coinValue } from "./connected-source";
 import { daysBetween } from "./dates";
+import type { DecimalString } from "./decimal";
 import type { FireScopeConfig } from "./fire";
 import { valuationMethodOfAsset } from "./holding-method";
 import { projectPortfolio } from "./portfolio-projection";
@@ -20,6 +21,7 @@ import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-his
 import {
   collectWarnings,
   type DomainWarning,
+  isClosedPosition,
   type WarningOverride,
   type WarningSeverity,
 } from "./warnings";
@@ -104,6 +106,14 @@ export interface CollectDataQualitySignalsInput {
   manualValueHistoryByAssetId: ReadonlyMap<string, readonly ManualValuePoint[]>;
   /** Asset creation timestamps (ISO), keyed by asset id — stale-manual fallback. */
   assetCreatedAtById: ReadonlyMap<string, string>;
+  /**
+   * Net units still held per investment holding (`netUnitsByAsset`), for holdings
+   * with at least one recorded operation. Required — not optional — so both
+   * consumers of this engine (the home hero and the agent view's
+   * `get_data_quality`) are forced to feed the SAME closed-position filter
+   * instead of each growing its own (#1348).
+   */
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>;
   /** Calendar day the collection runs against (`YYYY-MM-DD`). */
   asOfDateKey: string;
 }
@@ -164,7 +174,12 @@ export function collectDataQualitySignals(
   );
 
   return [
-    ...warningSignals(input.assets, input.warningOverrides, ownedAssetIds),
+    ...warningSignals(
+      input.assets,
+      input.warningOverrides,
+      ownedAssetIds,
+      input.netUnitsByAssetId,
+    ),
     ...staleManualValueSignals(
       input.assets,
       ownedAssetIds,
@@ -173,7 +188,12 @@ export function collectDataQualitySignals(
       input.asOfDateKey,
       input.warningOverrides,
     ),
-    ...priceFreshnessSignals(input.assets, ownedAssetIds, input.priceFreshnessByAssetId),
+    ...priceFreshnessSignals(
+      input.assets,
+      ownedAssetIds,
+      input.priceFreshnessByAssetId,
+      input.netUnitsByAssetId,
+    ),
     ...sourceFreshnessSignals(
       input.connectedSources,
       ownedAssetIds,
@@ -247,12 +267,16 @@ function warningSignals(
   assets: readonly ManualAsset[],
   warningOverrides: readonly WarningOverride[],
   ownedAssetIds: Set<string>,
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>,
 ): DataQualitySignal[] {
   const overridden = new Set(
     warningOverrides.map((override) => `${override.code}:${override.entityId}`),
   );
 
-  return collectWarnings([...assets])
+  // Overrides are NOT passed to `collectWarnings`: an acknowledged warning stays
+  // in the inventory and gets labelled instead of dropped. The closed-position
+  // filter is different — a sold-out position has no pending task at all (#1348).
+  return collectWarnings([...assets], [], { netUnitsByAssetId })
     .filter((warning) => ownedAssetIds.has(warning.entityId))
     .map((warning) => warningToSignal(warning, overridden, assets));
 }
@@ -364,11 +388,19 @@ function priceFreshnessSignals(
   assets: readonly ManualAsset[],
   ownedAssetIds: Set<string>,
   priceFreshnessByAssetId: ReadonlyMap<string, DataQualityPriceFreshness>,
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>,
 ): DataQualitySignal[] {
   const signals: DataQualitySignal[] = [];
 
   for (const asset of assets) {
-    if (!ownedAssetIds.has(asset.id)) {
+    // The second half of #1348: a CLOSED position keeps its price-cache row, so
+    // its quote goes stale (and, once the provider drops the symbol, fails)
+    // forever — and FAILED_PRICE is `high`, which turns the home hero red over a
+    // holding worth 0. A price nothing multiplies cannot compromise today's
+    // figure, so a sold-out position is silent here for exactly the reason it is
+    // silent for MISSING_PROVIDER_SYMBOL. Non-derived holdings are never in the
+    // map, so their freshness signals are untouched.
+    if (!ownedAssetIds.has(asset.id) || isClosedPosition(asset, netUnitsByAssetId)) {
       continue;
     }
 

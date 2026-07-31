@@ -53,6 +53,7 @@ import {
   investmentReturnsById,
   lookThroughExposure,
   monthlyCloseValuesFromSnapshotRows,
+  netUnitsByAsset,
   projectPortfolio,
   resolveAssetClassBreakdown,
   returnsByAssetClassView,
@@ -250,7 +251,12 @@ export async function loadPatrimonio(
     today,
   );
 
-  const warnings = collectWarnings(assets, overrides);
+  // A fully-sold position keeps its row as history but no longer needs a price
+  // symbol, so it stops carrying the MISSING_PROVIDER_SYMBOL badge (#1348). The
+  // ledger is already in hand from the shared projection context — no extra I/O.
+  const warnings = collectWarnings(assets, overrides, {
+    netUnitsByAssetId: netUnitsByAsset(projectionContext.operationsByAsset),
+  });
 
   const projection = selectedScope
     ? projectPortfolio({

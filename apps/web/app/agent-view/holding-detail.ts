@@ -12,6 +12,7 @@ import {
   defaultsFor,
   listScopeOptions,
   monthlyCloseValuesFromSnapshotRows,
+  netUnitsByAsset,
   projectPortfolio,
   systemClock,
 } from "@worthline/domain";
@@ -133,7 +134,7 @@ export async function buildHoldingDetail(
       object: "holding",
       ownership: toOwnership(assetRow.ownership, common),
       qualitySummary: qualitySummary(
-        holdingHasWarnings(assets, internalHoldingId),
+        holdingHasWarnings(assets, internalHoldingId, operations),
         facts,
       ),
       payouts: await buildHoldingPayouts({
@@ -330,10 +331,15 @@ function toOwnership(
 function holdingHasWarnings(
   assets: Awaited<ReturnType<AgentViewReadStore["readAssets"]>>,
   internalHoldingId: string,
+  operations: Awaited<ReturnType<AgentViewReadStore["readOperations"]>>,
 ): boolean {
-  return collectWarnings(assets).some(
-    (warning) => warning.entityId === internalHoldingId,
-  );
+  // The holding's own ledger, so a sold-out position no longer reports a missing
+  // price symbol it does not need (#1348) — the same filter `get_data_quality`
+  // and the home hero read. Other holdings stay absent from the map, which reads
+  // as open: this boolean only ever answers for `internalHoldingId`.
+  return collectWarnings(assets, [], {
+    netUnitsByAssetId: netUnitsByAsset(new Map([[internalHoldingId, operations]])),
+  }).some((warning) => warning.entityId === internalHoldingId);
 }
 
 const EXPOSURE_PROFILE_INSTRUMENTS = new Set<Instrument>([

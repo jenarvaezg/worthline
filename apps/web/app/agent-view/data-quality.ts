@@ -5,6 +5,8 @@ import {
   type DataQualityAffectedRef,
   type DataQualitySignal,
   listScopeOptions,
+  netUnitsByAsset,
+  valuationMethodOfAsset,
 } from "@worthline/domain";
 import { deriveSourcePublicId } from "./connected-source-positions";
 import {
@@ -207,6 +209,26 @@ async function collectScopeSignals(
     ),
   );
 
+  // Net units per holding, so a sold-out position is silent here for the same
+  // reasons it is on the home hero (#1348). Folded for EVERY `derived` holding,
+  // not just the ones a given signal can fire on: the engine now reads this map
+  // for two codes (MISSING_PROVIDER_SYMBOL and price freshness) and will read it
+  // for more, and a map narrowed to one code's candidates would silently
+  // under-populate for the next — the exact drift the required input prevents.
+  // The fold itself, including "an empty ledger is unstarted, not closed", is the
+  // domain's.
+  const netUnitsByAssetId = netUnitsByAsset(
+    new Map(
+      await Promise.all(
+        assets
+          .filter((asset) => valuationMethodOfAsset(asset) === "derived")
+          .map(
+            async (asset) => [asset.id, await store.readOperations(asset.id)] as const,
+          ),
+      ),
+    ),
+  );
+
   const domainSignals = collectDataQualitySignals({
     asOfDateKey: new Date().toISOString().slice(0, 10),
     assetCreatedAtById,
@@ -216,6 +238,7 @@ async function collectScopeSignals(
     fireConfigByScopeId,
     liabilities,
     manualValueHistoryByAssetId,
+    netUnitsByAssetId,
     positionsBySourceId,
     priceFreshnessByAssetId,
     scope: {

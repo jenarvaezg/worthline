@@ -32,6 +32,7 @@ function baseInput(
     fireConfigByScopeId: {},
     liabilities: [],
     manualValueHistoryByAssetId: new Map(),
+    netUnitsByAssetId: new Map(),
     positionsBySourceId: new Map(),
     priceFreshnessByAssetId: new Map(),
     scope: {
@@ -405,5 +406,106 @@ describe("collectDataQualitySignals", () => {
     );
 
     expect(signals.some((signal) => signal.code === "STALE_MANUAL_VALUE")).toBe(false);
+  });
+});
+
+describe("collectDataQualitySignals — MISSING_PROVIDER_SYMBOL on closed positions (#1348)", () => {
+  const symbollessFund = (asset: ReturnType<typeof fixture>["asset"]) =>
+    asset({
+      currentValueMinor: 0,
+      id: "asset_sold_fund",
+      instrument: "fund",
+      name: "Fondo vendido entero",
+      type: "investment",
+    });
+
+  const codesFor = (netUnits: [string, string][] | undefined) => {
+    const { asset, input } = fixture();
+    return collectDataQualitySignals(
+      input({
+        assets: [symbollessFund(asset)],
+        ...(netUnits ? { netUnitsByAssetId: new Map(netUnits) } : {}),
+      }),
+    )
+      .filter((signal) => signal.category === "warning")
+      .map((signal) => signal.code);
+  };
+
+  test("a sold-out fund no longer regenerates the signal every day", () => {
+    expect(codesFor([["asset_sold_fund", "0"]])).toEqual([]);
+  });
+
+  test("an open symbol-less fund still surfaces it as actionable", () => {
+    expect(codesFor([["asset_sold_fund", "42.7"]])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("a fund with no operation yet is unstarted, not closed — the task stands", () => {
+    expect(codesFor(undefined)).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+});
+
+describe("collectDataQualitySignals — price freshness on closed positions (#1348)", () => {
+  // The symbol'd sibling of the case above: this fund HAS a provider symbol, so
+  // it never raised MISSING_PROVIDER_SYMBOL — but its cached price keeps going
+  // stale/failing forever after the position is sold out, and FAILED_PRICE is
+  // `high`, which turns the home hero red over a figure of 0.
+  const priceCodesFor = (netUnits: [string, string][] | undefined) => {
+    const { asset, input } = fixture();
+    return collectDataQualitySignals(
+      input({
+        assets: [
+          asset({
+            currentValueMinor: 0,
+            id: "asset_sold_etf",
+            instrument: "etf",
+            name: "ETF vendido entero",
+            providerSymbol: "SOLD.MI",
+            type: "investment",
+          }),
+        ],
+        ...(netUnits ? { netUnitsByAssetId: new Map(netUnits) } : {}),
+        priceFreshnessByAssetId: new Map([
+          [
+            "asset_sold_etf",
+            { fetchedAt: "2026-02-01T00:00:00.000Z", freshnessState: "failed" as const },
+          ],
+        ]),
+      }),
+    )
+      .filter((signal) => signal.category === "price_freshness")
+      .map((signal) => signal.code);
+  };
+
+  test("a sold-out position stops reporting a failed price it does not need", () => {
+    expect(priceCodesFor([["asset_sold_etf", "0"]])).toEqual([]);
+  });
+
+  test("the same position still open reports the failed price", () => {
+    expect(priceCodesFor([["asset_sold_etf", "8"]])).toEqual(["FAILED_PRICE"]);
+  });
+
+  test("a holding with no ledger read keeps today's behaviour", () => {
+    expect(priceCodesFor(undefined)).toEqual(["FAILED_PRICE"]);
+  });
+
+  test("a stale price on a stored holding is untouched by net units", () => {
+    const { asset, input } = fixture();
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [
+          asset({ currentValueMinor: 1_000_00, id: "asset_cash", name: "Cuenta" }),
+        ],
+        // A non-derived holding is never in the map, so it can never read closed.
+        netUnitsByAssetId: new Map([["asset_cash", "0"]]),
+        priceFreshnessByAssetId: new Map([
+          [
+            "asset_cash",
+            { fetchedAt: "2026-01-01T00:00:00.000Z", freshnessState: "stale" as const },
+          ],
+        ]),
+      }),
+    );
+
+    expect(signals.filter((s) => s.code === "STALE_PRICE")).toHaveLength(1);
   });
 });
