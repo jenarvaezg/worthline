@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest";
 
 import type { AssetPrice } from "./prices";
-import { getPriceFreshness, PRICE_TTL_DAYS, selectStalePrices } from "./prices";
+import {
+  getPriceFreshness,
+  PRICE_TTL_DAYS,
+  selectStalePrices,
+  unitPriceMajorByHoldingId,
+} from "./prices";
 
 function makeEntry(overrides: Partial<AssetPrice>): AssetPrice {
   return {
@@ -227,5 +232,27 @@ describe("getPriceFreshness", () => {
         "2026-06-09",
       ),
     ).toBe("failed");
+  });
+});
+
+describe("unitPriceMajorByHoldingId", () => {
+  test("keeps fresh, stale and manual prices", () => {
+    const prices = unitPriceMajorByHoldingId([
+      makeEntry({ assetId: "a_fresh", freshnessState: "fresh", price: "100" }),
+      makeEntry({ assetId: "a_stale", freshnessState: "stale", price: "90" }),
+      makeEntry({ assetId: "a_manual", freshnessState: "manual", price: "35" }),
+    ]);
+
+    expect(prices).toEqual({ a_fresh: "100", a_manual: "35", a_stale: "90" });
+  });
+
+  test("drops the failed marker row instead of publishing a zero price (#1330)", () => {
+    const prices = unitPriceMajorByHoldingId([
+      makeEntry({ assetId: "a_ok", price: "100" }),
+      makeEntry({ assetId: "a_failed", freshnessState: "failed", price: "0" }),
+      makeEntry({ assetId: "a_zero", freshnessState: "fresh", price: "0" }),
+    ]);
+
+    expect(prices).toEqual({ a_ok: "100" });
   });
 });

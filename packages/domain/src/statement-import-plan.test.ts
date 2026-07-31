@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { InvestmentOperation } from "./investment-types";
 import {
   buildStatementImportPlan,
+  isProviderSymbolShaped,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 import { parseStatement } from "./statement-parse";
@@ -117,5 +118,36 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
       "op_lu_feb",
       "op_lu_jan",
     ]);
+  });
+});
+
+describe("isProviderSymbolShaped — what may be stamped as a provider symbol (#1330)", () => {
+  test("accepts tickers, CoinGecko ids and fund codes", () => {
+    for (const identifier of [
+      "VUSA.L",
+      "SPOG.L",
+      "bitcoin",
+      "N5572-myinvestor",
+      "N5394",
+    ]) {
+      expect(isProviderSymbolShaped(identifier)).toBe(true);
+    }
+  });
+
+  test("rejects a fund name — whitespace or over 20 characters is not a symbol", () => {
+    for (const identifier of [
+      "Vanguard US Equity Index Fund EUR Hedged",
+      "Cartera Indexada Metal",
+      "FondoConNombreLarguisimoSinEspacios",
+      "",
+      "   ",
+      "Fondo/Plan (2024)",
+    ]) {
+      expect(isProviderSymbolShaped(identifier)).toBe(false);
+    }
+  });
+
+  test("trims surrounding whitespace before judging", () => {
+    expect(isProviderSymbolShaped("  VUSA.L  ")).toBe(true);
   });
 });

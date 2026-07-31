@@ -55,6 +55,7 @@ import {
   holdingIrr,
   holdingTwr,
   instrumentOfAsset,
+  isPositiveDecimal,
   monthlyCloseValuesFromSnapshotRows,
   netUnitsByAsset,
   simpleGain,
@@ -667,7 +668,12 @@ export default async function EditarPage({
                   ...(position ? { currentUnits: position.currentUnits } : {}),
                   ...(priceCache
                     ? {
-                        unitPrice: priceCache.price,
+                        // A `failed` row carries price "0" as the marker for "no
+                        // price known" (#1330): show the failure, never the zero
+                        // as if it were this holding's last price.
+                        ...(isPositiveDecimal(priceCache.price)
+                          ? { unitPrice: priceCache.price }
+                          : {}),
                         priceFreshness: freshness,
                         // Visible caption (#303): when + by which source the cached
                         // unit price was last refreshed (absolute es-ES date). Null for
@@ -727,7 +733,9 @@ export default async function EditarPage({
                 currentUrl={currentUrl}
                 previewAction={boundPreviewSnapshotPriceCorrectionAction}
                 today={today}
-                {...(priceCache?.price ? { defaultUnitPrice: priceCache.price } : {})}
+                {...(priceCache && isPositiveDecimal(priceCache.price)
+                  ? { defaultUnitPrice: priceCache.price }
+                  : {})}
               />
             ) : null}
 

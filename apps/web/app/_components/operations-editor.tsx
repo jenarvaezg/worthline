@@ -147,13 +147,18 @@ export default function OperationsEditor({
           <>
             <span className="contextLabel">Unidades actuales</span>
             <span>{context.currentUnits}</span>
-            {context.unitPrice !== undefined ? (
+            {/* A holding whose fetch failed has no price but DOES have a state to
+                show: keep the row, say "Sin precio", never render a zero as if it
+                were the last price (#1330). */}
+            {context.unitPrice !== undefined || context.priceFreshness ? (
               <>
                 <span className="contextLabel">Último precio</span>
                 <span>
-                  {context.unitPrice && privacyMode
-                    ? maskMoneyString(context.unitPrice)
-                    : context.unitPrice}{" "}
+                  {context.unitPrice === undefined
+                    ? "Sin precio"
+                    : context.unitPrice && privacyMode
+                      ? maskMoneyString(context.unitPrice)
+                      : context.unitPrice}{" "}
                   <small className={`priceStatus ${context.priceFreshness ?? "unknown"}`}>
                     {priceFreshnessLabel(context.priceFreshness ?? null)}
                   </small>

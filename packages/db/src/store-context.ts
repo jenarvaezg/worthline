@@ -11,7 +11,7 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import { createLiability, projectAssets } from "@worthline/domain";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 
 import { openDrizzle } from "./libsql-client";
 
@@ -301,10 +301,25 @@ export async function readInvestmentMeta(
   }, new Map<string, InvestmentMeta>());
 }
 
+/**
+ * Cached prices usable for VALUATION, keyed by asset id.
+ *
+ * Rows in `freshness_state = "failed"` are markers for "the fetch failed and no
+ * prior good price exists" and carry `price: "0"` — they are deliberately left
+ * out so the valuation falls back to cost basis instead of multiplying units by
+ * zero (#1330). The rows themselves stay in the table: the freshness and salud
+ * de datos surfaces read them through `readAllPriceCacheEntries` and need both
+ * the state and its `stale_reason`. A `stale` row keeps its last good price and
+ * is still a valid valuation input.
+ */
 export async function readAllPriceCache(
   db: StoreDb,
 ): Promise<Map<string, { price: string }>> {
-  const rows = await db.select().from(assetPriceCache).all();
+  const rows = await db
+    .select()
+    .from(assetPriceCache)
+    .where(ne(assetPriceCache.freshnessState, "failed"))
+    .all();
 
   return rows.reduce((map, row) => {
     map.set(row.assetId, { price: row.price });

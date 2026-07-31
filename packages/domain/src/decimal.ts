@@ -27,6 +27,19 @@ export function normalizeDecimal(value: DecimalString): DecimalString {
   return new Big(value).toString();
 }
 
+/**
+ * True when `value` parses as a decimal strictly greater than zero. A malformed
+ * string answers false instead of throwing, so callers can use it as a guard on
+ * stored data of unknown quality.
+ */
+export function isPositiveDecimal(value: DecimalString): boolean {
+  try {
+    return new Big(value).gt(0);
+  } catch {
+    return false;
+  }
+}
+
 export function subtractUnits(left: DecimalString, right: DecimalString): DecimalString {
   return new Big(left).minus(right).toString();
 }

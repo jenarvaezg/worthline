@@ -161,6 +161,85 @@ describe("price cache persistence", () => {
   });
 });
 
+describe("failed price rows never value a holding at zero (#1330)", () => {
+  /**
+   * When a fetch fails with no good prior price the pool writes a marker row
+   * `{ price: "0", freshnessState: "failed" }`. That marker means "no price
+   * known" — the valuation must fall back to cost basis (ADR 0006, #1314),
+   * never consume the zero and value a live holding at 0 €.
+   */
+  async function seedFundWithBuy(store: WorthlineStore): Promise<void> {
+    await seedWorkspaceAndAsset(store, "fund");
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-01-10",
+        feesMinor: 0,
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: "2026-06-12" },
+    );
+  }
+
+  const FAILED_ROW: AssetPrice = {
+    assetId: "fund",
+    currency: "EUR",
+    fetchedAt: "2026-07-07T06:00:00Z",
+    freshnessState: "failed",
+    price: "0",
+    source: "yahoo",
+    staleReason: "yahoo: símbolo no encontrado",
+  };
+
+  test("a failed marker row leaves the holding valued at cost basis", async () => {
+    const store = await createTestStore();
+    await seedFundWithBuy(store);
+
+    await store.operations.upsertPrice(FAILED_ROW);
+
+    const asset = (await store.assets.readAssets()).find((a) => a.id === "fund")!;
+    expect(asset.currentValue.amountMinor).toBe(10 * 100_00);
+
+    store.close();
+  });
+
+  test("the failed row still round-trips for the freshness surfaces", async () => {
+    const store = await createTestStore();
+    await seedFundWithBuy(store);
+
+    await store.operations.upsertPrice(FAILED_ROW);
+
+    // The valuation ignores it, but salud de datos / price freshness must still
+    // see the row and its reason — filtering happens in the valuation read only.
+    const row = await store.operations.readPriceCache("fund");
+    expect(row).toMatchObject({ freshnessState: "failed", price: "0" });
+    expect(await store.operations.readAllPriceCacheEntries()).toHaveLength(1);
+
+    store.close();
+  });
+
+  test("a good price still wins over the manual quote after a failed row is replaced", async () => {
+    const store = await createTestStore();
+    await seedFundWithBuy(store);
+
+    await store.operations.upsertPrice(FAILED_ROW);
+    await store.operations.upsertPrice({
+      ...FAILED_ROW,
+      freshnessState: "fresh",
+      price: "130",
+    });
+
+    const asset = (await store.assets.readAssets()).find((a) => a.id === "fund")!;
+    expect(asset.currentValue.amountMinor).toBe(10 * 130_00);
+
+    store.close();
+  });
+});
+
 describe("investment price provider metadata", () => {
   test("readInvestmentAssetsWithMeta applies provider defaults and preserves overrides", async () => {
     const store = await createTestStore();

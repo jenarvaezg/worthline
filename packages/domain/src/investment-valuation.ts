@@ -1,4 +1,5 @@
 import type { DecimalString } from "./decimal";
+import { isPositiveDecimal } from "./decimal";
 import type { DomainViolation } from "./domain-result";
 import type { InvestmentOperation } from "./investment-types";
 import { derivePosition } from "./positions";
@@ -71,15 +72,21 @@ export interface SelectedInvestmentPrice {
 /**
  * Price-selection rule (ADR 0006): cached provider price beats a manual quote.
  * Returns undefined when neither is available.
+ *
+ * A non-positive (or malformed) figure is not a price and is skipped: the price
+ * pool writes `price: "0"` as the marker of a failed fetch with no prior good
+ * price, and consuming that zero valued live holdings at 0 € (#1330). Falling
+ * through leaves the valuation on its cost-basis fallback, the same answer as
+ * "no row at all" (#1314).
  */
 export function selectInvestmentPrice(input: {
   cachedPrice: DecimalString | undefined;
   manualPrice: DecimalString | undefined;
 }): SelectedInvestmentPrice | undefined {
-  if (input.cachedPrice !== undefined) {
+  if (input.cachedPrice !== undefined && isPositiveDecimal(input.cachedPrice)) {
     return { pricePerUnit: input.cachedPrice, source: "cached" };
   }
-  if (input.manualPrice !== undefined) {
+  if (input.manualPrice !== undefined && isPositiveDecimal(input.manualPrice)) {
     return { pricePerUnit: input.manualPrice, source: "manual" };
   }
   return undefined;

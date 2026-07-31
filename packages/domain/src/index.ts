@@ -292,6 +292,7 @@ export {
   averageUnitCost,
   compareUnits,
   divideUnits,
+  isPositiveDecimal,
   multiplyToMinor,
   normalizeDecimal,
   proportionMinor,
@@ -864,6 +865,7 @@ export {
   findStatementTypeConflict,
   groupStatementRowsByIsin,
   isIsinShaped,
+  isProviderSymbolShaped,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 export type { PerHoldingStatementIsinGuard, StatementIsinGuard } from "./statement-isin";

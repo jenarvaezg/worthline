@@ -493,6 +493,27 @@ describe("plantilla import (#695)", () => {
     expect(btc.suggestedName).toBe("Bitcoin");
   });
 
+  // #1330: a statement without ISINs groups by the fund's NAME. Suggesting that
+  // name as the provider symbol condemned the holding to a daily impossible
+  // lookup that kept rewriting a failed price row.
+  test("a fund-name identifier suggests no provider symbol", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const csv = [
+      "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+      "01/02/2024;Fondo;Vanguard US Equity Index Fund EUR Hedged;Compra;10;500;;Vanguard US Equity Index Fund EUR Hedged",
+    ].join("\r\n");
+
+    const row = newRow(
+      await preview(plantillaForm(csv), store),
+      "Vanguard US Equity Index Fund EUR Hedged",
+    );
+
+    expect(row.suggestedSymbol).toBe("");
+    expect(row.suggestedName).toBe("Vanguard US Equity Index Fund EUR Hedged");
+  });
+
   test("one identifier with two asset types aborts preview and confirm", async () => {
     const store = await createInMemoryStore();
     await seed(store);

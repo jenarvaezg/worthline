@@ -308,6 +308,44 @@ describe("selectInvestmentPrice — price-selection rule", () => {
 
     expect(result).toBeUndefined();
   });
+
+  // A `failed` cache row carries price "0" as a marker for "no price known"
+  // (#1330). Zero is not a price: consuming it valued live holdings at 0 €.
+  test("ignores a zero cached price — the failed-row marker is not a price", () => {
+    const result = selectInvestmentPrice({
+      cachedPrice: "0",
+      manualPrice: undefined,
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  test("falls back to the manual quote when the cached price is zero", () => {
+    const result = selectInvestmentPrice({
+      cachedPrice: "0.00",
+      manualPrice: "120.00",
+    });
+
+    expect(result).toEqual({ pricePerUnit: "120.00", source: "manual" });
+  });
+
+  test("ignores a non-positive manual quote", () => {
+    const result = selectInvestmentPrice({
+      cachedPrice: undefined,
+      manualPrice: "-3",
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  test("ignores a malformed cached price instead of throwing", () => {
+    const result = selectInvestmentPrice({
+      cachedPrice: "n/a",
+      manualPrice: "120.00",
+    });
+
+    expect(result).toEqual({ pricePerUnit: "120.00", source: "manual" });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -401,6 +439,21 @@ describe("deriveInvestmentValuation — derived value", () => {
     expect(result.pricePerUnit).toBeUndefined();
     expect(result.priceSource).toBeUndefined();
     expect(result.warnings).toEqual([]);
+  });
+
+  test("returns cost basis when the cached price is the failed-row zero (#1330)", () => {
+    const ops = [buyOp("10", "100", "op1")];
+    const result = deriveInvestmentValuation({
+      assetId: "asset_inv",
+      currency: "EUR",
+      operations: ops,
+      cachedPrice: "0",
+      manualPrice: undefined,
+    });
+
+    expect(result.valueMinor).toBe(100_000); // cost basis, never 0 €
+    expect(result.pricePerUnit).toBeUndefined();
+    expect(result.priceSource).toBeUndefined();
   });
 
   test("returns zero value for empty operations with no price", () => {

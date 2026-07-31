@@ -1,4 +1,5 @@
 import type { LiquidityTier } from "./classification";
+import { isPositiveDecimal } from "./decimal";
 
 export type PriceSource =
   | "manual"
@@ -61,11 +62,22 @@ export function isRetiredInvestmentPriceProvider(
   );
 }
 
-/** Major-unit price per holding id — used to convert units contributions to money. */
+/**
+ * Major-unit price per holding id — used to convert units contributions to money.
+ *
+ * A `failed` entry is the pool's marker for "no price known" and carries price
+ * "0" (#1330); it is left out rather than handed downstream, where a zero price
+ * turns "how much money is this many units" into 0 € or a division by zero.
+ */
 export function unitPriceMajorByHoldingId(
   priceCache: readonly AssetPrice[],
 ): Record<string, string> {
-  return Object.fromEntries(priceCache.map((entry) => [entry.assetId, entry.price]));
+  return Object.fromEntries(
+    priceCache
+      .filter((entry) => entry.freshnessState !== "failed")
+      .filter((entry) => isPositiveDecimal(entry.price))
+      .map((entry) => [entry.assetId, entry.price]),
+  );
 }
 
 export interface AssetPrice {

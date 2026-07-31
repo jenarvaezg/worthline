@@ -90,6 +90,29 @@ describe("historical snapshots from operations", () => {
     store.close();
   });
 
+  test("a failed price row counts as no price: snapshots stay at cost basis (#1330)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    // The pool's marker row for "fetch failed, no prior price" (price "0").
+    await store.operations.upsertPrice({
+      assetId: "fund",
+      currency: "EUR",
+      fetchedAt: "2026-07-07T06:00:00Z",
+      freshnessState: "failed",
+      price: "0",
+      source: "yahoo",
+      staleReason: "yahoo: símbolo no encontrado",
+    });
+
+    await recordBuy(store, "2024-03-01", "5", "200");
+    await recordBuy(store, "2024-01-10", "10", "100");
+
+    expect(await grossAt(store, "2024-01-10")).toBe(10 * 100_00);
+    expect(await grossAt(store, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
+    store.close();
+  });
+
   test("a priced investment keeps its captured price through a ripple (ADR 0012)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
