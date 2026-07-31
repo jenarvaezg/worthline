@@ -140,7 +140,7 @@ export async function runExtractorFixture(
     ]);
     const expected = parseGoldenExpected(JSON.parse(expectedRaw));
     const mimeType = attachmentMimeTypeForFileName(fixture.imageFile) || "image/png";
-    const result = await extractDocumentFromVisionAttachment(
+    const { result } = await extractDocumentFromVisionAttachment(
       {
         bytes: new Uint8Array(bytes),
         fileName: fixture.imageFile,
@@ -211,7 +211,7 @@ export async function runBalanceSeriesFixture(
     // The balance-series track is no longer PDF-only (#1243): a committed screenshot
     // grades the same document, so the transport follows the fixture's own file name.
     const isPdf = fixture.sourceFile.toLowerCase().endsWith(".pdf");
-    const result = await extractDocumentFromVisionAttachment(
+    const { result } = await extractDocumentFromVisionAttachment(
       {
         bytes: new Uint8Array(bytes),
         fileName: fixture.sourceFile,

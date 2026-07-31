@@ -30,6 +30,7 @@ export const EXTRACTOR_GOLDEN_SCENARIOS = [
   "ticker-name-ambiguity",
   "thousand-separator",
   "payment-screen",
+  "value-only-composition",
 ] as const;
 
 export type ExtractorGoldenScenario = (typeof EXTRACTOR_GOLDEN_SCENARIOS)[number];
@@ -125,6 +126,24 @@ export const EXTRACTOR_GOLDEN_FIXTURES: GoldenFixture[] = [
     id: "synthetic-payment-screen",
     imageFile: "fixtures/synthetic-payment-screen.png",
     scenario: "payment-screen",
+    storage: "committed",
+  },
+  // The regression #1337 could not pin because nothing here represented it (#1345): a
+  // bank's «Composición» tab, seven funds printing a name and a value in euros and
+  // NOTHING else — no símbolo, no participaciones, two names cut off with «…».
+  //
+  // It grades two guarantees at once, and only the first one existed before. That a
+  // value-only row is extracted at all rather than degraded to `empty_reading` (#1325,
+  // the contract widening), and that the events branch of the schema does not poison
+  // this reading: with #1316's instrument fields in the same schema, the model read the
+  // seven funds, summed them correctly in a warning and emitted an EMPTY array — 0/7,
+  // deterministically, on the father's real capture. A synthetic render is «more limpio
+  // que la vida» (#1247) and still catches that, because what fails is not the pixels.
+  {
+    expectedFile: "expected/synthetic-value-only-composition.json",
+    id: "synthetic-value-only-composition",
+    imageFile: "fixtures/synthetic-value-only-composition.png",
+    scenario: "value-only-composition",
     storage: "committed",
   },
 ];

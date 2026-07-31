@@ -29,20 +29,24 @@ import type { StoreTarget } from "@web/store-resolver";
  * (`after()`), so the overshoot is not one turn but everything a caller can start
  * before its first write lands — bounded by the hourly rate limit above it, which
  * is what keeps «a few readings over» from becoming «a day's worth». The same
- * tolerance the rate limit and the token meter carry, stated honestly.
+ * tolerance the rate limit and the token meter carry, stated honestly; #1345 widens it
+ * by one call per in-flight reading, since a reading now spends up to three.
  */
 
 /**
  * Daily readings allowed per scope, and the shared fuse over all of them.
  *
- * Denominated in readings because that is what a caller triggers: an identified
- * document costs one, an unidentified one costs two (#1246). The figures are
- * operational anti-abuse backstops, not pricing — safe to tune here.
+ * Denominated in CALLS, because that is the unit the seam can honestly report, and a
+ * document is no longer worth exactly one of them: a positions or balance-series
+ * reading costs one call, an unidentified capture two (#1246, the descriptive drain), a
+ * dated fact two (#1345, the detail read), and the one case that runs both cascades —
+ * a dated fact read in detail and then declined — three. The figures are operational
+ * anti-abuse backstops, not pricing — safe to tune here.
  *
- * `workspace`: 60 readings is 60 documents a day, or 30 of the worst kind. The
- * heaviest honest day imaginable — onboarding a household's statements — is well
- * inside it, while the hourly chat limit alone (30 requests/hour, ADR 0051) would
- * have allowed an order of magnitude more.
+ * `workspace`: 60 calls is 60 cheap documents a day, 30 of the two-call kind or 20 of
+ * the worst. The heaviest honest day imaginable — onboarding a household's statements —
+ * is well inside it, while the hourly chat limit alone (30 requests/hour, ADR 0051)
+ * would have allowed an order of magnitude more.
  *
  * `demo`: an anonymous visitor gets enough to try the feature (6 unidentified
  * uploads) and no more. It is the scope with no plan behind it and no identity to

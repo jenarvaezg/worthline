@@ -29,6 +29,7 @@ const SYNTHETIC_FIXTURE_RENDERS: readonly SyntheticFixtureRender[] = [
   { id: "synthetic-baseline", viewport: { height: 640, width: 820 } },
   { id: "synthetic-payment-screen", viewport: { height: 760, width: 420 } },
   { id: "synthetic-amortization-schedule", viewport: { height: 560, width: 760 } },
+  { id: "synthetic-value-only-composition", viewport: { height: 720, width: 420 } },
 ];
 
 function selectFixtures(ids: readonly string[]): readonly SyntheticFixtureRender[] {

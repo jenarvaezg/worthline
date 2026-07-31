@@ -1,0 +1,41 @@
+{
+  "positions": [
+    {
+      "name": "Fondo Índice Global Acciones",
+      "marketValueEur": 412.9,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Renta Fija Europea",
+      "marketValueEur": 268.45,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Mercados Emergent…",
+      "marketValueEur": 154.1,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Small Caps Europa",
+      "marketValueEur": 98.76,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Inmobiliario Glob…",
+      "marketValueEur": 71.55,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Tesorería Euro",
+      "marketValueEur": 55.2,
+      "currency": "EUR"
+    },
+    {
+      "name": "Fondo Índice Materias Primas",
+      "marketValueEur": 43.05,
+      "currency": "EUR"
+    }
+  ],
+  "totalEur": 1104.01,
+  "warnings": []
+}

@@ -157,7 +157,9 @@ Format and document type are orthogonal, and soldering them produced something w
 "I don't know": a wrong answer in a valid shape.
 
 Images and PDFs now go through **one** vision seam that identifies the document and
-extracts it in a **single** model call. The file kind decides only transport and the
+extracts it in a **single** model call (amended by #1345 below: still one seam and one
+identifying call, but an identified `holding_event` now pays for a second, narrower one
+to read its instrument detail). The file kind decides only transport and the
 per-family guards: the `%PDF-` magic-byte check, the page cap and `pages` limit reason
 still apply to PDFs and to nothing else, and the shared type/size limits are unchanged.
 The spreadsheet route is untouched and stays deterministic and model-free — a stronger
@@ -441,6 +443,65 @@ The preview card grows a row per printed field, because the card is where the us
 make that confirmation a formality. The unit price keeps the four decimals the document
 printed rather than the currency's usual two: rounding a stated figure is the one thing
 the reading may not do.
+
+## Amendment — a fat branch poisons the reading of another, so the ask is split and its arrays are required (#1345)
+
+The single call of the #1243 amendment did not survive the branch #1316 grew on it.
+`gemini-3.1-flash-lite` has a **schema complexity budget**, and running out of it does
+not degrade the branch that is too big: it degrades a *different* one. Shown a bank's
+«Composición» tab — seven funds, each printing a name and a value in euros — the model
+identified `positions`, read `totalEur` correctly, **summed the seven rows one by one in
+its own arithmetic warning**, and emitted no `positions` array at all. Bisected against
+the real API at `temperature: 0`, deterministically: the full prompt with a
+positions-only schema read seven rows; the same schema with `events` carrying #1316's
+instrument fields read zero, nested or flattened into seventeen primitives alike,
+occasionally with no object at all. Not the prompt — #1337's value-only instruction was
+already correct and changed nothing — and not the nesting. The size of a branch the
+document had nothing to do with.
+
+**The question is therefore asked in two calls, and only a dated fact pays for the
+second.** Call one identifies the document and reads it, with `events` cut back to the
+core of the #1244 amendment (day, amount, currency, label, kind, doubt). Call two is
+asked only when that call typed the screen as a `holding_event` carrying exactly one
+fact, and it reads that fact with everything the instrument fields of #1316 print. Every
+other document costs exactly what it did before. The locks of #1244 all apply to the
+call that produces the document: several facts or none is decided on the cheap reading,
+so a screen full of movements is declined without paying for the detail; the borrowed
+day, the dropped decorations and the branded contract apply to the second.
+
+**And the arrays the model may fill are REQUIRED in the schema it is asked for.** The
+split alone was not enough, which is the part worth remembering: the committed
+value-only capture stayed at zero rows with the events branch already reduced, and
+stayed at zero with `events` removed from the schema entirely (0/7 rows, 3/3 runs). What
+recovered it was asking for `positions` as a required array — 7/7 rows, 3/3 runs — and
+keeping every branch required held it there, for about twelve extra output tokens. An
+omitted array and an empty one mean the same thing to this seam, so nothing about the
+reading changes; what changes is the model's cheapest legal answer. Under strain, an
+optional array lets it say nothing at all, while `[]` has to be a decision.
+
+The two shapes are therefore deliberately asymmetric, and derived from one another so
+they cannot drift: **required on the way out, optional on the way back**. A reply that
+omits an array has told us it read no rows, and that already has an honest verdict —
+`empty_reading`, which since #1246 reaches the conversation through the descriptive
+lane. Validating the omission as malformed would turn a shrug into `invalid_output`, a
+dead end, on precisely the document that opened this issue. This needs saying because
+the SDK does not separate the two by itself: the schema handed to `Output.object` is
+*also* the validator it runs over the reply, and a failure there throws before the seam
+sees anything. The output spec is therefore built with the asked-for JSON schema and the
+tolerated reading's validator, and the bytes reaching the provider are unchanged.
+
+Three costs are accepted explicitly. The worst case is now **three** vision calls: a
+screen typed as a dated fact, read in detail, and then declined pays for
+identification, detail and description — the least common branch of the least common
+document, and the alternative is the dead end PRD #1241 opened against. The **wait**,
+by contrast, is not allowed to grow: both calls and every retry inside them share one
+deadline, set to the ceiling a single call could already reach, and the detail call is
+skipped in favour of the descriptive lane rather than asked with no budget left — a
+reading that needs 1,5 s cannot happen in the dregs, and the user pays this latency
+pre-stream with no `maxDuration` on the route to stop it sooner. And the golden set
+gains `synthetic-value-only-composition`, the fixture #1337 could not be pinned by
+because nothing represented it; a synthetic render is enough here even though the
+failure was found on a real capture, because what fails is not the pixels.
 
 ## Consequences
 
