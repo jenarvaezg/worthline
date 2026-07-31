@@ -19,8 +19,7 @@ import {
   defaultsFor,
   formatMoneyMinorPrivacy,
 } from "@worthline/domain";
-import type { RegisteredSource } from "@worthline/pricing";
-import { fetchPriceNow } from "@worthline/pricing";
+import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
 import Link from "next/link";
 import { type CSSProperties, type ReactNode, Suspense } from "react";
 
@@ -109,17 +108,6 @@ const INVESTMENT_GROUPS: InvestmentGroup[] = [
     symbolHint: "p. ej. «bitcoin»",
   },
 ];
-
-const REGISTERED_SOURCES: readonly RegisteredSource[] = [
-  "yahoo",
-  "stooq",
-  "coingecko",
-  "finect",
-];
-
-function isRegisteredSource(value: string | undefined): value is RegisteredSource {
-  return value !== undefined && (REGISTERED_SOURCES as readonly string[]).includes(value);
-}
 
 /**
  * The picked symbol's live unit price, fetched once when a candidate has been

@@ -61,6 +61,29 @@ export const providerRegistry = {
 export type RegisteredSource = keyof typeof providerRegistry;
 
 /**
+ * The registered sources as DATA, derived from the registry itself so adding a
+ * provider cannot leave a stale list behind (#1329). Callers that hold a plain
+ * string — a stored `priceProvider`, a wizard field — narrow it with
+ * {@link isRegisteredSource} before handing it to {@link fetchPriceNow}; the
+ * chat alta and the «Añadir holding» wizard each kept a literal copy of this
+ * list until it lived here.
+ */
+export const REGISTERED_SOURCES: readonly RegisteredSource[] = Object.keys(
+  providerRegistry,
+) as RegisteredSource[];
+
+/** Whether a loose string names a source the registry can actually fetch with. */
+export function isRegisteredSource(
+  value: string | null | undefined,
+): value is RegisteredSource {
+  return (
+    value !== null &&
+    value !== undefined &&
+    (REGISTERED_SOURCES as readonly string[]).includes(value)
+  );
+}
+
+/**
  * Declarative TRUE fallback chains: when the primary source returns no usable
  * price, walk these sources in order and take the first success. This is the
  * ADR 0011 Yahoo→Stooq fallback expressed as data — reordering or extending a

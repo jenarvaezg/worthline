@@ -36,6 +36,7 @@ import {
   deleteLiabilityAction,
 } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
+import { detectValueOnlyOpening } from "@web/patrimonio/value-only-opening";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
@@ -232,6 +233,13 @@ export default async function EditarPage({
       : false;
   const isSnapshotCorrectionEligible =
     isDerived && investment !== null && operations.length > 0;
+  // #1329: the «alta por valor total» state — 1 participación holding the whole
+  // declared value — but only while it has no symbol. With one, the quote already
+  // governs the valuation and the warning would be an obituary, not a guard.
+  const valueOnlyOpening =
+    investment !== null && !investment.providerSymbol
+      ? detectValueOnlyOpening(operations)
+      : null;
   const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
 
   // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
@@ -562,6 +570,7 @@ export default async function EditarPage({
               privacyMode={privacyMode}
               scopeMemberId={ownershipScopeMemberId}
               updateInvestmentAction={boundUpdateInvestmentAction}
+              valueOnlyOpening={valueOnlyOpening}
               values={formError?.formId === "edit" ? formError.values : {}}
             />
           ) : liability ? (

@@ -1,3 +1,4 @@
+import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument } from "@worthline/domain";
 import { searchSymbols } from "@worthline/pricing";
 import Link from "next/link";
@@ -90,7 +91,7 @@ export default async function SymbolSearch({
                     <span className="symbolResultSymbol">{c.symbol}</span>
                     <span className="symbolResultName">{c.name}</span>
                     <span className="symbolResultMeta">
-                      {[providerLabel(c.provider), c.quoteType, c.exchange, c.currency]
+                      {[priceSourceLabel(c.provider), c.quoteType, c.exchange, c.currency]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
@@ -108,19 +109,4 @@ export default async function SymbolSearch({
       ) : null}
     </div>
   );
-}
-
-function providerLabel(provider: string): string {
-  switch (provider) {
-    case "yahoo":
-      return "Yahoo Finance";
-    case "stooq":
-      return "Stooq";
-    case "finect":
-      return "Finect";
-    case "coingecko":
-      return "CoinGecko";
-    default:
-      return provider;
-  }
 }

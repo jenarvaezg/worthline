@@ -15,7 +15,7 @@
  *
  * A VALUE-ONLY declaration (#1325) — «tengo 574,48 € en este fondo», no units, no
  * NAV, the one thing a managed-portfolio statement states per fund — resolves as
- * **1 participación × the net value**, the same encoding a wizard user reaches by
+ * **1 participación × the declared value**, the same encoding a wizard user reaches by
  * typing the total as the price (ADR 0006: an investment is always units × price,
  * so updating the value later is editing that price). It is gated by the CALLER on
  * the alta having no `providerSymbol`: the moment a real quote can arrive, the fake
@@ -154,32 +154,37 @@ export function resolveHoldingCreationOpening(
   const fees = feesMinor !== undefined && feesMinor > 0 ? feesMinor : undefined;
 
   // Value-only (#1325): nothing but the cash amount (and maybe a commission) was
-  // declared, and the caller allows it — 1 participación at the net value. Gated
-  // on `pricePerUnit === undefined`, not on it failing to parse: a declared price
-  // that does not read is a transcription problem to surface, never to paper over.
+  // declared, and the caller allows it — 1 participación at the declared value.
+  // Gated on `pricePerUnit === undefined`, not on it failing to parse: a declared
+  // price that does not read is a transcription problem to surface, never to
+  // paper over.
+  //
+  // The commission does NOT come off the value here (#1329, the explicit decision
+  // the #1328 review asked for), and this is the ONE branch where it doesn't. The
+  // other branches read an ORDER — «pagué 164,64 € por 3 títulos» — where the cash
+  // out includes the fee, so the position is worth the amount net of it. A
+  // value-only declaration is a BALANCE: «tengo 574,48 € hoy en este fondo», a
+  // figure the user is reading off a statement, and any commission was already
+  // paid before that number existed. Carving it out would make the app disagree
+  // with the document by a euro — the worst possible lie, because it is small
+  // enough to look like the app's own arithmetic. The fee still rides on the
+  // operation, so the cost basis (units × price + fees) keeps it and the return
+  // shows the euro as what it is: a cost, not a shrunken position.
   if (
     options.allowValueOnly === true &&
     pricePerUnit === undefined &&
     units === undefined &&
     openingValueMinor !== undefined
   ) {
-    const netMinor = openingValueMinor - (fees ?? 0);
-    if (netMinor <= 0) {
-      return {
-        ok: false,
-        error:
-          "La comisión no puede igualar ni superar el importe de la apertura: comprueba las dos cifras.",
-      };
-    }
-    const valueAsPrice = positiveDecimal((netMinor / 100).toString());
-    // Unreachable with a validated positive net, but never assume a parse.
+    const valueAsPrice = positiveDecimal((openingValueMinor / 100).toString());
+    // Unreachable with a validated positive amount, but never assume a parse.
     if (valueAsPrice === null) return { ok: false, error: MISSING_VALUE };
     return {
       ok: true,
       opening: {
         pricePerUnit: valueAsPrice,
         units: "1",
-        valueMinor: netMinor,
+        valueMinor: openingValueMinor,
         ...(fees === undefined ? {} : { feesMinor: fees }),
       },
       valueOnly: true,

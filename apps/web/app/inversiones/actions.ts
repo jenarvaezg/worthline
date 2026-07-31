@@ -34,6 +34,11 @@ import {
   type PayoutScheduleFields,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+import {
+  detectValueOnlyOpening,
+  valueOnlySymbolGuardMessage,
+} from "@web/patrimonio/value-only-opening";
+import { priceSourceLabel } from "@web/price-source-label";
 import { type WorthlineStore } from "@web/store";
 import type {
   InvestmentPriceProvider,
@@ -76,6 +81,9 @@ const EDIT_INVESTMENT_FIELDS = [
   "priceProvider",
   "providerSymbol",
   "manualPricePerUnit",
+  // The #1329 acknowledgement: a rejected save must round-trip it, or the user
+  // re-ticks the same box on every attempt.
+  "valueOnlySymbolAck",
 ];
 
 // #153 collapsed the /inversiones management routes; investments now live in
@@ -100,6 +108,17 @@ function isHistoricalPriceSource(value: unknown): value is HistoricalPriceSource
   return typeof value === "object" && value !== null && "fetchSeriesEur" in value;
 }
 
+/**
+ * The outcome of checking a symbol at save time. The resolved quote rides along
+ * so the caller can say what assigning the symbol WOULD do to the valuation
+ * (#1329) instead of paying a second provider round-trip to find out; `null`
+ * means «no quote in hand», which is the normal case for the providers whose
+ * symbols are deliberately not validated on save.
+ */
+type ProviderSymbolCheck =
+  | { ok: false; error: string }
+  | { ok: true; quotedPricePerUnit: string | null };
+
 async function validateInvestmentProviderSymbol(input: {
   assetId: string;
   currency: string;
@@ -107,8 +126,8 @@ async function validateInvestmentProviderSymbol(input: {
   nowIso: string;
   priceProvider?: InvestmentPriceProvider | undefined;
   providerSymbol?: string | undefined;
-}): Promise<string | null> {
-  if (!input.providerSymbol) return null;
+}): Promise<ProviderSymbolCheck> {
+  if (!input.providerSymbol) return { ok: true, quotedPricePerUnit: null };
 
   const priceProvider =
     input.priceProvider ?? defaultInvestmentPriceProvider(input.liquidityTier);
@@ -118,7 +137,9 @@ async function validateInvestmentProviderSymbol(input: {
   // the same — its symbols are validated on price refresh, not at save. This is
   // domain policy (which providers block on save), not the provider-resolution
   // routing the registry now owns via `fetchPriceNow`.
-  if (priceProvider === "finect" || priceProvider === "coingecko") return null;
+  if (priceProvider === "finect" || priceProvider === "coingecko") {
+    return { ok: true, quotedPricePerUnit: null };
+  }
 
   // Route validation through the pricing seam (ADR 0026): a non-null price means
   // the symbol resolves. This gains the registry's Yahoo→Stooq fallback for free
@@ -131,22 +152,19 @@ async function validateInvestmentProviderSymbol(input: {
     symbol: input.providerSymbol,
   });
 
-  if (price) return null;
-
-  return `El símbolo no existe en ${providerLabel(priceProvider)}.`;
-}
-
-function providerLabel(provider: InvestmentPriceProvider): string {
-  switch (provider) {
-    case "stooq":
-      return "Stooq";
-    case "yahoo":
-      return "Yahoo Finance";
-    case "finect":
-      return "Finect";
-    case "coingecko":
-      return "CoinGecko";
+  // A non-EUR quote validates the symbol but must not be quoted back as euros:
+  // the caller prints it next to a euro figure (#1329).
+  if (price) {
+    return {
+      ok: true,
+      quotedPricePerUnit: price.currency === "EUR" ? price.price : null,
+    };
   }
+
+  return {
+    error: `El símbolo no existe en ${priceSourceLabel(priceProvider)}.`,
+    ok: false,
+  };
 }
 
 export async function recordOperationAction(
@@ -483,7 +501,7 @@ export async function updateInvestmentAction(
       (existing.priceProvider !== nextPriceProvider ||
         existing.providerSymbol !== nextProviderSymbol),
   );
-  const validationError = await validateInvestmentProviderSymbol({
+  const symbolCheck = await validateInvestmentProviderSymbol({
     assetId: routeAssetId,
     currency: existing?.currency ?? "EUR",
     liquidityTier: nextLiquidityTier,
@@ -492,8 +510,35 @@ export async function updateInvestmentAction(
     providerSymbol: parsed.command.providerSymbol,
   });
 
-  if (validationError) {
-    redirect(editErrorUrl(validationError));
+  if (!symbolCheck.ok) {
+    redirect(editErrorUrl(symbolCheck.error));
+  }
+
+  // #1329: a holding born «por valor total» is 1 participación × its whole value.
+  // Giving it a symbol hands the valuation to the quote, so the position silently
+  // becomes worth ONE share — and the fake unit poisons every later buy. Only the
+  // save that ADDS a symbol pays the ledger read, and only an explicit «es una
+  // participación real» gets through.
+  if (nextProviderSymbol && !existing?.providerSymbol) {
+    const acknowledged = String(formData.get("valueOnlySymbolAck") ?? "").trim() !== "";
+    if (!acknowledged) {
+      const operations = await runActionWithStore(
+        (store) => store.operations.readOperations(routeAssetId),
+        _store,
+      );
+      const valueOnly = detectValueOnlyOpening(operations);
+      if (valueOnly) {
+        redirect(
+          editErrorUrl(
+            valueOnlySymbolGuardMessage({
+              opening: valueOnly,
+              quotedPricePerUnit: symbolCheck.quotedPricePerUnit,
+              symbol: nextProviderSymbol,
+            }),
+          ),
+        );
+      }
+    }
   }
 
   await runActionWithStore(async (store) => {

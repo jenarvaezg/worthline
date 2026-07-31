@@ -173,7 +173,10 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
     });
   });
 
-  test("a commission is carved out of the 1-unit value too", () => {
+  test("a commission rides on the cost basis — it does NOT shrink today's balance (#1329)", () => {
+    // The declared amount is a BALANCE the user is reading off a statement, not
+    // an order's cash: carving the euro out would make the app disagree with the
+    // document. The fee stays on the operation, where the cost basis keeps it.
     const resolved = resolveHoldingCreationOpening(
       { feesMinor: 1_00, openingValueMinor: 574_48 },
       { allowValueOnly: true },
@@ -183,9 +186,9 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
       ok: true,
       opening: {
         feesMinor: 1_00,
-        pricePerUnit: "573.48",
+        pricePerUnit: "574.48",
         units: "1",
-        valueMinor: 573_48,
+        valueMinor: 574_48,
       },
       valueOnly: true,
     });
@@ -222,13 +225,19 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
     expect(resolved.error).toMatch(/precio por unidad/);
   });
 
-  test("a commission that swallows the whole value-only amount is rejected", () => {
+  test("a commission bigger than the balance is a cost, not an impossibility (#1329)", () => {
+    // Under the balance reading there is no arithmetic to break: the position is
+    // worth what the user says it is worth, and an outsized fee simply lands in
+    // the cost basis, where the return reports it as the loss it is.
     const resolved = resolveHoldingCreationOpening(
       { feesMinor: 600_00, openingValueMinor: 574_48 },
       { allowValueOnly: true },
     );
 
-    expect(resolved).toMatchObject({ ok: false });
+    expect(resolved).toMatchObject({
+      ok: true,
+      opening: { feesMinor: 600_00, units: "1", valueMinor: 574_48 },
+    });
   });
 });
 

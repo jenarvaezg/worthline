@@ -334,7 +334,9 @@ export {
   fallbackChains,
   fetchPriceNow,
   fetchWithFallback,
+  isRegisteredSource,
   providerRegistry,
+  REGISTERED_SOURCES,
   resolveProvider,
   runFallbackChain,
 } from "./registry";

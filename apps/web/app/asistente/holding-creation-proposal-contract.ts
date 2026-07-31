@@ -67,6 +67,13 @@ export interface HoldingCreationProposal {
    * document (same reading as `propose_early_repayment`'s cuota reconciliation).
    */
   openingMismatchWarning?: string;
+  /**
+   * Where the units came from when they were minted from a live quote (#1329):
+   * the delivering source and the as-of date IT states. A Yahoo close can be days
+   * old, so «10 uds.» without provenance overstates what the app actually knows.
+   * Absent whenever the títulos came from the document itself.
+   */
+  openingQuoteNote?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
