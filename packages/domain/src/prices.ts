@@ -62,22 +62,54 @@ export function isRetiredInvestmentPriceProvider(
   );
 }
 
+const PROVIDER_SYMBOL_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,19}$/;
+
+/**
+ * Whether a string is plausible as a provider symbol — a ticker ("VUSA.L"), a
+ * CoinGecko id ("bitcoin") or a fund code ("N5572-myinvestor"): no whitespace,
+ * no punctuation beyond `. _ : -`, at most 20 characters.
+ *
+ * A statement without ISINs groups its rows by the fund's NAME, and stamping
+ * that name as the provider symbol condemned the holding to a daily lookup that
+ * could never resolve — each attempt rewriting a `failed` price row (#1330).
+ * No symbol is the honest answer: the holding is valued at cost until someone
+ * maps it. Shape is all this can judge; whether the symbol RESOLVES is the
+ * provider's answer, not ours.
+ */
+export function isProviderSymbolShaped(value: string): boolean {
+  return PROVIDER_SYMBOL_SHAPE.test(value.trim());
+}
+
+/**
+ * The one rule for "is this cache row a price at all" (#1330).
+ *
+ * A `failed` row is the pool's marker for "the fetch failed and no prior good
+ * price exists" and carries price "0". Every reader that would multiply, divide
+ * or attribute by that figure asks here instead of re-spelling the check: the
+ * answer is the usable price, or null when the row only records a failure.
+ */
+export function usableCachedPrice(
+  entry: Pick<AssetPrice, "freshnessState" | "price">,
+): string | null {
+  if (entry.freshnessState === "failed") return null;
+  return isPositiveDecimal(entry.price) ? entry.price : null;
+}
+
 /**
  * Major-unit price per holding id — used to convert units contributions to money.
  *
- * A `failed` entry is the pool's marker for "no price known" and carries price
- * "0" (#1330); it is left out rather than handed downstream, where a zero price
- * turns "how much money is this many units" into 0 € or a division by zero.
+ * Rows that are not a price are left out rather than handed downstream, where a
+ * zero turns "how much money is this many units" into 0 € or a division by zero.
  */
 export function unitPriceMajorByHoldingId(
   priceCache: readonly AssetPrice[],
 ): Record<string, string> {
-  return Object.fromEntries(
-    priceCache
-      .filter((entry) => entry.freshnessState !== "failed")
-      .filter((entry) => isPositiveDecimal(entry.price))
-      .map((entry) => [entry.assetId, entry.price]),
-  );
+  const entries: Array<[string, string]> = [];
+  for (const entry of priceCache) {
+    const price = usableCachedPrice(entry);
+    if (price !== null) entries.push([entry.assetId, price]);
+  }
+  return Object.fromEntries(entries);
 }
 
 export interface AssetPrice {

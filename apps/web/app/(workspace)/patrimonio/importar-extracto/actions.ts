@@ -47,6 +47,7 @@ import {
   defaultsFor,
   findStatementTypeConflict,
   isIsinShaped,
+  isProviderSymbolShaped,
   isStatementBroker,
   type OwnershipShare,
   type ParsedStatement,
@@ -210,7 +211,13 @@ function selectionsFromForm(
 
     const name =
       String(formData.get(isinFormKey("name", bucket.isin)) ?? "").trim() || bucket.isin;
-    const symbol = String(formData.get(isinFormKey("symbol", bucket.isin)) ?? "").trim();
+    // Shape-checked here too, not only in the preview suggestion (#1330): a name
+    // typed into the symbol box resolves with no provider, and every daily retry
+    // rewrites the holding's `failed` price row.
+    const typedSymbol = String(
+      formData.get(isinFormKey("symbol", bucket.isin)) ?? "",
+    ).trim();
+    const symbol = isProviderSymbolShaped(typedSymbol) ? typedSymbol : "";
 
     return {
       action: "include",

@@ -375,6 +375,26 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     expect(created?.providerSymbol).toBeUndefined();
   });
 
+  test("a fund NAME typed into the symbol box is not persisted as a symbol (#1330)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const fd = uploadForm();
+    fd.set("include_FR00WL000004", "on");
+    fd.set("name_FR00WL000004", "Vanguard US Equity Index Fund EUR Hedged");
+    fd.set("symbol_FR00WL000004", "Vanguard US Equity Index Fund EUR Hedged");
+
+    await confirm(fd, store);
+
+    // No provider quotes by name: with no symbol the holding is valued at cost
+    // instead of rewriting a `failed` price row on every daily retry.
+    const created = (await store.assets.readInvestmentAssetsWithMeta()).find(
+      (meta) => meta.isin === "FR00WL000004",
+    );
+    expect(created?.name).toBe("Vanguard US Equity Index Fund EUR Hedged");
+    expect(created?.providerSymbol).toBeUndefined();
+  });
+
   test("re-confirming the same file is a no-op on the already-included funds", async () => {
     const store = await createInMemoryStore();
     await seed(store);

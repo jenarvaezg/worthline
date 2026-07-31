@@ -118,23 +118,6 @@ export function isIsinShaped(identifier: string): boolean {
   return ISIN_SHAPE.test(identifier.trim());
 }
 
-const PROVIDER_SYMBOL_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,19}$/;
-
-/**
- * Whether a statement identifier is plausible as a provider symbol — a ticker
- * ("VUSA.L"), a CoinGecko id ("bitcoin") or a fund code ("N5572-myinvestor"):
- * no whitespace, no punctuation beyond `. _ : -`, at most 20 characters.
- *
- * A statement without ISINs groups its rows by the fund's NAME, and stamping
- * that name as the provider symbol condemned the holding to a daily lookup that
- * could never resolve — each attempt rewriting a `failed` price row (#1330).
- * No symbol is the honest answer: the holding is valued at cost until someone
- * maps it.
- */
-export function isProviderSymbolShaped(identifier: string): boolean {
-  return PROVIDER_SYMBOL_SHAPE.test(identifier.trim());
-}
-
 export function groupStatementRowsByIsin(
   statement: ParsedStatement,
 ): StatementFundGroup[] {
