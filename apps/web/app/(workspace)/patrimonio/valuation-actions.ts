@@ -173,14 +173,39 @@ export async function batchValueUpdateAction(
       // Reject submissions that name a derived holding (investment or connected-
       // source coin collection) — their value is computed from sub-detail, never
       // hand-set. Ask the catalog seam per submitted holding, not an inline id-set.
+      // Debts submitted here are collected in the same pass for the curve guard
+      // below (their eligibility needs a read, so it is decided once, after).
+      const liabilityIds = new Set(liabilities.map((l) => l.id));
+      const submittedLiabilityIds: string[] = [];
       for (const [key] of formData.entries()) {
         if (!key.startsWith("val_")) continue;
-        const asset = assetsById.get(key.slice(4));
+        const id = key.slice(4);
+        const asset = assetsById.get(id);
         if (asset && !isValueUpdateEligible(asset)) {
           const violation = checkManualValuationViolation(asset) ?? {
             code: "value_update_investment_holding" as const,
           };
           return { ok: false, error: mapDomainViolation(violation) };
+        }
+        if (liabilityIds.has(id)) {
+          submittedLiabilityIds.push(id);
+        }
+      }
+
+      // The debts' half of the same rule (#1334): a debt with a plan, a re-baseline
+      // or a declared balance takes its figure from the curve, so writing its stored
+      // balance would "save" with no figure moving — the same door the ficha closed
+      // in #1290. The page no longer renders those rows; this catches the tab that
+      // was open before the curve existed, and refuses the WHOLE batch rather than
+      // writing part of it. One pass over the curve tables, and only when the
+      // submission names a debt at all.
+      if (submittedLiabilityIds.length > 0) {
+        const curveGoverned = await store.liabilities.readCurveGovernedLiabilityIds();
+        if (submittedLiabilityIds.some((id) => curveGoverned.has(id))) {
+          return {
+            error: mapDomainViolation({ code: "debt_balance_governed_by_curve" }),
+            ok: false,
+          };
         }
       }
 

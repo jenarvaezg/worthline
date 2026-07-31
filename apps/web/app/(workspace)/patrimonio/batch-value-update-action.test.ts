@@ -147,3 +147,111 @@ describe("batchValueUpdateAction — who the value-update pass accepts (#308)", 
     expect(url).toContain("error=");
   });
 });
+
+/**
+ * A debt with a modelled curve takes its figure from the curve, so its stored
+ * balance is a dead field — writing it "saves" without a single figure moving
+ * (#1290, here on the batch surface: #1334). The page stops offering the input;
+ * this is the server half, for the tab that was open before the curve existed.
+ */
+describe("batchValueUpdateAction — debts with a curve (#1334)", () => {
+  /** A `debt` liability with no curve data: the stored balance is all it has. */
+  async function seedBareDebt(store: WorthlineStore, name: string): Promise<string> {
+    await runAction(
+      createHoldingAction,
+      form({
+        instrument: "loan",
+        [`name_loan`]: name,
+        [`balance_loan`]: "10.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+    const liabilities = await store.liabilities.readLiabilities();
+    return liabilities.find((l) => l.name === name)!.id;
+  }
+
+  test("a debt with no curve is still updated by the pass", async () => {
+    const store = await seedStore();
+    const debtId = await seedBareDebt(store, "Préstamo coche");
+
+    const url = await runAction(
+      batchValueUpdateAction,
+      form({ [`val_${debtId}`]: "8.000,00" }),
+      store,
+    );
+
+    expect(url).not.toContain("error=");
+    const liability = (await store.liabilities.readLiabilities()).find(
+      (l) => l.id === debtId,
+    )!;
+    expect(liability.currentBalance.amountMinor).toBe(800_000);
+  });
+
+  test("a declared balance retires the row — the batch is refused, nothing is written", async () => {
+    const store = await seedStore();
+    const { storedId } = await seedHoldings(store);
+    const debtId = await seedBareDebt(store, "Tarjeta Revolut");
+    await store.liabilities.setDebtModel(debtId, "revolving");
+    await store.command.addBalanceAnchor({
+      anchorDate: "2026-07-01",
+      balanceMinor: 1_200_00,
+      id: "anchor_card",
+      liabilityId: debtId,
+    });
+
+    const url = await runAction(
+      batchValueUpdateAction,
+      form({
+        [`val_${storedId}`]: "3.000,00",
+        [`val_${debtId}`]: "999,00",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    // Nothing of the batch landed — not the debt, and not the asset beside it.
+    const liability = (await store.liabilities.readLiabilities()).find(
+      (l) => l.id === debtId,
+    )!;
+    expect(liability.currentBalance.amountMinor).toBe(1_000_000);
+    const asset = (await store.assets.readAssets()).find((a) => a.id === storedId)!;
+    expect(asset.currentValue.amountMinor).toBe(250_000);
+  });
+
+  test("an amortizable debt with a plan is refused too", async () => {
+    const store = await seedStore();
+    const debtId = await seedBareDebt(store, "Hipoteca Santander");
+    await store.command.createCurrentStateDebt({
+      plan: {
+        annualInterestRate: "0.0325",
+        disbursementDate: "2026-01-01",
+        firstPaymentDate: "2026-02-01",
+        id: "plan_mortgage",
+        initialCapitalMinor: 90_000_00,
+        liabilityId: debtId,
+        termMonths: 120,
+      },
+      rebaseline: {
+        annualInterestRate: "0.0325",
+        baselineDate: "2026-01-01",
+        endDate: "2036-01-01",
+        id: "reb_mortgage",
+        liabilityId: debtId,
+        nextPaymentDate: "2026-02-01",
+        outstandingBalanceMinor: 90_000_00,
+        startsAtBaseline: true,
+      },
+      today: "2026-07-31",
+    });
+
+    const url = await runAction(
+      batchValueUpdateAction,
+      form({ [`val_${debtId}`]: "1,00" }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+  });
+});

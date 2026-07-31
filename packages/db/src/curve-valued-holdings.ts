@@ -8,7 +8,12 @@ import type {
   ManualAsset,
   ValuationCadence,
 } from "@worthline/domain";
-import { debtBalanceAtDate, isHousingAsset, valueHousingAtDate } from "@worthline/domain";
+import {
+  debtBalanceAtDate,
+  isHousingAsset,
+  storedBalanceGovernsDebtFigure,
+  valueHousingAtDate,
+} from "@worthline/domain";
 
 import {
   amortizationPlans,
@@ -267,4 +272,60 @@ export async function readDebtBalanceInputs(
   }
 
   return inputs;
+}
+
+/**
+ * Which liabilities take their figure from a modelled curve — so their stored
+ * `current_balance_minor` is a dead field (#1290 / #1334).
+ *
+ * The bulk sibling of the per-debt reading in `updateLiabilityBalanceAction`: ONE
+ * pass per curve table instead of 3-4 reads per row, so a surface that lists every
+ * debt (the «puesta al día») can crib the ones whose balance input would be a
+ * write into the void without an N+1. The RULE itself is not restated here — the
+ * domain predicate `storedBalanceGovernsDebtFigure` decides, exactly as it does
+ * for one debt on the ficha.
+ *
+ * It asks presence only, which is all that predicate needs, so it selects ids and
+ * never whole plan rows; `readDebtBalanceInputs` above is the sibling that reads
+ * the full curve when the FIGURE is what's wanted. Trashed liabilities are
+ * included and inert: callers intersect the set with the live rows they hold.
+ */
+export async function readCurveGovernedLiabilityIds(db: StoreDb): Promise<Set<string>> {
+  const [modelRows, planRows, rebaselineRows, anchorRows] = await Promise.all([
+    db
+      .select({ debtModel: liabilities.debtModel, id: liabilities.id })
+      .from(liabilities)
+      .all(),
+    db
+      .select({ liabilityId: amortizationPlans.liabilityId })
+      .from(amortizationPlans)
+      .all(),
+    db
+      .select({ liabilityId: liabilityBalanceRebaselines.liabilityId })
+      .from(liabilityBalanceRebaselines)
+      .all(),
+    db
+      .select({ liabilityId: liabilityBalanceAnchors.liabilityId })
+      .from(liabilityBalanceAnchors)
+      .all(),
+  ]);
+
+  const withPlan = new Set(planRows.map((row) => row.liabilityId));
+  const withRebaseline = new Set(rebaselineRows.map((row) => row.liabilityId));
+  const withAnchor = new Set(anchorRows.map((row) => row.liabilityId));
+
+  const governed = new Set<string>();
+  for (const row of modelRows) {
+    const storedGoverns = storedBalanceGovernsDebtFigure({
+      debtModel: row.debtModel ?? null,
+      hasAmortizationPlan: withPlan.has(row.id),
+      hasBalanceAnchors: withAnchor.has(row.id),
+      hasBalanceRebaselines: withRebaseline.has(row.id),
+    });
+    if (!storedGoverns) {
+      governed.add(row.id);
+    }
+  }
+
+  return governed;
 }

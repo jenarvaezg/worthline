@@ -71,7 +71,12 @@ re-entering the plan.
 - Because a re-baseline (or a plan, or an anchor) makes the curve the source of
   the balance, the liability's stored balance field stops being a door for that
   debt: the raw "Saldo pendiente" form is not rendered and the write is refused
-  server-side, so the only repair is a re-baseline or an anchor (#1290). A debt
-  with no curve data yet keeps that field — there it is the only balance there
-  is. The rule lives beside the dispatcher it mirrors
-  (`storedBalanceGovernsDebtFigure`, `packages/domain/src/debt-balance.ts`).
+  server-side, so the only repair is a re-baseline or an anchor (#1290). The same
+  holds on the batch surface — the "puesta al día" lists no balance input for such
+  a debt and `batchValueUpdateAction` refuses the whole batch if one is submitted
+  anyway (#1334). A debt with no curve data yet keeps that field — there it is the
+  only balance there is. The rule lives beside the dispatcher it mirrors
+  (`storedBalanceGovernsDebtFigure`, `packages/domain/src/debt-balance.ts`); the
+  batch surface reads it for every debt in one pass
+  (`readCurveGovernedLiabilityIds`, `packages/db/src/curve-valued-holdings.ts`),
+  never a read per row.

@@ -36,7 +36,18 @@ export default async function PuestaAlDiaPage({
       // Stable fallback: sort by id alphabetically for determinism
       return a.id.localeCompare(b.id);
     });
-  const liabilities = await store.liabilities.readLiabilities();
+  // Only debts whose stored balance is still the figure. Once a plan, a
+  // re-baseline or a declared balance exists the balance comes from the curve and
+  // the stored field is dead (#1290): prefilling it here would invite a repair
+  // that moves nothing — the door is «Recalibrar con saldo real» or a declared
+  // balance, on the ficha (#1334). The curve owners are cribbed in ONE pass.
+  const [allLiabilities, curveGovernedLiabilityIds] = await Promise.all([
+    store.liabilities.readLiabilities(),
+    store.liabilities.readCurveGovernedLiabilityIds(),
+  ]);
+  const liabilities = allLiabilities.filter(
+    (liability) => !curveGovernedLiabilityIds.has(liability.id),
+  );
 
   const currency =
     assets[0]?.currentValue.currency ?? liabilities[0]?.currentBalance.currency ?? "EUR";
