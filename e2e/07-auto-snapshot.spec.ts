@@ -19,9 +19,13 @@ test("auto-snapshot: / load captures snapshot → historico shows entry", async 
   await page.goto("/historico");
   await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
 
-  // 3. The drill should have at least one data row (from the auto-capture above)
+  // 3. The drill should have at least one data row (from the auto-capture above).
+  //    A bare `count()` samples ONCE and the panel streams in behind the chrome
+  //    heading, so it asked before there was anything to count; the retrying
+  //    assertion is also the stronger claim — the row is on screen, not merely in
+  //    the document.
   const dataRows = page.locator(".historicoDrillRow");
-  expect(await dataRows.count()).toBeGreaterThanOrEqual(1);
+  await expect(dataRows.first()).toBeVisible();
 
   // 4. A date key cell exists with a YYYY-MM-DD pattern
   const dateCells = page.locator(".dateKey");

@@ -1,16 +1,32 @@
 /**
- * Shared e2e test base: browser errors fail the journey.
+ * Shared e2e test base: browser errors fail the journey, and page-scoped queries
+ * only see the route that is on screen.
  *
  * React reports hydration mismatches and rendering warnings through the
  * browser's error channels (uncaught page errors and console.error), so any
  * journey that triggers one — like the <title> array-children hydration bug
  * on the home — fails instead of scrolling by in the dev server logs.
  * Every spec must import { test, expect } from "./fixtures", never from
- * "@playwright/test" directly.
+ * "@playwright/test" directly. Two journeys don't: journey 47 PROVOKES browser
+ * errors on purpose, and `demo.spec.ts` never took this base (a standing gap, not
+ * a reasoned exemption). Both take `visibilityScopedTest` from "./visible-page" —
+ * this base without the gate — never the raw Playwright one.
+ * `tests/e2e-page-scope-guardian.test.ts` holds that line.
+ *
+ * The `page` this fixture hands out is VISIBILITY-SCOPED (#1351): since #1229 the
+ * route you navigate away from stays in the document, hidden, and only
+ * `getByRole` filters that out on its own. `visible-page.ts` carries the measured
+ * table and the reasoning; the short version is that `page.locator(".x")` here
+ * answers «what is on screen», and `wholeDocument(page).locator(".x")` is how you
+ * ask about the document when that is genuinely the question.
  */
-import { test as base, expect } from "@playwright/test";
+import { expect } from "@playwright/test";
 
-export const test = base.extend({
+import { visibilityScopedTest, wholeDocument } from "./visible-page";
+
+export { wholeDocument };
+
+export const test = visibilityScopedTest.extend({
   page: async ({ page }, use) => {
     const browserErrors: string[] = [];
 

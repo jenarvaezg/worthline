@@ -22,6 +22,7 @@ playwright-report/
 playwright-report-first-run/
 playwright-report-first-run-*/
 playwright-report-demo/
+playwright-report-routing/
 
 .local/
 .scratch/

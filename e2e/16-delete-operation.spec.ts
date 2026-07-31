@@ -17,6 +17,7 @@ import {
   holdingRow,
   openAdvancedSettings,
   test,
+  wholeDocument,
 } from "./fixtures";
 
 test("record an operation, then delete it", async ({ page }) => {
@@ -67,7 +68,11 @@ test("record an operation, then delete it", async ({ page }) => {
   await opDelete.locator("summary").click();
   await opDelete.getByRole("button", { name: "Confirmar" }).click();
 
-  await expect(page.locator("details.recentOpsPanel")).toHaveCount(0);
+  // «Not rendered» is a claim about the DOCUMENT, not about the screen: the
+  // panel lives inside the advanced block, which the success redirect folds shut
+  // again — so a screen-scoped count would pass even if the panel came back
+  // (#1351).
+  await expect(wholeDocument(page).locator("details.recentOpsPanel")).toHaveCount(0);
   expect(
     await page.evaluate(
       () => (window as Window & { __wlNoReload?: boolean }).__wlNoReload,
@@ -78,5 +83,5 @@ test("record an operation, then delete it", async ({ page }) => {
 
   // 6. Success banner and the operation stays gone (panel not rendered).
   await expect(page.getByRole("status")).toContainText("Operación eliminada");
-  await expect(page.locator("details.recentOpsPanel")).toHaveCount(0);
+  await expect(wholeDocument(page).locator("details.recentOpsPanel")).toHaveCount(0);
 });

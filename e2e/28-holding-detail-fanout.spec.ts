@@ -10,7 +10,14 @@
  * appreciating, amortized, anchored) must still render/edit from the detail page.
  */
 
-import { addHolding, expect, holdingRow, openAdvancedSettings, test } from "./fixtures";
+import {
+  addHolding,
+  expect,
+  holdingRow,
+  openAdvancedSettings,
+  test,
+  wholeDocument,
+} from "./fixtures";
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -63,10 +70,16 @@ test("derived: manage an investment's operations from /patrimonio/[id]/editar", 
   await opForm.getByLabel("Unidades").fill("4");
   await opForm.getByLabel("Precio por unidad en EUR").fill("120");
   await page.getByRole("button", { name: "Registrar operación" }).click();
+  // Waiting on the URL is no signal here: this redirect lands on the SAME
+  // `?ok=saved` URL step 4 already produced. The honest signal is the settled
+  // figure the server re-rendered — and it arrives inside the advanced block,
+  // which the redirect folds shut again (its `open` is server-driven). So this
+  // one asks the DOCUMENT on purpose: `wholeDocument` is what makes «present but
+  // not on screen» expressible now that page queries answer about the screen.
   await expect(
-    page.locator("details.editAdvanced .operacionContext").getByText("6", {
-      exact: true,
-    }),
+    wholeDocument(page)
+      .locator("details.editAdvanced .operacionContext")
+      .getByText("6", { exact: true }),
   ).toHaveCount(1);
   await openAdvancedSettings(page);
 
@@ -137,6 +150,9 @@ test("appreciating: a property edits its valuation curve from the detail page", 
   await page.getByLabel("Tasa de revalorización anual (%)").fill("3");
   await page.getByRole("button", { name: "Guardar tasa" }).click();
   await expect(page.getByRole("status")).toHaveText("Tasa de revalorización guardada.");
+  // The save redirect folds the advanced block shut again; re-open it before
+  // reading the field back.
+  await openAdvancedSettings(page);
   await expect(page.getByLabel("Tasa de revalorización anual (%)")).toHaveValue("3");
 });
 

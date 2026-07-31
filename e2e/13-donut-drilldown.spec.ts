@@ -26,11 +26,14 @@ test("every donut segment links to its tier's drill group", async ({ page }) => 
   // Whatever segments the data produces, each one's destination must match
   // its tier — the same mapping the decomposition bands use.
   const segmentLinks = page.locator(".tierDonut a");
-  const count = await segmentLinks.count();
 
-  // By this point in the serial run, holdings exist in at least one tier,
-  // so the donut must render at least one segment link.
-  expect(count).toBeGreaterThanOrEqual(1);
+  // By this point in the serial run, holdings exist in at least one tier, so the
+  // donut must render at least one segment link. Wait for the first one with a
+  // retrying assertion before counting: the chrome heading above paints from the
+  // prefetched shell while the donut streams in behind it, so a bare `count()`
+  // samples an empty dashboard.
+  await expect(segmentLinks.first()).toBeVisible();
+  const count = await segmentLinks.count();
 
   for (let i = 0; i < count; i += 1) {
     const link = segmentLinks.nth(i);
