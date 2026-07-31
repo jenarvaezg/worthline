@@ -23,6 +23,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { readCurveGovernedLiabilityIds } from "./curve-valued-holdings";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 import {
   amortizationPlans,
@@ -376,6 +377,15 @@ export interface LiabilityStore {
    * missing data falls back to the current balance.
    */
   debtBalanceAtDate: (liabilityId: string, targetDate: string) => Promise<number>;
+  /**
+   * Ids of the liabilities whose figure comes from a modelled curve — a plan, a
+   * re-baseline or a declared balance — so their stored balance is a dead field
+   * (#1290 / #1334). The one way the app asks `storedBalanceGovernsDebtFigure`, in
+   * one pass over the curve tables: the surface that lists EVERY debt (the «puesta
+   * al día») decides who gets a balance input without a read per row, and the two
+   * write actions refuse with the same answer.
+   */
+  readCurveGovernedLiabilityIds: () => Promise<Set<string>>;
 }
 
 export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
@@ -423,6 +433,7 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     deleteBalanceAnchor: (anchorId) => deleteBalanceAnchor(ctx, anchorId),
     debtBalanceAtDate: (liabilityId, targetDate) =>
       debtBalanceAtDateFor(ctx, liabilityId, targetDate),
+    readCurveGovernedLiabilityIds: () => readCurveGovernedLiabilityIds(ctx.db),
   };
 }
 

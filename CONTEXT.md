@@ -337,8 +337,10 @@ cadence** for the per-holding `interpolated` opt-in. Stored on the liability.
 The liability's own **stored balance** (UI: "Saldo pendiente") is the figure only
 while the model has no curve to walk: once an **amortization plan**, a **balance
 re-baseline** or a **balance anchor** exists, the balance comes from the curve and
-the stored field is dead — it is then neither shown nor writable, and the repair
-door is "Recalibrar con saldo real" or a new **balance anchor** (#1290).
+the stored field is dead — it is then neither shown nor writable on any surface
+(neither the holding's ficha nor the "puesta al día", which lists every debt), and
+the repair door is "Recalibrar con saldo real" or a new **balance anchor**
+(#1290, #1334).
 
 **Amortization plan**:
 The declared conditions of an **amortizable** debt: initial capital, annual interest
