@@ -541,6 +541,10 @@ collection feeds every consumer — the home's health block, the **agent view**,
 and the **financial assistant** — so the human and the agent see the same
 inventory. Signals that represent a deliberate choice are silenced with the same
 **override** mechanism as warnings.
+A signal is raised **once per thing the user would act on**, not once per row it
+touches: unvalued **positions** are counted into a single signal per **connected
+source** that says how many of how many and what is missing, because 77 identical
+lines bury everything actionable next to them (#1356).
 UI label: "Salud de datos".
 _Avoid_: health check (implies a pass/fail gate), issue (overloaded), warning
 (one category of signal, not the whole).
@@ -631,6 +635,12 @@ estimate is valued as metal, and vice-versa. When neither is available (a
 base-metal coin Numista does not estimate), the value falls back to its
 **purchase price**; absent even that, it is 0 and raises the existing
 "value at 0" **warning**.
+worthline never **assumes** a missing input to avoid that zero — an unknown
+_ley_ (the metal's millesimal fineness, `fineness` in code) or weight is not
+guessed at, because an invented melt value is worse than a visible gap. What it
+does instead is name the missing input — the _ley_, the weight, the **grade**, the
+estimate — in the **data-quality signal** and on the coin's own row, so a coin at
+0 € is a task with an address rather than a silence (#1356).
 
 **Grade**:
 The condition rating of a coin (e.g. VF, XF, AU, UNC), assigned by the user

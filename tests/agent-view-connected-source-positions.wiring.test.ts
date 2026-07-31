@@ -458,6 +458,47 @@ describe("GET /api/v1/agent-view/holdings/{holdingId}/connected-source-positions
     expect(shib.qualitySignals.length).toBeGreaterThan(0);
   });
 
+  test("an unvalued coin names the input that is missing (#1356)", async () => {
+    // Its own seed: one Numista source, one coin with no grade — so no per-grade
+    // estimate can be requested, and with no metal detail and no purchase price it
+    // lands on the `zero` basis.
+    const databasePath = tempDatabasePath("worthline-agent-view-csp-gap-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    const numista = await store.connectedSources.connect({
+      adapter: "numista",
+      credentialsJson: JSON.stringify({ apiKey: NUMISTA_SECRET }),
+      label: "Colección Numista",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    await store.connectedSources.syncPositions(
+      numista.sourceId,
+      [coin({ externalId: "coin-ungraded", grade: "", metal: null, name: "Sin grado" })],
+      "2026-06-15T12:00:00.000Z",
+    );
+
+    const source = (await connectedSourceSummaries()).find(
+      (candidate) => candidate.adapter === "numista",
+    )!;
+    const { body } = await holdingPositions(source.projectedHoldings[0]!.id);
+    const positions = body.data as Array<{
+      valuationBasis: string;
+      qualitySignals: string[];
+    }>;
+
+    expect(positions).toHaveLength(1);
+    expect(positions[0]!.valuationBasis).toBe("unvalued");
+    expect(positions[0]!.qualitySignals).toEqual([
+      "No value could be derived; reported at 0.",
+      "Missing input: grade.",
+    ]);
+  });
+
   test("paginates with stable cursors, walking every position exactly once", async () => {
     await seedSources();
     const { numistaSourcePublicId } = await resolveIds();

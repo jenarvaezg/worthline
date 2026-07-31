@@ -11,9 +11,11 @@
 import type {
   CoinPosition,
   CoinValuation,
+  CoinValueGap,
   MetalGroup,
   ValuationBasis,
 } from "@worthline/domain";
+import { COIN_VALUE_GAP_LABEL } from "@worthline/domain";
 
 /** A floor so a near-invisible metal (e.g. 0,2 %) still shows a sliver of bar. */
 export const MIN_SHARE_PCT = 2;
@@ -71,13 +73,28 @@ export function coinNumistaUrl(catalogueId: string): string | null {
   return id === "" ? null : `${NUMISTA_CATALOGUE_BASE}/${id}`;
 }
 
-/** The es-ES label + CSS class for a coin's valuation basis (the row's tag). */
+/** The chip form of a coin's value gap: what the row SAYS, in the two words a tag
+ *  has room for. The domain's sentence form (`COIN_VALUE_GAP_LABEL`) is the same
+ *  diagnosis spelled out, and rides along as the tag's title (#1356). */
+const GAP_TAG_LABEL: Record<CoinValueGap, string> = {
+  estimate: "Sin estimación",
+  fineness: "Sin ley",
+  grade: "Sin grado",
+  issue: "Sin emisión",
+  spot: "Sin cotización",
+  weight: "Sin peso",
+};
+
+/** The es-ES label + CSS class for a coin's valuation basis (the row's tag). An
+ *  unvalued coin names the MISSING INPUT in the tag itself — visible, not only on
+ *  hover, because a touch device has no hover (#1356). */
 export interface BasisTag {
   label: string;
   cls: string;
+  hint?: string;
 }
 
-export function basisTag(basis: ValuationBasis): BasisTag {
+export function basisTag(basis: ValuationBasis, gap?: CoinValueGap | null): BasisTag {
   switch (basis) {
     case "metal":
       return { label: "Metal", cls: "coinTagMetal" };
@@ -86,7 +103,13 @@ export function basisTag(basis: ValuationBasis): BasisTag {
     case "purchase":
       return { label: "Compra", cls: "coinTagPurchase" };
     case "zero":
-      return { label: "Sin valor", cls: "coinTagZero" };
+      return gap
+        ? {
+            label: GAP_TAG_LABEL[gap],
+            cls: "coinTagZero",
+            hint: `Cuenta como 0 €: ${COIN_VALUE_GAP_LABEL[gap]}`,
+          }
+        : { label: "Sin valor", cls: "coinTagZero" };
   }
 }
 

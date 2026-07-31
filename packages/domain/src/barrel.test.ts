@@ -77,6 +77,9 @@ const KEY_EXPORTS = [
   "projectConnectedSource",
   "coinValue",
   "groupPositionsByMetal",
+  // coin-value-gap (#1356)
+  "coinValueGap",
+  "summarizeCoinValueGaps",
   // prices
   "defaultInvestmentPriceProvider",
   "getPriceFreshness",
