@@ -24,13 +24,16 @@ import {
   type PriceProviderResult,
   type PriceSource,
 } from "./index";
-import { stooqProvider } from "./stooq";
 import { yahooProvider } from "./yahoo";
 
 /**
  * Every fetching provider, keyed by the `PriceSource` it serves. `manual` and
  * `numista` are price sources with no network provider (manual quotes and the
  * coin-collection valuation are produced elsewhere), so they are absent here.
+ * `stooq` was removed in #1354: it answers every symbol with an anti-bot error
+ * page, so there is nothing left to fetch. Its stored rows are served by
+ * {@link retiredPriceProvider} — absence from this registry is exactly what
+ * routes them there.
  *
  * Defined with getters so each provider binding is read lazily (live binding) at
  * lookup time rather than captured at module-eval time. This keeps the registry
@@ -42,9 +45,6 @@ import { yahooProvider } from "./yahoo";
 export const providerRegistry = {
   get yahoo() {
     return yahooProvider;
-  },
-  get stooq() {
-    return stooqProvider;
   },
   get ecb() {
     return ecbProvider;
@@ -85,17 +85,22 @@ export function isRegisteredSource(
 
 /**
  * Declarative TRUE fallback chains: when the primary source returns no usable
- * price, walk these sources in order and take the first success. This is the
- * ADR 0011 Yahoo→Stooq fallback expressed as data — reordering or extending a
- * chain is an edit here, not in a provider body.
+ * price, walk these sources in order and take the first success. Reordering or
+ * extending a chain is an edit here, not in a provider body.
  *
- * Currency CONVERSIONS (Yahoo→ECB FX, metal-spot Stooq×ECB) are NOT fallbacks
- * and deliberately do not live here: they are composition pipelines where every
- * leg must succeed, modelled inside their own helpers.
+ * EMPTY since #1354. The only chain was the ADR 0011 Yahoo→Stooq rescue, and
+ * Stooq is retired — a chain pointing at a dead provider does not rescue
+ * anything, it just doubles every miss's latency and writes a second provider's
+ * name into the failure reason. The mechanism stays (this is still the one place
+ * chains are declared, and `runFallbackChain` is still exercised) because the
+ * next provider added will want it.
+ *
+ * Currency CONVERSIONS (Yahoo→ECB FX, metal spot × ECB) are NOT fallbacks and
+ * deliberately do not live here: they are composition pipelines where every leg
+ * must succeed, modelled inside their own helpers.
  */
-export const fallbackChains: Partial<Record<RegisteredSource, readonly PriceSource[]>> = {
-  yahoo: ["stooq"],
-};
+export const fallbackChains: Partial<Record<RegisteredSource, readonly PriceSource[]>> =
+  {};
 
 /**
  * A price plus the source that actually delivered it, with no cache-row baggage

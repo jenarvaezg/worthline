@@ -12,6 +12,7 @@
  * validation still runs server-side in the domain; its error surfaces inline.
  */
 
+import { priceSourceLabel } from "@web/price-source-label";
 import {
   EXPOSURE_ASSET_CLASS_LABELS,
   EXPOSURE_DEFENSIVE_SECTORS,
@@ -19,6 +20,7 @@ import {
   EXPOSURE_SECTOR_LABELS,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
   type GlobalExposureProfile,
+  SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   sectorStyleSplit,
 } from "@worthline/domain";
 import { startTransition, useActionState, useEffect, useState } from "react";
@@ -32,10 +34,6 @@ import {
 import { COVERAGE_EPSILON, identityText, sumWeights } from "./catalog-triage";
 
 const IDLE: CatalogActionResult = { status: "idle" };
-
-// Mirrors the domain's `InvestmentPriceProvider` union — kept in sync manually
-// because the union has no runtime array to iterate.
-const PRICE_PROVIDERS = ["yahoo", "stooq", "finect", "coingecko"] as const;
 
 /** The raw identity fields of an existing profile, for hidden-field assembly. */
 function identityFields(profile: GlobalExposureProfile): {
@@ -273,9 +271,9 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
                   value={draft.priceProvider}
                 >
                   <option value="">—</option>
-                  {PRICE_PROVIDERS.map((provider) => (
+                  {SELECTABLE_INVESTMENT_PRICE_PROVIDERS.map((provider) => (
                     <option key={provider} value={provider}>
-                      {provider}
+                      {priceSourceLabel(provider)}
                     </option>
                   ))}
                 </select>
@@ -586,9 +584,9 @@ export function CatalogRekeyForm({ profile, onResult }: RekeyFormProps) {
             value={priceProvider}
           >
             <option value="">—</option>
-            {PRICE_PROVIDERS.map((provider) => (
+            {SELECTABLE_INVESTMENT_PRICE_PROVIDERS.map((provider) => (
               <option key={provider} value={provider}>
-                {provider}
+                {priceSourceLabel(provider)}
               </option>
             ))}
           </select>

@@ -3,7 +3,7 @@
 Two independent staleness rules existed side by side:
 
 1. `PRICE_TTL_DAYS` in `packages/domain/src/prices.ts` — a per-source table
-   (manual = 30 days, ecb / coingecko / stooq = 1 day).
+   (manual = 30 days, provider sources = 1 day).
 2. `STALE_THRESHOLD_MS` in `packages/domain/src/price-staleness.ts` — a fixed
    24-hour constant applied uniformly to all non-manual, non-failed entries.
 
@@ -17,7 +17,7 @@ source. The fixed `STALE_THRESHOLD_MS` constant is gone.
 
 ## Observable behaviour change
 
-For the three provider sources (ecb, coingecko, stooq) the TTL is 1 day
+For the provider sources (ecb, coingecko, yahoo, finect) the TTL is 1 day
 (86 400 000 ms), which is identical to the former fixed 24-hour threshold.
 **There is no change in refresh cadence for any currently wired source.**
 
@@ -41,3 +41,11 @@ The fixed-constant approach would require updating two independent thresholds.
   import the canonical rule from `prices` or the package root.
 - The refresh orchestration (determine stale → fetch → persist) is extracted
   into `apps/web/app/refresh-prices.ts`; both consuming pages delegate to it.
+
+> **Amended 2026-07-31 (#1354):** `PRICE_TTL_DAYS.stooq` stays at 1 day even though
+> Stooq is retired, and that is deliberate: stored rows still carry the source, and
+> the entry is what keeps a retired holding re-entering the daily refresh pass — where
+> `retiredPriceProvider` re-states the reason and preserves the last known price
+> instead of letting the row rot with no explanation. Removing the entry would make
+> `PRICE_TTL_DAYS` non-total over `PriceSource` and crash `getPriceFreshness` on those
+> rows.

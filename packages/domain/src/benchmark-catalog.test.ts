@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  BENCHMARK_CATALOG,
   benchmarkCoverageNote,
   listMarketIndexSeriesIds,
   listTrackedIndexLabels,
@@ -47,6 +48,19 @@ describe("benchmark catalog", () => {
     expect(resolveBenchmarkSeriesId("FTSE All-World", false)).toBeNull();
     expect(resolveBenchmarkSeriesId("", false)).toBeNull();
     expect(resolveBenchmarkSeriesId(null, false)).toBeNull();
+  });
+
+  test("every series carries a Yahoo symbol, never a lower-case Stooq one (#1354)", () => {
+    // Stooq symbols were lower-case with an exchange suffix (`sxr8.de`, `^spx`);
+    // Yahoo's are upper-case (`SXR8.DE`, `^GSPC`, `GC=F`). A lower-case letter
+    // here means a Stooq leftover survived the retirement.
+    for (const entry of BENCHMARK_CATALOG) {
+      expect(entry.yahooSymbol).toBe(entry.yahooSymbol.toUpperCase());
+      expect(entry.yahooSymbol).not.toBe("");
+    }
+    expect(
+      BENCHMARK_CATALOG.find((entry) => entry.seriesId === "sp500-price")?.yahooSymbol,
+    ).toBe("^GSPC");
   });
 
   test("carries a coverage note per series", () => {

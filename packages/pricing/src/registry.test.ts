@@ -1,10 +1,16 @@
 import type { PriceSource } from "@worthline/domain";
+import {
+  RETIRED_INVESTMENT_PRICE_PROVIDERS,
+  SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
+} from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAndCachePrice, type PriceProvider } from "./index";
 import {
+  fallbackChains,
   fetchPriceNow,
   fetchWithFallback,
+  isRegisteredSource,
   providerRegistry,
   resolveProvider,
   runFallbackChain,
@@ -34,15 +40,37 @@ describe("providerRegistry", () => {
 
   it("resolveProvider returns the registered provider for a source", () => {
     expect(resolveProvider("yahoo")).toBe(providerRegistry.yahoo);
-    expect(resolveProvider("stooq")).toBe(providerRegistry.stooq);
     expect(resolveProvider("ecb")).toBe(providerRegistry.ecb);
+  });
+
+  it("a retired source is NOT registered — Stooq answers every symbol with an anti-bot page (#1354)", () => {
+    expect(Object.keys(providerRegistry)).not.toContain("stooq");
+    expect(isRegisteredSource("stooq")).toBe(false);
+    expect(isRegisteredSource("yahoo")).toBe(true);
+  });
+
+  it("declares no fallback chain today: the only one pointed at the retired Stooq", () => {
+    expect(fallbackChains).toEqual({});
+  });
+
+  it("keeps the two definitions of 'retired' in step: retired ⇔ absent from the registry", () => {
+    // The domain says WHICH providers are retired (`RETIRED_…`, a data fact the
+    // pickers read); pricing decides by REGISTRY ABSENCE. Nothing links them, so
+    // this is the tripwire: retiring a provider in one place only would either
+    // leave a dead provider selectable or route a live one to the retired stub.
+    for (const provider of RETIRED_INVESTMENT_PRICE_PROVIDERS) {
+      expect(isRegisteredSource(provider)).toBe(false);
+    }
+    for (const provider of SELECTABLE_INVESTMENT_PRICE_PROVIDERS) {
+      expect(isRegisteredSource(provider)).toBe(true);
+    }
   });
 });
 
 describe("runFallbackChain", () => {
   it("returns the primary result when the primary succeeds (no fallback consulted)", async () => {
     const primary = fakeProvider("yahoo", { price: "10", currency: "EUR" });
-    const fallback = fakeProvider("stooq", { price: "99", currency: "EUR" });
+    const fallback = fakeProvider("coingecko", { price: "99", currency: "EUR" });
 
     const result = await runFallbackChain(primary, [fallback], baseCtx);
 
@@ -52,25 +80,25 @@ describe("runFallbackChain", () => {
 
   it("walks to the declared fallback on null and stamps the actual deliverer as source", async () => {
     const primary = fakeProvider("yahoo", null);
-    const fallback = fakeProvider("stooq", { price: "4.25", currency: "EUR" });
+    const fallback = fakeProvider("coingecko", { price: "4.25", currency: "EUR" });
 
     const result = await runFallbackChain(primary, [fallback], baseCtx);
 
-    expect(result).toEqual({ price: "4.25", currency: "EUR", source: "stooq" });
+    expect(result).toEqual({ price: "4.25", currency: "EUR", source: "coingecko" });
   });
 
   it("walks to the declared fallback on a provider failure, returning the rescue", async () => {
     const primary = fakeProvider("yahoo", { failed: true, reason: "boom" });
-    const fallback = fakeProvider("stooq", { price: "4.25", currency: "EUR" });
+    const fallback = fakeProvider("coingecko", { price: "4.25", currency: "EUR" });
 
     const result = await runFallbackChain(primary, [fallback], baseCtx);
 
-    expect(result).toEqual({ price: "4.25", currency: "EUR", source: "stooq" });
+    expect(result).toEqual({ price: "4.25", currency: "EUR", source: "coingecko" });
   });
 
   it("returns a chain failure reason naming every provider when every link fails", async () => {
     const primary = fakeProvider("yahoo", null);
-    const fallback = fakeProvider("stooq", {
+    const fallback = fakeProvider("coingecko", {
       failed: true,
       reason: "El proveedor respondió con un error (404)",
     });
@@ -81,7 +109,7 @@ describe("runFallbackChain", () => {
     // cache layer records a failed row instead of preserving a stale price.
     expect(result).toEqual({
       failed: true,
-      reason: "Yahoo: sin cotización; Stooq: error (404)",
+      reason: "Yahoo: sin cotización; CoinGecko: error (404)",
       transient: false,
     });
   });
@@ -91,7 +119,7 @@ describe("runFallbackChain", () => {
       failed: true,
       reason: "El proveedor respondió con un error (503)",
     });
-    const fallback = fakeProvider("stooq", {
+    const fallback = fakeProvider("coingecko", {
       failed: true,
       reason: "El proveedor respondió con un error (503)",
     });
@@ -100,7 +128,7 @@ describe("runFallbackChain", () => {
 
     expect(result).toEqual({
       failed: true,
-      reason: "Yahoo: error (503); Stooq: error (503)",
+      reason: "Yahoo: error (503); CoinGecko: error (503)",
       transient: true,
     });
   });
@@ -120,7 +148,7 @@ describe("runFallbackChain", () => {
   it("respects a custom chain ORDER (reordering is a data change, not a body edit)", async () => {
     const primary = fakeProvider("yahoo", null);
     const first = fakeProvider("coingecko", { price: "1", currency: "EUR" });
-    const second = fakeProvider("stooq", { price: "2", currency: "EUR" });
+    const second = fakeProvider("finect", { price: "2", currency: "EUR" });
 
     const result = await runFallbackChain(primary, [first, second], baseCtx);
 
@@ -136,53 +164,42 @@ describe("fetchWithFallback", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete fallbackChains.yahoo;
   });
 
-  it("applies the registry's declared Yahoo→Stooq chain when Yahoo has no price", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+  it("applies a chain declared as DATA in the registry (extending is one edit here)", async () => {
+    // No chain ships today (#1354 retired the Stooq rescue), so this declares one
+    // between two live sources to prove the policy seam still routes rescues.
+    fallbackChains.yahoo = ["coingecko"];
     vi.mocked(fetch)
       .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ "san-token": { eur: 4.25 } }),
+      } as Response);
+
+    const result = await fetchWithFallback("yahoo", { ...baseCtx, symbol: "san-token" });
+
+    expect(result).toMatchObject({ price: "4.25", currency: "EUR", source: "coingecko" });
+  });
+
+  it("a Yahoo miss is a miss: with no chain declared there is nothing to rescue it", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false } as Response);
 
     const result = await fetchWithFallback("yahoo", baseCtx);
 
-    expect(result).toMatchObject({ price: "4.25", currency: "EUR", source: "stooq" });
+    expect(result).toMatchObject({ failed: true, reason: "Yahoo: sin cotización" });
+    // Exactly one request: the retired provider is not consulted behind Yahoo.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
-  it("a source with no declared chain (stooq) is fetched alone — no rescue", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () =>
-        "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-09,16:00:00,4.10,4.30,4.05,4.25,1234",
-    } as Response);
-
-    const result = await fetchWithFallback("stooq", { ...baseCtx, symbol: "SAN.MC" });
-
-    expect(result).toMatchObject({ price: "4.25", currency: "EUR" });
-  });
-
-  it("the bare Yahoo provider no longer rescues itself (rescue is policy, not body)", async () => {
-    // A single not-ok Yahoo response yields a failed AssetPrice stamped "yahoo":
-    // the provider does NOT reach for Stooq on its own anymore.
+  it("the bare Yahoo provider does not rescue itself (rescue is policy, not body)", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false } as Response);
 
     const result = await fetchAndCachePrice(resolveProvider("yahoo"), baseCtx);
 
     expect(result.freshnessState).toBe("failed");
     expect(result.source).toBe("yahoo");
-  });
-
-  it("the rescue is recorded as source 'stooq' only through the fallback runner", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
-
-    const rescued = await fetchWithFallback("yahoo", baseCtx);
-
-    expect(rescued).toMatchObject({ source: "stooq" });
   });
 });
 
@@ -193,6 +210,7 @@ describe("fetchPriceNow", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete fallbackChains.yahoo;
   });
 
   it("returns a FetchedPrice when the primary source delivers (source stamped to the primary)", async () => {
@@ -216,23 +234,27 @@ describe("fetchPriceNow", () => {
     expect(result).toMatchObject({ price: "12.34", currency: "EUR", source: "yahoo" });
   });
 
-  it("exercises the fallback chain: a Yahoo miss is rescued by Stooq, stamped 'stooq'", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
+  it("exercises a declared chain end to end, stamping the rescuing source", async () => {
+    fallbackChains.yahoo = ["coingecko"];
     vi.mocked(fetch)
       .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ "san-token": { eur: 4.25 } }),
+      } as Response);
 
-    const result = await fetchPriceNow("yahoo", baseCtx);
+    const result = await fetchPriceNow("yahoo", { ...baseCtx, symbol: "san-token" });
 
-    expect(result).toMatchObject({ price: "4.25", currency: "EUR", source: "stooq" });
+    expect(result).toMatchObject({
+      price: "4.25",
+      currency: "EUR",
+      source: "coingecko",
+    });
   });
 
   it("collapses a total miss (every link fails) to null", async () => {
-    // Yahoo not-ok then Stooq not-ok: the whole chain misses.
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({ ok: false } as Response);
+    fallbackChains.yahoo = ["coingecko"];
+    vi.mocked(fetch).mockResolvedValue({ ok: false } as Response);
 
     const result = await fetchPriceNow("yahoo", baseCtx);
 
@@ -242,7 +264,7 @@ describe("fetchPriceNow", () => {
   it("never throws: a provider that rejects degrades to null", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("network down"));
 
-    // stooq has no declared fallback, so the rejection is the whole chain.
-    await expect(fetchPriceNow("stooq", baseCtx)).resolves.toBeNull();
+    // yahoo has no declared fallback, so the rejection is the whole chain.
+    await expect(fetchPriceNow("yahoo", baseCtx)).resolves.toBeNull();
   });
 });

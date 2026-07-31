@@ -6,7 +6,8 @@ import type {
 import { defaultInvestmentPriceProvider, selectStalePrices } from "@worthline/domain";
 
 import { fetchAndCachePrice, type PriceProvider } from "./index";
-import { fetchWithFallback, providerRegistry, type RegisteredSource } from "./registry";
+import { fetchWithFallback, isRegisteredSource, providerRegistry } from "./registry";
+import { retiredPriceProvider } from "./retired-provider";
 
 export interface InvestmentAssetRef {
   id: string;
@@ -163,11 +164,19 @@ export async function refreshStalePrices(
  * entry — there is no routing switch to extend here. The tier default stays in
  * `domain` (`defaultInvestmentPriceProvider`); only the name→provider resolution
  * lives behind the registry seam.
+ *
+ * A stored provider that is no longer registered (Stooq, retired in #1354) routes
+ * to {@link retiredPriceProvider}: it keeps the holding's last good price and
+ * records WHY in `stale_reason`, instead of being skipped in silence.
  */
 function resolveInvestmentPriceProvider(asset: InvestmentAssetRef): PriceProvider {
-  const source: RegisteredSource =
+  const source =
     asset.priceProvider ??
     defaultInvestmentPriceProvider(asset.liquidityTier ?? "market");
+
+  if (!isRegisteredSource(source)) {
+    return retiredPriceProvider(source);
+  }
 
   // A thin adapter so `fetchAndCachePrice` drives the source through its
   // fallback chain; `name` is the primary so a total miss still records it.

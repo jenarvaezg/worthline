@@ -18,7 +18,7 @@ import type { MetalKind, RevaluedPosition, RevaluePosition } from "@worthline/pr
  * value and marks the source stale (so it retries next pass) rather than throwing,
  * and the reason is surfaced via the returned `errors` for the staleness banner.
  *
- * Pure orchestration: the store reads/writes and the Numista/Stooq network are
+ * Pure orchestration: the store reads/writes and the Numista/Yahoo network are
  * injected, so the gate and outage paths are testable without I/O.
  */
 

@@ -1,5 +1,18 @@
 # Numista coins: valuation and synced history
 
+> **Amended 2026-07-31 (#1354): the metal spot moved from Stooq to Yahoo
+> futures.** Stooq's `XAUUSD`/`XAGUSD` feed died to anti-bot protection around
+> 2026-07-10 and `fetchMetalSpotEur` returned null for every metal, which silently
+> deleted the melt rung: measured on two real collections, **0 of 239 coins** had
+> a metal value, leaving 77 coins with a known weight and fineness reading 0 €.
+> The spot now comes from Yahoo's front-month futures — `GC=F` (gold), `SI=F`
+> (silver), `PL=F`, `PA=F`; Yahoo's spot pairs `XAUUSD=X`/`XAGUSD=X` return an
+> empty result and cannot be used. A front-month future is not pure spot: the
+> basis is under 1%, an accepted and documented approximation for a melt-value
+> FLOOR. Still no new credentialed dependency: the provider is already in the pool
+> and owns the USD→EUR conversion via ECB internally (so the pipeline is now one
+> leg, not two).
+
 The first **connected source** (ADR 0016) is a Numista numismatic collection. This
 records how a coin is valued and how it enters worthline's history.
 
@@ -13,8 +26,9 @@ worth its collector estimate when that exceeds the metal. Concretely:
 - **Numismatic value** — Numista's estimate for that coin at its **grade**
   (assigned on Numista, read by worthline), requested in EUR.
 - **Metal value** — composition × weight (from Numista's coin detail) × spot
-  price, sourced from the **Stooq** provider (e.g. XAU/XAG in USD) converted to
-  EUR via the existing **ECB** FX provider. No new price provider, no new API key.
+  price, sourced from the **Yahoo** provider's metal futures (USD/oz) converted to
+  EUR via the existing **ECB** FX provider (Stooq until #1354). No new price
+  provider, no new API key.
 - **Fallback** — when neither is available (a base-metal coin Numista does not
   estimate), the coin falls back to its **purchase price**; absent even that, it
   is 0 and raises the existing "value at 0" **warning**.
@@ -59,7 +73,10 @@ decoupled:
   rarely.
 - **Valuation** rides worthline's existing stale-price refresh and cache: coin
   details (composition/weight) are static and cached indefinitely, numismatic
-  estimates use a long TTL, and metal spot uses the daily Stooq/ECB TTL.
+  estimates use a long TTL, and metal spot uses the daily Yahoo/ECB TTL. The two
+  clocks are independent on purpose, which is what lets a spot outage's recovery
+  restore metal values on the next daily pass without waiting for the long
+  numismatic TTL (#1354).
 
 This keeps a steady-state sync to roughly one list call plus occasional price
 refreshes, comfortably under the cap.
@@ -74,8 +91,9 @@ refreshes, comfortably under the cap.
   it makes past net-worth figures wobble when coin prices move, breaking the
   frozen-snapshot guarantee the rest of worthline relies on.
 - **A dedicated metals API** (goldapi.io, metals-api) — rejected: a second
-  credentialed dependency and another rate limit, when Stooq + ECB already cover
-  the common metals.
+  credentialed dependency and another rate limit, when the existing price pool +
+  ECB already cover the common metals. Still rejected after #1354 killed Stooq:
+  the replacement was another symbol on a provider already in the pool.
 - **Manual spot entry** — rejected as the default: zero dependency but goes stale;
   kept only as a conceptual fallback.
 
@@ -92,7 +110,8 @@ refreshes, comfortably under the cap.
   is refetched only past its long TTL (`NUMISMATIC_TTL_DAYS`, gated per position).
   A Numista outage keeps the last-known value and marks that row stale (it retries
   next pass), surfaced as a "valoración desactualizada" note on the detail page.
-- Stooq's coverage of platinum/palladium must be verified at build time; base-metal
-  circulation coins lean on the numismatic estimate or the purchase-price fallback.
+- The spot provider's coverage of platinum/palladium must be verified whenever it
+  changes (`PL=F`/`PA=F` verified on Yahoo 2026-07-30); base-metal circulation
+  coins lean on the numismatic estimate or the purchase-price fallback.
 - The `client_credentials` end-to-end path and Numista's exact credential field set
   must be confirmed during implementation (see ADR 0016).

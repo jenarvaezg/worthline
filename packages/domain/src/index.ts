@@ -700,8 +700,13 @@ export type {
 export {
   defaultInvestmentPriceProvider,
   getPriceFreshness,
+  INVESTMENT_PRICE_PROVIDERS,
+  isInvestmentPriceProvider,
   isPriceStale,
+  isRetiredInvestmentPriceProvider,
   PRICE_TTL_DAYS,
+  RETIRED_INVESTMENT_PRICE_PROVIDERS,
+  SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
   selectStalePrices,
   unitPriceMajorByHoldingId,
 } from "./prices";

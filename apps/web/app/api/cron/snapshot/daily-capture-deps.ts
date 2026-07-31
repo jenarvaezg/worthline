@@ -18,7 +18,7 @@ import {
 } from "@worthline/domain";
 import {
   fetchSpanishCpi,
-  fetchStooqMonthlyBenchmark,
+  fetchYahooMonthlyBenchmark,
   refreshStalePrices,
 } from "@worthline/pricing";
 
@@ -131,7 +131,7 @@ export function buildDailyCaptureDeps(
       }
       const entry = benchmarkCatalogEntryBySeriesId(series.id);
       if (!entry) return [];
-      return fetchStooqMonthlyBenchmark(entry.stooqSymbol);
+      return fetchYahooMonthlyBenchmark(entry.yahooSymbol);
     },
     saveBenchmarkPrices: async (seriesId, prices) => {
       const controlPlane = await openControlPlane();

@@ -5,7 +5,6 @@ import { coingeckoProvider } from "./coingecko";
 import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { fetchWithFallback } from "./registry";
-import { stooqProvider } from "./stooq";
 import { yahooProvider } from "./yahoo";
 
 const baseCtx = {
@@ -102,95 +101,6 @@ describe("coingeckoProvider", () => {
 
       const init = vi.mocked(fetch).mock.calls[0]![1];
       expect(init?.headers).toEqual({});
-    });
-  });
-});
-
-describe("stooqProvider", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("parses valid CSV with header + data line for a EUR-listed symbol", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () => csv,
-    } as Response);
-
-    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "san.mc" });
-
-    expect(result).toEqual({ price: "4.25", currency: "EUR", priceDate: "2024-01-15" });
-  });
-
-  it("converts USD Stooq quotes to EUR via ECB", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180,182,179,100,1000";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          dataSets: [
-            {
-              series: {
-                "0:0:0:0:0": {
-                  observations: { "0": [1.25] },
-                },
-              },
-            },
-          ],
-        }),
-      } as Response);
-
-    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
-
-    expect(result).toEqual({ price: "80", currency: "EUR", priceDate: "2024-01-15" });
-  });
-
-  it("reports a no-quote failure when close price is N/D", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () => csv,
-    } as Response);
-
-    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
-
-    expect(result).toEqual({
-      failed: true,
-      reason: "El proveedor no devolvió cotización",
-    });
-  });
-
-  it("reports a symbol-not-found failure when the CSV has no data row", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () => "Symbol,Date,Time,Open,High,Low,Close,Volume",
-    } as Response);
-
-    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "nope.us" });
-
-    expect(result).toEqual({
-      failed: true,
-      reason: "Símbolo no encontrado en el proveedor",
-    });
-  });
-
-  it("reports an HTTP-error failure when response is not ok", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 404 } as Response);
-
-    const result = await stooqProvider.fetchPrice({ ...baseCtx, symbol: "aapl.us" });
-
-    expect(result).toEqual({
-      failed: true,
-      reason: "El proveedor respondió con un error (404)",
     });
   });
 });
@@ -405,74 +315,31 @@ describe("yahooProvider", () => {
     expect(result).toEqual({ price: "80", currency: "EUR", priceDate: "2024-01-15" });
   });
 
-  it("falls back to Stooq with USD→EUR conversion when Yahoo has no dated series", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL,2024-01-15,16:00:00,180,182,179,100,1000";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          chart: {
-            result: [{ meta: { currency: "USD", regularMarketPrice: 100 } }],
-          },
-        }),
-      } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          dataSets: [
-            {
-              series: {
-                "0:0:0:0:0": {
-                  observations: { "0": [1.25] },
-                },
-              },
-            },
-          ],
-        }),
-      } as Response);
+  // Stooq was Yahoo's declared rescue until #1354 retired it. There is no second
+  // market source today, so these pin the honest outcome of a Yahoo miss: a
+  // failed row naming Yahoo, with no phantom second leg in the reason.
+  it("an undated Yahoo meta quote is a miss, and nothing rescues it", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        chart: {
+          result: [{ meta: { currency: "USD", regularMarketPrice: 100 } }],
+        },
+      }),
+    } as Response);
 
     const result = await fetchAndCachePrice(
       { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
       { ...baseCtx, symbol: "AAPL.US" },
     );
 
-    expect(result.freshnessState).toBe("fresh");
-    expect(result.price).toBe("80");
-    expect(result.source).toBe("stooq");
+    expect(result.freshnessState).toBe("failed");
+    expect(result.source).toBe("yahoo");
+    expect(result.staleReason).toBe("Yahoo: sin cotización");
   });
 
-  // The Yahoo→Stooq fallback is now POLICY (issue #243): the chain lives in
-  // `./registry` and is applied by `fetchWithFallback`, not inside yahoo.ts.
-  // These assert the same observable outcome through the policy runner +
-  // `fetchAndCachePrice` (which honours the deliverer's stamped `source`).
-  it("falls back to Stooq and records Stooq as the source when Yahoo has no price", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => csv,
-      } as Response);
-
-    const result = await fetchAndCachePrice(
-      { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
-      { ...baseCtx, symbol: "SAN.MC" },
-    );
-
-    expect(result.freshnessState).toBe("fresh");
-    expect(result.price).toBe("4.25");
-    expect(result.source).toBe("stooq");
-  });
-
-  it("propagates the Stooq failure reason when both Yahoo and Stooq fail", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nNOPE,2024-01-15,16:00:00,N/D,N/D,N/D,N/D,0";
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: false, status: 404 } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+  it("a Yahoo HTTP error names only Yahoo in the failure reason", async () => {
+    vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as Response);
 
     const result = await fetchAndCachePrice(
       { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
@@ -480,28 +347,19 @@ describe("yahooProvider", () => {
     );
 
     expect(result.freshnessState).toBe("failed");
-    expect(result.staleReason).toBe("Yahoo: sin cotización; Stooq: sin cotización");
+    expect(result.staleReason).toBe("Yahoo: sin cotización");
   });
 
-  it("falls back to Stooq when the Yahoo request throws", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2024-01-15,16:00:00,4.10,4.30,4.05,4.25,55000000";
-    vi.mocked(fetch)
-      .mockRejectedValueOnce(new Error("timeout"))
-      .mockRejectedValueOnce(new Error("timeout"))
-      .mockRejectedValueOnce(new Error("timeout"))
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => csv,
-      } as Response);
+  it("a Yahoo request that throws degrades to a failed row, not to another provider", async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error("timeout"));
 
     const result = await fetchAndCachePrice(
       { name: "yahoo", fetchPrice: (ctx) => fetchWithFallback("yahoo", ctx) },
       { ...baseCtx, symbol: "SAN.MC" },
     );
 
-    expect(result.freshnessState).toBe("fresh");
-    expect(result.source).toBe("stooq");
+    expect(result.freshnessState).toBe("failed");
+    expect(result.source).toBe("yahoo");
   });
 });
 
@@ -639,7 +497,7 @@ describe("fetchAndCachePrice", () => {
 
   it("returns fresh AssetPrice on successful fetch", async () => {
     const provider = {
-      name: "stooq" as const,
+      name: "yahoo" as const,
       fetchPrice: async () => ({
         price: "42.50",
         currency: "EUR",
@@ -658,7 +516,7 @@ describe("fetchAndCachePrice", () => {
 
   it("returns failed AssetPrice when provider currency does not match asset currency", async () => {
     const provider = {
-      name: "stooq" as const,
+      name: "yahoo" as const,
       fetchPrice: async () => ({
         price: "42.50",
         currency: "USD",

@@ -4,7 +4,7 @@
  * A coin's metal (melt) value is composition × weight × spot. This module owns
  * the two pure steps: parsing Numista's free-text composition into a precious
  * metal + millesimal fineness, and turning that plus a weight and a EUR/oz spot
- * into a minor-unit value. The spot fetch (Stooq) and USD→EUR conversion (ECB)
+ * into a minor-unit value. The spot fetch (Yahoo) and USD→EUR conversion (ECB)
  * live in the sync layer; here everything is injected so it stays pure.
  *
  * Composition text arrives in Spanish (the client requests lang=es), e.g.
@@ -20,12 +20,21 @@ export interface ParsedComposition {
   finenessMillis: number | null;
 }
 
-/** The Stooq symbol carrying each metal's spot (per troy ounce, in USD). */
-export const STOOQ_METAL_SYMBOL: Record<MetalKind, string> = {
-  gold: "XAUUSD",
-  silver: "XAGUSD",
-  platinum: "XPTUSD",
-  palladium: "XPDUSD",
+/**
+ * The Yahoo symbol carrying each metal's spot (per troy ounce, in USD).
+ *
+ * These are the FRONT-MONTH FUTURES, not pure spot: Yahoo's spot pairs
+ * (`XAUUSD=X`, `XAGUSD=X`) return an empty result, while the futures answer for
+ * all four metals (verified 2026-07-30, #1354). The basis between a front-month
+ * future and spot is under 1% — a knowing trade for a melt-value floor that
+ * would otherwise be missing entirely, since Stooq's `XAUUSD` feed died to
+ * anti-bot protection and left every coin's metal rung at null (ADR 0017 amended).
+ */
+export const YAHOO_METAL_SYMBOL: Record<MetalKind, string> = {
+  gold: "GC=F",
+  silver: "SI=F",
+  platinum: "PL=F",
+  palladium: "PA=F",
 };
 
 const GRAMS_PER_TROY_OUNCE = 31.1034768;

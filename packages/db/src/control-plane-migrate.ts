@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 
-export const CP_SCHEMA_VERSION = 6;
+export const CP_SCHEMA_VERSION = 7;
 
 const SCHEMA_META_TABLE =
   "CREATE TABLE IF NOT EXISTS cp_schema_meta (version INTEGER NOT NULL)";
@@ -197,5 +197,33 @@ export async function migrateControlPlane(client: Client): Promise<void> {
       }
     }
     await writeControlPlaneSchemaVersion(client, 6);
+  }
+
+  if (version < 7) {
+    // Purge poisoned benchmark rows (#1354). Stooq started answering with a
+    // JavaScript anti-bot challenge, the CSV parser split that page by commas,
+    // and every market-index series ended up with ONE row keyed
+    // `date = "(async(-01"` — a fabricated data point the «vs índice» lens has
+    // been reading since 2026-07-10. A `date` that is not a real day key is not a
+    // row, so it goes; the cron's benchmark phase then re-ingests the real
+    // monthly history from Yahoo on its next pass (it only writes months the
+    // cache lacks, so the purge is what unblocks the backfill).
+    //
+    // Idempotent and safe on a healthy control plane: real rows are all
+    // `YYYY-MM-DD` and never match.
+    try {
+      await client.execute(
+        `DELETE FROM benchmark_prices
+         WHERE date NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`,
+      );
+    } catch (err) {
+      // Synthetic version-only fixtures in ladder tests may lack the table; a
+      // real control plane always has it (SCHEMA creates it).
+      const message = err instanceof Error ? err.message : String(err);
+      if (!/no such table:\s*benchmark_prices/i.test(message)) {
+        throw err;
+      }
+    }
+    await writeControlPlaneSchemaVersion(client, 7);
   }
 }

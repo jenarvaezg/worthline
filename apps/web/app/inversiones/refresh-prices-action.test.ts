@@ -5,8 +5,8 @@
  * record the delivering source — regardless of whether the cached row is still
  * fresh. Before #317 this was achieved by fabricating epoch-dated `stooq` cache
  * rows (`forcedStaleCache`) to defeat the staleness filter. This suite asserts
- * the honest replacement: refresh fetches through the registry's fallback chain
- * and persists the result, with no fake cache rows.
+ * the honest replacement: refresh fetches through the registry (applying whatever
+ * fallback chain it declares) and persists the result, with no fake cache rows.
  *
  * Uses the `_store` injection seam with a real in-memory store and a stubbed
  * global `fetch` so the registry actually delivers a price. `redirect` throws
@@ -114,19 +114,21 @@ describe("refreshPricesAction honest force-refresh (#317)", () => {
     });
   });
 
-  test("records the rescuing source when the primary misses and a fallback delivers", async () => {
+  test("a provider miss persists an honest failed row, never a fabricated one", async () => {
     const store = await createInMemoryStore();
     await seedEtf(store);
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-18,16:00:00,4.10,4.30,4.05,4.25,1234";
-    // Yahoo not-ok, then the registry's Yahoo→Stooq chain rescues via Stooq.
-    vi.mocked(fetch)
-      .mockResolvedValueOnce({ ok: false } as Response)
-      .mockResolvedValueOnce({ ok: true, text: async () => csv } as Response);
+    // Yahoo answers not-ok, and since #1354 retired Stooq there is no second leg
+    // to rescue it. The recorded row must say so instead of inventing a price.
+    vi.mocked(fetch).mockResolvedValue({ ok: false } as Response);
 
     await run(store);
 
     const persisted = await store.operations.readPriceCache("etf");
-    expect(persisted).toMatchObject({ price: "4.25", source: "stooq" });
+    expect(persisted).toMatchObject({
+      assetId: "etf",
+      freshnessState: "failed",
+      source: "yahoo",
+      staleReason: "Yahoo: sin cotización",
+    });
   });
 });

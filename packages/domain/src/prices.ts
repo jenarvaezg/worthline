@@ -12,6 +12,55 @@ export type PriceSource =
 export type InvestmentPriceProvider = "yahoo" | "stooq" | "finect" | "coingecko";
 export type PriceFreshnessState = "fresh" | "stale" | "failed" | "manual";
 
+/**
+ * Every provider value a stored `price_provider` can carry, RETIRED ONES
+ * INCLUDED — the vocabulary of the data, not of what can be chosen today. Built
+ * from an exhaustive `Record` so adding a member to the union breaks the build
+ * here instead of leaving a stale hand-written list behind (the four literal
+ * copies this replaces are exactly the drift #1329 warned about).
+ */
+export const INVESTMENT_PRICE_PROVIDERS = Object.keys({
+  yahoo: true,
+  stooq: true,
+  finect: true,
+  coingecko: true,
+} satisfies Record<InvestmentPriceProvider, true>) as readonly InvestmentPriceProvider[];
+
+/**
+ * Providers that no longer fetch: the upstream is gone for good, so nothing new
+ * may be pointed at them. Stooq deployed anti-bot protection and answers every
+ * symbol with an error page (#1354, ADR 0011 amended), so it stays in the union
+ * for the rows that already carry it and is refused for anything new.
+ */
+export const RETIRED_INVESTMENT_PRICE_PROVIDERS: ReadonlySet<InvestmentPriceProvider> =
+  new Set<InvestmentPriceProvider>(["stooq"]);
+
+/** The providers a user or agent may CHOOSE today (retired ones excluded). */
+export const SELECTABLE_INVESTMENT_PRICE_PROVIDERS: readonly InvestmentPriceProvider[] =
+  INVESTMENT_PRICE_PROVIDERS.filter(
+    (provider) => !RETIRED_INVESTMENT_PRICE_PROVIDERS.has(provider),
+  );
+
+/** Whether a loose string names a provider the data model knows (retired included). */
+export function isInvestmentPriceProvider(
+  value: string | null | undefined,
+): value is InvestmentPriceProvider {
+  return (
+    value !== null &&
+    value !== undefined &&
+    (INVESTMENT_PRICE_PROVIDERS as readonly string[]).includes(value)
+  );
+}
+
+/** Whether a stored provider has been retired — it can never fetch again. */
+export function isRetiredInvestmentPriceProvider(
+  value: string | null | undefined,
+): value is InvestmentPriceProvider {
+  return (
+    isInvestmentPriceProvider(value) && RETIRED_INVESTMENT_PRICE_PROVIDERS.has(value)
+  );
+}
+
 /** Major-unit price per holding id — used to convert units contributions to money. */
 export function unitPriceMajorByHoldingId(
   priceCache: readonly AssetPrice[],

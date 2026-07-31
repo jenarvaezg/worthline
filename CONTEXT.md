@@ -113,23 +113,27 @@ _Avoid_: editing an investment's value directly (it is a derived figure).
 
 **Price provider**:
 A service that supplies unit prices for investments. Each provider implements
-the `PriceProvider` contract (`canFetch` + `fetchPrice`). Wired providers:
-Yahoo Finance (market tickers — the default for liquid holdings, ADR 0011),
-Stooq (market tickers, alternative), Finect (pension plan NAVs — the default
-for term-locked holdings), CoinGecko (crypto, keyed by coin id e.g. `bitcoin`),
-ECB (FX rates).
+the `PriceProvider` contract (`fetchPrice`). Wired providers:
+Yahoo Finance (market tickers and metal futures — the default for liquid
+holdings, ADR 0011), Finect (pension plan NAVs — the default for term-locked
+holdings), CoinGecko (crypto, keyed by coin id e.g. `bitcoin`), ECB (FX rates).
+A **retired provider** is one whose upstream is gone for good (Stooq, #1354): it
+stays in the price-source vocabulary because stored rows carry it, is absent from
+the registry, and its holdings keep their last known price with an actionable
+reason instead of being refetched or silently frozen.
 _Avoid_: data source, feed, API.
 
 **Price source**:
 The label recorded in the price cache to identify which **price provider**
-supplied a given price (e.g. `"stooq"`, `"yahoo"`, `"finect"`, `"coingecko"`, `"manual"`).
+supplied a given price (e.g. `"yahoo"`, `"finect"`, `"coingecko"`, `"manual"`, and
+the retired `"stooq"` on rows written before #1354).
 One provider maps to one source; fallback chains record the provider that
 actually delivered the price, not the one that was tried first.
 
 **Provider symbol**:
 The lookup key sent to a **price provider** to fetch a price. For market
-providers (Yahoo, Stooq) this is a ticker in Yahoo-format (e.g. `SAN.MC`,
-`VUSA.L`). For Finect it is the plan code (e.g. `N5394`). Stored in
+providers this is a ticker in Yahoo-format (e.g. `SAN.MC`, `VUSA.L`). For Finect
+it is the plan code (e.g. `N5394`). Stored in
 `investment_assets.provider_symbol`.
 _Avoid_: ticker (too narrow — Finect codes are not tickers).
 
@@ -619,7 +623,8 @@ group them — a presentation lens, not a figure.
 
 **Coin value**:
 The value of one Numista **position**: the greater of its **metal value** (metal
-content × spot price, sourced from Stooq + ECB) and its **numismatic value**
+content × spot price, sourced from Yahoo metal futures + ECB — Stooq until #1354)
+and its **numismatic value**
 (Numista's estimate for that coin at its **grade**). Taken per coin, then summed
 into the rolled-up holding. A coin whose metal is worth more than its collector
 estimate is valued as metal, and vice-versa. When neither is available (a

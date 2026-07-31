@@ -10,7 +10,7 @@ function stalePrice(assetId: string): AssetPrice {
     fetchedAt: "2026-06-08T10:00:00Z",
     freshnessState: "fresh",
     price: "100",
-    source: "stooq",
+    source: "yahoo",
   };
 }
 
@@ -184,15 +184,15 @@ describe("refreshStalePrices provider routing", () => {
   test("preserves the prior good price when a transient outage blips", async () => {
     vi.mocked(fetch).mockRejectedValue(new Error("timeout"));
 
-    const prior = stalePrice("asset-direct-stooq");
+    const prior = stalePrice("asset-etf");
     const result = await refreshStalePrices(
       [prior],
       [
         {
-          id: "asset-direct-stooq",
+          id: "asset-etf",
           currency: "EUR",
           liquidityTier: "market",
-          priceProvider: "stooq",
+          priceProvider: "yahoo",
           providerSymbol: "VUSA.L",
         },
       ],
@@ -201,17 +201,76 @@ describe("refreshStalePrices provider routing", () => {
 
     expect(result.updated).toBe(0);
     expect(result.refreshed[0]).toMatchObject({
-      assetId: "asset-direct-stooq",
+      assetId: "asset-etf",
       price: "100",
       freshnessState: "stale",
     });
     expect(result.failedSymbols).toEqual([]);
   });
 
-  test("preserves the prior good price when BOTH legs of the Yahoo→Stooq chain fail transiently (#925 AC)", async () => {
-    // Every request times out: Yahoo degrades to null, Stooq's throw carries the
-    // transient reason. The composite chain failure must classify by the leg —
-    // not by re-parsing the joined reason string — so the good price survives.
+  test("a holding stored on the retired Stooq keeps its price and says what to do (#1354)", async () => {
+    // The retired provider must not touch the network, and must not let the cache
+    // layer zero a good price: it fails TRANSIENTLY so the last known value
+    // survives as stale, carrying an actionable reason into salud de datos.
+    const fetchMock = vi.mocked(fetch);
+    const prior = { ...stalePrice("asset-direct-stooq"), source: "stooq" as const };
+
+    const result = await refreshStalePrices(
+      [prior],
+      [
+        {
+          id: "asset-direct-stooq",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "stooq",
+          providerSymbol: "san.mc",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.updated).toBe(0);
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-direct-stooq",
+      price: "100",
+      freshnessState: "stale",
+      source: "stooq",
+      staleReason: "Proveedor retirado: asigna un símbolo de Yahoo a esta posición",
+    });
+  });
+
+  test("a retired-provider holding with no good prior price records a failed row, not a silent skip (#1354)", async () => {
+    const result = await refreshStalePrices(
+      [],
+      [
+        {
+          id: "asset-new-stooq",
+          currency: "EUR",
+          liquidityTier: "market",
+          priceProvider: "stooq",
+          providerSymbol: "san.mc",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-new-stooq",
+      freshnessState: "failed",
+      price: "0",
+    });
+    expect(result.failures).toEqual([
+      {
+        symbol: "san.mc",
+        reason: "Proveedor retirado: asigna un símbolo de Yahoo a esta posición",
+      },
+    ]);
+  });
+
+  test("preserves the prior good price when the single provider times out (#925 AC)", async () => {
+    // Yahoo has no rescuing chain since #1354, so the whole refresh is one leg:
+    // a timeout is transient and the good price must survive as stale.
     vi.mocked(fetch).mockRejectedValue(new Error("timeout"));
 
     const prior = { ...stalePrice("asset-etf"), source: "yahoo" as const };
@@ -238,41 +297,42 @@ describe("refreshStalePrices provider routing", () => {
   });
 
   test("explicit price provider overrides the liquidity-tier default", async () => {
-    const csv =
-      "Symbol,Date,Time,Open,High,Low,Close,Volume\nSAN,2026-06-09,16:00:00,4.10,4.30,4.05,4.25,1234";
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => csv,
+      json: async () => ({ bitcoin: { eur: 4.25 } }),
     } as Response);
 
     const result = await refreshStalePrices(
-      [stalePrice("asset-direct-stooq")],
+      [stalePrice("asset-term-locked")],
       [
         {
-          id: "asset-direct-stooq",
+          id: "asset-term-locked",
+          // A term-locked tier defaults to Finect; the explicit provider wins.
           currency: "EUR",
-          liquidityTier: "market",
-          priceProvider: "stooq",
-          providerSymbol: "SAN.MC",
+          liquidityTier: "term-locked",
+          priceProvider: "coingecko",
+          providerSymbol: "bitcoin",
         },
       ],
       "2026-06-09T10:00:00Z",
     );
 
     expect(result.refreshed[0]).toMatchObject({
-      assetId: "asset-direct-stooq",
+      assetId: "asset-term-locked",
       price: "4.25",
-      source: "stooq",
+      source: "coingecko",
     });
   });
 });
 
 /**
- * Builds a controllable Stooq CSV `fetch` mock that lets the test observe how
+ * Builds a controllable CoinGecko `fetch` mock that lets the test observe how
  * many provider calls are in flight at once (issue #202). Each call resolves
  * only after the test releases it, so the peak concurrency is deterministic.
+ * (It drove Stooq until #1354 retired that provider; the bounding it proves is
+ * provider-agnostic.)
  */
-function makeGatedStooqFetch(opts: {
+function makeGatedCoinGeckoFetch(opts: {
   failingSymbols?: Set<string>;
   onStart?: () => void;
   onEnd?: () => void;
@@ -281,8 +341,9 @@ function makeGatedStooqFetch(opts: {
   const release: Array<() => void> = [];
   const fetchMock = vi.fn(async (url: string) => {
     opts.onStart?.();
-    // Stooq URL carries the symbol as the `s` query param.
-    const symbol = new URL(url, "https://stooq.com").searchParams.get("s") ?? "";
+    // The CoinGecko URL carries the coin id as the `ids` query param.
+    const symbol =
+      new URL(url, "https://api.coingecko.com").searchParams.get("ids") ?? "";
     await new Promise<void>((resolve) => {
       const settle = () => {
         opts.onEnd?.();
@@ -296,17 +357,12 @@ function makeGatedStooqFetch(opts: {
       }
     });
     if (opts.failingSymbols?.has(symbol.toLowerCase())) {
-      // Symbol row present but close is "N/D" -> provider returns no quote.
-      return {
-        ok: true,
-        text: async () =>
-          `Symbol,Date,Time,Open,High,Low,Close,Volume\n${symbol.toUpperCase()},2026-06-09,16:00:00,N/D,N/D,N/D,N/D,0`,
-      } as Response;
+      // Unknown coin id -> empty object -> the provider returns no quote.
+      return { ok: true, json: async () => ({}) } as Response;
     }
     return {
       ok: true,
-      text: async () =>
-        `Symbol,Date,Time,Open,High,Low,Close,Volume\n${symbol.toUpperCase()},2026-06-09,16:00:00,80,81,79,80.50,1234`,
+      json: async () => ({ [symbol]: { eur: 80.5 } }),
     } as Response;
   });
   return {
@@ -323,12 +379,12 @@ function makeGatedStooqFetch(opts: {
   };
 }
 
-function stooqAsset(id: string) {
+function coingeckoAsset(id: string) {
   return {
     id,
     currency: "EUR",
     liquidityTier: "market" as const,
-    priceProvider: "stooq" as const,
+    priceProvider: "coingecko" as const,
     providerSymbol: id.toUpperCase(),
   };
 }
@@ -347,7 +403,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
   test("never exceeds the concurrency limit with more assets than the limit", async () => {
     let inFlight = 0;
     let peak = 0;
-    const { fetchMock, releaseAll } = makeGatedStooqFetch({
+    const { fetchMock, releaseAll } = makeGatedCoinGeckoFetch({
       onStart: () => {
         inFlight += 1;
         peak = Math.max(peak, inFlight);
@@ -363,7 +419,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
 
     const promise = refreshStalePrices(
       ids.map((id) => stalePrice(id)),
-      ids.map((id) => stooqAsset(id)),
+      ids.map((id) => coingeckoAsset(id)),
       "2026-06-09T10:00:00Z",
     );
 
@@ -384,7 +440,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
   });
 
   test("preserves order and result mapping when batching", async () => {
-    const { fetchMock, releaseAll } = makeGatedStooqFetch({});
+    const { fetchMock, releaseAll } = makeGatedCoinGeckoFetch({});
     vi.stubGlobal("fetch", fetchMock);
 
     const count = REFRESH_CONCURRENCY_LIMIT * 2 + 1;
@@ -392,7 +448,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
 
     const promise = refreshStalePrices(
       ids.map((id) => stalePrice(id)),
-      ids.map((id) => stooqAsset(id)),
+      ids.map((id) => coingeckoAsset(id)),
       "2026-06-09T10:00:00Z",
     );
     releaseAll();
@@ -411,14 +467,16 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
     const failing = new Set(
       ids.filter((_, i) => i % 2 === 0).map((id) => id.toLowerCase()),
     );
-    const { fetchMock, releaseAll } = makeGatedStooqFetch({
+    const { fetchMock, releaseAll } = makeGatedCoinGeckoFetch({
       failingSymbols: failing,
     });
     vi.stubGlobal("fetch", fetchMock);
 
+    // No prior cache rows: a miss must surface as a failure instead of preserving
+    // a good price (the preservation path has its own tests above).
     const promise = refreshStalePrices(
-      ids.map((id) => stalePrice(id)),
-      ids.map((id) => stooqAsset(id)),
+      [],
+      ids.map((id) => coingeckoAsset(id)),
       "2026-06-09T10:00:00Z",
     );
     releaseAll();
@@ -432,14 +490,14 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
     );
     expect(result.failures).toHaveLength(expectedFailures.length);
     for (const failure of result.failures) {
-      expect(failure.reason).toBe("Stooq: sin cotización");
+      expect(failure.reason).toBe("CoinGecko: sin cotización");
     }
     // Never throws: a normal result is returned even with failures interleaved.
     expect(result.refreshed.every((p) => p.assetId.startsWith("p"))).toBe(true);
   });
 
   test("invokes onRefreshed once per refreshable asset across batches", async () => {
-    const { fetchMock, releaseAll } = makeGatedStooqFetch({});
+    const { fetchMock, releaseAll } = makeGatedCoinGeckoFetch({});
     vi.stubGlobal("fetch", fetchMock);
 
     const count = REFRESH_CONCURRENCY_LIMIT * 2 + 1;
@@ -448,7 +506,7 @@ describe("refreshStalePrices concurrency bounding (issue #202)", () => {
 
     const promise = refreshStalePrices(
       ids.map((id) => stalePrice(id)),
-      ids.map((id) => stooqAsset(id)),
+      ids.map((id) => coingeckoAsset(id)),
       "2026-06-09T10:00:00Z",
       { onRefreshed: (price) => seen.push(price.assetId) },
     );

@@ -1,4 +1,16 @@
-# Multi-provider pricing: Yahoo primary, Stooq fallback, Finect for pensions
+# Multi-provider pricing: Yahoo primary, Finect for pensions
+
+> **Amended 2026-07-31 (#1354): Stooq is retired.** It deployed anti-bot
+> protection and now answers EVERY symbol with an HTML error page (verified for
+> `eurusd`, `^spx`, `aapl.us`), so the fallback rescued nothing while doubling the
+> latency of each miss and writing a second provider's name into every failure
+> reason. `stooqProvider` is deleted, the registry no longer lists it, and
+> `fallbackChains` is empty: Yahoo misses are now honest misses. `"stooq"` stays
+> in the `PriceSource`/`InvestmentPriceProvider` vocabulary because stored rows
+> carry it; those rows route to `retiredPriceProvider`, which fetches nothing and
+> fails TRANSIENTLY so the last known price survives as stale with an actionable
+> reason ("asigna un símbolo de Yahoo"). The sections below describe the
+> pre-amendment design; the routing/seam reasoning still holds.
 
 The app started with a single market provider (Stooq). To cover pension plan
 NAVs (which Stooq cannot serve) and improve market ticker coverage, we added
@@ -53,8 +65,15 @@ re-fetch that returns the same value until the gestora publishes a new one.
 
 ## Considered options
 
-- **Yahoo replaces Stooq** — rejected: Stooq is more reliable for European
-  ETFs; keeping it as fallback costs nothing.
+- **Yahoo replaces Stooq** — rejected in 2025, then FORCED in 2026 (#1354): the
+  provider died to anti-bot protection, so the choice was made for us. The
+  "costs nothing" argument was wrong in one way worth recording: a dead fallback
+  is not free, because its failures are indistinguishable from real ones until
+  someone reads a `stale_reason` closely.
+- **Auto-migrating stored `stooq` rows to `yahoo`** (#1354) — rejected: the
+  symbols are not interchangeable (`aapl.us` → `AAPL`, but `4gld.de` → `4GLD.DE`),
+  so a bulk rewrite would silently point holdings at wrong or non-existent
+  tickers. The retirement is reported per holding and the user reassigns.
 - **Inferred provider** (no explicit field) — rejected: fragile heuristics
   (e.g. a 5-letter ticker starting with N could be a stock or a plan code).
 - **Separate `finect_code` column** — rejected: `provider_symbol` already
