@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
-import { formatMoneyMinor } from "@worthline/domain";
+import { countKeyClaimants, formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -348,6 +348,11 @@ function HoldingCreationProposalCard({
           {proposal.duplicate.confidence === "strong"
             ? " (coincidencia fuerte)"
             : " (mismo nombre)"}
+          {proposal.duplicate.otherCandidates
+            ? ` y ${proposal.duplicate.otherCandidates} más que se le parece${
+                proposal.duplicate.otherCandidates === 1 ? "" : "n"
+              }`
+            : ""}
           . Puedes crearlo igualmente si es otro distinto.
         </p>
       ) : null}
@@ -512,6 +517,18 @@ function reconcileDecisionLabel(row: ReconcileRow): string {
 }
 
 /**
+ * The es-ES review mark of an ambiguous match (#1331): the key names the instrument
+ * but not the holding — the same fondo at two brokers, or two holdings with el mismo
+ * nombre — so the row says how many it is choosing between instead of presenting a
+ * confident target. Empty once the user picks one (the pick resolves the ambiguity).
+ */
+function reconcileAmbiguityMark(row: ReconcileRow): string {
+  if (!row.match.ambiguous || effectiveDecision(row) !== "update") return "";
+  const shared = row.match.key === "name" ? "el mismo nombre" : "el mismo identificador";
+  return ` · ${countKeyClaimants(row.match)} holdings con ${shared}: revisa cuál actualizas`;
+}
+
+/**
  * Reconcile por documento (#1108, PRD #1103 S5): the impact header leads
  * (patrimonio neto antes → después, estimado sobre las altas), then each row with
  * its decision and fidelity tier, reassignable in place (crear ↔ actualizar ↔
@@ -573,6 +590,7 @@ function ReconcileProposalCard({
             <span>
               {instrumentLabel(row.instrument)} · {reconcileFidelityMark(row.fidelity)} ·{" "}
               {reconcileDecisionLabel(row)}
+              {reconcileAmbiguityMark(row)}
               {row.uncertain ? " · dudoso" : ""}
               {!row.excluded && !isRowWritable(row) ? " · fuera de alcance" : ""}
             </span>

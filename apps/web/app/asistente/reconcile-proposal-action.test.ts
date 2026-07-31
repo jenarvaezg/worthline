@@ -1,4 +1,7 @@
-import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
+// The persistence escape hatch: seeding a CLOSED position needs `recordOperation`,
+// which the narrowed application store does not expose.
+import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
+import { createInMemoryStore } from "@worthline/db/testing";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -225,6 +228,101 @@ describe("confirmReconcileProposalAction (#1108) · dispatch", () => {
     expect(await store.operations.readOperations("asset-unrelated")).toHaveLength(0);
     const persisted = await store.assistantProposals.read(proposal.draft.proposalId);
     expect(persisted?.status).toBe("draft");
+    store.close();
+  });
+
+  test("the same ISIN in two holdings: the card's default curation feeds the LIVE one (#1331)", async () => {
+    const store = await seedWorkspace();
+    const SHARED = "IE00B1G3DH73";
+    // The old broker's position, created first and sold in full (closed).
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset-closed",
+      instrument: "fund",
+      isin: SHARED,
+      name: "Vanguard U.S. 500 Stk Idx € H Acc",
+      ownership: OWNERSHIP,
+    });
+    await store.operations.recordOperation({
+      assetId: "asset-closed",
+      currency: "EUR",
+      executedAt: "2021-03-01",
+      feesMinor: 0,
+      id: "op-closed-buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "97.65",
+    });
+    await store.operations.recordOperation({
+      assetId: "asset-closed",
+      currency: "EUR",
+      executedAt: "2023-09-01",
+      feesMinor: 0,
+      id: "op-closed-sell",
+      kind: "sell",
+      pricePerUnit: "120",
+      units: "97.65",
+    });
+    // The live Cartera Indexada holding the contributions belong to.
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset-live",
+      instrument: "fund",
+      isin: SHARED,
+      name: "Vanguard US Equity Index Fund EUR Hedged",
+      ownership: OWNERSHIP,
+    });
+    await store.operations.recordOperation({
+      assetId: "asset-live",
+      currency: "EUR",
+      executedAt: "2025-01-15",
+      feesMinor: 0,
+      id: "op-live-buy",
+      kind: "buy",
+      pricePerUnit: "150",
+      units: "40",
+    });
+
+    const proposal = await draftFrom(
+      store,
+      [
+        {
+          name: "Vanguard US Equity Index Fund EUR Hedged",
+          type: "Fondo",
+          isin: SHARED,
+          value: 6600,
+          currency: "EUR",
+          fidelity: "movements",
+        },
+      ],
+      [
+        {
+          date: "2026-06-10",
+          kind: "buy",
+          isin: SHARED,
+          units: 4,
+          amount: 600,
+          currency: "EUR",
+        },
+      ],
+    );
+    // The row is flagged for review, and the card's untouched default (what a user who
+    // just hits Confirmar sends) points at the live holding — not at the dead one.
+    expect(proposal.rows[0]!.match.ambiguous).toBe(true);
+    const curation: ReconcileCuration[] = [
+      { decision: "update", rowId: "row-0", target: proposal.rows[0]!.match.target! },
+    ];
+
+    const result = await confirmReconcileProposalAction(
+      proposal.draft,
+      curation,
+      store,
+      clock,
+    );
+    expect(result.status).toBe("applied");
+    // The contribution landed on the live holding; the closed one is untouched.
+    expect(await store.operations.readOperations("asset-live")).toHaveLength(2);
+    expect(await store.operations.readOperations("asset-closed")).toHaveLength(2);
     store.close();
   });
 

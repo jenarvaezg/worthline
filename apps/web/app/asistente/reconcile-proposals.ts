@@ -25,6 +25,7 @@ import {
   type ExtractedPositionsMovementsDocument,
   positionsMovementsDocumentSchema,
 } from "./attachment-extraction-contract";
+import { projectMatcherPortfolio } from "./matcher-portfolio";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 import { buildReconcileRows, reconcileSummary } from "./reconcile-plan";
 import type { ReconcileProposal } from "./reconcile-proposal-contract";
@@ -70,35 +71,15 @@ export async function connectedReconcileAssetIds(
  * Project the current portfolio into matcher holdings (assets + liabilities),
  * excluding connected-source-owned assets so a sync-owned holding is never a match
  * candidate — the code-level enforcement of the "no escribas a fuente conectada"
- * boundary (not left to model discretion).
+ * boundary (not left to model discretion). The shape itself (including the `closed`
+ * mark that ranks the claimants of a duplicated ISIN, #1331) is the shared
+ * {@link projectMatcherPortfolio}'s job.
  */
 export async function projectReconcilePortfolio(
   store: ReconcileProposalStore,
 ): Promise<MatchPortfolioHolding[]> {
   const connectedIds = await connectedReconcileAssetIds(store.connectedSources);
-  const assets = await store.assets.readAssets();
-  const investmentMeta = await store.assets.readInvestmentAssetsWithMeta();
-  const metaById = new Map(investmentMeta.map((meta) => [meta.id, meta]));
-  const assetHoldings: MatchPortfolioHolding[] = assets
-    .filter((asset) => !connectedIds.has(asset.id))
-    .map((asset) => {
-      const meta = metaById.get(asset.id);
-      return {
-        holdingId: asset.id,
-        name: asset.name,
-        ...(asset.instrument ? { instrument: asset.instrument } : {}),
-        ...(meta?.isin ? { isin: meta.isin } : {}),
-        ...((asset.providerSymbol ?? meta?.providerSymbol)
-          ? { providerSymbol: asset.providerSymbol ?? meta?.providerSymbol ?? null }
-          : {}),
-      };
-    });
-  const liabilities = await store.liabilities.readLiabilities();
-  const liabilityHoldings: MatchPortfolioHolding[] = liabilities.map((liability) => ({
-    holdingId: liability.id,
-    name: liability.name,
-  }));
-  return [...assetHoldings, ...liabilityHoldings];
+  return projectMatcherPortfolio(store, { excludeAssetIds: connectedIds });
 }
 
 /** The persisted (holdings + movements) view of an extracted document. */

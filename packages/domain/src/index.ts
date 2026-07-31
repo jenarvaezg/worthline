@@ -542,6 +542,7 @@ export type {
   RowMatch,
 } from "./holding-matcher";
 export {
+  countKeyClaimants,
   discardRow,
   matchHoldings,
   reassignToCandidate,
@@ -902,7 +903,7 @@ export type {
   WarningOverride,
   WarningSeverity,
 } from "./warnings";
-export { collectWarnings } from "./warnings";
+export { collectWarnings, isClosedPosition } from "./warnings";
 export type {
   ExportedAmortizationPlan,
   ExportedAsset,
