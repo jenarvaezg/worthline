@@ -59,6 +59,30 @@ describe("AdminAlertsPage", () => {
     expect(html).toContain("1 abiertas");
   });
 
+  test("names a missed cron pass as fleet + pass, not as workspace + holding (#1339)", async () => {
+    vi.mocked(listAdminMaintainerAlerts).mockResolvedValue({
+      alerts: [
+        {
+          ...OPEN_ALERT,
+          category: "missed_capture",
+          workspaceId: "fleet",
+          holdingId: "daily-capture:2026-07-28:pm",
+        },
+      ],
+      openCount: 1,
+    });
+
+    const html = renderToStaticMarkup(await AdminAlertsPage());
+
+    expect(html).toContain("Captura diaria perdida");
+    expect(html).toContain("flota");
+    expect(html).toContain("28-07-2026, captura de tarde");
+    // The sentinel ids never reach the maintainer's eyes, and the columns are not
+    // headed «Holding» for a row that has none.
+    expect(html).not.toContain("daily-capture:");
+    expect(html).not.toContain("<th>Holding</th>");
+  });
+
   test("shows an empty state and no badge when there are no alerts", async () => {
     vi.mocked(listAdminMaintainerAlerts).mockResolvedValue({ alerts: [], openCount: 0 });
 

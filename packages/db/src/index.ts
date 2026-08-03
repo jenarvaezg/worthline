@@ -150,6 +150,7 @@ export {
   type SecretCrypto,
   sealSecret,
 } from "./crypto";
+export { type DailyCapturePass, parseDailyCapturePass } from "./daily-capture-gap";
 export {
   resolveDatabasePath,
   resolveDatabaseTarget,
@@ -224,6 +225,7 @@ export type {
   DailyCaptureBenchmarkSeries,
   DailyCaptureFailure,
   DailyCaptureFetchedPrice,
+  DailyCaptureMissedPassReport,
   DailyCapturePricePair,
   DailyCaptureWorkspace,
   RunDailyCaptureDeps,

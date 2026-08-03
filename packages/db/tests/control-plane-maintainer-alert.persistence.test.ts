@@ -202,6 +202,45 @@ describe("control-plane maintainer alerts", () => {
     }
   });
 
+  test("a missed cron pass dedupes per PASS, not per fleet (#1339)", async () => {
+    const cp = await createInMemoryControlPlaneStore();
+    try {
+      const missed = (runKey: string) => ({
+        workspaceId: "fleet",
+        holdingId: `daily-capture:${runKey}`,
+        category: "missed_capture" as const,
+      });
+
+      const first = await cp.raiseMaintainerAlert({
+        ...missed("2026-07-28:pm"),
+        payload: { missedRunKey: "2026-07-28:pm" },
+        occurredAt: "2026-07-29T09:03:00.000Z",
+      });
+      // A retried capture run re-detects the SAME gap: one more occurrence, never
+      // a second alert (the partial unique index would reject it anyway).
+      const again = await cp.raiseMaintainerAlert({
+        ...missed("2026-07-28:pm"),
+        payload: { missedRunKey: "2026-07-28:pm" },
+        occurredAt: "2026-07-29T09:07:00.000Z",
+      });
+      // A different missed pass is a different incident, closable on its own.
+      const other = await cp.raiseMaintainerAlert({
+        ...missed("2026-07-29:am"),
+        payload: { missedRunKey: "2026-07-29:am" },
+        occurredAt: "2026-07-29T21:03:00.000Z",
+      });
+
+      expect(again.created).toBe(false);
+      expect(again.alert.id).toBe(first.alert.id);
+      expect(again.alert.occurrenceCount).toBe(2);
+      expect(other.created).toBe(true);
+      expect(other.alert.id).not.toBe(first.alert.id);
+      expect(await cp.countOpenMaintainerAlerts()).toBe(2);
+    } finally {
+      cp.close();
+    }
+  });
+
   test("updating an unknown alert throws", async () => {
     const cp = await createInMemoryControlPlaneStore();
     try {

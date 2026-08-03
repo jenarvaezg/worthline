@@ -1,3 +1,4 @@
+import type { RaiseMaintainerAlertInput } from "@worthline/db";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // Hostile suite · cron surface (#1009). Mock the authorization port so we can
@@ -12,11 +13,40 @@ const { openAuthorizedStore } = vi.hoisted(() => ({
 }));
 vi.mock("@web/principal", () => ({ openAuthorizedStore }));
 
+// The control plane is a real libsql client in production; stand in for it so the
+// missed-pass detection wiring (#1339) can be observed without a database.
+const { controlPlane, createControlPlaneStore } = vi.hoisted(() => {
+  const controlPlane = {
+    close: vi.fn(),
+    raiseMaintainerAlert: vi.fn(async (_input: RaiseMaintainerAlertInput) => ({
+      alert: {} as never,
+      created: true,
+    })),
+    readLatestJobDedupeKey: vi.fn(
+      async (_input: { kind: string; before: string }): Promise<string | null> => null,
+    ),
+  };
+  return { controlPlane, createControlPlaneStore: vi.fn(async () => controlPlane) };
+});
+vi.mock("@worthline/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@worthline/db")>()),
+  createControlPlaneStore,
+}));
+
 import { buildDailyCaptureDeps } from "./daily-capture-deps";
+
+const CONTROL_PLANE_ENV = {
+  WORTHLINE_CONTROL_PLANE_DB_URL: "libsql://cp",
+  WORTHLINE_DB_AUTH_TOKEN: "group-token",
+};
 
 describe("buildDailyCaptureDeps", () => {
   beforeEach(() => {
     openAuthorizedStore.mockClear();
+    controlPlane.close.mockClear();
+    controlPlane.raiseMaintainerAlert.mockClear();
+    controlPlane.readLatestJobDedupeKey.mockClear();
+    controlPlane.readLatestJobDedupeKey.mockResolvedValue(null);
   });
 
   test("now is the real clock — a WORTHLINE_DEMO_NOW in the env never pins it", () => {
@@ -79,6 +109,50 @@ describe("buildDailyCaptureDeps", () => {
     for (const [principal] of openAuthorizedStore.mock.calls) {
       expect((principal as { kind: string }).kind).toBe("system");
     }
+  });
+
+  test("takes the detection baseline from the daily-capture QUEUE, not from finalization (#1339)", async () => {
+    const deps = buildDailyCaptureDeps(CONTROL_PLANE_ENV);
+
+    expect(await deps.readLatestInvokedPass?.("2026-07-30:am")).toBeNull();
+    // Only daily-capture jobs, and only keys BELOW the pass now running (which has
+    // already enqueued its own row).
+    expect(controlPlane.readLatestJobDedupeKey).toHaveBeenCalledWith({
+      kind: "daily-capture",
+      before: "2026-07-30:am",
+    });
+
+    controlPlane.readLatestJobDedupeKey.mockResolvedValue("2026-07-29:am");
+    expect(await deps.readLatestInvokedPass?.("2026-07-30:am")).toBe("2026-07-29:am");
+    // The cron opens a control-plane connection per seam call and always closes it.
+    expect(controlPlane.close).toHaveBeenCalledTimes(2);
+  });
+
+  test("raises one fleet-keyed maintainer alert per missed pass (#1339)", async () => {
+    const deps = buildDailyCaptureDeps(CONTROL_PLANE_ENV);
+
+    await deps.reportMissedPasses?.({
+      missed: ["2026-07-28:pm", "2026-07-29:am"],
+      omitted: 0,
+      detectedByRunKey: "2026-07-29:pm",
+      latestInvokedRunKey: "2026-07-28:am",
+      detectedAt: "2026-07-29T21:04:00.000Z",
+    });
+
+    expect(controlPlane.raiseMaintainerAlert).toHaveBeenCalledTimes(2);
+    expect(controlPlane.raiseMaintainerAlert.mock.calls.map(([input]) => input)).toEqual([
+      expect.objectContaining({
+        workspaceId: "fleet",
+        holdingId: "daily-capture:2026-07-28:pm",
+        category: "missed_capture",
+      }),
+      expect.objectContaining({
+        workspaceId: "fleet",
+        holdingId: "daily-capture:2026-07-29:am",
+        category: "missed_capture",
+      }),
+    ]);
+    expect(controlPlane.close).toHaveBeenCalledTimes(1);
   });
 
   test("omits the auth token when the deploy configures none (local/dev cron)", async () => {

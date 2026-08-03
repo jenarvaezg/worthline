@@ -135,6 +135,28 @@ export interface SyncJobResolverDeps {
 }
 
 /**
+ * Log what missed-pass detection found (#1339). The alert on `/admin` is the
+ * durable signal, but the detection itself must not be able to fail in silence —
+ * that silence is the whole bug the issue is about — so the run log carries both
+ * the gap and any failure to record it. Never throws and never changes the job
+ * outcome: a missed pass is observability, not a capture failure.
+ */
+function logMissedPassDetection(
+  result: Awaited<ReturnType<SyncJobResolverDeps["runDailyCaptureFor"]>>,
+): void {
+  if (result.missedPassDetectionError) {
+    console.error(
+      `daily-capture: missed-pass detection failed: ${result.missedPassDetectionError}`,
+    );
+  }
+  if (result.missedPasses && result.missedPasses.length > 0) {
+    console.warn(
+      `daily-capture: pass(es) never invoked: ${result.missedPasses.join(", ")}`,
+    );
+  }
+}
+
+/**
  * Route one leased job to its executor, dispatching by kind. NEVER throws for a
  * job failure — it returns a typed {@link SyncJobResult} so the worker/store decide
  * ack-vs-retry from `retriable` (an uncaught throw would be treated as a
@@ -146,9 +168,9 @@ export function createSyncJobResolver(
 ): (job: RunnableJob) => Promise<SyncJobResult> {
   return async (job) => {
     if (job.descriptor.kind === "daily-capture") {
-      return dailyCaptureJobOutcome(
-        await deps.runDailyCaptureFor(job.descriptor.payload.now),
-      );
+      const result = await deps.runDailyCaptureFor(job.descriptor.payload.now);
+      logMissedPassDetection(result);
+      return dailyCaptureJobOutcome(result);
     }
 
     // source-sync: run it through the workspace's S2 executor (owns the sync_run).

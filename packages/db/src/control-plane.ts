@@ -181,13 +181,24 @@ export interface FailJobInput {
 }
 
 /**
- * The three maintainer-alert categories (#1050, ADR 0064). `infidelity`: the
- * painted/persisted figure diverges from the engine's recomputation (the #1042
- * class of bug). `residual`: an unexplained residual above the documented
- * modeling tolerance after normalizing and verifying config. `sync_source`: the
- * smell is a connected-source/sync ownership problem, not a worthline calc bug.
+ * The maintainer-alert categories (#1050, ADR 0064). The first three are the
+ * assistant's — `infidelity`: the painted/persisted figure diverges from the
+ * engine's recomputation (the #1042 class of bug); `residual`: an unexplained
+ * residual above the documented modeling tolerance after normalizing and
+ * verifying config; `sync_source`: the smell is a connected-source/sync
+ * ownership problem, not a worthline calc bug.
+ *
+ * `missed_capture` (#1339) is the one category NO model can raise: the
+ * daily-capture cron raises it about ITSELF when the ledger shows an expected
+ * pass that never finalized (Vercel Cron is best-effort and skips invocations).
+ * It is fleet-wide, so it carries sentinel workspace/holding ids rather than a
+ * tenant's — see the raiser for the contract.
  */
-export type MaintainerAlertCategory = "infidelity" | "residual" | "sync_source";
+export type MaintainerAlertCategory =
+  | "infidelity"
+  | "missed_capture"
+  | "residual"
+  | "sync_source";
 
 /** An alert's lifecycle state (#1050): `open` accumulates occurrences; `resolved`/`dismissed` close it. */
 export type MaintainerAlertStatus = "open" | "resolved" | "dismissed";
@@ -702,6 +713,16 @@ export interface JobStore {
   readJob(jobId: string): Promise<JobRecord | null>;
   /** Every job, newest first — observability / tests. */
   listJobs(): Promise<JobRecord[]>;
+  /**
+   * The greatest `dedupeKey` of this kind strictly below `before`, or null when
+   * there is none. Missed-pass detection's baseline (#1339): the daily-capture
+   * dedupe key IS the pass-qualified run key, and every invocation enqueues
+   * before it does anything else, so this answers "which pass was last INVOKED"
+   * — including passes that were invoked and then failed, which finalization
+   * cannot distinguish from passes that never arrived. `before` excludes the
+   * caller's own row, which it has necessarily already written.
+   */
+  readLatestJobDedupeKey(input: { kind: string; before: string }): Promise<string | null>;
 }
 
 /**
@@ -2119,6 +2140,20 @@ async function buildControlPlaneStore(
         "SELECT * FROM job ORDER BY created_at DESC, rowid DESC",
       );
       return result.rows.map((row) => toJob(row));
+    },
+    async readLatestJobDedupeKey({ kind, before }) {
+      // Ordered by the key itself, not by `created_at`: the key names the pass the
+      // job is ABOUT, and a late invocation (routinely up to +58 min, #1339) can
+      // create a row for an older pass after a newer one.
+      const result = await client.execute({
+        sql: `SELECT dedupe_key FROM job
+              WHERE kind = ? AND dedupe_key < ?
+              ORDER BY dedupe_key DESC
+              LIMIT 1`,
+        args: [kind, before],
+      });
+      const row = result.rows[0];
+      return row ? String(row["dedupe_key"]) : null;
     },
     close() {
       client.close();

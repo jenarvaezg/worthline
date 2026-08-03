@@ -10,6 +10,13 @@ import type {
 } from "@worthline/db";
 import { formatMoneyMinor } from "@worthline/domain";
 
+import {
+  dailyCapturePassLabel,
+  isMissedCapturePayload,
+  type MissedCapturePayload,
+  maintainerAlertSubject,
+} from "./missed-capture-alert";
+
 /**
  * The forensic detail of one maintainer alert (#1050, ADR 0064): the trace
  * tabulated like a bank's cuadro (declared-vs-computed), the config snapshot,
@@ -150,6 +157,31 @@ function CalculationTraceView({ trace }: { trace: AgentViewCalculationTrace }) {
   );
 }
 
+/**
+ * A missed daily-capture pass (#1339): the cron's own alert. There is no holding
+ * and no trace to tabulate — the forensic material IS the gap, so it renders as
+ * the pass that was lost, the baseline it was measured against, and the pass that
+ * noticed.
+ */
+function MissedCaptureView({ payload }: { payload: MissedCapturePayload }) {
+  return (
+    <>
+      <p className="alertSummary">{payload.summary}</p>
+      <p className="alertMeta">
+        Captura perdida <strong>{dailyCapturePassLabel(payload.missedRunKey)}</strong> ·
+        última invocada {dailyCapturePassLabel(payload.latestInvokedRunKey)} · detectada
+        por {dailyCapturePassLabel(payload.detectedByRunKey)}
+      </p>
+      {payload.omittedOlderPasses > 0 ? (
+        <p className="alertMeta">
+          {payload.omittedOlderPasses} captura(s) perdida(s) más antigua(s) fuera de este
+          informe.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 function OccurrenceView({
   payload,
   occurredAt,
@@ -164,7 +196,9 @@ function OccurrenceView({
       <h3>
         Ocurrencia {index + 1} · {occurredAt}
       </h3>
-      {payload === null ? (
+      {isMissedCapturePayload(payload) ? (
+        <MissedCaptureView payload={payload} />
+      ) : payload === null ? (
         <p className="alertMeta">Payload ilegible.</p>
       ) : (
         <>
@@ -231,14 +265,19 @@ export function MaintainerAlertDetail({
   alert: MaintainerAlertWithOccurrences;
 }) {
   const isOpen = alert.status === "open";
+  const subject = maintainerAlertSubject(alert);
   return (
     <main className="demoLanding maintainerAlerts">
       <header className="demoLandingHead">
         <p className="demoKicker">worthline · admin · alertas</p>
         <h1>{maintainerAlertCategoryLabel(alert.category)}</h1>
         <p className="demoLede">
-          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) · workspace{" "}
-          {alert.workspaceId} · holding {alert.holdingId}
+          {statusLabel(alert.status)} · {alert.occurrenceCount} ocurrencia(s) ·{" "}
+          {subject.isFleet
+            ? // A missed pass belongs to no tenant: its key carries the pass, not a
+              // holding (#1339), so the header names the pass, not the sentinels.
+              `${subject.workspace} · ${subject.subject}`
+            : `workspace ${subject.workspace} · holding ${subject.subject}`}
         </p>
         <p className="alertMeta">
           <a href="/admin/alertas">← Todas las alertas</a>

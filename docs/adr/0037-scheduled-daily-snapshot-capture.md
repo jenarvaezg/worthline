@@ -92,6 +92,42 @@ include the US close, and far from the UTC day boundary, so Hobby's ±59-minute
 scheduling imprecision can never flip the `dateKey` to the wrong day. The `dateKey`
 stays UTC-derived, consistent with the render path.
 
+## The scheduler is best-effort, so its misses are detected (#1339)
+
+Vercel Cron on this plan does not only run **late** (the ±59-minute imprecision the
+Timing section is built around): it sometimes does not run **at all**. The evidence
+on #1339 shows whole passes — `2026-07-27:am`, `2026-07-28:pm`, `2026-07-29:pm` —
+that were never even **enqueued**, while every pass that did arrive finished cleanly
+in seconds. Latest-wins keeps the damage mild (a lost `:pm` leaves the day closing
+on its provisional 09:00 point), but the loss was **invisible**: nothing detected
+it and nothing recorded it.
+
+The baseline is the durable **queue**, the same table that evidence came from. Every
+invocation enqueues its pass under the pass-qualified run key as dedupe key before
+doing anything else (PRD #999 S4), so a pass with no job row was never invoked. At
+the start of each pass — past the redelivery guard — the run reads the newest
+daily-capture dedupe key strictly below its own and names every expected pass in
+between (two per UTC day, `am` before `pm`). Each one is raised as a
+`missed_capture` maintainer alert (ADR 0064). No history is silent by construction:
+a fresh deploy has no baseline, so nothing was missed. The report is capped at the
+freshest few passes and states how many older ones it left out, so a long outage is
+a handful of readable incidents rather than a month of them.
+
+Measuring against the **finalization** ledger instead would have been wrong, though
+it is the more obvious table: it records finalized passes only, and finalization
+requires zero workspace failures, so one chronically broken tenant would freeze the
+baseline and turn every later pass into an alert blaming a scheduler that did its
+job. The queue answers the narrower question the issue actually asks — *was it
+invoked?* — and the alert makes only that claim. A pass that WAS invoked and then
+failed has a job row with its attempts and its `dead` state; that is the queue's own
+observability, not this signal's.
+
+Detection is pure observability — wrapped so a control plane that cannot answer
+costs the fleet no snapshot, and logged (gap and detection failure alike) so it
+cannot fail in the same silence it exists to break. It does not attempt to *recover*
+the missed pass: a market price from a lost day is gone (see "Why a missed day is not
+recoverable later"), and inventing one is the option this ADR already rejected.
+
 ## Considered options
 
 - **Keep capture visit-gated (status quo)** — rejected: it is the bug. Absent
@@ -131,6 +167,10 @@ stays UTC-derived, consistent with the render path.
   they are skipped by construction.
 - Failure is isolated per workspace — a broken tenant does not block the others'
   captures.
+- A pass the scheduler skipped is no longer silent: the next pass raises it as a
+  `missed_capture` maintainer alert (#1339). An external pinger and Vercel's paid
+  tier (guaranteed timing) stay available if detection shows the misses are frequent
+  enough to matter.
 - The CONTEXT.md **Snapshot** entry is sharpened: "automatic" now genuinely means
   time-driven, recorded whether or not anyone signs in, finalising at the day's
   close.
