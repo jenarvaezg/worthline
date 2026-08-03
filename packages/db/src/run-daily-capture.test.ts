@@ -2,6 +2,7 @@ import { captureDailySnapshotForWorkspace } from "@db/capture-daily-snapshot";
 import { createInMemoryStore } from "@db/index";
 import {
   type DailyCaptureFetchedPrice,
+  type DailyCaptureMissedPassReport,
   type DailyCapturePricePair,
   runDailyCapture,
 } from "@db/run-daily-capture";
@@ -361,6 +362,115 @@ describe("runDailyCapture (ADR 0037, PRD #528)", () => {
     expect(saveBenchmarkPrices).toHaveBeenCalledWith("ipc-es", [
       { dateKey: "2024-02-01", value: "101.2" },
     ]);
+  });
+});
+
+describe("runDailyCapture — missed-pass detection (#1339)", () => {
+  /** A one-workspace pass with the detection seams wired to spies. */
+  async function passWithDetection(opts: {
+    now?: string;
+    latestInvokedPass?: string | null;
+    reportMissedPasses?: (report: DailyCaptureMissedPassReport) => Promise<void>;
+    readLatestInvokedPass?: (before: string) => Promise<string | null>;
+    isRunFinalized?: (runKey: string) => Promise<boolean>;
+  }) {
+    const store = await seededStore();
+    const report = vi.fn(async (_report: DailyCaptureMissedPassReport) => {});
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      ...(opts.isRunFinalized ? { isRunFinalized: opts.isRunFinalized } : {}),
+      readLatestInvokedPass:
+        opts.readLatestInvokedPass ?? (async () => opts.latestInvokedPass ?? null),
+      reportMissedPasses: opts.reportMissedPasses ?? report,
+      now: opts.now ?? NOW,
+    });
+    store.close();
+    return { report, result };
+  }
+
+  test("reports the pass that was never invoked and still captures", async () => {
+    // NOW is 2026-06-25T21:00Z → the `pm` pass. The last pass invoked before it is
+    // the PREVIOUS day's close, so this morning's `am` never arrived.
+    const { report, result } = await passWithDetection({
+      latestInvokedPass: "2026-06-24:pm",
+    });
+
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]![0]).toEqual({
+      missed: ["2026-06-25:am"],
+      omitted: 0,
+      detectedByRunKey: "2026-06-25:pm",
+      latestInvokedRunKey: "2026-06-24:pm",
+      detectedAt: NOW,
+    });
+    // Detection is observability, never a brake: the capture still happened.
+    expect(result).toMatchObject({ captured: 1, failures: [] });
+    expect(result.missedPasses).toEqual(["2026-06-25:am"]);
+  });
+
+  test("asks for the baseline BELOW this pass, never including it", async () => {
+    // The pass now running enqueued its own job before draining, so the query must
+    // exclude its own key or every pass would look like its own predecessor.
+    const readLatestInvokedPass = vi.fn(async () => "2026-06-25:am");
+    await passWithDetection({ readLatestInvokedPass });
+
+    expect(readLatestInvokedPass).toHaveBeenCalledWith("2026-06-25:pm");
+  });
+
+  test("stays silent when the previous pass was invoked", async () => {
+    const { report, result } = await passWithDetection({
+      latestInvokedPass: "2026-06-25:am",
+    });
+
+    expect(report).not.toHaveBeenCalled();
+    expect(result.missedPasses).toEqual([]);
+  });
+
+  test("stays silent on a fresh deploy with no history", async () => {
+    const { report } = await passWithDetection({ latestInvokedPass: null });
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  test("detects nothing on a pass the run-key guard already short-circuited", async () => {
+    // An already-finalized pass is a redelivery: it must not re-report a gap it
+    // already reported on its first drain.
+    const readLatestInvokedPass = vi.fn(async () => "2026-06-24:pm");
+    const { report, result } = await passWithDetection({
+      isRunFinalized: async () => true,
+      readLatestInvokedPass,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(readLatestInvokedPass).not.toHaveBeenCalled();
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  test("a detection failure never breaks the capture", async () => {
+    const { result } = await passWithDetection({
+      latestInvokedPass: "2026-06-24:pm",
+      reportMissedPasses: async () => {
+        throw new Error("control plane unreachable");
+      },
+    });
+
+    expect(result).toMatchObject({ captured: 1, failures: [] });
+    expect(result.missedPassDetectionError).toMatch(/control plane unreachable/);
+  });
+
+  test("skips detection entirely when the seams are not wired", async () => {
+    const store = await seededStore();
+    const result = await runDailyCapture({
+      listAllWorkspaces: async () => [{ id: "ws", dbUrl: "libsql://ws" }],
+      openStore: async () => keepOpen(store),
+      fetchPrices: noFetchedPrices,
+      now: NOW,
+    });
+    store.close();
+
+    expect(result.missedPasses).toBeUndefined();
+    expect(result.missedPassDetectionError).toBeUndefined();
   });
 });
 

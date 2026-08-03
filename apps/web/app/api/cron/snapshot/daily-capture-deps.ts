@@ -1,3 +1,4 @@
+import { buildMissedCaptureAlerts } from "@web/admin/missed-capture-alert";
 import { runBinanceRefresh } from "@web/ajustes/binance-refresh";
 import { runNumistaCoinRefresh } from "@web/ajustes/numista-coin-refresh";
 import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
@@ -9,6 +10,8 @@ import {
   type DailyCaptureLog,
   deriveEffectivePlan,
   type EntitlementDirectory,
+  type JobStore,
+  type MaintainerAlertLog,
   type RunDailyCaptureDeps,
   type TenancyDirectory,
 } from "@worthline/db";
@@ -47,6 +50,8 @@ export function buildDailyCaptureDeps(
   const openControlPlane = async (): Promise<
     Pick<TenancyDirectory, "listAllWorkspaces"> &
       Pick<EntitlementDirectory, "readWorkspaceEntitlement"> &
+      Pick<MaintainerAlertLog, "raiseMaintainerAlert"> &
+      Pick<JobStore, "readLatestJobDedupeKey"> &
       DailyCaptureLog &
       BenchmarkPriceCache & { close(): void }
   > => {
@@ -109,6 +114,36 @@ export function buildDailyCaptureDeps(
       const controlPlane = await openControlPlane();
       try {
         await controlPlane.recordDailyCaptureRun(runKey, finalizedAt);
+      } finally {
+        controlPlane.close();
+      }
+    },
+    // Missed-pass detection (#1339). Vercel Cron is best-effort on the current
+    // plan: whole passes are never invoked (evidence on the issue) and the loss is
+    // invisible today. The baseline is the durable QUEUE, exactly the table that
+    // evidence came from: every invocation enqueues its pass under the run key as
+    // dedupe key before doing anything else, so the newest key below this pass is
+    // the last pass that actually arrived. The gap is raised as a maintainer alert
+    // on the control plane — no new table, no new dependency, nothing user-facing.
+    readLatestInvokedPass: async (before) => {
+      const controlPlane = await openControlPlane();
+      try {
+        return await controlPlane.readLatestJobDedupeKey({
+          kind: "daily-capture",
+          before,
+        });
+      } finally {
+        controlPlane.close();
+      }
+    },
+    reportMissedPasses: async (report) => {
+      const controlPlane = await openControlPlane();
+      try {
+        // One alert per missed pass, keyed so a re-detection accumulates an
+        // occurrence instead of minting a duplicate (see the alert contract).
+        for (const alert of buildMissedCaptureAlerts(report)) {
+          await controlPlane.raiseMaintainerAlert(alert);
+        }
       } finally {
         controlPlane.close();
       }

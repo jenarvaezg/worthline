@@ -176,6 +176,43 @@ describe("createSyncJobResolver — dispatch by kind", () => {
     expect(result).toEqual({ status: "ok" });
     expect(runDailyCaptureFor).toHaveBeenCalledWith(now);
   });
+
+  it("logs a missed pass and a failed detection without changing the outcome (#1339)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const resolver = createSyncJobResolver({
+        openWorkspaceStore: async () => {
+          throw new Error("not a source-sync job");
+        },
+        runDailyCaptureFor: async (now) => ({
+          total: 1,
+          captured: 1,
+          failures: [],
+          benchmarkFailures: [],
+          sourceSyncFailures: [],
+          missedPasses: ["2026-07-17:am"],
+          missedPassDetectionError: "control plane unreachable",
+          dateKey: now.slice(0, 10),
+        }),
+      });
+
+      const result = await resolver({
+        descriptor: dailyCaptureDescriptor("2026-07-17T21:00:00.000Z"),
+        job: {} as RunnableJob["job"],
+        workspaceId: null,
+      });
+
+      // The detection can no longer fail in silence — that silence IS the bug.
+      expect(error.mock.calls[0]?.[0]).toContain("control plane unreachable");
+      expect(warn.mock.calls[0]?.[0]).toContain("2026-07-17:am");
+      // …and it never turns an observability signal into a capture failure.
+      expect(result).toEqual({ status: "ok" });
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
 });
 
 describe("enqueueSyncJob — PULL mode drains the full chain in-process (no Redis)", () => {

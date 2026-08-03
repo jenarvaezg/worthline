@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
 import { MaintainerAlertDetail } from "./maintainer-alert-detail";
+import { buildMissedCaptureAlerts } from "./missed-capture-alert";
 
 const PAYLOAD: MaintainerAlertPayload = {
   category: "infidelity",
@@ -200,6 +201,42 @@ describe("MaintainerAlertDetail", () => {
     );
     expect(html).toContain("formato no reconocido");
     expect(html).toContain("calculation_trace");
+  });
+
+  test("renders a missed cron pass as the pass it lost, not as a holding (#1339)", () => {
+    const [missed] = buildMissedCaptureAlerts({
+      missed: ["2026-07-28:pm"],
+      omitted: 2,
+      detectedByRunKey: "2026-07-29:am",
+      latestInvokedRunKey: "2026-07-28:am",
+      detectedAt: "2026-07-29T09:03:00.000Z",
+    });
+
+    const html = renderToStaticMarkup(
+      MaintainerAlertDetail({
+        alert: alert({
+          category: "missed_capture",
+          workspaceId: missed!.workspaceId,
+          holdingId: missed!.holdingId,
+          occurrences: [
+            {
+              id: "occ-1",
+              payload: missed!.payload,
+              occurredAt: "2026-07-29T09:03:00.000Z",
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(html).toContain("Captura diaria perdida");
+    // The pass in words, not the sentinel ids and not a "holding".
+    expect(html).toContain("28-07-2026, captura de tarde");
+    expect(html).not.toContain("holding daily-capture");
+    // No trace exists for a cron gap, so the trace note must stay out of the way.
+    expect(html).not.toContain("Sin traza de cálculo");
+    // The cap is stated, never silent.
+    expect(html).toContain("2");
   });
 
   test("renders extractedData as escaped TEXT, never as raw HTML (#1180)", () => {

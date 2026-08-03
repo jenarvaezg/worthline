@@ -129,6 +129,42 @@ describe("control-plane job primitives — enqueue + single-flight dedupe", () =
 
     store.close();
   });
+
+  it("reads the latest dedupe key of a kind below a bound (#1339 baseline)", async () => {
+    const store = await createInMemoryControlPlaneStore();
+    const enqueue = (kind: string, dedupeKey: string) =>
+      store.enqueueJob({ kind, dedupeKey, payload: {}, runAfter: at(0) });
+
+    // No history at all: the caller must see null, never a fabricated baseline.
+    expect(
+      await store.readLatestJobDedupeKey({
+        kind: "daily-capture",
+        before: "2026-07-30:am",
+      }),
+    ).toBeNull();
+
+    await enqueue("daily-capture", "2026-07-28:pm");
+    await enqueue("daily-capture", "2026-07-29:am");
+    // Another kind must never answer for daily-capture, and the caller's own row
+    // (the pass now running) is excluded by the bound.
+    await enqueue("source-sync", "2026-07-29:pm");
+    await enqueue("daily-capture", "2026-07-30:am");
+
+    expect(
+      await store.readLatestJobDedupeKey({
+        kind: "daily-capture",
+        before: "2026-07-30:am",
+      }),
+    ).toBe("2026-07-29:am");
+    expect(
+      await store.readLatestJobDedupeKey({
+        kind: "daily-capture",
+        before: "2026-07-29:am",
+      }),
+    ).toBe("2026-07-28:pm");
+
+    store.close();
+  });
 });
 
 describe("control-plane job primitives — lease, recovery, renew", () => {

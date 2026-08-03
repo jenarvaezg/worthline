@@ -1,5 +1,6 @@
 import { guardAdmin } from "@web/admin/guard-admin";
 import { listAdminMaintainerAlerts } from "@web/admin/list-maintainer-alerts";
+import { maintainerAlertSubject } from "@web/admin/missed-capture-alert";
 import { maintainerAlertCategoryLabel } from "@web/asistente/maintainer-alert";
 import type { MaintainerAlertStatus } from "@worthline/db";
 
@@ -66,8 +67,10 @@ export default async function AdminAlertsPage() {
             <thead>
               <tr>
                 <th>Categoría</th>
-                <th>Workspace</th>
-                <th>Holding</th>
+                {/* «Ámbito»/«Sujeto», not workspace/holding: a fleet alert (a missed
+                    cron capture, #1339) has neither — see `maintainerAlertSubject`. */}
+                <th>Ámbito</th>
+                <th>Sujeto</th>
                 <th>Estado</th>
                 <th>Ocurr.</th>
                 <th>Última señal</th>
@@ -75,24 +78,29 @@ export default async function AdminAlertsPage() {
               </tr>
             </thead>
             <tbody>
-              {alerts.map((alert) => (
-                <tr
-                  key={alert.id}
-                  className={alert.status === "open" ? "alertOpenRow" : undefined}
-                >
-                  <td>{maintainerAlertCategoryLabel(alert.category)}</td>
-                  <td>{alert.workspaceId}</td>
-                  <td>{alert.holdingId}</td>
-                  <td>{statusLabel(alert.status)}</td>
-                  <td>{alert.occurrenceCount}</td>
-                  <td>{formatSeenAt(alert.lastSeenAt)}</td>
-                  <td className="rowActions">
-                    <a className="btnSmall" href={`/admin/alertas/${alert.id}`}>
-                      Ver
-                    </a>
-                  </td>
-                </tr>
-              ))}
+              {alerts.map((alert) => {
+                // A fleet alert (a missed cron pass, #1339) has no tenant and no
+                // holding: the same two cells name the fleet and the lost pass.
+                const subject = maintainerAlertSubject(alert);
+                return (
+                  <tr
+                    key={alert.id}
+                    className={alert.status === "open" ? "alertOpenRow" : undefined}
+                  >
+                    <td>{maintainerAlertCategoryLabel(alert.category)}</td>
+                    <td>{subject.workspace}</td>
+                    <td>{subject.subject}</td>
+                    <td>{statusLabel(alert.status)}</td>
+                    <td>{alert.occurrenceCount}</td>
+                    <td>{formatSeenAt(alert.lastSeenAt)}</td>
+                    <td className="rowActions">
+                      <a className="btnSmall" href={`/admin/alertas/${alert.id}`}>
+                        Ver
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

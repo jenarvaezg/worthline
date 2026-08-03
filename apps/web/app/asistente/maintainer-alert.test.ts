@@ -50,10 +50,17 @@ describe("maintainer-alert category helpers", () => {
     expect(isMaintainerAlertCategory("nonsense")).toBe(false);
   });
 
+  it("keeps the cron's own category out of the assistant's vocabulary (#1339)", () => {
+    // `missed_capture` is raised by the daily-capture cron about itself; no model
+    // may ever raise it through the chat tool.
+    expect(isMaintainerAlertCategory("missed_capture")).toBe(false);
+  });
+
   it("labels each category in Spanish", () => {
     expect(maintainerAlertCategoryLabel("infidelity")).toMatch(/infidelidad/i);
     expect(maintainerAlertCategoryLabel("residual")).toMatch(/residuo/i);
     expect(maintainerAlertCategoryLabel("sync_source")).toMatch(/sync/i);
+    expect(maintainerAlertCategoryLabel("missed_capture")).toMatch(/captura/i);
   });
 });
 

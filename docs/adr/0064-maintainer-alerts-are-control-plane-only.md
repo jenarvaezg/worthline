@@ -29,11 +29,11 @@ so the model never re-types the engine's arithmetic into the alert (the lesson o
 structured data extracted from the document — never the binary (process-and-discard
 of #865 stays intact).
 
-There are three categories: `infidelity` (a persisted figure the current config no
-longer reproduces — the #1042 class), `residual` (an unexplained residual above the
-documented modeling tolerance after normalizing the magnitude and verifying config),
-and `sync_source` (the smell is a connected-source/sync ownership problem, not a
-worthline calc bug).
+There are three assistant categories: `infidelity` (a persisted figure the current
+config no longer reproduces — the #1042 class), `residual` (an unexplained residual
+above the documented modeling tolerance after normalizing the magnitude and verifying
+config), and `sync_source` (the smell is a connected-source/sync ownership problem,
+not a worthline calc bug).
 
 The modeling tolerance is documented as a constant so a "difference" below it reads
 as modeling friction, not a defect: `max(1 €, 0.05 % of |balance|)` in integer minor
@@ -53,6 +53,27 @@ shows the extracted data, and links to the conversation. Pull-only in v1 — no 
 or email.
 
 The repair NEVER waits on the alert.
+
+## Amendment (#1339): the system may raise about itself
+
+A fourth category, `missed_capture`, is raised by the **daily-capture cron** about
+**itself** when the durable queue shows an expected pass that was never invoked
+(Vercel Cron is best-effort and skips invocations — ADR 0037). It is deliberately
+absent from the chat tool's enum: no model can raise it, and the assistant's
+category list stays a strict subset of the stored vocabulary.
+
+This is the first alert that belongs to no tenant and no holding, so it carries
+sentinels in the dedup key: workspace `fleet`, holding `daily-capture:<runKey>`. The
+holding slot names the alert's **subject** rather than a holding, which keeps the
+existing `workspace + holding + category` dedup exactly right — a retried capture
+run re-detecting the same gap accumulates an occurrence, while a different missed
+pass is a distinct incident a maintainer closes on its own. The `/admin` surfaces
+translate the sentinels (`flota` + the pass in words) so they never reach a
+maintainer's eyes raw, and the occurrence renders as the gap itself: there is no
+config snapshot and no calculation trace to tabulate.
+
+The alert stays consistent with the rest of the decision: control-plane-only, pull
+from `/admin`, and never a user-facing signal.
 
 ## Considered options
 

@@ -1,6 +1,7 @@
 import type { AssetPrice, InvestmentPriceProvider } from "@worthline/domain";
 import type { InvestmentAssetMeta } from "./asset-store";
 import { captureDailySnapshotForWorkspace } from "./capture-daily-snapshot";
+import { missedDailyCapturePasses } from "./daily-capture-gap";
 import type { WorthlineStore } from "./store-types";
 import { dailyCaptureRunKey, type SyncJobResult } from "./sync-job";
 
@@ -39,6 +40,23 @@ interface WorkspaceCapturePlan {
   assets: InvestmentAssetMeta[];
 }
 
+/**
+ * What one missed-pass detection found (#1339) — everything the raiser needs to
+ * describe the gap without recomputing it.
+ */
+export interface DailyCaptureMissedPassReport {
+  /** The run keys that were never invoked, oldest first (capped — see {@link omitted}). */
+  missed: string[];
+  /** How many older missed passes the cap left out; 0 when the list is complete. */
+  omitted: number;
+  /** The pass that noticed the gap (this run). */
+  detectedByRunKey: string;
+  /** The last pass that WAS invoked before this one. */
+  latestInvokedRunKey: string;
+  /** When the gap was noticed — this pass's pinned capture instant. */
+  detectedAt: string;
+}
+
 export interface RunDailyCaptureDeps {
   /** Enumerate every real workspace (control plane). */
   listAllWorkspaces: () => Promise<DailyCaptureWorkspace[]>;
@@ -61,6 +79,19 @@ export interface RunDailyCaptureDeps {
   isRunFinalized?: (runKey: string) => Promise<boolean>;
   /** Persist successful run finalization for this pass. */
   markRunFinalized?: (runKey: string, finalizedAt: string) => Promise<void>;
+  /**
+   * The last pass INVOKED before `runKey`, or null when there is no history — the
+   * baseline for missed-pass detection (#1339). Deliberately not "last finalized":
+   * see `daily-capture-gap.ts` for why finalization is the wrong baseline.
+   * Omitted (with {@link reportMissedPasses}) → no detection at all.
+   */
+  readLatestInvokedPass?: (before: string) => Promise<string | null>;
+  /**
+   * Report a detected gap: expected passes Vercel Cron never invoked (best-effort
+   * scheduling, #1339). Pure observability — it must never influence the capture,
+   * so a throw here is caught and surfaced on the result instead of failing the run.
+   */
+  reportMissedPasses?: (report: DailyCaptureMissedPassReport) => Promise<void>;
   /**
    * Sync a workspace's connected sources before capture (#895): re-read Binance
    * balances and Numista/coin valuations so the snapshot freezes fresh figures.
@@ -129,6 +160,14 @@ export interface RunDailyCaptureResult {
    * do not block run finalization; they are surfaced for observability only.
    */
   sourceSyncFailures: DailyCaptureSourceSyncFailure[];
+  /**
+   * Expected passes this run found were never invoked (#1339), oldest first —
+   * empty when nothing was missed, absent when detection is not wired.
+   * Observability only: like the sync failures, they never block finalization.
+   */
+  missedPasses?: string[];
+  /** Why missed-pass detection could not run or report (#1339); never fails the run. */
+  missedPassDetectionError?: string;
   dateKey?: string;
   skipped?: boolean;
 }
@@ -166,6 +205,13 @@ export async function runDailyCapture(
       skipped: true,
     };
   }
+
+  // Missed-pass detection (#1339) runs HERE: past the redelivery guard above, so a
+  // pass that already finalized never looks for gaps again. A partial-failure RETRY
+  // does re-detect (it never finalized, so the guard does not trip) — harmless,
+  // because the alert is keyed per missed pass and simply accumulates an occurrence.
+  // Fully isolated: the capture below is the job, this is only the smoke detector.
+  const detection = await detectMissedPasses(deps, runKey);
 
   const workspaces = await deps.listAllWorkspaces();
   const failures: DailyCaptureFailure[] = [];
@@ -283,8 +329,43 @@ export async function runDailyCapture(
     failures,
     benchmarkFailures,
     sourceSyncFailures,
+    ...detection,
     dateKey,
   };
+}
+
+/**
+ * One pass of missed-pass detection (#1339): compare the last INVOKED pass with
+ * the one now running and report every expected pass in between. Errors are
+ * CONTAINED and returned as a field — a control plane that cannot answer must
+ * never cost the fleet its snapshot.
+ */
+async function detectMissedPasses(
+  deps: RunDailyCaptureDeps,
+  runKey: string,
+): Promise<Pick<RunDailyCaptureResult, "missedPasses" | "missedPassDetectionError">> {
+  if (!deps.readLatestInvokedPass || !deps.reportMissedPasses) return {};
+  try {
+    const latestInvokedRunKey = await deps.readLatestInvokedPass(runKey);
+    const { missed, omitted } = missedDailyCapturePasses({
+      currentRunKey: runKey,
+      latestInvokedRunKey,
+    });
+    if (missed.length > 0 && latestInvokedRunKey !== null) {
+      await deps.reportMissedPasses({
+        missed,
+        omitted,
+        detectedByRunKey: runKey,
+        latestInvokedRunKey,
+        detectedAt: deps.now,
+      });
+    }
+    return { missedPasses: missed };
+  } catch (error) {
+    return {
+      missedPassDetectionError: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /**

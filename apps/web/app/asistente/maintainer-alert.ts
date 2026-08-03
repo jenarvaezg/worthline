@@ -16,7 +16,11 @@ import { boundExtractedData } from "./bound-extracted-data";
  * plane; nothing here ever touches the workspace database.
  */
 
-/** The three maintainer-alert categories, re-exported so surfaces share one label map. */
+/**
+ * The categories the ASSISTANT may raise. Deliberately a subset: `missed_capture`
+ * (#1339) is raised by the daily-capture cron about itself and must stay out of
+ * the chat tool's vocabulary — see `missed-capture-alert.ts`.
+ */
 export const MAINTAINER_ALERT_CATEGORIES: readonly MaintainerAlertCategory[] = [
   "infidelity",
   "residual",
@@ -38,6 +42,8 @@ export function maintainerAlertCategoryLabel(category: MaintainerAlertCategory):
       return "Residuo inexplicado (> tolerancia)";
     case "sync_source":
       return "Olor a sync/fuente";
+    case "missed_capture":
+      return "Captura diaria perdida (cron)";
   }
 }
 
