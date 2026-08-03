@@ -12,9 +12,10 @@ Admission is reviewed code, not live runtime state. Every entry must carry a
 real, complete run of the assistant admission harness with non-empty checks and
 at least the default 60% score — required in the aggregate and, since
 [ADR 0067](0067-assistant-write-path-is-guarded-by-code-not-by-model-choice.md),
-in every dimension the run measured. The committed Gemini and Cerebras marks
-satisfy that rule with complete two-dimension runs; a mark naming only `reading`
-would predate the write-path questions and state nothing about writes. An
+in every dimension the run measured. Both committed marks satisfy that rule from
+complete runs — Gemini across all three dimensions (2026-08-03), Cerebras across
+two (2026-07-27, its `attachments` revalidation pending); a mark naming only
+`reading` would predate the write-path questions and state nothing about writes. An
 automated guard checks that marks name the same provider/model, have coherent
 non-zero counts, and satisfy normal admission. There is no named exception: the
 one that existed — Groq Llama 3.3 70B, the incumbent from before this gate,
@@ -49,9 +50,18 @@ reach for a tool** is written once in the prompt and **how to fill that tool's
 arguments** once in its own description; the two rules with a boundary in code
 behind them (`connected-source-write-guard.ts`, `holding-id-provenance.ts`) are
 stated once in the prompt and never per tool, guarded by prose tripwires in
-`turn-floor.test.ts`. Because the prompt and the tool contract both changed, both
-pool entries were re-run and their marks refreshed, which is this ADR's own
-revalidation rule applied to itself.
+`turn-floor.test.ts`. Because the prompt and the tool contract both changed, this
+ADR's own revalidation rule fired: Gemini was re-run and its mark refreshed
+(62/83 on the full three-dimension set, the first mark to carry `attachments`),
+and a third run of the same day against pre-slice `main` scored 61/83, which is
+how «no rule disappeared» was checked behaviourally rather than argued — check by
+check, no rule-shaped check changed state. **Cerebras's revalidation is pending**
+and its mark is knowingly stale: two attempts that day could not complete, the
+second losing four of six questions to tokens-per-minute once the day's earlier
+runs had spent its free-tier allowance, and an incomplete run may never become a
+mark. Nothing in the pool's behaviour depends on it while Gemini remains the
+first entry, but the mark does not describe the shipped contract until it is
+re-run on a fresh allowance.
 
 That slice also settled a question the meter had only assumed: between the two
 floors both measured live — 35.390 and 32.719 characters, −7,55% — Gemini charged
