@@ -34,18 +34,19 @@ describe("committed admission evidence", () => {
     // evidence that cannot see whether it fakes a proposal (ADR 0067). When one of
     // these is finally re-run, this test is what says «add the dimension».
     //
-    // Read the lists below for what they do NOT contain either: no mark carries
-    // `attachments`, because both runs predate #1254 — so the pool admits its
-    // models on evidence that says nothing about a turn carrying a document, which is
-    // the half of the write path where PRD #1241's incident happened. The marks are
-    // `as const satisfies`, so this is a compile-time fact as much as a test one: a
-    // re-run adds the dimension here and the expectation moves with it.
+    // Read the lists below for what they do NOT contain either. Gemini's mark carries
+    // `attachments` since #1342 re-ran it; Cerebras's still does not, because its run
+    // predates #1254 — so for that entry the pool admits on evidence that says nothing
+    // about a turn carrying a document, which is the half of the write path where PRD
+    // #1241's incident happened. The marks are `as const satisfies`, so this is a
+    // compile-time fact as much as a test one: a re-run adds the dimension here and
+    // the expectation moves with it.
     const dimensionsOf = (provider: string) =>
       ADMISSION_EVIDENCE.find((entry) => entry.provider === provider)?.run.dimensions.map(
         (dimension) => dimension.dimension,
       );
 
-    expect(dimensionsOf("google")).toEqual(["reading", "tool-discipline"]);
+    expect(dimensionsOf("google")).toEqual(["reading", "tool-discipline", "attachments"]);
     expect(dimensionsOf("cerebras")).toEqual(["reading", "tool-discipline"]);
   });
 

@@ -45,17 +45,22 @@ model we hope to buy.
 
 So both paths keep the same model: the pool's first credential-backed entry,
 today Gemini 3.1 Flash Lite, for reads and for writes alike. What the runs fix is
-the shape of the bill if that ever changes. One turn's floor is 35.390 characters
-— the system prompt plus the name, description and schema of the 34 tools, before
-a single word of conversation — which the providers charge as 9.231 input tokens
-(Gemini) and 7.732 (Cerebras), measured rather than estimated with
-`bun run eval:floor -- --live` on 2026-07-30. Routing the write turns to a paid
+the shape of the bill if that ever changes. One turn's floor is 32.719 characters
+— the system prompt plus the name, description and schema of the 35 tools, before
+a single word of conversation — which the providers charge as 8.540 input tokens
+(Gemini) and 7.031 (Cerebras), measured rather than estimated with
+`bun run eval:floor -- --live` on 2026-08-03. (It was 35.390 characters, 9.231 and
+7.732 tokens, when this ADR was written; #1342 slimmed it by de-duplicating rules
+the prompt and the tool descriptions were both paying for, and confirmed on the way
+that tokens track characters roughly one to one.) Routing the write turns to a paid
 frontier model therefore trades a free turn for a cents-per-turn one at a volume
 worthline meters precisely because it is the product's variable cost (PRD #1160),
 and buys a lower failure frequency rather than a boundary. The free tier offers no
-second path either: the pool's third entry counted that same floor as 14.285
-tokens against a 12.000 ceiling and left the pool for it (#1278), and its second
-lost a question to tokens per minute even at 55 s of pacing.
+second path either: the pool's third entry counted the floor of its day as 14.285
+tokens against a 12.000 ceiling and left the pool for it (#1278) — a margin no
+slimming was ever going to close, since the ceiling is per minute and one turn
+issues up to six requests inside it — and its second lost a question to tokens per
+minute even at 55 s of pacing.
 
 The two-model comparison says something a single ratio never could: the two
 candidates fail in opposite directions. Gemini acts, and its one dangerous failure

@@ -12,9 +12,10 @@ Admission is reviewed code, not live runtime state. Every entry must carry a
 real, complete run of the assistant admission harness with non-empty checks and
 at least the default 60% score — required in the aggregate and, since
 [ADR 0067](0067-assistant-write-path-is-guarded-by-code-not-by-model-choice.md),
-in every dimension the run measured. The committed Gemini and Cerebras marks
-satisfy that rule with complete two-dimension runs; a mark naming only `reading`
-would predate the write-path questions and state nothing about writes. An
+in every dimension the run measured. Both committed marks satisfy that rule from
+complete runs — Gemini across all three dimensions (2026-08-03), Cerebras across
+two (2026-07-27, its `attachments` revalidation pending); a mark naming only
+`reading` would predate the write-path questions and state nothing about writes. An
 automated guard checks that marks name the same provider/model, have coherent
 non-zero counts, and satisfy normal admission. There is no named exception: the
 one that existed — Groq Llama 3.3 70B, the incumbent from before this gate,
@@ -24,11 +25,11 @@ provider (#1278), so «admitted» and «in the pool» are now the same statement
 **A pool entry must be able to accept one turn, and that is a measured fact
 (#1278).** Groq did not leave for quality: its free tier rejects the request
 outright. The bare turn — system prompt plus the name, description and JSON
-schema of the 34 tools, before a word of conversation — measures 35.390
-characters, which the three tokenizers read very differently: 9.231 input tokens
-for Gemini, 7.732 for Cerebras, and 14.285 for Llama 3.3 — whose free tier allows
-12.000 tokens per minute and refuses on arrival any single request that alone
-exceeds that allowance. Slimming the prompt would not have saved it either: the
+schema of every tool, before a word of conversation — measured 35.390
+characters with 34 tools, which the three tokenizers read very differently: 9.231
+input tokens for Gemini, 7.732 for Cerebras, and 14.285 for Llama 3.3 — whose free
+tier allows 12.000 tokens per minute and refuses on arrival any single request that
+alone exceeds that allowance. Slimming the prompt would not have saved it either: the
 allowance is per *minute*, and one turn issues up to six requests inside it, each
 re-sending the floor plus everything read so far. As the
 third entry, Groq was only ever reached when the first two were cooling down —
@@ -37,6 +38,40 @@ of latency, and a `request too large` rejection deliberately persists no cooldow
 so every request tried it again. `bun run eval:floor` is the meter, `--live` adds
 the per-provider token figure, and a CI test holds the character floor under a
 reviewed ceiling so it cannot drift up unnoticed.
+
+**The floor is a maintained figure, and duplication is what makes it grow
+(#1342).** It reached 37.024 characters four days after #1278 measured it, one
+write tool at a time, each description carrying its siblings' boilerplate.
+Slimming brought it to **32.719** characters with 35 tools — 8.540 input tokens
+for Gemini, 7.031 for Cerebras (measured live 2026-08-03) — and no rule was
+dropped to get there: what was removed was the same rule stated twice. The
+prompt and the tool descriptions are both re-sent on every step, so **when to
+reach for a tool** is written once in the prompt and **how to fill that tool's
+arguments** once in its own description; the two rules with a boundary in code
+behind them (`connected-source-write-guard.ts`, `holding-id-provenance.ts`) are
+stated once in the prompt and never per tool, guarded by prose tripwires in
+`turn-floor.test.ts`. Because the prompt and the tool contract both changed, this
+ADR's own revalidation rule fired: Gemini was re-run and its mark refreshed
+(62/83 on the full three-dimension set, the first mark to carry `attachments`),
+and a third run of the same day against pre-slice `main` scored 61/83, which is
+how «no rule disappeared» was checked behaviourally rather than argued — check by
+check, no rule-shaped check changed state. **Cerebras's revalidation is pending**
+and its mark is knowingly stale: two attempts that day could not complete, the
+second losing four of six questions to tokens-per-minute once the day's earlier
+runs had spent its free-tier allowance, and an incomplete run may never become a
+mark. Nothing in the pool's behaviour depends on it while Gemini remains the
+first entry, but the mark does not describe the shipped contract until it is
+re-run on a fresh allowance.
+
+That slice also settled a question the meter had only assumed: between the two
+floors both measured live — 35.390 and 32.719 characters, −7,55% — Gemini charged
+−7,49% and Cerebras −9,07%, so **tokens track characters at roughly one to one**
+and the cheap deterministic meter is a faithful proxy for the bill. Of the
+remaining floor, 14.462 characters are tool descriptions, 10.127 their JSON
+Schemas and 7.438 the prompt; the descriptions still hold the majority but carry
+per-tool argument semantics rather than duplication, and the schemas are the
+contract. Cutting materially further means offering fewer tools per turn, which
+is a behaviour change and needs its own decision.
 
 The pool is therefore two entries deep, and what happens when both are cooling
 down is unchanged and deliberate: `assistant_unavailable` with status 503, the

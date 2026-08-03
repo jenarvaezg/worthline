@@ -189,37 +189,103 @@ bun run eval:floor -- --live  # + one minimal request per credential-backed entr
 
 The offline half prints the floor of a bare turn — the system prompt plus the
 name, description and JSON schema of every tool, before a word of conversation —
-in characters, attributed per tool and ranked, which is where slimming would have
-to aim. Characters and not tokens on purpose: each provider tokenizes with its own
+in characters, attributed per tool and ranked, which is where slimming has to
+aim. Characters and not tokens on purpose: each provider tokenizes with its own
 BPE, so a token count computed here would be a fourth tokenizer's opinion. On
-2026-07-30 that floor is **35.390 characters**, 26.359 of them the 34 tools'
+2026-07-30 that floor was **35.390 characters**, 26.359 of them the 34 tools'
 descriptions and schemas and 9.031 the system prompt, and `turn-floor.test.ts`
 holds it under a reviewed ceiling so it cannot drift up unnoticed.
 
 `--live` sends one real request with a one-token answer cap and reads
-`usage.inputTokens`, which is the only honest source of a token figure. The same
+`usage.inputTokens`, which is the only honest source of a token figure. That
 floor measured 9.231 tokens for Gemini, 7.732 for Cerebras, and was rejected
 outright by Groq with «Limit 12000, Requested 14285» — the measurement behind
 #1278.
+
+### What #1342 cut, and what is left
+
+The floor is now **32.719 characters** (35 tools; 25.281 tools + 7.438 prompt) —
+8.540 input tokens for Gemini and 7.031 for Cerebras, measured live on 2026-08-03.
+
+Nothing was cut that was a rule. What was cut was the same rule written twice: the
+prompt and the tool descriptions are BOTH re-sent on every step of every turn, so a
+sentence in both places is paid twice and a sentence per tool is paid once per tool.
+The seam now is that **when to reach for a tool** belongs to the prompt (one copy)
+and **how to fill that tool's arguments** belongs to its description. Concretely:
+
+| Rule | Was | Is |
+|---|---|---|
+| the eleven `propose_*` tools, glossed one by one | prompt + each tool's own description | each tool's description |
+| a write to a sync-owned holding is rejected | prompt + 5 descriptions | prompt + `connected-source-write-guard.ts` |
+| an id must have come out of a read | prompt + 7 descriptions | prompt + `holding-id-provenance.ts` |
+| the alert's three categories | prompt + `raise_maintainer_alert` | `raise_maintainer_alert` |
+| `suggest_actions`' own parameters | prompt + `suggest_actions` | `suggest_actions` |
+| register the dated fact, don't re-baseline | prompt + `propose_early_repayment` | prompt |
+| resolve the symbol before a market alta | prompt + 2 descriptions | prompt |
+| a split is not supported | prompt + 2 descriptions | prompt |
+
+Two prose tripwires in `turn-floor.test.ts` guard the two rows with a code boundary
+behind them, because that regrowth is measured: the floor gained 1.634 characters in
+the four days between #1278 and #1342, one write tool at a time, each carrying its
+siblings' boilerplate. They match on wording, so they catch the regrowth of those two
+sentences and not every possible duplication — the six rows that moved on prose alone
+are held by the harness runs, not by a test.
+
+**Tokens track characters at roughly one to one, and that is now measured.** Between
+the two floors both measured live — 35.390 and 32.719 characters, −7,55% — Gemini
+charged −7,49% and Cerebras −9,07%. It vindicates the meter's choice of unit
+(`turn-floor.ts` assumes characters are a faithful proxy for a bill nobody can
+tokenize three ways) and it means a character saved is a token saved. Do not compare
+against the 37.024-character floor this slice started from: no live figure was ever
+taken for it.
+
+Where the remaining 32.719 sit, for whoever slims next: **14.462** in tool
+descriptions, **10.127** in their JSON Schemas, 7.438 in the prompt. Descriptions are
+still the majority, but what is left in them is per-tool argument semantics rather
+than duplication, and the schemas are the contract itself — not sentences anyone can
+rewrite. Cutting materially further probably means offering fewer tools per turn
+(35 tools at ~722 characters each), which is a behaviour change and its own ticket,
+not more editing.
 
 ## Committed evidence
 
 `admission-evidence.ts` holds the reviewed runs in the shape the pool allowlist
 needs (#957), each broken down by dimension so a mark says WHAT it measured.
-Gemini and Cerebras are normal admissions from complete two-dimension runs of
-2026-07-27, and they are the whole pool: the third entry, Groq, was retired in
-#1278 because its free tier can no longer accept one request of the current turn
-(12.000 tokens per minute against 14.285 measured), which also retired the one
-`grandfathered` mark the pool used to carry.
+Gemini and Cerebras are normal admissions and they are the whole pool: the third
+entry, Groq, was retired in #1278 because its free tier can no longer accept one
+request of the current turn (12.000 tokens per minute against 14.285 measured),
+which also retired the one `grandfathered` mark the pool used to carry.
+
+- **Gemini — 2026-08-03, 62/83, all three dimensions.** Re-run by #1342 (the prompt
+  and the tool contract both changed) and the first mark that says anything about
+  `attachments`: 28/42 reading, 18/23 tool-discipline, 16/18 attachments.
+- **Cerebras — 2026-07-27, 49/65, two dimensions. Revalidation pending.** #1342
+  changed its contract too, so this mark is stale and knowingly carried. Two attempts
+  that day failed to complete — the first died at question 20 of 22, the second lost
+  four of its first six to «Tokens per minute limit exceeded» at 55 s of pacing once
+  the day's earlier runs had spent the free-tier allowance. **Re-run it on a fresh
+  allowance.** An incomplete run may never become a mark.
 
 A mark with a missing dimension is not an omission — it is a run from before those
-questions existed, and it says nothing about what they measure (ADR 0067). Today
-**no committed mark carries `attachments`**: every one of them predates #1254, so
-none of them says anything about how that model behaves over a document. The next
-re-run of each candidate is what changes that; editing a number in place would not.
+questions existed, and it says nothing about what they measure (ADR 0067). That is
+what Cerebras's missing `attachments` means: for that entry the pool admits on
+evidence that says nothing about how the model behaves over a document. Only a
+re-run changes it; editing a number in place would not.
 
 Re-run and refresh a normal admission mark whenever its model, the system prompt
 or the question set changes, or when provider behavior materially degrades.
+
+### Reading a score change (#1342)
+
+A slice that touches the prompt or the tools should take a baseline the SAME day,
+against pre-slice `main`, before reading its own number as a regression. Three Gemini
+runs on 2026-08-03 measured the variance: `main` 61/83, an earlier build of the slice
+57/83, the shipped build 62/83 — ±5 checks on single samples, with `main` in the
+middle. Compare check by check, not totals: the swing sat almost entirely in
+`responde en español`, a marker-count grader on prose that flipped in both directions
+between runs, and every rule-shaped failure that existed failed on `main` too. The
+`--output` reports make that diff mechanical, and it is the only way to tell a lost
+rule from a coin toss at this sample size.
 
 ## Production pool
 

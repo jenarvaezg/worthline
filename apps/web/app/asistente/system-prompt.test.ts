@@ -122,15 +122,20 @@ describe("buildChatSystemPrompt", () => {
    * prompt has to justify it here.
    */
   it("does not grow net (decision 8)", () => {
-    // 8383 was the pre-#1245 ceiling. #1326 raises it to 9100: a real free-tier
-    // transcript showed three behaviour failures the code cannot fully close
-    // (chat-level pre-OK loops instead of emitting the card, amounts dealt out to
-    // holdings the user never linked, interface meta-commentary), and the slice
-    // already paid what it could by carrying the duplicate-warning rule in
-    // `propose_holding`'s own description instead of here. Raising this number
-    // remains a decision, not a detail: a slice that needs more prompt justifies
-    // it in this comment.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_100);
+    // 8383 was the pre-#1245 ceiling; #1326 raised it to 9100 for three behaviour
+    // failures the code cannot fully close (chat-level pre-OK loops instead of
+    // emitting the card, amounts dealt out to holdings the user never linked,
+    // interface meta-commentary).
+    //
+    // #1342 LOWERS it to 7500. The prompt was paying twice for what the tool
+    // descriptions in the same request already said: it glossed all eleven
+    // `propose_*` tools one by one, re-explained the maintainer alert's three
+    // categories, and spelled out `suggest_actions`' own parameters. None of that
+    // was a rule — every rule in those sentences is still here, in code, or in the
+    // one tool it belongs to (see the ownership seam in `system-prompt.ts`).
+    // Raising this number remains a decision, not a detail: a slice that needs
+    // more prompt justifies it in this comment.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(7_500);
   });
 
   it("pins the core read-only contract", () => {
