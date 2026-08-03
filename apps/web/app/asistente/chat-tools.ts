@@ -114,6 +114,13 @@ import { jsonSchema, type ToolSet, tool } from "ai";
  * Exposure look-through and investment returns are now agent-view facts exposed
  * through the relevant context/detail tools; add dedicated chat wrappers only
  * when the conversation needs a new public tool shape.
+ *
+ * What a description may say, decided in #1342: only what is true of THIS tool —
+ * its argument units, its enum semantics, what the app computes or rejects for it.
+ * A rule that spans tools goes in the system prompt instead, where it is written
+ * once rather than once per tool, and a rule that is an invariant goes in code
+ * (ADR 0067). The measurement behind the rule, and the table of what moved where,
+ * are in `eval/README.md`.
  */
 
 export interface ChatReadStore {
@@ -1009,16 +1016,14 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
 
     get_snapshot_history: tool({
       description:
-        "Historial de snapshots de patrimonio del scope (cierres mensuales por defecto, o " +
-        "cada snapshot con granularity=raw), con filtros de fecha y paginación por cursor. " +
-        "`includeHoldingRows` decide el coste de la lectura: `none` (por defecto, la más " +
-        "barata) para la forma de la serie; `summary` (≈3× más caro) cuando importe la " +
-        "composición por tramo de liquidez; `full` (≈8×) solo para mirar posición a " +
-        `posición. Con \`summary\` o \`full\` la página se acota a ${MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS} ` +
-        "snapshots (meta.holdingRowsWindow lo dice y el resto sigue en meta.nextCursor), así " +
-        "que elige QUÉ snapshots desglosas: sort=-date para los más recientes, o from/to " +
-        "para el rango que te interesa. Para el detalle de UNA posición usa " +
-        "get_holding_detail, no el histórico entero.",
+        "Historial de snapshots de patrimonio del scope (cierres mensuales por defecto, o cada " +
+        "snapshot con granularity=raw), con filtros de fecha y paginación por cursor. " +
+        "`includeHoldingRows` decide el coste: `none` (por defecto, la más barata) para la forma " +
+        "de la serie; `summary` (≈3×) para la composición por tramo de liquidez; `full` (≈8×) " +
+        `solo para mirar posición a posición. Con los dos últimos la página se acota a ${MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS} ` +
+        "snapshots (meta.holdingRowsWindow lo dice y el resto sigue en meta.nextCursor), así que " +
+        "elige QUÉ desglosas: sort=-date para los más recientes, o from/to para tu rango. Para " +
+        "UNA posición usa get_holding_detail, no el histórico entero.",
       inputSchema: jsonSchema<{
         scopeId?: string;
         granularity?: "monthly-close" | "raw";
@@ -1168,16 +1173,14 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     find_holdings: tool({
       description:
         "Busca posiciones VIVAS del scope por nombre, símbolo o ISIN (subcadena, sin distinguir " +
-        "mayúsculas ni acentos) sobre TODAS las posiciones, incluidas las que valen 0 € — que " +
+        "mayúsculas ni acentos) sobre TODAS ellas, incluidas las que valen 0 € — que " +
         "get_financial_context ordena últimas y deja fuera de su corte. Úsala SIEMPRE que el " +
         "usuario nombre una posición que no hayas visto en una lectura («el fondo a 0 €», un " +
-        "ticker, parte de una etiqueta): devuelve el id público wl_hld_… que necesita una " +
-        "corrección o una baja, la etiqueta, dirección, instrumento, valor, por qué campo casó, " +
-        "símbolo/ISIN si constan y `connectedSource` cuando el dueño del valor es el sync (a esas " +
-        "no se les escribe). Nunca concluyas que una posición no existe sin haberla buscado aquí. " +
-        "Ordena por valor absoluto descendente y acota los resultados (meta.truncated avisa si el " +
-        "tope dejó fuera coincidencias: afina la búsqueda). La papelera NO se busca aquí, sino con " +
-        "get_trash_summary. Solo lectura.",
+        "ticker, parte de una etiqueta), y nunca concluyas que no existe sin haberla buscado " +
+        "aquí. Devuelve el id que necesita una corrección o una baja, etiqueta, dirección, " +
+        "instrumento, valor, por qué campo casó, símbolo/ISIN si constan y `connectedSource`. " +
+        "Ordena por valor absoluto descendente y acota (meta.truncated avisa si el tope dejó " +
+        "fuera coincidencias: afina la búsqueda). La papelera se busca con get_trash_summary.",
       inputSchema: jsonSchema<{ query: string; scopeId?: string; limit?: number }>({
         type: "object",
         properties: {
@@ -1227,17 +1230,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
 
     get_calculation_trace: tool({
       description:
-        "Traza de cálculo de una deuda por su id `wl_hld_…`: el cuadro del motor — para una " +
-        "deuda amortizable, las fronteras de cuota con el desglose interés/principal y los " +
-        "eventos (revisiones de tipo, amortizaciones anticipadas) enganchados a cada frontera; " +
-        "para revolving/informal, sus anclas de saldo — más la reconciliación por fecha del " +
-        "saldo vivo recomputado frente al persistido en snapshot, el check de infidelidad " +
-        "(saldos persistidos que la config actual ya no reproduce) y la tolerancia de modelado " +
-        "max(1 €, 0,05 % del saldo). Pasa declaredBalanceMinor (céntimos) y declaredDate " +
-        "(YYYY-MM-DD) opcional para obtener el residuo de una cifra citada por el usuario frente " +
-        "al saldo vivo y si está dentro de tolerancia. Úsala ANTES de diagnosticar una queja de " +
-        "cifra equivocada, para no rehacer tú la aritmética de amortización. Solo deudas con " +
-        "modelo configurado; el resto devuelve error.",
+        "Traza de cálculo de una deuda: el cuadro del motor — para una deuda amortizable, las " +
+        "fronteras de cuota con el desglose interés/principal y los eventos (revisiones de tipo, " +
+        "amortizaciones anticipadas) enganchados a cada frontera; para revolving/informal, sus " +
+        "anclas de saldo — más la reconciliación por fecha del saldo vivo recomputado frente al " +
+        "persistido en snapshot, el check de infidelidad (saldos persistidos que la config " +
+        "actual ya no reproduce) y la tolerancia de modelado max(1 €, 0,05 % del saldo). Pasa " +
+        "declaredBalanceMinor (céntimos) y declaredDate (YYYY-MM-DD) opcional para obtener el " +
+        "residuo de una cifra citada por el usuario y si está dentro de tolerancia. Nunca " +
+        "rehagas tú la aritmética de amortización. Solo deudas con modelo configurado.",
       inputSchema: jsonSchema<{
         holdingId: string;
         declaredBalanceMinor?: number;
@@ -1562,7 +1563,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_balance_history_import: tool({
       description:
-        "Prepara una propuesta para una deuda amortizable inequívoca a partir de saldos observados en un cuadro de amortización; liabilityId es el public holding id wl_hld_… obtenido de las tools de lectura. " +
+        "Prepara una propuesta para una deuda amortizable inequívoca a partir de saldos observados en un cuadro de amortización. " +
         "No infieras capital, plazo ni cuota: envía solo fecha, saldo en céntimos y, si consta, tipo anual. " +
         "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
@@ -1612,12 +1613,12 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_correction: tool({
       description:
-        "Prepara una propuesta de CORRECCIÓN «Solo desde hoy» para UN holding mal modelado (holdingId es el public id wl_hld_… de las tools de lectura). Úsala solo tras leer get_calculation_trace y normalizar la magnitud citada (principal vs «total pendiente» con devengo). Radio: una propuesta = un holding. " +
+        "Prepara una propuesta de CORRECCIÓN «Solo desde hoy» para UN holding mal modelado. " +
         "correction.kind: 'declare_balance' (deuda: declara el saldo real hoy; en amortizable envía endDate y exactamente uno de annualRate o monthlyPaymentMinor → re-baseline ADR 0056; en revolving/informal → balance anchor), " +
         "'declare_value' (activo: valueMinor real de hoy → valuation anchor), " +
         "'change_debt_model' (debtModel destino cuando el modelo era el error), " +
         "'edit_config' (name, ownership, cadence, o plan.{annualInterestRate,termMonths,firstPaymentDate}). " +
-        "Los holdings de fuente conectada (Binance/Numista) están RECHAZADOS por la app, no solo desaconsejados: ahí el dueño es el sync (la ficha del holding lo marca con `connectedSource`), y la propuesta vuelve con un error que explica el camino. Split, alta o baja → wizard o papelera, no esta tool.",
+        "Split, alta o baja → wizard o papelera, no esta tool.",
       inputSchema: CORRECTION_PROPOSAL_SCHEMA,
       execute: (args) =>
         withProposalBudget(() =>
@@ -1651,11 +1652,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_early_repayment: tool({
       description:
-        "Prepara una propuesta para registrar UNA amortización anticipada YA HECHA sobre UNA deuda amortizable (liabilityId es el public id wl_hld_… de las tools de lectura). Es la reparación por CAUSA cuando el usuario dice que ha amortizado: registra el hecho fechado en vez de re-baselinizar desde hoy con propose_correction (declare_balance), que pierde la causa. " +
+        "Prepara una propuesta para registrar UNA amortización anticipada YA HECHA sobre UNA deuda amortizable. Solo amortizables: en revolving/informal usa propose_correction (balance anchor). " +
         "amountMinor va en CÉNTIMOS enteros (91,32 € → 9132); si el importe que lees tiene decimales, conviértelo a céntimos exactos y no lo redondees. La app RECHAZA un importe que supere el saldo vivo del préstamo en esa fecha en más de una cuota: eso es un error de unidad (euros escritos como céntimos), no una cancelación. " +
         "mode: 'reduce-term' (misma cuota, el préstamo acaba antes: la pantalla dice que se acorta el plazo o que se reduce la ÚLTIMA cuota) o 'reduce-payment' (mismo plazo, la cuota baja). Si la pantalla no lo dice, PREGUNTA al usuario: no lo elijas por él. " +
         "observedMonthlyPaymentMinor: la cuota que se lee en la pantalla, en céntimos, si consta — la app la reconcilia con la que calcula el plan y avisa si no cuadran. " +
-        "No calcules tú el efecto: la app calcula saldo antes/después, cuota y fecha de fin resultantes, y avisa de que una anticipada se aplica en el LÍMITE DE MES (la fecha del pago no es necesariamente la cuota que el usuario cree). Solo deudas amortizables: en revolving/informal usa propose_correction (balance anchor). Editar o borrar una anticipada ya registrada NO está en el chat: sigue en /patrimonio.",
+        "No calcules tú el efecto: la app calcula saldo antes/después, cuota y fecha de fin resultantes, y avisa de que una anticipada se aplica en el LÍMITE DE MES (la fecha del pago no es necesariamente la cuota que el usuario cree). Editar o borrar una anticipada ya registrada NO está en el chat: sigue en /patrimonio.",
       inputSchema: EARLY_REPAYMENT_PROPOSAL_SCHEMA,
       // Whitelisted single fact (#1248): a dated lump is verifiable at a glance in
       // the preview, so it may be born from unvalidated evidence — capped at one
@@ -1688,7 +1689,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     search_market_symbol: tool({
       description:
         "Resuelve el `providerSymbol` (ticker de precios) de un instrumento de mercado por nombre o ISIN. " +
-        "ÚSALA SIEMPRE antes de proponer un alta de fund/etf/stock/index/crypto con propose_holding: sin símbolo el precio no se revalúa. " +
         "Devuelve candidatos (symbol, name, market, currency) para desambiguar — el sufijo de mercado importa: VUSA.L ≠ VUSA.AS —. " +
         "`instrument` enruta el proveedor: fund/etf/stock/index → Yahoo, crypto → CoinGecko (el symbol es el id de la moneda, p. ej. `bitcoin`). " +
         "Pasa el `symbol` elegido a propose_holding.providerSymbol. Si no hay ningún candidato fiable, crea el alta igualmente (avisará de que el precio no se actualizará). Solo lectura.",
@@ -1703,13 +1703,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_holding: tool({
       description:
-        "Prepara una propuesta de ALTA «por estado actual» para crear UN holding manual por su valor/saldo de HOY (ADR 0056: nunca un holding vacío, nunca historia inventada). " +
-        "family + instrument deben concordar: stored (current_account/term_deposit/precious_metal/vehicle/other) → currentValueMinor; appreciating (property) → currentValueMinor + isPrimaryResidence; debt (mortgage/loan/credit_card) → balanceMinor (+ debtModel si lo conoces); investment (fund/etf/stock/index/pension_plan/crypto) → isin/providerSymbol opcionales y, para valorar la apertura de hoy, openingValueMinor (en céntimos: el efectivo de la orden, o el valor de HOY si es lo único que hay) + pricePerUnit; sin apertura crea un contenedor vacío. " +
-        "Si el usuario SOLO sabe el valor total de hoy (típico de cartera gestionada), pasa openingValueMinor sin pricePerUnit ni units: con providerSymbol la app deriva los títulos con la cotización en vivo, y sin símbolo lo registra como 1 participación al valor total (ponerla al día después = editar su precio). NUNCA dejes la apertura vacía cuando el usuario haya dado un importe: una tarjeta «Sin valoración de apertura» suma 0 €. " +
+        "Prepara una propuesta de ALTA «por estado actual»: UN holding manual por su valor/saldo de HOY (ADR 0056: nunca un holding vacío, nunca historia inventada). Corregir o dar de baja uno existente tienen sus propias tools. " +
+        "family + instrument deben concordar: stored (current_account/term_deposit/precious_metal/vehicle/other) → currentValueMinor; appreciating (property) → currentValueMinor + isPrimaryResidence; debt (mortgage/loan/credit_card) → balanceMinor (+ debtModel si lo conoces); investment (fund/etf/stock/index/pension_plan/crypto) → isin/providerSymbol opcionales y, para valorar la apertura de hoy, openingValueMinor (céntimos: el efectivo de la orden, o el valor de HOY si es lo único que hay) + pricePerUnit; sin apertura crea un contenedor vacío. " +
+        "Si el usuario SOLO sabe el valor total de hoy (típico de cartera gestionada), pasa openingValueMinor sin pricePerUnit ni units: con providerSymbol la app deriva los títulos con la cotización en vivo, y sin símbolo lo registra como 1 participación al valor total. NUNCA dejes la apertura vacía cuando el usuario haya dado un importe: una tarjeta «Sin valoración de apertura» suma 0 €. " +
         "Si el documento dice los TÍTULOS y la COMISIÓN (toda confirmación de compra los dice), pásalos en units y feesMinor (céntimos): se guardan tal cual y el coste sale exacto; sin units quedan derivadas y falsas. Si units × pricePerUnit + feesMinor no cuadra con openingValueMinor, la app avisa sin bloquear. " +
-        "Para un instrumento de mercado (fund/etf/stock/index/crypto) resuelve ANTES su símbolo con search_market_symbol y pasa el providerSymbol elegido: sin símbolo el precio no se actualizará solo (la propuesta lo avisa). " +
-        "La propuesta devuelta puede traer `duplicate` (ya existe un holding con ese nombre/ISIN): adviértelo SIEMPRE en tu texto y pregunta si es de verdad otro distinto; si es el mismo y quiere ponerlo al día, recomienda descartar la tarjeta y actualizar el existente, nunca crear un duplicado. " +
-        "NO uses esta tool para holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync, guía a mapeo/fuente. Un split no está soportado: dilo honestamente. Corregir o dar de baja un holding existente usan sus propias tools, no esta.",
+        "La propuesta devuelta puede traer `duplicate` (ya existe un holding con ese nombre/ISIN): adviértelo SIEMPRE en tu texto y pregunta si es de verdad otro distinto; si es el mismo y quiere ponerlo al día, recomienda descartar la tarjeta y actualizar el existente, nunca crear un duplicado.",
       inputSchema: HOLDING_CREATION_PROPOSAL_SCHEMA,
       execute: (args) =>
         withProposalBudget(() =>
@@ -1739,9 +1737,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_holding_removal: tool({
       description:
-        "Prepara una propuesta de BAJA reversible (soft delete a la papelera) de UNO O VARIOS holdings manuales, por sus ids públicos wl_hld_… ya leídos. Es el caso «quita/borra estos activos». Se aplica en lote atómico tras confirmar; nada se pierde (se puede restaurar). " +
-        "Si el usuario nombra una posición que no has leído (típico: «el fondo que está a 0 €», que get_financial_context ordena última y deja fuera de su corte), búscala PRIMERO con find_holdings y usa el id que devuelva; no inventes ids ni le pidas al usuario que los busque. " +
-        "Los holdings de fuente conectada (Binance/Numista) están RECHAZADOS por la app: ahí el dueño es el sync (`connectedSource` en la ficha) y la propuesta vuelve con un error que explica el camino. El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
+        "Prepara una propuesta de BAJA reversible (soft delete a la papelera) de UNO O VARIOS holdings manuales. Es el caso «quita/borra estos activos». Se aplica en lote atómico tras confirmar; nada se pierde (se puede restaurar con propose_holding_restoration). " +
+        "Si el usuario nombra una posición que no has leído (típico: «el fondo que está a 0 €», que get_financial_context ordena última y deja fuera de su corte), búscala PRIMERO con find_holdings. " +
+        "El hard-delete y vaciar la papelera NO están soportados por el chat: siguen en la UI del producto.",
       inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
       // `neutral` in the gate's classification and still budgeted (#1246 review).
       // Classification and cap answer different questions: a trash proposal is born
@@ -1769,8 +1767,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_holding_restoration: tool({
       description:
-        "Prepara una propuesta de RESTAURACIÓN (espejo de la baja) de UNO O VARIOS holdings que están EN LA PAPELERA, por sus ids públicos wl_hld_… (los que devuelve get_trash_summary). Se aplica en lote atómico tras confirmar. " +
-        "Restaurar un holding que NO está en la papelera es un error; primero comprueba la papelera con get_trash_summary.",
+        "Prepara una propuesta de RESTAURACIÓN (espejo de la baja) de UNO O VARIOS holdings que están EN LA PAPELERA. Se aplica en lote atómico tras confirmar. " +
+        "Restaurar un holding que NO está en la papelera es un error: comprueba la papelera antes con get_trash_summary, que es de donde salen sus ids.",
       inputSchema: HOLDING_TRASH_PROPOSAL_SCHEMA,
       // Budgeted for the same reason as its mirror above: `neutral` class, capped
       // shape (#1246 review).
@@ -1794,10 +1792,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_reconstruction: tool({
       description:
-        "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada (holdingId es el public id wl_hld_… de las tools de lectura), a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF incluido). " +
+        "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada, a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF incluido). " +
         "Envía solo fecha (YYYY-MM-DD) y saldo observado en céntimos; NO infieras capital, plazo, cuota ni tipo (la app re-deriva el tipo de la curva vigente). " +
-        "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico. " +
-        "Para declarar solo el saldo real de hoy sin tocar el pasado usa propose_correction (declare_balance). No escribas a deudas de fuente conectada.",
+        "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico.",
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
@@ -1832,7 +1829,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_mixed_document_import: tool({
       description:
-        "Segmenta un documento mixto y prepara UNA propuesta multi-dominio. Agrupa por tipo y activo, y usa confidence=certain solo cuando tipo, columnas y activo son inequívocos. Si cualquier segmento es dudoso, NO llames esta tool: pregunta al usuario. Usa ids públicos wl_hld_… para deuda/inmueble; la app enruta cada segmento a su extractor tipado, calcula previews y confirma todo-o-nada con un único ripple.",
+        "Segmenta un documento mixto y prepara UNA propuesta multi-dominio. Agrupa por tipo y activo, y usa confidence=certain solo cuando tipo, columnas y activo son inequívocos. Si cualquier segmento es dudoso, NO llames esta tool: pregunta al usuario. La app enruta cada segmento a su extractor tipado, calcula previews y confirma todo-o-nada con un único ripple.",
       inputSchema: MIXED_DOCUMENT_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
@@ -1878,7 +1875,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_reconcile: tool({
       description:
-        "Prepara UNA propuesta de RECONCILE de cartera a partir de un documento «posiciones + movimientos» ya extraído por el seam de adjuntos (documentType positions_movements en los DATOS ESTRUCTURADOS). Pasa holdings y movements TAL CUAL los diste por extraídos, sin recalcular ni inventar (respeta el tier de fidelidad ya estampado; ADR 0048). La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; otras familias o un split usa el alta por chat (propose_holding), no ésta. No escribas a holdings de fuente conectada (Binance/Numista): ahí el dueño es el sync.",
+        "Prepara UNA propuesta de RECONCILE de cartera a partir de un documento «posiciones + movimientos» ya extraído por el seam de adjuntos (documentType positions_movements en los DATOS ESTRUCTURADOS). Pasa holdings y movements TAL CUAL los diste por extraídos, sin recalcular ni inventar (respeta el tier de fidelidad ya estampado; ADR 0048). La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; para otras familias usa el alta por chat (propose_holding), no ésta.",
       inputSchema: RECONCILE_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
@@ -1918,17 +1915,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     raise_maintainer_alert: tool({
       description:
-        "Levanta una ALERTA FORENSE SOLO-MANTENEDOR cuando huela un bug de cálculo de worthline " +
-        "(no una duda del usuario). Camino separado de las propuestas y de las señales de calidad " +
-        "de datos de cara al usuario. Úsala SOLO tras leer get_calculation_trace y normalizar la " +
-        "magnitud, en tres categorías: `infidelity` (un saldo persistido que la config actual ya no " +
-        "reproduce — fidelity.faithful=false), `residual` (residuo inexplicado por encima de la " +
-        "tolerancia tras verificar la config), `sync_source` (el olor es de fuente conectada/sync, no " +
-        "de cálculo). Pasa holdingId (`wl_hld_…`), category, un summary con tu diagnóstico, y si " +
-        "aplica declaredBalanceMinor (céntimos)/declaredDate/declaredSource, extractedData " +
-        "(datos estructurados del documento, NUNCA el binario) y conversationRef. La app adjunta " +
-        "sola el snapshot de config y la traza de cálculo completa. La reparación NUNCA espera a la " +
-        "alerta: propón y arregla igual.",
+        "Levanta una ALERTA FORENSE SOLO-MANTENEDOR sobre un bug de cálculo de worthline. " +
+        "category: `infidelity` (un saldo persistido que la config actual ya no reproduce — " +
+        "fidelity.faithful=false), `residual` (residuo inexplicado por encima de la tolerancia tras " +
+        "verificar la config) o `sync_source` (el olor es de fuente conectada/sync, no de cálculo). " +
+        "summary lleva tu diagnóstico; si aplica, declaredBalanceMinor (céntimos)/declaredDate/" +
+        "declaredSource, extractedData (datos estructurados del documento, NUNCA el binario) y " +
+        "conversationRef. La app adjunta sola el snapshot de config y la traza de cálculo completa.",
       inputSchema: RAISE_MAINTAINER_ALERT_SCHEMA,
       execute: async (args) => {
         const raise = input.raiseMaintainerAlert;

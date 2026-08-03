@@ -189,18 +189,63 @@ bun run eval:floor -- --live  # + one minimal request per credential-backed entr
 
 The offline half prints the floor of a bare turn — the system prompt plus the
 name, description and JSON schema of every tool, before a word of conversation —
-in characters, attributed per tool and ranked, which is where slimming would have
-to aim. Characters and not tokens on purpose: each provider tokenizes with its own
+in characters, attributed per tool and ranked, which is where slimming has to
+aim. Characters and not tokens on purpose: each provider tokenizes with its own
 BPE, so a token count computed here would be a fourth tokenizer's opinion. On
-2026-07-30 that floor is **35.390 characters**, 26.359 of them the 34 tools'
+2026-07-30 that floor was **35.390 characters**, 26.359 of them the 34 tools'
 descriptions and schemas and 9.031 the system prompt, and `turn-floor.test.ts`
 holds it under a reviewed ceiling so it cannot drift up unnoticed.
 
 `--live` sends one real request with a one-token answer cap and reads
-`usage.inputTokens`, which is the only honest source of a token figure. The same
+`usage.inputTokens`, which is the only honest source of a token figure. That
 floor measured 9.231 tokens for Gemini, 7.732 for Cerebras, and was rejected
 outright by Groq with «Limit 12000, Requested 14285» — the measurement behind
 #1278.
+
+### What #1342 cut, and what is left
+
+The floor is now **32.719 characters** (35 tools; 25.281 tools + 7.438 prompt) —
+8.540 input tokens for Gemini and 7.031 for Cerebras, measured live on 2026-08-03.
+
+Nothing was cut that was a rule. What was cut was the same rule written twice: the
+prompt and the tool descriptions are BOTH re-sent on every step of every turn, so a
+sentence in both places is paid twice and a sentence per tool is paid once per tool.
+The seam now is that **when to reach for a tool** belongs to the prompt (one copy)
+and **how to fill that tool's arguments** belongs to its description. Concretely:
+
+| Rule | Was | Is |
+|---|---|---|
+| the eleven `propose_*` tools, glossed one by one | prompt + each tool's own description | each tool's description |
+| a write to a sync-owned holding is rejected | prompt + 5 descriptions | prompt + `connected-source-write-guard.ts` |
+| an id must have come out of a read | prompt + 7 descriptions | prompt + `holding-id-provenance.ts` |
+| the alert's three categories | prompt + `raise_maintainer_alert` | `raise_maintainer_alert` |
+| `suggest_actions`' own parameters | prompt + `suggest_actions` | `suggest_actions` |
+| register the dated fact, don't re-baseline | prompt + `propose_early_repayment` | prompt |
+| resolve the symbol before a market alta | prompt + 2 descriptions | prompt |
+| a split is not supported | prompt + 2 descriptions | prompt |
+
+Two prose tripwires in `turn-floor.test.ts` guard the two rows with a code boundary
+behind them, because that regrowth is measured: the floor gained 1.634 characters in
+the four days between #1278 and #1342, one write tool at a time, each carrying its
+siblings' boilerplate. They match on wording, so they catch the regrowth of those two
+sentences and not every possible duplication — the six rows that moved on prose alone
+are held by the harness runs, not by a test.
+
+**Tokens track characters at roughly one to one, and that is now measured.** Between
+the two floors both measured live — 35.390 and 32.719 characters, −7,55% — Gemini
+charged −7,49% and Cerebras −9,07%. It vindicates the meter's choice of unit
+(`turn-floor.ts` assumes characters are a faithful proxy for a bill nobody can
+tokenize three ways) and it means a character saved is a token saved. Do not compare
+against the 37.024-character floor this slice started from: no live figure was ever
+taken for it.
+
+Where the remaining 32.719 sit, for whoever slims next: **14.462** in tool
+descriptions, **10.127** in their JSON Schemas, 7.438 in the prompt. Descriptions are
+still the majority, but what is left in them is per-tool argument semantics rather
+than duplication, and the schemas are the contract itself — not sentences anyone can
+rewrite. Cutting materially further probably means offering fewer tools per turn
+(35 tools at ~722 characters each), which is a behaviour change and its own ticket,
+not more editing.
 
 ## Committed evidence
 
