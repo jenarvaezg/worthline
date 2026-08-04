@@ -181,6 +181,29 @@ describe("agent-view catalog · single source of truth (#576)", () => {
     // Trash is a separate lens; the lookup must not be mistaken for it.
     expect(tool.description).toContain("get_trash_summary");
   });
+
+  /**
+   * «Todos los instrumentos con nombre, ISIN y participaciones» is ONE read (#1346).
+   * The transcript that filed this fanned out `get_holding_detail`, did 3 of 24, and
+   * then reported the remaining ISINs as unregistered. The reads that CAN answer it
+   * must say so, and the one-holding read must say it is not the way.
+   */
+  test("the enumeration question points at the context and find_holdings, never at a fan-out", () => {
+    const catalog = createAgentViewCatalog();
+    const context = catalog.get_financial_context.description;
+    const detail = catalog.get_holding_detail.description;
+
+    for (const field of ["isin", "providerSymbol", "units"]) {
+      expect(context).toContain(field);
+      expect(catalog.find_holdings.description).toContain(field);
+      expect(detail).toContain(field);
+    }
+    expect(context).toMatch(/ENUMERATION/);
+    expect(context).toContain("NEVER one get_holding_detail per");
+    // And absence is a fact about the holding, not about the workspace.
+    expect(context).toMatch(/no isin means none is registered/i);
+    expect(detail).toMatch(/never a call per holding/i);
+  });
 });
 
 describe("agent-view catalog · scope defaulting", () => {

@@ -1,5 +1,9 @@
 import { readExposureCatalogFromControlPlane } from "@web/read-exposure-catalog";
-import type { AgentViewConnectedSource, AgentViewReadStore } from "@worthline/db";
+import type {
+  AgentViewConnectedSource,
+  AgentViewReadStore,
+  InvestmentAssetMeta,
+} from "@worthline/db";
 import type {
   AssetClassResolution,
   ExposureAllocationSlice,
@@ -40,6 +44,7 @@ import {
   type AgentViewFinancialContext,
   type AgentViewFinancialSummary,
   type AgentViewHoldingDirection,
+  type AgentViewHoldingIdentity,
   type AgentViewHoldingProvenance,
   type AgentViewHoldingSummary,
   type AgentViewHoldingsBlock,
@@ -57,6 +62,7 @@ import {
   resolveExposureCatalog,
 } from "./exposure-catalog";
 import { buildFireSummary } from "./fire-context";
+import { resolveHoldingIdentity } from "./holding-identity";
 import { summarizeOperations } from "./operation-summary";
 import { buildScopePassiveIncome } from "./payouts";
 import { buildPortfolioReturns } from "./returns";
@@ -151,6 +157,17 @@ export async function buildFinancialContext(
   // holding's value.
   const connectedSources = await store.readConnectedSources();
   const provenanceByAssetId = connectedSourceByAssetId(connectedSources);
+
+  // Meta (ISIN / provider symbol) + the global exposure catalog (PRD #711 S3, ADR
+  // 0058), read once and shared by the exposure look-through, the per-asset-class
+  // returns block (PRD #552) so both resolve a holding's asset class identically,
+  // and the per-row instrument identity (#1346).
+  // The catalog is injected reference data (boundary #943) — never the workspace
+  // store. When it is unavailable the profile map is empty (holdings fall to
+  // unclassified) and the coverage carries `catalogUnavailable` so the caller reads
+  // "catalog down", not "profiles missing".
+  const investmentMeta = await store.readInvestmentAssetsWithMeta();
+  const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
   const holdingSummaries = await buildHoldingSummaries(
     store,
     workspace,
@@ -158,17 +175,9 @@ export async function buildFinancialContext(
     assets,
     liabilities,
     provenanceByAssetId,
+    metaById,
   );
 
-  // Meta (ISIN / provider symbol) + the global exposure catalog (PRD #711 S3, ADR
-  // 0058), read once and shared by the exposure look-through and the per-asset-class
-  // returns block (PRD #552) so both resolve a holding's asset class identically.
-  // The catalog is injected reference data (boundary #943) — never the workspace
-  // store. When it is unavailable the profile map is empty (holdings fall to
-  // unclassified) and the coverage carries `catalogUnavailable` so the caller reads
-  // "catalog down", not "profiles missing".
-  const investmentMeta = await store.readInvestmentAssetsWithMeta();
-  const metaById = new Map(investmentMeta.map((row) => [row.id, row]));
   const catalog = resolveExposureCatalog(
     await (options.readExposureCatalog ?? readExposureCatalogFromControlPlane)(),
   );
@@ -328,6 +337,7 @@ async function buildHoldingSummaries(
   assets: ManualAsset[],
   liabilities: Liability[],
   provenanceByAssetId: ReadonlyMap<string, AgentViewHoldingProvenance>,
+  metaById: ReadonlyMap<string, InvestmentAssetMeta>,
 ): Promise<AgentViewHoldingSummary[]> {
   const publicIds = await store.readPublicIds();
   const holdingPublicIds = publicIdMap(publicIds, "holding");
@@ -345,28 +355,40 @@ async function buildHoldingSummaries(
     memberPublicIds,
     provenanceByAssetId,
   };
-  const investmentAssetIds = new Set(
-    assets.filter((asset) => asset.type === "investment").map((asset) => asset.id),
-  );
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
 
   const summaries: AgentViewHoldingSummary[] = [
     ...(await Promise.all(
-      projection.sections[0].rows.map(async (row) =>
-        toHoldingSummary({
+      projection.sections[0].rows.map(async (row) => {
+        // ONE ledger read per investment row serves both the folded operation
+        // summary and the net units the identity carries (#1346) — a second read
+        // for the units could only ever drift from the first.
+        const asset = assetById.get(row.id);
+        const operations =
+          asset?.type === "investment" ? await store.readOperations(row.id) : undefined;
+
+        return toHoldingSummary({
           ...common,
           direction: "asset",
-          operationSummary: investmentAssetIds.has(row.id)
-            ? summarizeOperations(await store.readOperations(row.id), currency)
+          identity: resolveHoldingIdentity({
+            asset,
+            meta: metaById.get(row.id),
+            operations,
+          }),
+          operationSummary: operations
+            ? summarizeOperations(operations, currency)
             : undefined,
           row,
           valueMinor: row.valueMinor,
-        }),
-      ),
+        });
+      }),
     )),
     ...projection.sections[1].rows.map((row) =>
       toHoldingSummary({
         ...common,
         direction: "liability",
+        // A debt is not an instrument: no ISIN, no provider symbol, no units.
+        identity: {},
         row,
         valueMinor: row.balanceMinor,
       }),
@@ -647,12 +669,14 @@ function toHoldingSummary(input: {
   memberLabels: Map<string, string>;
   operationSummary?: AgentViewOperationSummary | undefined;
   provenanceByAssetId: ReadonlyMap<string, AgentViewHoldingProvenance>;
+  identity: AgentViewHoldingIdentity;
 }): AgentViewHoldingSummary {
   // The procedencia mark travels on the row (uso real 2026-07-30): a model that only reads the
   // holdings block must still know the sync owns this value.
   const connectedSource = input.provenanceByAssetId.get(input.row.id);
 
   return {
+    ...input.identity,
     currentValue: moneyOf(input.valueMinor, input.currency),
     direction: input.direction,
     id: requirePublicId(input.holdingPublicIds, input.row.id),

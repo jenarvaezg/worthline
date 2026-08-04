@@ -12,8 +12,9 @@
  * refused write three turns later. Side-effect-free, accent-insensitive, bounded.
  */
 
-import type { AgentViewReadStore } from "@worthline/db";
+import type { AgentViewReadStore, InvestmentAssetMeta } from "@worthline/db";
 import {
+  type InvestmentOperation,
   type Liability,
   listScopeOptions,
   type ManualAsset,
@@ -30,6 +31,7 @@ import {
   type AgentViewHoldingSearchPage,
   AgentViewHttpError,
 } from "./contract";
+import { resolveHoldingIdentity } from "./holding-identity";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -53,8 +55,15 @@ interface SearchableHolding {
   instrument: string;
   label: string;
   valueMinor: number;
-  symbol: string | null;
-  isin: string | null;
+  /** True when the holding keeps an operation ledger, so its units are derivable. */
+  isInvestment: boolean;
+  /**
+   * What the instrument identity resolves FROM (#1346) — the projected asset row
+   * and the investment reference row. Kept unresolved so `resolveHoldingIdentity`
+   * stays the single place deciding a holding's ISIN and provider symbol.
+   */
+  asset: ManualAsset | undefined;
+  meta: InvestmentAssetMeta | undefined;
 }
 
 /**
@@ -147,17 +156,23 @@ export async function buildHoldingSearch(
   );
 
   return {
-    matches: matched
-      .slice(0, options.limit)
-      .map((entry) =>
-        toHoldingMatch(
-          entry.holding,
-          entry.matchedOn,
-          requirePublicId(holdingPublicIds, entry.holding.internalId),
-          workspace.baseCurrency,
-          provenanceByAssetId.get(entry.holding.internalId),
-        ),
+    // Units are folded from the ledger, so the operations are read ONLY for the
+    // matches that survive the cap (≤ `limit`) and only for the investments among
+    // them — the whole-scope scan above stays a projection, never N ledger reads.
+    matches: await Promise.all(
+      matched.slice(0, options.limit).map(async (entry) =>
+        toHoldingMatch({
+          connectedSource: provenanceByAssetId.get(entry.holding.internalId),
+          currency: workspace.baseCurrency,
+          holding: entry.holding,
+          matchedOn: entry.matchedOn,
+          operations: entry.holding.isInvestment
+            ? await store.readOperations(entry.holding.internalId)
+            : undefined,
+          publicId: requirePublicId(holdingPublicIds, entry.holding.internalId),
+        }),
       ),
+    ),
     meta: {
       limit: options.limit,
       query,
@@ -174,10 +189,18 @@ function matchField(holding: SearchableHolding, query: string): MatchedField | n
   if (normalizeSearchText(holding.label).includes(query)) {
     return "label";
   }
-  if (holding.symbol && normalizeSearchText(holding.symbol).includes(query)) {
-    return "symbol";
+
+  // The SAME identity the match will report, so a hit can never be on a field the
+  // answer does not carry.
+  const { isin, providerSymbol } = resolveHoldingIdentity({
+    asset: holding.asset,
+    meta: holding.meta,
+  });
+
+  if (providerSymbol && normalizeSearchText(providerSymbol).includes(query)) {
+    return "providerSymbol";
   }
-  if (holding.isin && normalizeSearchText(holding.isin).includes(query)) {
+  if (isin && normalizeSearchText(isin).includes(query)) {
     return "isin";
   }
   return null;
@@ -206,47 +229,53 @@ async function toSearchableHoldings(
 
   return [
     ...projection.sections[0].rows.map((row) => ({
+      asset: assetById.get(row.id),
       direction: "asset" as const,
       instrument: row.instrument,
       internalId: row.id,
-      isin: metaById.get(row.id)?.isin ?? null,
+      isInvestment: assetById.get(row.id)?.type === "investment",
       label: row.name,
-      symbol:
-        assetById.get(row.id)?.providerSymbol ??
-        metaById.get(row.id)?.providerSymbol ??
-        null,
+      meta: metaById.get(row.id),
       valueMinor: row.valueMinor,
     })),
     ...projection.sections[1].rows.map((row) => ({
+      // A debt is not an instrument: it has no identity to resolve.
+      asset: undefined,
       direction: "liability" as const,
       instrument: row.instrument,
       internalId: row.id,
-      isin: null,
+      isInvestment: false,
       label: row.name,
-      symbol: null,
+      meta: undefined,
       valueMinor: row.balanceMinor,
     })),
   ];
 }
 
-function toHoldingMatch(
-  holding: SearchableHolding,
-  matchedOn: MatchedField,
-  publicId: string,
-  currency: string,
-  connectedSource: AgentViewHoldingProvenance | undefined,
-): AgentViewHoldingMatch {
+function toHoldingMatch(input: {
+  holding: SearchableHolding;
+  matchedOn: MatchedField;
+  publicId: string;
+  currency: string;
+  connectedSource: AgentViewHoldingProvenance | undefined;
+  operations: readonly InvestmentOperation[] | undefined;
+}): AgentViewHoldingMatch {
+  const { holding } = input;
+
   return {
-    currentValue: { amountMinor: holding.valueMinor, currency },
+    ...resolveHoldingIdentity({
+      asset: holding.asset,
+      meta: holding.meta,
+      operations: input.operations,
+    }),
+    currentValue: { amountMinor: holding.valueMinor, currency: input.currency },
     direction: holding.direction,
-    id: publicId,
+    id: input.publicId,
     instrument: holding.instrument,
     label: holding.label,
-    matchedOn,
+    matchedOn: input.matchedOn,
     object: "holding",
-    ...(holding.symbol ? { symbol: holding.symbol } : {}),
-    ...(holding.isin ? { isin: holding.isin } : {}),
-    ...(connectedSource ? { connectedSource } : {}),
+    ...(input.connectedSource ? { connectedSource: input.connectedSource } : {}),
   };
 }
 

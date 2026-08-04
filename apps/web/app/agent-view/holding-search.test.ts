@@ -144,8 +144,8 @@ describe("buildHoldingSearch (uso real 2026-07-30)", () => {
 
     const page = await search(store, "0p0000test.f");
 
-    expect(page.matches[0]?.matchedOn).toBe("symbol");
-    expect(page.matches[0]?.symbol).toBe("0P0000TEST.F");
+    expect(page.matches[0]?.matchedOn).toBe("providerSymbol");
+    expect(page.matches[0]?.providerSymbol).toBe("0P0000TEST.F");
 
     const byIsin = await search(store, "lu0000000123");
     expect(byIsin.matches[0]?.matchedOn).toBe("isin");

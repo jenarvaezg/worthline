@@ -97,3 +97,28 @@ authorization are designed.
   surface.
 - **Generate public IDs lazily while reading** — rejected: it would make a read
   mutate the workspace and undermine the whole agent-view safety boundary.
+
+## Amendment (#1346): the holding row carries the instrument identity
+
+A real enumeration question («todos los instrumentos bursátiles con nombre, ISIN y
+número de participaciones», 2026-07-30) had no cheap answer: no row of the agent
+view carried an ISIN, a provider symbol, or the units held, so the only path was a
+fan-out of `get_holding_detail` — one call per holding. The model did three of 24,
+gave up, and then stated the remaining ISINs were not registered, while 17 of the 24
+had one. A fan-out abandoned halfway reads as absent data.
+
+So the three reads that name a holding — the compact context row
+(`AgentViewHoldingSummary`), a `find_holdings` match, and `get_holding_detail` —
+all carry `isin`, `providerSymbol`, and `units` (net, folded from the ledger),
+resolved once in `holding-identity.ts` so they cannot disagree. Every field is
+absent when there is no fact for it: a missing `isin` means none is registered on
+that holding, and absent `units` means no operation is recorded there (a
+connected-source rung still reports its units in `get_connected_source_positions`).
+Measured cost: under 80 bytes per investment row.
+
+This RENAMES one v1 field that #1338 had just shipped: `AgentViewHoldingMatch.symbol`
+becomes `providerSymbol`, and the `matchedOn` value `"symbol"` becomes
+`"providerSymbol"`. The contract otherwise preserves its object shapes; the rename
+is deliberate and is the exception, taken while the field was days old and had no
+consumer outside this repo, so all three reads speak the glossary's one name for the
+provider symbol instead of two.

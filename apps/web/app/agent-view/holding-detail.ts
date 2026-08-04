@@ -37,6 +37,7 @@ import {
   type HoldingFacts,
   liabilityHoldingFacts,
 } from "./holding-facts";
+import { resolveHoldingIdentity } from "./holding-identity";
 import { summarizeOperations } from "./operation-summary";
 import { buildHoldingPayouts } from "./payouts";
 import { buildHoldingReturns } from "./returns";
@@ -123,6 +124,14 @@ export async function buildHoldingDetail(
     );
 
     return {
+      // Same identity the compact context row and a `find_holdings` match carry
+      // (#1346), from the same resolver — a drilldown can never name a different
+      // ISIN, provider symbol, or units than the row that led to it.
+      ...resolveHoldingIdentity({
+        asset: assets.find((asset) => asset.id === internalHoldingId),
+        meta: investmentMeta,
+        operations,
+      }),
       currentValue: moneyOf(assetRow.valueMinor, currency),
       direction: "asset",
       exposureProfile: exposure.profile,
