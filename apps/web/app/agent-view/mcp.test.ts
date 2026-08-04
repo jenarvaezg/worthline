@@ -88,8 +88,9 @@ describe("agent-view MCP tools", () => {
           label: "Fondo cerrado",
           instrument: "fund",
           currentValue: { amountMinor: 0, currency: "EUR" },
-          matchedOn: "symbol",
-          symbol: "0P0000TEST.F",
+          matchedOn: "providerSymbol",
+          providerSymbol: "0P0000TEST.F",
+          units: "0",
         },
       ],
     };

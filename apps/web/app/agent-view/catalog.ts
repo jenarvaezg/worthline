@@ -471,7 +471,13 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         "with find_holdings (or raise holdingLimit). " +
         "A holding materialized by a connected source carries connectedSource {adapter, label}: the SYNC owns " +
         "that value. Never declare, correct, or remove such a holding — it is refused; the repair path is " +
-        "syncing or re-mapping the source in /ajustes/conexiones. No mark means the holding is hand-maintained.",
+        "syncing or re-mapping the source in /ajustes/conexiones. No mark means the holding is hand-maintained. " +
+        "Every investment row also carries its instrument identity: isin, providerSymbol and units (net units " +
+        'still held). So ANSWER AN ENUMERATION QUESTION FROM THIS READ — "list every fund with its ISIN and ' +
+        'participaciones" is ONE call with holdingLimit raised (up to 100), NEVER one get_holding_detail per ' +
+        "holding. A field is ABSENT when the holding has no such fact: no isin means none is registered on that " +
+        "holding (never conclude the workspace has none), and absent units means no operation is recorded there " +
+        "(a sync-owned rung reports its units in get_connected_source_positions).",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -609,7 +615,8 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         "worth 0, which get_financial_context sorts last and normally leaves outside its cut. Use it whenever " +
         'the user names a holding you have not seen in a read ("the fund at 0 €", a ticker, part of a label): ' +
         "it returns the public id (wl_hld_…) a correction or a baja needs, the label, direction, instrument, " +
-        "current value, which field matched, the symbol/ISIN when known, and connectedSource {adapter, label} " +
+        "current value, which field matched (label | providerSymbol | isin), the instrument identity when known " +
+        "(isin, providerSymbol, units still held), and connectedSource {adapter, label} " +
         "when a sync owns the holding (never write to those). Ranked by absolute value descending and capped " +
         `(default ${DEFAULT_HOLDING_MATCH_LIMIT}, max ${MAX_HOLDING_MATCH_LIMIT}); meta.truncated says the cap ` +
         "dropped matches — narrow the query rather than guessing. An empty query is a 422. Trashed holdings are " +
@@ -637,7 +644,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_holding_detail: {
       description:
-        "Get one holding's full detail by its public ID: value, ownership, instrument, valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). Missing or unsupported facts are flagged in the quality summary, never guessed.",
+        "Get one holding's full detail by its public ID: value, ownership, instrument, its identity (isin, providerSymbol, units still held), valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). Missing or unsupported facts are flagged in the quality summary, never guessed. This is a ONE-holding read: for a LIST (every fund, every ISIN, every units count) use get_financial_context with holdingLimit raised, or find_holdings — never a call per holding.",
       inputSchema: {
         additionalProperties: false,
         properties: {

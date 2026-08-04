@@ -120,8 +120,43 @@ export interface AgentViewHoldingProvenance {
   label: string;
 }
 
-/** A scope-weighted holding summary in the compact context. */
-export interface AgentViewHoldingSummary {
+/**
+ * What a holding IS, as it travels on the row (#1346): its ISIN, its
+ * provider symbol, and the net units still held. Shared by the compact
+ * context row, a `find_holdings` match, and `get_holding_detail`, so the three
+ * reads can never quote different identities for the same holding.
+ *
+ * Every field is OPTIONAL and ABSENT when there is no fact for it — a missing
+ * `isin` means "none registered on this holding", never "this holding has none";
+ * an absent `units` means "no operation recorded here" (cash, a property, or a
+ * connected-source rung whose units live in `get_connected_source_positions`),
+ * while a position that sold out honestly reports `"0"`.
+ *
+ * The glossary reserves "identity" for `isin ?? providerSymbol`, which names the
+ * INSTRUMENT; `units` is a quantity of the holding and rides along because the
+ * question this exists for asks for all three in one breath.
+ */
+export interface AgentViewHoldingIdentity {
+  /** The security's ISIN, when one is registered on the investment asset. */
+  isin?: string;
+  /** The price-provider lookup key (ADR 0011), when the holding has one. */
+  providerSymbol?: string;
+  /**
+   * Net units still held, as a decimal string: buys − sells over the WHOLE ledger,
+   * like the row's `operationSummary` — not clipped to the read's `asOf`.
+   */
+  units?: string;
+}
+
+/**
+ * A scope-weighted holding summary in the compact context. Investment rows also
+ * carry their instrument identity — `isin`, `providerSymbol`, `units` (#1346) —
+ * so an enumeration question ("every fund with its ISIN and participaciones")
+ * is answerable from THIS block with the cap raised, never from a fan-out of
+ * `get_holding_detail` calls that a model abandons halfway and then reports as
+ * missing data.
+ */
+export interface AgentViewHoldingSummary extends AgentViewHoldingIdentity {
   id: string;
   object: "holding";
   direction: AgentViewHoldingDirection;
@@ -139,13 +174,14 @@ export interface AgentViewHoldingSummary {
 
 /**
  * One holding matched by name/symbol lookup (`find_holdings`). Deliberately
- * narrow: the identity a write needs (public id), what it is, what it is worth,
- * where it came from, and WHY it matched — never the whole context row. It is the
+ * narrow: the identity a write needs (public id), what it is (instrument plus the
+ * `isin`/`providerSymbol`/`units` of #1346), what it is worth, where it came from,
+ * and WHY it matched — never the whole context row. It is the
  * only read that reaches a holding the compact context drops: a holding at 0 €
  * sorts last there and falls outside the default cap, which is precisely the
  * holding someone asks to delete.
  */
-export interface AgentViewHoldingMatch {
+export interface AgentViewHoldingMatch extends AgentViewHoldingIdentity {
   id: string;
   object: "holding";
   direction: AgentViewHoldingDirection;
@@ -153,10 +189,7 @@ export interface AgentViewHoldingMatch {
   instrument: string;
   currentValue: AgentViewMoney;
   /** Which field the query hit, so the caller can judge the match. */
-  matchedOn: "label" | "symbol" | "isin";
-  /** The price-provider ticker, when the holding has one. */
-  symbol?: string;
-  isin?: string;
+  matchedOn: "label" | "providerSymbol" | "isin";
   /** Present only when a connected source materializes this holding. */
   connectedSource?: AgentViewHoldingProvenance;
 }
@@ -891,7 +924,7 @@ export interface AgentViewHoldingSourceSummary {
  * summary when applicable. Deep valuation/debt facts (amortization, anchors,
  * appreciation) are issue #338.
  */
-export interface AgentViewHoldingDetail {
+export interface AgentViewHoldingDetail extends AgentViewHoldingIdentity {
   id: string;
   object: "holding";
   direction: AgentViewHoldingDirection;

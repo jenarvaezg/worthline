@@ -15,6 +15,8 @@ import {
   MAX_DATA_QUALITY_LIMIT,
 } from "@web/agent-view/data-quality";
 import { isFigureName } from "@web/agent-view/figure-explanations";
+import { MAX_HOLDING_LIMIT } from "@web/agent-view/financial-context";
+import { pickHoldingIdentity } from "@web/agent-view/holding-identity";
 import {
   DEFAULT_OPERATION_LIMIT,
   MAX_OPERATION_LIMIT,
@@ -357,6 +359,12 @@ function toChatFinancialContext(context: AgentViewFinancialContext) {
       direction: holding.direction,
       liquidityTier: holding.liquidityTier,
       currentValue: holding.currentValue,
+      // The instrument identity travels ON the row (#1346). Trimmed, the only way
+      // to answer «lista todos los instrumentos con ISIN y participaciones» was a
+      // fan-out of get_holding_detail — and a model that abandons the fan-out
+      // reports the ISINs as unregistered instead of as unread. Copied through the
+      // shared picker so this trim cannot hand-roll a guard that drops `units: "0"`.
+      ...pickHoldingIdentity(holding),
       // Procedencia travels ON the row (uso real 2026-07-30). Trimming it is what let the free
       // pool's model read the `connectedSources` block, fail to join it to the
       // holding, and offer to declare a Numista collection's value by hand.
@@ -384,6 +392,23 @@ const EMPTY_SCHEMA = jsonSchema<Record<string, never>>({
 const SCOPE_ONLY_SCHEMA = jsonSchema<{ scopeId?: string }>({
   type: "object",
   properties: { scopeId: { type: "string" } },
+  additionalProperties: false,
+});
+
+/**
+ * The compact context, with the holdings cap the caller may RAISE (#1346). Without
+ * it an inventory question («todos los fondos con su ISIN») could only be answered
+ * by fanning out detail calls, because the chat's cap was fixed at ten rows.
+ */
+const FINANCIAL_CONTEXT_SCHEMA = jsonSchema<{
+  scopeId?: string;
+  holdingLimit?: number;
+}>({
+  type: "object",
+  properties: {
+    scopeId: { type: "string" },
+    holdingLimit: { maximum: MAX_HOLDING_LIMIT, minimum: 1, type: "integer" },
+  },
   additionalProperties: false,
 });
 
@@ -833,15 +858,27 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Foto financiera actual del scope (por defecto el del hogar): patrimonio neto, " +
         "líquido, deudas, desglose de liquidez, exposición look-through y principales " +
         "posiciones. Fuente canónica de cifras; importes ya formateados es-ES. Incluye " +
-        "`links` con las fuentes citables.",
-      inputSchema: SCOPE_ONLY_SCHEMA,
+        "`links` con las fuentes citables. Cada posición de inversión trae su identidad " +
+        "en la propia fila: `isin`, `providerSymbol` y `units` (participaciones netas). " +
+        `Devuelve las ${CHAT_HOLDING_LIMIT} mayores por defecto y cuenta el resto en ` +
+        "`omittedHoldings`: si te piden un INVENTARIO («todos los fondos con su ISIN y " +
+        `participaciones»), sube \`holdingLimit\` hasta ${MAX_HOLDING_LIMIT} y respóndelo con ` +
+        "ESTA lectura — nunca con un get_holding_detail por posición. Un campo AUSENTE " +
+        "significa que esa posición no lo tiene registrado, no que no exista.",
+      inputSchema: FINANCIAL_CONTEXT_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {
           const scopeId = await resolveScopeId(store, args.scopeId);
           if (!scopeId) return EMPTY_WORKSPACE;
           const result = await catalogRead(
             catalog.get_financial_context,
-            { scopeId, holdingLimit: CHAT_HOLDING_LIMIT },
+            {
+              scopeId,
+              holdingLimit: clampPositiveLimit(args.holdingLimit, {
+                defaultLimit: CHAT_HOLDING_LIMIT,
+                maxLimit: MAX_HOLDING_LIMIT,
+              }),
+            },
             store.agentView,
           );
           if (isAgentViewErrorEnvelope(result)) return result;
@@ -1178,7 +1215,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "usuario nombre una posición que no hayas visto en una lectura («el fondo a 0 €», un " +
         "ticker, parte de una etiqueta), y nunca concluyas que no existe sin haberla buscado " +
         "aquí. Devuelve el id que necesita una corrección o una baja, etiqueta, dirección, " +
-        "instrumento, valor, por qué campo casó, símbolo/ISIN si constan y `connectedSource`. " +
+        "instrumento, valor, por qué campo casó (`label`/`providerSymbol`/`isin`), la " +
+        "identidad si consta (`isin`, `providerSymbol`, `units` netas) y `connectedSource`. " +
         "Ordena por valor absoluto descendente y acota (meta.truncated avisa si el tope dejó " +
         "fuera coincidencias: afina la búsqueda). La papelera se busca con get_trash_summary.",
       inputSchema: jsonSchema<{ query: string; scopeId?: string; limit?: number }>({
@@ -1212,9 +1250,13 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
 
     get_holding_detail: tool({
       description:
-        "Detalle completo de una posición por su id `wl_hld_…`: valor, propiedad, instrumento, " +
-        "método de valoración, tramo de liquidez, plan de amortización o anclas de valoración, " +
-        "y avisos de calidad. Los hechos ausentes se marcan, nunca se inventan.",
+        "Detalle completo de UNA posición por su id `wl_hld_…`: valor, propiedad, instrumento, " +
+        "su identidad (`isin`, `providerSymbol`, `units` netas), método de valoración, tramo de " +
+        "liquidez, plan de amortización o anclas de valoración, y avisos de calidad. Los hechos " +
+        "ausentes se marcan, nunca se inventan. Para una LISTA (todos los fondos, todos los " +
+        "ISIN, todas las participaciones) usa get_financial_context con `holdingLimit` alto: " +
+        "una llamada por posición se queda a medias y acaba dando por no registrado lo que " +
+        "solo estaba sin leer.",
       inputSchema: HOLDING_ID_SCHEMA,
       execute: (args) =>
         chatRead(input, async (store) => {

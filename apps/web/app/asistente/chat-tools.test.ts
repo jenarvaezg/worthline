@@ -1695,6 +1695,102 @@ describe("createChatTools · find_holdings and the connected-source frontier (us
   });
 });
 
+/**
+ * «Prepara una lista de todos los instrumentos con nombre, ISIN y participaciones»
+ * resolves in ONE read (#1346).
+ *
+ * From a real transcript (2026-07-30 noche): the assistant opened
+ * `get_holding_detail` fund by fund, did three of 24, gave up, and then stated that
+ * «para el resto el ISIN no consta en el workspace» — 17 of those 24 had one. No row
+ * carried an ISIN, a ticker, or units, and the chat's holdings cap was fixed at ten.
+ */
+describe("createChatTools · the instrument inventory in ONE read (#1346)", () => {
+  const SOLO = [{ memberId: "m", shareBps: 10_000 }];
+
+  async function seedTwelveFunds(): Promise<WorthlineStore> {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m", name: "Titular" }],
+      mode: "individual",
+    });
+    for (let index = 0; index < 12; index += 1) {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: `fund-${index}`,
+        instrument: "fund",
+        isin: `LU000000${index.toString().padStart(4, "0")}`,
+        name: `Fondo ${index}`,
+        ownership: SOLO,
+        providerSymbol: `0P00000${index.toString().padStart(3, "0")}.F`,
+      });
+    }
+    return store;
+  }
+
+  type ContextRows = {
+    holdings: Array<{
+      label: string;
+      isin?: string;
+      providerSymbol?: string;
+      units?: string;
+    }>;
+    omittedHoldings: { count: number } | null;
+  };
+
+  it("carries the ISIN and the ticker on every row, and raises the cap on demand", async () => {
+    const store = await seedTwelveFunds();
+    const tools = toolsOver(store.agentView);
+
+    const capped = (await tools["get_financial_context"]?.execute?.(
+      {},
+      toolCallContext(),
+    )) as ContextRows;
+
+    // The default stays cheap: ten rows, the rest counted, never silently dropped.
+    expect(capped.holdings).toHaveLength(10);
+    expect(capped.omittedHoldings?.count).toBe(2);
+    expect(capped.holdings[0]?.isin).toMatch(/^LU00000000\d\d$/);
+    expect(capped.holdings[0]?.providerSymbol).toMatch(/^0P00000\d\d\d\.F$/);
+
+    // An enumeration question raises the cap instead of fanning out detail calls.
+    const full = (await tools["get_financial_context"]?.execute?.(
+      { holdingLimit: 100 },
+      toolCallContext(),
+    )) as ContextRows;
+
+    expect(full.holdings).toHaveLength(12);
+    expect(full.omittedHoldings).toBeNull();
+    expect(full.holdings.every((holding) => holding.isin !== undefined)).toBe(true);
+  });
+
+  it(
+    "carries the net units held on an investment row with a real ledger",
+    async () => {
+      const store = await seededStore();
+      const tools = toolsOver(store.agentView);
+
+      const context = (await tools["get_financial_context"]?.execute?.(
+        { holdingLimit: 100 },
+        toolCallContext(),
+      )) as ContextRows;
+
+      // The familia persona's indexed portfolio: 42 monthly buys of 3 units, minus a
+      // 12-unit rebalance sale. The row says what is HELD, not what was bought.
+      const etf = context.holdings.find(
+        (holding) => holding.label === "Cartera indexada familiar",
+      );
+      expect(etf?.units).toBe("114");
+      // A cash account has no ledger, so it says nothing about units.
+      const cash = context.holdings.find(
+        (holding) => holding.label === "Depósito a 12 meses",
+      );
+      expect(cash).toBeDefined();
+      expect(cash && "units" in cash).toBe(false);
+    },
+    SEED_TIMEOUT_MS,
+  );
+});
+
 /** Execute a tool tolerating a builder that throws on fixture-empty args. */
 async function callToolSafely(
   tools: ReturnType<typeof createChatTools>,
