@@ -207,6 +207,15 @@ function OccurrenceView({
             <p className="alertMeta">
               {payload.holding.label} · {payload.holding.instrument} ·{" "}
               {payload.holding.valuationMethod} ({payload.holding.id})
+              {/* The painted figure and the source travel since #1347: without
+                  them an alert on a holding with no calculation trace — every
+                  fund, every share — arrived with nothing to reconcile against. */}
+              {payload.holding.currentValue
+                ? ` · pintado: ${money(payload.holding.currentValue)}`
+                : null}
+              {payload.holding.source
+                ? ` · fuente: ${payload.holding.source.label} (${payload.holding.source.adapter}), último sync ${payload.holding.source.lastSyncAt ?? "nunca"}`
+                : null}
             </p>
           ) : null}
           {payload.declared ? (

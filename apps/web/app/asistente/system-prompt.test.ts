@@ -112,6 +112,14 @@ describe("buildChatSystemPrompt", () => {
     // #1326: «(He corregido la presentación de las acciones sugeridas…)» reached
     // a real user. Interface/format meta-commentary is out.
     expect(prompt).toMatch(/cero meta-comentarios/i);
+    // #1347: cornered by a tool that has no ISIN field, a real run promised the
+    // user that «nuestro equipo» would link it. There is no team, no backoffice
+    // and no ticket queue; the honest answer names the surface that DOES it.
+    expect(prompt).toMatch(/no hay nadie detrás de ti/i);
+    expect(prompt).toMatch(/no tiene soporte/i);
+    expect(prompt).toMatch(/nunca prometas que alguien/i);
+    expect(prompt).toMatch(/ISIN/);
+    expect(prompt).toMatch(/en su ficha/i);
   });
 
   /**
@@ -135,7 +143,16 @@ describe("buildChatSystemPrompt", () => {
     // one tool it belongs to (see the ownership seam in `system-prompt.ts`).
     // Raising this number remains a decision, not a detail: a slice that needs
     // more prompt justifies it in this comment.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(7_500);
+    //
+    // #1347 raises it to 7700 for the «no hay nadie detrás de ti» rule. Code
+    // closes half of that failure — `maintainer-alert-evidence.ts` now refuses an
+    // alert with no discrepancy in it — but nothing in code can stop the model
+    // from writing «nuestro equipo lo revisará» into its prose, which is what
+    // actually reached a user on 2026-07-30. It paid for most of itself: the
+    // alert bullet dropped the wording its own tool description carries, and the
+    // concision bullet dropped a «cita las cifras» that duplicates the
+    // traceability rule two hundred characters above it.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(7_700);
   });
 
   it("pins the core read-only contract", () => {

@@ -88,7 +88,12 @@ describe("buildMaintainerAlertPayload", () => {
       direction: "liability",
       instrument: "loan",
       valuationMethod: "amortized",
+      // The painted figure travels with the snapshot (#1347): it is the other
+      // half of «the two conflicting figures» whenever there is no trace.
+      currentValue: { amountMinor: 587_900, currency: "EUR" },
     });
+    // No connected source on this holding, so the key stays absent.
+    expect(payload.holding).not.toHaveProperty("source");
     expect(payload.calculationTrace).toBe(TRACE);
     expect(payload.declared?.balanceMinor).toBe(559_200);
     expect(payload.extractedData).toEqual({
@@ -97,6 +102,26 @@ describe("buildMaintainerAlertPayload", () => {
     expect(payload.conversationRef).toBe("msg-1");
     // No unavailable reason when the trace is present.
     expect(payload).not.toHaveProperty("calculationTraceUnavailable");
+  });
+
+  it("carries the connected source when one materialized the holding (#1347)", () => {
+    const payload = buildMaintainerAlertPayload({
+      category: "sync_source",
+      summary: "Binance lleva semanas sin sincronizar",
+      raisedAt: "2026-07-30T20:12:00.000Z",
+      detail: {
+        ...DETAIL,
+        sourceSummary: { label: "Binance", adapter: "binance", lastSyncAt: null },
+      } as unknown as AgentViewHoldingDetail,
+      calculationTrace: null,
+    });
+
+    // What makes the smell diagnosable without a magnitude: which adapter, how stale.
+    expect(payload.holding?.source).toEqual({
+      adapter: "binance",
+      label: "Binance",
+      lastSyncAt: null,
+    });
   });
 
   it("records why the trace is missing without a holding snapshot", () => {

@@ -63,6 +63,11 @@ import {
   isMaintainerAlertCategory,
   type MaintainerAlertDeclaredFigure,
 } from "@web/asistente/maintainer-alert";
+import {
+  type MaintainerAlertRefusal,
+  maintainerAlertRefusalFor,
+  maintainerAlertRefused,
+} from "@web/asistente/maintainer-alert-evidence";
 import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
@@ -219,6 +224,16 @@ export interface ChatToolsInput {
   onUngroundedHoldingId?: (rejection: {
     tool: string;
     ungroundedHoldingIds: string[];
+  }) => void;
+  /**
+   * A maintainer alert was refused for carrying no discrepancy (#1347). Same
+   * reason as the callback above, and sharper: this gate can DROP the maintainer's
+   * only forensic channel, so if it ever over-blocks the failure mode is silence
+   * in the very channel whose job is to break silence.
+   */
+  onMaintainerAlertRefused?: (rejection: {
+    category: string;
+    refusal: MaintainerAlertRefusal;
   }) => void;
 }
 
@@ -1963,7 +1978,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "verificar la config) o `sync_source` (el olor es de fuente conectada/sync, no de cálculo). " +
         "summary lleva tu diagnóstico; si aplica, declaredBalanceMinor (céntimos)/declaredDate/" +
         "declaredSource, extractedData (datos estructurados del documento, NUNCA el binario) y " +
-        "conversationRef. La app adjunta sola el snapshot de config y la traza de cálculo completa.",
+        "conversationRef. La app adjunta sola el snapshot de config y la traza de cálculo completa. " +
+        "NO es un canal de soporte ni una petición de funcionalidad: exige un descuadre real de " +
+        "cifras y el código la RECHAZA si el payload no lo trae.",
       inputSchema: RAISE_MAINTAINER_ALERT_SCHEMA,
       execute: async (args) => {
         const raise = input.raiseMaintainerAlert;
@@ -2050,6 +2067,15 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               : { conversationRef: args.conversationRef }),
           });
         });
+
+        // Admission control (#1347): the three categories describe discrepancies
+        // of MAGNITUDES, so an alert with no discrepancy in it is not an alert —
+        // it is a support ticket, and there is no support desk to route it to.
+        const refusal = maintainerAlertRefusalFor(payload);
+        if (refusal) {
+          input.onMaintainerAlertRefused?.({ category: args.category, refusal });
+          return maintainerAlertRefused(refusal);
+        }
 
         let raised: RaisedMaintainerAlert | null;
         try {
