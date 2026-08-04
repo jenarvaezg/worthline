@@ -34,10 +34,15 @@ import { measureTurnFloor, turnFloorTools } from "./turn-floor";
  * (The floor this slice actually started from was 37.024 characters, −11,63% to
  * here; no live figure exists for it, so it is not part of that comparison.)
  *
- * The ceiling is set against the WIDEST real floor — the onboarding turn, 34.660
+ * The ceiling was set against the WIDEST real floor — the onboarding turn, 34.660
  * characters — plus about 7%: room to sharpen a description or two, not room for a
  * new tool family to arrive unnoticed (the average tool costs 722). Raising it is a
  * decision, and it belongs in the PR that raises it.
+ *
+ * That headroom is now 2,9%, not 7%: the widest floor measured 35.923 characters on
+ * 2026-08-04 (#1346 spent 895 on the row identity of an import, #1347 another 368
+ * on the maintainer alert's admission boundary). Read the ceiling as one tool
+ * family away, not as room — the arithmetic that justified it has moved.
  */
 const TURN_FLOOR_CHAR_CEILING = 37_000;
 

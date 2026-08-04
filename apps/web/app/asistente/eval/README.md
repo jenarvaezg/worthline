@@ -247,6 +247,27 @@ rewrite. Cutting materially further probably means offering fewer tools per turn
 (35 tools at ~722 characters each), which is a behaviour change and its own ticket,
 not more editing.
 
+### What has been added since (the floor is not frozen)
+
+The bare floor measured **33.982** characters on 2026-08-04 (7.663 prompt + 26.319
+tools), and the widest one — the onboarding turn, which is what the CI ceiling is
+set against — **35.923**. That leaves 2,9% of headroom under
+`TURN_FLOOR_CHAR_CEILING`, not the ~7% its comment was written with: the next slice
+that adds a tool family trips it, and raising it is a decision that belongs in the
+PR that raises it.
+
+#1346 spent 895 of the difference from #1342's 32.719 on the row identity of an
+import, and #1347 the remaining 368: a boundary always costs prose in two places,
+the description that tells the model the rule and the prompt line the code cannot
+enforce. #1347 paid for part of its own share — the alert bullet dropped wording
+its tool description carries, and the concision bullet dropped a «cita las cifras»
+that duplicated the traceability rule — so its net prompt cost is 225 characters.
+
+| Rule | Was | Is |
+|---|---|---|
+| an alert needs a real discrepancy | nothing (a hope) | `raise_maintainer_alert` + `maintainer-alert-evidence.ts` |
+| never promise a review by «el equipo» | nothing (a hope) | prompt |
+
 ## Committed evidence
 
 `admission-evidence.ts` holds the reviewed runs in the shape the pool allowlist

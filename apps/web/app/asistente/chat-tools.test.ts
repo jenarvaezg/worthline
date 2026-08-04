@@ -19,6 +19,7 @@ import {
   NON_HOLDING_ID_FIELDS,
   requiresGroundedHoldingIds,
 } from "@web/asistente/holding-id-provenance";
+import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
@@ -758,6 +759,11 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
           holdingId: "wl_hld_unknown",
           category: "infidelity",
           summary: "El saldo pintado no coincide con el recomputado.",
+          // The user's figure: with no trace to adjudicate it, this is the
+          // discrepancy the alert stands on (#1347).
+          declaredBalanceMinor: 559_200,
+          declaredDate: "2026-06-19",
+          declaredSource: "extracto del banco",
           conversationRef: "msg-42",
         },
         toolCallContext(),
@@ -804,6 +810,106 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
       );
 
       expect(result).toMatchObject({ error: { code: "bad_request" } });
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it(
+    "refuses to be used as a support ticket, and says where the thing IS done (#1347)",
+    async () => {
+      const store = await seededStore();
+      let raised = 0;
+      const refusals: Array<{ category: string; refusal: string }> = [];
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        groundedHoldingIds: ["wl_hld_unknown"],
+        onMaintainerAlertRefused: (rejection) => refusals.push(rejection),
+        raiseMaintainerAlert: async () => {
+          raised += 1;
+          return null;
+        },
+      });
+
+      // The real 2026-07-30 payload: the user's WISH written as an infidelity
+      // alert, with no figure in conflict and no trace behind it.
+      const result = (await tools["raise_maintainer_alert"]?.execute?.(
+        {
+          holdingId: "wl_hld_unknown",
+          category: "infidelity",
+          summary:
+            "El usuario desea asignar el ISIN LU0000000000 al fondo, pero propose_correction no permite editarlo.",
+        },
+        toolCallContext(),
+      )) as { error?: string; message?: string };
+
+      expect(result?.error).toBe("maintainer_alert_without_discrepancy");
+      // Nothing reached the control plane: no phantom «Infidelidad» on /admin.
+      expect(raised).toBe(0);
+      // And the model is handed the honest relay, not just a wall.
+      expect(result?.message).toMatch(/no hay ningún equipo/i);
+      expect(result?.message).toMatch(/\/patrimonio/);
+      // The refusal is reported: a gate over the only forensic channel there is
+      // must not be able to over-block in silence.
+      expect(refusals).toEqual([
+        { category: "infidelity", refusal: "maintainer_alert_without_discrepancy" },
+      ]);
+    },
+    SEED_TIMEOUT_MS,
+  );
+
+  it(
+    "refuses a declared figure that is only the painted one read back (#1347)",
+    async () => {
+      const store = await seededStore();
+      const payloads: MaintainerAlertPayload[] = [];
+      const tools = createChatTools({
+        runWithStore: (run) => run({ agentView: store.agentView }),
+        asOf: AS_OF,
+        raiseMaintainerAlert: async (alert) => {
+          payloads.push(alert.payload as MaintainerAlertPayload);
+          return null;
+        },
+      });
+
+      const context = (await tools["get_financial_context"]?.execute?.(
+        {},
+        toolCallContext(),
+      )) as { holdings: Array<{ id: string }> };
+      const holdingId = context.holdings[0]!.id;
+
+      // A figure that really conflicts travels — and its payload tells us what
+      // the engine paints, in the raw minor units /admin reconciles with.
+      const conflicting = (await tools["raise_maintainer_alert"]?.execute?.(
+        {
+          holdingId,
+          category: "residual",
+          summary: "El banco dice otra cosa.",
+          declaredBalanceMinor: 1,
+          declaredDate: AS_OF,
+        },
+        toolCallContext(),
+      )) as { error?: string };
+      expect(conflicting?.error).toBeUndefined();
+      const painted = payloads[0]?.holding?.currentValue;
+      expect(painted).toBeDefined();
+
+      // Hand that very figure back as the user's «correct» one: a number is now
+      // no longer a free pass through the gate.
+      const result = (await tools["raise_maintainer_alert"]?.execute?.(
+        {
+          holdingId,
+          category: "residual",
+          summary: "Creo que esta cifra está mal.",
+          declaredBalanceMinor: painted!.amountMinor,
+          declaredDate: AS_OF,
+        },
+        toolCallContext(),
+      )) as { error?: string };
+
+      expect(result?.error).toBe("maintainer_alert_figures_agree");
+      // Only the conflicting one ever reached the control plane.
+      expect(payloads).toHaveLength(1);
     },
     SEED_TIMEOUT_MS,
   );

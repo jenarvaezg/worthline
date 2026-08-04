@@ -1,6 +1,7 @@
 import type {
   AgentViewCalculationTrace,
   AgentViewHoldingDetail,
+  AgentViewMoney,
 } from "@web/agent-view/contract";
 import type { MaintainerAlertCategory } from "@worthline/db";
 
@@ -62,6 +63,22 @@ export interface MaintainerAlertHoldingSnapshot {
   direction: string;
   instrument: string;
   valuationMethod: string;
+  /**
+   * The painted figure at alert time, in RAW minor units (#1347). Optional
+   * because payloads persisted before #1347 do not carry it — the control plane
+   * stores the shape it was given, so every reader must survive its absence.
+   *
+   * It is the OTHER half of «the two conflicting figures»: the calculation trace
+   * only exists for modelled debts, so without this an alert about a fund reached
+   * /admin with the user's figure and nothing to reconcile it against.
+   */
+  currentValue?: AgentViewMoney;
+  /**
+   * The connected source that materializes this holding, when one does. It is
+   * what makes a `sync_source` alert diagnosable without a magnitude: which
+   * adapter, and how stale.
+   */
+  source?: { adapter: string; label: string; lastSyncAt: string | null };
 }
 
 /**
@@ -120,6 +137,16 @@ export function buildMaintainerAlertPayload(
           direction: input.detail.direction,
           instrument: input.detail.instrument,
           valuationMethod: input.detail.valuationMethod,
+          currentValue: input.detail.currentValue,
+          ...(input.detail.sourceSummary === undefined
+            ? {}
+            : {
+                source: {
+                  adapter: input.detail.sourceSummary.adapter,
+                  label: input.detail.sourceSummary.label,
+                  lastSyncAt: input.detail.sourceSummary.lastSyncAt,
+                },
+              }),
         }
       : null,
     calculationTrace: input.calculationTrace,

@@ -681,6 +681,11 @@ export async function POST(request: Request): Promise<Response> {
     // the length of the thread: a tool call happens once, in this turn.
     onUngroundedHoldingId: (rejection) =>
       console.info("Assistant pointed a write at an id it never read", rejection),
+    // The maintainer alert is the only forensic channel there is (ADR 0064), so a
+    // gate that can drop one must say when it did: an over-blocking guard is
+    // otherwise invisible by construction (#1347).
+    onMaintainerAlertRefused: (rejection) =>
+      console.info("Assistant raised a maintainer alert with no discrepancy", rejection),
     runWithStore: (run) => withStore((store) => run(chatToolStores(store)), target),
     asOf: chatAsOf(target),
     ...(workspaceId === null

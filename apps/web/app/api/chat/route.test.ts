@@ -1767,6 +1767,11 @@ describe("POST /api/chat", () => {
           holdingId: FAKE_LOAN_HOLDING_ID,
           category: "infidelity",
           summary: "El saldo pintado no coincide con el recomputado.",
+          // The discrepancy the alert stands on (#1347): without it the tool
+          // refuses before the control-plane seam, support-ticket-style.
+          declaredBalanceMinor: 559_200,
+          declaredDate: "2026-07-15",
+          declaredSource: "extracto del banco",
         }),
       ),
     ]);

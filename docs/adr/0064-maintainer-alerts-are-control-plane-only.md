@@ -75,6 +75,49 @@ config snapshot and no calculation trace to tabulate.
 The alert stays consistent with the rest of the decision: control-plane-only, pull
 from `/admin`, and never a user-facing signal.
 
+## Amendment (#1347): an alert must carry a discrepancy, and no one is behind it
+
+The three assistant categories all describe a discrepancy of MAGNITUDES, but until
+#1347 nothing checked that one was actually in the payload. A real run
+(2026-07-30) found the hole from the other side: cornered by a user asking to set
+an ISIN on a fund — a field `propose_correction` does not have — the model raised
+an `infidelity` alert whose summary was the user's **wish**, and then told the
+user that «nuestro equipo» would take care of it. Three lies at once: the category
+was false, the ISIN was already registered, and there is no team behind the alert
+— it is the maintainer's own `/admin` panel.
+
+So admission is now decided in code (`maintainer-alert-evidence.ts`), over the
+assembled payload rather than the model's arguments. Three forms of evidence let an
+alert through, and the summary's prose is none of them:
+
+- **the trace's own verdict** — an unfaithful persisted point, a diverging
+  reconciliation row, or a declared residual outside the documented band;
+- **the two conflicting figures** — the user's declared balance against the painted
+  one. Both now travel: the config snapshot gained `currentValue` in raw minor
+  units, because the trace exists only for modelled debts and without it an alert
+  about a fund reached `/admin` with a figure and nothing to reconcile it against.
+  Figures that AGREE are refused, whether the trace says «within tolerance» or the
+  declared number is simply the painted one read back;
+- **the source itself, for `sync_source` only** — that category is by definition
+  about a connected-source ownership problem rather than a magnitude, and its
+  smells (a source stuck for weeks, a sync that returned nothing) have no figure to
+  declare. The holding must actually be materialized by a source, so the snapshot
+  now carries which adapter and how stale — and a manual holding cannot get in by
+  relabelling the category, which is exactly what the 2026-07-30 fund was.
+
+The refusal routes rather than merely blocking: it names the two surfaces that own
+what an alert cannot fix — the holding's ficha for identity data, and
+`/ajustes/conexiones` for a connected source — as places to look rather than as the
+answer, since inventing a confident wrong surface would be #1347 in a new costume.
+And the refusal is reported to the route (`onMaintainerAlertRefused`), like the
+ungrounded-id one: a gate over the maintainer's only forensic channel must not be
+able to over-block in silence.
+
+The half code cannot close stays in the prompt, in one rule: there is no support,
+no backoffice and no «equipo», so the assistant never promises that anyone will
+review anything later, and an unsupported request is answered with the truth plus
+the surface that does support it.
+
 ## Considered options
 
 - **Store alerts in the workspace database** — rejected. Any export/transfer would
