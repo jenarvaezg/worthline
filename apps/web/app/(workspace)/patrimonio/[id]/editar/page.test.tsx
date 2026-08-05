@@ -173,6 +173,19 @@ describe("EditarPage progressive disclosure (#604)", () => {
     const basicMarkup = html.slice(basic, advanced);
     expect(basicMarkup.match(/<form/g)?.length).toBe(2);
   });
+
+  /**
+   * The danger zone's "registrar la venta" link (#1365) points back at this ficha
+   * with `?abrir=operaciones`. The operations surface lives inside the collapsed
+   * advanced block, so a bare `#operaciones` fragment would scroll to something
+   * `display:none` and reveal nothing — the param has to unfold it server-side.
+   */
+  test("?abrir=operaciones unfolds the advanced block on load", async () => {
+    expect(await renderedHtml(PUBLIC_ID, { abrir: "operaciones" })).toContain(
+      '<details class="editAdvanced" open=""',
+    );
+    expect(await renderedHtml()).not.toContain('class="editAdvanced" open=""');
+  });
 });
 
 /**

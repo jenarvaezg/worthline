@@ -216,6 +216,17 @@ describe("selectHeroHealth", () => {
         },
         "/ajustes",
       ],
+      [
+        // Not the ficha (#1365): a trashed holding has none, and both repairs —
+        // restore then record the sale, or confirm the borrado — live on the
+        // Papelera at the foot of the board.
+        {
+          category: "trashed_balance",
+          code: "TRASHED_WITH_BALANCE",
+          affected: { id: "h1", label: "Fondo", object: "holding" },
+        },
+        "/patrimonio?abrir=papelera#papelera",
+      ],
     ];
     for (const [partial, expectedHref] of cases) {
       const view = selectHeroHealth([signal(partial)], [], publicIds);

@@ -30,11 +30,7 @@ import {
   updatePayoutScheduleAction,
 } from "@web/inversiones/actions";
 import { resolvePageShell } from "@web/page-shell";
-import {
-  acknowledgeWarningAction,
-  deleteAssetAction,
-  deleteLiabilityAction,
-} from "@web/patrimonio/actions";
+import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
@@ -53,6 +49,7 @@ import {
   detectValueOnlyOpening,
   getPriceFreshness,
   holdingIrr,
+  holdingTrashImpact,
   holdingTwr,
   instrumentOfAsset,
   monthlyCloseValuesFromSnapshotRows,
@@ -69,6 +66,7 @@ import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CobrosSection } from "./_surfaces/cobros-section";
 import { CoinCollectionSection } from "./_surfaces/coin-collection-section";
+import { DangerZoneSection } from "./_surfaces/danger-zone-section";
 import { DebtModelSection } from "./_surfaces/debt-model-section";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 import { HousingValuationSection } from "./_surfaces/housing-valuation-section";
@@ -385,6 +383,16 @@ export default async function EditarPage({
   const ownershipScopeMemberId =
     activeMembers.find((m) => m.id === selectedScope?.id)?.id ?? activeMembers[0]?.id;
 
+  // What the Papelera would take with it (#1365). Reads the position this page
+  // already derived — no extra I/O — so the figure in the confirmation is the same
+  // one the ficha shows above it. Null for a sold-out position (and for every
+  // holding with no operations ledger), which is what keeps the clean delete clean.
+  const trashImpact = holdingTrashImpact(position);
+  // The sale link in that notice returns HERE with the advanced block unfolded
+  // (interaction-patterns §3: the state is read from the URL on load). A bare
+  // fragment would scroll to a collapsed <details> and reveal nothing.
+  const advancedOpen = resolvedSearchParams?.abrir === "operaciones";
+
   // Bind the holding id to the operations actions so the `derived` surface posts
   // back to this detail page (#153 collapsed the /inversiones management routes;
   // the shared investment actions now live on under app/inversiones/actions.ts
@@ -601,7 +609,7 @@ export default async function EditarPage({
           ) : null}
         </section>
 
-        <details suppressHydrationWarning className="editAdvanced">
+        <details suppressHydrationWarning className="editAdvanced" open={advancedOpen}>
           <summary>Configuración avanzada</summary>
           <div className="editAdvancedBody">
             {/* ── Method-dispatched configuration surface (#152, ADR 0014) ───── */}
@@ -795,31 +803,23 @@ export default async function EditarPage({
           </div>
         </details>
 
-        {/* Danger zone — two-step delete */}
-        <div className="dangerZone">
-          <h3>Zona de peligro</h3>
-          {asset ? (
-            <form action={deleteAssetAction}>
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="id" type="hidden" value={id} />
-              <details suppressHydrationWarning className="confirmDelete">
-                <summary>Eliminar activo</summary>
-                <p>El activo se moverá a la Papelera y podrás recuperarlo.</p>
-                <button type="submit">Confirmar eliminación</button>
-              </details>
-            </form>
-          ) : (
-            <form action={deleteLiabilityAction}>
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="id" type="hidden" value={id} />
-              <details suppressHydrationWarning className="confirmDelete">
-                <summary>Eliminar deuda</summary>
-                <p>La deuda se moverá a la Papelera y podrás recuperarla.</p>
-                <button type="submit">Confirmar eliminación</button>
-              </details>
-            </form>
-          )}
-        </div>
+        {/* Danger zone — two-step delete, with the truth about what it withdraws */}
+        {asset ? (
+          <DangerZoneSection
+            currentUrl={currentUrl}
+            holdingId={id}
+            kind="asset"
+            privacyMode={privacyMode}
+            trashImpact={trashImpact}
+          />
+        ) : (
+          <DangerZoneSection
+            currentUrl={currentUrl}
+            holdingId={id}
+            kind="liability"
+            privacyMode={privacyMode}
+          />
+        )}
       </section>
     </>
   );

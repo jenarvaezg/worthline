@@ -1146,7 +1146,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     get_data_quality: tool({
       description:
         "Señales de calidad de datos del scope: avisos de dominio, precios/sincronizaciones " +
-        "obsoletos o fallidos, configuración ausente e historial escaso. Útil para «¿qué " +
+        "obsoletos o fallidos, configuración ausente, historial escaso y activos en la " +
+        "papelera con saldo vivo. Útil para «¿qué " +
         "posiciones parecen obsoletas o sospechosas?». Filtra por categoría o severidad.",
       inputSchema: jsonSchema<{
         scopeId?: string;
@@ -1161,6 +1162,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           category: {
             enum: [
               "warning",
+              "trashed_balance",
+              "manual_value_freshness",
               "price_freshness",
               "source_freshness",
               "missing_configuration",

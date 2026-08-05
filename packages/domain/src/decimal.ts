@@ -28,6 +28,21 @@ export function normalizeDecimal(value: DecimalString): DecimalString {
 }
 
 /**
+ * Render a units decimal for display: es-ES separators, up to six decimals — the
+ * reading voice for participaciones/tokens, as `formatMoneyMinor` is for money.
+ * A malformed string comes back untouched rather than as `NaN`: a figure the app
+ * cannot read is still better shown raw than replaced by a lie.
+ */
+export function formatUnits(units: DecimalString): string {
+  const value = Number(units);
+  if (!Number.isFinite(value)) {
+    return units;
+  }
+
+  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 }).format(value);
+}
+
+/**
  * True when `value` parses as a decimal strictly greater than zero. A malformed
  * string answers false instead of throwing, so callers can use it as a guard on
  * stored data of unknown quality.

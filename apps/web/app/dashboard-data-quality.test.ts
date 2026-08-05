@@ -11,7 +11,7 @@
  * (`tests/agent-view-data-quality.wiring.test.ts`).
  */
 
-import type { AgentViewReadStore } from "@worthline/db";
+import type { AgentViewReadStore, AgentViewTrashedHolding } from "@worthline/db";
 import {
   createManualAsset,
   createWorkspace,
@@ -29,11 +29,12 @@ const workspace = createWorkspace({
 });
 const scope = listScopeOptions(workspace)[0]!;
 
-function emptyStore(): AgentViewReadStore {
+function emptyStore(trashedHoldings: AgentViewTrashedHolding[] = []): AgentViewReadStore {
   return {
     readAssetCreatedAtById: async () => new Map(),
     readConnectedSources: async () => [],
     readManualValueHistory: async () => new Map(),
+    readTrashedHoldings: async () => trashedHoldings,
   } as unknown as AgentViewReadStore;
 }
 
@@ -63,11 +64,15 @@ function operation(kind: "buy" | "sell", units: string, id: string): InvestmentO
   };
 }
 
-async function heroCodes(operations: readonly InvestmentOperation[]): Promise<string[]> {
-  const signals = await collectDashboardDataQualitySignals({
-    agentView: emptyStore(),
+async function heroSignals(
+  operations: readonly InvestmentOperation[],
+  trashedHoldings: AgentViewTrashedHolding[] = [],
+  assets: ManualAsset[] = [symbollessFund()],
+) {
+  return collectDashboardDataQualitySignals({
+    agentView: emptyStore(trashedHoldings),
     asOfDateKey: "2026-07-11",
-    assets: [symbollessFund()],
+    assets,
     fireConfigByScopeId: { [scope.id]: undefined },
     holdingRows: [],
     liabilities: [],
@@ -78,8 +83,10 @@ async function heroCodes(operations: readonly InvestmentOperation[]): Promise<st
     snapshots: [],
     workspace,
   });
+}
 
-  return signals
+async function heroCodes(operations: readonly InvestmentOperation[]): Promise<string[]> {
+  return (await heroSignals(operations))
     .filter((signal) => signal.category === "warning")
     .map((signal) => signal.code);
 }
@@ -102,5 +109,54 @@ describe("collectDashboardDataQualitySignals — closed positions (#1348)", () =
 
   test("a fund with no operation yet is unstarted, not closed", async () => {
     expect(await heroCodes([])).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+});
+
+/**
+ * The hero half of the trashed-with-balance signal (#1365). What this pins is the
+ * cheap part of the wiring: the trash's net units come from the ledger the
+ * dashboard ALREADY read (the shared projection context reads the whole operations
+ * table, trashed rows included), so surfacing the signal costs the home GET one
+ * read of the trash listing and no per-holding ledger fetch.
+ */
+describe("collectDashboardDataQualitySignals — trashed with balance (#1365)", () => {
+  const trashedFund: AgentViewTrashedHolding = {
+    deletedAt: "2026-07-01T10:00:00.000Z",
+    id: "asset_fund",
+    instrument: "fund",
+    kind: "asset",
+    name: "Fondo sin símbolo",
+    ownerMemberIds: ["member_jose"],
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    valueMinor: 0,
+  };
+
+  async function trashedCodes(
+    operations: readonly InvestmentOperation[],
+  ): Promise<string[]> {
+    // The holding is in the trash, so it is NOT among the live assets the
+    // dashboard read — only its ledger is still in the operations map.
+    return (await heroSignals(operations, [trashedFund], []))
+      .filter((signal) => signal.category === "trashed_balance")
+      .map((signal) => signal.code);
+  }
+
+  test("a fund trashed with units still held reaches the hero", async () => {
+    expect(await trashedCodes([operation("buy", "10", "op_buy")])).toEqual([
+      "TRASHED_WITH_BALANCE",
+    ]);
+  });
+
+  test("a fund sold out before being trashed stays silent", async () => {
+    expect(
+      await trashedCodes([
+        operation("buy", "10", "op_buy"),
+        operation("sell", "10", "op_sell"),
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a trashed holding with no ledger at all stays silent", async () => {
+    expect(await trashedCodes([])).toEqual([]);
   });
 });

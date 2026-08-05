@@ -220,6 +220,7 @@ const DATA_QUALITY_QUERY_PARAMS = ["category", "severity", "limit", "cursor"];
 
 const DATA_QUALITY_CATEGORIES: readonly AgentViewDataQualityCategory[] = [
   "warning",
+  "trashed_balance",
   "manual_value_freshness",
   "price_freshness",
   "source_freshness",

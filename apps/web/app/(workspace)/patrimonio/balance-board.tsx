@@ -606,6 +606,12 @@ export interface BalanceBoardProps {
    * Absent → nothing folds.
    */
   operatedAssetIds?: ReadonlySet<string>;
+  /**
+   * Render the Papelera already unfolded (#1365). The trashed-with-balance health
+   * signal links here to repair the delete, and both repairs live INSIDE this
+   * `<details>` — landing on a collapsed one shows the user nothing.
+   */
+  trashOpen?: boolean;
 }
 
 export default function BalanceBoard({
@@ -620,6 +626,7 @@ export default function BalanceBoard({
   readOnly = false,
   returnsById,
   operatedAssetIds,
+  trashOpen = false,
 }: BalanceBoardProps) {
   const returns: ReturnsById = returnsById ?? new Map();
   const base: BoardModel = { groups, trash };
@@ -748,7 +755,12 @@ export default function BalanceBoard({
         </div>
       </div>
 
-      <details suppressHydrationWarning className="balanceTrash">
+      <details
+        suppressHydrationWarning
+        className="balanceTrash"
+        id="papelera"
+        open={trashOpen}
+      >
         <summary>Papelera ({trashCount})</summary>
         {trashCount === 0 ? (
           <p className="balanceTrashEmpty">La papelera está vacía.</p>

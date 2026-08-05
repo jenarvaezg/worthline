@@ -85,6 +85,7 @@ export async function collectDashboardDataQualitySignals(
     debtModelEntries,
     manualValueHistoryByAssetId,
     assetCreatedAtById,
+    trashedHoldings,
   ] = await Promise.all([
     Promise.all(
       connectedSources.map(
@@ -103,6 +104,7 @@ export async function collectDashboardDataQualitySignals(
     ),
     agentView.readManualValueHistory(),
     agentView.readAssetCreatedAtById(),
+    agentView.readTrashedHoldings(),
   ]);
 
   const priceFreshnessByAssetId = new Map<string, DataQualityPriceFreshness>(
@@ -145,6 +147,12 @@ export async function collectDashboardDataQualitySignals(
     snapshotIdsWithHoldings,
     snapshots: input.snapshots,
     sourceFreshnessBySourceId,
+    // The Papelera's own rows (#1365). Their net units need no extra I/O: the
+    // shared projection context reads the WHOLE operations table, trashed
+    // holdings included, so `netUnitsByAssetId` above already covers them. The
+    // store row is passed as read — it already carries the id, name, and owner
+    // members the engine's `DataQualityTrashedHolding` asks for.
+    trashedHoldings,
     warningOverrides: input.overrides,
     workspace: input.workspace,
   });

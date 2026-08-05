@@ -569,6 +569,9 @@ export interface AgentViewFireSummary {
 /**
  * The data-quality taxonomy a signal falls under (PRD #328, #341):
  *  - `warning`: a domain warning (`collectWarnings`), blocking or overrideable.
+ *  - `trashed_balance`: a holding sitting in the Papelera whose position still
+ *    holds units — its value left the patrimonio at the capture after the delete,
+ *    with no sale, traspaso, or deposit recorded anywhere (#1365).
  *  - `manual_value_freshness`: a stored holding whose manual value is older than
  *    the fixed threshold (90 days in v1).
  *  - `price_freshness`: a priced asset's stale/failed/missing price quote.
@@ -582,6 +585,7 @@ export interface AgentViewFireSummary {
  */
 export type AgentViewDataQualityCategory =
   | "warning"
+  | "trashed_balance"
   | "manual_value_freshness"
   | "price_freshness"
   | "source_freshness"

@@ -164,6 +164,7 @@ export async function PatrimonioContent({
         readOnly={isDemo}
         returnsById={returnsById}
         trash={trash}
+        trashOpen={resolvedSearchParams?.abrir === "papelera"}
         warnings={warnings}
       />
 
