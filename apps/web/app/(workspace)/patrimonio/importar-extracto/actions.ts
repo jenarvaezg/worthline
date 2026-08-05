@@ -46,6 +46,7 @@ import {
   buildStatementImportPlan,
   defaultsFor,
   findStatementTypeConflict,
+  findUnresolvedStatementChoice,
   isIsinShaped,
   isProviderSymbolShaped,
   isStatementBroker,
@@ -67,9 +68,11 @@ import {
   readStatementFromText,
   statementImportPreviewReadPort,
   typeConflictMessage,
+  unresolvedChoiceMessage,
 } from "./statement-import-preview";
 
 export type {
+  FundMatchChoice,
   FundPositionImpact,
   FundPreviewRow,
   IsinLookupResult,
@@ -188,6 +191,21 @@ function shouldReplaceOpening(formData: FormData, isin: string): boolean {
   return !seen || formData.get(isinFormKey("replaceOpening", isin)) === "on";
 }
 
+/**
+ * The holding the user named for an identifier several investments claim (#1366),
+ * or undefined. Only read for an ambiguous bucket: posting it for a single-claimant
+ * one would let a preview built before the second claimant existed resolve a
+ * choice the user was never shown.
+ */
+function chosenAssetId(
+  formData: FormData,
+  bucket: StatementImportBucket,
+): string | undefined {
+  if (bucket.bucket !== "matched" || !bucket.ambiguous) return undefined;
+  const posted = String(formData.get(isinFormKey("assetId", bucket.isin)) ?? "").trim();
+  return posted === "" ? undefined : posted;
+}
+
 /** Build the confirmed per-ISIN selection from the posted checkboxes/fields. */
 function selectionsFromForm(
   buckets: StatementImportBucket[],
@@ -199,8 +217,13 @@ function selectionsFromForm(
     const included = formData.get(isinFormKey("include", bucket.isin)) === "on";
 
     if (!included || bucket.bucket === "matched") {
+      const assetId = chosenAssetId(formData, bucket);
       return included
-        ? ({ action: "include", isin: bucket.isin } as const)
+        ? ({
+            action: "include",
+            isin: bucket.isin,
+            ...(assetId ? { assetId } : {}),
+          } as const)
         : ({ action: "ignore", isin: bucket.isin } as const);
     }
 
@@ -319,6 +342,16 @@ export async function confirmImportStatementAction(
       });
 
       const selections = selectionsFromForm(buckets, formData, ownership, seed);
+
+      // Last line of defence for #1366: the preview blocks an unchosen identifier
+      // client-side, but the buckets are re-derived here against the live
+      // portfolio — a holding created (or trashed) since the preview can turn a
+      // resolved row ambiguous, or void the choice that was made.
+      const unresolved = findUnresolvedStatementChoice(buckets, selections);
+      if (unresolved) {
+        return { ok: false, error: unresolvedChoiceMessage(unresolved) };
+      }
+
       const plan = buildStatementImportPlan(buckets, selections);
 
       const funds = plan.included.map((fund, index) => {

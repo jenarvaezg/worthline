@@ -16,6 +16,13 @@ export interface FundSelectionState {
   included: boolean;
   /** Whether the (editable) provider-symbol field is empty. Ignored for "matched". */
   symbolEmpty: boolean;
+  /**
+   * The identifier is claimed by more than one investment and the user has not
+   * named which yet (#1366). Ignored for "new". Such a fund cannot be included —
+   * there is no safe default target — so it counts OUTSIDE the inclusion filter,
+   * as an unfinished decision rather than a property of the selection.
+   */
+  choicePending?: boolean;
   executedCount: number;
   skippedCount: number;
   amountMinor: number;
@@ -37,6 +44,13 @@ export interface ImportStatementSummary {
    * MISSING_PROVIDER_SYMBOL raised (ADR 0055).
    */
   unresolvedSymbolCount: number;
+  /**
+   * Funds whose identifier still names two investments instead of one (#1366),
+   * included or not. They stay out of the import until the user picks — ADR 0055
+   * decision 4: one unresolvable identifier is excluded, never a hostage to the
+   * other 25 — so the summary says so out loud instead of dropping them quietly.
+   */
+  pendingChoiceCount: number;
 }
 
 /**
@@ -55,6 +69,9 @@ export function summarizeImportSelection(
     fundCount: included.length,
     matchedCount: included.filter((fund) => fund.bucket === "matched").length,
     newCount: included.filter((fund) => fund.bucket === "new").length,
+    pendingChoiceCount: funds.filter(
+      (fund) => fund.bucket === "matched" && fund.choicePending === true,
+    ).length,
     unresolvedSymbolCount: included.filter(
       (fund) => fund.bucket === "new" && fund.symbolEmpty,
     ).length,

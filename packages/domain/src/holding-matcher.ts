@@ -31,6 +31,7 @@
  */
 
 import type { Instrument } from "./instrument-catalog";
+import { normalizeMatchKey, normalizeMatchName } from "./matching-keys";
 
 /** Which key produced a match. `none` is a row that matched nothing. */
 export type MatchKey = "isin" | "provider_symbol" | "name" | "none";
@@ -142,29 +143,10 @@ export interface RowMatch {
   ambiguous?: boolean;
 }
 
-const ISIN_SHAPE = /^[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]$/;
-
-/**
- * Normalize a strong identifier: uppercase only when it has ISIN shape, matching
- * {@link ./statement-import-plan}'s rule so plantilla identifiers (CoinGecko ids,
- * lowercase by contract) are not corrupted. Empty → null.
- */
-function normalizeStrongKey(value: string | null | undefined): string | null {
-  const trimmed = (value ?? "").trim();
-  if (!trimmed) return null;
-  return ISIN_SHAPE.test(trimmed) ? trimmed.toUpperCase() : trimmed;
-}
-
-/** Lowercase, strip diacritics, collapse whitespace — the name comparison basis. */
-function normalizeName(value: string | null | undefined): string | null {
-  const normalized = (value ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-  return normalized.length > 0 ? normalized : null;
-}
+// The key normalizers live in ./matching-keys: this module and the statement
+// router must read "the same key" identically, so the rule is written once (#1366).
+const normalizeStrongKey = normalizeMatchKey;
+const normalizeName = normalizeMatchName;
 
 /**
  * Whether a row and a holding declare compatible instruments for a weak match.

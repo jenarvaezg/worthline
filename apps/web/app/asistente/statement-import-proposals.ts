@@ -235,6 +235,14 @@ export function selectionsFromPreviewFunds(
 
   return buckets.map((bucket, index) => {
     if (bucket.bucket === "matched") {
+      // An identifier several investments claim is left OUT, never guessed
+      // (#1366): the chat has no surface on which to ask which holding it is, and
+      // this bucket may `delete`/`overwrite`. ADR 0055 decision 4 — one
+      // unresolvable identifier is excluded, the rest still import — and the
+      // proposal card says so, so the exclusion is read, not silent.
+      if (bucket.ambiguous) {
+        return { action: "ignore", isin: bucket.isin } as const;
+      }
       return { action: "include", isin: bucket.isin } as const;
     }
 

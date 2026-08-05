@@ -1568,6 +1568,14 @@ th:last-child {
   color: var(--gold);
 }
 
+/* "Elige": the identifier is claimed by two investments, so the row carries no
+   verdict (#1366). Gold like "new" because it is the same kind of state — a
+   decision the user still owes — and the pill's own word tells them which. */
+.statePill.ambiguous {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
 .fireProgress {
   display: grid;
   gap: 8px;

@@ -369,3 +369,52 @@ describe("discardStatementImportProposalAction", () => {
     ).toEqual({ status: "error", message: "La propuesta ya no está disponible." });
   });
 });
+
+describe("an identifier two holdings claim, confirmed from the chat (#1366)", () => {
+  test("is left out — the rest still imports, and neither claimant is written", async () => {
+    const { confirmStatementImportProposalAction } = await import(
+      "./statement-import-proposal-action"
+    );
+    const store = await createInMemoryStore();
+    await seedMatchedFund(store);
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "second_claimant",
+      isin: "ES00WL000001",
+      liquidityTier: "market",
+      name: "Mismo fondo, otro bróker",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+
+    const csv = [
+      "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+      "05/01/2024;Fondo;ES00WL000001;Compra;10;1000;;",
+      "10/01/2024;Fondo;LU00WL000002;Compra;12,0000;600;;",
+    ].join("\r\n");
+    const built = await buildStatementImportProposal(
+      store,
+      { broker: "plantilla", documentName: "dos-brokers.csv", rawText: csv },
+      TEST_RESOLVER,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+
+    // The card must say it, or the exclusion is a silent drop.
+    const ambiguous = built.proposal.funds.find((fund) => fund.isin === "ES00WL000001");
+    expect(ambiguous?.bucket === "matched" && ambiguous.ambiguous).toBe(true);
+
+    expect(
+      await confirmStatementImportProposalAction(
+        built.proposal.draft,
+        store,
+        TEST_RESOLVER,
+      ),
+    ).toEqual({ created: 1, included: 1, status: "applied" });
+
+    expect(await store.operations.readOperations("matched_fund")).toHaveLength(0);
+    expect(await store.operations.readOperations("second_claimant")).toHaveLength(0);
+    const metas = await store.assets.readInvestmentAssetsWithMeta();
+    const created = metas.find((meta) => meta.isin === "LU00WL000002");
+    expect(await store.operations.readOperations(created!.id)).toHaveLength(1);
+  });
+});

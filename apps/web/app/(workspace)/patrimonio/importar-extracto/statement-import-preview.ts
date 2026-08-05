@@ -9,9 +9,12 @@ import type {
   Instrument,
   InvestmentOperation,
   InvestmentPriceProvider,
+  MatchedStatementFund,
   ParsedStatement,
   ParsedStatementRow,
+  StatementFundClaimant,
   StatementImportBucket,
+  StatementMergePlan,
   StatementPortfolioInvestment,
 } from "@worthline/domain";
 import {
@@ -63,6 +66,25 @@ export async function defaultIsinSymbolResolver(
   }
 }
 
+/**
+ * One investment the identifier could belong to, with the merge **that**
+ * investment would receive (#1366). Every figure the row shows — counts, position
+ * impact, the opening-kept variant — is per claimant, because the merge deletes
+ * and overwrites against one ledger: rendering the default's numbers next to
+ * another holding's name would be a lie the user confirms.
+ */
+export interface FundMatchChoice {
+  assetId: string;
+  existingName: string;
+  /** Fully sold today — shown so the user can tell the two brokers' copies apart. */
+  closed: boolean;
+  toCreateCount: number;
+  toDeleteCount: number;
+  toOverwriteCount: number;
+  positionImpact: FundPositionImpact;
+  openingKeptPositionImpact?: FundPositionImpact;
+}
+
 /** One fund's preview row — the serializable shape the client table renders. */
 export type FundPreviewRow = {
   isin: string;
@@ -79,6 +101,13 @@ export type FundPreviewRow = {
       toDeleteCount: number;
       toOverwriteCount: number;
       openingKeptPositionImpact?: FundPositionImpact;
+      /**
+       * More than one investment claims the identifier: the row carries no
+       * verdict, only {@link choices}. The flat fields above mirror `choices[0]`
+       * — the best-ranked DEFAULT — so a resolved row reads exactly as before.
+       */
+      ambiguous: boolean;
+      choices: FundMatchChoice[];
     }
   | {
       bucket: "new";
@@ -104,6 +133,16 @@ export type StatementTextReadResult =
 
 export function typeConflictMessage(identifier: string): string {
   return `El identificador ${identifier} aparece con dos tipos de activo distintos — revisa el archivo. No se ha cargado nada.`;
+}
+
+/**
+ * The identifier belongs to more than one of your investments and the confirm did
+ * not name which (#1366) — either it was never chosen, or the portfolio changed
+ * under the preview. Nothing is written: the file cannot pick a holding whose
+ * operations it may overwrite.
+ */
+export function unresolvedChoiceMessage(identifier: string): string {
+  return `El identificador ${identifier} está en más de una de tus inversiones — vuelve a subir el archivo y elige a cuál pertenece. No se ha cargado nada.`;
 }
 
 export function readStatementFromText(
@@ -165,33 +204,39 @@ function isNearlyDouble(beforeValueMinor: number, afterValueMinor: number): bool
   );
 }
 
+/** What a group's rows do to one ledger — one claimant's, or a creation's. */
+interface PositionImpactInput {
+  assetId: string;
+  rows: readonly ParsedStatementRow[];
+  /** Absent for a creation: every row is simply added. */
+  mergePlan?: StatementMergePlan;
+}
+
 function derivePositionImpact(
-  bucket: StatementImportBucket,
+  { assetId, rows, mergePlan }: PositionImpactInput,
   existingOperations: readonly InvestmentOperation[],
 ): FundPositionImpact {
-  const assetId = bucket.bucket === "matched" ? bucket.assetId : bucket.isin;
-  const currency = existingOperations[0]?.currency ?? bucket.rows[0]?.currency ?? "EUR";
+  const currency = existingOperations[0]?.currency ?? rows[0]?.currency ?? "EUR";
   const beforeOperations = [...existingOperations];
-  const afterOperations =
-    bucket.bucket === "matched"
-      ? [
-          ...existingOperations.filter(
-            (operation) =>
-              !bucket.mergePlan.toDelete.some((deleted) => deleted.id === operation.id) &&
-              !bucket.mergePlan.toOverwrite.some(
-                (overwrite) => overwrite.operationId === operation.id,
-              ),
-          ),
-          ...bucket.mergePlan.toOverwrite.map((overwrite) =>
-            rowToPreviewOperation(assetId, overwrite.row, overwrite.operationId),
-          ),
-          ...bucket.mergePlan.toCreate.map((row, index) =>
-            rowToPreviewOperation(assetId, row, `preview_create_${index}`),
-          ),
-        ]
-      : bucket.rows.map((row, index) =>
+  const afterOperations = mergePlan
+    ? [
+        ...existingOperations.filter(
+          (operation) =>
+            !mergePlan.toDelete.some((deleted) => deleted.id === operation.id) &&
+            !mergePlan.toOverwrite.some(
+              (overwrite) => overwrite.operationId === operation.id,
+            ),
+        ),
+        ...mergePlan.toOverwrite.map((overwrite) =>
+          rowToPreviewOperation(assetId, overwrite.row, overwrite.operationId),
+        ),
+        ...mergePlan.toCreate.map((row, index) =>
           rowToPreviewOperation(assetId, row, `preview_create_${index}`),
-        );
+        ),
+      ]
+    : rows.map((row, index) =>
+        rowToPreviewOperation(assetId, row, `preview_create_${index}`),
+      );
   const currentPricePerUnit =
     latestOperationPrice(afterOperations) ?? latestOperationPrice(beforeOperations);
   const options = currentPricePerUnit
@@ -250,41 +295,67 @@ export async function readPortfolioInvestments(
   );
 }
 
+function claimantToChoice(
+  bucket: MatchedStatementFund,
+  claimant: StatementFundClaimant,
+  existingOperations: readonly InvestmentOperation[],
+): FundMatchChoice {
+  const impactOf = (mergePlan: StatementMergePlan) =>
+    derivePositionImpact(
+      { assetId: claimant.assetId, mergePlan, rows: bucket.rows },
+      existingOperations,
+    );
+  const openingKeptPositionImpact =
+    claimant.mergePlan.toDelete.length > 0
+      ? impactOf(
+          planStatementMerge(bucket.rows, [...existingOperations], {
+            replaceOpening: false,
+          }),
+        )
+      : undefined;
+
+  return {
+    assetId: claimant.assetId,
+    closed: claimant.closed,
+    existingName: claimant.name,
+    ...(openingKeptPositionImpact ? { openingKeptPositionImpact } : {}),
+    positionImpact: impactOf(claimant.mergePlan),
+    toCreateCount: claimant.mergePlan.toCreate.length,
+    toDeleteCount: claimant.mergePlan.toDelete.length,
+    toOverwriteCount: claimant.mergePlan.toOverwrite.length,
+  };
+}
+
 async function bucketToPreviewRow(
   bucket: StatementImportBucket,
   resolver: IsinSymbolResolver,
-  existingOperations: readonly InvestmentOperation[] = [],
+  operationsByAssetId: ReadonlyMap<string, InvestmentOperation[]>,
 ): Promise<FundPreviewRow> {
   const amountMinor = rowsAmountMinor(bucket.rows);
-  const positionImpact = derivePositionImpact(bucket, existingOperations);
 
   if (bucket.bucket === "matched") {
-    const openingKeptPositionImpact =
-      bucket.mergePlan.toDelete.length > 0
-        ? derivePositionImpact(
-            {
-              ...bucket,
-              mergePlan: planStatementMerge(bucket.rows, [...existingOperations], {
-                replaceOpening: false,
-              }),
-            },
-            existingOperations,
-          )
-        : undefined;
+    const choices = bucket.claimants.map((claimant) =>
+      claimantToChoice(bucket, claimant, operationsByAssetId.get(claimant.assetId) ?? []),
+    );
+    const best = choices[0]!;
 
     return {
       amountMinor,
-      assetId: bucket.assetId,
+      ambiguous: bucket.ambiguous === true,
+      assetId: best.assetId,
       bucket: "matched",
+      choices,
       executedCount: bucket.rows.length,
-      existingName: bucket.name,
+      existingName: best.existingName,
       isin: bucket.isin,
-      ...(openingKeptPositionImpact ? { openingKeptPositionImpact } : {}),
-      positionImpact,
+      ...(best.openingKeptPositionImpact
+        ? { openingKeptPositionImpact: best.openingKeptPositionImpact }
+        : {}),
+      positionImpact: best.positionImpact,
       skippedCount: bucket.skipped.length,
-      toCreateCount: bucket.mergePlan.toCreate.length,
-      toDeleteCount: bucket.mergePlan.toDelete.length,
-      toOverwriteCount: bucket.mergePlan.toOverwrite.length,
+      toCreateCount: best.toCreateCount,
+      toDeleteCount: best.toDeleteCount,
+      toOverwriteCount: best.toOverwriteCount,
     };
   }
 
@@ -295,7 +366,7 @@ async function bucketToPreviewRow(
     executedCount: bucket.rows.length,
     isin: bucket.isin,
     lookup,
-    positionImpact,
+    positionImpact: derivePositionImpact({ assetId: bucket.isin, rows: bucket.rows }, []),
     skippedCount: bucket.skipped.length,
     suggestedName: lookup.status === "found" ? lookup.name : (bucket.name ?? ""),
     suggestedSymbol:
@@ -346,15 +417,7 @@ export async function buildStatementImportPreview(
   }
 
   const funds = await Promise.all(
-    buckets.map((bucket) =>
-      bucketToPreviewRow(
-        bucket,
-        resolver,
-        bucket.bucket === "matched"
-          ? (operationsByAssetId.get(bucket.assetId) ?? [])
-          : [],
-      ),
-    ),
+    buckets.map((bucket) => bucketToPreviewRow(bucket, resolver, operationsByAssetId)),
   );
 
   return { buckets, funds, ok: true };

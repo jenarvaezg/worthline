@@ -868,6 +868,7 @@ export { getStatementBrokerAdapter, isStatementBroker } from "./statement-broker
 export type {
   MatchedStatementFund,
   NewStatementFund,
+  StatementFundClaimant,
   StatementFundGroup,
   StatementFundSelection,
   StatementImportBucket,
@@ -879,6 +880,7 @@ export type {
 export {
   buildStatementImportPlan,
   findStatementTypeConflict,
+  findUnresolvedStatementChoice,
   groupStatementRowsByIsin,
   isIsinShaped,
   resolveStatementImportBuckets,

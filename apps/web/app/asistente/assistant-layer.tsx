@@ -250,6 +250,16 @@ function formatPositionMoney(amountMinor: number): string {
   return formatMoneyMinor({ amountMinor, currency: "EUR" });
 }
 
+/**
+ * What the card says about an identifier several holdings claim (#1366). The chat
+ * has nowhere to ask "which of the two is it", and confirming would let the file
+ * overwrite the wrong broker's history — so the fund is left out, and the card
+ * points at the surface where the choice exists.
+ */
+function ambiguousFundNote(isin: string, claimants: number): string {
+  return `${isin} está en ${claimants} de tus inversiones: se queda fuera — elige cuál en Importar extracto.`;
+}
+
 function ProposalMutationStatus({
   pending,
   result,
@@ -717,6 +727,9 @@ function MixedDocumentProposalCard({
                       {fund.bucket === "matched"
                         ? fund.existingName
                         : fund.suggestedName || fund.isin}
+                      {fund.bucket === "matched" && fund.ambiguous
+                        ? ` — ${ambiguousFundNote(fund.isin, fund.choices.length)}`
+                        : ""}
                       : {fund.executedCount} movimientos · posición{" "}
                       {fund.positionImpact.beforeUnits} → {fund.positionImpact.afterUnits}{" "}
                       ({formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
@@ -924,6 +937,11 @@ function StatementProposalCard({
               {fund.bucket === "matched" ? "Existente" : "Nuevo"} · {fund.executedCount}{" "}
               movimientos
             </span>
+            {fund.bucket === "matched" && fund.ambiguous ? (
+              <span className="assistantError">
+                {ambiguousFundNote(fund.isin, fund.choices.length)}
+              </span>
+            ) : null}
             <span>
               Posición: {fund.positionImpact.beforeUnits} →{" "}
               {fund.positionImpact.afterUnits} (

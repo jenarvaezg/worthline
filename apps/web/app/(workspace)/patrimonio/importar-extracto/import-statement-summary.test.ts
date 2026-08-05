@@ -70,6 +70,18 @@ describe("summarizeImportSelection", () => {
     expect(summary.fundCount).toBe(0);
   });
 
+  test("an identifier awaiting a holding choice counts even though it cannot be included", () => {
+    const summary = summarizeImportSelection([
+      fund({ isin: "A", choicePending: true, included: false }),
+      fund({ isin: "B", choicePending: false }),
+      // "new" has no claimants to choose between — the flag is meaningless there.
+      fund({ isin: "C", bucket: "new", choicePending: true, included: false }),
+    ]);
+
+    expect(summary.pendingChoiceCount).toBe(1);
+    expect(summary.fundCount).toBe(1);
+  });
+
   test("empty selection summarizes to all-zero", () => {
     expect(summarizeImportSelection([])).toEqual({
       amountMinor: 0,
@@ -78,6 +90,7 @@ describe("summarizeImportSelection", () => {
       fundCount: 0,
       matchedCount: 0,
       newCount: 0,
+      pendingChoiceCount: 0,
       unresolvedSymbolCount: 0,
     });
   });
