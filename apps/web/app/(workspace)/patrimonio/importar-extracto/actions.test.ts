@@ -682,6 +682,24 @@ describe("an identifier two holdings claim (#1366)", () => {
     expect(await store.operations.readOperations("live_fund")).toHaveLength(0);
   });
 
+  test("the chosen holding disappearing does not hand the import to the survivor", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const fd = plantillaForm(ONE_ISIN_CSV);
+    fd.set("include_ES00WL000001", "on");
+    fd.set("assetId_ES00WL000001", "live_fund");
+    // Trashed between preview and confirm: the identifier is unambiguous again,
+    // but the holding the user named is gone — and the survivor is NOT a
+    // substitute for it, deletes and overwrites included.
+    await store.assets.softDeleteAsset("live_fund", "2024-02-01");
+
+    expect(await confirm(fd, store)).toContain("error=");
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { id: "old_opening", source: "opening" },
+    ]);
+  });
+
   test("the chosen holding is written and the other one is left exactly as it was", async () => {
     const store = await createInMemoryStore();
     await seedTwoClaimants(store);

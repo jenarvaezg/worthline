@@ -251,10 +251,13 @@ function formatPositionMoney(amountMinor: number): string {
 }
 
 /**
- * What the card says about an identifier several holdings claim (#1366). The chat
- * has nowhere to ask "which of the two is it", and confirming would let the file
- * overwrite the wrong broker's history — so the fund is left out, and the card
- * points at the surface where the choice exists.
+ * What a card says about a fund the confirm will leave OUT because its identifier
+ * names more than one holding (#1366). The chat has nowhere to ask "which of the
+ * two is it", and confirming would let the file overwrite the wrong broker's
+ * history — so the fund is left out, the card points at the surface where the
+ * choice exists, and it prints NONE of the fund's figures: they all belong to the
+ * first candidate, the very default this fix exists to stop passing off as the
+ * answer.
  */
 function ambiguousFundNote(isin: string, claimants: number): string {
   return `${isin} está en ${claimants} de tus inversiones: se queda fuera — elige cuál en Importar extracto.`;
@@ -722,23 +725,29 @@ function MixedDocumentProposalCard({
               <strong>{label[section.kind]}</strong>
               {section.kind === "investment_statement" ? (
                 <>
-                  {section.preview.funds.map((fund) => (
-                    <span key={fund.isin}>
-                      {fund.bucket === "matched"
-                        ? fund.existingName
-                        : fund.suggestedName || fund.isin}
-                      {fund.bucket === "matched" && fund.ambiguous
-                        ? ` — ${ambiguousFundNote(fund.isin, fund.choices.length)}`
-                        : ""}
-                      : {fund.executedCount} movimientos · posición{" "}
-                      {fund.positionImpact.beforeUnits} → {fund.positionImpact.afterUnits}{" "}
-                      ({formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
-                      {formatPositionMoney(fund.positionImpact.afterValueMinor)})
-                      {fund.positionImpact.flags.length > 0
-                        ? ` · Avisos: ${fund.positionImpact.flags.join(", ")}`
-                        : ""}
-                    </span>
-                  ))}
+                  {section.preview.funds.map((fund) =>
+                    // Left out of the import, so it gets the note and none of the
+                    // first candidate's figures (#1366).
+                    fund.bucket === "matched" && fund.ambiguous ? (
+                      <span className="assistantWarning" key={fund.isin}>
+                        {ambiguousFundNote(fund.isin, fund.choices.length)}
+                      </span>
+                    ) : (
+                      <span key={fund.isin}>
+                        {fund.bucket === "matched"
+                          ? fund.existingName
+                          : fund.suggestedName || fund.isin}
+                        : {fund.executedCount} movimientos · posición{" "}
+                        {fund.positionImpact.beforeUnits} →{" "}
+                        {fund.positionImpact.afterUnits} (
+                        {formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
+                        {formatPositionMoney(fund.positionImpact.afterValueMinor)})
+                        {fund.positionImpact.flags.length > 0
+                          ? ` · Avisos: ${fund.positionImpact.flags.join(", ")}`
+                          : ""}
+                      </span>
+                    ),
+                  )}
                 </>
               ) : section.kind === "debt_balance_history" ? (
                 <>
@@ -929,28 +938,36 @@ function StatementProposalCard({
         {proposal.funds.map((fund) => (
           <li key={fund.isin}>
             <strong>
-              {fund.bucket === "matched"
-                ? fund.existingName
-                : fund.suggestedName || fund.isin}
+              {fund.bucket !== "matched"
+                ? fund.suggestedName || fund.isin
+                : fund.ambiguous
+                  ? fund.isin
+                  : fund.existingName}
             </strong>
             <span>
               {fund.bucket === "matched" ? "Existente" : "Nuevo"} · {fund.executedCount}{" "}
               movimientos
             </span>
             {fund.bucket === "matched" && fund.ambiguous ? (
-              <span className="assistantError">
+              // No position line: this fund is NOT being imported, and the only
+              // figures on hand are the first candidate's — the very default this
+              // fix exists to stop passing off as the answer (#1366).
+              <span className="assistantWarning">
                 {ambiguousFundNote(fund.isin, fund.choices.length)}
               </span>
-            ) : null}
-            <span>
-              Posición: {fund.positionImpact.beforeUnits} →{" "}
-              {fund.positionImpact.afterUnits} (
-              {formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
-              {formatPositionMoney(fund.positionImpact.afterValueMinor)})
-            </span>
-            {fund.positionImpact.flags.length > 0 ? (
-              <span>Avisos: {fund.positionImpact.flags.join(", ")}</span>
-            ) : null}
+            ) : (
+              <>
+                <span>
+                  Posición: {fund.positionImpact.beforeUnits} →{" "}
+                  {fund.positionImpact.afterUnits} (
+                  {formatPositionMoney(fund.positionImpact.beforeValueMinor)} →{" "}
+                  {formatPositionMoney(fund.positionImpact.afterValueMinor)})
+                </span>
+                {fund.positionImpact.flags.length > 0 ? (
+                  <span>Avisos: {fund.positionImpact.flags.join(", ")}</span>
+                ) : null}
+              </>
+            )}
           </li>
         ))}
       </ul>

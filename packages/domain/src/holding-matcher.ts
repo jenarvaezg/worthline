@@ -143,11 +143,6 @@ export interface RowMatch {
   ambiguous?: boolean;
 }
 
-// The key normalizers live in ./matching-keys: this module and the statement
-// router must read "the same key" identically, so the rule is written once (#1366).
-const normalizeStrongKey = normalizeMatchKey;
-const normalizeName = normalizeMatchName;
-
 /**
  * Whether a row and a holding declare compatible instruments for a weak match.
  * When both declare one and they differ, they are NOT a match — this is the guard
@@ -188,9 +183,9 @@ function buildStrongIndex(holdings: MatchPortfolioHolding[]): StrongIndex {
   const byKey = new Map<string, MatchPortfolioHolding[]>();
   const bySymbolLower = new Map<string, MatchPortfolioHolding[]>();
   for (const holding of holdings) {
-    const isin = normalizeStrongKey(holding.isin);
+    const isin = normalizeMatchKey(holding.isin);
     if (isin) claim(byKey, isin, holding);
-    const symbol = normalizeStrongKey(holding.providerSymbol);
+    const symbol = normalizeMatchKey(holding.providerSymbol);
     if (symbol) {
       claim(byKey, symbol, holding);
       claim(bySymbolLower, symbol.toLowerCase(), holding);
@@ -221,12 +216,12 @@ function findStrongMatches(
   row: MatchCandidateRow,
   index: StrongIndex,
 ): { holdings: MatchPortfolioHolding[]; key: MatchKey } | null {
-  const isin = normalizeStrongKey(row.isin);
+  const isin = normalizeMatchKey(row.isin);
   if (isin) {
     const byIsin = index.byKey.get(isin);
     if (byIsin && byIsin.length > 0) return { holdings: byIsin, key: "isin" };
   }
-  const symbol = normalizeStrongKey(row.providerSymbol);
+  const symbol = normalizeMatchKey(row.providerSymbol);
   if (symbol) {
     const bySymbol = dedupeById(
       index.byKey.get(symbol) ?? [],
@@ -256,11 +251,11 @@ function rankStrongClaimants(
   holdings: MatchPortfolioHolding[],
 ): MatchPortfolioHolding[] {
   if (holdings.length < 2) return holdings;
-  const rowName = normalizeName(row.name);
+  const rowName = normalizeMatchName(row.name);
   const score = (holding: MatchPortfolioHolding): number => {
     const nameMatches =
       rowName !== null &&
-      normalizeName(holding.name) === rowName &&
+      normalizeMatchName(holding.name) === rowName &&
       instrumentsCompatible(row.instrument, holding.instrument);
     return (nameMatches ? 2 : 0) + (holding.closed === true ? 0 : 1);
   };
@@ -276,11 +271,11 @@ function findWeakMatches(
   row: MatchCandidateRow,
   holdings: MatchPortfolioHolding[],
 ): MatchPortfolioHolding[] {
-  const rowName = normalizeName(row.name);
+  const rowName = normalizeMatchName(row.name);
   if (!rowName) return [];
   return holdings.filter(
     (holding) =>
-      normalizeName(holding.name) === rowName &&
+      normalizeMatchName(holding.name) === rowName &&
       instrumentsCompatible(row.instrument, holding.instrument),
   );
 }

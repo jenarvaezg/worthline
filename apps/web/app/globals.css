@@ -1563,14 +1563,10 @@ th:last-child {
   color: var(--ink);
 }
 
-.statePill.new {
-  border-color: var(--gold);
-  color: var(--gold);
-}
-
-/* "Elige": the identifier is claimed by two investments, so the row carries no
-   verdict (#1366). Gold like "new" because it is the same kind of state — a
-   decision the user still owes — and the pill's own word tells them which. */
+/* "Nuevo" and "Elige" (#1366, an identifier two investments claim) share the
+   gold: both are the same kind of state — a decision the user still owes — and
+   the pill's own word says which one. */
+.statePill.new,
 .statePill.ambiguous {
   border-color: var(--gold);
   color: var(--gold);

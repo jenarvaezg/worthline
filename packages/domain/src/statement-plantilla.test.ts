@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import { multiplyToMinor } from "./decimal";
+import { isIsinShaped } from "./matching-keys";
 import {
   findStatementTypeConflict,
   groupStatementRowsByIsin,
-  isIsinShaped,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 import { parseStatement } from "./statement-parse";

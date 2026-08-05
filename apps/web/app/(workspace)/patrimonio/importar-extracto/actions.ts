@@ -193,15 +193,19 @@ function shouldReplaceOpening(formData: FormData, isin: string): boolean {
 
 /**
  * The holding the user named for an identifier several investments claim (#1366),
- * or undefined. Only read for an ambiguous bucket: posting it for a single-claimant
- * one would let a preview built before the second claimant existed resolve a
- * choice the user was never shown.
+ * or undefined.
+ *
+ * Read WHATEVER was posted, never gated on the re-derived bucket still being
+ * ambiguous: if the chosen holding was trashed between preview and confirm, the
+ * bucket comes back with one claimant, and dropping the choice there would apply
+ * the import — deletes and overwrites included — to the holding the user did not
+ * pick. A resolved preview renders no select, so nothing is posted for it.
  */
 function chosenAssetId(
   formData: FormData,
   bucket: StatementImportBucket,
 ): string | undefined {
-  if (bucket.bucket !== "matched" || !bucket.ambiguous) return undefined;
+  if (bucket.bucket !== "matched") return undefined;
   const posted = String(formData.get(isinFormKey("assetId", bucket.isin)) ?? "").trim();
   return posted === "" ? undefined : posted;
 }

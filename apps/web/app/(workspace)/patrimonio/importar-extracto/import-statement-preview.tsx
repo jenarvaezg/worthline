@@ -10,7 +10,11 @@ import type {
   ImportStatementPreviewState,
 } from "./actions";
 import {
+  chooseFundHolding,
+  defaultFundSelection,
+  type FundSelectionFlags,
   type FundSelectionState,
+  isFundChoicePending,
   pluralize,
   summarizeImportSelection,
 } from "./import-statement-summary";
@@ -35,18 +39,6 @@ import {
  */
 
 const IDLE: ImportStatementPreviewState = { status: "idle" };
-
-interface FundSelectionFlags {
-  included: boolean;
-  replaceOpening: boolean;
-  symbolEmpty: boolean;
-  /**
-   * The investment the user named for an identifier two holdings claim (#1366).
-   * Empty while unchosen — and an ambiguous fund cannot be included until it is,
-   * because every figure in its row belongs to one holding or the other.
-   */
-  assetId: string;
-}
 
 function bucketLabel(bucket: "matched" | "new"): string {
   return bucket === "matched" ? "Encaja" : "Nuevo";
@@ -79,24 +71,18 @@ function positionFlagLabel(
   }
 }
 
+/** Project a preview row onto the pure module's opening state. */
 function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
-  if (fund.bucket === "matched") {
-    // An ambiguous identifier starts unchosen AND excluded: the ranked first
-    // candidate is only an ordering, and pre-checking it would smuggle the very
-    // by-creation-order pick this row exists to stop (#1366).
-    return {
-      assetId: fund.ambiguous ? "" : fund.assetId,
-      included: !fund.ambiguous,
-      replaceOpening: fund.toDeleteCount > 0,
-      symbolEmpty: false,
-    };
-  }
-  return {
-    assetId: "",
-    included: fund.suggestedSymbol !== "",
-    replaceOpening: false,
-    symbolEmpty: fund.suggestedSymbol === "",
-  };
+  return defaultFundSelection(
+    fund.bucket === "matched"
+      ? {
+          ambiguous: fund.ambiguous,
+          assetId: fund.assetId,
+          bucket: "matched",
+          replacesOpening: fund.toDeleteCount > 0,
+        }
+      : { bucket: "new", suggestedSymbol: fund.suggestedSymbol },
+  );
 }
 
 /** The claimant whose figures the row currently shows — the chosen one, or the default. */
@@ -169,10 +155,9 @@ export function ImportStatementPreview({
   const summaryInput: FundSelectionState[] = funds.map((fund) => ({
     amountMinor: fund.amountMinor,
     bucket: fund.bucket,
-    choicePending:
-      fund.bucket === "matched" &&
-      fund.ambiguous &&
-      (selection[fund.isin]?.assetId ?? "") === "",
+    choicePending: isFundChoicePending(fund, {
+      assetId: selection[fund.isin]?.assetId ?? "",
+    }),
     executedCount: fund.executedCount,
     included: selection[fund.isin]?.included ?? false,
     isin: fund.isin,
@@ -208,24 +193,15 @@ export function ImportStatementPreview({
     return { assetId: "", included: false, replaceOpening: false, symbolEmpty: false };
   }
 
-  /**
-   * Name the investment an ambiguous identifier belongs to. Every figure in the
-   * row is that holding's, so the opening-replacement default is re-read from the
-   * chosen claimant instead of carrying the previous one's over.
-   */
   function chooseHolding(fund: FundPreviewRow, assetId: string) {
     if (fund.bucket !== "matched") return;
     const choice = fund.choices.find((entry) => entry.assetId === assetId);
     setSelection((current) => ({
       ...current,
-      [fund.isin]: {
-        ...(current[fund.isin] ?? defaultFlagsForIsin()),
+      [fund.isin]: chooseFundHolding(current[fund.isin] ?? defaultFlagsForIsin(), {
         assetId,
-        // Naming the holding IS the decision to import it; clearing the choice
-        // takes the fund back out rather than leaving it armed without a target.
-        included: assetId !== "",
-        replaceOpening: (choice?.toDeleteCount ?? 0) > 0,
-      },
+        replacesOpening: (choice?.toDeleteCount ?? 0) > 0,
+      }),
     }));
   }
 
@@ -316,12 +292,16 @@ export function ImportStatementPreview({
                 <tbody>
                   {funds.map((fund) => {
                     const flags = selection[fund.isin] ?? defaultFlagsFor(fund);
-                    const choice = chosenChoice(fund, flags);
-                    const displayName = choice?.existingName ?? fundDisplayName(fund);
+                    const choicePending = isFundChoicePending(fund, flags);
+                    // While the choice is pending there is no holding to speak
+                    // for: no name, no figures — the only ones on hand are the
+                    // first candidate's (#1366).
+                    const choice = choicePending ? null : chosenChoice(fund, flags);
+                    const displayName = choicePending
+                      ? fund.isin
+                      : (choice?.existingName ?? fundDisplayName(fund));
                     const unresolved =
                       fund.bucket === "new" && fund.lookup.status !== "found";
-                    const choicePending =
-                      fund.bucket === "matched" && fund.ambiguous && flags.assetId === "";
                     const positionImpact =
                       choice && !flags.replaceOpening && choice.openingKeptPositionImpact
                         ? choice.openingKeptPositionImpact
@@ -365,7 +345,7 @@ export function ImportStatementPreview({
                             fund.ambiguous ? (
                               <div className="stackForm">
                                 <label>
-                                  ¿Cuál de tus inversiones es?
+                                  {`¿Cuál de tus inversiones es ${fund.isin}?`}
                                   <select
                                     disabled={readOnly}
                                     name={`assetId_${fund.isin}`}
@@ -450,78 +430,81 @@ export function ImportStatementPreview({
                         </td>
                         <td>{formatMoney(fund.amountMinor)}</td>
                         <td>
-                          <div className="positionImpact">
-                            <p className="positionImpactLine">
-                              {formatUnits(positionImpact.beforeUnits)} uds (
-                              {formatMoney(positionImpact.beforeValueMinor)}) →{" "}
-                              {formatUnits(positionImpact.afterUnits)} uds (
-                              {formatMoney(positionImpact.afterValueMinor)})
+                          {choicePending ? (
+                            <p className="contextLabel">
+                              Elige la inversión para ver qué le pasa a la posición.
                             </p>
-                            {positionImpact.flags.length > 0 ? (
-                              <ul
-                                aria-label="Avisos de posición"
-                                className="positionFlags"
-                              >
-                                {positionImpact.flags.map((flag) => (
-                                  <li className="positionFlag" key={flag}>
-                                    {positionFlagLabel(flag)}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {choice ? (
-                              <details suppressHydrationWarning>
-                                <summary>
-                                  Ver fusión
-                                  {choicePending ? " (de la primera candidata)" : ""}
-                                </summary>
-                                <p>
-                                  {pluralize(
-                                    choice.toCreateCount,
-                                    "operación nueva",
-                                    "operaciones nuevas",
-                                  )}
-                                  {" · "}
-                                  {pluralize(
-                                    choice.toOverwriteCount,
-                                    "sobrescrita",
-                                    "sobrescritas",
-                                  )}
-                                  {choice.toDeleteCount > 0
-                                    ? ` · ${pluralize(
-                                        choice.toDeleteCount,
-                                        "apertura sustituida",
-                                        "aperturas sustituidas",
-                                      )}`
-                                    : ""}
-                                </p>
-                                {choice.toDeleteCount > 0 ? (
-                                  <label className="directionOptIn">
-                                    <input
-                                      name={`replaceOpeningSeen_${fund.isin}`}
-                                      type="hidden"
-                                      value="on"
-                                    />
-                                    <input
-                                      checked={flags.replaceOpening}
-                                      disabled={readOnly || !flags.included}
-                                      name={`replaceOpening_${fund.isin}`}
-                                      onChange={(event) =>
-                                        setReplaceOpening(
-                                          fund.isin,
-                                          event.currentTarget.checked,
-                                        )
-                                      }
-                                      type="checkbox"
-                                    />
-                                    Sustituir la apertura por el historial importado.
-                                  </label>
-                                ) : null}
-                              </details>
-                            ) : (
-                              <span className="contextLabel">Activo nuevo</span>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="positionImpact">
+                              <p className="positionImpactLine">
+                                {formatUnits(positionImpact.beforeUnits)} uds (
+                                {formatMoney(positionImpact.beforeValueMinor)}) →{" "}
+                                {formatUnits(positionImpact.afterUnits)} uds (
+                                {formatMoney(positionImpact.afterValueMinor)})
+                              </p>
+                              {positionImpact.flags.length > 0 ? (
+                                <ul
+                                  aria-label="Avisos de posición"
+                                  className="positionFlags"
+                                >
+                                  {positionImpact.flags.map((flag) => (
+                                    <li className="positionFlag" key={flag}>
+                                      {positionFlagLabel(flag)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {choice ? (
+                                <details suppressHydrationWarning>
+                                  <summary>Ver fusión</summary>
+                                  <p>
+                                    {pluralize(
+                                      choice.toCreateCount,
+                                      "operación nueva",
+                                      "operaciones nuevas",
+                                    )}
+                                    {" · "}
+                                    {pluralize(
+                                      choice.toOverwriteCount,
+                                      "sobrescrita",
+                                      "sobrescritas",
+                                    )}
+                                    {choice.toDeleteCount > 0
+                                      ? ` · ${pluralize(
+                                          choice.toDeleteCount,
+                                          "apertura sustituida",
+                                          "aperturas sustituidas",
+                                        )}`
+                                      : ""}
+                                  </p>
+                                  {choice.toDeleteCount > 0 ? (
+                                    <label className="directionOptIn">
+                                      <input
+                                        name={`replaceOpeningSeen_${fund.isin}`}
+                                        type="hidden"
+                                        value="on"
+                                      />
+                                      <input
+                                        checked={flags.replaceOpening}
+                                        disabled={readOnly || !flags.included}
+                                        name={`replaceOpening_${fund.isin}`}
+                                        onChange={(event) =>
+                                          setReplaceOpening(
+                                            fund.isin,
+                                            event.currentTarget.checked,
+                                          )
+                                        }
+                                        type="checkbox"
+                                      />
+                                      Sustituir la apertura por el historial importado.
+                                    </label>
+                                  ) : null}
+                                </details>
+                              ) : (
+                                <span className="contextLabel">Activo nuevo</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

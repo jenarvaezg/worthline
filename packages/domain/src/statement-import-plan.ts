@@ -10,7 +10,7 @@ import type { LiquidityTier } from "./classification";
 import type { DecimalString } from "./decimal";
 import type { Instrument, InstrumentPriceProvider } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
-import { isIsinShaped, normalizeMatchKey, normalizeMatchName } from "./matching-keys";
+import { normalizeMatchKey, normalizeMatchName } from "./matching-keys";
 import type { CurrencyCode } from "./money";
 import { netUnitsFromOperations } from "./positions";
 import { planStatementMerge, type StatementMergePlan } from "./statement-merge";
@@ -21,8 +21,6 @@ import type {
 } from "./statement-parse";
 import { unitsReadAsClosed } from "./warnings";
 import type { OwnershipShare } from "./workspace-types";
-
-export { isIsinShaped };
 
 export interface StatementPortfolioInvestment {
   assetId: string;
@@ -147,15 +145,13 @@ export interface StatementImportPlan {
   ignored: StatementFundGroup[];
 }
 
-const normalizeIsin = normalizeMatchKey;
-
 export function groupStatementRowsByIsin(
   statement: ParsedStatement,
 ): StatementFundGroup[] {
   const groupsByIsin = new Map<string, StatementFundGroup>();
 
   const groupFor = (isin: string | null): StatementFundGroup | null => {
-    const normalized = normalizeIsin(isin);
+    const normalized = normalizeMatchKey(isin);
     if (!normalized) return null;
 
     let group = groupsByIsin.get(normalized);
@@ -169,7 +165,7 @@ export function groupStatementRowsByIsin(
   for (const row of statement.rows) {
     const group = groupFor(row.isin);
     if (!group) continue;
-    group.rows.push({ ...row, isin: normalizeIsin(row.isin) });
+    group.rows.push({ ...row, isin: normalizeMatchKey(row.isin) });
     // The group's instrument/name come from its first row that carries them;
     // conflicting declarations are surfaced by findStatementTypeConflict.
     if (row.instrument && !group.instrument) group.instrument = row.instrument;
@@ -177,7 +173,7 @@ export function groupStatementRowsByIsin(
   }
 
   for (const row of statement.skipped) {
-    groupFor(row.isin)?.skipped.push({ ...row, isin: normalizeIsin(row.isin) });
+    groupFor(row.isin)?.skipped.push({ ...row, isin: normalizeMatchKey(row.isin) });
   }
 
   return [...groupsByIsin.values()];
@@ -253,13 +249,14 @@ function isClosedLedger(investment: StatementPortfolioInvestment): boolean {
 function rankClaimants(
   group: StatementFundGroup,
   investments: StatementPortfolioInvestment[],
+  closedByAssetId: ReadonlyMap<string, boolean>,
 ): StatementPortfolioInvestment[] {
   if (investments.length < 2) return investments;
   const groupName = normalizeMatchName(group.name);
   const score = (investment: StatementPortfolioInvestment): number => {
     const nameMatches =
       groupName !== null && normalizeMatchName(investment.name) === groupName;
-    return (nameMatches ? 2 : 0) + (isClosedLedger(investment) ? 0 : 1);
+    return (nameMatches ? 2 : 0) + (closedByAssetId.get(investment.assetId) ? 0 : 1);
   };
   return [...investments].sort((a, b) => score(b) - score(a));
 }
@@ -281,8 +278,12 @@ export function resolveStatementImportBuckets(
   const portfolioOrder = new Map(
     investments.map((investment, index) => [investment.assetId, index]),
   );
+  // Derived once per portfolio, not once per comparison inside a sort.
+  const closedByAssetId = new Map(
+    investments.map((investment) => [investment.assetId, isClosedLedger(investment)]),
+  );
   for (const investment of investments) {
-    claim(investmentsByKey, normalizeIsin(investment.isin), investment);
+    claim(investmentsByKey, normalizeMatchKey(investment.isin), investment);
     const symbol = (investment.providerSymbol ?? "").trim();
     if (symbol) {
       claim(investmentsByKey, symbol, investment);
@@ -300,6 +301,7 @@ export function resolveStatementImportBuckets(
         investmentsByKey.get(group.isin) ?? [],
         investmentsByKey.get(group.isin.toLowerCase()) ?? [],
       ),
+      closedByAssetId,
     );
 
     if (claimants.length === 0) {
@@ -309,7 +311,7 @@ export function resolveStatementImportBuckets(
     const replaceOpening = options.replaceOpening?.(group) ?? true;
     const planned: StatementFundClaimant[] = claimants.map((investment) => ({
       assetId: investment.assetId,
-      closed: isClosedLedger(investment),
+      closed: closedByAssetId.get(investment.assetId) === true,
       mergePlan: planStatementMerge(group.rows, investment.operations, {
         replaceOpening,
       }),
@@ -347,7 +349,8 @@ export function findUnresolvedStatementChoice(
 
   for (const selection of selections) {
     if (selection.action !== "include") continue;
-    const bucket = bucketByIsin.get(normalizeIsin(selection.isin) ?? selection.isin);
+    const key = normalizeMatchKey(selection.isin);
+    const bucket = key === null ? undefined : bucketByIsin.get(key);
     if (!bucket || bucket.bucket !== "matched") continue;
     if (resolveChosenClaimant(bucket, selection.assetId) === null) return bucket.isin;
   }
@@ -375,7 +378,7 @@ export function buildStatementImportPlan(
   selections: StatementFundSelection[],
 ): StatementImportPlan {
   const selectionByIsin = new Map(
-    selections.map((selection) => [normalizeIsin(selection.isin), selection]),
+    selections.map((selection) => [normalizeMatchKey(selection.isin), selection]),
   );
   const included: StatementImportPlanFund[] = [];
   const ignored: StatementFundGroup[] = [];

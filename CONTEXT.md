@@ -285,12 +285,14 @@ missing ones, prefilled by a live symbol lookup on the ISIN (the export carries 
 fund name) — and merges each group into that investment's **operations**: matched
 by date, the file winning where a date overlaps, operations whose date is absent
 from the file left untouched (never deleted). Only executed rows load; pending or
-rejected ones are skipped. The upload is previewed per fund — matched, new, or
-ignored — and applied all-or-nothing over the funds the user includes. Uploaded
-from the portfolio (any mix of ISINs) or from one holding, where every row must
-match that holding's ISIN. An investment created without a **provider symbol**
-values at its last operation's price and carries an overrideable **warning** until
-one is set. Distinct from an **Import** (a one-shot full-workspace replace) and
+rejected ones are skipped. The upload is previewed per fund — matched, new,
+ignored, or **pending a choice** (an ISIN identifies the instrument, not the
+holding: when two investments carry it — the same fund at two brokers — the user
+names which one, and until then the fund stays out) — and applied all-or-nothing
+over the funds the user includes. Uploaded from the portfolio (any mix of ISINs)
+or from one holding, where every row must match that holding's ISIN. An investment
+created without a **provider symbol** values at **cost basis** and carries an
+overrideable **warning** until one is set, unless its position is closed. Distinct from an **Import** (a one-shot full-workspace replace) and
 from a **connected source** (a live, read-only API mirror that owns its holdings):
 a statement is a manual, file-based feed of operations, and each holding's value
 still derives from its **price provider**. UI labels: "Cargar movimientos" (one
