@@ -27,6 +27,7 @@ import {
   buildTurnMessages,
   readGoldenAttachmentTurn,
   unvalidatedEvidenceFor,
+  validatedDocumentsFor,
 } from "./golden-turn";
 import type { AssistantAnswer } from "./graders";
 
@@ -73,6 +74,11 @@ async function askAssistant(
       // would grade a refusal production makes for the model — measuring the
       // harness's hole again, in the other direction.
       unvalidatedEvidence: unvalidatedEvidenceFor(reading),
+      // And the other half of what a document turn carries (#1373): the rows the
+      // reconcile is allowed to write come from the extraction, so a harness that
+      // forwarded the gate but not the documents would grade a refusal production
+      // never makes.
+      validatedDocuments: validatedDocumentsFor(reading),
     }),
     stopWhen: stepCountIs(MAX_STEPS),
   });

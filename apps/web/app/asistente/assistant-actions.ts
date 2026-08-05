@@ -349,12 +349,21 @@ export function parseHoldingCreationProposal(
   return raw as unknown as HoldingCreationProposal;
 }
 
-/** Shallow shape check for a reconcile row off the tool stream (own JSON). */
+/**
+ * Shallow shape check for a reconcile row off the tool stream (own JSON). The
+ * movement evidence (#1373) is part of the check on purpose: the card PRINTS those
+ * lines and sums them into the impact header, so a row shape this version does not
+ * carry is not something to render half of — a stale tab across a deploy loses the
+ * card (the draft is still there, and the next turn rebuilds it) rather than showing
+ * a `+0 €` header with no evidence under it, which is the very bug being fixed.
+ */
 function isReconcileRow(value: unknown): value is ReconcileRow {
   return (
     isRecord(value) &&
     typeof value.rowId === "string" &&
     typeof value.name === "string" &&
+    Array.isArray(value.movements) &&
+    typeof value.movementsDeltaMinor === "number" &&
     isRecord(value.match) &&
     typeof value.match.decision === "string"
   );

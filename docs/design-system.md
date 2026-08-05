@@ -98,6 +98,13 @@ marca de procedencia (#1257) no abre una entrada nueva: el envoltorio
 `.assistantProposalOrigin` se queda con la regla gruesa y el sello pasa a ser la
 primera línea impresa de la MISMA entrada, en oro y nombrado con palabras.
 
+Dentro de una propuesta, elegir el destino de una fila (#1373) no es un commit: son
+alternativas, y llevan `.assistantRowChoice` —radios nativos con marca de selección
+de regla lateral y hoja fuerte, el registro de los chips de selección de holding—
+nunca relleno primario, que es el peso reservado al único primario de la tarjeta
+(Confirmar). Quitar una fila del lote es un control de texto (`.assistantRowAside`),
+y no comparte etiqueta con descartar la propuesta entera.
+
 ## 5. Controles y navegación
 
 - `.navTab`: pestaña de registro sin fondo ni radio; activa mediante regla

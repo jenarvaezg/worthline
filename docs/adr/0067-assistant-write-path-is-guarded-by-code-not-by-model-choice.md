@@ -119,3 +119,41 @@ path's cost stays flat and the work goes into the frontiers.
   figure invented rather than asked for — are now each asked twice: once over a typed
   question and once over a document. If routing by task ever becomes the answer, it
   will be these numbers that say so.
+
+## Amendment (#1373): a document lane takes its rows from the document
+
+`propose_reconcile` was written as a document lane and documented as one — «pasa
+holdings y movements TAL CUAL los diste por extraídos» — with nothing checking it.
+The rows were whatever the model typed, which is the same shape of bet this ADR
+refuses everywhere else, and it cost a real session three turns: handed an
+aportación confirmation for «MYINVESTOR INDEXADO SP 500 PP», the model wrote the
+name of the OTHER pension plan of the workspace into the row, and filled the
+schema's then-mandatory `value` — a field an aportación confirmation does not
+contain — with a figure copied from the portfolio snapshot. To the code it was a
+clean match: the matcher was given the workspace's own name, so of course it matched.
+
+The boundary, in `reconcile-document-frontier.ts`:
+
+- **The rows come from the extraction.** The tool now receives the documents
+  worthline itself validated for the turn's context (the same list the model is shown
+  in the DATOS ESTRUCTURADOS block) and the model's `holdings` only SELECT among their
+  rows, by name or ISIN. Values, fidelity tiers and movements are the extractor's.
+- **A row that points at nothing fails the whole call**, with a message that ROUTES
+  (the #1248 rule): the portfolio-wide case belongs in `/patrimonio/importar-extracto`,
+  and one dated operation on an existing holding in that holding's ficha until the
+  chat lane for it exists (#1374). A batch quietly shrunk to the rows that happened
+  to match is how a wrong write looks reasonable.
+- **`value` stopped being mandatory** and became a CHECK: demanding a figure the
+  document may not contain is what pushed the model to invent one. A relayed value
+  that disagrees with the document's by more than a euro rejects the pick.
+- **The context, not the turn.** Unlike the exemption of `isValidatedDocument`
+  (#1248), which must be this turn's own extraction because a forged `valid` envelope
+  could otherwise DISABLE a gate, the rows may come from any validated document the
+  model was shown — a user who uploads a cartera and says «cuádrala» in the next
+  message is doing nothing wrong. A forged envelope buys nothing here: it would only
+  let the user's own browser propose rows the user then has to confirm, which is the
+  manual path with extra steps.
+
+The eval keeps grading the MODEL for typing rows it was not given, for the reason
+this ADR already gives: a gate that only recorded what got through would stop being
+able to tell a disciplined model from a guarded one.

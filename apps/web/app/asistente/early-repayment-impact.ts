@@ -42,6 +42,8 @@ import {
   type ValuationCadence,
 } from "@worthline/domain";
 
+import { formatIsoDayEs } from "./iso-day-es";
+
 export interface EarlyRepaymentImpactInput {
   /** The declared amortization plan, when the debt has one. */
   plan: AmortizationPlanInput;
@@ -111,12 +113,6 @@ function money(amountMinor: number, currency: string): string {
   }).format(amountMinor / 100);
 }
 
-/** YYYY-MM-DD → DD/MM/YYYY without touching Date (no timezone surprises). */
-export function formatDayEs(dateKey: string): string {
-  const [year, month, day] = dateKey.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 export function projectEarlyRepaymentImpact(
   input: EarlyRepaymentImpactInput,
 ): EarlyRepaymentImpactResult {
@@ -150,7 +146,7 @@ export function projectEarlyRepaymentImpact(
   if (proposed.repaymentDate < schedule.firstPaymentDate) {
     return {
       ok: false,
-      error: `La primera cuota de este préstamo es del ${formatDayEs(schedule.firstPaymentDate)}: una anticipada anterior no cae en ninguna cuota. Comprueba la fecha.`,
+      error: `La primera cuota de este préstamo es del ${formatIsoDayEs(schedule.firstPaymentDate)}: una anticipada anterior no cae en ninguna cuota. Comprueba la fecha.`,
     };
   }
 
@@ -199,7 +195,7 @@ export function projectEarlyRepaymentImpact(
   if (balanceBeforeMinor === 0) {
     return {
       ok: false,
-      error: `En ${formatDayEs(proposed.repaymentDate)} el préstamo ya está a cero, así que no hay saldo que amortizar.`,
+      error: `En ${formatIsoDayEs(proposed.repaymentDate)} el préstamo ya está a cero, así que no hay saldo que amortizar.`,
     };
   }
   const traceBefore = amortizationScheduleTrace({
@@ -232,7 +228,7 @@ export function projectEarlyRepaymentImpact(
   if (proposed.amountMinor > balanceBeforeMinor + allowanceMinor) {
     return {
       ok: false,
-      error: `El importe (${money(proposed.amountMinor, currency)}) supera el saldo vivo del préstamo en ${formatDayEs(proposed.repaymentDate)} (${money(balanceBeforeMinor, currency)}). Una cancelación total vale el principal más el devengo del mes, no diez veces el saldo: esto parece un error de unidad (euros escritos como céntimos). Comprueba la cifra antes de registrarla.`,
+      error: `El importe (${money(proposed.amountMinor, currency)}) supera el saldo vivo del préstamo en ${formatIsoDayEs(proposed.repaymentDate)} (${money(balanceBeforeMinor, currency)}). Una cancelación total vale el principal más el devengo del mes, no diez veces el saldo: esto parece un error de unidad (euros escritos como céntimos). Comprueba la cifra antes de registrarla.`,
     };
   }
 
@@ -280,7 +276,7 @@ export function projectEarlyRepaymentImpact(
   const notes: string[] = [];
   if (boundaryDate !== proposed.repaymentDate) {
     notes.push(
-      `El saldo baja el mismo ${formatDayEs(proposed.repaymentDate)}, pero la anticipada cae dentro de la cuota del ${formatDayEs(boundaryDate)}: es esa cuota la que se recalcula con el saldo ya reducido.`,
+      `El saldo baja el mismo ${formatIsoDayEs(proposed.repaymentDate)}, pero la anticipada cae dentro de la cuota del ${formatIsoDayEs(boundaryDate)}: es esa cuota la que se recalcula con el saldo ya reducido.`,
     );
   }
   if (fullyRepaid) {
@@ -295,7 +291,7 @@ export function projectEarlyRepaymentImpact(
   );
   for (const repayment of sameBoundary) {
     notes.push(
-      `Ya hay una anticipada del ${formatDayEs(repayment.repaymentDate)} (${money(repayment.amountMinor, currency)}) en esa misma cuota: cada una baja el saldo en su propia fecha, y la cuota se recalcula con las dos ya restadas.`,
+      `Ya hay una anticipada del ${formatIsoDayEs(repayment.repaymentDate)} (${money(repayment.amountMinor, currency)}) en esa misma cuota: cada una baja el saldo en su propia fecha, y la cuota se recalcula con las dos ya restadas.`,
     );
   }
   if (reconciliation && !reconciliation.matches && monthlyPaymentAfterMinor > 0) {
@@ -319,7 +315,7 @@ export function projectEarlyRepaymentImpact(
       .sort((a, b) => a.baselineDate.localeCompare(b.baselineDate))[0];
     notes.push(
       governing
-        ? `Esta anticipada no cambia el saldo de hoy: hay una recalibración posterior (${formatDayEs(governing.baselineDate)}) que manda sobre la curva a partir de su fecha, así que solo corrige el tramo anterior.`
+        ? `Esta anticipada no cambia el saldo de hoy: hay una recalibración posterior (${formatIsoDayEs(governing.baselineDate)}) que manda sobre la curva a partir de su fecha, así que solo corrige el tramo anterior.`
         : balanceTodayAfterMinor === 0
           ? `Esta anticipada no cambia el saldo de hoy: el préstamo ya estaba liquidado antes de hoy, así que esto solo corrige el histórico.`
           : `Esta anticipada no cambia el saldo de hoy, así que solo corrige el tramo anterior de la curva.`,

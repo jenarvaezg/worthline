@@ -40,6 +40,7 @@ import {
   type QuickAction,
   sourceHref,
 } from "@web/asistente/assistant-actions";
+import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
 import {
   buildCorrectionProposal,
@@ -73,6 +74,10 @@ import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-propos
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import { stampProposalTools } from "@web/asistente/proposal-provenance";
 import { PROPOSAL_SUMMARY_MAX_CHARS } from "@web/asistente/proposal-summary";
+import {
+  positionsMovementsInContext,
+  resolveReconcileDocument,
+} from "@web/asistente/reconcile-document-frontier";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
@@ -202,6 +207,16 @@ export interface ChatToolsInput {
    * where it comes from. Defaults to the verdict when the caller does not know.
    */
   hasUnvalidatedEvidence?: boolean;
+  /**
+   * The documents worthline itself extracted and validated for the turn's context —
+   * exactly the ones handed to the model in the DATOS ESTRUCTURADOS block. The
+   * reconcile lane reads its rows FROM here instead of from the model's arguments
+   * (#1373): its contract always said the rows came from an extraction, and until
+   * this input existed nothing could check it, so a mistyped holding name became a
+   * write against the wrong plan de pensiones. Empty by default, which closes the
+   * lane — a fixture or an eval that wants a reconcile must bring the document.
+   */
+  validatedDocuments?: readonly ExtractedDocument[];
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -714,6 +729,19 @@ const MIXED_DOCUMENT_PROPOSAL_SCHEMA = jsonSchema<{
   additionalProperties: false,
 });
 
+/**
+ * A reconcile is a SELECTION over a document worthline validated, not a batch of
+ * rows the model writes (#1373). So `holdings` only has to point at rows — a name
+ * and/or an ISIN — and every figure comes from the extraction.
+ *
+ * What the fields that are still accepted are doing here: `value` used to be
+ * MANDATORY, which is what pushed a model holding an aportación confirmation (a
+ * document with no position value in it at all) to fill the slot with a portfolio
+ * snapshot; it is now optional and only ever used to CHECK the pick. `type`,
+ * `currency`, `fidelity`, `declaredCost`, `uncertain` and `movements` are tolerated
+ * so a model still relaying the old shape does not fail its call, and ignored: the
+ * app has the extractor's own values and never needs the model's copy of them.
+ */
 const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
   documentName?: string;
   holdings?: Array<Record<string, unknown>>;
@@ -739,7 +767,7 @@ const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
           },
           uncertain: { type: "boolean" },
         },
-        required: ["name", "type", "value", "currency", "fidelity"],
+        required: ["name"],
         additionalProperties: false,
       },
     },
@@ -762,7 +790,7 @@ const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
       },
     },
   },
-  required: ["holdings", "movements"],
+  required: ["holdings"],
   additionalProperties: false,
 });
 
@@ -1954,11 +1982,23 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_reconcile: tool({
       description:
-        "Prepara UNA propuesta de RECONCILE de cartera a partir de un documento «posiciones + movimientos» ya extraído por el seam de adjuntos (documentType positions_movements en los DATOS ESTRUCTURADOS). Pasa holdings y movements TAL CUAL los diste por extraídos, sin recalcular ni inventar (respeta el tier de fidelidad ya estampado; ADR 0048). La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; para otras familias usa el alta por chat (propose_holding), no ésta.",
+        "Prepara UNA propuesta de RECONCILE de cartera SOBRE un documento «posiciones + movimientos» que worthline ya haya extraído y validado (documentType positions_movements en los DATOS ESTRUCTURADOS). Solo SELECCIONAS filas de ese documento: en holdings pasa el nombre (y el ISIN si lo trae) TAL CUAL los diga el documento, o no pases ninguna para llevarlas todas. Los importes, los tiers de fidelidad y los movimientos los toma la app del documento, así que no los recalcules ni los rellenes con cifras de la cartera. Si no hay documento validado, o si una fila no está en él, la app RECHAZA la llamada: una operación puntual sobre una inversión que ya existe no se anota por aquí. La app fusiona con la cartera viva: crea los holdings nuevos, actualiza los coincidentes con sus movimientos, deja el resto — todo o nada. El usuario reasigna los matches dudosos en el preview antes de confirmar. v1 escribe solo familias de inversión (fondo/etf/acción/índice/plan de pensiones/cripto) en EUR; para otras familias usa el alta por chat (propose_holding), no ésta.",
       inputSchema: RECONCILE_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_RECONCILE_MESSAGE);
         if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
+        // The document-only frontier (#1373): the rows come from the extraction, the
+        // model only picks among them. Checked BEFORE the store is opened — a call
+        // with nothing to stand on is refused, not half-resolved against live data.
+        const resolved = resolveReconcileDocument(
+          (args.holdings ?? []).map((holding) => ({
+            ...(typeof holding.name === "string" ? { name: holding.name } : {}),
+            ...(typeof holding.isin === "string" ? { isin: holding.isin } : {}),
+            ...(typeof holding.value === "number" ? { value: holding.value } : {}),
+          })),
+          positionsMovementsInContext(input.validatedDocuments ?? []),
+        );
+        if (!resolved.ok) return Promise.resolve(resolved.error);
         return input.runWithStore(async (store) => {
           if (
             !store.assistantProposals ||
@@ -1979,12 +2019,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
                 ? { connectedSources: store.connectedSources }
                 : {}),
             },
-            {
-              documentType: "positions_movements",
-              holdings: args.holdings ?? [],
-              movements: args.movements ?? [],
-              warnings: [],
-            },
+            resolved.document,
             input.asOf,
             args.documentName ?? "cartera.xlsx",
           );

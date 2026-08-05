@@ -11,6 +11,7 @@ import type {
   HoldingFidelity,
 } from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
+import { formatIsoDayEs } from "./iso-day-es";
 
 const number = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
 const euros = new Intl.NumberFormat("es-ES", {
@@ -155,18 +156,6 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
 }
 
 /**
- * `DD/MM/YYYY` from an ISO day. A local three-liner rather than an import of the
- * assistant's `formatDayEs`: that one lives in `early-repayment-impact`, next to the
- * amortization engine, and this component is rendered inside the `"use client"`
- * assistant layer — pulling a server-side domain module across that boundary for
- * string slicing is a bundle bet this repo's weight tripwire does not need taken.
- */
-function isoDayEs(isoDay: string): string {
-  const [year, month, day] = isoDay.split("-");
-  return `${day}/${month}/${year}`;
-}
-
-/**
  * How each `kind` reads. It is the ONE field on this card the model classified
  * rather than read, so the row is labelled as a reading of ours and the copy under
  * the table says so — an amount sitting next to an authoritative «Amortización
@@ -215,7 +204,7 @@ function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) 
           <tbody>
             <tr>
               <th scope="row">Fecha</th>
-              <td>{isoDayEs(event.date)}</td>
+              <td>{formatIsoDayEs(event.date)}</td>
             </tr>
             <tr>
               <th scope="row">Concepto</th>
@@ -279,7 +268,7 @@ function HoldingEventPreview({ data }: { data: ExtractedHoldingEventDocument }) 
               <tr>
                 <th scope="row">Próxima cuota</th>
                 <td>
-                  {isoDayEs(event.nextInstalment.date)} ·{" "}
+                  {formatIsoDayEs(event.nextInstalment.date)} ·{" "}
                   {formatAmount(
                     event.nextInstalment.amount,
                     event.nextInstalment.currency,

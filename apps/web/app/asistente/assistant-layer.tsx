@@ -3,7 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard-messages";
 import { PremiumNotice } from "@web/entitlements/premium-notice";
-import { countKeyClaimants, formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinor } from "@worthline/domain";
 import type { UIMessage } from "ai";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -120,6 +120,14 @@ import {
   type ReconcileProposal,
   reconcileFolio,
 } from "./reconcile-proposal-contract";
+import {
+  reconcileAmbiguityMark,
+  reconcileDestinationLabel,
+  reconcileDocumentLine,
+  reconcileFidelityMark,
+  reconcileImpactCaption,
+  reconcileMovementLine,
+} from "./reconcile-row-copy";
 import { withoutRepeatedProse } from "./repeated-prose";
 import {
   deriveScreenContext,
@@ -513,41 +521,84 @@ function HoldingTrashProposalCard({
   );
 }
 
-/** The es-ES fidelity mark a reconcile row shows (decision #1090, ADR 0048). */
-function reconcileFidelityMark(fidelity: ReconcileRow["fidelity"]): string {
-  if (fidelity === "movements") return "con movimientos";
-  if (fidelity === "declared_cost") return "coste declarado";
-  return "sin coste real";
-}
-
-/** The es-ES decision line a reconcile row shows. */
-function reconcileDecisionLabel(row: ReconcileRow): string {
-  const decision = effectiveDecision(row);
-  if (decision === "leave") return "Dejar";
-  if (decision === "create") return `Crear «${row.name}»`;
-  const target = row.match.candidates.find((c) => c.holdingId === row.match.target);
-  return `Actualizar «${target?.name ?? row.name}»`;
-}
-
 /**
- * The es-ES review mark of an ambiguous match (#1331): the key names the instrument
- * but not the holding — the same fondo at two brokers, or two holdings with el mismo
- * nombre — so the row says how many it is choosing between instead of presenting a
- * confident target. Empty once the user picks one (the pick resolves the ambiguity).
+ * The row's editable decision (#1373). It used to be a rank of look-alike buttons —
+ * «Crear nuevo» first and in primary ink, then one «Actualizar «X»» per candidate
+ * INCLUDING the one already chosen, which was a filled, principal-looking button
+ * whose click changed nothing a user could see. So it stops being buttons at all:
+ * choosing a destination is a choice among alternatives, and native radios say which
+ * one is live without colour being the only signal, with no affordance that promises
+ * an action and performs none. The candidates come first and «Crear nuevo» last —
+ * creating is the option that would duplicate the holding, so it is not the default
+ * shape of the row, and Confirmar stays the card's only primary.
+ *
+ * A row taken out of the batch has its choices INERT rather than live: the pure
+ * reassign helpers put a row back in when it is given a destination, and a group of
+ * enabled radios that silently re-includes the row — while the control next to it
+ * still offers to re-include it, and no radio reads as chosen — is the same hidden
+ * effect this component was rebuilt to remove. Out of the batch, the way back is the
+ * one control that says so.
  */
-function reconcileAmbiguityMark(row: ReconcileRow): string {
-  if (!row.match.ambiguous || effectiveDecision(row) !== "update") return "";
-  const shared = row.match.key === "name" ? "el mismo nombre" : "el mismo identificador";
-  return ` · ${countKeyClaimants(row.match)} holdings con ${shared}: revisa cuál actualizas`;
+function ReconcileRowChoices({
+  disabled,
+  groupName,
+  onCreate,
+  onUpdate,
+  row,
+}: {
+  disabled: boolean;
+  groupName: string;
+  onCreate: () => void;
+  onUpdate: (holdingId: string) => void;
+  row: ReconcileRow;
+}) {
+  const decision = effectiveDecision(row);
+  return (
+    <span
+      aria-label={`Destino de ${row.name}`}
+      className="assistantRowChoices"
+      role="radiogroup"
+    >
+      {row.match.candidates.map((candidate) => (
+        <label className="assistantRowChoice" key={candidate.holdingId}>
+          <input
+            checked={decision === "update" && row.match.target === candidate.holdingId}
+            disabled={disabled}
+            name={groupName}
+            onChange={() => onUpdate(candidate.holdingId)}
+            type="radio"
+          />
+          Actualizar «{candidate.name}»
+        </label>
+      ))}
+      <label className="assistantRowChoice">
+        <input
+          checked={decision === "create"}
+          disabled={disabled}
+          name={groupName}
+          onChange={onCreate}
+          type="radio"
+        />
+        Crear nuevo
+      </label>
+    </span>
+  );
 }
 
 /**
  * Reconcile por documento (#1108, PRD #1103 S5): the impact header leads
- * (patrimonio neto antes → después, estimado sobre las altas), then each row with
- * its decision and fidelity tier, reassignable in place (crear ↔ actualizar ↔
- * descartar), never blocking on a doubtful match; folio «Propuesta de reconcile ·
- * N holdings». Reuses the `.assistantProposal` anatomy — no new card. The rows are
- * editable client state; Confirmar sends the curated decisions to the atomic apply.
+ * (patrimonio neto antes → después), then each row printing what the DOCUMENT says,
+ * which holding it will write to, and the movements it will add — reassignable in
+ * place (actualizar ↔ crear ↔ quitar del lote), never blocking on a doubtful match;
+ * folio «Propuesta de reconcile · N holdings». Reuses the `.assistantProposal`
+ * anatomy — no new card. The rows are editable client state; Confirmar sends the
+ * curated decisions to the atomic apply.
+ *
+ * The three lines per row are the fix of #1373: the document text and the target
+ * holding used to be one sentence, so a model that typed the name of the wrong
+ * pension plan produced a row whose title and whose «Actualizar «…»» agreed with
+ * each other and with nothing else — and the movements, the only place the 125 € of
+ * the document appeared, were summarized as a fidelity tier.
  */
 function ReconcileProposalCard({
   mutationsDisabled,
@@ -571,9 +622,10 @@ function ReconcileProposalCard({
   const summary = reconcileSummary(rows);
   const impact = reconcileImpact(rows, proposal.netWorthBeforeMinor);
   const increases = impact.deltaMinor >= 0;
+  const caption = reconcileImpactCaption(impact);
   const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
     Math.abs(impact.deltaMinor),
-  )}${impact.partial ? " · estimado sobre las altas" : ""}`;
+  )}${caption ? ` · ${caption}` : ""}`;
   const totalKnown = impact.beforeMinor !== null && impact.afterMinor !== null;
   const folio = reconcileFolio(summary.active);
 
@@ -599,54 +651,52 @@ function ReconcileProposalCard({
       <ul>
         {rows.map((row) => (
           <li key={row.rowId}>
-            <strong>{row.name}</strong>{" "}
+            <strong>{reconcileDocumentLine(row)}</strong>
             <span>
-              {instrumentLabel(row.instrument)} · {reconcileFidelityMark(row.fidelity)} ·{" "}
-              {reconcileDecisionLabel(row)}
-              {reconcileAmbiguityMark(row)}
+              En el documento · {instrumentLabel(row.instrument)} ·{" "}
+              {reconcileFidelityMark(row.fidelity)}
               {row.uncertain ? " · dudoso" : ""}
+            </span>
+            <span>
+              {reconcileDestinationLabel(row)}
+              {reconcileAmbiguityMark(row)}
               {!row.excluded && !isRowWritable(row) ? " · fuera de alcance" : ""}
             </span>
-            <span className="assistantProposalActions">
-              {effectiveDecision(row) !== "create" || row.excluded ? (
-                <button
-                  disabled={actionsDisabled}
-                  onClick={() => setRows(reassignRowToNew(rows, row.rowId))}
-                  type="button"
-                >
-                  Crear nuevo
-                </button>
-              ) : null}
-              {row.match.candidates.map((candidate) => (
-                <button
-                  disabled={actionsDisabled}
-                  key={candidate.holdingId}
-                  onClick={() =>
-                    setRows(reassignRowToCandidate(rows, row.rowId, candidate.holdingId))
-                  }
-                  type="button"
-                >
-                  Actualizar «{candidate.name}»
-                </button>
-              ))}
-              {row.excluded ? (
-                <button
-                  disabled={actionsDisabled}
-                  onClick={() => setRows(restoreReconcileRow(rows, row.rowId))}
-                  type="button"
-                >
-                  Recuperar
-                </button>
-              ) : (
-                <button
-                  className="secondary"
-                  disabled={actionsDisabled}
-                  onClick={() => setRows(discardReconcileRow(rows, row.rowId))}
-                  type="button"
-                >
-                  Descartar
-                </button>
-              )}
+            {/* The evidence, line by line: what confirm will write on this holding. */}
+            {row.movements.map((movement, index) => (
+              <span
+                className="assistantRowMovement"
+                key={`${movement.date}-${movement.kind}-${index}`}
+              >
+                {reconcileMovementLine(movement)}
+              </span>
+            ))}
+            <ReconcileRowChoices
+              disabled={actionsDisabled || row.excluded}
+              groupName={`reconcile-${proposal.draft.proposalId}-${row.rowId}`}
+              onCreate={() => setRows(reassignRowToNew(rows, row.rowId))}
+              onUpdate={(holdingId) =>
+                setRows(reassignRowToCandidate(rows, row.rowId, holdingId))
+              }
+              row={row}
+            />
+            <span className="assistantRowAside">
+              <button
+                disabled={actionsDisabled}
+                onClick={() =>
+                  setRows(
+                    row.excluded
+                      ? restoreReconcileRow(rows, row.rowId)
+                      : discardReconcileRow(rows, row.rowId),
+                  )
+                }
+                type="button"
+              >
+                {/* Never «Descartar»: that word belongs to the whole proposal below. */}
+                {row.excluded
+                  ? "Volver a incluir esta fila"
+                  : "Quitar esta fila del lote"}
+              </button>
             </span>
           </li>
         ))}
@@ -688,7 +738,7 @@ function ReconcileProposalCard({
           }
           type="button"
         >
-          Descartar
+          Descartar la propuesta
         </button>
       </div>
     </div>

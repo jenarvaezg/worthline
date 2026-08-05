@@ -5,6 +5,7 @@ import {
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
+  validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
 import { isVisionAttachment, readAttachmentTurn } from "@web/asistente/attachment-turn";
@@ -670,6 +671,11 @@ export async function POST(request: Request): Promise<Response> {
     // the turn the proposal was born in, and a validated document lifts the gate
     // without taking the unreadable file out of the model's context.
     hasUnvalidatedEvidence,
+    // The documents the model was actually handed (#1373). The reconcile lane takes
+    // its rows from them instead of from what the model typed, so a row that no
+    // extraction contains cannot become a write. Read from `shrunk.messages` for the
+    // same reason as the grounded ids: what grounds a write is what the model sees.
+    validatedDocuments: validatedDocumentsForTools(shrunk.messages, currentPreview),
     // Holding-id provenance (#1263): the ids worthline itself put in the history the
     // model is about to read. Taken from `shrunk.messages`, so what grounds a write
     // is exactly what the model can see — a tool payload dropped by the ceiling

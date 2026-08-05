@@ -20,7 +20,6 @@ import type {
 import type { EarlyRepaymentMode } from "@worthline/domain";
 import {
   type EarlyRepaymentImpact,
-  formatDayEs,
   projectEarlyRepaymentImpact,
 } from "./early-repayment-impact";
 import {
@@ -28,6 +27,7 @@ import {
   type EarlyRepaymentProposal,
   earlyRepaymentModeLabel,
 } from "./early-repayment-proposal-contract";
+import { formatIsoDayEs } from "./iso-day-es";
 import { boundProposalSummary } from "./proposal-summary";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities"> & {
@@ -213,7 +213,7 @@ export async function projectEarlyRepaymentProposal(
       // internal `liability_…` id is one it can neither use nor hand to the user
       // — that is exactly how it ended up asking people to copy ids out of the
       // address bar. The route is named the way the user navigates it instead.
-      error: `Esa anticipada ya está registrada: ${liability.name} tiene una del ${formatDayEs(row.repaymentDate)}. No sumo importes ni la duplico; si la cifra registrada es otra, se corrige en la ficha de esa deuda, dentro de Patrimonio.`,
+      error: `Esa anticipada ya está registrada: ${liability.name} tiene una del ${formatIsoDayEs(row.repaymentDate)}. No sumo importes ni la duplico; si la cifra registrada es otra, se corrige en la ficha de esa deuda, dentro de Patrimonio.`,
     };
   }
 
@@ -324,7 +324,7 @@ export async function buildEarlyRepaymentProposal(
         amount: euros(parsed.row.amountMinor),
         boundaryDate: impact.boundaryDate,
         date: parsed.row.repaymentDate,
-        dateLabel: formatDayEs(parsed.row.repaymentDate),
+        dateLabel: formatIsoDayEs(parsed.row.repaymentDate),
         mode: parsed.row.mode,
         modeLabel: earlyRepaymentModeLabel(parsed.row.mode),
       },
@@ -337,7 +337,7 @@ export async function buildEarlyRepaymentProposal(
         {
           after: euros(impact.balanceAfterMinor),
           before: euros(impact.balanceBeforeMinor),
-          label: `Saldo pendiente (${formatDayEs(parsed.row.repaymentDate)})`,
+          label: `Saldo pendiente (${formatIsoDayEs(parsed.row.repaymentDate)})`,
         },
         ...(impact.balanceTodayBeforeMinor === impact.balanceBeforeMinor &&
         impact.balanceTodayAfterMinor === impact.balanceAfterMinor
@@ -346,7 +346,7 @@ export async function buildEarlyRepaymentProposal(
               {
                 after: euros(impact.balanceTodayAfterMinor),
                 before: euros(impact.balanceTodayBeforeMinor),
-                label: `Saldo hoy (${formatDayEs(today)})`,
+                label: `Saldo hoy (${formatIsoDayEs(today)})`,
               },
             ]),
         {
@@ -355,8 +355,8 @@ export async function buildEarlyRepaymentProposal(
           label: "Cuota mensual",
         },
         {
-          after: formatDayEs(impact.endDateAfter),
-          before: formatDayEs(impact.endDateBefore),
+          after: formatIsoDayEs(impact.endDateAfter),
+          before: formatIsoDayEs(impact.endDateBefore),
           label: "Última cuota",
         },
       ],
