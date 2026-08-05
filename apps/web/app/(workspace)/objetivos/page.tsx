@@ -180,7 +180,6 @@ export async function ObjetivosContent({
     { assets, liabilities },
     goals,
     fireConfig,
-    overrides,
     payoutRecords,
     payoutSchedules,
     contributionPlan,
@@ -193,7 +192,6 @@ export async function ObjetivosContent({
     store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
     store.readFireConfig(),
-    store.readWarningOverrides(),
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
     selectedScope
@@ -245,7 +243,6 @@ export async function ObjetivosContent({
     selectedView: "liquid",
     snapshots: [],
     today,
-    overrides,
     workspace,
   });
 

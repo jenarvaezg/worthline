@@ -63,7 +63,7 @@ describe("seedPersona — familia", () => {
   );
 
   it(
-    "renders a populated net worth with no blocking warnings",
+    "renders a populated net worth",
     async () => {
       const store = await createInMemoryStore();
       await seedPersona(store, FAMILIA_SPEC, AS_OF);
@@ -72,7 +72,6 @@ describe("seedPersona — familia", () => {
 
       expect(result.needsOnboarding).toBe(false);
       expect(result.presentation?.headline.amountMinor ?? 0).toBeGreaterThan(0);
-      expect(result.warnings.filter((w) => w.severity === "blocking")).toHaveLength(0);
 
       store.close();
     },

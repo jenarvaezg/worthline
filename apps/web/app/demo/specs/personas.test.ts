@@ -36,7 +36,7 @@ async function readDashboard(store: WorthlineStore, scopeId?: string) {
 
 describe("seedPersona — joven (starter saver)", () => {
   it(
-    "renders a modest, coherent starter portfolio with no blocking warnings",
+    "renders a modest, coherent starter portfolio",
     async () => {
       const store = await createInMemoryStore();
       await seedPersona(store, JOVEN_SPEC, AS_OF);
@@ -47,7 +47,6 @@ describe("seedPersona — joven (starter saver)", () => {
       const result = await readDashboard(store);
       expect(result.needsOnboarding).toBe(false);
       expect(result.presentation?.headline.amountMinor ?? 0).toBeGreaterThan(0);
-      expect(result.warnings.filter((w) => w.severity === "blocking")).toHaveLength(0);
 
       const byTier = new Map(result.pyramid.map((t) => [t.tier, t]));
       expect(byTier.get("cash")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
@@ -93,7 +92,6 @@ describe("seedPersona — inversor (markets-heavy)", () => {
 
       const result = await readDashboard(store);
       expect(result.needsOnboarding).toBe(false);
-      expect(result.warnings.filter((w) => w.severity === "blocking")).toHaveLength(0);
 
       const byTier = new Map(result.pyramid.map((t) => [t.tier, t]));
       expect(byTier.get("market")?.grossAssets.amountMinor ?? 0).toBeGreaterThan(0);
