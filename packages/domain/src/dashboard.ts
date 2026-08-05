@@ -35,8 +35,6 @@ import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
 import { calculateSnapshotDeltas } from "./snapshot-types";
-import type { DomainWarning, WarningOverride } from "./warnings";
-import { collectWarnings } from "./warnings";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
 
 export type { LocalPersistenceStatus };
@@ -162,7 +160,6 @@ export interface DashboardState {
   activeMembers: Member[];
   investmentAssets: ManualAsset[];
   today: string;
-  warnings: DomainWarning[];
   onboarding: OnboardingStep[];
   selectedView: NetWorthFraming;
 }
@@ -179,7 +176,6 @@ export function prepareDashboardState(input: {
   snapshots: NetWorthSnapshot[];
   fireConfig: Record<string, FireScopeConfig>;
   selectedView: NetWorthFraming;
-  overrides?: WarningOverride[];
   /** Goals for the selected scope (PRD #421, #426); reserve capital against FIRE. */
   goals?: Goal[];
   /** Today (YYYY-MM-DD), for the goal-reservation horizon; defaults to the system date. */
@@ -294,7 +290,6 @@ export function prepareDashboardState(input: {
 
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
-  const warnings = collectWarnings(assets, input.overrides ?? []);
   const onboarding = deriveOnboardingProgress({
     activeMemberCount: activeMembers.length,
     holdingCount: assets.length + liabilities.length,
@@ -348,7 +343,6 @@ export function prepareDashboardState(input: {
     snapshots: input.snapshots,
     summary,
     today,
-    warnings,
     workspace,
   };
 }
@@ -380,7 +374,6 @@ export interface ObjetivosState {
   fireScopeConfig: DashboardState["fireScopeConfig"];
   /** coastRequired / fireNumber clamped to [0,1]; null when coast data unavailable. */
   coastTickFraction: number | null;
-  warnings: DashboardState["warnings"];
   goals: ObjetivosGoalView[];
   /**
    * Coast · Lean · Regular · Fat milestones (PRD #507 N1, #513).
@@ -484,7 +477,6 @@ export function prepareObjetivosState(
     fireProjection: dash.fireProjection,
     fireResult: dash.fireResult,
     fireScopeConfig: dash.fireScopeConfig,
-    warnings: dash.warnings,
     goals,
     fireLevelRail,
   };

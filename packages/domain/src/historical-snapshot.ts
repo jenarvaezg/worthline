@@ -605,6 +605,16 @@ export function buildSnapshotAtDate(
     id: input.id,
     investmentDetails,
     liabilities: historicalLiabilities,
+    // The units held ON THE TARGET DATE, so this snapshot's warnings answer the
+    // question as of its own date (#1364): a holding whose closing sell left
+    // sub-unit dust by then asks for no provider symbol, while an earlier date —
+    // when the pending task WAS real — still freezes it. Read off the details
+    // this function just derived, so it is contemporaneous by construction; a
+    // fully-sold position never gets here at all (`valueAt` reports "not held"
+    // and the holding is omitted above).
+    netUnitsByAssetId: new Map(
+      [...investmentDetails].map(([assetId, detail]) => [assetId, detail.units]),
+    ),
     scopeId: input.scopeId,
     scopeLabel: input.scopeLabel,
     workspace: input.workspace,

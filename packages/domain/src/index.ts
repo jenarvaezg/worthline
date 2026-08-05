@@ -843,6 +843,7 @@ export type {
   FramedSnapshotDeltas,
   NetWorthSnapshot,
   SnapshotDeltas,
+  SnapshotWarningInputs,
   ValuedNetWorthSnapshot,
 } from "./snapshot-types";
 export {

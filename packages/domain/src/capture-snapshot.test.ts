@@ -145,6 +145,73 @@ describe("captureSnapshotForScope", () => {
   });
 });
 
+describe("captureSnapshotForScope — closed positions do not persist a symbol warning (#1364)", () => {
+  /** A symbol-less derived investment: the `MISSING_PROVIDER_SYMBOL` candidate. */
+  function symbollessFund(workspace: Workspace): ManualAsset {
+    return createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 0,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo vendido entero",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+  }
+
+  function capturedCodes(
+    workspace: Workspace,
+    extra: Partial<Parameters<typeof captureSnapshotForScope>[0]>,
+  ): string[] {
+    return captureSnapshotForScope({
+      assets: [...makeAssets(workspace), symbollessFund(workspace)],
+      capturedAt: "2026-08-05T21:00:00.000Z",
+      existingSnapshots: [],
+      liabilities: [],
+      scope: HOUSEHOLD,
+      workspace,
+      ...extra,
+    }).snapshot.warnings.map((warning) => warning.code);
+  }
+
+  test("a fully-sold holding's warning is not frozen into warnings_json", () => {
+    const workspace = makeWorkspace();
+
+    expect(
+      capturedCodes(workspace, {
+        netUnitsByAssetId: new Map([["asset_fund", "0"]]),
+      }),
+    ).toEqual([]);
+  });
+
+  test("an open holding without a symbol is still frozen — the task is real", () => {
+    const workspace = makeWorkspace();
+
+    expect(
+      capturedCodes(workspace, {
+        netUnitsByAssetId: new Map([["asset_fund", "12.5"]]),
+      }),
+    ).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("an acknowledged warning is not frozen either", () => {
+    const workspace = makeWorkspace();
+
+    expect(
+      capturedCodes(workspace, {
+        netUnitsByAssetId: new Map([["asset_fund", "12.5"]]),
+        warningOverrides: [{ code: "MISSING_PROVIDER_SYMBOL", entityId: "asset_fund" }],
+      }),
+    ).toEqual([]);
+  });
+
+  test("without a map the holding reads as open (callers that read no ledger)", () => {
+    const workspace = makeWorkspace();
+
+    expect(capturedCodes(workspace, {})).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+});
+
 describe("buildSnapshotId", () => {
   test("is deterministic from scope and capture date (moved from intake)", () => {
     expect(buildSnapshotId("household", "2026-06-08T21:00:00.000Z", 3)).toBe(

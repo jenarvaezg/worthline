@@ -9,6 +9,7 @@ import type {
   AssetProjectionContext,
   CaptureSnapshotOutput,
   CoinPosition,
+  DecimalString,
   InvestmentCaptureDetail,
   Liability,
   LiquidityTier,
@@ -17,6 +18,7 @@ import type {
   ScopeOption,
   SnapshotPositionInput,
   TokenPosition,
+  WarningOverride,
   Workspace,
 } from "@worthline/domain";
 import {
@@ -24,6 +26,7 @@ import {
   coinPositionSnapshotInput,
   listScopeOptions,
   mergeCoinPositionSnapshotInputs,
+  netUnitsByAsset,
   resolveScopeMemberIds,
   tokenSymbolSnapshotInputs,
 } from "@worthline/domain";
@@ -45,6 +48,14 @@ export interface SharedSnapshotInputs {
   scopes: ScopeOption[];
   investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail>;
   positionDetails: ReadonlyMap<string, SnapshotPositionInput[]>;
+  /**
+   * Net units still held per investment holding, folded from the ledger already
+   * in hand (#1364). Freezes the same MISSING_PROVIDER_SYMBOL set the live salud
+   * de datos shows: a sold-out position asks for no symbol (#1348).
+   */
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>;
+  /** Acknowledged warnings, so the capture does not freeze what the user dismissed. */
+  warningOverrides: WarningOverride[];
 }
 
 /**
@@ -119,8 +130,10 @@ export async function captureDailySnapshotForWorkspace(
       existingSnapshots,
       investmentDetails: shared.investmentDetails,
       liabilities: shared.liabilities,
+      netUnitsByAssetId: shared.netUnitsByAssetId,
       positionDetails,
       scope,
+      warningOverrides: shared.warningOverrides,
       workspace: shared.workspace,
     });
 
@@ -148,11 +161,17 @@ export async function buildSharedSnapshotInputs(
   const workspace = await store.workspace.readWorkspace();
   if (!workspace) return null;
 
+  // Build the projection context ONCE when the caller has none (#1364). Both
+  // reads below already accept it and each would otherwise build its own
+  // identical copy — and the capture needs `operationsByAsset` for the
+  // closed-position warning filter, which no other read exposes.
+  const ctx = projectionContext ?? (await store.snapshots.buildProjectionContext());
+
   const dateKey = now.slice(0, 10);
-  const { assets, liabilities } = await store.snapshots.readCurveValuedHoldingsAtDate(
-    dateKey,
-    projectionContext,
-  );
+  const [{ assets, liabilities }, warningOverrides] = await Promise.all([
+    store.snapshots.readCurveValuedHoldingsAtDate(dateKey, ctx),
+    store.readWarningOverrides(),
+  ]);
   const scopes = listScopeOptions(workspace);
 
   // ── Shared investment details (one per asset, scope-agnostic) ────────────
@@ -160,7 +179,7 @@ export async function buildSharedSnapshotInputs(
   // across scopes (what differs is the scope-weighted allocation downstream).
   const scopedProjection = await store.snapshots.readScopedPositionsWithDetails(
     scopes[0]?.id,
-    projectionContext,
+    ctx,
   );
   const investmentDetails: ReadonlyMap<string, InvestmentCaptureDetail> =
     scopedProjection.details;
@@ -210,7 +229,16 @@ export async function buildSharedSnapshotInputs(
     }
   }
 
-  return { assets, investmentDetails, liabilities, positionDetails, scopes, workspace };
+  return {
+    assets,
+    investmentDetails,
+    liabilities,
+    netUnitsByAssetId: netUnitsByAsset(ctx.operationsByAsset),
+    positionDetails,
+    scopes,
+    warningOverrides,
+    workspace,
+  };
 }
 
 /**
@@ -238,8 +266,10 @@ export async function buildTodaySnapshotForScope(
     existingSnapshots,
     investmentDetails: shared.investmentDetails,
     liabilities: shared.liabilities,
+    netUnitsByAssetId: shared.netUnitsByAssetId,
     positionDetails: shared.positionDetails,
     scope,
+    warningOverrides: shared.warningOverrides,
     workspace: shared.workspace,
   });
 }

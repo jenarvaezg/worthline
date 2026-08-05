@@ -127,6 +127,67 @@ describe("lastKnownValueAtDate", () => {
   });
 });
 
+describe("buildSnapshotAtDate — a position closed by the target date needs no symbol (#1364)", () => {
+  /**
+   * Bought in January, closed in March by a sell rounded to fewer decimals than
+   * the buy — the imported case #1348's dust threshold exists for. The exact-sell
+   * case never reaches the warning at all (`valueAt` reports "not held" and the
+   * holding is omitted from the capture), so dust is what this covers.
+   */
+  function ledger(sellUnits: string): Map<string, InvestmentOperation[]> {
+    return new Map([
+      [
+        "asset_fund",
+        [
+          buy("asset_fund", "op_buy", "2024-01-10", "10.34567", "100"),
+          {
+            assetId: "asset_fund",
+            currency: "EUR",
+            executedAt: "2024-03-20",
+            feesMinor: 0,
+            id: "op_sell",
+            kind: "sell" as const,
+            pricePerUnit: "110",
+            units: sellUnits,
+          },
+        ],
+      ],
+    ]);
+  }
+
+  function codesAt(targetDate: string, sellUnits = "10.3456"): string[] {
+    const workspace = makeWorkspace();
+    const result = buildSnapshotAtDate({
+      ...BASE,
+      assets: [
+        investment(workspace, "asset_fund", "Fondo"),
+        cash(workspace, "asset_cash", 1_000_00),
+      ],
+      capturedAt: `${targetDate}T12:00:00.000Z`,
+      liabilities: [],
+      manualValueHistory: new Map(),
+      operationsByAsset: ledger(sellUnits),
+      targetDate,
+      workspace,
+    });
+
+    expect(result).not.toBeNull();
+    return result!.snapshot.warnings.map((warning) => warning.code);
+  }
+
+  test("sub-unit dust left by the closing sell freezes no MISSING_PROVIDER_SYMBOL", () => {
+    expect(codesAt("2024-06-01")).toEqual([]);
+  });
+
+  test("a date while the position was still open freezes it — the task was real then", () => {
+    expect(codesAt("2024-02-01")).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+
+  test("a partial sell leaves the position open, so the warning stands", () => {
+    expect(codesAt("2024-06-01", "4")).toEqual(["MISSING_PROVIDER_SYMBOL"]);
+  });
+});
+
 describe("buildSnapshotAtDate", () => {
   test("values an investment with an operation on or before the date", () => {
     const workspace = makeWorkspace();

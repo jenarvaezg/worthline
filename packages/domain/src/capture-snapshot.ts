@@ -18,7 +18,7 @@ import type {
   SnapshotPositionInput,
 } from "./snapshot-holdings";
 import { findTodaySnapshotId } from "./snapshot-policy";
-import type { NetWorthSnapshot } from "./snapshot-types";
+import type { NetWorthSnapshot, SnapshotWarningInputs } from "./snapshot-types";
 import { captureValuedNetWorthSnapshot } from "./snapshot-types";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
@@ -27,7 +27,7 @@ import type { Liability, ManualAsset, Workspace } from "./workspace-types";
  * `workspace`, and `investmentDetails` are shared across scopes and read once
  * by the caller; `scope` and `existingSnapshots` are per-scope.
  */
-export interface CaptureSnapshotInput {
+export interface CaptureSnapshotInput extends SnapshotWarningInputs {
   /** The scope (household or member/group) to capture for. */
   scope: ScopeOption;
   workspace: Workspace;
@@ -94,6 +94,12 @@ export function captureSnapshotForScope(
     workspace: input.workspace,
     ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
     ...(input.positionDetails ? { positionDetails: input.positionDetails } : {}),
+    // The two inputs that keep `warnings_json` in step with the live engine
+    // (#1364): a sold-out position asks for no symbol, and an acknowledged
+    // warning is not frozen. Absent = the previous reading (every holding open,
+    // nothing acknowledged).
+    ...(input.netUnitsByAssetId ? { netUnitsByAssetId: input.netUnitsByAssetId } : {}),
+    ...(input.warningOverrides ? { warningOverrides: input.warningOverrides } : {}),
   });
 
   return { holdings, replace: replacesId !== undefined, snapshot };

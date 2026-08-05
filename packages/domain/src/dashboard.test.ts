@@ -47,11 +47,10 @@ describe("prepareDashboardState", () => {
     expect(state.presentation).toBeUndefined();
     expect(state.fireResult).toBeNull();
     expect(state.pyramid).toEqual([]);
-    expect(state.warnings).toEqual([]);
     expect(state.dashboard.productName).toBe("worthline");
   });
 
-  test("computes summary, pyramid, and warnings for a workspace with assets", () => {
+  test("computes summary and pyramid for a workspace with assets", () => {
     const cash = createManualAsset(workspace, {
       currency: "EUR",
       currentValueMinor: 0,
@@ -79,8 +78,6 @@ describe("prepareDashboardState", () => {
     expect(state.summary).toBeDefined();
     expect(state.summary!.grossAssets.amountMinor).toBe(0);
     expect(state.pyramid).toHaveLength(5);
-    expect(state.warnings).toHaveLength(1);
-    expect(state.warnings[0]!.code).toBe("ZERO_VALUE_ASSET");
     expect(state.dashboard.generatedAt).toBeDefined();
   });
 });

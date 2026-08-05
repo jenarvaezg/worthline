@@ -1,3 +1,4 @@
+import type { DecimalString } from "./decimal";
 import type { MoneyMinor } from "./money";
 import { subtractMoney } from "./money";
 import type { NetWorthFraming, NetWorthSummary } from "./net-worth";
@@ -12,7 +13,7 @@ import {
   buildSnapshotHoldingRows,
 } from "./snapshot-holdings";
 import { deriveMonthlyCloses } from "./snapshot-policy";
-import type { DomainWarning } from "./warnings";
+import type { DomainWarning, WarningOverride } from "./warnings";
 import { collectWarnings } from "./warnings";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
@@ -79,23 +80,52 @@ export function createNetWorthSnapshot(
   };
 }
 
-export function captureNetWorthSnapshot(input: {
-  workspace: Workspace;
-  scopeId: string;
-  scopeLabel: string;
-  assets: ManualAsset[];
-  liabilities?: Liability[];
-  capturedAt: string;
-  id: string;
-  isMonthlyClose?: boolean;
-}): NetWorthSnapshot {
+/**
+ * What a capture needs to freeze the SAME warnings the app shows live (#1364).
+ *
+ * `warnings_json` is history: whatever it records is what a future trend view or
+ * export will read. Without these two the capture wrote avisos the live engine
+ * already filters — a closed position's missing symbol, and a warning the user
+ * had explicitly acknowledged — so the salud-de-datos panel and the persisted row
+ * disagreed about the same fact, and the one on disk was the wrong one.
+ *
+ * Both optional, and each answers the question AS OF the snapshot's own date: the
+ * daily capture passes today's ledger, the historical backfill passes the units
+ * held on the date it is reconstructing. A caller with no ledger in hand
+ * (fixtures) keeps the previous reading, where an absent entry means "open".
+ */
+export interface SnapshotWarningInputs {
+  /** Net units still held per holding (`netUnitsByAsset`); absent = open (#1348). */
+  netUnitsByAssetId?: ReadonlyMap<string, DecimalString>;
+  /**
+   * Acknowledgements that an overrideable warning is intentional. Overrides are
+   * not dated, so only the live capture path supplies them — the historical
+   * backfill would apply today's acknowledgements to a past date.
+   */
+  warningOverrides?: WarningOverride[];
+}
+
+export function captureNetWorthSnapshot(
+  input: {
+    workspace: Workspace;
+    scopeId: string;
+    scopeLabel: string;
+    assets: ManualAsset[];
+    liabilities?: Liability[];
+    capturedAt: string;
+    id: string;
+    isMonthlyClose?: boolean;
+  } & SnapshotWarningInputs,
+): NetWorthSnapshot {
   const summary = calculateNetWorth({
     workspace: input.workspace,
     scopeId: input.scopeId,
     assets: input.assets,
     ...(input.liabilities ? { liabilities: input.liabilities } : {}),
   });
-  const warnings = collectWarnings(input.assets);
+  const warnings = collectWarnings(input.assets, input.warningOverrides ?? [], {
+    ...(input.netUnitsByAssetId ? { netUnitsByAssetId: input.netUnitsByAssetId } : {}),
+  });
 
   return createNetWorthSnapshot({
     capturedAt: input.capturedAt,
@@ -123,20 +153,22 @@ export interface ValuedNetWorthSnapshot {
  * the headline gross assets and debts, the capture fails loudly so nothing
  * partial can be persisted.
  */
-export function captureValuedNetWorthSnapshot(input: {
-  workspace: Workspace;
-  scopeId: string;
-  scopeLabel: string;
-  assets: ManualAsset[];
-  liabilities?: Liability[];
-  capturedAt: string;
-  id: string;
-  isMonthlyClose?: boolean;
-  /** Per-investment units and unit price, keyed by asset id. */
-  investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
-  /** Per-connected-source position breakdown, keyed by asset id (ADR 0035). */
-  positionDetails?: ReadonlyMap<string, SnapshotPositionInput[]>;
-}): ValuedNetWorthSnapshot {
+export function captureValuedNetWorthSnapshot(
+  input: {
+    workspace: Workspace;
+    scopeId: string;
+    scopeLabel: string;
+    assets: ManualAsset[];
+    liabilities?: Liability[];
+    capturedAt: string;
+    id: string;
+    isMonthlyClose?: boolean;
+    /** Per-investment units and unit price, keyed by asset id. */
+    investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
+    /** Per-connected-source position breakdown, keyed by asset id (ADR 0035). */
+    positionDetails?: ReadonlyMap<string, SnapshotPositionInput[]>;
+  } & SnapshotWarningInputs,
+): ValuedNetWorthSnapshot {
   const snapshot = captureNetWorthSnapshot(input);
   const holdings = buildSnapshotHoldingRows({
     assets: input.assets,
