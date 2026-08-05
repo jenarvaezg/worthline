@@ -7,7 +7,7 @@
  *
  * Uses the familia persona — it has a configured FIRE target.
  */
-import { expect, test } from "./fixtures";
+import { clickSectionTab, expect, homeBody, test } from "./fixtures";
 
 test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }) => {
   // Choose the familia persona (has FIRE configured) via its deep-link — a single
@@ -41,10 +41,10 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
   await page.goto("/app");
   await expect(page).toHaveURL(/\/app$/);
 
-  await page
-    .getByRole("navigation", { name: "Secciones principales" })
-    .getByRole("link", { name: "Objetivos" })
-    .click();
+  // Through `clickSectionTab`, which waits for the home to be on screen first: this
+  // journey clicking the tab while the home's body was still unrevealed is what made
+  // it the suite's dominant flake (#1351, interaction-patterns §5.1).
+  await clickSectionTab(page, "Objetivos", homeBody(page));
   await expect(page).toHaveURL(/\/objetivos/);
   await expect(page.getByRole("region", { name: "FIRE", exact: true })).toBeVisible();
 });

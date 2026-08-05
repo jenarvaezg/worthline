@@ -124,6 +124,53 @@ export async function isHydrated(
   );
 }
 
+/**
+ * The home's own body, on screen — and deliberately not `.dashGrid`.
+ *
+ * `dashboard-skeleton.tsx` renders a `.dashGrid` and a `.summaryBand` too, so both
+ * of those match the SHELL. Measured under 8x CPU throttling: `.dashGrid` paints at
+ * ~85 ms and the real body arrives at ~400 ms, so a guard on it would clear 300 ms
+ * too early and leave the race in place. Only the real dashboard labels its summary
+ * band, and that band and the FIRE panel appear in the SAME frame (measured, 6/6) —
+ * one Suspense boundary, so this is the whole body's arrival, not one corner of it.
+ */
+export function homeBody(page: import("@playwright/test").Page) {
+  return page.getByRole("region", { name: "Resumen patrimonial" });
+}
+
+/**
+ * Click a workspace topnav tab, once the route being left is actually on screen.
+ *
+ * Leaving a route whose body has not been revealed yet leaves that body ON SCREEN
+ * over the destination (#1351; `docs/interaction-patterns.md` §5.1 carries the
+ * mechanism and the measurement). The chrome paints from the prefetched shell, so a
+ * tab is clickable long before the body under it exists — which makes this the one
+ * click that needs the guard. Clicking inside the body never does: it is not
+ * clickable until it is revealed.
+ *
+ * `bodyOnScreen` is the caller's own «this page is painted» locator because there is
+ * no route-agnostic signal for it. Hydration is not one either: in every measured
+ * reproduction the tab was already hydrated — that is why the click was a client
+ * navigation at all.
+ *
+ * One journey is exempt for a reason, and says so at its own call site: journey 48
+ * leaves routes mid-reveal on purpose, because the pre-body shell IS its subject.
+ */
+export async function clickSectionTab(
+  page: import("@playwright/test").Page,
+  tab: string,
+  bodyOnScreen: import("@playwright/test").Locator,
+) {
+  await expect(
+    bodyOnScreen,
+    "do not leave a route whose body is not on screen yet (#1351)",
+  ).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Secciones principales" })
+    .getByRole("link", { name: tab })
+    .click();
+}
+
 /** Expand the edit page's progressive-disclosure block before using advanced forms. */
 export async function openAdvancedSettings(page: import("@playwright/test").Page) {
   const advanced = page.locator("details.editAdvanced");
