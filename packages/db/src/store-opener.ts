@@ -264,6 +264,11 @@ async function buildStore(
       connectedSources: connectedSourceSeams,
       datedFacts: datedFactCommands,
       factPersistence: { addBalanceRebaseline: liabilityStore.addBalanceRebaseline },
+      investmentIdentity: {
+        clearPriceCache: operationsStore.clearPriceCache,
+        patchInvestmentIdentity: assetStore.patchInvestmentIdentity,
+        readInvestmentAssetsWithMeta: assetStore.readInvestmentAssetsWithMeta,
+      },
       liabilityReads: { debtBalanceAtDate: liabilityStore.debtBalanceAtDate },
       snapshotOrchestrator,
     },

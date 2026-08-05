@@ -1,3 +1,4 @@
+import type { AssetStore } from "@db/asset-store";
 import type {
   AssistantProposal,
   AssistantProposalStore,
@@ -6,10 +7,11 @@ import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
 import type { EarlyRepaymentPlan } from "@db/early-repayment-plan";
 import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
+import type { OperationsStore } from "@db/operations-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
-import { checkOwnershipSplit } from "@worthline/domain";
+import { checkOwnershipSplit, resolveInstrumentIdentityFill } from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./command-implementation-types";
 import type { ImportBalanceHistoryCommand } from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
@@ -167,6 +169,17 @@ interface InternalCommandHostDependencies {
   factPersistence: Pick<LiabilityStore, "addBalanceRebaseline">;
   /** Read seam for the correction apply's live-data revalidation (#1051). */
   liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
+  /**
+   * Read + write seams for the identity fill a correction can carry (#1349). The
+   * read is the re-resolution against live data; `clearPriceCache` is why the
+   * operations store rides along — a new symbol must not be priced from the cache
+   * row the old configuration left behind.
+   */
+  investmentIdentity: Pick<
+    AssetStore,
+    "readInvestmentAssetsWithMeta" | "patchInvestmentIdentity"
+  > &
+    Pick<OperationsStore, "clearPriceCache">;
   snapshotOrchestrator: SnapshotOrchestrator;
 }
 
@@ -248,6 +261,7 @@ async function applyCorrectionPlan(
   ctx: StoreContext,
   datedFacts: DatedFactCommands,
   liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">,
+  investmentIdentity: InternalCommandHostDependencies["investmentIdentity"],
   plan: CorrectionPlan,
   today: string,
 ): Promise<void> {
@@ -260,7 +274,47 @@ async function applyCorrectionPlan(
     await assertLiveBalanceUnchanged(liabilityReads, plan.revalidation);
   }
   for (const edit of plan.edits) {
-    await applyCorrectionEdit(ctx, datedFacts, edit, today);
+    await applyCorrectionEdit(ctx, datedFacts, investmentIdentity, edit, today);
+  }
+}
+
+/**
+ * Fill an investment's identity, re-resolved against LIVE data (#1349). The draft
+ * carries the declaration, never a decision: between arming the card and
+ * confirming it, a sibling proposal or the ficha may have written the very field
+ * this edit believes is empty, or given the key to a neighbour. Re-running the
+ * pure rule here is what makes «solo rellenar hueco» true at write time instead
+ * of at draft time; the throw rolls the whole apply back and the action surfaces
+ * the reason.
+ */
+async function applyInvestmentIdentityFill(
+  seams: InternalCommandHostDependencies["investmentIdentity"],
+  edit: Extract<CorrectionEdit, { kind: "investment_identity" }>,
+): Promise<void> {
+  const portfolio = await seams.readInvestmentAssetsWithMeta();
+  const target = portfolio.find((holding) => holding.id === edit.assetId);
+  if (!target) {
+    throw new Error("Esa inversión ya no existe en el workspace.");
+  }
+  const resolved = resolveInstrumentIdentityFill({
+    declaration: edit.declaration,
+    portfolio,
+    target,
+  });
+  if (!resolved.ok) throw new Error(resolved.error);
+
+  await seams.patchInvestmentIdentity(edit.assetId, {
+    ...resolved.patch,
+    // The provider is derived, never chat-chosen: same rule the editing surface
+    // applies. A holding that already has one keeps it.
+    ...(resolved.patch.providerSymbol === undefined
+      ? {}
+      : { priceProvider: target.priceProvider }),
+  });
+  // A cache row minted under the previous configuration would price the new
+  // symbol from the old figure — the editing surface clears it for the same reason.
+  if (resolved.patch.providerSymbol !== undefined) {
+    await seams.clearPriceCache(edit.assetId);
   }
 }
 
@@ -282,6 +336,7 @@ async function assertOwnershipSplit(
 async function applyCorrectionEdit(
   ctx: StoreContext,
   datedFacts: DatedFactCommands,
+  investmentIdentity: InternalCommandHostDependencies["investmentIdentity"],
   edit: CorrectionEdit,
   today: string,
 ): Promise<void> {
@@ -326,6 +381,11 @@ async function applyCorrectionEdit(
       await assertOwnershipSplit(ctx, edit.patch);
       await datedFacts.updateAssetAndRippleOwnership(edit.assetId, edit.patch, { today });
       return;
+    case "investment_identity":
+      // No ripple: identity is a mapping route, not a dated fact. The next price
+      // refresh is what re-values the holding through the new symbol.
+      await applyInvestmentIdentityFill(investmentIdentity, edit);
+      return;
     case "investment_operations":
       await datedFacts.recordOperationsAndRipple({
         assetId: edit.assetId,
@@ -348,6 +408,7 @@ export function createCommandHost(
     connectedSources,
     datedFacts,
     factPersistence,
+    investmentIdentity,
     liabilityReads,
     snapshotOrchestrator,
   } = seams;
@@ -541,6 +602,7 @@ export function createCommandHost(
             ctx,
             datedFacts,
             liabilityReads,
+            investmentIdentity,
             correctionPlanOf(proposal),
             today,
           );

@@ -580,6 +580,13 @@ export {
   defaultsFor,
 } from "./instrument-catalog";
 export type {
+  InstrumentIdentityDeclaration,
+  InstrumentIdentityFillResolution,
+  InstrumentIdentityHolding,
+  InstrumentIdentityPatch,
+} from "./instrument-identity-fill";
+export { resolveInstrumentIdentityFill } from "./instrument-identity-fill";
+export type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
   OperationKind,

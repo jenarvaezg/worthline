@@ -27,6 +27,7 @@ import {
   statementLoadedRedirectUrl,
   successRedirectUrl,
 } from "@web/intake";
+import { validateInvestmentProviderSymbol } from "@web/inversiones/provider-symbol-check";
 import {
   buildPayoutResult,
   buildPayoutScheduleResult,
@@ -38,7 +39,6 @@ import {
   detectValueOnlyOpening,
   valueOnlySymbolGuardMessage,
 } from "@web/patrimonio/value-only-opening";
-import { priceSourceLabel } from "@web/price-source-label";
 import { type WorthlineStore } from "@web/store";
 import type {
   InvestmentPriceProvider,
@@ -51,7 +51,6 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
-  isRetiredInvestmentPriceProvider,
   isStatementBroker,
   parseStatement,
   planSnapshotPriceCorrection,
@@ -62,7 +61,6 @@ import {
 } from "@worthline/domain";
 import {
   fetchAndCachePrice,
-  fetchPriceNow,
   type HistoricalPriceSource,
   type PriceProvider,
   refreshStalePrices,
@@ -107,72 +105,6 @@ function isPriceProvider(value: unknown): value is PriceProvider {
 
 function isHistoricalPriceSource(value: unknown): value is HistoricalPriceSource {
   return typeof value === "object" && value !== null && "fetchSeriesEur" in value;
-}
-
-/**
- * The outcome of checking a symbol at save time. The resolved quote rides along
- * so the caller can say what assigning the symbol WOULD do to the valuation
- * (#1329) instead of paying a second provider round-trip to find out; `null`
- * means «no quote in hand», which is the normal case for the providers whose
- * symbols are deliberately not validated on save.
- */
-type ProviderSymbolCheck =
-  | { ok: false; error: string }
-  | { ok: true; quotedPricePerUnit: string | null };
-
-async function validateInvestmentProviderSymbol(input: {
-  assetId: string;
-  currency: string;
-  liquidityTier: LiquidityTier;
-  nowIso: string;
-  priceProvider?: InvestmentPriceProvider | undefined;
-  providerSymbol?: string | undefined;
-}): Promise<ProviderSymbolCheck> {
-  if (!input.providerSymbol) return { ok: true, quotedPricePerUnit: null };
-
-  const priceProvider =
-    input.priceProvider ?? defaultInvestmentPriceProvider(input.liquidityTier);
-
-  // Finect NAVs can lag or disappear temporarily; per issue #106, Finect
-  // validation is non-blocking at save time. CoinGecko (crypto, #151) is treated
-  // the same — its symbols are validated on price refresh, not at save. This is
-  // domain policy (which providers block on save), not the provider-resolution
-  // routing the registry now owns via `fetchPriceNow`.
-  if (priceProvider === "finect" || priceProvider === "coingecko") {
-    return { ok: true, quotedPricePerUnit: null };
-  }
-
-  // A retired provider (Stooq, #1354) can no longer confirm anything, and blocking
-  // here would refuse an edit that has nothing to do with the symbol — a legacy
-  // holding could not even be renamed. It saves; the refresh pass is what reports
-  // the retirement, with an actionable reason in salud de datos.
-  if (isRetiredInvestmentPriceProvider(priceProvider)) {
-    return { ok: true, quotedPricePerUnit: null };
-  }
-
-  // Route validation through the pricing seam (ADR 0026): a non-null price means
-  // the symbol resolves, applying whatever fallback chain the registry declares,
-  // and dropping the bespoke provider switch + the throwaway cache-row read.
-  const price = await fetchPriceNow(priceProvider, {
-    assetId: input.assetId,
-    currency: input.currency,
-    nowIso: input.nowIso,
-    symbol: input.providerSymbol,
-  });
-
-  // A non-EUR quote validates the symbol but must not be quoted back as euros:
-  // the caller prints it next to a euro figure (#1329).
-  if (price) {
-    return {
-      ok: true,
-      quotedPricePerUnit: price.currency === "EUR" ? price.price : null,
-    };
-  }
-
-  return {
-    error: `El símbolo no existe en ${priceSourceLabel(priceProvider)}.`,
-    ok: false,
-  };
 }
 
 export async function recordOperationAction(

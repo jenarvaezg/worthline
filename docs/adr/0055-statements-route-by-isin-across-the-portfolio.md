@@ -175,3 +175,34 @@ The statement router itself (`resolveStatementImportBuckets`) still first-wins a
 duplicated ISIN, and there it can `delete`/`overwrite` operations of the holding it
 picked: tracked as **#1366**, deferred because fixing it changes the importer's
 preview surface (a bucket needs candidates, not one `assetId`).
+
+## Amendment (#1349): the chat fills an identity hole, it never creates the pair
+
+The amendment above settles what a duplicated key MEANS once it exists. #1349 asks
+the other half: who may bring one into existence. The chat now has a way to write
+an instrument's identity — the ask that follows a data audit is «este fondo no
+tiene ISIN, póngselo», and until then the model had no path and improvised one
+(it filed a maintainer alert as if it were a support ticket, #1347).
+
+The answer is asymmetric, and the asymmetry is the decision:
+
+- **An empty field may be filled from the chat.** Writing into a hole cannot
+  reprice a holding as a different instrument, and the guards that remain are
+  cheap: the ISIN's own checksum, and the #1329 rule that a symbol must not turn
+  an alta «por valor total» into one share.
+- **A field that already has a value is not changed from the chat, indefinitely.**
+  Replacing an ISIN or a symbol reprices the position as another fund and can hand
+  a statement the wrong holding to overwrite. That edit stays on the ficha, where
+  the whole holding is on screen.
+- **A key another holding already claims is refused, naming the claimant.** The
+  legitimate pair (the same fund in two brokers, one closed and one live) is real
+  — and it is precisely why the chat does not create it blind. A human makes that
+  pair on the ficha, seeing both. This is what un-blocks #1349 from #1366: the
+  importer's first-wins router is still a bug, but the chat is no longer a source
+  of the pairs that trigger it.
+
+The rule is one pure function (`resolveInstrumentIdentityFill`) called twice: when
+the card is drafted, and again inside the apply. A draft carries no lock, so
+without the second call two proposals in flight — or a ficha edit between drafting
+and confirming — would let «only fills holes» be true at preview time and false at
+write time.

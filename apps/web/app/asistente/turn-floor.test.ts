@@ -43,6 +43,15 @@ import { measureTurnFloor, turnFloorTools } from "./turn-floor";
  * 2026-08-04 (#1346 spent 895 on the row identity of an import, #1347 another 368
  * on the maintainer alert's admission boundary). Read the ceiling as one tool
  * family away, not as room — the arithmetic that justified it has moved.
+ *
+ * 36.353 on 2026-08-05 (#1349): 1,75% of headroom left. The identity fill spent 430
+ * — 370 on `propose_correction`'s description and 60 on its two new schema fields —
+ * and paid 23 back on the prompt, whose absolute «el precio/símbolo NO es un hecho
+ * editable» became the narrower rule that is still true. It is deliberately the
+ * tool's description and not the prompt: every rule the fill needs is about ONE
+ * tool, so the prompt keeps only the half that routes an overwrite to the ficha.
+ * The next slice that needs characters here should look at whether the eleven
+ * `propose_*` descriptions still each earn their length before raising the ceiling.
  */
 const TURN_FLOOR_CHAR_CEILING = 37_000;
 

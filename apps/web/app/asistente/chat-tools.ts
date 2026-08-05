@@ -135,6 +135,11 @@ export interface ChatReadStore {
   assistantProposals?: AssistantProposalStore;
   liabilities?: WorthlineStore["liabilities"];
   assets?: WorthlineStore["assets"];
+  /**
+   * Present for the identity fill (#1349): the #1329 guard reads the ledger to
+   * refuse a symbol that would reprice a «por valor total» alta as one share.
+   */
+  operations?: WorthlineStore["operations"];
   /** Present for the alta builder (#1105): resolves ownership at build time. */
   workspace?: WorthlineStore["workspace"];
   /** Present for the reconcile builder (#1108): fences off sync-owned holdings. */
@@ -147,7 +152,7 @@ export interface ChatReadStore {
  * Both callers — the chat route and the admission harness (#1265) — used to list
  * the fields by hand, and the harness listed three of the six: every proposal tool
  * answered `proposal_persistence_unavailable`, so the write path could not be
- * measured at all. A seventh field would have re-armed exactly that.
+ * measured at all. An eighth field would have re-armed exactly that.
  */
 export function chatToolStores(store: WorthlineStore): ChatReadStore {
   return {
@@ -156,6 +161,7 @@ export function chatToolStores(store: WorthlineStore): ChatReadStore {
     assistantProposals: store.assistantProposals,
     connectedSources: store.connectedSources,
     liabilities: store.liabilities,
+    operations: store.operations,
     workspace: store.workspace,
   };
 }
@@ -521,6 +527,8 @@ const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
     name?: string;
     ownership?: Array<{ memberId: string; shareBps: number }>;
     cadence?: string | null;
+    isin?: string;
+    providerSymbol?: string;
     plan?: {
       annualInterestRate?: string;
       termMonths?: number;
@@ -537,7 +545,13 @@ const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
       properties: {
         kind: {
           type: "string",
-          enum: ["declare_balance", "declare_value", "change_debt_model", "edit_config"],
+          enum: [
+            "declare_balance",
+            "declare_value",
+            "change_debt_model",
+            "edit_config",
+            "edit_identity",
+          ],
         },
         balanceMinor: { type: "number" },
         valueMinor: { type: "number" },
@@ -560,6 +574,8 @@ const CORRECTION_PROPOSAL_SCHEMA = jsonSchema<{
           },
         },
         cadence: { type: ["string", "null"], enum: ["step", "interpolated", null] },
+        isin: { type: "string" },
+        providerSymbol: { type: "string" },
         plan: {
           type: "object",
           properties: {
@@ -1674,7 +1690,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "correction.kind: 'declare_balance' (deuda: declara el saldo real hoy; en amortizable envía endDate y exactamente uno de annualRate o monthlyPaymentMinor → re-baseline ADR 0056; en revolving/informal → balance anchor), " +
         "'declare_value' (activo: valueMinor real de hoy → valuation anchor), " +
         "'change_debt_model' (debtModel destino cuando el modelo era el error), " +
-        "'edit_config' (name, ownership, cadence, o plan.{annualInterestRate,termMonths,firstPaymentDate}). " +
+        "'edit_config' (name, ownership, cadence, o plan.{annualInterestRate,termMonths,firstPaymentDate}), " +
+        "'edit_identity' (RELLENAR el isin y/o providerSymbol VACÍOS de una inversión: si ya tiene valor NO se cambia desde aquí, la app lo rechaza y manda a la ficha). " +
+        "Para el símbolo resuélvelo antes con search_market_symbol y no lo inventes; la app comprueba que cotiza y rechaza el que revaloraría un alta «por valor total» a UNA participación. " +
         "Split, alta o baja → wizard o papelera, no esta tool.",
       inputSchema: CORRECTION_PROPOSAL_SCHEMA,
       execute: (args) =>
@@ -1694,6 +1712,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
                 assets: store.assets,
                 assistantProposals: store.assistantProposals,
                 liabilities: store.liabilities,
+                ...(store.operations ? { operations: store.operations } : {}),
               },
               {
                 correction: args.correction as unknown as CorrectionInput,
