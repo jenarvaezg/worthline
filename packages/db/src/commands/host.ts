@@ -11,7 +11,12 @@ import type { OperationsStore } from "@db/operations-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
-import { checkOwnershipSplit, resolveInstrumentIdentityFill } from "@worthline/domain";
+import {
+  checkOwnershipSplit,
+  detectValueOnlyOpening,
+  resolveInstrumentIdentityFill,
+  valueOnlySymbolGuardMessage,
+} from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./command-implementation-types";
 import type { ImportBalanceHistoryCommand } from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
@@ -171,15 +176,16 @@ interface InternalCommandHostDependencies {
   liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
   /**
    * Read + write seams for the identity fill a correction can carry (#1349). The
-   * read is the re-resolution against live data; `clearPriceCache` is why the
-   * operations store rides along — a new symbol must not be priced from the cache
-   * row the old configuration left behind.
+   * reads are the re-resolution against live data — the portfolio for the identity
+   * rule, the ledger for the #1329 guard; `clearPriceCache` is the third reason the
+   * operations store rides along, since a new symbol must not be priced from the
+   * cache row the old configuration left behind.
    */
   investmentIdentity: Pick<
     AssetStore,
     "readInvestmentAssetsWithMeta" | "patchInvestmentIdentity"
   > &
-    Pick<OperationsStore, "clearPriceCache">;
+    Pick<OperationsStore, "clearPriceCache" | "readOperations">;
   snapshotOrchestrator: SnapshotOrchestrator;
 }
 
@@ -257,11 +263,20 @@ async function assertLiveBalanceUnchanged(
  * radius is one holding, save for the atomic debt↔asset pair an ownership fix
  * carries as two edits in the same transaction.
  */
+/**
+ * The collaborators one correction edit can need. Grouped rather than threaded
+ * positionally: the loop already carries three, and every new edit kind that needs
+ * a seam would add another parameter to both functions below.
+ */
+interface CorrectionApplySeams {
+  datedFacts: DatedFactCommands;
+  liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
+  investmentIdentity: InternalCommandHostDependencies["investmentIdentity"];
+}
+
 async function applyCorrectionPlan(
   ctx: StoreContext,
-  datedFacts: DatedFactCommands,
-  liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">,
-  investmentIdentity: InternalCommandHostDependencies["investmentIdentity"],
+  seams: CorrectionApplySeams,
   plan: CorrectionPlan,
   today: string,
 ): Promise<void> {
@@ -271,10 +286,10 @@ async function applyCorrectionPlan(
     throw new Error(`Correction plan mode "${plan.mode}" is not applied here.`);
   }
   if (plan.revalidation) {
-    await assertLiveBalanceUnchanged(liabilityReads, plan.revalidation);
+    await assertLiveBalanceUnchanged(seams.liabilityReads, plan.revalidation);
   }
   for (const edit of plan.edits) {
-    await applyCorrectionEdit(ctx, datedFacts, investmentIdentity, edit, today);
+    await applyCorrectionEdit(ctx, seams, edit, today);
   }
 }
 
@@ -303,14 +318,27 @@ async function applyInvestmentIdentityFill(
   });
   if (!resolved.ok) throw new Error(resolved.error);
 
-  await seams.patchInvestmentIdentity(edit.assetId, {
-    ...resolved.patch,
-    // The provider is derived, never chat-chosen: same rule the editing surface
-    // applies. A holding that already has one keeps it.
-    ...(resolved.patch.providerSymbol === undefined
-      ? {}
-      : { priceProvider: target.priceProvider }),
-  });
+  // The #1329 guard, live too: the ledger CAN become the 1-participación opening
+  // between drafting and confirming (an operation deleted on the ficha is enough),
+  // and then this write would hand a 574,48 € holding to one share's quote. No
+  // figure to quote here — pricing it would be a network call inside the apply —
+  // so the message degrades to the honest half the pure module already has.
+  if (resolved.patch.providerSymbol !== undefined) {
+    const valueOnly = detectValueOnlyOpening(await seams.readOperations(edit.assetId));
+    if (valueOnly) {
+      throw new Error(
+        valueOnlySymbolGuardMessage({
+          opening: valueOnly,
+          symbol: resolved.patch.providerSymbol,
+        }),
+      );
+    }
+  }
+
+  // `priceProvider` is deliberately NOT written: `readInvestmentAssetsWithMeta`
+  // derives the default for a NULL column (and it is what feeds the refresh), so
+  // stamping it would be an invisible side effect of an identity fill.
+  await seams.patchInvestmentIdentity(edit.assetId, resolved.patch);
   // A cache row minted under the previous configuration would price the new
   // symbol from the old figure — the editing surface clears it for the same reason.
   if (resolved.patch.providerSymbol !== undefined) {
@@ -335,11 +363,11 @@ async function assertOwnershipSplit(
 
 async function applyCorrectionEdit(
   ctx: StoreContext,
-  datedFacts: DatedFactCommands,
-  investmentIdentity: InternalCommandHostDependencies["investmentIdentity"],
+  seams: CorrectionApplySeams,
   edit: CorrectionEdit,
   today: string,
 ): Promise<void> {
+  const { datedFacts } = seams;
   switch (edit.kind) {
     case "debt_rebaseline":
       await datedFacts.addBalanceRebaselineAndRipple(edit.input, { today });
@@ -384,7 +412,7 @@ async function applyCorrectionEdit(
     case "investment_identity":
       // No ripple: identity is a mapping route, not a dated fact. The next price
       // refresh is what re-values the holding through the new symbol.
-      await applyInvestmentIdentityFill(investmentIdentity, edit);
+      await applyInvestmentIdentityFill(seams.investmentIdentity, edit);
       return;
     case "investment_operations":
       await datedFacts.recordOperationsAndRipple({
@@ -600,9 +628,7 @@ export function createCommandHost(
           if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
           await applyCorrectionPlan(
             ctx,
-            datedFacts,
-            liabilityReads,
-            investmentIdentity,
+            { datedFacts, investmentIdentity, liabilityReads },
             correctionPlanOf(proposal),
             today,
           );

@@ -4,23 +4,24 @@
  * to answer — «does this symbol resolve?» (the provider) and «what would it do to
  * the valuation?» (the ledger, #1329).
  *
- * The pure rule lives in `@worthline/domain` because the apply re-runs it against
- * live data; these guards run at draft time only, and deliberately so: their
- * inputs cannot turn against the user between drafting and confirming (a quote
- * that stops resolving is reported by the refresh pass, not by refusing an edit —
- * the same policy the editing surface applies to a retired provider), whereas the
- * identity of a field is exactly what a sibling proposal can change underneath.
+ * The rules that can change under a draft live in `@worthline/domain` and run
+ * TWICE — here and inside the apply: the identity fill itself, and the #1329
+ * ledger guard, whose figure is the only part that cannot make the second trip
+ * (quoting it there would be a network call inside a transaction).
+ *
+ * The symbol's existence is checked here only, and deliberately: a quote that
+ * stops resolving is reported by the refresh pass, not by refusing a confirm the
+ * user already read — the same policy the editing surface applies to a retired
+ * provider.
  */
 
 import { validateInvestmentProviderSymbol } from "@web/inversiones/provider-symbol-check";
-import {
-  detectValueOnlyOpening,
-  valueOnlySymbolGuardMessage,
-} from "@web/patrimonio/value-only-opening";
 import type { OperationsStore, WorthlineStore } from "@worthline/db";
 import {
+  detectValueOnlyOpening,
   type InstrumentIdentityPatch,
   resolveInstrumentIdentityFill,
+  valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import type { CorrectionProposalEditRow } from "./correction-proposal-contract";
 
@@ -64,13 +65,11 @@ export type InstrumentIdentityCorrection =
  */
 export async function resolveInstrumentIdentityCorrection(
   store: Pick<WorthlineStore, "assets"> & {
-    operations: Pick<OperationsStore, "readOperations">;
+    /** Absent only in a caller that predates #1349; then a symbol fill refuses. */
+    operations?: Pick<OperationsStore, "readOperations">;
   },
-  input: {
-    assetId: string;
-    declaration: { isin?: string | undefined; providerSymbol?: string | undefined };
-  },
-  probe: ProviderSymbolProbe = liveProviderSymbolProbe,
+  input: { assetId: string; declaration: InstrumentIdentityPatch },
+  probe: ProviderSymbolProbe,
 ): Promise<InstrumentIdentityCorrection> {
   const portfolio = await store.assets.readInvestmentAssetsWithMeta();
   const target = portfolio.find((holding) => holding.id === input.assetId);
@@ -92,6 +91,16 @@ export async function resolveInstrumentIdentityCorrection(
 
   const symbol = resolved.patch.providerSymbol;
   if (symbol !== undefined) {
+    // Fail-closed, and only for a symbol: the #1329 guard needs the ledger, so
+    // without that seam the honest answer is no. An ISIN fill never reads it.
+    if (!store.operations) {
+      return {
+        ok: false,
+        error:
+          "No puedo leer el libro de esta posición ahora mismo, así que no le voy a " +
+          "asignar un símbolo de cotización.",
+      };
+    }
     const checked = await probe({
       assetId: target.id,
       currency: target.currency,
@@ -104,6 +113,8 @@ export async function resolveInstrumentIdentityCorrection(
     // #1329 on the chat's path: the guard that protects the editing surface lives
     // in its Server Action, which this lane never crosses. Same rule, same wording,
     // and no escape hatch here — «es una participación real» is a ficha decision.
+    // Here it also carries the quote, so the card can name what the symbol WOULD
+    // turn the holding into; the apply re-checks the rule without that figure.
     const valueOnly = detectValueOnlyOpening(
       await store.operations.readOperations(target.id),
     );

@@ -21,6 +21,7 @@
 import type {
   CreateInvestmentOperationInput,
   DebtModel,
+  InstrumentIdentityPatch,
   ValuationCadence,
 } from "@worthline/domain";
 import type { AddValuationAnchorInput, UpdateAssetInput } from "./asset-store";
@@ -106,7 +107,7 @@ export type CorrectionEdit =
       kind: "investment_identity";
       assetId: string;
       before: { isin: string | null; providerSymbol: string | null };
-      declaration: { isin?: string; providerSymbol?: string };
+      declaration: InstrumentIdentityPatch;
     }
   | {
       kind: "investment_operations";

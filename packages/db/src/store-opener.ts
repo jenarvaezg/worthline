@@ -268,6 +268,7 @@ async function buildStore(
         clearPriceCache: operationsStore.clearPriceCache,
         patchInvestmentIdentity: assetStore.patchInvestmentIdentity,
         readInvestmentAssetsWithMeta: assetStore.readInvestmentAssetsWithMeta,
+        readOperations: operationsStore.readOperations,
       },
       liabilityReads: { debtBalanceAtDate: liabilityStore.debtBalanceAtDate },
       snapshotOrchestrator,

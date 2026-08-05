@@ -194,15 +194,25 @@ The answer is asymmetric, and the asymmetry is the decision:
   Replacing an ISIN or a symbol reprices the position as another fund and can hand
   a statement the wrong holding to overwrite. That edit stays on the ficha, where
   the whole holding is on screen.
-- **A key another holding already claims is refused, naming the claimant.** The
+- **An ISIN another holding already claims is refused, naming the claimant.** The
   legitimate pair (the same fund in two brokers, one closed and one live) is real
   — and it is precisely why the chat does not create it blind. A human makes that
   pair on the ficha, seeing both. This is what un-blocks #1349 from #1366: the
   importer's first-wins router is still a bug, but the chat is no longer a source
   of the pairs that trigger it.
+- **A duplicated provider SYMBOL is not refused**, and the asymmetry is the whole
+  point of the amendment above. A symbol is a pricing route: the same ETF at two
+  brokers shares it, both holdings value correctly off the same quote, and nothing
+  routes a document by it. What a duplicated ISIN does and a duplicated symbol does
+  not is give the importer a second claimant for a row it may `overwrite`. Refusing
+  the symbol would send the most common fill of all — «este fondo no se actualiza» —
+  to the ficha for no gain.
 
 The rule is one pure function (`resolveInstrumentIdentityFill`) called twice: when
 the card is drafted, and again inside the apply. A draft carries no lock, so
 without the second call two proposals in flight — or a ficha edit between drafting
 and confirming — would let «only fills holes» be true at preview time and false at
-write time.
+write time. The #1329 value-only guard makes the same round trip, which is why its
+module moved into the domain: an operation deleted on the ficha between drafting
+and confirming is enough to turn a curated ledger back into the 1-participación
+opening, and the apply lives in `packages/db`, where the web app is out of reach.

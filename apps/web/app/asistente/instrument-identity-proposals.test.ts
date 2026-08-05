@@ -175,7 +175,7 @@ describe("edit_identity (#1349)", () => {
     );
     expect(built.ok).toBe(false);
     if (built.ok) return;
-    expect(built.error).toContain("/patrimonio");
+    expect(built.error).toContain("ficha");
     expect(await isinOf(store, "fund")).toBe("IE00B03HCZ61");
     store.close();
   });
@@ -326,7 +326,51 @@ describe("edit_identity (#1349)", () => {
     }
   });
 
-  test("without the ledger seam the fill refuses instead of writing blind", async () => {
+  test("the confirm re-checks the #1329 guard: a ledger gone value-only blocks it", async () => {
+    const store = await seedWorkspace();
+    await seedFund(store, { id: "fund", name: "Santander" });
+    // A curated ledger at draft time, so the guard lets the card through.
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "fund",
+        currency: "EUR",
+        executedAt: "2026-06-01",
+        feesMinor: 0,
+        id: "op1",
+        kind: "buy",
+        pricePerUnit: "4.10",
+        source: "manual",
+        units: "100",
+      },
+      { today: TODAY },
+    );
+    await seedValueOnlyOpening(store, "fund", 574_48);
+
+    const built = await buildCorrectionProposal(
+      store,
+      args({ kind: "edit_identity", providerSymbol: "SAN.MC" }),
+      TODAY,
+      RESOLVES,
+    );
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+
+    // Then the curated operation is deleted on the ficha, and what remains IS the
+    // 1-participación opening: writing the symbol now would hand 574,48 € to one
+    // share's quote. The draft carries no lock, so the apply must re-check.
+    await store.command.deleteInvestmentOperation({ operationId: "op1", today: TODAY });
+
+    const applied = await confirmCorrectionProposalAction(
+      built.proposal.draft,
+      store,
+      TODAY,
+    );
+    expect(applied.status).toBe("error");
+    expect(await symbolOf(store, "fund")).toBe(null);
+    store.close();
+  });
+
+  test("without the ledger seam a symbol fill refuses, but an ISIN fill does not", async () => {
     const store = await seedWorkspace();
     await seedFund(store, { id: "fund", name: "Fondo" });
 
@@ -346,6 +390,20 @@ describe("edit_identity (#1349)", () => {
     if (built.ok) return;
     expect(built.error).toContain("libro");
     expect(await symbolOf(store, "fund")).toBe(null);
+
+    // The ISIN never reads the ledger, so the same missing seam must not stop it.
+    const isinFill = await buildCorrectionProposal(
+      {
+        agentView: store.agentView,
+        assets: store.assets,
+        assistantProposals: store.assistantProposals,
+        liabilities: store.liabilities,
+      },
+      args({ isin: "IE00B03HCZ61", kind: "edit_identity" }),
+      TODAY,
+      RESOLVES,
+    );
+    expect(isinFill.ok).toBe(true);
     store.close();
   });
 });

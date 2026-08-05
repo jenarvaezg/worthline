@@ -61,7 +61,7 @@ describe("resolveInstrumentIdentityFill", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain(ISIN_A);
-    expect(result.error).toContain("/patrimonio");
+    expect(result.error).toContain("ficha");
   });
 
   it("refuses to overwrite a provider symbol the holding already has", () => {
@@ -73,7 +73,7 @@ describe("resolveInstrumentIdentityFill", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("VUSA.L");
-    expect(result.error).toContain("/patrimonio");
+    expect(result.error).toContain("ficha");
   });
 
   it("refuses when another holding already claims that ISIN, naming it", () => {
@@ -90,7 +90,10 @@ describe("resolveInstrumentIdentityFill", () => {
     expect(result.error).toContain(ISIN_A);
   });
 
-  it("refuses when another holding already claims that provider symbol", () => {
+  it("allows a provider symbol another holding already uses", () => {
+    // The same ETF at two brokers shares its symbol, both price off the same quote,
+    // and the symbol is what an unpriced holding is missing — unlike a duplicated
+    // ISIN, which hands an importer a second claimant for a row it may overwrite.
     const result = resolve({
       declaration: { providerSymbol: "VUSA.L" },
       portfolio: [
@@ -99,9 +102,7 @@ describe("resolveInstrumentIdentityFill", () => {
       ],
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toContain("S&P 500 en DEGIRO");
+    expect(result).toEqual({ ok: true, patch: { providerSymbol: "VUSA.L" } });
   });
 
   it("compares claimants on the normalized ISIN, not the raw string", () => {

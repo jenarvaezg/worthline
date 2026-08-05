@@ -4,6 +4,7 @@ import type {
   DecimalString,
   HousingValuationAnchor,
   Instrument,
+  InstrumentIdentityPatch,
   InvestmentPriceProvider,
   LiquidityTier,
   ManualAsset,
@@ -160,11 +161,7 @@ export interface AssetStore {
    */
   patchInvestmentIdentity: (
     assetId: string,
-    patch: {
-      isin?: string;
-      providerSymbol?: string;
-      priceProvider?: InvestmentPriceProvider;
-    },
+    patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
   ) => Promise<number>;
   /** Soft-delete an asset (moves it to the trash). Returns 1 if moved, 0 if not found. */
   softDeleteAsset: (assetId: string, deletedAt: string) => Promise<number>;
@@ -893,11 +890,7 @@ async function backfillInvestmentIsin(
 async function patchInvestmentIdentity(
   ctx: StoreContext,
   assetId: string,
-  patch: {
-    isin?: string;
-    providerSymbol?: string;
-    priceProvider?: InvestmentPriceProvider;
-  },
+  patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
 ): Promise<number> {
   const fields: Partial<typeof investmentAssets.$inferInsert> = {
     ...(patch.isin === undefined ? {} : { isin: patch.isin }),

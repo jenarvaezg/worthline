@@ -41,8 +41,11 @@ export type InstrumentIdentityFillResolution =
   | { ok: false; error: string }
   | { ok: true; patch: InstrumentIdentityPatch };
 
-/** Where an overwrite is done instead — named, so the refusal is actionable. */
-const FICHA = "/patrimonio, abriendo la posición";
+/**
+ * Where an overwrite is done instead — named, so the refusal is actionable. The
+ * surface, not its route: a URL is app knowledge and the domain has none.
+ */
+const OVERWRITE_SURFACE = "su ficha del patrimonio (abriendo la posición)";
 
 function normalizeIsin(value: string | null | undefined): string | null {
   const trimmed = (value ?? "").trim().toUpperCase();
@@ -69,7 +72,7 @@ function occupiedRejection(params: {
     `«${params.holdingName}» ya tiene ${params.label} ${params.current}, y desde el chat ` +
     `solo puedo rellenar el que está vacío: cambiar uno que ya existe revaloriza la ` +
     `posición como si fuera otro instrumento. Para ponerlo en ${params.declared}, edítalo ` +
-    `en ${FICHA}.`
+    `en ${OVERWRITE_SURFACE}.`
   );
 }
 
@@ -81,7 +84,7 @@ function claimedRejection(params: {
   return (
     `${params.label} ${params.value} ya lo reclama «${params.claimantName}». El mismo ` +
     `instrumento en dos sitios existe (una posición cerrada y una viva), pero desde el ` +
-    `chat no lo doy por hecho: si de verdad son dos, hazlo en ${FICHA}, viendo los dos.`
+    `chat no lo doy por hecho: si de verdad son dos, hazlo en ${OVERWRITE_SURFACE}, viendo los dos.`
   );
 }
 
@@ -170,19 +173,12 @@ export function resolveInstrumentIdentityFill(input: {
         }),
       };
     }
-    const claimant = rivals.find(
-      (holding) => normalizeSymbol(holding.providerSymbol) === declaredSymbol,
-    );
-    if (claimant) {
-      return {
-        ok: false,
-        error: claimedRejection({
-          claimantName: claimant.name,
-          label: "El símbolo",
-          value: `«${declaredSymbol}»`,
-        }),
-      };
-    }
+    // A symbol claimed by a neighbour is NOT refused, unlike a duplicated ISIN.
+    // The same ETF at two brokers shares its symbol legitimately, both holdings
+    // price correctly off the same quote, and the symbol is precisely what an
+    // unpriced holding is missing — refusing it would send the most common fill of
+    // all to the ficha. What a duplicated ISIN does and this does not is give an
+    // importer a second claimant for a row it may overwrite (ADR 0055, #1366).
     patch.providerSymbol = declaredSymbol;
   }
 

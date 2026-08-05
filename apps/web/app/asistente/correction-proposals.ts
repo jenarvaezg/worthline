@@ -320,17 +320,11 @@ async function buildAssetCorrection(
       origin: "assistant",
     });
   } else if (correction.kind === "edit_identity") {
-    const { operations } = store;
-    if (!operations) {
-      return {
-        ok: false,
-        error:
-          "No puedo leer el libro de esta posición ahora mismo, así que no voy a tocar " +
-          "su ISIN ni su símbolo.",
-      };
-    }
     const resolved = await resolveInstrumentIdentityCorrection(
-      { assets: store.assets, operations },
+      {
+        assets: store.assets,
+        ...(store.operations ? { operations: store.operations } : {}),
+      },
       {
         assetId: asset.id,
         declaration: {

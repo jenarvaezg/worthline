@@ -35,10 +35,6 @@ import {
   type PayoutScheduleFields,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
-import {
-  detectValueOnlyOpening,
-  valueOnlySymbolGuardMessage,
-} from "@web/patrimonio/value-only-opening";
 import { type WorthlineStore } from "@web/store";
 import type {
   InvestmentPriceProvider,
@@ -51,6 +47,7 @@ import {
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
+  detectValueOnlyOpening,
   isStatementBroker,
   parseStatement,
   planSnapshotPriceCorrection,
@@ -58,6 +55,7 @@ import {
   resolvePerHoldingStatementIsinGuard,
   snapshotPriceCorrectionErrorMessage,
   systemClock,
+  valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import {
   fetchAndCachePrice,
