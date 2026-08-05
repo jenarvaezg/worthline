@@ -31,6 +31,7 @@
  */
 
 import type { Instrument } from "./instrument-catalog";
+import { normalizeMatchKey, normalizeMatchName } from "./matching-keys";
 
 /** Which key produced a match. `none` is a row that matched nothing. */
 export type MatchKey = "isin" | "provider_symbol" | "name" | "none";
@@ -142,30 +143,6 @@ export interface RowMatch {
   ambiguous?: boolean;
 }
 
-const ISIN_SHAPE = /^[A-Za-z]{2}[A-Za-z0-9]{9}[0-9]$/;
-
-/**
- * Normalize a strong identifier: uppercase only when it has ISIN shape, matching
- * {@link ./statement-import-plan}'s rule so plantilla identifiers (CoinGecko ids,
- * lowercase by contract) are not corrupted. Empty → null.
- */
-function normalizeStrongKey(value: string | null | undefined): string | null {
-  const trimmed = (value ?? "").trim();
-  if (!trimmed) return null;
-  return ISIN_SHAPE.test(trimmed) ? trimmed.toUpperCase() : trimmed;
-}
-
-/** Lowercase, strip diacritics, collapse whitespace — the name comparison basis. */
-function normalizeName(value: string | null | undefined): string | null {
-  const normalized = (value ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-  return normalized.length > 0 ? normalized : null;
-}
-
 /**
  * Whether a row and a holding declare compatible instruments for a weak match.
  * When both declare one and they differ, they are NOT a match — this is the guard
@@ -206,9 +183,9 @@ function buildStrongIndex(holdings: MatchPortfolioHolding[]): StrongIndex {
   const byKey = new Map<string, MatchPortfolioHolding[]>();
   const bySymbolLower = new Map<string, MatchPortfolioHolding[]>();
   for (const holding of holdings) {
-    const isin = normalizeStrongKey(holding.isin);
+    const isin = normalizeMatchKey(holding.isin);
     if (isin) claim(byKey, isin, holding);
-    const symbol = normalizeStrongKey(holding.providerSymbol);
+    const symbol = normalizeMatchKey(holding.providerSymbol);
     if (symbol) {
       claim(byKey, symbol, holding);
       claim(bySymbolLower, symbol.toLowerCase(), holding);
@@ -239,12 +216,12 @@ function findStrongMatches(
   row: MatchCandidateRow,
   index: StrongIndex,
 ): { holdings: MatchPortfolioHolding[]; key: MatchKey } | null {
-  const isin = normalizeStrongKey(row.isin);
+  const isin = normalizeMatchKey(row.isin);
   if (isin) {
     const byIsin = index.byKey.get(isin);
     if (byIsin && byIsin.length > 0) return { holdings: byIsin, key: "isin" };
   }
-  const symbol = normalizeStrongKey(row.providerSymbol);
+  const symbol = normalizeMatchKey(row.providerSymbol);
   if (symbol) {
     const bySymbol = dedupeById(
       index.byKey.get(symbol) ?? [],
@@ -274,11 +251,11 @@ function rankStrongClaimants(
   holdings: MatchPortfolioHolding[],
 ): MatchPortfolioHolding[] {
   if (holdings.length < 2) return holdings;
-  const rowName = normalizeName(row.name);
+  const rowName = normalizeMatchName(row.name);
   const score = (holding: MatchPortfolioHolding): number => {
     const nameMatches =
       rowName !== null &&
-      normalizeName(holding.name) === rowName &&
+      normalizeMatchName(holding.name) === rowName &&
       instrumentsCompatible(row.instrument, holding.instrument);
     return (nameMatches ? 2 : 0) + (holding.closed === true ? 0 : 1);
   };
@@ -294,11 +271,11 @@ function findWeakMatches(
   row: MatchCandidateRow,
   holdings: MatchPortfolioHolding[],
 ): MatchPortfolioHolding[] {
-  const rowName = normalizeName(row.name);
+  const rowName = normalizeMatchName(row.name);
   if (!rowName) return [];
   return holdings.filter(
     (holding) =>
-      normalizeName(holding.name) === rowName &&
+      normalizeMatchName(holding.name) === rowName &&
       instrumentsCompatible(row.instrument, holding.instrument),
   );
 }

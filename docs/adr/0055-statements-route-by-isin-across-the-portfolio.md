@@ -171,10 +171,44 @@ creation order — which in that real case is the dead holding. So:
   from" would be the strongest disambiguator, but the extraction contract carries no
   broker or scope per holding, so it is not part of the ranking today.
 
-The statement router itself (`resolveStatementImportBuckets`) still first-wins a
-duplicated ISIN, and there it can `delete`/`overwrite` operations of the holding it
-picked: tracked as **#1366**, deferred because fixing it changes the importer's
-preview surface (a bucket needs candidates, not one `assetId`).
+The statement router (`resolveStatementImportBuckets`) carried the same first-wins
+index, and there it can `delete`/`overwrite` operations of the holding it picked —
+closed in **#1366**, see the amendment below.
+
+## Amendment (#1366): the router asks instead of picking
+
+The amendment above fixed the assistant's matcher and left the statement router with
+the assumption it had just retired. On this surface it costs more: a _matched_ bucket
+does not only add, it carries `deletes` and `overwrites` (ADR 0018 — "the file wins on
+the dates it covers"), so a duplicated ISIN meant the upload could rewrite the closed
+broker's history, or the live one's, chosen by creation order.
+
+The same rule, adapted to a surface where the choice must be **asked**:
+
+- **Every claimant is indexed** and a bucket carries `claimants`, each with **its own
+  merge plan** — the plan is only meaningful against one ledger, so the preview shows
+  the chosen holding's counts and position impact, not a default's numbers next to
+  another holding's name. The flat `assetId`/`mergePlan` fields remain the best-ranked
+  claimant, a default for rendering, never a resolution.
+- **Ranking is the same pair of disambiguators** as the matcher's `rankStrongClaimants`
+  (the file's own name first, then live before closed), with `closed` read from the
+  ledger the router already holds. Ties keep portfolio order. The key normalizers both
+  surfaces depend on now live in one module (`matching-keys.ts`): they must read "the
+  same key" identically or the same file resolves differently per door.
+- **The importer asks.** An ambiguous identifier renders as a choice ("¿cuál de tus
+  inversiones es?"), starts excluded and cannot be included until it is named — a
+  pre-checked best candidate would smuggle back the very by-order pick this exists to
+  stop. The confirm re-derives the buckets and refuses a choice that no longer names
+  exactly one claimant, so a portfolio that changed under an open preview blocks
+  instead of writing.
+- **The chat leaves it out.** `propose_statement_import` has no surface on which to ask,
+  so an ambiguous identifier is excluded and the proposal card says which one and where
+  to resolve it — decision 4 applied verbatim: one unresolvable identifier is excluded,
+  never a hostage to the other 25, and never a silent drop.
+
+What is deliberately NOT done: inferring the holding from the document's broker (the
+extraction contract still carries no scope, as the amendment above notes), and blocking
+the whole upload on one ambiguous identifier.
 
 ## Amendment (#1349): the chat fills an identity hole, it never creates the pair
 
@@ -197,9 +231,9 @@ The answer is asymmetric, and the asymmetry is the decision:
 - **An ISIN another holding already claims is refused, naming the claimant.** The
   legitimate pair (the same fund in two brokers, one closed and one live) is real
   — and it is precisely why the chat does not create it blind. A human makes that
-  pair on the ficha, seeing both. This is what un-blocks #1349 from #1366: the
-  importer's first-wins router is still a bug, but the chat is no longer a source
-  of the pairs that trigger it.
+  pair on the ficha, seeing both. This is what un-blocked #1349 from #1366: while
+  the importer's router still first-won, the chat had already stopped being a
+  source of the pairs that triggered it.
 - **A duplicated provider SYMBOL is not refused**, and the asymmetry is the whole
   point of the amendment above. A symbol is a pricing route: the same ETF at two
   brokers shares it, both holdings value correctly off the same quote, and nothing

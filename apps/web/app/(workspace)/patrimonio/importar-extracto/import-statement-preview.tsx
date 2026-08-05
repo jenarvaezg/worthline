@@ -4,9 +4,17 @@ import { formatUnits } from "@worthline/domain";
 import { startTransition, useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
-import type { FundPreviewRow, ImportStatementPreviewState } from "./actions";
+import type {
+  FundMatchChoice,
+  FundPreviewRow,
+  ImportStatementPreviewState,
+} from "./actions";
 import {
+  chooseFundHolding,
+  defaultFundSelection,
+  type FundSelectionFlags,
   type FundSelectionState,
+  isFundChoicePending,
   pluralize,
   summarizeImportSelection,
 } from "./import-statement-summary";
@@ -21,19 +29,16 @@ import {
  * goes through `formAction`, where the post-action reset is harmless because a
  * successful confirm redirects away.
  *
- * The only client state is per-fund include/symbol-empty flags — the confirm
- * summary (fondos, operaciones, importe, aviso pendiente) recomputes from that
- * state through the pure `summarizeImportSelection` module on every toggle, no
- * server round-trip (docs/interaction-patterns.md §7).
+ * The only client state is per-fund include/symbol-empty flags plus, for an
+ * identifier several holdings claim, which one the user named (#1366) — the
+ * confirm summary (fondos, operaciones, importe, avisos pendientes) recomputes
+ * from that state through the pure `summarizeImportSelection` module on every
+ * toggle, no server round-trip (docs/interaction-patterns.md §7). Switching the
+ * chosen holding likewise re-renders that row's merge counts and position impact
+ * from the candidates the server already sent, never a second request.
  */
 
 const IDLE: ImportStatementPreviewState = { status: "idle" };
-
-interface FundSelectionFlags {
-  included: boolean;
-  replaceOpening: boolean;
-  symbolEmpty: boolean;
-}
 
 function bucketLabel(bucket: "matched" | "new"): string {
   return bucket === "matched" ? "Encaja" : "Nuevo";
@@ -66,19 +71,31 @@ function positionFlagLabel(
   }
 }
 
+/** Project a preview row onto the pure module's opening state. */
 function defaultFlagsFor(fund: FundPreviewRow): FundSelectionFlags {
-  if (fund.bucket === "matched") {
-    return {
-      included: true,
-      replaceOpening: fund.toDeleteCount > 0,
-      symbolEmpty: false,
-    };
-  }
-  return {
-    included: fund.suggestedSymbol !== "",
-    replaceOpening: false,
-    symbolEmpty: fund.suggestedSymbol === "",
-  };
+  return defaultFundSelection(
+    fund.bucket === "matched"
+      ? {
+          ambiguous: fund.ambiguous,
+          assetId: fund.assetId,
+          bucket: "matched",
+          replacesOpening: fund.toDeleteCount > 0,
+        }
+      : { bucket: "new", suggestedSymbol: fund.suggestedSymbol },
+  );
+}
+
+/** The claimant whose figures the row currently shows — the chosen one, or the default. */
+function chosenChoice(
+  fund: FundPreviewRow,
+  flags: FundSelectionFlags,
+): FundMatchChoice | null {
+  if (fund.bucket !== "matched") return null;
+  return (
+    fund.choices.find((choice) => choice.assetId === flags.assetId) ??
+    fund.choices[0] ??
+    null
+  );
 }
 
 function ConfirmSubmit({
@@ -138,6 +155,9 @@ export function ImportStatementPreview({
   const summaryInput: FundSelectionState[] = funds.map((fund) => ({
     amountMinor: fund.amountMinor,
     bucket: fund.bucket,
+    choicePending: isFundChoicePending(fund, {
+      assetId: selection[fund.isin]?.assetId ?? "",
+    }),
     executedCount: fund.executedCount,
     included: selection[fund.isin]?.included ?? false,
     isin: fund.isin,
@@ -170,7 +190,19 @@ export function ImportStatementPreview({
   }
 
   function defaultFlagsForIsin(): FundSelectionFlags {
-    return { included: false, replaceOpening: false, symbolEmpty: false };
+    return { assetId: "", included: false, replaceOpening: false, symbolEmpty: false };
+  }
+
+  function chooseHolding(fund: FundPreviewRow, assetId: string) {
+    if (fund.bucket !== "matched") return;
+    const choice = fund.choices.find((entry) => entry.assetId === assetId);
+    setSelection((current) => ({
+      ...current,
+      [fund.isin]: chooseFundHolding(current[fund.isin] ?? defaultFlagsForIsin(), {
+        assetId,
+        replacesOpening: (choice?.toDeleteCount ?? 0) > 0,
+      }),
+    }));
   }
 
   function setSymbolEmpty(isin: string, symbolEmpty: boolean) {
@@ -260,15 +292,20 @@ export function ImportStatementPreview({
                 <tbody>
                   {funds.map((fund) => {
                     const flags = selection[fund.isin] ?? defaultFlagsFor(fund);
-                    const displayName = fundDisplayName(fund);
+                    const choicePending = isFundChoicePending(fund, flags);
+                    // While the choice is pending there is no holding to speak
+                    // for: no name, no figures — the only ones on hand are the
+                    // first candidate's (#1366).
+                    const choice = choicePending ? null : chosenChoice(fund, flags);
+                    const displayName = choicePending
+                      ? fund.isin
+                      : (choice?.existingName ?? fundDisplayName(fund));
                     const unresolved =
                       fund.bucket === "new" && fund.lookup.status !== "found";
                     const positionImpact =
-                      fund.bucket === "matched" &&
-                      !flags.replaceOpening &&
-                      fund.openingKeptPositionImpact
-                        ? fund.openingKeptPositionImpact
-                        : fund.positionImpact;
+                      choice && !flags.replaceOpening && choice.openingKeptPositionImpact
+                        ? choice.openingKeptPositionImpact
+                        : (choice?.positionImpact ?? fund.positionImpact);
 
                     return (
                       <tr key={fund.isin}>
@@ -277,7 +314,7 @@ export function ImportStatementPreview({
                             <input
                               aria-label={`Incluir ${displayName}`}
                               checked={flags.included}
-                              disabled={readOnly}
+                              disabled={readOnly || choicePending}
                               name={`include_${fund.isin}`}
                               onChange={() => toggleIncluded(fund.isin)}
                               type="checkbox"
@@ -287,9 +324,17 @@ export function ImportStatementPreview({
                         </td>
                         <td>
                           <span
-                            className={`statePill ${fund.bucket === "matched" ? "matched" : "new"}`}
+                            className={`statePill ${
+                              fund.bucket === "matched"
+                                ? fund.ambiguous
+                                  ? "ambiguous"
+                                  : "matched"
+                                : "new"
+                            }`}
                           >
-                            {bucketLabel(fund.bucket)}
+                            {fund.bucket === "matched" && fund.ambiguous
+                              ? "Elige"
+                              : bucketLabel(fund.bucket)}
                           </span>
                         </td>
                         <th scope="row">
@@ -297,7 +342,41 @@ export function ImportStatementPreview({
                         </th>
                         <td>
                           {fund.bucket === "matched" ? (
-                            <strong>{fund.existingName}</strong>
+                            fund.ambiguous ? (
+                              <div className="stackForm">
+                                <label>
+                                  {`¿Cuál de tus inversiones es ${fund.isin}?`}
+                                  <select
+                                    disabled={readOnly}
+                                    name={`assetId_${fund.isin}`}
+                                    onChange={(event) =>
+                                      chooseHolding(fund, event.currentTarget.value)
+                                    }
+                                    value={flags.assetId}
+                                  >
+                                    <option value="">— elige una —</option>
+                                    {fund.choices.map((option) => (
+                                      <option key={option.assetId} value={option.assetId}>
+                                        {option.existingName}
+                                        {option.closed ? " (posición cerrada)" : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <p className="infoNote">
+                                  {pluralize(
+                                    fund.choices.length,
+                                    "inversión tuya lleva",
+                                    "inversiones tuyas llevan",
+                                  )}{" "}
+                                  este identificador — el mismo fondo en dos brókers. El
+                                  archivo no dice cuál, y cargarlo puede sobrescribir
+                                  operaciones: elígela tú.
+                                </p>
+                              </div>
+                            ) : (
+                              <strong>{fund.existingName}</strong>
+                            )
                           ) : (
                             <div className="stackForm">
                               <label>
@@ -351,75 +430,81 @@ export function ImportStatementPreview({
                         </td>
                         <td>{formatMoney(fund.amountMinor)}</td>
                         <td>
-                          <div className="positionImpact">
-                            <p className="positionImpactLine">
-                              {formatUnits(positionImpact.beforeUnits)} uds (
-                              {formatMoney(positionImpact.beforeValueMinor)}) →{" "}
-                              {formatUnits(positionImpact.afterUnits)} uds (
-                              {formatMoney(positionImpact.afterValueMinor)})
+                          {choicePending ? (
+                            <p className="contextLabel">
+                              Elige la inversión para ver qué le pasa a la posición.
                             </p>
-                            {positionImpact.flags.length > 0 ? (
-                              <ul
-                                aria-label="Avisos de posición"
-                                className="positionFlags"
-                              >
-                                {positionImpact.flags.map((flag) => (
-                                  <li className="positionFlag" key={flag}>
-                                    {positionFlagLabel(flag)}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : null}
-                            {fund.bucket === "matched" ? (
-                              <details suppressHydrationWarning>
-                                <summary>Ver fusión</summary>
-                                <p>
-                                  {pluralize(
-                                    fund.toCreateCount,
-                                    "operación nueva",
-                                    "operaciones nuevas",
-                                  )}
-                                  {" · "}
-                                  {pluralize(
-                                    fund.toOverwriteCount,
-                                    "sobrescrita",
-                                    "sobrescritas",
-                                  )}
-                                  {fund.toDeleteCount > 0
-                                    ? ` · ${pluralize(
-                                        fund.toDeleteCount,
-                                        "apertura sustituida",
-                                        "aperturas sustituidas",
-                                      )}`
-                                    : ""}
-                                </p>
-                                {fund.toDeleteCount > 0 ? (
-                                  <label className="directionOptIn">
-                                    <input
-                                      name={`replaceOpeningSeen_${fund.isin}`}
-                                      type="hidden"
-                                      value="on"
-                                    />
-                                    <input
-                                      checked={flags.replaceOpening}
-                                      disabled={readOnly || !flags.included}
-                                      name={`replaceOpening_${fund.isin}`}
-                                      onChange={(event) =>
-                                        setReplaceOpening(
-                                          fund.isin,
-                                          event.currentTarget.checked,
-                                        )
-                                      }
-                                      type="checkbox"
-                                    />
-                                    Sustituir la apertura por el historial importado.
-                                  </label>
-                                ) : null}
-                              </details>
-                            ) : (
-                              <span className="contextLabel">Activo nuevo</span>
-                            )}
-                          </div>
+                          ) : (
+                            <div className="positionImpact">
+                              <p className="positionImpactLine">
+                                {formatUnits(positionImpact.beforeUnits)} uds (
+                                {formatMoney(positionImpact.beforeValueMinor)}) →{" "}
+                                {formatUnits(positionImpact.afterUnits)} uds (
+                                {formatMoney(positionImpact.afterValueMinor)})
+                              </p>
+                              {positionImpact.flags.length > 0 ? (
+                                <ul
+                                  aria-label="Avisos de posición"
+                                  className="positionFlags"
+                                >
+                                  {positionImpact.flags.map((flag) => (
+                                    <li className="positionFlag" key={flag}>
+                                      {positionFlagLabel(flag)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                              {choice ? (
+                                <details suppressHydrationWarning>
+                                  <summary>Ver fusión</summary>
+                                  <p>
+                                    {pluralize(
+                                      choice.toCreateCount,
+                                      "operación nueva",
+                                      "operaciones nuevas",
+                                    )}
+                                    {" · "}
+                                    {pluralize(
+                                      choice.toOverwriteCount,
+                                      "sobrescrita",
+                                      "sobrescritas",
+                                    )}
+                                    {choice.toDeleteCount > 0
+                                      ? ` · ${pluralize(
+                                          choice.toDeleteCount,
+                                          "apertura sustituida",
+                                          "aperturas sustituidas",
+                                        )}`
+                                      : ""}
+                                  </p>
+                                  {choice.toDeleteCount > 0 ? (
+                                    <label className="directionOptIn">
+                                      <input
+                                        name={`replaceOpeningSeen_${fund.isin}`}
+                                        type="hidden"
+                                        value="on"
+                                      />
+                                      <input
+                                        checked={flags.replaceOpening}
+                                        disabled={readOnly || !flags.included}
+                                        name={`replaceOpening_${fund.isin}`}
+                                        onChange={(event) =>
+                                          setReplaceOpening(
+                                            fund.isin,
+                                            event.currentTarget.checked,
+                                          )
+                                        }
+                                        type="checkbox"
+                                      />
+                                      Sustituir la apertura por el historial importado.
+                                    </label>
+                                  ) : null}
+                                </details>
+                              ) : (
+                                <span className="contextLabel">Activo nuevo</span>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -439,6 +524,19 @@ export function ImportStatementPreview({
                 {pluralize(summary.newCount, "activo nuevo", "activos nuevos")} ·{" "}
                 {pluralize(summary.excludedCount, "activo fuera", "activos fuera")}
               </p>
+              {summary.pendingChoiceCount > 0 ? (
+                <p className="warningBand" role="alert">
+                  {pluralize(
+                    summary.pendingChoiceCount,
+                    "identificador",
+                    "identificadores",
+                  )}{" "}
+                  {summary.pendingChoiceCount === 1 ? "lo llevan" : "los llevan"} varias
+                  inversiones tuyas:{" "}
+                  {summary.pendingChoiceCount === 1 ? "se queda" : "se quedan"} fuera
+                  hasta que elijas cuál es.
+                </p>
+              ) : null}
               {summary.unresolvedSymbolCount > 0 ? (
                 <p className="warningBand" role="alert">
                   {pluralize(

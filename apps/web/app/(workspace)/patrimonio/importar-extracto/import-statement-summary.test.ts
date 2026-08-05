@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  chooseFundHolding,
+  defaultFundSelection,
   type FundSelectionState,
+  isFundChoicePending,
   pluralize,
   summarizeImportSelection,
 } from "./import-statement-summary";
@@ -70,6 +73,18 @@ describe("summarizeImportSelection", () => {
     expect(summary.fundCount).toBe(0);
   });
 
+  test("an identifier awaiting a holding choice counts even though it cannot be included", () => {
+    const summary = summarizeImportSelection([
+      fund({ isin: "A", choicePending: true, included: false }),
+      fund({ isin: "B", choicePending: false }),
+      // "new" has no claimants to choose between — the flag is meaningless there.
+      fund({ isin: "C", bucket: "new", choicePending: true, included: false }),
+    ]);
+
+    expect(summary.pendingChoiceCount).toBe(1);
+    expect(summary.fundCount).toBe(1);
+  });
+
   test("empty selection summarizes to all-zero", () => {
     expect(summarizeImportSelection([])).toEqual({
       amountMinor: 0,
@@ -78,6 +93,7 @@ describe("summarizeImportSelection", () => {
       fundCount: 0,
       matchedCount: 0,
       newCount: 0,
+      pendingChoiceCount: 0,
       unresolvedSymbolCount: 0,
     });
   });
@@ -91,5 +107,84 @@ describe("pluralize", () => {
   test("uses the plural form for zero and for more than one", () => {
     expect(pluralize(0, "fondo", "fondos")).toBe("0 fondos");
     expect(pluralize(2, "fondo", "fondos")).toBe("2 fondos");
+  });
+});
+
+describe("per-fund selection rules (#1366)", () => {
+  test("a single-claimant match starts included, aimed at that claimant", () => {
+    expect(
+      defaultFundSelection({
+        ambiguous: false,
+        assetId: "asset_only",
+        bucket: "matched",
+        replacesOpening: true,
+      }),
+    ).toEqual({
+      assetId: "asset_only",
+      included: true,
+      replaceOpening: true,
+      symbolEmpty: false,
+    });
+  });
+
+  test("an ambiguous identifier starts unchosen AND excluded — never pre-aimed", () => {
+    const flags = defaultFundSelection({
+      ambiguous: true,
+      assetId: "asset_best_ranked",
+      bucket: "matched",
+      replacesOpening: true,
+    });
+
+    expect(flags.assetId).toBe("");
+    expect(flags.included).toBe(false);
+  });
+
+  test("naming a holding includes the fund and re-reads its opening default", () => {
+    const start = defaultFundSelection({
+      ambiguous: true,
+      assetId: "asset_a",
+      bucket: "matched",
+      replacesOpening: true,
+    });
+
+    const chosen = chooseFundHolding(start, {
+      assetId: "asset_b",
+      replacesOpening: false,
+    });
+
+    expect(chosen).toEqual({
+      assetId: "asset_b",
+      included: true,
+      // Read from the newly chosen claimant, not carried over from asset_a.
+      replaceOpening: false,
+      symbolEmpty: false,
+    });
+    expect(start.assetId).toBe(""); // never mutated
+  });
+
+  test("clearing the choice takes the fund back out instead of leaving it armed", () => {
+    const chosen = chooseFundHolding(
+      { assetId: "asset_b", included: true, replaceOpening: true, symbolEmpty: false },
+      { assetId: "", replacesOpening: false },
+    );
+
+    expect(chosen.included).toBe(false);
+    expect(chosen.assetId).toBe("");
+  });
+
+  test("the choice is pending only for an ambiguous match with nothing named", () => {
+    const pending = { assetId: "" };
+    const named = { assetId: "asset_a" };
+
+    expect(isFundChoicePending({ ambiguous: true, bucket: "matched" }, pending)).toBe(
+      true,
+    );
+    expect(isFundChoicePending({ ambiguous: true, bucket: "matched" }, named)).toBe(
+      false,
+    );
+    expect(isFundChoicePending({ ambiguous: false, bucket: "matched" }, pending)).toBe(
+      false,
+    );
+    expect(isFundChoicePending({ bucket: "new" }, pending)).toBe(false);
   });
 });

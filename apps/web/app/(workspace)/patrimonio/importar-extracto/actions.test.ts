@@ -593,3 +593,129 @@ describe("plantilla import (#695)", () => {
     expect(newRow(result, "LU00WL000002").executedCount).toBe(1);
   });
 });
+
+describe("an identifier two holdings claim (#1366)", () => {
+  const ONE_ISIN_CSV = [
+    "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
+    "05/01/2024;Fondo;ES00WL000001;Compra;10;1000;;",
+  ].join("\r\n");
+
+  /**
+   * The father's real pair: the same fund at two brokers. The seeded holding is
+   * the OLD one, carrying an opening the merge would delete — whichever of the two
+   * the router happened to reach first, one of them was being rewritten blind.
+   */
+  async function seedTwoClaimants(store: WorthlineStore): Promise<void> {
+    await seed(store);
+    await store.operations.recordOperation({
+      assetId: "matched_fund",
+      currency: "EUR",
+      executedAt: "2023-06-15",
+      id: "old_opening",
+      kind: "buy",
+      pricePerUnit: "100",
+      source: "opening",
+      units: "10",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "live_fund",
+      isin: "ES00WL000001",
+      liquidityTier: "market",
+      manualPricePerUnit: "35",
+      name: "Mismo fondo, bróker actual",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+  }
+
+  test("the preview asks which holding it is, with each one's own merge", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const matched = matchedRow(
+      await preview(plantillaForm(ONE_ISIN_CSV), store),
+      "ES00WL000001",
+    );
+
+    expect(matched.ambiguous).toBe(true);
+    // Each candidate carries ITS ledger's consequences: only the old holding has
+    // an opening this import would replace.
+    expect(
+      Object.fromEntries(
+        matched.choices.map((choice) => [
+          choice.existingName,
+          { toCreateCount: choice.toCreateCount, toDeleteCount: choice.toDeleteCount },
+        ]),
+      ),
+    ).toEqual({
+      "Fondo existente": { toCreateCount: 1, toDeleteCount: 1 },
+      "Mismo fondo, bróker actual": { toCreateCount: 1, toDeleteCount: 0 },
+    });
+  });
+
+  test("confirming without choosing writes nothing at all", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const fd = plantillaForm(ONE_ISIN_CSV);
+    fd.set("include_ES00WL000001", "on");
+
+    const digest = await confirm(fd, store);
+    expect(digest).toContain("error=");
+
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { id: "old_opening", source: "opening" },
+    ]);
+    expect(await store.operations.readOperations("live_fund")).toHaveLength(0);
+  });
+
+  test("a posted holding no longer claiming the identifier is refused, not applied", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const fd = plantillaForm(ONE_ISIN_CSV);
+    fd.set("include_ES00WL000001", "on");
+    fd.set("assetId_ES00WL000001", "some_other_holding");
+
+    expect(await confirm(fd, store)).toContain("error=");
+    expect(await store.operations.readOperations("matched_fund")).toHaveLength(1);
+    expect(await store.operations.readOperations("live_fund")).toHaveLength(0);
+  });
+
+  test("the chosen holding disappearing does not hand the import to the survivor", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const fd = plantillaForm(ONE_ISIN_CSV);
+    fd.set("include_ES00WL000001", "on");
+    fd.set("assetId_ES00WL000001", "live_fund");
+    // Trashed between preview and confirm: the identifier is unambiguous again,
+    // but the holding the user named is gone — and the survivor is NOT a
+    // substitute for it, deletes and overwrites included.
+    await store.assets.softDeleteAsset("live_fund", "2024-02-01");
+
+    expect(await confirm(fd, store)).toContain("error=");
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { id: "old_opening", source: "opening" },
+    ]);
+  });
+
+  test("the chosen holding is written and the other one is left exactly as it was", async () => {
+    const store = await createInMemoryStore();
+    await seedTwoClaimants(store);
+
+    const fd = plantillaForm(ONE_ISIN_CSV);
+    fd.set("include_ES00WL000001", "on");
+    fd.set("assetId_ES00WL000001", "live_fund");
+
+    expect(await confirm(fd, store)).toContain("ok=statement_import_loaded");
+
+    expect(await store.operations.readOperations("live_fund")).toMatchObject([
+      { executedAt: "2024-01-05", source: "statement", units: "10" },
+    ]);
+    // The old broker's opening — which the first-wins router would have deleted.
+    expect(await store.operations.readOperations("matched_fund")).toMatchObject([
+      { id: "old_opening", source: "opening" },
+    ]);
+  });
+});

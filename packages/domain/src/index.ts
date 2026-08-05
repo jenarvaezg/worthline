@@ -613,6 +613,7 @@ export {
   selectInvestmentPrice,
 } from "./investment-valuation";
 export { LIQUIDITY_LADDER, LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
+export { isIsinShaped } from "./matching-keys";
 export type { CurrencyCode, MoneyMinor } from "./money";
 export {
   addMoney,
@@ -868,6 +869,7 @@ export { getStatementBrokerAdapter, isStatementBroker } from "./statement-broker
 export type {
   MatchedStatementFund,
   NewStatementFund,
+  StatementFundClaimant,
   StatementFundGroup,
   StatementFundSelection,
   StatementImportBucket,
@@ -879,8 +881,8 @@ export type {
 export {
   buildStatementImportPlan,
   findStatementTypeConflict,
+  findUnresolvedStatementChoice,
   groupStatementRowsByIsin,
-  isIsinShaped,
   resolveStatementImportBuckets,
 } from "./statement-import-plan";
 export type { PerHoldingStatementIsinGuard, StatementIsinGuard } from "./statement-isin";
