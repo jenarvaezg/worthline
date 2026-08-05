@@ -53,15 +53,21 @@ import { measureTurnFloor, turnFloorTools } from "./turn-floor";
  *
  * **Raised to 38.800 on 2026-08-05 by #1374**, the case the ceiling was written for:
  * «a new tool family arriving» — arriving in a PR that says so. `propose_operation`
- * is the lane «añádeme esta compra» never had, and it costs 1.640 characters (desc
- * 1.204 · schema 419), which takes the widest real floor to 38.366. It is mid-pack:
+ * is the lane «añádeme esta compra» never had, and it costs 1.488 characters (desc
+ * 1.052 · schema 419), which takes the widest real floor to 38.214. It is mid-pack:
  * cheaper than `propose_reconcile` (1.979) or `propose_early_repayment` (1.633), and
- * its four sentences are four separate acceptance criteria of the issue — the
- * document-only frontier, the units contract, the routing away from the batch lanes,
- * and the five refusals the app enforces. Nothing in it restates a sibling's rule.
+ * its three sentences are three separate acceptance criteria of the issue — the
+ * document-only frontier, the units contract, and the routing away from the batch
+ * lanes. Nothing in it restates a sibling's rule.
  *
- * So headroom is 1,1% again, and the honest reading has not changed since #1349: this
- * IS the slimming slice's cue. `propose_holding` alone is 2.543 (desc 1.738) and
+ * What it deliberately does NOT carry is the app's catalogue of refusals (divisa,
+ * ISIN contradictorio, duplicado, sobreventa, fecha futura): the floor is paid on
+ * EVERY turn and a rejection only when it fires, and each one answers with an
+ * actionable message. That is the same trade #1342 made, applied to a new tool
+ * instead of retrofitted onto an old one, and it is worth 152 characters.
+ *
+ * So headroom is 1,5%, and the honest reading has not changed since #1349: this IS the
+ * slimming slice's cue. `propose_holding` alone is 2.543 (desc 1.738) and
  * `propose_correction` 2.127 — between them a fifth of the tool half. The next slice
  * that needs characters here should spend them there, not on another raise.
  */

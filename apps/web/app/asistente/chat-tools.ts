@@ -2081,8 +2081,12 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Anota UNA operación fechada (compra, venta o aportación) en una inversión que YA EXISTE, a partir de su JUSTIFICANTE: el apunte que worthline ya haya extraído y validado (documentType holding_event en los DATOS ESTRUCTURADOS). Es el caso «añádeme esta compra» con el recibo delante. " +
         "Tú decides `holdingId` (la posición destino) y `kind`: 'buy', 'sell', o 'contribution' para una aportación a un plan (se anota como compra y la tarjeta dice «aportación»). " +
         "El resto son los hechos OBSERVADOS del documento tal cual —date, amount y currency en unidades del documento (125.00 EUR, NO céntimos), y si los imprime isin, units, pricePerUnit y fees—: la app los COMPRUEBA contra él, escribe los del documento y RECHAZA la llamada si alguno no cuadra. No calcules ninguno; el valor actual de la posición no es un campo porque nadie tiene que rellenarlo. " +
-        "NO es ésta: la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction. " +
-        "Rechaza además fuente conectada, divisa distinta de la de la posición, ISIN que la contradice, operación ya anotada y venta que la dejaría en negativo.",
+        // The app's OTHER refusals (fuente conectada, divisa, ISIN contradictorio,
+        // duplicado, sobreventa, fecha futura) are deliberately NOT listed here: the
+        // floor is paid on every turn and a rejection only when it fires, and each one
+        // answers with an actionable message anyway. A description carries this tool's
+        // argument semantics, not the app's catalogue of refusals (#1342).
+        "NO es ésta: la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction.",
       inputSchema: OPERATION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
