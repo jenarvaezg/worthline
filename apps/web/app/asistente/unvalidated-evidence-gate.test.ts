@@ -45,6 +45,9 @@ describe("unvalidated-evidence classification (#1248)", () => {
   it("leaves gesture-born proposals and reads out of the gate", () => {
     expect(unvalidatedEvidenceClassFor("propose_holding_removal")).toBe("neutral");
     expect(unvalidatedEvidenceClassFor("propose_holding_restoration")).toBe("neutral");
+    // And the operation lane (#1374), whose OWN frontier is stronger than the gate:
+    // without a validated `holding_event` there is no fact for it to write at all.
+    expect(unvalidatedEvidenceClassFor("propose_operation")).toBe("neutral");
     // A read never feeds on a document: unclassified means neutral by default.
     expect(unvalidatedEvidenceClassFor("get_financial_context")).toBe("neutral");
     expect(unvalidatedEvidenceClassFor("suggest_actions")).toBe("neutral");

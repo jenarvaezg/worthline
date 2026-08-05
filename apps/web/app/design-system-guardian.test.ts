@@ -521,21 +521,22 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     // Each proposal states its kind through the shared folio label (the first
     // real child is the srOnly mutation status, so the title carries its class).
-    // Ten cards: statement, correction (#1051), reconstruction (#1053),
+    // Eleven cards: statement, correction (#1051), reconstruction (#1053),
     // balance-history, valuation, mixed, holding-creation (#1105), the shared
-    // baja/restauración card (#1106, one card, two folios), reconcile (#1108) and
-    // early repayment (#1245).
+    // baja/restauración card (#1106, one card, two folios), reconcile (#1108),
+    // early repayment (#1245) and the dated investment operation (#1374).
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
-    expect(kindTitles.length).toBe(10);
+    expect(kindTitles.length).toBe(11);
 
     // The ledger FOOTER is a different line from the folio label above (canon §3):
     // the atomic-batch statement («1 propuesta · 1 holding · 1 lote atómico»), which
-    // only the three atomic cards print — correction, reconstruction and early
-    // repayment. The alta, baja and reconcile cards used to print their own kind
+    // only the four atomic cards print — correction, reconstruction, early repayment
+    // and the dated operation (#1374, «1 propuesta · 1 posición · 1 operación
+    // fechada»). The alta, baja and reconcile cards used to print their own kind
     // string there instead, so the reader met the same words twice in one card
     // (#1317). A footer that merely repeats the header is the mistake this pins.
     const footers = layer.match(/className="assistantProposalFolio"/g) ?? [];
-    expect(footers.length).toBe(3);
+    expect(footers.length).toBe(4);
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {

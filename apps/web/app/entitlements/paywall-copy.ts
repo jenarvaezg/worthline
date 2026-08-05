@@ -31,6 +31,12 @@ export const PAYWALL_RECONCILE_MESSAGE =
   "Reconciliar tu cartera desde un documento es premium. El seguimiento manual sigue " +
   "gratis; premium deja que la IA concilie posiciones y movimientos desde tus documentos.";
 
+/** A free workspace tried to register an operation read off a document (#1374). */
+export const PAYWALL_OPERATION_MESSAGE =
+  "Anotar una operación leyéndola de su justificante es premium. Puedes seguir " +
+  "registrando compras y ventas a mano gratis, en las operaciones de cada posición; " +
+  "premium deja que la IA lea el justificante por ti.";
+
 /** A free workspace tried to connect a data source (Binance, Numista, …). */
 export const PAYWALL_CONNECT_SOURCE_MESSAGE =
   "Conectar fuentes de datos es premium. Tus datos manuales siguen siendo gratis; " +

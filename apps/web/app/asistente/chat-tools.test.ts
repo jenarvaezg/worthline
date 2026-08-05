@@ -577,6 +577,195 @@ describe("createChatTools · propose_reconcile (#1108, frontera de documento #13
   });
 });
 
+describe("createChatTools · propose_operation (#1374)", () => {
+  /**
+   * The lane «añádeme esta compra» had none of (#1374). Its fact comes from a
+   * validated `holding_event` — the MyInvestor aportación confirmation of the issue —
+   * and the model only points at it and says which way it runs.
+   */
+  const VALIDATED_APORTACION = extractedDocumentSchema.parse({
+    documentType: "holding_event",
+    event: {
+      date: "2026-08-05",
+      amount: 125,
+      currency: "EUR",
+      label: "APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP",
+      kind: "other",
+      isin: "ES0173516115",
+      units: 5.92,
+      pricePerUnit: { amount: 21.12, currency: "EUR" },
+      fees: { amount: 0, currency: "EUR" },
+    },
+    warnings: [],
+  });
+
+  async function operationStore() {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset-plan",
+      instrument: "pension_plan",
+      isin: "ES0173516115",
+      name: "MyInvestor Indexado SP500",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    // Seeded through the intent-level command: the narrowed application store this
+    // suite uses does not expose the raw persistence seam.
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "asset-plan",
+        currency: "EUR",
+        executedAt: "2025-09-15",
+        id: "op-seed",
+        kind: "buy",
+        pricePerUnit: "20",
+        units: "262.012",
+      },
+      { today: "2026-08-05" },
+    );
+    return store;
+  }
+
+  async function operationTools(
+    store: Awaited<ReturnType<typeof operationStore>>,
+    validatedDocuments: Parameters<typeof createChatTools>[0]["validatedDocuments"],
+  ) {
+    const publicId = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityId === "asset-plan",
+    )?.publicId;
+    return {
+      publicId: publicId ?? "",
+      tools: createChatTools({
+        groundedHoldingIds: publicId ? [publicId] : [],
+        runWithStore: (run) =>
+          run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            operations: store.operations,
+          }),
+        asOf: "2026-08-05",
+        ...(validatedDocuments ? { validatedDocuments } : {}),
+      }),
+    };
+  }
+
+  it("turns the attached confirmation into ONE operation proposal", async () => {
+    const store = await operationStore();
+    const { publicId, tools } = await operationTools(store, [VALIDATED_APORTACION]);
+
+    const result = await tools["propose_operation"]?.execute?.(
+      {
+        holdingId: publicId,
+        kind: "contribution",
+        date: "2026-08-05",
+        amount: 125,
+        currency: "EUR",
+        units: 5.92,
+        pricePerUnit: 21.12,
+        fees: 0,
+      },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      proposalType: "investment_operation",
+      draft: { proposalId: expect.any(String) },
+    });
+    expect(result.position).toEqual({ unitsAfter: "267,932", unitsBefore: "262,012" });
+    expect(await store.assistantProposals.read(result.draft.proposalId)).toMatchObject({
+      kind: "investment_operation",
+      status: "draft",
+    });
+  });
+
+  /** A refused call must not even open the store: no draft, no read, no write. */
+  function refusingOperationTools(
+    validatedDocuments: Parameters<typeof createChatTools>[0]["validatedDocuments"],
+  ) {
+    return createChatTools({
+      groundedHoldingIds: ["wl_hld_plan"],
+      runWithStore: () => {
+        throw new Error("the operation must not open the store to refuse");
+      },
+      asOf: "2026-08-05",
+      ...(validatedDocuments ? { validatedDocuments } : {}),
+    });
+  }
+
+  it("refuses a turn with no validated receipt, and routes", async () => {
+    const tools = refusingOperationTools(undefined);
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: "wl_hld_plan", kind: "contribution", amount: 125 },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_document_required");
+    expect(result.message).toContain("justificante");
+  });
+
+  it("refuses a figure the validated receipt does not carry", async () => {
+    const tools = refusingOperationTools([VALIDATED_APORTACION]);
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      // The invention of the session: a snapshot of the portfolio as the figure.
+      { holdingId: "wl_hld_plan", kind: "contribution", amount: 5_387 },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_fact_not_in_document");
+    expect(result.message).toContain("125");
+  });
+
+  /**
+   * The direction is the ONE judgement the document cannot make, so it is never
+   * defaulted: `jsonSchema()`'s `required` is not validated at runtime, and code
+   * picking «buy» would be code reading the paper. Same for the destination holding.
+   */
+  it("refuses to pick the direction, or the holding, for the model", async () => {
+    const tools = refusingOperationTools([VALIDATED_APORTACION]);
+
+    const noKind = (await tools["propose_operation"]?.execute?.(
+      { holdingId: "wl_hld_plan", amount: 125 },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+    expect(noKind.error).toBe("operation_kind_required");
+    expect(noKind.message).toContain("No lo elijo yo");
+
+    const badKind = (await tools["propose_operation"]?.execute?.(
+      { holdingId: "wl_hld_plan", kind: "aportación" },
+      toolCallContext(),
+    )) as { error?: string };
+    expect(badKind.error).toBe("operation_kind_required");
+
+    const noHolding = (await tools["propose_operation"]?.execute?.(
+      { kind: "contribution" },
+      toolCallContext(),
+    )) as { error?: string };
+    expect(noHolding.error).toBe("operation_holding_required");
+  });
+
+  /**
+   * The routing half of #1374's acceptance: the description has to say when this tool
+   * is the one and when the batch lanes are, so the model does not reach for a
+   * portfolio reconcile to record a single dated fact.
+   */
+  it("names the batch lanes it is NOT, in its own description", async () => {
+    const tools = refusingOperationTools([VALIDATED_APORTACION]);
+    const description = tools["propose_operation"]?.description ?? "";
+
+    expect(description).toContain("propose_reconcile");
+    expect(description).toContain("propose_statement_import");
+    expect(description).toContain("propose_holding");
+    expect(description).toContain("propose_correction");
+  });
+});
+
 describe("createChatTools · propose_reconstruction (#1053)", () => {
   it("builds a superficie-C reconstruct proposal from a dated balance series", async () => {
     const store = await createInMemoryStore();
@@ -1010,6 +1199,8 @@ describe("createChatTools · premium ingestion gate (#1162)", () => {
     "propose_reconstruction",
     "propose_mixed_document_import",
     "propose_reconcile",
+    // Reading an operation off its receipt is document ingestion too (#1374).
+    "propose_operation",
   ];
 
   it(

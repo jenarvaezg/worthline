@@ -71,6 +71,13 @@ import {
 } from "@web/asistente/maintainer-alert-evidence";
 import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-search";
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
+import {
+  holdingEventInContext,
+  OPERATION_KIND_CLAIMS,
+  type OperationKindClaim,
+  resolveOperationEvent,
+} from "@web/asistente/operation-document-frontier";
+import { buildOperationProposal } from "@web/asistente/operation-proposals";
 import { buildPropertyValuationProposal } from "@web/asistente/property-valuation-proposals";
 import { stampProposalTools } from "@web/asistente/proposal-provenance";
 import { PROPOSAL_SUMMARY_MAX_CHARS } from "@web/asistente/proposal-summary";
@@ -90,6 +97,7 @@ import {
   unvalidatedEvidenceRejected,
 } from "@web/asistente/unvalidated-evidence-gate";
 import {
+  PAYWALL_OPERATION_MESSAGE,
   PAYWALL_RECONCILE_MESSAGE,
   PAYWALL_STATEMENT_MESSAGE,
   premiumRequired,
@@ -791,6 +799,47 @@ const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["holdings"],
+  additionalProperties: false,
+});
+
+/**
+ * `propose_operation` (#1374). The holding and the DIRECTION are the model's calls —
+ * nothing in a document says which of the user's positions a paper belongs to, and a
+ * securities confirmation lands as a generic dated fact — and everything else is a
+ * CLAIM about the validated extraction, checked against it and then discarded. So the
+ * position's current value is not a field at all: nobody has to fill it, which is the
+ * whole point (the improvised reconcile demanded it and got a portfolio snapshot).
+ *
+ * `pricePerUnit` and `fees` are accepted in the document's major units, like `amount`,
+ * because they are relayed for verification and never persisted from here — unlike
+ * every céntimos-taking tool, this one takes no money it will write.
+ */
+const OPERATION_PROPOSAL_SCHEMA = jsonSchema<{
+  holdingId?: string;
+  kind?: OperationKindClaim;
+  date?: string;
+  amount?: number;
+  currency?: string;
+  isin?: string;
+  units?: number;
+  pricePerUnit?: number;
+  fees?: number;
+  summary?: string;
+}>({
+  type: "object",
+  properties: {
+    holdingId: { type: "string" },
+    kind: { enum: ["buy", "sell", "contribution"], type: "string" },
+    date: { type: "string" },
+    amount: { type: "number" },
+    currency: { type: "string" },
+    isin: { type: "string" },
+    units: { type: "number" },
+    pricePerUnit: { type: "number" },
+    fees: { type: "number" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
+  },
+  required: ["holdingId", "kind"],
   additionalProperties: false,
 });
 
@@ -2022,6 +2071,94 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             resolved.document,
             input.asOf,
             args.documentName ?? "cartera.xlsx",
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        });
+      },
+    }),
+    propose_operation: tool({
+      description:
+        "Anota UNA operación fechada (compra, venta o aportación) en una inversión que YA EXISTE, a partir de su JUSTIFICANTE: el apunte que worthline ya haya extraído y validado (documentType holding_event en los DATOS ESTRUCTURADOS). Es el caso «añádeme esta compra» con el recibo delante. " +
+        "Tú decides `holdingId` (la posición destino) y `kind`: 'buy', 'sell', o 'contribution' para una aportación a un plan (se anota como compra y la tarjeta dice «aportación»). " +
+        "El resto son los hechos OBSERVADOS del documento tal cual —date, amount y currency en unidades del documento (125.00 EUR, NO céntimos), y si los imprime isin, units, pricePerUnit y fees—: la app los COMPRUEBA contra él, escribe los del documento y RECHAZA la llamada si alguno no cuadra. No calcules ninguno; el valor actual de la posición no es un campo porque nadie tiene que rellenarlo. " +
+        // The app's OTHER refusals (fuente conectada, divisa, ISIN contradictorio,
+        // duplicado, sobreventa, fecha futura) are deliberately NOT listed here: the
+        // floor is paid on every turn and a rejection only when it fires, and each one
+        // answers with an actionable message anyway. A description carries this tool's
+        // argument semantics, not the app's catalogue of refusals (#1342).
+        "NO es ésta: la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction.",
+      inputSchema: OPERATION_PROPOSAL_SCHEMA,
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
+        // `required` in a `jsonSchema()` is not validated at runtime, so the direction
+        // is checked HERE — and never defaulted. It is the one judgement the document
+        // cannot make (ADR 0067's #1374 amendment), so an absent one means the model
+        // must read the paper again, exactly as `propose_early_repayment` refuses to
+        // infer a `mode`. Defaulting to «buy» would let code pick a direction.
+        const kind = OPERATION_KIND_CLAIMS.has(args.kind as string)
+          ? (args.kind as OperationKindClaim)
+          : null;
+        if (kind === null) {
+          return Promise.resolve({
+            error: "operation_kind_required",
+            message:
+              "Falta decir si el justificante es una compra, una venta o una aportación " +
+              "('buy', 'sell' o 'contribution'). No lo elijo yo: lo dice el papel.",
+          });
+        }
+        const publicHoldingId = args.holdingId?.trim();
+        if (!publicHoldingId) {
+          return Promise.resolve({
+            error: "operation_holding_required",
+            message:
+              "Falta la posición en la que anotar la operación. Lee la cartera y pasa el " +
+              "identificador que te devuelva.",
+          });
+        }
+        // The document-only frontier (#1374): the fact comes from the extraction, the
+        // model only points at it and says which way it runs. Checked BEFORE the store
+        // is opened — a call with nothing to stand on is refused, not half-resolved
+        // against live data. No unvalidated-evidence gate is needed on top: without a
+        // validated document there is no fact at all (see UNVALIDATED_EVIDENCE_CLASSES).
+        const resolved = resolveOperationEvent(
+          {
+            kind,
+            ...(typeof args.date === "string" ? { date: args.date } : {}),
+            ...(typeof args.amount === "number" ? { amount: args.amount } : {}),
+            ...(typeof args.currency === "string" ? { currency: args.currency } : {}),
+            ...(typeof args.isin === "string" ? { isin: args.isin } : {}),
+            ...(typeof args.units === "number" ? { units: args.units } : {}),
+            ...(typeof args.pricePerUnit === "number"
+              ? { pricePerUnit: args.pricePerUnit }
+              : {}),
+            ...(typeof args.fees === "number" ? { fees: args.fees } : {}),
+          },
+          holdingEventInContext(input.validatedDocuments ?? []),
+        );
+        if (!resolved.ok) return Promise.resolve(resolved.error);
+        return input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.assets || !store.operations) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const assetId = await resolveInternalHoldingId(
+            store.agentView,
+            publicHoldingId,
+          );
+          const built = await buildOperationProposal(
+            {
+              agentView: store.agentView,
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              operations: store.operations,
+            },
+            {
+              assetId,
+              event: resolved.event,
+              kind,
+              publicHoldingId,
+              ...(args.summary === undefined ? {} : { summary: args.summary }),
+            },
+            input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
         });

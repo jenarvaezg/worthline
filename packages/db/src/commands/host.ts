@@ -6,6 +6,7 @@ import type {
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
 import type { EarlyRepaymentPlan } from "@db/early-repayment-plan";
+import type { InvestmentOperationPlan } from "@db/investment-operation-plan";
 import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { OperationsStore } from "@db/operations-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
@@ -118,6 +119,19 @@ export interface CommandHost extends DatedFactAliases {
   applyAssistantReconcileProposal: (
     params: StatementImportCommand & { proposalId: string },
   ) => Promise<void>;
+  /**
+   * Apply one investment-operation proposal (#1374) and resolve it in the SAME
+   * transaction. The write is reconstructed from the persisted fact, never from the
+   * caller — like the early repayment and unlike the reconcile, whose curated batch
+   * legitimately comes from the card: here there is nothing for the user to curate,
+   * so the terms that reach the engine are exactly the ones the preview showed. It
+   * routes through the proven statement-import ripple as a single `matched` fund,
+   * the same path a reconcile row takes, and stamps `source: "agent"`.
+   */
+  applyAssistantOperationProposal: (params: {
+    proposalId: string;
+    today: string;
+  }) => Promise<void>;
   applyAssistantBalanceHistoryProposal: (
     params: Parameters<DatedFactCommands["importBalanceHistoryAndRipple"]>[0] & {
       proposalId: string;
@@ -227,6 +241,23 @@ function earlyRepaymentPlanOf(proposal: AssistantProposal): EarlyRepaymentPlan {
   if (!fact || fact.kind !== "debt_early_repayment") {
     throw new Error(
       `Early-repayment proposal "${proposal.id}" carries no repayment plan.`,
+    );
+  }
+  return fact.row;
+}
+
+/** Extract the single operation plan an `investment_operation` proposal carries. */
+function investmentOperationPlanOf(proposal: AssistantProposal): InvestmentOperationPlan {
+  const facts = proposal.documents
+    .flatMap((document) => document.facts)
+    .filter((item) => item.kind === "investment_operation");
+  const [fact] = facts;
+  // Exactly one, not «the first one»: this lane exists because a single dated fact
+  // was being pushed through a batch tool (#1374), so a draft that somehow carries
+  // two operations is a bug to surface, never half a write to apply.
+  if (facts.length !== 1 || !fact || fact.kind !== "investment_operation") {
+    throw new Error(
+      `Investment-operation proposal "${proposal.id}" carries no single operation plan.`,
     );
   }
   return fact.row;
@@ -523,6 +554,55 @@ export function createCommandHost(
         },
         () =>
           datedFacts.applyStatementImportAndRipple({ ...params, trigger: "assistant" }),
+      ),
+    applyAssistantOperationProposal: async ({ proposalId, today }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "investment_operation") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" is not an investment operation.`,
+            );
+          }
+          return proposal;
+        },
+        async () => {
+          const proposal = await assistantProposals.read(proposalId);
+          if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
+          const plan = investmentOperationPlanOf(proposal);
+          await datedFacts.applyStatementImportAndRipple({
+            funds: [
+              {
+                assetId: plan.assetId,
+                creates: [
+                  {
+                    assetId: plan.assetId,
+                    currency: plan.currency,
+                    executedAt: plan.executedAt,
+                    id: ctx.newId(),
+                    kind: plan.kind,
+                    pricePerUnit: plan.pricePerUnit,
+                    source: "agent",
+                    units: plan.units,
+                    // A printed zero is «sin comisión», which is already the
+                    // domain's default: carry nothing rather than a fact that
+                    // changes nothing (the alta's rule, #1315).
+                    ...(plan.feesMinor !== undefined && plan.feesMinor > 0
+                      ? { feesMinor: plan.feesMinor }
+                      : {}),
+                  },
+                ],
+                deletes: [],
+                kind: "matched",
+                overwrites: [],
+              },
+            ],
+            today,
+            trigger: "assistant",
+          });
+        },
       ),
     applyAssistantBalanceHistoryProposal: async ({
       proposalId,

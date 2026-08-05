@@ -937,6 +937,8 @@ export type AssistantProposalKind =
   | "holding_removal"
   | "holding_restoration"
   | "reconcile"
+  /** ONE dated buy/sell on an investment holding that already exists (#1374). */
+  | "investment_operation"
   | "early_repayment";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";

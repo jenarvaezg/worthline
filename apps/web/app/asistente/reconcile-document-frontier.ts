@@ -49,17 +49,19 @@ export interface ReconcileFrontierError {
  * No validated positions/movements document is on the table. The message ROUTES
  * rather than just refusing (the #1248 rule): the two things a user arriving here
  * actually has are a whole portfolio — which belongs in the deterministic import —
- * and one dated operation on a holding that already exists, which belongs in that
- * holding's own ficha until the chat lane for it exists (#1374). Naming the lane is
- * what turns a dead end into an answer.
+ * and one dated operation on a holding that already exists, which now has its own
+ * lane (`propose_operation`, #1374). Naming the lane is what turns a dead end into an
+ * answer, and until that lane existed this same sentence had to send people to the
+ * holding's ficha.
  */
 export const RECONCILE_DOCUMENT_REQUIRED_MESSAGE =
   "El reconcile de cartera solo lo puedo preparar sobre un documento de posiciones o " +
   "movimientos que yo haya leído y validado, y en esta conversación no hay ninguno: no " +
   "puedo escribir filas dictadas por mí. Si lo que traes es una operación puntual " +
-  "(una compra, una aportación) sobre una inversión que ya tienes, anótala en su ficha " +
-  "de Patrimonio, dentro de sus operaciones; si es la cartera entera, súbeme el " +
-  "extracto o el Excel, o usa /patrimonio/importar-extracto.";
+  "(una compra, una venta, una aportación) sobre una inversión que ya tienes, ésa se " +
+  "anota con su justificante: súbeme el recibo y la preparo como propuesta de " +
+  "operación. Si es la cartera entera, súbeme el extracto o el Excel, o usa " +
+  "/patrimonio/importar-extracto.";
 
 /**
  * The row named nothing the document contains. Almost always the same mistake as
@@ -76,7 +78,8 @@ export function reconcileRowNotInDocumentMessage(
     "No puedo llevar al patrimonio una fila que no salga de él (ni con el nombre del " +
     `holding de la cartera: en el documento pone ${available.join(", ")}). Pasa los ` +
     "nombres tal cual los trae el documento, o, si lo que quieres es anotar una " +
-    "operación en una inversión que ya existe, hazlo en su ficha de Patrimonio."
+    "operación fechada en una inversión que ya existe, prepárala desde su justificante " +
+    "en lugar de por aquí."
   );
 }
 
