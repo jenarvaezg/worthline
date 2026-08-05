@@ -170,6 +170,13 @@ function fixSurface(
       const href = fichaHref();
       return href ? { href, label: "Ver activo" } : null;
     }
+    case "trashed_balance":
+      // Not the holding's ficha — a trashed holding has none (every live read
+      // excludes it). Both repairs live on the Papelera at the foot of the board:
+      // restore it (then record the sale) or confirm the borrado (#1365). The
+      // Papelera is a collapsed <details>, so the link has to unfold it too — a
+      // bare `#papelera` would land on something the user cannot see.
+      return { href: "/patrimonio?abrir=papelera#papelera", label: "Ver papelera" };
     case "manual_value_freshness":
       return { href: "/patrimonio/actualizar", label: "Actualizar valor" };
     case "price_freshness": {

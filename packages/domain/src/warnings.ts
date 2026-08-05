@@ -132,7 +132,21 @@ export function isClosedPosition(
     return false;
   }
 
-  const units = netUnitsByAssetId?.get(asset.id);
+  return unitsReadAsClosed(netUnitsByAssetId?.get(asset.id));
+}
+
+/**
+ * The units half of the closed-position rule, without the asset (#1365). Split
+ * out of `isClosedPosition` so a caller holding the units but NOT the
+ * `ManualAsset` reads the same dust threshold instead of re-deriving it — which
+ * is the case for a TRASHED holding, since every live read excludes the trash.
+ *
+ * Absent units read as NOT closed, matching `isClosedPosition`: a caller that
+ * read no ledger knows nothing, and "unknown" must never pass for "sold out".
+ * Callers whose signal needs positive evidence of live units must therefore check
+ * for the entry themselves.
+ */
+export function unitsReadAsClosed(units: DecimalString | undefined): boolean {
   return (
     units !== undefined &&
     compareUnits(units, CLOSED_POSITION_UNITS_EPSILON) < 0 &&

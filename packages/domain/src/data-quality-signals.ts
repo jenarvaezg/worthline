@@ -11,18 +11,19 @@ import { summarizeCoinValueGaps } from "./coin-value-gap";
 import type { SourcePosition } from "./connected-source";
 import { coinValue, positionValue } from "./connected-source";
 import { daysBetween } from "./dates";
-import type { DecimalString } from "./decimal";
+import { type DecimalString, formatUnits } from "./decimal";
 import type { FireScopeConfig } from "./fire";
 import { valuationMethodOfAsset } from "./holding-method";
 import { projectPortfolio } from "./portfolio-projection";
 import type { PriceFreshnessState } from "./prices";
-import type { ScopeOption } from "./scope";
+import { resolveScopeMemberIds, type ScopeOption } from "./scope";
 import type { NetWorthSnapshot } from "./snapshot-types";
 import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-history";
 import {
   collectWarnings,
   type DomainWarning,
   isClosedPosition,
+  unitsReadAsClosed,
   type WarningOverride,
   type WarningSeverity,
 } from "./warnings";
@@ -30,6 +31,7 @@ import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-t
 
 export type DataQualityCategory =
   | "warning"
+  | "trashed_balance"
   | "manual_value_freshness"
   | "price_freshness"
   | "source_freshness"
@@ -70,6 +72,19 @@ export interface DataQualityScopeContext {
   scopeLabel: string;
 }
 
+/**
+ * A soft-deleted holding as the health engine sees it (#1365). Carries only what
+ * the trashed-balance rule needs: who it is, and which members own a share of it —
+ * the trash is outside every live read, so its scope relevance is decided by
+ * ownership intersection exactly as the trash listing decides it (#342), not by
+ * the portfolio projection (which, by definition, cannot see it).
+ */
+export interface DataQualityTrashedHolding {
+  id: string;
+  name: string;
+  ownerMemberIds: readonly string[];
+}
+
 export interface DataQualityConnectedSource {
   id: string;
   label: string;
@@ -95,6 +110,13 @@ export interface CollectDataQualitySignalsInput {
   assets: readonly ManualAsset[];
   liabilities: readonly Liability[];
   connectedSources: readonly DataQualityConnectedSource[];
+  /**
+   * The workspace's soft-deleted holdings (#1365). Required — not optional — for
+   * the same reason `netUnitsByAssetId` is: a signal about the trash that only
+   * one of the two consumers feeds is a signal the agent and the human disagree
+   * about. An empty array is the honest reading of "nothing in the trash".
+   */
+  trashedHoldings: readonly DataQualityTrashedHolding[];
   warningOverrides: readonly WarningOverride[];
   fireConfigByScopeId: Readonly<Record<string, FireScopeConfig | undefined>>;
   snapshots: readonly NetWorthSnapshot[];
@@ -125,6 +147,9 @@ export const STALE_MANUAL_VALUE_THRESHOLD_DAYS = 90;
 /** Machine code for a stored holding without a recent manual value update. */
 export const STALE_MANUAL_VALUE_CODE = "STALE_MANUAL_VALUE";
 
+/** Machine code for a trashed holding whose position still holds units (#1365). */
+export const TRASHED_WITH_BALANCE_CODE = "TRASHED_WITH_BALANCE";
+
 /**
  * Signal kinds the user may acknowledge as intentional via the persisted
  * `{code, entityId}` override shape (warnings + selected signal kinds).
@@ -145,6 +170,7 @@ export const SPARSE_SNAPSHOT_THRESHOLD = 3;
 /** Stable category order for the secondary sort key (PRD #328). */
 export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "warning",
+  "trashed_balance",
   "manual_value_freshness",
   "price_freshness",
   "source_freshness",
@@ -180,6 +206,11 @@ export function collectDataQualitySignals(
       input.warningOverrides,
       ownedAssetIds,
       input.netUnitsByAssetId,
+    ),
+    ...trashedBalanceSignals(
+      input.trashedHoldings,
+      input.netUnitsByAssetId,
+      new Set(resolveScopeMemberIds(input.workspace, input.scope.internalScopeId)),
     ),
     ...staleManualValueSignals(
       input.assets,
@@ -313,6 +344,62 @@ function warningToSignal(
 
 function warningSeverity(severity: WarningSeverity): DataQualitySeverity {
   return severity === "blocking" ? "high" : "medium";
+}
+
+/**
+ * A holding sitting in the Papelera with units still on its ledger (#1365): its
+ * value left the patrimonio at the capture after the delete, and the histórico
+ * records no sale, no traspaso, and no deposit into any account. The money looks
+ * evaporated — indistinguishable from the shape of someone who sold the fund and
+ * then deleted it "porque ya no lo tengo" without recording the sale first.
+ *
+ * `high`, because unlike a stale price this is not a figure that MIGHT be wrong:
+ * the drop already happened. Both repairs already exist on the trash listing and
+ * both clear this signal by removing its cause — restore it and record the sale,
+ * or hard-delete to confirm the borrado — so it needs no acknowledgement door of
+ * its own (and, unlike an overrideable warning, a trashed holding has no ficha to
+ * acknowledge it from).
+ *
+ * Positive evidence only: the holding must HAVE an entry in the net-units map and
+ * that entry must not read as closed. A holding absent from the map — a cash
+ * account, a flat, anything without an operations ledger — says nothing about
+ * units and is silent here, rather than being flagged on a rule it cannot answer.
+ */
+function trashedBalanceSignals(
+  trashedHoldings: readonly DataQualityTrashedHolding[],
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>,
+  scopeMemberIds: ReadonlySet<string>,
+): DataQualitySignal[] {
+  const signals: DataQualitySignal[] = [];
+
+  for (const holding of trashedHoldings) {
+    if (!holding.ownerMemberIds.some((memberId) => scopeMemberIds.has(memberId))) {
+      continue;
+    }
+
+    const units = netUnitsByAssetId.get(holding.id);
+    if (units === undefined || unitsReadAsClosed(units)) {
+      continue;
+    }
+
+    signals.push({
+      affected: { id: holding.id, label: holding.name, object: "holding" },
+      category: "trashed_balance",
+      code: TRASHED_WITH_BALANCE_CODE,
+      fixable: true,
+      label:
+        `"${holding.name}" está en la Papelera con ${formatUnits(units)} unidades: su valor salió ` +
+        "de tu patrimonio sin venta ni traspaso. Recupéralo y registra la venta, o confirma el borrado.",
+      naturalKey: signalNaturalKey(
+        "trashed_balance",
+        TRASHED_WITH_BALANCE_CODE,
+        holding.id,
+      ),
+      severity: "high",
+    });
+  }
+
+  return signals;
 }
 
 function staleManualValueSignals(

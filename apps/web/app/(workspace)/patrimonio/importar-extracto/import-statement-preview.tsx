@@ -1,5 +1,6 @@
 "use client";
 
+import { formatUnits } from "@worthline/domain";
 import { startTransition, useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 
@@ -50,14 +51,6 @@ function formatMoney(amountMinor: number): string {
     minimumFractionDigits: 2,
     style: "currency",
   }).format(amountMinor / 100);
-}
-
-function formatUnits(units: string): string {
-  const value = Number(units);
-  if (!Number.isFinite(value)) return units;
-  return new Intl.NumberFormat("es-ES", {
-    maximumFractionDigits: 6,
-  }).format(value);
 }
 
 function positionFlagLabel(

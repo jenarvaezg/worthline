@@ -141,7 +141,10 @@ export default function OperationsEditor({
         };
 
   return (
-    <section aria-label="Operaciones de la inversión">
+    // The anchor the danger zone's "registrar la venta" link lands on (#1365):
+    // the correct exit for a holding with units is a recorded sell, and it lives
+    // here, one collapsed block away from the delete button.
+    <section aria-label="Operaciones de la inversión" id="operaciones">
       <h3>Operaciones</h3>
 
       {/* Announce the in-flight save for screen readers (§8); the settled outcome

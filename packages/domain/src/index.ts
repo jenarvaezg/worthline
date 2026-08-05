@@ -259,6 +259,7 @@ export type {
   DataQualitySeverity,
   DataQualitySignal,
   DataQualitySourceFreshness,
+  DataQualityTrashedHolding,
 } from "./data-quality-signals";
 export {
   collectDataQualitySignals,
@@ -270,6 +271,7 @@ export {
   SPARSE_SNAPSHOT_THRESHOLD,
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,
+  TRASHED_WITH_BALANCE_CODE,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
 export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
@@ -292,6 +294,7 @@ export {
   averageUnitCost,
   compareUnits,
   divideUnits,
+  formatUnits,
   isPositiveDecimal,
   multiplyToMinor,
   normalizeDecimal,
@@ -553,6 +556,8 @@ export {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "./holding-method";
+export type { HoldingTrashImpact } from "./holding-trash-impact";
+export { holdingTrashImpact } from "./holding-trash-impact";
 export type {
   HoldingValuation,
   HoldingValuationInput,
@@ -918,7 +923,7 @@ export type {
   WarningOverride,
   WarningSeverity,
 } from "./warnings";
-export { collectWarnings, isClosedPosition } from "./warnings";
+export { collectWarnings, isClosedPosition, unitsReadAsClosed } from "./warnings";
 export type {
   ExportedAmortizationPlan,
   ExportedAsset,

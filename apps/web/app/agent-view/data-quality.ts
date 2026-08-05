@@ -209,6 +209,11 @@ async function collectScopeSignals(
     ),
   );
 
+  // The Papelera's own rows (#1365). Every read above excludes the trash, so a
+  // holding deleted with units still on its ledger is invisible to all of them —
+  // both the row and its ledger have to be asked for by id.
+  const trashedHoldings = await store.readTrashedHoldings();
+
   // Net units per holding, so a sold-out position is silent here for the same
   // reasons it is on the home hero (#1348). Folded for EVERY `derived` holding,
   // not just the ones a given signal can fire on: the engine now reads this map
@@ -216,15 +221,22 @@ async function collectScopeSignals(
   // for more, and a map narrowed to one code's candidates would silently
   // under-populate for the next — the exact drift the required input prevents.
   // The fold itself, including "an empty ledger is unstarted, not closed", is the
-  // domain's.
+  // domain's. Trashed ASSETS join the fold for the same reason: their units are
+  // what decides whether the delete took value out of the patrimonio (#1365).
   const netUnitsByAssetId = netUnitsByAsset(
     new Map(
       await Promise.all(
-        assets
-          .filter((asset) => valuationMethodOfAsset(asset) === "derived")
-          .map(
-            async (asset) => [asset.id, await store.readOperations(asset.id)] as const,
-          ),
+        [
+          ...assets
+            .filter((asset) => valuationMethodOfAsset(asset) === "derived")
+            .map((asset) => asset.id),
+          ...trashedHoldings
+            .filter((holding) => holding.kind === "asset")
+            .map((holding) => holding.id),
+        ].map(
+          async (holdingId) =>
+            [holdingId, await store.readOperations(holdingId)] as const,
+        ),
       ),
     ),
   );
@@ -249,6 +261,7 @@ async function collectScopeSignals(
     snapshotIdsWithHoldings,
     snapshots,
     sourceFreshnessBySourceId,
+    trashedHoldings,
     warningOverrides,
     workspace,
   });

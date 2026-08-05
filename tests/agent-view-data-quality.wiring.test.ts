@@ -4,6 +4,7 @@ import { GET as getDataQuality } from "@web/api/v1/agent-view/scopes/[scopeId]/d
 import { GET as getFinancialContext } from "@web/api/v1/agent-view/scopes/[scopeId]/financial-context/route";
 import { GET as getScopes } from "@web/api/v1/agent-view/scopes/route";
 import { createWorthlineStoreUnsafe } from "@worthline/db/unsafe-store";
+import { DATA_QUALITY_CATEGORY_ORDER } from "@worthline/domain";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanupTempDirs, tempDatabasePath } from "./helpers";
@@ -157,6 +158,7 @@ async function backdateAssetCreatedAt(
  *  - missing_configuration: no FIRE config + a mortgage with no debt model.
  *  - history_coverage: no snapshots for the scope.
  *  - projection_gap: an unpriced Binance token (null unitPrice).
+ *  - trashed_balance: an investment sent to the Papelera with units still held.
  */
 async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<string> {
   const databasePath = tempDatabasePath(prefix);
@@ -297,6 +299,29 @@ async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<s
     },
   );
 
+  // trashed_balance: an investment with a bought-and-never-sold ledger, sent to
+  // the Papelera. Its value left the patrimonio at the next capture with no sale
+  // recorded anywhere (#1365) — and, being trashed, it is invisible to every live
+  // read the rest of this seed exercises.
+  await store.assets.createInvestmentAsset({
+    currency: "EUR",
+    id: "asset_trashed_fund",
+    liquidityTier: "market",
+    name: "Fondo borrado con saldo",
+    ownership: owner,
+  });
+  await store.operations.recordOperation({
+    assetId: "asset_trashed_fund",
+    currency: "EUR",
+    executedAt: "2026-01-10",
+    feesMinor: 0,
+    id: "op_trashed_buy",
+    kind: "buy",
+    pricePerUnit: "100",
+    units: "10",
+  });
+  await store.assets.softDeleteAsset("asset_trashed_fund", "2026-07-01T10:00:00.000Z");
+
   // No FIRE config saved, no snapshots captured → missing_configuration +
   // history_coverage signals.
   store.close();
@@ -315,6 +340,7 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     expect(categories).toEqual(
       new Set([
         "warning",
+        "trashed_balance",
         "manual_value_freshness",
         "price_freshness",
         "source_freshness",
@@ -529,15 +555,11 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
 
     const all = await signals(scopeId, "?limit=500");
     const severityRank = { high: 0, medium: 1, low: 2 } as const;
-    const categoryRank: Record<string, number> = {
-      warning: 0,
-      manual_value_freshness: 1,
-      price_freshness: 2,
-      source_freshness: 3,
-      missing_configuration: 4,
-      history_coverage: 5,
-      projection_gap: 6,
-    };
+    // Read off the engine's own order: a hand-kept mirror silently stops covering
+    // a newly inserted category (its rank comes back `undefined`).
+    const categoryRank: Record<string, number> = Object.fromEntries(
+      DATA_QUALITY_CATEGORY_ORDER.map((category, rank) => [category, rank]),
+    );
 
     for (let i = 1; i < all.length; i += 1) {
       const a = all[i - 1]!;
@@ -853,6 +875,7 @@ describe("main financial context data-quality summary (#341)", () => {
         "price_freshness",
         "projection_gap",
         "source_freshness",
+        "trashed_balance",
         "warning",
       ].sort(),
     );
@@ -868,5 +891,106 @@ describe("main financial context data-quality summary (#341)", () => {
 
     expect(top.length).toBeLessThanOrEqual(10);
     expect(top.map((s) => s.id)).toEqual(all.slice(0, top.length).map((s) => s.id));
+  });
+});
+
+/**
+ * Sending a holding to the Papelera with units still inside takes its value out of
+ * the patrimonio and records nowhere that it went (#1365). The signal has to reach
+ * the agent view through plumbing NO live read touches: the trash is excluded from
+ * `readAssets`, so both the holding and its ledger are fetched by id.
+ */
+describe("TRASHED_WITH_BALANCE (#1365)", () => {
+  /** A fund bought whole, optionally sold whole, then sent to the Papelera. */
+  async function seedTrashedFund(options: {
+    soldOut: boolean;
+    trashed: boolean;
+  }): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-trashed-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo Indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fund",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    });
+    if (options.soldOut) {
+      await store.operations.recordOperation({
+        assetId: "asset_fund",
+        currency: "EUR",
+        executedAt: "2026-06-10",
+        feesMinor: 0,
+        id: "op_sell_all",
+        kind: "sell",
+        pricePerUnit: "120",
+        units: "10",
+      });
+    }
+    if (options.trashed) {
+      await store.assets.softDeleteAsset("asset_fund", "2026-07-01T10:00:00.000Z");
+    }
+    store.close();
+  }
+
+  async function trashedSignals(): Promise<Signal[]> {
+    const scopeId = await householdScopeId();
+    return (await signals(scopeId, "?limit=500")).filter(
+      (signal) => signal.code === "TRASHED_WITH_BALANCE",
+    );
+  }
+
+  test("a holding trashed with units raises the signal, named by its public id", async () => {
+    await seedTrashedFund({ soldOut: false, trashed: true });
+    const found = await trashedSignals();
+
+    expect(found).toHaveLength(1);
+    expect(found[0]!.category).toBe("trashed_balance");
+    expect(found[0]!.severity).toBe("high");
+    expect(found[0]!.label).toContain("Fondo Indexado");
+    expect(found[0]!.label).toContain("10 unidades");
+    // The affected reference speaks the public `wl_hld_…` vocabulary, so the
+    // assistant can act on it — the trash keeps its id across the soft delete.
+    expect(found[0]!.affected?.object).toBe("holding");
+    expect(found[0]!.affected?.id).toMatch(/^wl_hld_/);
+  });
+
+  test("selling out before deleting is the correct exit, and it is silent", async () => {
+    await seedTrashedFund({ soldOut: true, trashed: true });
+
+    expect(await trashedSignals()).toEqual([]);
+  });
+
+  test("a live holding with units is not in the trash and raises nothing", async () => {
+    await seedTrashedFund({ soldOut: false, trashed: false });
+
+    expect(await trashedSignals()).toEqual([]);
+  });
+
+  test("filtering by the new category returns it and nothing else", async () => {
+    await seedTrashedFund({ soldOut: false, trashed: true });
+    const scopeId = await householdScopeId();
+
+    const page = await signals(scopeId, "?category=trashed_balance");
+
+    expect(page).toHaveLength(1);
+    expect(page[0]!.code).toBe("TRASHED_WITH_BALANCE");
   });
 });

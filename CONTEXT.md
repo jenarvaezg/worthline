@@ -538,8 +538,9 @@ category of **data-quality signal** — the per-holding misconfiguration flags.
 **Data-quality signal**:
 A flag about how much the data behind the figures can be trusted: a **warning**,
 a stale or failed price, a stale or failed **sync**, missing configuration (FIRE,
-a debt model), sparse or gapped **snapshot** history, an unvalued **position**, or
-a manual value long without a **value update pass**. Computed live per **scope**
+a debt model), sparse or gapped **snapshot** history, an unvalued **position**, a
+manual value long without a **value update pass**, or a holding sitting in the
+**trash** with units still held (#1365). Computed live per **scope**
 from persisted state — never stored, never a figure. Carries a severity and,
 where there is one, the holding, source, or scope it points at. One shared
 collection feeds every consumer — the home's health block, the **agent view**,
@@ -565,6 +566,12 @@ which that warning stops surfacing.
 Where deleted **holdings** wait, fully recoverable, until restored or
 **hard-deleted**. Deleting a holding always lands it here first — the trash is
 the only doorway to destroying one. UI label: "Papelera".
+Recoverable does not mean free: while a holding is in the trash the next
+**capture** stops counting it, so trashing one that still holds units drops the
+**net worth** by its value with no **operation**, transfer, or **cash account**
+movement recording where the money went. The delete confirmation names that value
+and offers the correct exit (record the sale first), and a **data-quality signal**
+flags the state afterwards — friction only where there is money inside (#1365).
 
 **Hard delete**:
 The irreversible destruction of an entity's live data. Frozen **snapshots** are

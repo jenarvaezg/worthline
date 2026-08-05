@@ -4,6 +4,7 @@ import {
   type CollectDataQualitySignalsInput,
   collectDataQualitySignals,
   compareDataQualitySignals,
+  DATA_QUALITY_CATEGORY_ORDER,
   type DataQualitySignal,
 } from "./data-quality-signals";
 import { listScopeOptions, type ScopeOption } from "./scope";
@@ -43,6 +44,7 @@ function baseInput(
     snapshotIdsWithHoldings: new Set(),
     snapshots: [],
     sourceFreshnessBySourceId: new Map(),
+    trashedHoldings: [],
     warningOverrides: [],
     workspace,
     ...overrides,
@@ -253,15 +255,12 @@ describe("collectDataQualitySignals", () => {
     );
 
     const severityRank = { high: 0, medium: 1, low: 2 } as const;
-    const categoryRank: Record<string, number> = {
-      warning: 0,
-      manual_value_freshness: 1,
-      price_freshness: 2,
-      source_freshness: 3,
-      missing_configuration: 4,
-      history_coverage: 5,
-      projection_gap: 6,
-    };
+    // Read off the engine's own order rather than mirrored here: a hand-kept copy
+    // still passes when a category is inserted (every rank shifts equally), so it
+    // would silently stop testing the thing it names.
+    const categoryRank: Record<string, number> = Object.fromEntries(
+      DATA_QUALITY_CATEGORY_ORDER.map((category, rank) => [category, rank]),
+    );
 
     const keyOf = (signal: DataQualitySignal) =>
       [
@@ -666,5 +665,65 @@ describe("collectDataQualitySignals — price freshness on closed positions (#13
     );
 
     expect(signals.filter((s) => s.code === "STALE_PRICE")).toHaveLength(1);
+  });
+});
+
+/**
+ * A holding trashed with units still on its ledger (#1365). The real case: four
+ * fondos sent to the Papelera the same day, three at zero units (harmless) and one
+ * with a four-figure value — the next day's patrimonio fell by that amount, and
+ * 82 % of the daily drop was the delete, not the market.
+ */
+describe("collectDataQualitySignals — TRASHED_WITH_BALANCE (#1365)", () => {
+  const trashed = (
+    netUnits: Array<[string, string]>,
+    ownerMemberIds: readonly string[] = ["member_jose"],
+  ) => {
+    const { input } = fixture();
+    return collectDataQualitySignals(
+      input({
+        netUnitsByAssetId: new Map(netUnits),
+        trashedHoldings: [{ id: "asset_fondo", name: "Fondo Indexado", ownerMemberIds }],
+      }),
+    ).filter((signal) => signal.category === "trashed_balance");
+  };
+
+  test("a trashed holding with live units raises a high-severity signal naming them", () => {
+    const signals = trashed([["asset_fondo", "120.5"]]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.code).toBe("TRASHED_WITH_BALANCE");
+    expect(signals[0]!.severity).toBe("high");
+    expect(signals[0]!.fixable).toBe(true);
+    expect(signals[0]!.naturalKey).toBe(
+      "trashed_balance:TRASHED_WITH_BALANCE:asset_fondo",
+    );
+    expect(signals[0]!.affected).toEqual({
+      id: "asset_fondo",
+      label: "Fondo Indexado",
+      object: "holding",
+    });
+    // The units read in es-ES, and the label names BOTH repairs the trash listing
+    // already offers — restore and record the sale, or confirm the borrado.
+    expect(signals[0]!.label).toContain("120,5 unidades");
+    expect(signals[0]!.label).toContain("sin venta ni traspaso");
+    expect(signals[0]!.label).toContain("registra la venta");
+  });
+
+  test("a trashed holding sold out first is silent — the clean delete stays clean", () => {
+    expect(trashed([["asset_fondo", "0"]])).toEqual([]);
+    expect(trashed([["asset_fondo", "0.00001"]])).toEqual([]);
+  });
+
+  test("a trashed holding with no ledger at all is silent, not flagged on a rule it cannot answer", () => {
+    // A trashed cash account or flat has no operations, so it is absent from the
+    // map. Absent must not read as "has units" — that would flag every trashed
+    // holding in the workspace.
+    expect(trashed([])).toEqual([]);
+  });
+
+  test("the signal is scoped by ownership, since no live read can see the trash", () => {
+    expect(trashed([["asset_fondo", "120.5"]], ["member_otro"])).toEqual([]);
+    expect(trashed([["asset_fondo", "120.5"]], [])).toEqual([]);
   });
 });

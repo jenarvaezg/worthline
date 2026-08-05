@@ -45,7 +45,12 @@ export default function HeroDataHealthAlert({ health }: { health: HeroHealthView
                 className="heroHealthFix"
                 href={alert.href}
                 prefetch={false}
-                scroll={false}
+                // A fix target deep-linking to a section BY FRAGMENT needs the
+                // scroll it names (#1365): the Papelera sits at the foot of the
+                // board, and landing at the top of the page hides the repair the
+                // alert just promised. Fragment-less targets keep scroll off —
+                // they are action links, not hot navigation.
+                scroll={alert.href.includes("#")}
               >
                 {alert.fixLabel} →
               </Link>
