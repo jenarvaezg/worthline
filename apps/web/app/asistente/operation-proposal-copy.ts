@@ -38,7 +38,13 @@ export function operationKindLabel(kind: OperationKindClaim): string {
   return OPERATION_KIND_LABELS[kind];
 }
 
-/** The observed terms of the operation, already resolved, as the card needs them. */
+/**
+ * The resolved terms this line reads, plus the direction. Structural on purpose: the
+ * caller hands over its whole {@link OperationTerms} with the kind alongside, rather
+ * than re-spreading seven fields into a fresh literal at the call site — the fields
+ * travel together everywhere in this lane, and copying them by hand is how one of them
+ * eventually gets left behind.
+ */
 export interface OperationFactLine {
   executedAt: string;
   kind: OperationKindClaim;

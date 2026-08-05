@@ -22,11 +22,13 @@ import {
   type DecimalString,
   divideUnits,
   formatMoneyMinorExact,
+  formatUnits,
   multiplyToMinor,
   normalizeDecimal,
 } from "@worthline/domain";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
+import { formatDocumentUnitPrice } from "./document-figures";
 
 export interface OperationTerms {
   /** YYYY-MM-DD, the document's own day. */
@@ -44,9 +46,13 @@ export interface OperationTerms {
    * none at all, and the card then says nothing about commissions.
    */
   feesMinor?: number;
-  /** The participaciones were derived from the printed unit price, not printed. */
-  unitsDerived: boolean;
-  /** Honest, never blocking: the printed terms do not add up. */
+  /**
+   * Honest, never blocking: the printed terms do not add up, or the participaciones
+   * had to be derived. There is deliberately no `unitsDerived` flag next to this —
+   * a boolean nothing reads is a boolean that can go stale and lie (and the plan read
+   * back from the database could not honestly set it), so the derivation speaks
+   * through the note the user actually sees.
+   */
   notes: string[];
 }
 
@@ -158,7 +164,6 @@ export function resolveOperationTerms(
         notes: printedPriceNotes(event, units, netMinor, feesMinor),
         pricePerUnit,
         units,
-        unitsDerived: false,
       },
     };
   }
@@ -184,13 +189,14 @@ export function resolveOperationTerms(
       terms: {
         ...common,
         notes: [
-          `El documento no dice las participaciones: las derivo del precio que sí imprime ` +
-            `(${euros(netMinor, event.currency)} ÷ ${event.pricePerUnit.amount} = ` +
-            `${derived.units} part.). Si el justificante trae la cantidad exacta, dímela.`,
+          "El documento no dice las participaciones, así que las derivo del precio que sí " +
+            `imprime: ${euros(netMinor, event.currency)} ÷ ${formatDocumentUnitPrice(event.pricePerUnit.amount)} ` +
+            `= ${formatUnits(derived.units)} part. Las dos cifras son del documento, pero la ` +
+            "cantidad es una división y queda así en el libro: si el justificante trae los " +
+            "títulos exactos, dímelos y los anoto tal cual.",
         ],
         pricePerUnit: derived.price,
         units: derived.units,
-        unitsDerived: true,
       },
     };
   }

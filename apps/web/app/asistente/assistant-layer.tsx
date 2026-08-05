@@ -99,6 +99,7 @@ import {
   discardPropertyValuationProposalAction,
 } from "./property-valuation-proposal-action";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
+import { proposalImpactHeader } from "./proposal-impact-header";
 import {
   hasUnvalidatedProvenance,
   UNVALIDATED_PROVENANCE_LABEL,
@@ -317,27 +318,16 @@ function HoldingCreationProposalCard({
   const [pending, startTransition] = useTransition();
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
-  const increases = proposal.impact.deltaMinor >= 0;
-  const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
-    Math.abs(proposal.impact.deltaMinor),
-  )}`;
-  // `beforeMinor === null` means the net-worth read degraded — show the known
-  // delta but never fabricate a total the card never read (ADR 0048).
-  const totalKnown =
-    proposal.impact.beforeMinor !== null && proposal.impact.afterMinor !== null;
+  const header = proposalImpactHeader(proposal.impact, formatPositionMoney);
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
       <p className="assistantProposalKind">{proposal.folio}</p>
       {/* Impact first: what confirming does to the household net worth. */}
-      <strong>
-        {totalKnown
-          ? `Patrimonio neto ${formatPositionMoney(
-              proposal.impact.beforeMinor as number,
-            )} → ${formatPositionMoney(proposal.impact.afterMinor as number)}`
-          : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`}
-      </strong>
-      <p className={increases ? "assistantOk" : "assistantError"}>{deltaLabel}</p>
+      <strong>{header.headline}</strong>
+      <p className={header.increases ? "assistantOk" : "assistantError"}>
+        {header.deltaLabel}
+      </p>
       <ul>
         <li>
           <strong>{proposal.holding.name}</strong>{" "}
@@ -627,12 +617,10 @@ function ReconcileProposalCard({
 
   const summary = reconcileSummary(rows);
   const impact = reconcileImpact(rows, proposal.netWorthBeforeMinor);
-  const increases = impact.deltaMinor >= 0;
   const caption = reconcileImpactCaption(impact);
-  const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
-    Math.abs(impact.deltaMinor),
-  )}${caption ? ` · ${caption}` : ""}`;
-  const totalKnown = impact.beforeMinor !== null && impact.afterMinor !== null;
+  const header = proposalImpactHeader(impact, formatPositionMoney, {
+    ...(caption ? { caption } : {}),
+  });
   const folio = reconcileFolio(summary.active);
 
   const curation: ReconcileCuration[] = rows.map((row) => {
@@ -646,14 +634,10 @@ function ReconcileProposalCard({
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
       <p className="assistantProposalKind">{folio}</p>
-      <strong>
-        {totalKnown
-          ? `Patrimonio neto ${formatPositionMoney(
-              impact.beforeMinor as number,
-            )} → ${formatPositionMoney(impact.afterMinor as number)}`
-          : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`}
-      </strong>
-      <p className={increases ? "assistantOk" : "assistantError"}>{deltaLabel}</p>
+      <strong>{header.headline}</strong>
+      <p className={header.increases ? "assistantOk" : "assistantError"}>
+        {header.deltaLabel}
+      </p>
       <ul>
         {rows.map((row) => (
           <li key={row.rowId}>
@@ -1193,23 +1177,18 @@ function OperationProposalCard({
   const [pending, startTransition] = useTransition();
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
-  const increases = proposal.impact.deltaMinor >= 0;
-  const deltaLabel = `${increases ? "+" : "−"}${formatPositionMoney(
-    Math.abs(proposal.impact.deltaMinor),
-  )} · ${proposal.impactCaption}`;
-  const totalKnown =
-    proposal.impact.beforeMinor !== null && proposal.impact.afterMinor !== null;
+  const header = proposalImpactHeader(proposal.impact, formatPositionMoney, {
+    caption: proposal.impactCaption,
+  });
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
       <p className="assistantProposalKind">Operación · Hecho fechado</p>
       <strong>{proposal.summary}</strong>
-      <p className={increases ? "assistantOk" : "assistantError"}>
-        {totalKnown
-          ? `Patrimonio neto ${formatPositionMoney(
-              proposal.impact.beforeMinor as number,
-            )} → ${formatPositionMoney(proposal.impact.afterMinor as number)} · ${deltaLabel}`
-          : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`}
+      <p className={header.increases ? "assistantOk" : "assistantError"}>
+        {header.totalKnown
+          ? `${header.headline} · ${header.deltaLabel}`
+          : header.headline}
       </p>
       <ul>
         <li>

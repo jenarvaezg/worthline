@@ -73,6 +73,7 @@ import { resolveMarketSymbolCandidates } from "@web/asistente/market-symbol-sear
 import { buildMixedDocumentProposal } from "@web/asistente/mixed-document-proposals";
 import {
   holdingEventInContext,
+  OPERATION_KIND_CLAIMS,
   type OperationKindClaim,
   resolveOperationEvent,
 } from "@web/asistente/operation-document-frontier";
@@ -2085,6 +2086,31 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: OPERATION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
+        // `required` in a `jsonSchema()` is not validated at runtime, so the direction
+        // is checked HERE — and never defaulted. It is the one judgement the document
+        // cannot make (ADR 0067's #1374 amendment), so an absent one means the model
+        // must read the paper again, exactly as `propose_early_repayment` refuses to
+        // infer a `mode`. Defaulting to «buy» would let code pick a direction.
+        const kind = OPERATION_KIND_CLAIMS.has(args.kind as string)
+          ? (args.kind as OperationKindClaim)
+          : null;
+        if (kind === null) {
+          return Promise.resolve({
+            error: "operation_kind_required",
+            message:
+              "Falta decir si el justificante es una compra, una venta o una aportación " +
+              "('buy', 'sell' o 'contribution'). No lo elijo yo: lo dice el papel.",
+          });
+        }
+        const publicHoldingId = args.holdingId?.trim();
+        if (!publicHoldingId) {
+          return Promise.resolve({
+            error: "operation_holding_required",
+            message:
+              "Falta la posición en la que anotar la operación. Lee la cartera y pasa el " +
+              "identificador que te devuelva.",
+          });
+        }
         // The document-only frontier (#1374): the fact comes from the extraction, the
         // model only points at it and says which way it runs. Checked BEFORE the store
         // is opened — a call with nothing to stand on is refused, not half-resolved
@@ -2092,7 +2118,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         // validated document there is no fact at all (see UNVALIDATED_EVIDENCE_CLASSES).
         const resolved = resolveOperationEvent(
           {
-            kind: args.kind ?? "buy",
+            kind,
             ...(typeof args.date === "string" ? { date: args.date } : {}),
             ...(typeof args.amount === "number" ? { amount: args.amount } : {}),
             ...(typeof args.currency === "string" ? { currency: args.currency } : {}),
@@ -2112,7 +2138,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           }
           const assetId = await resolveInternalHoldingId(
             store.agentView,
-            args.holdingId ?? "",
+            publicHoldingId,
           );
           const built = await buildOperationProposal(
             {
@@ -2124,8 +2150,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             {
               assetId,
               event: resolved.event,
-              kind: args.kind ?? "buy",
-              publicHoldingId: args.holdingId ?? "",
+              kind,
+              publicHoldingId,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },
             input.asOf,

@@ -148,6 +148,34 @@ describe("buildOperationProposal (#1374) · the card", () => {
   });
 });
 
+describe("buildOperationProposal (#1374) · the impact", () => {
+  /**
+   * The delta is what the LEDGER will value the operation at — participaciones ×
+   * precio, i.e. the amount net of the commission — and not the gross figure the
+   * document states. The fee is a cost, not position value: a gross delta would
+   * overstate the change in net worth by exactly the commission.
+   */
+  test("counts the operation net of the commission, not the document's gross", async () => {
+    const store = await seedPortfolio();
+
+    const proposal = await draft(store, {
+      ...APORTACION,
+      amount: 1000,
+      fees: { amount: 1.5, currency: "EUR" },
+      pricePerUnit: undefined,
+      units: 10,
+    });
+
+    expect(proposal.impact.deltaMinor).toBe(998_50);
+    expect(proposal.impact.afterMinor).toBe(
+      (proposal.impact.beforeMinor as number) + 998_50,
+    );
+    // And the document's own gross figure is still what the fact line prints.
+    expect(proposal.document.fact.replace(NBSP, " ")).toContain("· 1000 €");
+    store.close();
+  });
+});
+
 describe("confirmOperationProposalAction (#1374) · the write", () => {
   test("writes exactly one agent operation and squares the position", async () => {
     const store = await seedPortfolio();
@@ -175,6 +203,37 @@ describe("confirmOperationProposalAction (#1374) · the write", () => {
     expect((await store.assistantProposals.read(proposal.draft.proposalId))?.status).toBe(
       "applied",
     );
+    store.close();
+  });
+
+  /**
+   * The acceptance figure of the issue: «el ripple deja la posición cuadrada (para
+   * este caso: 267,932 part. y 5.508,68 €)». With the plan's participación priced at
+   * 20,56 €, 267,932 × 20,56 € is exactly that — so this pins the whole chain, not
+   * just the ledger row: the operation lands, the ripple runs, and the live position
+   * reads the units and the value the user was promised.
+   */
+  test("the ripple leaves the position squared: 267,932 part. and 5.508,68 €", async () => {
+    const store = await seedPortfolio();
+    await store.operations.upsertPrice({
+      assetId: "plan-sp500",
+      currency: "EUR",
+      fetchedAt: `${TODAY}T08:00:00.000Z`,
+      freshnessState: "fresh",
+      price: "20.56",
+      source: "manual",
+    });
+    const proposal = await draft(store);
+
+    expect(await confirmOperationProposalAction(proposal.draft, store, clock)).toEqual({
+      status: "applied",
+    });
+
+    const position = (await store.snapshots.readPositions()).find(
+      (row) => row.assetId === "plan-sp500",
+    );
+    expect(position?.currentUnits).toBe("267.932");
+    expect(position?.marketValue?.amountMinor).toBe(5_508_68);
     store.close();
   });
 
@@ -243,6 +302,40 @@ describe("confirmOperationProposalAction (#1374) · the write", () => {
     expect(await store.operations.readOperations("plan-sp500")).toHaveLength(2);
     store.close();
   });
+
+  /**
+   * And the guard compares through the DECIMAL SEAM, not as strings: the ledger stores
+   * whatever the writer normalized, so «5,920» and «5,92» are one quantity. A string
+   * compare here would let the second upload of one receipt double the position.
+   */
+  test("catches the duplicate even when the stored quantity reads differently", async () => {
+    const store = await seedPortfolio();
+    await store.operations.recordOperation({
+      assetId: "plan-sp500",
+      currency: "EUR",
+      executedAt: TODAY,
+      id: "op-manual",
+      kind: "buy",
+      pricePerUnit: "21.114864864864864865",
+      units: "5.920",
+    });
+
+    const built = await buildOperationProposal(
+      storeFor(store),
+      {
+        assetId: "plan-sp500",
+        event: APORTACION,
+        kind: "contribution",
+        publicHoldingId: "wl_hld_plan",
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("ya está anotada");
+    store.close();
+  });
 });
 
 describe("buildOperationProposal (#1374) · the frontiers", () => {
@@ -279,6 +372,11 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
     store.close();
   });
 
+  /**
+   * The refusal must not MISDIAGNOSE: the read that answers this is a list of
+   * investments, so «no existe» and «existe pero es una cuenta» arrive identically.
+   * It names both ways out instead of asserting which one happened.
+   */
   test("refuses a holding that does not exist as an investment", async () => {
     const store = await seedPortfolio();
     const built = await buildOperationProposal(
@@ -294,7 +392,9 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
 
     expect(built.ok).toBe(false);
     if (built.ok) return;
-    expect(built.error).toContain("no es una inversión");
+    expect(built.error).toContain("o no existe, o es de otra familia");
+    expect(built.error).toContain("dala de alta");
+    expect(built.error).not.toContain("Esa posición no es una inversión");
     store.close();
   });
 

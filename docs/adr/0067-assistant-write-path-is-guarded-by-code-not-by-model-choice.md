@@ -187,7 +187,10 @@ produced the missing lane. The rule this adds to the ADR:
   as separate lines next to the document's verbatim text (#1373's rule), and both are
   fenced where a fence is possible: an id must come out of a read (#1263), an ISIN that
   contradicts the holding's rejects the call, and a document the extraction pinned as an
-  ingreso cannot be written as a sale.
+  ingreso cannot be written as a sale. **Neither is ever defaulted.** `jsonSchema()`'s
+  `required` is not validated at runtime, so an absent direction is refused in the tool
+  body — the same refusal `parseEarlyRepaymentInput` makes for an absent `mode`. Code
+  quietly picking «buy» would be code reading the paper.
 - **Where the honest answer is «I can't».** A confirmation with an amount and neither a
   quantity nor a unit price has no encoding on an existing position: the
   «1 participación al importe» form of a value-only alta (#1325) would be revalued to ONE

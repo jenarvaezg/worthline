@@ -30,7 +30,6 @@ describe("resolveOperationTerms · the case of the issue", () => {
       executedAt: "2026-08-05",
       feesMinor: 0,
       units: "5.92",
-      unitsDerived: false,
     });
     // 125 € ÷ 5,92 part. — the card prints it as 21,1149 €.
     expect(terms.pricePerUnit.startsWith("21.114864")).toBe(true);
@@ -127,11 +126,14 @@ describe("resolveOperationTerms · a document with no participaciones", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.terms.unitsDerived).toBe(true);
     expect(result.terms.pricePerUnit).toBe("21.12");
     // 125 € ÷ 21,12 €
     expect(result.terms.units.startsWith("5.9185")).toBe(true);
+    // The note says the quantity is a DIVISION and asks for the exact one: the two
+    // figures are the document's, but this one is not copied off it.
     expect(result.terms.notes[0]).toContain("no dice las participaciones");
+    expect(result.terms.notes[0]).toContain("5,918561 part.");
+    expect(result.terms.notes[0]).toContain("dímelos");
   });
 
   /**

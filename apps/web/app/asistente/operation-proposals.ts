@@ -27,8 +27,10 @@ import type {
 } from "@worthline/db";
 import {
   addUnits,
+  compareUnits,
   type DecimalString,
   formatUnits,
+  multiplyToMinor,
   netUnitsFromOperations,
   subtractUnits,
 } from "@worthline/domain";
@@ -81,12 +83,20 @@ export interface OperationWrite {
   documentIsin?: string;
 }
 
-/** The route offered when the target is not a manual investment holding. */
+/**
+ * The route offered when the target is not a manual investment holding. It does NOT
+ * claim to know which of the two things went wrong — the read that answers this is a
+ * list of investments, so «no existe» and «existe pero es una cuenta» arrive
+ * identically — and saying «esa posición no es una inversión» about an id that names
+ * nothing would misdiagnose it. Both ways out are named instead.
+ */
 const NOT_AN_INVESTMENT =
-  "Esa posición no es una inversión con participaciones, así que no puedo anotarle una " +
-  "compra ni una venta: una operación fechada solo tiene sentido sobre un fondo, un ETF, " +
-  "una acción, un índice, un plan de pensiones o una cripto. Si lo que quieres es corregir " +
-  "su saldo o su valor, ésa es otra propuesta; si el activo aún no existe, dalo de alta.";
+  "No encuentro esa posición entre las inversiones con participaciones de la cartera: o no " +
+  "existe, o es de otra familia (una cuenta, un inmueble, una deuda). Una operación fechada " +
+  "solo tiene sentido sobre un fondo, un ETF, una acción, un índice, un plan de pensiones o " +
+  "una cripto: busca la posición por su nombre para confirmar cuál es, y si de verdad no " +
+  "está en la cartera, dala de alta antes de anotarle la operación. Si lo que quieres es " +
+  "corregir su saldo o su valor, ésa es otra propuesta.";
 
 export interface ProjectedOperation {
   ok: true;
@@ -163,7 +173,10 @@ export async function projectOperationWrite(
     (operation) =>
       operation.executedAt.slice(0, 10) === terms.executedAt &&
       operation.kind === kind &&
-      operation.units === terms.units,
+      // Through the decimal seam, never as strings: «5.920» and «5.92» are the same
+      // quantity, and a string compare would let the second upload of one receipt
+      // double the position — precisely what this guard exists to stop.
+      compareUnits(operation.units, terms.units) === 0,
   );
   if (duplicate) {
     return {
@@ -232,7 +245,6 @@ export function operationWriteFromPlan(plan: InvestmentOperationPlan): Operation
       notes: [],
       pricePerUnit: plan.pricePerUnit,
       units: plan.units,
-      unitsDerived: false,
       ...(plan.feesMinor === undefined ? {} : { feesMinor: plan.feesMinor }),
     },
     ...(plan.isin === undefined ? {} : { documentIsin: plan.isin }),
@@ -294,21 +306,17 @@ export async function buildOperationProposal(
   });
 
   const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
-  const deltaMinor = plan.kind === "sell" ? -terms.amountMinor : terms.amountMinor;
+  // What the LEDGER will value the operation at — `participaciones × precio`, i.e. the
+  // amount net of the commission — and not the gross figure the document states. The
+  // fee is a cost, not position value, so a gross delta overstates the change by it.
+  const positionMinor = multiplyToMinor(terms.units, terms.pricePerUnit);
+  const deltaMinor = plan.kind === "sell" ? -positionMinor : positionMinor;
 
   return {
     ok: true,
     proposal: {
       document: {
-        fact: operationFactLine({
-          amountMinor: terms.amountMinor,
-          currency: terms.currency,
-          executedAt: terms.executedAt,
-          kind: args.kind,
-          pricePerUnit: terms.pricePerUnit,
-          units: terms.units,
-          ...(terms.feesMinor === undefined ? {} : { feesMinor: terms.feesMinor }),
-        }),
+        fact: operationFactLine({ ...terms, kind: args.kind }),
         line: operationDocumentLine({
           label: args.event.label,
           ...(args.event.isin === undefined ? {} : { isin: args.event.isin }),

@@ -723,6 +723,34 @@ describe("createChatTools · propose_operation (#1374)", () => {
   });
 
   /**
+   * The direction is the ONE judgement the document cannot make, so it is never
+   * defaulted: `jsonSchema()`'s `required` is not validated at runtime, and code
+   * picking «buy» would be code reading the paper. Same for the destination holding.
+   */
+  it("refuses to pick the direction, or the holding, for the model", async () => {
+    const tools = refusingOperationTools([VALIDATED_APORTACION]);
+
+    const noKind = (await tools["propose_operation"]?.execute?.(
+      { holdingId: "wl_hld_plan", amount: 125 },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+    expect(noKind.error).toBe("operation_kind_required");
+    expect(noKind.message).toContain("No lo elijo yo");
+
+    const badKind = (await tools["propose_operation"]?.execute?.(
+      { holdingId: "wl_hld_plan", kind: "aportación" },
+      toolCallContext(),
+    )) as { error?: string };
+    expect(badKind.error).toBe("operation_kind_required");
+
+    const noHolding = (await tools["propose_operation"]?.execute?.(
+      { kind: "contribution" },
+      toolCallContext(),
+    )) as { error?: string };
+    expect(noHolding.error).toBe("operation_holding_required");
+  });
+
+  /**
    * The routing half of #1374's acceptance: the description has to say when this tool
    * is the one and when the batch lanes are, so the model does not reach for a
    * portfolio reconcile to record a single dated fact.

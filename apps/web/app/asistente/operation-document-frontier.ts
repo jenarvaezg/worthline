@@ -25,8 +25,20 @@ import type {
   ExtractedHoldingEvent,
   ExtractedHoldingEventDocument,
 } from "./attachment-extraction-contract";
+import { formatDocumentMoney, formatDocumentUnits } from "./document-figures";
 
-/** What the ledger records. An aportación is a `buy` (ADR 0006: units × price). */
+/**
+ * What the ledger records. An aportación is a `buy` (ADR 0006: units × price).
+ *
+ * The set is exported so the tool can CHECK it at runtime: `jsonSchema()`'s `required`
+ * is not validated, and a direction quietly defaulted in code is a direction nobody
+ * read off the paper.
+ */
+export const OPERATION_KIND_CLAIMS: ReadonlySet<string> = new Set([
+  "buy",
+  "sell",
+  "contribution",
+]);
 export type OperationKindClaim = "buy" | "sell" | "contribution";
 
 /**
@@ -132,12 +144,14 @@ function isoDay(value: string): string {
   return value.trim();
 }
 
-function money(amount: number): string {
-  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 }).format(amount);
-}
-
-function quantity(amount: number): string {
-  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 }).format(amount);
+/**
+ * A major-unit figure quoted back to the MODEL, through the same formatters the cards
+ * use (`document-figures.ts`): these sentences exist so the model stops guessing, and
+ * a figure it reads here in one voice and on the card in another is one more thing to
+ * get wrong. The currency travels with the amount so «125 €» is unambiguous.
+ */
+function money(amount: number, currency: string): string {
+  return formatDocumentMoney(Math.round(amount * 100), currency);
 }
 
 /**
@@ -165,7 +179,7 @@ function claimMismatches(
     Math.abs(Math.abs(claim.amount) - Math.abs(event.amount)) > AMOUNT_TOLERANCE
   ) {
     mismatches.push(
-      `el importe del documento es ${money(event.amount)}, no ${money(claim.amount)}`,
+      `el importe del documento es ${money(event.amount, event.currency)}, no ${money(claim.amount, event.currency)}`,
     );
   }
   if (
@@ -187,11 +201,11 @@ function claimMismatches(
       // The invention this lane most has to fear: a quantity nobody printed becomes
       // units in the ledger forever, and every later sale inherits the error (#1315).
       mismatches.push(
-        `el documento no dice las participaciones, y tú pasas ${quantity(claim.units)}`,
+        `el documento no dice las participaciones, y tú pasas ${formatDocumentUnits(claim.units)}`,
       );
     } else if (Math.abs(claim.units - event.units) > UNITS_TOLERANCE) {
       mismatches.push(
-        `las participaciones del documento son ${quantity(event.units)}, no ${quantity(claim.units)}`,
+        `las participaciones del documento son ${formatDocumentUnits(event.units)}, no ${formatDocumentUnits(claim.units)}`,
       );
     }
   }
@@ -201,7 +215,7 @@ function claimMismatches(
   // that prints none is invention with nothing behind it.
   if (claim.pricePerUnit !== undefined && event.pricePerUnit === undefined) {
     mismatches.push(
-      `el documento no imprime precio por título, y tú pasas ${money(claim.pricePerUnit)}`,
+      `el documento no imprime precio por título, y tú pasas ${money(claim.pricePerUnit, event.currency)}`,
     );
   }
   if (claim.fees !== undefined) {
@@ -209,8 +223,8 @@ function claimMismatches(
     if (Math.abs(claim.fees - printed) > FEES_TOLERANCE) {
       mismatches.push(
         event.fees === undefined
-          ? `el documento no imprime comisión, y tú pasas ${money(claim.fees)}`
-          : `la comisión del documento es ${money(event.fees.amount)}, no ${money(claim.fees)}`,
+          ? `el documento no imprime comisión, y tú pasas ${money(claim.fees, event.currency)}`
+          : `la comisión del documento es ${money(event.fees.amount, event.currency)}, no ${money(claim.fees, event.currency)}`,
       );
     }
   }

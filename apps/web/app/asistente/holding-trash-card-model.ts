@@ -9,35 +9,22 @@
 
 import type { HoldingTrashImpact } from "./holding-trash-impact";
 import type { HoldingTrashProposal } from "./holding-trash-proposal-contract";
+import {
+  type ProposalImpactHeader,
+  proposalImpactHeader,
+} from "./proposal-impact-header";
 
-export interface HoldingTrashImpactHeader {
-  /** True when both before and after net worth are known (not a degraded read). */
-  totalKnown: boolean;
-  /** "Patrimonio neto X → Y", or the delta-only line when the total degraded. */
-  headline: string;
-  /** Signed, formatted delta, e.g. "+12.500 €" / "−12.500 €". */
-  deltaLabel: string;
-  /** Whether the batch raises net worth (drives the ok/error tone). */
-  increases: boolean;
-}
+export type HoldingTrashImpactHeader = ProposalImpactHeader;
 
 /**
- * The impact header the card leads with (superficie B). Takes an injected money
- * formatter so the module stays pure (no es-ES/Intl coupling in tests).
+ * The impact header the card leads with (superficie B) — the shared one every card
+ * uses since #1374, kept under this name because it is how this card asks for it.
  */
 export function holdingTrashImpactHeader(
   impact: HoldingTrashImpact,
   format: (minor: number) => string,
 ): HoldingTrashImpactHeader {
-  const increases = impact.deltaMinor >= 0;
-  const deltaLabel = `${increases ? "+" : "−"}${format(Math.abs(impact.deltaMinor))}`;
-  const totalKnown = impact.beforeMinor !== null && impact.afterMinor !== null;
-  const headline = totalKnown
-    ? `Patrimonio neto ${format(impact.beforeMinor as number)} → ${format(
-        impact.afterMinor as number,
-      )}`
-    : `Impacto en el patrimonio: ${deltaLabel} (total no disponible ahora)`;
-  return { deltaLabel, headline, increases, totalKnown };
+  return proposalImpactHeader(impact, format);
 }
 
 /**
