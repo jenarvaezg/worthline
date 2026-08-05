@@ -11,7 +11,7 @@
  * `.decompositionLegend` now lives only INSIDE the drill panel's stack section.
  */
 
-import { expect, test } from "./fixtures";
+import { clickSectionTab, expect, homeBody, test } from "./fixtures";
 
 test("liquid drilldown: band/legend link → drill panel → breadcrumb back", async ({
   page,
@@ -77,11 +77,10 @@ test("topnav navigation does not cause a full document reload (VT cross-fade, #5
     (window as unknown as { __wlNoReload?: string }).__wlNoReload = "kept";
   });
 
-  // Click a topnav link to a different top-level section.
-  await page
-    .getByRole("navigation", { name: "Secciones principales" })
-    .getByRole("link", { name: "Patrimonio" })
-    .click();
+  // Click a topnav link to a different top-level section. Waiting for the home's
+  // body is not decoration: the heading above is chrome, so without it this leaves
+  // /app mid-reveal and the home's body lands on screen over /patrimonio (#1351).
+  await clickSectionTab(page, "Patrimonio", homeBody(page));
 
   await expect(page).toHaveURL(/\/patrimonio/);
 

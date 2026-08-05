@@ -38,6 +38,20 @@
  * upgrade changes the answer the suite says which cell moved. The machine-readable
  * half of the table lives in `visible-queries.ts`.
  *
+ * ## What this scoping does NOT cover: a route left mid-reveal
+ *
+ * The narrowing rests on the leaver being HIDDEN, and there is one way it is not —
+ * #1351's own symptom. `<Activity>`'s `display: none` only reaches the nodes React
+ * already owns, so a body still inside React's streaming holder when you navigate is
+ * revealed afterwards, into an already-hidden route whose new container nothing has
+ * hidden yet: ON SCREEN, over the destination. `getByRole` then rightly matches two
+ * routes and nothing here can help, because the leaver is genuinely visible.
+ *
+ * The guard is not in this file, because scoping a query cannot fix it: do not leave
+ * a route whose body is not on screen — `clickSectionTab` in `fixtures.ts` for the
+ * one click that can, journey 50 as the watchdog, `docs/interaction-patterns.md`
+ * §5.1 for the mechanism and the measurement.
+ *
  * ## The boundary: the page, never a Locator
  *
  * {@link visiblePage} scopes the queries hanging off `page`, and deliberately

@@ -118,6 +118,12 @@ test("five workspace tabs paint shell + skeleton instantly on soft navigation", 
   await expect(nav.getByRole("link")).toHaveCount(5);
   await warmed;
 
+  // Deliberately NOT via `clickSectionTab` (#1351): that helper waits for the route
+  // being left to be on screen, and this journey's whole subject is the state before
+  // a body exists — the prefetched shell and the route skeleton. Leaving mid-reveal
+  // is what it measures, so the guard would erase the thing under test. Safe here
+  // because nothing it asserts can latch onto a leaver's body: every skeleton label
+  // is the destination's own, and the chrome assertions are about the shell.
   for (const tab of TABS) {
     await instant(page, async () => {
       await nav.getByRole("link", { name: tab.name, exact: true }).click();

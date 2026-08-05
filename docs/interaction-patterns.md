@@ -117,7 +117,7 @@ esconde con React [`<Activity mode="hidden">`][activity] (`display: none`) y
 formulario, el scroll, un `<details>` abierto o un vídeo en marcha. Es
 comportamiento **documentado** —
 `apps/web/node_modules/next/dist/docs/01-app/02-guides/preserving-ui-state.md` —
-no un bug, y tiene tres consecuencias que muerden:
+no un bug, y tiene cuatro consecuencias que muerden:
 
 1. **El documento se acorta a mitad de intercambio.** La saliente pasa a
    `display:none` en el primer frame y la entrante tarda ~250 ms en pintar; en ese
@@ -136,6 +136,25 @@ no un bug, y tiene tres consecuencias que muerden:
    jornada 50 lo vuelve a medir en cada corrida). Por eso el `page` de la suite va
    **acotado a lo visible** y preguntar por el documento es explícito
    (`wholeDocument(page)`).
+4. **Si dejas una ruta antes de que se revele, su cuerpo pinta encima de la
+   entrante.** El `display:none` de `<Activity>` sólo alcanza a los nodos que React
+   **ya posee**. El cuerpo de una página recién cargada llega dentro del holder de
+   streaming de React (`<div hidden>`) y lo revela su _runtime_, no un commit: si la
+   navegación ocurre antes de ese revelado, el contenido aterriza en una ruta que ya
+   está oculta pero cuyo contenedor nuevo nadie ha ocultado, y **se queda en
+   pantalla** sobre el destino hasta el commit siguiente. El chrome es lo que lo
+   hace alcanzable: pinta del shell prefetchado, así que una pestaña del topnav es
+   clicable con el cuerpo aún sin revelar — clicar _dentro del cuerpo_ no puede caer
+   aquí, porque no es clicable hasta estar revelado. Medido en #1351 sobre build de
+   producción con throttling de CPU 8x: clicar la pestaña justo tras la carga
+   reprodujo **5 de 10**, esperar a que el cuerpo esté en pantalla **0 de 10**; en un
+   runner ahogado el hueco pasó de los 5 s de reintento de Playwright, y eso convirtió
+   al spec 36 en el flake dominante de la suite. Regla: **no dejes una ruta que no
+   esté en pantalla** — en la suite eso es `clickSectionTab` (`e2e/fixtures.ts`), con
+   la jornada 48 exenta y diciéndolo, y la 50 de centinela. En la app **no hay
+   palanca**: el revelado y el ocultado son de React/Next, así que la persona en un
+   móvil lento que toca una pestaña durante el primer pintado sí puede ver los dos
+   bloques apilados.
 
 [activity]: https://react.dev/reference/react/Activity
 
@@ -230,6 +249,7 @@ ADR 0036 eligió este camino en parte para **no** enviar «materialmente más JS
 - [ ] ¿Las mutaciones son optimistas (o pending honesto si el resultado no es predecible), con revert+error si fallan y `aria-live` de guardado? (§4)
 - [ ] ¿La navegación va sin flash ni salto de scroll, con degradado limpio y respetando `prefers-reduced-motion`? (§5)
 - [ ] ¿Nada asume que la ruta anterior se desmontó — ni el reset de estado, ni una consulta al documento, ni un e2e? (§5.1)
+- [ ] ¿Ningún e2e deja una ruta antes de que su cuerpo esté en pantalla (clicar el chrome tras un `goto`)? (§5.1)
 - [ ] ¿La gráfica interactiva envuelve geometría pura de `packages/domain`, no la sustituye? (§6)
 - [ ] ¿La lógica (reducer/merge/elegibilidad) está en un módulo puro con `.test.ts` y el componente es una cáscara fina? (§7)
 - [ ] ¿Teclado, foco visible, ARIA anunciado y **foco gestionado** al conmutar en cliente? (§8)

@@ -8,7 +8,7 @@
  * page-scoped query for exactly that reason; this journey is the proof that it
  * works, in both directions.
  *
- * The two tests are deliberately different in kind:
+ * The three tests are deliberately different in kind:
  *
  * 1. The PROBE is hermetic (`setContent`, no app, no server) and pins which
  *    Playwright queries filter by visibility. That table is the whole basis for
@@ -19,20 +19,28 @@
  *    exhaustive over it, so a method cannot join that list unmeasured.
  *
  * 2. The NAVIGATION test proves the same thing against the real app, where the
- *    hidden DOM is a whole retained route rather than a `display: none` div. It is
- *    also the standing watchdog for #1351's own open symptom: that spec 36 saw the
- *    outgoing route STILL VISIBLE after 5 s in CI, twice, and never locally. If the
- *    ordering here ever inverts — entrant painted while the leaver is still
- *    on screen — this is where it shows up named.
+ *    hidden DOM is a whole retained route rather than a `display: none` div. It
+ *    leaves through a link in the BODY — the safe path, because a body link is not
+ *    clickable until the body is on screen.
+ *
+ * 3. The CHROME test covers the path that actually broke: a topnav tab, which
+ *    paints from the prefetched shell and is therefore clickable while the body it
+ *    is leaving is still unrevealed. That is #1351's open symptom, now measured —
+ *    the leaver's body revealed AFTER the navigation and stayed ON SCREEN over the
+ *    destination. It samples across a window instead of glancing once, because the
+ *    defect is a window and a single retrying assertion cannot see one.
  */
 
 import { QUERIES_THAT_SEE_HIDDEN_DOM } from "@e2e/visible-queries";
 import type { Locator, Page } from "@playwright/test";
 
-import { expect, test, wholeDocument } from "./fixtures";
+import { clickSectionTab, expect, homeBody, test, wholeDocument } from "./fixtures";
 
 /** Home-only hook: the dashboard's FIRE panel (`dashboard-content.tsx`). */
 const HOME_FIRE_PANEL = ".firePanel.section";
+
+/** Its /objetivos counterpart — the pair whose shared name collided in #1351. */
+const OBJETIVOS_FIRE_PANEL = ".firePanel.objetivosFirePanel";
 
 /**
  * One hidden target per narrowed query. Keyed by the query name so the type is
@@ -137,4 +145,54 @@ test("a retained route stays in the document, and the suite's page ignores it", 
     wholeDocument(page).locator(HOME_FIRE_PANEL),
     "the route left behind should still be in the document (cacheComponents keeps up to 3)",
   ).toHaveCount(1);
+});
+
+/**
+ * The number of on-screen FIRE regions, sampled repeatedly for `windowMs`.
+ *
+ * A single retrying assertion cannot see this: `toHaveCount(0)` passes the moment
+ * the count reaches 0 and never reports the frames before it. The defect is a
+ * WINDOW during which two routes are on screen at once, so the sentinel has to
+ * watch rather than glance — this is the same measurement that found the cause.
+ */
+async function worstOnScreenFireCount(page: Page, windowMs: number): Promise<number> {
+  const fire = page.getByRole("region", { name: "FIRE", exact: true });
+  const deadline = Date.now() + windowMs;
+  let worst = 0;
+  do {
+    worst = Math.max(worst, await fire.count());
+  } while (Date.now() < deadline && worst < 2);
+  return worst;
+}
+
+test("leaving a route through the chrome does not leave its body on screen", async ({
+  page,
+}) => {
+  // #1351's own open symptom, and the other direction of the same contract:
+  // `<Activity>`'s hide only reaches the nodes React already owns, so a body still
+  // inside React's streaming holder when you navigate is revealed afterwards, into
+  // an already-hidden route whose new container nothing has hidden yet — ON SCREEN,
+  // over the destination. `docs/interaction-patterns.md` §5.1 carries the mechanism
+  // and the measurement; `clickSectionTab` carries the guard.
+  //
+  // Honest limit: this walks the path that broke, at full speed, so it is a watchdog
+  // rather than a proof of the negative — dropping the guard inside `clickSectionTab`
+  // would go red only under load.
+  await page.goto("/demo?persona=familia");
+  await expect(page).toHaveURL(/\/app$/);
+
+  await clickSectionTab(page, "Objetivos", homeBody(page));
+  await page.waitForURL(/\/objetivos/, { timeout: 15_000 });
+
+  // Wait for the ENTRANT's own panel before sampling. Without this a destination
+  // that is merely slow reads as the defect: the sample would find nothing on screen
+  // and the count assertion below would fail with «two routes» for the opposite
+  // reason — exactly on the starved runner this test exists for.
+  await expect(page.locator(OBJETIVOS_FIRE_PANEL)).toBeVisible();
+
+  expect(
+    await worstOnScreenFireCount(page, 2_000),
+    "two routes were on screen at once — the route being left was not hidden (#1351)",
+  ).toBe(1);
+  await expect(page.locator(HOME_FIRE_PANEL)).toHaveCount(0);
 });
