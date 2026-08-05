@@ -23,6 +23,7 @@ import type {
 } from "@worthline/domain";
 import { matchHoldings, reassignToCandidate, reassignToNew } from "@worthline/domain";
 import type {
+  ExtractedMovement,
   ExtractedPositionsMovementsDocument,
   HoldingFidelity,
 } from "./attachment-extraction-contract";
@@ -49,6 +50,31 @@ const INVESTMENT_INSTRUMENTS: ReadonlySet<Instrument> = new Set<Instrument>([
 export type ReconcileDecision = "create" | "update" | "leave";
 
 /**
+ * One movement the document attributes to a row — the EVIDENCE of what the apply
+ * will write on that holding (#1373). Before this the row carried only a count, so
+ * a card could say «con movimientos» while showing neither the date, the type, the
+ * participaciones, the price nor the amount: exactly the four facts that would have
+ * made a wrong target and a `+0 €` header obvious at a glance.
+ *
+ * The shape mirrors `operationsFromMovements` (the confirm's writer) on purpose:
+ * `signedAmountMinor` is signed BY KIND (a venta subtracts) rather than by the
+ * document's sign, and `unitPrice` is the same `amount / units` division the apply
+ * persists as `pricePerUnit`. What is printed is therefore what is written.
+ */
+export interface ReconcileRowMovement {
+  /** The document's own day, `YYYY-MM-DD`. */
+  date: string;
+  kind: ExtractedMovement["kind"];
+  /** Minor units, signed by kind: buy/contribution add, sell subtracts. */
+  signedAmountMinor: number;
+  currency: string;
+  /** Participaciones, only when the document reports a quantity. */
+  units?: number;
+  /** `amount / units` when both are known — the unit price the apply writes. */
+  unitPrice?: number;
+}
+
+/**
  * One reconcile row — an extracted holding joined to the portfolio, plus the
  * user-editable state (its current match and whether it was discarded). Money is
  * carried in minor units so the impact header stays integer money; `currency` is
@@ -66,8 +92,17 @@ export interface ReconcileRow {
   valueMinor: number;
   currency: string;
   declaredCostMinor?: number;
-  /** How many extracted movements attribute to this holding (strong or weak key). */
-  movementsCount: number;
+  /**
+   * The extracted movements that attribute to this holding (strong or weak key), in
+   * document order — what the row prints and what the apply writes.
+   */
+  movements: ReconcileRowMovement[];
+  /**
+   * The signed sum of the EUR movements above, in minor units. Carried ON the row
+   * (#1373) so the impact header adds a figure computed once, next to the evidence
+   * it comes from, instead of the card re-deriving money in the view.
+   */
+  movementsDeltaMinor: number;
   /** The current per-row matcher decision (mutated by the reassign helpers). */
   match: RowMatch;
   /** The user discarded this row from the batch ("descartar"); it then `leave`s. */
@@ -101,12 +136,39 @@ export function isRowWritable(row: ReconcileRow): boolean {
     return false;
   const decision = row.match.decision;
   if (decision === "create") return true;
-  if (decision === "update") return row.movementsCount > 0;
+  if (decision === "update") return row.movements.length > 0;
   return false;
 }
 
 function toMinor(value: number): number {
   return Math.round(value * 100);
+}
+
+/**
+ * Project one extracted movement onto the row. The sign comes from the KIND, never
+ * from the document's own sign: a sheet may state a venta as `-1.000` or as `1.000`
+ * and both mean the same withdrawal, so `Math.abs` + kind is the only reading that
+ * cannot double-negate one of the two.
+ */
+function toRowMovement(movement: ExtractedMovement): ReconcileRowMovement {
+  const amount = Math.abs(movement.amount);
+  const magnitudeMinor = toMinor(amount);
+  const units =
+    typeof movement.units === "number" && movement.units > 0
+      ? Math.abs(movement.units)
+      : undefined;
+  return {
+    currency: movement.currency.toUpperCase(),
+    date: movement.date,
+    kind: movement.kind,
+    signedAmountMinor: movement.kind === "sell" ? -magnitudeMinor : magnitudeMinor,
+    ...(units === undefined ? {} : { unitPrice: amount / units, units }),
+  };
+}
+
+/** Whether a movement's currency is one the reconcile can sum and write (EUR-only v1). */
+function isSummableMovement(movement: ReconcileRowMovement): boolean {
+  return movement.currency === "EUR";
 }
 
 /**
@@ -133,9 +195,12 @@ export function buildReconcileRows(
 
   return document.holdings.map((holding, index) => {
     const instrument = mapReconcileTypeToInstrument(holding.type);
-    const movementsCount = document.movements.filter((movement) =>
-      movementLinksToHolding(movement, holding),
-    ).length;
+    const movements = document.movements
+      .filter((movement) => movementLinksToHolding(movement, holding))
+      .map(toRowMovement);
+    const movementsDeltaMinor = movements
+      .filter(isSummableMovement)
+      .reduce((sum, movement) => sum + movement.signedAmountMinor, 0);
     const isEur = holding.currency.toUpperCase() === "EUR";
     return {
       rowId: `row-${index}`,
@@ -148,7 +213,8 @@ export function buildReconcileRows(
       ...(holding.declaredCost !== undefined
         ? { declaredCostMinor: toMinor(holding.declaredCost) }
         : {}),
-      movementsCount,
+      movements,
+      movementsDeltaMinor,
       match: matches[index]!,
       excluded: false,
       uncertain: holding.uncertain === true || instrument === null || !isEur,
@@ -237,23 +303,36 @@ export interface ReconcileImpact {
   beforeMinor: number | null;
   /** `beforeMinor + deltaMinor`, or `null` when `beforeMinor` is unknown. */
   afterMinor: number | null;
-  /** The signed sum of the value the included `create` rows add to net worth. */
+  /** The signed sum of what the included rows add to net worth. */
   deltaMinor: number;
   /**
-   * True when the delta is a partial view: an included `update` (its post-merge
-   * effect is not computable before applying) or a non-EUR create was left out of
-   * the sum. The card says "impacto estimado sobre las altas" rather than overclaim.
+   * True when something the batch WILL write is not in the sum: a row out of the v1
+   * write scope, a non-EUR create, an update the document only re-values, or a
+   * linked movement in another currency. The caption then says «estimado» instead of
+   * presenting a partial figure as the whole impact.
    */
   partial: boolean;
+  /** A created holding's value is part of the sum. */
+  includesCreates: boolean;
+  /** A movement-backed update's signed movement sum is part of the sum. */
+  includesMovements: boolean;
 }
 
 /**
- * The impact header (antes → después). The delta counts only the value the
- * **created** holdings add to household net worth: a matched `update` reconciles a
- * holding already inside "before", and its post-merge value is not knowable until
- * the apply ripples, so it is honestly excluded and flagged `partial`. Debt
- * creates subtract. Non-EUR and unmapped creates are excluded from the sum (they
- * cannot be converted here without inventing a rate) and also flag `partial`.
+ * The impact header (antes → después).
+ *
+ * A `create` contributes the value the document declares for it. A movement-backed
+ * `update` contributes the SIGNED SUM OF ITS MOVEMENTS (#1373): before this, every
+ * update was excluded on the grounds that its post-merge value «is not knowable
+ * until the ripple», which turned a document stating a 125 € aportación into a
+ * header reading `+0 €`. The part that was genuinely unknowable is the REVALUATION
+ * of the resulting units — not the cash the document says went in, which is exactly
+ * what the confirm writes as operations. So the knowable half is summed and the
+ * caption keeps saying the ripple can still move the figure.
+ *
+ * An update the document only re-values still contributes nothing (there is no
+ * dated fact to add — ADR 0048) and flags `partial`, as do out-of-scope rows,
+ * non-EUR creates and movements in a currency this lane cannot convert.
  */
 export function reconcileImpact(
   rows: ReconcileRow[],
@@ -261,23 +340,38 @@ export function reconcileImpact(
 ): ReconcileImpact {
   let deltaMinor = 0;
   let partial = false;
+  let includesCreates = false;
+  let includesMovements = false;
   for (const row of rows) {
     const decision = effectiveDecision(row);
     if (decision === "leave") continue;
-    // A writable create lands a valued investment holding — it adds to net worth.
-    // A writable update reconciles a holding already inside "before"; its post-merge
-    // value is not knowable until the ripple, so it is excluded and flags partial.
-    // A create that cannot write (out of scope / non-EUR) is likewise excluded.
-    if (decision === "create" && isRowWritable(row)) {
-      deltaMinor += row.valueMinor;
-    } else {
+    // A create that cannot write (out of scope / non-EUR) is excluded, as is an
+    // update with no movements to add: neither has a knowable, dated effect here.
+    if (!isRowWritable(row)) {
       partial = true;
+      continue;
     }
+    if (decision === "create") {
+      deltaMinor += row.valueMinor;
+      includesCreates = true;
+      continue;
+    }
+    const summable = row.movements.filter(isSummableMovement);
+    if (summable.length === 0) {
+      // Movement-backed by the write scope's rule, but nothing summable in euros.
+      partial = true;
+      continue;
+    }
+    deltaMinor += row.movementsDeltaMinor;
+    includesMovements = true;
+    if (summable.length < row.movements.length) partial = true;
   }
   return {
     afterMinor: netWorthBeforeMinor === null ? null : netWorthBeforeMinor + deltaMinor,
     beforeMinor: netWorthBeforeMinor,
     deltaMinor,
+    includesCreates,
+    includesMovements,
     partial,
   };
 }

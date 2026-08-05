@@ -42,6 +42,8 @@ import {
   type ValuationCadence,
 } from "@worthline/domain";
 
+import { formatIsoDayEs } from "./iso-day-es";
+
 export interface EarlyRepaymentImpactInput {
   /** The declared amortization plan, when the debt has one. */
   plan: AmortizationPlanInput;
@@ -111,11 +113,12 @@ function money(amountMinor: number, currency: string): string {
   }).format(amountMinor / 100);
 }
 
-/** YYYY-MM-DD → DD/MM/YYYY without touching Date (no timezone surprises). */
-export function formatDayEs(dateKey: string): string {
-  const [year, month, day] = dateKey.split("-");
-  return `${day}/${month}/${year}`;
-}
+/**
+ * YYYY-MM-DD → DD/MM/YYYY. The slicing itself lives in {@link formatIsoDayEs}, a
+ * leaf module: the client-side cards need the same format and must not import this
+ * one (it pulls the amortization engine).
+ */
+export const formatDayEs = formatIsoDayEs;
 
 export function projectEarlyRepaymentImpact(
   input: EarlyRepaymentImpactInput,

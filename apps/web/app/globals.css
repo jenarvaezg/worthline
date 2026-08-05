@@ -8407,6 +8407,88 @@ td.rowActions > * {
   color: var(--ink);
 }
 
+/* Una cifra leída del documento se imprime en la columna numérica del canon (§3):
+   Iosevka tabular, para que fecha, participaciones, precio e importe de dos filas
+   se puedan comparar en vertical sin sumar de cabeza (#1373). */
+.assistantRowMovement {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+
+/* La decisión de una fila del reconcile (#1373) son ALTERNATIVAS, no commits: radios
+   nativos disfrazados de la misma marca de selección que los chips de holding
+   (`.addHoldingChip`) — regla lateral de 2px y hoja fuerte, sin relleno primario,
+   que es el peso reservado a Confirmar. La selección la anuncia el radio, así que el
+   color nunca es la única señal (canon §6). */
+.assistantRowChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+.assistantProposal .assistantRowChoice {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.assistantRowChoice:hover {
+  border-color: var(--line);
+}
+.assistantRowChoice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.assistantRowChoice:has(input:checked) {
+  border-color: var(--ink);
+  border-left: 2px solid var(--ink);
+  background: var(--paper-strong);
+}
+.assistantRowChoice:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.assistantRowChoice:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Quitar una fila del lote no es descartar la propuesta: control de texto, aparte de
+   las alternativas y muy por debajo del primario de la tarjeta. */
+.assistantRowAside {
+  display: flex;
+}
+.assistantProposal .assistantRowAside button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  min-height: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.assistantProposal .assistantRowAside button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
 .assistantActions {
   display: flex;
   flex-wrap: wrap;

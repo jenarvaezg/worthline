@@ -13,6 +13,7 @@ import {
   DEFAULT_SNAPSHOT_LIMIT,
   MAX_SNAPSHOT_LIMIT_WITH_HOLDING_ROWS,
 } from "@web/agent-view/snapshot-history";
+import { extractedDocumentSchema } from "@web/asistente/attachment-extraction-contract";
 import { createChatTools } from "@web/asistente/chat-tools";
 import {
   HOLDING_REFERENCE_FIELDS,
@@ -423,8 +424,37 @@ describe("createChatTools · propose_statement_import (#767)", () => {
   });
 });
 
-describe("createChatTools · propose_reconcile (#1108)", () => {
-  it("merges an extracted portfolio into an editable reconcile proposal", async () => {
+describe("createChatTools · propose_reconcile (#1108, frontera de documento #1373)", () => {
+  /**
+   * The lane is document-only (#1373): the rows come from an extraction worthline
+   * validated and the model only selects among them. Every case here therefore
+   * starts from a real validated document — the same one, so the difference between
+   * cases is what the MODEL says about it.
+   */
+  const VALIDATED_CARTERA = extractedDocumentSchema.parse({
+    documentType: "positions_movements",
+    holdings: [
+      {
+        name: "Amundi MSCI World",
+        type: "Fondo",
+        isin: "LU1681043599",
+        value: 12_000,
+        currency: "EUR",
+        fidelity: "value_only",
+      },
+      {
+        name: "Vanguard Global",
+        type: "ETF",
+        value: 5_000,
+        currency: "EUR",
+        fidelity: "value_only",
+      },
+    ],
+    movements: [],
+    warnings: [],
+  });
+
+  async function reconcileStore() {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({
       members: [{ id: "mJ", name: "Jose" }],
@@ -438,7 +468,14 @@ describe("createChatTools · propose_reconcile (#1108)", () => {
       name: "Amundi MSCI World",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
-    const tools = createChatTools({
+    return store;
+  }
+
+  function reconcileTools(
+    store: Awaited<ReturnType<typeof reconcileStore>>,
+    validatedDocuments: Parameters<typeof createChatTools>[0]["validatedDocuments"],
+  ) {
+    return createChatTools({
       runWithStore: (run) =>
         run({
           agentView: store.agentView,
@@ -448,28 +485,18 @@ describe("createChatTools · propose_reconcile (#1108)", () => {
           workspace: store.workspace,
         }),
       asOf: AS_OF,
+      ...(validatedDocuments ? { validatedDocuments } : {}),
     });
+  }
+
+  it("merges an extracted portfolio into an editable reconcile proposal", async () => {
+    const store = await reconcileStore();
+    const tools = reconcileTools(store, [VALIDATED_CARTERA]);
 
     const result = await tools["propose_reconcile"]?.execute?.(
       {
         documentName: "cartera.xlsx",
-        holdings: [
-          {
-            name: "Amundi MSCI World",
-            type: "Fondo",
-            isin: "LU1681043599",
-            value: 12000,
-            currency: "EUR",
-            fidelity: "value_only",
-          },
-          {
-            name: "Vanguard Global",
-            type: "ETF",
-            value: 5000,
-            currency: "EUR",
-            fidelity: "value_only",
-          },
-        ],
+        holdings: [{ name: "Amundi MSCI World" }, { name: "Vanguard Global" }],
         movements: [],
       },
       toolCallContext(),
@@ -486,6 +513,67 @@ describe("createChatTools · propose_reconcile (#1108)", () => {
       kind: "reconcile",
       status: "draft",
     });
+  });
+
+  it("takes the figures from the document, not from what the model typed (#1373)", async () => {
+    const store = await reconcileStore();
+    const tools = reconcileTools(store, [VALIDATED_CARTERA]);
+
+    const result = await tools["propose_reconcile"]?.execute?.(
+      // The model relays the row it must, and the value is right to the euro: the
+      // cents still come from the extraction, never from the relay.
+      { holdings: [{ name: "Vanguard Global", value: 5_000 }] },
+      toolCallContext(),
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].name).toBe("Vanguard Global");
+    expect(result.rows[0].valueMinor).toBe(500_000);
+  });
+
+  /**
+   * A refused call must not even open the store: no draft, no read, no write. The
+   * store here throws if it is touched, which is the strongest form of that check.
+   */
+  function refusingTools(
+    validatedDocuments: Parameters<typeof createChatTools>[0]["validatedDocuments"],
+  ) {
+    return createChatTools({
+      runWithStore: () => {
+        throw new Error("the reconcile must not open the store to refuse");
+      },
+      asOf: AS_OF,
+      ...(validatedDocuments ? { validatedDocuments } : {}),
+    });
+  }
+
+  it("refuses a turn with no validated positions document, and routes (#1373)", async () => {
+    const tools = refusingTools(undefined);
+
+    const result = (await tools["propose_reconcile"]?.execute?.(
+      {
+        holdings: [
+          // The invention of the session: the workspace's own holding, typed in.
+          { name: "Amundi MSCI World", type: "Fondo", value: 12_000, currency: "EUR" },
+        ],
+      },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("reconcile_document_required");
+    expect(result.message).toContain("importar-extracto");
+  });
+
+  it("refuses a row that is not in the validated document (#1373)", async () => {
+    const tools = refusingTools([VALIDATED_CARTERA]);
+
+    const result = (await tools["propose_reconcile"]?.execute?.(
+      { holdings: [{ name: "N5396 - Myinvestor Indexado Global PP", value: 5_387 }] },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("reconcile_row_not_in_document");
+    expect(result.message).toContain("Amundi MSCI World");
   });
 });
 

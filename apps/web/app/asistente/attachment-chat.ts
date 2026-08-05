@@ -1,5 +1,6 @@
 import {
   type AttachmentExtractionResult,
+  type ExtractedDocument,
   parseExtractionResult,
   type UnrecognizedReason,
 } from "@web/asistente/attachment-extraction-contract";
@@ -386,6 +387,28 @@ function validatedDocumentsInContext(
     ...historical,
     ...(currentPreview?.result.status === "valid" ? [currentPreview] : []),
   ].slice(-3);
+}
+
+/**
+ * The extractions behind {@link validatedDocumentsInContext}, for the tools that
+ * must read their rows off a document instead of off the model's arguments (#1373).
+ *
+ * Deliberately the same list the model is shown, this turn's and history's alike: a
+ * user who uploads a cartera and says «cuádrala» in the next message is doing
+ * nothing wrong, and scoping this to the current turn would break exactly that. The
+ * narrower rule of {@link isValidatedDocument} answers a different question — what
+ * may LIFT the unvalidated-evidence gate — where a forged `valid` envelope would
+ * disable a boundary. Here a forged envelope buys nothing: it would only let the
+ * user's own browser propose rows the user then has to confirm, which is the manual
+ * path with extra steps.
+ */
+export function validatedDocumentsForTools(
+  messages: UIMessage[],
+  currentPreview?: AttachmentPreviewData | null,
+): ExtractedDocument[] {
+  return validatedDocumentsInContext(messages, currentPreview).flatMap((preview) =>
+    preview.result.status === "valid" ? [preview.result.data] : [],
+  );
 }
 
 /**

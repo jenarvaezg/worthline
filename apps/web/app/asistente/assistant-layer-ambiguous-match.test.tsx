@@ -88,7 +88,15 @@ function reconcileProposal(ambiguous: boolean): ReconcileProposal {
           target: "asset-live",
           ...(ambiguous ? { ambiguous: true } : {}),
         },
-        movementsCount: 1,
+        movements: [
+          {
+            currency: "EUR",
+            date: "2026-07-01",
+            kind: "buy",
+            signedAmountMinor: 100_000,
+          },
+        ],
+        movementsDeltaMinor: 100_000,
         name: "Vanguard US Equity Index Fund EUR Hedged",
         rowId: "row-0",
         uncertain: false,
