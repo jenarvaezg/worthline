@@ -1,5 +1,5 @@
-import type { DecimalString, InvestmentOperation } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
+import type { DecimalString, InvestmentOperation } from "./index";
 import {
   detectValueOnlyOpening,
   valueOnlySymbolFormNotice,

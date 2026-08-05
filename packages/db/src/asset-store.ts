@@ -4,6 +4,7 @@ import type {
   DecimalString,
   HousingValuationAnchor,
   Instrument,
+  InstrumentIdentityPatch,
   InvestmentPriceProvider,
   LiquidityTier,
   ManualAsset,
@@ -150,6 +151,18 @@ export interface AssetStore {
    * later upload to the same asset is guarded. Returns 1 if updated, 0 if not found.
    */
   backfillInvestmentIsin: (assetId: string, isin: string) => Promise<number>;
+  /**
+   * Fill an investment's identity columns (#1349) — ONLY the ones present in the
+   * patch, like `backfillInvestmentIsin` above and unlike `updateInvestmentAsset`,
+   * whose form-shaped input nulls every metadata column it is not given. The
+   * assistant's correction never carries the whole metadata row, so a full replace
+   * would silently drop the unit symbol or the manual price. Returns 1 if updated,
+   * 0 if not found (or if the patch is empty).
+   */
+  patchInvestmentIdentity: (
+    assetId: string,
+    patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
+  ) => Promise<number>;
   /** Soft-delete an asset (moves it to the trash). Returns 1 if moved, 0 if not found. */
   softDeleteAsset: (assetId: string, deletedAt: string) => Promise<number>;
   /** Restore a trashed asset. Returns 1 if restored, 0 if not found or not in trash. */
@@ -215,6 +228,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
       updateAssetValuation(ctx, assetId, currentValueMinor),
     updateInvestmentAsset: (input) => updateInvestmentAsset(ctx, input),
     backfillInvestmentIsin: (assetId, isin) => backfillInvestmentIsin(ctx, assetId, isin),
+    patchInvestmentIdentity: (assetId, patch) =>
+      patchInvestmentIdentity(ctx, assetId, patch),
     softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) => ctx.transaction(() => hardDeleteAssetTx(ctx, assetId)),
@@ -867,6 +882,33 @@ async function backfillInvestmentIsin(
 
   if (result.rowsAffected > 0) {
     await ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, { isin });
+  }
+
+  return result.rowsAffected;
+}
+
+async function patchInvestmentIdentity(
+  ctx: StoreContext,
+  assetId: string,
+  patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
+): Promise<number> {
+  const fields: Partial<typeof investmentAssets.$inferInsert> = {
+    ...(patch.isin === undefined ? {} : { isin: patch.isin }),
+    ...(patch.providerSymbol === undefined
+      ? {}
+      : { providerSymbol: patch.providerSymbol }),
+    ...(patch.priceProvider === undefined ? {} : { priceProvider: patch.priceProvider }),
+  };
+  if (Object.keys(fields).length === 0) return 0;
+
+  const result = await ctx.db
+    .update(investmentAssets)
+    .set(fields)
+    .where(eq(investmentAssets.assetId, assetId))
+    .run();
+
+  if (result.rowsAffected > 0) {
+    await ctx.writeAuditEntry("patch_investment_identity", "asset", assetId, fields);
   }
 
   return result.rowsAffected;

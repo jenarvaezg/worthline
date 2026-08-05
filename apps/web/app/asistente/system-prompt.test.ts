@@ -120,6 +120,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/nunca prometas que alguien/i);
     expect(prompt).toMatch(/ISIN/);
     expect(prompt).toMatch(/en su ficha/i);
+    // #1349: the chat CAN fill an empty ISIN/symbol now, so the rule that used to
+    // send every identity edit to the ficha is halved, not dropped — overwriting
+    // one that already has a value stays there, and the prompt must say which half.
+    expect(prompt).toMatch(/que YA tiene se hace en su ficha/);
+    expect(prompt).toMatch(/solo se rellena el vacío/i);
+    // The old absolute («el precio/símbolo NO es un hecho editable») would teach
+    // the model to refuse the fill it now has a tool for.
+    expect(prompt).not.toMatch(/precio\/símbolo NO es un hecho editable/);
   });
 
   /**

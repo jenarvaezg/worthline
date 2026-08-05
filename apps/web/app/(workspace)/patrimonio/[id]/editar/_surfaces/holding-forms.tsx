@@ -16,11 +16,6 @@ import {
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
 } from "@web/patrimonio/actions";
-import {
-  VALUE_ONLY_ACK_LABEL,
-  type ValueOnlyOpening,
-  valueOnlySymbolFormNotice,
-} from "@web/patrimonio/value-only-opening";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel, retiredPriceSourceLabel } from "@web/price-source-label";
 import type { InvestmentAssetFull } from "@worthline/db";
@@ -30,6 +25,9 @@ import {
   formatMoneyMinorPrivacy,
   isRetiredInvestmentPriceProvider,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
+  VALUE_ONLY_ACK_LABEL,
+  type ValueOnlyOpening,
+  valueOnlySymbolFormNotice,
 } from "@worthline/domain";
 import Link from "next/link";
 

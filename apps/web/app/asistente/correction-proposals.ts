@@ -25,9 +25,22 @@ import {
   type CorrectionProposal,
   type CorrectionProposalEditRow,
 } from "./correction-proposal-contract";
+import {
+  liveProviderSymbolProbe,
+  type ProviderSymbolProbe,
+  resolveInstrumentIdentityCorrection,
+} from "./instrument-identity-proposals";
 import { boundProposalSummary } from "./proposal-summary";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities" | "assets"> & {
+  /**
+   * Only the identity fill (#1349) reads the ledger — for the #1329 guard. Optional
+   * so a caller that predates it keeps the other four correction kinds working
+   * instead of failing all of them (the `chatToolStores` lesson), and the branch
+   * that needs it refuses fail-closed when it is missing.
+   */
+  operations?: Pick<WorthlineStore["operations"], "readOperations">;
+} & {
   assistantProposals: AssistantProposalStore;
   /**
    * Required, not optional: the connected-source frontier is enforced in code
@@ -55,6 +68,16 @@ export type CorrectionInput =
     }
   | { kind: "declare_value"; valueMinor: number; date?: string }
   | { kind: "change_debt_model"; debtModel: "amortizable" | "revolving" | "informal" }
+  | {
+      /**
+       * Fill an investment's empty ISIN / provider symbol (#1349). A kind of its
+       * own, not two more fields on `edit_config`: the identity guards hang off
+       * this single branch, so a rename can never carry an ISIN past them.
+       */
+      kind: "edit_identity";
+      isin?: string;
+      providerSymbol?: string;
+    }
   | {
       kind: "edit_config";
       name?: string;
@@ -88,6 +111,7 @@ export async function buildCorrectionProposal(
   store: ProposalStore,
   args: CorrectionArgs,
   today: string,
+  probe: ProviderSymbolProbe = liveProviderSymbolProbe,
 ): Promise<BuildResult> {
   const liabilities = await store.liabilities.readLiabilities();
   const liability = liabilities.find((item) => item.id === args.holdingId);
@@ -97,7 +121,7 @@ export async function buildCorrectionProposal(
   const assets = await store.assets.readAssets();
   const asset = assets.find((item) => item.id === args.holdingId);
   if (asset) {
-    return buildAssetCorrection(store, args, asset, today);
+    return buildAssetCorrection(store, args, asset, today, probe);
   }
   return { ok: false, error: "No encuentro ese holding en el workspace." };
 }
@@ -258,6 +282,7 @@ async function buildAssetCorrection(
   args: CorrectionArgs,
   asset: Awaited<ReturnType<WorthlineStore["assets"]["readAssets"]>>[number],
   today: string,
+  probe: ProviderSymbolProbe,
 ): Promise<BuildResult> {
   const { correction } = args;
   const currency = asset.currency;
@@ -294,6 +319,31 @@ async function buildAssetCorrection(
       label: "Valor de mercado",
       origin: "assistant",
     });
+  } else if (correction.kind === "edit_identity") {
+    const resolved = await resolveInstrumentIdentityCorrection(
+      {
+        assets: store.assets,
+        ...(store.operations ? { operations: store.operations } : {}),
+      },
+      {
+        assetId: asset.id,
+        declaration: {
+          ...(correction.isin === undefined ? {} : { isin: correction.isin }),
+          ...(correction.providerSymbol === undefined
+            ? {}
+            : { providerSymbol: correction.providerSymbol }),
+        },
+      },
+      probe,
+    );
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+    edits.push({
+      assetId: asset.id,
+      before: resolved.before,
+      declaration: resolved.declaration,
+      kind: "investment_identity",
+    });
+    rows.push(...resolved.rows);
   } else if (correction.kind === "edit_config") {
     appendConfigEdits(edits, rows, {
       cadence: correction.cadence,

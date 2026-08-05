@@ -17,10 +17,16 @@
  * This module is the detection + the wording, pure: no store, no clock, no
  * network. The action decides (block, or let an acknowledged 1-participación
  * position through) and the form renders the same facts before the user submits.
+ *
+ * It lives in the domain because TWO write paths need the same answer (#1349):
+ * the editing action, and the assistant's identity fill — whose apply runs inside
+ * `packages/db` and cannot reach into the web app.
  */
 
-import type { DecimalString, InvestmentOperation } from "@worthline/domain";
-import { formatMoneyMinorExact, multiplyToMinor } from "@worthline/domain";
+import type { DecimalString } from "./decimal";
+import { multiplyToMinor } from "./decimal";
+import type { InvestmentOperation } from "./investment-types";
+import { formatMoneyMinorExact } from "./money";
 
 export interface ValueOnlyOpening {
   /** The single participación's price — which IS the declared total value. */

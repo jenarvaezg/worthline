@@ -36,7 +36,6 @@ import {
   deleteLiabilityAction,
 } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
-import { detectValueOnlyOpening } from "@web/patrimonio/value-only-opening";
 import { detailRefreshCaption } from "@web/price-refresh";
 import { readBenchmarkPricesFromControlPlane } from "@web/read-benchmark-prices";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
@@ -51,6 +50,7 @@ import {
   debtAccrualAtDate,
   debtBalanceAtDate,
   detectSingleAssetBackfillCandidate,
+  detectValueOnlyOpening,
   getPriceFreshness,
   holdingIrr,
   holdingTwr,
