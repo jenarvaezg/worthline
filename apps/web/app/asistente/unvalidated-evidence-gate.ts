@@ -44,6 +44,18 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
   // Born from a gesture over ids already read, not from a document.
   propose_holding_removal: "neutral",
   propose_holding_restoration: "neutral",
+  /**
+   * `neutral` because its OWN frontier is strictly stronger than this gate (#1374):
+   * the date, the amount, the participaciones and the commission are read off a
+   * validated `holding_event`, checked before the store is even opened, so evidence
+   * worthline could not validate can never become an operation — there is nothing for
+   * the gate to protect. Classifying it `rejects` would also lie: the routing copy
+   * offers «un dato puntual sí puedo prepararlo como propuesta», and this IS that
+   * single dated fact. And it would block the legitimate turn where an unreadable
+   * spreadsheet arrived earlier in the conversation while the confirmation the user is
+   * asking about was validated in a previous message.
+   */
+  propose_operation: "neutral",
 } as const satisfies Record<string, UnvalidatedEvidenceClass>;
 
 /**

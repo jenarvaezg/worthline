@@ -513,6 +513,8 @@ export type ExtractedPositionsMovementsDocument = z.infer<
   typeof positionsMovementsDocumentSchema
 >;
 export type ExtractedHoldingEventDocument = z.infer<typeof holdingEventDocumentSchema>;
+/** The ONE observed fact a holding-event document carries (#1244, #1316). */
+export type ExtractedHoldingEvent = ExtractedHoldingEventDocument["event"];
 export type ExtractedDocument = z.infer<typeof extractedDocumentSchema>;
 
 const nonEmptyMessageSchema = z.string().trim().min(1);

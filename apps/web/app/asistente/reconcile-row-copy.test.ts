@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { ReconcileImpact, ReconcileRow } from "./reconcile-plan";
 import {
-  formatDocumentMoney,
   reconcileDestinationLabel,
   reconcileDocumentLine,
   reconcileImpactCaption,
@@ -118,13 +117,6 @@ describe("reconcileMovementLine", () => {
         signedAmountMinor: 90_000,
       }),
     ).toContain("fuera de alcance");
-  });
-});
-
-describe("formatDocumentMoney", () => {
-  it("keeps the cents a document printed and adds none where there are none", () => {
-    expect(plain(formatDocumentMoney(12_500))).toBe("125 €");
-    expect(plain(formatDocumentMoney(12_550))).toBe("125,50 €");
   });
 });
 

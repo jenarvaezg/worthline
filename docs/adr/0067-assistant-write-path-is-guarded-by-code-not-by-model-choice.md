@@ -157,3 +157,39 @@ The boundary, in `reconcile-document-frontier.ts`:
 The eval keeps grading the MODEL for typing rows it was not given, for the reason
 this ADR already gives: a gate that only recorded what got through would stop being
 able to tell a disciplined model from a guarded one.
+
+## Amendment (#1374): a missing lane is a boundary failure, not a model failure
+
+The amendment above closed the reconcile's rows. What the same session also showed is
+the other half of the story, and it is not about discipline at all: **the model reached
+for the reconcile because nothing else took the request.** «Añádeme esta compra», with
+an aportación confirmation attached, is the most ordinary thing a manual portfolio can
+be asked, and the write inventory had no lane for it — `propose_statement_import` wants
+CSV text, `propose_holding` is an alta, `propose_correction` repairs a misconfigured
+holding, `propose_reconcile` and `propose_mixed_document_import` are batches. The
+attachment extracted cleanly as a `holding_event` with the full identity #1316 gives it,
+and no proposer consumed it.
+
+So the model improvised into the only door that would open, and the schema of that door
+demanded a figure its document does not contain. Grading the model harder would not have
+produced the missing lane. The rule this adds to the ADR:
+
+- **Every write the product supports needs a lane whose schema asks only for what its
+  evidence contains.** A mandatory field a real document cannot fill is not a validation
+  — it is an instruction to invent. `propose_operation`'s input has no `value` at all,
+  and that absence is the fix; the position's worth is nobody's to type.
+- **A refusal must name the lane that does take the request.** Every routing message in
+  `reconcile-document-frontier.ts` and `operation-terms.ts` names one. When #1374's lane
+  did not exist, the reconcile's refusal had to send people to the holding's ficha —
+  honest, but a dead end in the conversation; it now names the receipt.
+- **The model still decides what no boundary can.** Which of the user's holdings the
+  paper belongs to, and whether it is a purchase or a sale. Both are printed on the card
+  as separate lines next to the document's verbatim text (#1373's rule), and both are
+  fenced where a fence is possible: an id must come out of a read (#1263), an ISIN that
+  contradicts the holding's rejects the call, and a document the extraction pinned as an
+  ingreso cannot be written as a sale.
+- **Where the honest answer is «I can't».** A confirmation with an amount and neither a
+  quantity nor a unit price has no encoding on an existing position: the
+  «1 participación al importe» form of a value-only alta (#1325) would be revalued to ONE
+  share's NAV at the next ripple and swallow the amount. `operation-terms.ts` refuses and
+  says which figure is missing, rather than write something that looks right for a day.

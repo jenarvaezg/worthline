@@ -22,6 +22,10 @@ import type {
   MixedDocumentSection,
   MixedTrust,
 } from "./mixed-document-proposals";
+import {
+  type OperationProposal,
+  parseOperationProposalDraft,
+} from "./operation-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
 import type { ReconcileRow } from "./reconcile-plan";
@@ -484,6 +488,47 @@ export function parseEarlyRepaymentProposal(raw: unknown): EarlyRepaymentProposa
     }
   }
   return raw as unknown as EarlyRepaymentProposal;
+}
+
+/**
+ * Trust boundary for an operation proposal (#1374). Every rendered figure is a STRING
+ * the server already formatted — the fact line, the participaciones, the destination —
+ * so the card cannot re-derive money, a quantity or a date; only the shape is checked.
+ * The impact triple is nullable on both ends when the net-worth read degraded (ADR
+ * 0048), and the delta never is.
+ */
+export function parseOperationProposal(raw: unknown): OperationProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "investment_operation") return null;
+  const draft = parseOperationProposalDraft(raw.draft);
+  if (!draft.ok || typeof raw.summary !== "string" || typeof raw.folio !== "string") {
+    return null;
+  }
+  if (
+    !isRecord(raw.document) ||
+    typeof raw.document.line !== "string" ||
+    typeof raw.document.fact !== "string" ||
+    !isRecord(raw.holding) ||
+    typeof raw.holding.name !== "string" ||
+    typeof raw.holding.destination !== "string" ||
+    !isRecord(raw.position) ||
+    typeof raw.position.unitsBefore !== "string" ||
+    typeof raw.position.unitsAfter !== "string" ||
+    typeof raw.impactCaption !== "string"
+  ) {
+    return null;
+  }
+  if (
+    !isRecord(raw.impact) ||
+    !(raw.impact.beforeMinor === null || typeof raw.impact.beforeMinor === "number") ||
+    !(raw.impact.afterMinor === null || typeof raw.impact.afterMinor === "number") ||
+    typeof raw.impact.deltaMinor !== "number"
+  ) {
+    return null;
+  }
+  if (!Array.isArray(raw.notes) || !raw.notes.every((note) => typeof note === "string")) {
+    return null;
+  }
+  return raw as unknown as OperationProposal;
 }
 
 export function parsePropertyValuationProposal(

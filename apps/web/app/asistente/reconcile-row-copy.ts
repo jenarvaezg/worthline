@@ -13,12 +13,13 @@
  * strings out, no store and no clock.
  */
 
-import {
-  countKeyClaimants,
-  formatMoneyMinor,
-  formatMoneyMinorExact,
-} from "@worthline/domain";
+import { countKeyClaimants } from "@worthline/domain";
 
+import {
+  formatDocumentMoney,
+  formatDocumentUnitPrice,
+  formatDocumentUnits,
+} from "./document-figures";
 import { formatIsoDayEs } from "./iso-day-es";
 import {
   effectiveDecision,
@@ -26,27 +27,6 @@ import {
   type ReconcileRow,
   type ReconcileRowMovement,
 } from "./reconcile-plan";
-
-/**
- * Money as the document states it: whole euros in the app's reading voice
- * (`formatMoneyMinor`), and the cents shown whenever there are any. A figure the
- * user is checking against a PDF may not be rounded away — 125,50 € printed as
- * «126 €» is the same class of lie this card exists to stop (#1315, #1329) — but a
- * round 125 € does not have to grow a «,00» either.
- */
-export function formatDocumentMoney(amountMinor: number): string {
-  const money = { amountMinor, currency: "EUR" as const };
-  return amountMinor % 100 === 0 ? formatMoneyMinor(money) : formatMoneyMinorExact(money);
-}
-
-/**
- * es-ES participaciones and unit price, hoisted like the preview card's own
- * formatters. Four decimals on the price: a derived NAV (125 € / 5,92 part.) is
- * periodic, and the four decimals a fund quotes are the reading voice — six would
- * print noise the document does not contain.
- */
-const unitCount = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 });
-const unitPrice = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
 
 /**
  * A movement in a currency this lane cannot write. It is printed in ITS currency —
@@ -87,7 +67,7 @@ export function reconcileMovementLine(movement: ReconcileRowMovement): string {
   const parts = [formatIsoDayEs(movement.date), MOVEMENT_KIND_LABELS[movement.kind]];
   if (movement.units !== undefined && movement.unitPrice !== undefined) {
     parts.push(
-      `${unitCount.format(movement.units)} part. × ${unitPrice.format(movement.unitPrice)} €`,
+      `${formatDocumentUnits(movement.units)} part. × ${formatDocumentUnitPrice(movement.unitPrice)} €`,
     );
   }
   parts.push(
