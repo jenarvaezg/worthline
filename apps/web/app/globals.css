@@ -6041,7 +6041,15 @@ td.rowActions > * {
   flex-direction: column;
   gap: 0.35rem;
 }
-.addHoldingChip {
+/* Chip de selección: UNA receta con dos consumidores (canon §7, «no duplican una
+   versión equivalente ad hoc») — el wizard de alta (`.addHoldingChip`) y la fila del
+   reconcile (`.assistantRowChoice`, #1373). El radio/checkbox nativo va recortado a
+   1px, así que la marca de selección visible es la regla lateral de 2px más el borde
+   en tinta; el estado que anuncian los lectores de pantalla es el del control nativo,
+   nunca el color. Las diferencias de cada superficie (dirección, densidad, cuerpo)
+   viven junto a su superficie, no aquí. */
+.addHoldingChip,
+.assistantRowChoice {
   position: relative;
   display: flex;
   align-items: center;
@@ -6055,10 +6063,12 @@ td.rowActions > * {
     border-color var(--dur-fast) var(--ease-standard),
     background var(--dur-fast) var(--ease-standard);
 }
-.addHoldingChip:hover {
+.addHoldingChip:hover,
+.assistantRowChoice:hover {
   border-color: var(--line);
 }
-.addHoldingChip input {
+.addHoldingChip input,
+.assistantRowChoice input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -6069,14 +6079,20 @@ td.rowActions > * {
   white-space: nowrap;
   border: 0;
 }
-.addHoldingChip:has(input:checked) {
+.addHoldingChip:has(input:checked),
+.assistantRowChoice:has(input:checked) {
   border-color: var(--ink);
   border-left: 2px solid var(--dot, var(--ink));
   background: var(--paper-strong);
 }
-.addHoldingChip:has(input:focus-visible) {
+.addHoldingChip:has(input:focus-visible),
+.assistantRowChoice:has(input:focus-visible) {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
+}
+.assistantRowChoice:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
 }
 .addHoldingDot {
   flex: none;
@@ -8407,19 +8423,18 @@ td.rowActions > * {
   color: var(--ink);
 }
 
-/* Una cifra leída del documento se imprime en la columna numérica del canon (§3):
-   Iosevka tabular, para que fecha, participaciones, precio e importe de dos filas
-   se puedan comparar en vertical sin sumar de cabeza (#1373). */
+/* Las cifras leídas del documento se imprimen en la tinta numérica del canon (§3):
+   Iosevka tabular, para que 5,92 y 21,1149 se lean como cifras y no como prosa
+   (#1373). La línea es una frase, no una columna: no se alinea a la derecha. */
 .assistantRowMovement {
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
 }
 
-/* La decisión de una fila del reconcile (#1373) son ALTERNATIVAS, no commits: radios
-   nativos disfrazados de la misma marca de selección que los chips de holding
-   (`.addHoldingChip`) — regla lateral de 2px y hoja fuerte, sin relleno primario,
-   que es el peso reservado a Confirmar. La selección la anuncia el radio, así que el
-   color nunca es la única señal (canon §6). */
+/* La decisión de una fila del reconcile (#1373) son ALTERNATIVAS, no commits: lleva
+   la receta compartida de chip de selección (definida junto a `.addHoldingChip`) y
+   aquí solo su densidad — nunca relleno primario, que es el peso reservado al único
+   primario de la tarjeta, Confirmar. */
 .assistantRowChoices {
   display: flex;
   flex-wrap: wrap;
@@ -8427,50 +8442,19 @@ td.rowActions > * {
   margin-top: 3px;
 }
 .assistantProposal .assistantRowChoice {
-  position: relative;
   display: inline-flex;
-  align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
   color: var(--ink);
   font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.2;
-  cursor: pointer;
-}
-.assistantRowChoice:hover {
-  border-color: var(--line);
-}
-.assistantRowChoice input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-.assistantRowChoice:has(input:checked) {
-  border-color: var(--ink);
-  border-left: 2px solid var(--ink);
-  background: var(--paper-strong);
-}
-.assistantRowChoice:has(input:focus-visible) {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-.assistantRowChoice:has(input:disabled) {
-  cursor: default;
-  opacity: 0.6;
 }
 
 /* Quitar una fila del lote no es descartar la propuesta: control de texto, aparte de
-   las alternativas y muy por debajo del primario de la tarjeta. */
+   las alternativas y muy por debajo del primario de la tarjeta. No lleva `.secondary`
+   —el secundario del canon (§5) es transparente con `--line-strong`, y esto es un
+   enlace— y su regla vive aquí porque es la única superficie que lo usa. */
 .assistantRowAside {
   display: flex;
 }

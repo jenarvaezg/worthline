@@ -155,6 +155,17 @@ describe("ReconcileProposalCard · la aportación de 125 € (#1373)", () => {
     );
   });
 
+  test("a row taken out of the batch has inert choices, not a hidden re-include", () => {
+    const excluded = aportacionProposal();
+    excluded.rows[0]!.excluded = true;
+    const html = markupFor(excluded);
+
+    // Both radios disabled: the only way back is the control that says so.
+    expect(html.match(/<input [^>]*disabled=""/g)).toHaveLength(2);
+    expect(html).toContain("Volver a incluir esta fila");
+    expect(html).toContain("Dejar");
+  });
+
   test("removing a row and discarding the proposal no longer share a label", () => {
     const html = plain(markupFor(aportacionProposal()));
 
@@ -169,12 +180,13 @@ describe("ReconcileProposalCard · la aportación de 125 € (#1373)", () => {
 
     // The primary is the button with no class — the `.btn` base of the canon (§5).
     expect(html).toContain('<button type="button">Confirmar</button>');
-    // Everything else on the card declares itself secondary, row control included.
+    // Descartar declares itself secondary; the row's control is a text aside, and
+    // deliberately NOT `.secondary` — that class names a register it does not have.
     expect(html).toContain(
       '<button class="secondary" type="button">Descartar la propuesta</button>',
     );
     expect(html).toContain(
-      '<button class="secondary" type="button">Quitar esta fila del lote</button>',
+      '<span class="assistantRowAside"><button type="button">Quitar esta fila del lote',
     );
   });
 });

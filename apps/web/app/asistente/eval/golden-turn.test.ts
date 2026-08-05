@@ -1,3 +1,4 @@
+import { extractedDocumentSchema } from "@web/asistente/attachment-extraction-contract";
 import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +10,7 @@ import {
   laneOf,
   readGoldenAttachmentTurn,
   unvalidatedEvidenceFor,
+  validatedDocumentsFor,
 } from "./golden-turn";
 
 describe("golden attachments", () => {
@@ -84,6 +86,46 @@ describe("unvalidatedEvidenceFor", () => {
     // The default the reading and tool-discipline sets have always run under: without
     // this, every question would be graded against a gate production would not close.
     expect(unvalidatedEvidenceFor(null)).toBe(false);
+  });
+});
+
+describe("validatedDocumentsFor", () => {
+  it("hands the tools the document the turn validated (#1373)", () => {
+    // The reconcile lane takes its rows from here. A harness that forwarded the gate
+    // but not the documents would grade `reconcile_document_required` on every
+    // question — its own hole, not the model, exactly as #1265 found with the stores.
+    const data = extractedDocumentSchema.parse({
+      documentType: "positions_movements",
+      holdings: [
+        {
+          name: "Amundi MSCI World",
+          type: "Fondo",
+          value: 12_000,
+          currency: "EUR",
+          fidelity: "value_only",
+        },
+      ],
+      movements: [],
+      warnings: [],
+    });
+
+    expect(
+      validatedDocumentsFor({
+        preview: { fileName: "cartera.csv", result: { data, status: "valid" } },
+        unstructured: null,
+        visionCalls: 0,
+      }),
+    ).toEqual([data]);
+  });
+
+  it("hands nothing on a turn with no document, and nothing on an unreadable one", async () => {
+    const reading = await readGoldenAttachmentTurn({
+      file: "apuntes-familia.csv",
+      lane: "unstructured",
+    });
+
+    expect(validatedDocumentsFor(null)).toEqual([]);
+    expect(validatedDocumentsFor(reading)).toEqual([]);
   });
 });
 

@@ -19,7 +19,7 @@ import {
   formatMoneyMinorExact,
 } from "@worthline/domain";
 
-import { formatDayEs } from "./early-repayment-impact";
+import { formatIsoDayEs } from "./iso-day-es";
 import {
   effectiveDecision,
   type ReconcileImpact,
@@ -40,22 +40,19 @@ export function formatDocumentMoney(amountMinor: number): string {
 }
 
 /**
- * es-ES participaciones and unit price. Four decimals on the price: a derived NAV
- * (125 € / 5,92 part.) is periodic, and the four decimals a fund quotes are the
- * reading voice — six would print noise the document does not contain.
+ * es-ES participaciones and unit price, hoisted like the preview card's own
+ * formatters. Four decimals on the price: a derived NAV (125 € / 5,92 part.) is
+ * periodic, and the four decimals a fund quotes are the reading voice — six would
+ * print noise the document does not contain.
  */
-function formatUnitCount(units: number): string {
-  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 }).format(units);
-}
-
-function formatUnitPrice(price: number): string {
-  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 }).format(price)} €`;
-}
+const unitCount = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 });
+const unitPrice = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
 
 /**
  * A movement in a currency this lane cannot write. It is printed in ITS currency —
  * converting it here would invent a rate — and said out loud, because the confirm
  * skips it and a silently dropped line is the kind of gap this row exists to close.
+ * Built per call because the currency is the document's, not ours.
  */
 function formatForeignMoney(amountMinor: number, currency: string): string {
   return new Intl.NumberFormat("es-ES", {
@@ -87,10 +84,10 @@ const MOVEMENT_KIND_LABELS: Record<ReconcileRowMovement["kind"], string> = {
  * so a row that will write nothing says why on its own line.
  */
 export function reconcileMovementLine(movement: ReconcileRowMovement): string {
-  const parts = [formatDayEs(movement.date), MOVEMENT_KIND_LABELS[movement.kind]];
+  const parts = [formatIsoDayEs(movement.date), MOVEMENT_KIND_LABELS[movement.kind]];
   if (movement.units !== undefined && movement.unitPrice !== undefined) {
     parts.push(
-      `${formatUnitCount(movement.units)} part. × ${formatUnitPrice(movement.unitPrice)}`,
+      `${unitCount.format(movement.units)} part. × ${unitPrice.format(movement.unitPrice)} €`,
     );
   }
   parts.push(

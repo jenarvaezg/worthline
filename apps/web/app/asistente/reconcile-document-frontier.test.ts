@@ -161,6 +161,27 @@ describe("resolveReconcileDocument", () => {
     expect(result.document.holdings[0]!.name).toBe("MYINVESTOR INDEXADO SP 500 PP");
   });
 
+  it("rejects two identifiers that point at two different rows", () => {
+    // The name lands on the plan, the ISIN on the fondo. Letting either win would
+    // write a row on the strength of half a claim.
+    expect(
+      resolveReconcileDocument(
+        [{ name: "MYINVESTOR INDEXADO SP 500 PP", isin: "LU1681043599" }],
+        DOCUMENT,
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("rejects an ISIN that contradicts the row its name matched", () => {
+    // The ISIN belongs to no row of the document AND disagrees with this one's.
+    expect(
+      resolveReconcileDocument(
+        [{ name: "MYINVESTOR INDEXADO SP 500 PP", isin: "IE00B3RBWM25" }],
+        DOCUMENT,
+      ).ok,
+    ).toBe(false);
+  });
+
   it("tolerates a whole-euro relay of a figure with cents", () => {
     expect(
       resolveReconcileDocument(

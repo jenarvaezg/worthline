@@ -531,6 +531,13 @@ function HoldingTrashProposalCard({
  * an action and performs none. The candidates come first and «Crear nuevo» last —
  * creating is the option that would duplicate the holding, so it is not the default
  * shape of the row, and Confirmar stays the card's only primary.
+ *
+ * A row taken out of the batch has its choices INERT rather than live: the pure
+ * reassign helpers put a row back in when it is given a destination, and a group of
+ * enabled radios that silently re-includes the row — while the control next to it
+ * still offers to re-include it, and no radio reads as chosen — is the same hidden
+ * effect this component was rebuilt to remove. Out of the batch, the way back is the
+ * one control that says so.
  */
 function ReconcileRowChoices({
   disabled,
@@ -550,7 +557,7 @@ function ReconcileRowChoices({
     <span
       aria-label={`Destino de ${row.name}`}
       className="assistantRowChoices"
-      role="group"
+      role="radiogroup"
     >
       {row.match.candidates.map((candidate) => (
         <label className="assistantRowChoice" key={candidate.holdingId}>
@@ -665,7 +672,7 @@ function ReconcileProposalCard({
               </span>
             ))}
             <ReconcileRowChoices
-              disabled={actionsDisabled}
+              disabled={actionsDisabled || row.excluded}
               groupName={`reconcile-${proposal.draft.proposalId}-${row.rowId}`}
               onCreate={() => setRows(reassignRowToNew(rows, row.rowId))}
               onUpdate={(holdingId) =>
@@ -675,7 +682,6 @@ function ReconcileProposalCard({
             />
             <span className="assistantRowAside">
               <button
-                className="secondary"
                 disabled={actionsDisabled}
                 onClick={() =>
                   setRows(

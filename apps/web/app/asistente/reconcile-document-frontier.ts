@@ -128,12 +128,22 @@ function findClaimedHolding(
     isin === null
       ? undefined
       : holdings.find((holding) => holding.isin && normalizeIsin(holding.isin) === isin);
-  const found =
-    byIsin ??
-    (name === null
+  const byName =
+    name === null
       ? undefined
-      : holdings.find((holding) => normalizeName(holding.name) === name));
+      : holdings.find((holding) => normalizeName(holding.name) === name);
+  // Two identifiers that resolve to two different rows is a contradiction, not a
+  // match to arbitrate: the batch would write one of them on the strength of half a
+  // claim. ISIN wins only when the name resolves to nothing — the ordinary case of a
+  // model relaying a name of its own next to the document's identifier.
+  if (byIsin && byName && byIsin !== byName) return null;
+  const found = byIsin ?? byName;
   if (!found) return null;
+  // And an identifier that resolves to nothing may still CONTRADICT the row it landed
+  // on: a name that matches while the ISIN beside it belongs to no row of the document
+  // and disagrees with this one's is the same slip as a fabricated value. A document
+  // row with no ISIN of its own cannot contradict anything.
+  if (isin !== null && found.isin && normalizeIsin(found.isin) !== isin) return null;
   if (
     claim.value !== undefined &&
     Math.abs(claim.value - found.value) > VALUE_TOLERANCE_EUR

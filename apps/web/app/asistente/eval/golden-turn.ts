@@ -23,7 +23,9 @@ import { fileURLToPath } from "node:url";
 import {
   isValidatedDocument,
   prepareAttachmentMessagesForModel,
+  validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
+import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
 import {
   type AttachmentTurnReading,
   readAttachmentTurn,
@@ -100,6 +102,21 @@ export function unvalidatedEvidenceFor(reading: AttachmentTurnReading | null): b
     hasUnvalidatedEvidence: reading?.unstructured != null,
     hasValidatedDocumentInThisTurn: isValidatedDocument(reading?.preview),
   });
+}
+
+/**
+ * The validated documents this turn's tools may take their rows from (#1373),
+ * through the route's own function. Without it `propose_reconcile` refuses every
+ * golden question by construction, and the harness would grade its own hole instead
+ * of the model — the mistake #1265 had to undo, in the same shape.
+ *
+ * A golden question is single-turn, so there is no history to draw on: the list is
+ * whatever THIS reading validated, if anything.
+ */
+export function validatedDocumentsFor(
+  reading: AttachmentTurnReading | null,
+): ExtractedDocument[] {
+  return validatedDocumentsForTools([], reading?.preview ?? null);
 }
 
 /**
