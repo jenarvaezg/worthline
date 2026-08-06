@@ -1,6 +1,7 @@
 /**
- * The «Acciones recomendadas:» block the model writes in prose becomes chips, or
- * the prose is left exactly as it was. Nothing in between.
+ * The «Acciones recomendadas:» block the model writes in prose becomes chips, and the
+ * block leaves the text whether or not its items converted (#1375) — as long as it is
+ * an action list and not advice under an action heading.
  */
 
 import type { QuickAction } from "@web/asistente/assistant-actions";
@@ -49,10 +50,12 @@ describe("splitProseActionBlock", () => {
 
   it("never lets prose reach an external destination", () => {
     const text = "Texto.\n\nAcciones recomendadas:\n- [Mira esto](https://evil.test)";
-    expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
+    // The link is not made clickable — and the bullet does not survive as markdown
+    // either: an unconvertible item leaves with its block (#1375).
+    expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
   });
 
-  it("leaves the whole block when one item does not resolve", () => {
+  it("drops the item it cannot convert and still removes the block", () => {
     const text = [
       "Texto.",
       "",
@@ -62,14 +65,80 @@ describe("splitProseActionBlock", () => {
     ].join("\n");
 
     expect(splitProseActionBlock(text, [NUMISTA_CHIP])).toEqual({
-      cleaned: text,
-      actions: [],
+      cleaned: "Texto.",
+      actions: [
+        {
+          type: "runSuggestedAnalysis",
+          label: "¿Cuánto vale mi cartera?",
+          prompt: "¿Cuánto vale mi cartera?",
+        },
+      ],
     });
   });
 
-  it("does not turn advice into a button", () => {
-    const text = "Texto.\n\nAcciones recomendadas:\n- Revisa tu colchón de liquidez.";
+  it("erases the reported block verbatim, chips or no chips (#1375)", () => {
+    const text = [
+      "Tu plan de pensiones vale 12.000 €.",
+      "",
+      "Acciones de seguimiento:",
+      "• [Abrir detalles del Plan de Pensiones](openInternalSource?holding=«N5396 - Myinvestor Indexado Global PP»&section=patrimonio)",
+      "• Ver resumen patrimonial [blocked]",
+    ].join("\n");
+
+    const { cleaned, actions } = splitProseActionBlock(text);
+
+    // Not one bracket, paren or `[blocked]` left on screen: the block goes whole.
+    expect(cleaned).toBe("Tu plan de pensiones vale 12.000 €.");
+    expect(actions).toEqual([]);
+  });
+
+  it("removes a lone `[blocked]` bullet too, with no link beside it", () => {
+    const text =
+      "Texto.\n\nAcciones de seguimiento:\n• Ver resumen patrimonial [blocked]";
+
+    expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
+  });
+
+  it("does not turn advice into a button, nor delete it", () => {
+    // Nothing here is machinery and nothing became a chip: it is a sentence written
+    // for the reader, and answering broken markdown with a silence is not the fix.
+    const text = [
+      "Texto.",
+      "",
+      "Acciones recomendadas:",
+      "- Revisa tu colchón de liquidez.",
+      "- Considera amortizar la hipoteca antes de fin de año.",
+    ].join("\n");
+
     expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
+  });
+
+  it("keeps advice a footnote or a year happens to end with", () => {
+    // One item deletes its whole block, so a bracketed tail that is not a state tag
+    // would take four real recommendations with it.
+    const text = [
+      "Texto.",
+      "",
+      "Acciones recomendadas:",
+      "- Aporta al plan de pensiones [límite 1.500 € anuales]",
+      "- Revisa las comisiones del fondo [2025]",
+    ].join("\n");
+
+    expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
+  });
+
+  it("keeps advice that carries a working internal link inside the sentence", () => {
+    const text =
+      "Texto.\n\nAcciones recomendadas:\n- Revisa [tu histórico](/historico) para ver la tendencia.";
+
+    expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
+  });
+
+  it("removes an item that spells out a holding's own route", () => {
+    const text =
+      "Texto.\n\nAcciones de seguimiento:\n• Abrir el plan (/patrimonio/wl_hld_abc/editar)";
+
+    expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
   });
 
   it("ignores a list that is not an action block", () => {
@@ -88,7 +157,7 @@ describe("splitProseActionBlock", () => {
     expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
   });
 
-  it("refuses a block longer than the chip cap instead of truncating it", () => {
+  it("caps a block longer than the chip cap without leaving its tail in the text", () => {
     const text = [
       "Texto.",
       "Acciones recomendadas:",
@@ -99,7 +168,15 @@ describe("splitProseActionBlock", () => {
       "- ¿Cinco?",
     ].join("\n");
 
-    expect(splitProseActionBlock(text)).toEqual({ cleaned: text, actions: [] });
+    const { cleaned, actions } = splitProseActionBlock(text);
+
+    expect(cleaned).toBe("Texto.");
+    expect(actions.map((action) => action.label)).toEqual([
+      "¿Una?",
+      "¿Dos?",
+      "¿Tres?",
+      "¿Cuatro?",
+    ]);
   });
 
   it("matches a repeated chip through emphasis and trailing punctuation", () => {

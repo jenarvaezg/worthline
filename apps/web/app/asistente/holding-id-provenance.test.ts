@@ -115,6 +115,20 @@ describe("assertsHoldingIds", () => {
     ).toBe(false);
   });
 
+  it("does not ground the id a chip resolved from a NAME (#1375)", () => {
+    // Since #1375 a chip may carry a real id the model never read: it named the
+    // holding and the app looked it up. Handing that back as grounding would let a
+    // write point at a holding the model only guessed the label of — the exclusion
+    // above is what stops it, and it is now load-bearing.
+    expect(
+      assertsHoldingIds("suggest_actions", {
+        actions: [
+          { href: `/patrimonio/${NEVER_READ}/editar`, type: "openInternalSource" },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("never grounds a write's own output", () => {
     expect(assertsHoldingIds("propose_correction", { proposalType: "correction" })).toBe(
       false,
