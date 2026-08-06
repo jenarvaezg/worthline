@@ -99,6 +99,29 @@ describe("AssistantLayer · the action block never stays in the prose", () => {
     expect(markup().match(/assistantChip/g)).toHaveLength(1);
   });
 
+  test("shows no raw markdown when nothing in the block converts (#1375)", () => {
+    chatMessages = [
+      assistantTurn(
+        [
+          "Tu plan de pensiones vale 12.000 €.",
+          "",
+          "Acciones de seguimiento:",
+          "• [Abrir detalles del Plan de Pensiones](openInternalSource?holding=«N5396 - Myinvestor Indexado Global PP»&section=patrimonio)",
+          "• Ver resumen patrimonial [blocked]",
+        ].join("\n"),
+        [],
+      ),
+    ];
+
+    const html = markup();
+
+    expect(html).toContain("Tu plan de pensiones vale 12.000 €.");
+    expect(html).not.toContain("Acciones de seguimiento");
+    expect(html).not.toContain("openInternalSource");
+    expect(html).not.toContain("blocked");
+    expect(html).not.toContain("assistantChip");
+  });
+
   test("leaves prose alone when there is no action block", () => {
     chatMessages = [assistantTurn("Tus mayores posiciones:\n- Fondo A\n- Fondo B", [])];
 

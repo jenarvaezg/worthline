@@ -23,10 +23,20 @@ import { internalProseLinkHref } from "./prose-link";
  * (this module resolves nothing the chip channel cannot already express) and leaves
  * one place where follow-ups live.
  *
- * All-or-nothing by design: an item we cannot convert leaves the whole block in the
- * text untouched. Half-eaten prose — a heading with one bullet gone — is worse than
- * the duplicate we started with, and «we didn't understand it» must never look like
- * «the assistant had nothing else to offer».
+ * The REMOVAL is all-or-nothing; the CONVERSION is not (#1375). Half-eaten prose — a
+ * heading with one bullet gone — is worse than the duplicate we started with, so a
+ * block that goes, goes whole. But an unconvertible item used to keep the whole block
+ * in the text, and the real worst case turned out to be exactly that: four turns in a
+ * row ending in `• [Abrir detalles del Plan](openInternalSource?holding=«…»)` and a
+ * bare `[blocked]`, raw markdown that reads as a broken app rather than as «the
+ * assistant had nothing else to offer».
+ *
+ * So a block goes when it is the model's ACTION LIST: something in it became a chip,
+ * or something in it is machinery that leaked (a markdown link, a `[blocked]` tag, the
+ * tool's own vocabulary). A heading followed by plain sentences — «Vende el fondo A»,
+ * «Revisa tu colchón» — is advice the reader can read, and deleting it would answer
+ * broken markdown with a silence. Whatever it is, the user never keeps the debris of
+ * an item we could not convert: those leave with their block.
  */
 
 /** `Acciones recomendadas:` / `**Acciones sugeridas**` / `Acciones de seguimiento:` */
@@ -42,6 +52,22 @@ const WHOLE_ITEM_LINK = /^\[([^\]]+)\]\(([^)]*)\)$/;
 /** Bold or italic wrapping the entire item, which the model likes to add. */
 const WRAPPING_EMPHASIS = /^(\*\*|\*|__|_)([\s\S]+)\1$/;
 
+/**
+ * A trailing state tag the model annotates its own list with: `… [blocked]`.
+ *
+ * One bare ASCII word, deliberately. Any bracketed tail would also match a footnote
+ * marker (`[1]`), a year (`[2025]`) or an aside a person would write
+ * (`[límite 1.500 € anuales]`) — and since one machinery item takes its whole block
+ * with it, a footnote would delete four real recommendations.
+ */
+const ITEM_STATE_TAG = /\[[a-z_]{3,20}\]\s*$/i;
+
+/** The action channel's own vocabulary, which only ever leaks out of machinery. */
+const ACTION_VOCABULARY = /openInternalSource|runSuggestedAnalysis|suggest_actions/i;
+
+/** A product path with a holding id spliced into it, which prose never carries. */
+const ITEM_HOLDING_PATH = /\/[a-z-]+\/wl_hld_[a-z0-9_]/i;
+
 export interface ProseActionSplit {
   /** The reply with the trailing action block removed, or the original text. */
   cleaned: string;
@@ -55,6 +81,10 @@ export interface ProseActionSplit {
  * a prose item that merely repeats one of them resolves to that chip rather than
  * being dropped — which is what makes the common «heading + a link with a made-up
  * destination + a question» block convertible at all.
+ *
+ * A block that is recognised always leaves the text, whether or not its items became
+ * chips. What is NOT recognised (no heading, a list mid-answer) is left alone: this
+ * only ever eats a list the model announced as its follow-up actions.
  */
 export function splitProseActionBlock(
   text: string,
@@ -76,16 +106,19 @@ export function splitProseActionBlock(
     if (BLOCK_HEADING.test(line)) headingAt = i;
     break;
   }
-  if (headingAt === -1 || bodies.length === 0 || bodies.length > MAX_ACTIONS) {
-    return unchanged;
-  }
+  if (headingAt === -1 || bodies.length === 0) return unchanged;
 
+  // Best-effort per item, capped like every other chip path: a chatty block of eight
+  // bullets still leaves the text, it just cannot become eight buttons.
   const actions: QuickAction[] = [];
+  let machinery = false;
   for (const body of bodies) {
+    if (looksLikeMachinery(body)) machinery = true;
+    if (actions.length === MAX_ACTIONS) continue;
     const action = proseItemAction(body, toolActions);
-    if (action === null) return unchanged;
-    actions.push(action);
+    if (action !== null) actions.push(action);
   }
+  if (actions.length === 0 && !machinery) return unchanged;
 
   return { cleaned: lines.slice(0, headingAt).join("\n").trimEnd(), actions };
 }
@@ -108,6 +141,25 @@ export function mergeQuickActions(
     if (merged.length === MAX_ACTIONS) break;
   }
   return merged;
+}
+
+/**
+ * Is this bullet a piece of the app that leaked into the answer, rather than a
+ * sentence written for the reader?
+ *
+ * Only shapes prose does not have. A bullet that IS a markdown link is a button
+ * written by hand; a link INSIDE a sentence («revisa [tu histórico](/historico)
+ * antes de aportar») is advice with a working link in it, and deleting that is the
+ * one thing worse than the bug being fixed.
+ */
+function looksLikeMachinery(body: string): boolean {
+  const item = withoutWrappingEmphasis(body);
+  return (
+    WHOLE_ITEM_LINK.test(item) ||
+    ITEM_STATE_TAG.test(item) ||
+    ACTION_VOCABULARY.test(item) ||
+    ITEM_HOLDING_PATH.test(item)
+  );
 }
 
 /** Identity for de-duplication: the destination, not the wording around it. */

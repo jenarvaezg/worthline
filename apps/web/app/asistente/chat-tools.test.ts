@@ -375,6 +375,76 @@ describe("createChatTools · suggest_actions (#631)", () => {
 
     expect(result.actions).toEqual([]);
   });
+
+  /**
+   * The model names the holding instead of citing its id (#1375) — «holding:
+   * «N5396 - Myinvestor Indexado Global PP»» — which used to be dropped in silence,
+   * leaving the turn with no chip at all and its prose block with nothing to match.
+   */
+  describe("a holding named instead of cited (#1375)", () => {
+    async function storeWithFunds(names: readonly string[]): Promise<WorthlineStore> {
+      const store = await createInMemoryStore();
+      await store.workspace.initializeWorkspace({
+        members: [{ id: "m", name: "Titular" }],
+        mode: "individual",
+      });
+      for (const [index, name] of names.entries()) {
+        await store.assets.createInvestmentAsset({
+          currency: "EUR",
+          id: `fund-${index}`,
+          instrument: "fund",
+          name,
+          ownership: [{ memberId: "m", shareBps: 10_000 }],
+        });
+      }
+      return store;
+    }
+
+    async function chipFor(store: WorthlineStore, holding: string) {
+      const result = await toolsOver(store.agentView)["suggest_actions"]?.execute?.(
+        { actions: [{ type: "openInternalSource", label: "Abrir detalles", holding }] },
+        toolCallContext(),
+      );
+      return result.actions;
+    }
+
+    it("resolves the name, guillemets and all, to the holding's own surface", async () => {
+      const store = await storeWithFunds(["N5396 - Myinvestor Indexado Global PP"]);
+      const publicId = await firstHoldingPublicId(store.agentView);
+
+      expect(await chipFor(store, "«N5396 - Myinvestor Indexado Global PP»")).toEqual([
+        {
+          type: "openInternalSource",
+          label: "Abrir detalles",
+          href: `/patrimonio/${publicId}/editar`,
+        },
+      ]);
+    });
+
+    it("drops an ambiguous name rather than opening the likeliest holding", async () => {
+      const store = await storeWithFunds(["Fondo Global A", "Fondo Global B"]);
+
+      expect(await chipFor(store, "Fondo Global")).toEqual([]);
+    });
+
+    it("drops a name no live holding carries", async () => {
+      const store = await storeWithFunds(["Fondo Global A"]);
+
+      expect(await chipFor(store, "Plan de Pensiones Inventado")).toEqual([]);
+    });
+
+    it("never lets a made-up destination through the name via (#1289)", async () => {
+      const store = await storeWithFunds(["Fondo Global A"]);
+
+      expect(
+        await chipFor(
+          store,
+          "openInternalSource?holding=Fondo Global A&section=patrimonio",
+        ),
+      ).toEqual([]);
+      expect(await chipFor(store, "https://evil.test")).toEqual([]);
+    });
+  });
 });
 
 describe("createChatTools · propose_statement_import (#767)", () => {
