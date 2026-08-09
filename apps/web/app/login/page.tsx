@@ -15,7 +15,8 @@ export const instant = false;
  * signed-out visitors can sign in with Google — or follow "probar la demo" into
  * the read-only public demo (no account needed). Successful sign-in sends them
  * to `returnTo` when valid, otherwise `/app`. Zero client JS (ADR 0009): a
- * server action POST.
+ * server action POST. In local no-auth mode (no Google pair) the Google button
+ * is disabled and a "Sesión local" entry leads into the app instead.
  */
 export default async function LoginPage({
   searchParams,
@@ -28,7 +29,13 @@ export default async function LoginPage({
     : resolved?.returnTo;
   const returnTo = parseReturnTo(rawReturnTo);
 
-  if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+  // Local no-auth mode (ADR 0030): Google is absent, so there is no session to
+  // resolve — the page advertises the local entry instead of a live sign-in.
+  const authConfigured = Boolean(
+    process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
+  );
+
+  if (authConfigured) {
     const session = await auth();
     if (session) {
       redirect(returnTo);
@@ -57,8 +64,16 @@ export default async function LoginPage({
               await signIn("google", { redirectTo: returnTo });
             }}
           >
-            <button type="submit">Iniciar sesión con Google</button>
+            <button type="submit" disabled={!authConfigured}>
+              Iniciar sesión con Google
+            </button>
           </form>
+
+          {!authConfigured && (
+            <Link className="loginLocalBtn" href={returnTo}>
+              Sesión local
+            </Link>
+          )}
 
           <p className="loginDemoLink">
             ¿Solo mirando? <Link href="/demo">Probar la demo →</Link>
