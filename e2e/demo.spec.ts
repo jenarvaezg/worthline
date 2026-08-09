@@ -119,11 +119,16 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
 
   // 5. Exiting the demo clears the persona cookie and lands on /login — the banner
   //    is gone and the sign-in affordance is shown. (The hosted-mode "/ now hits the
-  //    login wall" gate is not exercisable in the auth-less demo build.)
+  //    login wall" gate is not exercisable in the auth-less demo build.) In local
+  //    no-auth mode Google is disabled and the local entry leads into the app.
   await page.getByRole("button", { name: /Salir de la demo/ }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("note", { name: "Modo demostración" })).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /Iniciar sesión con Google/ }),
-  ).toBeVisible();
+  const googleButton = page.getByRole("button", { name: /Iniciar sesión con Google/ });
+  await expect(googleButton).toBeVisible();
+  await expect(googleButton).toBeDisabled();
+  const localEntry = page.getByRole("link", { name: /Sesión local/ });
+  await expect(localEntry).toBeVisible();
+  await localEntry.click();
+  await expect(page).toHaveURL(/\/app$/);
 });

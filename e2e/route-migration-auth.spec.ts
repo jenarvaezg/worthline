@@ -25,9 +25,12 @@ test.describe("route migration — auth gate", () => {
     page,
   }) => {
     await page.goto("/login?returnTo=https%3A%2F%2Fevil.example.com%2F");
-    await expect(
-      page.getByRole("button", { name: /Iniciar sesión con Google/ }),
-    ).toBeVisible();
+    const googleButton = page.getByRole("button", { name: /Iniciar sesión con Google/ });
+    await expect(googleButton).toBeVisible();
+    // Auth is configured here: the Google entry is live and the local no-auth
+    // entry must never render.
+    await expect(googleButton).toBeEnabled();
+    await expect(page.getByRole("link", { name: /Sesión local/ })).toHaveCount(0);
     // The page must not navigate away to the hostile URL while logged out.
     await expect(page).toHaveURL(/\/login/);
   });
