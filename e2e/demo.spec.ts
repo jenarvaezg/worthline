@@ -120,7 +120,8 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // 5. Exiting the demo clears the persona cookie and lands on /login — the banner
   //    is gone and the sign-in affordance is shown. (The hosted-mode "/ now hits the
   //    login wall" gate is not exercisable in the auth-less demo build.) In local
-  //    no-auth mode Google is disabled and the local entry leads into the app.
+  //    no-auth mode Google is disabled and the local entry leads into the app — which,
+  //    on a workspace that does not exist yet, means its onboarding. See below.
   await page.getByRole("button", { name: /Salir de la demo/ }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("note", { name: "Modo demostración" })).toHaveCount(0);
@@ -130,5 +131,17 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   const localEntry = page.getByRole("link", { name: /Sesión local/ });
   await expect(localEntry).toBeVisible();
   await localEntry.click();
-  await expect(page).toHaveURL(/\/app$/);
+  // The local entry points at `/app`, and where that SETTLES is `/empezar`: this
+  // suite's data dir is a fresh `mkdtemp` and nothing in the demo journey creates a
+  // workspace (only `/empezar`'s own action does), so the shell finds no workspace
+  // record and redirects (`page-shell.ts`). Asserting `/app` here was asserting a
+  // state the app passes THROUGH: the redirect is decided after the response has
+  // begun streaming, so the browser is already on `/app` for a moment and only then
+  // moves. `toHaveURL` polls, so waiting for the settled URL is deterministic while
+  // waiting for the intermediate one is a race — one this test won on every machine
+  // that was fast enough, and lost in CI (#1389).
+  await expect(page).toHaveURL(/\/empezar$/);
+  // The point of the entry, which the URL alone no longer states: it leaves the login
+  // wall behind and lands inside the app, on its first page rather than on /login.
+  await expect(page.getByRole("link", { name: /Sesión local/ })).toHaveCount(0);
 });
