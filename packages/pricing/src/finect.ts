@@ -1,7 +1,9 @@
 import { convertPriceToEur } from "./convert-to-eur";
 import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
-const FINECT_BASE_URL = "https://www.finect.com/planes-pensiones/";
+// One base URL covers both product sections: `/planes-pensiones/<slug>`
+// 301-redirects to `/fondos-inversion/<slug>` for a fund, and `fetch` follows it.
+const FINECT_PRODUCT_URL = "https://www.finect.com/planes-pensiones/";
 const FINECT_API_BASE_URL = "https://api.finect.com/v4/";
 // Finect's own public frontend key (the `key` header their website sends to
 // api.finect.com), not a credential we registered — so it's intentionally
@@ -21,7 +23,7 @@ export interface FinectQuote {
 export const finectProvider: PriceProvider = {
   name: "finect",
   fetchPrice: async (ctx) => {
-    const res = await fetch(FINECT_BASE_URL + encodeURIComponent(ctx.symbol), {
+    const res = await fetch(FINECT_PRODUCT_URL + encodeURIComponent(ctx.symbol), {
       signal: AbortSignal.timeout(8000),
     });
 
@@ -76,7 +78,7 @@ export async function resolveFinectProduct(symbol: string): Promise<
     })
   | null
 > {
-  const res = await fetch(FINECT_BASE_URL + encodeURIComponent(symbol), {
+  const res = await fetch(FINECT_PRODUCT_URL + encodeURIComponent(symbol), {
     signal: AbortSignal.timeout(8000),
   });
 
@@ -145,7 +147,7 @@ interface FinectJsonLd {
  * declared currency, and keeps the full precision the label rounds away
  * (21,64353 vs 21,64).
  */
-export function parseFinectQuote(html: string): FinectQuote | null {
+function parseFinectQuote(html: string): FinectQuote | null {
   const payload = parseFinectJsonLd(html);
   if (!payload) return null;
 
@@ -166,21 +168,50 @@ export function parseFinectQuote(html: string): FinectQuote | null {
   };
 }
 
+/**
+ * The product payload among the page's JSON-LD blocks — picked by having an
+ * `offers`, not by being first. Finect serves a single block today, but the day
+ * it prepends a `BreadcrumbList` (or wraps everything in a `@graph`), taking
+ * block zero would fail EVERY Finect symbol at once, and transiently: prices
+ * would quietly age instead of raising anything.
+ */
 function parseFinectJsonLd(html: string): FinectJsonLd | null {
-  const match = html.match(
-    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
+  const blocks = html.matchAll(
+    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
   );
 
-  if (!match?.[1]) return null;
+  for (const block of blocks) {
+    if (!block[1]) continue;
 
-  try {
-    const parsed = JSON.parse(match[1]) as FinectJsonLd;
-    return typeof parsed === "object" && parsed !== null ? parsed : null;
-  } catch {
-    return null;
+    try {
+      const parsed: unknown = JSON.parse(block[1]);
+      const candidates = flattenJsonLd(parsed);
+      const product = candidates.find((entry) => entry.offers !== undefined);
+      if (product) return product;
+    } catch {
+      // A malformed block is not the end of the page: try the next one.
+    }
   }
+
+  return null;
 }
 
+/** Unwrap the three shapes schema.org allows: a node, an array, a `@graph`. */
+function flattenJsonLd(parsed: unknown): FinectJsonLd[] {
+  if (Array.isArray(parsed)) return parsed.flatMap(flattenJsonLd);
+  if (typeof parsed !== "object" || parsed === null) return [];
+
+  const node = parsed as FinectJsonLd & { "@graph"?: unknown };
+
+  return node["@graph"] === undefined ? [node] : [node, ...flattenJsonLd(node["@graph"])];
+}
+
+/**
+ * schema.org offers state the price with a `.` decimal separator, so the raw
+ * string is kept (full precision, no float round-trip). A comma-formatted price
+ * is REJECTED rather than guessed at: `1,234` is 1,234 in Madrid and 1234 in
+ * London, and this parser exists because a guessed figure doubled a position.
+ */
 function normalizeOfferPrice(value: unknown): string | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
 

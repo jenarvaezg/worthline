@@ -1,20 +1,16 @@
-import { readFileSync } from "node:fs";
-
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  FUND_USD_HTML,
+  PENSION_PLAN_EUR_HTML,
+  PRODUCTO_NO_DISPONIBLE_HTML,
+} from "./__fixtures__/finect";
 import { coingeckoProvider } from "./coingecko";
 import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { fetchWithFallback } from "./registry";
 import { yahooProvider } from "./yahoo";
-
-const finectFixture = (name: string) =>
-  readFileSync(new URL(`./__fixtures__/finect/${name}`, import.meta.url), "utf8");
-
-const FUND_USD_HTML = finectFixture("fund-usd.html");
-const PENSION_PLAN_EUR_HTML = finectFixture("pension-plan-eur.html");
-const PRODUCTO_NO_DISPONIBLE_HTML = finectFixture("producto-no-disponible.html");
 
 const baseCtx = {
   assetId: "asset-1",

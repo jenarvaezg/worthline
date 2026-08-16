@@ -73,6 +73,9 @@ export function shortenProviderFailureReason(reason: string): string {
   if (httpMatch) return `error (${httpMatch[1]})`;
   if (reason === PRICE_FAILURE_REASONS.noQuote) return "sin cotización";
   if (reason === PRICE_FAILURE_REASONS.symbolNotFound) return "símbolo no encontrado";
+  if (reason === PRICE_FAILURE_REASONS.unreadableQuote) return "cotización ilegible";
+  const fxMatch = reason.match(/^No se pudo convertir ([A-Z]{3}) a EUR/);
+  if (fxMatch) return `sin tipo de cambio ${fxMatch[1]}`;
   return reason;
 }
 

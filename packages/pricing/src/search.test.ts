@@ -1,14 +1,7 @@
-import { readFileSync } from "node:fs";
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FUND_USD_HTML, PENSION_PLAN_EUR_HTML } from "./__fixtures__/finect";
 import { searchCoinGeckoSymbols, searchSymbols, searchYahooSymbols } from "./search";
-
-const finectFixture = (name: string) =>
-  readFileSync(new URL(`./__fixtures__/finect/${name}`, import.meta.url), "utf8");
-
-const PENSION_PLAN_EUR_HTML = finectFixture("pension-plan-eur.html");
-const FUND_USD_HTML = finectFixture("fund-usd.html");
 
 describe("searchYahooSymbols", () => {
   beforeEach(() => {
@@ -406,7 +399,7 @@ describe("searchSymbols", () => {
       name: "IE00BDZVHT63 - Fidelity MSCI Pacific ex Japan Index Fund",
       isin: "IE00BDZVHT63",
       currency: "USD",
-      quoteType: "FUND",
+      quoteType: "MUTUALFUND",
     });
   });
 

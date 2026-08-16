@@ -284,9 +284,14 @@ async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | 
       symbol: product.symbol,
       name: product.name,
       // The product's OWN currency (#1357): a USD fund announced as EUR is how
-      // a NAV ends up doubling a position.
+      // a NAV ends up doubling a position. It is DISPLAY metadata only — the
+      // alta flow stores the asset in EUR, which is what the provider returns
+      // after FX. Copying it onto the asset would make every refresh of this
+      // fund fail on the currency-mismatch guard.
       currency: product.currency,
-      ...(isin ? { isin, quoteType: "FUND" } : { quoteType: "PENSIONPLAN" }),
+      // `MUTUALFUND` is Yahoo's label for the same thing — one vocabulary in
+      // the candidate list, whichever provider produced the hit.
+      ...(isin ? { isin, quoteType: "MUTUALFUND" } : { quoteType: "PENSIONPLAN" }),
     };
   } catch {
     return null;
@@ -299,10 +304,11 @@ async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | 
  *
  * - `crypto` → CoinGecko only (native coins; suppresses Yahoo equity/ETF noise).
  * - `pension_plan` → Finect only (a slug resolved against its live NAV).
- * - `fund` → Yahoo, plus Finect when the query IS a Finect fund slug or URL
- *   (#1357: Spanish funds Yahoo does not list are only reachable that way).
  * - `etf`/`stock`/`index` → Yahoo only (free-text and ISIN search).
- * - no/unknown instrument → Yahoo + Finect-slug, the legacy mixed behaviour.
+ * - `fund` and no/unknown instrument → Yahoo + Finect-slug. Funds joined the
+ *   mixed lane in #1357: Spanish funds Yahoo does not list are reachable only
+ *   through their Finect slug, and `resolveFinectCandidate` stays silent unless
+ *   the query IS one, so it adds no noise to a free-text search.
  *
  * Never throws: each provider degrades independently to no results.
  */
@@ -321,15 +327,6 @@ export async function searchSymbols(
 
   if (instrument === "etf" || instrument === "stock" || instrument === "index") {
     return searchYahooSymbols(query);
-  }
-
-  if (instrument === "fund") {
-    const [yahoo, finect] = await Promise.all([
-      searchYahooSymbols(query),
-      resolveFinectCandidate(query),
-    ]);
-
-    return finect ? [finect, ...yahoo] : yahoo;
   }
 
   const [yahoo, finect] = await Promise.all([
