@@ -66,7 +66,7 @@ test("liquid drilldown: band/legend link → drill panel → breadcrumb back", a
   ).toBe("kept");
 });
 
-test("topnav navigation does not cause a full document reload (VT cross-fade, #517)", async ({
+test("topnav navigation does not cause a full document reload (soft nav, #517)", async ({
   page,
 }) => {
   // Navigate to home and tag the live document with a sentinel.
@@ -84,21 +84,21 @@ test("topnav navigation does not cause a full document reload (VT cross-fade, #5
 
   await expect(page).toHaveURL(/\/patrimonio/);
 
-  // If the VT caused a full document reload the sentinel would be gone.
+  // If the click fell through to a hard navigation the sentinel would be gone.
   const sentinel = await page.evaluate(
     () => (window as unknown as { __wlNoReload?: string }).__wlNoReload,
   );
   expect(sentinel).toBe("kept");
 });
 
-// Note: the *directional* transition type (slide-forward vs slide-back vs
-// cross-fade) is verified at the unit seam in `apps/web/app/view-transitions.test.ts`.
-// It is intentionally NOT asserted here: the runtime View Transition does not
-// fire observably under the turbopack dev server (Next only invokes
-// `document.startViewTransition` when there are named transition elements), so an
-// e2e assertion on the type would either be vacuous or require a production-only
-// observability hook. The user-observable acceptance — no full document reload —
-// is covered by the test above.
+// Note: there is no view transition to assert on. #1379 measured a production
+// build with a `document.startViewTransition` probe and counted zero calls —
+// React only opens a transition from inside a `<ViewTransition>` boundary and
+// the app has none — then retired the layer (ADR 0036 §5). An earlier version of
+// this comment blamed the turbopack dev server and "named transition elements";
+// both halves were wrong, and the mistake cost #1351 an investigation. What the
+// test above covers is the acceptance that actually holds: the topnav click is a
+// soft navigation, not a document reload.
 
 test("liquid drilldown: the selected Vista survives entering and leaving", async ({
   page,

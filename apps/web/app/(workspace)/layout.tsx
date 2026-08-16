@@ -37,9 +37,9 @@ export default function WorkspaceLayout({
           </div>
         </div>
         <div className="topbarEnd">
-          {/* usePathname() (SectionNav + ViewTransitionLink) would otherwise
-              blank the whole topnav until hydrate. Fallback paints the same
-              five links without active/transition state (#1229). */}
+          {/* usePathname() in SectionNav would otherwise blank the whole topnav
+              until hydrate. Fallback paints the same five links without the
+              active-tab marker (#1229). */}
           <Suspense fallback={<SectionNavFallback />}>
             <SectionNav />
           </Suspense>

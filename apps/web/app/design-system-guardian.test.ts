@@ -423,8 +423,8 @@ describe("Libro mayor design-system guardian (#906)", () => {
 
   test("the shell masthead is paper, not a filled panel (#910)", () => {
     // Canon §3: the hero is the only surface with a fill; the masthead is paper
-    // opened by a heavy rule, never a card. (.topbar also carries a
-    // view-transition anchor rule, so match on the recipe, not the first rule.)
+    // opened by a heavy rule, never a card. (Match on the recipe, not the first
+    // rule — .topbar may pick up further rules elsewhere in the sheet.)
     expectRecipe(".topbar", {
       background: "transparent",
       "border-bottom": "var(--rule-heavy)",

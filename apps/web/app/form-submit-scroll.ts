@@ -3,8 +3,7 @@
  *
  * Kept in a plain (non-client) module so it is unit-testable in the node
  * environment while the island (`form-submit-scroll-keeper.tsx`) holds only the
- * wiring — the same composition as `view-transitions.ts` (§5) and
- * `view-state.ts` (§3).
+ * wiring — the same composition as `active-section.ts` and `view-state.ts` (§3).
  *
  * ## Why this is a loop and not a single frame
  *

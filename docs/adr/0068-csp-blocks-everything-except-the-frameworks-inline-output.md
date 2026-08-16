@@ -9,8 +9,10 @@ enforcing it would enforce them through the back door.
 
 The reason is not missing evidence. It is that both need `'unsafe-inline'` to work at
 all. Next emits an inline bootstrap script and inline hydration payloads on every
-page; styled-jsx, inline `style` attributes and the View Transitions API all emit
-inline styles (ADR 0036). An enforced `script-src` that keeps `'unsafe-inline'` buys
+page; styled-jsx and inline `style` attributes emit inline styles. (The View
+Transitions API was a third source when this was written; #1379 retired that layer —
+see the amendment to ADR 0036 — which removes one emitter but not the need.) An
+enforced `script-src` that keeps `'unsafe-inline'` buys
 nothing — an injected inline `<script>` is exactly what it would still admit — so
 enforcing it is not a smaller version of the same decision. It is all or nothing, and
 the "all" is a nonce.

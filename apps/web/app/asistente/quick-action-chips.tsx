@@ -1,6 +1,6 @@
 "use client";
 
-import ViewTransitionLink from "@web/view-transition-link";
+import NavLink from "@web/nav-link";
 
 import type { QuickAction } from "./assistant-actions";
 
@@ -11,7 +11,7 @@ import type { QuickAction } from "./assistant-actions";
  * The two typed actions are two different HTML elements, and that is the point:
  *
  *   - `openInternalSource` is a NAVIGATION, so it is an anchor
- *     ({@link ViewTransitionLink}, the repo's own link). As a `<button>` it looked
+ *     ({@link NavLink}, the repo's own link). As a `<button>` it looked
  *     like a link, navigated like a link and behaved like neither: no destination
  *     on hover or in the status bar, no ⌘-click into a new tab, and — the reported
  *     complaint — no in-flight signal at all. Opening a source is an RSC fetch of a
@@ -35,13 +35,13 @@ export default function QuickActionChips({
     <div aria-label="Acciones sugeridas" className="assistantActions" role="group">
       {actions.map((action, i) =>
         action.type === "openInternalSource" ? (
-          <ViewTransitionLink
+          <NavLink
             className="assistantChip openInternalSource"
             href={action.href}
             key={`${action.label}-${i}`}
           >
             {action.label}
-          </ViewTransitionLink>
+          </NavLink>
         ) : (
           <button
             className="assistantChip runSuggestedAnalysis"
