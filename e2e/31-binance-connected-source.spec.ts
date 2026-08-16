@@ -20,7 +20,17 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   page,
 }) => {
   // 1. Connect with dummy credentials (the fake server ignores the HMAC signature).
+  //    The sources live on their own page since #1223: /ajustes only keeps the
+  //    summary card that leads here, and an unconnected source folds its
+  //    credentials behind "Conectar".
   await page.goto("/ajustes");
+  await page.getByRole("link", { name: "Gestionar conexiones →" }).click();
+  await expect(page).toHaveURL(/\/ajustes\/conexiones$/);
+  await page
+    .locator(".conexAvailableRow")
+    .filter({ hasText: "Binance" })
+    .locator("details.conexConnect > summary")
+    .click();
   await page.getByLabel("Clave de API de Binance").fill("e2e-key");
   await page.getByLabel("Secreto de API de Binance").fill("e2e-secret");
   await page.getByRole("button", { name: "Conectar Binance" }).click();

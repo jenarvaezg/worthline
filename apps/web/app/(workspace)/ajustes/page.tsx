@@ -1,22 +1,8 @@
 import { isDemoMode } from "@web/demo/write-guard";
-import { isPremiumIngestionAllowed } from "@web/entitlements/effective-plan";
-import {
-  PAYWALL_CONNECT_SOURCE_MESSAGE,
-  PAYWALL_SOURCES_PAUSED_MESSAGE,
-} from "@web/entitlements/paywall-copy";
-import { PremiumNotice } from "@web/entitlements/premium-notice";
-import { readEffectivePlan } from "@web/entitlements/read-effective-plan";
-import {
-  holdingDetailHref,
-  holdingPublicIdOf,
-  readHoldingPublicIdIndex,
-} from "@web/holding-route";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { resolvePageShell } from "@web/page-shell";
-import { PendingSubmit } from "@web/pending-submit";
-import { readStoreTarget } from "@web/read-store-target";
 import {
   formatMoneyMinorPrivacy,
   suggestMonthlySavingsCapacity,
@@ -35,12 +21,7 @@ import {
   updateMemberProfileAction,
 } from "./actions";
 import AjustesSkeleton from "./ajustes-skeleton";
-import { connectBinanceAction, syncBinanceAction } from "./binance-actions";
-import { aggregateSourceValueMinor, countNonDustTokens } from "./binance-helpers";
-import DisconnectBinanceFold from "./disconnect-binance-fold";
-import DisconnectNumistaFold from "./disconnect-numista-fold";
-import { connectNumistaAction, syncNumistaAction } from "./numista-actions";
-import { formatLastSync } from "./numista-helpers";
+import { CONNECTION_ADAPTERS } from "./conexiones/connection-rows";
 
 export default function AjustesPage({
   searchParams,
@@ -70,73 +51,15 @@ export async function AjustesContent({
   const { persistence, privacyMode, selectedScope, store, workspace } =
     await resolvePageShell({ searchParams: resolvedSearchParams });
 
+  // Connected sources moved to their own page (#1223): here they are a count and
+  // a link, so the settings page no longer reads positions, rung assets or the
+  // public-id index for them.
   const sources = await store.connectedSources.listSources();
-  // A connected source's «Ver» link opens the mirrored holding's ficha, which is
-  // addressed by its public `wl_hld_…` id (#1318) — never the internal one. A
-  // holding with no registry row simply loses its link here rather than taking
-  // the whole settings page down with it.
-  const publicIds = await readHoldingPublicIdIndex(store);
-  const fichaHref = (internalId: string): string | null => {
-    const publicId = holdingPublicIdOf(publicIds, internalId);
-    return publicId ? holdingDetailHref(publicId) : null;
-  };
+  const connectedCount = CONNECTION_ADAPTERS.filter((adapter) =>
+    sources.some((source) => source.adapter === adapter),
+  ).length;
   const allAssets = await store.assets.readAssets();
   const overrides = await store.readWarningOverrides();
-
-  // Connected sources are premium ingestion (#1162): a free workspace keeps its
-  // already-imported data, but sees an honest paused/connect reminder instead of
-  // syncing. Reads and manual tracking on this page stay free.
-  const sourcesGated = !isPremiumIngestionAllowed(
-    await readEffectivePlan(await readStoreTarget()),
-  );
-
-  // The connected Numista source (PRD #160), if any. The derived holding's value
-  // and coin count come from the asset row + its positions.
-  const numistaRow = sources.find((source) => source.adapter === "numista");
-  const numistaPositions = numistaRow
-    ? await store.connectedSources.readPositions(numistaRow.id)
-    : [];
-  const numistaAsset = numistaRow
-    ? (allAssets.find((a) => a.id === numistaRow.assetId) ?? null)
-    : null;
-  const numistaSource = numistaRow
-    ? {
-        id: numistaRow.id,
-        assetId: numistaRow.assetId,
-        label: numistaRow.label,
-        lastSyncAt: numistaRow.lastSyncAt,
-        coinCount: numistaPositions.reduce(
-          (sum, p) => sum + (p.kind === "coin" ? p.quantity : 0),
-          0,
-        ),
-        valueMinor: numistaAsset?.currentValue.amountMinor ?? 0,
-      }
-    : null;
-
-  // The connected Binance source (PRD #245/#248), if any. A source now spans
-  // rungs — one asset per occupied rung (market + term-locked) — so the tile
-  // AGGREGATES across the source's assets: value = Σ asset values, token count =
-  // the distinct non-dust tokens (#479). "Ver →" links to the market (primary) asset.
-  const binanceRow = sources.find((source) => source.adapter === "binance");
-  const binancePositions = binanceRow
-    ? await store.connectedSources.readPositions(binanceRow.id)
-    : [];
-  const binanceAssetIds = binanceRow
-    ? new Set(await store.connectedSources.listSourceAssetIds(binanceRow.id))
-    : new Set<string>();
-  const binanceValueMinor = binanceRow
-    ? aggregateSourceValueMinor(allAssets, binanceAssetIds)
-    : 0;
-  const binanceSource = binanceRow
-    ? {
-        id: binanceRow.id,
-        assetId: binanceRow.assetId,
-        label: binanceRow.label,
-        lastSyncAt: binanceRow.lastSyncAt,
-        tokenCount: countNonDustTokens(binancePositions),
-        valueMinor: binanceValueMinor,
-      }
-    : null;
 
   // The overrides list used to print the raw internal id (`asset_activo_cero_…`)
   // at the user. It reads as noise to a human and it is the retired vocabulary on
@@ -144,9 +67,6 @@ export async function AjustesContent({
   // deleted holding has no name to show and keeps the stored id, which is the only
   // thing that still identifies it.
   const holdingNameById = new Map(allAssets.map((asset) => [asset.id, asset.name]));
-
-  const numistaFichaHref = numistaSource ? fichaHref(numistaSource.assetId) : null;
-  const binanceFichaHref = binanceSource ? fichaHref(binanceSource.assetId) : null;
 
   // Monthly savings capacity suggestion (#425): the historical average of net
   // money invested, offered as the default in the FIRE form. Workspace-wide
@@ -612,185 +532,20 @@ export async function AjustesContent({
           </a>
         </section>
 
-        {/* ── Fuentes conectadas ──────────────────────────────────── */}
-        <section className="ajustesPanel section" aria-label="Fuentes conectadas">
+        {/* ── Conexiones (#1223: la sección vive en /ajustes/conexiones) ── */}
+        <section className="ajustesPanel section" aria-label="Conexiones">
           <div className="panelHeader">
-            <h2>Fuentes conectadas</h2>
-            <span>Numista y Binance</span>
+            <h2>Conexiones</h2>
+            <span>
+              {connectedCount} de {CONNECTION_ADAPTERS.length} conectadas
+            </span>
           </div>
-
-          {sourcesGated ? (
-            <PremiumNotice
-              cta={false}
-              message={
-                sources.length > 0
-                  ? PAYWALL_SOURCES_PAUSED_MESSAGE
-                  : PAYWALL_CONNECT_SOURCE_MESSAGE
-              }
-            />
-          ) : null}
-
-          {formError?.formId === "numista" ? (
-            <p className="formError" role="alert">
-              {formError.message}
-            </p>
-          ) : null}
-
-          {numistaSource ? (
-            <div className="coinSourceTile">
-              <div className="coinSourceStatus">
-                <span className="coinStatusPill">Conectado</span>
-                <dl className="coinSourceStats">
-                  <div>
-                    <dt>Última sincronización</dt>
-                    <dd>{formatLastSync(numistaSource.lastSyncAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Monedas</dt>
-                    <dd className="coinNum">{numistaSource.coinCount}</dd>
-                  </div>
-                  <div>
-                    <dt>Valor</dt>
-                    <dd className="coinNum">
-                      {formatMoneyMinorPrivacy(
-                        {
-                          amountMinor: numistaSource.valueMinor,
-                          currency: "EUR",
-                        },
-                        privacyMode,
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-              <div className="coinSourceActions">
-                <form action={syncNumistaAction} className="coinSyncForm">
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="sourceId" type="hidden" value={numistaSource.id} />
-                  <PendingSubmit pendingLabel="Sincronizando…">
-                    Sincronizar Numista
-                  </PendingSubmit>
-                </form>
-                {numistaFichaHref ? (
-                  <Link className="actionLink" href={numistaFichaHref}>
-                    Ver colección →
-                  </Link>
-                ) : null}
-                <DisconnectNumistaFold
-                  currentUrl={currentUrl}
-                  sourceId={numistaSource.id}
-                />
-              </div>
-            </div>
-          ) : (
-            <form action={connectNumistaAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <label>
-                Clave de API de Numista
-                <input
-                  aria-label="Clave de API de Numista"
-                  autoComplete="off"
-                  name="apiKey"
-                  placeholder="Pega aquí tu clave de API"
-                  type="password"
-                />
-              </label>
-              <p className="muted">
-                Conecta tu colección de Numista para reflejar tus monedas como un activo
-                ilíquido con valor calculado. Usa una clave de solo lectura; se guarda{" "}
-                cifrada y nunca se exporta.
-              </p>
-              <button type="submit">Conectar Numista</button>
-            </form>
-          )}
-
-          {/* ── Binance (PRD #245, ADR 0021) ─────────────────────────── */}
-          {formError?.formId === "binance" ? (
-            <p className="formError" role="alert">
-              {formError.message}
-            </p>
-          ) : null}
-
-          {binanceSource ? (
-            <div className="coinSourceTile">
-              <div className="coinSourceStatus">
-                <span className="coinStatusPill">Conectado</span>
-                <dl className="coinSourceStats">
-                  <div>
-                    <dt>Última sincronización</dt>
-                    <dd>{formatLastSync(binanceSource.lastSyncAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Tokens</dt>
-                    <dd className="coinNum">{binanceSource.tokenCount}</dd>
-                  </div>
-                  <div>
-                    <dt>Valor</dt>
-                    <dd className="coinNum">
-                      {formatMoneyMinorPrivacy(
-                        {
-                          amountMinor: binanceSource.valueMinor,
-                          currency: "EUR",
-                        },
-                        privacyMode,
-                      )}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-              <div className="coinSourceActions">
-                <form action={syncBinanceAction} className="coinSyncForm">
-                  <input name="currentUrl" type="hidden" value={currentUrl} />
-                  <input name="sourceId" type="hidden" value={binanceSource.id} />
-                  <PendingSubmit pendingLabel="Sincronizando…">
-                    Sincronizar Binance
-                  </PendingSubmit>
-                </form>
-                {binanceFichaHref ? (
-                  <Link className="actionLink" href={binanceFichaHref}>
-                    Ver →
-                  </Link>
-                ) : null}
-                <DisconnectBinanceFold
-                  currentUrl={currentUrl}
-                  sourceId={binanceSource.id}
-                  summary="Desconectar"
-                />
-              </div>
-            </div>
-          ) : (
-            <form action={connectBinanceAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <label>
-                Clave de API de Binance
-                <input
-                  aria-label="Clave de API de Binance"
-                  autoComplete="off"
-                  name="apiKey"
-                  placeholder="Pega aquí tu clave de API"
-                  type="password"
-                />
-              </label>
-              <label>
-                Secreto de API de Binance
-                <input
-                  aria-label="Secreto de API de Binance"
-                  autoComplete="off"
-                  name="apiSecret"
-                  placeholder="Pega aquí tu secreto de API"
-                  type="password"
-                />
-              </label>
-              <p className="muted">
-                Conecta tu cuenta de Binance para reflejar tus tokens como un activo
-                valorado en vivo. Usa <strong>obligatoriamente</strong> una clave de{" "}
-                <strong>solo lectura</strong> («Enable Reading»), sin permisos de trading
-                ni de retiro: worthline solo lee saldos. La clave y el secreto se guardan{" "}
-                <strong>cifrados</strong> y nunca se exportan.
-              </p>
-              <button type="submit">Conectar Binance</button>
-            </form>
-          )}
+          <p className="muted">
+            Numista y Binance se conectan, sincronizan y desconectan en su propia página.
+          </p>
+          <Link className="panelAction" href="/ajustes/conexiones">
+            Gestionar conexiones →
+          </Link>
         </section>
 
         {/* ── Overrides de avisos ──────────────────────────────────── */}

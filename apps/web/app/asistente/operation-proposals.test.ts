@@ -368,7 +368,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
     expect(built.ok).toBe(false);
     if (built.ok) return;
     expect(built.error).toContain("fuente conectada");
-    expect(built.error).toContain("/ajustes");
+    expect(built.error).toContain("/ajustes/conexiones");
     store.close();
   });
 

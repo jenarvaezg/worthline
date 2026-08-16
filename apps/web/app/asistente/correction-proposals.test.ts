@@ -223,7 +223,7 @@ describe("buildCorrectionProposal · connected sources are sync-owned (uso real 
     // Honest and actionable: which source owns it, and where the repair lives.
     expect(built.error).toContain("Colección de monedas");
     expect(built.error).toContain("numista");
-    expect(built.error).toContain("/ajustes");
+    expect(built.error).toContain("/ajustes/conexiones");
     // And nothing was persisted: no draft, no anchor.
     expect(await store.assets.readValuationAnchors(assetId)).toHaveLength(0);
     store.close();

@@ -179,7 +179,7 @@ describe("buildHoldingRemovalProposal (#1106)", () => {
     if (built.ok) return;
     expect(built.error).toContain("Colección de monedas");
     expect(built.error).toContain("numista");
-    expect(built.error).toContain("/ajustes");
+    expect(built.error).toContain("/ajustes/conexiones");
     // All-or-nothing: the manual holding in the same batch is untouched, and no
     // draft was persisted for a batch that can never be applied.
     expect(await store.agentView.readTrashedHoldings()).toHaveLength(0);

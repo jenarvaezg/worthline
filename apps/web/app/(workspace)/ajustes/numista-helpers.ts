@@ -9,7 +9,7 @@
  * the local DB only — never logged and never placed in a redirect URL.
  */
 
-import type { Member, OwnershipShare } from "@worthline/domain";
+import type { Member, OwnershipShare, SourcePosition } from "@worthline/domain";
 import type { NumistaToken } from "@worthline/pricing";
 
 /**
@@ -80,6 +80,19 @@ export function parseNumistaToken(tokenJson: string | null): NumistaToken | null
   } catch {
     return null;
   }
+}
+
+/**
+ * Count the coins a Numista source holds: the summed QUANTITY of its coin
+ * positions, not the number of rows — a row can be «3 duros de plata». Mirrors
+ * `countNonDustTokens` on the Binance side so the conexiones registry (#1223)
+ * asks every adapter the same question.
+ */
+export function countCoins(positions: readonly SourcePosition[]): number {
+  return positions.reduce(
+    (sum, position) => sum + (position.kind === "coin" ? position.quantity : 0),
+    0,
+  );
 }
 
 /** Format an ISO last-sync stamp for the connected-source tile, or a dash. */

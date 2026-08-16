@@ -1,7 +1,16 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
+interface SourceRow {
+  id: string;
+  adapter: string;
+  assetId: string;
+  label: string;
+  lastSyncAt: string | null;
+}
+
 const calls = vi.hoisted(() => ({
-  listSources: vi.fn(async () => []),
+  listSources: vi.fn(async (): Promise<SourceRow[]> => []),
   readAssets: vi.fn(async () => [
     {
       id: "asset_cash",
@@ -85,5 +94,44 @@ describe("ajustes page data loading (#636)", () => {
     expect(calls.listSources).toHaveBeenCalledTimes(1);
     expect(calls.readAssets).toHaveBeenCalledTimes(1);
     expect(calls.readWarningOverrides).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("las fuentes conectadas ya no viven aquí (#1223)", () => {
+  test("la sección es una tarjeta-resumen: ni conectar, ni sincronizar, ni desconectar", async () => {
+    calls.listSources.mockResolvedValueOnce([
+      {
+        id: "src_numista",
+        adapter: "numista",
+        assetId: "asset_numista",
+        label: "Colección Numista",
+        lastSyncAt: "2026-08-16T05:12:41.000Z",
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain("/ajustes/conexiones");
+    expect(html).toContain("1 de 2 conectadas");
+    for (const gone of [
+      "Conectar Numista",
+      "Conectar Binance",
+      "Sincronizar Numista",
+      "Sincronizar Binance",
+      "Clave de API de Numista",
+      "Clave de API de Binance",
+    ]) {
+      expect(html).not.toContain(gone);
+    }
+  });
+
+  test("no se leen posiciones ni activos de la fuente para pintar el resumen", async () => {
+    await AjustesContent({ searchParams: Promise.resolve({}) });
+
+    expect(calls.readPositions).not.toHaveBeenCalled();
+    expect(calls.readSourceAssetIds).not.toHaveBeenCalled();
+    expect(calls.readPublicIds).not.toHaveBeenCalled();
   });
 });

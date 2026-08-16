@@ -187,7 +187,9 @@ function fixSurface(
     }
     case "source_freshness":
     case "projection_gap":
-      return { href: "/ajustes", label: "Ver fuentes" };
+      // Las fuentes vivas tienen página propia desde #1223; /ajustes solo lleva
+      // ya una tarjeta-resumen, y el aviso apunta a donde se repara.
+      return { href: "/ajustes/conexiones", label: "Ver fuentes" };
     case "missing_configuration": {
       // Only MISSING_DEBT_MODEL reaches the hero — MISSING_FIRE_CONFIG is
       // filtered out upstream (it does not bear on today's figure).
