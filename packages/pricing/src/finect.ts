@@ -264,6 +264,16 @@ function parseFinectName(html: string): string | null {
   return name || null;
 }
 
+/**
+ * The NAV date stamp, or null when the page does not carry a real one.
+ *
+ * The regex bounds the digits, not the calendar (issue #1380): `31/02/2026`
+ * used to sail through and be stored — and shown back to the user as
+ * `31/02/2026` — as a day February does not have. A stamp we cannot trust is
+ * dropped, never the price: `fetchPrice` and `resolveFinectProduct` both spread
+ * `priceDate` conditionally, and the assistant already says "sin fecha del
+ * proveedor". An unreadable stamp does not make the NAV any less true.
+ */
 function parseFinectNavDate(html: string): string | null {
   const text = toPlainText(html);
   const match = text.match(
@@ -272,10 +282,24 @@ function parseFinectNavDate(html: string): string | null {
 
   if (!match?.[1] || !match[2] || !match[3]) return null;
 
-  const day = match[1].padStart(2, "0");
-  const month = match[2].padStart(2, "0");
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
 
-  return `${match[3]}-${month}-${day}`;
+  // Round-trip through UTC: out-of-range components roll over silently
+  // (Feb 31 → Mar 3, month 25 → next year), so only a date whose parts survive
+  // intact is one the calendar actually has.
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
 }
 
 function toPlainText(html: string): string {
