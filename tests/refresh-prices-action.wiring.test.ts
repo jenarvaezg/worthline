@@ -2,10 +2,21 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
+import { readFileSync } from "node:fs";
+
 import { refreshPricesAction } from "@web/inversiones/actions";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import type { PriceProvider } from "@worthline/pricing";
 import { catchRedirect, fd } from "./helpers";
+
+/** The real Finect sheet the provider parses (see the fixture README, #1357). */
+const FINECT_PENSION_PLAN_EUR_HTML = readFileSync(
+  new URL(
+    "../packages/pricing/src/__fixtures__/finect/pension-plan-eur.html",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 let store: WorthlineStore;
 
@@ -201,11 +212,7 @@ describe("refreshPricesAction wiring", () => {
       "fetch",
       vi.fn().mockResolvedValueOnce({
         ok: true,
-        text: async () => `
-          <p>Valor liquidativo</p>
-          <strong>20,63 €</strong>
-          <span>Fecha de valor liquidativo: 10/06/2026</span>
-        `,
+        text: async () => FINECT_PENSION_PLAN_EUR_HTML,
       } as Response),
     );
 
@@ -216,7 +223,7 @@ describe("refreshPricesAction wiring", () => {
     expect(url).toContain("ok=prices_refreshed");
     expect(url).toContain("updated=1");
     expect(await store.operations.readPriceCache("asset_pension")).toMatchObject({
-      price: "20.63",
+      price: "21.64353",
       source: "finect",
     });
   });

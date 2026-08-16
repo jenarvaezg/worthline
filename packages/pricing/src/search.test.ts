@@ -1,6 +1,14 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { searchCoinGeckoSymbols, searchSymbols, searchYahooSymbols } from "./search";
+
+const finectFixture = (name: string) =>
+  readFileSync(new URL(`./__fixtures__/finect/${name}`, import.meta.url), "utf8");
+
+const PENSION_PLAN_EUR_HTML = finectFixture("pension-plan-eur.html");
+const FUND_USD_HTML = finectFixture("fund-usd.html");
 
 describe("searchYahooSymbols", () => {
   beforeEach(() => {
@@ -283,13 +291,7 @@ describe("searchSymbols", () => {
   it("resolves a Finect slug for a pension_plan query", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => `
-        <html>
-          <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
-          <body><strong>20,29 €</strong>
-          <span>Fecha de valor liquidativo: 10/06/2026</span></body>
-        </html>
-      `,
+      text: async () => PENSION_PLAN_EUR_HTML,
     } as Response);
 
     const result = await searchSymbols("N5394-Myinvestor", "pension_plan");
@@ -308,13 +310,7 @@ describe("searchSymbols", () => {
   it("resolves a pasted Finect pension-plan URL", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => `
-        <html>
-          <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
-          <body><strong>20,29 €</strong>
-          <span>Fecha de valor liquidativo: 10/06/2026</span></body>
-        </html>
-      `,
+      text: async () => PENSION_PLAN_EUR_HTML,
     } as Response);
 
     const result = await searchSymbols(
@@ -348,13 +344,7 @@ describe("searchSymbols", () => {
       } as Response)
       .mockResolvedValueOnce({
         ok: true,
-        text: async () => `
-          <html>
-            <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
-            <body><strong>20,29 €</strong>
-            <span>Fecha de valor liquidativo: 10/06/2026</span></body>
-          </html>
-        `,
+        text: async () => PENSION_PLAN_EUR_HTML,
       } as Response);
 
     const result = await searchSymbols("N5394", "pension_plan");
@@ -386,13 +376,7 @@ describe("searchSymbols", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ quotes: [] }) } as Response)
       .mockResolvedValueOnce({
         ok: true,
-        text: async () => `
-          <html>
-            <head><title>N5394 - Myinvestor Indexado S&amp;P 500 PP</title></head>
-            <body><strong>20,29 €</strong>
-            <span>Fecha de valor liquidativo: 10/06/2026</span></body>
-          </html>
-        `,
+        text: async () => PENSION_PLAN_EUR_HTML,
       } as Response);
 
     const result = await searchSymbols("N5394-Myinvestor");
@@ -403,6 +387,26 @@ describe("searchSymbols", () => {
       name: "N5394 - Myinvestor Indexado S&P 500 PP",
       currency: "EUR",
       quoteType: "PENSIONPLAN",
+    });
+  });
+
+  it("resolves a pasted Finect FUND url for a fund query, in its own currency (#1357)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ quotes: [] }) } as Response)
+      .mockResolvedValueOnce({ ok: true, text: async () => FUND_USD_HTML } as Response);
+
+    const result = await searchSymbols(
+      "https://www.finect.com/fondos-inversion/IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc",
+      "fund",
+    );
+
+    expect(result[0]).toEqual({
+      provider: "finect",
+      symbol: "IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc",
+      name: "IE00BDZVHT63 - Fidelity MSCI Pacific ex Japan Index Fund",
+      isin: "IE00BDZVHT63",
+      currency: "USD",
+      quoteType: "FUND",
     });
   });
 

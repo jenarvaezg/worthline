@@ -1,6 +1,6 @@
+import { convertPriceToEur } from "./convert-to-eur";
 import { fetchHttpWithRetry } from "./fetch-with-retry";
 import type { PriceProvider } from "./index";
-import { resolveProvider } from "./registry";
 
 interface YahooChartResponse {
   chart?: {
@@ -35,7 +35,8 @@ const MS_PER_DAY = 86_400_000;
 // in `./registry` (`fallbackChains`) and applied by `fetchWithFallback`, so a
 // Yahoo miss returns null here and the runner reaches for Stooq (issue #243).
 // The EUR conversion (Yahoo→ECB FX) stays — it is a composition pipeline, not a
-// fallback — but resolves ECB via the registry rather than a hardcoded import.
+// fallback — and lives in `./convert-to-eur`, which resolves ECB via the
+// registry rather than a hardcoded import.
 export const yahooProvider: PriceProvider = {
   name: "yahoo",
   fetchPrice: async (ctx) => {
@@ -59,11 +60,7 @@ export const yahooProvider: PriceProvider = {
       if (price == null || !Number.isFinite(price)) return null;
 
       const currency = meta?.currency ?? ctx.currency;
-      const priceInEur = await convertYahooPriceToEur(
-        decimalFromNumber(price),
-        currency,
-        ctx,
-      );
+      const priceInEur = await convertPriceToEur(decimalFromNumber(price), currency, ctx);
 
       return priceInEur
         ? {
@@ -136,23 +133,4 @@ function isStaleYahooMarketDate(priceDate: string | undefined, nowIso: string): 
 
   // Seven days tolerates weekends/holidays while rejecting dead listings.
   return now - marketDate > YAHOO_STALE_MARKET_DATE_DAYS * MS_PER_DAY;
-}
-
-export async function convertYahooPriceToEur(
-  price: string,
-  currency: string,
-  ctx: Parameters<PriceProvider["fetchPrice"]>[0],
-): Promise<string | null> {
-  if (currency === "EUR") return price;
-
-  // FX conversion is a pipeline (Yahoo price × ECB rate must both succeed), not
-  // a fallback — but ECB resolves through the registry so no cross-provider
-  // import is buried in this body (issue #243).
-  const fx = await resolveProvider("ecb").fetchPrice({ ...ctx, symbol: currency });
-  if (!fx || "failed" in fx) return null;
-
-  const converted = Number(price) * Number(fx.price);
-  if (!Number.isFinite(converted)) return null;
-
-  return String(Math.round((converted + Number.EPSILON) * 100000000) / 100000000);
 }

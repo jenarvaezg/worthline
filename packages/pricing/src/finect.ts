@@ -1,3 +1,4 @@
+import { convertPriceToEur } from "./convert-to-eur";
 import { PRICE_FAILURE_REASONS, type PriceProvider } from "./index";
 
 const FINECT_BASE_URL = "https://www.finect.com/planes-pensiones/";
@@ -9,6 +10,13 @@ const FINECT_API_BASE_URL = "https://api.finect.com/v4/";
 // it; `resolveFinectPlanSymbolByCode` already degrades to null on any non-OK
 // response, so that failure mode is handled.
 const FINECT_API_KEY = "OgcqanUxQ4S6Y5VVvnwlJayUuxeg8Ah5";
+
+/** A NAV as Finect publishes it: native amount plus its declared currency. */
+export interface FinectQuote {
+  price: string;
+  currency: string;
+  priceDate?: string;
+}
 
 export const finectProvider: PriceProvider = {
   name: "finect",
@@ -22,36 +30,52 @@ export const finectProvider: PriceProvider = {
     }
 
     const html = await res.text();
-    const price = parseFinectNavPrice(html);
+    const quote = parseFinectQuote(html);
 
-    // HTTP-OK but no parseable NAV — Finect's `Producto no disponible` soft-404.
-    if (!price) {
-      return { failed: true, reason: PRICE_FAILURE_REASONS.symbolNotFound };
+    if (!quote) {
+      // Finect's `Producto no disponible` soft-404 is a dead symbol (permanent);
+      // a product page we simply cannot read is a layout change (transient), and
+      // must not discard a good cached price.
+      return isProductoNoDisponible(html)
+        ? { failed: true, reason: PRICE_FAILURE_REASONS.symbolNotFound }
+        : { failed: true, reason: PRICE_FAILURE_REASONS.unreadableQuote };
     }
 
-    const priceDate = parseFinectNavDate(html);
+    // Funds are often denominated in USD (issue #1357). Passing that figure off
+    // as EUR doubled a position's value, so an unavailable rate is a failure,
+    // never a 1:1 pass-through.
+    const priceInEur = await convertPriceToEur(quote.price, quote.currency, ctx);
+
+    if (!priceInEur) {
+      return {
+        failed: true,
+        reason: PRICE_FAILURE_REASONS.fxUnavailable(quote.currency),
+      };
+    }
 
     return {
-      price,
+      price: priceInEur,
       currency: "EUR",
-      ...(priceDate ? { priceDate } : {}),
+      ...(quote.priceDate ? { priceDate: quote.priceDate } : {}),
     };
   },
 };
 
 /**
- * Resolve a Finect pension-plan symbol (the slug after
- * `/planes-pensiones/`, e.g. `N5394-Myinvestor`) to its plan name and current
- * NAV. Returns null for a missing plan or Finect's `Producto no disponible`
- * soft-404 page (HTTP 200 with no NAV) — the absence of a parseable NAV is the
- * signal that the symbol does not resolve to a real plan.
+ * Resolve a Finect product symbol (the slug after `/planes-pensiones/` or
+ * `/fondos-inversion/`, e.g. `N5394-Myinvestor` or
+ * `IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc`) to its name and current
+ * NAV **in its own currency**. Returns null for a missing product or Finect's
+ * `Producto no disponible` soft-404 page (HTTP 200 with no offer) — the absence
+ * of a parseable NAV is the signal that the symbol does not resolve.
  */
-export async function resolveFinectPlan(symbol: string): Promise<{
-  symbol: string;
-  name: string;
-  price: string;
-  priceDate?: string;
-} | null> {
+export async function resolveFinectProduct(symbol: string): Promise<
+  | (FinectQuote & {
+      symbol: string;
+      name: string;
+    })
+  | null
+> {
   const res = await fetch(FINECT_BASE_URL + encodeURIComponent(symbol), {
     signal: AbortSignal.timeout(8000),
   });
@@ -59,17 +83,14 @@ export async function resolveFinectPlan(symbol: string): Promise<{
   if (!res.ok) return null;
 
   const html = await res.text();
-  const price = parseFinectNavPrice(html);
+  const quote = parseFinectQuote(html);
 
-  if (!price) return null;
-
-  const priceDate = parseFinectNavDate(html);
+  if (!quote) return null;
 
   return {
     symbol,
     name: parseFinectName(html) ?? symbol,
-    price,
-    ...(priceDate ? { priceDate } : {}),
+    ...quote,
   };
 }
 
@@ -106,6 +127,99 @@ export async function resolveFinectPlanSymbolByCode(
   return alias ? `${isin}-${alias}` : null;
 }
 
+interface FinectJsonLd {
+  offers?: {
+    price?: unknown;
+    priceCurrency?: unknown;
+  };
+  additionalProperty?: Array<{ name?: unknown; value?: unknown }>;
+}
+
+/**
+ * Read the NAV from the page's schema.org `InvestmentFund` payload.
+ *
+ * The visible label is NOT a viable source (issue #1357): scraping the first
+ * `<digits> €` out of the flattened HTML matched `%20Europa` on a USD fund
+ * (a URL-encoded space plus the start of "Europa" → a 20 € NAV) and `%22euribor`
+ * on the soft-404 page (→ 22 €). The JSON-LD offer is unambiguous, carries the
+ * declared currency, and keeps the full precision the label rounds away
+ * (21,64353 vs 21,64).
+ */
+export function parseFinectQuote(html: string): FinectQuote | null {
+  const payload = parseFinectJsonLd(html);
+  if (!payload) return null;
+
+  const price = normalizeOfferPrice(payload.offers?.price);
+  const currency =
+    normalizeCurrency(payload.offers?.priceCurrency) ?? declaredCurrency(payload);
+
+  // A NAV without a declared currency is unusable: assuming EUR is exactly the
+  // bug this parser exists to prevent.
+  if (!price || !currency) return null;
+
+  const priceDate = parseFinectNavDate(html);
+
+  return {
+    price,
+    currency,
+    ...(priceDate ? { priceDate } : {}),
+  };
+}
+
+function parseFinectJsonLd(html: string): FinectJsonLd | null {
+  const match = html.match(
+    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
+  );
+
+  if (!match?.[1]) return null;
+
+  try {
+    const parsed = JSON.parse(match[1]) as FinectJsonLd;
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOfferPrice(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+
+  const price = Number(value);
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  return String(value).trim();
+}
+
+function normalizeCurrency(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  const currency = value.trim().toUpperCase();
+
+  return /^[A-Z]{3}$/.test(currency) ? currency : null;
+}
+
+/** Fallback for offers that omit `priceCurrency`: the page's `Divisa` property. */
+function declaredCurrency(payload: FinectJsonLd): string | null {
+  const property = payload.additionalProperty?.find(
+    (entry) =>
+      typeof entry?.name === "string" && entry.name.trim().toLowerCase() === "divisa",
+  );
+
+  return normalizeCurrency(property?.value);
+}
+
+/**
+ * Finect's soft-404: HTTP 200 with `Producto no disponible` as the page's own
+ * heading. Matched on the title and the `<h1>` only — never on the whole body,
+ * where an unrelated widget could carry the phrase and turn a live product into
+ * a dead symbol.
+ */
+function isProductoNoDisponible(html: string): boolean {
+  const headline = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "";
+
+  return /producto no disponible/i.test(`${parseFinectName(html) ?? ""} ${headline}`);
+}
+
 function parseFinectName(html: string): string | null {
   const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
 
@@ -117,15 +231,6 @@ function parseFinectName(html: string): string | null {
     .trim();
 
   return name || null;
-}
-
-function parseFinectNavPrice(html: string): string | null {
-  const text = toPlainText(html);
-  const match = text.match(/(\d+(?:\.\d{3})*,\d+|\d+\.\d+|\d+)\s*(?:\u20ac|EUR)/i);
-
-  if (!match?.[1]) return null;
-
-  return match[1].replace(/\./g, "").replace(",", ".");
 }
 
 function parseFinectNavDate(html: string): string | null {
@@ -144,7 +249,7 @@ function parseFinectNavDate(html: string): string | null {
 
 function toPlainText(html: string): string {
   return html
-    .replace(/&euro;/gi, "\u20ac")
+    .replace(/&euro;/gi, "€")
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();

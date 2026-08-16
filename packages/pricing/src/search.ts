@@ -1,7 +1,7 @@
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 
 import { coingeckoBaseUrl } from "./coingecko";
-import { resolveFinectPlan, resolveFinectPlanSymbolByCode } from "./finect";
+import { resolveFinectPlanSymbolByCode, resolveFinectProduct } from "./finect";
 
 /**
  * A symbol-search hit: a provider + symbol pair ready to fill an investment's
@@ -213,10 +213,15 @@ export async function searchCoinGeckoSymbols(query: string): Promise<SymbolCandi
   }
 }
 
+/** The two Finect product sections that serve the same NAV sheet. */
+const FINECT_PATH_MARKERS = ["/planes-pensiones/", "/fondos-inversion/"];
 /**
- * A Finect pension-plan slug looks like `<DGS code>-<slug>`, e.g.
- * `N5394-Myinvestor_indexado_sp_500_pp`; a bare DGS code like `N5394` needs an
- * API lookup before the public sheet URL can be validated.
+ * A Finect product slug looks like `<code>-<slug>`, where the code is either a
+ * DGS pension code (`N5394-Myinvestor_indexado_sp_500_pp`) or an ISIN
+ * (`IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc`, issue #1357 — funds
+ * were unreachable from the search box, so their symbols had to be typed by
+ * hand). A bare DGS code like `N5394` needs an API lookup before the public
+ * sheet URL can be validated.
  */
 function finectSymbolFromQuery(
   query: string,
@@ -233,10 +238,12 @@ function finectSymbolFromQuery(
     // Not a URL; treat it as a raw slug or copied path.
   }
 
-  const marker = "/planes-pensiones/";
-  const markerIndex = candidate.toLowerCase().indexOf(marker);
-  if (markerIndex >= 0) {
-    candidate = candidate.slice(markerIndex + marker.length);
+  for (const marker of FINECT_PATH_MARKERS) {
+    const markerIndex = candidate.toLowerCase().indexOf(marker);
+    if (markerIndex >= 0) {
+      candidate = candidate.slice(markerIndex + marker.length);
+      break;
+    }
   }
 
   const slug = (decodeURIComponent(candidate).split(/[?#]/, 1)[0] ?? "").replace(
@@ -244,7 +251,7 @@ function finectSymbolFromQuery(
     "",
   );
 
-  if (/^[A-Za-z]?\d{3,}-[A-Za-z0-9_-]+$/.test(slug)) {
+  if (/^(?:[A-Za-z]{2}[A-Za-z0-9]{9}\d|[A-Za-z]?\d{3,})-[A-Za-z0-9_-]+$/.test(slug)) {
     return { kind: "slug", value: slug };
   }
 
@@ -266,15 +273,20 @@ async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | 
         : lookup.value;
     if (!symbol) return null;
 
-    const plan = await resolveFinectPlan(symbol);
-    if (!plan) return null;
+    const product = await resolveFinectProduct(symbol);
+    if (!product) return null;
+
+    // `IE00BDZVHT63-…` opens a fund slug; `N5394-…`, a pension-plan one.
+    const isin = normalizedIsin(symbol.split("-", 1)[0] ?? "");
 
     return {
       provider: "finect",
-      symbol: plan.symbol,
-      name: plan.name,
-      currency: "EUR",
-      quoteType: "PENSIONPLAN",
+      symbol: product.symbol,
+      name: product.name,
+      // The product's OWN currency (#1357): a USD fund announced as EUR is how
+      // a NAV ends up doubling a position.
+      currency: product.currency,
+      ...(isin ? { isin, quoteType: "FUND" } : { quoteType: "PENSIONPLAN" }),
     };
   } catch {
     return null;
@@ -287,7 +299,9 @@ async function resolveFinectCandidate(query: string): Promise<SymbolCandidate | 
  *
  * - `crypto` → CoinGecko only (native coins; suppresses Yahoo equity/ETF noise).
  * - `pension_plan` → Finect only (a slug resolved against its live NAV).
- * - `fund`/`etf`/`stock`/`index` → Yahoo only (free-text and ISIN search).
+ * - `fund` → Yahoo, plus Finect when the query IS a Finect fund slug or URL
+ *   (#1357: Spanish funds Yahoo does not list are only reachable that way).
+ * - `etf`/`stock`/`index` → Yahoo only (free-text and ISIN search).
  * - no/unknown instrument → Yahoo + Finect-slug, the legacy mixed behaviour.
  *
  * Never throws: each provider degrades independently to no results.
@@ -305,13 +319,17 @@ export async function searchSymbols(
     return finect ? [finect] : [];
   }
 
-  if (
-    instrument === "fund" ||
-    instrument === "etf" ||
-    instrument === "stock" ||
-    instrument === "index"
-  ) {
+  if (instrument === "etf" || instrument === "stock" || instrument === "index") {
     return searchYahooSymbols(query);
+  }
+
+  if (instrument === "fund") {
+    const [yahoo, finect] = await Promise.all([
+      searchYahooSymbols(query),
+      resolveFinectCandidate(query),
+    ]);
+
+    return finect ? [finect, ...yahoo] : yahoo;
   }
 
   const [yahoo, finect] = await Promise.all([

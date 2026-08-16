@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +8,13 @@ import { finectProvider } from "./finect";
 import { fetchAndCachePrice } from "./index";
 import { fetchWithFallback } from "./registry";
 import { yahooProvider } from "./yahoo";
+
+const finectFixture = (name: string) =>
+  readFileSync(new URL(`./__fixtures__/finect/${name}`, import.meta.url), "utf8");
+
+const FUND_USD_HTML = finectFixture("fund-usd.html");
+const PENSION_PLAN_EUR_HTML = finectFixture("pension-plan-eur.html");
+const PRODUCTO_NO_DISPONIBLE_HTML = finectFixture("producto-no-disponible.html");
 
 const baseCtx = {
   assetId: "asset-1",
@@ -372,42 +381,67 @@ describe("finectProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("parses the pension plan NAV and valuation date from server-rendered HTML", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () => `
-        <html>
-          <body>
-            <h1>MyInvestor Indexado S&P 500 PP</h1>
-            <p>Valor liquidativo</p>
-            <strong>20,63 €</strong>
-            <span>Fecha de valor liquidativo: 10/06/2026</span>
-          </body>
-        </html>
-      `,
-    } as Response);
+  const htmlResponse = (html: string) =>
+    ({ ok: true, text: async () => html }) as Response;
+
+  it("reads the NAV and its currency from the JSON-LD offer, not the visible text", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(PENSION_PLAN_EUR_HTML));
 
     const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "N5394" });
 
+    // The visible label rounds to 21,64; the offer carries the full NAV.
     expect(result).toEqual({
-      price: "20.63",
+      price: "21.64353",
       currency: "EUR",
-      priceDate: "2026-06-10",
+      priceDate: "2026-08-13",
+    });
+  });
+
+  it("converts a USD fund NAV to EUR instead of labelling dollars as euros (#1357)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(htmlResponse(FUND_USD_HTML))
+      // ECB publishes USD per EUR (1.25) → one USD is worth 0.80 EUR.
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          dataSets: [{ series: { "0:0:0:0:0": { observations: { "0": [1.25] } } } }],
+        }),
+      } as Response);
+
+    const result = await finectProvider.fetchPrice({
+      ...baseCtx,
+      symbol: "IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc",
+    });
+
+    expect(result).toEqual({
+      price: "6.89688",
+      currency: "EUR",
+      priceDate: "2026-08-14",
+    });
+  });
+
+  it("never mistakes URL-encoded page copy for a NAV (the '%20de%20Europa' trap, #1357)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(htmlResponse(FUND_USD_HTML))
+      .mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    const result = await finectProvider.fetchPrice({
+      ...baseCtx,
+      symbol: "IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc",
+    });
+
+    // Without FX there is no honest EUR price: fail transiently rather than
+    // fall back to the first "<digits> EUR" in the flattened HTML (that was 20).
+    expect(result).toEqual({
+      failed: true,
+      reason: "No se pudo convertir USD a EUR (tipo de cambio no disponible)",
     });
   });
 
   it("reports a symbol-not-found failure for the 'Producto no disponible' soft-404 page", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      text: async () => `
-        <html>
-          <body>
-            <h1>Producto no disponible</h1>
-            <p>El plan que buscas no está disponible en Finect.</p>
-          </body>
-        </html>
-      `,
-    } as Response);
+    // The real soft-404 body is full of URL-encoded state ("%22euribor"), which
+    // the old text scrape read as a 22 EUR quote.
+    vi.mocked(fetch).mockResolvedValueOnce(htmlResponse(PRODUCTO_NO_DISPONIBLE_HTML));
 
     const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "NOPE" });
 
@@ -415,6 +449,47 @@ describe("finectProvider", () => {
       failed: true,
       reason: "Símbolo no encontrado en el proveedor",
     });
+  });
+
+  it("fails transiently when the product page carries no readable offer", async () => {
+    // A layout change is not a dead symbol: keep the cached price alive.
+    vi.mocked(fetch).mockResolvedValueOnce(
+      htmlResponse(
+        "<html><head><title>Myinvestor PP - Finect</title></head><body/></html>",
+      ),
+    );
+
+    const result = await finectProvider.fetchPrice({ ...baseCtx, symbol: "N5394" });
+
+    expect(result).toEqual({
+      failed: true,
+      reason: "No se pudo leer la cotización en la página del proveedor",
+    });
+  });
+
+  it("keeps a prior good price when the page becomes unreadable", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      htmlResponse(
+        "<html><head><title>Myinvestor PP - Finect</title></head><body/></html>",
+      ),
+    );
+    const prior: AssetPrice = {
+      assetId: "asset-1",
+      currency: "EUR",
+      price: "21.64353",
+      source: "finect",
+      fetchedAt: "2026-08-13T10:00:00Z",
+      freshnessState: "fresh",
+    };
+
+    const result = await fetchAndCachePrice(
+      finectProvider,
+      { ...baseCtx, symbol: "N5394" },
+      { prior },
+    );
+
+    expect(result.freshnessState).toBe("stale");
+    expect(result.price).toBe("21.64353");
   });
 
   it("reports an HTTP-error failure when Finect responds with a non-2xx status", async () => {

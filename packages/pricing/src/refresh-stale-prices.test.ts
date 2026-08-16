@@ -1,7 +1,15 @@
+import { readFileSync } from "node:fs";
+
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { REFRESH_CONCURRENCY_LIMIT, refreshStalePrices } from "./refresh-stale-prices";
+
+const finectFixture = (name: string) =>
+  readFileSync(new URL(`./__fixtures__/finect/${name}`, import.meta.url), "utf8");
+
+const PENSION_PLAN_EUR_HTML = finectFixture("pension-plan-eur.html");
+const PRODUCTO_NO_DISPONIBLE_HTML = finectFixture("producto-no-disponible.html");
 
 function stalePrice(assetId: string): AssetPrice {
   return {
@@ -30,11 +38,7 @@ describe("refreshStalePrices provider routing", () => {
   test("retirement investments default to Finect when no price provider is set", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => `
-        <p>Valor liquidativo</p>
-        <strong>20,63 €</strong>
-        <span>Fecha de valor liquidativo: 10/06/2026</span>
-      `,
+      text: async () => PENSION_PLAN_EUR_HTML,
     } as Response);
 
     const result = await refreshStalePrices(
@@ -53,7 +57,7 @@ describe("refreshStalePrices provider routing", () => {
     expect(result.updated).toBe(1);
     expect(result.refreshed[0]).toMatchObject({
       assetId: "asset-pension",
-      price: "20.63",
+      price: "21.64353",
       source: "finect",
     });
   });
@@ -158,7 +162,7 @@ describe("refreshStalePrices provider routing", () => {
   test("surfaces each failed symbol with its human-readable reason", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => "<h1>Producto no disponible</h1>",
+      text: async () => PRODUCTO_NO_DISPONIBLE_HTML,
     } as Response);
 
     const result = await refreshStalePrices(

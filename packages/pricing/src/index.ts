@@ -44,6 +44,15 @@ export const PRICE_FAILURE_REASONS = {
   noQuote: "El proveedor no devolvió cotización",
   /** A retired source (#1354): the holding needs a symbol on a live provider. */
   providerRetired: "Proveedor retirado: asigna un símbolo de Yahoo a esta posición",
+  /**
+   * The page loaded but its quote could not be read — a layout change, not a
+   * dead symbol (#1357). Deliberately NOT permanent: a good cached price
+   * survives as stale instead of being wiped by a provider redesign.
+   */
+  unreadableQuote: "No se pudo leer la cotización en la página del proveedor",
+  /** A non-EUR quote with no ECB rate to convert it (#1357): never pass 1:1. */
+  fxUnavailable: (currency: string) =>
+    `No se pudo convertir ${currency} a EUR (tipo de cambio no disponible)`,
   httpError: (status: number) => `El proveedor respondió con un error (${status})`,
   currencyMismatch: (providerCurrency: string, assetCurrency: string) =>
     `La divisa del proveedor (${providerCurrency}) no coincide con la del activo (${assetCurrency})`,
