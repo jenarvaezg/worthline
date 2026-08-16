@@ -112,10 +112,16 @@ export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
 /**
  * Every holding the reads of this turn named, `id` → `label`.
  *
- * Both fields travel together on every shape a holding takes in the agent view — the
- * compact context row, a `find_holdings` match, `get_holding_detail` — which is what
- * makes this generic walk honest rather than a guess: the harness never has to know
- * WHICH read the model chose, only that a read named the thing it then wrote to.
+ * `id`, `label` and `object: "holding"` travel together on every shape a holding takes
+ * in the agent view — the compact context row, a `find_holdings` match,
+ * `get_holding_detail` — which is what makes this generic walk honest rather than a
+ * guess: the harness never has to know WHICH read the model chose, only that a read
+ * named the thing it then wrote to.
+ *
+ * The `object` tag is REQUIRED and not decoration. Scopes, members, connected sources,
+ * payouts and anchors all carry an `id` with a `label` too, so a walk that took any
+ * such pair could name a destination that is not a holding at all — and this grader
+ * exists to say WHICH position a write landed on.
  */
 function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
   const labels = new Map<string, string>();
@@ -128,7 +134,13 @@ function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
     const record = value as Record<string, unknown>;
     const id = record["id"];
     const label = record["label"];
-    if (typeof id === "string" && typeof label === "string") labels.set(id, label);
+    if (
+      record["object"] === "holding" &&
+      typeof id === "string" &&
+      typeof label === "string"
+    ) {
+      labels.set(id, label);
+    }
     Object.values(record).forEach(walk);
   };
   for (const result of answer.toolResults) {

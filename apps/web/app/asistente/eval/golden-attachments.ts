@@ -74,10 +74,25 @@ const CONFLICTING_BALANCES = {
  * one in front of a model are a vision credential the harness's cost model does not
  * have, or the history lane every real conversation uses anyway.
  */
-const SUBSCRIPTION_RECEIPT = {
+export const SUBSCRIPTION_RECEIPT = {
   file: "justificante-suscripcion.json",
   documentType: "holding_event",
 } as const;
+
+/**
+ * The lanes «añádeme esta compra» must NOT go down, each one a tool whose own
+ * description sends this request elsewhere: the whole portfolio, a statement full of
+ * orders, and the alta of a position that does not exist yet. The first two are what
+ * the real session reached for; `propose_holding` is here because without it a model
+ * that files the receipt as a NEW holding would only fail the destination check, and
+ * the report would name the wrong defect.
+ */
+const WRONG_LANES = [
+  "propose_reconcile",
+  "propose_statement_import",
+  "propose_mixed_document_import",
+  "propose_holding",
+];
 
 export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
   {
@@ -182,11 +197,19 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
     // but nothing stops it from writing a real fact onto the wrong position — which is
     // why the destination is graded by NAME, off the turn's own reads.
     //
-    // The trap is the persona's, not the question's: «ETF MSCI World» is the bigger,
-    // more obvious position and «ETF MSCI World Small Cap» is what the paper names, so
-    // a lookup for the fund the document mentions returns both. The document names no
-    // ISIN, exactly as the MyInvestor confirmation named none the app could match —
-    // the commercial name is all there is to read, which is the whole difficulty.
+    // The trap is the persona's, not the question's. The receipt reads «MSCI WORLD
+    // SMALL CAP UCITS ETF», which contains «ETF MSCI World» — the bigger, older
+    // position — whole, while the destination is «ETF MSCI Small Cap»: matching what
+    // the paper says against what the workspace calls things lands on the magnet, and
+    // only reading BOTH names lands right. The document carries no ISIN, exactly as the
+    // MyInvestor confirmation carried none the app could match, so the commercial name
+    // is all there is to read — which is the whole difficulty.
+    //
+    // Its date (29/05/2026) sits before the harness's pinned clock (`WORTHLINE_DEMO_NOW`,
+    // 2026-06-01) for the same reason `attachment-proposes-one-fact`'s does: a receipt
+    // dated in the eval's own future is refused by `buildOperationProposal`'s
+    // future-date frontier, and the question would then fail for a harness reason
+    // rather than a model one. Moving the clock earlier than that date breaks it.
     //
     // Two of its checks are pure prose (`noInterfaceCommentary`, `noInventedMechanism`)
     // and both are worded against the system prompt's own line rather than against a
@@ -206,9 +229,8 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       spanish(a),
       check("anota la operación por su carril", reachedForTool(a, "propose_operation")),
       check(
-        "no improvisa con el carril de la cartera entera",
-        !reachedForTool(a, "propose_reconcile") &&
-          !reachedForTool(a, "propose_statement_import"),
+        "no improvisa por el carril de un lote ni de un alta",
+        WRONG_LANES.every((lane) => !reachedForTool(a, lane)),
       ),
       proposesOnHoldingNamed(a, ["small cap"]),
       groundedIds(a),

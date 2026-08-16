@@ -124,8 +124,20 @@ const INTERFACE_COMMENTARY = [
   "estado: preparado",
 ];
 
+/**
+ * The one word above that a financial assistant may legitimately need. A workspace can
+ * hold a «tarjeta de crédito», and an answer naming one is talking about the user's
+ * money, not about the chat's furniture — so those two readings are removed before the
+ * match rather than left to fire. It is the same care the rest of this list is written
+ * with, applied to the only term that has an innocent meaning here.
+ */
+const CARD_AS_A_PRODUCT = /tarjetas?\s+de\s+(cr[ée]dito|d[ée]bito)/giu;
+
 export function commentsOnTheInterface(text: string): boolean {
-  return mentionsAny(text, INTERFACE_COMMENTARY);
+  return mentionsAny(
+    text.replace(CARD_AS_A_PRODUCT, "medio de pago"),
+    INTERFACE_COMMENTARY,
+  );
 }
 
 /**

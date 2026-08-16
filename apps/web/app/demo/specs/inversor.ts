@@ -5,8 +5,8 @@
  * and earn balances, and a configured FIRE target with strong progress. All
  * figures are fictional.
  *
- * Two of its funds are deliberately SIBLINGS — «ETF MSCI World» and «ETF MSCI World
- * Small Cap» — so that naming one of them is a judgement and not a lookup (#1376).
+ * Two of its funds are deliberately SIBLINGS — «ETF MSCI World» and «ETF MSCI Small
+ * Cap» — so that naming one of them is a judgement and not a lookup (#1376).
  */
 import type {
   BinanceHistoryMonthSpec,
@@ -120,12 +120,19 @@ export const INVERSOR_SPEC: PersonaSpec = {
       // different MyInvestor pension plan of the same portfolio. Until this holding
       // existed no demo persona could reproduce that: every position was distinguishable
       // at a glance, so the eval could only ever grade the easy case.
-      id: "asset_inversor_world_small",
+      //
+      // «Small Cap» and not «World Small Cap», deliberately. The receipt reads «MSCI
+      // WORLD SMALL CAP UCITS ETF», which contains the OTHER holding's label whole, so
+      // a substring match on what the paper says lands on the magnet — and the magnet is
+      // also the bigger, older position. Naming this one «ETF MSCI World Small Cap»
+      // would have made its sibling a strict prefix of it, and the naive lookup would
+      // then arrive at the right answer having judged nothing.
+      id: "asset_inversor_small_cap",
       manualPricePerUnit: "34.80",
-      name: "ETF MSCI World Small Cap",
-      operations: monthlyBuys("asset_inversor_world_small", 24, "4", 26.5, 0.35),
+      name: "ETF MSCI Small Cap",
+      operations: monthlyBuys("asset_inversor_small_cap", 24, "4", 26.5, 0.35),
       ownership: FULL,
-      unitSymbol: "WSML",
+      unitSymbol: "SMLC",
     },
     {
       id: "asset_inversor_emerging",

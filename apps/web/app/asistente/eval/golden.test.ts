@@ -47,10 +47,13 @@ describe("golden question set", () => {
     // with no document at all grades an ordinary turn while claiming to grade a
     // document — by either route, attached now or validated one turn ago (#1376).
     for (const question of ATTACHMENT_QUESTIONS) {
+      // Exactly one of the two routes, never both: the turn a question composes depends
+      // on which it declares, and a question claiming both would be graded on a turn
+      // nobody designed.
       expect(
-        question.attachment ?? question.validatedDocument,
+        Boolean(question.attachment) !== Boolean(question.validatedDocument),
         question.id,
-      ).toBeDefined();
+      ).toBe(true);
     }
     for (const question of [...READING_QUESTIONS, ...TOOL_DISCIPLINE_QUESTIONS]) {
       expect(question.attachment, question.id).toBeUndefined();

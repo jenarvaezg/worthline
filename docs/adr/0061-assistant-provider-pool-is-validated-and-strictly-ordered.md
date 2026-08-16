@@ -52,7 +52,9 @@ behind them (`connected-source-write-guard.ts`, `holding-id-provenance.ts`) are
 stated once in the prompt and never per tool, guarded by prose tripwires in
 `turn-floor.test.ts`. Because the prompt and the tool contract both changed, this
 ADR's own revalidation rule fired: Gemini was re-run and its mark refreshed
-(62/83 on the full three-dimension set, the first mark to carry `attachments`),
+(62/83 on the full three-dimension set as it stood that day — 22 questions; #1376
+later took it to 23 and 91 checks, so both marks are stale again — and the first
+mark to carry `attachments`),
 and a third run of the same day against pre-slice `main` scored 61/83, which is
 how «no rule disappeared» was checked behaviourally rather than argued — check by
 check, no rule-shaped check changed state. **Cerebras's revalidation is pending**

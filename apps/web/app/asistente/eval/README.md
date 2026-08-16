@@ -138,14 +138,20 @@ still — that `holdingEventInContext` finds the fact, which is precisely what
 `propose_operation` refuses to run without.
 
 The trap is in the persona, not in the question. `inversor` carries two sibling funds
-since this slice — «ETF MSCI World» and «ETF MSCI World Small Cap» — because a
-confirmation prints the fund's COMMERCIAL name and never the label the user chose
-here, so a lookup for what the paper names returns both, and the bigger one is the
-magnet. That is the shape of the original error (a MyInvestor aportación filed against
-a different MyInvestor plan of the same portfolio), and no demo persona could
-reproduce it before: every position was distinguishable at a glance, so the harness
-could only ever grade the easy case. The destination is graded by NAME, resolved from
-the turn's own reads, so no seeded id has to be kept in sync.
+since this slice — «ETF MSCI World» and «ETF MSCI Small Cap» — because a confirmation
+prints the fund's COMMERCIAL name and never the label the user chose here. The receipt
+reads «MSCI WORLD SMALL CAP UCITS ETF», which contains the magnet's label **whole**
+while the destination's shares only the family name, so matching the paper against the
+workspace lands on the wrong fund and only reading both names lands right. That
+asymmetry is the point and it is why the sibling is not called «ETF MSCI World Small
+Cap»: its label would then have contained the magnet's as a strict prefix, and a naive
+substring lookup would have arrived at the right answer having judged nothing. It is
+the shape of the original error (a MyInvestor aportación filed against a different
+MyInvestor plan of the same portfolio), and no demo persona could reproduce it before:
+every position was distinguishable at a glance, so the harness could only ever grade
+the easy case. The destination is graded by NAME, resolved from the turn's own reads —
+and only from rows tagged `object: "holding"`, since scopes, members and sources carry
+an `id` with a `label` too.
 
 Two of its eight checks are pure prose. `noInterfaceCommentary` is worded against the
 system prompt's own line («cero meta-comentarios sobre la interfaz o tu formato»), and

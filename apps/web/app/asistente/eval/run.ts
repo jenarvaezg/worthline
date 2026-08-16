@@ -23,14 +23,7 @@ import {
   shouldStopAfterProviderError,
 } from "./candidate-config";
 import { type Check, GOLDEN_QUESTIONS, type GoldenQuestion } from "./golden";
-import {
-  buildTurnMessages,
-  documentHistoryMessages,
-  readGoldenAttachmentTurn,
-  readGoldenValidatedDocument,
-  unvalidatedEvidenceFor,
-  validatedDocumentsFor,
-} from "./golden-turn";
+import { prepareGoldenTurn } from "./golden-turn";
 import type { AssistantAnswer } from "./graders";
 
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
@@ -54,24 +47,16 @@ async function askAssistant(
   persona: StoreTarget & { kind: "demo" },
   question: GoldenQuestion,
 ): Promise<AssistantAnswer> {
-  // Read through the production seam, and asserted against the lane the question
-  // declares: a fixture that stopped being unvalidated evidence would make the
-  // frontier checks green for a gate that never engaged.
-  const reading = question.attachment
-    ? await readGoldenAttachmentTurn(question.attachment)
-    : null;
-  // And the other way a document reaches a turn (#1376): validated in an earlier
-  // message and carried forward by `validatedDocumentsInContext`. Asserted against the
-  // documentType the question declares, for the same reason the lane is.
-  const history = documentHistoryMessages(
-    question.validatedDocument
-      ? await readGoldenValidatedDocument(question.validatedDocument)
-      : null,
-  );
+  // Documents read through the production seams, asserted against what the question
+  // declares, and composed into one turn — all in a single call on purpose (#1376):
+  // the two bugs this harness has had were both a caller forwarding some of what a
+  // document turn carries and not the rest, and each one graded the hole as a model
+  // defect (#1265, #1373).
+  const turn = await prepareGoldenTurn(question);
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
-    messages: await buildTurnMessages(question, reading, history),
+    messages: turn.messages,
     tools: createChatTools({
       // The chat route's own slice, not a copy of it (#1265): the harness used to
       // forward three of six, which left every proposal tool answering
@@ -79,17 +64,8 @@ async function askAssistant(
       // because what came back was the harness's hole rather than the model.
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf: chatAsOf(persona),
-      // Derived from this turn's own extraction exactly as the route derives it
-      // (#1248). Without it the bulk-import tools would stay open and the harness
-      // would grade a refusal production makes for the model — measuring the
-      // harness's hole again, in the other direction.
-      unvalidatedEvidence: unvalidatedEvidenceFor(reading),
-      // And the other half of what a document turn carries (#1373): the rows the
-      // reconcile is allowed to write come from the extraction, so a harness that
-      // forwarded the gate but not the documents would grade a refusal production
-      // never makes. History counts too (#1376) — that is where `propose_operation`
-      // takes its fact from, one message after the upload.
-      validatedDocuments: validatedDocumentsFor(reading, history),
+      unvalidatedEvidence: turn.unvalidatedEvidence,
+      validatedDocuments: turn.validatedDocuments,
     }),
     stopWhen: stepCountIs(MAX_STEPS),
   });

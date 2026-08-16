@@ -263,3 +263,28 @@ describe("proposedHoldingLabels", () => {
     ).toEqual([]);
   });
 });
+
+describe("proposedHoldingLabels — what is not a holding", () => {
+  test("ignores an id/label pair that belongs to something else", () => {
+    // Scopes, members, connected sources and payouts all carry `id` + `label`. Naming
+    // one of them as a write's destination would report the wrong thing entirely, so
+    // the `object` tag is what qualifies a row here.
+    expect(
+      proposedHoldingLabels(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_scp_hogar" }, name: "propose_operation" },
+          ],
+          toolResults: [
+            {
+              name: "list_scopes",
+              output: {
+                scopes: [{ id: "wl_scp_hogar", label: "Hogar", object: "scope" }],
+              },
+            },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+  });
+});

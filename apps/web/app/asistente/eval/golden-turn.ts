@@ -229,3 +229,41 @@ export async function buildTurnMessages(
     ),
   );
 }
+
+/** Everything a golden question needs from the filesystem, ready for `generateText`. */
+export interface GoldenTurn {
+  messages: ModelMessage[];
+  /** The #1248 gate, as the route derives it. */
+  unvalidatedEvidence: boolean;
+  /** The rows a document lane may write from (#1373, #1376). */
+  validatedDocuments: ExtractedDocument[];
+}
+
+/**
+ * Read a question's documents and compose its turn — all three halves at once.
+ *
+ * One function rather than a sequence the caller assembles, because the sequence is
+ * where this harness has already been wrong twice: forwarding three of six tool stores
+ * (#1265) and, in the same shape, the gate without the documents (#1373). Both bugs
+ * graded the harness's own hole and read as a model defect. A caller that cannot get
+ * two of the three from the same call cannot forget one of them either, and there is
+ * exactly one place left where «what the model receives» is decided.
+ */
+export async function prepareGoldenTurn(question: GoldenQuestion): Promise<GoldenTurn> {
+  // Both readings assert what the question DECLARES before anything is composed: a
+  // mismatch throws here, and the runner records the question as errored with every
+  // check failed rather than grading a turn nobody wrote.
+  const reading = question.attachment
+    ? await readGoldenAttachmentTurn(question.attachment)
+    : null;
+  const history = documentHistoryMessages(
+    question.validatedDocument
+      ? await readGoldenValidatedDocument(question.validatedDocument)
+      : null,
+  );
+  return {
+    messages: await buildTurnMessages(question, reading, history),
+    unvalidatedEvidence: unvalidatedEvidenceFor(reading),
+    validatedDocuments: validatedDocumentsFor(reading, history),
+  };
+}

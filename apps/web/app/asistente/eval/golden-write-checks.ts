@@ -60,15 +60,21 @@ export const groundedIds = (a: AssistantAnswer): Check => {
  * to write — and every destination must be that one, because proposing on the sibling
  * as well as on the target is the same wrong write with a hedge in front of it.
  *
- * The destinations travel in the check name so a failure in the JSON report says which
- * position the model actually chose, without re-running the provider.
+ * The destination the model chose travels in the check name ONLY when the check fails,
+ * exactly as {@link groundedIds} carries its invented ids: a failure is then auditable
+ * from the JSON report without re-running the provider, and a PASSING check keeps one
+ * stable name across runs. Naming it unconditionally would have broken the one thing
+ * the README asks of these reports — comparing a run against a baseline check by check.
  */
 export const proposesOnHoldingNamed = (a: AssistantAnswer, terms: string[]): Check => {
   const labels = proposedHoldingLabels(a);
+  const passes = labels.length > 0 && labels.every((label) => mentionsAll(label, terms));
   const named = labels.length === 0 ? "ninguno legible" : labels.join(", ");
   return check(
-    `la propuesta va a la posición que nombra el documento (destino: ${named})`,
-    labels.length > 0 && labels.every((label) => mentionsAll(label, terms)),
+    passes
+      ? "la propuesta va a la posición que nombra el documento"
+      : `la propuesta va a la posición que nombra el documento (destino: ${named})`,
+    passes,
   );
 };
 

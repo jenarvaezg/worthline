@@ -196,3 +196,47 @@ produced the missing lane. The rule this adds to the ADR:
   «1 participación al importe» form of a value-only alta (#1325) would be revalued to ONE
   share's NAV at the next ripple and swallow the amount. `operation-terms.ts` refuses and
   says which figure is missing, rather than write something that looks right for a day.
+
+## Amendment (#1376): the routing-flip failures are now asked three times, and one of them over a receipt
+
+The two amendments above were written from a session this gate never saw. The reason is
+worth stating plainly, because it is a property of the harness and not an accident: the
+`attachments` dimension could only put a SPREADSHEET in front of a model. Its four
+questions attach a committed CSV, and that choice is deliberate and still right — the
+deterministic route costs no vision credential and CI can verify the fixture through the
+production seam. But a `holding_event` does not come out of a spreadsheet, so «here is a
+purchase confirmation, add it» was ungradeable, and the four forbidden behaviours of that
+session moved no number at all.
+
+What changes:
+
+- **A document may reach a golden turn through HISTORY.** `validatedDocumentsInContext`
+  is the route every real conversation already takes — upload in one message, act in the
+  next — and it is the only one that can hand a model a validated receipt for free. A
+  question declares a `validatedDocument` instead of an `attachment`; the fixture is the
+  extraction envelope as the browser persists it, revalidated in process by
+  `parseAttachmentPreviewData`. The declared `documentType` is asserted exactly as a lane
+  is, and CI checks the stronger thing: that `holdingEventInContext` finds the fact, which
+  is what `propose_operation` refuses to run without.
+- **The dimension's definition widens accordingly**: `attachments` grades a turn that
+  carries a DOCUMENT, by either route. The argument for scoring it apart is untouched —
+  behaviour over a document still does not follow from behaviour over a typed question.
+- **«A proposal that names a real but WRONG holding among ambiguous candidates» is now
+  asked three times**, and the third is the hardest: not «which of four savings accounts»
+  but «which of two sibling funds», where the paper prints a commercial name that contains
+  the wrong holding's label whole. The Consequences above say these numbers are what would
+  flip the routing decision; this is the one that reproduces how the failure actually
+  happened.
+- **A missing lane is measured, not only fixed.** #1374 built `propose_operation` because
+  the model improvised into the reconcile. The eval now grades whether the model FINDS the
+  lane — the same principle as the bullet above about not recording only what got through:
+  a boundary that exists and is never chosen is a boundary nobody uses.
+
+Two of the new checks are pure prose, which this ADR's own rule about prose would
+normally rule out. They are admitted because what they grade has no tool trace and no
+possible code boundary: a meta-comment about the interface, and a mechanism the apply
+does not have. Both are worded against the system prompt's own line rather than against
+taste, and both are deliberately narrow — the invented-mechanism check does not match
+«revaloriza», because the ripple really does revalue the position at today's price. A
+grader that failed a model for saying something true would be the mirror image of the
+defect this ADR exists to prevent.

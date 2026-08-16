@@ -3,13 +3,14 @@ import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-type
 import { holdingEventInContext } from "@web/asistente/operation-document-frontier";
 import { describe, expect, it } from "vitest";
 
-import { ATTACHMENT_QUESTIONS } from "./golden-attachments";
+import { ATTACHMENT_QUESTIONS, SUBSCRIPTION_RECEIPT } from "./golden-attachments";
 import type { GoldenQuestion } from "./golden-question";
 import { READING_QUESTIONS } from "./golden-reading";
 import {
   buildTurnMessages,
   documentHistoryMessages,
   laneOf,
+  prepareGoldenTurn,
   readGoldenAttachmentTurn,
   readGoldenValidatedDocument,
   unvalidatedEvidenceFor,
@@ -32,13 +33,9 @@ describe("golden attachments", () => {
   it("reads every declared attachment through the lane its question claims", async () => {
     expect(ATTACHMENT_QUESTIONS.length).toBeGreaterThanOrEqual(3);
     for (const question of ATTACHMENT_QUESTIONS) {
-      // Every question in this dimension must really carry a document, by ONE of the two
-      // routes: attached to this turn, or validated in an earlier one (#1376). A
-      // question in `attachments` that carries neither is a question graded on nothing.
-      expect(
-        Boolean(question.attachment) !== Boolean(question.validatedDocument),
-        question.id,
-      ).toBe(true);
+      // That every question in this dimension carries a document by exactly one of the
+      // two routes is `golden.test.ts`' invariant; here we only read the ones that
+      // declare an attachment.
       if (!question.attachment) continue;
       const reading = await readGoldenAttachmentTurn(question.attachment);
       expect(laneOf(reading), question.id).toBe(question.attachment.lane);
@@ -90,10 +87,9 @@ describe("golden attachments", () => {
 });
 
 describe("golden validated documents (#1376)", () => {
-  const RECEIPT = {
-    file: "justificante-suscripcion.json",
-    documentType: "holding_event",
-  } as const;
+  // The question's own fixture, not a copy of its coordinates: a test that named the
+  // file itself could keep passing while the question pointed somewhere else.
+  const RECEIPT = SUBSCRIPTION_RECEIPT;
 
   /**
    * The #1254 tripwire, for the other route a document takes. It runs with no API key
@@ -268,5 +264,41 @@ describe("buildTurnMessages", () => {
     // And nothing in the history decides what the question grades: no holding named, no
     // direction given, no figure repeated by the assistant.
     expect(serialized).not.toContain("ETF MSCI World");
+  });
+});
+
+describe("prepareGoldenTurn", () => {
+  it("hands the receipt question its messages, its gate and its documents at once", async () => {
+    // The single call the runner makes. All three halves come from it, because both bugs
+    // this harness has had were a caller that forwarded some of them and not the rest.
+    const question = ATTACHMENT_QUESTIONS.find(
+      (candidate) => candidate.validatedDocument,
+    )!;
+
+    const turn = await prepareGoldenTurn(question);
+
+    expect(JSON.stringify(turn.messages)).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
+    // No document arrived in THIS turn, so the #1248 gate has nothing to close over.
+    expect(turn.unvalidatedEvidence).toBe(false);
+    expect(turn.validatedDocuments.map((document) => document.documentType)).toEqual([
+      "holding_event",
+    ]);
+  });
+
+  it("arms the gate and hands no document on an unstructured attachment question", async () => {
+    const question = ATTACHMENT_QUESTIONS.find((candidate) => candidate.attachment)!;
+
+    const turn = await prepareGoldenTurn(question);
+
+    expect(turn.unvalidatedEvidence).toBe(true);
+    expect(turn.validatedDocuments).toEqual([]);
+  });
+
+  it("composes a plain turn for a question with no document at all", async () => {
+    const turn = await prepareGoldenTurn(READING_QUESTIONS[0]!);
+
+    expect(turn.messages).toHaveLength(1);
+    expect(turn.unvalidatedEvidence).toBe(false);
+    expect(turn.validatedDocuments).toEqual([]);
   });
 });
