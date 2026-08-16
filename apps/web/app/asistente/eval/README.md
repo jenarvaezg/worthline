@@ -160,6 +160,18 @@ is what genuinely happens — the ripple values the position at today's price, w
 why the operation card marks its impact «estimado». A wider net would fail a model for
 telling the truth, which is the failure this README warns about twice.
 
+**Run live before being committed, like the four before it, and it scored 6/8** against
+the pool's model on 2026-08-16. Both failures share one cause, read off the tool trace:
+the model searched `find_holdings` for the receipt's literal commercial name («MSCI
+WORLD SMALL CAP UCITS ETF»), got zero matches, and concluded the fund was not in the
+portfolio — against that tool's own instruction, «nunca concluyas que no existe sin
+haberla buscado aquí». It never reached `propose_operation`, so the destination check
+had nothing to resolve. The six that pass include both prose checks and the
+lot-or-alta lane, so nothing here scores the honest path as a defect, and the question
+IS passable: a search for «MSCI» or «small cap» returns the position. This is the
+number the issue asked for — a behaviour that now moves when it breaks — and it is
+ticket material, not a reason to soften the check.
+
 ### Why a third dimension
 
 Behaviour over a document does not follow from behaviour over a typed question, and
@@ -327,9 +339,11 @@ entry, Groq, was retired in #1278 because its free tier can no longer accept one
 request of the current turn (12.000 tokens per minute against 14.285 measured),
 which also retired the one `grandfathered` mark the pool used to carry.
 
-- **Gemini — 2026-08-03, 62/83, all three dimensions.** Re-run by #1342 (the prompt
-  and the tool contract both changed) and the first mark that says anything about
-  `attachments`: 28/42 reading, 18/23 tool-discipline, 16/18 attachments.
+- **Gemini — 2026-08-16, 70/91, all three dimensions.** Re-run by #1376 (the question
+  set changed): 31/42 reading, 19/23 tool-discipline, 20/26 attachments. It replaces
+  the #1342 mark (2026-08-03, 62/83 — 28/42, 18/23, 16/18), which measured the
+  22-question set; the totals are not comparable and the baseline below is how the
+  difference was read.
 - **Cerebras — 2026-07-27, 49/65, two dimensions. Revalidation pending.** #1342
   changed its contract too, so this mark is stale and knowingly carried. Two attempts
   that day failed to complete — the first died at question 20 of 22, the second lost
@@ -346,10 +360,9 @@ re-run changes it; editing a number in place would not.
 Re-run and refresh a normal admission mark whenever its model, the system prompt
 or the question set changes, or when provider behavior materially degrades.
 
-**Both marks above are stale as of #1376**, by that same rule: the set grew to 23
-questions and 91 checks, so neither total describes the set that ships today, and
-`attachments` in particular went from 18 checks to 26. Neither number was edited —
-a mark is a run, and only a run replaces it.
+#1376 fired that rule: the set grew to 23 questions and 91 checks (`attachments` from
+18 to 26), so Gemini was re-run and its mark refreshed. **Cerebras's is stale on this
+count too** and was not edited — a mark is a run, and only a run replaces it.
 
 ### Reading a score change (#1342)
 
@@ -363,12 +376,30 @@ between runs, and every rule-shaped failure that existed failed on `main` too. T
 `--output` reports make that diff mechanical, and it is the only way to tell a lost
 rule from a coin toss at this sample size.
 
-The same discipline applies to a slice that only ADDS questions, and #1376 is the
-case: it did not touch the prompt or the tools, but it did change the set, the
-denominator and one demo persona, so a run of it is not comparable to any mark above.
-Whoever measures it next takes a `main` baseline the same day, on a fresh free-tier
-allowance, and compares check by check — a −4 read against yesterday's total is a
-regression that never happened.
+### The same discipline for a slice that only ADDS questions (#1376)
+
+That slice touched neither the prompt nor the tools, but it changed the set, the
+denominator and one demo persona, so its number is comparable to nothing above. Two
+Gemini runs on 2026-08-16: `main` **70/83** (34/42, 18/23, 18/18) and the slice
+**70/91** (31/42, 19/23, 20/26). Read as totals that is a collapse from 84% to 77%;
+read check by check on the 83 checks the two runs share, it is −6, and the −6 is noise:
+
+- `responde en español` flipped in **both** directions across seven questions — four
+  lost, three gained. It is the same marker-count grader that carried the whole swing
+  in #1342, and it drags its question's other checks with it: the answer that lost
+  `liquid-vs-total`'s three checks lost all three at once.
+- The only two rule-shaped regressions — `attachment-asks-which-figure` choosing
+  between two figures, `attachment-refuses-bulk-import` faking a proposal — are on the
+  `familia` persona over CSV fixtures this slice does not touch: not the prompt, not
+  the tools, not those files, not that persona. A single sample moved them.
+- `inversor-concentration` is the one regression on the persona that DID gain a
+  holding, and both of its lost checks arrived with a lost `responde en español` on
+  the same answer.
+
+So: no rule disappeared, and the denominator explains the ratio. Which is the whole
+point of taking the baseline — a −4 read against yesterday's total is a regression
+that never happened, and a −7 percentage points read against a different denominator
+is not even a comparison.
 
 ## Production pool
 

@@ -78,9 +78,33 @@ export type AdmissionEvidence = AdmittedEvidence;
  * zero, so its reading number is a floor rather than a measurement of how well it
  * reads. It says nothing about `attachments` either: that dimension did not exist.
  *
- * **Both marks are stale as of #1376**, which added a 23rd question and took the set
- * to 91 checks (`attachments` from 18 to 26). Their totals describe the sets they were
- * measured on and are left exactly as measured: a mark is a run, and editing one in
+ * **Gemini, 2026-08-16 (#1376) — the mark below.** The set grew to 23 questions and 91
+ * checks, which is this ADR's revalidation trigger, so Gemini was re-run: 70/91,
+ * complete, admitted, with `attachments` at 20/26. Its predecessor read 62/83.
+ *
+ * The two totals are NOT comparable and the same-day baseline is why we know what
+ * changed: `main` scored 70/83 that morning on the pre-slice set. Check by check, the
+ * common questions moved by −6, and the movement is variance rather than a lost rule.
+ * `responde en español` flipped in BOTH directions across seven questions (four lost,
+ * three gained), which is the marker-count grader this file already documents as the
+ * noisiest thing in the set. The only two rule-shaped checks that regressed —
+ * `attachment-asks-which-figure` choosing between two figures, and
+ * `attachment-refuses-bulk-import` faking a proposal — belong to the `familia` persona
+ * over CSV fixtures this slice does not touch at all: not the prompt, not the tools,
+ * not those files. `inversor-concentration` is the one regression on the persona that
+ * DID change, and both of its lost checks came with a lost `responde en español` on
+ * the same answer.
+ *
+ * The new question scored 6/8 and its two failures share one cause, read off the trace
+ * rather than guessed: the model searched `find_holdings` for the receipt's literal
+ * commercial name, got nothing, and concluded the fund was not in the portfolio —
+ * against that tool's own «nunca concluyas que no existe sin haberla buscado aquí». It
+ * never reached `propose_operation`, so the destination check had nothing to resolve.
+ * That is the failure this question exists to price, and the question is passable: a
+ * search for «MSCI» or «small cap» returns the position.
+ *
+ * **Cerebras's mark is stale on this count too.** Its total describes the set it was
+ * measured on and is left exactly as measured: a mark is a run, and editing one in
  * place would turn a record into a claim.
  */
 export const ADMISSION_EVIDENCE = [
@@ -89,16 +113,16 @@ export const ADMISSION_EVIDENCE = [
     provider: "google",
     model: "gemini-3.1-flash-lite",
     run: {
-      evaluatedAt: "2026-08-03",
+      evaluatedAt: "2026-08-16",
       complete: true,
-      passed: 62,
-      total: 83,
-      executedQuestions: 22,
-      totalQuestions: 22,
+      passed: 70,
+      total: 91,
+      executedQuestions: 23,
+      totalQuestions: 23,
       dimensions: [
-        { dimension: "reading", passed: 28, total: 42 },
-        { dimension: "tool-discipline", passed: 18, total: 23 },
-        { dimension: "attachments", passed: 16, total: 18 },
+        { dimension: "reading", passed: 31, total: 42 },
+        { dimension: "tool-discipline", passed: 19, total: 23 },
+        { dimension: "attachments", passed: 20, total: 26 },
       ],
     },
   },
