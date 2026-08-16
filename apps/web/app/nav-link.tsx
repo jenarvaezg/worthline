@@ -17,7 +17,15 @@
 
 import Link, { useLinkStatus } from "next/link";
 
-export interface NavLinkProps extends React.ComponentProps<typeof Link> {
+/**
+ * `transitionTypes` is omitted on purpose. Next's `Link` typings still declare it
+ * whether or not `experimental.viewTransition` is set, so without this a caller
+ * could pass it, get no type error, and get no transition either — the exact
+ * silent inertness #1379 retired. Making it untypeable turns that back into a
+ * compile error.
+ */
+export interface NavLinkProps
+  extends Omit<React.ComponentProps<typeof Link>, "transitionTypes" | "href"> {
   /** href must be a string pathname (topnav links always are). */
   href: string;
 }
@@ -40,7 +48,6 @@ function NavPending() {
 }
 
 export default function NavLink({ href, children, ...rest }: NavLinkProps) {
-  // rest spread first so our computed href wins over any caller value.
   return (
     <Link {...rest} href={href}>
       {children}

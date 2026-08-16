@@ -4,8 +4,8 @@
  * SectionNav (#1190) — the workspace topnav tabs. Now that the chrome lives in
  * the shared `(workspace)` layout, the active tab is derived from the live URL
  * (`usePathname()` → `sectionForPath`) instead of being threaded as a prop from
- * every page. Thin client wiring over the pure `active-section` module, same
- * composition as `form-submit-scroll.ts`.
+ * every page. Thin client wiring over the pure `active-section` module — the same
+ * composition as `form-submit-scroll-keeper.tsx` over `form-submit-scroll.ts`.
  */
 
 import { usePathname } from "next/navigation";
