@@ -4,6 +4,8 @@ import {
   type AssistantAnswer,
   citesEuros,
   citesInternalSource,
+  claimsAnInventedMechanism,
+  commentsOnTheInterface,
   declinesToInvent,
   isSpanish,
   mentionsAll,
@@ -95,6 +97,53 @@ describe("citesInternalSource", () => {
             { type: "runSuggestedAnalysis", label: "¿Y mi liquidez?", prompt: "…" },
           ],
         }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("commentsOnTheInterface", () => {
+  it("catches the session that explained the card and the button (#1376)", () => {
+    for (const text of [
+      "Te he dejado la tarjeta pendiente aquí abajo.",
+      "Pulsa el botón de confirmar cuando lo hayas revisado.",
+      "Acciones sugeridas: revisar la posición.",
+      "propose_operation [blocked]",
+    ]) {
+      expect(commentsOnTheInterface(text), text).toBe(true);
+    }
+  });
+
+  it("leaves the obedient answer alone", () => {
+    // The product WANTS the user asked to confirm; the prompt only bans talking about
+    // the furniture. A check that failed this would score the honest turn as a defect.
+    expect(
+      commentsOnTheInterface(
+        "He preparado la aportación de 480 € del 29/05/2026 sobre el ETF MSCI World " +
+          "Small Cap. Confírmala si el destino es el correcto.",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("claimsAnInventedMechanism", () => {
+  it("catches the recalibration nobody implements (#1376)", () => {
+    for (const text of [
+      "Al confirmar, worthline suma los 480 € y recalibra la valoración de la posición.",
+      "El importe ajusta la valoración de tu fondo.",
+      "Con eso se recalcula la valoración del holding.",
+    ]) {
+      expect(claimsAnInventedMechanism(text), text).toBe(true);
+    }
+  });
+
+  it("does not punish the true sentence about the ripple", () => {
+    // The position IS revalued at today's price after the operation lands — that is why
+    // `propose_operation`'s card marks its impact «estimado». Grading it as invention
+    // would be the plausible-looking check that fails the right answer.
+    expect(
+      claimsAnInventedMechanism(
+        "La posición se revaloriza al precio de hoy, así que el impacto es estimado.",
       ),
     ).toBe(false);
   });

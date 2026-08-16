@@ -6,6 +6,7 @@
  * Why there are two dimensions at all: ADR 0067.
  */
 
+import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
 import type { PersonaId } from "@web/demo/persona";
 
 import type { EvalDimension } from "./dimension";
@@ -35,6 +36,28 @@ export interface GoldenAttachment {
   lane: "unstructured" | "validated";
 }
 
+/**
+ * A document worthline ALREADY validated, sitting in the conversation's history
+ * (#1376) — the second way a document reaches a turn, and the ordinary one: a user
+ * uploads a confirmation, reads what worthline made of it, and asks for something in
+ * the NEXT message. `validatedDocumentsInContext` is what carries it there, and it is
+ * the only route by which a `holding_event` can reach an eval at all: that document
+ * does not come out of a spreadsheet, so no CSV fixture can produce one and a PDF
+ * fixture would spend a vision credential the harness's cost model does not have.
+ *
+ * The fixture is the extraction ENVELOPE as the browser persists it, so the runner
+ * revalidates it through `parseAttachmentPreviewData` — the production seam — rather
+ * than trusting a literal. `documentType` is asserted the way {@link GoldenAttachment}
+ * asserts its lane: a fixture that stopped parsing, or that parsed to another
+ * document, would grade a model against a turn nobody wrote.
+ */
+export interface GoldenValidatedDocument {
+  /** File name under `eval/documents/`, committed and free of real data. */
+  file: string;
+  /** The document the fixture must parse to — ASSERTED before grading. */
+  documentType: ExtractedDocument["documentType"];
+}
+
 export interface GoldenQuestion {
   id: string;
   dimension: EvalDimension;
@@ -42,6 +65,8 @@ export interface GoldenQuestion {
   question: string;
   /** The document this turn arrives with, if any (#1254). */
   attachment?: GoldenAttachment;
+  /** The document an earlier turn already left validated in context (#1376). */
+  validatedDocument?: GoldenValidatedDocument;
   grade: (answer: AssistantAnswer) => Check[];
 }
 

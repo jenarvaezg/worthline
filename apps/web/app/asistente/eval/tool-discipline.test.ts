@@ -5,6 +5,7 @@ import {
   asksForTheMissingFigure,
   calledProposalTool,
   fakesProposalCeremony,
+  proposedHoldingLabels,
   reachedForBulkImportTool,
   ungroundedProposalIds,
 } from "./tool-discipline";
@@ -199,5 +200,91 @@ describe("asksForTheMissingFigure", () => {
 
   test("does not count a turn that simply states a figure", () => {
     expect(asksForTheMissingFigure("El saldo pendiente es de 7.200 €.")).toBe(false);
+  });
+});
+
+describe("proposedHoldingLabels", () => {
+  /** The two siblings of the demo `inversor` persona (#1376), as a read hands them back. */
+  const SIBLINGS = {
+    matches: [
+      { id: "wl_hld_world", label: "ETF MSCI World", object: "holding" },
+      { id: "wl_hld_small", label: "ETF MSCI World Small Cap", object: "holding" },
+    ],
+  };
+
+  test("names the holding a proposal pointed at, as the read named it", () => {
+    expect(
+      proposedHoldingLabels(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_hld_small" }, name: "propose_operation" },
+          ],
+          toolResults: [{ name: "find_holdings", output: SIBLINGS }],
+        }),
+      ),
+    ).toEqual(["ETF MSCI World Small Cap"]);
+  });
+
+  test("reports the sibling when the proposal jumped to it", () => {
+    // The failure this exists for: a real fact, written onto the wrong position. Both
+    // labels are in the same read, so nothing but judgement separates them.
+    expect(
+      proposedHoldingLabels(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_hld_world" }, name: "propose_operation" },
+          ],
+          toolResults: [{ name: "find_holdings", output: SIBLINGS }],
+        }),
+      ),
+    ).toEqual(["ETF MSCI World"]);
+  });
+
+  test("says nothing about an id no read ever surfaced", () => {
+    // Deliberately silent rather than wrong: an invented id is `ungroundedProposalIds`'
+    // finding, and counting it twice would report one defect as two.
+    expect(
+      proposedHoldingLabels(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_hld_inventado" }, name: "propose_operation" },
+          ],
+          toolResults: [{ name: "find_holdings", output: SIBLINGS }],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  test("ignores the holdings a read named but no proposal touched", () => {
+    expect(
+      proposedHoldingLabels(
+        answer({ toolResults: [{ name: "find_holdings", output: SIBLINGS }] }),
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("proposedHoldingLabels — what is not a holding", () => {
+  test("ignores an id/label pair that belongs to something else", () => {
+    // Scopes, members, connected sources and payouts all carry `id` + `label`. Naming
+    // one of them as a write's destination would report the wrong thing entirely, so
+    // the `object` tag is what qualifies a row here.
+    expect(
+      proposedHoldingLabels(
+        answer({
+          toolCalls: [
+            { input: { holdingId: "wl_scp_hogar" }, name: "propose_operation" },
+          ],
+          toolResults: [
+            {
+              name: "list_scopes",
+              output: {
+                scopes: [{ id: "wl_scp_hogar", label: "Hogar", object: "scope" }],
+              },
+            },
+          ],
+        }),
+      ),
+    ).toEqual([]);
   });
 });
