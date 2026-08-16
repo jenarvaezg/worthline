@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const pathname = vi.hoisted(() => ({ value: "/app" }));
 vi.mock("next/navigation", () => ({ usePathname: () => pathname.value }));
-// ViewTransitionLink's useLinkStatus only resolves inside a real Link render;
+// NavLink's useLinkStatus only resolves inside a real Link render;
 // stub it to a plain anchor so a static render can inspect the tab classes.
-vi.mock("./view-transition-link", () => ({
+vi.mock("./nav-link", () => ({
   default: ({ className, children }: { className: string; children: unknown }) => (
     <a className={className}>{children as never}</a>
   ),

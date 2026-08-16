@@ -95,19 +95,27 @@ de que la acción resuelva:
   cambia de modelo, este es el primer sitio donde mirar: el síntoma es una
   mutación que persiste y una pantalla que no se entera.
 
-## 5. Navegación sin flash: View Transitions + scroll estable
+## 5. Navegación sin flash: shell prefetchado + scroll estable
 
 Moverse entre dashboard ↔ histórico ↔ drilldowns **no parpadea en blanco ni
 pierde la posición de scroll**:
 
-- Se usa la **View Transitions API** por el camino soportado de Next 16 / React 19.
-- La elegibilidad de transición (cuándo animar, cuándo no) vive en un módulo puro
-  testeable (§7), no esparcida por los componentes.
-- Si el navegador no soporta View Transitions, **degradado limpio**: navegación
-  normal, nunca una transición rota.
-- **Respeta `prefers-reduced-motion`**: si el usuario lo pide, se omite la
-  animación (cambio directo, igual sin flash). El movimiento es un lujo, no un
-  requisito.
+- Quien cumple la promesa es **Cache Components + Partial Prefetching** (#1229):
+  al clicar una pestaña, su shell prefetchado —chrome + skeleton de Suspense—
+  pinta sin ida y vuelta al servidor. La navegación es blanda: nunca hay recarga
+  de documento (`e2e/11-liquid-drilldown.spec.ts` lo fija con un centinela).
+- Mientras el payload dinámico llega, el enlace pinta un **marcador de vuelo**
+  (`NavPendingIndicator` sobre `useLinkStatus`, #607) en vez de dejar la pestaña
+  muda. La lógica pura vive en `app/nav-link.tsx`, la isla es solo cableado (§7).
+- **No hay View Transitions.** Las hubo sobre el papel desde #517 y **nunca se
+  ejecutaron**: React solo abre una transición desde dentro de una frontera
+  `<ViewTransition>`, la app no tenía ninguna, y medido en build de producción
+  daba cero llamadas a `document.startViewTransition`. La capa se retiró en
+  #1379 — el razonamiento completo, y qué haría falta para justificar volver
+  (continuidad de elemento, no fundido de página), está en la enmienda de
+  ADR 0036 §5.
+- **Respeta `prefers-reduced-motion`**: la regla general de `globals.css` colapsa
+  las animaciones a imperceptibles. El movimiento es un lujo, no un requisito.
 
 ### 5.1 La ruta que dejas sigue en el documento (contrato de `<Activity>`)
 

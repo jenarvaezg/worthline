@@ -81,3 +81,47 @@ owns the toggle in both cases — and a fold sent open mismatches in the other d
 when it is clicked shut early. A fold whose `open` ever came from `useState` would make
 React the owner; that is the moment to revisit this rule, not a reason to carve an
 exemption into it now.
+
+## Amendment (#1379): the View Transitions leg is retired — the shell was doing the work
+
+The chosen option above lists "the View Transitions API for flash-free navigation" as
+one of its four legs. That leg **never ran a single time**. Measured on a production
+build (`build:e2e` + `CI=1`) with `document.startViewTransition` wrapped in an init
+script, navigating the topnav dozens of times with and without CPU throttling:
+**zero calls**.
+
+The reason is structural, not a misconfiguration. React decides whether to open a
+transition through an internal `shouldStartViewTransition` flag that is set **only**
+from `<ViewTransition>` fibers; with no boundary in the tree, `commitRoot` takes the
+ordinary branch. Next's client runtime does not add a boundary either — `transitionTypes`
+on `<Link>` calls `addTransitionType`, which queues a type for the next transition, and
+if no transition starts, nothing is queued. `experimental.viewTransition: true` only
+resolves a React build that *exports* the component; it does not mount one.
+
+We **retired** the layer instead of adding the boundary, for three reasons:
+
+1. **What reviving it buys is one page-root cross-fade.** #640 already deleted the
+   directional slide selectors, so `slide-forward` and `slide-back` would have painted
+   exactly what `cross-fade` paints. The classification module was computing a
+   distinction no stylesheet consumed.
+2. **A cross-fade fades into a skeleton.** A view transition snapshots the outgoing page
+   and fades toward the incoming page's *initial* state. Every section page streams under
+   `<Suspense>` and there is no `loading.tsx`, so that initial state is the skeleton: a
+   polished fade, then an unanimated pop to content. §5's "no flash" promise is kept today
+   by the prefetched shell and the skeletons (#1229), not by any transition.
+3. **The boundary would move the outgoing route's hide inside the transition callback.**
+   Under `cacheComponents` that hide is what #1296 (document-height collapse) and #1351
+   (late reveal) turn on. Re-opening that mechanism to buy a fundido is a bad trade.
+
+What was kept: `NavPendingIndicator` + `useLinkStatus` (`app/nav-link.tsx`), the in-flight
+marker that lived in the same component and never depended on the transition.
+
+The retirement is guarded by `app/retired-view-transitions.test.ts`, which fails if the
+pseudo-element rules or the `experimental.viewTransition` flag come back — the flag alone
+recreates the inert layer, and an inert layer is not free: the opening hypothesis of #1351
+was "a transition that never closes", and there was no transition.
+
+**If View Transitions are ever wanted here, the case is element continuity, not page
+cross-fade** — a shared `view-transition-name` on a position card growing into its
+drilldown, which CSS cannot imitate. That is a new proposal with its own measurement,
+not a revival of this one.

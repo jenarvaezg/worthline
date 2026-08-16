@@ -25,11 +25,12 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
-    // Enable React 19 / Next 16 View Transitions API integration.
-    // Route navigations automatically become transitions; <ViewTransition>
-    // components from 'react' can then animate named elements (ADR 0036 §5,
-    // interaction-patterns §5).
-    viewTransition: true,
+    // NOTE: `viewTransition` is deliberately absent (#1379). The flag only
+    // resolves a React build that EXPORTS `<ViewTransition>`; it does not add a
+    // boundary, and without one React never sets `shouldStartViewTransition`, so
+    // the whole layer was inert. Retired rather than revived — ADR 0036 §5 has
+    // the reasoning, `app/retired-view-transitions.test.ts` guards it.
+    //
     // Instant Navigation Testing API (#1229). `instant()` from @next/playwright
     // is a cookie the CLIENT BUNDLE must be compiled to honour: Next inlines
     // `__NEXT_EXPOSE_TESTING_API` as `dev || exposeTestingApiInProductionBuild`,

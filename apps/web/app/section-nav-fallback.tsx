@@ -1,6 +1,6 @@
 /**
  * Static topnav links for the Instant Navigations shell (#1229). Same five
- * tabs as `SectionNav`, but without `usePathname()` / view-transition wiring —
+ * tabs as `SectionNav`, but without `usePathname()` / pending-status wiring —
  * used as the Suspense fallback so a cold load paints the nav immediately
  * instead of popping it in after hydration (no header CLS).
  */
