@@ -1,6 +1,11 @@
 import type { AssetPrice } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import {
+  FUND_USD_HTML,
+  PENSION_PLAN_EUR_HTML,
+  PRODUCTO_NO_DISPONIBLE_HTML,
+} from "./__fixtures__/finect";
 import { REFRESH_CONCURRENCY_LIMIT, refreshStalePrices } from "./refresh-stale-prices";
 
 function stalePrice(assetId: string): AssetPrice {
@@ -30,11 +35,7 @@ describe("refreshStalePrices provider routing", () => {
   test("retirement investments default to Finect when no price provider is set", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => `
-        <p>Valor liquidativo</p>
-        <strong>20,63 €</strong>
-        <span>Fecha de valor liquidativo: 10/06/2026</span>
-      `,
+      text: async () => PENSION_PLAN_EUR_HTML,
     } as Response);
 
     const result = await refreshStalePrices(
@@ -53,7 +54,7 @@ describe("refreshStalePrices provider routing", () => {
     expect(result.updated).toBe(1);
     expect(result.refreshed[0]).toMatchObject({
       assetId: "asset-pension",
-      price: "20.63",
+      price: "21.64353",
       source: "finect",
     });
   });
@@ -158,7 +159,7 @@ describe("refreshStalePrices provider routing", () => {
   test("surfaces each failed symbol with its human-readable reason", async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      text: async () => "<h1>Producto no disponible</h1>",
+      text: async () => PRODUCTO_NO_DISPONIBLE_HTML,
     } as Response);
 
     const result = await refreshStalePrices(
@@ -179,6 +180,35 @@ describe("refreshStalePrices provider routing", () => {
     expect(result.failures).toEqual([
       { symbol: "N5394", reason: "Finect: símbolo no encontrado" },
     ]);
+  });
+
+  test("a USD fund with no ECB rate keeps its price and names the missing piece (#1357)", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, text: async () => FUND_USD_HTML } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 404 } as Response);
+
+    const result = await refreshStalePrices(
+      [stalePrice("asset-fund-usd")],
+      [
+        {
+          id: "asset-fund-usd",
+          currency: "EUR",
+          liquidityTier: "term-locked",
+          providerSymbol: "IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc",
+        },
+      ],
+      "2026-06-09T10:00:00Z",
+    );
+
+    // Transient by design: an ECB blip must not zero a good price, and the
+    // banner says what is missing rather than the whole sentence.
+    expect(result.refreshed[0]).toMatchObject({
+      assetId: "asset-fund-usd",
+      price: "100",
+      freshnessState: "stale",
+      staleReason: "Finect: sin tipo de cambio USD",
+    });
+    expect(result.failedSymbols).toEqual([]);
   });
 
   test("preserves the prior good price when a transient outage blips", async () => {

@@ -115,8 +115,10 @@ _Avoid_: editing an investment's value directly (it is a derived figure).
 A service that supplies unit prices for investments. Each provider implements
 the `PriceProvider` contract (`fetchPrice`). Wired providers:
 Yahoo Finance (market tickers and metal futures — the default for liquid
-holdings, ADR 0011), Finect (pension plan NAVs — the default for term-locked
-holdings), CoinGecko (crypto, keyed by coin id e.g. `bitcoin`), ECB (FX rates).
+holdings, ADR 0011), Finect (Spanish pension-plan and fund NAVs — the default for
+term-locked holdings), CoinGecko (crypto, keyed by coin id e.g. `bitcoin`),
+ECB (FX rates). A provider always reports the NAV's **own** currency; a non-EUR
+quote is converted through the ECB rate, never passed through as euros (#1357).
 A **retired provider** is one whose upstream is gone for good (Stooq, #1354): it
 stays in the price-source vocabulary because stored rows carry it, is absent from
 the registry, and its holdings keep their last known price with an actionable
@@ -133,7 +135,8 @@ actually delivered the price, not the one that was tried first.
 **Provider symbol**:
 The lookup key sent to a **price provider** to fetch a price. For market
 providers this is a ticker in Yahoo-format (e.g. `SAN.MC`, `VUSA.L`). For Finect
-it is the plan code (e.g. `N5394`). Stored in
+it is the product slug — a pension code (`N5394-Myinvestor…`) or an ISIN
+(`IE00BDZVHT63-Fidelity…`) followed by its alias. Stored in
 `investment_assets.provider_symbol`.
 _Avoid_: ticker (too narrow — Finect codes are not tickers).
 

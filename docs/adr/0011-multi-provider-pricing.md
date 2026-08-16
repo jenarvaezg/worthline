@@ -12,6 +12,19 @@
 > reason ("asigna un símbolo de Yahoo"). The sections below describe the
 > pre-amendment design; the routing/seam reasoning still holds.
 
+> **Amended 2026-08-16 (#1357): Finect serves funds too, and quotes carry their
+> own currency.** The provider read the NAV by scraping the first
+> `<digits> €|EUR` out of the flattened page, which matched URL-encoded copy
+> (`%20de%20Europa` → a 20 € NAV) and hardcoded `currency: "EUR"` on every quote.
+> It now reads the page's `application/ld+json` offer — price plus
+> `priceCurrency` — and converts a non-EUR NAV through the ECB rate (#1065),
+> failing rather than passing dollars off as euros. Two consequences for the
+> sections below: a Finect **symbol** is the product slug (a pension code
+> `N5394-Myinvestor…` OR an ISIN `IE00BDZVHT63-Fidelity…`), not the bare plan
+> code, and Finect covers Spanish investment **funds** as well as pension plans —
+> `/planes-pensiones/` 301-redirects to `/fondos-inversion/`, so one base URL
+> still serves both. The routing/seam reasoning is unchanged.
+
 The app started with a single market provider (Stooq). To cover pension plan
 NAVs (which Stooq cannot serve) and improve market ticker coverage, we added
 two providers: **Yahoo Finance** for market prices and **Finect** for Spanish
@@ -43,7 +56,10 @@ so the gate was redundant ceremony.
 
 The `provider_symbol` field uses Yahoo-format tickers as canonical
 (e.g. `SAN.MC`, `VUSA.L`). Stooq normalises internally (lowercasing, etc.).
-For Finect, the symbol is the plan code (e.g. `N5394`).
+For Finect, the symbol is the plan code (e.g. `N5394`) — since #1357, the full
+product slug (`N5394-Myinvestor_indexado_sp_500_pp`,
+`IE00BDZVHT63-Fidelity_msci_pac_ex_jpn_idx_usd_p_acc`); a bare code is resolved
+to its slug through Finect's public plans API before use.
 
 ## Validation
 
