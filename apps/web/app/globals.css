@@ -6640,6 +6640,100 @@ td.rowActions > * {
   cursor: pointer;
 }
 
+/* ── Conexiones (#1223, PRD #1222) — el «libro de conexiones» ─────────────────
+   Una fila por fuente y, bajo la MISMA fila, el pliegue con lo que se puede
+   hacer. Se apoya en la tabla base del canon (regla fina, cabecera en versalitas)
+   y solo añade lo que esa base no da: la subrayada del nombre, la columna
+   numérica y el remate de las fuentes sin conectar.
+
+   Las columnas se miden por su contenido: la de acciones lleva dos controles y
+   con el reparto fijo por defecto se comía la cifra de al lado. */
+.conexTable {
+  table-layout: auto;
+}
+
+.conexName {
+  font-weight: 650;
+}
+
+.conexSub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: normal;
+}
+
+.conexNum {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Las acciones de una fila caben EN la fila: si no entran, la tabla scrollea
+   (.tableScroll), que es lo que hace el resto del libro; partirlas en dos líneas
+   descuadra la altura de la entrada. */
+.conexActions {
+  display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem 0.9rem;
+}
+
+/* El pliegue cuelga de su fila: sin regla propia, para que fila y detalle se
+   lean como UNA entrada del libro. */
+.conexTable .conexDetailRow td {
+  border-bottom: 1px solid var(--line-soft);
+  padding-top: 0;
+  text-align: left;
+}
+
+/* Dentro de una celda a lo ancho de la tabla, las opciones de desconexión
+   conservan su ancho natural (canon §5): una rejilla suelta las estiraría de
+   margen a margen y un botón rojo de 1130 px no es una alternativa, es un susto. */
+.conexDetailRow .disconnectOption {
+  justify-items: start;
+}
+
+.conexAvailable {
+  margin-top: 1.75rem;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 0.75rem;
+}
+
+.conexAvailable h3 {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0 0 0.4rem;
+}
+
+/* Una fuente por conectar se lee como las conectadas: nombre arriba y el pliegue
+   debajo, a la izquierda — abierto o cerrado, la palabra «Conectar» no se mueve
+   de sitio. */
+.conexAvailableRow {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.conexConnect > summary {
+  cursor: pointer;
+  margin-top: 0.35rem;
+  width: fit-content;
+}
+
+/* El formulario de credenciales tiene el ancho de un formulario, no el de la
+   página: dos campos y un botón estirados a 1100 px no son un formulario. */
+.conexConnect .stackForm {
+  max-width: 32rem;
+}
+
+.conexConnect .stackForm button {
+  justify-self: start;
+}
+
 /* Composition strip — the 100 %-stacked metal split, the signature. */
 .coinStrip {
   display: flex;

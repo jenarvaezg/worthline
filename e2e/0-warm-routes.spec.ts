@@ -34,6 +34,7 @@ const ROUTES = [
   "/historico",
   "/objetivos",
   "/ajustes",
+  "/ajustes/conexiones",
   "/login",
 ] as const;
 

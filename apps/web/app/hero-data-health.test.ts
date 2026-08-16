@@ -198,7 +198,7 @@ describe("selectHeroHealth", () => {
           severity: "medium",
           affected: { id: "s1", label: "S", object: "connected_source" },
         },
-        "/ajustes",
+        "/ajustes/conexiones",
       ],
       [
         {
@@ -214,7 +214,7 @@ describe("selectHeroHealth", () => {
           code: "UNVALUED_POSITION",
           affected: { id: "s2", label: "S2", object: "connected_source" },
         },
-        "/ajustes",
+        "/ajustes/conexiones",
       ],
       [
         // Not the ficha (#1365): a trashed holding has none, and both repairs —

@@ -51,7 +51,9 @@ const BINANCE_LABEL = "Binance";
 export const connectBinanceAction = formAction({
   requireId: false,
   datedFact: false,
-  guardUrl: () => "/ajustes",
+  // El formulario vive en /ajustes/conexiones (#1223), así que el guard de demo
+  // devuelve a la página desde la que se envió, no a la raíz de ajustes.
+  guardUrl: (formData) => currentUrlOf(formData),
   parse: ({ formData }) => {
     const creds = parseBinanceCredentials(
       formData.get("apiKey"),

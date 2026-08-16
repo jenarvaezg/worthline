@@ -4,10 +4,11 @@
  * no network — these are the decisions the thin server actions delegate to.
  */
 
-import type { Member } from "@worthline/domain";
+import type { CoinPosition, Member, TokenPosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
+  countCoins,
   formatLastSync,
   normalizeApiKey,
   readApiKey,
@@ -82,5 +83,60 @@ describe("formatLastSync", () => {
     const out = formatLastSync("2026-06-14T11:20:00.000Z");
     expect(out).not.toBe("Nunca");
     expect(out).toMatch(/2026/);
+  });
+});
+
+describe("countCoins (#1223)", () => {
+  function coin(externalId: string, quantity: number): CoinPosition {
+    return {
+      kind: "coin",
+      id: externalId,
+      sourceId: "src_numista",
+      externalId,
+      name: `Moneda ${externalId}`,
+      liquidityTier: "illiquid",
+      currency: "EUR",
+      catalogueId: externalId,
+      issueId: null,
+      grade: "XF",
+      quantity,
+      year: null,
+      metal: null,
+      finenessMillis: null,
+      weightGrams: null,
+      purchaseDate: null,
+      metalValueMinor: null,
+      numismaticValueMinor: null,
+      numismaticFetchedAt: null,
+      purchasePriceMinor: null,
+      obverseThumbUrl: null,
+    };
+  }
+
+  test("sums quantities, not rows — a line can hold several coins", () => {
+    expect(countCoins([coin("a", 3), coin("b", 1)])).toBe(4);
+  });
+
+  test("an empty collection counts zero", () => {
+    expect(countCoins([])).toBe(0);
+  });
+
+  test("ignores positions of another kind", () => {
+    const token: TokenPosition = {
+      kind: "token",
+      id: "BTC-spot",
+      sourceId: "src_binance",
+      externalId: "BTC:spot",
+      name: "BTC",
+      liquidityTier: "market",
+      currency: "EUR",
+      symbol: "BTC",
+      balance: "1",
+      wallet: "spot",
+      unitPrice: "50000",
+      imageUrl: null,
+    };
+
+    expect(countCoins([coin("a", 2), token])).toBe(2);
   });
 });

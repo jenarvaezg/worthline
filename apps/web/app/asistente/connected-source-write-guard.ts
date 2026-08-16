@@ -38,7 +38,7 @@ export async function readConnectedSourceOwners(
 
 /**
  * Why a declared figure cannot land on a sync-owned holding, and what does work.
- * Names the source so the user recognizes it in Ajustes.
+ * Names the source so the user recognizes it in Conexiones.
  */
 export function connectedSourceValueRejection(
   owner: AgentViewHoldingProvenance,
@@ -48,9 +48,9 @@ export function connectedSourceValueRejection(
     `«${holdingName}» la mantiene la fuente conectada «${owner.label}» (${owner.adapter}): ` +
     "su valor lo escribe la sincronización a partir de las posiciones espejadas, así que no " +
     "puedo declararlo ni corregirlo a mano (lo sobrescribiría el siguiente sync). " +
-    "Para ponerla al día, sincroniza la fuente en Ajustes (/ajustes); si lo que está mal es " +
-    "el mapeo o el catálogo de la fuente, se arregla ahí. Si de verdad quieres llevar esta " +
-    "posición a mano, desconecta la fuente en Ajustes conservando sus valores: entonces pasa " +
+    "Para ponerla al día, sincroniza la fuente en Conexiones (/ajustes/conexiones); si lo que " +
+    "está mal es el mapeo o el catálogo de la fuente, se arregla ahí. Si de verdad quieres " +
+    "llevar esta posición a mano, desconecta la fuente ahí conservando sus valores: entonces pasa " +
     "a ser un holding manual y sí puedo corregirlo."
   );
 }
@@ -63,7 +63,8 @@ export function connectedSourceRemovalRejection(
   return (
     `«${holdingName}» la materializa la fuente conectada «${owner.label}» (${owner.adapter}), ` +
     "así que no puedo darla de baja desde aquí: el sync la volvería a proyectar. " +
-    "Para quitarla, desconecta la fuente en Ajustes (/ajustes) — puedes conservar sus valores " +
+    "Para quitarla, desconecta la fuente en Conexiones (/ajustes/conexiones) — puedes conservar " +
+    "sus valores " +
     "como holding manual y darlo de baja después, o eliminar la fuente y sus posiciones."
   );
 }
