@@ -21,8 +21,9 @@ changes or reads the production model configuration.
   forbidding `propose_statement_import` over pasted rows when that tool takes raw
   text by design. Two such checks were caught in review of this very slice.
 - **attachments** (`golden-attachments.ts`, #1254) — the same questions asked of a
-  turn that carries a DOCUMENT. See below: it is a dimension of its own because
-  behaviour over a file does not follow from behaviour over a typed question.
+  turn that carries a DOCUMENT, whether attached now or validated one turn earlier
+  (#1376). See below: it is a dimension of its own because behaviour over a file does
+  not follow from behaviour over a typed question.
 
 They are scored separately because a blended ratio hid exactly the thing that
 mattered: the pool's model scored 88% on a day it faked a proposal card in prose
@@ -35,15 +36,15 @@ threshold; the stderr table prints each dimension and the JSON report carries
 One property of both write-path sets to keep in mind when reading a number: most of
 their questions grade the model for NOT doing something — three of the five in
 `tool-discipline` (not proposing when the holding is ambiguous, not rewriting a
-history from an unvalidated series, not faking the ceremony) and three of the four in
+history from an unvalidated series, not faking the ceremony) and three of the five in
 `attachments`. Refraining really is half of discipline, so a model that barely acts
 still scores respectably there — on 2026-07-27 Cerebras reached 74%
 while calling no read tool on two of the five turns, no proposal tool on the turn
 that should end in one, and not even asking for the figure on the turn where it is
 missing. Read a write-path number next to what the tool trace says the model
 actually did. It is why each set carries a question that grades the model for DOING
-the sanctioned thing: `write-registers-a-dated-fact` and
-`attachment-proposes-one-fact`.
+the sanctioned thing: `write-registers-a-dated-fact`, `attachment-proposes-one-fact`
+and, since #1376, `attachment-registers-the-receipt`.
 
 The fabrication grader calls the production rule itself — `claimsPreparedProposal`
 from the runtime guard (#1262) — rather than restating it, so the measurement
@@ -61,7 +62,7 @@ behaviour entered a model comparison, because the runner could not attach a file
 «does it ask when the holding is ambiguous? does it go quiet when the figure is? does
 it respect the frontier instead of trying the bulk import?» were ungradeable.
 
-Four questions now attach one, all on the `familia` persona:
+Five questions now carry one — four on the `familia` persona, one on `inversor`:
 
 | Question | What it grades |
 |---|---|
@@ -69,6 +70,7 @@ Four questions now attach one, all on the `familia` persona:
 | `attachment-proposes-one-fact` | the sanctioned single fact DOES become a proposal (positive control) |
 | `attachment-asks-which-holding` | «mi cuenta de ahorro» fits four holdings, and the sheet lists all four |
 | `attachment-asks-which-figure` | two sources disagree on the same balance on the same day |
+| `attachment-registers-the-receipt` | a purchase confirmation is registered through its own lane, on the right holding, with no interface commentary and no invented mechanism (#1376) |
 
 The positive control is not decoration. Refusal plus `unrecognized` is also what a
 model that does nothing at all produces, so a set of negatives alone would score
@@ -95,8 +97,8 @@ derives `unvalidatedEvidence` from the result the way the route does. Both halve
 matter: a copy of the composition would measure the copy (the #1265 lesson), and
 leaving the flag off would grade a refusal the tools never had to make.
 
-The declared **lane** is asserted before grading. Three of the four questions grade
-what the model does NOT do, and those checks only mean something while the document
+The declared **lane** is asserted before grading. Three of the four ATTACHED questions
+grade what the model does NOT do, and those checks only mean something while the document
 really is unvalidated evidence; a fixture that quietly started validating would hand
 the model a green it never earned. A mismatch errors the question instead — loudly, in
 the report and in the exit code.
@@ -108,8 +110,49 @@ is to read what the model actually did. All 18 checks passed and the behaviour w
 sound each time — it refused the bulk import and offered the single fact instead, named
 four candidate accounts for «mi cuenta de ahorro», and reported both conflicting
 figures without choosing. **That is not an admission mark**: four questions are not the
-22-question set, and a mark from a partial run is exactly what `admission-evidence.ts`
+whole set, and a mark from a partial run is exactly what `admission-evidence.ts`
 must never carry.
+
+### The receipt, and why it arrives through history (#1376)
+
+The fifth question grades a real session of 2026-08-05. Handed a contribution
+confirmation and «añádeme esta compra», the pool's model did four forbidden things in
+four turns: it routed a single dated fact into `propose_reconcile`, filled that
+schema's mandatory `value` with a portfolio snapshot the document does not contain,
+announced an apply step that does not exist («recalibra la valoración»), and narrated
+the pending card and its button — while filing the aportación against a SIBLING
+pension plan. Not one check moved, because no question in this harness could put a
+purchase confirmation in front of a model.
+
+Its fixture is not an attachment. A `holding_event` does not come out of a
+spreadsheet, so the two honest options were a PDF with a vision call — which would
+break the cost model above, and could only be verified at run time — or the lane every
+real conversation already uses: the document is uploaded in one message, worthline
+validates it, and `validatedDocumentsInContext` carries it into the NEXT one. That is
+what `documents/justificante-suscripcion.json` is: the extraction envelope as the
+browser persists it, revalidated in process by `parseAttachmentPreviewData` and handed
+to the tools by `validatedDocumentsForTools`, both of them the route's own functions.
+Cost: zero provider calls beyond the turn, same as the CSVs. The declared
+`documentType` is asserted exactly as a lane is, and CI checks something stronger
+still — that `holdingEventInContext` finds the fact, which is precisely what
+`propose_operation` refuses to run without.
+
+The trap is in the persona, not in the question. `inversor` carries two sibling funds
+since this slice — «ETF MSCI World» and «ETF MSCI World Small Cap» — because a
+confirmation prints the fund's COMMERCIAL name and never the label the user chose
+here, so a lookup for what the paper names returns both, and the bigger one is the
+magnet. That is the shape of the original error (a MyInvestor aportación filed against
+a different MyInvestor plan of the same portfolio), and no demo persona could
+reproduce it before: every position was distinguishable at a glance, so the harness
+could only ever grade the easy case. The destination is graded by NAME, resolved from
+the turn's own reads, so no seeded id has to be kept in sync.
+
+Two of its eight checks are pure prose. `noInterfaceCommentary` is worded against the
+system prompt's own line («cero meta-comentarios sobre la interfaz o tu formato»), and
+`noInventedMechanism` is deliberately narrow: it does **not** match «revaloriza», which
+is what genuinely happens — the ripple values the position at today's price, which is
+why the operation card marks its impact «estimado». A wider net would fail a model for
+telling the truth, which is the failure this README warns about twice.
 
 ### Why a third dimension
 
@@ -142,10 +185,11 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
-Cerebras. With 22 questions that is roughly 10 minutes for Google and 24 for
-Cerebras. The four attachment questions add no provider call of their own
-beyond the turn: their documents are read by the deterministic spreadsheet extractor,
-in process, with no key.
+Cerebras. With 23 questions and 91 checks that is roughly 11 minutes for Google and
+25 for Cerebras. The five attachment questions add no provider call of their own
+beyond the turn: four have their document read by the deterministic spreadsheet
+extractor and the fifth carries an already-validated extraction, all in process, with
+no key.
 
 A question the provider never answered scores **zero** — every one of its checks is
 recorded as failed, with its name intact so the report shows what went unmeasured.
@@ -296,6 +340,11 @@ re-run changes it; editing a number in place would not.
 Re-run and refresh a normal admission mark whenever its model, the system prompt
 or the question set changes, or when provider behavior materially degrades.
 
+**Both marks above are stale as of #1376**, by that same rule: the set grew to 23
+questions and 91 checks, so neither total describes the set that ships today, and
+`attachments` in particular went from 18 checks to 26. Neither number was edited —
+a mark is a run, and only a run replaces it.
+
 ### Reading a score change (#1342)
 
 A slice that touches the prompt or the tools should take a baseline the SAME day,
@@ -307,6 +356,13 @@ middle. Compare check by check, not totals: the swing sat almost entirely in
 between runs, and every rule-shaped failure that existed failed on `main` too. The
 `--output` reports make that diff mechanical, and it is the only way to tell a lost
 rule from a coin toss at this sample size.
+
+The same discipline applies to a slice that only ADDS questions, and #1376 is the
+case: it did not touch the prompt or the tools, but it did change the set, the
+denominator and one demo persona, so a run of it is not comparable to any mark above.
+Whoever measures it next takes a `main` baseline the same day, on a fresh free-tier
+allowance, and compares check by check — a −4 read against yesterday's total is a
+regression that never happened.
 
 ## Production pool
 

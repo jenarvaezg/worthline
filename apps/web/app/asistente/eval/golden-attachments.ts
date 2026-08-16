@@ -10,7 +10,7 @@
  * instead of trying the bulk import?» were the questions one would most want pinned
  * before changing model, and they were exactly the ones no run could answer.
  *
- * Every question here attaches a committed CSV, on purpose:
+ * Four of the five questions attach a committed CSV, on purpose:
  *
  *  - the deterministic spreadsheet route needs no API key, so an attachment question
  *    costs the candidate's own credential and nothing else — a Cerebras run does
@@ -20,6 +20,12 @@
  *    checked for at run time;
  *  - and a CSV carries no real entity and no real figure — it is the family's own
  *    hand-kept notes, which is precisely the document this frontier is about.
+ *
+ * The fifth (#1376) carries no attachment at all: its document was validated in an
+ * EARLIER turn and reaches this one through `validatedDocumentsInContext`. That lane
+ * costs the same nothing — the fixture is the extraction envelope, revalidated in
+ * process through the route's own parser — and it is the only way a `holding_event`
+ * can be put in front of a model here, since no spreadsheet produces one.
  *
  * The set is deliberately NOT all negatives. `attachment-proposes-one-fact` is the
  * positive control, and it is what makes the other three mean something: `unrecognized`
@@ -41,11 +47,15 @@ import {
   groundedIds,
   namesTwoCashCandidates,
   noFakeCeremony,
+  noInterfaceCommentary,
+  noInventedMechanism,
+  proposesOnHoldingNamed,
 } from "./golden-write-checks";
 import {
   asksForTheMissingFigure,
   calledProposalTool,
   reachedForBulkImportTool,
+  reachedForTool,
 } from "./tool-discipline";
 
 /** The family's own notes: readable, and not a positions table worthline can validate. */
@@ -55,6 +65,18 @@ const HAND_KEPT_NOTES = { file: "apuntes-familia.csv", lane: "unstructured" } as
 const CONFLICTING_BALANCES = {
   file: "saldos-en-conflicto.csv",
   lane: "unstructured",
+} as const;
+
+/**
+ * A subscription confirmation worthline already read and validated, sitting in the
+ * conversation from the previous turn (#1376). Not an attachment of this turn and not
+ * a spreadsheet: a `holding_event` comes off a receipt, so the only two ways to put
+ * one in front of a model are a vision credential the harness's cost model does not
+ * have, or the history lane every real conversation uses anyway.
+ */
+const SUBSCRIPTION_RECEIPT = {
+  file: "justificante-suscripcion.json",
+  documentType: "holding_event",
 } as const;
 
 export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
@@ -143,6 +165,56 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       check("no elige por su cuenta entre dos importes", !calledProposalTool(a)),
       check("pregunta cuál es el importe real", asksForTheMissingFigure(a.text)),
       noFakeCeremony(a),
+    ],
+  },
+  {
+    // The real session of 2026-08-05, made gradeable (#1376). One receipt, four things
+    // that went wrong at once, and not one of them moved a number in this harness:
+    // the model routed a single dated fact into `propose_reconcile`, filled that
+    // schema's mandatory `value` with a portfolio snapshot the document does not
+    // contain, explained an apply step that does not exist («recalibra la valoración»),
+    // and narrated the pending card and its button — while filing the aportación
+    // against a SIBLING pension plan of the same portfolio.
+    //
+    // #1374 built the lane, so the routing half now has somewhere right to go and this
+    // question grades whether the model finds it. The rest is judgement with no code
+    // behind it: `propose_operation` will refuse a fact that contradicts the document,
+    // but nothing stops it from writing a real fact onto the wrong position — which is
+    // why the destination is graded by NAME, off the turn's own reads.
+    //
+    // The trap is the persona's, not the question's: «ETF MSCI World» is the bigger,
+    // more obvious position and «ETF MSCI World Small Cap» is what the paper names, so
+    // a lookup for the fund the document mentions returns both. The document names no
+    // ISIN, exactly as the MyInvestor confirmation named none the app could match —
+    // the commercial name is all there is to read, which is the whole difficulty.
+    //
+    // Two of its checks are pure prose (`noInterfaceCommentary`, `noInventedMechanism`)
+    // and both are worded against the system prompt's own line rather than against a
+    // taste of mine. Their narrowness is deliberate and documented in `graders.ts`: a
+    // wider net would fail the model for saying true things.
+    id: "attachment-registers-the-receipt",
+    dimension: "attachments",
+    persona: "inversor",
+    validatedDocument: SUBSCRIPTION_RECEIPT,
+    question: "Añádeme esta compra, por favor.",
+    // No `grounded` here, deliberately: `usedReadTool` counts any tool that is not
+    // `suggest_actions`, so the proposal itself would satisfy it, and a check nothing
+    // can fail is a check that lifts a score without measuring anything. What replaces
+    // it is stronger — `proposesOnHoldingNamed` only resolves a destination when a READ
+    // named it, so a turn that wrote without reading has nowhere to get a label from.
+    grade: (a) => [
+      spanish(a),
+      check("anota la operación por su carril", reachedForTool(a, "propose_operation")),
+      check(
+        "no improvisa con el carril de la cartera entera",
+        !reachedForTool(a, "propose_reconcile") &&
+          !reachedForTool(a, "propose_statement_import"),
+      ),
+      proposesOnHoldingNamed(a, ["small cap"]),
+      groundedIds(a),
+      noFakeCeremony(a),
+      noInterfaceCommentary(a),
+      noInventedMechanism(a),
     ],
   },
 ];

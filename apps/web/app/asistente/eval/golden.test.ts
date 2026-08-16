@@ -44,12 +44,17 @@ describe("golden question set", () => {
     // A question in another set carrying a file would be graded by checks written for
     // a turn with no document — and it would be scored on a dimension whose name says
     // otherwise. The reverse is the #1254 defect in miniature: an attachment question
-    // with no attachment grades an ordinary turn while claiming to grade a document.
+    // with no document at all grades an ordinary turn while claiming to grade a
+    // document — by either route, attached now or validated one turn ago (#1376).
     for (const question of ATTACHMENT_QUESTIONS) {
-      expect(question.attachment, question.id).toBeDefined();
+      expect(
+        question.attachment ?? question.validatedDocument,
+        question.id,
+      ).toBeDefined();
     }
     for (const question of [...READING_QUESTIONS, ...TOOL_DISCIPLINE_QUESTIONS]) {
       expect(question.attachment, question.id).toBeUndefined();
+      expect(question.validatedDocument, question.id).toBeUndefined();
     }
   });
 

@@ -109,6 +109,67 @@ export function ungroundedProposalIds(answer: AssistantAnswer): string[] {
   return [...new Set(proposed)].filter((id) => !read.includes(id));
 }
 
+/**
+ * Every holding the reads of this turn named, `id` → `label`.
+ *
+ * Both fields travel together on every shape a holding takes in the agent view — the
+ * compact context row, a `find_holdings` match, `get_holding_detail` — which is what
+ * makes this generic walk honest rather than a guess: the harness never has to know
+ * WHICH read the model chose, only that a read named the thing it then wrote to.
+ */
+function holdingLabelsById(answer: AssistantAnswer): Map<string, string> {
+  const labels = new Map<string, string>();
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value !== "object" || value === null) return;
+    const record = value as Record<string, unknown>;
+    const id = record["id"];
+    const label = record["label"];
+    if (typeof id === "string" && typeof label === "string") labels.set(id, label);
+    Object.values(record).forEach(walk);
+  };
+  for (const result of answer.toolResults) {
+    if (!isProposalToolName(result.name)) walk(result.output);
+  }
+  return labels;
+}
+
+/** The `holdingId` arguments of one tool call, at any depth. */
+function holdingIdsIn(input: unknown): string[] {
+  if (Array.isArray(input)) return input.flatMap(holdingIdsIn);
+  if (typeof input !== "object" || input === null) return [];
+  return Object.entries(input).flatMap(([key, value]) =>
+    typeof value === "string"
+      ? /^(public)?holdingid$/i.test(key) && value.trim().length > 0
+        ? [value]
+        : []
+      : holdingIdsIn(value),
+  );
+}
+
+/**
+ * The holdings a proposal pointed at, named as the TURN'S OWN READS named them (#1376).
+ *
+ * Resolving the id back to a label is what makes «did it write to the right position?»
+ * gradeable without pinning a seeded id the harness would then have to keep in sync.
+ * An id no read ever surfaced resolves to nothing and is simply absent — that failure
+ * is {@link ungroundedProposalIds}'s to report, and reporting it twice under two names
+ * would double-count one defect.
+ */
+export function proposedHoldingLabels(answer: AssistantAnswer): string[] {
+  const labels = holdingLabelsById(answer);
+  return answer.toolCalls
+    .filter((call) => isProposalToolName(call.name))
+    .flatMap((call) => holdingIdsIn(call.input))
+    .flatMap((id) => {
+      const label = labels.get(id);
+      return label === undefined ? [] : [label];
+    });
+}
+
 /** Words that name the figure a correction needs. */
 const FIGURE_WORDS = ["saldo", "importe", "cifra", "cantidad", "cuánto"];
 

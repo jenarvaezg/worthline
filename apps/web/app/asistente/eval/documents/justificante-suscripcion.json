@@ -1,0 +1,20 @@
+{
+  "fileName": "justificante-suscripcion.pdf",
+  "result": {
+    "status": "valid",
+    "data": {
+      "documentType": "holding_event",
+      "event": {
+        "date": "2026-05-29",
+        "amount": 480,
+        "currency": "EUR",
+        "label": "Suscripción de participaciones · MSCI WORLD SMALL CAP UCITS ETF (Acc)",
+        "kind": "other",
+        "units": 13.7213,
+        "pricePerUnit": { "amount": 34.8, "currency": "EUR" },
+        "fees": { "amount": 2.5, "currency": "EUR" }
+      },
+      "warnings": []
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { extractedDocumentSchema } from "@web/asistente/attachment-extraction-contract";
 import { UNSTRUCTURED_SPREADSHEET_MESSAGE } from "@web/asistente/attachment-types";
+import { holdingEventInContext } from "@web/asistente/operation-document-frontier";
 import { describe, expect, it } from "vitest";
 
 import { ATTACHMENT_QUESTIONS } from "./golden-attachments";
@@ -7,8 +8,10 @@ import type { GoldenQuestion } from "./golden-question";
 import { READING_QUESTIONS } from "./golden-reading";
 import {
   buildTurnMessages,
+  documentHistoryMessages,
   laneOf,
   readGoldenAttachmentTurn,
+  readGoldenValidatedDocument,
   unvalidatedEvidenceFor,
   validatedDocumentsFor,
 } from "./golden-turn";
@@ -29,9 +32,16 @@ describe("golden attachments", () => {
   it("reads every declared attachment through the lane its question claims", async () => {
     expect(ATTACHMENT_QUESTIONS.length).toBeGreaterThanOrEqual(3);
     for (const question of ATTACHMENT_QUESTIONS) {
-      expect(question.attachment, question.id).toBeDefined();
-      const reading = await readGoldenAttachmentTurn(question.attachment!);
-      expect(laneOf(reading), question.id).toBe(question.attachment!.lane);
+      // Every question in this dimension must really carry a document, by ONE of the two
+      // routes: attached to this turn, or validated in an earlier one (#1376). A
+      // question in `attachments` that carries neither is a question graded on nothing.
+      expect(
+        Boolean(question.attachment) !== Boolean(question.validatedDocument),
+        question.id,
+      ).toBe(true);
+      if (!question.attachment) continue;
+      const reading = await readGoldenAttachmentTurn(question.attachment);
+      expect(laneOf(reading), question.id).toBe(question.attachment.lane);
     }
   });
 
@@ -67,8 +77,67 @@ describe("golden attachments", () => {
     // A `..` in a file name would read something outside the eval set — private data
     // on the reviewer's machine, in the worst case, sent to an external provider.
     for (const question of ATTACHMENT_QUESTIONS) {
-      expect(question.attachment?.file, question.id).toMatch(/^[\w.-]+\.(csv|png|xlsx)$/);
+      if (question.attachment) {
+        expect(question.attachment.file, question.id).toMatch(
+          /^[\w.-]+\.(csv|png|xlsx)$/,
+        );
+      }
+      if (question.validatedDocument) {
+        expect(question.validatedDocument.file, question.id).toMatch(/^[\w.-]+\.json$/);
+      }
     }
+  });
+});
+
+describe("golden validated documents (#1376)", () => {
+  const RECEIPT = {
+    file: "justificante-suscripcion.json",
+    documentType: "holding_event",
+  } as const;
+
+  /**
+   * The #1254 tripwire, for the other route a document takes. It runs with no API key
+   * for the same reason the attachment one does, and it is stronger than it looks: the
+   * fixture is revalidated through the production parser, so a contract change that
+   * stopped accepting it (a tightened field, a renamed key) fails HERE rather than as
+   * a mysterious refusal in a live run three weeks later.
+   */
+  it("revalidates every declared document as the document its question claims", async () => {
+    for (const question of ATTACHMENT_QUESTIONS) {
+      if (!question.validatedDocument) continue;
+      const preview = await readGoldenValidatedDocument(question.validatedDocument);
+      expect(preview.result.status, question.id).toBe("valid");
+    }
+  });
+
+  it("hands the receipt to `propose_operation` as the fact it may write", async () => {
+    // The lane assertion that matters for this question: the tool takes its date,
+    // amount, participaciones and commission from HERE, and refuses outright when the
+    // list is empty. A harness that composed the history but not this would grade
+    // `operation_document_required` on every run — its own hole, not the model.
+    const history = documentHistoryMessages(await readGoldenValidatedDocument(RECEIPT));
+
+    const event = holdingEventInContext(validatedDocumentsFor(null, history))?.event;
+
+    expect(event?.date).toBe("2026-05-29");
+    expect(event?.amount).toBe(480);
+    expect(event?.units).toBe(13.7213);
+    expect(event?.label).toContain("SMALL CAP");
+  });
+
+  it("refuses to grade a fixture that parsed as another document", async () => {
+    await expect(
+      readGoldenValidatedDocument({ ...RECEIPT, documentType: "positions" }),
+    ).rejects.toThrow(/holding_event/);
+  });
+
+  it("fails loudly on a document that is not committed", async () => {
+    await expect(
+      readGoldenValidatedDocument({
+        file: "no-existe.json",
+        documentType: "holding_event",
+      }),
+    ).rejects.toThrow();
   });
 });
 
@@ -174,5 +243,30 @@ describe("buildTurnMessages", () => {
     const messages = await buildTurnMessages(question, null);
 
     expect(JSON.stringify(messages)).not.toContain("ADJUNTO");
+  });
+
+  it("carries a document validated one turn earlier behind the validated fence", async () => {
+    const question = ATTACHMENT_QUESTIONS.find(
+      (candidate) => candidate.validatedDocument,
+    )!;
+    const history = documentHistoryMessages(
+      await readGoldenValidatedDocument(question.validatedDocument!),
+    );
+
+    const messages = await buildTurnMessages(question, null, history);
+    const serialized = JSON.stringify(messages);
+
+    // The fence that means «validated by worthline» — the one an unstructured turn
+    // never gets — plus the receipt's own figures, and the question asked on top.
+    expect(serialized).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
+    expect(serialized).toContain("SMALL CAP");
+    expect(serialized).toContain("2026-05-29");
+    expect(serialized).toContain(question.question);
+    // The card stays UI here too: what travels is the extraction, never the payload the
+    // browser painted.
+    expect(serialized).not.toContain("data-attachment-extraction");
+    // And nothing in the history decides what the question grades: no holding named, no
+    // direction given, no figure repeated by the assistant.
+    expect(serialized).not.toContain("ETF MSCI World");
   });
 });

@@ -25,7 +25,9 @@ import {
 import { type Check, GOLDEN_QUESTIONS, type GoldenQuestion } from "./golden";
 import {
   buildTurnMessages,
+  documentHistoryMessages,
   readGoldenAttachmentTurn,
+  readGoldenValidatedDocument,
   unvalidatedEvidenceFor,
   validatedDocumentsFor,
 } from "./golden-turn";
@@ -58,10 +60,18 @@ async function askAssistant(
   const reading = question.attachment
     ? await readGoldenAttachmentTurn(question.attachment)
     : null;
+  // And the other way a document reaches a turn (#1376): validated in an earlier
+  // message and carried forward by `validatedDocumentsInContext`. Asserted against the
+  // documentType the question declares, for the same reason the lane is.
+  const history = documentHistoryMessages(
+    question.validatedDocument
+      ? await readGoldenValidatedDocument(question.validatedDocument)
+      : null,
+  );
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
-    messages: await buildTurnMessages(question, reading),
+    messages: await buildTurnMessages(question, reading, history),
     tools: createChatTools({
       // The chat route's own slice, not a copy of it (#1265): the harness used to
       // forward three of six, which left every proposal tool answering
@@ -77,8 +87,9 @@ async function askAssistant(
       // And the other half of what a document turn carries (#1373): the rows the
       // reconcile is allowed to write come from the extraction, so a harness that
       // forwarded the gate but not the documents would grade a refusal production
-      // never makes.
-      validatedDocuments: validatedDocumentsFor(reading),
+      // never makes. History counts too (#1376) — that is where `propose_operation`
+      // takes its fact from, one message after the upload.
+      validatedDocuments: validatedDocumentsFor(reading, history),
     }),
     stopWhen: stepCountIs(MAX_STEPS),
   });

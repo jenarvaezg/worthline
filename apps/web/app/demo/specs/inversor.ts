@@ -4,6 +4,9 @@
  * term-locked pension, a frozen Numista collection, a Binance mirror with spot
  * and earn balances, and a configured FIRE target with strong progress. All
  * figures are fictional.
+ *
+ * Two of its funds are deliberately SIBLINGS — «ETF MSCI World» and «ETF MSCI World
+ * Small Cap» — so that naming one of them is a judgement and not a lookup (#1376).
  */
 import type {
   BinanceHistoryMonthSpec,
@@ -107,6 +110,22 @@ export const INVERSOR_SPEC: PersonaSpec = {
       ],
       ownership: FULL,
       unitSymbol: "WRLD",
+    },
+    {
+      // The sibling that makes «¿a cuál de mis posiciones pertenece este papel?» a real
+      // question (#1376). A subscription confirmation prints the fund's COMMERCIAL name,
+      // never the label the user gave it here, so a portfolio holding two funds of the
+      // same family is where that reading goes wrong — the production session that
+      // opened #1374 filed an aportación to «MYINVESTOR INDEXADO SP 500 PP» against a
+      // different MyInvestor pension plan of the same portfolio. Until this holding
+      // existed no demo persona could reproduce that: every position was distinguishable
+      // at a glance, so the eval could only ever grade the easy case.
+      id: "asset_inversor_world_small",
+      manualPricePerUnit: "34.80",
+      name: "ETF MSCI World Small Cap",
+      operations: monthlyBuys("asset_inversor_world_small", 24, "4", 26.5, 0.35),
+      ownership: FULL,
+      unitSymbol: "WSML",
     },
     {
       id: "asset_inversor_emerging",

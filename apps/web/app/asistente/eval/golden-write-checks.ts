@@ -14,8 +14,18 @@
  */
 
 import { type Check, check } from "./golden-question";
-import { type AssistantAnswer, mentionsAny } from "./graders";
-import { fakesProposalCeremony, ungroundedProposalIds } from "./tool-discipline";
+import {
+  type AssistantAnswer,
+  claimsAnInventedMechanism,
+  commentsOnTheInterface,
+  mentionsAll,
+  mentionsAny,
+} from "./graders";
+import {
+  fakesProposalCeremony,
+  proposedHoldingLabels,
+  ungroundedProposalIds,
+} from "./tool-discipline";
 
 /**
  * The check every write-path question carries: the turn must not IMITATE the
@@ -40,6 +50,47 @@ export const groundedIds = (a: AssistantAnswer): Check => {
     ungrounded.length === 0,
   );
 };
+
+/**
+ * The proposal landed on the holding the document names, and on no other (#1376).
+ *
+ * `terms` are fragments of the destination's label, so the check pins a NAME and never
+ * a seeded id. Two conditions, on purpose: at least one proposal must have a readable
+ * destination — silence is not a right answer on a question whose sanctioned move is
+ * to write — and every destination must be that one, because proposing on the sibling
+ * as well as on the target is the same wrong write with a hedge in front of it.
+ *
+ * The destinations travel in the check name so a failure in the JSON report says which
+ * position the model actually chose, without re-running the provider.
+ */
+export const proposesOnHoldingNamed = (a: AssistantAnswer, terms: string[]): Check => {
+  const labels = proposedHoldingLabels(a);
+  const named = labels.length === 0 ? "ninguno legible" : labels.join(", ");
+  return check(
+    `la propuesta va a la posición que nombra el documento (destino: ${named})`,
+    labels.length > 0 && labels.every((label) => mentionsAll(label, terms)),
+  );
+};
+
+/**
+ * The turn talked about the content and not about the chat's own furniture — the
+ * system prompt's «cero meta-comentarios sobre la interfaz o tu formato».
+ */
+export const noInterfaceCommentary = (a: AssistantAnswer): Check =>
+  check(
+    "no comenta la interfaz ni imprime anotaciones de estado",
+    !commentsOnTheInterface(a.text),
+  );
+
+/**
+ * The turn described what worthline will do, not a mechanism it invented for the
+ * occasion. See {@link claimsAnInventedMechanism} for what this deliberately allows.
+ */
+export const noInventedMechanism = (a: AssistantAnswer): Check =>
+  check(
+    "no atribuye a worthline un mecanismo que no existe",
+    !claimsAnInventedMechanism(a.text),
+  );
 
 /**
  * The labels of the `familia` persona's cash holdings (`demo/specs/familia.ts`), each

@@ -21,7 +21,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  type AttachmentPreviewData,
   isValidatedDocument,
+  parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
   validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
@@ -34,9 +36,14 @@ import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 
-import type { GoldenAttachment, GoldenQuestion } from "./golden-question";
+import type {
+  GoldenAttachment,
+  GoldenQuestion,
+  GoldenValidatedDocument,
+} from "./golden-question";
 
 const ATTACHMENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "attachments");
+const DOCUMENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "documents");
 
 function resolveGoldenAttachmentPath(attachment: GoldenAttachment): string {
   return join(ATTACHMENTS_DIR, attachment.file);
@@ -92,10 +99,82 @@ export async function readGoldenAttachmentTurn(
 }
 
 /**
+ * What the user said in the turn that uploaded the document, and what the assistant
+ * answered then (#1376). Deliberately the emptiest pair that still makes a
+ * conversation: neither names a holding, a figure or a direction, so everything the
+ * question grades is decided in the turn under test and not handed over in history.
+ */
+const DOCUMENT_UPLOAD_TURN = "Te subo el justificante.";
+const DOCUMENT_UPLOAD_REPLY = "Lo he leído.";
+
+/**
+ * Read one declared validated document and check it is what the question thinks it is.
+ *
+ * The fixture is the extraction envelope the browser persists, and it is revalidated
+ * through {@link parseAttachmentPreviewData} — the same function the chat route runs
+ * on history — so what reaches the model is what a real conversation would carry, not
+ * a literal this harness typed. Both assertions throw rather than degrade, for the
+ * reason {@link readGoldenAttachmentTurn} states: a question that grades WHICH lane a
+ * turn took is meaningless once the document silently stopped being that document, and
+ * a silent green is worse than a loud error.
+ */
+export async function readGoldenValidatedDocument(
+  document: GoldenValidatedDocument,
+): Promise<AttachmentPreviewData> {
+  const raw = await readFile(join(DOCUMENTS_DIR, document.file), "utf8");
+  const preview = parseAttachmentPreviewData(JSON.parse(raw));
+  if (preview === null || preview.result.status !== "valid") {
+    throw new Error(
+      `Document ${document.file} did not revalidate as a worthline extraction.`,
+    );
+  }
+  const documentType = preview.result.data.documentType;
+  if (documentType !== document.documentType) {
+    throw new Error(
+      `Document ${document.file} parsed as "${documentType}", not the declared "${document.documentType}".`,
+    );
+  }
+  return preview;
+}
+
+/**
+ * The exchange that put the document in context, in the shape the route receives it
+ * from the browser: the user's upload turn, and the assistant reply that carries the
+ * extraction card. The card rides on the ASSISTANT message because that is where the
+ * stream emits it — and `prepareAttachmentMessagesForModel` strips it right back out,
+ * which is the point: the model gets the structured block, never the card.
+ */
+export function documentHistoryMessages(
+  document: AttachmentPreviewData | null,
+): UIMessage[] {
+  if (document === null) return [];
+  return [
+    {
+      id: "documento-subido",
+      role: "user",
+      parts: [{ type: "text", text: DOCUMENT_UPLOAD_TURN }],
+    },
+    {
+      id: "documento-leido",
+      role: "assistant",
+      parts: [
+        { type: "data-attachment-extraction", data: document },
+        { type: "text", text: DOCUMENT_UPLOAD_REPLY },
+      ],
+    },
+  ];
+}
+
+/**
  * The unvalidated-evidence frontier for this turn (#1248), derived exactly as the
- * chat route derives it: from what THIS turn's own extraction produced. Golden
- * questions are single-turn, so the history half of the route's rule cannot apply —
- * there is no earlier turn to have left a trace.
+ * chat route derives it: from what THIS turn's own extraction produced.
+ *
+ * The history half of the route's rule (`hasUnstructuredEvidenceInHistory`) has
+ * nothing to find here even since #1376 gave questions a history, and that is a
+ * property of the fixtures rather than a shortcut: what an earlier turn may leave in
+ * context is a VALIDATED document, and the trace that gate looks for is the card of an
+ * unstructured one. A fixture that ever validated in the other direction would need
+ * this function to read the history too.
  */
 export function unvalidatedEvidenceFor(reading: AttachmentTurnReading | null): boolean {
   return unvalidatedEvidenceGateApplies({
@@ -110,13 +189,16 @@ export function unvalidatedEvidenceFor(reading: AttachmentTurnReading | null): b
  * golden question by construction, and the harness would grade its own hole instead
  * of the model — the mistake #1265 had to undo, in the same shape.
  *
- * A golden question is single-turn, so there is no history to draw on: the list is
- * whatever THIS reading validated, if anything.
+ * Both halves of the route's rule apply since #1376: this turn's own reading, and the
+ * documents an earlier turn left in context. `propose_operation` lives entirely on the
+ * second — a `holding_event` is uploaded in one message and acted on in the next — so
+ * a harness that only forwarded the current turn could not grade that lane at all.
  */
 export function validatedDocumentsFor(
   reading: AttachmentTurnReading | null,
+  history: UIMessage[] = [],
 ): ExtractedDocument[] {
-  return validatedDocumentsForTools([], reading?.preview ?? null);
+  return validatedDocumentsForTools(history, reading?.preview ?? null);
 }
 
 /**
@@ -126,13 +208,17 @@ export function validatedDocumentsFor(
  *
  * A question with no attachment goes through the same path and comes out as the single
  * user message the runner's old `prompt:` built, so there is one code path rather than
- * two, and no question kind is quietly composed differently from the other.
+ * two, and no question kind is quietly composed differently from the other. A question
+ * whose document is in HISTORY (#1376) is the same story one turn later: the exchange
+ * that uploaded it goes in front, and the route's own function decides what survives.
  */
 export async function buildTurnMessages(
   question: GoldenQuestion,
   reading: AttachmentTurnReading | null,
+  history: UIMessage[] = [],
 ): Promise<ModelMessage[]> {
   const messages: UIMessage[] = [
+    ...history,
     { id: question.id, role: "user", parts: [{ type: "text", text: question.question }] },
   ];
   return await convertToModelMessages(

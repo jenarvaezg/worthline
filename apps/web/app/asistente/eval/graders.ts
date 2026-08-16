@@ -98,6 +98,64 @@ export function mentionsAny(text: string, terms: string[]): boolean {
   return terms.some((t) => haystack.includes(normalize(t)));
 }
 
+/**
+ * Talking about the INTERFACE instead of the content (#1376). The system prompt bans
+ * it in one line — «Cero meta-comentarios sobre la interfaz o tu formato (botones,
+ * tarjetas, acciones sugeridas): habla solo del contenido» — and the session that
+ * opened this issue broke it with whole paragraphs explaining what the pending card
+ * does and which button to press, plus a `[blocked]` annotation printed next to an
+ * action. The status annotations are here for the same reason: they are the model
+ * narrating its own plumbing.
+ *
+ * Deliberately matched on the interface NOUNS the prompt names and not on «confirma»:
+ * asking the user to confirm is what the product wants said, and a check that punished
+ * it would score the obedient answer as a defect.
+ */
+const INTERFACE_COMMENTARY = [
+  "tarjeta",
+  "botón",
+  "haz clic",
+  "haz click",
+  "acciones sugeridas",
+  "acción sugerida",
+  "acciones recomendadas",
+  "[blocked]",
+  "[bloqueado]",
+  "estado: preparado",
+];
+
+export function commentsOnTheInterface(text: string): boolean {
+  return mentionsAny(text, INTERFACE_COMMENTARY);
+}
+
+/**
+ * Claiming worthline does something it does not (#1376). The session that opened this
+ * issue announced that on confirming, worthline «suma los 125 € … y RECALIBRA la
+ * valoración de la posición». There is no such step: the apply appends one operation
+ * to the ledger and the position's value is units × price, like every other holding's.
+ *
+ * The list is deliberately NARROW, and the omission is the interesting part. It does
+ * not match «revaloriza» on its own, because that IS what happens — the ripple values
+ * the position at today's price, which is exactly why `propose_operation`'s card marks
+ * its impact «estimado». A wider net here would grade the true sentence as a lie, the
+ * failure mode this harness's README warns about twice. What is left is vocabulary
+ * that corresponds to no step of the apply at all.
+ */
+const INVENTED_MECHANISM = [
+  "recalibr",
+  "recalcula la valoración",
+  "recalcular la valoración",
+  "recalculará la valoración",
+  "recalcula el valor de la posición",
+  "ajusta la valoración",
+  "ajustará la valoración",
+  "reajusta la valoración",
+];
+
+export function claimsAnInventedMechanism(text: string): boolean {
+  return mentionsAny(text, INVENTED_MECHANISM);
+}
+
 /** A grounding read tool ran — the answer is not ungrounded chatter. */
 export function usedReadTool(answer: AssistantAnswer): boolean {
   return answer.toolCalls.some((call) => call.name !== "suggest_actions");

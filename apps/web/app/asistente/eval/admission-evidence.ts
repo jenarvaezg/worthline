@@ -77,6 +77,11 @@ export type AdmissionEvidence = AdmittedEvidence;
  * questions died on tokens-per-minute back then as well — a dead question scores
  * zero, so its reading number is a floor rather than a measurement of how well it
  * reads. It says nothing about `attachments` either: that dimension did not exist.
+ *
+ * **Both marks are stale as of #1376**, which added a 23rd question and took the set
+ * to 91 checks (`attachments` from 18 to 26). Their totals describe the sets they were
+ * measured on and are left exactly as measured: a mark is a run, and editing one in
+ * place would turn a record into a claim.
  */
 export const ADMISSION_EVIDENCE = [
   {
