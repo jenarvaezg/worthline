@@ -590,6 +590,19 @@ function priceFreshnessToSignal(
   return null;
 }
 
+/**
+ * Si una fuente pertenece al ámbito: alguno de los peldaños que materializa está
+ * entre los holdings del ámbito. Una sola definición para las TRES señales de
+ * fuente — si cada una decidiera la pertenencia por su cuenta, dos señales sobre la
+ * misma fuente podrían discrepar de ámbito.
+ */
+function sourceIsInScope(
+  source: DataQualityConnectedSource,
+  ownedAssetIds: Set<string>,
+): boolean {
+  return source.assetIds.some((assetId) => ownedAssetIds.has(assetId));
+}
+
 function sourceFreshnessSignals(
   connectedSources: readonly DataQualityConnectedSource[],
   ownedAssetIds: Set<string>,
@@ -598,7 +611,7 @@ function sourceFreshnessSignals(
   const signals: DataQualitySignal[] = [];
 
   for (const source of connectedSources) {
-    if (!source.assetIds.some((assetId) => ownedAssetIds.has(assetId))) {
+    if (!sourceIsInScope(source, ownedAssetIds)) {
       continue;
     }
 
@@ -687,8 +700,13 @@ function consecutiveFailures(attempts: readonly DataQualitySyncAttempt[]): {
     if (attempt.status === "ok") {
       break;
     }
+    // La fecha es la del fallo MÁS RECIENTE, sea la que sea — incluido un `null`.
+    // Con `??=` un intento reciente sin instante cedía la fecha a uno más viejo que
+    // sí lo tenía, y la señal decía «falló el día que aún funcionaba».
+    if (count === 0) {
+      latestFailureAt = attempt.at;
+    }
     count += 1;
-    latestFailureAt ??= attempt.at;
   }
 
   return { count, latestFailureAt };
@@ -701,9 +719,14 @@ function consecutiveFailures(attempts: readonly DataQualitySyncAttempt[]): {
  * mismo (la fuente), la superficie donde se repara es la misma
  * (`/ajustes/conexiones`) y la pregunta que responde es la misma familia de
  * pregunta que `FAILED_SOURCE_SYNC` — «¿por qué no se mueve esto?». Lo que añade es
- * el eje que la frescura no tiene: la CUENTA. Y son complementarias, no
- * solapadas — un fallo de fetch se captura antes de abrir corrida, así que no deja
- * intentos en error que contar, y un fallo de persist no toca la frescura.
+ * el eje que la frescura no tiene: la CUENTA. Con `FAILED_SOURCE_SYNC` no se pisa
+ * nunca — un fallo de fetch se captura antes de abrir corrida, así que no deja
+ * intentos en error que contar — pero con `STALE_SOURCE_SYNC` sí puede convivir: un
+ * persist que falla no mueve `last_sync_at`, así que la frescura se enrancia por
+ * detrás. Conviven a propósito: son dos lecturas verdaderas y distintas («lleva días
+ * sin moverse» y «lo ha intentado N veces sin conseguirlo»), y quien las lee juntas
+ * —el agente, el panel completo— sale sabiendo más. En el home no hay ruido: el
+ * bloque se queda solo con el tramo de severidad más alta, y esta es `high`.
  *
  * `high`, como el fallo de fetch: las cifras de la fuente llevan días congeladas en
  * la última sincronización buena y nada en la pantalla lo dice. `fixable: false`
@@ -722,7 +745,7 @@ function persistentSyncFailureSignals(
   const signals: DataQualitySignal[] = [];
 
   for (const source of connectedSources) {
-    if (!source.assetIds.some((assetId) => ownedAssetIds.has(assetId))) {
+    if (!sourceIsInScope(source, ownedAssetIds)) {
       continue;
     }
 
@@ -929,7 +952,7 @@ function projectionGapSignals(
   const signals: DataQualitySignal[] = [];
 
   for (const source of connectedSources) {
-    if (!source.assetIds.some((assetId) => ownedAssetIds.has(assetId))) {
+    if (!sourceIsInScope(source, ownedAssetIds)) {
       continue;
     }
 

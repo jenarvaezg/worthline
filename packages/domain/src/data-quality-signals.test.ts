@@ -840,6 +840,19 @@ describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => 
     expect(signals[0]!.observedDate).toBeUndefined();
   });
 
+  test("un fallo reciente sin instante no cede la fecha a uno más viejo", () => {
+    // La fila más reciente puede llegar sin fechar (una corrida abierta que nunca
+    // llegó a `running`). Heredar la fecha del fallo anterior diría «falló el día
+    // que aún funcionaba».
+    const signals = syncSignals([
+      attempt("error", null),
+      attempt("error", "2026-08-16T21:00:00.000Z"),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.observedDate).toBeUndefined();
+  });
+
   test("una fuente cuyos activos no son del ámbito no alerta en ese ámbito", () => {
     const { input } = fixture();
     const signals = collectDataQualitySignals(

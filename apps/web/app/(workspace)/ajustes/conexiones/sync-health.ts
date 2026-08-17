@@ -98,11 +98,6 @@ export function describeSyncError(error: SyncRunError | null): string {
     : "La última sincronización falló y no quedó registrado el motivo. Vuelve a intentarlo y, si sigue, cuéntanoslo.";
 }
 
-// Cuándo pasó una corrida (cierre → arranque → creación) lo dice `syncRunInstant`,
-// que vive con la fila en `@worthline/db`: desde #1226 esa misma regla la lee la
-// proyección que cuenta fallos seguidos para la salud de datos, y dos copias del
-// orden de respaldo son dos oportunidades de fechar el mismo sync en días distintos.
-
 /** El estado de la conexión que implica el estado de UNA corrida. */
 const RUN_STATE: Record<SyncRunStatus, SyncHealthState> = {
   error: "error",
