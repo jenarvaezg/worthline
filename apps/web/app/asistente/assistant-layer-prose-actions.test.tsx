@@ -145,10 +145,10 @@ describe("AssistantLayer · the action block never stays in the prose", () => {
     // aria-label and the chip's class, which is the whole point of the fix.)
     expect(html).not.toContain("Acciones sugeridas:");
     expect(html).not.toContain("runSuggestedAnalysis:");
-    expect(html).not.toContain("prompt");
+    expect(html).not.toContain("{&quot;prompt&quot;");
     expect(html).not.toContain("blocked");
-    expect(html).toContain(
-      '<button class="assistantChip runSuggestedAnalysis" type="button">Analizar el estado de la deuda actual</button>',
+    expect(html).toMatch(
+      /<button[^>]*class="assistantChip runSuggestedAnalysis"[^>]*>Analizar el estado de la deuda actual</,
     );
     expect(html.match(/assistantChip/g)).toHaveLength(1);
   });

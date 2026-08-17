@@ -239,11 +239,9 @@ function proseItemAction(
  * This reads arguments the MODEL wrote, so it deliberately adds no capability the
  * tool channel lacks: the parsed object goes through `resolveModelQuickActions` — the
  * same trust boundary the printed-JSON fallback uses — which maps a `section`,
- * `holding` or `figure` to a route the app owns and re-checks anything else. The one
- * field that could smuggle a destination is `href`, and it is filtered through
- * `internalProseLinkHref` first, exactly like a link written in the prose (#1289): a
- * href that is not an internal path is dropped rather than trusted, and the item then
- * lives or dies on the typed reference beside it.
+ * `holding` or `figure` to a route the app owns, and puts any `href` written in the
+ * text through the internal-path filter (#1289) before it can become a chip. Nothing
+ * is pre-cleaned here on purpose: one gate, and it is the one the other channels use.
  */
 function narratedCallAction(item: string): QuickAction | null {
   const call = NARRATED_CALL.exec(item);
@@ -258,22 +256,16 @@ function narratedCallAction(item: string): QuickAction | null {
   if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
 
   const label = withoutWrappingEmphasis(call[1] ?? "");
-  const candidate: Record<string, unknown> = {
-    ...(args as Record<string, unknown>),
-    type: call[2],
-    // The label the reader actually saw wins over the one in the arguments.
-    ...(label === "" ? {} : { label }),
-  };
-  if ("href" in candidate) {
-    const href =
-      typeof candidate["href"] === "string"
-        ? internalProseLinkHref(candidate["href"])
-        : null;
-    if (href === null) delete candidate["href"];
-    else candidate["href"] = href;
-  }
-
-  return resolveModelQuickActions([candidate])[0] ?? null;
+  return (
+    resolveModelQuickActions([
+      {
+        ...(args as Record<string, unknown>),
+        type: call[2],
+        // The label the reader actually saw wins over the one in the arguments.
+        ...(label === "" ? {} : { label }),
+      },
+    ])[0] ?? null
+  );
 }
 
 /** The chip this bullet is repeating, matched on its visible label. */

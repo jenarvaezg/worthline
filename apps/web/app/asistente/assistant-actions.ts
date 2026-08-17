@@ -28,6 +28,7 @@ import {
 } from "./operation-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
+import { internalProseLinkHref } from "./prose-link";
 import type { ReconcileRow } from "./reconcile-plan";
 import {
   parseReconcileProposalDraft,
@@ -100,17 +101,22 @@ const FIGURE_SECTION: Record<string, ScreenSection> = {
 };
 
 /**
- * An internal, same-origin path: rooted at `/`, not protocol-relative (`//`),
- * no backslash tricks, no scheme (`:`). Blocks `javascript:`, `http://…`, and
+ * The path a chip may navigate to, or null: rooted at `/`, not protocol-relative
+ * (`//`), no backslash tricks, no scheme (`:`). Blocks `javascript:`, `http://…` and
  * `//evil` while allowing `/patrimonio/x/editar`.
+ *
+ * Returns the CLEANED path and decides on it, never on the raw string (#1407): the
+ * URL parser DELETES tabs, LF and CR before resolving, so `/<tab>/evil.test/x` reads
+ * as a single-slash path — no backslash, no colon — and then navigates to
+ * `https://evil.test/x`. `internalProseLinkHref` strips exactly those characters,
+ * which is the same gate a link written in the prose goes through (#1289); the two
+ * extra checks here are what the chip channel adds on top of it.
  */
-function isInternalHref(href: string): boolean {
-  return (
-    href.startsWith("/") &&
-    !href.startsWith("//") &&
-    !href.includes("\\") &&
-    !href.includes(":")
-  );
+function internalActionHref(href: string): string | null {
+  const cleaned = internalProseLinkHref(href);
+  return cleaned !== null && !cleaned.includes("\\") && !cleaned.includes(":")
+    ? cleaned
+    : null;
 }
 
 function boundedString(value: unknown, max: number): string | null {
@@ -135,8 +141,9 @@ export function parseQuickActions(raw: unknown): QuickAction[] {
     if (label === null) continue;
 
     if (candidate["type"] === "openInternalSource") {
-      const href = boundedString(candidate["href"], MAX_LABEL);
-      if (href !== null && isInternalHref(href)) {
+      const written = boundedString(candidate["href"], MAX_LABEL);
+      const href = written === null ? null : internalActionHref(written);
+      if (href !== null) {
         actions.push({ type: "openInternalSource", label, href });
       }
     } else if (candidate["type"] === "runSuggestedAnalysis") {
@@ -182,8 +189,9 @@ export function resolveModelQuickActions(raw: unknown): QuickAction[] {
     if (label === null) continue;
 
     if (item["type"] === "openInternalSource") {
-      const hrefDirect = boundedString(item["href"], MAX_LABEL);
-      if (hrefDirect !== null && isInternalHref(hrefDirect)) {
+      const rawHref = boundedString(item["href"], MAX_LABEL);
+      const hrefDirect = rawHref === null ? null : internalActionHref(rawHref);
+      if (hrefDirect !== null) {
         actions.push({ type: "openInternalSource", label, href: hrefDirect });
       } else {
         const holding = boundedString(item["holding"], MAX_LABEL);

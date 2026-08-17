@@ -226,11 +226,39 @@ describe("splitProseActionBlock", () => {
   });
 
   it("never lets a narrated call carry its own destination off-origin", () => {
-    for (const href of ["https://evil.test", "//evil.test/x", "/\\evil.test"]) {
+    // The last one is the subtle one: the URL parser deletes the tab, so a href that
+    // reads as a single-slash path resolves to `//evil.test/x` — another origin.
+    const written = [
+      "https://evil.test",
+      "//evil.test/x",
+      "/\\\\evil.test",
+      "/\\t/evil.test/x",
+      "javascript:alert(1)",
+    ];
+    for (const href of written) {
       const text = `Texto.\n\n// Acciones sugeridas:\n- [Mira esto] (openInternalSource:{"href":"${href}"})`;
       // The block still goes — it is the model's action list — but nothing clickable
       // comes out of a destination the model wrote.
       expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
+    }
+  });
+
+  it("recognises a narrated call for every type of quick action", () => {
+    // A new quick-action type breaks this map in the typecheck, and with it this test:
+    // `NARRATED_CALL` naming its own subset of the vocabulary is what would otherwise
+    // fail in silence — the block would go and the chip would not come back.
+    const narrated: Record<QuickAction["type"], string> = {
+      openInternalSource: '(openInternalSource:{"section":"objetivos","label":"Ir"})',
+      runSuggestedAnalysis:
+        '(runSuggestedAnalysis:{"prompt":"¿Y ahora?","label":"Ahora"})',
+    };
+
+    for (const [type, item] of Object.entries(narrated)) {
+      const { cleaned, actions } = splitProseActionBlock(
+        `Texto.\n\n// Acciones sugeridas:\n- ${item}`,
+      );
+      expect(cleaned).toBe("Texto.");
+      expect(actions.map((action) => action.type)).toEqual([type]);
     }
   });
 

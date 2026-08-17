@@ -59,6 +59,28 @@ describe("parseQuickActions", () => {
       ).toEqual([]);
     }
   });
+
+  it("rejects a path the URL parser folds into another origin (#1407)", () => {
+    // The parser DELETES tab, LF and CR before resolving, so each of these reads as a
+    // single-slash path and lands on `//evil.test/x`. Checked on the raw string, they
+    // all passed — the chip would have been a link off-origin.
+    for (const href of ["/\t/evil.test/x", "/\n/evil.test/x", "/\r/evil.test/x"]) {
+      expect(
+        parseQuickActions([{ type: "openInternalSource", label: "x", href }]),
+      ).toEqual([]);
+      expect(
+        resolveModelQuickActions([{ type: "openInternalSource", label: "x", href }]),
+      ).toEqual([]);
+    }
+  });
+
+  it("carries the cleaned path, not the string it validated from", () => {
+    expect(
+      parseQuickActions([
+        { type: "openInternalSource", label: "x", href: "/patri\tmonio" },
+      ]),
+    ).toEqual([{ type: "openInternalSource", label: "x", href: "/patrimonio" }]);
+  });
 });
 
 describe("resolveModelQuickActions", () => {
