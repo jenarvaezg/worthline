@@ -185,7 +185,11 @@ describe("attachment chat context", () => {
     expect(serialized).toContain("SOLO UNA PARTE del contenido");
     expect(serialized).toContain("LECTURA PARCIAL");
     expect(serialized).toContain("NUNCA trates la última línea visible como el final");
-    expect(serialized).toContain("no la presentes como saldo final, total, ni fecha");
+    expect(serialized).toContain("no la presentes como saldo final, total ni fecha");
+    // And the other half of the rule since #1419: a SAMPLE ends where the sheet ends,
+    // so what it must not be read as is a continuous table.
+    expect(serialized).toContain("NO son consecutivas");
+    expect(serialized).toContain("no cuentes filas");
     // The rule sits BEFORE the content, so the document cannot displace it.
     const text = promptTextOf(prepared);
     expect(text.indexOf("SOLO UNA PARTE")).toBeLessThan(text.indexOf("04/04/2026"));

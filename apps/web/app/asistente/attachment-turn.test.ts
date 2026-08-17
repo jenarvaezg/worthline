@@ -98,7 +98,9 @@ describe("readAttachmentTurn", () => {
       status: "unrecognized",
     });
     expect(reading.unstructured?.source).toBe("spreadsheet_grid");
-    expect(reading.unstructured?.text).toContain("Cuenta corriente conjunta");
+    expect(reading.unstructured?.fitTo(200_000).text).toContain(
+      "Cuenta corriente conjunta",
+    );
     // A workbook never reaches a vision model: the deterministic route owns it.
     expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
     expect(describeVisionAttachment).not.toHaveBeenCalled();
@@ -129,7 +131,7 @@ describe("readAttachmentTurn", () => {
       mimeType: "image/png",
     });
 
-    expect(reading.unstructured).toEqual({
+    expect(reading.unstructured?.fitTo(200_000)).toEqual({
       fileName: "captura.png",
       source: "vision_description",
       text: "Se ve una pantalla de pago.",
@@ -203,7 +205,7 @@ describe("readAttachmentTurn", () => {
       mimeType: "image/png",
     });
 
-    expect(reading.unstructured).toEqual({
+    expect(reading.unstructured?.fitTo(200_000)).toEqual({
       fileName: "composicion.png",
       source: "vision_description",
       text: "Se ve una cartera con dos fondos y un total de 1.413,63 €.",
