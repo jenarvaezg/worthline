@@ -37,7 +37,7 @@ import type {
 import type { OperationsStore, UpdateInvestmentOperationInput } from "./operations-store";
 import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
-import type { SyncTrigger } from "./sync-run-store";
+import type { SyncRunReadStore, SyncTrigger } from "./sync-run-store";
 import type { WorkspaceStore } from "./workspace-store";
 
 type PublicAssetStore = Omit<
@@ -203,6 +203,13 @@ interface LegacyWorthlineStore {
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
   connectedSources: PublicConnectedSourceStore;
+  /**
+   * The observable sync attempts, READ-ONLY (#885, surfaced by #1224). Health of
+   * fetch — did the sync run and work? — as opposed to the freshness of the
+   * valuation, which lives in `connected_sources.last_sync_at` / the price cache.
+   * Runs are written only by the sync executor, never through this store.
+   */
+  syncRuns: SyncRunReadStore;
   /** Intermediate goals + their assigned holdings (PRD #421, #424). */
   goals: GoalStore;
   payouts: PayoutStore;

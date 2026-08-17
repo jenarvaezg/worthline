@@ -1,3 +1,4 @@
+import type { SyncRun } from "@worthline/db";
 import type { SourcePosition } from "@worthline/domain";
 
 /**
@@ -56,12 +57,19 @@ export interface ConnectionSourceRow {
 export interface ConnectionRowStore {
   listSourceAssetIds: (sourceId: string) => Promise<string[]>;
   readPositions: (sourceId: string) => Promise<SourcePosition[]>;
+  /** Las corridas retenidas de la fuente, newest-first (`sync_run`, #1224). */
+  readRuns: (sourceId: string) => Promise<SyncRun[]>;
 }
 
 export interface ConnectionRow {
   adapter: string;
   /** Ficha del activo espejo, o null si el holding ya no tiene id público (#1318). */
   fichaHref: string | null;
+  /**
+   * Las corridas de sync retenidas, newest-first — la primera es la última
+   * corrida y de ella sale la salud de la fila (#1224). Vacío sin conectar.
+   */
+  runs: readonly SyncRun[];
   /** null = adapter disponible pero sin conectar. */
   source: { assetId: string; id: string; lastSyncAt: string | null } | null;
   unitCount: number;
@@ -94,24 +102,27 @@ export async function loadConnectionRows({
         return {
           adapter: definition.adapter,
           fichaHref: null,
+          runs: [],
           source: null,
           unitCount: 0,
           valueMinor: 0,
         };
       }
 
-      // Las dos lecturas van siempre, también para un adapter de un solo peldaño
+      // Las tres lecturas van siempre, también para un adapter de un solo peldaño
       // que no mire `sourceAssetIds` (Numista): el contrato es el mismo para
-      // todos y son dos consultas indexadas por fuente conectada — como mucho una
-      // por entrada del registry, y solo si está conectada.
-      const [positions, sourceAssetIds] = await Promise.all([
+      // todos y son tres consultas indexadas por fuente conectada — como mucho
+      // una tanda por entrada del registry, y solo si está conectada.
+      const [positions, sourceAssetIds, runs] = await Promise.all([
         store.readPositions(source.id),
         store.listSourceAssetIds(source.id),
+        store.readRuns(source.id),
       ]);
 
       return {
         adapter: definition.adapter,
         fichaHref: hrefOf(source.assetId),
+        runs,
         source: {
           assetId: source.assetId,
           id: source.id,

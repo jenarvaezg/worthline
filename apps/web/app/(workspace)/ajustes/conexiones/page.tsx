@@ -69,7 +69,14 @@ export async function ConexionesContent({
       return publicId ? holdingDetailHref(publicId) : null;
     },
     sources,
-    store: store.connectedSources,
+    // Las posiciones y los peldaños salen de `connected_sources`; la salud de la
+    // última corrida, de `sync_run` (#1224) — dos puertos distintos, cableados
+    // explícitamente para que la carga no dependa de la forma de un store entero.
+    store: {
+      listSourceAssetIds: store.connectedSources.listSourceAssetIds,
+      readPositions: store.connectedSources.readPositions,
+      readRuns: store.syncRuns.readRuns,
+    },
   });
 
   const connections: ConnectionEntry[] = CONNECTION_REGISTRY.map((definition, index) => ({

@@ -1,3 +1,4 @@
+import type { SyncRun } from "@worthline/db";
 import type { SourcePosition } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -51,19 +52,39 @@ function position(externalId: string): SourcePosition {
   };
 }
 
+function syncRun(overrides: Partial<SyncRun> = {}): SyncRun {
+  return {
+    createdAt: "2026-08-17T09:00:00.000Z",
+    error: null,
+    finishedAt: "2026-08-17T09:00:04.000Z",
+    id: "run_1",
+    sourceId: "src_espejo",
+    startedAt: "2026-08-17T09:00:00.000Z",
+    status: "ok",
+    trigger: "cron",
+    ...overrides,
+  };
+}
+
 function fakeStore(
   positions: Record<string, SourcePosition[]> = {},
   assetIds: Record<string, string[]> = {},
+  runs: Record<string, SyncRun[]> = {},
 ) {
   return {
     listSourceAssetIds: vi.fn(async (sourceId: string) => assetIds[sourceId] ?? []),
     readPositions: vi.fn(async (sourceId: string) => positions[sourceId] ?? []),
+    readRuns: vi.fn(async (sourceId: string) => runs[sourceId] ?? []),
   };
 }
 
 describe("loadConnectionRows (#1223)", () => {
   test("a connected source becomes a row with its adapter's own count and value", async () => {
-    const store = fakeStore({ src_espejo: [position("a"), position("b")] });
+    const store = fakeStore(
+      { src_espejo: [position("a"), position("b")] },
+      {},
+      { src_espejo: [syncRun()] },
+    );
 
     const rows = await loadConnectionRows({
       assets: [
@@ -80,6 +101,7 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: "/patrimonio/wl_hld_1",
+        runs: [syncRun()],
         source: {
           assetId: "asset_espejo",
           id: "src_espejo",
@@ -129,6 +151,7 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: null,
+        runs: [],
         source: null,
         unitCount: 0,
         valueMinor: 0,
@@ -137,6 +160,32 @@ describe("loadConnectionRows (#1223)", () => {
     // Sin fuente no hay nada que leer: la página no paga I/O por un adapter suelto.
     expect(store.readPositions).not.toHaveBeenCalled();
     expect(store.listSourceAssetIds).not.toHaveBeenCalled();
+    expect(store.readRuns).not.toHaveBeenCalled();
+  });
+
+  test("una fuente conectada trae sus corridas retenidas, tal cual las da el store (#1224)", async () => {
+    const fallida = syncRun({
+      error: { code: "sync_persist_failed", message: "boom", retriable: true },
+      id: "run_fallida",
+      status: "error",
+    });
+    const store = fakeStore(
+      {},
+      {},
+      { src_espejo: [fallida, syncRun({ id: "run_previa" })] },
+    );
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    // El orden es el del store (newest-first): la salud se lee de la primera.
+    expect(rows[0]?.runs.map((run) => run.id)).toEqual(["run_fallida", "run_previa"]);
+    expect(store.readRuns).toHaveBeenCalledWith("src_espejo");
   });
 
   test("rows follow the registry order, not the order the store lists sources in", async () => {

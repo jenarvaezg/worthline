@@ -41,6 +41,17 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   await page.getByRole("button", { name: "Sincronizar Binance" }).click();
   await expect(page.getByRole("status")).toHaveText("Cuenta de Binance sincronizada.");
 
+  // 2.b La salud de esa corrida queda VISIBLE en la propia página (#1224): la fila
+  //     declara su estado y el pliegue guarda el historial de `sync_run` — antes
+  //     solo se pintaba `last_sync_at` y un fallo era indistinguible de un éxito.
+  const binanceRow = page.locator(".conexTable tbody tr").filter({
+    has: page.getByRole("button", { name: "Sincronizar Binance" }),
+  });
+  await expect(binanceRow).toContainText("Sincronizado");
+  await page.locator("details.conexHistory > summary").click();
+  await expect(page.locator(".conexRunTable")).toContainText("Manual");
+  await expect(page.locator(".conexRunTable")).toContainText("Correcta");
+
   // 3. Both holdings appear in the unified list with their live values: the market
   //    holding (0.5 BTC × 50 000 = 25 000 €) and the SEPARATE term-locked one
   //    (3 ETH × 2 000 = 6 000 €), tagged "(bloqueado)".
