@@ -35,6 +35,16 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
   propose_early_repayment: "accepts",
   propose_holding: "accepts",
   propose_property_valuation_anchor: "accepts",
+  /**
+   * `accepts`, no `rejects` como su hermana (#1423): una enmienda no puede meter
+   * NINGUNA fila nueva en el patrimonio —opera sobre los puntos que ya están
+   * persistidos, seleccionados por fecha— y lo único que puede aportar de una
+   * lectura sin validar es UN importe corregido en un punto, que es exactamente el
+   * dato puntual que el ojo humano valida en la tarjeta. Clasificarla `rejects`
+   * dejaría al usuario con la propuesta ya en pantalla y sin forma de retocarla,
+   * que es el agujero que la issue arregla; el cupo de una por turno sigue puesto.
+   */
+  propose_reconstruction_amendment: "accepts",
   // Bulk import: the deterministic route owns these, always.
   propose_balance_history_import: "rejects",
   propose_mixed_document_import: "rejects",

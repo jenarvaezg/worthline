@@ -57,6 +57,12 @@ function onboardingBlock(mode: OnboardingMode): string {
  * reads in the same request; so this prompt no longer glosses the eleven `propose_*`
  * tools one by one, and the maintainer alert's three categories moved the other way,
  * into the tool. The measurement behind the rule is in `eval/README.md`.
+ *
+ * Un caso resuelto con esa regla, por si el próximo lo duda (#1423): «enmienda la
+ * reconstrucción en vez de reemitir sus 49 filas» es una elección entre DOS tools
+ * hermanas, no una regla del protocolo, así que vive en las descripciones de las dos
+ * (`propose_reconstruction` apunta a `propose_reconstruction_amendment`) y no gasta
+ * ni un carácter de aquí.
  */
 export function buildChatSystemPrompt(screenContext: ScreenContext | null): string {
   const mode = screenContext ? onboardingModeForContext(screenContext) : null;

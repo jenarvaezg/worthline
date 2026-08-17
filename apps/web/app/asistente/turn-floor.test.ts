@@ -75,6 +75,29 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * made the per-model prompt budget charge it: the budget subtracts what a turn pays
  * before dividing what is left, so a second copy of the figure here would let the
  * two drift. This file keeps the evidence; the module keeps the value.
+ *
+ * **Raised to 40.300 on 2026-08-17 by #1423**, the second «new tool family» raise and
+ * for the same kind of reason as #1374: `propose_reconstruction_amendment` is the lane
+ * «quita los puntos estimados» never had. Without it the only way to change a
+ * reconstruction already on screen was to RE-EMIT its 49 rows, which is precisely the
+ * payload `gemini-3.1-flash-lite` stops producing — a real user got «he actualizado la
+ * propuesta» over a proposal nothing had touched. So the raise buys a cheaper turn,
+ * not a more expensive one: the amendment is a two-field call where the alternative
+ * was a 49-row array, and the alternative did not work.
+ *
+ * The arithmetic: the widest real floor is 39.708 (1.235 for the tool — desc 730 ·
+ * schema 473 — plus 158 on `propose_reconstruction`'s pointer to it), and the ceiling
+ * keeps the same ~1,5% headroom #1374 left. The tool is mid-pack and it paid what it
+ * could inside its own lane first: its description started at 1.106 and lost 376 (the
+ * «no reemitas» sentence, which the sister tool's pointer already carries, and two of
+ * three examples). What it did NOT do is slim a sibling — `propose_holding` (2.543)
+ * and `propose_correction` (2.127) are still the ranking's head, and their length is
+ * measured incident repair, not padding: trimming them blind from this lane would be
+ * trading a floor for a behaviour nobody re-measured. That slice is still owed, and it
+ * is still the honest reading of this list.
+ *
+ * The prompt paid nothing: «enmienda en vez de reemitir» is a choice between two
+ * sibling tools, so it lives in their descriptions (see `system-prompt.ts`).
  */
 
 describe("measureTurnFloor", () => {
