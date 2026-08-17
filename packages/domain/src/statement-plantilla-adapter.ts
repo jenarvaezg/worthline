@@ -10,7 +10,9 @@
  *
  * - `Fecha`: `dd/mm/aaaa` or `aaaa-mm-dd`.
  * - `Tipo de activo`: Fondo | ETF | Acción | Índice | Plan de pensiones |
- *   Cripto (accent/case-insensitive; `Plan` and `Crypto` also accepted).
+ *   Cripto (accent/case-insensitive; `Plan` and `Crypto` also accepted). A
+ *   handful of types worthline models elsewhere — Hipoteca, Inmueble, Efectivo —
+ *   are recognized only to point at their own door (#1405); they still abort.
  * - `Identificador`: the grouping/matching key — ISIN for listed instruments,
  *   Finect code for pension plans, CoinGecko id for crypto.
  * - `Operación`: Compra | Venta — the ONLY source of direction. Amounts and
@@ -67,6 +69,46 @@ const INSTRUMENT_BY_TIPO: Record<string, Instrument> = {
   indice: "index",
   plan: "pension_plan",
   "plan de pensiones": "pension_plan",
+};
+
+/**
+ * Types worthline DOES model, but not as a holding with buy/sell operations
+ * (#1405). Each of these enters by its own door, so the row is still an error —
+ * what changes is that the message says WHERE to go instead of only listing the
+ * six types this file accepts.
+ *
+ * The distinction is real, not cosmetic: a mortgage's history is not a ledger of
+ * movements but a plan that GENERATES its balance curve (ADR 0019, ADR 0056), so
+ * a cuadro de amortización flattened into 270 fake buys and sells would store the
+ * derived curve as declared truth and lose the cuota, the payoff date and every
+ * future revision. Reading it as «worthline no sabe de hipotecas» is what cost a
+ * real user an afternoon.
+ *
+ * A wrong match here can only ever change an error message — the row aborts the
+ * load either way — so the vocabulary leans generous on synonyms.
+ */
+const DEBT_DOOR =
+  "worthline sí modela las deudas, pero no entran por aquí: se dan de alta en /patrimonio/anadir, cajón «Deuda», con su cuadro de amortización (capital, plazo, tipo y revisiones)";
+const HOUSING_DOOR =
+  "worthline sí modela los inmuebles, pero no entran por aquí: se dan de alta en /patrimonio/anadir, cajón «Inmueble», con su valor y sus tasaciones";
+const CASH_DOOR =
+  "worthline sí modela el dinero en cuenta, pero no entra por aquí: se da de alta en /patrimonio/anadir, cajón «Dinero»";
+
+const OTHER_DOOR_BY_TIPO: Record<string, string> = {
+  casa: HOUSING_DOOR,
+  cuenta: CASH_DOOR,
+  "cuenta corriente": CASH_DOOR,
+  credito: DEBT_DOOR,
+  deposito: CASH_DOOR,
+  deuda: DEBT_DOOR,
+  efectivo: CASH_DOOR,
+  hipoteca: DEBT_DOOR,
+  inmueble: HOUSING_DOOR,
+  local: HOUSING_DOOR,
+  piso: HOUSING_DOOR,
+  prestamo: DEBT_DOOR,
+  tarjeta: DEBT_DOOR,
+  vivienda: HOUSING_DOOR,
 };
 
 export const plantillaAdapter: StatementBrokerAdapter<PlantillaColumns> = {
@@ -160,9 +202,12 @@ export const plantillaAdapter: StatementBrokerAdapter<PlantillaColumns> = {
     const tipoRaw = (cells[columns.tipo] ?? "").trim();
     const instrument = INSTRUMENT_BY_TIPO[normalizeText(tipoRaw)];
     if (!instrument) {
+      if (tipoRaw === "") return rowError("viene sin tipo de activo");
+
+      const otherDoor = OTHER_DOOR_BY_TIPO[normalizeText(tipoRaw)];
       return rowError(
-        tipoRaw === ""
-          ? "viene sin tipo de activo"
+        otherDoor
+          ? `declara «${tipoRaw}» — ${otherDoor}`
           : `tiene un tipo de activo que no reconozco («${tipoRaw}») — vale Fondo, ETF, Acción, Índice, Plan de pensiones o Cripto`,
       );
     }
