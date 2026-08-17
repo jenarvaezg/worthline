@@ -406,27 +406,42 @@ function dedupeByDate<T>(entries: readonly T[], dateOf: (entry: T) => string): T
 function toRevisions(rates: readonly RawRate[]): {
   revisions: ScheduleRateRevision[];
   ambiguous: boolean;
+  warnings: string[];
 } {
   const anyPercentSign = rates.some((rate) => rate.percent);
   const anyAboveOne = rates.some((rate) => rate.value > 1);
   const percent = anyPercentSign || anyAboveOne;
   const ambiguous = !percent && rates.length > 0;
 
-  const revisions = rates
-    .filter(
-      (rate) =>
-        (percent ? rate.value : rate.value * 100) <= MAX_PLAUSIBLE_ANNUAL_RATE_PERCENT,
-    )
-    .map((rate) => ({
-      // Decimal division: `2.7 / 100` is 0.027000000000000003 in binary floating
-      // point, and a rate is a DecimalString all the way into the curve.
-      annualInterestRate: percent
-        ? new Big(rate.value).div(100).toString()
-        : new Big(rate.value).toString(),
-      revisionDate: rate.dateKey,
-    }));
+  const plausible = (rate: RawRate) =>
+    (percent ? rate.value : rate.value * 100) <= MAX_PLAUSIBLE_ANNUAL_RATE_PERCENT;
 
-  return { ambiguous, revisions };
+  const revisions = rates.filter(plausible).map((rate) => ({
+    // Decimal division: `2.7 / 100` is 0.027000000000000003 in binary floating
+    // point, and a rate is a DecimalString all the way into the curve.
+    annualInterestRate: percent
+      ? new Big(rate.value).div(100).toString()
+      : new Big(rate.value).toString(),
+    revisionDate: rate.dateKey,
+  }));
+
+  // A dropped cell is said out loud, never swallowed: it is the shape of a rate
+  // column that is not a rate column, and the reader guessing quietly is exactly
+  // how a misread document reaches the preview looking complete.
+  const dropped = rates.filter((rate) => !plausible(rate));
+  const warnings =
+    dropped.length === 0
+      ? []
+      : [
+          `No he leído como tipo ${dropped.length === 1 ? "una celda" : `${dropped.length} celdas`} (${dropped
+            .slice(0, 3)
+            .map((rate) => `${rate.dateKey}: ${rate.value}`)
+            .join(
+              "; ",
+            )}): pasan del ${MAX_PLAUSIBLE_ANNUAL_RATE_PERCENT} % anual, así que no son un tipo.`,
+        ];
+
+  return { ambiguous, revisions, warnings };
 }
 
 type SheetReading = Omit<AmortizationScheduleReading, "sheetName">;
@@ -459,7 +474,7 @@ function readSheet(sheet: ScheduleSheet): SheetReading | null {
   // hand, are the aggregate of a year filed under the anniversary column, while
   // the table's «Extra» carries the true date — so the table wins there.
   const rates = [...(table?.rates ?? []), ...(matrix?.rates ?? [])];
-  const { ambiguous, revisions } = toRevisions(rates);
+  const { ambiguous, revisions, warnings } = toRevisions(rates);
   const earlyRepayments =
     table && table.earlyRepayments.length > 0
       ? table.earlyRepayments
@@ -473,7 +488,7 @@ function readSheet(sheet: ScheduleSheet): SheetReading | null {
     earlyRepayments: dedupeByDate(earlyRepayments, (entry) => entry.repaymentDate),
     rateScaleAmbiguous: ambiguous,
     revisions: dedupeByDate(revisions, (revision) => revision.revisionDate),
-    warnings: [],
+    warnings,
   };
 }
 

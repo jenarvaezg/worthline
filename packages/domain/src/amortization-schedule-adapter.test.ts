@@ -83,6 +83,17 @@ describe("readAmortizationSchedule — the wide matrix", () => {
     expect(read(SANTANDER_MATRIX).rateScaleAmbiguous).toBe(true);
   });
 
+  test("a cell too big to be a rate is dropped OUT LOUD, never in silence", () => {
+    const reading = read([
+      ["", "01/05/2004", "01/05/2005"],
+      ["Tipo", "2,70", "163856,72"],
+    ]);
+    expect(reading.revisions.map((revision) => revision.revisionDate)).toEqual([
+      "2004-05-01",
+    ]);
+    expect(reading.warnings[0]).toContain("2005-05-01");
+  });
+
   test("a dates-across-the-top table with no rate row is not a schedule", () => {
     const result = readAmortizationSchedule([
       sheet([
