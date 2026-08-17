@@ -621,6 +621,19 @@ and one that **spans liquidity rungs**.
 _Avoid_: integration, account (overloaded — see **scope**), import (a one-shot
 full-workspace replace, not a live mirror).
 
+**Credentials**:
+The secret a **connected source** authenticates with — an API key, plus a signing
+secret where the provider needs one. Sealed at rest, never logged, never carried
+in a URL, and never read back to the screen: a form asks for a replacement, it
+never shows the current one. Credentials are the source's _key_, not the source
+itself, so **rotating** them is a distinct act from **disconnecting**: the link,
+its **positions**, and its history all survive a new key. A replacement is proved
+against the provider _before_ it is stored, so a rejected one leaves the working
+credentials standing rather than killing a live link with a typo. UI label:
+"Cambiar credenciales".
+_Avoid_: token (the short-lived thing minted _from_ credentials), password,
+reconnect (that is disconnect + connect, which is what rotating avoids).
+
 **Connector ingestion port**:
 The shared, staged boundary through which an external feed presents stable,
 normalized facts for preview, reconciliation, confirmation, and atomic application.

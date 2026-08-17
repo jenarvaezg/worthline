@@ -474,6 +474,8 @@ export function okMessage(key: string | undefined): string | null {
     balance_anchor_saved: "Saldo actualizado.",
     balance_history_imported: "Historial de saldos importado.",
     binance_connected: "Cuenta de Binance conectada.",
+    binance_credentials_updated:
+      "Credenciales de Binance actualizadas. Las nuevas ya sincronizan la cuenta.",
     binance_disconnected: "Cuenta de Binance desconectada.",
     binance_frozen: "Cuenta de Binance convertida en activo manual.",
     binance_synced: "Cuenta de Binance sincronizada.",
@@ -493,6 +495,8 @@ export function okMessage(key: string | undefined): string | null {
     liability_added: "Deuda añadida.",
     member_deleted: "Miembro borrado definitivamente.",
     numista_connected: "Colección Numista conectada.",
+    numista_credentials_updated:
+      "Clave de API de Numista actualizada. La nueva ya sincroniza la colección.",
     numista_disconnected: "Colección Numista desconectada.",
     numista_frozen: "Colección convertida en activo manual.",
     numista_synced: "Colección Numista sincronizada.",
