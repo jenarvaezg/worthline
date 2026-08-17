@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import OperationsEditor from "./operations-editor";
+import OperationsEditor, { RecordOperationSubmit } from "./operations-editor";
 
 const noop = async () => {};
 
@@ -59,5 +59,28 @@ describe("price context when the provider fetch failed (#1330)", () => {
     expect(html).toContain("130.5");
     expect(html).toContain("Reciente");
     expect(html).not.toContain("Sin precio");
+  });
+});
+
+describe("double-submit guard on the record button (#1394)", () => {
+  test("the idle button is enabled and reads 'Registrar operación'", () => {
+    const html = renderToStaticMarkup(<RecordOperationSubmit pending={false} />);
+
+    expect(html).toContain("Registrar operación");
+    expect(html).not.toContain("disabled");
+  });
+
+  test("while the action is in flight the button is disabled", () => {
+    // The second of two clicks never reaches the server: this is what stopped a
+    // sell from being recorded twice and eating ~1.000 € of net worth.
+    const html = renderToStaticMarkup(<RecordOperationSubmit pending={true} />);
+
+    expect(html).toContain("disabled");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Registrando…");
+  });
+
+  test("the editor renders the record button in its idle state", () => {
+    expect(render()).toContain("Registrar operación");
   });
 });

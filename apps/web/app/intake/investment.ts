@@ -95,11 +95,15 @@ export function parseInvestmentAssetCommandStrict(
  * (not a dropdown), preventing silent no-op on unselected dropdown.
  * Never silently swallows a bad units/price/fees field — returns an error
  * that names the offending field.
+ *
+ * `seed` is what makes the operation id unique. A clock reading gives a fresh id
+ * per call; an idempotency key (#1394) gives the SAME id for the same submission,
+ * which is how a double submit stops becoming two operations.
  */
 export function parseRouteOperationCommand(
   formData: FormData,
   routeAssetId: string,
-  seed: number,
+  seed: number | string,
   today: string,
 ): StrictParseResult<CreateInvestmentOperationInput> {
   const unitsRaw = String(formData.get("units") ?? "").trim();
