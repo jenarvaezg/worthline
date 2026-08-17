@@ -133,13 +133,20 @@ describe("isUnreadableTypedSeriesRefusal (#1418)", () => {
 });
 
 describe("the notes' copy (#1418)", () => {
-  it("opens the door that IS open and routes only what really has a route", () => {
+  it("names the chat door FIRST — it is the one that needs no second upload", () => {
     expect(UNVALIDATED_EVIDENCE_NOTE).toMatch(/histórico de saldos/i);
     expect(UNVALIDATED_EVIDENCE_NOTE).toMatch(/una línea por fecha/i);
-    // The statement importer is named for positions and movements — never for the debt
-    // history, which has no deterministic surface at all.
+    expect(UNVALIDATED_EVIDENCE_NOTE.indexOf("una línea por fecha")).toBeLessThan(
+      UNVALIDATED_EVIDENCE_NOTE.indexOf("importar-extracto"),
+    );
+  });
+
+  it("names BOTH tabs of the importer, since #1406 gave the schedule its own reader", () => {
+    // Before that, sending a mortgage schedule to /patrimonio/importar-extracto was
+    // sending someone to a door that did not open.
     expect(UNVALIDATED_EVIDENCE_NOTE).toContain("/patrimonio/importar-extracto");
     expect(UNVALIDATED_EVIDENCE_NOTE).toMatch(/posiciones y movimientos/i);
+    expect(UNVALIDATED_EVIDENCE_NOTE).toContain("Cuadro de amortización");
   });
 
   it("never sends the user back to the upload that shut the door", () => {
@@ -150,5 +157,9 @@ describe("the notes' copy (#1418)", () => {
     expect(UNREADABLE_TYPED_SERIES_NOTE).toMatch(/no he sabido interpretarla/i);
     expect(UNREADABLE_TYPED_SERIES_NOTE).toMatch(/no has perdido el trabajo/i);
     expect(UNREADABLE_TYPED_SERIES_NOTE).not.toBe(UNVALIDATED_EVIDENCE_NOTE);
+    // The file route is the tail of it, never the answer.
+    expect(UNREADABLE_TYPED_SERIES_NOTE.indexOf("importar-extracto")).toBeGreaterThan(
+      UNREADABLE_TYPED_SERIES_NOTE.indexOf("no has perdido el trabajo"),
+    );
   });
 });

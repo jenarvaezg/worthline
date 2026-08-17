@@ -420,6 +420,18 @@ export function resolveOkMessage(
     return `${funds} fondo${funds === 1 ? "" : "s"} importado${funds === 1 ? "" : "s"}${createdPart}.`;
   }
 
+  if (key === "schedule_import_loaded") {
+    const revisions =
+      Number.parseInt(normalizeParam(searchParams?.["revisiones"]) ?? "", 10) || 0;
+    const lumps =
+      Number.parseInt(normalizeParam(searchParams?.["anticipadas"]) ?? "", 10) || 0;
+    const lumpsPart =
+      lumps > 0
+        ? ` y ${lumps} amortización${lumps === 1 ? "" : "es"} anticipada${lumps === 1 ? "" : "s"}`
+        : "";
+    return `Cuadro cargado: ${revisions} revisión${revisions === 1 ? "" : "es"} de tipo${lumpsPart}. La historia de la deuda se ha recalculado.`;
+  }
+
   if (key === "price_backfill_done") {
     // Surface the source that produced the frozen prices so the post-confirm
     // banner — not just the preview — carries the audit trail (#380, criterion 8).

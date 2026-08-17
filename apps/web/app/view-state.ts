@@ -101,6 +101,20 @@ export const RANGE_VIEW_PARAM: ViewParamSpec<CompositionRange> = {
   fallback: "all",
 };
 
+/**
+ * Which document «Importar extracto» is reading (#1406). One door, two readers:
+ * a statement of movements (the default, and what the route has always been) or a
+ * bank's amortization schedule. They share the entry and nothing else — a
+ * movement is a book event, a cuadro is the output of a generative model.
+ */
+export type ImportDocumentKind = "operaciones" | "cuadro";
+
+export const IMPORT_DOCUMENT_VIEW_PARAM: ViewParamSpec<ImportDocumentKind> = {
+  key: "documento",
+  allowed: ["operaciones", "cuadro"],
+  fallback: "operaciones",
+};
+
 /** The two exposure-lens values: full portfolio (default) ↔ equity-only. */
 export type ExposureLens = "all" | "equity";
 

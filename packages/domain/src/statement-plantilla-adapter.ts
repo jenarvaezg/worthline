@@ -87,8 +87,10 @@ const INSTRUMENT_BY_TIPO: Record<string, Instrument> = {
  * A wrong match here can only ever change an error message — the row aborts the
  * load either way — so the vocabulary leans generous on synonyms.
  */
+// Re-pointed by #1406: the signpost is not thrown away, it now points at the
+// lane that reads the bank's own document instead of at twenty-three forms.
 const DEBT_DOOR =
-  "worthline sí modela las deudas, pero no entran por aquí: se dan de alta en /patrimonio/anadir, cajón «Deuda», con su cuadro de amortización (capital, plazo, tipo y revisiones)";
+  "worthline sí modela las deudas, pero no como filas de compra y venta: se dan de alta en /patrimonio/anadir, cajón «Deuda», y su historia entra por la pestaña «Cuadro de amortización» de esta misma pantalla — sube ahí el cuadro tal cual te lo da el banco";
 const HOUSING_DOOR =
   "worthline sí modela los inmuebles, pero no entran por aquí: se dan de alta en /patrimonio/anadir, cajón «Inmueble», con su valor y sus tasaciones";
 const CASH_DOOR =

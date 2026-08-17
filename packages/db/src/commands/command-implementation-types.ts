@@ -215,6 +215,18 @@ export interface DatedFactCommandImplementations {
     today?: string;
   }) => Promise<void>;
   /**
+   * Amortization-schedule import seam (#1406): persist a whole cuadro's worth of
+   * interest-rate revisions and early repayments over an EXISTING plan — the plan
+   * row itself is never rewritten — AND run ONE ripple, atomically. Returns how
+   * many rows were inserted (0 when empty).
+   */
+  importAmortizationScheduleAndRipple: (params: {
+    liabilityId: string;
+    revisions: AddInterestRateRevisionInput[];
+    earlyRepayments: AddEarlyRepaymentInput[];
+    today?: string;
+  }) => Promise<number>;
+  /**
    * Balance-history import seam (ADR 0056, #696): persist a chain of balance
    * re-baselines (`startsAtBaseline: false`) AND run ONE ripple from the
    * earliest checkpoint, atomically. Never N ripples — the batched debt seam

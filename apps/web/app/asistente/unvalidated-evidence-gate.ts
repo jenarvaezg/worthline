@@ -35,6 +35,16 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
   propose_early_repayment: "accepts",
   propose_holding: "accepts",
   propose_property_valuation_anchor: "accepts",
+  /**
+   * `accepts`, no `rejects` como su hermana (#1423): una enmienda no puede meter
+   * NINGUNA fila nueva en el patrimonio —opera sobre los puntos que ya están
+   * persistidos, seleccionados por fecha— y lo único que puede aportar de una
+   * lectura sin validar es UN importe corregido en un punto, que es exactamente el
+   * dato puntual que el ojo humano valida en la tarjeta. Clasificarla `rejects`
+   * dejaría al usuario con la propuesta ya en pantalla y sin forma de retocarla,
+   * que es el agujero que la issue arregla; el cupo de una por turno sigue puesto.
+   */
+  propose_reconstruction_amendment: "accepts",
   // Bulk import: the deterministic route owns these, always.
   propose_balance_history_import: "rejects",
   propose_mixed_document_import: "rejects",
@@ -84,6 +94,13 @@ export function unvalidatedEvidenceClassFor(toolName: string): UnvalidatedEviden
  * document are positions, movements and segments: nothing here can read those off a
  * message without guessing what each column means, and a guess is the bulk write this
  * whole boundary exists to prevent. Their route remains the deterministic one.
+ *
+ * These two have a deterministic route as well since #1406 gave the bank's schedule its
+ * own reader behind the same door (ADR 0071), and that does not make this escape idle: a
+ * person who has just been told their file cannot be read in bulk, and who answers by
+ * typing the figures, is on the manual path in the surface they are already standing in.
+ * What it does mean is that every refusal here can name the importer as an alternative —
+ * and must, which is why the copy below does.
  *
  * Enumerated here, next to the frontier it pierces, so the guardian test can assert
  * that every escape belongs to a lane the frontier actually closes.
@@ -261,15 +278,22 @@ export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =
  * «escríbeme las fechas y los saldos» at somebody who has just written them is the
  * failure this ticket is named after. So this one says what it tried, what shape works,
  * and the two things that most often break a real paste — a balance that goes up, and
- * two figures for the same date. It never asks for a file: there IS no deterministic
- * route for a debt's balance history, so this lane is the only one there is.
+ * two figures for the same date.
+ *
+ * The file route comes LAST and as an alternative, never as the fix: it exists since
+ * #1406 gave the bank's schedule its own reader behind the same door (ADR 0071), so
+ * withholding it would be hiding a working path — but leading with it would be answering
+ * «I could not read what you wrote» with «upload a file instead», which is the shrug the
+ * whole ticket is about.
  */
 export const UNREADABLE_TYPED_SERIES_MESSAGE =
   "He intentado leer la serie de saldos que me has escrito y no he podido, así que no " +
   "he preparado nada — el trabajo no se ha perdido, solo necesito el formato. Escríbeme " +
   "una línea por fecha, con la fecha y el saldo pendiente y nada más (por ejemplo " +
   "«01/10/2025 198.456,78»). Ojo a dos cosas que me lo impiden: que el saldo suba de " +
-  "una fecha a la siguiente, y que haya dos cifras distintas para la misma fecha.";
+  "una fecha a la siguiente, y que haya dos cifras distintas para la misma fecha. Si " +
+  "prefieres no reescribirlo, el cuadro del banco entero se carga en " +
+  "/patrimonio/importar-extracto, pestaña «Cuadro de amortización».";
 
 /**
  * The typed envelope the model relays. Sibling of the paywall's

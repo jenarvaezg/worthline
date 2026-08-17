@@ -41,6 +41,9 @@ describe("unvalidated-evidence classification (#1248)", () => {
       "propose_property_valuation_anchor",
       "propose_holding",
       "propose_early_repayment",
+      // Enmendar una reconstrucción (#1423) no mete ninguna fila nueva: opera sobre
+      // los puntos ya persistidos y, como mucho, corrige UN importe a la vista.
+      "propose_reconstruction_amendment",
     ]) {
       expect(unvalidatedEvidenceClassFor(name), name).toBe("accepts");
     }
@@ -239,8 +242,12 @@ describe("a series the user typed reopens its lane (#1418)", () => {
     // …names the two shapes that actually break a real paste…
     expect(unreadable.message).toMatch(/suba/i);
     expect(unreadable.message).toMatch(/misma fecha/i);
-    // …and never sends them to a file: there is no deterministic route for this one.
-    expect(unreadable.message).not.toMatch(/importar-extracto|sube|adjunt/i);
+    // …and offers the schedule importer (#1406) as an ALTERNATIVE, at the end: leading
+    // with it would answer «no supe leer lo que escribiste» with «sube un fichero».
+    expect(unreadable.message).toMatch(/Cuadro de amortización/);
+    expect(unreadable.message.indexOf("importar-extracto")).toBeGreaterThan(
+      unreadable.message.indexOf("he intentado leer"),
+    );
   });
 });
 

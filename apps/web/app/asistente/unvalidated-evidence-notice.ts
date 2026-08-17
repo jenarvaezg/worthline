@@ -37,19 +37,20 @@ import { unreadableTypedSeriesRejected } from "./unvalidated-evidence-gate";
  * import, a reconcile, a reconstruction — so it speaks about the file and the routes,
  * never about which tool the model happened to call.
  *
- * The middle sentence is the door #1418 opened, and it is here rather than only in the
- * model's copy because this note is what the user actually reads. It does NOT send them
- * to `/patrimonio/importar-extracto` for a debt's history: there is no deterministic
- * route for that at all, so this lane is the only one, and naming the statement importer
- * would be sending someone to a door that does not open.
+ * It names BOTH ways out, in the order that costs the user least. First the door #1418
+ * opened, because they are already standing in the chat and it needs no second upload.
+ * Then the deterministic importer, by its two tabs (#1406, ADR 0071): «Operaciones» for
+ * positions and movements, «Cuadro de amortización» for the bank's schedule. Naming the
+ * tab matters — before #1406 that door only had the operations reader, so sending a
+ * mortgage schedule there was sending someone to a door that did not open.
  */
 export const UNVALIDATED_EVIDENCE_NOTE =
   "Ese archivo no lo he podido leer como tabla, así que de él no puedo llevar nada en " +
   "bloque al patrimonio — y repetir sus datos en el chat tampoco lo consigue, con una " +
   "excepción: el histórico de saldos de una deuda. Ese escríbemelo aquí, una línea por " +
-  "fecha con la fecha y el saldo, y lo leo yo de tu mensaje. Para posiciones y " +
-  "movimientos el camino es /patrimonio/importar-extracto, o el extracto original del " +
-  "banco o del broker.";
+  "fecha con la fecha y el saldo, y lo leo yo de tu mensaje. Y para cargar un documento " +
+  "entero el camino es /patrimonio/importar-extracto: la pestaña «Operaciones» para " +
+  "posiciones y movimientos, y «Cuadro de amortización» para el cuadro del banco.";
 
 /**
  * What the app says when the user DID write the series and worthline could not read it.
@@ -60,13 +61,18 @@ export const UNVALIDATED_EVIDENCE_NOTE =
  * real paste. The precise shape lives in the tool's own refusal, which the model relays
  * next to this; here it is enough that the user knows worthline tried and why nothing
  * appeared.
+ *
+ * The schedule tab is offered LAST, for the same reason it is last in the tool's copy:
+ * it is a real alternative since #1406, and leading with it would answer «I could not
+ * read what you wrote» with «upload a file instead».
  */
 export const UNREADABLE_TYPED_SERIES_NOTE =
   "He leído tu mensaje buscando la serie de saldos y no he sabido interpretarla, así " +
   "que no hay ninguna tarjeta que confirmar. No has perdido el trabajo: con una línea " +
   "por fecha —solo la fecha y el saldo pendiente— la leo. Lo que no puedo resolver es " +
   "un saldo que suba de una fecha a la siguiente, ni dos cifras distintas para la " +
-  "misma fecha.";
+  "misma fecha. Y si prefieres no reescribirlo, el cuadro del banco entero entra por " +
+  "/patrimonio/importar-extracto, pestaña «Cuadro de amortización».";
 
 /**
  * The envelope the second note answers to, read off the gate itself so the two can never

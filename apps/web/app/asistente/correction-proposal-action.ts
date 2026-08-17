@@ -3,7 +3,7 @@
 import { createStableId } from "@web/intake";
 import { parseBalanceHistoryRows } from "@web/patrimonio/import-balance-history";
 import type { WorthlineStore } from "@web/store";
-import type { AssistantProposal } from "@worthline/db";
+import type { AssistantProposal, ReconstructCorrectionPlan } from "@worthline/db";
 
 import { projectBalanceHistoryProposal } from "./balance-history-proposals";
 import { parseCorrectionProposalDraft } from "./correction-proposal-contract";
@@ -13,6 +13,10 @@ import {
   runProposalConfirm,
   runProposalDiscard,
 } from "./proposal-action";
+import {
+  effectiveReconstructionRows,
+  normalizeReconstructionAmendments,
+} from "./reconstruction-amendment";
 
 /** The single correction plan a `correction` proposal carries. */
 function correctionPlanOf(proposal: AssistantProposal) {
@@ -100,16 +104,26 @@ export async function confirmCorrectionProposalAction(
 async function applyReconstruction(
   store: WorthlineStore,
   proposalId: string,
-  plan: { liabilityId: string; observations: unknown },
+  plan: ReconstructCorrectionPlan,
   editedRows: unknown[] | undefined,
   today: string,
 ): Promise<ProposalApplyResult> {
   const parsed = parseBalanceHistoryRows(editedRows ?? plan.observations);
   if (!parsed.ok) return { message: parsed.error, status: "error" };
+  // Las filas que llegan de la tarjeta ya traen la edición del usuario aplicada
+  // (excluidos fuera, importes sobrescritos). Las persistidas son la serie CRUDA,
+  // así que las enmiendas del chat (#1423) se aplican aquí — si no, confirmar
+  // volvería a meter los puntos que el asistente había quitado por encargo.
+  const rows = editedRows
+    ? parsed.rows
+    : effectiveReconstructionRows(
+        parsed.rows,
+        normalizeReconstructionAmendments(plan.amendments),
+      );
   const projected = await projectBalanceHistoryProposal(
     store,
     plan.liabilityId,
-    parsed.rows,
+    rows,
     today,
   );
   if (!projected.ok) return { message: projected.error, status: "error" };

@@ -93,6 +93,7 @@ export function laneOf(
  */
 export async function readGoldenAttachmentTurn(
   attachment: GoldenAttachment,
+  today: string,
 ): Promise<AttachmentTurnReading> {
   const path = resolveGoldenAttachmentPath(attachment);
   const bytes = await readFile(path);
@@ -100,6 +101,10 @@ export async function readGoldenAttachmentTurn(
     bytes: new Uint8Array(bytes),
     fileName: attachment.file,
     mimeType: attachmentMimeTypeForFileName(attachment.file),
+    // The harness's own pinned clock (#1424), through the runner: a fixture dated
+    // after it is the document's forecast, and grading it as an observation would
+    // measure a reading no user gets.
+    today,
   });
   const lane = laneOf(reading);
   if (lane !== attachment.lane) {
@@ -293,12 +298,13 @@ export interface GoldenTurn {
 export async function prepareGoldenTurn(
   question: GoldenQuestion,
   candidate: EvalCandidate,
+  today: string,
 ): Promise<GoldenTurn> {
   // Both readings assert what the question DECLARES before anything is composed: a
   // mismatch throws here, and the runner records the question as errored with every
   // check failed rather than grading a turn nobody wrote.
   const reading = question.attachment
-    ? await readGoldenAttachmentTurn(question.attachment)
+    ? await readGoldenAttachmentTurn(question.attachment, today)
     : null;
   const history = documentHistoryMessages(
     question.validatedDocument

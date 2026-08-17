@@ -53,7 +53,8 @@ async function askAssistant(
   // the two bugs this harness has had were both a caller forwarding some of what a
   // document turn carries and not the rest, and each one graded the hole as a model
   // defect (#1265, #1373).
-  const turn = await prepareGoldenTurn(question, candidate);
+  const asOf = chatAsOf(persona);
+  const turn = await prepareGoldenTurn(question, candidate, asOf);
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
@@ -64,7 +65,7 @@ async function askAssistant(
       // `proposal_persistence_unavailable` — the write path could not be measured,
       // because what came back was the harness's hole rather than the model.
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
-      asOf: chatAsOf(persona),
+      asOf,
       typedBalanceSeries: turn.typedBalanceSeries,
       unvalidatedEvidence: turn.unvalidatedEvidence,
       validatedDocuments: turn.validatedDocuments,

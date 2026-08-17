@@ -23,6 +23,7 @@ import {
 import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
+import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -901,6 +902,111 @@ describe("createChatTools · propose_reconstruction (#1053)", () => {
   });
 });
 
+describe("createChatTools · propose_reconstruction_amendment (#1423)", () => {
+  async function mortgageTools() {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 140_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: AS_OF },
+    );
+    const holding = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityType === "holding",
+    );
+    const tools = createChatTools({
+      asOf: AS_OF,
+      groundedHoldingIds: [holding?.publicId ?? ""],
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+        }),
+    });
+    return { holdingId: holding?.publicId ?? "", store, tools };
+  }
+
+  it("excluye por rango sobre la propuesta abierta y devuelve una tarjeta nueva", async () => {
+    const { holdingId, store, tools } = await mortgageTools();
+    const open = (await tools["propose_reconstruction"]?.execute?.(
+      {
+        documentName: "extracto.pdf",
+        holdingId,
+        rows: [
+          { balanceMinor: 145_000_00, date: "2026-05-12" },
+          { balanceMinor: 140_000_00, date: AS_OF },
+        ],
+      },
+      toolCallContext(),
+    )) as { draft: { proposalId: string } };
+
+    const amended = await tools["propose_reconstruction_amendment"]?.execute?.(
+      {
+        operations: [{ action: "exclude", from: AS_OF }],
+        proposalId: open.draft.proposalId,
+      },
+      toolCallContext(),
+    );
+
+    expect(amended).toMatchObject({ mode: "reconstruir", proposalType: "correction" });
+    const series = (amended as { series: Array<{ date: string; excluded?: boolean }> })
+      .series;
+    expect(series.find((point) => point.date === AS_OF)?.excluded).toBe(true);
+    // La anterior queda descartada: su tarjeta ya no puede aplicar la serie vieja.
+    expect(await store.assistantProposals.read(open.draft.proposalId)).toMatchObject({
+      status: "discarded",
+    });
+    store.close();
+  });
+
+  it("relaya un error honesto cuando la propuesta ya no está abierta", async () => {
+    const { store, tools } = await mortgageTools();
+
+    const amended = await tools["propose_reconstruction_amendment"]?.execute?.(
+      { operations: [{ action: "exclude", date: AS_OF }], proposalId: "no_existe" },
+      toolCallContext(),
+    );
+
+    expect((amended as { error: string }).error).toContain(
+      "ninguna propuesta de reconstrucción abierta",
+    );
+    store.close();
+  });
+
+  it("dice en su descripción que no se reemita la serie recortada", async () => {
+    const { store, tools } = await mortgageTools();
+    const description = tools["propose_reconstruction_amendment"]?.description ?? "";
+
+    expect(description).toContain("propose_reconstruction");
+    expect(description).toContain("Excluir");
+    // Y la hermana apunta a ella, que es donde el modelo la va a buscar.
+    expect(tools["propose_reconstruction"]?.description ?? "").toContain(
+      "propose_reconstruction_amendment",
+    );
+    store.close();
+  });
+});
+
 describe("createChatTools · search_market_symbol (#1186)", () => {
   it(
     "is a read tool wired over resolveMarketSymbolCandidates (blank query → no matches)",
@@ -1267,6 +1373,8 @@ describe("createChatTools · premium ingestion gate (#1162)", () => {
   const GATED_TOOLS = [
     "propose_statement_import",
     "propose_reconstruction",
+    // Enmendar una reconstrucción es la misma ingesta, un turno más tarde (#1423).
+    "propose_reconstruction_amendment",
     "propose_mixed_document_import",
     "propose_reconcile",
     // Reading an operation off its receipt is document ingestion too (#1374).
@@ -1362,7 +1470,10 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
    */
   const WHITELIST_ARGS: Record<
     string,
-    (ids: Record<string, string>) => Record<string, unknown>
+    (
+      ids: Record<string, string>,
+      store: WorthlineStore,
+    ) => Record<string, unknown> | Promise<Record<string, unknown>>
   > = {
     propose_correction: (ids) => ({
       correction: { kind: "edit_config", name: "Cuenta renombrada" },
@@ -1382,6 +1493,27 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       valuationDate: "2020-06-15",
       valueMinor: 220_000_00,
     }),
+    // Enmendar (#1423) necesita una reconstrucción ABIERTA, así que la arma por el
+    // builder: la enmienda no lee ningún documento, solo los puntos ya persistidos.
+    propose_reconstruction_amendment: async (ids, store) => {
+      const built = await buildReconstructionProposal(
+        store,
+        {
+          liabilityId: "prestamo",
+          publicHoldingId: ids["prestamo"] ?? "",
+          rows: [
+            { balanceMinor: 4_400_00, date: "2026-05-15" },
+            { balanceMinor: 4_200_00, date: AS_OF },
+          ],
+        },
+        AS_OF,
+      );
+      if (!built.ok) throw new Error(built.error);
+      return {
+        operations: [{ action: "exclude", date: "2026-05-15" }],
+        proposalId: built.proposal.draft.proposalId,
+      };
+    },
   };
 
   async function workspaceStore(): Promise<WorthlineStore> {
@@ -1513,7 +1645,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     const tools = await toolsWithEvidence(store);
 
     const result = (await tools[name]?.execute?.(
-      WHITELIST_ARGS[name]!(await publicIds(store)) as never,
+      (await WHITELIST_ARGS[name]!(await publicIds(store), store)) as never,
       toolCallContext(),
     )) as { proposalType?: string };
 
@@ -1529,7 +1661,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     const ids = await publicIds(store);
 
     const first = (await tools[name]?.execute?.(
-      WHITELIST_ARGS[name]!(ids) as never,
+      (await WHITELIST_ARGS[name]!(ids, store)) as never,
       toolCallContext(),
     )) as { proposalType?: string };
     expect(first?.proposalType, name).toBeTruthy();
@@ -1538,7 +1670,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     // whitelisted tool, not just the one that spent it.
     for (const other of WHITELIST_TOOLS) {
       const capped = (await tools[other]?.execute?.(
-        WHITELIST_ARGS[other]!(ids) as never,
+        (await WHITELIST_ARGS[other]!(ids, store)) as never,
         toolCallContext(),
       )) as { error?: string };
       expect(capped?.error, `${name} \u2192 ${other}`).toBe("unvalidated_evidence_limit");
@@ -1703,7 +1835,7 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     const tools = await toolsWithEvidence(store);
 
     const result = await tools[name]?.execute?.(
-      WHITELIST_ARGS[name]!(await publicIds(store)) as never,
+      (await WHITELIST_ARGS[name]!(await publicIds(store), store)) as never,
       toolCallContext(),
     );
 

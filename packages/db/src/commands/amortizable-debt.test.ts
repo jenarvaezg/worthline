@@ -183,4 +183,94 @@ describe("amortizable debt commands (#970)", () => {
 
     store.close();
   });
+
+  test("importing a cuadro writes every event and re-derives history once (#1406)", async () => {
+    const store = await seedAmortizableMortgage();
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
+    const beforeImport = await debtsAt(store, "2026-05-15");
+    expect(beforeImport).toBeDefined();
+
+    const written = await store.command.importAmortizationSchedule({
+      earlyRepayments: [
+        {
+          amountMinor: 10_000_00,
+          id: "lump1",
+          mode: "reduce-payment",
+          planId: "plan1",
+          repaymentDate: "2026-04-15",
+        },
+      ],
+      liabilityId: "mortgage",
+      revisions: [
+        {
+          id: "rev1",
+          newAnnualInterestRate: "0.02",
+          planId: "plan1",
+          revisionDate: "2026-03-15",
+        },
+        {
+          id: "rev2",
+          newAnnualInterestRate: "0.045",
+          planId: "plan1",
+          revisionDate: "2026-05-15",
+        },
+      ],
+      today: TODAY,
+    });
+
+    expect(written).toBe(3);
+    expect(await store.liabilities.readInterestRateRevisions("plan1")).toHaveLength(2);
+    expect(await store.liabilities.readEarlyRepayments("plan1")).toHaveLength(1);
+    // The plan row itself is untouched — the reader writes events, never a plan.
+    expect(
+      (await store.liabilities.readAmortizationPlan("mortgage"))?.annualInterestRate,
+    ).toBe("0.03");
+    // History moved with the lump, and every snapshot matches the live curve.
+    expect(await debtsAt(store, "2026-05-15")).toBe(
+      await store.liabilities.debtBalanceAtDate("mortgage", "2026-05-15"),
+    );
+    expect(await debtsAt(store, "2026-05-15")).toBeLessThan(beforeImport! - 10_000_00);
+
+    store.close();
+  });
+
+  test("an empty cuadro import writes nothing and leaves history alone", async () => {
+    const store = await seedAmortizableMortgage();
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: TODAY },
+    );
+    const before = await debtsAt(store, "2026-05-15");
+
+    expect(
+      await store.command.importAmortizationSchedule({
+        earlyRepayments: [],
+        liabilityId: "mortgage",
+        revisions: [],
+        today: TODAY,
+      }),
+    ).toBe(0);
+    expect(await debtsAt(store, "2026-05-15")).toBe(before);
+
+    store.close();
+  });
 });

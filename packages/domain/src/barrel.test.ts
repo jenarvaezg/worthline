@@ -137,6 +137,11 @@ const KEY_EXPORTS = [
   "valueHousingAtDate",
   // amortization
   "amortizableBalanceAtDate",
+  // amortization-schedule import (#1406)
+  "readAmortizationSchedule",
+  "buildAmortizationScheduleImportPlan",
+  // balance-tolerance (ADR 0070)
+  "balancesAgree",
   // debt-balance
   "debtBalanceAtDate",
   // delta-breakdown (#653 S1/S2)

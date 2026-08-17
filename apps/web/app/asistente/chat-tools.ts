@@ -92,7 +92,11 @@ import {
   resolveReconcileDocument,
 } from "@web/asistente/reconcile-document-frontier";
 import { buildReconcileProposal } from "@web/asistente/reconcile-proposals";
-import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
+import type { ReconstructionAmendmentOperation } from "@web/asistente/reconstruction-amendment";
+import {
+  buildReconstructionAmendment,
+  buildReconstructionProposal,
+} from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import {
@@ -639,6 +643,47 @@ const RECONSTRUCTION_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["holdingId", "rows"],
+  additionalProperties: false,
+});
+
+/**
+ * Enmendar la reconstrucción abierta (#1423). Deliberadamente CHATO y de dos
+ * campos: el fallo que arregla es que reemitir 49 filas en una tool call es la
+ * carga que `gemini-3.1-flash-lite` deja de producir —narrando «he actualizado la
+ * propuesta» sin llamar a nada—, así que la enmienda no vuelve a pedir la serie.
+ */
+const RECONSTRUCTION_AMENDMENT_SCHEMA = jsonSchema<{
+  proposalId?: string;
+  summary?: string;
+  operations?: Array<{
+    action?: string;
+    date?: string;
+    from?: string;
+    to?: string;
+    balanceMinor?: number;
+  }>;
+}>({
+  type: "object",
+  properties: {
+    proposalId: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
+    operations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          action: { enum: ["exclude", "include", "set_balance"], type: "string" },
+          date: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+          balanceMinor: { type: "number" },
+        },
+        required: ["action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["proposalId", "operations"],
   additionalProperties: false,
 });
 
@@ -1872,7 +1917,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       description:
         "Prepara una propuesta para una deuda amortizable inequívoca a partir de saldos observados en un cuadro de amortización. " +
         "No infieras capital, plazo ni cuota: envía solo fecha, saldo en céntimos y, si consta, tipo anual. " +
-        "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
+        "Los saldos marcados projected son la previsión del documento, no observaciones: envíalos igual —la app los excluye y lo dice en la tarjeta— pero no los cites como hechos. " +
+        "La app calcula la curva y la reconcilia con el saldo conocido antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
       execute: (args) => {
         const series = debtSeriesRows("propose_balance_history_import", args);
@@ -2112,7 +2158,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       description:
         "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada, a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF u hoja de cálculo incluidos). " +
         "Envía solo fecha (YYYY-MM-DD) y saldo observado en céntimos; NO infieras capital, plazo, cuota ni tipo (la app re-deriva el tipo de la curva vigente). " +
-        "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico.",
+        "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico. " +
+        "Para CAMBIAR una propuesta que ya está en pantalla (quitar puntos, reincluirlos, corregir un importe) no la reemitas recortada: enmiéndala con propose_reconstruction_amendment.",
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
@@ -2144,6 +2191,38 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           );
           return built.ok ? built.proposal : { error: built.error };
         });
+      },
+    }),
+    propose_reconstruction_amendment: tool({
+      description:
+        "ENMIENDA la propuesta de reconstrucción que ya está en pantalla, sin reenviar la serie: es la tool para «quita los puntos estimados a partir de agosto de 2026» o «ese saldo era 145.500 €». " +
+        "Pasa el proposalId que devolvió propose_reconstruction (o la última enmienda) y una lista corta de operaciones: 'exclude'/'include' con `date` (un punto) o con `from`/`to` (rango inclusive, ambos opcionales: «a partir de» es solo `from`); 'set_balance' con `date` y `balanceMinor` en céntimos. Fechas AAAA-MM-DD que existan en la serie. " +
+        "La tarjeta ya trae por cada punto una casilla «Excluir» y su importe editable: si esta tool no puede con lo que te piden, ésa es la ÚNICA excepción a no hablar de la interfaz — dile que los desmarque ahí.",
+      inputSchema: RECONSTRUCTION_AMENDMENT_SCHEMA,
+      execute: (args) => {
+        // El muro de pago ANTES del cupo del turno: una tool cerrada no puede gastar
+        // —ni devolver— un hueco del presupuesto de propuestas.
+        if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        return withProposalBudget(() =>
+          input.runWithStore(async (store) => {
+            if (!store.assistantProposals || !store.liabilities) {
+              return { error: "proposal_persistence_unavailable" };
+            }
+            const built = await buildReconstructionAmendment(
+              {
+                assistantProposals: store.assistantProposals,
+                liabilities: store.liabilities,
+              },
+              {
+                operations: (args.operations ?? []) as ReconstructionAmendmentOperation[],
+                proposalId: args.proposalId ?? "",
+                ...(args.summary === undefined ? {} : { summary: args.summary }),
+              },
+              input.asOf,
+            );
+            return built.ok ? built.proposal : { error: built.error };
+          }),
+        );
       },
     }),
     propose_mixed_document_import: tool({

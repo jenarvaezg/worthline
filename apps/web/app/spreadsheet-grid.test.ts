@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { toIsoDate } from "./attachment-spreadsheet-grid";
+import { toIsoDate } from "./spreadsheet-grid";
 
 describe("toIsoDate", () => {
   test("reformats dd/mm/yyyy and rejects an impossible day", () => {
