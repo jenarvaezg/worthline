@@ -1,10 +1,11 @@
 import type {
   AttachmentPreviewData,
   UnstructuredAttachment,
+  UnstructuredSource,
 } from "@web/asistente/attachment-chat";
 import type { UnrecognizedReason } from "@web/asistente/attachment-extraction-contract";
+import { readSpreadsheetContext } from "@web/asistente/attachment-spreadsheet-context";
 import { extractSpreadsheetDocument } from "@web/asistente/attachment-spreadsheet-dispatch";
-import { renderSpreadsheetForContext } from "@web/asistente/attachment-spreadsheet-extractor";
 import {
   UNSTRUCTURED_EMPTY_READING_MESSAGE,
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
@@ -34,6 +35,35 @@ export interface AttachmentTurnInput {
   mimeType: string;
 }
 
+/**
+ * A reading worthline could not validate, not yet fitted to any model (#1419).
+ *
+ * The reading happens ONCE per turn; the prompt is built once per PROVIDER, and their
+ * budgets differ by an order of magnitude (`turn-prompt-budget.ts`). So the seam hands
+ * back something renderable rather than rendered text, and {@link fitTo} is called with
+ * the budget of the model that is about to read it. Rendering here instead would either
+ * hand the narrow fallback a book it must reject, or ration the primary to the
+ * fallback's size — the mistake #1408 removed from the prose lane.
+ */
+export interface UnstructuredReading {
+  fileName: string;
+  source: UnstructuredSource;
+  /** The block this model gets, sampled only as far as its budget forces. */
+  fitTo: (budgetChars: number) => UnstructuredAttachment;
+}
+
+function unstructuredReading(
+  fileName: string,
+  source: UnstructuredSource,
+  render: (budgetChars: number) => string,
+): UnstructuredReading {
+  return {
+    fileName,
+    fitTo: (budgetChars) => ({ fileName, source, text: render(budgetChars) }),
+    source,
+  };
+}
+
 export interface AttachmentTurnReading {
   /** The extraction verdict, always shown to the user (#1242). */
   preview: AttachmentPreviewData;
@@ -42,7 +72,7 @@ export interface AttachmentTurnReading {
    * #1246). Non-null is exactly what opens the unvalidated-evidence gate (#1248),
    * so the caller derives that flag from this field rather than guessing from MIME.
    */
-  unstructured: UnstructuredAttachment | null;
+  unstructured: UnstructuredReading | null;
   /**
    * How many vision model calls this reading paid for (#1258) — the number the
    * caller's fuse counts. Zero for the deterministic spreadsheet route, one for a
@@ -130,17 +160,21 @@ export async function readAttachmentTurn(
   const extractionCalls = extraction.visionCalls;
 
   // A readable spreadsheet that is not a positions table becomes conversational
-  // material instead of a dead-end (#865): render the whole book and let the model
-  // describe it — never as validated figures.
+  // material instead of a dead-end (#865): the WHOLE book goes to the model — every
+  // sheet, every row, every column (#1419) — for it to describe, never as validated
+  // figures. What it does not carry is a count-shaped cut but the reading model's own
+  // budget, which is why it is read here and rendered later.
   if (result.status === "unrecognized" && isSpreadsheet) {
-    const text = renderSpreadsheetForContext(extractionInput);
-    if (text) {
+    const context = readSpreadsheetContext(extractionInput);
+    if (context) {
       return {
         preview: {
           fileName,
           result: { message: UNSTRUCTURED_SPREADSHEET_MESSAGE, status: "unrecognized" },
         },
-        unstructured: { fileName, source: "spreadsheet_grid", text },
+        unstructured: unstructuredReading(fileName, "spreadsheet_grid", (budgetChars) =>
+          context.render(budgetChars),
+        ),
         visionCalls: 0,
       };
     }
@@ -195,7 +229,13 @@ export async function readAttachmentTurn(
           status: "unrecognized",
         },
       },
-      unstructured: { fileName, source: "vision_description", text: description },
+      // A model's own description of a capture is already short, and nothing about it
+      // is a series to sample — so it ignores the budget and travels whole.
+      unstructured: unstructuredReading(
+        fileName,
+        "vision_description",
+        () => description,
+      ),
       visionCalls,
     };
   }

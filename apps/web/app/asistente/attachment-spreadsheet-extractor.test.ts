@@ -2,10 +2,7 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
 
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "./attachment-extraction-contract";
-import {
-  extractPositionsFromSpreadsheet,
-  renderSpreadsheetForContext,
-} from "./attachment-spreadsheet-extractor";
+import { extractPositionsFromSpreadsheet } from "./attachment-spreadsheet-extractor";
 
 const HEADER = "Símbolo;Nombre;Unidades;Valor de mercado EUR;Divisa";
 
@@ -183,81 +180,5 @@ describe("extractPositionsFromSpreadsheet", () => {
 
     expect(fromCsv).toEqual(EXPECTED_VALID);
     expect(fromXlsx).toEqual(fromCsv);
-  });
-});
-
-describe("renderSpreadsheetForContext (#865)", () => {
-  test("renders every worksheet of an xlsx as bounded named text", () => {
-    const text = renderSpreadsheetForContext(
-      input(
-        xlsxFixture(),
-        "libro.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      ),
-    );
-
-    expect(text).not.toBeNull();
-    // Both sheets are described, in workbook order, with their names.
-    expect(text).toContain("Hoja «Posiciones»");
-    expect(text).toContain("Hoja «Otra»");
-    expect(text).toContain("VWCE | Vanguard FTSE All-World");
-    expect(text).toContain("No debe leerse");
-  });
-
-  test("renders a delimited CSV as a single unnamed sheet", () => {
-    const text = renderSpreadsheetForContext(
-      input(csvBytes(["Activo;2024;2023", "Inmovilizado;100;90"])),
-    );
-
-    expect(text).toContain("Hoja «Hoja 1»");
-    expect(text).toContain("Activo | 2024 | 2023");
-    expect(text).toContain("Inmovilizado | 100 | 90");
-  });
-
-  /**
-   * The measured failure (#865): a 91-row movements sheet reached the model cut at row
-   * 60, and the model presented that row's balance as the document's closing figure —
-   * three months and 54 € away from the real last line. The bound stays; what it says
-   * about itself does not.
-   */
-  test("says out loud that the rows were cut, and how many are missing (#865)", () => {
-    const rows = Array.from(
-      { length: 91 },
-      (_unused, index) => `Movimiento ${index + 1};${index + 1},00`,
-    );
-    const text = renderSpreadsheetForContext(
-      input(csvBytes(["Concepto;Saldo", ...rows])),
-    );
-
-    expect(text).not.toBeNull();
-    // Both numbers, so «the last line I can see» is never «the last line there is».
-    expect(text).toContain("LECTURA PARCIAL");
-    expect(text).toContain("se muestran 60 de 92 filas");
-    expect(text).toContain("El documento CONTINÚA más allá de lo visible");
-    expect(text).toContain("NO es la última del documento ni su estado más reciente");
-    // The visible window is unchanged: honesty about the cut, not a bigger prompt.
-    expect(text).toContain("Movimiento 59 | 59,00");
-    expect(text).not.toContain("Movimiento 60 | 60,00");
-  });
-
-  test("stays silent about a cut that did not happen", () => {
-    const text = renderSpreadsheetForContext(
-      input(csvBytes(["Concepto;Saldo", "Cuenta;10,00"])),
-    );
-
-    // A notice on every sheet would be noise, and noise is what got ignored.
-    expect(text).not.toContain("LECTURA PARCIAL");
-  });
-
-  test("returns null when the bytes cannot be read at all", () => {
-    expect(
-      renderSpreadsheetForContext(
-        input(
-          strToU8("not a workbook"),
-          "roto.xlsx",
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ),
-      ),
-    ).toBeNull();
   });
 });

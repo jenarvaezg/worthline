@@ -23,7 +23,7 @@ import {
   shouldStopAfterProviderError,
 } from "./candidate-config";
 import { type Check, GOLDEN_QUESTIONS, type GoldenQuestion } from "./golden";
-import { prepareGoldenTurn } from "./golden-turn";
+import { type EvalCandidate, prepareGoldenTurn } from "./golden-turn";
 import type { AssistantAnswer } from "./graders";
 
 const EVAL_NOW = process.env["WORTHLINE_DEMO_NOW"] || "2026-06-01T12:00:00.000Z";
@@ -46,13 +46,14 @@ async function askAssistant(
   model: LanguageModel,
   persona: StoreTarget & { kind: "demo" },
   question: GoldenQuestion,
+  candidate: EvalCandidate,
 ): Promise<AssistantAnswer> {
   // Documents read through the production seams, asserted against what the question
   // declares, and composed into one turn — all in a single call on purpose (#1376):
   // the two bugs this harness has had were both a caller forwarding some of what a
   // document turn carries and not the rest, and each one graded the hole as a model
   // defect (#1265, #1373).
-  const turn = await prepareGoldenTurn(question);
+  const turn = await prepareGoldenTurn(question, candidate);
   const result = await generateText({
     model,
     system: buildChatSystemPrompt(null),
@@ -142,7 +143,10 @@ async function main(): Promise<void> {
     const rowLabel = `${question.persona}/${question.id}`.padEnd(36);
 
     try {
-      const answer = await askAssistant(model, target, question);
+      const answer = await askAssistant(model, target, question, {
+        model: args.model,
+        provider: args.provider,
+      });
       const checks = question.grade(answer);
       const passed = checks.filter((check) => check.pass).length;
       const green = passed === checks.length;

@@ -17,6 +17,15 @@ import {
   validatedDocumentsFor,
 } from "./golden-turn";
 
+/**
+ * The provider the turn is fitted to, since #1419 made that a per-model decision: the
+ * primary is what answers virtually every production turn, so it is what the harness
+ * grades against unless a run says otherwise.
+ */
+const PRIMARY = { model: "gemini-3.1-flash-lite", provider: "google" };
+/** Wide enough that no fixture in here is sampled by accident. */
+const WIDE_BUDGET = 200_000;
+
 describe("golden attachments", () => {
   /**
    * The #1254 tripwire, pointed at this harness rather than at the extractor's: every
@@ -54,8 +63,9 @@ describe("golden attachments", () => {
     });
     // The grid the model actually reads: the ambiguity of «mi cuenta de ahorro» is in
     // the file, not only in the question.
-    expect(reading.unstructured?.text).toContain("Fondo de emergencia");
-    expect(reading.unstructured?.text).toContain("Ahorro estudios peques");
+    const block = reading.unstructured?.fitTo(WIDE_BUDGET);
+    expect(block?.text).toContain("Fondo de emergencia");
+    expect(block?.text).toContain("Ahorro estudios peques");
   });
 
   it("refuses to grade a turn whose document arrived through another lane", async () => {
@@ -200,7 +210,7 @@ describe("buildTurnMessages", () => {
   it("sends a question without a document as one plain user turn", async () => {
     const question = READING_QUESTIONS[0]!;
 
-    const messages = await buildTurnMessages(question, null);
+    const messages = await buildTurnMessages(question, null, PRIMARY);
 
     expect(messages).toHaveLength(1);
     expect(messages[0]?.role).toBe("user");
@@ -210,7 +220,7 @@ describe("buildTurnMessages", () => {
   it("hands the document to the model behind the production fence", async () => {
     const reading = await readGoldenAttachmentTurn(ATTACHMENT_QUESTION.attachment!);
 
-    const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading);
+    const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading, PRIMARY);
     const serialized = JSON.stringify(messages);
 
     // The fence and the framing are the route's, not a paraphrase: what is measured is
@@ -227,7 +237,7 @@ describe("buildTurnMessages", () => {
     // strips, and the reason this harness calls it instead of assembling its own turn.
     const reading = await readGoldenAttachmentTurn(ATTACHMENT_QUESTION.attachment!);
 
-    const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading);
+    const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading, PRIMARY);
 
     expect(JSON.stringify(messages)).not.toContain("data-attachment-extraction");
     expect(JSON.stringify(messages)).not.toContain(UNSTRUCTURED_SPREADSHEET_MESSAGE);
@@ -236,7 +246,7 @@ describe("buildTurnMessages", () => {
   it("says nothing about a document on a question that carries none", async () => {
     const question: GoldenQuestion = { ...READING_QUESTIONS[0]!, id: "sin-adjunto" };
 
-    const messages = await buildTurnMessages(question, null);
+    const messages = await buildTurnMessages(question, null, PRIMARY);
 
     expect(JSON.stringify(messages)).not.toContain("ADJUNTO");
   });
@@ -249,7 +259,7 @@ describe("buildTurnMessages", () => {
       await readGoldenValidatedDocument(question.validatedDocument!),
     );
 
-    const messages = await buildTurnMessages(question, null, history);
+    const messages = await buildTurnMessages(question, null, PRIMARY, history);
     const serialized = JSON.stringify(messages);
 
     // The fence that means «validated by worthline» — the one an unstructured turn
@@ -275,7 +285,7 @@ describe("prepareGoldenTurn", () => {
       (candidate) => candidate.validatedDocument,
     )!;
 
-    const turn = await prepareGoldenTurn(question);
+    const turn = await prepareGoldenTurn(question, PRIMARY);
 
     expect(JSON.stringify(turn.messages)).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
     // No document arrived in THIS turn, so the #1248 gate has nothing to close over.
@@ -288,14 +298,14 @@ describe("prepareGoldenTurn", () => {
   it("arms the gate and hands no document on an unstructured attachment question", async () => {
     const question = ATTACHMENT_QUESTIONS.find((candidate) => candidate.attachment)!;
 
-    const turn = await prepareGoldenTurn(question);
+    const turn = await prepareGoldenTurn(question, PRIMARY);
 
     expect(turn.unvalidatedEvidence).toBe(true);
     expect(turn.validatedDocuments).toEqual([]);
   });
 
   it("composes a plain turn for a question with no document at all", async () => {
-    const turn = await prepareGoldenTurn(READING_QUESTIONS[0]!);
+    const turn = await prepareGoldenTurn(READING_QUESTIONS[0]!, PRIMARY);
 
     expect(turn.messages).toHaveLength(1);
     expect(turn.unvalidatedEvidence).toBe(false);

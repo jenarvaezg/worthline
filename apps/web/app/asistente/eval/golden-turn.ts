@@ -33,6 +33,7 @@ import {
   readAttachmentTurn,
 } from "@web/asistente/attachment-turn";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
+import { turnPromptBudget } from "@web/asistente/turn-prompt-budget";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 
@@ -47,6 +48,12 @@ const DOCUMENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "documents")
 
 function resolveGoldenAttachmentPath(attachment: GoldenAttachment): string {
   return join(ATTACHMENTS_DIR, attachment.file);
+}
+
+/** The provider/model pair under test, and the one whose budget the turn is fitted to. */
+export interface EvalCandidate {
+  provider: string;
+  model: string;
 }
 
 /**
@@ -215,6 +222,7 @@ export function validatedDocumentsFor(
 export async function buildTurnMessages(
   question: GoldenQuestion,
   reading: AttachmentTurnReading | null,
+  candidate: EvalCandidate,
   history: UIMessage[] = [],
 ): Promise<ModelMessage[]> {
   const messages: UIMessage[] = [
@@ -225,7 +233,14 @@ export async function buildTurnMessages(
     prepareAttachmentMessagesForModel(
       messages,
       reading?.preview ?? null,
-      reading?.unstructured ?? null,
+      // The candidate's OWN budget, as the route resolves it (#1419): a workbook is
+      // rendered against the model that will read it, so grading a narrow fallback on
+      // the primary's book — or the primary on the fallback's sample — measures a turn
+      // no user would ever get.
+      reading?.unstructured?.fitTo(
+        turnPromptBudget({ modelId: candidate.model, provider: candidate.provider })
+          .attachmentChars,
+      ) ?? null,
     ),
   );
 }
@@ -249,7 +264,10 @@ export interface GoldenTurn {
  * two of the three from the same call cannot forget one of them either, and there is
  * exactly one place left where «what the model receives» is decided.
  */
-export async function prepareGoldenTurn(question: GoldenQuestion): Promise<GoldenTurn> {
+export async function prepareGoldenTurn(
+  question: GoldenQuestion,
+  candidate: EvalCandidate,
+): Promise<GoldenTurn> {
   // Both readings assert what the question DECLARES before anything is composed: a
   // mismatch throws here, and the runner records the question as errored with every
   // check failed rather than grading a turn nobody wrote.
@@ -262,7 +280,7 @@ export async function prepareGoldenTurn(question: GoldenQuestion): Promise<Golde
       : null,
   );
   return {
-    messages: await buildTurnMessages(question, reading, history),
+    messages: await buildTurnMessages(question, reading, candidate, history),
     unvalidatedEvidence: unvalidatedEvidenceFor(reading),
     validatedDocuments: validatedDocumentsFor(reading, history),
   };

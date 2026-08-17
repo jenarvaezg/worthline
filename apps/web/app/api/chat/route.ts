@@ -3,11 +3,14 @@ import {
   hasUnstructuredEvidenceInHistory,
   isValidatedDocument,
   prepareAttachmentMessagesForModel,
-  type UnstructuredAttachment,
   validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
-import { isVisionAttachment, readAttachmentTurn } from "@web/asistente/attachment-turn";
+import {
+  isVisionAttachment,
+  readAttachmentTurn,
+  type UnstructuredReading,
+} from "@web/asistente/attachment-turn";
 import {
   EMPTY_READING_MESSAGE,
   UNIDENTIFIED_DOCUMENT_MESSAGE,
@@ -268,7 +271,7 @@ function attachmentCardStream(
  */
 function previewWithoutModelTurn(
   preview: AttachmentPreviewData,
-  unstructured: UnstructuredAttachment | null,
+  unstructured: UnstructuredReading | null,
 ): AttachmentPreviewData {
   if (!unstructured) return preview;
   // Which dead end, though: an `empty_reading` capture is described too now (#1246), and
@@ -300,7 +303,7 @@ function previewWithoutModelTurn(
  */
 function previewOnlyResponse(
   preview: AttachmentPreviewData,
-  unstructured: UnstructuredAttachment | null,
+  unstructured: UnstructuredReading | null,
 ): Response {
   return createUIMessageStreamResponse({
     headers: NO_STORE,
@@ -472,7 +475,7 @@ export async function POST(request: Request): Promise<Response> {
   // with the assistant eval so a run grades this behaviour rather than a copy of it.
   // The route keeps what is about the CALLER: quota, paywall, rate limits, cooldowns.
   let currentPreview: AttachmentPreviewData | null = null;
-  let unstructuredAttachment: UnstructuredAttachment | null = null;
+  let unstructuredAttachment: UnstructuredReading | null = null;
   if (attachment) {
     const reading = await readAttachmentTurn({
       bytes: new Uint8Array(await attachment.arrayBuffer()),
@@ -640,7 +643,8 @@ export async function POST(request: Request): Promise<Response> {
   };
   const prepared = new Map<string, PreparedTurn>();
   for (const provider of eligibleProviders) {
-    const fitted = fitHistoryToBudget(shrunk.messages, turnPromptBudget(provider));
+    const budget = turnPromptBudget(provider);
+    const fitted = fitHistoryToBudget(shrunk.messages, budget);
     if (
       fitted.droppedMessageIds.length > 0 ||
       fitted.droppedAttachmentCards > 0 ||
@@ -663,7 +667,14 @@ export async function POST(request: Request): Promise<Response> {
           prepareAttachmentMessagesForModel(
             fitted.messages,
             currentPreview,
-            unstructuredAttachment,
+            // THIS turn's unvalidated reading is rendered here, against the budget of
+            // the model that is about to read it (#1419) — the whole workbook where
+            // the primary's million-token window allows it, a sample where the
+            // fallback's per-minute allowance does not. It is charged to the
+            // attachment lane's share because that is what it is: the freshest
+            // document of the lane whose older cards `fitHistoryToBudget` has just
+            // dropped to the same ceiling.
+            unstructuredAttachment?.fitTo(budget.attachmentChars) ?? null,
           ),
         ),
         tools: buildTools(fitted.messages),

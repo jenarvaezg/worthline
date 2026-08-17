@@ -895,6 +895,49 @@ describe("POST /api/chat", () => {
     expect(countChatRequest).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * The workbook is READ once and RENDERED per provider (#1419). The primary accepts a
+   * million input tokens and gets the book whole; the fallback, whose 30 000 tokens per
+   * minute leave it on the floor, gets a sample of the same book — which is the point:
+   * before this, one rendering had to be narrow enough for the narrowest member of the
+   * pool, so every turn paid the fallback's ration.
+   */
+  it("renders the same workbook to each provider's own budget (#1419)", async () => {
+    const primary = rejectedModel(providerError(503, "unavailable"));
+    const fallback = simpleAnswerModel("Te cuento lo que veo en el cuaderno.");
+    vi.mocked(resolveChatModels).mockReturnValue([
+      resolvedModel("google", primary),
+      resolvedModel("cerebras", fallback),
+    ]);
+    const rows = Array.from(
+      { length: 450 },
+      (_unused, index) =>
+        `Cuota ${index + 1};01/0${(index % 9) + 1}/2020;300,00;120,00;${100_000 - index * 100},00`,
+    );
+
+    const response = await POST(
+      attachmentRequest(
+        ["Cuota;Fecha;Capital;Interés;Saldo", ...rows].join("\n"),
+        "hipoteca.csv",
+      ),
+    );
+    await response.text();
+
+    const wide = turnsOf(primary.doStreamCalls[0]!);
+    const narrow = turnsOf(fallback.doStreamCalls[0]!);
+    // The primary reads the plan from its first payment to its last, uncut.
+    expect(wide).toContain("Cuota 1 |");
+    expect(wide).toContain("Cuota 450 |");
+    // «MUESTRA de …» is the sheet header's own wording; the framing above the fence
+    // quotes the bare word to state the rule, so an absence assertion must be specific.
+    expect(wide).not.toContain("MUESTRA de");
+    // The fallback reads a sample of the SAME plan — and it still ends where the plan
+    // ends, which a prefix never did.
+    expect(narrow).toContain("MUESTRA de");
+    expect(narrow).toContain("Cuota 450 |");
+    expect(narrow.length).toBeLessThan(wide.length);
+  });
+
   it("shows the extraction verdict even when every provider is in cooldown (#1242)", async () => {
     const model = simpleAnswerModel("no debe llamarse");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
