@@ -78,3 +78,94 @@ export function parseOperationDraft(
     feesMinor,
   };
 }
+
+/**
+ * What a submit of the record form should do (#1394). Two clicks four seconds
+ * apart once left the father with two identical sells and ~1.000 € of evaporated
+ * net worth, so the submit decision lives here — pure and testable — instead of
+ * inline in the island:
+ *
+ * - `native`: the draft is unbuildable (blank units/price) — let the browser post
+ *   so the server's validation surfaces the error.
+ * - `optimistic`: add the row and run the action, carrying `submissionId` — the
+ *   idempotency key the action seeds the operation id with.
+ *
+ * `inFlightSubmissionId` is the key of the submit currently in flight, or null
+ * when there is none. A submit that arrives while one is in flight REUSES it, so
+ * both POSTs resolve to the same operation id and the second writes nothing. That
+ * is the half of the guard the disabled button cannot cover: `isPending` only
+ * flips on the next render, so two clicks inside one frame both get through.
+ * Rotating the key back to null once the action settles is what keeps two
+ * legitimately identical operations (a split periodic buy) registrable.
+ */
+export type OperationSubmitPlan =
+  | { kind: "native" }
+  | { kind: "optimistic"; draft: InvestmentOperation; submissionId: string };
+
+export function planOperationSubmit({
+  assetId,
+  formData,
+  inFlightSubmissionId,
+  newId,
+  today,
+}: {
+  assetId: string;
+  formData: FormData;
+  inFlightSubmissionId: string | null;
+  /** Fresh unique id per call (the island passes `crypto.randomUUID`). */
+  newId: () => string;
+  today: string;
+}): OperationSubmitPlan {
+  // The optimistic row's key is always fresh: a racing second click must not
+  // collide with the row the first one already added.
+  const draft = parseOperationDraft(formData, assetId, today, newId());
+  if (!draft) return { kind: "native" };
+
+  return { draft, kind: "optimistic", submissionId: inFlightSubmissionId ?? newId() };
+}
+
+/** The mutable holder of the in-flight key — a React ref in the island, a plain object in tests. */
+export interface SubmissionKeyRef {
+  current: string | null;
+}
+
+/**
+ * Run a planned record submit (#1394): stamp the key onto the body, publish it as
+ * the in-flight one, then add the optimistic row and call the action inside the
+ * caller's transition.
+ *
+ * The two writes to `keyRef` are the whole guard, so they live here where a test
+ * can fail if either goes missing. Publishing happens SYNCHRONOUSLY, before the
+ * transition: a second click in the same frame has to see the key, which is
+ * exactly the window `isPending` cannot cover. Clearing happens in a `finally`,
+ * so even a rejected action rotates the key — otherwise the retry would be read
+ * as a replay of a submission that never wrote anything.
+ */
+export function submitOperationRecord({
+  addPending,
+  formData,
+  keyRef,
+  plan,
+  recordAction,
+  startTransition,
+}: {
+  addPending: (mutation: OperationMutation) => void;
+  formData: FormData;
+  keyRef: SubmissionKeyRef;
+  plan: Extract<OperationSubmitPlan, { kind: "optimistic" }>;
+  recordAction: (formData: FormData) => void | Promise<void>;
+  startTransition: (scope: () => Promise<void>) => void;
+}): void {
+  formData.set("submissionId", plan.submissionId);
+  keyRef.current = plan.submissionId;
+  startTransition(async () => {
+    addPending({ kind: "add", operation: plan.draft });
+    try {
+      await recordAction(formData);
+    } finally {
+      // Settled: the next submit is a NEW operation, not a replay of this one —
+      // a split periodic buy must stay registrable.
+      keyRef.current = null;
+    }
+  });
+}

@@ -65,7 +65,37 @@ function parseOwnershipPreset(value: FormDataEntryValue | null): OwnershipPreset
   return value === "scope" || value === "even" ? value : "custom";
 }
 
-export function createStableId(prefix: string, name: string, seed: number): string {
+/**
+ * A client-supplied idempotency key (#1394), or null when the form carries none.
+ *
+ * The value is untrusted input that ends up INSIDE a persisted id, so it is
+ * squeezed through the `[a-z0-9]` alphabet and capped — a UUID survives as its
+ * 32 hex digits, anything else stops being able to shape the id. Absent (the
+ * no-JS path) means "no dedupe key": the caller keeps seeding ids off the clock.
+ */
+export function parseSubmissionId(
+  formData: FormData,
+  field = "submissionId",
+): string | null {
+  const key = String(formData.get(field) ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 40);
+
+  return key || null;
+}
+
+/**
+ * A readable, stable id. `seed` is normally a timestamp, but a caller that owns
+ * an idempotency key passes THAT instead (#1394): the id is then a pure function
+ * of the submission, so a replayed form lands on the same id rather than minting
+ * a second row.
+ */
+export function createStableId(
+  prefix: string,
+  name: string,
+  seed: number | string,
+): string {
   const slug =
     name
       .normalize("NFD")

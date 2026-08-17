@@ -1,7 +1,14 @@
 import type { InvestmentOperation } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { applyOperationMutations, parseOperationDraft } from "./optimistic-operations";
+import {
+  applyOperationMutations,
+  type OperationMutation,
+  parseOperationDraft,
+  planOperationSubmit,
+  type SubmissionKeyRef,
+  submitOperationRecord,
+} from "./optimistic-operations";
 
 /**
  * The pure optimistic-merge for the investment operations editor (#521, S5 of
@@ -112,5 +119,162 @@ describe("parseOperationDraft", () => {
     expect(
       parseOperationDraft(form({ units: "5", pricePerUnit: "" }), "a", "t", "id"),
     ).toBeNull();
+  });
+});
+
+describe("planOperationSubmit · double-submit guard (#1394)", () => {
+  const ids = () => {
+    let n = 0;
+    return () => `id-${++n}`;
+  };
+
+  test("a first submit mints its own idempotency key", () => {
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({ units: "5", pricePerUnit: "200" }),
+      inFlightSubmissionId: null,
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan.kind).toBe("optimistic");
+    if (plan.kind !== "optimistic") return;
+    // The optimistic row's key and the submission key are distinct ids.
+    expect(plan.submissionId).toBe("id-2");
+    expect(plan.draft.id).toBe("id-1");
+  });
+
+  test("a submit that races an in-flight one REUSES its key", () => {
+    // The two clicks the disabled button cannot catch: `isPending` has not
+    // flipped yet, so both reach the handler. Same key → same operation id
+    // server-side → the second submit writes nothing.
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({ units: "5", pricePerUnit: "200" }),
+      inFlightSubmissionId: "already-in-flight",
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan.kind).toBe("optimistic");
+    if (plan.kind !== "optimistic") return;
+    expect(plan.submissionId).toBe("already-in-flight");
+    // ...but the optimistic row still gets a fresh key: two rows must not
+    // collide on React's list key while both are in flight.
+    expect(plan.draft.id).toBe("id-1");
+  });
+
+  test("two settled submits of identical values get different keys", () => {
+    // The money-math guard: a split periodic buy is two real operations.
+    const newId = ids();
+    const values = { units: "5", pricePerUnit: "200" };
+    const first = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form(values),
+      inFlightSubmissionId: null,
+      newId,
+      today: "2026-06-24",
+    });
+    const second = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form(values),
+      inFlightSubmissionId: null, // the first one settled and rotated the ref
+      newId,
+      today: "2026-06-24",
+    });
+
+    if (first.kind !== "optimistic" || second.kind !== "optimistic") {
+      throw new Error("both submits should be optimistic");
+    }
+    expect(first.submissionId).not.toBe(second.submissionId);
+  });
+
+  test("a half-filled submit falls back to the native post", () => {
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({ units: "", pricePerUnit: "200" }),
+      inFlightSubmissionId: null,
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan.kind).toBe("native");
+  });
+});
+
+describe("submitOperationRecord · the wiring the guard rests on (#1394)", () => {
+  const plan = {
+    draft: op("optimistic-1", "2026-07-31"),
+    kind: "optimistic" as const,
+    submissionId: "key-1",
+  };
+
+  /** Collect what the island hands React and the action. */
+  function harness(recordAction: (fd: FormData) => Promise<void>) {
+    const keyRef: SubmissionKeyRef = { current: null };
+    const added: OperationMutation[] = [];
+    let scope: (() => Promise<void>) | null = null;
+    return {
+      added,
+      keyRef,
+      run: (formData: FormData) => {
+        submitOperationRecord({
+          addPending: (mutation) => added.push(mutation),
+          formData,
+          keyRef,
+          plan,
+          recordAction,
+          startTransition: (fn) => {
+            scope = fn;
+          },
+        });
+        return scope as unknown as () => Promise<void>;
+      },
+    };
+  }
+
+  test("stamps the submission key onto the posted body", async () => {
+    // Drop this and the server seeds ids off the clock again — two clicks, two
+    // operations, the #1394 bug verbatim.
+    let posted: FormData | null = null;
+    const h = harness(async (fd) => {
+      posted = fd;
+    });
+    const formData = form({ units: "47,96", pricePerUnit: "21,24" });
+
+    await h.run(formData)();
+
+    expect((posted as unknown as FormData).get("submissionId")).toBe("key-1");
+  });
+
+  test("publishes the key BEFORE the transition runs, and clears it after", async () => {
+    const h = harness(async () => {});
+    const scope = h.run(form({ units: "1", pricePerUnit: "1" }));
+
+    // Synchronously visible: the second click of the same frame reads this.
+    expect(h.keyRef.current).toBe("key-1");
+
+    await scope();
+    expect(h.keyRef.current).toBeNull();
+  });
+
+  test("clears the key even when the action rejects", async () => {
+    // A failed submit wrote nothing, so the retry must NOT be read as a replay.
+    const h = harness(async () => {
+      throw new Error("boom");
+    });
+    const scope = h.run(form({ units: "1", pricePerUnit: "1" }));
+
+    await expect(scope()).rejects.toThrow("boom");
+    expect(h.keyRef.current).toBeNull();
+  });
+
+  test("adds the optimistic row inside the transition", async () => {
+    const h = harness(async () => {});
+    const scope = h.run(form({ units: "1", pricePerUnit: "1" }));
+
+    expect(h.added).toHaveLength(0);
+    await scope();
+    expect(h.added).toEqual([{ kind: "add", operation: plan.draft }]);
   });
 });

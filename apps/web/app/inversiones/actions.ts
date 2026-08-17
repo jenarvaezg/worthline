@@ -19,6 +19,7 @@ import {
   errorRedirectUrl,
   mapDomainViolation,
   parseRouteOperationCommand,
+  parseSubmissionId,
   parseUpdateInvestmentCommand,
   preserveFields,
   priceBackfillDoneRedirectUrl,
@@ -105,11 +106,25 @@ function isHistoricalPriceSource(value: unknown): value is HistoricalPriceSource
   return typeof value === "object" && value !== null && "fetchSeriesEur" in value;
 }
 
+/**
+ * Record one investment operation (ADR 0006/0014/0020).
+ *
+ * Idempotent when the form carries a `submissionId` (#1394). A double click once
+ * left the father with two identical sells 4 seconds apart and ~1.000 € of net
+ * worth gone — and, because the operation was backdated, every snapshot from that
+ * date on was rewritten with the wrong units. The client sends one key per
+ * submission and the key SEEDS the operation id, so a replay of the same
+ * submission resolves to the same id, finds its own row already there, and writes
+ * nothing. Two legitimately identical operations (a split periodic buy) arrive
+ * under different keys and both persist. Without the key — the no-JS path — the
+ * id is still seeded off the clock and nothing changes.
+ */
 export async function recordOperationAction(
   routeAssetId: string,
   formData: FormData,
   ..._testArgs: unknown[]
 ) {
+  const submissionId = parseSubmissionId(formData);
   const returnUrl = currentUrlOf(formData);
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
@@ -127,7 +142,10 @@ export async function recordOperationAction(
       const parsed = parseRouteOperationCommand(
         formData,
         routeAssetId,
-        Date.now(),
+        // The `k` prefix keeps the two seed spaces disjoint by construction: a
+        // key that happens to read as digits can never land on the id the no-JS
+        // path would mint at that millisecond.
+        submissionId ? `k${submissionId}` : Date.now(),
         today,
       );
       if (!parsed.ok) return { ok: false, redirect: operationErrorUrl(parsed.error) };
@@ -145,7 +163,36 @@ export async function recordOperationAction(
     // One command persists the operation AND ripples its snapshots atomically
     // (ADR 0020; backdated operation → reconstruct history, PRD #107).
     run: async (store, { parsed, today }) => {
-      await store.command.recordInvestmentOperation(parsed, { today });
+      // The no-JS path has no dedupe key: clock-seeded id, single write, exactly
+      // as before.
+      if (!submissionId) {
+        await store.command.recordInvestmentOperation(parsed, { today });
+        return { ok: true };
+      }
+
+      // The keyed path (#1394). The id IS the dedupe key, and the row's primary
+      // key is what ultimately enforces it — the read below is only the cheap
+      // shortcut for the ordinary replay (Next serializes a client's actions, so
+      // the double click arrives second). Two replicas that are NOT serialized —
+      // two tabs, two devices, a browser retrying over a second connection —
+      // both read before either writes, and the loser's INSERT hits the id's
+      // UNIQUE constraint. Asking the ledger again is what tells a replica
+      // ("my row is there, someone else wrote it") apart from a genuine failure
+      // ("nothing was written"): the first is the success this action promises,
+      // the second still surfaces. `datedFact: false` means nothing else
+      // translates that constraint, so an unhandled collision would be a raw 500.
+      const alreadyRecorded = async () =>
+        (await store.operations.readOperations(routeAssetId)).some(
+          (operation) => operation.id === parsed.id,
+        );
+
+      if (await alreadyRecorded()) return { ok: true };
+      try {
+        await store.command.recordInvestmentOperation(parsed, { today });
+      } catch (error) {
+        if (await alreadyRecorded()) return { ok: true };
+        throw error;
+      }
       return { ok: true };
     },
   })(formData, ..._testArgs);

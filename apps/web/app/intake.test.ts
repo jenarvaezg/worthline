@@ -29,6 +29,7 @@ import {
   parseRouteOperationCommand,
   parseScopeCookie,
   parseScopeParam,
+  parseSubmissionId,
   parseUpdateInvestmentCommand,
   parseValuationAnchorStrict,
   parseValueUpdatePass,
@@ -1222,6 +1223,50 @@ describe("parseRouteOperationCommand — asset id from route, strict field error
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.command.assetId).toBe("asset_correct");
+  });
+
+  test("the same string seed yields the same operation id (#1394)", () => {
+    // The idempotency key seeds the id, so a replayed submission collides with
+    // its own row instead of minting a second operation.
+    const fields = { kind: "sell", units: "47,96", pricePerUnit: "21,24" };
+    const id = (seed: number | string) => {
+      const result = parseRouteOperationCommand(
+        form(fields),
+        "asset_acme",
+        seed,
+        "2026-07-31",
+      );
+      return result.ok ? result.command.id : null;
+    };
+
+    expect(id("9f2c4d7a")).toBe(id("9f2c4d7a"));
+    expect(id("9f2c4d7a")).not.toBe(id("1a2b3c4d"));
+    expect(id("9f2c4d7a")).toContain("9f2c4d7a");
+  });
+});
+
+describe("parseSubmissionId — the client's idempotency key (#1394)", () => {
+  test("keeps a UUID as its hex digits", () => {
+    expect(
+      parseSubmissionId(form({ submissionId: "9f2c4d7a-1b3e-4f5a-8c9d-0e1f2a3b4c5d" })),
+    ).toBe("9f2c4d7a1b3e4f5a8c9d0e1f2a3b4c5d");
+  });
+
+  test("is null when the form carries none (the no-JS path)", () => {
+    expect(parseSubmissionId(form({}))).toBeNull();
+  });
+
+  test("is null when the value has nothing usable left", () => {
+    expect(parseSubmissionId(form({ submissionId: "   ../..   " }))).toBeNull();
+  });
+
+  test("squeezes an untrusted value into the id alphabet, capped", () => {
+    // The key ends up INSIDE a persisted id: it must never shape it.
+    const key = parseSubmissionId(form({ submissionId: `A_b/${"9".repeat(80)}` }));
+
+    expect(key).toMatch(/^[a-z0-9]+$/);
+    expect(key).toHaveLength(40);
+    expect(key?.startsWith("ab9")).toBe(true);
   });
 });
 

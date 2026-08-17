@@ -59,6 +59,7 @@ export {
   parseEntityId,
   parseMoneyMinorField,
   parseOwnership,
+  parseSubmissionId,
   type StrictParseResult,
 } from "./intake/shared";
 export {

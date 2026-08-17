@@ -31,12 +31,13 @@ import {
   formatMoneyMinorPrivacy,
   maskMoneyString,
 } from "@worthline/domain";
-import { type FormEvent, useOptimistic, useTransition } from "react";
+import { type FormEvent, useOptimistic, useRef, useTransition } from "react";
 
 import {
   applyOperationMutations,
   type OperationMutation,
-  parseOperationDraft,
+  planOperationSubmit,
+  submitOperationRecord,
 } from "./optimistic-operations";
 
 export interface OperationsEditorContext {
@@ -66,6 +67,22 @@ export interface OperationsEditorContext {
 function shownUnitPrice(unitPrice: string | undefined, privacyMode: boolean): string {
   if (!unitPrice) return "Sin precio";
   return privacyMode ? maskMoneyString(unitPrice) : unitPrice;
+}
+
+/**
+ * The record form's submit button (#1394). It goes disabled while the action is
+ * in flight, so the second of two clicks never reaches the server — the visible
+ * half of the double-submit guard, whose server half is the idempotency key in
+ * `planOperationSubmit`. Its own component so the pending markup is assertable
+ * without a DOM: `PendingSubmit` cannot serve here because the JS path
+ * `preventDefault`s and calls the action by hand, leaving `useFormStatus` idle.
+ */
+export function RecordOperationSubmit({ pending }: { pending: boolean }) {
+  return (
+    <button aria-busy={pending} disabled={pending} type="submit">
+      {pending ? "Registrando…" : "Registrar operación"}
+    </button>
+  );
 }
 
 /**
@@ -107,24 +124,45 @@ export default function OperationsEditor({
     (current: readonly InvestmentOperation[], mutation: OperationMutation) =>
       applyOperationMutations(current, [mutation]),
   );
-  const [isPending, startTransition] = useTransition();
+  // Two transitions, not one: the record button's pending state must describe
+  // the RECORD action. Sharing a transition with delete had the button read
+  // "Registrando…" while an operation was being deleted (#1394 review).
+  const [isRecording, startRecording] = useTransition();
+  const [isDeleting, startDeleting] = useTransition();
+  const isPending = isRecording || isDeleting;
+  // The idempotency key of the record submit currently in flight (#1394), null
+  // between submits. Held in a ref, not state: it must be readable and writable
+  // from inside the submit handler without waiting for a render, which is the
+  // whole point — the two clicks that duplicated an operation happened before
+  // `isPending` had a chance to flip.
+  const inFlightSubmissionId = useRef<string | null>(null);
 
   // Record: build the optimistic row from the form, apply it, then run the action —
-  // all in the transition so `useOptimistic` tracks it and `isPending` holds until
-  // the redirect lands. In demo we let the form fall back to its plain `action=`
-  // post (no faked optimism, §10).
+  // all in the transition so `useOptimistic` tracks it and `isRecording` holds
+  // until the redirect lands. In demo we let the form fall back to its plain
+  // `action=` post (no faked optimism, §10).
   const onRecord = readOnly
     ? undefined
     : (event: FormEvent<HTMLFormElement>) => {
         const formData = new FormData(event.currentTarget);
-        const draft = parseOperationDraft(formData, assetId, today, crypto.randomUUID());
-        if (!draft) {
+        const plan = planOperationSubmit({
+          assetId,
+          formData,
+          inFlightSubmissionId: inFlightSubmissionId.current,
+          newId: () => crypto.randomUUID(),
+          today,
+        });
+        if (plan.kind === "native") {
           return; // let the native post + server validation surface the error
         }
         event.preventDefault();
-        startTransition(async () => {
-          addPending({ kind: "add", operation: draft });
-          await recordAction(formData);
+        submitOperationRecord({
+          addPending,
+          formData,
+          keyRef: inFlightSubmissionId,
+          plan,
+          recordAction,
+          startTransition: startRecording,
         });
       };
 
@@ -134,7 +172,7 @@ export default function OperationsEditor({
       : (event: FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
-          startTransition(async () => {
+          startDeleting(async () => {
             addPending({ kind: "delete", id });
             await deleteAction(formData);
           });
@@ -274,7 +312,7 @@ export default function OperationsEditor({
           />
         </label>
 
-        <button type="submit">Registrar operación</button>
+        <RecordOperationSubmit pending={isRecording} />
       </form>
 
       {optimisticOps.length > 0 ? (
