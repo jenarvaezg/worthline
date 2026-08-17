@@ -98,8 +98,13 @@ function PeriodControls({
 function HoldingLine({ m }: { m: HoldingMover }) {
   return (
     <div className="moversHolding">
-      <span className="moversHoldingName">
-        {m.label}
+      {/* The margin is narrow, so the NAME is what gives way: it truncates with an
+          ellipsis (`title` keeps the full one a hover away) while the chips stay
+          outside it, so «deuda» / «nuevo» survive a long name. */}
+      <span className="moversHoldingLabel">
+        <span className="moversHoldingName" title={m.label}>
+          {m.label}
+        </span>
         {m.isDebt ? <span className="moversTag deuda">deuda</span> : null}
         <Tag tag={m.tag} />
       </span>

@@ -7610,11 +7610,13 @@ td.rowActions > * {
   color: var(--paper-strong);
 }
 
-/* Subieron / Bajaron split columns */
+/* Subieron / Bajaron split columns. The tracks are floored at 0 (never a bare
+   `1fr`, whose `auto` minimum grows to the min-content of a nowrap holding name)
+   so a long name truncates instead of pushing the row out of the panel. */
 .moversSplitCols {
   display: grid;
   gap: 22px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .moversCol h4 {
@@ -7637,8 +7639,19 @@ td.rowActions > * {
   align-items: baseline;
   column-gap: 8px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   padding: 5px 0;
+}
+
+/* Name + chips share one grid cell: the name truncates, the chips never do. */
+.moversHoldingLabel {
+  align-items: baseline;
+  display: flex;
+  min-width: 0;
+}
+
+.moversHoldingLabel .moversTag {
+  flex: 0 0 auto;
 }
 
 .moversHoldingName {
@@ -7700,7 +7713,7 @@ td.rowActions > * {
 
 @media (max-width: 640px) {
   .moversSplitCols {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -7903,7 +7916,7 @@ td.rowActions > * {
 
 .heroMargin .moversSplitCols {
   gap: 14px;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .heroMargin .moversHead {
@@ -7911,14 +7924,16 @@ td.rowActions > * {
   gap: 8px;
 }
 
+/* One line per annotation: «nombre ⋯ cifra». Wrapping would drop the € figure to
+   a second line, left-aligned, and break the column of figures. */
 .heroMargin .moversHolding {
   align-items: baseline;
   column-gap: 6px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
-.heroMargin .moversHoldingName {
+.heroMargin .moversHoldingLabel {
   flex: 0 1 auto;
 }
 
