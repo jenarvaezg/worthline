@@ -161,7 +161,7 @@ describe("extractPositionsFromSpreadsheet", () => {
     ).toEqual({
       code: "unsupported_document",
       failure: "permanent",
-      message: "El archivo XLSX no se puede leer.",
+      message: "El archivo Excel no se puede leer — guarda la hoja como .xlsx.",
       status: "failure",
     });
   });

@@ -66,6 +66,155 @@ function xlsxFixture(): Uint8Array {
   });
 }
 
+/**
+ * The same workbook written the way ClosedXML/EPPlus (and the generator Jorge's
+ * ChatGPT used) do it: every OOXML element carries an `x:` namespace prefix,
+ * strings travel as `t="str"` literals instead of a shared table, and the date
+ * column is a serial styled through a prefixed `<x:cellXfs>` (#1404).
+ */
+function prefixedXlsxFixture(): Uint8Array {
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:styleSheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:numFmts count="1"><x:numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></x:numFmts><x:cellXfs count="2"><x:xf numFmtId="0"/><x:xf numFmtId="164" applyNumberFormat="1"/></x:cellXfs></x:styleSheet>`;
+
+  // 38126 = 2004-05-19 in the 1900 serial system (epoch 1899-12-30).
+  const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData>
+<x:row r="1"><x:c r="A1" t="str"><x:v>Fecha</x:v></x:c><x:c r="B1" t="str"><x:v>Tipo de activo</x:v></x:c><x:c r="C1" t="str"><x:v>Identificador</x:v></x:c><x:c r="D1" t="str"><x:v>Operación</x:v></x:c><x:c r="E1" t="str"><x:v>Participaciones</x:v></x:c><x:c r="F1" t="str"><x:v>Importe</x:v></x:c><x:c r="G1" t="str"><x:v>Comisión</x:v></x:c><x:c r="H1" t="str"><x:v>Nombre</x:v></x:c></x:row>
+<x:row r="2"><x:c r="A2" s="1"><x:v>38126</x:v></x:c><x:c r="B2" t="str"><x:v>Fondo</x:v></x:c><x:c r="C2" t="str"><x:v>IE00BYX5NX33</x:v></x:c><x:c r="D2" t="str"><x:v>Compra</x:v></x:c><x:c r="E2"><x:v>7.226</x:v></x:c><x:c r="F2"><x:v>100</x:v></x:c><x:c r="H2" t="str"><x:v>Cartera; la de siempre</x:v></x:c></x:row>
+</x:sheetData></x:worksheet>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:sheets><x:sheet name="Movimientos" sheetId="1" r:id="rId1"/></x:sheets></x:workbook>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/worksheets/sheet1.xml"/></Relationships>`;
+
+  return zipSync({
+    "xl/_rels/workbook.xml.rels": strToU8(rels),
+    "xl/styles.xml": strToU8(styles),
+    "xl/workbook.xml": strToU8(workbook),
+    "xl/worksheets/sheet1.xml": strToU8(sheet),
+  });
+}
+
+describe("namespace-prefixed OOXML (#1404)", () => {
+  test("reads a prefixed workbook's rows instead of calling it empty", () => {
+    const rows = spreadsheetToRows(prefixedXlsxFixture());
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual([
+      "Fecha",
+      "Tipo de activo",
+      "Identificador",
+      "Operación",
+      "Participaciones",
+      "Importe",
+      "Comisión",
+      "Nombre",
+    ]);
+    expect(rows[1]?.[7]).toBe("Cartera; la de siempre");
+  });
+
+  test("a prefixed date style still converts the serial, not a raw 38126", () => {
+    const rows = spreadsheetToRows(prefixedXlsxFixture());
+
+    expect(rows[1]?.[0]).toBe("19/05/2004");
+  });
+
+  test("round-trips into the plantilla parser like an unprefixed workbook", () => {
+    const parsed = parseStatement(
+      spreadsheetToDelimitedText(prefixedXlsxFixture()),
+      "plantilla",
+    );
+
+    if (!parsed.ok) throw new Error(parsed.errors.join(" | "));
+    expect(parsed.value.rows).toHaveLength(1);
+    expect(parsed.value.rows[0]).toMatchObject({
+      dateKey: "2004-05-19",
+      instrument: "fund",
+      isin: "IE00BYX5NX33",
+      kind: "buy",
+      name: "Cartera; la de siempre",
+      units: "7.226",
+    });
+  });
+
+  test("the assistant path reads every prefixed sheet by name too", () => {
+    expect(spreadsheetToAllSheets(prefixedXlsxFixture())).toEqual([
+      {
+        name: "Movimientos",
+        rows: [
+          [
+            "Fecha",
+            "Tipo de activo",
+            "Identificador",
+            "Operación",
+            "Participaciones",
+            "Importe",
+            "Comisión",
+            "Nombre",
+          ],
+          [
+            "19/05/2004",
+            "Fondo",
+            "IE00BYX5NX33",
+            "Compra",
+            "7.226",
+            "100",
+            "",
+            "Cartera; la de siempre",
+          ],
+        ],
+      },
+    ]);
+  });
+
+  test("a prefixed shared-string table and a prefixed rels part resolve too", () => {
+    const shared = `<?xml version="1.0"?>
+<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2"><x:si><x:t>Cuota</x:t></x:si><x:si><x:t xml:space="preserve">Capital </x:t></x:si></x:sst>`;
+    const sheet = `<?xml version="1.0"?>
+<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="B1" t="s"><x:v>1</x:v></x:c></x:row></x:sheetData></x:worksheet>`;
+    const workbook = `<?xml version="1.0"?>
+<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:sheets><x:sheet name="Cuadro" sheetId="1" r:id="rId1"/></x:sheets></x:workbook>`;
+    const rels = `<?xml version="1.0"?>
+<rel:Relationships xmlns:rel="http://schemas.openxmlformats.org/package/2006/relationships"><rel:Relationship Id="rId1" Target="./worksheets/cuadro.xml"/></rel:Relationships>`;
+    const bytes = zipSync({
+      "xl/_rels/workbook.xml.rels": strToU8(rels),
+      "xl/sharedStrings.xml": strToU8(shared),
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/worksheets/cuadro.xml": strToU8(sheet),
+    });
+
+    expect(spreadsheetToRows(bytes)).toEqual([["Cuota", "Capital "]]);
+  });
+
+  test("a relationship id full of regex metacharacters resolves, it doesn't crash the upload", () => {
+    const sheet = `<?xml version="1.0"?>
+<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="str"><x:v>Activo</x:v></x:c></x:row></x:sheetData></x:worksheet>`;
+    const workbook = `<?xml version="1.0"?>
+<x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><x:sheets><x:sheet name="Hoja" sheetId="1" r:id="rId1(*"/></x:sheets></x:workbook>`;
+    const rels = `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1(*" Target="worksheets/otra.xml"/></Relationships>`;
+    const bytes = zipSync({
+      "xl/_rels/workbook.xml.rels": strToU8(rels),
+      "xl/workbook.xml": strToU8(workbook),
+      "xl/worksheets/otra.xml": strToU8(sheet),
+    });
+
+    expect(spreadsheetToRows(bytes)).toEqual([["Activo"]]);
+  });
+
+  test("a readable workbook with no rows says so instead of reaching the parser's «archivo vacío»", () => {
+    const sheet = `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`;
+    const bytes = zipSync({ "xl/worksheets/sheet1.xml": strToU8(sheet) });
+
+    expect(() => spreadsheetToDelimitedText(bytes)).toThrow(
+      /no he podido leer ninguna fila/i,
+    );
+  });
+});
+
 describe("spreadsheetToDelimitedText (#695)", () => {
   test("detects the zip magic", () => {
     expect(isSpreadsheet(xlsxFixture())).toBe(true);

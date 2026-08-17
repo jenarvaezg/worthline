@@ -172,10 +172,9 @@ export function extractPositionsFromSpreadsheet(
       rows = spreadsheetToRows(input.bytes);
     } catch (error) {
       if (error instanceof SpreadsheetReadError) {
-        return permanentFailure(
-          "unsupported_document",
-          "El archivo XLSX no se puede leer.",
-        );
+        // The reader already knows WHY (broken container vs. no row read);
+        // flattening it back into one generic sentence loses that (#1404).
+        return permanentFailure("unsupported_document", error.message);
       }
       throw error;
     }
