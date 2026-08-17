@@ -5,11 +5,15 @@ import {
 } from "@web/spreadsheet-text";
 
 /**
- * Shared CSV/XLSX grid reading for the deterministic spreadsheet extractors. It
+ * Shared CSV/XLSX grid reading for every deterministic document reader. It
  * returns raw worksheets — header resolution and per-document mapping stay with
- * each extractor. XLSX reading reuses the workbook parser; CSV is decoded as UTF-8
+ * each reader. XLSX reading reuses the workbook parser; CSV is decoded as UTF-8
  * and split on the delimiter that yields the widest first row (`;`, `,` or tab),
  * matching the Spanish-export convention where `;` is the default separator.
+ *
+ * It lived beside the assistant's attachment extractors until the amortization
+ * schedule import (#1406) became its second caller from another surface; a reader
+ * two features share belongs next to `spreadsheet-text`, not inside one of them.
  */
 
 const DELIMITERS = [";", ",", "\t"] as const;

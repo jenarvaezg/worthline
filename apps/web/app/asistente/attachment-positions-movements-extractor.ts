@@ -1,5 +1,10 @@
+import {
+  normalizeHeader,
+  readSpreadsheetGrids,
+  type SpreadsheetGridInput,
+  toIsoDate,
+} from "@web/spreadsheet-grid";
 import type { WorkbookSheet } from "@web/spreadsheet-text";
-
 import {
   type AttachmentExtractionResult,
   capExtractionWarnings,
@@ -14,12 +19,6 @@ import {
   parseExtractionResult,
   resolveHoldingFidelity,
 } from "./attachment-extraction-contract";
-import {
-  normalizeHeader,
-  readSpreadsheetGrids,
-  type SpreadsheetGridInput,
-  toIsoDate,
-} from "./attachment-spreadsheet-grid";
 
 /**
  * Deterministic extractor for the **positions + movements** document (PRD #1103

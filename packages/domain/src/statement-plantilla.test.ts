@@ -115,7 +115,9 @@ describe("parseStatement — plantilla (#695)", () => {
     expect(error).toContain("HIP-PLASENCIA-2004");
     expect(error).toContain("sí modela las deudas");
     expect(error).toContain("/patrimonio/anadir");
-    expect(error).toContain("cuadro de amortización");
+    // Re-pointed by #1406: the row's own history has a reader now, on this very
+    // screen, so the signpost names it instead of twenty-three manual forms.
+    expect(error).toContain("«Cuadro de amortización»");
     // Still all-or-nothing: nothing loads, the row has to go.
     expect(error).toContain("no se ha cargado nada");
   });

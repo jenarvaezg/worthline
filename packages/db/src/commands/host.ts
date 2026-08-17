@@ -66,6 +66,7 @@ const DATED_FACT_ALIASES = {
   updateInterestRateRevision: "updateInterestRateRevisionAndRipple",
   deleteInterestRateRevision: "deleteInterestRateRevisionAndRipple",
   addEarlyRepayment: "addEarlyRepaymentAndRipple",
+  importAmortizationSchedule: "importAmortizationScheduleAndRipple",
   updateEarlyRepayment: "updateEarlyRepaymentAndRipple",
   deleteEarlyRepayment: "deleteEarlyRepaymentAndRipple",
   createCurrentStateDebt: "createCurrentStateDebtAndRipple",

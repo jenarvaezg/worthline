@@ -27,6 +27,16 @@
  * frases reciben el formateador). Ver ADR 0070.
  */
 
+import { balancesAgree, balanceToleranceMinor } from "@worthline/domain";
+
+/**
+ * La tolerancia y su predicado viven en el dominio desde #1406, donde el import
+ * del cuadro de amortización mide la MISMA clase de cosa (una curva reconstruida
+ * contra una cifra conocida). Se re-exportan aquí porque este módulo es el que
+ * nombra la ley para las superficies del asistente.
+ */
+export { balancesAgree, balanceToleranceMinor };
+
 export type BalanceReconciliationStatus = "exact" | "within-tolerance" | "mismatch";
 
 /** Contra cuál de los dos testigos se midió el extremo de la serie. */
@@ -71,29 +81,6 @@ export interface BalanceReconciliation {
     /** El ancla no la reproduce ni la propia curva de la deuda. */
     stale: boolean;
   };
-}
-
-/** Fracción del saldo que se acepta como ruido de reconstrucción: 0,1 %. */
-const TOLERANCE_FRACTION = 0.001;
-
-/** Suelo del margen: un euro, para que un saldo pequeño no exija el céntimo. */
-const TOLERANCE_FLOOR_MINOR = 100;
-
-/**
- * El margen con el que se compara una curva reconstruida contra una cifra
- * conocida, en céntimos. Elegido a propósito (#1422): un euro de redondeo no es
- * lo mismo que 494 € de un ancla de hace un mes.
- */
-export function balanceToleranceMinor(referenceMinor: number): number {
-  return Math.max(
-    TOLERANCE_FLOOR_MINOR,
-    Math.round(Math.abs(referenceMinor) * TOLERANCE_FRACTION),
-  );
-}
-
-/** ¿Están las dos cifras dentro del margen de la primera? */
-export function balancesAgree(referenceMinor: number, actualMinor: number): boolean {
-  return Math.abs(actualMinor - referenceMinor) <= balanceToleranceMinor(referenceMinor);
 }
 
 export function reconcileReconstructedBalance(

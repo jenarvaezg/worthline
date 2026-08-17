@@ -27,6 +27,25 @@ export {
   suggestFirstPaymentDate,
 } from "./amortization";
 export type {
+  AmortizationScheduleReading,
+  AmortizationScheduleReadResult,
+  ScheduleDeclaredBalance,
+  ScheduleEarlyRepayment,
+  ScheduleRateRevision,
+  ScheduleSheet,
+} from "./amortization-schedule-adapter";
+export { readAmortizationSchedule } from "./amortization-schedule-adapter";
+export type {
+  AmortizationScheduleImportContext,
+  AmortizationScheduleImportPlan,
+  PlannedEarlyRepayment,
+  PlannedRevision,
+  ScheduleCheckpoint,
+  ScheduleEventStatus,
+  ScheduleImportSummary,
+} from "./amortization-schedule-import";
+export { buildAmortizationScheduleImportPlan } from "./amortization-schedule-import";
+export type {
   AssetProjectionContext,
   PositionProjection,
   RawAssetRow,
@@ -38,6 +57,7 @@ export {
   projectPositions,
   projectScopedPositionsWithDetails,
 } from "./asset-projection";
+export { balancesAgree, balanceToleranceMinor } from "./balance-tolerance";
 export type { BenchmarkCatalogEntry, BenchmarkVariant } from "./benchmark-catalog";
 export {
   BENCHMARK_CATALOG,

@@ -1,7 +1,4 @@
-import {
-  readSpreadsheetGrids,
-  type SpreadsheetGridInput,
-} from "./attachment-spreadsheet-grid";
+import { readSpreadsheetGrids, type SpreadsheetGridInput } from "@web/spreadsheet-grid";
 
 /**
  * A readable-but-unrecognized spreadsheet, rendered as plain text so the assistant can
