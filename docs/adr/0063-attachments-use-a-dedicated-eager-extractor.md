@@ -503,6 +503,71 @@ gains `synthetic-value-only-composition`, the fixture #1337 could not be pinned 
 because nothing represented it; a synthetic render is enough here even though the
 failure was found on a real capture, because what fails is not the pixels.
 
+## Amendment — the spreadsheet lane learns the dated balance series (#1417)
+
+The #1243 amendment above settled that format and document type are orthogonal. It
+settled it for pixels only: the vision seam identified any document behind an image or a
+PDF, while the spreadsheet lane still knew exactly one document — a positions table, and
+later a positions + movements one. So the SAME amortization schedule wrote history as a
+PDF and was refused as an `.xlsx`, which then closed the unvalidated-evidence gate
+(#1248) and `propose_reconstruction` with it for the rest of the conversation. The
+ordering was backwards: the workbook is the exact reading, parsed rather than looked at,
+and it was the format being asked to disguise itself as the weaker one.
+
+The dispatch gains a **third arm**: `extractBalanceSeriesFromSpreadsheet`, after the two
+portfolio recognizers (their headers are the specific ones; a balance series asks only
+for a date and a balance, which a portfolio sheet with a `Saldo` column also satisfies).
+The document, its preview card and its consumer are unchanged — what was missing was the
+recognizer. Only *observed* balances are read, as the contract has always demanded (ADR
+0048): the rate revisions and the term printed above a real schedule are #1406's work,
+not this document's.
+
+Five behaviours are new, and each answers something measured on a real 13-sheet
+Santander workbook:
+
+- **The header is searched for, not assumed.** The sibling recognizers take row one; this
+  table starts on row 20, under a wide matrix of rate revisions. A row is the header when
+  it resolves a date column and a balance column AND yields at least one observation
+  under it — that last condition is what stops a summary block naming a «Saldo» and a
+  «Fecha de cálculo» from being read as a table.
+- **A sparse balance column is normal.** The bank stamps the balance on 49 of ~380
+  monthly rows. A gap is the absence of an observation, not a defect, so it is skipped in
+  silence; a warning is owed only where the sheet printed something we could not read.
+- **Several named products under one date is not a series.** A sheet with a
+  `Concepto`/`Nombre` column whose observations carry more than one distinct label is a
+  portfolio snapshot, and reading it as a series would silently drop the one column that
+  says what each figure belongs to. It stays `unrecognized` and keeps #865's lane.
+- **The row bound counts observations, not sheet height.** A 40-year schedule is ~480
+  rows carrying a few dozen balances; measuring the sheet would refuse it for rows the
+  document never claims to read.
+- **The whole workbook is swept**, not just sheet one, and when several sheets qualify the
+  first wins and the card *names* the sheet it read and the ones it saw. No deterministic
+  rule can know which mortgage the user meant — the file that motivated this carries a
+  second one on sheet 11 — so the honest half of the answer is the half the user can act on.
+
+`bare «capital»` is deliberately not a balance alias: in a Spanish schedule it is the
+principal paid that month, and reading it as the outstanding balance would turn a 665,80 €
+payment into a 665,80 € mortgage.
+
+**The one assumption, and why it is not an invention.** An amortization schedule states no
+currency anywhere (measured: the balance column carries Excel's plain `#,##0.00`). The
+contract requires one per balance, so a currency is taken from — in order — an explicit
+`Divisa` column, a symbol printed in the balance cell, a symbol in its header, and only
+then assumed EUR. That last step is never silent: it raises a warning the preview paints
+and marks the document `uncertain`, in front of a user who must confirm before anything is
+written. An assumption the user can see and refuse is not what ADR 0048 forbids; a silent
+one would be. Currency *decorations* resolve through a closed, tiny vocabulary (€, $, £,
+¥ and their codes) because any three-letter word would otherwise qualify — a «Saldo mes»
+column would declare its balances to be in MES; an explicit column is taken verbatim.
+
+**A boundary parser was relaxed on the way.** `parseBalanceHistoryRows` rejected the WHOLE
+series over a non-positive balance, while an impossible date passed it and was excluded
+per-row downstream. A real schedule ends on 0 — the row that says the loan is paid off —
+so 49 observed balances died on «la serie de saldos no es válida» over the one row nobody
+needed. The parser now validates shape only; positivity, calendar validity and future
+dates stay the per-row verdicts `validateRowBasics` already renders, and the preview shows
+every row with that one folded and its reason.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

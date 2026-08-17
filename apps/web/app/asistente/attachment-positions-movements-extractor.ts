@@ -2,6 +2,7 @@ import type { WorkbookSheet } from "@web/spreadsheet-text";
 
 import {
   type AttachmentExtractionResult,
+  capExtractionWarnings,
   checkAttachmentLimits,
   type ExtractedHolding,
   type ExtractedMovement,
@@ -17,6 +18,7 @@ import {
   normalizeHeader,
   readSpreadsheetGrids,
   type SpreadsheetGridInput,
+  toIsoDate,
 } from "./attachment-spreadsheet-grid";
 
 /**
@@ -178,17 +180,6 @@ function unsupportedDocument(message: string): AttachmentExtractionResult {
 const UNRECOGNIZED_MESSAGE =
   "No reconozco una tabla de posiciones con nombre, tipo, valor y divisa en esta hoja.";
 
-// The contract accepts at most 20 warnings; a messy sheet can drop more rows than
-// that, so the last slot summarizes the overflow instead of losing it silently.
-const MAX_WARNINGS = 20;
-
-function capWarnings(warnings: readonly string[]): string[] {
-  if (warnings.length <= MAX_WARNINGS) return [...warnings];
-  const kept = warnings.slice(0, MAX_WARNINGS - 1);
-  kept.push(`y ${warnings.length - (MAX_WARNINGS - 1)} avisos más sin mostrar.`);
-  return kept;
-}
-
 /** Map a Spanish/English operation label to a movement kind, or null if unknown. */
 function resolveOperationKind(value: string): MovementKind | null {
   const normalized = normalizeHeader(value);
@@ -196,35 +187,6 @@ function resolveOperationKind(value: string): MovementKind | null {
     if (OPERATION_KINDS[kind].some((alias) => normalized.includes(alias))) return kind;
   }
   return null;
-}
-
-/**
- * Normalize a date cell to ISO `YYYY-MM-DD`, or null if it is not a recognizable
- * calendar date. Accepts an already-ISO value and the `dd/mm/yyyy` that the XLSX
- * reader emits from date-styled serials (and that Spanish CSV exports use) — a
- * deterministic reformat, never an invented date. A same-day validity check keeps
- * a `32/13/2026` from slipping through.
- */
-export function toIsoDate(value: string): string | null {
-  const trimmed = value.trim();
-  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (iso) return isRealDay(+iso[1]!, +iso[2]!, +iso[3]!) ? trimmed : null;
-  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
-  if (dmy) {
-    const [year, month, day] = [+dmy[3]!, +dmy[2]!, +dmy[1]!];
-    if (!isRealDay(year, month, day)) return null;
-    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  }
-  return null;
-}
-
-function isRealDay(year: number, month: number, day: number): boolean {
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
 }
 
 interface HoldingsSheet {
@@ -451,7 +413,10 @@ export function extractPositionsAndMovementsFromSpreadsheet(
       documentType: "positions_movements",
       holdings: holdingsRead.holdings,
       movements: movementsRead.movements,
-      warnings: capWarnings([...holdingsRead.warnings, ...movementsRead.warnings]),
+      warnings: capExtractionWarnings([
+        ...holdingsRead.warnings,
+        ...movementsRead.warnings,
+      ]),
     },
     status: "valid",
   });

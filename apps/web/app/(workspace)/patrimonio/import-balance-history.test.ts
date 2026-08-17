@@ -198,6 +198,19 @@ describe("parseBalanceHistoryRows", () => {
     });
   });
 
+  test("a schedule that ends on 0 parses, and only that row is excluded (#1417)", () => {
+    const result = parseBalanceHistoryRows([
+      { balanceMinor: 140_000_00, date: "2026-06-15" },
+      { balanceMinor: 0, date: "2026-06-20" },
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+
+    const preview = previewBalanceHistoryImport(result.rows, PLAN_CTX);
+    expect(preview.map((row) => row.status)).toEqual(["accepted", "excluded"]);
+    expect(preview[1]?.reason).toBe(BALANCE_HISTORY_MESSAGES.nonPositiveBalance);
+  });
+
   test("accepts a well-formed series", () => {
     const result = parseBalanceHistoryRows([
       { annualRate: "0.03", balanceMinor: 140_000_00, date: "2026-06-15" },

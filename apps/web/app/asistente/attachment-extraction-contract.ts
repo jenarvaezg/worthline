@@ -567,6 +567,20 @@ export function parseExtractionResult(input: unknown): AttachmentExtractionResul
   return parsed.success ? parsed.data : INVALID_OUTPUT_FAILURE;
 }
 
+/**
+ * Fit a reading's honesty text inside the envelope's warning bound. A messy sheet can
+ * drop more rows than the contract admits warnings, so the last slot summarizes the
+ * overflow instead of losing it silently. Shared by every deterministic extractor:
+ * the cap belongs to the contract that declares `maxWarnings`, not to one reader.
+ */
+export function capExtractionWarnings(warnings: readonly string[]): string[] {
+  const max = ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings;
+  if (warnings.length <= max) return [...warnings];
+  const kept = warnings.slice(0, max - 1);
+  kept.push(`y ${warnings.length - (max - 1)} avisos más sin mostrar.`);
+  return kept;
+}
+
 /** Validate type, byte size and per-family bounds before doing extraction work. */
 export function checkAttachmentLimits(
   input: AttachmentLimitInput,

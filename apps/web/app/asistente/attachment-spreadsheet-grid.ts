@@ -96,6 +96,38 @@ function csvToRows(bytes: Uint8Array): string[][] | null {
   return best.length > 0 ? best : null;
 }
 
+/**
+ * Normalize a date cell to ISO `YYYY-MM-DD`, or null if it is not a recognizable
+ * calendar date. Accepts an already-ISO value and the `dd/mm/yyyy` that the XLSX
+ * reader emits from date-styled serials (and that Spanish CSV exports use) — a
+ * deterministic reformat, never an invented date. A same-day validity check keeps
+ * a `32/13/2026` from slipping through.
+ *
+ * It lives with the grid reader rather than with one extractor because every
+ * deterministic sheet route reads the same two spellings out of the same cells.
+ */
+export function toIsoDate(value: string): string | null {
+  const trimmed = value.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (iso) return isRealDay(+iso[1]!, +iso[2]!, +iso[3]!) ? trimmed : null;
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (dmy) {
+    const [year, month, day] = [+dmy[3]!, +dmy[2]!, +dmy[1]!];
+    if (!isRealDay(year, month, day)) return null;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  return null;
+}
+
+function isRealDay(year: number, month: number, day: number): boolean {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 /** Read every worksheet of an XLSX, or the single grid of a CSV. */
 export function readSpreadsheetGrids(input: SpreadsheetGridInput): SpreadsheetGridResult {
   if (isXlsx(input.fileName)) {

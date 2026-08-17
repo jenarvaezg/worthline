@@ -84,8 +84,19 @@ function isValidIsoDate(date: string): boolean {
 }
 
 /**
- * Validate external row payloads at the action boundary — every element must
- * carry a real ISO date and a positive integer balanceMinor.
+ * Validate external row payloads at the action boundary — every element must carry a
+ * date string and an integer balanceMinor. SHAPE only: whether the date is a real day,
+ * whether it is in the future and whether the balance is positive are per-row verdicts
+ * {@link validateRowBasics} renders, and the row is then EXCLUDED with its reason
+ * rather than sinking the series.
+ *
+ * That split is why a non-positive balance no longer fails here (#1417). It used to,
+ * and the asymmetry was arbitrary — a `2026-99-99` passed this parser and was excluded
+ * downstream, while a balance of 0 rejected the whole file. A real amortization
+ * schedule ends on 0, the row that says the loan is paid off, so an all-or-nothing
+ * refusal turned 49 observed balances into «la serie de saldos no es válida» over the
+ * one row nobody needed. The preview now shows all of them, that one folded with «introduce
+ * un saldo real mayor que 0 €», which is the honest reading of what the document says.
  */
 export function parseBalanceHistoryRows(raw: unknown): ParseBalanceHistoryRowsResult {
   if (!Array.isArray(raw)) {
@@ -104,11 +115,7 @@ export function parseBalanceHistoryRows(raw: unknown): ParseBalanceHistoryRowsRe
     }
 
     const balanceMinor = record.balanceMinor;
-    if (
-      typeof balanceMinor !== "number" ||
-      !Number.isInteger(balanceMinor) ||
-      balanceMinor <= 0
-    ) {
+    if (typeof balanceMinor !== "number" || !Number.isInteger(balanceMinor)) {
       return { error: BALANCE_HISTORY_MESSAGES.invalidSeries, ok: false };
     }
 

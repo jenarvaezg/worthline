@@ -2038,7 +2038,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     propose_reconstruction: tool({
       description:
-        "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada, a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF incluido). " +
+        "Prepara una propuesta de CORRECCIÓN «Reconstruir historia» para UNA deuda amortizable mal modelada, a partir de una serie de saldos fechados observados en un extracto o cuadro de amortización — normalmente extraídos de un adjunto (PDF u hoja de cálculo incluidos). " +
         "Envía solo fecha (YYYY-MM-DD) y saldo observado en céntimos; NO infieras capital, plazo, cuota ni tipo (la app re-deriva el tipo de la curva vigente). " +
         "La app reconstruye la curva como cadena de re-baselines (ADR 0056), la reconcilia con el saldo conocido y muestra la superficie C con edición punto a punto; la confirmación re-proyecta la serie y aplica un único lote atómico.",
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
