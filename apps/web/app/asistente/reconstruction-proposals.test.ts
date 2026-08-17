@@ -196,7 +196,14 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
     store.close();
   });
 
-  test("rejects an edited series that no longer reconciles, persisting nothing", async () => {
+  /**
+   * #1422: esta prueba decía lo contrario. Rechazaba toda serie cuyo extremo no
+   * igualase AL CÉNTIMO el saldo tecleado a mano, y como la tarjeta encendía el
+   * botón en cuanto se editaba un punto, el usuario recibía «la serie YA NO
+   * reconcilia» —culpándole de romper algo que nunca cuadró— después de pulsar.
+   * Hoy el descuadre se dice antes de confirmar y confirmar lo aplica.
+   */
+  test("aplica una serie que no reconcilia y re-deriva el saldo declarado (#1422)", async () => {
     const store = await seedMortgage();
     const built = await buildReconstructionProposal(
       store,
@@ -208,6 +215,33 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
     const result = await confirmCorrectionProposalAction(
       built.proposal.draft,
       [{ balanceMinor: 130_000_00, date: TODAY }],
+      store,
+      clock,
+    );
+
+    expect(result).toEqual({ status: "applied" });
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+    // El ancla deja de mentir: pasa a ser lo que dice la curva aceptada.
+    const [liability] = await store.liabilities.readLiabilities();
+    expect(liability?.currentBalance.amountMinor).toBe(130_000_00);
+    expect(
+      (await store.assistantProposals.read(built.proposal.draft.proposalId))?.status,
+    ).toBe("applied");
+    store.close();
+  });
+
+  test("una serie sin ningún saldo aplicable sigue siendo un error honesto", async () => {
+    const store = await seedMortgage();
+    const built = await buildReconstructionProposal(
+      store,
+      args([{ balanceMinor: 140_000_00, date: TODAY }]),
+      TODAY,
+    );
+    if (!built.ok) throw new Error(built.error);
+
+    const result = await confirmCorrectionProposalAction(
+      built.proposal.draft,
+      [{ balanceMinor: 130_000_00, date: "2027-01-01" }],
       store,
       clock,
     );

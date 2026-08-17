@@ -1,7 +1,9 @@
 import { createInMemoryStore } from "@worthline/db";
+import { fixedClock } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { balanceCurvePolyline } from "./balance-curve-polyline";
+import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import { parseBalanceHistoryProposalDraft } from "./balance-history-proposal-contract";
 import {
   buildBalanceHistoryProposal,
@@ -65,10 +67,18 @@ describe("balance-history assistant proposal (#768)", () => {
     );
     expect(built.ok).toBe(true);
     if (!built.ok) return;
-    expect(built.proposal.reconciliation).toEqual({
+    expect(built.proposal.reconciliation).toMatchObject({
+      against: "declared",
       expectedMinor: 140_000_00,
       matches: true,
       resultingMinor: 140_000_00,
+      status: "exact",
+    });
+    // El ancla tecleada (140.000 €) no la reproduce ni la propia curva del plan
+    // (147.704,07 €): la propuesta lo dice en vez de callarlo (#1422).
+    expect(built.proposal.reconciliation.anchor).toMatchObject({
+      modelMinor: 147_704_07,
+      stale: true,
     });
     expect(built.proposal.points).toMatchObject([
       { date: "2026-07-12", status: "accepted" },
@@ -85,6 +95,32 @@ describe("balance-history assistant proposal (#768)", () => {
         { balanceMinor: 139_000_00, date: "2026-08-12" },
       ],
     });
+    store.close();
+  });
+
+  test("un descuadre ya no cierra la lane del historial de deuda (#1422)", async () => {
+    const store = await seed();
+    const built = await buildBalanceHistoryProposal(
+      store,
+      {
+        liabilityId: "mortgage",
+        rows: [{ balanceMinor: 130_000_00, date: "2026-07-12" }],
+      },
+      "2026-07-12",
+    );
+    if (!built.ok) throw new Error(built.error);
+    expect(built.proposal.reconciliation.matches).toBe(false);
+
+    // La misma puerta de la tarjeta de reconstrucción, en su lane hermana: el
+    // veredicto se enseña, pero confirmar aplica.
+    expect(
+      await confirmBalanceHistoryProposalAction(
+        built.proposal.draft,
+        store,
+        fixedClock("2026-07-12T00:00:00.000Z"),
+      ),
+    ).toMatchObject({ status: "applied" });
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
     store.close();
   });
 

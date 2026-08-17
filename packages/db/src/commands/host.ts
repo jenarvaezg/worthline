@@ -152,7 +152,16 @@ export interface CommandHost extends DatedFactAliases {
      * import (ONE fact_batch, ONE ripple from the oldest date) instead of the
      * anchor-only edit loop. The persisted plan keeps the raw series + before-values.
      */
-    reconstruct?: { liabilityId: string; rebaselines: AddBalanceRebaselineInput[] };
+    reconstruct?: {
+      liabilityId: string;
+      rebaselines: AddBalanceRebaselineInput[];
+      /**
+       * The endpoint of the accepted curve today (#1422). Present only when it
+       * differs from the stored `current_balance_minor`: applying a document the
+       * user confirmed must not leave the hand-typed anchor contradicting it.
+       */
+      redeclaredBalanceMinor?: number;
+    };
   }) => Promise<void>;
   /**
    * Apply one early-repayment proposal (#1245) and resolve it in the SAME
@@ -185,7 +194,15 @@ interface InternalCommandHostDependencies {
   assistantProposals: AssistantProposalStore;
   connectedSources: ConnectedSourceSeams;
   datedFacts: DatedFactCommands;
-  factPersistence: Pick<LiabilityStore, "addBalanceRebaseline">;
+  /**
+   * `updateLiabilityBalance` rides along for the reconstruct depth (#1422): the
+   * declared balance is re-derived from the curve the user just accepted, inside
+   * the SAME transaction as the re-baselines that made it true.
+   */
+  factPersistence: Pick<
+    LiabilityStore,
+    "addBalanceRebaseline" | "updateLiabilityBalance"
+  >;
   /** Read seam for the correction apply's live-data revalidation (#1051). */
   liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
   /**
@@ -691,9 +708,20 @@ export function createCommandHost(
         async () => {
           // Reconstruct depth (#1053): apply the re-projected series as ONE atomic
           // batch with ONE ripple from the oldest date. The confirm already
-          // revalidated the endpoint against live data (the series must reconcile
-          // to the current anchor), so a stale draft never reaches here.
+          // re-projected the series against live data, and (#1422) may have
+          // re-derived the declared balance from that curve — same transaction, so
+          // the anchor and the re-baselines that justify it never diverge.
           if (reconstruct) {
+            // El saldo va PRIMERO, y el import después: el import ripplea desde la
+            // fecha más antigua, y las fechas anteriores al primer re-baseline se
+            // valoran con el saldo guardado. Al revés, ese ripple congelaría en los
+            // snapshots el ancla vieja que esta misma llamada viene a corregir.
+            if (reconstruct.redeclaredBalanceMinor !== undefined) {
+              await factPersistence.updateLiabilityBalance(
+                reconstruct.liabilityId,
+                reconstruct.redeclaredBalanceMinor,
+              );
+            }
             await importBalanceHistory(
               {
                 liabilityId: reconstruct.liabilityId,

@@ -12,6 +12,8 @@ import type {
   AmortizationPlanInput,
   BalanceRebaselineInput,
   DecimalString,
+  EarlyRepayment,
+  ValuationCadence,
 } from "@worthline/domain";
 import { debtBalanceAtDate, effectiveAmortizationPlan } from "@worthline/domain";
 
@@ -46,6 +48,16 @@ export interface BalanceHistoryDebtContext {
   plan?: AmortizationPlanInput;
   balanceRebaselines: readonly BalanceRebaselineInput[];
   revisions: readonly RecalibrationRevision[];
+  /**
+   * Las amortizaciones anticipadas de la deuda (#1422). NO son un adorno: mueven
+   * el saldo, y sin ellas esta curva y la que el store calcula para la misma
+   * deuda son dos motores distintos. Esa divergencia deja de ser académica desde
+   * que el extremo proyectado se compara con la curva viva y, al confirmar, se
+   * re-declara como saldo — se prometería una cifra que ninguna curva reproduce.
+   */
+  earlyRepayments: readonly EarlyRepayment[];
+  /** La cadencia declarada de la deuda (ADR 0031); `null` se lee como `step`. */
+  cadence?: ValuationCadence | null;
   currentBalanceMinor: number;
   today: string;
 }
@@ -63,7 +75,7 @@ export interface BalanceHistoryImportPlan {
 /** Spanish messages reusable by the #764 assistant preview surface. */
 export const BALANCE_HISTORY_MESSAGES = {
   duplicateDate: "Ya existe un saldo en esta fecha.",
-  duplicateInBatch: "Fecha duplicada en la serie.",
+  duplicateInBatch: "Otro saldo de la misma fecha, posterior en el documento, manda.",
   futureDate: "La fecha del saldo no puede ser futura.",
   invalidDate: "La fecha del saldo no es válida.",
   invalidSeries: "La serie de saldos no es válida.",
@@ -180,15 +192,31 @@ function effectiveAt(
   });
 }
 
-function vigenteBalanceAt(ctx: BalanceHistoryDebtContext, targetDate: string): number {
+/**
+ * La curva vigente de la deuda en una fecha, con TODO lo que la mueve. Exportada
+ * para que quien proyecte la serie reconstruida use este mismo motor (#1422): el
+ * bug que lo hizo necesario era comparar un extremo calculado sin amortizaciones
+ * anticipadas contra un saldo calculado con ellas.
+ */
+export function balanceHistoryCurveAt(
+  ctx: BalanceHistoryDebtContext,
+  balanceRebaselines: readonly BalanceRebaselineInput[],
+  targetDate: string,
+): number {
   return debtBalanceAtDate({
-    balanceRebaselines: ctx.balanceRebaselines,
+    balanceRebaselines,
     currentBalanceMinor: ctx.currentBalanceMinor,
     debtModel: "amortizable",
+    earlyRepayments: ctx.earlyRepayments,
     ...(ctx.plan ? { plan: ctx.plan } : {}),
     revisions: ctx.revisions,
     targetDate,
+    ...(ctx.cadence == null ? {} : { cadence: ctx.cadence }),
   });
+}
+
+function vigenteBalanceAt(ctx: BalanceHistoryDebtContext, targetDate: string): number {
+  return balanceHistoryCurveAt(ctx, ctx.balanceRebaselines, targetDate);
 }
 
 function derivationReason(error: string): string {
@@ -200,18 +228,34 @@ function derivationReason(error: string): string {
 /**
  * Single pass: preview every row (drift vs the vigente curve) and compose the
  * chained re-baselines accepted rows will persist.
+ *
+ * Two balances on the SAME date are ambiguous for a curve, and the resolution is
+ * **the last one in the document wins** (#1422). A real amortization schedule
+ * repeats a date when something happened twice that day — the two early
+ * repayments Jorge made on 2004-06-01, 169.653,18 € and then 164.153,18 € — and
+ * the balance that closes the day is the last row, never the first. The earlier
+ * ones fold with their reason instead of governing the chain.
  */
 export function planBalanceHistoryImport(
   rows: readonly BalanceHistoryRowInput[],
   ctx: BalanceHistoryDebtContext,
 ): BalanceHistoryImportPlan {
+  // Estable: entre fechas iguales conserva el orden del documento, que es lo que
+  // hace de «la última» una lectura de fin de día y no un azar.
   const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  // La última fila USABLE de cada fecha, no la última a secas: si la que cierra el
+  // día es un 0,00 € del final del cuadro o una fecha futura, plegar la buena por
+  // «manda la posterior» y excluir la posterior por su propio motivo borraría la
+  // observación entera.
+  const lastIndexByDate = new Map<string, number>();
+  sorted.forEach((row, index) => {
+    if (validateRowBasics(row, ctx.today).ok) lastIndexByDate.set(row.date, index);
+  });
   const previews: BalanceHistoryRowPreview[] = [];
   const composed: ComposedBalanceHistoryRebaseline[] = [];
-  const seenDates = new Set<string>();
   const chainRebaselines: BalanceRebaselineInput[] = [...ctx.balanceRebaselines];
 
-  for (const row of sorted) {
+  for (const [index, row] of sorted.entries()) {
     const basics = validateRowBasics(row, ctx.today);
     if (!basics.ok) {
       previews.push(
@@ -224,7 +268,7 @@ export function planBalanceHistoryImport(
       continue;
     }
 
-    if (seenDates.has(row.date)) {
+    if (lastIndexByDate.get(row.date) !== index) {
       previews.push(
         previewRow(row, {
           driftMinor: null,
@@ -234,7 +278,6 @@ export function planBalanceHistoryImport(
       );
       continue;
     }
-    seenDates.add(row.date);
 
     const existing = ctx.balanceRebaselines.find((r) => r.baselineDate === row.date);
     if (existing) {

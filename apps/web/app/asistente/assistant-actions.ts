@@ -333,7 +333,13 @@ export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null
     raw.mode === "reconstruir" &&
     Array.isArray(raw.series) &&
     Array.isArray(raw.curve) &&
-    typeof raw.anchorMinor === "number"
+    typeof raw.anchorMinor === "number" &&
+    // El veredicto de reconciliación (#1422) es parte del contrato: la tarjeta
+    // PINTA sus cifras y anuncia con ellas lo que hará el confirmar. Una pestaña
+    // vieja de antes del deploy pierde la tarjeta —el borrador sigue ahí y el
+    // turno siguiente la reconstruye— en vez de reventar al desreferenciar un
+    // campo que ese payload no trae.
+    isBalanceReconciliation(raw.reconciliation)
   ) {
     return raw as unknown as CorrectionProposal;
   }
@@ -433,23 +439,37 @@ export function parseHoldingTrashProposal(
   return raw as unknown as HoldingTrashProposal;
 }
 
+/**
+ * Shape check for the reconciliation verdict (#1422). Every field the cards read
+ * is checked, including `anchor`, because they are DESREFERENCED at render: a
+ * half-verdict off a stale tab would throw inside the assistant layer, which is
+ * the failure this boundary exists to prevent.
+ */
+function isBalanceReconciliation(raw: unknown): boolean {
+  return (
+    isRecord(raw) &&
+    typeof raw.status === "string" &&
+    typeof raw.against === "string" &&
+    typeof raw.matches === "boolean" &&
+    typeof raw.expectedMinor === "number" &&
+    typeof raw.resultingMinor === "number" &&
+    typeof raw.deltaMinor === "number" &&
+    typeof raw.toleranceMinor === "number" &&
+    isRecord(raw.anchor) &&
+    typeof raw.anchor.declaredMinor === "number" &&
+    typeof raw.anchor.modelMinor === "number" &&
+    typeof raw.anchor.driftMinor === "number" &&
+    typeof raw.anchor.stale === "boolean"
+  );
+}
+
 export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposal | null {
   if (!isRecord(raw) || raw.proposalType !== "balance_history_import") return null;
   const draft = parseBalanceHistoryProposalDraft(raw.draft);
   if (!draft.ok || !isRecord(raw.liability) || typeof raw.liability.id !== "string")
     return null;
-  if (
-    !Array.isArray(raw.points) ||
-    !Array.isArray(raw.curve) ||
-    !isRecord(raw.reconciliation)
-  )
-    return null;
-  if (
-    typeof raw.reconciliation.expectedMinor !== "number" ||
-    typeof raw.reconciliation.resultingMinor !== "number" ||
-    typeof raw.reconciliation.matches !== "boolean"
-  )
-    return null;
+  if (!Array.isArray(raw.points) || !Array.isArray(raw.curve)) return null;
+  if (!isBalanceReconciliation(raw.reconciliation)) return null;
   return raw as unknown as BalanceHistoryProposal;
 }
 

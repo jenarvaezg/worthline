@@ -7,14 +7,23 @@
  * prototype codified:
  *
  *   resultado  = último punto incluido de la serie
- *   cuadra     = resultado === anclaConocida
- *   canConfirm = modo === "solo-desde-hoy" || cuadra
+ *   cuadra     = |resultado − anclaConocida| ≤ margen        (#1422)
+ *   canConfirm = modo === "solo-desde-hoy" || hay un punto   (#1422)
  *
- * S1 (anchor-only, this slice) and S2 (document reconstruction) share this
- * surface via the mode; S1 declares one point from today and always confirms,
- * S2 reconstructs a series that must reconcile to the anchor before Confirmar
- * unlocks.
+ * S1 (anchor-only) and S2 (document reconstruction) share this surface via the
+ * mode; S1 declares one point from today and always confirms, S2 reconstructs a
+ * series and reconciles it to the anchor.
+ *
+ * The two `#1422` lines are the repair of a button that nació muerto. `cuadra`
+ * was `===` between a curve derived from ~49 observed points and a figure typed
+ * by hand months earlier — un céntimo de redondeo la cerraba igual que 494 € —
+ * and `cuadra` was ALSO the confirm gate, so a correct document from the bank had
+ * no way in. Reconciling is now a VERDICT the card renders (with its tolerance and
+ * its witnesses, `balance-reconciliation.ts`), not a lock: a mismatch confirms too,
+ * saying what it will do.
  */
+
+import { balancesAgree } from "./balance-reconciliation";
 
 export type CorrectionSurfaceMode = "solo-desde-hoy" | "reconstruir" | "sin-ancla";
 
@@ -55,6 +64,11 @@ function lastIncludedBalance(series: readonly CorrectionPoint[]): number | null 
   return null;
 }
 
+/** ¿Queda algún punto que aplicar? Un importe ilegible no es uno. */
+function hasApplicablePoint(series: readonly CorrectionPoint[]): boolean {
+  return series.some((point) => !point.excluded && point.balanceMinor !== null);
+}
+
 /**
  * The gate over a correction series. `anchorMinor` is the reconciliation anchor
  * (a present-day balance the reconstruction must reproduce); `null` means no
@@ -87,9 +101,11 @@ export function computeCorrectionGate(input: {
     };
   }
 
-  const matches = resultingMinor === anchorMinor;
+  const matches = resultingMinor !== null && balancesAgree(anchorMinor, resultingMinor);
   return {
-    canConfirm: matches,
+    // Un descuadre ya no cierra la puerta (#1422): basta que quede un punto que
+    // aplicar. Lo que el descuadre cambia es lo que la tarjeta DICE.
+    canConfirm: hasApplicablePoint(series),
     guarantee: matches
       ? { anchorMinor, resultingMinor: resultingMinor as number, state: "reconciled" }
       : { anchorMinor, resultingMinor, state: "mismatch" },

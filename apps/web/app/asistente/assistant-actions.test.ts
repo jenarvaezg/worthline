@@ -189,16 +189,47 @@ describe("parseCorrectionProposal (#1051/#1053)", () => {
     ).not.toBeNull();
   });
 
-  it("accepts the reconstruct depth with a series, curve and anchor", () => {
+  const reconstruct = {
+    ...base,
+    anchorMinor: 140_000_00,
+    curve: [{ balanceMinor: 140_000_00, date: "2026-07-12" }],
+    mode: "reconstruir",
+    reconciliation: {
+      against: "declared",
+      anchor: {
+        declaredMinor: 140_000_00,
+        driftMinor: 0,
+        modelMinor: 140_000_00,
+        stale: false,
+      },
+      deltaMinor: 0,
+      expectedMinor: 140_000_00,
+      matches: true,
+      resultingMinor: 140_000_00,
+      status: "exact",
+      toleranceMinor: 14_000,
+    },
+    series: [{ balanceMinor: 140_000_00, date: "2026-07-12", origin: "assistant" }],
+  };
+
+  it("accepts the reconstruct depth with a series, curve, anchor and verdict", () => {
+    expect(parseCorrectionProposal(reconstruct)).not.toBeNull();
+  });
+
+  it("rejects a reconstruct payload with no reconciliation verdict (#1422)", () => {
+    const { reconciliation: _dropped, ...stale } = reconstruct;
+    expect(parseCorrectionProposal(stale)).toBeNull();
+  });
+
+  it("rejects a half verdict the card would crash on (#1422)", () => {
+    // La tarjeta desreferencia `reconciliation.anchor.stale` al renderizar: un
+    // veredicto a medias no es media garantía, es una excepción.
     expect(
       parseCorrectionProposal({
-        ...base,
-        anchorMinor: 140_000_00,
-        curve: [{ balanceMinor: 140_000_00, date: "2026-07-12" }],
-        mode: "reconstruir",
-        series: [{ balanceMinor: 140_000_00, date: "2026-07-12", origin: "assistant" }],
+        ...reconstruct,
+        reconciliation: { matches: true, status: "exact" },
       }),
-    ).not.toBeNull();
+    ).toBeNull();
   });
 
   it("rejects a reconstruct payload missing the anchor", () => {

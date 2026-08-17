@@ -777,10 +777,15 @@ _Avoid_: snapshot (that is the frozen daily capture), onboarding data.
 
 **Reconciliation anchor**:
 A present-day position or balance the user already knows — from a **present-state
-declaration** or a document's own closing figure — that a reconstructed history must
-reproduce end-to-end. The checksum for bulk historical ingestion: the engine confirms the
-extracted **dated facts** add up to the anchor, so the user can trust the whole in
-aggregate without checking each fact. Validates the endpoint, not the intermediate curve.
+declaration**, a document's own closing figure, or what worthline's own curve computes
+today — that a reconstructed history is measured against. The checksum for bulk historical
+ingestion: the engine confirms the extracted **dated facts** add up to the anchor, so the
+user can trust the whole in aggregate without checking each fact. Validates the endpoint,
+not the intermediate curve, and **within a tolerance** rather than to the cent — a curve
+derived from dozens of observed points cannot be expected to equal a stored figure exactly
+(ADR 0070). There can be more than one anchor and they can disagree; agreeing with the
+closest is enough, and an anchor the debt's own curve does not reproduce is reported as
+suspect instead of obeyed. A disagreement is stated, never a locked door.
 _Avoid_: baseline (overloaded with balance rebaseline), opening balance.
 
 **Reconstructed history**:
@@ -790,7 +795,8 @@ Historical **dated facts** an assistant extracted from an uploaded document and 
 — that worthline surfaces transparently and the user can correct point by point. Trust
 comes from knowing what is reconstructed and being able to fix it, not from assuming the
 extraction was right. It splits in two by whether a **reconciliation anchor** exists:
-**reconciled** (an anchor exists and the checksum passed) and **unverified** (no anchor —
+**reconciled** (an anchor exists and the checksum passed within its tolerance) and
+**unverified** (no anchor —
 e.g. a holding no longer held, present only in the document — so the preview forces a look
 at that item, since no checksum covers it).
 _Avoid_: imported history (implies verified), synced history.

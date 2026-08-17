@@ -264,7 +264,10 @@ async function buildStore(
       assistantProposals: assistantProposalStore,
       connectedSources: connectedSourceSeams,
       datedFacts: datedFactCommands,
-      factPersistence: { addBalanceRebaseline: liabilityStore.addBalanceRebaseline },
+      factPersistence: {
+        addBalanceRebaseline: liabilityStore.addBalanceRebaseline,
+        updateLiabilityBalance: liabilityStore.updateLiabilityBalance,
+      },
       investmentIdentity: {
         clearPriceCache: operationsStore.clearPriceCache,
         patchInvestmentIdentity: assetStore.patchInvestmentIdentity,

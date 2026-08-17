@@ -16,7 +16,7 @@ import {
   useState,
   useTransition,
 } from "react";
-import { editCorrectionPoint } from "./anchor-correction-gate";
+import { computeCorrectionGate, editCorrectionPoint } from "./anchor-correction-gate";
 import {
   extractEmbeddedQuickActions,
   parseBalanceHistoryProposal,
@@ -46,6 +46,11 @@ import { userTurnText } from "./attachment-notice";
 import { balanceCurvePolyline } from "./balance-curve-polyline";
 import { confirmBalanceHistoryProposalAction } from "./balance-history-proposal-action";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
+import {
+  anchorDriftSentence,
+  reconciliationSentence,
+  redeclarationSentence,
+} from "./balance-reconciliation";
 import {
   confirmCorrectionProposalAction,
   discardCorrectionProposalAction,
@@ -1389,16 +1394,27 @@ function ReconstructionProposalCard({
     .filter((point) => !point.excluded && point.balanceMinor !== null)
     .map((point) => ({ balanceMinor: point.balanceMinor as number, date: point.date }));
 
-  // Pristine, the engine's reconciliation from the build is both the guarantee
-  // and the gate. After an edit the strong check moves fully server-side — the
-  // confirm re-projects the kept series and reconciles its endpoint against live
-  // data (a naive last-point check would wrongly block a statement dated before
-  // today), so we allow the attempt whenever a point remains and surface the
-  // server's verdict in the result.
+  // La reconciliación es un VEREDICTO, no una cerradura (#1422). Confirmar pide
+  // solo que quede un punto que aplicar: si el extremo no cuadra, la frase lo
+  // dice y el servidor re-proyecta la serie de todos modos. Al revés —lo que
+  // había— un documento correcto del banco no tenía ninguna forma de entrar, y
+  // «edita un punto» solo movía la misma negativa un clic más tarde.
+  const gate = computeCorrectionGate({
+    anchorMinor: proposal.anchorMinor,
+    mode: "reconstruir",
+    series,
+  });
   const verified = !dirty && proposal.guarantee.state === "reconciled";
-  const canConfirm = dirty
-    ? editedRows.length > 0
-    : proposal.guarantee.state === "reconciled";
+  const canConfirm = gate.canConfirm;
+  const drift = dirty
+    ? null
+    : anchorDriftSentence(proposal.reconciliation, formatPositionMoney);
+  // Editar la serie no apaga la consecuencia, solo la vuelve menos predecible: el
+  // confirmar sigue re-derivando el saldo declarado, y callarlo justo entonces
+  // sería la mitad exacta de la promesa (#1422).
+  const redeclaration = dirty
+    ? "Al confirmar, tu saldo declarado pasará a ser el extremo de la serie que apliques."
+    : redeclarationSentence(proposal.reconciliation, formatPositionMoney);
   const settled = result?.status === "applied" || result?.status === "discarded";
   const actionsDisabled = pending || mutationsDisabled || settled;
 
@@ -1408,11 +1424,15 @@ function ReconstructionProposalCard({
       <p className="assistantProposalKind">Corrección · Reconstruir historia</p>
       <strong>{proposal.summary}</strong>
       {/* Superficie C: the guarantee leads, the point-by-point detail folds below. */}
-      <p className={verified ? "assistantOk" : dirty ? "" : "assistantError"}>
+      <p className={verified ? "assistantOk" : dirty ? "" : "assistantWarning"}>
         {dirty
           ? "Editaste la serie — se recomprobará con el motor al confirmar."
-          : guaranteeMessage(proposal.guarantee.state)}
+          : reconciliationSentence(proposal.reconciliation, formatPositionMoney)}
       </p>
+      {/* El ancla deja de ser el juez incuestionable (#1422): cuando la propia
+          curva de la deuda no la reproduce, se dice — es un diagnóstico que no
+          depende de ningún documento y aquí señala al candidato correcto. */}
+      {drift === null ? null : <p className="assistantWarning">{drift}</p>}
       <svg
         aria-label="Curva escalonada orientativa del saldo reconstruido"
         role="img"
@@ -1426,18 +1446,20 @@ function ReconstructionProposalCard({
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      {!dirty && "resultingMinor" in proposal.guarantee ? (
+      {dirty ? null : (
         <p>
-          Reconciliación:{" "}
-          {proposal.guarantee.resultingMinor === null
-            ? "—"
-            : formatPositionMoney(proposal.guarantee.resultingMinor)}{" "}
-          / {formatPositionMoney(proposal.anchorMinor)} ·{" "}
-          {proposal.guarantee.state === "reconciled"
-            ? "Cuadra en el extremo"
-            : "No cuadra en el extremo"}
+          Reconciliación: {formatPositionMoney(proposal.reconciliation.resultingMinor)} /{" "}
+          {formatPositionMoney(proposal.reconciliation.expectedMinor)} ·{" "}
+          {proposal.reconciliation.against === "model"
+            ? "tu curva actual"
+            : "tu saldo declarado"}{" "}
+          · margen ±{formatPositionMoney(proposal.reconciliation.toleranceMinor)}
         </p>
-      ) : null}
+      )}
+      {/* Lo que el confirmar va a hacerle al saldo declarado, dicho ANTES de
+          pulsarlo: «el documento tiene razón, actualiza el saldo declarado» era
+          justo lo que el usuario escribió en el chat y no tenía botón (#1422). */}
+      {redeclaration === null ? null : <p>{redeclaration}</p>}
       <details suppressHydrationWarning>
         <summary>Detalle punto a punto ({series.length})</summary>
         <ul>
@@ -1500,7 +1522,7 @@ function ReconstructionProposalCard({
       ) : null}
       <div className="assistantProposalActions">
         <button
-          disabled={actionsDisabled || !canConfirm || editedRows.length === 0}
+          disabled={actionsDisabled || !canConfirm}
           onClick={() =>
             startTransition(async () =>
               setResult(
@@ -1542,11 +1564,14 @@ function BalanceHistoryProposalCard({
     ReturnType<typeof confirmBalanceHistoryProposalAction>
   > | null>(null);
   const [pending, startTransition] = useTransition();
-  const confirmDisabled =
-    pending ||
-    mutationsDisabled ||
-    !proposal.reconciliation.matches ||
-    result?.status === "applied";
+  // La misma puerta de #1422, en la otra lane del mismo documento: exigir que el
+  // extremo cuadre para dejar confirmar dejaba el botón muerto sin salida ninguna.
+  // El veredicto se dice; aplicar es decisión del usuario.
+  const confirmDisabled = pending || mutationsDisabled || result?.status === "applied";
+  const balanceHistoryDrift = anchorDriftSentence(
+    proposal.reconciliation,
+    formatPositionMoney,
+  );
   return (
     <div className="assistantProposal">
       <ProposalMutationStatus pending={pending} result={result} />
@@ -1585,9 +1610,14 @@ function BalanceHistoryProposalCard({
       </ul>
       <p>
         Reconciliación: {formatPositionMoney(proposal.reconciliation.resultingMinor)} /{" "}
-        {formatPositionMoney(proposal.reconciliation.expectedMinor)} ·{" "}
-        {proposal.reconciliation.matches ? "Cuadra exactamente" : "No cuadra"}
+        {formatPositionMoney(proposal.reconciliation.expectedMinor)}
       </p>
+      <p className={proposal.reconciliation.matches ? "assistantOk" : "assistantWarning"}>
+        {reconciliationSentence(proposal.reconciliation, formatPositionMoney)}
+      </p>
+      {balanceHistoryDrift === null ? null : (
+        <p className="assistantWarning">{balanceHistoryDrift}</p>
+      )}
       {result ? (
         <p
           aria-live="polite"

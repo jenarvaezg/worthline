@@ -15,10 +15,17 @@ export async function readBalanceHistoryDebtContext(
   liabilityId: string,
   today: string,
 ): Promise<BalanceHistoryDebtContext> {
-  const reads = await readAmortizableDebtCurveContext(store, liabilityId);
+  const [reads, cadence] = await Promise.all([
+    readAmortizableDebtCurveContext(store, liabilityId),
+    store.liabilities.readValuationCadence(liabilityId),
+  ]);
   return {
     balanceRebaselines: reads.balanceRebaselines,
+    cadence,
     currentBalanceMinor: reads.currentBalanceMinor,
+    // #1422: las amortizaciones anticipadas y la cadencia viajaban leídas pero se
+    // caían aquí, y la curva de la importación quedaba por encima de la real.
+    earlyRepayments: reads.earlyRepayments,
     ...(reads.plan ? { plan: reads.plan } : {}),
     revisions: reads.revisions,
     today,

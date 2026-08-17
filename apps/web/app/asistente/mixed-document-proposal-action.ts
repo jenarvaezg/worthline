@@ -166,10 +166,14 @@ export async function confirmMixedDocumentProposalAction(
           rows,
           today,
         );
-        if (!projected.ok || !projected.reconciliation.matches)
+        // Solo un fallo REAL de proyección aborta el lote (#1422): un descuadre de
+        // extremo no es uno. Tirar el documento entero —sus fondos, sus
+        // valoraciones— porque una curva reconstruida no iguala al céntimo un
+        // saldo tecleado a mano era la versión más cara del mismo bug.
+        if (!projected.ok)
           return {
             status: "error",
-            message: "Una deuda ya no reconcilia con su saldo actual.",
+            message: projected.error,
           };
         balanceHistories.push({
           liabilityId,

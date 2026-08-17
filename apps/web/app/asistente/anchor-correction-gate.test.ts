@@ -25,7 +25,7 @@ describe("computeCorrectionGate", () => {
     expect(gate.resultingMinor).toBe(5_587_10);
   });
 
-  it("reconstruir unlocks Confirmar only when the endpoint reconciles", () => {
+  it("reconstruir reconciles the endpoint against the anchor", () => {
     const matched = computeCorrectionGate({
       anchorMinor: 5_000_00,
       mode: "reconstruir",
@@ -39,8 +39,37 @@ describe("computeCorrectionGate", () => {
       mode: "reconstruir",
       series: [point({ balanceMinor: 4_900_00 })],
     });
-    expect(mismatched.canConfirm).toBe(false);
     expect(mismatched.guarantee.state).toBe("mismatch");
+  });
+
+  it("un descuadre se dice, pero ya no cierra Confirmar (#1422)", () => {
+    const gate = computeCorrectionGate({
+      anchorMinor: 52_375_33,
+      mode: "reconstruir",
+      series: [point({ balanceMinor: 51_881_00 })],
+    });
+    expect(gate.matches).toBe(false);
+    expect(gate.canConfirm).toBe(true);
+  });
+
+  it("un céntimo de redondeo ya no es un descuadre (#1422)", () => {
+    const gate = computeCorrectionGate({
+      anchorMinor: 52_375_33,
+      mode: "reconstruir",
+      series: [point({ balanceMinor: 52_375_34 })],
+    });
+    expect(gate.matches).toBe(true);
+    expect(gate.guarantee.state).toBe("reconciled");
+  });
+
+  it("una serie sin ningún punto vivo no tiene nada que confirmar", () => {
+    const gate = computeCorrectionGate({
+      anchorMinor: 5_000_00,
+      mode: "reconstruir",
+      series: [point({ balanceMinor: 5_000_00, excluded: true })],
+    });
+    expect(gate.resultingMinor).toBeNull();
+    expect(gate.canConfirm).toBe(false);
   });
 
   it("the endpoint is the last non-excluded point", () => {

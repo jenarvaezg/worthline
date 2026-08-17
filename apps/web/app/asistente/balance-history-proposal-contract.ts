@@ -1,3 +1,5 @@
+import type { BalanceReconciliation } from "./balance-reconciliation";
+
 export interface BalanceHistoryProposalDraft {
   proposalId: string;
 }
@@ -14,7 +16,7 @@ export interface BalanceHistoryProposal {
     reason?: string;
   }>;
   curve: Array<{ date: string; balanceMinor: number }>;
-  reconciliation: { expectedMinor: number; resultingMinor: number; matches: boolean };
+  reconciliation: BalanceReconciliation;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
