@@ -28,6 +28,7 @@ import {
 } from "./operation-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
+import { internalProseLinkHref } from "./prose-link";
 import type { ReconcileRow } from "./reconcile-plan";
 import {
   parseReconcileProposalDraft,
@@ -100,17 +101,22 @@ const FIGURE_SECTION: Record<string, ScreenSection> = {
 };
 
 /**
- * An internal, same-origin path: rooted at `/`, not protocol-relative (`//`),
- * no backslash tricks, no scheme (`:`). Blocks `javascript:`, `http://…`, and
+ * The path a chip may navigate to, or null: rooted at `/`, not protocol-relative
+ * (`//`), no backslash tricks, no scheme (`:`). Blocks `javascript:`, `http://…` and
  * `//evil` while allowing `/patrimonio/x/editar`.
+ *
+ * Returns the CLEANED path and decides on it, never on the raw string (#1407): the
+ * URL parser DELETES tabs, LF and CR before resolving, so `/<tab>/evil.test/x` reads
+ * as a single-slash path — no backslash, no colon — and then navigates to
+ * `https://evil.test/x`. `internalProseLinkHref` strips exactly those characters,
+ * which is the same gate a link written in the prose goes through (#1289); the two
+ * extra checks here are what the chip channel adds on top of it.
  */
-function isInternalHref(href: string): boolean {
-  return (
-    href.startsWith("/") &&
-    !href.startsWith("//") &&
-    !href.includes("\\") &&
-    !href.includes(":")
-  );
+function internalActionHref(href: string): string | null {
+  const cleaned = internalProseLinkHref(href);
+  return cleaned !== null && !cleaned.includes("\\") && !cleaned.includes(":")
+    ? cleaned
+    : null;
 }
 
 function boundedString(value: unknown, max: number): string | null {
@@ -135,8 +141,9 @@ export function parseQuickActions(raw: unknown): QuickAction[] {
     if (label === null) continue;
 
     if (candidate["type"] === "openInternalSource") {
-      const href = boundedString(candidate["href"], MAX_LABEL);
-      if (href !== null && isInternalHref(href)) {
+      const written = boundedString(candidate["href"], MAX_LABEL);
+      const href = written === null ? null : internalActionHref(written);
+      if (href !== null) {
         actions.push({ type: "openInternalSource", label, href });
       }
     } else if (candidate["type"] === "runSuggestedAnalysis") {
@@ -182,21 +189,26 @@ export function resolveModelQuickActions(raw: unknown): QuickAction[] {
     if (label === null) continue;
 
     if (item["type"] === "openInternalSource") {
-      const hrefDirect = boundedString(item["href"], MAX_LABEL);
-      if (hrefDirect !== null && isInternalHref(hrefDirect)) {
+      const rawHref = boundedString(item["href"], MAX_LABEL);
+      const hrefDirect = rawHref === null ? null : internalActionHref(rawHref);
+      if (hrefDirect !== null) {
         actions.push({ type: "openInternalSource", label, href: hrefDirect });
       } else {
         const holding = boundedString(item["holding"], MAX_LABEL);
         const section = parseScreenSection(item["section"]);
         const figure = boundedString(item["figure"], MAX_LABEL);
-        let href: string | null = null;
+        let resolved: string | null = null;
         if (holding !== null) {
-          href = sourceHref({ kind: "holding", publicId: holding });
+          resolved = sourceHref({ kind: "holding", publicId: holding });
         } else if (section !== null) {
-          href = sourceHref({ kind: "section", section });
+          resolved = sourceHref({ kind: "section", section });
         } else if (figure !== null) {
-          href = sourceHref({ kind: "figure", figure });
+          resolved = sourceHref({ kind: "figure", figure });
         }
+        // Through the same gate as a href written in the text, resolved or not: one
+        // place decides what a chip may point at, and `OpenInternalSourceAction.href`
+        // being a string is then true by construction rather than by inspection.
+        const href = resolved === null ? null : internalActionHref(resolved);
         if (href !== null) {
           actions.push({ type: "openInternalSource", label, href });
         }
@@ -672,10 +684,19 @@ export function sourceHref(ref: SourceRef): string | null {
         ? holdingDetailHref(ref.publicId)
         : null;
     case "section":
-      return SECTION_ROUTE[ref.section];
+      return SECTION_ROUTE[ref.section] ?? null;
     case "figure": {
-      const section = FIGURE_SECTION[ref.figure];
-      return section ? SECTION_ROUTE[section] : null;
+      // Own properties only, and `?? null` on both lookups (#1407). The figure name
+      // comes from the model, and every object inherits `constructor`, `toString` and
+      // `hasOwnProperty` from its prototype: a plain `FIGURE_SECTION[ref.figure]`
+      // returned the truthy `Object` constructor for «constructor», which then indexed
+      // `SECTION_ROUTE` to `undefined` — and `undefined` is not `null`, so it slipped
+      // through every `!== null` guard downstream and became a chip with NO href, a
+      // `<Link href={undefined}>` that throws while rendering the assistant panel.
+      const section = Object.hasOwn(FIGURE_SECTION, ref.figure)
+        ? FIGURE_SECTION[ref.figure]
+        : undefined;
+      return section === undefined ? null : (SECTION_ROUTE[section] ?? null);
     }
   }
 }

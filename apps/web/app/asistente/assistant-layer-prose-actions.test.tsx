@@ -122,6 +122,37 @@ describe("AssistantLayer · the action block never stays in the prose", () => {
     expect(html).not.toContain("assistantChip");
   });
 
+  test("turns the narrated tool call into a chip instead of printing it (#1407)", () => {
+    chatMessages = [
+      assistantTurn(
+        [
+          "El saldo pendiente de la hipoteca de Plasencia es de 41.230 €.",
+          "",
+          "// Acciones sugeridas:",
+          '- [Analizar el estado de la deuda actual] (runSuggestedAnalysis:{"prompt":"Muéstrame el estado actual de la hipoteca de Plasencia."})',
+          "- Abrir el detalle de la hipoteca [blocked]",
+        ].join("\n"),
+        [],
+      ),
+    ];
+
+    const html = markup();
+
+    expect(html).toContain("El saldo pendiente de la hipoteca de Plasencia");
+    // Neither the commented heading, nor the tool's own name in the prose, nor its
+    // JSON, nor the tag the model invented for itself: the reader gets one button.
+    // (`Acciones sugeridas` and `runSuggestedAnalysis` do survive as the chip row's
+    // aria-label and the chip's class, which is the whole point of the fix.)
+    expect(html).not.toContain("Acciones sugeridas:");
+    expect(html).not.toContain("runSuggestedAnalysis:");
+    expect(html).not.toContain("{&quot;prompt&quot;");
+    expect(html).not.toContain("blocked");
+    expect(html).toMatch(
+      /<button[^>]*class="assistantChip runSuggestedAnalysis"[^>]*>Analizar el estado de la deuda actual</,
+    );
+    expect(html.match(/assistantChip/g)).toHaveLength(1);
+  });
+
   test("leaves prose alone when there is no action block", () => {
     chatMessages = [assistantTurn("Tus mayores posiciones:\n- Fondo A\n- Fondo B", [])];
 
