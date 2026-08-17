@@ -38,13 +38,9 @@ export async function confirmBalanceHistoryProposalAction(
         today,
       );
       if (!projected.ok) return { status: "error", message: projected.error };
-      if (!projected.reconciliation.matches) {
-        return {
-          status: "error",
-          message:
-            "La serie ya no reconcilia exactamente con el saldo actual de la deuda.",
-        };
-      }
+      // El descuadre NO bloquea (#1422). Es la misma puerta que dejaba muerta la
+      // tarjeta de reconstrucción, en la lane hermana: la tarjeta enseña el
+      // veredicto y sus testigos antes de pulsar, y quien pulsa manda.
       await store.command.applyAssistantBalanceHistoryProposal({
         liabilityId: observations.liabilityId,
         proposalId: proposal.id,

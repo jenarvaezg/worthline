@@ -14,6 +14,7 @@ const TODAY = "2026-07-02";
 const PLAN_CTX: BalanceHistoryDebtContext = {
   balanceRebaselines: [],
   currentBalanceMinor: 150_000_00,
+  earlyRepayments: [],
   plan: {
     annualInterestRate: "0.03",
     disbursementDate: "2026-01-15",
@@ -116,7 +117,42 @@ describe("previewBalanceHistoryImport — per-row validation and drift (#696)", 
     expect(preview[0]?.reason).toBe(BALANCE_HISTORY_MESSAGES.duplicateDate);
   });
 
-  test("excludes duplicate dates within the batch", () => {
+  test("una amortización anticipada mueve la curva contra la que se mide el desvío (#1422)", () => {
+    // Sin ella, esta curva y la que el store calcula para la MISMA deuda eran dos
+    // motores distintos, y el extremo proyectado se comparaba con un saldo ajeno.
+    const withRepayment = previewBalanceHistoryImport(
+      [{ balanceMinor: 140_000_00, date: "2026-06-15" }],
+      {
+        ...PLAN_CTX,
+        earlyRepayments: [
+          { amountMinor: 10_000_00, mode: "reduce-term", repaymentDate: "2026-03-15" },
+        ],
+      },
+    );
+    const without = previewBalanceHistoryImport(
+      [{ balanceMinor: 140_000_00, date: "2026-06-15" }],
+      PLAN_CTX,
+    );
+    expect(withRepayment[0]!.driftMinor).not.toBe(without[0]!.driftMinor);
+  });
+
+  test("la fila que cierra el día decide solo si ella misma es usable (#1422)", () => {
+    // El «0,00 €» con el que acaba un cuadro de amortización, repetido en la fecha
+    // de una observación buena, no puede llevársela por delante.
+    const plan = planBalanceHistoryImport(
+      [
+        { balanceMinor: 139_000_00, date: "2026-06-15" },
+        { balanceMinor: 0, date: "2026-06-15" },
+      ],
+      PLAN_CTX,
+    );
+    expect(plan.composed).toHaveLength(1);
+    expect(plan.composed[0]?.outstandingBalanceMinor).toBe(139_000_00);
+  });
+
+  test("dos saldos el mismo día: manda el último del documento (#1422)", () => {
+    // Las dos amortizaciones anticipadas de Jorge el 2004-06-01: el saldo que
+    // cierra el día es el segundo, no el primero.
     const preview = previewBalanceHistoryImport(
       [
         { balanceMinor: 140_000_00, date: "2026-06-15" },
@@ -124,11 +160,14 @@ describe("previewBalanceHistoryImport — per-row validation and drift (#696)", 
       ],
       PLAN_CTX,
     );
-    expect(preview.find((row) => row.status === "accepted")).toBeDefined();
-    expect(
-      preview.find((row) => row.reason === BALANCE_HISTORY_MESSAGES.duplicateInBatch)
-        ?.status,
-    ).toBe("excluded");
+    expect(preview.find((row) => row.status === "accepted")?.balanceMinor).toBe(
+      139_000_00,
+    );
+    const folded = preview.find(
+      (row) => row.reason === BALANCE_HISTORY_MESSAGES.duplicateInBatch,
+    );
+    expect(folded?.status).toBe("excluded");
+    expect(folded?.balanceMinor).toBe(140_000_00);
   });
 
   test("chains composition: the second row composes off the first accepted row", () => {

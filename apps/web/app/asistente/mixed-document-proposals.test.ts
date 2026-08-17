@@ -56,6 +56,68 @@ describe("mixed document proposal router", () => {
     ]);
   });
 
+  /**
+   * #1422, la versión más cara del botón muerto: un descuadre de extremo en UNA
+   * deuda abortaba `applyAssistantMixedProposal` entero, así que los fondos y las
+   * valoraciones de inmueble del mismo documento morían con ella.
+   */
+  test("un descuadre de una deuda ya no tira el documento mixto entero (#1422)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 140_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: "2026-01-15",
+        firstPaymentDate: "2026-02-15",
+        id: "plan",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: "2026-07-12" },
+    );
+    const built = await buildMixedDocumentProposal(
+      store,
+      {
+        documentName: "mezcla.xlsx",
+        documentSha256: SHA,
+        segments: [
+          {
+            confidence: "certain",
+            kind: "debt_balance_history",
+            liabilityId: "mortgage",
+            rows: [{ balanceMinor: 140_000_00, date: "2026-07-12" }],
+          },
+        ],
+      },
+      "2026-07-12",
+    );
+    if (!built.ok) throw new Error("expected a mixed proposal");
+
+    // El saldo declarado se mueve a mano entre armar y confirmar.
+    await store.liabilities.updateLiabilityBalance("mortgage", 130_000_00);
+
+    expect(
+      await confirmMixedDocumentProposalAction(built.proposal.draft, store, {
+        today: () => "2026-07-12",
+      }),
+    ).toMatchObject({ status: "applied" });
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
+    store.close();
+  });
+
   test("asks for clarification instead of guessing a doubtful segment", async () => {
     const create = vi.fn();
     const result = await buildMixedDocumentProposal(
@@ -266,25 +328,6 @@ describe("mixed document proposal router", () => {
     );
     expect(persisted?.documents).toHaveLength(1);
     expect(persisted?.documents[0]?.facts).toHaveLength(6);
-
-    await store.liabilities.updateLiabilityBalance("mortgage", 130_000_00);
-    const staleConfirm = await confirmMixedDocumentProposalAction(
-      result.proposal.draft,
-      store,
-      { today: () => "2026-07-12" },
-    );
-    expect(staleConfirm).toEqual({
-      message: "Una deuda ya no reconcilia con su saldo actual.",
-      status: "error",
-    });
-    expect(await store.operations.readOperations("fund")).toEqual([]);
-    expect(await store.assets.readValuationAnchors("home")).toEqual([]);
-    expect(
-      await store.assistantProposals.read(result.proposal.draft.proposalId),
-    ).toMatchObject({
-      status: "draft",
-    });
-    await store.liabilities.updateLiabilityBalance("mortgage", 140_000_00);
 
     const apply = {
       funds: [

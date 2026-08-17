@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type BalanceHistoryRowInput,
+  balanceHistoryCurveAt,
   parseBalanceHistoryRows,
   planBalanceHistoryImport,
 } from "@web/patrimonio/import-balance-history";
@@ -13,6 +14,7 @@ import type {
 import { debtBalanceAtDate } from "@worthline/domain";
 
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
+import { reconcileReconstructedBalance } from "./balance-reconciliation";
 
 type ProposalStore = Pick<WorthlineStore, "liabilities"> & {
   assistantProposals: AssistantProposalStore;
@@ -48,9 +50,20 @@ export async function projectBalanceHistoryProposal(
 ) {
   const liabilities = await store.liabilities.readLiabilities();
   const matches = liabilities.filter((item) => item.id === liabilityId);
-  const planRecord = await store.liabilities.readAmortizationPlan(liabilityId);
-  const rebaselines = await store.liabilities.readBalanceRebaselines(liabilityId);
-  if (matches.length !== 1 || (!planRecord && rebaselines.length === 0)) {
+  const [planRecord, rebaselines, debtModel] = await Promise.all([
+    store.liabilities.readAmortizationPlan(liabilityId),
+    store.liabilities.readBalanceRebaselines(liabilityId),
+    // El mensaje de abajo prometía esta comprobación y no la hacía (#1422): sin
+    // ella una deuda revolving/informal con una fila de plan colada se valoraba
+    // forzando `debtModel: "amortizable"`, y su saldo guardado —que en esos
+    // modelos SÍ es la cifra viva— acababa reescrito sin ripple que lo acompañe.
+    store.liabilities.readDebtModel(liabilityId),
+  ]);
+  if (
+    matches.length !== 1 ||
+    debtModel !== "amortizable" ||
+    (!planRecord && rebaselines.length === 0)
+  ) {
     return { ok: false as const, error: "La deuda no existe o no es amortizable." };
   }
   const liability = matches[0]!;
@@ -59,6 +72,11 @@ export async function projectBalanceHistoryProposal(
     liabilityId,
     today,
   );
+  // El segundo testigo (#1422): lo que la propia app calcula HOY para esta deuda,
+  // por el mismo seam que pinta su ficha. Compararlo con el extremo de abajo solo
+  // vale si los dos salen del MISMO motor — de ahí que el contexto arrastre ya
+  // amortizaciones anticipadas y cadencia.
+  const modelMinor = await store.liabilities.debtBalanceAtDate(liabilityId, today);
   const plan = planBalanceHistoryImport(rows, ctx);
   if (plan.composed.length === 0) {
     return { ok: false as const, error: "La propuesta no contiene saldos aplicables." };
@@ -68,14 +86,7 @@ export async function projectBalanceHistoryProposal(
     ...plan.composed.map((row) => ({ ...row, startsAtBaseline: false })),
   ];
   const balanceAt = (targetDate: string) =>
-    debtBalanceAtDate({
-      balanceRebaselines: resultingRebaselines,
-      currentBalanceMinor: ctx.currentBalanceMinor,
-      debtModel: "amortizable",
-      ...(ctx.plan ? { plan: ctx.plan } : {}),
-      revisions: ctx.revisions,
-      targetDate,
-    });
+    balanceHistoryCurveAt(ctx, resultingRebaselines, targetDate);
   const resultingMinor = balanceAt(today);
   const curve = Array.from(
     new Set([
@@ -90,11 +101,11 @@ export async function projectBalanceHistoryProposal(
     liability,
     plan,
     curve,
-    reconciliation: {
-      expectedMinor: ctx.currentBalanceMinor,
-      matches: resultingMinor === ctx.currentBalanceMinor,
+    reconciliation: reconcileReconstructedBalance({
+      declaredMinor: ctx.currentBalanceMinor,
+      modelMinor,
       resultingMinor,
-    },
+    }),
   };
 }
 

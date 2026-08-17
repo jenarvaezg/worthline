@@ -84,9 +84,18 @@ export async function confirmCorrectionProposalAction(
 
 /**
  * Confirm the reconstruct depth (#1053): re-project the kept series against LIVE
- * data (the revalidation), reject unless the endpoint reconciles to the anchor,
- * then apply the chain as ONE atomic batch. Edited rows from the card override
- * the persisted series; the persisted plan's before-values stay for audit.
+ * data (the revalidation) and apply the chain as ONE atomic batch. Edited rows
+ * from the card override the persisted series; the persisted plan's before-values
+ * stay for audit.
+ *
+ * The endpoint no longer gates this (#1422). It used to reject anything that did
+ * not equal `current_balance_minor` to the cent — a hand-typed field the engine
+ * does not even read for a debt that has a curve — so a correct document from the
+ * bank was unappliable, and the card's «edita un punto» escape hatch just moved
+ * the same refusal one click later («la serie YA NO reconcilia», blaming the user
+ * for a series that never did). Now the mismatch is surfaced on the card BEFORE
+ * confirming and applying it re-derives the declared balance from the curve the
+ * user accepted, so the anchor stops lying instead of blocking the repair.
  */
 async function applyReconstruction(
   store: WorthlineStore,
@@ -104,12 +113,7 @@ async function applyReconstruction(
     today,
   );
   if (!projected.ok) return { message: projected.error, status: "error" };
-  if (!projected.reconciliation.matches) {
-    return {
-      message: "La serie ya no reconcilia con el saldo conocido de la deuda.",
-      status: "error",
-    };
-  }
+  const { anchor, resultingMinor } = projected.reconciliation;
   await store.command.applyAssistantCorrectionProposal({
     proposalId,
     reconstruct: {
@@ -121,6 +125,12 @@ async function applyReconstruction(
         source: "agent" as const,
         startsAtBaseline: false,
       })),
+      // El saldo declarado se re-deriva de la curva que el usuario acaba de
+      // aceptar (#1422). Dejarlo como estaba es dejar en la base de datos una
+      // cifra que el propio documento acaba de desmentir.
+      ...(anchor.declaredMinor === resultingMinor
+        ? {}
+        : { redeclaredBalanceMinor: resultingMinor }),
     },
     today,
   });

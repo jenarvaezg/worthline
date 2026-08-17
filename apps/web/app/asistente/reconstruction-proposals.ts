@@ -82,7 +82,8 @@ export async function buildReconstructionProposal(
   if (!projected.ok) return { ok: false, error: projected.error };
 
   const series = projected.plan.previews.map(toSeriesPoint);
-  const anchorMinor = projected.reconciliation.expectedMinor;
+  const { reconciliation } = projected;
+  const anchorMinor = reconciliation.expectedMinor;
   // Persist only the observed date + balance (never an inferred parameter); the
   // confirm re-projects this raw series against live data as the revalidation.
   const observations = parsed.rows.map(({ balanceMinor, date }) => ({
@@ -103,8 +104,12 @@ export async function buildReconstructionProposal(
       {
         kind: "holding_correction",
         row: {
-          // before = the live balance the draft was armed against (undo/audit).
-          before: { balanceMinor: anchorMinor },
+          // before = el saldo DECLARADO que había guardado, no el testigo contra
+          // el que se midió: la confirmación puede reescribirlo (#1422), así que
+          // es la cifra que un undo necesita recuperar. Es la de ESTE momento; si
+          // algo la mueve entre armar la propuesta y confirmarla, el undo devuelve
+          // la de aquí, no la última — la misma ventana que el resto del borrador.
+          before: { balanceMinor: reconciliation.anchor.declaredMinor },
           holding: args.publicHoldingId,
           liabilityId: args.liabilityId,
           mode: "reconstruct",
@@ -115,13 +120,14 @@ export async function buildReconstructionProposal(
   });
 
   // The pristine guarantee is the engine's own reconciliation (the reconstructed
-  // curve's endpoint vs the live anchor) — the strong check the PRD demands. The
+  // curve's endpoint vs the closest known witness, within tolerance — #1422). The
   // card shows a lightweight hint as the user excludes/edits points, and the
-  // confirm re-projects the edited series server-side (authoritative) before applying.
+  // confirm re-projects the edited series server-side (authoritative) before
+  // applying. A "mismatch" is a warning, no longer a locked door.
   const guarantee: CorrectionGuarantee = {
     anchorMinor,
-    resultingMinor: projected.reconciliation.resultingMinor,
-    state: projected.reconciliation.matches ? "reconciled" : "mismatch",
+    resultingMinor: reconciliation.resultingMinor,
+    state: reconciliation.matches ? "reconciled" : "mismatch",
   };
 
   return {
@@ -135,6 +141,7 @@ export async function buildReconstructionProposal(
       holding: { id: args.publicHoldingId, name: projected.liability.name },
       mode: "reconstruir",
       proposalType: "correction",
+      reconciliation,
       series,
       summary: boundProposalSummary(
         args.summary,

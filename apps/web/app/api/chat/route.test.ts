@@ -909,32 +909,35 @@ describe("POST /api/chat", () => {
       resolvedModel("google", primary),
       resolvedModel("cerebras", fallback),
     ]);
+    // El cuaderno tiene que ser uno que la app NO sabe tipar: un cuadro de
+    // amortización con sus fechas y sus saldos lo reconoce el extractor (#1417) y
+    // entonces al modelo le llega la extracción, no la hoja — que es otra lane.
     const rows = Array.from(
       { length: 450 },
       (_unused, index) =>
-        `Cuota ${index + 1};01/0${(index % 9) + 1}/2020;300,00;120,00;${100_000 - index * 100},00`,
+        `Fila ${index + 1};nota ${index + 1};alfa;beta;gamma-${index + 1}`,
     );
 
     const response = await POST(
       attachmentRequest(
-        ["Cuota;Fecha;Capital;Interés;Saldo", ...rows].join("\n"),
-        "hipoteca.csv",
+        ["Concepto;Nota;Uno;Dos;Tres", ...rows].join("\n"),
+        "cuaderno.csv",
       ),
     );
     await response.text();
 
     const wide = turnsOf(primary.doStreamCalls[0]!);
     const narrow = turnsOf(fallback.doStreamCalls[0]!);
-    // The primary reads the plan from its first payment to its last, uncut.
-    expect(wide).toContain("Cuota 1 |");
-    expect(wide).toContain("Cuota 450 |");
+    // The primary reads the book from its first row to its last, uncut.
+    expect(wide).toContain("Fila 1 |");
+    expect(wide).toContain("Fila 450 |");
     // «MUESTRA de …» is the sheet header's own wording; the framing above the fence
     // quotes the bare word to state the rule, so an absence assertion must be specific.
     expect(wide).not.toContain("MUESTRA de");
     // The fallback reads a sample of the SAME plan — and it still ends where the plan
     // ends, which a prefix never did.
     expect(narrow).toContain("MUESTRA de");
-    expect(narrow).toContain("Cuota 450 |");
+    expect(narrow).toContain("Fila 450 |");
     expect(narrow.length).toBeLessThan(wide.length);
   });
 

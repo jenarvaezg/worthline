@@ -6,6 +6,7 @@
  */
 
 import type { CorrectionGuarantee, CorrectionPoint } from "./anchor-correction-gate";
+import type { BalanceReconciliation } from "./balance-reconciliation";
 
 /** The atomic-batch folio both correction depths render (#1051/#1053). */
 export const CORRECTION_FOLIO = "1 propuesta · 1 holding · 1 lote atómico";
@@ -51,15 +52,18 @@ export interface AnchorOnlyCorrectionProposal extends CorrectionProposalBase {
 
 /**
  * "Reconstruir historia" depth (#1053): the reconstructed dated balance series,
- * an orienting stepped curve and the reconciliation anchor. Confirmar unlocks
- * only when the endpoint reconciles to the anchor (gate lives in the pure module).
+ * an orienting stepped curve and the reconciliation. Confirmar no longer hangs on
+ * the reconciliation (#1422): a mismatch is confirmable, saying what it will do —
+ * the verdict and its tolerance live in the pure `balance-reconciliation` module.
  */
 export interface ReconstructionCorrectionProposal extends CorrectionProposalBase {
   mode: "reconstruir";
   series: CorrectionSeriesPoint[];
   curve: Array<{ date: string; balanceMinor: number }>;
-  /** The present-day balance the reconstruction must reproduce. */
+  /** The present-day balance the reconstruction was measured against. */
   anchorMinor: number;
+  /** The full three-witness verdict the card renders (#1422). */
+  reconciliation: BalanceReconciliation;
 }
 
 export type CorrectionProposal =
