@@ -746,7 +746,10 @@ describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => 
   ): DataQualitySyncAttempt => ({ at, status });
 
   /** Newest-first, como las entrega el puerto de lectura. */
-  const syncSignals = (attempts: DataQualitySyncAttempt[]) => {
+  const syncSignals = (
+    attempts: DataQualitySyncAttempt[],
+    freshnessState?: "fresh" | "stale" | "failed",
+  ) => {
     const { asset, input } = fixture();
     return collectDataQualitySignals(
       input({
@@ -759,6 +762,16 @@ describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => 
             lastSyncAt: "2026-08-10T10:00:00.000Z",
           },
         ],
+        ...(freshnessState === undefined
+          ? {}
+          : {
+              sourceFreshnessBySourceId: new Map([
+                [
+                  "src_binance",
+                  { fetchedAt: "2026-08-17T09:00:00.000Z", freshnessState },
+                ],
+              ]),
+            }),
         syncAttemptsBySourceId: new Map([["src_binance", attempts]]),
       }),
     ).filter((signal) => signal.code === PERSISTENT_SYNC_FAILURE_CODE);
@@ -838,6 +851,19 @@ describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => 
 
     expect(signals).toHaveLength(1);
     expect(signals[0]!.observedDate).toBeUndefined();
+  });
+
+  test("cede ante un fetch roto AHORA: una avería, una línea roja", () => {
+    // El fetch roto es la causa viva y `FAILED_SOURCE_SYNC` ya es `high` y apunta al
+    // mismo sitio; dos rojos sobre la misma conexión ocuparían dos de los tres
+    // huecos del bloque para una sola cosa que hacer.
+    const failing = [attempt("error"), attempt("error")];
+
+    expect(syncSignals(failing, "failed")).toEqual([]);
+    // Un fetch meramente rancio no la calla: son dos lecturas distintas y esta manda
+    // por severidad.
+    expect(syncSignals(failing, "stale")).toHaveLength(1);
+    expect(syncSignals(failing, "fresh")).toHaveLength(1);
   });
 
   test("un fallo reciente sin instante no cede la fecha a uno más viejo", () => {

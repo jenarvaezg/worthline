@@ -281,6 +281,7 @@ export function collectDataQualitySignals(
       input.connectedSources,
       ownedAssetIds,
       input.syncAttemptsBySourceId,
+      input.sourceFreshnessBySourceId,
     ),
     ...missingConfigurationSignals(
       input.scope,
@@ -719,20 +720,38 @@ function consecutiveFailures(attempts: readonly DataQualitySyncAttempt[]): {
  * mismo (la fuente), la superficie donde se repara es la misma
  * (`/ajustes/conexiones`) y la pregunta que responde es la misma familia de
  * pregunta que `FAILED_SOURCE_SYNC` — «¿por qué no se mueve esto?». Lo que añade es
- * el eje que la frescura no tiene: la CUENTA. Con `FAILED_SOURCE_SYNC` no se pisa
- * nunca — un fallo de fetch se captura antes de abrir corrida, así que no deja
- * intentos en error que contar — pero con `STALE_SOURCE_SYNC` sí puede convivir: un
- * persist que falla no mueve `last_sync_at`, así que la frescura se enrancia por
- * detrás. Conviven a propósito: son dos lecturas verdaderas y distintas («lleva días
- * sin moverse» y «lo ha intentado N veces sin conseguirlo»), y quien las lee juntas
- * —el agente, el panel completo— sale sabiendo más. En el home no hay ruido: el
- * bloque se queda solo con el tramo de severidad más alta, y esta es `high`.
+ * el eje que la frescura no tiene: la CUENTA.
  *
- * `high`, como el fallo de fetch: las cifras de la fuente llevan días congeladas en
- * la última sincronización buena y nada en la pantalla lo dice. `fixable: false`
- * porque lo que puede fallar DENTRO de una corrida es nuestro guardado, no un dato
- * que el usuario pueda corregir; la frase, por eso, no le manda hacer nada y remite
- * a la página, que es donde el motivo se explica.
+ * DONDE ESTA SEÑAL SE APARTA DE LA PROSA DE #1226: el issue la clasificaba como
+ * «una señal que NO toca la cifra de hoy», remitiendo al filtro que aparta del home
+ * lo que solo afecta a proyecciones o al histórico (`NON_FIGURE_CATEGORIES`), y esa
+ * lectura la habría dejado únicamente en la superficie del agente. No cabe con sus
+ * propios criterios de aceptación, que piden «alerta visible en las superficies de
+ * data-health CON LINK a la página» y que la exposición agent/MCP sea un «también»:
+ * el contrato del agente no lleva `href`, así que fuera del home no queda ninguna
+ * superficie que cumpla lo primero. Y la premisa tampoco se sostiene: la cifra de
+ * hoy no está intacta, está CONGELADA — es el número de hace días presentándose
+ * como el de hoy, que es exactamente lo que el bloque del home existe para avisar.
+ * Así que hereda el tratamiento de la familia `source_freshness`: llega al home,
+ * como su hermana de fetch.
+ *
+ * `high`, como el fallo de fetch, por lo mismo. `fixable: false` porque lo que puede
+ * fallar DENTRO de una corrida es nuestro guardado, no un dato que el usuario pueda
+ * corregir; la frase, por eso, no le manda hacer nada y remite a la página, que es
+ * donde el motivo se explica.
+ *
+ * Con `STALE_SOURCE_SYNC` (medium) conviven a propósito: un persist que falla no
+ * mueve `last_sync_at`, así que la frescura se enrancia por detrás, y son dos
+ * lecturas verdaderas y distintas («lleva días sin moverse» y «lo ha intentado N
+ * veces sin conseguirlo») que juntas dicen más. En el home no hacen ruido: el bloque
+ * se queda solo con el tramo de severidad más alta, y esta es `high`.
+ *
+ * Con `FAILED_SOURCE_SYNC` (high) NO conviven, y por eso esta cede: si el fetch está
+ * roto AHORA, esa es la causa viva, y las corridas en error que quedan detrás son la
+ * avería anterior de la misma conexión. Dos líneas rojas sobre Binance ocupando dos
+ * de los tres huecos del bloque serían un signo repetido sobre una sola cosa que
+ * hacer, y la colección se levanta «una señal por cosa que el usuario haría». No se
+ * pierde aviso: la de fetch es igual de `high` y apunta al mismo sitio.
  *
  * La cuenta va en la frase (no «falla mucho», sino cuántas veces) y siempre es ≥ 2
  * por el umbral, así que el plural nunca tiene que ramificar.
@@ -741,11 +760,17 @@ function persistentSyncFailureSignals(
   connectedSources: readonly DataQualityConnectedSource[],
   ownedAssetIds: Set<string>,
   syncAttemptsBySourceId: ReadonlyMap<string, readonly DataQualitySyncAttempt[]>,
+  sourceFreshnessBySourceId: ReadonlyMap<string, DataQualitySourceFreshness | null>,
 ): DataQualitySignal[] {
   const signals: DataQualitySignal[] = [];
 
   for (const source of connectedSources) {
     if (!sourceIsInScope(source, ownedAssetIds)) {
+      continue;
+    }
+
+    const freshness = sourceFreshnessBySourceId.get(source.id) ?? null;
+    if (sourceFreshnessStatus(source, freshness) === "failed") {
       continue;
     }
 
