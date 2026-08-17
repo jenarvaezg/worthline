@@ -3,6 +3,7 @@ import {
   MAX_LABEL,
   MAX_PROMPT,
   type QuickAction,
+  resolveModelQuickActions,
 } from "./assistant-actions";
 import { internalProseLinkHref } from "./prose-link";
 
@@ -37,17 +38,42 @@ import { internalProseLinkHref } from "./prose-link";
  * «Revisa tu colchón» — is advice the reader can read, and deleting it would answer
  * broken markdown with a silence. Whatever it is, the user never keeps the debris of
  * an item we could not convert: those leave with their block.
+ *
+ * The worst copy of the block is not markdown at all (#1407): the pool's Cerebras
+ * fallback (`gpt-oss-120b`) writes its commentary channel out loud, so the turn ends
+ * in `// Acciones sugeridas:` followed by `[etiqueta] (runSuggestedAnalysis:{"prompt":
+ * "…"})` — the tool's name and its JSON arguments, on screen. Two characters kept
+ * this net from catching it: the `//` in front of the heading. And once past the
+ * heading the narrated form still converted to nothing, because `[label] (tool:{…})`
+ * is not a markdown link. Both are handled here now — the arguments are read and
+ * passed through the SAME validator the tool's own output goes through, so the app
+ * still decides every destination and the text never supplies one (ADR 0053).
  */
 
-/** `Acciones recomendadas:` / `**Acciones sugeridas**` / `Acciones de seguimiento:` */
+/**
+ * `Acciones recomendadas:` / `**Acciones sugeridas**` / `Acciones de seguimiento:`,
+ * optionally behind a comment marker (`//`, the commentary channel leaking) or a
+ * markdown heading marker (`##`). The prefix is all that is loosened: the line still
+ * has to be the heading and nothing else, so «// Acciones sugeridas para tu cartera»
+ * is not one — and it must not be, because recognising a heading deletes what follows.
+ */
 const BLOCK_HEADING =
-  /^\s*\**\s*acciones\s+(?:recomendadas|sugeridas|de\s+seguimiento)\s*\**\s*:?\s*\**\s*$/i;
+  /^\s*(?:\/{2,}|#{1,6})?\s*\**\s*acciones\s+(?:recomendadas|sugeridas|de\s+seguimiento)\s*\**\s*:?\s*\**\s*$/i;
 
 /** `- item`, `* item`, `• item`, `1. item`, `2) item`. */
 const LIST_ITEM = /^\s*(?:[-*•]|\d+[.)])\s+(.+)$/;
 
 /** A whole-item markdown link: `[label](destination)`. */
 const WHOLE_ITEM_LINK = /^\[([^\]]+)\]\(([^)]*)\)$/;
+
+/**
+ * The tool call written out as text instead of made: `[etiqueta]
+ * (runSuggestedAnalysis:{"prompt":"…"})`. The label in brackets is optional — the
+ * arguments often carry their own — and the parenthesis is not: a bullet has to look
+ * like a call, not merely mention one, before its JSON is read.
+ */
+const NARRATED_CALL =
+  /^(?:\[([^\]]*)\]\s*)?\(\s*(openInternalSource|runSuggestedAnalysis)\s*:\s*(\{[\s\S]*\})\s*\)$/;
 
 /** Bold or italic wrapping the entire item, which the model likes to add. */
 const WRAPPING_EMPHASIS = /^(\*\*|\*|__|_)([\s\S]+)\1$/;
@@ -187,6 +213,9 @@ function proseItemAction(
   const item = withoutWrappingEmphasis(body);
   if (item === "") return null;
 
+  const narrated = narratedCallAction(item);
+  if (narrated !== null) return narrated;
+
   const link = WHOLE_ITEM_LINK.exec(item);
   if (link) {
     const label = withoutWrappingEmphasis(link[1] ?? "");
@@ -202,6 +231,49 @@ function proseItemAction(
   if (item.includes("?"))
     return { type: "runSuggestedAnalysis", label: item, prompt: item };
   return matchingToolAction(item, toolActions);
+}
+
+/**
+ * The chip a bullet that narrates the tool call was describing (#1407), or null.
+ *
+ * This reads arguments the MODEL wrote, so it deliberately adds no capability the
+ * tool channel lacks: the parsed object goes through `resolveModelQuickActions` — the
+ * same trust boundary the printed-JSON fallback uses — which maps a `section`,
+ * `holding` or `figure` to a route the app owns and re-checks anything else. The one
+ * field that could smuggle a destination is `href`, and it is filtered through
+ * `internalProseLinkHref` first, exactly like a link written in the prose (#1289): a
+ * href that is not an internal path is dropped rather than trusted, and the item then
+ * lives or dies on the typed reference beside it.
+ */
+function narratedCallAction(item: string): QuickAction | null {
+  const call = NARRATED_CALL.exec(item);
+  if (call === null) return null;
+
+  let args: unknown;
+  try {
+    args = JSON.parse(call[3] ?? "");
+  } catch {
+    return null;
+  }
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return null;
+
+  const label = withoutWrappingEmphasis(call[1] ?? "");
+  const candidate: Record<string, unknown> = {
+    ...(args as Record<string, unknown>),
+    type: call[2],
+    // The label the reader actually saw wins over the one in the arguments.
+    ...(label === "" ? {} : { label }),
+  };
+  if ("href" in candidate) {
+    const href =
+      typeof candidate["href"] === "string"
+        ? internalProseLinkHref(candidate["href"])
+        : null;
+    if (href === null) delete candidate["href"];
+    else candidate["href"] = href;
+  }
+
+  return resolveModelQuickActions([candidate])[0] ?? null;
 }
 
 /** The chip this bullet is repeating, matched on its visible label. */

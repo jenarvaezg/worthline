@@ -179,6 +179,80 @@ describe("splitProseActionBlock", () => {
     ]);
   });
 
+  it("recovers the call the model narrated under a commented heading (#1407)", () => {
+    // Verbatim shape from the report: `gpt-oss-120b` writes its commentary channel's
+    // `// Acciones sugeridas:` and then the tool call itself as text.
+    const text = [
+      "El saldo pendiente de la hipoteca de Plasencia es de 41.230 €.",
+      "",
+      "// Acciones sugeridas:",
+      '- [Analizar el estado de la deuda actual] (runSuggestedAnalysis:{"prompt":"Muéstrame el estado actual de la hipoteca de Plasencia y si hay alguna inconsistencia en el histórico."})',
+      "- Abrir el detalle de la hipoteca [blocked]",
+    ].join("\n");
+
+    const { cleaned, actions } = splitProseActionBlock(text);
+
+    expect(cleaned).toBe(
+      "El saldo pendiente de la hipoteca de Plasencia es de 41.230 €.",
+    );
+    expect(actions).toEqual([
+      {
+        type: "runSuggestedAnalysis",
+        label: "Analizar el estado de la deuda actual",
+        prompt:
+          "Muéstrame el estado actual de la hipoteca de Plasencia y si hay alguna inconsistencia en el histórico.",
+      },
+    ]);
+  });
+
+  it("reads the heading through a markdown heading marker", () => {
+    const { cleaned, actions } = splitProseActionBlock(
+      "Texto.\n\n## Acciones sugeridas\n- ¿Cuánto vale mi cartera?",
+    );
+
+    expect(cleaned).toBe("Texto.");
+    expect(actions.map((action) => action.label)).toEqual(["¿Cuánto vale mi cartera?"]);
+  });
+
+  it("lets the app resolve the section of a narrated openInternalSource", () => {
+    const { cleaned, actions } = splitProseActionBlock(
+      'Texto.\n\n// Acciones sugeridas:\n- (openInternalSource:{"section":"patrimonio","label":"Ver tu patrimonio"})',
+    );
+
+    expect(cleaned).toBe("Texto.");
+    expect(actions).toEqual([
+      { type: "openInternalSource", label: "Ver tu patrimonio", href: "/patrimonio" },
+    ]);
+  });
+
+  it("never lets a narrated call carry its own destination off-origin", () => {
+    for (const href of ["https://evil.test", "//evil.test/x", "/\\evil.test"]) {
+      const text = `Texto.\n\n// Acciones sugeridas:\n- [Mira esto] (openInternalSource:{"href":"${href}"})`;
+      // The block still goes — it is the model's action list — but nothing clickable
+      // comes out of a destination the model wrote.
+      expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
+    }
+  });
+
+  it("keeps an internal path a narrated call points at", () => {
+    const { actions } = splitProseActionBlock(
+      'Texto.\n\n// Acciones sugeridas:\n- [Ver histórico] (openInternalSource:{"href":"/historico"})',
+    );
+
+    expect(actions).toEqual([
+      { type: "openInternalSource", label: "Ver histórico", href: "/historico" },
+    ]);
+  });
+
+  it("drops a narrated call whose arguments are unreadable or over the caps", () => {
+    const unreadable =
+      'Texto.\n\n// Acciones sugeridas:\n- [Algo] (runSuggestedAnalysis:{"prompt":)';
+    expect(splitProseActionBlock(unreadable)).toEqual({ cleaned: "Texto.", actions: [] });
+
+    const tooLong = `Texto.\n\n// Acciones sugeridas:\n- [Algo] (runSuggestedAnalysis:{"prompt":"${"x".repeat(281)}"})`;
+    expect(splitProseActionBlock(tooLong)).toEqual({ cleaned: "Texto.", actions: [] });
+  });
+
   it("matches a repeated chip through emphasis and trailing punctuation", () => {
     const { actions } = splitProseActionBlock(
       "Texto.\n\nAcciones de seguimiento:\n- **Ver detalle de la Colección Numista.**",
