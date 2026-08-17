@@ -583,8 +583,20 @@ function sourceFreshnessSignals(
   return signals;
 }
 
-function sourceFreshnessStatus(
-  source: DataQualityConnectedSource,
+/**
+ * Whether a connected source's FETCH is broken or merely lapsed — the one shared
+ * reading of source health (#1224).
+ *
+ * It matters that this is shared rather than re-derived per surface: a fetch that
+ * fails upstream (revoked credentials, provider outage) is caught before a
+ * `sync_run` is ever opened, so it leaves NO run to read — its only trace is the
+ * source's freshness row. A surface that looked solely at `sync_run` would inherit
+ * the last good run's verdict and claim health while the source has been dark for
+ * days, contradicting this collection (which CONTEXT.md requires every consumer to
+ * agree with). `/ajustes/conexiones` calls this for exactly that reason.
+ */
+export function sourceFreshnessStatus(
+  source: { lastSyncAt: string | null },
   freshness: DataQualitySourceFreshness | null,
 ): "failed" | "stale" | null {
   if (freshness === null && source.lastSyncAt === null) {

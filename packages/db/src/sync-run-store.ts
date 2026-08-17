@@ -115,8 +115,11 @@ export interface SyncRunStore {
  * needs to answer "did the last sync work?" without being able to open, finalize
  * or fail a run. The public `WorthlineStore` exposes only this: a run is written
  * exclusively by whoever executes the sync (`connected-source-seams.ts`).
+ *
+ * Deliberately just `readRuns`: `latestOkAt` has no consumer, and a read surface
+ * wider than its readers need is a promise nobody asked for.
  */
-export type SyncRunReadStore = Pick<SyncRunStore, "readRuns" | "latestOkAt">;
+export type SyncRunReadStore = Pick<SyncRunStore, "readRuns">;
 
 function rowToSyncRun(row: typeof syncRuns.$inferSelect): SyncRun {
   return {

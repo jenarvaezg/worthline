@@ -10,8 +10,21 @@ import {
   describeSyncState,
   describeTrigger,
   runInstantOf,
+  type SyncHealthTone,
   summarizeSyncHealth,
 } from "./sync-health";
+
+/**
+ * Con qué se dibuja cada tono. El tono es semántico y lo decide el módulo puro;
+ * la clase es cosa de aquí. `ok` no añade ninguna: el verde es el punto base de
+ * `.coinStatusPill`, y `muted` reusa la clase que ya significa «sin señal viva».
+ */
+const TONE_CLASS: Record<SyncHealthTone, string> = {
+  error: "isError",
+  muted: "isStale",
+  ok: "",
+  pending: "isPending",
+};
 
 /**
  * El libro de conexiones (#1223, PRD #1222) — la disposición que salió del
@@ -71,10 +84,14 @@ export default function ConnectionsTable({
               {connected.map(({ definition, row }) => {
                 // Filtrada arriba: una conexión de esta lista SIEMPRE tiene fuente.
                 const source = row.source!;
-                // La salud sale de `sync_run`, no de `last_sync_at`: la columna
-                // cacheada dice cuándo fue el último sync BUENO, y por sí sola no
-                // distingue «todo en orden» de «lleva tres días fallando» (#1224).
-                const health = summarizeSyncHealth(row.runs);
+                // La salud NO sale de `last_sync_at`: esa columna dice cuándo fue
+                // el último sync BUENO, y por sí sola no distingue «todo en orden»
+                // de «lleva tres días fallando» (#1224).
+                const health = summarizeSyncHealth({
+                  freshness: row.freshness,
+                  lastSyncAt: source.lastSyncAt,
+                  runs: row.runs,
+                });
                 const state = describeSyncState(health.state);
 
                 return (
@@ -85,7 +102,9 @@ export default function ConnectionsTable({
                         <span className="conexSub">{definition.mirrors}</span>
                       </td>
                       <td>
-                        <span className={`coinStatusPill ${state.toneClass}`.trim()}>
+                        <span
+                          className={`coinStatusPill ${TONE_CLASS[state.tone]}`.trim()}
+                        >
                           {state.label}
                         </span>
                         {health.trigger ? (

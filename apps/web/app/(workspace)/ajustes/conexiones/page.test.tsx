@@ -52,6 +52,14 @@ const calls = vi.hoisted(() => ({
   readPublicIds: vi.fn(async () => [
     { entityType: "holding", entityId: "asset_binance", publicId: "wl_hld_binance" },
   ]),
+  // La fuente está al día: es el caso corriente, y el que deja que los tests de
+  // fallo hablen solo del eje que prueban.
+  readSourceFreshness: vi.fn(
+    async (): Promise<{ fetchedAt: string; freshnessState: string } | null> => ({
+      fetchedAt: "2026-08-16T05:12:41.000Z",
+      freshnessState: "fresh",
+    }),
+  ),
   // Anotada con el tipo del puerto, no inferida del literal: `vi.fn` estrecharía
   // `status: "ok"` y ningún `mockResolvedValueOnce` con otra corrida compilaría.
   readRuns: vi.fn(
@@ -74,7 +82,10 @@ vi.mock("@web/page-shell", () => ({
   resolvePageShell: async () => ({
     privacyMode: false,
     store: {
-      agentView: { readPublicIds: calls.readPublicIds },
+      agentView: {
+        readPublicIds: calls.readPublicIds,
+        readSourceFreshness: calls.readSourceFreshness,
+      },
       assets: { readAssets: calls.readAssets },
       connectedSources: {
         listSourceAssetIds: calls.listSourceAssetIds,
@@ -275,6 +286,38 @@ describe("salud de sync visible (#1224)", () => {
     const html = await render();
 
     expect(html).toContain("Sincronizando…");
+    expect(html).not.toContain("La última sincronización falló");
+  });
+
+  test("una fuente que no consigue traer datos NO afirma salud, aunque su última corrida fuese buena", async () => {
+    // El fallo de fetch —credenciales revocadas, proveedor caído— se captura aguas
+    // arriba y no abre corrida: `sync_run` solo guarda la última corrida BUENA. Sin
+    // leer la frescura, la fila pintaría verde «Sincronizado» con la fuente a
+    // oscuras — y contradiría al bloque de salud del home, que sí lo ve.
+    calls.readSourceFreshness.mockResolvedValueOnce({
+      fetchedAt: "2026-08-17T21:00:00.000Z",
+      freshnessState: "failed",
+    });
+
+    const html = await render();
+
+    expect(html).toContain("Con error");
+    expect(html).not.toContain("Sincronizado");
+    expect(html).toContain("no consiguió traer");
+    // Fechado por el intento de traída, no por la corrida buena del 16.
+    expect(html).toContain("17 ago 2026");
+  });
+
+  test("una fuente rancia se dice desactualizada, que no es lo mismo que caída", async () => {
+    calls.readSourceFreshness.mockResolvedValueOnce({
+      fetchedAt: "2026-08-14T21:00:00.000Z",
+      freshnessState: "stale",
+    });
+
+    const html = await render();
+
+    expect(html).toContain("Desactualizado");
+    expect(html).not.toContain("Con error");
     expect(html).not.toContain("La última sincronización falló");
   });
 

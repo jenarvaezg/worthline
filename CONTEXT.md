@@ -679,6 +679,20 @@ re-valuing them. On demand, read-only, and bounded by the source's rate limits.
 Distinct from a **snapshot** (a frozen capture worthline derives) and from an
 **import** (a one-shot full-workspace replace).
 
+**Sync run**:
+One **sync** attempt, as a record: what triggered it (the twice-daily cron, a
+person, connecting the source), when it started and finished, and whether it
+succeeded. Kept as a short recent tail per source — a diagnostic breadcrumb, not
+a ledger fact — so "why isn't this updating?" has an answer instead of a guess.
+It records **health of fetch** (did the attempt run and work?), which is a
+different question from **freshness** (how old is the figure on screen?): a run
+that fails leaves the last good figure standing, so the two must be read
+together. Only failures INSIDE the attempt leave a run at all — a fetch that
+never gets off the ground (revoked credentials, provider down) is caught before
+one is opened, and shows up only as the source's lapsed freshness.
+_Avoid_: job (the queue's unit of work, which may carry a run), sync (the act,
+not the record of one attempt).
+
 **Projection**:
 How a **connected source**'s **positions** roll up into the portfolio: one
 **holding** per source per **liquidity tier** rung. Numista's coins are all

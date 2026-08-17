@@ -1,4 +1,4 @@
-import type { SyncRun } from "@worthline/db";
+import { SYNC_RUN_RETENTION_LIMIT, type SyncRun } from "@worthline/db";
 import type { SourcePosition } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -6,6 +6,8 @@ import {
   type ConnectionSourceRow,
   loadConnectionRows,
 } from "./connection-rows";
+import type { SourceFreshnessRow } from "./sync-health";
+import { failedSyncRun, syncRun } from "./sync-run-fixtures";
 
 /** Un adapter cuyo valor es el del activo espejo (la forma de Numista). */
 const mirrorAdapter: ConnectionDataDefinition = {
@@ -52,29 +54,20 @@ function position(externalId: string): SourcePosition {
   };
 }
 
-function syncRun(overrides: Partial<SyncRun> = {}): SyncRun {
-  return {
-    createdAt: "2026-08-17T09:00:00.000Z",
-    error: null,
-    finishedAt: "2026-08-17T09:00:04.000Z",
-    id: "run_1",
-    sourceId: "src_espejo",
-    startedAt: "2026-08-17T09:00:00.000Z",
-    status: "ok",
-    trigger: "cron",
-    ...overrides,
-  };
-}
-
 function fakeStore(
   positions: Record<string, SourcePosition[]> = {},
   assetIds: Record<string, string[]> = {},
   runs: Record<string, SyncRun[]> = {},
+  freshness: Record<string, SourceFreshnessRow> = {},
 ) {
   return {
     listSourceAssetIds: vi.fn(async (sourceId: string) => assetIds[sourceId] ?? []),
     readPositions: vi.fn(async (sourceId: string) => positions[sourceId] ?? []),
     readRuns: vi.fn(async (sourceId: string) => runs[sourceId] ?? []),
+    readSourceFreshness: vi.fn(
+      async (sourceId: string): Promise<SourceFreshnessRow | null> =>
+        freshness[sourceId] ?? null,
+    ),
   };
 }
 
@@ -101,6 +94,7 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: "/patrimonio/wl_hld_1",
+        freshness: null,
         runs: [syncRun()],
         source: {
           assetId: "asset_espejo",
@@ -151,6 +145,7 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: null,
+        freshness: null,
         runs: [],
         source: null,
         unitCount: 0,
@@ -161,14 +156,57 @@ describe("loadConnectionRows (#1223)", () => {
     expect(store.readPositions).not.toHaveBeenCalled();
     expect(store.listSourceAssetIds).not.toHaveBeenCalled();
     expect(store.readRuns).not.toHaveBeenCalled();
+    expect(store.readSourceFreshness).not.toHaveBeenCalled();
+  });
+
+  test("la frescura de la fuente viaja en la fila: es el otro eje de su salud (#1224)", async () => {
+    const store = fakeStore(
+      {},
+      {},
+      {},
+      {
+        src_espejo: { fetchedAt: "2026-08-17T21:00:00.000Z", freshnessState: "failed" },
+      },
+    );
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    expect(rows[0]?.freshness).toEqual({
+      fetchedAt: "2026-08-17T21:00:00.000Z",
+      freshnessState: "failed",
+    });
+  });
+
+  test("el techo de retención se aplica al LEER, no solo al podar (#1224)", async () => {
+    // La poda solo corre al finalizar una corrida: una colgada en `running` que
+    // nunca finaliza deja crecer la cola por encima del límite que el historial
+    // promete.
+    const sinPodar = Array.from({ length: SYNC_RUN_RETENTION_LIMIT + 7 }, (_, index) =>
+      syncRun({ id: `run_${index}` }),
+    );
+    const store = fakeStore({}, {}, { src_espejo: sinPodar });
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    expect(rows[0]?.runs).toHaveLength(SYNC_RUN_RETENTION_LIMIT);
+    // Y se queda con las NUEVAS, que son las que el store entrega primero.
+    expect(rows[0]?.runs[0]?.id).toBe("run_0");
   });
 
   test("una fuente conectada trae sus corridas retenidas, tal cual las da el store (#1224)", async () => {
-    const fallida = syncRun({
-      error: { code: "sync_persist_failed", message: "boom", retriable: true },
-      id: "run_fallida",
-      status: "error",
-    });
+    const fallida = failedSyncRun({ id: "run_fallida" });
     const store = fakeStore(
       {},
       {},

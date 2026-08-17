@@ -271,6 +271,7 @@ export {
   SPARSE_SNAPSHOT_THRESHOLD,
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,
+  sourceFreshnessStatus,
   TRASHED_WITH_BALANCE_CODE,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";

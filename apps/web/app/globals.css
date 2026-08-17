@@ -6596,14 +6596,12 @@ td.rowActions > * {
 }
 /* A stale valuation is no longer a live connection state, so the dot drops its
    green for a muted tone (design-system §4 reserves green for healthy status).
-   `.isUnknown` is the same reading for a source with no retained sync runs
-   (#1224): connected, but nothing known about how the last attempt went. */
-.coinStatusPill.isStale,
-.coinStatusPill.isUnknown {
+   Conexiones (#1224) reuses it for both readings with no live signal: a lapsed
+   source, and a connected one with nothing yet to report. */
+.coinStatusPill.isStale {
   color: var(--muted);
 }
-.coinStatusPill.isStale::before,
-.coinStatusPill.isUnknown::before {
+.coinStatusPill.isStale::before {
   background: var(--muted);
 }
 /* A failed run: red dot AND the word that says it — color is never the only
