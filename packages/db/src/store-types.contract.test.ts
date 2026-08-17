@@ -16,5 +16,12 @@ describe("public WorthlineStore mutation boundary", () => {
     expectTypeOf<WorthlineStore["connectedSources"]>().not.toHaveProperty(
       "syncPositions",
     );
+    // Las corridas de sync se LEEN desde el store público (#1224) y se escriben
+    // solo desde el executor del sync: nadie puede abrir, cerrar ni fallar una
+    // corrida a través de `store.syncRuns`.
+    expectTypeOf<WorthlineStore["syncRuns"]>().toHaveProperty("readRuns");
+    expectTypeOf<WorthlineStore["syncRuns"]>().not.toHaveProperty("beginRun");
+    expectTypeOf<WorthlineStore["syncRuns"]>().not.toHaveProperty("finishRun");
+    expectTypeOf<WorthlineStore["syncRuns"]>().not.toHaveProperty("failRun");
   });
 });

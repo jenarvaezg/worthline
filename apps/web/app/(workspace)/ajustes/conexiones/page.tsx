@@ -69,7 +69,17 @@ export async function ConexionesContent({
       return publicId ? holdingDetailHref(publicId) : null;
     },
     sources,
-    store: store.connectedSources,
+    // Tres puertos distintos, cableados explícitamente para que la carga no
+    // dependa de la forma de un store entero: las posiciones y los peldaños de
+    // `connected_sources`, la última corrida de `sync_run` (#1224) y la frescura
+    // por el MISMO puerto que alimenta la colección de salud de datos — para que
+    // esta página no pueda contradecir al bloque de salud del home.
+    store: {
+      listSourceAssetIds: store.connectedSources.listSourceAssetIds,
+      readPositions: store.connectedSources.readPositions,
+      readRuns: store.syncRuns.readRuns,
+      readSourceFreshness: store.agentView.readSourceFreshness,
+    },
   });
 
   const connections: ConnectionEntry[] = CONNECTION_REGISTRY.map((definition, index) => ({

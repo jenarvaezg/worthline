@@ -5,6 +5,26 @@ import Link from "next/link";
 import { Fragment } from "react";
 import type { ConnectionDefinition } from "./connection-registry";
 import type { ConnectionRow } from "./connection-rows";
+import {
+  describeRunOutcome,
+  describeSyncState,
+  describeTrigger,
+  runInstantOf,
+  type SyncHealthTone,
+  summarizeSyncHealth,
+} from "./sync-health";
+
+/**
+ * Con qué se dibuja cada tono. El tono es semántico y lo decide el módulo puro;
+ * la clase es cosa de aquí. `ok` no añade ninguna: el verde es el punto base de
+ * `.coinStatusPill`, y `muted` reusa la clase que ya significa «sin señal viva».
+ */
+const TONE_CLASS: Record<SyncHealthTone, string> = {
+  error: "isError",
+  muted: "isStale",
+  ok: "",
+  pending: "isPending",
+};
 
 /**
  * El libro de conexiones (#1223, PRD #1222) — la disposición que salió del
@@ -12,9 +32,9 @@ import type { ConnectionRow } from "./connection-rows";
  * conexión con lo que se sabe de un vistazo, y bajo esa misma fila el pliegue
  * con lo que se puede hacer. Nada obliga a navegar para actuar.
  *
- * El pliegue es también el hueco de los slices siguientes: el historial de
- * corridas (S2 #1224) y la edición de credenciales (S3 #1225) entran ahí sin
- * mover la fila.
+ * Bajo la fila cuelgan, en ese orden: el motivo de un sync fallido (visible sin
+ * abrir nada), el pliegue del historial de corridas (S2 #1224) y el de
+ * desconexión. La edición de credenciales (S3 #1225) entra ahí sin mover la fila.
  *
  * Cero JSX por fuente: todo lo que distingue a un adapter de otro llega en su
  * entrada del registry.
@@ -64,6 +84,15 @@ export default function ConnectionsTable({
               {connected.map(({ definition, row }) => {
                 // Filtrada arriba: una conexión de esta lista SIEMPRE tiene fuente.
                 const source = row.source!;
+                // La salud NO sale de `last_sync_at`: esa columna dice cuándo fue
+                // el último sync BUENO, y por sí sola no distingue «todo en orden»
+                // de «lleva tres días fallando» (#1224).
+                const health = summarizeSyncHealth({
+                  freshness: row.freshness,
+                  lastSyncAt: source.lastSyncAt,
+                  runs: row.runs,
+                });
+                const state = describeSyncState(health.state);
 
                 return (
                   <Fragment key={definition.adapter}>
@@ -73,7 +102,16 @@ export default function ConnectionsTable({
                         <span className="conexSub">{definition.mirrors}</span>
                       </td>
                       <td>
-                        <span className="coinStatusPill">Conectado</span>
+                        <span
+                          className={`coinStatusPill ${TONE_CLASS[state.tone]}`.trim()}
+                        >
+                          {state.label}
+                        </span>
+                        {health.trigger ? (
+                          <span className="conexSub">
+                            {describeTrigger(health.trigger)}
+                          </span>
+                        ) : null}
                       </td>
                       <td>{formatLastSync(source.lastSyncAt)}</td>
                       <td className="conexNum">
@@ -105,6 +143,54 @@ export default function ConnectionsTable({
                     </tr>
                     <tr className="conexDetailRow">
                       <td colSpan={6}>
+                        {/* El motivo del fallo va FUERA de todo pliegue: es la
+                            respuesta a «¿por qué no se actualiza esto?», y esa
+                            no se busca abriendo cosas (#1224). */}
+                        {health.errorMessage ? (
+                          <p className="conexSyncError">
+                            {/* CUÁNDO falló, porque la columna «Última
+                                sincronización» no lo dice: esa sigue clavada en
+                                el último sync BUENO, que es justo lo que hace
+                                invisible el fallo. */}
+                            <strong>
+                              {health.at
+                                ? `La última sincronización falló el ${formatLastSync(health.at)}.`
+                                : "La última sincronización falló."}
+                            </strong>{" "}
+                            {health.errorMessage}
+                          </p>
+                        ) : null}
+
+                        {row.runs.length > 0 ? (
+                          <details suppressHydrationWarning className="conexHistory">
+                            <summary>Historial de sincronización</summary>
+                            <table className="conexRunTable">
+                              <thead>
+                                <tr>
+                                  <th>Cuándo</th>
+                                  <th>Origen</th>
+                                  <th>Resultado</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {row.runs.map((run) => {
+                                  // Una corrida sin ningún sello de tiempo no pasó
+                                  // «Nunca» —que es lo que diría `formatLastSync`—:
+                                  // pasó sin dejar hora, y eso es una raya.
+                                  const at = runInstantOf(run);
+                                  return (
+                                    <tr key={run.id}>
+                                      <td>{at ? formatLastSync(at) : "—"}</td>
+                                      <td>{describeTrigger(run.trigger)}</td>
+                                      <td>{describeRunOutcome(run.status)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </details>
+                        ) : null}
+
                         {/* El pliegue lo escribe cada adapter (sus opciones
                             eliminar/congelar difieren), pero la palabra con la
                             que se abre es la misma en todas las filas. */}

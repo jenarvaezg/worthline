@@ -1,3 +1,4 @@
+import { SYNC_RUN_RETENTION_LIMIT, type SyncRun } from "@worthline/db";
 import type { SourcePosition } from "@worthline/domain";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -5,6 +6,8 @@ import {
   type ConnectionSourceRow,
   loadConnectionRows,
 } from "./connection-rows";
+import type { SourceFreshnessRow } from "./sync-health";
+import { failedSyncRun, syncRun } from "./sync-run-fixtures";
 
 /** Un adapter cuyo valor es el del activo espejo (la forma de Numista). */
 const mirrorAdapter: ConnectionDataDefinition = {
@@ -54,16 +57,27 @@ function position(externalId: string): SourcePosition {
 function fakeStore(
   positions: Record<string, SourcePosition[]> = {},
   assetIds: Record<string, string[]> = {},
+  runs: Record<string, SyncRun[]> = {},
+  freshness: Record<string, SourceFreshnessRow> = {},
 ) {
   return {
     listSourceAssetIds: vi.fn(async (sourceId: string) => assetIds[sourceId] ?? []),
     readPositions: vi.fn(async (sourceId: string) => positions[sourceId] ?? []),
+    readRuns: vi.fn(async (sourceId: string) => runs[sourceId] ?? []),
+    readSourceFreshness: vi.fn(
+      async (sourceId: string): Promise<SourceFreshnessRow | null> =>
+        freshness[sourceId] ?? null,
+    ),
   };
 }
 
 describe("loadConnectionRows (#1223)", () => {
   test("a connected source becomes a row with its adapter's own count and value", async () => {
-    const store = fakeStore({ src_espejo: [position("a"), position("b")] });
+    const store = fakeStore(
+      { src_espejo: [position("a"), position("b")] },
+      {},
+      { src_espejo: [syncRun()] },
+    );
 
     const rows = await loadConnectionRows({
       assets: [
@@ -80,6 +94,8 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: "/patrimonio/wl_hld_1",
+        freshness: null,
+        runs: [syncRun()],
         source: {
           assetId: "asset_espejo",
           id: "src_espejo",
@@ -129,6 +145,8 @@ describe("loadConnectionRows (#1223)", () => {
       {
         adapter: "espejo",
         fichaHref: null,
+        freshness: null,
+        runs: [],
         source: null,
         unitCount: 0,
         valueMinor: 0,
@@ -137,6 +155,75 @@ describe("loadConnectionRows (#1223)", () => {
     // Sin fuente no hay nada que leer: la página no paga I/O por un adapter suelto.
     expect(store.readPositions).not.toHaveBeenCalled();
     expect(store.listSourceAssetIds).not.toHaveBeenCalled();
+    expect(store.readRuns).not.toHaveBeenCalled();
+    expect(store.readSourceFreshness).not.toHaveBeenCalled();
+  });
+
+  test("la frescura de la fuente viaja en la fila: es el otro eje de su salud (#1224)", async () => {
+    const store = fakeStore(
+      {},
+      {},
+      {},
+      {
+        src_espejo: { fetchedAt: "2026-08-17T21:00:00.000Z", freshnessState: "failed" },
+      },
+    );
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    expect(rows[0]?.freshness).toEqual({
+      fetchedAt: "2026-08-17T21:00:00.000Z",
+      freshnessState: "failed",
+    });
+  });
+
+  test("el techo de retención se aplica al LEER, no solo al podar (#1224)", async () => {
+    // La poda solo corre al finalizar una corrida: una colgada en `running` que
+    // nunca finaliza deja crecer la cola por encima del límite que el historial
+    // promete.
+    const sinPodar = Array.from({ length: SYNC_RUN_RETENTION_LIMIT + 7 }, (_, index) =>
+      syncRun({ id: `run_${index}` }),
+    );
+    const store = fakeStore({}, {}, { src_espejo: sinPodar });
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    expect(rows[0]?.runs).toHaveLength(SYNC_RUN_RETENTION_LIMIT);
+    // Y se queda con las NUEVAS, que son las que el store entrega primero.
+    expect(rows[0]?.runs[0]?.id).toBe("run_0");
+  });
+
+  test("una fuente conectada trae sus corridas retenidas, tal cual las da el store (#1224)", async () => {
+    const fallida = failedSyncRun({ id: "run_fallida" });
+    const store = fakeStore(
+      {},
+      {},
+      { src_espejo: [fallida, syncRun({ id: "run_previa" })] },
+    );
+
+    const rows = await loadConnectionRows({
+      assets: [],
+      definitions: [mirrorAdapter],
+      hrefOf: () => null,
+      sources: [sourceRow()],
+      store,
+    });
+
+    // El orden es el del store (newest-first): la salud se lee de la primera.
+    expect(rows[0]?.runs.map((run) => run.id)).toEqual(["run_fallida", "run_previa"]);
+    expect(store.readRuns).toHaveBeenCalledWith("src_espejo");
   });
 
   test("rows follow the registry order, not the order the store lists sources in", async () => {

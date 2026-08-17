@@ -6595,12 +6595,29 @@ td.rowActions > * {
   background: var(--green);
 }
 /* A stale valuation is no longer a live connection state, so the dot drops its
-   green for a muted tone (design-system §4 reserves green for healthy status). */
+   green for a muted tone (design-system §4 reserves green for healthy status).
+   Conexiones (#1224) reuses it for both readings with no live signal: a lapsed
+   source, and a connected one with nothing yet to report. */
 .coinStatusPill.isStale {
   color: var(--muted);
 }
 .coinStatusPill.isStale::before {
   background: var(--muted);
+}
+/* A failed run: red dot AND the word that says it — color is never the only
+   signal (canon §8). --red holds AA on both papers (contrast.test.ts). */
+.coinStatusPill.isError {
+  color: var(--red);
+}
+.coinStatusPill.isError::before {
+  background: var(--red);
+}
+/* A sync in flight: blue = interaction under way (canon §6), not decoration. */
+.coinStatusPill.isPending {
+  color: var(--blue);
+}
+.coinStatusPill.isPending::before {
+  background: var(--blue);
 }
 .coinSourceStats {
   display: flex;
@@ -6687,6 +6704,65 @@ td.rowActions > * {
   border-bottom: 1px solid var(--line-soft);
   padding-top: 0;
   text-align: left;
+}
+
+/* El motivo de una corrida fallida (#1224): un aviso ABIERTO con regla roja a la
+   izquierda —misma gramática que .premiumNotice y la Línea del debe—, nunca una
+   tarjeta. El cuerpo se queda en tinta y solo la entradilla toma el rojo: --red
+   sobre papel aguanta AA, pero un párrafo entero en rojo grita. */
+.conexSyncError {
+  border-left: 2px solid var(--red);
+  color: var(--ink);
+  font-size: 0.82rem;
+  margin: 0 0 0.6rem;
+  max-width: 70ch;
+  padding: 0.1rem 0 0.1rem 0.6rem;
+}
+
+.conexSyncError strong {
+  color: var(--red);
+}
+
+/* El historial de corridas: un pliegue más bajo la fila, con la misma palabra
+   discreta que «Desconectar». Cerrado por defecto — es diagnóstico, no la
+   respuesta (esa va arriba, en .conexSyncError). */
+.conexHistory {
+  margin: 0 0 0.6rem;
+}
+
+.conexHistory > summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+/* La tabla de corridas cabe DENTRO de la celda del pliegue: ancho natural, no de
+   margen a margen, para que se lea como una nota al pie de la fila y no como un
+   segundo libro. */
+.conexRunTable {
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  width: auto;
+}
+
+.conexRunTable th,
+.conexRunTable td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.28rem 1.2rem 0.28rem 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.conexRunTable th {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.conexRunTable td {
+  font-size: 0.8rem;
 }
 
 /* Dentro de una celda a lo ancho de la tabla, las opciones de desconexión

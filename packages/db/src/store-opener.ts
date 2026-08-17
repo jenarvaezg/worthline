@@ -282,6 +282,7 @@ async function buildStore(
     operations: operationsStore,
     workspace: workspaceStore,
     connectedSources: connectedSourceStore,
+    syncRuns: syncRunStore,
     goals: goalStore,
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,

@@ -298,6 +298,7 @@ export {
   SYNC_RUN_RETENTION_LIMIT,
   type SyncRun,
   type SyncRunError,
+  type SyncRunReadStore,
   type SyncRunStatus,
   type SyncRunStore,
   type SyncTrigger,

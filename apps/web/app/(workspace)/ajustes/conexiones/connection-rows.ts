@@ -1,4 +1,6 @@
+import { SYNC_RUN_RETENTION_LIMIT, type SyncRun } from "@worthline/db";
 import type { SourcePosition } from "@worthline/domain";
+import type { SourceFreshnessRow } from "./sync-health";
 
 /**
  * La carga de datos de `/ajustes/conexiones` (#1223, PRD #1222).
@@ -56,12 +58,27 @@ export interface ConnectionSourceRow {
 export interface ConnectionRowStore {
   listSourceAssetIds: (sourceId: string) => Promise<string[]>;
   readPositions: (sourceId: string) => Promise<SourcePosition[]>;
+  /** Las corridas retenidas de la fuente, newest-first (`sync_run`, #1224). */
+  readRuns: (sourceId: string) => Promise<SyncRun[]>;
+  /**
+   * La frescura de la fuente (#1224) — el MISMO puerto que alimenta la colección
+   * de salud de datos, para que esta página no pueda decir «al día» donde el
+   * bloque de salud del home dice «falló».
+   */
+  readSourceFreshness: (sourceId: string) => Promise<SourceFreshnessRow | null>;
 }
 
 export interface ConnectionRow {
   adapter: string;
   /** Ficha del activo espejo, o null si el holding ya no tiene id público (#1318). */
   fichaHref: string | null;
+  /** La frescura de la fuente, el otro eje de su salud (#1224). */
+  freshness: SourceFreshnessRow | null;
+  /**
+   * Las corridas de sync retenidas, newest-first — la primera es la última
+   * corrida y de ella sale la salud de la fila (#1224). Vacío sin conectar.
+   */
+  runs: readonly SyncRun[];
   /** null = adapter disponible pero sin conectar. */
   source: { assetId: string; id: string; lastSyncAt: string | null } | null;
   unitCount: number;
@@ -94,24 +111,34 @@ export async function loadConnectionRows({
         return {
           adapter: definition.adapter,
           fichaHref: null,
+          freshness: null,
+          runs: [],
           source: null,
           unitCount: 0,
           valueMinor: 0,
         };
       }
 
-      // Las dos lecturas van siempre, también para un adapter de un solo peldaño
-      // que no mire `sourceAssetIds` (Numista): el contrato es el mismo para
-      // todos y son dos consultas indexadas por fuente conectada — como mucho una
-      // por entrada del registry, y solo si está conectada.
-      const [positions, sourceAssetIds] = await Promise.all([
+      // Las cuatro lecturas van siempre, también para un adapter de un solo
+      // peldaño que no mire `sourceAssetIds` (Numista): el contrato es el mismo
+      // para todos y son cuatro consultas indexadas por fuente conectada — como
+      // mucho una tanda por entrada del registry, y solo si está conectada.
+      const [positions, sourceAssetIds, runs, freshness] = await Promise.all([
         store.readPositions(source.id),
         store.listSourceAssetIds(source.id),
+        store.readRuns(source.id),
+        store.readSourceFreshness(source.id),
       ]);
 
       return {
         adapter: definition.adapter,
         fichaHref: hrefOf(source.assetId),
+        freshness,
+        // El techo de retención se aplica también al LEER: la poda solo corre al
+        // finalizar una corrida, así que una colgada en `running` que nunca
+        // finaliza deja crecer la cola por encima del límite que el historial
+        // promete (#1224).
+        runs: runs.slice(0, SYNC_RUN_RETENTION_LIMIT),
         source: {
           assetId: source.assetId,
           id: source.id,
