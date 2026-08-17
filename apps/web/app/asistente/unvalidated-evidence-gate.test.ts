@@ -15,6 +15,7 @@ import {
   TYPED_SERIES_REOPENS,
   typedSeriesReopens,
   UNVALIDATED_EVIDENCE_CLASSES,
+  unreadableTypedSeriesRejected,
   unvalidatedEvidenceCapReached,
   unvalidatedEvidenceClassFor,
   unvalidatedEvidenceGateApplies,
@@ -142,10 +143,11 @@ describe("a series the user typed reopens its lane (#1418)", () => {
     }
   });
 
-  const typed = [
+  const rows = [
     { balanceMinor: 19845678, date: "2025-10-01" },
     { balanceMinor: 19792568, date: "2025-11-01" },
   ];
+  const read = { rows, status: "read" } as const;
   const modelRows = [{ annualRate: "0.025", balanceMinor: 1, date: "2020-01-01" }];
 
   it("hands the model's own rows through on an ordinary turn", () => {
@@ -154,9 +156,9 @@ describe("a series the user typed reopens its lane (#1418)", () => {
         gated: false,
         modelRows,
         toolName: "propose_balance_history_import",
-        typedSeries: typed,
+        typedSeries: read,
       }),
-    ).toEqual({ fromUserMessage: false, rows: modelRows });
+    ).toEqual({ rows: modelRows, source: "model" });
   });
 
   it("replaces the model's rows with the typed series when the gate bites", () => {
@@ -167,9 +169,9 @@ describe("a series the user typed reopens its lane (#1418)", () => {
         gated: true,
         modelRows,
         toolName: "propose_reconstruction",
-        typedSeries: typed,
+        typedSeries: read,
       }),
-    ).toEqual({ fromUserMessage: true, rows: typed });
+    ).toEqual({ rows, source: "user_typed" });
   });
 
   it("stays closed when the gate bites and the user typed nothing", () => {
@@ -178,20 +180,37 @@ describe("a series the user typed reopens its lane (#1418)", () => {
         gated: true,
         modelRows,
         toolName: "propose_balance_history_import",
-        typedSeries: [],
+        typedSeries: { status: "absent" },
       }),
-    ).toBeNull();
+    ).toEqual({ source: "closed" });
   });
 
-  it("stays closed for a lane the escape does not cover, series or not", () => {
+  /**
+   * The distinction the ticket is named after: a person who WROTE the series and whose
+   * paste we could not read must not get the copy that asks for the series.
+   */
+  it("reports an unreadable paste apart from silence", () => {
     expect(
       gatedDebtSeries({
         gated: true,
         modelRows,
-        toolName: "propose_reconcile",
-        typedSeries: typed,
+        toolName: "propose_balance_history_import",
+        typedSeries: { status: "unreadable" },
       }),
-    ).toBeNull();
+    ).toEqual({ source: "unreadable_series" });
+  });
+
+  it("stays closed for a lane the escape does not cover, series or not", () => {
+    for (const typedSeries of [read, { status: "unreadable" } as const]) {
+      expect(
+        gatedDebtSeries({
+          gated: true,
+          modelRows,
+          toolName: "propose_reconcile",
+          typedSeries,
+        }),
+      ).toEqual({ source: "closed" });
+    }
   });
 
   /**
@@ -203,6 +222,25 @@ describe("a series the user typed reopens its lane (#1418)", () => {
     const { message } = unvalidatedEvidenceRejected();
     expect(message).toMatch(/histórico de saldos/i);
     expect(message).toMatch(/una línea por fecha/i);
+  });
+
+  /**
+   * THE regression of #1418. The refusal for a paste we could not read must not be the
+   * one that asks for the paste — that is the sentence Jorge got after typing 360 rows.
+   */
+  it("never asks again for the series it just failed to read", () => {
+    const unreadable = unreadableTypedSeriesRejected();
+
+    expect(unreadable.error).toBe("unreadable_typed_series");
+    expect(unreadable.error).not.toBe(unvalidatedEvidenceRejected().error);
+    expect(unreadable.message).not.toBe(unvalidatedEvidenceRejected().message);
+    // It confirms the attempt instead of repeating the request…
+    expect(unreadable.message).toMatch(/he intentado leer/i);
+    // …names the two shapes that actually break a real paste…
+    expect(unreadable.message).toMatch(/suba/i);
+    expect(unreadable.message).toMatch(/misma fecha/i);
+    // …and never sends them to a file: there is no deterministic route for this one.
+    expect(unreadable.message).not.toMatch(/importar-extracto|sube|adjunt/i);
   });
 });
 

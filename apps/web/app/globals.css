@@ -8495,6 +8495,11 @@ td.rowActions > * {
   padding-top: 12px;
 }
 
+.assistantSeriesNotice {
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+
 /* La marca de procedencia (#1257) sella la propuesta nacida en un turno con
    evidencia que worthline no ha podido validar. La regla gruesa que abre la
    entrada pasa al envoltorio: sello y tarjeta son UNA entrada de papel, no dos

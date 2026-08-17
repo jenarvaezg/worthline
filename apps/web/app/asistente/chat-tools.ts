@@ -96,14 +96,17 @@ import { buildReconstructionProposal } from "@web/asistente/reconstruction-propo
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import {
+  NO_TYPED_BALANCE_SERIES,
   TYPED_BALANCE_SERIES_DOCUMENT_NAME,
   type TypedBalanceRow,
+  type TypedBalanceSeriesReading,
 } from "@web/asistente/typed-balance-series";
 import {
   consumesUnvalidatedEvidenceBudget,
   createUnvalidatedProposalBudget,
   gatedDebtSeries,
   type UnvalidatedEvidenceError,
+  unreadableTypedSeriesRejected,
   unvalidatedEvidenceCapReached,
   unvalidatedEvidenceRejected,
 } from "@web/asistente/unvalidated-evidence-gate";
@@ -237,14 +240,16 @@ export interface ChatToolsInput {
    */
   validatedDocuments?: readonly ExtractedDocument[];
   /**
-   * The dated balance series the user TYPED in this turn, parsed by worthline itself
-   * (#1418). It is what reopens the two debt-series lanes of
+   * What this turn's own message turned out to hold, read by worthline itself (#1418).
+   * A `read` series is what reopens the two debt-series lanes of
    * {@link TYPED_SERIES_REOPENS} while the evidence gate bites — and the rows those
    * lanes then build from, so a model holding an unreadable grid cannot pass its own
-   * remembered figures off as something the user wrote. Empty by default: a caller
-   * that does not read the message keeps the gate's old behaviour exactly.
+   * remembered figures off as something the user wrote. `unreadable` is what lets a
+   * refusal say «I could not read what you wrote» instead of asking for it again.
+   * `absent` by default: a caller that does not read the message keeps the gate's old
+   * behaviour exactly.
    */
-  typedBalanceSeries?: readonly TypedBalanceRow[];
+  typedBalanceSeries?: TypedBalanceSeriesReading;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -1040,39 +1045,58 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
   const groundedHoldingIds = createGroundedHoldingIds(input.groundedHoldingIds ?? []);
 
   /**
+   * What a debt-series lane may build from — its rows and the document to record them
+   * against — or the refusal to answer with (#1418).
+   *
+   * The frontier decides ({@link gatedDebtSeries}); this resolves the two things that
+   * belong to the CALL. The document name, because a series read off the chat is backed
+   * by the message and never by the file the model may still be naming in
+   * `documentName` — resolved here once rather than at each call site, so the two lanes
+   * cannot drift on it. And the envelope, so a lane that could not read what the user
+   * wrote says THAT instead of asking him to write it again.
+   */
+  const debtSeriesRows = <Row extends TypedBalanceRow>(
+    toolName: string,
+    args: { rows?: readonly Row[]; documentName?: string },
+  ):
+    | { rows: readonly (Row | TypedBalanceRow)[]; documentName?: string }
+    | UnvalidatedEvidenceError => {
+    const resolved = gatedDebtSeries<Row, TypedBalanceRow>({
+      gated: unvalidatedEvidence,
+      modelRows: args.rows ?? [],
+      toolName,
+      typedSeries: input.typedBalanceSeries ?? NO_TYPED_BALANCE_SERIES,
+    });
+    switch (resolved.source) {
+      case "closed":
+        return unvalidatedEvidenceRejected();
+      case "unreadable_series":
+        return unreadableTypedSeriesRejected();
+      case "user_typed":
+        return {
+          documentName: TYPED_BALANCE_SERIES_DOCUMENT_NAME,
+          rows: resolved.rows,
+        };
+      default:
+        return {
+          rows: resolved.rows,
+          ...(args.documentName === undefined ? {} : { documentName: args.documentName }),
+        };
+    }
+  };
+
+  /** Whether {@link debtSeriesRows} answered with a refusal rather than rows. */
+  const isSeriesRefusal = (
+    resolved: { rows?: unknown } | UnvalidatedEvidenceError,
+  ): resolved is UnvalidatedEvidenceError => "error" in resolved;
+
+  /**
    * Wrap a single-fact proposal (the whitelist): allowed on unvalidated
    * evidence, but only once per turn — repeating a puntual tool twelve times is
    * the bulk import the frontier forbids. The slot is reserved BEFORE the await
    * (the AI SDK runs a step's tool-calls concurrently) and handed back when no
    * proposal came out, so a builder error or throw costs the user nothing.
-   *
    */
-  /**
-   * The rows a debt-series lane may build from, or `null` when the gate bites and
-   * nothing reopens it (#1418). The decision itself belongs to the frontier
-   * ({@link gatedDebtSeries}); what is added here is the document name, because a
-   * series read off the chat is backed by the message and never by the file the model
-   * may still be naming in `documentName`.
-   */
-  const debtSeriesRows = <Row extends TypedBalanceRow>(
-    toolName: string,
-    modelRows: readonly Row[],
-  ): { rows: readonly (Row | TypedBalanceRow)[]; documentName?: string } | null => {
-    const resolved = gatedDebtSeries<Row, TypedBalanceRow>({
-      gated: unvalidatedEvidence,
-      modelRows,
-      toolName,
-      typedSeries: input.typedBalanceSeries ?? [],
-    });
-    if (resolved === null) return null;
-    return {
-      rows: resolved.rows,
-      ...(resolved.fromUserMessage
-        ? { documentName: TYPED_BALANCE_SERIES_DOCUMENT_NAME }
-        : {}),
-    };
-  };
-
   const withProposalBudget = async <T>(
     run: () => Promise<T>,
   ): Promise<T | UnvalidatedEvidenceError> => {
@@ -1851,8 +1875,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
       execute: (args) => {
-        const series = debtSeriesRows("propose_balance_history_import", args.rows ?? []);
-        if (series === null) return unvalidatedEvidenceRejected();
+        const series = debtSeriesRows("propose_balance_history_import", args);
+        if (isSeriesRefusal(series)) return series;
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
@@ -2092,8 +2116,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
-        const series = debtSeriesRows("propose_reconstruction", args.rows ?? []);
-        if (series === null) return unvalidatedEvidenceRejected();
+        const series = debtSeriesRows("propose_reconstruction", args);
+        if (isSeriesRefusal(series)) return series;
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
@@ -2102,7 +2126,6 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             store.agentView,
             args.holdingId ?? "",
           );
-          const documentName = series.documentName ?? args.documentName;
           const built = await buildReconstructionProposal(
             {
               assistantProposals: store.assistantProposals,
@@ -2113,7 +2136,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               publicHoldingId: args.holdingId ?? "",
               rows: series.rows,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
-              ...(documentName === undefined ? {} : { documentName }),
+              ...(series.documentName === undefined
+                ? {}
+                : { documentName: series.documentName }),
             },
             input.asOf,
           );

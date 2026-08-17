@@ -59,6 +59,19 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
 } as const satisfies Record<string, UnvalidatedEvidenceClass>;
 
 /**
+ * The class of a tool. Anything unclassified is `neutral`: reads and
+ * `suggest_actions`/`raise_maintainer_alert` never turn a document into a write,
+ * so they must keep working untouched while an unvalidated sheet is on the table.
+ */
+export function unvalidatedEvidenceClassFor(toolName: string): UnvalidatedEvidenceClass {
+  return (
+    (UNVALIDATED_EVIDENCE_CLASSES as Record<string, UnvalidatedEvidenceClass>)[
+      toolName
+    ] ?? "neutral"
+  );
+}
+
+/**
  * The `rejects` lanes a series the USER TYPED reopens (#1418) — the two that import a
  * dated balance series of a debt, and only those.
  *
@@ -86,16 +99,35 @@ export function typedSeriesReopens(toolName: string): boolean {
 }
 
 /**
- * Which rows a debt-series lane may build from this turn, or `null` when the gate
- * bites and nothing reopens it (#1418).
+ * What a debt-series lane may do this turn (#1418).
  *
- * The whole escape is in the middle branch, and the two things it does are equally
- * load-bearing. It ALLOWS the call — otherwise a user who typed the series by hand has
- * no way out but uploading a file, which is the dead end this closes. And it REPLACES
- * the rows: the model has the unvalidated document in its context, so rows it typed
- * could be figures it remembers from the document rather than from the message. They
- * are dropped, never merged — merging would let a single remembered row ride in beside
- * three real ones, which is exactly the write nobody validated.
+ * A discriminated union and not rows-plus-a-flag: the rows are ALWAYS all of one
+ * provenance, so a `(Model | Typed)[]` beside a boolean would be a type that lies about
+ * every element it holds. Here the source and the array cannot disagree.
+ */
+export type GatedDebtSeries<Model, Typed> =
+  /** Build from these rows. `source` says whose figures they are. */
+  | { source: "model"; rows: readonly Model[] }
+  | { source: "user_typed"; rows: readonly Typed[] }
+  /** The gate bites and nothing reopened it. */
+  | { source: "closed" }
+  /** The user DID write dated figures and worthline could not read them as a series. */
+  | { source: "unreadable_series" };
+
+/**
+ * Which rows a debt-series lane may build from this turn.
+ *
+ * The escape is `user_typed`, and the two things it does are equally load-bearing. It
+ * ALLOWS the call — otherwise a user who typed the series by hand has no way out but
+ * uploading a file, which is the dead end this closes. And it REPLACES the rows: the
+ * model has the unvalidated document in its context, so rows it typed could be figures
+ * it remembers from the document rather than from the message. They are dropped, never
+ * merged — merging would let a single remembered row ride in beside three real ones,
+ * which is exactly the write nobody validated.
+ *
+ * `unreadable_series` exists because `closed` was answering two questions with one word.
+ * A person who wrote the series and whose paste we could not parse was getting the copy
+ * that asks for the series — the disease #1418 was filed for, one level further in.
  *
  * Generic over both row shapes because the two are not the same: the model may attach
  * a rate to its rows and the parser never invents one. Nothing here reads a field —
@@ -110,24 +142,17 @@ export function gatedDebtSeries<Model, Typed>({
   gated: boolean;
   modelRows: readonly Model[];
   toolName: string;
-  typedSeries: readonly Typed[];
-}): { rows: readonly (Model | Typed)[]; fromUserMessage: boolean } | null {
-  if (!gated) return { fromUserMessage: false, rows: modelRows };
-  if (!typedSeriesReopens(toolName) || typedSeries.length === 0) return null;
-  return { fromUserMessage: true, rows: typedSeries };
-}
-
-/**
- * The class of a tool. Anything unclassified is `neutral`: reads and
- * `suggest_actions`/`raise_maintainer_alert` never turn a document into a write,
- * so they must keep working untouched while an unvalidated sheet is on the table.
- */
-export function unvalidatedEvidenceClassFor(toolName: string): UnvalidatedEvidenceClass {
-  return (
-    (UNVALIDATED_EVIDENCE_CLASSES as Record<string, UnvalidatedEvidenceClass>)[
-      toolName
-    ] ?? "neutral"
-  );
+  typedSeries:
+    | { status: "read"; rows: readonly Typed[] }
+    | { status: "absent" }
+    | { status: "unreadable" };
+}): GatedDebtSeries<Model, Typed> {
+  if (!gated) return { rows: modelRows, source: "model" };
+  if (!typedSeriesReopens(toolName)) return { source: "closed" };
+  if (typedSeries.status === "read") {
+    return { rows: typedSeries.rows, source: "user_typed" };
+  }
+  return { source: typedSeries.status === "unreadable" ? "unreadable_series" : "closed" };
 }
 
 export interface UnvalidatedEvidenceFacts {
@@ -170,6 +195,18 @@ export interface UnvalidatedEvidenceFacts {
  * predicate — the gate's verdict about the turn is unchanged, and the escape is
  * per-lane and per-turn, granted only where the rows come from the parse instead of
  * from the model's arguments.
+ *
+ * What #1418 CONSIDERED and did not do, so nobody re-derives it from scratch: making
+ * the trace EXPIRE when the document leaves active context. It was rejected on its
+ * premise. The unstructured grid is never kept in history at all — it is rendered into
+ * one turn's copy and gone (`prepareAttachmentMessagesForModel`), and what survives is
+ * the model's own prose about it, which no three-document window bounds. So there is no
+ * moment at which «the document left context» is a fact this predicate could read, and
+ * expiry would not have helped the conversation that filed the ticket either: it
+ * carried exactly one file, so nothing would ever have aged out. The inversion the
+ * ticket names — reading a document BETTER closes a door an unreadable one leaves open
+ * — therefore still stands for positions, movements and mixed documents. Closing it
+ * needs a different lever: those lanes have a deterministic route, and this one did not.
  */
 export function unvalidatedEvidenceGateApplies({
   hasUnvalidatedEvidence,
@@ -218,17 +255,45 @@ export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =
   "/patrimonio/importar-extracto, o pásame el extracto original del banco o del broker.";
 
 /**
+ * The user wrote the series and worthline could not read it (#1418).
+ *
+ * A DIFFERENT message from the one above, and that difference is the point: repeating
+ * «escríbeme las fechas y los saldos» at somebody who has just written them is the
+ * failure this ticket is named after. So this one says what it tried, what shape works,
+ * and the two things that most often break a real paste — a balance that goes up, and
+ * two figures for the same date. It never asks for a file: there IS no deterministic
+ * route for a debt's balance history, so this lane is the only one there is.
+ */
+export const UNREADABLE_TYPED_SERIES_MESSAGE =
+  "He intentado leer la serie de saldos que me has escrito y no he podido, así que no " +
+  "he preparado nada — el trabajo no se ha perdido, solo necesito el formato. Escríbeme " +
+  "una línea por fecha, con la fecha y el saldo pendiente y nada más (por ejemplo " +
+  "«01/10/2025 198.456,78»). Ojo a dos cosas que me lo impiden: que el saldo suba de " +
+  "una fecha a la siguiente, y que haya dos cifras distintas para la misma fecha.";
+
+/**
  * The typed envelope the model relays. Sibling of the paywall's
  * `premiumRequired` and deliberately NOT the same: the reason is different and
  * the way out is the deterministic route, never paying.
  */
 export interface UnvalidatedEvidenceError {
-  error: "unvalidated_evidence" | "unvalidated_evidence_limit";
+  error:
+    | "unvalidated_evidence"
+    | "unvalidated_evidence_limit"
+    | "unreadable_typed_series";
   message: string;
 }
 
 export function unvalidatedEvidenceRejected(): UnvalidatedEvidenceError {
   return { error: "unvalidated_evidence", message: UNVALIDATED_EVIDENCE_MESSAGE };
+}
+
+/** The refusal for a series that was written and could not be read (#1418). */
+export function unreadableTypedSeriesRejected(): UnvalidatedEvidenceError {
+  return {
+    error: "unreadable_typed_series",
+    message: UNREADABLE_TYPED_SERIES_MESSAGE,
+  };
 }
 
 export function unvalidatedEvidenceCapReached(): UnvalidatedEvidenceError {

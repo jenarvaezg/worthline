@@ -34,6 +34,11 @@ import {
 } from "@web/asistente/attachment-turn";
 import { attachmentMimeTypeForFileName } from "@web/asistente/attachment-types";
 import { turnPromptBudget } from "@web/asistente/turn-prompt-budget";
+import {
+  NO_TYPED_BALANCE_SERIES,
+  parseTypedBalanceSeries,
+  type TypedBalanceSeriesReading,
+} from "@web/asistente/typed-balance-series";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import { convertToModelMessages, type ModelMessage, type UIMessage } from "ai";
 
@@ -245,11 +250,32 @@ export async function buildTurnMessages(
   );
 }
 
+/**
+ * The series the question's own text carries (#1418), through the route's parser and
+ * gated the way the route gates it.
+ *
+ * Here for the reason {@link prepareGoldenTurn} states below: deriving the frontier and
+ * NOT what reopens it is the #1373 mistake in a new place — a question that types a
+ * dated series would be refused by the harness and scored as the model refusing.
+ * `question.question` is the turn's only user message, which is what the route's
+ * `typedBalanceSeriesInTurn` would pick out of a real history.
+ */
+export function typedBalanceSeriesFor(
+  question: GoldenQuestion,
+  unvalidatedEvidence: boolean,
+): TypedBalanceSeriesReading {
+  return unvalidatedEvidence
+    ? parseTypedBalanceSeries(question.question)
+    : NO_TYPED_BALANCE_SERIES;
+}
+
 /** Everything a golden question needs from the filesystem, ready for `generateText`. */
 export interface GoldenTurn {
   messages: ModelMessage[];
   /** The #1248 gate, as the route derives it. */
   unvalidatedEvidence: boolean;
+  /** What the question's own text holds, and so which debt lane reopens (#1418). */
+  typedBalanceSeries: TypedBalanceSeriesReading;
   /** The rows a document lane may write from (#1373, #1376). */
   validatedDocuments: ExtractedDocument[];
 }
@@ -279,9 +305,11 @@ export async function prepareGoldenTurn(
       ? await readGoldenValidatedDocument(question.validatedDocument)
       : null,
   );
+  const unvalidatedEvidence = unvalidatedEvidenceFor(reading);
   return {
     messages: await buildTurnMessages(question, reading, candidate, history),
-    unvalidatedEvidence: unvalidatedEvidenceFor(reading),
+    typedBalanceSeries: typedBalanceSeriesFor(question, unvalidatedEvidence),
+    unvalidatedEvidence,
     validatedDocuments: validatedDocumentsFor(reading, history),
   };
 }

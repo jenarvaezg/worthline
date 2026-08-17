@@ -67,7 +67,10 @@ import {
   TOOL_PROMPT_BUDGET,
   turnPromptBudget,
 } from "@web/asistente/turn-prompt-budget";
-import { typedBalanceSeriesInTurn } from "@web/asistente/typed-balance-series";
+import {
+  NO_TYPED_BALANCE_SERIES,
+  typedBalanceSeriesInTurn,
+} from "@web/asistente/typed-balance-series";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import {
   isGlobalVisionCallFuseBlown,
@@ -588,9 +591,15 @@ export async function POST(request: Request): Promise<Response> {
   // The user's own keyboard as a way out of that gate (#1418). Read from the RAW
   // history, not from the fitted one the model gets: what grounds these rows is what
   // the user wrote, and a per-provider truncation of his message must not change the
-  // series worthline read off it. Empty for every turn that carries no series, which
-  // is almost all of them.
-  const typedBalanceSeries = typedBalanceSeriesInTurn(body.messages);
+  // series worthline read off it.
+  //
+  // Only parsed when the gate actually bites. Not for the cost — one message is
+  // nothing — but because that is the only turn where this series means anything: an
+  // ordinary turn already builds from the model's rows, and a value that could not
+  // change any outcome is a value nobody should have to reason about.
+  const typedBalanceSeries = unvalidatedEvidence
+    ? typedBalanceSeriesInTurn(body.messages)
+    : NO_TYPED_BALANCE_SERIES;
   const buildTools = (history: UIMessage[]) =>
     createChatTools({
       ingestionAllowed,

@@ -1493,6 +1493,41 @@ describe("POST /api/chat", () => {
     expect(streamed).not.toContain("unvalidated_evidence");
   });
 
+  it("tells the turn its paste was unreadable, not that it wrote nothing (#1418)", async () => {
+    const model = proposeToolModel("propose_reconstruction", {
+      holdingId: FAKE_HOLDING_ID,
+      rows: [{ balanceMinor: 100, date: "2026-05-08" }],
+    });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("mira esto"),
+          unstructuredHistory,
+          groundedHoldingHistory(FAKE_HOLDING_ID),
+          {
+            id: "u2",
+            role: "user",
+            // A series with a balance that GOES UP: written, and unreadable.
+            parts: [
+              {
+                type: "text",
+                text: "01/10/2025 197.925,68\n01/11/2025 198.456,78",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("unreadable_typed_series");
+    // And never the copy that asks for what he has just written.
+    expect(streamed).not.toContain("Ese archivo");
+  });
+
   it("keeps it closed when the same turn types no series (#1418)", async () => {
     const model = proposeToolModel("propose_reconstruction", {
       holdingId: FAKE_HOLDING_ID,

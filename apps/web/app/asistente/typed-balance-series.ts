@@ -67,11 +67,30 @@ export const TYPED_BALANCE_SERIES_DOCUMENT_NAME = "serie-escrita-en-el-chat";
  */
 const MAX_SCANNED_LINES = 4000;
 
-/** `YYYY-MM-DD`. Tried first: it can never be read as the local shape below. */
-const ISO_DATE = /\d{4}-\d{2}-\d{2}/u;
+/**
+ * `YYYY-MM-DD`. Tried first: it can never be read as the local shape below.
+ *
+ * Both patterns are fenced by digit lookarounds, and that is not decoration. Without
+ * them `600.12.3456` — a phone number in the prose around a paste — matches the local
+ * shape starting at its second digit, yields no real day, and takes the ENTIRE series
+ * down with it. The fence costs nothing and removes a whole family of that.
+ */
+const ISO_DATE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/u;
 
-/** `D/M/YYYY`, `D-M-YYYY`, `D.M.YYYY` — how a Spanish sheet prints a date. */
-const LOCAL_DATE = /(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})/u;
+/**
+ * `D/M/YYYY`, `D-M-YYYY`, `D.M.YYYY` — how a Spanish sheet prints a date.
+ *
+ * DAY FIRST, always, with no attempt to detect the American order. That is a decision
+ * and not an oversight: worthline is es-ES throughout, and its number reader already
+ * settles the same class of ambiguity the same way («Spanish grouping wins for
+ * ambiguous string values», {@link normalizeExtractedNumber}). The alternative —
+ * requiring one row to prove the order with a day above twelve — would refuse the most
+ * ordinary series there is, a mortgage paid on the 1st of every month. A month-first
+ * paste whose day exceeds twelve yields no real day and is reported as `unreadable`,
+ * which is the honest outcome: the person is told, rather than silently getting
+ * March read as the 3rd.
+ */
+const LOCAL_DATE = /(?<!\d)(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?!\d)/u;
 
 /** Currency marks that ride along with a figure and are not part of it. */
 const CURRENCY_MARKS = /[€$£]|\bEUR\b|\bUSD\b/giu;
@@ -109,19 +128,31 @@ function cut(line: string, match: RegExpExecArray): string {
  * Every figure on the line, in the order it is printed.
  *
  * A token ending in `%` is dropped: an interest rate is not a balance, and leaving
- * it in gives the column heuristic below one more decreasing series to weigh. Tokens
- * are cut on whitespace, `|` and `;` — never on the comma, which is the decimal
- * separator of every figure this parser is here to read.
+ * it in gives the column heuristic below one more decreasing series to weigh.
+ *
+ * Tokens are cut on whitespace, `|` and `;` — never on the comma FIRST, because the
+ * comma is the decimal separator of every Spanish figure this parser exists to read.
+ * A token that fails to normalize is then re-cut on commas, which recovers the ordinary
+ * dot-decimal CSV (`2025-01-31,1000.00,2.5`) without ever reaching a figure like
+ * `198.456,78` — that one normalizes on the first attempt and never gets split. What
+ * stays unreadable is a comma-joined pair of Spanish decimals (`1.000,50,2.000,75`),
+ * which is ambiguous to a human too.
  */
 function amountsInLine(text: string): number[] {
   return text
     .split(/[\s|;]+/u)
-    .map((token) => token.replace(CURRENCY_MARKS, "").trim())
-    .filter((token) => token !== "" && !token.endsWith("%"))
-    .flatMap((token) => {
-      const value = normalizeExtractedNumber(token);
-      return value === null ? [] : [value];
-    });
+    .flatMap((token) => figuresInToken(token.replace(CURRENCY_MARKS, "").trim()));
+}
+
+function figuresInToken(token: string): number[] {
+  if (token === "" || token.endsWith("%")) return [];
+  const value = normalizeExtractedNumber(token);
+  if (value !== null) return [value];
+  if (!token.includes(",")) return [];
+  return token.split(",").flatMap((piece) => {
+    const parsed = normalizeExtractedNumber(piece.trim());
+    return parsed === null ? [] : [parsed];
+  });
 }
 
 /** A line that observes something: one date and at least one figure. */
@@ -166,7 +197,27 @@ function balanceColumn(rows: readonly ObservationLine[]): number[] | null {
 }
 
 /**
- * The dated balance series written in `text`, or an empty array when there is none.
+ * What a message turned out to hold.
+ *
+ * The three-way answer is the whole reason this is not a `TypedBalanceRow[]`. «I saw no
+ * series» and «I saw one and could not read it» are DIFFERENT things to tell a person,
+ * and collapsing them is the exact failure that filed #1418: Jorge did the work we
+ * asked for and got back, word for word, the message that had asked for it. A refusal
+ * the user cannot tell from silence is silence.
+ */
+export type TypedBalanceSeriesReading =
+  /** A series worthline could read. Never empty. */
+  | { status: "read"; rows: TypedBalanceRow[] }
+  /** Nothing series-shaped in the message at all. */
+  | { status: "absent" }
+  /** Dated figures were written and none of the checks could turn them into a series. */
+  | { status: "unreadable" };
+
+/** The empty answer, shared so callers never build a reading by hand. */
+export const NO_TYPED_BALANCE_SERIES: TypedBalanceSeriesReading = { status: "absent" };
+
+/**
+ * Read the dated balance series written in `text`.
  *
  * The regularity check is the load-bearing one: every observation line must carry the
  * SAME number of figures. A table is regular, and a paste that is not lets the column
@@ -174,35 +225,49 @@ function balanceColumn(rows: readonly ObservationLine[]): number[] | null {
  * refused rather than read. Repeated dates are refused for the same reason: two
  * balances on one day are two different series, and nothing here may choose between
  * them.
+ *
+ * Every one of those refusals answers `unreadable`, not `absent`: the person wrote
+ * dated figures, so they are owed a reason rather than the same request again. Only a
+ * message with fewer than {@link MIN_TYPED_BALANCE_SERIES_ROWS} dated figures in it is
+ * `absent` — there, nothing was attempted.
  */
-export function parseTypedBalanceSeries(text: string): TypedBalanceRow[] {
+export function parseTypedBalanceSeries(text: string): TypedBalanceSeriesReading {
   const observations: ObservationLine[] = [];
   for (const line of text.split("\n").slice(0, MAX_SCANNED_LINES)) {
     const dated = dateInLine(line);
-    if (dated === "invalid") return [];
+    // A date-shaped token that is not a real day: the person was writing dates, so
+    // this is a reading we got wrong and never «no series».
+    if (dated === "invalid") return { status: "unreadable" };
     if (dated === null) continue;
     const amounts = amountsInLine(dated.rest);
     if (amounts.length === 0) continue;
     observations.push({ amounts, date: dated.date });
   }
 
-  if (observations.length < MIN_TYPED_BALANCE_SERIES_ROWS) return [];
-  if (observations.length > ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows) return [];
-  if (new Set(observations.map((row) => row.amounts.length)).size !== 1) return [];
-  if (new Set(observations.map((row) => row.date)).size !== observations.length)
-    return [];
+  if (observations.length < MIN_TYPED_BALANCE_SERIES_ROWS) return NO_TYPED_BALANCE_SERIES;
+  if (observations.length > ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows) {
+    return { status: "unreadable" };
+  }
+  if (new Set(observations.map((row) => row.amounts.length)).size !== 1) {
+    return { status: "unreadable" };
+  }
+  if (new Set(observations.map((row) => row.date)).size !== observations.length) {
+    return { status: "unreadable" };
+  }
 
   const sorted = [...observations].sort((left, right) =>
     left.date.localeCompare(right.date),
   );
   const balances = balanceColumn(sorted);
-  if (balances === null) return [];
+  if (balances === null) return { status: "unreadable" };
 
-  const series = sorted.map((row, index) => ({
+  const rows = sorted.map((row, index) => ({
     balanceMinor: Math.round(balances[index]! * 100),
     date: row.date,
   }));
-  return series.every((row) => Number.isSafeInteger(row.balanceMinor)) ? series : [];
+  return rows.every((row) => Number.isSafeInteger(row.balanceMinor))
+    ? { rows, status: "read" }
+    : { status: "unreadable" };
 }
 
 /**
@@ -215,7 +280,7 @@ export function parseTypedBalanceSeries(text: string): TypedBalanceRow[] {
  */
 export function typedBalanceSeriesInTurn(
   messages: readonly UIMessage[],
-): TypedBalanceRow[] {
+): TypedBalanceSeriesReading {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]!;
     if (message.role !== "user") continue;
@@ -226,5 +291,5 @@ export function typedBalanceSeriesInTurn(
         .join("\n"),
     );
   }
-  return [];
+  return NO_TYPED_BALANCE_SERIES;
 }

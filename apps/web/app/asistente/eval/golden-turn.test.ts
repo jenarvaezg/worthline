@@ -13,6 +13,7 @@ import {
   prepareGoldenTurn,
   readGoldenAttachmentTurn,
   readGoldenValidatedDocument,
+  typedBalanceSeriesFor,
   unvalidatedEvidenceFor,
   validatedDocumentsFor,
 } from "./golden-turn";
@@ -161,6 +162,37 @@ describe("unvalidatedEvidenceFor", () => {
     // The default the reading and tool-discipline sets have always run under: without
     // this, every question would be graded against a gate production would not close.
     expect(unvalidatedEvidenceFor(null)).toBe(false);
+  });
+});
+
+describe("typedBalanceSeriesFor (#1418)", () => {
+  const question = (text: string): GoldenQuestion =>
+    ({ id: "q", question: text }) as GoldenQuestion;
+  const SERIES = "01/10/2025 198.456,78\n01/11/2025 197.925,68";
+
+  it("hands the tools the series the question types under a closed gate", () => {
+    // The harness has been wrong in this exact shape twice (#1265, #1373): forwarding
+    // the frontier without what reopens it would refuse a legitimate turn and score it
+    // as the model refusing.
+    expect(typedBalanceSeriesFor(question(SERIES), true)).toEqual({
+      rows: [
+        { balanceMinor: 19845678, date: "2025-10-01" },
+        { balanceMinor: 19792568, date: "2025-11-01" },
+      ],
+      status: "read",
+    });
+  });
+
+  it("stays absent on an open turn, exactly as the route leaves it", () => {
+    expect(typedBalanceSeriesFor(question(SERIES), false)).toEqual({ status: "absent" });
+  });
+
+  it("stays absent for a question that types no series", () => {
+    expect(typedBalanceSeriesFor(question("¿cuánto debo de la hipoteca?"), true)).toEqual(
+      {
+        status: "absent",
+      },
+    );
   });
 });
 
