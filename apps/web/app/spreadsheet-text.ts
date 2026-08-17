@@ -19,7 +19,37 @@ import { strFromU8, unzipSync } from "fflate";
 export class SpreadsheetReadError extends Error {}
 
 const UNREADABLE = "El archivo Excel no se puede leer — guarda la hoja como .xlsx.";
+/**
+ * A workbook that unzipped fine but yielded no row is NOT «el archivo está
+ * vacío» (#1404): saying so sent a 271-row file back to its owner as empty.
+ */
+const NO_ROWS =
+  "No he podido leer ninguna fila de este Excel — comprueba que la hoja tiene datos.";
 const MEBIBYTE = 1024 * 1024;
+
+/**
+ * OOXML lets a writer namespace-prefix every ELEMENT — `<x:row>`, `<x:c>`,
+ * `<x:v>` — which ClosedXML, EPPlus and other generators do and Excel does not.
+ * Both spellings are valid, so every element pattern below tolerates a prefix
+ * on the open AND the close tag (#1404). Attribute names are a separate matter:
+ * they stay unprefixed except for the relationship id, whose prefix is bound by
+ * the writer (`r:id` by convention, but the letter is not guaranteed).
+ */
+const NS = String.raw`(?:\w+:)?`;
+
+const ROW_ELEMENTS = new RegExp(`<${NS}row[\\s>][\\s\\S]*?</${NS}row>`, "g");
+const CELL_ELEMENTS = new RegExp(`<${NS}c[\\s>][\\s\\S]*?(?:</${NS}c>|/>)`, "g");
+const VALUE_ELEMENT = new RegExp(`<${NS}v(?:\\s[^>]*)?>([\\s\\S]*?)</${NS}v>`);
+const TEXT_ELEMENT = new RegExp(`<${NS}t(?:\\s[^>]*)?>([\\s\\S]*?)</${NS}t>`);
+const TEXT_ELEMENT_GLOBAL = new RegExp(TEXT_ELEMENT.source, "g");
+const SHARED_ITEMS = new RegExp(`<${NS}si(?:\\s[^>]*)?>[\\s\\S]*?</${NS}si>`, "g");
+const SHEET_ELEMENTS = new RegExp(`<${NS}sheet\\b[^>]*/?>`, "g");
+const RELATIONSHIP_ELEMENTS = new RegExp(`<${NS}Relationship\\b[^>]*/?>`, "g");
+const NUM_FMT_ELEMENTS = new RegExp(`<${NS}numFmt\\b[^>]*/?>`, "g");
+const CELL_XFS_BLOCK = new RegExp(`<${NS}cellXfs[\\s\\S]*?</${NS}cellXfs>`);
+const XF_ELEMENTS = new RegExp(`<${NS}xf\\b[^>]*/?>`, "g");
+/** `r:id` on a sheet, whatever prefix the writer bound the relationship ns to. */
+const RELATIONSHIP_ID_ATTRIBUTE = /\b\w+:id\s*=\s*"([^"]+)"/;
 
 /** Prevent a small compressed workbook from expanding without bound in memory. */
 export const MAX_SPREADSHEET_UNCOMPRESSED_BYTES = 16 * MEBIBYTE;
@@ -54,12 +84,16 @@ export function spreadsheetToRows(bytes: Uint8Array): string[][] {
 
   const budget = { used: 0 };
   const metadata = unzipSelected(bytes, (name) => METADATA_PARTS.has(name), budget);
-  const sheetPath = firstSheetPath(metadata);
+  const sheetPath = sheetEntries(metadata)[0]!.path;
   const sheet = unzipSelected(bytes, (name) => name === sheetPath, budget);
   const sheetXml = part(sheet, sheetPath);
   if (!sheetXml) throw new SpreadsheetReadError(UNREADABLE);
 
-  return sheetXmlToRows(sheetXml, workbookContext(metadata));
+  const rows = sheetXmlToRows(sheetXml, workbookContext(metadata));
+  // An empty string here would reach the statement parser as «el archivo está
+  // vacío» — a diagnosis about the file when the truth is about the reader.
+  if (rows.length === 0) throw new SpreadsheetReadError(NO_ROWS);
+  return rows;
 }
 
 /**
@@ -77,13 +111,20 @@ export function spreadsheetToAllSheets(bytes: Uint8Array): WorkbookSheet[] {
   const sheets = unzipSelected(bytes, (name) => paths.has(name), budget);
 
   const context = workbookContext(metadata);
-  const read = entries
-    .map((entry) => ({
-      name: entry.name,
-      rows: sheetXmlToRows(part(sheets, entry.path), context),
-    }))
-    .filter((sheet) => sheet.rows.length > 0);
-  if (read.length === 0) throw new SpreadsheetReadError(UNREADABLE);
+  const found = entries.map((entry) => ({
+    name: entry.name,
+    rows: sheetXmlToRows(part(sheets, entry.path), context),
+    xml: part(sheets, entry.path),
+  }));
+  const read = found
+    .filter((sheet) => sheet.rows.length > 0)
+    .map(({ name, rows }) => ({ name, rows }));
+  if (read.length === 0) {
+    // No worksheet XML at all is a broken container; XML that yielded no row is
+    // a reading problem, and the two deserve different words (#1404).
+    const anyXml = found.some((sheet) => sheet.xml !== "");
+    throw new SpreadsheetReadError(anyXml ? NO_ROWS : UNREADABLE);
+  }
   return read;
 }
 
@@ -104,9 +145,9 @@ function workbookContext(metadata: Record<string, Uint8Array>): WorkbookContext 
 /** A worksheet's XML rows as a cell matrix, gaps filled by column reference. */
 function sheetXmlToRows(sheetXml: string, context: WorkbookContext): string[][] {
   const rows: string[][] = [];
-  for (const rowXml of sheetXml.match(/<row[\s>][\s\S]*?<\/row>/g) ?? []) {
+  for (const rowXml of sheetXml.match(ROW_ELEMENTS) ?? []) {
     const cells: string[] = [];
-    for (const cellXml of rowXml.match(/<c[\s>][\s\S]*?(?:<\/c>|\/>)/g) ?? []) {
+    for (const cellXml of rowXml.match(CELL_ELEMENTS) ?? []) {
       const at = columnIndexOf(cellXml);
       while (cells.length < at) cells.push("");
       cells[at] = cellText(cellXml, context.shared, context.dateStyles, context.date1904);
@@ -124,16 +165,16 @@ function sheetEntries(
   const rels = part(metadata, "xl/_rels/workbook.xml.rels");
 
   const targets = new Map<string, string>();
-  for (const rel of rels.match(/<Relationship\b[^>]*\/?>/g) ?? []) {
+  for (const rel of rels.match(RELATIONSHIP_ELEMENTS) ?? []) {
     const id = /\bId\s*=\s*"([^"]+)"/.exec(rel)?.[1];
     const target = /\bTarget\s*=\s*"([^"]+)"/.exec(rel)?.[1];
     if (id && target) targets.set(id, target);
   }
 
   const entries: { name: string; path: string }[] = [];
-  for (const sheet of workbook.match(/<sheet\b[^>]*\/?>/g) ?? []) {
+  for (const sheet of workbook.match(SHEET_ELEMENTS) ?? []) {
     const name = unescapeXml(/\bname\s*=\s*"([^"]*)"/.exec(sheet)?.[1] ?? "");
-    const relId = /\br:id\s*=\s*"([^"]+)"/.exec(sheet)?.[1];
+    const relId = RELATIONSHIP_ID_ATTRIBUTE.exec(sheet)?.[1];
     const target = relId ? targets.get(relId) : undefined;
     if (!target) continue;
     const path = target.startsWith("/")
@@ -179,33 +220,13 @@ function part(files: Record<string, Uint8Array>, name: string): string {
   return bytes ? strFromU8(bytes) : "";
 }
 
-/** The workbook's first sheet path, resolved through workbook.xml + its rels. */
-function firstSheetPath(files: Record<string, Uint8Array>): string {
-  const workbook = part(files, "xl/workbook.xml");
-  const relId = /<sheet[^>]*\br:id\s*=\s*"([^"]+)"/.exec(workbook)?.[1];
-  if (relId) {
-    const rels = part(files, "xl/_rels/workbook.xml.rels");
-    const target = new RegExp(
-      `<Relationship[^>]*\\bId\\s*=\\s*"${relId}"[^>]*\\bTarget\\s*=\\s*"([^"]+)"`,
-    ).exec(rels)?.[1];
-    if (target) {
-      const path = target.startsWith("/")
-        ? target.slice(1)
-        : `xl/${target.replace(/^\.\//, "")}`;
-      return path;
-    }
-  }
-  // Fallback for writers that skip rels: the conventional first-sheet path.
-  return "xl/worksheets/sheet1.xml";
-}
-
 /** sharedStrings.xml → flat string table (rich-text runs concatenated). */
 function sharedStrings(files: Record<string, Uint8Array>): string[] {
   const xml = part(files, "xl/sharedStrings.xml");
   if (!xml) return [];
-  return (xml.match(/<si>[\s\S]*?<\/si>/g) ?? []).map((si) =>
-    (si.match(/<t[^>]*>([\s\S]*?)<\/t>/g) ?? [])
-      .map((t) => unescapeXml(/<t[^>]*>([\s\S]*?)<\/t>/.exec(t)?.[1] ?? ""))
+  return (xml.match(SHARED_ITEMS) ?? []).map((si) =>
+    (si.match(TEXT_ELEMENT_GLOBAL) ?? [])
+      .map((t) => unescapeXml(TEXT_ELEMENT.exec(t)?.[1] ?? ""))
       .join(""),
   );
 }
@@ -221,7 +242,7 @@ function dateStyleIndexes(files: Record<string, Uint8Array>): Set<number> {
   if (!xml) return new Set();
 
   const customDateFormats = new Set<number>();
-  for (const numFmt of xml.match(/<numFmt\b[^>]*\/?>/g) ?? []) {
+  for (const numFmt of xml.match(NUM_FMT_ELEMENTS) ?? []) {
     const id = Number(/numFmtId\s*=\s*"(\d+)"/.exec(numFmt)?.[1]);
     const code = /formatCode\s*=\s*"([^"]*)"/.exec(numFmt)?.[1] ?? "";
     // A format with day/year tokens (outside color/[] sections) is a date.
@@ -231,8 +252,8 @@ function dateStyleIndexes(files: Record<string, Uint8Array>): Set<number> {
   }
 
   const styles = new Set<number>();
-  const cellXfs = /<cellXfs[\s\S]*?<\/cellXfs>/.exec(xml)?.[0] ?? "";
-  (cellXfs.match(/<xf\b[^>]*\/?>/g) ?? []).forEach((xf, index) => {
+  const cellXfs = CELL_XFS_BLOCK.exec(xml)?.[0] ?? "";
+  (cellXfs.match(XF_ELEMENTS) ?? []).forEach((xf, index) => {
     const numFmtId = Number(/numFmtId\s*=\s*"(\d+)"/.exec(xf)?.[1] ?? "0");
     if (BUILTIN_DATE_FORMATS.has(numFmtId) || customDateFormats.has(numFmtId)) {
       styles.add(index);
@@ -259,10 +280,10 @@ function cellText(
   const type = /\bt\s*=\s*"([^"]+)"/.exec(cellXml)?.[1] ?? "n";
 
   if (type === "inlineStr") {
-    return unescapeXml(/<t[^>]*>([\s\S]*?)<\/t>/.exec(cellXml)?.[1] ?? "");
+    return unescapeXml(TEXT_ELEMENT.exec(cellXml)?.[1] ?? "");
   }
 
-  const value = /<v[^>]*>([\s\S]*?)<\/v>/.exec(cellXml)?.[1] ?? "";
+  const value = VALUE_ELEMENT.exec(cellXml)?.[1] ?? "";
   if (type === "s") return shared[Number(value)] ?? "";
   if (type === "str" || type === "b" || type === "e") return unescapeXml(value);
 
