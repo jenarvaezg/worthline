@@ -121,7 +121,23 @@ function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
   );
 }
 
+/**
+ * The dated balances, with the forecast half of a schedule marked as such (#1424).
+ *
+ * «Previsión» answers a different question from «Revisar lectura», and both can be on
+ * one row: the figure may be transcribed perfectly (nothing uncertain about it) and
+ * still not be a fact. It is what the row MEANS — a balance dated after today is what
+ * the bank predicts the loan will be worth — and Jorge's own words for why that is not
+ * data («la hipoteca cambia de interés cada año… en julio 2027 pagaré una cuota
+ * distinta en función del euríbor de abril 2027») are why this card must say it before
+ * he has to.
+ *
+ * It shares the `em` treatment, and therefore `--gold`, deliberately: the design system
+ * gives that token to «aviso», and «no te apoyes en esta cifra» is exactly one. The two
+ * marks stack in reading order — what the row is, then what the reading doubts.
+ */
 function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }) {
+  const someProjected = data.balances.some((balance) => balance.projected);
   return (
     <>
       <div className="assistantAttachmentTableScroll">
@@ -138,6 +154,7 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
               <tr key={`${balance.date}-${index}`}>
                 <th scope="row">
                   {balance.date}
+                  {balance.projected ? <em>Previsión</em> : null}
                   {balance.uncertain ? <em>Revisar lectura</em> : null}
                 </th>
                 <td>{formatAmount(balance.amount, balance.currency)}</td>
@@ -147,7 +164,13 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
           </tbody>
         </table>
       </div>
+      {/* La frase entera vive en el aviso de la lectura, que esta misma tarjeta ya
+          pinta arriba: aquí solo se explica QUÉ es el distintivo de la fila, para no
+          decir dos veces lo mismo con dos redacciones. */}
       <p className="assistantAttachmentBridgeHint">
+        {someProjected
+          ? "Las filas marcadas «Previsión» son posteriores a hoy y no entran en la reconstrucción. "
+          : ""}
         Son los saldos fechados leídos del documento. Revísalos: nada se guarda desde el
         chat.
       </p>

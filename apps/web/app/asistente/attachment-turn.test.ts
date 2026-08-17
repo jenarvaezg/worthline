@@ -13,7 +13,11 @@ import { describeVisionAttachment } from "@web/asistente/attachment-vision-descr
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isVisionAttachment, readAttachmentTurn } from "./attachment-turn";
+import {
+  type AttachmentTurnInput,
+  isVisionAttachment,
+  readAttachmentTurn,
+} from "./attachment-turn";
 
 vi.mock("@web/asistente/attachment-vision-extractor", () => ({
   extractDocumentFromVisionAttachment: vi.fn(),
@@ -34,12 +38,48 @@ function visionReading(
   return { result, visionCalls };
 }
 
-function csv(text: string): { bytes: Uint8Array; fileName: string; mimeType: string } {
+/**
+ * The turn's own date (#1424). Fixed rather than `new Date()` so the fixtures below
+ * sit on a known side of the observed/forecast line — the whole point of the mark is
+ * that it depends on today, and a test whose today drifts grades a different document
+ * every morning.
+ */
+const TODAY = "2026-08-17";
+
+function csv(text: string): AttachmentTurnInput {
   return {
     bytes: new TextEncoder().encode(text),
     fileName: "hoja.csv",
     mimeType: "text/csv",
+    today: TODAY,
   };
+}
+
+/**
+ * A cuadro de amortización as it really reads: past instalments and the bank's
+ * projection under one header, with nothing in the sheet telling them apart. The
+ * currency column is explicit so the reading's only warning is the one under test.
+ */
+const SCHEDULE_CSV = [
+  "Fecha;Capital pendiente;Divisa",
+  "2026-06-01;52857,24;EUR",
+  "2027-06-01;46985,97;EUR",
+  "2034-06-01;0,01;EUR",
+].join("\n");
+
+const PAST_BALANCES_CSV = [
+  "Fecha;Capital pendiente;Divisa",
+  "2026-05-01;53000,00;EUR",
+  "2026-06-01;52857,24;EUR",
+].join("\n");
+
+/** The validated balance series behind a card, or a loud failure saying it was not one. */
+function balanceSeriesOf(preview: { result: AttachmentExtractionResult }) {
+  const { result } = preview;
+  if (result.status !== "valid" || result.data.documentType !== "balance_series") {
+    throw new Error(`Expected a balance series, got ${result.status}`);
+  }
+  return result.data;
 }
 
 const POSITIONS_CSV = [
@@ -106,10 +146,67 @@ describe("readAttachmentTurn", () => {
     expect(describeVisionAttachment).not.toHaveBeenCalled();
   });
 
+  it("marks the forecast half of an amortization schedule read from a sheet", async () => {
+    // El caso de Jorge (#1424): cuatro de los saldos de su cuadro están fechados
+    // después de hoy. El extractor no puede saberlo —la frontera es la fecha del
+    // turno, que no está en el documento— así que la estampa este seam.
+    const reading = await readAttachmentTurn(csv(SCHEDULE_CSV));
+
+    expect(reading.preview.result.status).toBe("valid");
+    const data = balanceSeriesOf(reading.preview);
+    expect(data.balances.map((balance) => balance.projected)).toEqual([
+      undefined,
+      true,
+      true,
+    ]);
+    expect(data.warnings[0]).toContain("2 de los 3 saldos son posteriores a hoy");
+  });
+
+  it("marks the same document read through the vision lane", async () => {
+    // La asimetría que #1417 ya tuvo que quitar una vez: el MISMO cuadro no puede
+    // significar una cosa en .xlsx y otra en PDF.
+    vi.mocked(extractDocumentFromVisionAttachment).mockResolvedValue(
+      visionReading(
+        parseExtractionResult({
+          data: {
+            balances: [
+              { amount: 52857.24, currency: "EUR", date: "2026-06-01" },
+              { amount: 46985.97, currency: "EUR", date: "2027-06-01" },
+            ],
+            documentType: "balance_series",
+            warnings: [],
+          },
+          status: "valid",
+        }),
+      ),
+    );
+
+    const reading = await readAttachmentTurn({
+      bytes: new Uint8Array([1, 2, 3]),
+      fileName: "cuadro.pdf",
+      mimeType: "application/pdf",
+      today: TODAY,
+    });
+
+    expect(balanceSeriesOf(reading.preview).balances.map((b) => b.projected)).toEqual([
+      undefined,
+      true,
+    ]);
+  });
+
+  it("leaves a fully observed statement unmarked and unwarned", async () => {
+    const reading = await readAttachmentTurn(csv(PAST_BALANCES_CSV));
+
+    const data = balanceSeriesOf(reading.preview);
+    expect(data.balances.every((balance) => balance.projected === undefined)).toBe(true);
+    expect(data.warnings).toEqual([]);
+  });
+
   it("trims the user-supplied file name once, here", async () => {
     const reading = await readAttachmentTurn({
       ...csv(POSITIONS_CSV),
       fileName: "  hoja.csv  ",
+      today: TODAY,
     });
 
     expect(reading.preview.fileName).toBe("hoja.csv");
@@ -129,6 +226,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.unstructured?.fitTo(200_000)).toEqual({
@@ -169,6 +267,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "movimientos.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     // Unstructured, NOT validated: this is what keeps the gate and the cap biting.
@@ -203,6 +302,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "composicion.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.unstructured?.fitTo(200_000)).toEqual({
@@ -261,6 +361,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "composicion.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     // Two calls, counted on the ASK exactly as the unidentified lane counts them: the
@@ -283,6 +384,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.unstructured).toBeNull();
@@ -304,6 +406,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.unstructured).toBeNull();
@@ -324,6 +427,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "extracto.pdf",
       mimeType: "application/pdf",
+      today: TODAY,
     });
 
     expect(
@@ -367,6 +471,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(calls);
@@ -393,6 +498,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(3);
@@ -413,6 +519,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(2);
@@ -434,6 +541,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "captura.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(2);
@@ -458,6 +566,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "extracto.pdf",
       mimeType: "application/pdf",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(0);
@@ -481,6 +590,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "enorme.png",
       mimeType: "image/png",
+      today: TODAY,
     });
 
     expect(reading.visionCalls).toBe(0);
@@ -499,6 +609,7 @@ describe("readAttachmentTurn", () => {
       bytes: new Uint8Array([1, 2, 3]),
       fileName: "extracto.PDF",
       mimeType: "",
+      today: TODAY,
     });
 
     expect(

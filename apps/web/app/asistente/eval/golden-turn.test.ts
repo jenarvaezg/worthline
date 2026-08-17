@@ -23,6 +23,13 @@ import {
  * grades against unless a run says otherwise.
  */
 const PRIMARY = { model: "gemini-3.1-flash-lite", provider: "google" };
+/**
+ * The turn's date the reading seam now needs (#1424). At run time it is the harness's
+ * pinned clock through `chatAsOf`; here it only has to be A valid day, because no
+ * fixture in this file is a dated balance series — so this constant deliberately does
+ * NOT claim to track `WORTHLINE_DEMO_NOW`, which would be a coupling nothing asserts.
+ */
+const TODAY = "2026-06-01";
 /** Wide enough that no fixture in here is sampled by accident. */
 const WIDE_BUDGET = 200_000;
 
@@ -46,16 +53,19 @@ describe("golden attachments", () => {
       // two routes is `golden.test.ts`' invariant; here we only read the ones that
       // declare an attachment.
       if (!question.attachment) continue;
-      const reading = await readGoldenAttachmentTurn(question.attachment);
+      const reading = await readGoldenAttachmentTurn(question.attachment, TODAY);
       expect(laneOf(reading), question.id).toBe(question.attachment.lane);
     }
   });
 
   it("hands the family's notes to the model as evidence worthline did not validate", async () => {
-    const reading = await readGoldenAttachmentTurn({
-      file: "apuntes-familia.csv",
-      lane: "unstructured",
-    });
+    const reading = await readGoldenAttachmentTurn(
+      {
+        file: "apuntes-familia.csv",
+        lane: "unstructured",
+      },
+      TODAY,
+    );
 
     expect(reading.preview.result).toEqual({
       message: UNSTRUCTURED_SPREADSHEET_MESSAGE,
@@ -70,13 +80,13 @@ describe("golden attachments", () => {
 
   it("refuses to grade a turn whose document arrived through another lane", async () => {
     await expect(
-      readGoldenAttachmentTurn({ file: "apuntes-familia.csv", lane: "validated" }),
+      readGoldenAttachmentTurn({ file: "apuntes-familia.csv", lane: "validated" }, TODAY),
     ).rejects.toThrow(/unstructured/);
   });
 
   it("fails loudly on a fixture that is not committed", async () => {
     await expect(
-      readGoldenAttachmentTurn({ file: "no-existe.csv", lane: "unstructured" }),
+      readGoldenAttachmentTurn({ file: "no-existe.csv", lane: "unstructured" }, TODAY),
     ).rejects.toThrow();
   });
 
@@ -149,10 +159,13 @@ describe("golden validated documents (#1376)", () => {
 
 describe("unvalidatedEvidenceFor", () => {
   it("arms the frontier for a document worthline could not validate", async () => {
-    const reading = await readGoldenAttachmentTurn({
-      file: "apuntes-familia.csv",
-      lane: "unstructured",
-    });
+    const reading = await readGoldenAttachmentTurn(
+      {
+        file: "apuntes-familia.csv",
+        lane: "unstructured",
+      },
+      TODAY,
+    );
 
     expect(unvalidatedEvidenceFor(reading)).toBe(true);
   });
@@ -194,10 +207,13 @@ describe("validatedDocumentsFor", () => {
   });
 
   it("hands nothing on a turn with no document, and nothing on an unreadable one", async () => {
-    const reading = await readGoldenAttachmentTurn({
-      file: "apuntes-familia.csv",
-      lane: "unstructured",
-    });
+    const reading = await readGoldenAttachmentTurn(
+      {
+        file: "apuntes-familia.csv",
+        lane: "unstructured",
+      },
+      TODAY,
+    );
 
     expect(validatedDocumentsFor(null)).toEqual([]);
     expect(validatedDocumentsFor(reading)).toEqual([]);
@@ -218,7 +234,10 @@ describe("buildTurnMessages", () => {
   });
 
   it("hands the document to the model behind the production fence", async () => {
-    const reading = await readGoldenAttachmentTurn(ATTACHMENT_QUESTION.attachment!);
+    const reading = await readGoldenAttachmentTurn(
+      ATTACHMENT_QUESTION.attachment!,
+      TODAY,
+    );
 
     const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading, PRIMARY);
     const serialized = JSON.stringify(messages);
@@ -235,7 +254,10 @@ describe("buildTurnMessages", () => {
     // The card is UI, not context. It rides the stream in production and must not
     // reach the provider here either — that is what `prepareAttachmentMessagesForModel`
     // strips, and the reason this harness calls it instead of assembling its own turn.
-    const reading = await readGoldenAttachmentTurn(ATTACHMENT_QUESTION.attachment!);
+    const reading = await readGoldenAttachmentTurn(
+      ATTACHMENT_QUESTION.attachment!,
+      TODAY,
+    );
 
     const messages = await buildTurnMessages(ATTACHMENT_QUESTION, reading, PRIMARY);
 
@@ -285,7 +307,7 @@ describe("prepareGoldenTurn", () => {
       (candidate) => candidate.validatedDocument,
     )!;
 
-    const turn = await prepareGoldenTurn(question, PRIMARY);
+    const turn = await prepareGoldenTurn(question, PRIMARY, TODAY);
 
     expect(JSON.stringify(turn.messages)).toContain("DATOS ESTRUCTURADOS DE ADJUNTOS");
     // No document arrived in THIS turn, so the #1248 gate has nothing to close over.
@@ -298,14 +320,14 @@ describe("prepareGoldenTurn", () => {
   it("arms the gate and hands no document on an unstructured attachment question", async () => {
     const question = ATTACHMENT_QUESTIONS.find((candidate) => candidate.attachment)!;
 
-    const turn = await prepareGoldenTurn(question, PRIMARY);
+    const turn = await prepareGoldenTurn(question, PRIMARY, TODAY);
 
     expect(turn.unvalidatedEvidence).toBe(true);
     expect(turn.validatedDocuments).toEqual([]);
   });
 
   it("composes a plain turn for a question with no document at all", async () => {
-    const turn = await prepareGoldenTurn(READING_QUESTIONS[0]!, PRIMARY);
+    const turn = await prepareGoldenTurn(READING_QUESTIONS[0]!, PRIMARY, TODAY);
 
     expect(turn.messages).toHaveLength(1);
     expect(turn.unvalidatedEvidence).toBe(false);
