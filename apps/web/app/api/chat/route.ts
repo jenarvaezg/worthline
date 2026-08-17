@@ -2,7 +2,6 @@ import {
   type AttachmentPreviewData,
   hasUnstructuredEvidenceInHistory,
   isValidatedDocument,
-  parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
   type UnstructuredAttachment,
   validatedDocumentsForTools,
@@ -18,7 +17,6 @@ import {
   correctFabricatedProposalClaims,
   dropStaleToolPayloads,
   pruneOrphanToolCalls,
-  withoutToolParts,
 } from "@web/asistente/chat-history";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { chatToolStores, createChatTools } from "@web/asistente/chat-tools";
@@ -27,6 +25,7 @@ import {
   isCourtesyQuotaExhausted,
 } from "@web/asistente/courtesy-quota";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
+import { fitHistoryToBudget } from "@web/asistente/history-prose-budget";
 import { groundedHoldingIdsInHistory } from "@web/asistente/holding-id-provenance";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
@@ -60,6 +59,11 @@ import {
 } from "@web/asistente/token-budget";
 import { readAiTokenUsage, recordAiTokenUsage } from "@web/asistente/token-budget-store";
 import { meterAssistantStream } from "@web/asistente/token-metering";
+import {
+  MAX_STEPS,
+  TOOL_PROMPT_BUDGET,
+  turnPromptBudget,
+} from "@web/asistente/turn-prompt-budget";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import {
   isGlobalVisionCallFuseBlown,
@@ -105,52 +109,20 @@ import { after, NextResponse } from "next/server";
  */
 
 const NO_STORE = { "Cache-Control": "no-store" };
-const MAX_MESSAGES = 40;
-const MAX_TOTAL_CHARS = 16_000;
-const MAX_ATTACHMENT_HISTORY_CHARS = 256_000;
 /**
- * Tool payloads in history are NOT charged to {@link MAX_TOTAL_CHARS} (#1260).
- * They are not the user's text and they dwarf it: ONE `get_snapshot_history` with
- * per-position rows measures 113 773 characters — seven times that ceiling — so
- * charging it there killed a healthy conversation with a permanent 400, and the
- * client re-sends the same history every turn, so there was no way back.
+ * Ceiling on the whole request body (#1180): the 4 MiB attachment cap plus room for
+ * the conversation that rides along in the same multipart body and the multipart
+ * framing. A legitimate request can never approach it; a hostile one is refused
+ * before a byte is parsed.
  *
- * There is deliberately NO size ceiling that refuses them either: a refusal is
- * permanent for the same reason. Oversized history is SHRUNK instead, below.
- */
-const MAX_TOOL_PROMPT_CHARS = 80_000;
-/**
- * Room for the freshest reading AND a pending proposal at the same time: measured,
- * `get_snapshot_history` with summary rows is 42 550 characters, so a tighter total
- * meant one of the two had to go — the reading the answer stands on, or the
- * proposal the user is about to confirm.
- */
-const MAX_TOOL_PROPOSAL_CHARS = 48_000;
-/** What the readings behind the freshest one share before being dropped. */
-const MAX_STALE_TOOL_READ_CHARS = 24_000;
-/**
- * And how many tool parts may survive at all, because characters alone do not
- * bound the prompt: the SDK expands each kept part into a call AND a result, so
- * 10 000 tiny parts fitted the character budget and still tripled it. Six steps
- * per turn ({@link MAX_STEPS}) means this covers several turns of grounding.
- */
-const MAX_TOOL_PARTS_IN_PROMPT = 40;
-/** Read tool(s) + answer + suggest_actions (#631), with headroom for one extra read. */
-const MAX_STEPS = 6;
-/**
- * Ceiling on the whole request body (#1180): the 4 MiB attachment cap plus room
- * for the text conversation that rides along in the same multipart body
- * ({@link MAX_TOTAL_CHARS} + {@link MAX_ATTACHMENT_HISTORY_CHARS}) and the
- * multipart framing. A legitimate request can never approach it; a hostile one
- * is refused before a byte is parsed.
- *
- * Tool payloads ride along without a ceiling of their own (#1260), so this is the
- * one door a very long conversation can still reach — and it CAN: 40 turns of the
- * largest reading measured (113 773 chars) plus the other two budgets exceed it
- * (4 822 920 > 4 718 592), and a single turn can carry up to {@link MAX_STEPS}
- * readings, so ~9 multi-read turns suffice. Deliberately not widened: this is the
- * #1180 door against a hostile body. What is fixed instead is the copy of its 413,
- * which no longer blames a file that a JSON turn does not even carry.
+ * Since #1408 it is the ONLY size door in this route that refuses. Every budget the
+ * prompt has — prose, attachment cards, tool payloads, message count — is fitted
+ * per model in `turn-prompt-budget.ts` and shrunk to in `history-prose-budget.ts`,
+ * because the browser re-sends the same history every turn: a refusal there was
+ * permanent, and «recarga la página» was the only way out of a conversation the
+ * route would not accept. This one stays a refusal on purpose — it guards against a
+ * hostile body, not against a long conversation, and it is decided on
+ * `Content-Length` before anything is parsed.
  */
 const MAX_REQUEST_BYTES = ATTACHMENT_EXTRACTION_LIMITS_V1.maxBytes + 512 * 1024;
 
@@ -164,38 +136,12 @@ interface ChatRequestInput {
   body: ChatBody;
 }
 
-function messagesSizeForLimit(messages: unknown[]): {
-  attachmentChars: number;
-  ordinaryChars: number;
-} {
-  let attachmentChars = 0;
-  const counted = messages.map((message) => {
-    if (message === null || typeof message !== "object") return message;
-    const parts = (message as { parts?: unknown }).parts;
-    if (!Array.isArray(parts)) return message;
-    return {
-      ...message,
-      parts: parts.filter((part) => {
-        if (
-          part === null ||
-          typeof part !== "object" ||
-          (part as { type?: unknown }).type !== "data-attachment-extraction"
-        ) {
-          return true;
-        }
-        const preview = parseAttachmentPreviewData((part as { data?: unknown }).data);
-        if (preview === null) return true;
-        attachmentChars += JSON.stringify(preview).length;
-        return false;
-      }),
-    };
-  });
-  return {
-    attachmentChars,
-    ordinaryChars: JSON.stringify(withoutToolParts(counted)).length,
-  };
-}
-
+/**
+ * Shape only, never size (#1408). Every size question — how much prose, how many
+ * messages, how many attachment cards — is answered per model when the turn is
+ * built, by shrinking rather than refusing. What is left here is what no amount of
+ * shrinking can repair: a body that is not a conversation.
+ */
 function parseChatBody(raw: unknown): ChatBody | null {
   if (raw === null || typeof raw !== "object") return null;
 
@@ -204,14 +150,6 @@ function parseChatBody(raw: unknown): ChatBody | null {
     screenContext?: unknown;
   };
   if (!Array.isArray(messages) || messages.length === 0) return null;
-  if (messages.length > MAX_MESSAGES) return null;
-  const messageSizes = messagesSizeForLimit(messages);
-  if (
-    messageSizes.ordinaryChars > MAX_TOTAL_CHARS ||
-    messageSizes.attachmentChars > MAX_ATTACHMENT_HISTORY_CHARS
-  ) {
-    return null;
-  }
   const shapedLikeUIMessages = messages.every(
     (m) =>
       m !== null &&
@@ -619,32 +557,11 @@ export async function POST(request: Request): Promise<Response> {
       orphanToolCalls: pruned.orphanToolCallIds.length,
     });
   }
-  const shrunk = dropStaleToolPayloads(pruned.messages, {
-    maxParts: MAX_TOOL_PARTS_IN_PROMPT,
-    proposalChars: MAX_TOOL_PROPOSAL_CHARS,
-    staleChars: MAX_STALE_TOOL_READ_CHARS,
-    totalChars: MAX_TOOL_PROMPT_CHARS,
-  });
+  const shrunk = dropStaleToolPayloads(pruned.messages, TOOL_PROMPT_BUDGET);
   if (shrunk.droppedToolCallIds.length > 0) {
     console.info("Assistant history shrunk to fit", {
       droppedToolPayloads: shrunk.droppedToolCallIds.length,
     });
-  }
-
-  let modelMessages;
-  try {
-    modelMessages = await convertToModelMessages(
-      prepareAttachmentMessagesForModel(
-        shrunk.messages,
-        currentPreview,
-        unstructuredAttachment,
-      ),
-    );
-  } catch {
-    if (currentPreview) {
-      return previewOnlyResponse(currentPreview, unstructuredAttachment);
-    }
-    return jsonError("invalid_body", 400);
   }
 
   const system = buildChatSystemPrompt(body.screenContext);
@@ -664,51 +581,114 @@ export async function POST(request: Request): Promise<Response> {
     hasUnvalidatedEvidence,
     hasValidatedDocumentInThisTurn: isValidatedDocument(currentPreview),
   });
-  const tools = createChatTools({
-    ingestionAllowed,
-    unvalidatedEvidence,
-    // The premise, not the verdict: the provenance mark on the card (#1257) marks
-    // the turn the proposal was born in, and a validated document lifts the gate
-    // without taking the unreadable file out of the model's context.
-    hasUnvalidatedEvidence,
-    // The documents the model was actually handed (#1373). The reconcile lane takes
-    // its rows from them instead of from what the model typed, so a row that no
-    // extraction contains cannot become a write. Read from `shrunk.messages` for the
-    // same reason as the grounded ids: what grounds a write is what the model sees.
-    validatedDocuments: validatedDocumentsForTools(shrunk.messages, currentPreview),
-    // Holding-id provenance (#1263): the ids worthline itself put in the history the
-    // model is about to read. Taken from `shrunk.messages`, so what grounds a write
-    // is exactly what the model can see — a tool payload dropped by the ceiling
-    // (#1260) is no longer in its context either, and it has to read again.
-    groundedHoldingIds: groundedHoldingIdsInHistory(shrunk.messages),
-    // One line per refused call, with the offending strings: this is the frequency
-    // of the invention, and it is invisible otherwise — the turn simply carries on
-    // without the proposal. Unlike the history repairs above it cannot inflate with
-    // the length of the thread: a tool call happens once, in this turn.
-    onUngroundedHoldingId: (rejection) =>
-      console.info("Assistant pointed a write at an id it never read", rejection),
-    // The maintainer alert is the only forensic channel there is (ADR 0064), so a
-    // gate that can drop one must say when it did: an over-blocking guard is
-    // otherwise invisible by construction (#1347).
-    onMaintainerAlertRefused: (rejection) =>
-      console.info("Assistant raised a maintainer alert with no discrepancy", rejection),
-    runWithStore: (run) => withStore((store) => run(chatToolStores(store)), target),
-    asOf: chatAsOf(target),
-    ...(workspaceId === null
-      ? {}
-      : {
-          raiseMaintainerAlert: (alert) =>
-            raiseMaintainerAlert({ workspaceId, ...alert }),
-        }),
-  });
+  const buildTools = (history: UIMessage[]) =>
+    createChatTools({
+      ingestionAllowed,
+      unvalidatedEvidence,
+      // The premise, not the verdict: the provenance mark on the card (#1257) marks
+      // the turn the proposal was born in, and a validated document lifts the gate
+      // without taking the unreadable file out of the model's context.
+      hasUnvalidatedEvidence,
+      // The documents the model was actually handed (#1373). The reconcile lane takes
+      // its rows from them instead of from what the model typed, so a row that no
+      // extraction contains cannot become a write. Read from the FITTED history for
+      // the same reason as the grounded ids: what grounds a write is what the model
+      // sees, and since #1408 that differs per provider.
+      validatedDocuments: validatedDocumentsForTools(history, currentPreview),
+      // Holding-id provenance (#1263): the ids worthline itself put in the history the
+      // model is about to read — a payload dropped by the tool ceiling (#1260) or a
+      // turn dropped by the prose budget (#1408) is no longer in its context either,
+      // so it has to read again.
+      groundedHoldingIds: groundedHoldingIdsInHistory(history),
+      // One line per refused call, with the offending strings: this is the frequency
+      // of the invention, and it is invisible otherwise — the turn simply carries on
+      // without the proposal. Unlike the history repairs above it cannot inflate with
+      // the length of the thread: a tool call happens once, in this turn.
+      onUngroundedHoldingId: (rejection) =>
+        console.info("Assistant pointed a write at an id it never read", rejection),
+      // The maintainer alert is the only forensic channel there is (ADR 0064), so a
+      // gate that can drop one must say when it did: an over-blocking guard is
+      // otherwise invisible by construction (#1347).
+      onMaintainerAlertRefused: (rejection) =>
+        console.info(
+          "Assistant raised a maintainer alert with no discrepancy",
+          rejection,
+        ),
+      runWithStore: (run) => withStore((store) => run(chatToolStores(store)), target),
+      asOf: chatAsOf(target),
+      ...(workspaceId === null
+        ? {}
+        : {
+            raiseMaintainerAlert: (alert) =>
+              raiseMaintainerAlert({ workspaceId, ...alert }),
+          }),
+    });
+
+  // ONE prompt PER PROVIDER (#1408). The history is fitted to the budget of the model
+  // that is about to read it, so `gemini-3.1-flash-lite` — 1 048 576 input tokens —
+  // keeps a whole conversation where a 30 000-tokens-per-minute fallback gets a cut
+  // one. Before this, both were held to a single 16 000-character ceiling that
+  // REFUSED, and one recited document ended the conversation for good.
+  //
+  // The tools are rebuilt per provider too, and that is not incidental: the write
+  // gates take their allowlists from the history the model can see (#1263, #1373),
+  // so deriving them once from the unfitted history would let them name a document
+  // that this provider was never handed.
+  type PreparedTurn = {
+    messages: Awaited<ReturnType<typeof convertToModelMessages>>;
+    tools: ReturnType<typeof createChatTools>;
+  };
+  const prepared = new Map<string, PreparedTurn>();
+  for (const provider of eligibleProviders) {
+    const fitted = fitHistoryToBudget(shrunk.messages, turnPromptBudget(provider));
+    if (
+      fitted.droppedMessageIds.length > 0 ||
+      fitted.droppedAttachmentCards > 0 ||
+      fitted.truncatedMessageIds.length > 0
+    ) {
+      // Silent to the user by design (#1408), never silent to us: this is how often a
+      // real conversation outgrows a real model, and the refusal it replaces made that
+      // frequency unmeasurable — every one of them ended in a reload.
+      console.info("Assistant history fitted to the model budget", {
+        provider: provider.provider,
+        modelId: provider.modelId,
+        droppedMessages: fitted.droppedMessageIds.length,
+        droppedAttachmentCards: fitted.droppedAttachmentCards,
+        truncatedMessages: fitted.truncatedMessageIds.length,
+      });
+    }
+    try {
+      prepared.set(provider.provider, {
+        messages: await convertToModelMessages(
+          prepareAttachmentMessagesForModel(
+            fitted.messages,
+            currentPreview,
+            unstructuredAttachment,
+          ),
+        ),
+        tools: buildTools(fitted.messages),
+      });
+    } catch {
+      // A history the SDK cannot convert is unconvertible for every provider, so
+      // this leaves the map empty and takes the exit below.
+    }
+  }
+  if (prepared.size === 0) {
+    if (currentPreview) {
+      return previewOnlyResponse(currentPreview, unstructuredAttachment);
+    }
+    return jsonError("invalid_body", 400);
+  }
+
   const selected = await streamWithProviderFailover({
-    providers: eligibleProviders,
-    startStream: (provider) =>
-      streamText({
+    providers: eligibleProviders.filter((provider) => prepared.has(provider.provider)),
+    startStream: (provider) => {
+      const turn = prepared.get(provider.provider)!;
+      return streamText({
         model: provider.model,
         system,
-        messages: modelMessages,
-        tools,
+        messages: turn.messages,
+        tools: turn.tools,
         stopWhen: isStepCount(MAX_STEPS),
         // Cross-provider failover is the retry policy for a rejected request.
         // Retrying the same 429 first would delay request-too-large failover.
@@ -716,7 +696,8 @@ export async function POST(request: Request): Promise<Response> {
         // AI SDK's default callback logs the complete APICallError, including
         // requestBodyValues. Attempt and stream logs below are sanitized.
         onError: () => undefined,
-      }).stream,
+      }).stream;
+    },
     log: (entry) => console.info("Assistant provider attempt", entry),
     onRejected: async ({ provider, classification, error }) => {
       const cooldownUntil = deriveProviderCooldownUntil(error, classification);

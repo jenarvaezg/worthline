@@ -23,6 +23,15 @@ import type { ToolSet } from "ai";
 
 import { createChatTools } from "./chat-tools";
 
+/**
+ * The reviewed ceiling on the floor, held by this module's CI gate — and, since
+ * #1408, the figure the per-model prompt budget charges before a word of the
+ * conversation is counted. ONE number for both on purpose: the budget's whole
+ * point is that what a turn PAYS and what a conversation may KEEP look at each
+ * other, and two copies would let them drift apart silently.
+ */
+export const TURN_FLOOR_CHAR_CEILING = 38_800;
+
 /** One tool's share of the floor: the three strings a provider receives for it. */
 export interface TurnFloorTool {
   name: string;

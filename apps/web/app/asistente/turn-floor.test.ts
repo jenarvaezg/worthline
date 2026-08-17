@@ -2,7 +2,7 @@ import { jsonSchema, tool } from "ai";
 import { describe, expect, it } from "vitest";
 
 import { buildChatSystemPrompt } from "./system-prompt";
-import { measureTurnFloor, turnFloorTools } from "./turn-floor";
+import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./turn-floor";
 
 /**
  * The floor the pool's providers actually charged for, measured with
@@ -70,8 +70,12 @@ import { measureTurnFloor, turnFloorTools } from "./turn-floor";
  * slimming slice's cue. `propose_holding` alone is 2.543 (desc 1.738) and
  * `propose_correction` 2.127 — between them a fifth of the tool half. The next slice
  * that needs characters here should spend them there, not on another raise.
+ *
+ * The number itself moved next to the meter (`TURN_FLOOR_CHAR_CEILING`) when #1408
+ * made the per-model prompt budget charge it: the budget subtracts what a turn pays
+ * before dividing what is left, so a second copy of the figure here would let the
+ * two drift. This file keeps the evidence; the module keeps the value.
  */
-const TURN_FLOOR_CHAR_CEILING = 38_800;
 
 describe("measureTurnFloor", () => {
   it("attributes the floor to the system prompt and to each tool", () => {
