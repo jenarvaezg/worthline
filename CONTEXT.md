@@ -299,7 +299,9 @@ overrideable **warning** until one is set, unless its position is closed. Distin
 from a **connected source** (a live, read-only API mirror that owns its holdings):
 a statement is a manual, file-based feed of operations, and each holding's value
 still derives from its **price provider**. UI labels: "Cargar movimientos" (one
-holding), "Importar extracto" (portfolio).
+holding), "Importar extracto" (portfolio) — which is one door with two readers
+(ADR 0071): the "Operaciones" tab reads this, the "Cuadro de amortización" tab
+reads an **amortization schedule**.
 _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's refresh).
 
 **Valuation anchor**:
@@ -379,10 +381,28 @@ where it ripples forward and never comes out; the surface says so, warns when a
 declared figure has that shape, and still lets it through.
 _Avoid_: "saldo total", which names neither.
 
+**Amortization schedule** (cuadro de amortización):
+The bank's own document for an **amortizable** debt: a row per period with the
+cuota, its interest/principal split and the outstanding balance, plus — in one
+layout or another — the rate applied in each stretch. It is the OUTPUT of the
+bank's model, never worthline's input format: what worthline reads out of it are
+the **interest rate revisions** and **early repayments** it reveals, written over
+an **amortization plan** that already exists (the plan's own conditions are never
+rewritten). Because it prints both the causes and their consequences, it verifies
+its own reading: the curve those events generate is measured against the balances
+the same document declares, within the shared tolerance (ADR 0070), and the
+verdict is shown before anything is saved. A stretch already covered by a
+**balance re-baseline** stays governed by it (ADR 0056) — the schedule
+reconstructs only the years the re-baselines do not cover, and retires none of
+them. Enters by "Importar extracto", tab "Cuadro de amortización" (ADR 0071).
+_Avoid_: extracto (the movements lane of the same door), cuadro alone when the
+**amortization plan** is meant.
+
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
 specific date. The system recalculates the monthly payment from that date forward
-with the new rate and remaining term.
+with the new rate and remaining term. Entered one at a time in the debt's ficha,
+or a whole document's worth at once by loading an **amortization schedule**.
 
 **Early repayment**:
 A declared payment against an **amortized** debt's principal at a specific date, partial
@@ -811,7 +831,7 @@ _Avoid_: imported history (implies verified), synced history.
 - A **framing** chooses which figure headlines; **gross assets**, **debts**, **housing equity**, and **liquid net worth** are always-visible breakdown around it.
 - An **import** is a **reset** followed by loading an **export**: both erase the whole workspace, but a reset ends at onboarding while an import ends in a populated dashboard.
 - A **valuation anchor** attaches to a **holding** at a date; **market appraisals** define the interpolation curve, **improvements** are step-ups on top.
-- An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** and **early repayments** modify the plan from a date forward.
+- An **amortization plan** belongs to an **amortizable** liability; **interest rate revisions** and **early repayments** modify the plan from a date forward. An **amortization schedule** is the bank's printout of the result: worthline reads the revisions and repayments out of it and writes them onto the existing plan, never the other way round.
 - A **balance re-baseline** attaches to an **amortized** liability at a date; the schedule re-derives forward from it and the pre-baseline past stays unmodelled — snapshots before it do not include the debt.
 - A **balance anchor** attaches to a **revolving** or **informal** liability at a date.
 - A **debt model** determines how a liability's historical balance is calculated: from an **amortization plan**, from **balance anchors**, or from a step function of anchors.

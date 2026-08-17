@@ -1,5 +1,10 @@
+import {
+  normalizeHeader,
+  readSpreadsheetGrids,
+  type SpreadsheetGridInput,
+  toIsoDate,
+} from "@web/spreadsheet-grid";
 import type { WorkbookSheet } from "@web/spreadsheet-text";
-
 import {
   type AttachmentExtractionResult,
   capExtractionWarnings,
@@ -9,12 +14,6 @@ import {
   normalizeExtractedNumber,
   parseExtractionResult,
 } from "./attachment-extraction-contract";
-import {
-  normalizeHeader,
-  readSpreadsheetGrids,
-  type SpreadsheetGridInput,
-  toIsoDate,
-} from "./attachment-spreadsheet-grid";
 
 /**
  * Deterministic extractor for the **dated balance series** document from a

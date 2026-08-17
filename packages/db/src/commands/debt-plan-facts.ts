@@ -59,8 +59,44 @@ export function createDebtPlanCommands(
   | "addEarlyRepaymentAndRipple"
   | "updateEarlyRepaymentAndRipple"
   | "deleteEarlyRepaymentAndRipple"
+  | "importAmortizationScheduleAndRipple"
 > {
   return {
+    importAmortizationScheduleAndRipple: async ({
+      liabilityId,
+      revisions,
+      earlyRepayments,
+      today: todayOpt,
+    }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      const written = revisions.length + earlyRepayments.length;
+      // One transaction, ONE ripple (ADR 0020). Twenty-three events applied one
+      // at a time would be twenty-three ripples over the same thirty years, and
+      // a failure in the middle would leave half a mortgage's history rewritten.
+      return ctx.transaction(async () => {
+        for (const revision of revisions) {
+          await stores.liabilities.addInterestRateRevision(revision);
+        }
+        for (const repayment of earlyRepayments) {
+          await stores.liabilities.addEarlyRepayment(repayment);
+        }
+        if (written === 0) return 0;
+
+        const workspace = await ctx.getWorkspace();
+        if (!workspace) return written;
+        // The `amortizable-plan` kind, not the per-event one: a batch read off a
+        // cuadro reshapes the schedule from its earliest event, and the plan kind
+        // is the one that both regenerates the cuota series and recalculates the
+        // whole curve. Recalculating a date whose figure does not move is a no-op.
+        await rippleHistoricalSnapshotsForDebt(
+          ctx,
+          workspace,
+          stores.snapshots.saveSnapshot,
+          { kind: "amortizable-plan", liabilityId, today },
+        );
+        return written;
+      });
+    },
     createAmortizationPlanAndRipple: async (input, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);
       // Atomic persist + ripple (ADR 0020). The plan ripple derives its per-cuota
