@@ -39,6 +39,14 @@ import {
  * assistant's reading a decade away from the dashboard it is talking about.
  */
 
+/**
+ * What a row past the line MEANS, in one phrase and one place. The reading's warning
+ * and the preview card's hint both stand on it, and they must not drift: the card
+ * paints both, so two wordings of the same claim would read as two different claims.
+ */
+export const PROJECTED_BALANCE_MEANING =
+  "son la previsión del documento, no saldos observados";
+
 /** How a reading says which of its rows are the document's forecast. */
 export function projectedBalancesWarning(
   projected: number,
@@ -48,7 +56,7 @@ export function projectedBalancesWarning(
   const verb = projected === 1 ? "es" : "son";
   return (
     `${projected} de los ${total} saldos ${verb} posteriores a hoy (${today}): ` +
-    "son la previsión del documento, no saldos observados, y no entran en la reconstrucción."
+    `${PROJECTED_BALANCE_MEANING}.`
   );
 }
 
@@ -71,22 +79,26 @@ export function markProjectedBalances(
   if (result.status !== "valid" || result.data.documentType !== "balance_series") {
     return result;
   }
-  if (!isIsoDay(today)) return result;
+  // Trimmed ONCE and compared trimmed: `isIsoDay` trims before validating, so
+  // checking the raw string and then comparing dates against it would let a stray
+  // space through the guard and sort every row to the wrong side of the line.
+  const turnDay = today.trim();
+  if (!isIsoDay(turnDay)) return result;
 
   const { balances } = result.data;
-  const projected = balances.filter((balance) => balance.date > today).length;
+  const projected = balances.filter((balance) => balance.date > turnDay).length;
   if (projected === 0) return result;
 
   const marked = parseExtractionResult({
     data: {
       ...result.data,
       balances: balances.map((balance) =>
-        balance.date > today ? { ...balance, projected: true } : balance,
+        balance.date > turnDay ? { ...balance, projected: true } : balance,
       ),
       // First, like every other disclosure about the reading AS A WHOLE: what the
       // contract's warning cap drops must not be «which of these rows are real».
       warnings: capExtractionWarnings([
-        projectedBalancesWarning(projected, balances.length, today),
+        projectedBalancesWarning(projected, balances.length, turnDay),
         ...result.data.warnings,
       ]),
     },
@@ -96,5 +108,14 @@ export function markProjectedBalances(
   // both inside the contract — but a re-parse that failed would turn a good reading
   // into `invalid_output`, which is strictly worse than a reading without the mark:
   // only `unrecognized` and `valid` keep the document in the conversation at all.
-  return marked.status === "valid" ? marked : result;
+  // Degrading is the right call; degrading in SILENCE is not, because the whole point
+  // of this function is that the user is told which rows are not facts.
+  if (marked.status !== "valid") {
+    console.error("Balance series projection mark could not be stamped", {
+      balances: balances.length,
+      projected,
+    });
+    return result;
+  }
+  return marked;
 }

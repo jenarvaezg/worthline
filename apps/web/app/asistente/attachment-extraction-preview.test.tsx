@@ -152,7 +152,9 @@ describe("AttachmentExtractionPreview", () => {
                   projected: true,
                 },
               ],
-              warnings: [],
+              warnings: [
+                "1 de los 2 saldos es posterior a hoy (2026-08-17): son la previsión del documento, no saldos observados.",
+              ],
             }),
             status: "valid",
           },
@@ -161,7 +163,11 @@ describe("AttachmentExtractionPreview", () => {
     );
 
     expect(html).toContain("Previsión");
+    // El significado lo dice el aviso de la lectura, UNA vez; el pie solo explica el
+    // distintivo y su consecuencia, para no repetir la misma frase con otra redacción.
     expect(html).toContain("no saldos observados");
+    expect(html.match(/no saldos observados/g)).toHaveLength(1);
+    expect(html).toContain("no entran en la reconstrucción");
     // La duda de lectura es otra cosa y no debe aparecer por esta puerta.
     expect(html).not.toContain("Revisar lectura");
   });

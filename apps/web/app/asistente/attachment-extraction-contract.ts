@@ -342,9 +342,17 @@ export const positionsDocumentSchema = z
   .strict();
 
 /**
- * The dated balance series document: observed balances with a date and currency.
- * It covers both a debt statement and an amortization schedule — from a schedule
- * only *observed* balances are extracted, never parameters inferred by the model.
+ * The dated balance series document: dated balances with their currency. It covers
+ * both a debt statement and an amortization schedule, and from either only what the
+ * document PRINTS is extracted — never a parameter the model inferred (ADR 0048).
+ *
+ * What the extractor cannot promise, and stopped pretending to (#1424): that every
+ * row is an *observation*. A schedule prints its whole life at once, and the last
+ * rows of a 30-year mortgage are the bank's forecast under an interest rate nobody
+ * has seen yet. Nothing in the document separates the halves — the turn's own date
+ * does, which is why the mark is stamped afterwards, by the reading seam, onto
+ * {@link datedBalanceSchema}'s `projected`. The rows still all travel; what changed
+ * is that the ones on the far side of today say so.
  */
 export const balanceSeriesDocumentSchema = z
   .object({

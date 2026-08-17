@@ -24,10 +24,10 @@ import {
  */
 const PRIMARY = { model: "gemini-3.1-flash-lite", provider: "google" };
 /**
- * The harness's own pinned clock (`WORTHLINE_DEMO_NOW`), which the runner resolves
- * through `chatAsOf` and now hands to the reading seam (#1424): a dated balance is an
- * observation or the document's forecast depending on it, and the fixtures are dated
- * relative to this day on purpose.
+ * The turn's date the reading seam now needs (#1424). At run time it is the harness's
+ * pinned clock through `chatAsOf`; here it only has to be A valid day, because no
+ * fixture in this file is a dated balance series — so this constant deliberately does
+ * NOT claim to track `WORTHLINE_DEMO_NOW`, which would be a coupling nothing asserts.
  */
 const TODAY = "2026-06-01";
 /** Wide enough that no fixture in here is sampled by accident. */

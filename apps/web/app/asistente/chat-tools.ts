@@ -1808,7 +1808,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       description:
         "Prepara una propuesta para una deuda amortizable inequívoca a partir de saldos observados en un cuadro de amortización. " +
         "No infieras capital, plazo ni cuota: envía solo fecha, saldo en céntimos y, si consta, tipo anual. " +
-        "NO envíes los saldos marcados projected: son la previsión del documento, no observaciones, y la app los excluye. " +
+        "Los saldos marcados projected son la previsión del documento, no observaciones: envíalos igual —la app los excluye y lo dice en la tarjeta— pero no los cites como hechos. " +
         "La app calcula la curva y la reconcilia con el saldo conocido antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
       execute: (args) => {

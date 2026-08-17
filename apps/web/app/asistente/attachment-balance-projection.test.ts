@@ -126,6 +126,20 @@ describe("markProjectedBalances", () => {
     expect(markProjectedBalances(unrecognized, TODAY)).toBe(unrecognized);
   });
 
+  it("reads the turn's date trimmed, the way its own guard validates it", () => {
+    // `isIsoDay` recorta antes de validar: comprobar la cadena cruda y luego comparar
+    // fechas contra ella dejaría pasar un espacio y mandaría TODAS las filas al lado
+    // equivocado de la línea.
+    const marked = balancesOf(
+      markProjectedBalances(
+        balanceSeries([{ amount: 52857.24, date: "2026-06-01" }]),
+        ` ${TODAY} `,
+      ),
+    );
+
+    expect(marked.balances[0]?.projected).toBeUndefined();
+  });
+
   it("does not guess when the turn's date is not a calendar day", () => {
     // Comparar fechas contra basura marcaría todas las filas o ninguna, y ambas
     // mienten. Sin fecha del turno no hay frontera que dibujar: se deja la lectura
