@@ -121,7 +121,18 @@ function PositionsPreview({ data }: { data: ExtractedPositionsDocument }) {
   );
 }
 
+/**
+ * The dated balances, with the forecast half of a schedule marked as such (#1424).
+ *
+ * «Previsión» is not a caveat about the READING — the figure is transcribed exactly —
+ * so it is deliberately not the `uncertain` mark. It is what the row MEANS: a balance
+ * dated after today is what the bank predicts the loan will be worth, and Jorge's own
+ * words for why that is not data («la hipoteca cambia de interés cada año… en julio
+ * 2027 pagaré una cuota distinta en función del euríbor de abril 2027») are the reason
+ * this card must say it before he has to.
+ */
 function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }) {
+  const someProjected = data.balances.some((balance) => balance.projected);
   return (
     <>
       <div className="assistantAttachmentTableScroll">
@@ -138,6 +149,7 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
               <tr key={`${balance.date}-${index}`}>
                 <th scope="row">
                   {balance.date}
+                  {balance.projected ? <em>Previsión</em> : null}
                   {balance.uncertain ? <em>Revisar lectura</em> : null}
                 </th>
                 <td>{formatAmount(balance.amount, balance.currency)}</td>
@@ -148,6 +160,9 @@ function BalanceSeriesPreview({ data }: { data: ExtractedBalanceSeriesDocument }
         </table>
       </div>
       <p className="assistantAttachmentBridgeHint">
+        {someProjected
+          ? "Las filas marcadas «Previsión» son posteriores a hoy: es lo que el documento proyecta, no saldos observados, y no entran en la reconstrucción. "
+          : ""}
         Son los saldos fechados leídos del documento. Revísalos: nada se guarda desde el
         chat.
       </p>

@@ -481,6 +481,10 @@ export async function POST(request: Request): Promise<Response> {
       bytes: new Uint8Array(await attachment.arrayBuffer()),
       fileName: attachment.name,
       mimeType: attachment.type,
+      // The SAME date the tools value at, not `nowIso` (#1424): a demo target runs on
+      // a pinned clock, and a reading that called half a schedule «previsión» against
+      // a different today than the curve it feeds would contradict its own card.
+      today: chatAsOf(target),
     });
     currentPreview = reading.preview;
     unstructuredAttachment = reading.unstructured;

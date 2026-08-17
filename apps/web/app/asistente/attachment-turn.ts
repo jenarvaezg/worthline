@@ -1,3 +1,4 @@
+import { markProjectedBalances } from "@web/asistente/attachment-balance-projection";
 import type {
   AttachmentPreviewData,
   UnstructuredAttachment,
@@ -33,6 +34,15 @@ export interface AttachmentTurnInput {
   /** As the user's file arrives; trimmed here, at the one place that reads it. */
   fileName: string;
   mimeType: string;
+  /**
+   * The turn's own valuation date, `YYYY-MM-DD` (#1424) — passed in and never read
+   * off the wall clock, because a demo target runs on a pinned one (`chatAsOf`).
+   *
+   * It is the fact no document carries: an amortization schedule is half history and
+   * half forecast, and only today's date says where the line falls. See
+   * {@link markProjectedBalances}.
+   */
+  today: string;
 }
 
 /**
@@ -156,7 +166,11 @@ export async function readAttachmentTurn(
   const extraction = isSpreadsheet
     ? { result: extractSpreadsheetDocument(extractionInput), visionCalls: 0 }
     : await extractDocumentFromVisionAttachment({ ...extractionInput, kind: visionKind });
-  const { result } = extraction;
+  // The one thing neither extractor can know (#1424): which of a schedule's dated
+  // balances already happened. Stamped over the validated verdict of BOTH lanes, so
+  // there is one answer for a cuadro de amortización whether it arrived as a PDF or
+  // as an .xlsx — the asymmetry #1417 already had to remove once.
+  const result = markProjectedBalances(extraction.result, input.today);
   const extractionCalls = extraction.visionCalls;
 
   // A readable spreadsheet that is not a positions table becomes conversational

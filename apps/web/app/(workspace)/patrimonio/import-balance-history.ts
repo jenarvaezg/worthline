@@ -76,7 +76,15 @@ export interface BalanceHistoryImportPlan {
 export const BALANCE_HISTORY_MESSAGES = {
   duplicateDate: "Ya existe un saldo en esta fecha.",
   duplicateInBatch: "Otro saldo de la misma fecha, posterior en el documento, manda.",
-  futureDate: "La fecha del saldo no puede ser futura.",
+  /**
+   * Por qué una fila futura se queda fuera (#1424). Era «la fecha del saldo no puede
+   * ser futura», que es un regaño por un dato que el usuario no ha tecleado: las
+   * cuatro últimas filas del cuadro de Jorge están fechadas en 2027, 2032 y 2034
+   * porque un cuadro de amortización es mitad histórico y mitad previsión. La regla
+   * no cambia —una previsión no gobierna la curva— pero la tarjeta ya puede decir
+   * QUÉ es esa fila en vez de tratarla como un error de quien la aportó.
+   */
+  futureDate: "Es posterior a hoy: previsión del documento, no un saldo observado.",
   invalidDate: "La fecha del saldo no es válida.",
   invalidSeries: "La serie de saldos no es válida.",
   nonPositiveBalance: "Introduce un saldo real mayor que 0 €.",

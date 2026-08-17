@@ -128,6 +128,42 @@ describe("AttachmentExtractionPreview", () => {
     // The balance series has no add-holding bridge in v1 (S5 owns the proposal).
     expect(html).not.toContain("/patrimonio/anadir");
     expect(html).not.toMatch(/Confirmar|Importar|Guardar|<form|<button/);
+    // Nothing here is dated after the turn, so the forecast copy stays off the card.
+    expect(html).not.toContain("Previsión");
+  });
+
+  test("says which rows of a schedule are the document's forecast, not a reading", () => {
+    // #1424: la marca NO es «revisar lectura» — la cifra está transcrita exacta. Es lo
+    // que la fila SIGNIFICA: un saldo de 2034 es lo que el banco proyecta.
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "cuadro.xlsx",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "balance_series",
+              balances: [
+                { amount: 52857.24, currency: "EUR", date: "2026-06-01" },
+                {
+                  amount: 46985.97,
+                  currency: "EUR",
+                  date: "2027-06-01",
+                  projected: true,
+                },
+              ],
+              warnings: [],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Previsión");
+    expect(html).toContain("no saldos observados");
+    // La duda de lectura es otra cosa y no debe aparecer por esta puerta.
+    expect(html).not.toContain("Revisar lectura");
   });
 
   test("shows the dated fact, its verbatim label and the effect the screen declared", () => {
