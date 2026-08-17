@@ -1779,7 +1779,11 @@ function proposalCardFor({
     ) : null;
   }
   if (
-    (name === "propose_correction" || name === "propose_reconstruction") &&
+    (name === "propose_correction" ||
+      name === "propose_reconstruction" ||
+      // Una enmienda (#1423) devuelve la MISMA propuesta de corrección, con la
+      // serie enmendada: su tarjeta es la de siempre, o no habría tarjeta.
+      name === "propose_reconstruction_amendment") &&
     "output" in part
   ) {
     const proposal = parseCorrectionProposal(part.output);

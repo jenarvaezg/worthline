@@ -154,6 +154,23 @@ export interface AnchorOnlyCorrectionPlan {
 }
 
 /**
+ * One point of the observed series the assistant amended on the user's behalf
+ * (#1423) — the chat equivalent of the card's two per-point controls: the «Excluir»
+ * checkbox and the editable amount. A LAYER over {@link DatedBalanceObservation},
+ * never a rewrite of it: the observed series keeps saying what the document said,
+ * and the effective series is derived from both. Keyed by date, because an
+ * amortization schedule repeats a date when that day carried two events (#1422) and
+ * an index into a series the engine re-sorts would point at the wrong row.
+ */
+export interface ReconstructPointAmendment {
+  date: string;
+  /** Left out of the applied series (the card's checkbox, pre-checked). */
+  excluded?: boolean;
+  /** The amount the user corrected through the chat, in minor units. */
+  balanceMinor?: number;
+}
+
+/**
  * The "Reconstruir historia" depth (#1053): the raw dated balance series and the
  * live anchor it was armed against. The composed re-baseline chain is NOT baked
  * in — the confirm re-projects the (possibly point-edited) series against live
@@ -166,6 +183,14 @@ export interface ReconstructCorrectionPlan {
   liabilityId: string;
   observations: DatedBalanceObservation[];
   before: CorrectionBeforeMoney;
+  /** What the assistant excluded or corrected point by point (#1423). */
+  amendments?: ReconstructPointAmendment[];
+  /**
+   * The draft this one amends (#1423). An amendment prepares a NEW proposal from
+   * the previous one and discards it, so the thread keeps the trail and the
+   * superseded card can no longer be applied over the top of this one.
+   */
+  amendedFrom?: string;
 }
 
 export type CorrectionPlan = AnchorOnlyCorrectionPlan | ReconstructCorrectionPlan;

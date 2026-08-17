@@ -37,7 +37,10 @@ import AssistantLayer from "./assistant-layer";
 import { reconcileReconstructedBalance } from "./balance-reconciliation";
 import type { ReconstructionCorrectionProposal } from "./correction-proposal-contract";
 
-function markupFor(proposal: ReconstructionCorrectionProposal): string {
+function markupFor(
+  proposal: ReconstructionCorrectionProposal,
+  tool = "propose_reconstruction",
+): string {
   chatMessages = [
     {
       id: "a1",
@@ -46,7 +49,7 @@ function markupFor(proposal: ReconstructionCorrectionProposal): string {
           output: proposal,
           state: "output-available",
           toolCallId: "call-1",
-          type: "tool-propose_reconstruction",
+          type: `tool-${tool}`,
         } as unknown as UIMessage["parts"][number],
       ],
       role: "assistant",
@@ -146,6 +149,39 @@ describe("ReconstructionProposalCard · el cuadro que no se podía aplicar (#142
     expect(confirmButton(html)).not.toContain("disabled");
     expect(html).toContain("No cuadra");
     expect(html).toContain("mandará el documento");
+  });
+
+  /**
+   * #1423: una enmienda devuelve la MISMA propuesta de corrección desde otra tool, y
+   * si el render no la reconoce el usuario ve un turno sin tarjeta — exactamente el
+   * «he actualizado la propuesta» sin propuesta que la issue arregla.
+   */
+  test("la propuesta enmendada también pinta su tarjeta, con lo quitado a la vista", () => {
+    const proposal = jorgeProposal();
+    const html = plain(
+      markupFor(
+        {
+          ...proposal,
+          series: [
+            proposal.series[0]!,
+            {
+              ...proposal.series[1]!,
+              excluded: true,
+              origin: "user",
+              reason: "Excluido a tu petición",
+            },
+          ],
+          summary: "Reconstrucción de «Hipoteca Santander» (enmendada)",
+        },
+        "propose_reconstruction_amendment",
+      ),
+    );
+
+    expect(html).toContain("Reconstrucción de «Hipoteca Santander» (enmendada)");
+    expect(html).toContain("Excluido a tu petición");
+    // La casilla del punto quitado llega marcada: reincluirlo es un clic.
+    expect(html).toContain('type="checkbox" checked');
+    expect(confirmButton(html)).not.toContain("disabled");
   });
 
   test("sin ningún punto que aplicar no hay nada que confirmar", () => {

@@ -37,6 +37,9 @@ describe("unvalidated-evidence classification (#1248)", () => {
       "propose_property_valuation_anchor",
       "propose_holding",
       "propose_early_repayment",
+      // Enmendar una reconstrucción (#1423) no mete ninguna fila nueva: opera sobre
+      // los puntos ya persistidos y, como mucho, corrige UN importe a la vista.
+      "propose_reconstruction_amendment",
     ]) {
       expect(unvalidatedEvidenceClassFor(name), name).toBe("accepts");
     }

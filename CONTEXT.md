@@ -761,6 +761,16 @@ rules as manual input, previews its effects, and applies it only after explicit 
 confirmation.
 _Avoid_: import, sync, automatic fix, agent write.
 
+**Proposal amendment**:
+A change the user asks for by chat over a **proposal** already on screen — «quita los
+puntos posteriores a agosto», «ese saldo era otro» — expressed as a short list of
+operations over the points that proposal already carries, never as a re-emission of the
+whole series. It supersedes the draft it amends: a new proposal is prepared from the
+old one and the old one is discarded, so its card cannot apply a series the user has
+already corrected (ADR 0071). The operations are the chat's half of what the card's own
+per-point controls do, so amending by chat and by hand cannot mean different things.
+_Avoid_: edit (that is the card's own control), re-propose, update the proposal.
+
 **Assistant quick action**:
 A one-click action suggested by the **financial assistant** that navigates, changes
 the current analysis view, or runs another read-only analysis. In the first assistant

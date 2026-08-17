@@ -143,6 +143,7 @@ export type {
   CorrectionRevalidation,
   DatedBalanceObservation,
   ReconstructCorrectionPlan,
+  ReconstructPointAmendment,
 } from "./correction-plan";
 export {
   ENCRYPTION_KEY_ENV,
