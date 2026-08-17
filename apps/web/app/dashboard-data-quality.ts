@@ -81,6 +81,7 @@ export async function collectDashboardDataQualitySignals(
 
   const [
     sourceFreshnessEntries,
+    syncAttemptEntries,
     positionEntries,
     debtModelEntries,
     manualValueHistoryByAssetId,
@@ -91,6 +92,16 @@ export async function collectDashboardDataQualitySignals(
       connectedSources.map(
         async (source) =>
           [source.id, await agentView.readSourceFreshness(source.id)] as const,
+      ),
+    ),
+    // Los intentos de sync de cada fuente (#1226). Una consulta indexada por fuente
+    // conectada — el mismo coste y la misma tanda que la frescura de arriba, y solo
+    // por fuente realmente conectada (hoy dos), así que no mueve el presupuesto de
+    // I/O del GET del home (#783).
+    Promise.all(
+      connectedSources.map(
+        async (source) =>
+          [source.id, await agentView.readSyncAttempts(source.id)] as const,
       ),
     ),
     Promise.all(
@@ -147,6 +158,7 @@ export async function collectDashboardDataQualitySignals(
     snapshotIdsWithHoldings,
     snapshots: input.snapshots,
     sourceFreshnessBySourceId,
+    syncAttemptsBySourceId: new Map(syncAttemptEntries),
     // The Papelera's own rows (#1365). Their net units need no extra I/O: the
     // shared projection context reads the WHOLE operations table, trashed
     // holdings included, so `netUnitsByAssetId` above already covers them. The

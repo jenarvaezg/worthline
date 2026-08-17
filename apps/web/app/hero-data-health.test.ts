@@ -94,6 +94,32 @@ describe("selectHeroHealth", () => {
     expect(view.alerts.map((a) => a.severity)).toEqual(["high"]);
   });
 
+  it("headlines a connection whose sync keeps failing, linking to the page (#1226)", () => {
+    // El criterio de aceptación de S4: la señal no se queda en el inventario del
+    // agente. Una cifra congelada porque el sync lleva días fallando compromete la
+    // confianza en el número de hoy tanto como un precio roto, así que pasa el
+    // filtro «¿afecta a la cifra de hoy?» y aterriza donde se repara.
+    const view = selectHeroHealth(
+      [
+        signal({
+          affected: { id: "s1", label: "Binance", object: "connected_source" },
+          category: "source_freshness",
+          code: "PERSISTENT_SYNC_FAILURE",
+          fixable: false,
+          label: 'Las últimas 3 sincronizaciones de "Binance" fallaron.',
+          severity: "high",
+        }),
+      ],
+      [],
+      publicIds,
+    );
+
+    expect(view.impact).toBe("error");
+    expect(view.alerts).toHaveLength(1);
+    expect(view.alerts[0]?.href).toBe("/ajustes/conexiones");
+    expect(view.alerts[0]?.affectedLabel).toBe("Binance");
+  });
+
   it("orders shown alerts by the engine's stable ordering", () => {
     // Same severity, different categories: warning sorts before manual_value_freshness.
     const stale = signal({

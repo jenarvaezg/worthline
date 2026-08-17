@@ -188,6 +188,18 @@ async function collectScopeSignals(
     ),
   );
 
+  // El otro eje de la salud de una fuente (#1226): sus intentos de sync retenidos,
+  // de los que el motor cuenta cuántos han fallado seguidos. Lo lee el MISMO puerto
+  // que alimenta el bloque de salud del home, para que el agente y el humano no
+  // puedan contar rachas distintas.
+  const syncAttemptsBySourceId = new Map(
+    await Promise.all(
+      connectedSources.map(
+        async (source) => [source.id, await store.readSyncAttempts(source.id)] as const,
+      ),
+    ),
+  );
+
   const mortgageIds = liabilities
     .filter((liability) => liability.type === "mortgage")
     .map((liability) => liability.id);
@@ -261,6 +273,7 @@ async function collectScopeSignals(
     snapshotIdsWithHoldings,
     snapshots,
     sourceFreshnessBySourceId,
+    syncAttemptsBySourceId,
     trashedHoldings,
     warningOverrides,
     workspace,

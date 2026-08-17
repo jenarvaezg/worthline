@@ -1,5 +1,6 @@
 import { formatLastSync } from "@web/ajustes/numista-helpers";
 import { PendingSubmit } from "@web/pending-submit";
+import { syncRunInstant } from "@worthline/db";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { Fragment } from "react";
@@ -9,7 +10,6 @@ import {
   describeRunOutcome,
   describeSyncState,
   describeTrigger,
-  runInstantOf,
   type SyncHealthTone,
   summarizeSyncHealth,
 } from "./sync-health";
@@ -230,7 +230,7 @@ export default function ConnectionsTable({
                                   // Una corrida sin ningún sello de tiempo no pasó
                                   // «Nunca» —que es lo que diría `formatLastSync`—:
                                   // pasó sin dejar hora, y eso es una raya.
-                                  const at = runInstantOf(run);
+                                  const at = syncRunInstant(run);
                                   return (
                                     <tr key={run.id}>
                                       <td>{at ? formatLastSync(at) : "—"}</td>

@@ -302,6 +302,7 @@ export {
   type SyncRunStatus,
   type SyncRunStore,
   type SyncTrigger,
+  syncRunInstant,
 } from "./sync-run-store";
 export type {
   ImportWorkspaceResult,

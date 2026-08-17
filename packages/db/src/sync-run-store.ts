@@ -46,6 +46,19 @@ export interface SyncRun {
 }
 
 /**
+ * When a run happened: its finish if it ended, its start if it is still in flight
+ * and, failing both (a run opened that never reached `running`), its creation.
+ *
+ * A fact about the ROW, so it lives with the row: two readers ask it — the
+ * connections page's health pill (#1224) and the data-health projection that counts
+ * consecutive failures (#1226) — and a second copy of the fallback order is a second
+ * chance to disagree about when a sync happened.
+ */
+export function syncRunInstant(run: SyncRun): string | null {
+  return run.finishedAt ?? run.startedAt ?? run.createdAt;
+}
+
+/**
  * How many runs to retain per source (#885 "últimos-N"). A run is a diagnostic
  * breadcrumb, not a ledger fact — the connector-health panel (#654) only needs a
  * short recent tail, so older runs are pruned on each finalize. Sized so the

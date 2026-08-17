@@ -1,11 +1,10 @@
-import type { SyncRun } from "@worthline/db";
+import { type SyncRun, syncRunInstant } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 import {
   describeRunOutcome,
   describeSyncError,
   describeSyncState,
   describeTrigger,
-  runInstantOf,
   summarizeSyncHealth,
 } from "./sync-health";
 import {
@@ -225,13 +224,13 @@ describe("vocabulario de una corrida (#1224)", () => {
   });
 
   test("una corrida en curso se fecha por su arranque; una cerrada, por su cierre", () => {
-    expect(runInstantOf(run())).toBe("2026-08-17T09:00:04.000Z");
-    expect(runInstantOf(run({ finishedAt: null, status: "running" }))).toBe(
+    expect(syncRunInstant(run())).toBe("2026-08-17T09:00:04.000Z");
+    expect(syncRunInstant(run({ finishedAt: null, status: "running" }))).toBe(
       "2026-08-17T09:00:00.000Z",
     );
     // Ni arranque ni cierre (una corrida abierta a medias): queda su creación.
     expect(
-      runInstantOf(
+      syncRunInstant(
         run({ createdAt: "2026-08-01T00:00:00.000Z", finishedAt: null, startedAt: null }),
       ),
     ).toBe("2026-08-01T00:00:00.000Z");
