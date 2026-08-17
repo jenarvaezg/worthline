@@ -1873,6 +1873,78 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     const alta = await tools["propose_holding"]?.execute?.(CUENTA, toolCallContext());
     expect(alta).toMatchObject({ proposalType: "holding_creation" });
   });
+
+  /**
+   * The way out that does not need another upload (#1418). Both halves are asserted
+   * here because either one alone would be a hole: the lane has to OPEN, and it has to
+   * build from the series worthline parsed off the message — the model is holding the
+   * document worthline could not validate, so rows it typed could be figures it
+   * remembers from that document.
+   */
+  it("reopens the debt-history lane with the series the user typed (#1418)", async () => {
+    const store = await workspaceStore();
+    const ids = await publicIds(store);
+    const tools = createChatTools({
+      groundedHoldingIds: Object.values(ids),
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          liabilities: store.liabilities,
+          workspace: store.workspace,
+        }),
+      asOf: AS_OF,
+      typedBalanceSeries: [
+        { balanceMinor: 3_900_00, date: "2025-12-15" },
+        { balanceMinor: 3_750_00, date: "2026-01-15" },
+      ],
+      unvalidatedEvidence: true,
+    });
+
+    const proposal = (await tools["propose_balance_history_import"]?.execute?.(
+      {
+        documentName: "cartera-que-no-pude-leer.xlsx",
+        liabilityId: ids["prestamo"],
+        // What the model sent: a row nobody typed, from the grid it still has.
+        rows: [{ balanceMinor: 99_00, date: "2026-02-15" }],
+      } as never,
+      toolCallContext(),
+    )) as {
+      proposalType?: string;
+      draft?: { proposalId: string };
+      points?: { date: string; balanceMinor: number }[];
+    };
+
+    expect(proposal.proposalType).toBe("balance_history_import");
+    expect(proposal.points?.map((point) => point.date)).toEqual([
+      "2025-12-15",
+      "2026-01-15",
+    ]);
+
+    // And the document it records is the message, not the file the model named: a
+    // write backed by a chat message may not wear a spreadsheet's name.
+    const persisted = await store.assistantProposals.read(proposal.draft!.proposalId);
+    expect(persisted?.documents.map((entry) => entry.document.name)).toEqual([
+      "serie-escrita-en-el-chat",
+    ]);
+  });
+
+  it("keeps the lane shut when the user typed no series (#1418)", async () => {
+    const store = await workspaceStore();
+    const ids = await publicIds(store);
+    const tools = await toolsWithEvidence(store);
+
+    const refused = (await tools["propose_balance_history_import"]?.execute?.(
+      {
+        liabilityId: ids["prestamo"],
+        rows: [{ balanceMinor: 3_900_00, date: "2025-12-15" }],
+      } as never,
+      toolCallContext(),
+    )) as { error?: string };
+
+    expect(refused?.error).toBe("unvalidated_evidence");
+  });
 });
 
 /**

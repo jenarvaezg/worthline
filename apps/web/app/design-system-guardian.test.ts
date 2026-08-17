@@ -494,6 +494,9 @@ describe("Libro mayor design-system guardian (#906)", () => {
       // The app contradicting a faked proposal ceremony (#1262) is set apart the
       // same way, so it cannot drift into a card either.
       ".assistantFakeProposal",
+      // And so is the evidence gate speaking for itself (#1418): same kind of
+      // statement, same paper entry.
+      ".assistantGateNotice",
       // The provenance mark (#1257) takes over the heavy rule of the proposal it
       // stamps, so stamp and card are ONE paper entry — and neither becomes a card.
       ".assistantProposalOrigin",

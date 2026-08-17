@@ -10,7 +10,10 @@ import { describe, expect, it } from "vitest";
 import {
   consumesUnvalidatedEvidenceBudget,
   createUnvalidatedProposalBudget,
+  gatedDebtSeries,
   MAX_UNVALIDATED_PROPOSALS_PER_TURN,
+  TYPED_SERIES_REOPENS,
+  typedSeriesReopens,
   UNVALIDATED_EVIDENCE_CLASSES,
   unvalidatedEvidenceCapReached,
   unvalidatedEvidenceClassFor,
@@ -113,6 +116,93 @@ describe("unvalidatedEvidenceGateApplies (#1248)", () => {
         hasValidatedDocumentInThisTurn: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("a series the user typed reopens its lane (#1418)", () => {
+  /**
+   * The guardian of the escape hatch: reopening a lane the frontier never closed
+   * would be meaningless, and reopening a lane the frontier closes for a REASON we
+   * cannot answer (positions, movements, segments) is the thing to notice.
+   */
+  it("only ever reopens lanes the frontier closes", () => {
+    for (const name of Object.keys(TYPED_SERIES_REOPENS)) {
+      expect(unvalidatedEvidenceClassFor(name), name).toBe("rejects");
+      expect(typedSeriesReopens(name)).toBe(true);
+    }
+  });
+
+  it("leaves the lanes a parser cannot read off a message closed", () => {
+    for (const name of [
+      "propose_statement_import",
+      "propose_reconcile",
+      "propose_mixed_document_import",
+    ]) {
+      expect(typedSeriesReopens(name), name).toBe(false);
+    }
+  });
+
+  const typed = [
+    { balanceMinor: 19845678, date: "2025-10-01" },
+    { balanceMinor: 19792568, date: "2025-11-01" },
+  ];
+  const modelRows = [{ annualRate: "0.025", balanceMinor: 1, date: "2020-01-01" }];
+
+  it("hands the model's own rows through on an ordinary turn", () => {
+    expect(
+      gatedDebtSeries({
+        gated: false,
+        modelRows,
+        toolName: "propose_balance_history_import",
+        typedSeries: typed,
+      }),
+    ).toEqual({ fromUserMessage: false, rows: modelRows });
+  });
+
+  it("replaces the model's rows with the typed series when the gate bites", () => {
+    // Replaces, never merges: the model holds the unvalidated document, so a row it
+    // wrote could be a figure it remembers from that document.
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_reconstruction",
+        typedSeries: typed,
+      }),
+    ).toEqual({ fromUserMessage: true, rows: typed });
+  });
+
+  it("stays closed when the gate bites and the user typed nothing", () => {
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_balance_history_import",
+        typedSeries: [],
+      }),
+    ).toBeNull();
+  });
+
+  it("stays closed for a lane the escape does not cover, series or not", () => {
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_reconcile",
+        typedSeries: typed,
+      }),
+    ).toBeNull();
+  });
+
+  /**
+   * The refusal is what the model reads, so it is where the newly open door has to be
+   * named: the alternative is the conversation that filed this ticket, where nobody
+   * told the user that the work he was about to do could not land anywhere.
+   */
+  it("names the typed way out in the refusal the model relays", () => {
+    const { message } = unvalidatedEvidenceRejected();
+    expect(message).toMatch(/histórico de saldos/i);
+    expect(message).toMatch(/una línea por fecha/i);
   });
 });
 

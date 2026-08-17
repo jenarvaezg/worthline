@@ -67,6 +67,7 @@ import {
   TOOL_PROMPT_BUDGET,
   turnPromptBudget,
 } from "@web/asistente/turn-prompt-budget";
+import { typedBalanceSeriesInTurn } from "@web/asistente/typed-balance-series";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import {
   isGlobalVisionCallFuseBlown,
@@ -584,6 +585,12 @@ export async function POST(request: Request): Promise<Response> {
     hasUnvalidatedEvidence,
     hasValidatedDocumentInThisTurn: isValidatedDocument(currentPreview),
   });
+  // The user's own keyboard as a way out of that gate (#1418). Read from the RAW
+  // history, not from the fitted one the model gets: what grounds these rows is what
+  // the user wrote, and a per-provider truncation of his message must not change the
+  // series worthline read off it. Empty for every turn that carries no series, which
+  // is almost all of them.
+  const typedBalanceSeries = typedBalanceSeriesInTurn(body.messages);
   const buildTools = (history: UIMessage[]) =>
     createChatTools({
       ingestionAllowed,
@@ -598,6 +605,9 @@ export async function POST(request: Request): Promise<Response> {
       // the same reason as the grounded ids: what grounds a write is what the model
       // sees, and since #1408 that differs per provider.
       validatedDocuments: validatedDocumentsForTools(history, currentPreview),
+      // The series the user typed this turn (#1418): it reopens the debt-history lanes
+      // the gate closed, and it is what those lanes build from.
+      typedBalanceSeries,
       // Holding-id provenance (#1263): the ids worthline itself put in the history the
       // model is about to read — a payload dropped by the tool ceiling (#1260) or a
       // turn dropped by the prose budget (#1408) is no longer in its context either,

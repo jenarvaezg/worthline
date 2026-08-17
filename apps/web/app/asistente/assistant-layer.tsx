@@ -158,6 +158,10 @@ import {
   reduceStatementProposalDiscard,
 } from "./statement-proposal-discard-state";
 import { suggestedPrompts } from "./suggested-prompts";
+import {
+  messageWithUnvalidatedEvidenceNotice,
+  UNVALIDATED_EVIDENCE_NOTE,
+} from "./unvalidated-evidence-notice";
 
 /** Human-readable section names for screen-reader context announcements (#633). */
 const SECTION_LABEL: Record<ScreenSection, string> = {
@@ -1749,6 +1753,23 @@ function FabricatedProposalNote() {
 }
 
 /**
+ * The evidence gate, said by the app (#1418).
+ *
+ * Printed under the FIRST turn whose tools the gate refused, and only that one. Same
+ * frame as the note above because it is the same kind of statement — the app telling
+ * the user something the model was trusted to relay and did not.
+ */
+function UnvalidatedEvidenceNote() {
+  return (
+    <div className="assistantGateNotice" role="note">
+      <p className="assistantWarning">
+        <strong>Aviso de worthline.</strong> {UNVALIDATED_EVIDENCE_NOTE}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The proposal card a tool answer unfolds into, or `null` when the answer is not a
  * proposal (every read tool runs silently) or does not parse as one.
  *
@@ -1955,6 +1976,12 @@ function ConversationParts({
   // holding where it wrote its id (#1263). Memoised for the same reason: the panel
   // re-renders on every keystroke and this walks every tool output of every turn.
   const holdingLabels = useMemo(() => labelsByPublicHoldingId(messages), [messages]);
+  // The one turn that carries the gate's note (#1418) — once per conversation, so it
+  // is decided over the whole thread and not per message.
+  const gateNoticeId = useMemo(
+    () => messageWithUnvalidatedEvidenceNotice(messages),
+    [messages],
+  );
   return (
     <>
       {messages.map((message) => {
@@ -2020,6 +2047,7 @@ function ConversationParts({
               return null;
             })}
             {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
+            {gateNoticeId === message.id ? <UnvalidatedEvidenceNote /> : null}
           </div>
         );
       })}

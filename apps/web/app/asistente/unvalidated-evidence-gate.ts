@@ -59,6 +59,65 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
 } as const satisfies Record<string, UnvalidatedEvidenceClass>;
 
 /**
+ * The `rejects` lanes a series the USER TYPED reopens (#1418) — the two that import a
+ * dated balance series of a debt, and only those.
+ *
+ * The escape is not «trust the user's message»: it is that worthline PARSES the
+ * message itself ({@link ../typed-balance-series}) and the lane builds from that
+ * parse, never from the model's arguments. So it is available exactly where a
+ * deterministic parser can read the rows off chat text — a date and a balance.
+ *
+ * The other three stay closed on purpose. A statement import, a reconcile and a mixed
+ * document are positions, movements and segments: nothing here can read those off a
+ * message without guessing what each column means, and a guess is the bulk write this
+ * whole boundary exists to prevent. Their route remains the deterministic one.
+ *
+ * Enumerated here, next to the frontier it pierces, so the guardian test can assert
+ * that every escape belongs to a lane the frontier actually closes.
+ */
+export const TYPED_SERIES_REOPENS = {
+  propose_balance_history_import: true,
+  propose_reconstruction: true,
+} as const;
+
+/** Whether a user-typed series can reopen this tool's lane (#1418). */
+export function typedSeriesReopens(toolName: string): boolean {
+  return Object.hasOwn(TYPED_SERIES_REOPENS, toolName);
+}
+
+/**
+ * Which rows a debt-series lane may build from this turn, or `null` when the gate
+ * bites and nothing reopens it (#1418).
+ *
+ * The whole escape is in the middle branch, and the two things it does are equally
+ * load-bearing. It ALLOWS the call — otherwise a user who typed the series by hand has
+ * no way out but uploading a file, which is the dead end this closes. And it REPLACES
+ * the rows: the model has the unvalidated document in its context, so rows it typed
+ * could be figures it remembers from the document rather than from the message. They
+ * are dropped, never merged — merging would let a single remembered row ride in beside
+ * three real ones, which is exactly the write nobody validated.
+ *
+ * Generic over both row shapes because the two are not the same: the model may attach
+ * a rate to its rows and the parser never invents one. Nothing here reads a field —
+ * the decision is about PROVENANCE, and provenance is about where the array came from.
+ */
+export function gatedDebtSeries<Model, Typed>({
+  gated,
+  modelRows,
+  toolName,
+  typedSeries,
+}: {
+  gated: boolean;
+  modelRows: readonly Model[];
+  toolName: string;
+  typedSeries: readonly Typed[];
+}): { rows: readonly (Model | Typed)[]; fromUserMessage: boolean } | null {
+  if (!gated) return { fromUserMessage: false, rows: modelRows };
+  if (!typedSeriesReopens(toolName) || typedSeries.length === 0) return null;
+  return { fromUserMessage: true, rows: typedSeries };
+}
+
+/**
  * The class of a tool. Anything unclassified is `neutral`: reads and
  * `suggest_actions`/`raise_maintainer_alert` never turn a document into a write,
  * so they must keep working untouched while an unvalidated sheet is on the table.
@@ -104,6 +163,13 @@ export interface UnvalidatedEvidenceFacts {
  * the deterministic route — which is where a bulk import belongs anyway. The
  * whitelisted single-fact tools stay open throughout, capped at one per turn, and
  * uploading a document worthline CAN read reopens everything in that same turn.
+ *
+ * That «rest of the conversation» is no longer a dead end for a debt's balance
+ * history (#1418): a series the user TYPES in a turn is parsed by worthline itself and
+ * reopens the two lanes of {@link TYPED_SERIES_REOPENS}. It does not go through this
+ * predicate — the gate's verdict about the turn is unchanged, and the escape is
+ * per-lane and per-turn, granted only where the rows come from the parse instead of
+ * from the model's arguments.
  */
 export function unvalidatedEvidenceGateApplies({
   hasUnvalidatedEvidence,
@@ -128,13 +194,21 @@ export const MAX_UNVALIDATED_PROPOSALS_PER_TURN = 1;
  * «esa hoja no la he podido leer» names a document that never existed. The
  * boundary's own tests assert the wording now, so the next lane cannot make it
  * lie again in silence.
+ *
+ * The last sentence is the door #1418 opened, said HERE because this envelope is what
+ * the model reads when the lane refuses: the alternative was a user pasting 360 rows
+ * that could not work and nobody telling him. It is conditional («si es el histórico de
+ * saldos de una deuda») because that is the only shape a parser can read off chat text
+ * — positions and movements still have one honest route, the file.
  */
 export const UNVALIDATED_EVIDENCE_MESSAGE =
   "Ese archivo no lo he podido leer como tabla de posiciones o movimientos, así que no " +
   "puedo llevarlo en bloque al patrimonio. En /patrimonio/importar-extracto tienes el " +
   "formato que sí reconozco; y si tienes el extracto original del banco o del broker, " +
   "ése sí puedo leerlo. Un dato puntual sí puedo prepararlo como propuesta para que lo " +
-  "confirmes.";
+  "confirmes. Y si lo que quieres cargar es el histórico de saldos de una deuda, " +
+  "escríbeme aquí las fechas y los saldos, una línea por fecha: eso sí lo leo de tu " +
+  "mensaje.";
 
 /** The per-turn cap: a second proposal out of the same unvalidated document. */
 export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =

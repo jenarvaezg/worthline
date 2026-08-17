@@ -1447,6 +1447,76 @@ describe("POST /api/chat", () => {
   });
 
   /**
+   * The way out that needs no second upload (#1418). These two turns differ in ONE
+   * thing — whether the user's own message carries a dated series — so together they
+   * prove the route reads that series off the message and hands it to the tools.
+   *
+   * A user who has just been told his file cannot be read in bulk, and who then types
+   * the figures himself, is on the ordinary manual path: the source is his text.
+   */
+  const typedSeriesTurn = {
+    id: "u2",
+    role: "user",
+    parts: [
+      {
+        type: "text",
+        text: [
+          "No me deja subir el archivo, te paso los saldos de la hipoteca:",
+          "01/10/2025 198.456,78",
+          "01/11/2025 197.925,68",
+          "01/12/2025 197.393,32",
+        ].join("\n"),
+      },
+    ],
+  };
+
+  it("reopens the debt-history lane when the user TYPES the series (#1418)", async () => {
+    const model = proposeToolModel("propose_reconstruction", {
+      holdingId: FAKE_HOLDING_ID,
+      rows: [{ balanceMinor: 100, date: "2026-05-08" }],
+    });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("mira esto"),
+          unstructuredHistory,
+          groundedHoldingHistory(FAKE_HOLDING_ID),
+          typedSeriesTurn,
+        ],
+      }),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).not.toContain("unvalidated_evidence");
+  });
+
+  it("keeps it closed when the same turn types no series (#1418)", async () => {
+    const model = proposeToolModel("propose_reconstruction", {
+      holdingId: FAKE_HOLDING_ID,
+      rows: [{ balanceMinor: 100, date: "2026-05-08" }],
+    });
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("mira esto"),
+          unstructuredHistory,
+          groundedHoldingHistory(FAKE_HOLDING_ID),
+          { id: "u2", role: "user", parts: [{ type: "text", text: "reconstruye esto" }] },
+        ],
+      }),
+    );
+    const streamed = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(streamed).toContain("unvalidated_evidence");
+  });
+
+  /**
    * The same two-turn bypass, for the path #1246 inaugurates. Turn 1 describes a
    * capture; turn 2 arrives with no attachment and asks for a bulk import. Without
    * the described-capture marker in `hasUnstructuredEvidenceInHistory` the boundary

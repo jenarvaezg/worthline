@@ -96,8 +96,13 @@ import { buildReconstructionProposal } from "@web/asistente/reconstruction-propo
 import type { ScreenSection } from "@web/asistente/screen-context";
 import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
 import {
+  TYPED_BALANCE_SERIES_DOCUMENT_NAME,
+  type TypedBalanceRow,
+} from "@web/asistente/typed-balance-series";
+import {
   consumesUnvalidatedEvidenceBudget,
   createUnvalidatedProposalBudget,
+  gatedDebtSeries,
   type UnvalidatedEvidenceError,
   unvalidatedEvidenceCapReached,
   unvalidatedEvidenceRejected,
@@ -231,6 +236,15 @@ export interface ChatToolsInput {
    * lane — a fixture or an eval that wants a reconcile must bring the document.
    */
   validatedDocuments?: readonly ExtractedDocument[];
+  /**
+   * The dated balance series the user TYPED in this turn, parsed by worthline itself
+   * (#1418). It is what reopens the two debt-series lanes of
+   * {@link TYPED_SERIES_REOPENS} while the evidence gate bites — and the rows those
+   * lanes then build from, so a model holding an unreadable grid cannot pass its own
+   * remembered figures off as something the user wrote. Empty by default: a caller
+   * that does not read the message keeps the gate's old behaviour exactly.
+   */
+  typedBalanceSeries?: readonly TypedBalanceRow[];
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -1033,6 +1047,32 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
    * proposal came out, so a builder error or throw costs the user nothing.
    *
    */
+  /**
+   * The rows a debt-series lane may build from, or `null` when the gate bites and
+   * nothing reopens it (#1418). The decision itself belongs to the frontier
+   * ({@link gatedDebtSeries}); what is added here is the document name, because a
+   * series read off the chat is backed by the message and never by the file the model
+   * may still be naming in `documentName`.
+   */
+  const debtSeriesRows = <Row extends TypedBalanceRow>(
+    toolName: string,
+    modelRows: readonly Row[],
+  ): { rows: readonly (Row | TypedBalanceRow)[]; documentName?: string } | null => {
+    const resolved = gatedDebtSeries<Row, TypedBalanceRow>({
+      gated: unvalidatedEvidence,
+      modelRows,
+      toolName,
+      typedSeries: input.typedBalanceSeries ?? [],
+    });
+    if (resolved === null) return null;
+    return {
+      rows: resolved.rows,
+      ...(resolved.fromUserMessage
+        ? { documentName: TYPED_BALANCE_SERIES_DOCUMENT_NAME }
+        : {}),
+    };
+  };
+
   const withProposalBudget = async <T>(
     run: () => Promise<T>,
   ): Promise<T | UnvalidatedEvidenceError> => {
@@ -1811,7 +1851,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "La app calcula la curva y exige reconciliación exacta con el saldo actual antes de confirmar.",
       inputSchema: BALANCE_HISTORY_PROPOSAL_SCHEMA,
       execute: (args) => {
-        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
+        const series = debtSeriesRows("propose_balance_history_import", args.rows ?? []);
+        if (series === null) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
@@ -1825,7 +1866,14 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               assistantProposals: store.assistantProposals,
               liabilities: store.liabilities,
             },
-            { ...args, liabilityId },
+            {
+              ...args,
+              liabilityId,
+              rows: series.rows,
+              ...(series.documentName === undefined
+                ? {}
+                : { documentName: series.documentName }),
+            },
             input.asOf,
           );
           return built.ok ? built.proposal : { error: built.error };
@@ -2044,7 +2092,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       inputSchema: RECONSTRUCTION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
-        if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
+        const series = debtSeriesRows("propose_reconstruction", args.rows ?? []);
+        if (series === null) return unvalidatedEvidenceRejected();
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals || !store.liabilities) {
             return { error: "proposal_persistence_unavailable" };
@@ -2053,6 +2102,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             store.agentView,
             args.holdingId ?? "",
           );
+          const documentName = series.documentName ?? args.documentName;
           const built = await buildReconstructionProposal(
             {
               assistantProposals: store.assistantProposals,
@@ -2061,11 +2111,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
             {
               liabilityId,
               publicHoldingId: args.holdingId ?? "",
-              rows: args.rows ?? [],
+              rows: series.rows,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
-              ...(args.documentName === undefined
-                ? {}
-                : { documentName: args.documentName }),
+              ...(documentName === undefined ? {} : { documentName }),
             },
             input.asOf,
           );
