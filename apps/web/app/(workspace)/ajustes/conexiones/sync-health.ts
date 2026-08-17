@@ -1,4 +1,10 @@
-import type { SyncRun, SyncRunError, SyncRunStatus, SyncTrigger } from "@worthline/db";
+import {
+  type SyncRun,
+  type SyncRunError,
+  type SyncRunStatus,
+  type SyncTrigger,
+  syncRunInstant,
+} from "@worthline/db";
 import {
   type DataQualitySourceFreshness,
   sourceFreshnessStatus,
@@ -92,15 +98,6 @@ export function describeSyncError(error: SyncRunError | null): string {
     : "La última sincronización falló y no quedó registrado el motivo. Vuelve a intentarlo y, si sigue, cuéntanoslo.";
 }
 
-/**
- * Cuándo pasó una corrida: su cierre si terminó, su arranque si sigue en curso y,
- * si le falta ambos (una corrida abierta que nunca llegó a `running`), su
- * creación.
- */
-export function runInstantOf(run: SyncRun): string | null {
-  return run.finishedAt ?? run.startedAt ?? run.createdAt;
-}
-
 /** El estado de la conexión que implica el estado de UNA corrida. */
 const RUN_STATE: Record<SyncRunStatus, SyncHealthState> = {
   error: "error",
@@ -190,9 +187,9 @@ function instantOf({
   freshness: SourceFreshnessRow | null;
   latest: SyncRun | undefined;
 }): string | null {
-  if (failedRun) return runInstantOf(failedRun);
+  if (failedRun) return syncRunInstant(failedRun);
   if (fetchFailed && freshness) return freshness.fetchedAt;
-  return latest ? runInstantOf(latest) : null;
+  return latest ? syncRunInstant(latest) : null;
 }
 
 const TRIGGER_LABEL: Record<SyncTrigger, string> = {

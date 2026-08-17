@@ -259,6 +259,7 @@ export type {
   DataQualitySeverity,
   DataQualitySignal,
   DataQualitySourceFreshness,
+  DataQualitySyncAttempt,
   DataQualityTrashedHolding,
 } from "./data-quality-signals";
 export {
@@ -268,6 +269,8 @@ export {
   dataQualitySignalSortKey,
   isOverrideableSignalCode,
   OVERRIDEABLE_SIGNAL_CODES,
+  PERSISTENT_SYNC_FAILURE_CODE,
+  PERSISTENT_SYNC_FAILURE_THRESHOLD,
   SPARSE_SNAPSHOT_THRESHOLD,
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,

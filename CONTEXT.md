@@ -542,7 +542,8 @@ category of **data-quality signal** — the per-holding misconfiguration flags.
 
 **Data-quality signal**:
 A flag about how much the data behind the figures can be trusted: a **warning**,
-a stale or failed price, a stale or failed **sync**, missing configuration (FIRE,
+a stale or failed price, a stale or failed **sync**, a **sync** that has failed
+attempt after attempt (#1226), missing configuration (FIRE,
 a debt model), sparse or gapped **snapshot** history, an unvalued **position**, a
 manual value long without a **value update pass**, or a holding sitting in the
 **trash** with units still held (#1365). Computed live per **scope**
@@ -703,6 +704,10 @@ that fails leaves the last good figure standing, so the two must be read
 together. Only failures INSIDE the attempt leave a run at all — a fetch that
 never gets off the ground (revoked credentials, provider down) is caught before
 one is opened, and shows up only as the source's lapsed freshness.
+The tail is also what makes a failure **persistent**: a single failed attempt is a
+hiccup the connection's own page reports and nothing else, while two consecutive
+failed attempts raise a **data-quality signal** — one failure that a later
+successful attempt follows never alerts (#1226).
 _Avoid_: job (the queue's unit of work, which may carry a run), sync (the act,
 not the record of one attempt).
 

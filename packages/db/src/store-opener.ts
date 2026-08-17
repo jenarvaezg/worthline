@@ -223,6 +223,7 @@ async function buildStore(
         ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
       };
     },
+    readSyncRuns: syncRunStore.readRuns,
     readValuationAnchors: assetStore.readValuationAnchors,
     readWarningOverrides: () => store.readWarningOverrides(),
   });

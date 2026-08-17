@@ -575,7 +575,8 @@ export interface AgentViewFireSummary {
  *  - `manual_value_freshness`: a stored holding whose manual value is older than
  *    the fixed threshold (90 days in v1).
  *  - `price_freshness`: a priced asset's stale/failed/missing price quote.
- *  - `source_freshness`: a connected source's stale/failed last sync.
+ *  - `source_freshness`: a connected source's stale/failed last sync, or a sync
+ *    that has failed on consecutive attempts rather than merely lapsed (#1226).
  *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
  *    config, an amortized liability's debt model, …).
  *  - `history_coverage`: sparse snapshots or a snapshot with no frozen holding rows.

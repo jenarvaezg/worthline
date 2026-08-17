@@ -150,6 +150,47 @@ async function backdateAssetCreatedAt(
 }
 
 /**
+ * Record terminal sync attempts for a source, newest LAST in the given order
+ * (#1226). Written straight to `sync_run` on purpose: the public store exposes only
+ * the READ half of the run store — a run is opened and finalized exclusively by
+ * whoever executes the sync — so a test that needs a history of outcomes seeds the
+ * rows the same way it backdates an asset's `created_at`.
+ */
+async function recordSyncRuns(
+  databasePath: string,
+  sourceId: string,
+  runs: readonly { status: "ok" | "error"; at: string }[],
+): Promise<void> {
+  const { createClient } = await import("@libsql/client");
+  const client = createClient({ url: `file:${databasePath}` });
+  for (const run of runs) {
+    await client.execute({
+      args: [
+        // Fechado, no numerado: el helper se llama más de una vez sobre la misma
+        // base para alargar el historial, y un contador reiniciado colisionaría.
+        `sync_run_seed_${run.at}`,
+        sourceId,
+        run.status,
+        run.status === "error"
+          ? JSON.stringify({
+              code: "sync_persist_failed",
+              message: "libsql: SQLITE_BUSY",
+              retriable: true,
+            })
+          : null,
+        run.at,
+        run.at,
+        run.at,
+      ],
+      sql:
+        "INSERT INTO sync_run (id, source_id, trigger, status, error_json, started_at, finished_at, created_at) " +
+        "VALUES (?, ?, 'cron', ?, ?, ?, ?, ?)",
+    });
+  }
+  client.close();
+}
+
+/**
  * Seed a household that triggers every category at least once:
  *  - warning: a zero-value stored asset (ZERO_VALUE_ASSET, overrideable).
  *  - manual_value_freshness: a stored cash holding with no value update in 90+ days.
@@ -439,6 +480,50 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/data-quality", () => {
     expect(sourceSignals[0]!.severity).toBe("medium");
     expect(sourceSignals[0]!.affected?.id).toMatch(/^wl_src_/);
     expect(sourceSignals[0]!.affected?.object).toBe("connected_source");
+  });
+
+  /**
+   * S4 del PRD #1222 (#1226) sobre el contrato real: la señal de sync que falla de
+   * forma sostenida se expone también por las superficies agent/MCP, y su umbral se
+   * mide sobre las filas de `sync_run` que la base tiene de verdad — no sobre un
+   * mapa cocinado en un test de unidad.
+   */
+  test("represents a connection whose sync keeps failing, and clears on a good one", async () => {
+    const databasePath = await seedAllCategories("worthline-agent-view-dq-sync-");
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    const [source] = await store.connectedSources.listSources();
+    store.close();
+
+    await recordSyncRuns(databasePath, source!.id, [
+      { at: "2026-06-18T09:00:00.000Z", status: "error" },
+      { at: "2026-06-19T09:00:00.000Z", status: "error" },
+    ]);
+
+    const scopeId = await householdScopeId();
+    const failing = (await signals(scopeId, "?limit=500")).find(
+      (s) => s.code === "PERSISTENT_SYNC_FAILURE",
+    )!;
+
+    expect(failing.category).toBe("source_freshness");
+    expect(failing.severity).toBe("high");
+    expect(failing.fixable).toBe(false);
+    expect(failing.affected?.id).toMatch(/^wl_src_/);
+    expect(failing.affected?.object).toBe("connected_source");
+    expect(failing.observedDate).toBe("2026-06-19");
+    expect(failing.label).toContain("Las últimas 2 sincronizaciones");
+    // El `message` crudo de la fila (texto de driver) nunca cruza el contrato.
+    expect(failing.label).not.toContain("SQLITE_BUSY");
+
+    // Un sync bueno posterior cierra la racha: la señal desaparece.
+    await recordSyncRuns(databasePath, source!.id, [
+      { at: "2026-06-20T09:00:00.000Z", status: "ok" },
+    ]);
+
+    expect(
+      (await signals(scopeId, "?limit=500")).filter(
+        (s) => s.code === "PERSISTENT_SYNC_FAILURE",
+      ),
+    ).toEqual([]);
   });
 
   test("represents a missing FIRE config as a scope-global signal", async () => {

@@ -6,6 +6,8 @@ import {
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
   type DataQualitySignal,
+  type DataQualitySyncAttempt,
+  PERSISTENT_SYNC_FAILURE_CODE,
 } from "./data-quality-signals";
 import { listScopeOptions, type ScopeOption } from "./scope";
 import {
@@ -44,6 +46,7 @@ function baseInput(
     snapshotIdsWithHoldings: new Set(),
     snapshots: [],
     sourceFreshnessBySourceId: new Map(),
+    syncAttemptsBySourceId: new Map(),
     trashedHoldings: [],
     warningOverrides: [],
     workspace,
@@ -725,5 +728,177 @@ describe("collectDataQualitySignals — TRASHED_WITH_BALANCE (#1365)", () => {
   test("the signal is scoped by ownership, since no live read can see the trash", () => {
     expect(trashed([["asset_fondo", "120.5"]], ["member_otro"])).toEqual([]);
     expect(trashed([["asset_fondo", "120.5"]], [])).toEqual([]);
+  });
+});
+
+/**
+ * Una conexión cuyo sync falla intento tras intento (#1226, PRD #1222 S4).
+ *
+ * Lo que estas pruebas fijan es el UMBRAL, que es la decisión del slice: un fallo
+ * suelto no alerta a nadie (la página de conexiones ya lo cuenta), dos seguidos sí,
+ * y un `ok` posterior cierra la racha aunque la cola de intentos siga llena de
+ * fallos viejos.
+ */
+describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => {
+  const attempt = (
+    status: DataQualitySyncAttempt["status"],
+    at: string | null = "2026-08-16T09:00:00.000Z",
+  ): DataQualitySyncAttempt => ({ at, status });
+
+  /** Newest-first, como las entrega el puerto de lectura. */
+  const syncSignals = (
+    attempts: DataQualitySyncAttempt[],
+    freshnessState?: "fresh" | "stale" | "failed",
+  ) => {
+    const { asset, input } = fixture();
+    return collectDataQualitySignals(
+      input({
+        assets: [asset({ id: "asset_binance", name: "Binance (spot)" })],
+        connectedSources: [
+          {
+            assetIds: ["asset_binance"],
+            id: "src_binance",
+            label: "Binance",
+            lastSyncAt: "2026-08-10T10:00:00.000Z",
+          },
+        ],
+        ...(freshnessState === undefined
+          ? {}
+          : {
+              sourceFreshnessBySourceId: new Map([
+                [
+                  "src_binance",
+                  { fetchedAt: "2026-08-17T09:00:00.000Z", freshnessState },
+                ],
+              ]),
+            }),
+        syncAttemptsBySourceId: new Map([["src_binance", attempts]]),
+      }),
+    ).filter((signal) => signal.code === PERSISTENT_SYNC_FAILURE_CODE);
+  };
+
+  test("dos intentos seguidos con error alertan, fechados en el más reciente", () => {
+    const signals = syncSignals([
+      attempt("error", "2026-08-17T09:00:00.000Z"),
+      attempt("error", "2026-08-16T21:00:00.000Z"),
+      attempt("ok", "2026-08-16T09:00:00.000Z"),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.category).toBe("source_freshness");
+    expect(signals[0]!.severity).toBe("high");
+    // El guardado es nuestro, no un dato que el usuario pueda corregir.
+    expect(signals[0]!.fixable).toBe(false);
+    expect(signals[0]!.naturalKey).toBe(
+      "source_freshness:PERSISTENT_SYNC_FAILURE:src_binance",
+    );
+    expect(signals[0]!.affected).toEqual({
+      id: "src_binance",
+      label: "Binance",
+      object: "connected_source",
+    });
+    // La frase dice CUÁNTAS, no «falla mucho», y no manda hacer nada imposible.
+    expect(signals[0]!.label).toBe(
+      'Las últimas 2 sincronizaciones de "Binance" fallaron: sus cifras siguen ' +
+        "congeladas en la última que funcionó.",
+    );
+    expect(signals[0]!.observedDate).toBe("2026-08-17");
+  });
+
+  test("un fallo puntual no alerta: la página ya lo cuenta sin dar la lata", () => {
+    expect(syncSignals([attempt("error"), attempt("ok")])).toEqual([]);
+    expect(syncSignals([attempt("error")])).toEqual([]);
+  });
+
+  test("un sync bueno cierra la racha, por muchos fallos viejos que queden detrás", () => {
+    expect(
+      syncSignals([attempt("ok"), attempt("error"), attempt("error"), attempt("error")]),
+    ).toEqual([]);
+  });
+
+  test("un reintento en vuelo no borra el veredicto de lo anterior", () => {
+    // Si `running` cortase la racha, la alerta desaparecería justo mientras se
+    // reintenta y volvería al fallar: parpadeo en vez de señal.
+    const signals = syncSignals([
+      attempt("running", null),
+      attempt("pending", null),
+      attempt("error", "2026-08-17T09:00:00.000Z"),
+      attempt("error", "2026-08-16T21:00:00.000Z"),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.observedDate).toBe("2026-08-17");
+  });
+
+  test("la racha entera va en la frase, no solo el umbral", () => {
+    const signals = syncSignals([
+      attempt("error"),
+      attempt("error"),
+      attempt("error"),
+      attempt("error"),
+    ]);
+
+    expect(signals[0]!.label).toContain("Las últimas 4 sincronizaciones");
+  });
+
+  test("una fuente sin intentos, o con ninguno terminal, está callada", () => {
+    expect(syncSignals([])).toEqual([]);
+    expect(syncSignals([attempt("running", null), attempt("pending", null)])).toEqual([]);
+  });
+
+  test("un fallo sin instante alerta igual, pero sin fecha inventada", () => {
+    const signals = syncSignals([attempt("error", null), attempt("error", null)]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.observedDate).toBeUndefined();
+  });
+
+  test("cede ante un fetch roto AHORA: una avería, una línea roja", () => {
+    // El fetch roto es la causa viva y `FAILED_SOURCE_SYNC` ya es `high` y apunta al
+    // mismo sitio; dos rojos sobre la misma conexión ocuparían dos de los tres
+    // huecos del bloque para una sola cosa que hacer.
+    const failing = [attempt("error"), attempt("error")];
+
+    expect(syncSignals(failing, "failed")).toEqual([]);
+    // Un fetch meramente rancio no la calla: son dos lecturas distintas y esta manda
+    // por severidad.
+    expect(syncSignals(failing, "stale")).toHaveLength(1);
+    expect(syncSignals(failing, "fresh")).toHaveLength(1);
+  });
+
+  test("un fallo reciente sin instante no cede la fecha a uno más viejo", () => {
+    // La fila más reciente puede llegar sin fechar (una corrida abierta que nunca
+    // llegó a `running`). Heredar la fecha del fallo anterior diría «falló el día
+    // que aún funcionaba».
+    const signals = syncSignals([
+      attempt("error", null),
+      attempt("error", "2026-08-16T21:00:00.000Z"),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.observedDate).toBeUndefined();
+  });
+
+  test("una fuente cuyos activos no son del ámbito no alerta en ese ámbito", () => {
+    const { input } = fixture();
+    const signals = collectDataQualitySignals(
+      input({
+        // Sin el activo espejo entre los holdings del ámbito, la fuente no es suya.
+        assets: [],
+        connectedSources: [
+          {
+            assetIds: ["asset_ajeno"],
+            id: "src_binance",
+            label: "Binance",
+            lastSyncAt: null,
+          },
+        ],
+        syncAttemptsBySourceId: new Map([
+          ["src_binance", [attempt("error"), attempt("error")]],
+        ]),
+      }),
+    );
+
+    expect(signals.filter((s) => s.code === PERSISTENT_SYNC_FAILURE_CODE)).toEqual([]);
   });
 });

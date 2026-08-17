@@ -2,6 +2,7 @@ import type {
   AssetPrice,
   ContributionOccurrenceReconciliation,
   ContributionPlan,
+  DataQualitySyncAttempt,
   DebtModel,
   ExportedPublicId,
   FireScopeConfig,
@@ -37,6 +38,7 @@ import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
 import { groupOwnershipByOwner, type StoreContext, type StoreDb } from "./store-context";
+import { type SyncRun, syncRunInstant } from "./sync-run-store";
 
 /**
  * A connected source as the agent view sees it — identity, label, freshness, and
@@ -153,6 +155,15 @@ export interface AgentViewReadStore {
    * the failed-fetch reason — never the provider's raw payload or any secret.
    */
   readSourceFreshness: (sourceId: string) => Promise<AgentViewSourceFreshness | null>;
+  /**
+   * A connected source's retained sync attempts, newest first (#1226) — the axis
+   * the data-health engine counts consecutive failures on. Deliberately narrower
+   * than a `sync_run` row: only the outcome and its instant cross this port. A
+   * run's `error.message` comes from a `catch` (driver text, sometimes a token in a
+   * connection string) and belongs in the server log, never in a read surface an
+   * agent can call.
+   */
+  readSyncAttempts: (sourceId: string) => Promise<DataQualitySyncAttempt[]>;
   /** Frozen snapshots for a scope, chronological (snapshot-store ordering). */
   readSnapshots: (scopeId: string) => Promise<NetWorthSnapshot[]>;
   /** Frozen holding rows, optionally filtered by scope and date-key window. */
@@ -236,6 +247,8 @@ export interface AgentViewReadStoreDeps {
   listConnectedSources: () => Promise<ConnectedSourceRow[]>;
   listSourceAssetIds: (sourceId: string) => Promise<string[]>;
   readSourcePositions: (sourceId: string) => Promise<SourcePosition[]>;
+  /** A source's retained sync runs, newest first (`SyncRunStore.readRuns`). */
+  readSyncRuns: (sourceId: string) => Promise<SyncRun[]>;
   /** The price-cache row of a source's primary asset (its valuation freshness). */
   readSourcePriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;
@@ -314,6 +327,10 @@ export function createAgentViewReadStore(
         freshnessState: cache.freshnessState,
         ...(cache.staleReason === undefined ? {} : { staleReason: cache.staleReason }),
       };
+    },
+    readSyncAttempts: async (sourceId) => {
+      const runs = await deps.readSyncRuns(sourceId);
+      return runs.map((run) => ({ at: syncRunInstant(run), status: run.status }));
     },
     readSnapshots: (scopeId) => deps.readSnapshots(scopeId),
     readSnapshotHoldings: (query) => deps.readSnapshotHoldings(query),
