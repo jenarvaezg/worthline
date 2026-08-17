@@ -120,7 +120,7 @@ describe("balance series spreadsheet extractor", () => {
     expect(result.status).toBe("unrecognized");
   });
 
-  test("several named products under one date is a snapshot, not a series", () => {
+  test("several named products is a snapshot, not a series, even on other dates", () => {
     // The eval's «apuntes de la familia»: reading this as a series would drop the one
     // column that says what each figure belongs to.
     const result = extractBalanceSeriesFromSpreadsheet(
@@ -128,9 +128,80 @@ describe("balance series spreadsheet extractor", () => {
         csvBytes([
           "Concepto;Saldo;Fecha",
           "Cuenta corriente conjunta;12.930,44;31/05/2026",
-          "Hipoteca vivienda;-183.512,90;31/05/2026",
+          "Hipoteca vivienda;-183.512,90;30/06/2026",
         ]),
       ),
+    );
+    expect(result.status).toBe("unrecognized");
+  });
+
+  test("one date for every balance is a snapshot too, whatever the label is called", () => {
+    // The vocabulary-independent half of the same guard: «Producto financiero» is in no
+    // alias list, and six figures sharing a date are six things at a moment.
+    const result = extractBalanceSeriesFromSpreadsheet(
+      input(
+        csvBytes([
+          "Fecha;Producto financiero;Saldo",
+          "31/05/2026;Cuenta corriente conjunta;12.930,44",
+          "31/05/2026;Depósito a 12 meses;25.000,00",
+        ]),
+      ),
+    );
+    expect(result.status).toBe("unrecognized");
+  });
+
+  test("a single dated balance is a series of one — that is what a statement is", () => {
+    const data = balanceSeries(
+      csvBytes(["Fecha;Saldo pendiente;Divisa", "30/06/2026;183.512,90;EUR"]),
+    );
+    expect(data.balances).toHaveLength(1);
+  });
+
+  test("a figure buried in prose is not an observed balance", () => {
+    // The `Saldo` column is where a bank sheet writes its annotations; mining the 2 out
+    // of «ver hoja 2» would put a fabricated balance inside a validated document.
+    const data = balanceSeries(
+      csvBytes([
+        "Fecha;Saldo",
+        "01/06/2004;169653,18",
+        "01/07/2004;Pendiente de confirmar con la sucursal, ver hoja 2",
+        "01/08/2004;Amortización anticipada 1803,04",
+      ]),
+    );
+    expect(data.balances).toHaveLength(1);
+    expect(data.warnings).toContain(
+      "Fila 2 de la tabla: «Pendiente de confirmar con la sucursal, ver hoja 2» no es solo un saldo; se ha omitido.",
+    );
+    expect(data.warnings).toContain(
+      "Fila 3 de la tabla: «Amortización anticipada 1803,04» no es solo un saldo; se ha omitido.",
+    );
+  });
+
+  test("a Divisa column holding a symbol says its currency as plainly as a cell", () => {
+    const data = balanceSeries(
+      csvBytes(["Fecha;Saldo;Divisa", "01/06/2004;169653,18;€"]),
+    );
+    expect(data.balances[0]?.currency).toBe("EUR");
+    expect(data.warnings).toEqual([]);
+  });
+
+  test("a sheet where every row looks like a header costs linear work", () => {
+    // The header search rescans the rows under each candidate, so an unbounded search
+    // was quadratic in sheet height: 20 000 rows measured at 2,6 s, and the 4 MiB body
+    // admits ~366 000 of them. With the candidate bound this returns in milliseconds —
+    // the test's own timeout is the assertion, and a real one: without the bound this
+    // sheet takes minutes.
+    const lines: string[] = [];
+    for (let index = 0; index < 20_000; index += 1) lines.push("Fecha;Saldo");
+    expect(extractBalanceSeriesFromSpreadsheet(input(csvBytes(lines))).status).toBe(
+      "unrecognized",
+    );
+  });
+
+  test("a cell of runaway whitespace is read as a plain label, not as a currency", () => {
+    const padded = `Saldo${" ".repeat(400)}x`;
+    const result = extractBalanceSeriesFromSpreadsheet(
+      input(csvBytes([`Fecha;${padded}`, "01/06/2004;169653,18"])),
     );
     expect(result.status).toBe("unrecognized");
   });
@@ -171,7 +242,7 @@ describe("balance series spreadsheet extractor", () => {
     );
     expect(data.balances).toHaveLength(1);
     expect(data.warnings).toContain(
-      "Fila 3: el saldo «12.34.56» no es un número; se ha omitido.",
+      "Fila 2 de la tabla: el saldo «12.34.56» no es un número; se ha omitido.",
     );
   });
 
@@ -181,7 +252,7 @@ describe("balance series spreadsheet extractor", () => {
     );
     expect(data.balances).toHaveLength(1);
     expect(data.warnings).toContain(
-      "Fila 3: la fecha no es una fecha válida; se ha omitido.",
+      "Fila 2 de la tabla: la fecha no es una fecha válida; se ha omitido.",
     );
   });
 
@@ -195,7 +266,7 @@ describe("balance series spreadsheet extractor", () => {
     );
     expect(data.balances).toHaveLength(1);
     expect(data.warnings).toContain(
-      "Fila 3: la divisa «EUROS» no es un código de tres letras; se ha omitido.",
+      "Fila 2 de la tabla: la divisa «EUROS» no es un código de tres letras; se ha omitido.",
     );
   });
 
@@ -246,7 +317,9 @@ describe("balance series spreadsheet extractor", () => {
     for (let index = 0; index < 600; index += 1) {
       // A monthly schedule the bank stamps a balance on twice a year: 600 rows,
       // 100 observations — well inside the bound that used to measure the sheet.
-      lines.push(`01/06/2004;${index % 6 === 0 ? "169653,18" : ""}`);
+      const day = String((index % 28) + 1).padStart(2, "0");
+      const year = 2004 + Math.floor(index / 28);
+      lines.push(`${day}/06/${year};${index % 6 === 0 ? "169653,18" : ""}`);
     }
     expect(balanceSeries(csvBytes(lines)).balances).toHaveLength(100);
   });
@@ -254,7 +327,8 @@ describe("balance series spreadsheet extractor", () => {
   test("refuses a series above the contract's row limit", () => {
     const lines = ["Fecha;Saldo"];
     for (let index = 0; index <= ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows; index += 1) {
-      lines.push(`01/06/2004;${1000 + index}`);
+      const day = String((index % 28) + 1).padStart(2, "0");
+      lines.push(`${day}/06/${2004 + Math.floor(index / 28)};${1000 + index}`);
     }
     const result = extractBalanceSeriesFromSpreadsheet(input(csvBytes(lines)));
     expect(result.status).toBe("out_of_limits");

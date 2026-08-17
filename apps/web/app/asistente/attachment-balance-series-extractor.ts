@@ -27,19 +27,19 @@ import {
  * conversation. Nothing about that ordering was defensible: the workbook is the
  * exact reading, parsed rather than looked at.
  *
- * Two behaviours are genuinely new here, and both come from a real file (a
- * Santander schedule kept as a 13-sheet workbook):
+ * The two behaviours that are genuinely new both come from a real file (a Santander
+ * schedule kept as a 13-sheet workbook):
  *
  * - **The header is searched for, not assumed.** The sibling recognizers take row
  *   one as the header; this table starts on row 20, under a wide matrix of rate
- *   revisions and a title. The first row that resolves a date column AND a balance
- *   column AND has at least one readable observation under it is the header — that
- *   last condition is what keeps a stray «Saldo» label in a summary block from
- *   being mistaken for a table.
+ *   revisions and a title. The first row that resolves a date column and a balance
+ *   column and whose reading {@link isOneSeries} accepts is the header — see there for
+ *   the three conditions and the false positive each one answers.
  * - **A sparse balance column is normal.** The bank fills the balance on 49 of
  *   ~380 monthly rows; a gap is not a defect but the absence of an observation, so
  *   it is skipped in silence. Warnings are owed only where the sheet printed
- *   something we could not read.
+ *   something we could not read — and a figure buried in prose counts as unread, not
+ *   as a balance ({@link splitCellCurrency}).
  *
  * What stays forbidden is what the contract has always forbidden (ADR 0048): only
  * *observed* balances are read. The wide matrix above the table holds the rate
@@ -134,7 +134,8 @@ const LABEL_HEADERS: ReadonlySet<string> = new Set(LABEL_ALIASES.map(normalizeHe
  * this path guesses a currency from ink next to a figure («Saldo (€)», «1.234,56 €»),
  * and any three-letter word would otherwise qualify — a «Saldo mes» column would
  * declare its balances to be in MES. A sheet in any other currency is still read in
- * full through the explicit `Divisa` column, which is taken verbatim.
+ * full through the explicit `Divisa` column: a cell there is looked up here first (so
+ * a column of «€» works) and otherwise taken verbatim as the code it claims to be.
  */
 const CURRENCY_DECORATIONS: Record<string, string> = {
   "€": "EUR",
@@ -155,11 +156,15 @@ const CURRENCY_DECORATIONS: Record<string, string> = {
  *
  * The contract requires a currency per balance and the reading would otherwise have
  * no legal shape to land in, so the assumption is made once, HERE, and it is never
- * silent: it raises a warning the preview card paints and marks the document
- * `uncertain`, in front of a user who must confirm before anything is written. That
- * is the frontier this whole lane is built on — an assumption the user can see and
- * refuse is not the invention ADR 0048 forbids; an assumption nobody is told about
- * would be.
+ * silent. What the USER sees is the warning below, which the preview card paints; the
+ * document-level `uncertain` is the machine-readable half and reaches the model, not
+ * the card (`attachment-extraction-preview.tsx` renders only per-row uncertainty, and
+ * marking all 49 rows «revisar lectura» would put the caveat on the dates and amounts,
+ * which are exact — the currency label is the only doubt).
+ *
+ * That is the frontier this whole lane is built on: an assumption stated on the card
+ * of a user who must confirm before anything is written is not the invention ADR 0048
+ * forbids; an assumption nobody is told about would be.
  */
 const ASSUMED_CURRENCY = "EUR";
 
@@ -189,46 +194,114 @@ interface BalanceTable {
   labels: Set<string>;
 }
 
+/**
+ * How much of a cell is read before deciding what it is. A header label and a money
+ * cell are both short by nature, and every cell of every sheet passes through here:
+ * an XLSX cell holds 32 767 characters and a CSV field more, so an unbounded scan is
+ * a CPU surface the upload controls. Past this length a cell is not a header and not
+ * a figure — it is prose, and prose is neither.
+ */
+const MAX_CELL_CHARS = 120;
+
+/**
+ * How many candidate header rows one sheet is allowed to cost. Every candidate
+ * rescans the rows under it, so an unbounded search is quadratic in sheet height —
+ * measured at 2,6 s for 20 000 rows of `Fecha;Saldo`, and the 4 MiB body admits
+ * ~366 000 of them. A bound on the CANDIDATES keeps the work linear without bounding
+ * WHERE the header may sit, which is the freedom this recognizer exists for.
+ */
+const MAX_HEADER_CANDIDATES = 25;
+
+/**
+ * The figure inside a money cell, with whatever surrounds it. Anchored and with no
+ * two adjacent variable-length parts over the same characters: `[^\d]*?` cannot
+ * overlap the digits it stops before.
+ */
+const NUMBER_IN_CELL = /^([^\d]*?)([+-]?[\d.,\s ]*\d)([^\d]*)$/;
+
 /** The code a printed decoration stands for, or undefined when it stands for nothing. */
 function currencyFromDecoration(token: string): string | undefined {
   const compact = token
-    .trim()
-    .replace(/[()[\]]/g, "")
+    .replace(/[()[\]\s]/g, "")
     .trim()
     .toLowerCase();
   return compact === "" ? undefined : CURRENCY_DECORATIONS[compact];
+}
+
+/** The separators a currency decoration may hide behind: a space, «(» or «[». */
+function isDecorationBoundary(char: string): boolean {
+  return char === "(" || char === "[" || /\s/.test(char);
 }
 
 /**
  * Split «Saldo (€)» or «Capital pendiente EUR» into the label to match and the
  * currency it declares. A separator before the token is required, or the last three
  * letters of «Saldo» would read as a currency called LDO.
+ *
+ * One backwards scan rather than a regex: the pattern this replaces had three
+ * variable-length parts competing over the same whitespace, and one cell of 3 000
+ * spaces cost 5 s of cubic backtracking — in a function that runs over every cell of
+ * every sheet while hunting for the header, so no header bound protected it.
  */
 function splitHeaderCurrency(value: string): {
   label: string;
   currency: string | undefined;
 } {
-  const decorated = /^(.+?)(?:\s+|\s*[([])\s*(\p{Sc}|[A-Za-z]{3})\s*[)\]]?$/u.exec(
-    value.trim(),
-  );
-  const currency = decorated ? currencyFromDecoration(decorated[2]!) : undefined;
+  const trimmed = value.trim().slice(0, MAX_CELL_CHARS);
+  const plain = { currency: undefined, label: normalizeHeader(value) };
+
+  let end = trimmed.length;
+  if (trimmed.endsWith(")") || trimmed.endsWith("]")) end -= 1;
+  let start = end;
+  while (start > 0 && !isDecorationBoundary(trimmed[start - 1]!)) start -= 1;
+  if (start === 0 || start === end) return plain;
+
+  const currency = currencyFromDecoration(trimmed.slice(start, end));
+  // The boundary itself belongs to the decoration, not to the label: «Capital
+  // pendiente (€)» must match the alias «capital pendiente», bracket dropped.
   return currency === undefined
-    ? { currency: undefined, label: normalizeHeader(value) }
-    : { currency, label: normalizeHeader(decorated?.[1] ?? value) };
+    ? plain
+    : {
+        currency,
+        label: normalizeHeader(trimmed.slice(0, start).replace(/[([\s]+$/, "")),
+      };
 }
 
-/** Split «169.653,18 €» into the figure and the currency printed beside it. */
+/**
+ * Split «169.653,18 €» into the figure, the currency printed beside it, and whatever
+ * ELSE the cell said. That residue is the honesty half: the `Saldo` column is exactly
+ * where a real bank sheet writes its annotations, and «Pendiente de confirmar, ver
+ * hoja 2» carries a 2 that a find-the-number-anywhere reading hands back as an
+ * observed balance of 2 €. A cell with leftovers is a cell we could not read, and it
+ * is warned about rather than mined for digits (ADR 0048).
+ */
 function splitCellCurrency(value: string): {
   amount: string;
   currency: string | undefined;
+  residue: string;
 } {
-  const parts = /^([^\d]*?)\s*([+-]?[\d.,\s ]*\d)\s*([^\d]*)$/.exec(value);
-  if (!parts) return { amount: value, currency: undefined };
-  const token = (parts[3] ?? "").trim() || (parts[1] ?? "").trim();
-  return { amount: parts[2]!, currency: currencyFromDecoration(token) };
+  const parts = NUMBER_IN_CELL.exec(value.slice(0, MAX_CELL_CHARS));
+  if (!parts) return { amount: value, currency: undefined, residue: value.trim() };
+
+  const prefix = parts[1] ?? "";
+  const suffix = parts[3] ?? "";
+  const fromSuffix = currencyFromDecoration(suffix);
+  const currency = fromSuffix ?? currencyFromDecoration(prefix);
+  const leftovers =
+    currency === undefined ? [prefix, suffix] : fromSuffix ? [prefix] : [suffix];
+  return {
+    amount: parts[2]!,
+    currency,
+    residue: leftovers.join("").trim(),
+  };
 }
 
-/** The date + balance (+ currency, + label) columns this row declares, if a header. */
+/**
+ * The date + balance (+ currency, + label) columns this row declares, if a header.
+ * Within each family the LEFTMOST match wins: a sheet printing both «Fecha de cargo»
+ * and «Fecha vencimiento» is read on the first of the two, and there is no ranking
+ * among the aliases that would be more truthful than the sheet's own order.
+ */
 function resolveColumns(row: readonly string[]): BalanceColumns | null {
   let date: number | undefined;
   let balance: number | undefined;
@@ -260,8 +333,24 @@ function hasDigit(value: string): boolean {
 }
 
 /**
- * Read the observations under a header row. `offset` is the 0-based index of the
- * first data row in the sheet, so a warning names the row the user sees in Excel.
+ * How a cell is quoted back inside a warning. Clamped, because the cell is untrusted
+ * and each warning is capped at 300 characters by the contract: an over-long one fails
+ * the branded parse and turns the whole reading into `invalid_output`, which is
+ * strictly worse than `unrecognized` — only `unrecognized` keeps #865's lane, so a
+ * long cell would take a conversational file and dead-end it on the card.
+ */
+function quoteCell(value: string): string {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact.length > 60 ? `«${compact.slice(0, 60)}…»` : `«${compact}»`;
+}
+
+/**
+ * Read the observations under a header row. Rows are numbered from the header — «fila 1
+ * de la tabla» is the first row under it — and NOT by their position in the sheet: the
+ * grid reader drops blank rows (CSV) and ignores the `r` attribute (XLSX), so a
+ * sheet-relative count would name a row Excel numbers differently, which on the very
+ * file this exists for (a table under 19 rows of matrix, with blanks inside it) is the
+ * shape where it would be wrong.
  *
  * A blank balance cell — or a `—` placeholder — is not an observation and is passed
  * over in silence: on a monthly schedule the bank fills the balance a few times a
@@ -269,7 +358,7 @@ function hasDigit(value: string): boolean {
  */
 function readBalances(
   rows: readonly string[][],
-  offset: number,
+  from: number,
   columns: BalanceColumns,
 ): Omit<BalanceTable, "sheetName"> {
   const balances: DatedBalance[] = [];
@@ -277,34 +366,47 @@ function readBalances(
   const labels = new Set<string>();
   let assumedCurrency = false;
 
-  for (const [index, row] of rows.entries()) {
+  for (let index = from; index < rows.length; index += 1) {
+    const row = rows[index]!;
     const rawBalance = (row[columns.balance] ?? "").trim();
     if (!hasDigit(rawBalance)) continue;
 
-    const rowNumber = offset + index + 1;
+    const rowNumber = index - from + 1;
     const observed = splitCellCurrency(rawBalance);
     const amount = normalizeExtractedNumber(observed.amount);
     if (amount === null) {
       warnings.push(
-        `Fila ${rowNumber}: el saldo «${rawBalance}» no es un número; se ha omitido.`,
+        `Fila ${rowNumber} de la tabla: el saldo ${quoteCell(rawBalance)} no es un número; se ha omitido.`,
+      );
+      continue;
+    }
+    // A figure with prose around it is not a printed balance (see splitCellCurrency).
+    if (observed.residue !== "") {
+      warnings.push(
+        `Fila ${rowNumber} de la tabla: ${quoteCell(rawBalance)} no es solo un saldo; se ha omitido.`,
       );
       continue;
     }
 
     const date = toIsoDate((row[columns.date] ?? "").trim());
     if (date === null) {
-      warnings.push(`Fila ${rowNumber}: la fecha no es una fecha válida; se ha omitido.`);
+      warnings.push(
+        `Fila ${rowNumber} de la tabla: la fecha no es una fecha válida; se ha omitido.`,
+      );
       continue;
     }
 
+    // The declared column goes through the SAME decoration table as the cell and the
+    // header: a `Divisa` column holding «€» said its currency as plainly as a cell
+    // would, and killing the row for it was the inverse of the other two paths.
+    const declaredCell =
+      columns.currency === undefined ? "" : (row[columns.currency] ?? "").trim();
     const declared =
-      columns.currency === undefined
-        ? ""
-        : (row[columns.currency] ?? "").trim().toUpperCase();
-    const printed = declared || observed.currency || columns.headerCurrency;
+      currencyFromDecoration(declaredCell) ?? (declaredCell || undefined)?.toUpperCase();
+    const printed = declared ?? observed.currency ?? columns.headerCurrency;
     if (printed !== undefined && !/^[A-Z]{3}$/.test(printed)) {
       warnings.push(
-        `Fila ${rowNumber}: la divisa «${printed}» no es un código de tres letras; se ha omitido.`,
+        `Fila ${rowNumber} de la tabla: la divisa ${quoteCell(printed)} no es un código de tres letras; se ha omitido.`,
       );
       continue;
     }
@@ -316,7 +418,9 @@ function readBalances(
       date,
     });
     if (!parsed.success) {
-      warnings.push(`Fila ${rowNumber}: el saldo leído no es válido; se ha omitido.`);
+      warnings.push(
+        `Fila ${rowNumber} de la tabla: el saldo leído no es válido; se ha omitido.`,
+      );
       continue;
     }
     balances.push(parsed.data);
@@ -329,24 +433,42 @@ function readBalances(
 }
 
 /**
- * Find the dated balance table of ONE worksheet: the first header row that yields a
- * series. Two conditions make a header a table, and each answers a measured
- * false positive:
+ * Is this reading ONE product's balance over time? Three conditions, each answering a
+ * measured false positive:
  *
- * - **at least one observation under it** — a summary block naming a «Saldo» and a
- *   «Fecha de cálculo» resolves columns and yields nothing, so the search moves on
- *   instead of declaring the sheet read;
- * - **at most one distinct row label** — several named products under one date is a
- *   snapshot of a portfolio, not one balance over time ({@link LABEL_ALIASES}).
+ * - **at least one observation** — a summary block naming a «Saldo» and a «Fecha de
+ *   cálculo» resolves columns and yields nothing, so the search moves on instead of
+ *   declaring the sheet read;
+ * - **at most one distinct row label** — several named products is a portfolio
+ *   snapshot, not a series ({@link LABEL_ALIASES});
+ * - **more than one distinct date, once there is more than one observation** — the
+ *   vocabulary-independent half of the same guard, and the one that catches the label
+ *   column an alias list has never heard of («Producto financiero», «Titular»): six
+ *   figures sharing one date are six things at a moment, not one thing over time. A
+ *   single dated balance stays a series of one, which is exactly what a debt statement
+ *   is.
+ */
+function isOneSeries(read: Omit<BalanceTable, "sheetName">): boolean {
+  if (read.balances.length === 0 || read.labels.size > 1) return false;
+  const dates = new Set(read.balances.map((balance) => balance.date));
+  return read.balances.length === 1 || dates.size > 1;
+}
+
+/**
+ * Find the dated balance table of ONE worksheet: the first header row whose reading is
+ * a series. Candidates are bounded ({@link MAX_HEADER_CANDIDATES}) and the rows below
+ * are read in place rather than sliced, so a pathological sheet where every row looks
+ * like a header costs linear work instead of quadratic.
  */
 function readBalanceTable(sheet: WorkbookSheet): BalanceTable | null {
+  let candidates = 0;
   for (const [index, row] of sheet.rows.entries()) {
     const columns = resolveColumns(row);
     if (!columns) continue;
-    const read = readBalances(sheet.rows.slice(index + 1), index + 1, columns);
-    if (read.balances.length > 0 && read.labels.size <= 1) {
-      return { ...read, sheetName: sheet.name };
-    }
+    if (candidates >= MAX_HEADER_CANDIDATES) return null;
+    candidates += 1;
+    const read = readBalances(sheet.rows, index + 1, columns);
+    if (isOneSeries(read)) return { ...read, sheetName: sheet.name };
   }
   return null;
 }
@@ -418,9 +540,11 @@ export function extractBalanceSeriesFromSpreadsheet(
   });
   if (rowLimit) return rowLimit;
 
+  // Both disclosures about the reading AS A WHOLE go first: the per-row noise of a
+  // messy sheet can reach the contract's warning cap on its own, and what the cap drops
+  // must not be «which sheet did you read» or «in what currency».
   const warnings = [
     ...(table.assumedCurrency ? [ASSUMED_CURRENCY_WARNING] : []),
-    ...table.warnings,
     ...(ignored.length > 0
       ? [
           sheetChoiceWarning(
@@ -429,6 +553,7 @@ export function extractBalanceSeriesFromSpreadsheet(
           ),
         ]
       : []),
+    ...table.warnings,
   ];
 
   return parseExtractionResult({

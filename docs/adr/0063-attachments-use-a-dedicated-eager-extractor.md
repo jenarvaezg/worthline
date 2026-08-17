@@ -522,7 +522,7 @@ recognizer. Only *observed* balances are read, as the contract has always demand
 0048): the rate revisions and the term printed above a real schedule are #1406's work,
 not this document's.
 
-Five behaviours are new, and each answers something measured on a real 13-sheet
+Six behaviours are new, and each answers something measured on a real 13-sheet
 Santander workbook:
 
 - **The header is searched for, not assumed.** The sibling recognizers take row one; this
@@ -533,10 +533,22 @@ Santander workbook:
 - **A sparse balance column is normal.** The bank stamps the balance on 49 of ~380
   monthly rows. A gap is the absence of an observation, not a defect, so it is skipped in
   silence; a warning is owed only where the sheet printed something we could not read.
-- **Several named products under one date is not a series.** A sheet with a
+- **Several products is not a series**, on two independent grounds. A
   `Concepto`/`Nombre` column whose observations carry more than one distinct label is a
   portfolio snapshot, and reading it as a series would silently drop the one column that
-  says what each figure belongs to. It stays `unrecognized` and keeps #865's lane.
+  says what each figure belongs to. And — the vocabulary-independent half, because an
+  alias list has never heard of «Producto financiero» or «Titular» — several observations
+  sharing ONE date are several things at a moment, not one thing over time. Either way it
+  stays `unrecognized` and keeps #865's lane. A **single** dated balance is still a series
+  of one, which is what a debt statement is; that does widen what counts as validated
+  debt evidence for the #1248 gate (a checking-account snapshot qualifies), and it is the
+  same latitude the vision lane has always had over a photo of the same figure, with the
+  same confirm boundary in front of any write.
+- **A figure surrounded by prose is not a balance.** The `Saldo` column is exactly where
+  a bank sheet writes «Pendiente de confirmar, ver hoja 2», and a find-the-number-anywhere
+  reading hands that back as an observed balance of 2 €. The residue left after the figure
+  and its currency decoration must be empty; otherwise the cell is warned about and
+  skipped, never mined for digits (ADR 0048).
 - **The row bound counts observations, not sheet height.** A 40-year schedule is ~480
   rows carrying a few dozen balances; measuring the sheet would refuse it for rows the
   document never claims to read.
@@ -553,12 +565,37 @@ payment into a 665,80 € mortgage.
 currency anywhere (measured: the balance column carries Excel's plain `#,##0.00`). The
 contract requires one per balance, so a currency is taken from — in order — an explicit
 `Divisa` column, a symbol printed in the balance cell, a symbol in its header, and only
-then assumed EUR. That last step is never silent: it raises a warning the preview paints
-and marks the document `uncertain`, in front of a user who must confirm before anything is
-written. An assumption the user can see and refuse is not what ADR 0048 forbids; a silent
+then assumed EUR. That last step is never silent: it raises a warning the preview paints, in front of a user who must confirm
+before anything is written (the document-level `uncertain` travels with it, but the card
+renders only per-row uncertainty, and marking 49 exact dates and amounts «revisar lectura»
+would put the caveat on the wrong thing). An assumption the user can see and refuse is not what ADR 0048 forbids; a silent
 one would be. Currency *decorations* resolve through a closed, tiny vocabulary (€, $, £,
 ¥ and their codes) because any three-letter word would otherwise qualify — a «Saldo mes»
 column would declare its balances to be in MES; an explicit column is taken verbatim.
+
+**Two CPU bounds, because the input is untrusted.** Both were found in review, measured,
+and both are of the same shape — work an upload controls. Header/money cells are read up
+to 120 characters and parsed by one backwards scan instead of a regex with three
+variable-length parts over the same whitespace (one cell of 3 000 spaces cost 5,3 s of
+cubic backtracking, on a function that runs over every cell of every sheet while hunting
+for the header). And the header search bounds its CANDIDATES rather than its position: each
+candidate rescans the rows below it, so 20 000 rows of `Fecha;Saldo` cost 2,6 s and the
+4 MiB body admits ~366 000 of them. Bounding the candidates keeps the work linear without
+bounding WHERE the header may sit, which is the freedom this recognizer exists for.
+Measured after: 1 ms and 27 ms.
+
+**`capExtractionWarnings` now clamps length as well as count.** A warning quoting an
+untrusted cell can outgrow the contract's 300-char per-warning bound, and that failure is
+not neutral: the branded parse fails closed to `invalid_output`, while only `unrecognized`
+keeps #865's unstructured lane — so one long cell would take a file the model could have
+discussed and dead-end it on the card. Clamping is the honest failure: the reading
+survives and the warning says a little less. The sibling positions + movements extractor
+quotes cells the same way and inherits the fix.
+
+**Warnings number rows from the header** («fila 2 de la tabla»), not from the sheet: the
+grid reader drops blank rows in CSV and ignores the `r` attribute in XLSX, so a
+sheet-relative count would name a row Excel numbers differently — and the motivating file,
+a table under 19 rows of matrix with blanks inside it, is precisely that shape.
 
 **A boundary parser was relaxed on the way.** `parseBalanceHistoryRows` rejected the WHOLE
 series over a non-positive balance, while an impossible date passed it and was excluded
