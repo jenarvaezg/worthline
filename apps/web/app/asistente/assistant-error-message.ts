@@ -20,12 +20,15 @@ const BY_CODE: Readonly<Record<string, string>> = {
   // blame a file it may not carry.
   attachment_too_large:
     "La petición es demasiado grande. Si has adjuntado un archivo, prueba con uno más pequeño; si no, recarga la página para empezar de nuevo.",
-  // Reachable in practice only when the conversation itself no longer fits, and
-  // the same history travels in every later turn: retrying cannot help. It says
-  // «recarga» and not «empieza una conversación nueva» because there is no control
-  // that starts one — the panel keeps its messages for as long as the page lives.
+  // No longer about size (#1408): every budget the prompt has is now fitted per
+  // model instead of refused, so what is left here is a body that is not a
+  // conversation — malformed JSON, a message without parts, a history the SDK
+  // cannot convert. Retrying cannot help either way, since the browser re-sends
+  // the same history, and «recarga» and not «empieza una conversación nueva»
+  // because there is no control that starts one: the panel keeps its messages for
+  // as long as the page lives.
   invalid_body:
-    "Esta conversación es demasiado larga para seguir. Recarga la página para empezar de nuevo.",
+    "El asistente no ha podido leer esta conversación. Recarga la página para empezar de nuevo.",
   invalid_surface: "El asistente no está disponible en esta pantalla.",
   rate_limited:
     "Has enviado muchos mensajes seguidos. Espera un momento y vuelve a intentarlo.",

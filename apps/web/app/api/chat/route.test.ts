@@ -28,6 +28,7 @@ import { describeVisionAttachment } from "@web/asistente/attachment-vision-descr
 import { extractDocumentFromVisionAttachment } from "@web/asistente/attachment-vision-extractor";
 import { resolveChatModels } from "@web/asistente/chat-model";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
+import { DROPPED_ATTACHMENT_NOTE } from "@web/asistente/history-prose-budget";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
 import {
   readProviderCooldowns,
@@ -1633,7 +1634,7 @@ describe("POST /api/chat", () => {
     expect(JSON.stringify(model.doStreamCalls)).toContain("ACME");
   });
 
-  it("bounds large validated previews separately from the ordinary 16k chat limit", async () => {
+  it("bounds large validated previews separately from the conversation's own prose", async () => {
     const model = simpleAnswerModel("Contexto grande recibido.");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
     const positions = Array.from({ length: 300 }, (_, index) => ({
@@ -1673,7 +1674,12 @@ describe("POST /api/chat", () => {
     expect(JSON.stringify(model.doStreamCalls)).toContain("Posición 299");
   });
 
-  it("rejects structured history beyond its dedicated context budget", async () => {
+  it("shrinks structured history beyond its budget instead of refusing it (#1408)", async () => {
+    // This used to be a 400, and the browser re-sends the same history every turn,
+    // so it was permanent: the conversation could only be abandoned. Now the oldest
+    // cards are dropped and the turn is answered.
+    const model = simpleAnswerModel("Tres cuadernos, y sigo aquí.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
     const positions = Array.from({ length: 500 }, (_, index) => ({
       currency: "EUR",
       marketValueEur: index + 1,
@@ -1703,9 +1709,70 @@ describe("POST /api/chat", () => {
       }),
     );
 
-    expect(response.status).toBe(400);
-    expect(resolveChatModels).not.toHaveBeenCalled();
-    expect(countChatRequest).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Tres cuadernos, y sigo aquí.");
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    // Bounded, and the model is told a document left its context — only the user
+    // can hand that file over again.
+    expect(turns.length).toBeLessThan(300_000);
+    expect(turns).toContain(DROPPED_ATTACHMENT_NOTE);
+  });
+
+  it("keeps answering a conversation whose prose outgrew one answer (#1408)", async () => {
+    // The reported turn: Jorge attaches a 425-row amortisation table, the assistant
+    // recites it, and the NEXT question was refused forever — ONE answer, 20 000
+    // characters, against a 16 000-character ceiling for the whole conversation.
+    const model = simpleAnswerModel("En 2030 pagas 3.610,00 €.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const recitation = Array.from(
+      { length: 425 },
+      (_, index) =>
+        `| 1-jul.-${2026 + index} | 3.610,00 | 1.204,55 | 2.405,45 | 187.412,90 |`,
+    ).join("\n");
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("te adjunto el cuadro de amortización"),
+          { id: "a1", role: "assistant", parts: [{ type: "text", text: recitation }] },
+          { id: "u2", role: "user", parts: [{ type: "text", text: "¿y en 2030?" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("En 2030 pagas 3.610,00 €.");
+    // And nothing was dropped to get there: flash-lite's budget holds the recitation
+    // ten times over, so the assistant still remembers its own answer.
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("1-jul.-2030");
+    expect(turns).toContain("¿y en 2030?");
+  });
+
+  it("shrinks a conversation of many turns instead of refusing it (#1408)", async () => {
+    // `MAX_MESSAGES` was the same cliff with another name: turn 21 of a healthy
+    // conversation was refused, permanently.
+    const model = simpleAnswerModel("Seguimos hablando.");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+    const messages = Array.from({ length: 40 }, (_, index) => [
+      {
+        id: `u${index}`,
+        role: "user",
+        parts: [{ type: "text", text: `pregunta ${index}` }],
+      },
+      {
+        id: `a${index}`,
+        role: "assistant",
+        parts: [{ type: "text", text: `respuesta ${index}` }],
+      },
+    ]).flat();
+
+    const response = await POST(chatRequest({ messages }));
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("pregunta 39");
+    expect(turns).not.toContain("pregunta 0");
   });
 
   it("rejects file data URLs embedded in message history", async () => {
