@@ -96,6 +96,63 @@ describe("parseStatement — plantilla (#695)", () => {
     }
   });
 
+  test("a type worthline models elsewhere names its own door instead of only the six (#1405)", () => {
+    // Jorge's real file: 271 rows declaring `Hipoteca`, converted from his bank's
+    // cuadro de amortización. The rejection is right — a mortgage is a plan that
+    // generates its curve, not 270 buys and sells — but the old message listed the
+    // six accepted types and read as «worthline no sabe de hipotecas».
+    const result = parseStatement(
+      [
+        HEADER,
+        "19/05/2004;Hipoteca;HIP-PLASENCIA-2004;Compra;1;173153,18;;Hipoteca",
+      ].join("\n"),
+      "plantilla",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    const [error] = result.errors;
+    expect(error).toContain("HIP-PLASENCIA-2004");
+    expect(error).toContain("sí modela las deudas");
+    expect(error).toContain("/patrimonio/anadir");
+    expect(error).toContain("cuadro de amortización");
+    // Still all-or-nothing: nothing loads, the row has to go.
+    expect(error).toContain("no se ha cargado nada");
+  });
+
+  test("each known-but-elsewhere family points at its own drawer, accent/case-insensitive", () => {
+    for (const [tipo, expected] of [
+      ["Préstamo", "cajón «Deuda»"],
+      ["TARJETA", "cajón «Deuda»"],
+      ["Vivienda", "cajón «Inmueble»"],
+      ["inmueble", "cajón «Inmueble»"],
+      ["Efectivo", "cajón «Dinero»"],
+      ["Cuenta corriente", "cajón «Dinero»"],
+    ] as const) {
+      const result = parseStatement(
+        [HEADER, `01/02/2026;${tipo};X-1;Compra;1;100;;`].join("\n"),
+        "plantilla",
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error("expected error");
+      expect(result.errors[0]).toContain(expected);
+    }
+  });
+
+  test("a type worthline models nowhere still gets the list of the six", () => {
+    const result = parseStatement(
+      [HEADER, "01/02/2026;Sello de correos;X-1;Compra;1;100;;"].join("\n"),
+      "plantilla",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected error");
+    expect(result.errors[0]).toContain("no reconozco");
+    expect(result.errors[0]).toContain("Plan de pensiones");
+    expect(result.errors[0]).not.toContain("/patrimonio/anadir");
+  });
+
   test("tipo and operación are accent/case-insensitive; Comisión and Nombre are optional columns", () => {
     const { rows } = parsedOk(
       [
