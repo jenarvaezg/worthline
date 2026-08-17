@@ -6723,17 +6723,31 @@ td.rowActions > * {
   color: var(--red);
 }
 
-/* El historial de corridas: un pliegue más bajo la fila, con la misma palabra
-   discreta que «Desconectar». Cerrado por defecto — es diagnóstico, no la
-   respuesta (esa va arriba, en .conexSyncError). */
-.conexHistory {
+/* El historial de corridas y el cambio de credenciales (#1224/#1225): pliegues
+   bajo la fila, con la misma palabra discreta que «Desconectar». Cerrados por
+   defecto — ninguno es la respuesta (esa va arriba, en .conexSyncError): uno es
+   diagnóstico y el otro, el remedio que se pide a mano. */
+.conexHistory,
+.conexCredentials {
   margin: 0 0 0.6rem;
 }
 
-.conexHistory > summary {
+.conexHistory > summary,
+.conexCredentials > summary {
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 650;
+}
+
+/* El formulario de credenciales tiene el ancho de un formulario, no el de la
+   tabla (mismo criterio que .conexConnect, canon §5). */
+.conexCredentials .stackForm {
+  margin-top: 0.6rem;
+  max-width: 32rem;
+}
+
+.conexCredentials .stackForm button {
+  justify-self: start;
 }
 
 /* La tabla de corridas cabe DENTRO de la celda del pliegue: ancho natural, no de

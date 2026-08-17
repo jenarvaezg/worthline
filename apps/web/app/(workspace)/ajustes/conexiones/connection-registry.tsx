@@ -1,11 +1,25 @@
-import { connectBinanceAction, syncBinanceAction } from "@web/ajustes/binance-actions";
+import {
+  connectBinanceAction,
+  recredentialBinanceAction,
+  syncBinanceAction,
+} from "@web/ajustes/binance-actions";
 import {
   aggregateSourceValueMinor,
   countNonDustTokens,
 } from "@web/ajustes/binance-helpers";
+import {
+  BINANCE_CONNECT_FORM_ID,
+  BINANCE_CREDENTIALS_FORM_ID,
+  NUMISTA_CONNECT_FORM_ID,
+  NUMISTA_CREDENTIALS_FORM_ID,
+} from "@web/ajustes/connected-source-form-ids";
 import DisconnectBinanceFold from "@web/ajustes/disconnect-binance-fold";
 import DisconnectNumistaFold from "@web/ajustes/disconnect-numista-fold";
-import { connectNumistaAction, syncNumistaAction } from "@web/ajustes/numista-actions";
+import {
+  connectNumistaAction,
+  recredentialNumistaAction,
+  syncNumistaAction,
+} from "@web/ajustes/numista-actions";
 import { countCoins } from "@web/ajustes/numista-helpers";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -36,8 +50,14 @@ export interface ConnectionDefinition extends ConnectionDataDefinition {
   label: string;
   /** Qué materializa la fuente en worthline, bajo el nombre del proveedor. */
   mirrors: string;
-  /** El `formId` con el que las actions de este adapter marcan sus errores. */
+  /** El `formId` con el que la action de CONECTAR marca sus errores. */
   formId: string;
+  /**
+   * El `formId` de la action de cambiar credenciales (#1225). Distinto del de
+   * conectar: los dos pliegues no son el mismo, y un error debe reabrir el que lo
+   * produjo — nunca el otro, que hablaría de un formulario que no se envió.
+   */
+  credentialsFormId: string;
   /** Sustantivo de lo que cuenta la columna «Elementos». */
   unitLabel: string;
   fields: CredentialField[];
@@ -45,6 +65,9 @@ export interface ConnectionDefinition extends ConnectionDataDefinition {
   intro: ReactNode;
   connectAction: (formData: FormData) => void | Promise<void>;
   connectLabel: string;
+  /** Cambiar las credenciales de una fuente ya conectada, sin desconectarla (#1225). */
+  recredentialAction: (formData: FormData) => void | Promise<void>;
+  recredentialLabel: string;
   syncAction: (formData: FormData) => void | Promise<void>;
   syncLabel: string;
   /** El enlace a la ficha del activo espejo. */
@@ -60,7 +83,8 @@ const numista: ConnectionDefinition = {
   adapter: "numista",
   label: "Numista",
   mirrors: "Colección de monedas",
-  formId: "numista",
+  formId: NUMISTA_CONNECT_FORM_ID,
+  credentialsFormId: NUMISTA_CREDENTIALS_FORM_ID,
   unitLabel: "monedas",
   countUnits: countCoins,
   // Numista ocupa un solo peldaño: su valor es el del activo espejo.
@@ -82,6 +106,8 @@ const numista: ConnectionDefinition = {
   ),
   connectAction: connectNumistaAction,
   connectLabel: "Conectar Numista",
+  recredentialAction: recredentialNumistaAction,
+  recredentialLabel: "Guardar la clave nueva",
   syncAction: syncNumistaAction,
   syncLabel: "Sincronizar Numista",
   viewLabel: "Ver colección →",
@@ -92,7 +118,8 @@ const binance: ConnectionDefinition = {
   adapter: "binance",
   label: "Binance",
   mirrors: "Cuenta de Binance",
-  formId: "binance",
+  formId: BINANCE_CONNECT_FORM_ID,
+  credentialsFormId: BINANCE_CREDENTIALS_FORM_ID,
   unitLabel: "tokens",
   countUnits: countNonDustTokens,
   // Binance ocupa VARIOS peldaños (mercado + bloqueado a plazo, #248): su valor
@@ -122,6 +149,8 @@ const binance: ConnectionDefinition = {
   ),
   connectAction: connectBinanceAction,
   connectLabel: "Conectar Binance",
+  recredentialAction: recredentialBinanceAction,
+  recredentialLabel: "Guardar las credenciales nuevas",
   syncAction: syncBinanceAction,
   syncLabel: "Sincronizar Binance",
   viewLabel: "Ver →",

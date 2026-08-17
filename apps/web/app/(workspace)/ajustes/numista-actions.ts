@@ -22,7 +22,12 @@ import {
 } from "@worthline/pricing";
 import { redirect } from "next/navigation";
 import {
+  NUMISTA_CONNECT_FORM_ID,
+  NUMISTA_CREDENTIALS_FORM_ID,
+} from "./connected-source-form-ids";
+import {
   CONNECTED_SOURCE_PERSISTENCE_ERROR_MESSAGE,
+  connectedSourceCredentialsRejectedMessage,
   connectedSourceProviderErrorMessage,
   currentUrlOf,
   scopeMemberId,
@@ -61,7 +66,7 @@ export const connectNumistaAction = formAction({
       return {
         ok: false,
         redirect: errorRedirectUrl(currentUrlOf(formData), {
-          formId: "numista",
+          formId: NUMISTA_CONNECT_FORM_ID,
           message: "Pega tu clave de API de Numista para conectar la colección.",
         }),
       };
@@ -127,9 +132,101 @@ export const connectNumistaAction = formAction({
     return { ok: true };
   },
   onError: ({ formData, error }) =>
-    errorRedirectUrl(currentUrlOf(formData), { formId: "numista", message: error }),
+    errorRedirectUrl(currentUrlOf(formData), {
+      formId: NUMISTA_CONNECT_FORM_ID,
+      message: error,
+    }),
   onSuccess: ({ formData }) =>
     appendParam(currentUrlOf(formData), "ok", "numista_connected"),
+});
+
+/**
+ * Cambiar la clave de API de una colección YA conectada (#1225, PRD #1222).
+ *
+ * Hasta ahora rotar una clave exigía desconectar y volver a conectar — es decir,
+ * pasar por el fork remove/freeze y perder las posiciones (o congelarlas) para
+ * recuperar algo que nunca dejó de existir. Esta acción cambia solo el secreto:
+ * la fuente, su activo espejo, sus posiciones y su histórico no se tocan.
+ *
+ * El orden NO es negociable: **primero se valida contra Numista, y solo si acepta
+ * se escribe**. Mintear un token con la clave nueva es la llamada más barata que
+ * el proveedor puede rechazar, así que es a la vez la validación y el token que
+ * el próximo sync necesita. Si se escribiese antes de preguntar, una clave mal
+ * pegada dejaría la conexión muerta y sin forma de volver atrás.
+ */
+export const recredentialNumistaAction = formAction<string>({
+  requireId: false,
+  datedFact: false,
+  extraIds: ["sourceId"],
+  guardUrl: (formData) => currentUrlOf(formData),
+  missingId: "No se encontró la fuente conectada de Numista.",
+  missingIdUrl: (formData) => currentUrlOf(formData),
+  parse: ({ formData }) => {
+    const apiKey = normalizeApiKey(formData.get("apiKey"));
+    if (!apiKey) {
+      return {
+        ok: false,
+        redirect: errorRedirectUrl(currentUrlOf(formData), {
+          formId: NUMISTA_CREDENTIALS_FORM_ID,
+          message: "Pega la clave de API nueva de Numista para cambiarla.",
+        }),
+      };
+    }
+    return { ok: true, value: apiKey };
+  },
+  run: async (store, { extra, now, parsed }) => {
+    // Una fuente viva es ingesta premium (#1162): un workspace lapsado conserva lo
+    // importado, pero la máquina no vuelve a hablar con el proveedor por él — y
+    // esta acción hace exactamente eso (valida y sincroniza).
+    const paywall = await ingestionBlockedMessage(PAYWALL_SOURCES_PAUSED_MESSAGE);
+    if (paywall) {
+      return { ok: false, error: paywall };
+    }
+
+    const sourceId = extra.sourceId!;
+    const source = await store.connectedSources.readSource(sourceId);
+
+    // El adapter se comprueba, no se asume: `sourceId` llega del formulario, y
+    // escribir un `{ apiKey }` de Numista sobre una fuente de Binance la dejaría
+    // sin secreto de firma. Es una línea contra un fallo silencioso.
+    if (!source || source.adapter !== "numista") {
+      return { ok: false, error: "No se encontró la fuente conectada de Numista." };
+    }
+
+    let token;
+    try {
+      token = await mintNumistaToken({ apiKey: parsed }, Date.parse(now));
+    } catch {
+      return { ok: false, error: connectedSourceCredentialsRejectedMessage("Numista") };
+    }
+
+    await store.connectedSources.updateCredentials(
+      sourceId,
+      JSON.stringify({ apiKey: parsed }),
+    );
+    // El token cacheado lo emitió la clave ANTERIOR. Guardar el que acaba de
+    // mintearse evita que el próximo sync arranque con un token huérfano de la
+    // credencial que lo firmó (y, con él, un fallo que parecería del proveedor).
+    await store.connectedSources.saveToken(sourceId, JSON.stringify(token));
+
+    // Sync eager, igual que en connect (#895): la clave nueva puede ver otra
+    // colección, y el GET ya no sincroniza. Best-effort — una caída de Numista no
+    // deshace el cambio de credenciales, que es lo que el usuario vino a hacer.
+    try {
+      await runNumistaCoinRefresh(store, now);
+    } catch {
+      // El cron reintentará; las credenciales ya están guardadas.
+    }
+
+    return { ok: true };
+  },
+  onError: ({ formData, error }) =>
+    errorRedirectUrl(currentUrlOf(formData), {
+      formId: NUMISTA_CREDENTIALS_FORM_ID,
+      message: error,
+    }),
+  onSuccess: ({ formData }) =>
+    appendParam(currentUrlOf(formData), "ok", "numista_credentials_updated"),
 });
 
 export async function syncNumistaAction(

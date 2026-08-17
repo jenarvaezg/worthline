@@ -8,7 +8,7 @@
 
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db/testing";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
@@ -25,6 +25,7 @@ vi.mock("./numista-coin-refresh", () => ({
 import {
   connectNumistaAction,
   disconnectNumistaAction,
+  recredentialNumistaAction,
   syncNumistaAction,
 } from "./numista-actions";
 import { runNumistaCoinRefresh } from "./numista-coin-refresh";
@@ -69,6 +70,37 @@ async function seedWithSource(
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
   });
 }
+
+/**
+ * Stub Numista's OAuth mint — la ÚNICA llamada que un cambio de credenciales
+ * hace antes de escribir nada (#1225). Cualquier otra URL revienta el stub: si
+ * la acción tocase la red por otro sitio, el test lo delata.
+ */
+function stubNumistaMint(accepts: boolean): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(async (input: unknown) => {
+    const url = String(input);
+    if (!url.includes("oauth_token")) {
+      throw new Error(`unexpected fetch: ${url}`);
+    }
+    return accepts
+      ? new Response(
+          JSON.stringify({
+            access_token: "tok-nuevo",
+            token_type: "Bearer",
+            expires_in: 3600,
+            user_id: 7,
+          }),
+          { headers: { "content-type": "application/json" }, status: 200 },
+        )
+      : new Response("unauthorized", { status: 401 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("connectNumistaAction", () => {
   test("connects the first Numista source and eagerly syncs it (#895)", async () => {
@@ -290,5 +322,111 @@ describe("syncNumistaAction", () => {
     expect(digest).toContain("error=");
     // The real source's positions are untouched.
     expect(await store.connectedSources.readPositions(sourceId)).toHaveLength(1);
+  });
+});
+
+describe("recredentialNumistaAction (#1225)", () => {
+  test("una clave que Numista acepta se guarda, renueva el token y sincroniza", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    vi.mocked(runNumistaCoinRefresh).mockClear();
+    stubNumistaMint(true);
+
+    const digest = await runAction(
+      recredentialNumistaAction,
+      form({
+        apiKey: "clave-nueva",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("ok=numista_credentials_updated");
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({ apiKey: "clave-nueva" });
+    // El token cacheado se minteó con la clave ANTERIOR: si no se renueva, el
+    // próximo sync iría con un token huérfano de la credencial que lo emitió.
+    expect(JSON.parse(source!.tokenJson!)).toMatchObject({
+      accessToken: "tok-nuevo",
+      userId: 7,
+    });
+    // Sync eager, igual que en connect.
+    expect(runNumistaCoinRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("una clave que Numista rechaza no pisa la anterior", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    vi.mocked(runNumistaCoinRefresh).mockClear();
+    stubNumistaMint(false);
+
+    const digest = await runAction(
+      recredentialNumistaAction,
+      form({ apiKey: "clave-mala", currentUrl: "/ajustes/conexiones", sourceId }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(digest).toContain("form=numista-credentials");
+    // Lo que importa: la conexión sigue viva con la clave que funcionaba.
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({ apiKey: "secret" });
+    expect(runNumistaCoinRefresh).not.toHaveBeenCalled();
+  });
+
+  test("un formulario sin clave no llega ni a tocar la red", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    const fetchMock = stubNumistaMint(true);
+
+    const digest = await runAction(
+      recredentialNumistaAction,
+      form({ apiKey: "   ", currentUrl: "/ajustes/conexiones", sourceId }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({ apiKey: "secret" });
+  });
+
+  test("sin sourceId no se cambia nada", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    const fetchMock = stubNumistaMint(true);
+
+    const digest = await runAction(
+      recredentialNumistaAction,
+      form({ apiKey: "clave-nueva", currentUrl: "/ajustes/conexiones" }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({ apiKey: "secret" });
+  });
+
+  test("la clave nueva NUNCA viaja en la URL, ni al aceptarla ni al rechazarla", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+
+    stubNumistaMint(true);
+    const ok = await runAction(
+      recredentialNumistaAction,
+      form({ apiKey: "clave-secretísima", currentUrl: "/ajustes/conexiones", sourceId }),
+      store,
+    );
+    expect(ok).not.toContain("clave-secret");
+
+    stubNumistaMint(false);
+    const rejected = await runAction(
+      recredentialNumistaAction,
+      form({ apiKey: "otra-secretísima", currentUrl: "/ajustes/conexiones", sourceId }),
+      store,
+    );
+    expect(rejected).not.toContain("otra-secret");
   });
 });

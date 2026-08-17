@@ -266,7 +266,11 @@ export type {
   BinanceRequestDeps,
   BinanceWalletBalance,
 } from "./binance";
-export { getAccountSnapshots, getAllBalances } from "./binance";
+// `getSpotBalances` se exporta suelta además de dentro de `getAllBalances` porque
+// es la sonda de credenciales de Binance (#1225): la llamada firmada más barata que
+// ejercita clave Y secreto, para validar unas credenciales nuevas antes de pisar las
+// que funcionaban.
+export { getAccountSnapshots, getAllBalances, getSpotBalances } from "./binance";
 export type {
   CoinGeckoHistoryResult,
   ReconstructBinanceHistoryDeps,

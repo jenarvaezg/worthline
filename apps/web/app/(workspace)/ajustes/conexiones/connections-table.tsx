@@ -3,7 +3,7 @@ import { PendingSubmit } from "@web/pending-submit";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { Fragment } from "react";
-import type { ConnectionDefinition } from "./connection-registry";
+import type { ConnectionDefinition, CredentialField } from "./connection-registry";
 import type { ConnectionRow } from "./connection-rows";
 import {
   describeRunOutcome,
@@ -33,8 +33,9 @@ const TONE_CLASS: Record<SyncHealthTone, string> = {
  * con lo que se puede hacer. Nada obliga a navegar para actuar.
  *
  * Bajo la fila cuelgan, en ese orden: el motivo de un sync fallido (visible sin
- * abrir nada), el pliegue del historial de corridas (S2 #1224) y el de
- * desconexión. La edición de credenciales (S3 #1225) entra ahí sin mover la fila.
+ * abrir nada), el pliegue de cambiar credenciales (S3 #1225 — el remedio, pegado
+ * al motivo), el del historial de corridas (S2 #1224, diagnóstico) y el de
+ * desconexión (destructivo, el último).
  *
  * Cero JSX por fuente: todo lo que distingue a un adapter de otro llega en su
  * entrada del registry.
@@ -43,6 +44,27 @@ const TONE_CLASS: Record<SyncHealthTone, string> = {
 export interface ConnectionEntry {
   definition: ConnectionDefinition;
   row: ConnectionRow;
+}
+
+/**
+ * Los campos de credenciales que declara un adapter, pintados igual en los DOS
+ * sitios donde se piden: al conectar por primera vez y al cambiarlas sin
+ * desconectar (#1225). Siempre `type="password"` y sin autocompletar — un secreto
+ * no se pinta en claro ni se guarda en el gestor de contraseñas del navegador.
+ */
+function CredentialFields({ fields }: { fields: readonly CredentialField[] }) {
+  return fields.map((field) => (
+    <label key={field.name}>
+      {field.label}
+      <input
+        aria-label={field.label}
+        autoComplete="off"
+        name={field.name}
+        placeholder={field.placeholder}
+        type="password"
+      />
+    </label>
+  ));
 }
 
 export default function ConnectionsTable({
@@ -161,6 +183,37 @@ export default function ConnectionsTable({
                           </p>
                         ) : null}
 
+                        {/* Cambiar credenciales sin desconectar (#1225): una clave
+                            rotada o revocada es la causa más común de un sync
+                            fallido, así que el remedio va JUNTO al motivo — por
+                            delante del historial (diagnóstico) y de la desconexión
+                            (destructiva, y hasta ahora el único camino para esto).
+                            Se reabre solo cuando el error lo produjo ESTE pliegue. */}
+                        <details
+                          suppressHydrationWarning
+                          className="conexCredentials"
+                          open={errorFormId === definition.credentialsFormId}
+                        >
+                          <summary>Cambiar credenciales</summary>
+                          <form
+                            action={definition.recredentialAction}
+                            className="stackForm"
+                          >
+                            <input name="currentUrl" type="hidden" value={currentUrl} />
+                            <input name="sourceId" type="hidden" value={source.id} />
+                            <CredentialFields fields={definition.fields} />
+                            <p className="muted">
+                              Se comprueban contra {definition.label} antes de guardarse:
+                              si las rechaza, las de ahora siguen intactas. La conexión no
+                              se corta, así que no se pierden ni las posiciones ni el
+                              histórico.
+                            </p>
+                            <PendingSubmit pendingLabel="Comprobando…">
+                              {definition.recredentialLabel}
+                            </PendingSubmit>
+                          </form>
+                        </details>
+
                         {row.runs.length > 0 ? (
                           <details suppressHydrationWarning className="conexHistory">
                             <summary>Historial de sincronización</summary>
@@ -227,18 +280,7 @@ export default function ConnectionsTable({
                 <summary>Conectar</summary>
                 <form action={definition.connectAction} className="stackForm">
                   <input name="currentUrl" type="hidden" value={currentUrl} />
-                  {definition.fields.map((field) => (
-                    <label key={field.name}>
-                      {field.label}
-                      <input
-                        aria-label={field.label}
-                        autoComplete="off"
-                        name={field.name}
-                        placeholder={field.placeholder}
-                        type="password"
-                      />
-                    </label>
-                  ))}
+                  <CredentialFields fields={definition.fields} />
                   <p className="muted">{definition.intro}</p>
                   <button type="submit">{definition.connectLabel}</button>
                 </form>

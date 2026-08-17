@@ -52,6 +52,19 @@ test("binance: connect (stubbed API) → market + term-locked holdings → token
   await expect(page.locator(".conexRunTable")).toContainText("Manual");
   await expect(page.locator(".conexRunTable")).toContainText("Correcta");
 
+  // 2.c Rotar las credenciales NO pasa por desconectar (#1225): el pliegue vive bajo
+  //     la misma fila, y al guardarlas la cuenta sigue conectada — con sus posiciones
+  //     y su histórico intactos, que es lo que el paso 3 comprueba a continuación.
+  //     Antes, cambiar una clave obligaba a pasar por el fork remove/freeze.
+  await page.locator("details.conexCredentials > summary").click();
+  await page.getByLabel("Clave de API de Binance").fill("e2e-key-rotada");
+  await page.getByLabel("Secreto de API de Binance").fill("e2e-secret-rotado");
+  await page.getByRole("button", { name: "Guardar las credenciales nuevas" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Credenciales de Binance actualizadas.",
+  );
+  await expect(page.getByRole("button", { name: "Sincronizar Binance" })).toBeVisible();
+
   // 3. Both holdings appear in the unified list with their live values: the market
   //    holding (0.5 BTC × 50 000 = 25 000 €) and the SEPARATE term-locked one
   //    (3 ETH × 2 000 = 6 000 €), tagged "(bloqueado)".

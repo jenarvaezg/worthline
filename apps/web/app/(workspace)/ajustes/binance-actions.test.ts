@@ -36,6 +36,7 @@ import { redirect } from "next/navigation";
 import {
   connectBinanceAction,
   disconnectBinanceAction,
+  recredentialBinanceAction,
   syncBinanceAction,
 } from "./binance-actions";
 import { runBinanceRefresh } from "./binance-refresh";
@@ -639,5 +640,171 @@ describe("syncBinanceAction", () => {
 
     expect(decoded).toContain("No se pudo guardar");
     expect(decoded).not.toContain("clave de API");
+  });
+});
+
+/**
+ * Stub Binance's signed account read — la ÚNICA llamada que un cambio de
+ * credenciales hace antes de escribir nada (#1225). Cualquier otra URL revienta
+ * el stub: si la acción tocase la red por otro sitio, el test lo delata.
+ */
+function stubBinanceAccount(accepts: boolean): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(async (input: unknown) => {
+    const url = String(input);
+    if (!url.includes("/api/v3/account")) {
+      throw new Error(`unexpected fetch: ${url}`);
+    }
+    return accepts
+      ? new Response(
+          JSON.stringify({ balances: [{ asset: "BTC", free: "1", locked: "0" }] }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          },
+        )
+      : new Response("unauthorized", { status: 401 });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("recredentialBinanceAction (#1225)", () => {
+  test("unas credenciales que Binance acepta se guardan y disparan el sync eager", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    vi.mocked(runBinanceRefresh).mockClear();
+    stubBinanceAccount(true);
+
+    const digest = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "clave-nueva",
+        apiSecret: "secreto-nuevo",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("ok=binance_credentials_updated");
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({
+      apiKey: "clave-nueva",
+      apiSecret: "secreto-nuevo",
+    });
+    expect(runBinanceRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("unas credenciales que Binance rechaza no pisan las anteriores", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    vi.mocked(runBinanceRefresh).mockClear();
+    stubBinanceAccount(false);
+
+    const digest = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "clave-mala",
+        apiSecret: "secreto-malo",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(digest).toContain("form=binance-credentials");
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({
+      apiKey: "key",
+      apiSecret: "secret",
+    });
+    expect(runBinanceRefresh).not.toHaveBeenCalled();
+  });
+
+  test("un secreto a medias no llega ni a tocar la red", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+    const fetchMock = stubBinanceAccount(true);
+
+    const digest = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "clave-nueva",
+        apiSecret: "",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const source = await store.connectedSources.readSource(sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({
+      apiKey: "key",
+      apiSecret: "secret",
+    });
+  });
+
+  test("la clave y el secreto NUNCA viajan en la URL, ni al aceptarlos ni al rechazarlos", async () => {
+    const store = await createInMemoryStore();
+    const { sourceId } = await seedWithSource(store);
+
+    stubBinanceAccount(true);
+    const ok = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "clave-secretísima",
+        apiSecret: "secreto-secretísimo",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+    expect(ok).not.toContain("clave-secret");
+    expect(ok).not.toContain("secreto-secret");
+
+    stubBinanceAccount(false);
+    const rejected = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "otra-secretísima",
+        apiSecret: "otro-secretísimo",
+        currentUrl: "/ajustes/conexiones",
+        sourceId,
+      }),
+      store,
+    );
+    expect(rejected).not.toContain("otra-secret");
+    expect(rejected).not.toContain("otro-secret");
+  });
+
+  test("un sourceId de OTRO adapter no se re-credencializa con credenciales de Binance", async () => {
+    const store = await createInMemoryStore();
+    await seedWithSource(store);
+    const numista = await store.connectedSources.connect({
+      adapter: "numista",
+      label: "Colección Numista",
+      credentialsJson: JSON.stringify({ apiKey: "numista-key" }),
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const fetchMock = stubBinanceAccount(true);
+
+    const digest = await runAction(
+      recredentialBinanceAction,
+      form({
+        apiKey: "clave-nueva",
+        apiSecret: "secreto-nuevo",
+        currentUrl: "/ajustes/conexiones",
+        sourceId: numista.sourceId,
+      }),
+      store,
+    );
+
+    expect(digest).toContain("error=");
+    expect(fetchMock).not.toHaveBeenCalled();
+    const source = await store.connectedSources.readSource(numista.sourceId);
+    expect(JSON.parse(source!.credentialsJson)).toEqual({ apiKey: "numista-key" });
   });
 });

@@ -331,3 +331,70 @@ describe("salud de sync visible (#1224)", () => {
     expect(html).not.toContain("La última sincronización falló");
   });
 });
+
+describe("editar credenciales sin desconectar (#1225)", () => {
+  test("una fuente conectada trae su pliegue de credenciales, con los campos de su registry", async () => {
+    const html = await render();
+
+    expect(html).toContain("Cambiar credenciales");
+    // Binance declara dos campos: los dos se piden aquí, sin JSX propio.
+    expect(html).toContain("Clave de API de Binance");
+    expect(html).toContain("Secreto de API de Binance");
+    expect(html).toContain("Guardar las credenciales nuevas");
+    // Y la promesa que sostiene todo el slice: nada se pisa hasta que el
+    // proveedor acepte, así que cambiar la clave no cuesta el histórico.
+    expect(html).toContain("las de ahora siguen intactas");
+  });
+
+  test("una fuente SIN conectar no ofrece cambiar credenciales: no tiene ninguna", async () => {
+    calls.listSources.mockResolvedValueOnce([]);
+
+    const html = await render();
+
+    expect(html).not.toContain("Cambiar credenciales");
+    expect(html).toContain("Conectar Binance");
+  });
+
+  test("los campos del pliegue de cambio son secretos, como los de conectar", async () => {
+    const html = await render();
+
+    // Binance conectado (2 campos de cambio) + Numista sin conectar (1 de
+    // conexión): los tres, y los tres `type="password"`.
+    const credentialInputs = html.match(/<input[^>]*name="api[A-Za-z]*"[^>]*>/g) ?? [];
+    expect(credentialInputs).toHaveLength(3);
+    for (const input of credentialInputs) {
+      expect(input).toContain('type="password"');
+    }
+  });
+
+  test("un error al cambiar credenciales reabre ESE pliegue, no el de conectar", async () => {
+    const html = renderToStaticMarkup(
+      await ConexionesContent({
+        searchParams: Promise.resolve({
+          error: "Binance rechazó esas credenciales, así que no se ha guardado nada.",
+          form: "binance-credentials",
+        }),
+      }),
+    );
+
+    // Exactamente un pliegue abierto, y es el de credenciales: el de conectar
+    // Numista sigue cerrado (su formulario no se envió).
+    expect(html.match(/<details[^>]*\sopen=""/g) ?? []).toHaveLength(1);
+    expect(html).toMatch(/<details class="conexCredentials"[^>]*open=""/);
+    expect(html).toContain("rechazó esas credenciales");
+  });
+
+  test("un error de conexión NO reabre el pliegue de credenciales de otra fila", async () => {
+    const html = renderToStaticMarkup(
+      await ConexionesContent({
+        searchParams: Promise.resolve({
+          error: "Pega tu clave de API de Numista para conectar la colección.",
+          form: "numista",
+        }),
+      }),
+    );
+
+    expect(html.match(/<details[^>]*\sopen=""/g) ?? []).toHaveLength(1);
+    expect(html).not.toMatch(/<details class="conexCredentials"[^>]*open=""/);
+  });
+});
