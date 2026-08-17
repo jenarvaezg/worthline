@@ -8479,8 +8479,23 @@ td.rowActions > * {
 
 /* El desmentido de una ceremonia falsa (#1262) se separa de la prosa del modelo
    con la misma regla gruesa que abre una propuesta: es la app hablando, no el
-   modelo. Sin borde perimetral, radio ni fondo — canon §4. */
+   modelo. Sin borde perimetral, radio ni fondo — canon §4.
+
+   El aviso de la puerta de evidencia (#1418) es el mismo tipo de mensaje —un hecho
+   que la app afirma cuando el modelo no lo ha contado—, así que abre su entrada
+   igual. Regla propia y no un selector agrupado: el guardián del canon busca cada
+   entrada de papel por su selector exacto. */
 .assistantFakeProposal {
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+
+.assistantGateNotice {
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+
+.assistantSeriesNotice {
   border-top: var(--rule-heavy);
   padding-top: 12px;
 }

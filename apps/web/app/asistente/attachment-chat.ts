@@ -481,7 +481,22 @@ const UNSTRUCTURED_EVIDENCE_MESSAGES: readonly string[] = [
  * ever CLOSE this gate, and nothing read here reaches the model.
  */
 export function hasUnstructuredEvidenceInHistory(messages: UIMessage[]): boolean {
-  return messages.some((message) =>
+  return messageWithUnstructuredEvidence(messages) !== null;
+}
+
+/**
+ * The id of the FIRST message whose card means «the model was handed evidence worthline
+ * did not validate» — the moment the #1248 gate closed for this conversation.
+ *
+ * Same markers as the predicate above, deliberately: the client prints the app's own
+ * notice about that gate (#1418) and it must appear exactly where the door shut, so
+ * both ends have to agree on what shutting it looks like. Two readers of one list, never
+ * two lists.
+ */
+export function messageWithUnstructuredEvidence(
+  messages: readonly UIMessage[],
+): string | null {
+  const closing = messages.find((message) =>
     message.parts.some((part) => {
       const envelope = looseEnvelopeFromPart(part);
       return (
@@ -491,6 +506,7 @@ export function hasUnstructuredEvidenceInHistory(messages: UIMessage[]): boolean
       );
     }),
   );
+  return closing?.id ?? null;
 }
 
 /**

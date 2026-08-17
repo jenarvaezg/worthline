@@ -158,6 +158,11 @@ import {
   reduceStatementProposalDiscard,
 } from "./statement-proposal-discard-state";
 import { suggestedPrompts } from "./suggested-prompts";
+import {
+  UNREADABLE_TYPED_SERIES_NOTE,
+  UNVALIDATED_EVIDENCE_NOTE,
+  unvalidatedEvidenceNotices,
+} from "./unvalidated-evidence-notice";
 
 /** Human-readable section names for screen-reader context announcements (#633). */
 const SECTION_LABEL: Record<ScreenSection, string> = {
@@ -1731,18 +1736,19 @@ function PropertyValuationProposalCard({
 }
 
 /**
- * The app contradicting its own assistant (#1262).
+ * The app speaking for itself, next to a turn (#1262, #1418).
  *
- * Printed when a turn CLAIMS to have prepared a proposal and carries none. It is
- * the app speaking, not the model, so it is set apart the way a proposal is — a
- * paper entry opened by a heavy rule (canon §4) — and labelled in words, never by
- * colour alone (canon §6: oro = aviso).
+ * Every one of these says something the model was trusted to relay and did not, so they
+ * are set apart the way a proposal is — a paper entry opened by a heavy rule (canon §4)
+ * — and labelled in words, never by colour alone (canon §6: oro = aviso). The class is a
+ * parameter because the canon guardian looks each entry up by its exact selector, so
+ * every note keeps its own rule in `globals.css`.
  */
-function FabricatedProposalNote() {
+function AppNote({ className, text }: { className: string; text: string }) {
   return (
-    <div className="assistantFakeProposal" role="note">
+    <div className={className} role="note">
       <p className="assistantWarning">
-        <strong>Aviso de worthline.</strong> {FABRICATED_PROPOSAL_NOTE}
+        <strong>Aviso de worthline.</strong> {text}
       </p>
     </div>
   );
@@ -1959,6 +1965,9 @@ function ConversationParts({
   // holding where it wrote its id (#1263). Memoised for the same reason: the panel
   // re-renders on every keystroke and this walks every tool output of every turn.
   const holdingLabels = useMemo(() => labelsByPublicHoldingId(messages), [messages]);
+  // The two turns that carry the gate's notes (#1418) — one each per conversation, so
+  // both are decided over the whole thread and not per message.
+  const gateNotices = useMemo(() => unvalidatedEvidenceNotices(messages), [messages]);
   return (
     <>
       {messages.map((message) => {
@@ -2023,7 +2032,21 @@ function ConversationParts({
               }
               return null;
             })}
-            {fabricated.has(message.id) ? <FabricatedProposalNote /> : null}
+            {fabricated.has(message.id) ? (
+              <AppNote
+                className="assistantFakeProposal"
+                text={FABRICATED_PROPOSAL_NOTE}
+              />
+            ) : null}
+            {gateNotices.gateClosed === message.id ? (
+              <AppNote className="assistantGateNotice" text={UNVALIDATED_EVIDENCE_NOTE} />
+            ) : null}
+            {gateNotices.unreadableSeries === message.id ? (
+              <AppNote
+                className="assistantSeriesNotice"
+                text={UNREADABLE_TYPED_SERIES_NOTE}
+              />
+            ) : null}
           </div>
         );
       })}

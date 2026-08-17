@@ -10,8 +10,12 @@ import { describe, expect, it } from "vitest";
 import {
   consumesUnvalidatedEvidenceBudget,
   createUnvalidatedProposalBudget,
+  gatedDebtSeries,
   MAX_UNVALIDATED_PROPOSALS_PER_TURN,
+  TYPED_SERIES_REOPENS,
+  typedSeriesReopens,
   UNVALIDATED_EVIDENCE_CLASSES,
+  unreadableTypedSeriesRejected,
   unvalidatedEvidenceCapReached,
   unvalidatedEvidenceClassFor,
   unvalidatedEvidenceGateApplies,
@@ -116,6 +120,134 @@ describe("unvalidatedEvidenceGateApplies (#1248)", () => {
         hasValidatedDocumentInThisTurn: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("a series the user typed reopens its lane (#1418)", () => {
+  /**
+   * The guardian of the escape hatch: reopening a lane the frontier never closed
+   * would be meaningless, and reopening a lane the frontier closes for a REASON we
+   * cannot answer (positions, movements, segments) is the thing to notice.
+   */
+  it("only ever reopens lanes the frontier closes", () => {
+    for (const name of Object.keys(TYPED_SERIES_REOPENS)) {
+      expect(unvalidatedEvidenceClassFor(name), name).toBe("rejects");
+      expect(typedSeriesReopens(name)).toBe(true);
+    }
+  });
+
+  it("leaves the lanes a parser cannot read off a message closed", () => {
+    for (const name of [
+      "propose_statement_import",
+      "propose_reconcile",
+      "propose_mixed_document_import",
+    ]) {
+      expect(typedSeriesReopens(name), name).toBe(false);
+    }
+  });
+
+  const rows = [
+    { balanceMinor: 19845678, date: "2025-10-01" },
+    { balanceMinor: 19792568, date: "2025-11-01" },
+  ];
+  const read = { rows, status: "read" } as const;
+  const modelRows = [{ annualRate: "0.025", balanceMinor: 1, date: "2020-01-01" }];
+
+  it("hands the model's own rows through on an ordinary turn", () => {
+    expect(
+      gatedDebtSeries({
+        gated: false,
+        modelRows,
+        toolName: "propose_balance_history_import",
+        typedSeries: read,
+      }),
+    ).toEqual({ rows: modelRows, source: "model" });
+  });
+
+  it("replaces the model's rows with the typed series when the gate bites", () => {
+    // Replaces, never merges: the model holds the unvalidated document, so a row it
+    // wrote could be a figure it remembers from that document.
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_reconstruction",
+        typedSeries: read,
+      }),
+    ).toEqual({ rows, source: "user_typed" });
+  });
+
+  it("stays closed when the gate bites and the user typed nothing", () => {
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_balance_history_import",
+        typedSeries: { status: "absent" },
+      }),
+    ).toEqual({ source: "closed" });
+  });
+
+  /**
+   * The distinction the ticket is named after: a person who WROTE the series and whose
+   * paste we could not read must not get the copy that asks for the series.
+   */
+  it("reports an unreadable paste apart from silence", () => {
+    expect(
+      gatedDebtSeries({
+        gated: true,
+        modelRows,
+        toolName: "propose_balance_history_import",
+        typedSeries: { status: "unreadable" },
+      }),
+    ).toEqual({ source: "unreadable_series" });
+  });
+
+  it("stays closed for a lane the escape does not cover, series or not", () => {
+    for (const typedSeries of [read, { status: "unreadable" } as const]) {
+      expect(
+        gatedDebtSeries({
+          gated: true,
+          modelRows,
+          toolName: "propose_reconcile",
+          typedSeries,
+        }),
+      ).toEqual({ source: "closed" });
+    }
+  });
+
+  /**
+   * The refusal is what the model reads, so it is where the newly open door has to be
+   * named: the alternative is the conversation that filed this ticket, where nobody
+   * told the user that the work he was about to do could not land anywhere.
+   */
+  it("names the typed way out in the refusal the model relays", () => {
+    const { message } = unvalidatedEvidenceRejected();
+    expect(message).toMatch(/histórico de saldos/i);
+    expect(message).toMatch(/una línea por fecha/i);
+  });
+
+  /**
+   * THE regression of #1418. The refusal for a paste we could not read must not be the
+   * one that asks for the paste — that is the sentence Jorge got after typing 360 rows.
+   */
+  it("never asks again for the series it just failed to read", () => {
+    const unreadable = unreadableTypedSeriesRejected();
+
+    expect(unreadable.error).toBe("unreadable_typed_series");
+    expect(unreadable.error).not.toBe(unvalidatedEvidenceRejected().error);
+    expect(unreadable.message).not.toBe(unvalidatedEvidenceRejected().message);
+    // It confirms the attempt instead of repeating the request…
+    expect(unreadable.message).toMatch(/he intentado leer/i);
+    // …names the two shapes that actually break a real paste…
+    expect(unreadable.message).toMatch(/suba/i);
+    expect(unreadable.message).toMatch(/misma fecha/i);
+    // …and offers the schedule importer (#1406) as an ALTERNATIVE, at the end: leading
+    // with it would answer «no supe leer lo que escribiste» with «sube un fichero».
+    expect(unreadable.message).toMatch(/Cuadro de amortización/);
+    expect(unreadable.message.indexOf("importar-extracto")).toBeGreaterThan(
+      unreadable.message.indexOf("he intentado leer"),
+    );
   });
 });
 

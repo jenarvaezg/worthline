@@ -160,7 +160,15 @@ describe("buildChatSystemPrompt", () => {
     // alert bullet dropped the wording its own tool description carries, and the
     // concision bullet dropped a «cita las cifras» that duplicates the
     // traceability rule two hundred characters above it.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(7_700);
+    //
+    // #1418 raises it to 8000 for the typed-series way out. The code half of that
+    // fix accepts a dated series the user writes in the chat and builds the proposal
+    // from worthline's own parse of it — but nothing in code can ASK for the series,
+    // and a model told «desde ese adjunto no hay importación en bloque» will keep
+    // offering the dead end this ticket was filed for: a user who pasted 360 months
+    // of balances that no lane could accept, five turns before anyone said so. Same
+    // shape as #1347 — code closes the guarantee, the prompt has to open the door.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8_000);
   });
 
   it("pins the core read-only contract", () => {

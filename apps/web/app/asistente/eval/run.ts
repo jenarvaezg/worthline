@@ -66,6 +66,7 @@ async function askAssistant(
       // because what came back was the harness's hole rather than the model.
       runWithStore: (run) => withStore((store) => run(chatToolStores(store)), persona),
       asOf,
+      typedBalanceSeries: turn.typedBalanceSeries,
       unvalidatedEvidence: turn.unvalidatedEvidence,
       validatedDocuments: turn.validatedDocuments,
     }),
