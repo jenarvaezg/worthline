@@ -567,6 +567,38 @@ export function parseExtractionResult(input: unknown): AttachmentExtractionResul
   return parsed.success ? parsed.data : INVALID_OUTPUT_FAILURE;
 }
 
+/**
+ * The length ONE warning may reach — the bound `nonEmptyStringSchema` enforces, named
+ * here because {@link capExtractionWarnings} is what keeps callers inside it.
+ */
+const MAX_WARNING_CHARS = 300;
+
+/**
+ * Fit a reading's honesty text inside the envelope's warning bounds, in BOTH
+ * directions. A messy sheet can drop more rows than the contract admits warnings, so
+ * the last slot summarizes the overflow instead of losing it silently; and a warning
+ * that quotes an untrusted cell can outgrow the per-warning cap, which would fail the
+ * branded parse and turn the whole reading into `invalid_output` — strictly worse than
+ * `unrecognized`, because only `unrecognized` keeps the unstructured lane (#865) that
+ * lets the model still discuss the file. Clamping is the honest failure: the reading
+ * survives and the warning says a little less.
+ *
+ * Shared by every deterministic extractor: both caps belong to the contract that
+ * declares them, not to one reader.
+ */
+export function capExtractionWarnings(warnings: readonly string[]): string[] {
+  const max = ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings;
+  const clamped = warnings.map((warning) =>
+    warning.length > MAX_WARNING_CHARS
+      ? `${warning.slice(0, MAX_WARNING_CHARS - 1)}…`
+      : warning,
+  );
+  if (clamped.length <= max) return clamped;
+  const kept = clamped.slice(0, max - 1);
+  kept.push(`y ${clamped.length - (max - 1)} avisos más sin mostrar.`);
+  return kept;
+}
+
 /** Validate type, byte size and per-family bounds before doing extraction work. */
 export function checkAttachmentLimits(
   input: AttachmentLimitInput,

@@ -2,10 +2,7 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, test } from "vitest";
 
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "./attachment-extraction-contract";
-import {
-  extractPositionsAndMovementsFromSpreadsheet,
-  toIsoDate,
-} from "./attachment-positions-movements-extractor";
+import { extractPositionsAndMovementsFromSpreadsheet } from "./attachment-positions-movements-extractor";
 
 function csvBytes(lines: string[]): Uint8Array {
   return new TextEncoder().encode(lines.join("\n"));
@@ -240,14 +237,6 @@ describe("positions + movements spreadsheet extractor", () => {
     ]);
     const result = extractPositionsAndMovementsFromSpreadsheet(input(bytes));
     expect(result.status).toBe("unrecognized");
-  });
-
-  test("toIsoDate reformats dd/mm/yyyy and rejects an impossible day", () => {
-    expect(toIsoDate("15/01/2026")).toBe("2026-01-15");
-    expect(toIsoDate("5/1/2026")).toBe("2026-01-05");
-    expect(toIsoDate("2026-01-15")).toBe("2026-01-15");
-    expect(toIsoDate("32/13/2026")).toBeNull();
-    expect(toIsoDate("30 de junio")).toBeNull();
   });
 
   test("enforces the shared row limit across holdings and movements", () => {

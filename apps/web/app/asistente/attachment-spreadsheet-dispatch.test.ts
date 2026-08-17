@@ -33,7 +33,22 @@ describe("spreadsheet document dispatch", () => {
     expect(result.data.documentType).toBe("positions");
   });
 
-  test("a sheet neither recognizer knows stays unrecognized for the unstructured path", () => {
+  test("falls through to the dated balance series of an amortization schedule", () => {
+    const bytes = csvBytes([
+      "Tabla de Amortización",
+      "Fecha;Cuota;Capital;Interés;Saldo",
+      "01/06/2004;3500;3500;;169653,18",
+      "01/07/2004;665,80;296,46;369,34;163856,72",
+    ]);
+    const result = extractSpreadsheetDocument(input(bytes));
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("expected valid");
+    expect(result.data.documentType).toBe("balance_series");
+    if (result.data.documentType !== "balance_series") throw new Error("expected series");
+    expect(result.data.balances).toHaveLength(2);
+  });
+
+  test("a sheet no recognizer knows stays unrecognized for the unstructured path", () => {
     const bytes = csvBytes(["Cabecera cualquiera;Otra", "un valor;otro"]);
     expect(extractSpreadsheetDocument(input(bytes)).status).toBe("unrecognized");
   });

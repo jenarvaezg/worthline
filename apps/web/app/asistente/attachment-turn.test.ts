@@ -47,9 +47,15 @@ const POSITIONS_CSV = [
   "VWCE;Vanguard FTSE All-World;120;13450,32;EUR",
 ].join("\n");
 
-const NOT_A_POSITIONS_TABLE_CSV = [
-  "Concepto;Saldo;Fecha",
-  "Cuenta corriente conjunta;12.930,44;30/06/2026",
+/**
+ * A readable sheet that is NO document the deterministic route knows. It used to be
+ * `Concepto;Saldo;Fecha` — a dated balance, which is exactly the document the sheet
+ * lane learned to validate in #1417, so it stopped being an example of this lane.
+ * Notes against names is the shape that still has nothing to extract.
+ */
+const NOT_A_KNOWN_DOCUMENT_CSV = [
+  "Concepto;Notas",
+  "Cuenta corriente conjunta;pendiente de revisar con el banco",
 ].join("\n");
 
 beforeEach(() => {
@@ -85,7 +91,7 @@ describe("readAttachmentTurn", () => {
   });
 
   it("hands a readable-but-unrecognized sheet over as unstructured context", async () => {
-    const reading = await readAttachmentTurn(csv(NOT_A_POSITIONS_TABLE_CSV));
+    const reading = await readAttachmentTurn(csv(NOT_A_KNOWN_DOCUMENT_CSV));
 
     expect(reading.preview.result).toEqual({
       message: UNSTRUCTURED_SPREADSHEET_MESSAGE,
@@ -327,9 +333,7 @@ describe("readAttachmentTurn", () => {
     // The seam's report is what the money fuse counts (#1258), so «no model was
     // called» has to arrive as a zero, not as an absent field.
     expect((await readAttachmentTurn(csv(POSITIONS_CSV))).visionCalls).toBe(0);
-    expect((await readAttachmentTurn(csv(NOT_A_POSITIONS_TABLE_CSV))).visionCalls).toBe(
-      0,
-    );
+    expect((await readAttachmentTurn(csv(NOT_A_KNOWN_DOCUMENT_CSV))).visionCalls).toBe(0);
   });
 
   it.each([1, 2])("carries the %i call(s) the seam says it made", async (calls) => {
