@@ -111,6 +111,18 @@ describe("resolveModelQuickActions", () => {
       },
     ]);
   });
+
+  it("never emits a chip without a href, whatever the figure names (#1407)", () => {
+    // Every object inherits these, so a plain map lookup answered «yes» for a figure
+    // nobody registered and the resolved href came out `undefined` — not `null`, so it
+    // walked past the guard and became `<Link href={undefined}>`, which throws while
+    // rendering the panel.
+    for (const figure of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      expect(
+        resolveModelQuickActions([{ type: "openInternalSource", label: "x", figure }]),
+      ).toEqual([]);
+    }
+  });
 });
 
 describe("extractEmbeddedQuickActions", () => {

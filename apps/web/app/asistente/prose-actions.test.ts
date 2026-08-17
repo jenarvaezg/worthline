@@ -243,6 +243,19 @@ describe("splitProseActionBlock", () => {
     }
   });
 
+  it("drops a narrated call whose typed reference resolves to no route", () => {
+    // `constructor` is not a figure, but every object has one: the resolved href used
+    // to come out `undefined` and the chip reached the panel with no destination.
+    for (const args of [
+      '{"figure":"constructor"}',
+      '{"section":"otra"}',
+      '{"holding":"asset_inventado_123"}',
+    ]) {
+      const text = `Texto.\n\n// Acciones sugeridas:\n- [Mira esto] (openInternalSource:${args})`;
+      expect(splitProseActionBlock(text)).toEqual({ cleaned: "Texto.", actions: [] });
+    }
+  });
+
   it("recognises a narrated call for every type of quick action", () => {
     // A new quick-action type breaks this map in the typecheck, and with it this test:
     // `NARRATED_CALL` naming its own subset of the vocabulary is what would otherwise

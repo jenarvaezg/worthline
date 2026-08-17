@@ -197,14 +197,18 @@ export function resolveModelQuickActions(raw: unknown): QuickAction[] {
         const holding = boundedString(item["holding"], MAX_LABEL);
         const section = parseScreenSection(item["section"]);
         const figure = boundedString(item["figure"], MAX_LABEL);
-        let href: string | null = null;
+        let resolved: string | null = null;
         if (holding !== null) {
-          href = sourceHref({ kind: "holding", publicId: holding });
+          resolved = sourceHref({ kind: "holding", publicId: holding });
         } else if (section !== null) {
-          href = sourceHref({ kind: "section", section });
+          resolved = sourceHref({ kind: "section", section });
         } else if (figure !== null) {
-          href = sourceHref({ kind: "figure", figure });
+          resolved = sourceHref({ kind: "figure", figure });
         }
+        // Through the same gate as a href written in the text, resolved or not: one
+        // place decides what a chip may point at, and `OpenInternalSourceAction.href`
+        // being a string is then true by construction rather than by inspection.
+        const href = resolved === null ? null : internalActionHref(resolved);
         if (href !== null) {
           actions.push({ type: "openInternalSource", label, href });
         }
@@ -680,10 +684,19 @@ export function sourceHref(ref: SourceRef): string | null {
         ? holdingDetailHref(ref.publicId)
         : null;
     case "section":
-      return SECTION_ROUTE[ref.section];
+      return SECTION_ROUTE[ref.section] ?? null;
     case "figure": {
-      const section = FIGURE_SECTION[ref.figure];
-      return section ? SECTION_ROUTE[section] : null;
+      // Own properties only, and `?? null` on both lookups (#1407). The figure name
+      // comes from the model, and every object inherits `constructor`, `toString` and
+      // `hasOwnProperty` from its prototype: a plain `FIGURE_SECTION[ref.figure]`
+      // returned the truthy `Object` constructor for «constructor», which then indexed
+      // `SECTION_ROUTE` to `undefined` — and `undefined` is not `null`, so it slipped
+      // through every `!== null` guard downstream and became a chip with NO href, a
+      // `<Link href={undefined}>` that throws while rendering the assistant panel.
+      const section = Object.hasOwn(FIGURE_SECTION, ref.figure)
+        ? FIGURE_SECTION[ref.figure]
+        : undefined;
+      return section === undefined ? null : (SECTION_ROUTE[section] ?? null);
     }
   }
 }
