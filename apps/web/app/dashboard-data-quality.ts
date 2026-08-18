@@ -148,6 +148,9 @@ export async function collectDashboardDataQualitySignals(
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId: input.fireConfigByScopeId,
+    // The same ledger, un-folded: the savings-coherence watch (#1449) needs the
+    // operations themselves, not just the net units derived from them.
+    investmentOperationsByAssetId: input.operationsByAsset,
     liabilities: input.liabilities,
     manualValueHistoryByAssetId,
     netUnitsByAssetId: netUnitsByAsset(input.operationsByAsset),

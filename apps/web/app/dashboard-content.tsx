@@ -27,6 +27,7 @@ import CompositionPanel from "./composition-panel";
 import { compositionUrl } from "./composition-url";
 import { parseMode } from "./dashboard-matrix";
 import DonutDrill, { type DonutSegment } from "./donut-drill";
+import FireAchievementBadge from "./fire-achievement-badge";
 import FramingPanel, { type FramingTab } from "./framing-panel";
 import { latestFetchedAt } from "./freshness";
 import { HeroMonthlyMicroBand, HeroWeeklyBlock } from "./hero-breakdown";
@@ -151,11 +152,11 @@ function FireGlanceCard({
             }}
           />
         </div>
-        {glance.isFunded ? (
-          <span className="statePill ready">FIRE alcanzado</span>
-        ) : glance.isAlreadyAtCoastFire ? (
-          <span className="statePill ready">Coast FIRE alcanzado</span>
-        ) : null}
+        <FireAchievementBadge
+          achievement={glance.achievement}
+          currency={currency}
+          privacyMode={privacyMode}
+        />
       </div>
       {glance.yearsToFire !== null ? (
         <div className="fireMetric">

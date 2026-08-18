@@ -1328,6 +1328,113 @@ describe("loadDashboard — contribution plan does not touch the FIRE projection
 });
 
 // ---------------------------------------------------------------------------
+// Measured savings ✕ achievement badge (#1449)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — the achievement badge answers to the measured ledger", () => {
+  /** A 100 € buy a month for the 12 months ending 2026-06. */
+  const MONTHS = [
+    "2025-07",
+    "2025-08",
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+  ];
+
+  async function seed(store: WorthlineStore, withBigSell: boolean): Promise<void> {
+    await makeWorkspace(store);
+    await makeAsset(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 1_000_00,
+      id: "asset_fondo",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "investment",
+    });
+
+    for (const month of MONTHS) {
+      await store.operations.recordOperation({
+        assetId: "asset_fondo",
+        currency: "EUR",
+        executedAt: `${month}-10`,
+        feesMinor: 0,
+        id: `op_buy_${month}`,
+        kind: "buy",
+        pricePerUnit: "1",
+        units: "100",
+      });
+    }
+
+    if (withBigSell) {
+      await store.operations.recordOperation({
+        assetId: "asset_fondo",
+        currency: "EUR",
+        executedAt: "2026-03-15",
+        feesMinor: 0,
+        id: "op_sell_big",
+        kind: "sell",
+        pricePerUnit: "1",
+        units: "5000",
+      });
+    }
+
+    // FIRE number = 100 € × 12 / 0,04 = 30.000 €, well under the 100.000 € of cash:
+    // funded on paper, whatever the ledger says.
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 10_000,
+      safeWithdrawalRate: 0.04,
+      monthlySavingsCapacityMinor: 100_000,
+      expectedRealReturn: 0.05,
+    });
+  }
+
+  const load = (store: WorthlineStore) =>
+    loadDashboard({
+      store,
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      today: "2026-06-25",
+      now: "2026-06-25T10:00:00.000Z",
+    });
+
+  // The veto is computed in the domain but only fires when this loader hands the
+  // ledger in — the wiring is the half that can silently go missing.
+  test("vetoes the badge when the ledger measures dis-saving", async () => {
+    const store = await createInMemoryStore();
+    await seed(store, true);
+
+    const glance = (await load(store)).fireGlance!;
+
+    expect(glance.achievement).toMatchObject({ level: "fire", vetoed: true });
+    expect(glance.achievement.measuredMonthlySavingsMinor).toBeLessThan(0);
+
+    store.close();
+  });
+
+  test("leaves the badge alone when the ledger backs the declared figure", async () => {
+    const store = await createInMemoryStore();
+    await seed(store, false);
+
+    expect((await load(store)).fireGlance!.achievement).toMatchObject({
+      level: "fire",
+      vetoed: false,
+    });
+
+    store.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Home hero data-health alert (#665, PRD #654 S3)
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { FireScopeConfig } from "./index";
+import type { FireScopeConfig, InvestmentOperation } from "./index";
 import {
   createManualAsset,
   createWorkspace,
@@ -132,6 +132,124 @@ describe("fireGlance in prepareDashboardState", () => {
     const base = state.fireProjection!.scenarios.find((s) => s.label === "base")!;
     expect(base.yearsToFire).not.toBeNull();
     expect(base.totalContributedMinor).toBe(100_000 * 12 * base.yearsToFire!);
+  });
+
+  /** A monthly buy of `amountMajor` € for the 12 months ending 2026-06. */
+  function monthlyBuys(amountMajor: number): InvestmentOperation[] {
+    const months = [
+      "2025-07",
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+    ];
+    return months.map((month) => ({
+      assetId: "asset_inv",
+      currency: "EUR",
+      executedAt: `${month}-10`,
+      feesMinor: 0,
+      id: `buy-${month}`,
+      kind: "buy" as const,
+      pricePerUnit: "1",
+      units: String(amountMajor),
+    }));
+  }
+
+  function glanceWithLedger(operations: InvestmentOperation[]) {
+    // 100 % funded: eligible 600.000 € against a 600.000 € FIRE number.
+    const funded = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 60_000_000,
+      id: "asset_inv",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: fullOwnership,
+      type: "investment",
+    });
+
+    return prepareDashboardState({
+      assets: [funded],
+      fireConfig: {
+        household: { ...fireConfig, monthlySavingsCapacityMinor: 100_000 },
+      },
+      investmentOperationsByAssetId: new Map([["asset_inv", operations]]),
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    }).fireGlance!;
+  }
+
+  // #1449: the badge is a claim about the future, made from a snapshot of today.
+  // A ledger that measures dis-saving says the real trajectory goes the other way,
+  // so the badge is shown as a caveat instead of a congratulation.
+  test("vetoes the achievement badge when the ledger measures dis-saving", () => {
+    const glance = glanceWithLedger([
+      ...monthlyBuys(100),
+      {
+        assetId: "asset_inv",
+        currency: "EUR",
+        executedAt: "2026-03-10",
+        feesMinor: 0,
+        id: "sell-big",
+        kind: "sell",
+        pricePerUnit: "1",
+        units: "5000",
+      },
+    ]);
+
+    expect(glance.achievement).toMatchObject({ level: "fire", vetoed: true });
+    expect(glance.achievement.measuredMonthlySavingsMinor).toBeLessThan(0);
+    expect(glance.achievement.measuredMonths).toBe(12);
+  });
+
+  test("keeps the badge when the ledger backs the declared savings", () => {
+    expect(glanceWithLedger(monthlyBuys(1000)).achievement).toMatchObject({
+      level: "fire",
+      vetoed: false,
+    });
+  });
+
+  test("keeps the badge when no ledger was handed in", () => {
+    const glance = prepareDashboardState({
+      assets: [
+        createManualAsset(workspace, {
+          currency: "EUR",
+          currentValueMinor: 60_000_000,
+          id: "asset_inv",
+          liquidityTier: "market",
+          name: "Fondo indexado",
+          ownership: fullOwnership,
+          type: "investment",
+        }),
+      ],
+      fireConfig: { household: fireConfig },
+      liabilities: [],
+      persistence,
+      positions: [],
+      priceCache: [],
+      scopes: [scope],
+      selectedScope: scope,
+      selectedView: "liquid",
+      snapshots: [],
+      today: "2026-06-25",
+      workspace,
+    }).fireGlance!;
+
+    expect(glance.achievement).toMatchObject({ level: "fire", vetoed: false });
   });
 
   test("returns populated fireGlance when FIRE is configured", () => {

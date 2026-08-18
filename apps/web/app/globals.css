@@ -1499,6 +1499,14 @@ th:last-child {
   color: var(--gold);
 }
 
+/* An achievement badge the measured savings contradict (#1449): the capital is
+   there on paper, so the badge stays — but in the aviso register, never in green.
+   Its own words ("sobre el papel") carry the meaning; the gold only seconds it. */
+.statePill.caution {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
 .fireProgress {
   display: grid;
   gap: 8px;
@@ -2753,6 +2761,34 @@ code {
   align-content: start;
   display: grid;
   gap: 12px;
+}
+
+/* The reason a badge is attenuated (#1449) — same voice as the coast explainer,
+   shared by the home glance and the /objetivos hero. */
+.fireAchievementCaveat {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.fireAchievementCaveat strong {
+  color: var(--gold);
+}
+
+/* El aviso de declarado-vs-medido en el panel FIRE (#1449): registro de aviso,
+   no de error — nada está roto, hay dos cifras que no encajan. */
+.objetivosSavingsGap {
+  border-left: 2px solid var(--gold);
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 10px;
+}
+
+.objetivosSavingsGap a {
+  color: var(--blue);
 }
 
 /* Coast FIRE explainer paragraph */

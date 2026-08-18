@@ -458,6 +458,12 @@ export {
   projectFireFromContext,
   withRate,
 } from "./fire";
+export type {
+  FireAchievement,
+  FireAchievementInput,
+  FireAchievementLevel,
+} from "./fire-achievement";
+export { fireAchievement } from "./fire-achievement";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
 export { splitFireCapital } from "./fire-capital-split";
 export type { BirthDate } from "./fire-current-age";
@@ -666,8 +672,12 @@ export {
   parseDecimalToMinorStrict,
   subtractMoney,
 } from "./money";
-export type { MonthlySavingsSuggestion } from "./monthly-savings";
-export { suggestMonthlySavingsCapacity } from "./monthly-savings";
+export type {
+  MeasureMonthlySavingsOptions,
+  MonthlySavingsMeasurement,
+  MonthlySavingsSuggestion,
+} from "./monthly-savings";
+export { measureMonthlySavings, suggestMonthlySavingsCapacity } from "./monthly-savings";
 export type {
   LiquidityComponent,
   LiquidityTierBreakdown,
@@ -854,6 +864,20 @@ export {
   returnsByAssetClassView,
   returnsKindForInstrument,
 } from "./returns-display";
+export type {
+  AssessSavingsCoherenceInput,
+  SavingsCoherence,
+  SavingsCoherenceState,
+} from "./savings-coherence";
+export {
+  assessSavingsCoherence,
+  describeSavingsDivergence,
+  MEASURED_SAVINGS_MIN_MONTHS,
+  MEASURED_SAVINGS_WINDOW_MONTHS,
+  SAVINGS_DIVERGENCE_MIN_ABSOLUTE_MINOR,
+  SAVINGS_DIVERGENCE_MIN_RATIO,
+  scopeSavingsCoherence,
+} from "./savings-coherence";
 export type { ScopeOption, ScopeType } from "./scope";
 export { findScopeMemberIds, listScopeOptions, resolveScopeMemberIds } from "./scope";
 export type { ScopedHolding } from "./scope-allocation";

@@ -14,9 +14,11 @@ import { daysBetween } from "./dates";
 import { type DecimalString, formatUnits } from "./decimal";
 import type { FireScopeConfig } from "./fire";
 import { valuationMethodOfAsset } from "./holding-method";
-import { projectPortfolio } from "./portfolio-projection";
+import type { InvestmentOperation } from "./investment-types";
 import type { PriceFreshnessState } from "./prices";
+import { describeSavingsDivergence, scopeSavingsCoherence } from "./savings-coherence";
 import { resolveScopeMemberIds, type ScopeOption } from "./scope";
+import { scopeOwnedHoldingIds } from "./scope-holdings";
 import type { NetWorthSnapshot } from "./snapshot-types";
 import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-history";
 import {
@@ -36,6 +38,7 @@ export type DataQualityCategory =
   | "price_freshness"
   | "source_freshness"
   | "missing_configuration"
+  | "savings_coherence"
   | "history_coverage"
   | "projection_gap";
 
@@ -162,6 +165,16 @@ export interface CollectDataQualitySignalsInput {
    * instead of each growing its own (#1348).
    */
   netUnitsByAssetId: ReadonlyMap<string, DecimalString>;
+  /**
+   * The investment ledger keyed by holding id — the evidence behind the
+   * declared-vs-measured savings watch (#1449). Required, not optional, for the
+   * same reason `netUnitsByAssetId` is: both consumers already hold this map
+   * (the shared projection context on the home, the per-holding reads on the
+   * agent view), and a signal only one of them feeds is a signal the human and
+   * the agent disagree about. An empty map reads as "no ledger", which silences
+   * the watch rather than accusing anyone.
+   */
+  investmentOperationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>;
   /** Calendar day the collection runs against (`YYYY-MM-DD`). */
   asOfDateKey: string;
 }
@@ -188,6 +201,12 @@ export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
 export function isOverrideableSignalCode(code: string): boolean {
   return OVERRIDEABLE_SIGNAL_CODES.has(code);
 }
+
+/**
+ * Machine code for a scope whose declared savings capacity and measured savings
+ * cannot both be true (#1449).
+ */
+export const SAVINGS_DECLARED_VS_MEASURED_CODE = "SAVINGS_DECLARED_VS_MEASURED";
 
 /** Machine code for a connection whose sync keeps failing attempt after attempt (#1226). */
 export const PERSISTENT_SYNC_FAILURE_CODE = "PERSISTENT_SYNC_FAILURE";
@@ -221,6 +240,7 @@ export const DATA_QUALITY_CATEGORY_ORDER: readonly DataQualityCategory[] = [
   "price_freshness",
   "source_freshness",
   "missing_configuration",
+  "savings_coherence",
   "history_coverage",
   "projection_gap",
 ];
@@ -239,12 +259,12 @@ const SEVERITY_RANK: Record<DataQualitySeverity, number> = {
 export function collectDataQualitySignals(
   input: CollectDataQualitySignalsInput,
 ): DataQualitySignal[] {
-  const ownedAssetIds = ownedHoldingIds(
-    input.workspace,
-    input.scopeOption,
-    input.assets,
-    input.liabilities,
-  );
+  const ownedAssetIds = scopeOwnedHoldingIds({
+    assets: input.assets,
+    liabilities: input.liabilities,
+    scopeOption: input.scopeOption,
+    workspace: input.workspace,
+  });
 
   return [
     ...warningSignals(
@@ -290,6 +310,14 @@ export function collectDataQualitySignals(
       input.fireConfigByScopeId,
       input.debtModelByLiabilityId,
     ),
+    ...savingsCoherenceSignals(
+      input.scope,
+      input.workspace,
+      ownedAssetIds,
+      input.fireConfigByScopeId,
+      input.investmentOperationsByAssetId,
+      input.asOfDateKey,
+    ),
     ...historyCoverageSignals(
       input.scope,
       input.snapshots,
@@ -327,24 +355,6 @@ export function compareDataQualitySignals(
     return byPrimary;
   }
   return a.tieBreaker.localeCompare(b.tieBreaker);
-}
-
-function ownedHoldingIds(
-  workspace: Workspace,
-  scope: ScopeOption,
-  assets: readonly ManualAsset[],
-  liabilities: readonly Liability[],
-): Set<string> {
-  const projection = projectPortfolio({
-    assets: [...assets],
-    liabilities: [...liabilities],
-    scope,
-    workspace,
-  });
-  return new Set([
-    ...projection.sections[0].rows.map((row) => row.id),
-    ...projection.sections[1].rows.map((row) => row.id),
-  ]);
 }
 
 function warningSignals(
@@ -858,6 +868,67 @@ function missingConfigurationSignals(
   }
 
   return signals;
+}
+
+/**
+ * The declared savings capacity against what the ledger measures (#1449) — the
+ * counterweight to #1416's cut of the plan→FIRE derivation.
+ *
+ * The signal states the disagreement and shows all three figures (declared,
+ * measured, gap). It deliberately does NOT decide which side is wrong: an
+ * optimistic declaration, a stale spending figure, rents declared gross, and
+ * savings that never reach an investment all produce the same shape, and only the
+ * user knows which one it is. `medium`, like the other figure-shaping config
+ * signals: nothing on screen is provably wrong, but the FIRE date is built on a
+ * number that has now failed its only available check.
+ *
+ * Scopes with no FIRE config are silent here — `MISSING_FIRE_CONFIG` already
+ * covers them, and there is no declared figure to disagree with.
+ */
+function savingsCoherenceSignals(
+  scope: DataQualityScopeContext,
+  workspace: Workspace,
+  ownedAssetIds: Set<string>,
+  fireConfigByScopeId: Readonly<Record<string, FireScopeConfig | undefined>>,
+  investmentOperationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>,
+  asOfDateKey: string,
+): DataQualitySignal[] {
+  const config = fireConfigByScopeId[scope.internalScopeId];
+  if (config === undefined) {
+    return [];
+  }
+
+  const coherence = scopeSavingsCoherence({
+    asOfDateKey,
+    config,
+    currency: workspace.baseCurrency,
+    operationsByAssetId: investmentOperationsByAssetId,
+    ownedHoldingIds: ownedAssetIds,
+  });
+
+  if (coherence.state !== "diverged") {
+    return [];
+  }
+
+  return [
+    {
+      affected: {
+        id: scope.internalScopeId,
+        label: scope.scopeLabel,
+        object: "scope",
+      },
+      category: "savings_coherence",
+      code: SAVINGS_DECLARED_VS_MEASURED_CODE,
+      fixable: true,
+      label: describeSavingsDivergence(coherence, workspace.baseCurrency),
+      naturalKey: signalNaturalKey(
+        "savings_coherence",
+        SAVINGS_DECLARED_VS_MEASURED_CODE,
+        scope.internalScopeId,
+      ),
+      severity: "medium",
+    },
+  ];
 }
 
 function historyCoverageSignals(

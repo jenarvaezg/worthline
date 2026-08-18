@@ -486,6 +486,26 @@ retirement age** is the one age the user chooses. Its inputs are the user's
 declarations, stored in a form that cannot expire; what the app measures or derives
 elsewhere is a lens or a warning, never an input that overwrites one (ADR 0074).
 
+**Measured savings**:
+Net money the operations ledger shows going into investments over the trailing 12
+calendar months, per month and **with its sign** — the one figure of the monthly flow
+the app can produce without anybody typing it. It is never an input to **FIRE
+progress**: it is the declared savings capacity's only witness, crossed against it as a
+**data-quality signal** and vetoing **achievement badges** while it is negative
+(ADR 0075). Below three months of ledger, or across mixed currencies, there is no
+measurement and nothing is claimed.
+_Avoid_: net savings (a different figure — the residual band of the **delta
+breakdown**, computed from snapshots), savings capacity (the user's declaration),
+savings rate (a ratio).
+
+**Achievement badge**:
+The "FIRE alcanzado" / "Coast FIRE alcanzado" mark on the home glance and the
+/objetivos hero. A claim about the future made from today's capital, so it answers to
+**measured savings**: while those are negative the badge is shown attenuated and worded
+"alcanzado sobre el papel", with the measured figure named underneath — never hidden,
+never green (ADR 0075).
+_Avoid_: state pill (the visual component, not the concept).
+
 **Birth date**:
 A member's birth year and, optionally, birth month — the only stored age fact. Every
 age FIRE prints (the coast age, the years to target retirement, the three projected
@@ -580,7 +600,8 @@ category of **data-quality signal** — the per-holding misconfiguration flags.
 A flag about how much the data behind the figures can be trusted: a **warning**,
 a stale or failed price, a stale or failed **sync**, a **sync** that has failed
 attempt after attempt (#1226), missing configuration (FIRE,
-a debt model), sparse or gapped **snapshot** history, an unvalued **position**, a
+a debt model), a declared savings capacity its **measured savings** cannot back
+(#1449), sparse or gapped **snapshot** history, an unvalued **position**, a
 manual value long without a **value update pass**, or a holding sitting in the
 **trash** with units still held (#1365). Computed live per **scope**
 from persisted state — never stored, never a figure. Carries a severity and,

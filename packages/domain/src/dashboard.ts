@@ -5,6 +5,8 @@ import {
   isFireEligibleAsset,
   projectFireFromContext,
 } from "./fire";
+import type { FireAchievement } from "./fire-achievement";
+import { fireAchievement } from "./fire-achievement";
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
@@ -19,7 +21,7 @@ import {
   goalReservedMinor,
   totalGoalReservationMinor,
 } from "./goals";
-import type { PositionSummary } from "./investment-types";
+import type { InvestmentOperation, PositionSummary } from "./investment-types";
 import type {
   LiquidityTierBreakdown,
   NetWorthFraming,
@@ -29,8 +31,11 @@ import type {
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { AssetPrice } from "./prices";
+import type { SavingsCoherence } from "./savings-coherence";
+import { scopeSavingsCoherence } from "./savings-coherence";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
+import { scopeOwnedHoldingIds } from "./scope-holdings";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
 import { calculateSnapshotDeltas } from "./snapshot-types";
 import type { Liability, ManualAsset, Member, Workspace } from "./workspace-types";
@@ -121,10 +126,13 @@ export interface FireGlance {
   percentFunded: number;
   /** coastRequired / fireNumber (0–1); null when coast data is unavailable. */
   coastTickFraction: number | null;
-  /** True when already at Coast FIRE. */
-  isAlreadyAtCoastFire: boolean;
-  /** True when fully FIRE funded. */
-  isFunded: boolean;
+  /**
+   * The achievement badge and whether it is vetoed by measured dis-saving
+   * (#1449). Replaces the raw `isFunded` / `isAlreadyAtCoastFire` pair the card
+   * used to branch on, so the veto cannot be applied on one screen and forgotten
+   * on the other.
+   */
+  achievement: FireAchievement;
   /** Whole years to FIRE from the base scenario; null if beyond the horizon. */
   yearsToFire: number | null;
   /** Number of active goals for the scope. */
@@ -151,6 +159,11 @@ export interface DashboardState {
   fireProjection: FireProjection | null;
   /** Compact glance data for the home FIRE card (PRD #507, S1); null when unconfigured. */
   fireGlance: FireGlance | null;
+  /**
+   * Declared-vs-measured savings for the selected scope (#1449). Null when FIRE is
+   * unconfigured or the caller handed in no ledger to measure.
+   */
+  savingsCoherence: SavingsCoherence | null;
   selectedMemberIds: string[];
   pyramid: LiquidityTierBreakdown[];
   deltas: SnapshotDeltas | undefined;
@@ -186,6 +199,14 @@ export function prepareDashboardState(input: {
    * agree on which holdings the total covers.
    */
   fx?: FxAggregation;
+  /**
+   * The investment ledger keyed by holding id — the evidence the achievement-badge
+   * veto reads (#1449). Optional because a caller with no FIRE config on screen has
+   * nothing to veto; when absent, the badge behaves exactly as it did before. Both
+   * page loads that draw the badge already hold this map (the shared projection
+   * context), so passing it costs no I/O.
+   */
+  investmentOperationsByAssetId?: ReadonlyMap<string, readonly InvestmentOperation[]>;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -292,6 +313,25 @@ export function prepareDashboardState(input: {
     snapshotCount: input.snapshots.length,
   });
 
+  // Declared-vs-measured savings (#1449): the same reading the health engine
+  // alerts on, over the same scope-owned holdings — so the badge on screen and
+  // the alert above it can never disagree about what the ledger measures.
+  const savingsCoherence: SavingsCoherence | null =
+    fireScopeConfig && workspace && selectedScope && input.investmentOperationsByAssetId
+      ? scopeSavingsCoherence({
+          asOfDateKey: today,
+          config: fireScopeConfig,
+          currency: workspace.baseCurrency,
+          operationsByAssetId: input.investmentOperationsByAssetId,
+          ownedHoldingIds: scopeOwnedHoldingIds({
+            assets,
+            liabilities,
+            scopeOption: selectedScope,
+            workspace,
+          }),
+        })
+      : null;
+
   const fireGlance: FireGlance | null =
     fireScopeConfig && fireResult
       ? {
@@ -304,8 +344,13 @@ export function prepareDashboardState(input: {
                     fireResult.fireNumber.amountMinor,
                 )
               : null,
-          isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire ?? false,
-          isFunded: fireResult.percentFunded >= 100,
+          achievement: fireAchievement({
+            ...(fireResult.isAlreadyAtCoastFire === undefined
+              ? {}
+              : { isAlreadyAtCoastFire: fireResult.isAlreadyAtCoastFire }),
+            ...(savingsCoherence === null ? {} : { coherence: savingsCoherence }),
+            percentFunded: fireResult.percentFunded,
+          }),
           yearsToFire:
             fireProjection?.scenarios.find((s) => s.label === "base")?.yearsToFire ??
             null,
@@ -331,6 +376,7 @@ export function prepareDashboardState(input: {
     presentation,
     priceCache: input.priceCache,
     pyramid,
+    savingsCoherence,
     scopes: input.scopes,
     selectedMemberIds,
     selectedScope,
@@ -369,6 +415,19 @@ export interface ObjetivosState {
   fireScopeConfig: DashboardState["fireScopeConfig"];
   /** coastRequired / fireNumber clamped to [0,1]; null when coast data unavailable. */
   coastTickFraction: number | null;
+  /**
+   * The achievement badge for the hero, veto included (#1449). Read off the same
+   * `fireAchievement` the home card reads, so "FIRE alcanzado" cannot be a claim
+   * on one screen and a caveat on the other. Null when FIRE is unconfigured.
+   */
+  achievement: FireAchievement | null;
+  /**
+   * Declared-vs-measured savings for the scope (#1449). The FIRE panel is where
+   * the divergence gets shown to a human: the health engine keeps it in the shared
+   * inventory, but the figures it puts in doubt (the FIRE date, the funded
+   * percentage) live here. Null when FIRE is unconfigured or no ledger was handed in.
+   */
+  savingsCoherence: SavingsCoherence | null;
   goals: ObjetivosGoalView[];
   /**
    * Coast · Lean · Regular · Fat milestones (PRD #507 N1, #513).
@@ -454,7 +513,9 @@ export function prepareObjetivosState(
     : null;
 
   return {
+    achievement: dash.fireGlance?.achievement ?? null,
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
+    savingsCoherence: dash.savingsCoherence,
     fireProjection: dash.fireProjection,
     fireResult: dash.fireResult,
     fireScopeConfig: dash.fireScopeConfig,

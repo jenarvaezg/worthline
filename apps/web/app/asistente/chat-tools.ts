@@ -1442,6 +1442,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               "price_freshness",
               "source_freshness",
               "missing_configuration",
+              "savings_coherence",
               "history_coverage",
               "projection_gap",
             ],
