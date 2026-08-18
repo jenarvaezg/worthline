@@ -551,6 +551,126 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(asset?.currentValue.amountMinor).toBe(100_000);
   });
 
+  test("a blank «Fecha del saldo» keeps the opening dated today (#1395, unchanged path)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "crypto",
+        name_crypto: "Bitcoin",
+        symbol_crypto: "bitcoin",
+        price_crypto: "50.000,00",
+        invMode_crypto: "saldo",
+        saldo_crypto: "1.000,00",
+        saldoDate_crypto: "",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    expect(ops[0]!.executedAt).toBe("2026-06-15");
+    // Dated today, so there is no past to reconstruct: no backfilled snapshot.
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
+  });
+
+  test("a past «Fecha del saldo» dates the opening there and rebuilds the history from that day (#1395)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "Fondo destino del traspaso",
+        symbol_fund: "VANGTLI",
+        price_fund: "319,59",
+        invMode_fund: "saldo",
+        saldo_fund: "1.089,79",
+        // The traspaso landed 15 days before the alta (#1393): the money left the
+        // origin fund then, and the destination must exist from that day.
+        saldoDate_fund: "2026-05-31",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=investment_added");
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.executedAt).toBe("2026-05-31");
+    expect(ops[0]!.units).toBe("3.409963");
+    expect(ops[0]!.source).toBe("opening");
+
+    // The ripple (ADR 0012/0020) reconstructed the net worth AT the saldo date —
+    // the hole between the exit and the re-entry is what #1395 is about.
+    const snapshots = await store.snapshots.readSnapshots();
+    expect(snapshots.map((snap) => snap.dateKey)).toContain("2026-05-31");
+    const rebuilt = snapshots.find((snap) => snap.dateKey === "2026-05-31")!;
+    expect(rebuilt.totalNetWorth.amountMinor).toBeGreaterThanOrEqual(1_089_79);
+  });
+
+  test("a future «Fecha del saldo» is refused and records no opening (#1395)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "crypto",
+        name_crypto: "Bitcoin",
+        symbol_crypto: "bitcoin",
+        price_crypto: "50.000,00",
+        invMode_crypto: "saldo",
+        saldo_crypto: "1.000,00",
+        saldoDate_crypto: "2026-07-01",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url).replaceAll("+", " ")).toContain("no puede ser futura");
+    expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
+  });
+
+  test("an impossible calendar date is refused and refills the field (#1395)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "crypto",
+        name_crypto: "Bitcoin",
+        symbol_crypto: "bitcoin",
+        price_crypto: "50.000,00",
+        invMode_crypto: "saldo",
+        saldo_crypto: "1.000,00",
+        // Passes any ISO regex and sorts before today, yet 30 February is not a day:
+        // it would land as an executed_at (and a snapshot dateKey) no calendar reads.
+        saldoDate_crypto: "2026-02-30",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    // The redirect encodes spaces as «+», so read it back the way a URL does.
+    const decoded = decodeURIComponent(url).replaceAll("+", " ");
+    expect(decoded).toContain("no es válida");
+    // The guard fires before any write: no holding, no operation, no snapshot — and
+    // the typed date comes back, so the fix is one edit instead of a re-entry.
+    expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    expect(await store.snapshots.readSnapshots()).toHaveLength(0);
+    expect(decoded).toContain("v_saldoDate_crypto=2026-02-30");
+  });
+
   test("import path creates the investment with NO opening operation and routes to «Cargar movimientos»", async () => {
     const store = await seedStore();
 
@@ -603,11 +723,9 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url)).toContain("precio");
-    // The opening BUY never recorded (the price guard fired before it).
-    const meta = await store.assets.readInvestmentAssetsWithMeta();
-    if (meta.length > 0) {
-      expect(await store.operations.readOperations(meta[0]!.id)).toHaveLength(0);
-    }
+    // The price guard fires before the creation, so there is no 0 € container either
+    // — the "no orphaned holding" the action's comment promises.
+    expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
   });
 });
 

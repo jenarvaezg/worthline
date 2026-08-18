@@ -47,6 +47,18 @@ test("saldo-de-hoy: crypto → opening BUY, lands valued, shows ≈ participacio
   await expect(saldoPane.locator(".invUnitsHint")).toContainText("participaciones");
   await expect(saldoPane.locator(".invUnitsHint")).toContainText("0,02");
 
+  // «Fecha del saldo» (#1395): dating the saldo in the past re-labels the pane and
+  // makes the hint announce the history rebuild. Cleared before submitting, so this
+  // journey keeps adding a holding dated today and the later journeys' totals stay
+  // as they are — the WRITE side of a backdated alta (the opening's executed_at and
+  // the rippled snapshot) is covered at the action level instead.
+  const saldoDate = saldoPane.locator('input[name="saldoDate_crypto"]');
+  await saldoDate.fill("2026-01-15");
+  await expect(saldoPane.locator(".invUnitsHint")).toContainText("histórico");
+  await expect(saldoPane).toContainText("valor liquidativo del 15 ene 2026");
+  await saldoDate.fill("");
+  await expect(saldoPane.locator(".invUnitsHint")).toContainText("0,02");
+
   await saldoPane.getByRole("button", { name: "Añadir" }).click();
 
   // S5 (#600): the simple wizard loops — the add lands on the success screen

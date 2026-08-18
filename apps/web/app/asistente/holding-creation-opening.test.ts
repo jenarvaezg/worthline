@@ -1,3 +1,4 @@
+import { multiplyToMinor } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -135,6 +136,23 @@ describe("resolveHoldingCreationOpening (#1315) · derivation fallback", () => {
       ok: true,
       opening: { pricePerUnit: "150", units: "10", valueMinor: 1_500_00 },
     });
+  });
+
+  test("the derived value comes from the SAME engine as the units (#1395)", () => {
+    // The units are cut at six decimals, so at a five-figure unit price they no
+    // longer fold back to the declared amount to the cent. The plan's valueMinor is
+    // what the impact card promises and the operation is what gets written, so the
+    // two must be one figure: units × price, never the amount that was typed.
+    const resolved = resolveHoldingCreationOpening({
+      openingValueMinor: 1_234_56,
+      pricePerUnit: "100000",
+    });
+
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok || !resolved.opening) return;
+    const { pricePerUnit, units, valueMinor } = resolved.opening;
+    expect(units).toBe("0.012346");
+    expect(valueMinor).toBe(multiplyToMinor(units, pricePerUnit));
   });
 
   test("a commission without units is carved out before dividing", () => {

@@ -317,6 +317,7 @@ export async function AnadirHoldingContent({
                   livePrice={livePrice}
                   resolvedParams={resolvedParams}
                   selectedInstrument={selectedInstrument}
+                  today={today}
                   values={values}
                 />
                 <HousingPane hasPrimaryResidence={hasPrimaryResidence} values={values} />
@@ -388,11 +389,13 @@ function InvestmentPane({
   livePrice,
   resolvedParams,
   selectedInstrument,
+  today,
   values,
 }: {
   livePrice: string | null;
   resolvedParams: Record<string, string | string[] | undefined>;
   selectedInstrument: Instrument | undefined;
+  today: string;
   values: Record<string, string>;
 }) {
   return (
@@ -430,6 +433,7 @@ function InvestmentPane({
           livePrice={livePrice}
           resolvedParams={resolvedParams}
           selectedInstrument={selectedInstrument}
+          today={today}
           values={values}
         />
       ))}
@@ -442,12 +446,14 @@ function InvestmentGroupPane({
   livePrice,
   resolvedParams,
   selectedInstrument,
+  today,
   values,
 }: {
   group: InvestmentGroup;
   livePrice: string | null;
   resolvedParams: Record<string, string | string[] | undefined>;
   selectedInstrument: Instrument | undefined;
+  today: string;
   values: Record<string, string>;
 }) {
   const id = group.instrument;
@@ -518,15 +524,18 @@ function InvestmentGroupPane({
 
       <div className="invModePane" data-mode="saldo">
         <InvestmentCapture
+          defaultDate={v("saldoDate") ?? ""}
           defaultPrice={priceValue}
           defaultSaldo={v("saldo") ?? ""}
           instrument={id}
           key={captureKey}
+          livePrice={isSelected && livePrice ? livePrice : undefined}
           priceHint={
             isSelected && livePrice
               ? `Precio en vivo de ${group.providerLabel}.`
               : group.symbolHint
           }
+          today={today}
         />
         <PaneActions />
       </div>

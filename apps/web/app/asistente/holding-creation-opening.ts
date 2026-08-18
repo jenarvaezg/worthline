@@ -260,7 +260,18 @@ export function resolveHoldingCreationOpening(
     opening: {
       pricePerUnit: derived.price,
       units: derived.units,
-      valueMinor: netMinor,
+      // The value of the position the operation WRITES — units × price, from the
+      // same engine, not the amount that was declared. Since #1395 the derived
+      // units are cut at six decimals, so at a five-figure unit price the two
+      // differ by a few cents; carrying the declared amount here would make the
+      // impact card promise a figure the persisted operation does not add up to
+      // (the #1422 rule: two figures side by side come from the SAME engine).
+      // Deliberately silent: the gap this can open is rounding-scale by
+      // construction (half a millionth of a unit), so warning about it on every
+      // high-priced alta would be noise. A real disagreement between declared
+      // terms still gets its `mismatchWarning` — that is the units-declared
+      // branch above, where the two figures come from the document itself.
+      valueMinor: multiplyToMinor(derived.units, derived.price),
       ...(fees === undefined ? {} : { feesMinor: fees }),
     },
     ...(options.valueIsBalance === true
