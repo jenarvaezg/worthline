@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 import type { FireScopeConfig } from "@worthline/domain";
-import { withDerivedCurrentAges } from "@worthline/domain";
+import { unitPriceMajorByHoldingId, withDerivedCurrentAges } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
@@ -18,6 +18,7 @@ import {
   openDatabaseTarget,
   resolveDatabaseTarget,
 } from "./database-target";
+import { seedDeclaredFireSavingsCapacity } from "./fire-savings-capacity-seed";
 import { createGoalStore } from "./goal-store";
 import { createLiabilityStore } from "./liability-store";
 import { openLibsqlClient } from "./libsql-client";
@@ -463,6 +464,22 @@ async function buildStore(
     liabilities: liabilityStore,
     snapshots: snapshotStore,
   });
+
+  // v56 (#1416, ADR 0074): the plan→FIRE savings derivation is gone, so a scope
+  // that lived off it with no declared scalar keeps the figure it projects today —
+  // written once, marked as seeded so /ajustes asks the user to check it. Gated on
+  // the `pending` row the ladder enqueues, so it cannot be lost to a process that
+  // discards the migrate result.
+  await seedDeclaredFireSavingsCapacity(
+    ctx,
+    {
+      readContributionPlan: (scopeId) =>
+        contributionPlanStore.readContributionPlan(scopeId),
+      readUnitPrices: async () =>
+        unitPriceMajorByHoldingId(await operationsStore.readAllPriceCacheEntries()),
+    },
+    () => deps.clock?.() ?? new Date().toISOString(),
+  );
 
   return store;
 }

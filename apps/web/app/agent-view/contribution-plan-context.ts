@@ -24,7 +24,6 @@ import {
   projectExposureDrift,
   projectFireFromContext,
   resolveHoldingAnnualReturnForProjection,
-  resolveMonthlySavingsCapacityForFire,
   systemClock,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
@@ -103,25 +102,16 @@ export async function buildContributionPlanContext(
   const workspace = await store.readWorkspace();
   const currency = workspace?.baseCurrency ?? "EUR";
 
-  const [plan, reconciliations, priceCache, fireConfig, assets] = await Promise.all([
+  const [plan, reconciliations, priceCache, assets] = await Promise.all([
     store.readContributionPlan(internalScopeId),
     store.readContributionReconciliations(internalScopeId),
     store.readAllPriceCacheEntries(),
-    store.readFireConfig(today),
     store.readAssets(),
   ]);
 
   const unitPrices = unitPriceMajorByHoldingId(priceCache);
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-
-  const scopeConfig = fireConfig[internalScopeId];
-  const monthlyCapacity = resolveMonthlySavingsCapacityForFire(
-    plan,
-    scopeConfig ?? { monthlySpendingMinor: 0, safeWithdrawalRate: 0.04 },
-    today,
-    unitPrices,
-  );
 
   const operations = await readInvestmentOperations(store, assets);
   const reconciliationFromDate = earliestPlanDate(plan, today);
@@ -179,17 +169,6 @@ export async function buildContributionPlanContext(
     contributions: plan.contributions.map((contribution) =>
       toPlannedContribution(contribution, holdingPublicIds, currency, unitPrices, today),
     ),
-    monthlySavingsCapacity: {
-      amount: moneyOf(monthlyCapacity.capacityMinor, currency),
-      source: monthlyCapacity.source,
-      ...(monthlyCapacity.missingUnitPriceHoldingIds === undefined
-        ? {}
-        : {
-            missingUnitPriceHoldings: monthlyCapacity.missingUnitPriceHoldingIds.map(
-              (holdingId) => requirePublicId(holdingPublicIds, holdingId),
-            ),
-          }),
-    },
     monthlyAllocation: toMonthlyAllocation(
       computeMonthlyContributionAllocation({
         monthKey: month,

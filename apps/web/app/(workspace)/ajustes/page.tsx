@@ -119,6 +119,12 @@ export async function AjustesContent({
   const legacyFrozenAge =
     derivedScopeAge === undefined ? fireScopeConfig?.currentAge : undefined;
 
+  // #1416: the v56 migration wrote this scope's savings capacity from the total the
+  // FIRE projection used to read off the contribution plan. A figure the user never
+  // typed must say where it came from and ask to be checked; saving this form clears
+  // the flag, because by then he has seen the note.
+  const seededFromPlan = fireScopeConfig?.monthlySavingsCapacitySeededFromPlan === true;
+
   return (
     <>
       {formError && !formError.formId ? (
@@ -467,6 +473,10 @@ export async function AjustesContent({
                       : "0"
                   }
                 />
+                <small className="muted">
+                  Es la única cifra de ahorro que usa la proyección FIRE: tu plan de
+                  aportaciones no la pisa.
+                </small>
                 {savingsSuggestion.basis === "operations" ? (
                   <small className="muted">
                     Sugerido por tu histórico:{" "}
@@ -481,6 +491,13 @@ export async function AjustesContent({
                   </small>
                 ) : null}
               </label>
+              {seededFromPlan ? (
+                <p className="warningBand">
+                  Hemos puesto este ahorro mensual con el total de tu plan de
+                  aportaciones, que es lo que la proyección usaba antes. Revísalo: aquí va
+                  lo que ahorras cada mes, no solo lo que aportas a un destino.
+                </p>
+              ) : null}
               <label>
                 Multiplicador Lean FIRE (opcional)
                 <input

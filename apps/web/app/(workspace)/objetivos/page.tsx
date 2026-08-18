@@ -232,7 +232,6 @@ export async function ObjetivosContent({
     fireLevelRail,
   } = prepareObjetivosState({
     assets,
-    contributionPlan,
     fireConfig,
     goals,
     liabilities,

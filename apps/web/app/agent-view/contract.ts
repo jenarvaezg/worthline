@@ -1861,11 +1861,14 @@ export interface AgentViewContributionPlanContext {
   truthNote: string;
   status: "empty" | "configured";
   contributions: AgentViewPlannedContribution[];
-  monthlySavingsCapacity: {
-    amount: AgentViewMoney;
-    source: "plan_derived" | "manual_fallback" | "incomplete_unit_pricing";
-    missingUnitPriceHoldings?: string[];
-  };
+  /**
+   * No `monthlySavingsCapacity` here on purpose (#1416, ADR 0074). This surface
+   * used to report the FIRE savings capacity and where it came from, because the
+   * plan overrode the user's declared scalar. It no longer does: the plan's own
+   * monthly figure is `monthlyAllocation.totalPlanned`, and the capacity the FIRE
+   * projection contributes is `get_fire_projection.monthlySavingsCapacity` — one
+   * number per question, so the assistant cannot quote a subset as the total.
+   */
   monthlyAllocation: AgentViewMonthlyAllocation;
   reconciliation: AgentViewContributionReconciliation;
   whatIf: AgentViewContributionWhatIf;

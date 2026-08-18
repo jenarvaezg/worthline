@@ -115,7 +115,10 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/contribution-plan", () => {
     expect(body.data.monthlyAllocation.slices).toHaveLength(1);
     expect(body.data.monthlyAllocation.slices[0].shareOfMonth).toBe("1");
     expect(body.data.reconciliation.window.from).toBe("2026-01-01");
-    expect(body.data.monthlySavingsCapacity.source).toBe("plan_derived");
+    // #1416: this surface no longer reports a FIRE savings capacity at all. The
+    // plan's own monthly figure is `monthlyAllocation.totalPlanned`; the capacity
+    // the projection contributes belongs to `get_fire_projection`.
+    expect(body.data.monthlySavingsCapacity).toBeUndefined();
     expect(body.data.reconciliation.object).toBe("contribution_reconciliation");
     expect(body.data.whatIf.growthAssumption).toBe("flat");
     expect(body.data.whatIf.status).toBe("configured");

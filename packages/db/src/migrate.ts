@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 55;
+export const SCHEMA_VERSION = 56;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1657,6 +1657,37 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       await client.executeMultiple("ALTER TABLE members ADD COLUMN birth_month INTEGER");
     } catch {}
     await writeSchemaVersion(client, 55);
+  }
+
+  if (version < 56) {
+    // #1416: no DDL — this step ENQUEUES a data seed the store performs on open.
+    // The FIRE projection no longer derives its monthly savings from the
+    // contribution plan (ADR 0074): the plan models planned additions to named
+    // destinations, so summing its rows substituted a subset for the total the user
+    // declared. Jorge declared 1.500 €/mes and the app projected the 100 €/mes of
+    // his single pension-plan row — five years of FIRE date, with nothing on screen
+    // saying so.
+    //
+    // A scope that projected the plan's total and never typed a scalar keeps that
+    // figure, written once into `monthlySavingsCapacityMinor`. The work needs the
+    // domain (cadence math) and this module is a leaf with no `@worthline/domain`
+    // dependency, so the ladder cannot do it — but it must not be signalled with a
+    // returned flag either: `runBootstrapHealthcheck` runs the ladder and DISCARDS
+    // the result, so a boolean can be consumed by a process that does not seed, and
+    // an error after the version bump would swallow it. The pending marker is a
+    // ROW: whoever opens the store next finds the work still queued (see
+    // `seedDeclaredFireSavingsCapacity`, which flips it to its completion stamp).
+    //
+    // Only on a pre-existing DB: a fresh one has no plan and no config, so it never
+    // gets a marker and never pays a read for one.
+    if (version >= 2) {
+      await execToleratingMissingTable(
+        client,
+        `INSERT INTO app_settings (key, value) VALUES ('fire.capacity_seed.v56', 'pending')
+         ON CONFLICT (key) DO NOTHING`,
+      );
+    }
+    await writeSchemaVersion(client, 56);
   }
 
   return { ranV18Backfill, ranV33Backfill };

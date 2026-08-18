@@ -151,4 +151,37 @@ describe("FIRE config persistence", () => {
       expect((await store.readFireConfig("2026-08-18")).household?.currentAge).toBe(63);
     });
   });
+
+  describe("the seeded-capacity marker is cleared by a save (#1416)", () => {
+    // The v56 migration writes `monthlySavingsCapacitySeededFromPlan` so /ajustes can
+    // say "we put this here, check it". The note must not outlive the check, and it
+    // stops precisely because `saveFireConfig` replaces the scope object — the one
+    // carve-out being the legacy `currentAge` (#1415). Pin it: a future carry-forward
+    // that also preserved this flag would make the band permanent, silently.
+    test("saving the FIRE form drops the marker while keeping the legacy age", async () => {
+      const store = await createFileBackedStore("worthline-fire-");
+      const seeded = {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        currentAge: 48,
+        monthlySavingsCapacityMinor: 10_000,
+        monthlySavingsCapacitySeededFromPlan: true,
+        excludedAssetIds: [],
+      };
+      await store.saveFireConfig("household", seeded);
+
+      // What the form parser produces: no age (derived now), no seed marker.
+      await store.saveFireConfig("household", {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        monthlySavingsCapacityMinor: 150_000,
+        excludedAssetIds: [],
+      });
+
+      const saved = (await store.readFireConfig("2026-08-18")).household!;
+      expect(saved.monthlySavingsCapacitySeededFromPlan).toBeUndefined();
+      expect(saved.monthlySavingsCapacityMinor).toBe(150_000);
+      expect(saved.currentAge).toBe(48);
+    });
+  });
 });

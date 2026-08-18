@@ -3,13 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   type ContributionPlan,
   contributionOccurrenceId,
-  derivedMonthlySavingsCapacity,
   expandContributionPlan,
   type PlannedContribution,
+  plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
-  resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
-import type { FireScopeConfig } from "./fire";
 
 function contribution(overrides: Partial<PlannedContribution> = {}): PlannedContribution {
   return {
@@ -280,9 +278,9 @@ describe("projectContributionReconciliation", () => {
   });
 });
 
-describe("derivedMonthlySavingsCapacity", () => {
+describe("plannedMonthlyContributionsMinor", () => {
   it("sums active contributions' monthly-equivalent money amounts", () => {
-    const capacity = derivedMonthlySavingsCapacity(
+    const planned = plannedMonthlyContributionsMinor(
       plan([
         contribution({
           id: "monthly",
@@ -298,16 +296,15 @@ describe("derivedMonthlySavingsCapacity", () => {
       ]),
       "2025-06-01",
     );
-    expect(capacity).toBe(300_000 + Math.round((100_000 * 52) / 12));
+    expect(planned).toBe(300_000 + Math.round((100_000 * 52) / 12));
   });
 
-  it("falls back to the manual scalar when the plan is empty", () => {
-    expect(derivedMonthlySavingsCapacity(plan([]), "2025-06-01", 250_000)).toBe(250_000);
-    expect(derivedMonthlySavingsCapacity(plan([]), "2025-06-01")).toBe(0);
+  it("is 0 for an empty plan — there is no scalar to fall back to", () => {
+    expect(plannedMonthlyContributionsMinor(plan([]), "2025-06-01")).toBe(0);
   });
 
   it("converts units with a supplied unit price", () => {
-    const capacity = derivedMonthlySavingsCapacity(
+    const planned = plannedMonthlyContributionsMinor(
       plan([
         contribution({
           amount: { mode: "units", value: "2" },
@@ -315,14 +312,13 @@ describe("derivedMonthlySavingsCapacity", () => {
         }),
       ]),
       "2025-06-01",
-      undefined,
       { h1: "1000" },
     );
-    expect(capacity).toBe(200_000);
+    expect(planned).toBe(200_000);
   });
 
   it("returns null when an active units contribution lacks a unit price", () => {
-    const capacity = derivedMonthlySavingsCapacity(
+    const planned = plannedMonthlyContributionsMinor(
       plan([
         contribution({
           amount: { mode: "units", value: "2" },
@@ -331,11 +327,11 @@ describe("derivedMonthlySavingsCapacity", () => {
       ]),
       "2025-06-01",
     );
-    expect(capacity).toBeNull();
+    expect(planned).toBeNull();
   });
 
   it("ignores contributions that ended before today", () => {
-    const capacity = derivedMonthlySavingsCapacity(
+    const planned = plannedMonthlyContributionsMinor(
       plan([
         contribution({
           endDate: "2025-01-31",
@@ -344,56 +340,6 @@ describe("derivedMonthlySavingsCapacity", () => {
       ]),
       "2025-06-01",
     );
-    expect(capacity).toBe(0);
-  });
-});
-
-describe("resolveMonthlySavingsCapacityForFire", () => {
-  const baseConfig: FireScopeConfig = {
-    monthlySpendingMinor: 2_000_000,
-    safeWithdrawalRate: 0.04,
-    monthlySavingsCapacityMinor: 150_000,
-  };
-
-  it("reads the derived plan total when contributions exist", () => {
-    expect(
-      resolveMonthlySavingsCapacityForFire(
-        plan([contribution({ amount: { mode: "money", value: 400_000 } })]),
-        baseConfig,
-        "2025-06-01",
-      ),
-    ).toEqual({ capacityMinor: 400_000, source: "plan_derived" });
-  });
-
-  it("matches the old scalar behaviour when only the manual value is set", () => {
-    expect(resolveMonthlySavingsCapacityForFire(null, baseConfig, "2025-06-01")).toEqual({
-      capacityMinor: 150_000,
-      source: "manual_fallback",
-    });
-    expect(
-      resolveMonthlySavingsCapacityForFire(plan([]), baseConfig, "2025-06-01"),
-    ).toEqual({
-      capacityMinor: 150_000,
-      source: "manual_fallback",
-    });
-  });
-
-  it("falls back to the manual scalar and reports missing prices for unit rows", () => {
-    expect(
-      resolveMonthlySavingsCapacityForFire(
-        plan([
-          contribution({
-            amount: { mode: "units", value: "1" },
-            cadence: { kind: "monthly", dayOfMonth: 1 },
-          }),
-        ]),
-        baseConfig,
-        "2025-06-01",
-      ),
-    ).toEqual({
-      capacityMinor: 150_000,
-      source: "incomplete_unit_pricing",
-      missingUnitPriceHoldingIds: ["h1"],
-    });
+    expect(planned).toBe(0);
   });
 });

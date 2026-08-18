@@ -1,5 +1,3 @@
-import type { ContributionPlan } from "./contribution-plan";
-import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireScopeConfig } from "./fire";
 import {
   calculateFireForScope,
@@ -10,6 +8,7 @@ import {
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
+import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 import type { FxAggregation } from "./fx";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
@@ -30,7 +29,6 @@ import type {
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { AssetPrice } from "./prices";
-import { unitPriceMajorByHoldingId } from "./prices";
 import type { ScopeOption } from "./scope";
 import { resolveScopeMemberIds } from "./scope";
 import type { NetWorthSnapshot, SnapshotDeltas } from "./snapshot-types";
@@ -180,8 +178,6 @@ export function prepareDashboardState(input: {
   goals?: Goal[];
   /** Today (YYYY-MM-DD), for the goal-reservation horizon; defaults to the system date. */
   today?: string;
-  /** Scope contribution plan (ADR 0041); drives derived monthly savings for FIRE. */
-  contributionPlan?: ContributionPlan | null;
   /**
    * FX context for non-base-currency holdings (#1065). Present only when the
    * portfolio actually holds a foreign currency (the caller resolves ECB rates
@@ -193,7 +189,6 @@ export function prepareDashboardState(input: {
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
-  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
 
   const summary =
     workspace && selectedScope
@@ -250,15 +245,15 @@ export function prepareDashboardState(input: {
   // FIRE projection (#427): scenarios from the reservation-adjusted eligible
   // total and the configured monthly savings capacity. The resolved rate, FIRE
   // number and age ride in the context (#1026), so coast + projection + levels
-  // agree by construction — no rate to thread by hand, no fallback.
+  // agree by construction — no rate to thread by hand, no fallback. The savings
+  // capacity is the declared scalar and nothing else (#1416, ADR 0074): the
+  // contribution plan used to override it here, substituting one destination's
+  // planned addition for the user's declared total.
   const fireProjection = fireResult
     ? projectFireFromContext(fireResult.context, {
-        monthlyContributionMinor: resolveMonthlySavingsCapacityForFire(
-          input.contributionPlan,
+        monthlyContributionMinor: monthlySavingsCapacityForFire(
           fireResult.context.config,
-          today,
-          unitPrices,
-        ).capacityMinor,
+        ),
       })
     : null;
 
@@ -401,7 +396,6 @@ export function prepareObjetivosState(
       : new Set();
 
   const now = input.today ?? new Date().toISOString().slice(0, 10);
-  const unitPrices = unitPriceMajorByHoldingId(input.priceCache);
   const fireHorizon = dash.fireScopeConfig
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;
@@ -447,12 +441,6 @@ export function prepareObjetivosState(
             otherReservationsMinor,
             thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
             now,
-            ...(input.contributionPlan
-              ? { contributionPlan: input.contributionPlan }
-              : {}),
-            ...(Object.keys(unitPrices).length > 0
-              ? { unitPriceMajorByHoldingId: unitPrices }
-              : {}),
           })
         : { kind: "no_effect" as const },
     };
@@ -462,14 +450,7 @@ export function prepareObjetivosState(
   // (#1026), so rail ETAs are coherent with the projection chart and coast by
   // construction — the context carries the SAME net eligible the chart starts from.
   const fireLevelRail = dash.fireResult
-    ? fireLevels({
-        context: dash.fireResult.context,
-        today: now,
-        ...(input.contributionPlan ? { contributionPlan: input.contributionPlan } : {}),
-        ...(Object.keys(unitPrices).length > 0
-          ? { unitPriceMajorByHoldingId: unitPrices }
-          : {}),
-      })
+    ? fireLevels({ context: dash.fireResult.context })
     : null;
 
   return {

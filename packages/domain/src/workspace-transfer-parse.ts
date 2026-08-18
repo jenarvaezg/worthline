@@ -226,6 +226,8 @@ const fireScopeConfigSchema = z.object({
   targetRetirementAge: z.number().optional(),
   excludedAssetIds: z.array(nonEmptyString).optional(),
   monthlySavingsCapacityMinor: z.number().int().optional(),
+  /** #1416 seed marker: survives a transfer so the "check it" note is not lost. */
+  monthlySavingsCapacitySeededFromPlan: z.boolean().optional(),
   leanMultiplier: z.number().optional(),
   fatMultiplier: z.number().optional(),
   baristaMonthlyIncomeMinor: z.number().int().optional(),

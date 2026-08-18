@@ -1298,7 +1298,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         "Lee el plan de aportaciones del scope: contribuciones recurrentes, reparto " +
         "mensual previsto, pendientes/backlog de reconciliación y proyección what-if " +
         "bajo el plan (growthAssumption flat|historical). Toda la respuesta es previsión, " +
-        "no verdad ejecutada; las operaciones confirmadas siguen en get_operations.",
+        "no verdad ejecutada; las operaciones confirmadas siguen en get_operations. NO da " +
+        "la capacidad de ahorro del FIRE: esa vive en get_fire_projection.",
       inputSchema: jsonSchema<{
         scopeId?: string;
         month?: string;
