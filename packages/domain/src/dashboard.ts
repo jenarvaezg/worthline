@@ -29,6 +29,7 @@ import type {
   NetWorthSummary,
 } from "./net-worth";
 import { buildLiquidityBreakdown, calculateNetWorth, presentNetWorth } from "./net-worth";
+import type { PayoutSchedule } from "./payouts";
 import type { LocalPersistenceStatus } from "./persistence";
 import type { AssetPrice } from "./prices";
 import type { SavingsCoherence } from "./savings-coherence";
@@ -207,6 +208,13 @@ export function prepareDashboardState(input: {
    * context), so passing it costs no I/O.
    */
   investmentOperationsByAssetId?: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  /**
+   * Declared payout schedules (#1448) — the evidence behind the rent-derived FIRE
+   * rate. Optional: without them the rate is the tier weighting it always was.
+   * Every screen that draws a FIRE figure already reads these for its payout
+   * surfaces, so passing them costs no I/O.
+   */
+  payoutSchedules?: readonly PayoutSchedule[];
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -260,6 +268,12 @@ export function prepareDashboardState(input: {
           workspace,
           selectedScope.id,
           fireReservedMinor,
+          {
+            // Same "today" as the reservation horizon above: a schedule's validity
+            // must not be measured on a second clock (#1448).
+            todayISO: today,
+            ...(input.payoutSchedules ? { payoutSchedules: input.payoutSchedules } : {}),
+          },
         )
       : null;
 

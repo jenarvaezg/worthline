@@ -128,12 +128,66 @@ describe("payout schedule CRUD", () => {
         holdingId: "h1",
         label: "Alquiler piso",
         amountMinor: 100000,
+        // Not declared, not zero (#1448): a rent with no declared cost derives no
+        // FIRE rate at all, so the two have to stay distinguishable in storage.
+        expensesMinor: null,
         cadence: "monthly",
         startISO: "2024-01-01",
         endISO: null,
         exclusions: [],
       },
     ]);
+  });
+
+  it("round-trips declared expenses, and tells a declared 0 from an absence", async () => {
+    const store = await freshStore();
+    const withCosts = await store.payouts.createPayoutSchedule({
+      amountMinor: 100_000,
+      cadence: "monthly",
+      expensesMinor: 25_000,
+      holdingId: "h1",
+      label: "Alquiler con gastos",
+      startISO: "2024-01-01",
+    });
+    const free = await store.payouts.createPayoutSchedule({
+      amountMinor: 50_000,
+      cadence: "monthly",
+      expensesMinor: 0,
+      holdingId: "h1",
+      label: "Alquiler sin gastos",
+      startISO: "2024-01-01",
+    });
+
+    const byId = new Map(
+      (await store.payouts.readPayoutSchedulesForHolding("h1")).map((row) => [
+        row.id,
+        row.expensesMinor,
+      ]),
+    );
+    expect(byId.get(withCosts.id)).toBe(25_000);
+    expect(byId.get(free.id)).toBe(0);
+    expect(free.expensesMinor).toBe(0);
+  });
+
+  it("updates the declared expenses, and clears them back to 'not declared'", async () => {
+    const store = await freshStore();
+    const schedule = await store.payouts.createPayoutSchedule({
+      amountMinor: 100_000,
+      cadence: "monthly",
+      holdingId: "h1",
+      label: "Alquiler",
+      startISO: "2024-01-01",
+    });
+
+    await store.payouts.updatePayoutSchedule(schedule.id, { expensesMinor: 30_000 });
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding("h1"))[0]?.expensesMinor,
+    ).toBe(30_000);
+
+    await store.payouts.updatePayoutSchedule(schedule.id, { expensesMinor: null });
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding("h1"))[0]?.expensesMinor,
+    ).toBeNull();
   });
 
   it("updates a schedule: retroactive end and per-occurrence exclusions", async () => {

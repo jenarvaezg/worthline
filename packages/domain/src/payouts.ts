@@ -31,6 +31,20 @@ export interface PayoutSchedule {
   holdingId: string;
   label: string;
   amountMinor: number;
+  /**
+   * What this income costs its owner, per occurrence and in the SAME cadence as
+   * `amountMinor` — the agency, the IBI, the insurance, the community fees, the
+   * maintenance, the empty months (#1448). The one exception to "a payout is
+   * income-only": it adds no figure either (net rent is not a payout, and the
+   * passive-income lens stays gross), it exists so a rented property's FIRE return
+   * can be its NET yield instead of the housing rung's guessed 3 %.
+   *
+   * Absent / null means **not declared**, and nothing is assumed from it: no rate
+   * is derived at all rather than the gross being used, which would flatter. A
+   * declared `0` is a different statement — "this income costs me nothing" — and
+   * does derive.
+   */
+  expensesMinor?: number | null;
   cadence: PayoutCadence;
   startISO: string;
   /** A retroactive end date removes the dead tail in one edit. Inclusive. */

@@ -14,6 +14,8 @@
 
 import { tierOfAsset } from "./classification";
 import type { FireScopeConfig } from "./fire";
+import type { RentRealReturns, RentReturnNotice } from "./fire-rent-return";
+import type { AssetRateOverride } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
 import { rungForLiability } from "./liquidity-ladder";
 import { resolveScopeMemberIds } from "./scope";
@@ -39,6 +41,13 @@ export interface AssembleFireEligiblePoolInput {
   liabilities: Liability[];
   workspace: Workspace;
   scopeId: string;
+  /**
+   * Per-asset rates derived from declared net rent (#1448), plus the declarations
+   * that could not produce one. Both are filtered here — the loop that already
+   * decides eligibility and ownership is the only one entitled to say which
+   * declaration actually took effect for this scope.
+   */
+  rentRealReturns?: RentRealReturns;
 }
 
 export interface FireEligiblePool {
@@ -71,6 +80,19 @@ export interface FireEligiblePool {
    * nothing and is not surfaced (listing it would just be noise).
    */
   excludedAssets: FireExcludedAsset[];
+  /**
+   * The per-asset rates that ACTUALLY apply to this scope's pool (#1448): eligible,
+   * owned, and carrying a derived rate. `effectiveRealReturn` substitutes each one
+   * over its slice of its tier. Empty when nothing was derived.
+   */
+  assetRateOverrides: AssetRateOverride[];
+  /**
+   * Declared rents that did not become a rate for an asset this scope actually
+   * holds, with the reason (#1448). Scope-relative like `excludedAssets`, and
+   * silent about assets FIRE excludes anyway: a warning about the primary
+   * residence's rent would be noise, since its capital is out of FIRE too.
+   */
+  rentReturnNotices: RentReturnNotice[];
 }
 
 /**
@@ -85,7 +107,14 @@ export function assembleFireEligiblePool(
   const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, scopeId));
   const excludedSet = new Set(config.excludedAssetIds ?? []);
 
+  const rentRateByAssetId = input.rentRealReturns?.byAssetId;
+  const rentNoticeByAssetId = new Map(
+    (input.rentRealReturns?.notices ?? []).map((notice) => [notice.assetId, notice]),
+  );
+
   let eligiblePreDebtMinor = 0;
+  const assetRateOverrides: AssetRateOverride[] = [];
+  const rentReturnNotices: RentReturnNotice[] = [];
   const excludedAssets: FireExcludedAsset[] = [];
   const excludedAssetIds = new Set<string>();
   // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
@@ -111,6 +140,23 @@ export function assembleFireEligiblePool(
       const tier = tierOfAsset(asset);
       eligibleByTierMinor[tier] = (eligibleByTierMinor[tier] ?? 0) + ownedMinor;
       eligibleTierByAssetId.set(asset.id, tier);
+      // An asset the scope owns nothing of weighs nothing, so neither its derived
+      // rate nor a warning about it belongs to this scope (#1448).
+      if (ownedMinor > 0) {
+        const derived = rentRateByAssetId?.get(asset.id);
+        if (derived) {
+          assetRateOverrides.push({
+            amountMinor: ownedMinor,
+            assetId: asset.id,
+            rate: derived.rate,
+            tier,
+          });
+        }
+        const notice = rentNoticeByAssetId.get(asset.id);
+        if (notice) {
+          rentReturnNotices.push(notice);
+        }
+      }
       continue;
     }
 
@@ -157,5 +203,7 @@ export function assembleFireEligiblePool(
     eligibleByTierMinor,
     scopedDebtByTierMinor,
     excludedAssets,
+    assetRateOverrides,
+    rentReturnNotices,
   };
 }

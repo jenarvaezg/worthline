@@ -6,10 +6,13 @@ import type { FireGrowthAssumption } from "./fire-plan-projection";
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
+import type { FireRentReturnReport } from "./fire-rent-return";
+import { deriveRentRealReturns } from "./fire-rent-return";
 import { effectiveRealReturn } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
+import type { PayoutSchedule } from "./payouts";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
 export type { FireExcludedAsset, FireExclusionReason } from "./fire-eligible-pool";
@@ -137,6 +140,13 @@ export interface ScopeFireResult extends FireResult {
    * `calculateFire`, which only sees a pre-computed total with no tier mix.
    */
   readonly capitalSplit: FireCapitalSplit;
+  /**
+   * What the declared rents did to the rate (#1448): the properties whose net
+   * yield replaced the housing rung's guess, and the rents that were left out with
+   * the reason. Both empty when no schedule was handed in — the rate is then the
+   * pure tier weighting it always was.
+   */
+  readonly rentReturns: FireRentReturnReport;
 }
 
 /**
@@ -314,6 +324,27 @@ export function calculateFire(
   return result;
 }
 
+/**
+ * The evidence `calculateFireForScope` reads beyond the holdings themselves. One
+ * door for the rent-derived rate (#1448): a caller hands in the declared payout
+ * schedules it already has, and the substitution happens HERE — so the home, the
+ * /objetivos panel, the figure explanations and the MCP tools cannot end up
+ * quoting different rates for the same scope.
+ */
+export interface CalculateFireForScopeOptions {
+  /**
+   * Every declared payout schedule (all holdings). When omitted, no rate is derived
+   * and the tier defaults stand exactly as before.
+   */
+  payoutSchedules?: readonly PayoutSchedule[];
+  /**
+   * Today (YYYY-MM-DD) — what a schedule's validity window is measured against.
+   * Defaults to the system date; pass the page's own "today" so the rate is
+   * measured on the same clock as everything else on screen.
+   */
+  todayISO?: string;
+}
+
 export function calculateFireForScope(
   config: FireScopeConfig,
   assets: ManualAsset[],
@@ -325,12 +356,32 @@ export function calculateFireForScope(
    * the scope-eligible total before the FIRE math; defaults to 0 (no goals).
    */
   reservedForGoalsMinor = 0,
+  options: CalculateFireForScopeOptions = {},
 ): ScopeFireResult {
+  // A rented property's own net yield replaces its rung's guess (#1448). Derived
+  // over ALL assets: the pool below is what filters this to the ones the scope
+  // owns and FIRE counts, so eligibility is decided in exactly one place.
+  //
+  // No schedules, no derivation and no clock: the system-date fallback exists only
+  // for a caller that hands in schedules without a date, and it must not put a
+  // second, disagreeing clock in front of a computation that has nothing to date.
+  const payoutSchedules = options.payoutSchedules ?? [];
+  const rentRealReturns =
+    payoutSchedules.length === 0
+      ? { byAssetId: new Map(), notices: [] }
+      : deriveRentRealReturns({
+          assets,
+          baseCurrency: workspace.baseCurrency,
+          schedules: payoutSchedules,
+          todayISO: options.todayISO ?? new Date().toISOString().slice(0, 10),
+        });
+
   // The risk-bearing pool assembly lives in its own tested module (#1122).
   const pool = assembleFireEligiblePool({
     config,
     assets,
     liabilities,
+    rentRealReturns,
     workspace,
     scopeId,
   });
@@ -338,7 +389,10 @@ export function calculateFireForScope(
     pool;
 
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
+  // A per-asset rate substitutes its tier's over its own slice (#1448) — it is not
+  // an extra weight, so the eligible total the rate describes is unchanged.
   const effective = effectiveRealReturn({
+    assetRateOverrides: pool.assetRateOverrides,
     eligibleByTierMinor,
     ...(config.tierRealReturns ? { tierRealReturns: config.tierRealReturns } : {}),
   });
@@ -378,5 +432,16 @@ export function calculateFireForScope(
     reservedForGoals: money(reserved, workspace.baseCurrency),
     context,
     capitalSplit,
+    rentReturns: {
+      // The overrides the pool kept ARE the rates that took effect, so the report
+      // cannot advertise a substitution the rate did not receive.
+      applied: pool.assetRateOverrides.flatMap((override) => {
+        const derived = rentRealReturns.byAssetId.get(override.assetId);
+        // The override's amount IS the scoped weight the rate was applied with, so
+        // the report cannot disagree with the arithmetic about how much it counted.
+        return derived ? [{ ...derived, scopedValueMinor: override.amountMinor }] : [];
+      }),
+      notices: pool.rentReturnNotices,
+    },
   };
 }

@@ -2545,6 +2545,63 @@ code {
   text-align: right;
 }
 
+/* The declared rent inside the expected return (#1448). A withheld rent is not an
+   error and not a figure: it is an invitation, so it reads in muted ink with the
+   gilt tick of the housing rung rather than in the alert band. */
+.fireRent {
+  border-top: 1px solid var(--hairline);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.fireRentTitle {
+  font-size: 0.86rem;
+  margin: 0 0 4px;
+}
+
+.fireRentIntro {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin: 0 0 8px;
+}
+
+.fireRentIntroWhy {
+  font-style: italic;
+}
+
+.fireRentList {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fireRentRow {
+  border-left: 2px solid var(--hairline);
+  display: grid;
+  gap: 2px;
+  padding-left: 10px;
+}
+
+.fireRentRow.is-applied {
+  border-left-color: var(--gold);
+}
+
+.fireRentRowTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.fireRentRow.is-withheld .fireRentRowTitle {
+  color: var(--muted);
+}
+
+.fireRentRowGloss {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 /* FIRE projection card (PRD #421, #427). */
 .fireProjection {
   border-top: 1px solid var(--hairline);
@@ -9465,6 +9522,23 @@ td.rowActions > * {
 }
 .cobrosScheduleActions form {
   display: inline;
+}
+/* Declared costs, inline on the row (#1448): the rent's gastos are edited where the
+   rent is listed, because a schedule declared before the field existed has to be
+   completable without re-entering it. */
+.cobrosExpensesForm {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+.cobrosScheduleActions form.cobrosExpensesForm {
+  display: inline-flex;
+}
+.cobrosExpensesForm input {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  width: 96px;
 }
 .cobrosHonestNote {
   color: var(--muted);

@@ -281,6 +281,8 @@ export const payoutSchedules = sqliteTable(
       .references(() => assets.id, { onDelete: "cascade" }),
     label: text("label").notNull(),
     amountMinor: integer("amount_minor").notNull(),
+    /** Declared cost of this income, same cadence as `amount_minor`; NULL = not declared (#1448). */
+    expensesMinor: integer("expenses_minor"),
     cadence: text("cadence").$type<PayoutCadence>().notNull(),
     startDate: text("start_date").notNull(),
     endDate: text("end_date"),

@@ -15,6 +15,7 @@ import {
   buildPayoutScheduleResult,
   type PayoutFields,
   type PayoutScheduleFields,
+  parseScheduleExpenses,
   toggleExclusion,
 } from "./cobros-form";
 
@@ -29,6 +30,7 @@ function scheduleFields(over: Partial<PayoutScheduleFields> = {}): PayoutSchedul
     cadence: "monthly",
     startISO: "2024-01-01",
     endISO: "",
+    expenses: "",
     ...over,
   };
 }
@@ -132,5 +134,63 @@ describe("toggleExclusion", () => {
     expect(toggleExclusion(["2025-06-01", "2025-09-01"], "2025-06-01")).toEqual([
       "2025-09-01",
     ]);
+  });
+});
+
+// ── declared expenses (#1448) ─────────────────────────────────────────────────
+
+describe("parseScheduleExpenses", () => {
+  test("an empty field is 'not declared', never a zero", () => {
+    // The distinction is the whole guard: with no declaration a rented property
+    // keeps the housing tier's 3 %, instead of sealing its gross yield as if net.
+    expect(parseScheduleExpenses("")).toEqual({ ok: true, expensesMinor: null });
+    expect(parseScheduleExpenses("   ")).toEqual({ ok: true, expensesMinor: null });
+  });
+
+  test("a declared 0 is a statement and parses as one", () => {
+    expect(parseScheduleExpenses("0")).toEqual({ ok: true, expensesMinor: 0 });
+  });
+
+  test("parses an es-ES amount into minor units", () => {
+    expect(parseScheduleExpenses("1.234,56")).toEqual({
+      ok: true,
+      expensesMinor: 123_456,
+    });
+  });
+
+  test("rejects garbage instead of coercing it to zero", () => {
+    const result = parseScheduleExpenses("doscientos");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/gastos válidos/);
+  });
+
+  test("rejects a negative cost", () => {
+    const result = parseScheduleExpenses("-50");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/negativos/);
+  });
+});
+
+describe("buildPayoutScheduleResult + expenses", () => {
+  test("carries the declared expenses through", () => {
+    const result = buildPayoutScheduleResult(scheduleFields({ expenses: "250" }));
+    expect(result.ok && result.schedule.expensesMinor).toBe(25_000);
+  });
+
+  test("omits the field entirely when blank (never expensesMinor: undefined)", () => {
+    const result = buildPayoutScheduleResult(scheduleFields());
+    expect(result.ok).toBe(true);
+    if (result.ok) expect("expensesMinor" in result.schedule).toBe(false);
+  });
+
+  test("costs above the income are accepted: a flat can cost more than it earns", () => {
+    const result = buildPayoutScheduleResult(
+      scheduleFields({ amount: "1000", expenses: "1200" }),
+    );
+    expect(result.ok && result.schedule.expensesMinor).toBe(120_000);
+  });
+
+  test("an unparseable cost fails the whole write", () => {
+    expect(buildPayoutScheduleResult(scheduleFields({ expenses: "??" })).ok).toBe(false);
   });
 });

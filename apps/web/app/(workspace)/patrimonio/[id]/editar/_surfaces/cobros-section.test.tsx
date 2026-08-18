@@ -39,7 +39,9 @@ const DIVIDEND: Payout = {
 
 const noop = async () => {};
 
-function renderSection(over: { monthlySpendingMinor?: number | null } = {}) {
+function renderSection(
+  over: { monthlySpendingMinor?: number | null; schedules?: PayoutSchedule[] } = {},
+) {
   return renderToStaticMarkup(
     <CobrosSection
       createPayoutAction={noop}
@@ -51,7 +53,7 @@ function renderSection(over: { monthlySpendingMinor?: number | null } = {}) {
       monthlySpendingMinor={over.monthlySpendingMinor ?? null}
       payouts={[DIVIDEND]}
       privacyMode={false}
-      schedules={[RENT]}
+      schedules={over.schedules ?? [RENT]}
       today={TODAY}
       updatePayoutScheduleAction={noop}
     />,
@@ -101,5 +103,38 @@ describe("CobrosSection wiring", () => {
   test("shows the coverage percentage when spending is declared", () => {
     const markup = renderSection({ monthlySpendingMinor: 220000 });
     expect(markup).toContain("de tu gasto declarado");
+  });
+});
+
+// ── declared expenses (#1448) ─────────────────────────────────────────────────
+
+describe("CobrosSection — declared expenses", () => {
+  test("the recurring form offers a costs field and says what it is for", () => {
+    const markup = renderSection();
+
+    expect(markup).toContain("Gastos del cobro recurrente");
+    expect(markup).toContain('name="expenses"');
+    // The user has to learn WHY it matters, or the field reads as budgeting.
+    expect(markup).toContain("alquiler neto");
+  });
+
+  test("a rent with no declared costs says so on its row", () => {
+    // The absence is what keeps the property on the 3 % default, so it cannot be
+    // an invisible blank: the row has to explain the rate that did not move.
+    expect(renderSection()).toContain("sin gastos declarados");
+  });
+
+  test("a rent with declared costs names them, and the row can be corrected", () => {
+    const markup = renderSection({
+      schedules: [{ ...RENT, expensesMinor: 25_000 }],
+    });
+
+    expect(markup).toContain(
+      `${formatMoneyMinorPrivacy({ amountMinor: 25_000, currency: "EUR" }, false)} de gastos`,
+    );
+    // Prefilled through the shared money-input formatter (es-ES, two decimals), so
+    // an existing declaration is edited rather than re-typed.
+    expect(markup).toContain('value="250,00"');
+    expect(markup).toContain('name="saveExpenses"');
   });
 });

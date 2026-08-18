@@ -206,12 +206,14 @@ Money a **holding** paid its owner on a date — a dividend, deposit or account
 interest, or rent. A dated attribution record, not a figure: it never touches
 **net worth**, the holding's value, **snapshots**, or **ripple recalculation** —
 the cash it brought arrives through the ordinary **value update pass** of whatever
-account received it, exactly as it does today. Asset-side and income-only: costs
-are not modelled (declare the one amount you consider yours — worthline is not a
-budgeting app), and what a liability charges is already modelled by its
-**amortization plan**. Entered one-off (a variable dividend) or derived from a
-**payout schedule** (rent). Like an **operation** it is small and re-enterable,
-so it deletes directly with confirmation and gets no trash.
+account received it, exactly as it does today. Asset-side and income-only: a one-off
+payout models no costs (declare the one amount you consider yours — worthline is not
+a budgeting app), and what a liability charges is already modelled by its
+**amortization plan**. The one exception is a **payout schedule**'s **declared
+expenses**, and even there no figure is netted — see that entry. Entered one-off
+(a variable dividend) or derived from a **payout schedule** (rent). Like an
+**operation** it is small and re-enterable, so it deletes directly with
+confirmation and gets no trash.
 UI label: "Cobro".
 _Avoid_: income (smells of salary and budgeting — in a net-worth app "ingreso"
 reads as an incoming transfer), flow (direction-ambiguous, collides with the
@@ -226,10 +228,35 @@ income is forecast, the **contribution plan** family's territory, not this.
 Amending it re-derives the list live: a retroactive end date removes a dead tail
 in one edit, and an **exclusion** removes a single occurrence (an unpaid month).
 A variable amount never gets a schedule — estimating one would invent facts;
-enter those as one-off **payouts**.
+enter those as one-off **payouts**. It may also carry **declared expenses**.
 UI label: "Cobro recurrente".
 _Avoid_: recurring income, planned payout (a schedule derives past truth; a plan
 forecasts the future).
+
+**Declared expenses**:
+What a **payout schedule**'s income costs its owner, per occurrence and in the
+schedule's own cadence — the agency, the IBI, the community fees, the insurance, the
+maintenance, the empty months. Declared, never estimated, and its absence is a
+distinct state from a declared zero: with no declaration nothing is derived from the
+income at all (ADR 0076). It adds and subtracts no figure anywhere — net worth, the
+**return**, the **delta breakdown** and the passive-income lens are all untouched, and
+the lens stays **gross**. Its only consumer is the **rent-derived real return**.
+UI label: "Gastos".
+_Avoid_: net rent (that is the derived figure, not the field), budget, spending (this
+is a cost OF an asset, not the user's **declared spending**).
+
+**Rent-derived real return**:
+The expected real return of a **real-estate** holding whose rent is declared: its
+annual net rent (income minus **declared expenses**) over its value, substituting the
+**housing** rung's default for that holding alone inside **FIRE progress**'s weighted
+return. Only the housing rung, because rent is inflation-linked and a flat's real
+appreciation is ~0 by construction — a deposit's interest is nominal and a fund's
+dividend is only part of its return, so neither substitutes. The rate is
+share-invariant (rent and value are both declared for 100 % of the property); only its
+weight is scoped. Without **declared expenses** it does not happen: the gross yield is
+never used, and the FIRE panel names it as the figure being withheld (ADR 0076).
+_Avoid_: rental yield (ambiguous about gross vs net — this one is always net), cap
+rate (property-investing jargon the app does not otherwise speak).
 
 **Return**:
 How an **investment**'s value has grown relative to what was put into it. worthline
@@ -484,7 +511,9 @@ declared spending, withdrawal-rate, return, and age assumptions. The **reference
 is derived from the member's **birth date**, never typed (ADR 0073); the **target
 retirement age** is the one age the user chooses. Its inputs are the user's
 declarations, stored in a form that cannot expire; what the app measures or derives
-elsewhere is a lens or a warning, never an input that overwrites one (ADR 0074).
+elsewhere is a lens or a warning, never an input that overwrites one (ADR 0074). The
+return is a weighted average of per-rung defaults, except for a holding whose income
+is declared: there it is the **rent-derived real return** (ADR 0076).
 
 **Measured savings**:
 Net money the operations ledger shows going into investments over the trailing 12
@@ -893,7 +922,7 @@ _Avoid_: imported history (implies verified), synced history.
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.
 - An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
-- A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**.
+- A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**. A schedule's **declared expenses** feed only the **rent-derived real return**, and only when declared: no declaration, no derivation — the gross yield is never used (ADR 0076).
 - A **benchmark comparison** is a present-time lens (never a figure, ADR 0060) that reads a **benchmark series** cached monthly in a control-plane catalog. Globally it offers two real-terms, annualized lenses behind a toggle — **patrimonio real** (net worth deflated by CPI; includes contributions; ungated) and **rentabilidad real** (the invested sleeve's contribution-stripped **return** vs CPI; gated on returns) — and per **holding** it compares a fund's time-weighted **return** to the index it **tracks** (ADR 0039), never touching the net-worth math.
 - A **delta breakdown** splits the change between two **snapshots** (normally **monthly closes**) into market movement, **payouts**, and **net savings** — the residual; it reads frozen snapshots, per-holding rows, **operations**, and **payouts**, and never writes history.
 - A **data-quality signal** is derived live from persisted state; **warnings** are one category of it, and one shared collection feeds the home health block, the **agent view**, and the **financial assistant** alike.
