@@ -400,6 +400,61 @@ describe("calculateFireForScope", () => {
     expect(result.eligibleAssets.amountMinor).toBe(0);
   });
 
+  // ── The capital split (#1447): the two sides always add up to what is shown.
+  it("carries a capital split whose sides add up to the eligible assets on screen", () => {
+    const assets = [
+      makeAsset("etf", 143_370_75, false, [{ memberId: "alice", shareBps: 10_000 }]),
+      {
+        ...makeAsset("rental", 370_000_00, false, [
+          { memberId: "alice", shareBps: 10_000 },
+        ]),
+        liquidityTier: "housing" as const,
+      },
+    ];
+    const liabilities = [makeLiability("mortgage", 68_628_03, "rental")];
+    const config = { monthlySpendingMinor: 200_000, safeWithdrawalRate: 0.035 };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    // The mortgage nets inside the brick, never against the market cash.
+    expect(result.capitalSplit.sellable.amountMinor).toBe(143_370_75);
+    expect(result.capitalSplit.immobilized.amountMinor).toBe(370_000_00 - 68_628_03);
+    expect(
+      result.capitalSplit.sellable.amountMinor +
+        result.capitalSplit.immobilized.amountMinor,
+    ).toBe(result.eligibleAssets.amountMinor);
+  });
+
+  it("keeps the split adding up to the eligible assets after a goal reservation", () => {
+    const assets = [
+      makeAsset("etf", 100_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+      {
+        ...makeAsset("rental", 200_000_00, false, [
+          { memberId: "alice", shareBps: 10_000 },
+        ]),
+        liquidityTier: "housing" as const,
+      },
+    ];
+    const config = { monthlySpendingMinor: 200_000, safeWithdrawalRate: 0.04 };
+
+    const result = calculateFireForScope(
+      config,
+      assets,
+      [],
+      workspace,
+      "alice",
+      30_000_00,
+    );
+
+    // A dated goal is funded by selling: the reservation comes off the sellable side.
+    expect(result.capitalSplit.sellable.amountMinor).toBe(70_000_00);
+    expect(result.capitalSplit.immobilized.amountMinor).toBe(200_000_00);
+    expect(
+      result.capitalSplit.sellable.amountMinor +
+        result.capitalSplit.immobilized.amountMinor,
+    ).toBe(result.eligibleAssets.amountMinor);
+  });
+
   it("calculateFire returns an empty excludedAssets list", () => {
     const result = calculateFire(
       {

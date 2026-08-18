@@ -275,6 +275,105 @@ describe("ObjetivosPage FIRE wiring", () => {
   });
 });
 
+describe("ObjetivosPage capital split (#1447)", () => {
+  /** Jorge's shape: brick is two thirds of the pool, with its own mortgage. */
+  function landlordLedger() {
+    return {
+      assets: [
+        {
+          id: "asset_etf",
+          name: "Fondos",
+          type: "investment",
+          currency: "EUR",
+          currentValue: { amountMinor: 143_370_75, currency: "EUR" },
+          liquidityTier: "market",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+        {
+          id: "asset_pension",
+          name: "Plan de pensiones",
+          type: "manual",
+          currency: "EUR",
+          currentValue: { amountMinor: 10_556_58, currency: "EUR" },
+          liquidityTier: "term-locked",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+        {
+          id: "asset_rental",
+          name: "Piso de Plasencia",
+          type: "real_estate",
+          currency: "EUR",
+          currentValue: { amountMinor: 370_000_00, currency: "EUR" },
+          liquidityTier: "housing",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+      ],
+      liabilities: [
+        {
+          id: "liability_mortgage",
+          name: "Hipoteca Plasencia",
+          type: "mortgage",
+          currency: "EUR",
+          currentBalance: { amountMinor: 68_628_03, currency: "EUR" },
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          associatedAssetId: "asset_rental",
+        },
+      ],
+    };
+  }
+
+  test("shows what can be sold in slices apart from what cannot", async () => {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(landlordLedger());
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.035,
+        expectedRealReturn: 0.05,
+      },
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("vendible");
+    expect(html).toContain("inmovilizado");
+    // Sellable = mercado 143.370,75 + plazo 10.556,58; the mortgage never touches it.
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 153_927_33, currency: "EUR" }, false),
+    );
+    // Immobilized = 370.000,00 − 68.628,03: the debt nets inside the brick.
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 301_371_97, currency: "EUR" }, false),
+    );
+  });
+
+  test("says what the sellable side alone funds, next to the whole-pool percentage", async () => {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(landlordLedger());
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.035,
+        expectedRealReturn: 0.05,
+      },
+    });
+
+    const html = await renderedHtml();
+
+    // 455.299,30 / 685.714,29 = 66,4 % of the pool …
+    expect(html).toContain("66,4 %");
+    // … but only 153.927,33 / 685.714,29 = 22,4 % of it can be spent in instalments.
+    expect(html).toContain("22,4 %");
+  });
+
+  test("stays out of the way when nothing in the pool is immobilized", async () => {
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("inmovilizado");
+  });
+});
+
 describe("ObjetivosPage passive-income lens (#658)", () => {
   test("renders the scope's trailing payouts and coverage vs declared spending", async () => {
     const html = await renderedHtml();

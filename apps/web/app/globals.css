@@ -2496,6 +2496,47 @@ code {
   color: var(--gold);
 }
 
+/* Vendible vs inmovilizado (#1447): the eligible total broken apart by nature.
+   A ledger sub-entry — a rule down its spine, never a card. */
+.fireCapitalSplit {
+  border-left: 1px solid var(--hairline);
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: -6px 0 0;
+  padding: 0 0 0 12px;
+}
+
+.fireCapitalRow {
+  align-items: baseline;
+  display: grid;
+  font-size: 0.82rem;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.fireCapitalLabel {
+  font-weight: 700;
+}
+
+/* Vivienda keeps its gilt identity: the side that does not sell in slices. */
+.fireCapitalRow.is-immobilized .fireCapitalLabel {
+  color: var(--gold);
+}
+
+.fireCapitalGloss {
+  color: var(--muted);
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fireCapitalRow strong {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* FIRE projection card (PRD #421, #427). */
 .fireProjection {
   border-top: 1px solid var(--hairline);

@@ -1,4 +1,6 @@
 import type { ContributionPlan } from "./contribution-plan";
+import type { FireCapitalSplit } from "./fire-capital-split";
+import { splitFireCapital } from "./fire-capital-split";
 import { assembleFireEligiblePool, type FireExcludedAsset } from "./fire-eligible-pool";
 import type { FireGrowthAssumption } from "./fire-plan-projection";
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
@@ -128,6 +130,13 @@ export interface FireContext {
 /** `calculateFireForScope`'s result: a `FireResult` that always carries its `FireContext`. */
 export interface ScopeFireResult extends FireResult {
   readonly context: FireContext;
+  /**
+   * `eligibleAssets` split into what can be sold in slices and what cannot
+   * (#1447). Presentation-only: eligibility, rates and totals are unchanged —
+   * the two sides always add back up to `eligibleAssets`. Absent on
+   * `calculateFire`, which only sees a pre-computed total with no tier mix.
+   */
+  readonly capitalSplit: FireCapitalSplit;
 }
 
 /**
@@ -325,7 +334,8 @@ export function calculateFireForScope(
     workspace,
     scopeId,
   });
-  const { excludedAssets, netEligibleMinor, eligibleByTierMinor } = pool;
+  const { excludedAssets, netEligibleMinor, eligibleByTierMinor, scopedDebtByTierMinor } =
+    pool;
 
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   const effective = effectiveRealReturn({
@@ -354,10 +364,19 @@ export function calculateFireForScope(
     fireNumberMinor: base.fireNumber.amountMinor,
   };
 
+  // The split reads the SAME pool and the SAME reservation the figure above was
+  // computed from, so it can never disagree with `eligibleAssets` (#1447).
+  const capitalSplit = splitFireCapital({
+    eligibleByTierMinor,
+    debtByTierMinor: scopedDebtByTierMinor,
+    reservedForGoalsMinor: reserved,
+  });
+
   return {
     ...base,
     excludedAssets,
     reservedForGoals: money(reserved, workspace.baseCurrency),
     context,
+    capitalSplit,
   };
 }

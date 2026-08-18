@@ -33,6 +33,11 @@ import {
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
+import {
+  fireCapitalSplitRows,
+  sellableFundedPercent,
+  shouldShowCapitalSplit,
+} from "./fire-capital-split-view";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import ObjetivosSkeleton from "./objetivos-skeleton";
 
@@ -247,6 +252,12 @@ export async function ObjetivosContent({
   });
 
   const currency = workspace.baseCurrency;
+
+  // What the sellable side alone funds (#1447): the figure the single
+  // "% financiado" hides when most of the pool is brick.
+  const sellableFunded = fireResult
+    ? sellableFundedPercent(fireResult.capitalSplit, fireResult.fireNumber.amountMinor)
+    : null;
 
   // Monthly allocation view (#557): the plan's capital split for a window of
   // months, every month server-rendered once; the island toggles client-side.
@@ -466,6 +477,25 @@ export async function ObjetivosContent({
                     {formatMoneyMinorPrivacy(fireResult.eligibleAssets, privacyMode)}
                   </strong>
                 </div>
+                {/* Vendible vs inmovilizado (#1447): la misma cifra de arriba,
+                    partida por naturaleza. Una tasa de retirada supone capital
+                    que se vende a trozos; el ladrillo no lo es. */}
+                {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
+                  <ul className="fireCapitalSplit">
+                    {fireCapitalSplitRows(fireResult.capitalSplit).map((row) => (
+                      <li className={`fireCapitalRow is-${row.key}`} key={row.key}>
+                        <span className="fireCapitalLabel">{row.label}</span>
+                        <span className="fireCapitalGloss">{row.gloss}</span>
+                        <strong>
+                          {formatMoneyMinorPrivacy(
+                            { amountMinor: row.amountMinor, currency },
+                            privacyMode,
+                          )}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {fireResult.coastFireRequired ? (
                   <div className="fireMetric">
                     <span>Coast requerido</span>
@@ -495,6 +525,23 @@ export async function ObjetivosContent({
                   <strong>vivienda habitual</strong> y los que hayas excluido manualmente
                   en Ajustes. Cash, inversiones y criptos cuentan.
                 </p>
+                {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
+                  <p className="fireEligibleRule">
+                    La tasa de retirada supone capital que se{" "}
+                    <strong>vende a trozos</strong> y se rebalancea. Tu parte{" "}
+                    <strong>inmovilizada</strong> (vivienda no habitual, colecciones) es
+                    patrimonio, pero no se gasta a plazos: la deuda de cada inmueble se
+                    resta dentro de ese mismo lado.
+                    {sellableFunded !== null ? (
+                      <>
+                        {" "}
+                        Solo con lo vendible estarías al{" "}
+                        <strong>{sellableFunded.toFixed(1).replace(".", ",")} %</strong>{" "}
+                        de tu número FIRE.
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
                 {fireResult.excludedAssets.length > 0 ? (
                   <ul className="fireExcludedList">
                     {fireResult.excludedAssets.map((a) => (
