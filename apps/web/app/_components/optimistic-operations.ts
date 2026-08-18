@@ -74,7 +74,12 @@ export function parseOperationDraft(
     executedAt,
     units: units as InvestmentOperation["units"],
     pricePerUnit: pricePerUnit as InvestmentOperation["pricePerUnit"],
-    currency: "EUR",
+    // The currency the apunte was typed in, NOT the euros it will become (#1401).
+    // The ECB rate is a server-side fetch, so the client cannot predict the converted
+    // figure — and a row that showed `8.00` under a EUR label would be the very lie
+    // this issue is about. `readOperationPrice` renders it with its currency until the
+    // redirect settles the conversion.
+    currency: String(formData.get("currency") ?? "").trim() || "EUR",
     feesMinor,
   };
 }

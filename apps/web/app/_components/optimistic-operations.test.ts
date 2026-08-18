@@ -112,6 +112,21 @@ describe("parseOperationDraft", () => {
     expect(draft?.feesMinor).toBe(0);
   });
 
+  test("carries the captured currency so the row is not read as euros (#1401)", () => {
+    const draft = parseOperationDraft(
+      form({ units: "0,255", pricePerUnit: "8,00", currency: "USD" }),
+      "fidelity",
+      "2026-06-24",
+      "optimistic-1",
+    );
+
+    // No rate is known client-side, so the row shows the dollars it IS — the
+    // redirect settles the converted euros.
+    expect(draft?.currency).toBe("USD");
+    expect(draft?.pricePerUnit).toBe("8,00");
+    expect(draft?.capture).toBeUndefined();
+  });
+
   test("returns null when units or price is blank (no ghost row)", () => {
     expect(
       parseOperationDraft(form({ units: "", pricePerUnit: "200" }), "a", "t", "id"),

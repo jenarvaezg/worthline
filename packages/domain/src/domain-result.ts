@@ -10,6 +10,12 @@ export type DomainViolation =
   | { code: "operation_units_not_positive" }
   | { code: "operation_price_negative" }
   | { code: "operation_fees_negative" }
+  | {
+      /** No ECB rate covers the execution date, so the apunte has no honest EUR figure (#1401). */
+      code: "operation_currency_missing_rate";
+      currency: string;
+      executedAt: string;
+    }
   | { code: "investment_manual_valuation_rejected" }
   | { code: "connected_manual_valuation_rejected" }
   | { code: "value_update_investment_holding" }

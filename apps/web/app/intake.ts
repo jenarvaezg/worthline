@@ -546,6 +546,22 @@ export function okMessage(key: string | undefined): string | null {
   return messages[key] ?? null;
 }
 
+/** A date key read out loud for a message: `2026-01-23` → «23 ene 2026». */
+function readDateKey(dateKey: string): string {
+  const parsed = new Date(`${dateKey.slice(0, 10)}T00:00:00.000Z`);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return dateKey;
+  }
+
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(parsed);
+}
+
 /**
  * Map a single domain violation to a localized Spanish user-facing message.
  * Intake owns the message text; the domain owns the stable code and context.
@@ -564,6 +580,11 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "El precio por unidad no es válido.";
     case "operation_fees_negative":
       return "Las comisiones no son válidas.";
+    case "operation_currency_missing_rate":
+      // ECB publishes business days only and the snapshot already carries the
+      // previous one forward a week (#1401); past that there is no honest euro
+      // figure, so the capture is refused instead of stored at an invented rate.
+      return `No hay tipo de cambio del BCE de ${violation.currency} para el ${readDateKey(violation.executedAt)}. Comprueba la fecha, o registra el importe ya convertido a euros.`;
     case "investment_manual_valuation_rejected":
       return "El valor de una inversión es siempre calculado — registra una operación o actualiza el precio.";
     case "connected_manual_valuation_rejected":

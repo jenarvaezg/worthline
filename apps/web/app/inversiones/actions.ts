@@ -4,6 +4,7 @@ import {
   isClock,
   runActionWithStore,
   testArgFromActionArgs,
+  testFxRatesOverride,
   testStoreFromActionArgs,
 } from "@web/action-store";
 import { markFirstHoldingBestEffort } from "@web/activation-marks";
@@ -38,6 +39,7 @@ import {
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
 import { type WorthlineStore } from "@web/store";
 import type {
+  CreateInvestmentOperationInput,
   InvestmentPriceProvider,
   LiquidityTier,
   ParsedStatement,
@@ -59,6 +61,7 @@ import {
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import {
+  convertCapturedOperation,
   fetchAndCachePrice,
   type HistoricalPriceSource,
   type PriceProvider,
@@ -69,7 +72,17 @@ import { redirect } from "next/navigation";
 
 // Field lists for error-preserve round-trips
 
-const OPERATION_FORM_FIELDS = ["kind", "executedAt", "units", "pricePerUnit", "fees"];
+// `currency` rides along (#1401): a rejected capture that came back without it would
+// re-open the form in EUR, and the user would re-pick the same currency every attempt
+// — the same round-trip lesson as the #1329 acknowledgement below.
+const OPERATION_FORM_FIELDS = [
+  "kind",
+  "executedAt",
+  "units",
+  "pricePerUnit",
+  "fees",
+  "currency",
+];
 
 const EDIT_INVESTMENT_FIELDS = [
   "name",
@@ -126,6 +139,22 @@ export async function recordOperationAction(
 ) {
   const submissionId = parseSubmissionId(formData);
   const returnUrl = currentUrlOf(formData);
+  // Re-express a non-EUR apunte in euros at the rate of its execution date (#1401).
+  // The ledger sums ONE currency, so this is the last thing that happens before the
+  // write and the first thing that can refuse it. A EUR apunte short-circuits inside
+  // `convertCapturedOperation` without touching the network.
+  const convertCapture = async (
+    parsed: CreateInvestmentOperationInput,
+  ): Promise<
+    { ok: true; value: CreateInvestmentOperationInput } | { ok: false; error: string }
+  > => {
+    const converted = await convertCapturedOperation(parsed, {
+      ...testFxRatesOverride(_testArgs),
+    });
+    return converted.ok
+      ? { ok: true, value: converted.value }
+      : { ok: false, error: mapDomainViolation(converted.violations[0]) };
+  };
   const operationErrorUrl = (message: string) =>
     errorRedirectUrl(returnUrl, {
       formId: "operation",
@@ -166,7 +195,9 @@ export async function recordOperationAction(
       // The no-JS path has no dedupe key: clock-seeded id, single write, exactly
       // as before.
       if (!submissionId) {
-        await store.command.recordInvestmentOperation(parsed, { today });
+        const converted = await convertCapture(parsed);
+        if (!converted.ok) return { ok: false, error: converted.error };
+        await store.command.recordInvestmentOperation(converted.value, { today });
         return { ok: true };
       }
 
@@ -187,8 +218,14 @@ export async function recordOperationAction(
         );
 
       if (await alreadyRecorded()) return { ok: true };
+
+      // Converted AFTER the replay shortcut, so a double click never spends a second
+      // ECB request on an operation that is already in the ledger.
+      const converted = await convertCapture(parsed);
+      if (!converted.ok) return { ok: false, error: converted.error };
+
       try {
-        await store.command.recordInvestmentOperation(parsed, { today });
+        await store.command.recordInvestmentOperation(converted.value, { today });
       } catch (error) {
         if (await alreadyRecorded()) return { ok: true };
         throw error;

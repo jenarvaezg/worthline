@@ -1,7 +1,7 @@
 "use server";
 
-import { testArgFromActionArgs } from "@web/action-store";
-import { createStableId, resolveOwnershipSplit } from "@web/intake";
+import { testArgFromActionArgs, testFxRatesOverride } from "@web/action-store";
+import { createStableId, mapDomainViolation, resolveOwnershipSplit } from "@web/intake";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
@@ -17,6 +17,7 @@ import {
   type ParsedStatementRow,
   resolveStatementImportBuckets,
 } from "@worthline/domain";
+import { convertStatementRows } from "@worthline/pricing";
 
 import { runProposalConfirm, runProposalDiscard } from "./proposal-action";
 import {
@@ -33,6 +34,8 @@ function rowToCreateInput(
 ) {
   return {
     assetId,
+    // What the document stated, before the conversion to euros (#1401).
+    ...(row.capture === undefined ? {} : { capture: row.capture }),
     currency: row.currency,
     executedAt: row.dateKey,
     feesMinor: row.feesMinor,
@@ -68,10 +71,23 @@ export async function confirmStatementImportProposalAction(
     },
     apply: async ({ store, proposal, today }) => {
       const seed = Date.now();
-      const statement = statementFromAssistantProposal(proposal);
-      if (!statement || statement.rows.length === 0) {
+      const stated = statementFromAssistantProposal(proposal);
+      if (!stated || stated.rows.length === 0) {
         return { status: "error", message: "La propuesta no contiene movimientos." };
       }
+
+      // Belt to `buildStatementImportProposal`'s braces (#1401): the rows persisted on
+      // the proposal are already euros, so this normally costs nothing — but the write
+      // is the last place that can still refuse a non-EUR figure, and it is the one
+      // place that MUST, because everything downstream sums a single currency.
+      const converted = await convertStatementRows(
+        stated.rows,
+        testFxRatesOverride(_testArgs),
+      );
+      if (!converted.ok) {
+        return { status: "error", message: mapDomainViolation(converted.violations[0]) };
+      }
+      const statement = { ...stated, rows: converted.value };
 
       const readPort = statementImportPreviewReadPort(store);
       const preview = await buildStatementImportPreview(readPort, statement, _resolver);
@@ -127,6 +143,8 @@ export async function confirmStatementImportProposalAction(
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
             overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
+              // Replaced, not merged — clearing it when the row is euros now (#1401).
+              ...(row.capture === undefined ? {} : { capture: row.capture }),
               currency: row.currency,
               feesMinor: row.feesMinor,
               id: operationId,

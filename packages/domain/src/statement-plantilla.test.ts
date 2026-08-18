@@ -182,6 +182,57 @@ describe("parseStatement — plantilla (#695)", () => {
   });
 });
 
+describe("parseStatement — plantilla, la columna Divisa (#1401)", () => {
+  test("a row states the currency its Importe is in", () => {
+    const { rows } = parsedOk(
+      [
+        `${HEADER};Divisa`,
+        // The father's real MyInvestor purchase: 2,04 US$ over 0,255 participaciones.
+        "23/01/2026;Fondo;IE00BDZVHT63;Compra;0,255;2,04;;Fidelity Pacific ex-Japan;USD",
+      ].join("\n"),
+    );
+
+    expect(rows[0]!.currency).toBe("USD");
+    // The price stays the NAV the file states — 8,00 US$ — and the CONVERSION
+    // happens at the write, with the ECB rate of the execution date.
+    expect(rows[0]!.pricePerUnit).toBe("8");
+  });
+
+  test("no column at all is EUR, exactly as before", () => {
+    const { rows } = parsedOk(
+      [HEADER, "01/02/2026;Fondo;IE00BYX5NX33;Compra;7,226;100;;Fidelity"].join("\n"),
+    );
+
+    expect(rows[0]!.currency).toBe("EUR");
+  });
+
+  test("an empty Divisa cell is EUR too", () => {
+    const { rows } = parsedOk(
+      [
+        `${HEADER};Divisa`,
+        "01/02/2026;Fondo;IE00BYX5NX33;Compra;7,226;100;;Fidelity;",
+      ].join("\n"),
+    );
+
+    expect(rows[0]!.currency).toBe("EUR");
+  });
+
+  test("a currency this app cannot capture aborts the load, naming the row", () => {
+    const result = parseStatement(
+      [
+        `${HEADER};Divisa`,
+        "01/02/2026;Fondo;IE00BYX5NX33;Compra;7,226;100;;Fidelity;JPY",
+      ].join("\n"),
+      "plantilla",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toContain("divisa");
+    expect(result.errors[0]).toContain("JPY");
+  });
+});
+
 describe("statement grouping and matching with plantilla identifiers", () => {
   test("isIsinShaped separates ISINs from plan codes and coin ids", () => {
     expect(isIsinShaped("IE00BYX5NX33")).toBe(true);

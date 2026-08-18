@@ -3791,6 +3791,26 @@ code {
   color: var(--muted);
 }
 
+/* A non-EUR capture (#1401) says what will happen before the submit, in the same
+   muted voice as a field hint — it is guidance, not a warning: the conversion is the
+   correct outcome, and the fact worth stating is WHICH day's rate it uses. */
+.invCaptureHint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* The apunte a converted operation was captured in, under the euro figure it folded
+   as (#1401). Muted and smaller: the euros are the figure, the dollars are the
+   provenance that lets a row be reconciled against a statement. */
+.opCaptureNote {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 /* ── Symbol search (#138) ──────────────────────────────────────────────── */
 .symbolSearch {
   margin-bottom: 20px;

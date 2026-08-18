@@ -193,6 +193,13 @@ _Avoid_: drill-down (the per-**position** second level is a different concept), 
 
 **Operation**:
 A buy or a sell against one **investment**: date, units, price per unit, fees.
+Always **stored in EUR** — the cost basis folds every operation of a holding into one
+accumulator, so a ledger that mixed currencies would sum dollars as euros (which is
+exactly what happened, #1401). An apunte the user has in another currency is therefore
+**captured** in that currency and converted at the ECB rate of its **execution date** —
+never today's — before it is written, keeping the original figures as its **capture**.
+_Avoid_: writing an operation in the currency a broker states it in; and reading the
+**capture** as optional detail — it is the only record of which rate was applied.
 
 **Payout**:
 Money a **holding** paid its owner on a date — a dividend, deposit or account

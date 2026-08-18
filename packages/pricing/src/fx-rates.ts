@@ -41,28 +41,57 @@ export interface ResolveFxRateSnapshotOptions {
  * fetched ONCE over the carry-forward window ending at `asOf`; a present-day `asOf`
  * therefore yields the latest observation as the spot rate. Never rejects.
  */
-export async function resolveFxRateSnapshot(
+export function resolveFxRateSnapshot(
   currencies: readonly string[],
   asOf: string,
   options: ResolveFxRateSnapshotOptions = {},
 ): Promise<FxRateSnapshot> {
+  return resolveFxRateSnapshotForDates(currencies, [asOf], options);
+}
+
+/**
+ * The MANY-dates variant (#1401): one snapshot covering every `dateKey`, still ONE
+ * ECB request per currency — the window spans from the earliest date (minus the
+ * carry-forward slack, so a weekend can reach back to Friday) to the latest.
+ *
+ * A statement import brings dozens of operations spread over years, and each converts
+ * at the rate of ITS OWN execution date. Asking per row would be dozens of requests
+ * for one series ECB hands over whole; asking with a single `asOf` would price a
+ * 2024 purchase at today's rate, which is the #1401 bug wearing different clothes.
+ *
+ * Malformed dates are ignored when sizing the window (and simply find no rate later);
+ * with no usable date at all the snapshot comes back empty rather than fetching a
+ * window built from `NaN`.
+ */
+export async function resolveFxRateSnapshotForDates(
+  currencies: readonly string[],
+  dateKeys: readonly string[],
+  options: ResolveFxRateSnapshotOptions = {},
+): Promise<FxRateSnapshot> {
   const fetchDailyRates = options.fetchDailyRates ?? fetchEcbDailyRatesEur;
 
-  const wanted = new Map<string, string>();
+  const wanted = new Set<string>();
   for (const raw of currencies) {
     const currency = raw.trim().toUpperCase();
     if (currency && currency !== BASE_CURRENCY) {
-      wanted.set(currency, currency);
+      wanted.add(currency);
     }
   }
 
-  const asOfMs = Date.parse(`${asOf.slice(0, 10)}T00:00:00.000Z`);
-  const toMs = Number.isFinite(asOfMs) ? asOfMs : Date.parse(`${asOf}`);
-  const fromMs = toMs - FX_CARRY_FORWARD_DAYS * MS_PER_DAY;
+  const stamps = dateKeys
+    .map((dateKey) => Date.parse(`${dateKey.slice(0, 10)}T00:00:00.000Z`))
+    .filter((ms) => Number.isFinite(ms));
+
+  if (wanted.size === 0 || stamps.length === 0) {
+    return createFxRateSnapshot({});
+  }
+
+  const toMs = Math.max(...stamps);
+  const fromMs = Math.min(...stamps) - FX_CARRY_FORWARD_DAYS * MS_PER_DAY;
 
   const pointsByCurrency: Record<string, FxRatePoint[]> = {};
   await Promise.all(
-    [...wanted.values()].map(async (currency) => {
+    [...wanted].map(async (currency) => {
       const rates = await fetchDailyRates(currency, fromMs, toMs);
       pointsByCurrency[currency] = [...rates].map(([dateKey, eurPerUnit]) => ({
         dateKey,

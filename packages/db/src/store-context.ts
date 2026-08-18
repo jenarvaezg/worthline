@@ -6,6 +6,7 @@ import type {
   InvestmentOperation,
   Liability,
   ManualAsset,
+  OperationCapture,
   OwnershipShare,
   RawAssetRow,
   Workspace,
@@ -269,11 +270,69 @@ export interface InvestmentMeta {
   providerSymbol?: string;
 }
 
+/**
+ * The captured apunte carried by a row, or undefined (#1401). All four columns are
+ * written together, so ONE missing piece means the row cannot describe a conversion
+ * and the capture is reported as absent rather than half-built — a partially filled
+ * capture would claim an audit trail it does not have. A pre-#1401 row has all four
+ * NULL, which reads as the euro operation it was recorded as.
+ */
+function toOperationCapture(
+  row: typeof assetOperations.$inferSelect,
+): OperationCapture | undefined {
+  const eurPerUnit = Number(row.captureEurPerUnit);
+
+  if (
+    row.captureCurrency === null ||
+    row.capturePricePerUnit === null ||
+    row.captureFeesMinor === null ||
+    row.captureEurPerUnit === null ||
+    // A rate has to be a positive number: `Number("")` is a finite 0, and a zero rate
+    // would read as "one dollar is worth nothing".
+    !Number.isFinite(eurPerUnit) ||
+    eurPerUnit <= 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    currency: row.captureCurrency,
+    eurPerUnit,
+    feesMinor: row.captureFeesMinor,
+    pricePerUnit: row.capturePricePerUnit,
+  };
+}
+
+/**
+ * The four capture columns for a write, or four NULLs (#1401). A set of four or
+ * nothing: a half-written capture would claim an audit trail it cannot back. Shared
+ * by the single-operation insert and the whole-document import so an export →
+ * import round-trip cannot quietly drop the original apunte.
+ *
+ * The rate goes in as its own decimal string, which round-trips the double exactly.
+ */
+export function operationCaptureColumns(capture: OperationCapture | undefined): {
+  captureCurrency: string | null;
+  captureEurPerUnit: string | null;
+  captureFeesMinor: number | null;
+  capturePricePerUnit: string | null;
+} {
+  return {
+    captureCurrency: capture?.currency ?? null,
+    captureEurPerUnit: capture === undefined ? null : String(capture.eurPerUnit),
+    captureFeesMinor: capture?.feesMinor ?? null,
+    capturePricePerUnit: capture?.pricePerUnit ?? null,
+  };
+}
+
 export function toOperation(
   row: typeof assetOperations.$inferSelect,
 ): InvestmentOperation {
+  const capture = toOperationCapture(row);
+
   return {
     assetId: row.assetId,
+    ...(capture === undefined ? {} : { capture }),
     currency: row.currency,
     executedAt: row.executedAt,
     feesMinor: row.feesMinor,

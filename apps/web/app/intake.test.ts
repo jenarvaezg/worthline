@@ -1225,6 +1225,46 @@ describe("parseRouteOperationCommand — asset id from route, strict field error
     expect(result.command.assetId).toBe("asset_correct");
   });
 
+  test("stamps the currency the apunte was captured in (#1401)", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "0,255", pricePerUnit: "8,00", currency: "USD" }),
+      "asset_fidelity",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The parser is pure, so it stamps USD and does NOT convert — the action does,
+    // with the ECB rate of the execution date.
+    expect(result.command.currency).toBe("USD");
+    expect(result.command.pricePerUnit).toBe("8.00");
+  });
+
+  test("defaults to EUR when the form names no currency", () => {
+    const result = parseRouteOperationCommand(
+      form({ units: "1", pricePerUnit: "50" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.currency).toBe("EUR");
+  });
+
+  test("refuses a currency the app cannot honestly capture", () => {
+    // JPY has no minor unit in this money model (fx.ts), so accepting it would mangle
+    // the fees by ×100 in silence.
+    const result = parseRouteOperationCommand(
+      form({ units: "1", pricePerUnit: "50", currency: "JPY" }),
+      "asset_acme",
+      1,
+      "2026-06-09",
+    );
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("divisa");
+  });
+
   test("the same string seed yields the same operation id (#1394)", () => {
     // The idempotency key seeds the id, so a replayed submission collides with
     // its own row instead of minting a second operation.

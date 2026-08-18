@@ -22,6 +22,7 @@
 import {
   runActionWithStore,
   testArgFromActionArgs,
+  testFxRatesOverride,
   testStoreFromActionArgs,
 } from "@web/action-store";
 import { markFirstHoldingBestEffort } from "@web/activation-marks";
@@ -32,6 +33,7 @@ import { formAction } from "@web/form-action";
 import {
   createStableId,
   errorRedirectUrl,
+  mapDomainViolation,
   resolveOwnershipSplit,
   successRedirectUrl,
 } from "@web/intake";
@@ -57,6 +59,10 @@ import {
   type StatementFundSelection,
   type StatementImportBucket,
 } from "@worthline/domain";
+import {
+  type ConvertCapturedOperationsOptions,
+  convertStatementRows,
+} from "@worthline/pricing";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
@@ -96,8 +102,22 @@ export type ImportStatementPreviewState =
       funds: FundPreviewRow[];
     };
 
+/**
+ * Read the uploaded file into a parsed statement whose rows are all in EUROS (#1401).
+ *
+ * The conversion happens HERE, at the single door both the preview and the confirm go
+ * through, and it happens to the ROWS rather than to the operations built from them:
+ * the merge plan compares incoming rows against stored (euro) operations by units and
+ * price, so converting first is what keeps that comparison meaningful — and what makes
+ * the preview show the figures the confirm will write (#1438).
+ *
+ * Each row converts at the rate of its OWN execution date, and one unconvertible row
+ * refuses the whole file — the same all-or-nothing this importer already applies to a
+ * malformed row (ADR 0010).
+ */
 async function readStatementFromForm(
   formData: FormData,
+  fxOptions: ConvertCapturedOperationsOptions = {},
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
   const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
@@ -136,7 +156,12 @@ async function readStatementFromForm(
     return { message: parsed.message, ok: false };
   }
 
-  return { ok: true, value: parsed.value };
+  const converted = await convertStatementRows(parsed.value.rows, fxOptions);
+  if (!converted.ok) {
+    return { message: mapDomainViolation(converted.violations[0]), ok: false };
+  }
+
+  return { ok: true, value: { ...parsed.value, rows: converted.value } };
 }
 
 /**
@@ -161,7 +186,7 @@ export async function previewImportStatementAction(
     return { message: paywall, status: "error" };
   }
 
-  const read = await readStatementFromForm(formData);
+  const read = await readStatementFromForm(formData, testFxRatesOverride(_testArgs));
   if (!read.ok) {
     return { message: read.message, status: "error" };
   }
@@ -270,6 +295,9 @@ function selectionsFromForm(
 function rowToCreateInput(assetId: string, row: ParsedStatementRow, id: string) {
   return {
     assetId,
+    // The row arrives converted (#1401); `capture` is what the file stated, and it
+    // travels to the ledger so the operation can be read back in that currency.
+    ...(row.capture === undefined ? {} : { capture: row.capture }),
     currency: row.currency,
     executedAt: row.dateKey,
     feesMinor: row.feesMinor,
@@ -312,7 +340,7 @@ export async function confirmImportStatementAction(
         return { ok: false, error: paywall };
       }
 
-      const read = await readStatementFromForm(formData);
+      const read = await readStatementFromForm(formData, testFxRatesOverride(_testArgs));
       if (!read.ok) {
         return { ok: false, error: read.message };
       }
@@ -378,6 +406,9 @@ export async function confirmImportStatementAction(
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
             overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
+              // An overwrite REPLACES the capture, clearing it when the row is euros
+              // now — see `updateOperation` (#1401).
+              ...(row.capture === undefined ? {} : { capture: row.capture }),
               currency: row.currency,
               feesMinor: row.feesMinor,
               id: operationId,

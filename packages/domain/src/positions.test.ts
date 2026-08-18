@@ -322,3 +322,65 @@ describe("netUnitsFromOperations / netUnitsByAsset (#1348)", () => {
     ]);
   });
 });
+
+describe("derivePosition — the mixed-currency guard (#1401)", () => {
+  test("warns when the ledger is not in the currency the cost is labelled with", () => {
+    // The father's eight USD purchases, folded and labelled EUR: a cost basis 17,7 %
+    // too high, and until now completely silent.
+    const position = derivePosition([buy("0.255", "8.00", { currency: "USD" })], {
+      assetId: "asset_inv",
+      currency: "EUR",
+    });
+
+    expect(position.warnings).toHaveLength(1);
+    expect(position.warnings[0]).toContain("USD");
+    expect(position.warnings[0]).toContain("EUR");
+  });
+
+  test("a single-currency ledger stays warning-free", () => {
+    const position = derivePosition([buy("10", "100"), sell("4", "120")], {
+      assetId: "asset_inv",
+      currency: "EUR",
+    });
+
+    expect(position.warnings).toEqual([]);
+  });
+
+  test("the currency warning rides ALONGSIDE the over-sell one, not instead of it", () => {
+    const position = derivePosition(
+      [buy("10", "100", { currency: "USD" }), sell("12", "120", { currency: "USD" })],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.warnings).toHaveLength(2);
+    expect(position.warnings.some((warning) => warning.includes("unidades"))).toBe(true);
+    expect(position.warnings.some((warning) => warning.includes("USD"))).toBe(true);
+  });
+});
+
+describe("createInvestmentOperation — the captured apunte (#1401)", () => {
+  const input: CreateInvestmentOperationInput = {
+    assetId: "asset_inv",
+    capture: {
+      currency: "USD",
+      eurPerUnit: 0.85,
+      feesMinor: 0,
+      pricePerUnit: "8.00",
+    },
+    currency: "EUR",
+    executedAt: "2026-01-23",
+    id: "op_usd",
+    kind: "buy",
+    pricePerUnit: "6.8",
+    units: "0.255",
+  };
+
+  test("carries the capture onto the operation", () => {
+    expect(createInvestmentOperation(input).capture).toEqual(input.capture);
+  });
+
+  test("leaves the field absent — not null — for a euro apunte", () => {
+    const { capture: _capture, ...euroInput } = input;
+    expect("capture" in createInvestmentOperation(euroInput)).toBe(false);
+  });
+});

@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1606,6 +1606,41 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!String(error).includes("no such table")) throw error;
     }
     await writeSchemaVersion(client, 53);
+  }
+
+  if (version < 54) {
+    // #1401: the operation ledger learns to say what currency an apunte was CAPTURED
+    // in. Eight MyInvestor purchases of a USD fund were stored as `8.00 EUR` because
+    // every capture path stamped EUR without asking; from now on a non-EUR apunte is
+    // converted with the ECB rate of its execution date and these four columns keep
+    // the original, so the conversion can be audited instead of re-derived (and an
+    // ECB revision can never silently rewrite a cost basis that already rippled).
+    //
+    // All four are nullable and all four are absent together: a NULL
+    // `capture_currency` is the honest reading "this was always euros", not a lost
+    // original. Nothing is backfilled — a pre-#1401 row genuinely does not know.
+    // `capture_eur_per_unit` is TEXT like every other stored rate in the schema; the
+    // domain reads it back as the `number` the ECB adapter produces.
+    try {
+      const columns = await client.execute("PRAGMA table_info(asset_operations)");
+      const present = new Set(columns.rows.map((row) => String(row.name)));
+
+      if (columns.rows.length > 0) {
+        for (const [name, definition] of [
+          ["capture_currency", "capture_currency TEXT"],
+          ["capture_price_per_unit", "capture_price_per_unit TEXT"],
+          ["capture_fees_minor", "capture_fees_minor INTEGER"],
+          ["capture_eur_per_unit", "capture_eur_per_unit TEXT"],
+        ] as const) {
+          if (!present.has(name)) {
+            await client.execute(`ALTER TABLE asset_operations ADD COLUMN ${definition}`);
+          }
+        }
+      }
+    } catch (error) {
+      if (!String(error).includes("no such table")) throw error;
+    }
+    await writeSchemaVersion(client, 54);
   }
 
   return { ranV18Backfill, ranV33Backfill };

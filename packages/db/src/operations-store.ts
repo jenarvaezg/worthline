@@ -5,6 +5,7 @@ import type {
   DecimalString,
   Instant,
   InvestmentOperation,
+  OperationCapture,
   OperationKind,
   OperationSource,
 } from "@worthline/domain";
@@ -20,7 +21,7 @@ import {
   contributionOccurrenceReconciliations,
   liabilities,
 } from "./schema";
-import { type StoreContext, toOperation } from "./store-context";
+import { operationCaptureColumns, type StoreContext, toOperation } from "./store-context";
 import {
   assertAssetAllowsOperationWrite,
   assertAssetAllowsStoredValuationWrite,
@@ -60,6 +61,12 @@ export interface UpdateInvestmentOperationInput {
   feesMinor: number;
   occurredAt?: Instant;
   source?: OperationSource;
+  /**
+   * The apunte the new figures were converted from (#1401), or absent for a euro
+   * one. An overwrite REPLACES the capture — including clearing it, which is what a
+   * re-imported statement that now states euros means.
+   */
+  capture?: OperationCapture;
 }
 
 export interface OperationsStore {
@@ -127,6 +134,7 @@ async function recordOperation(
     .values({
       assetId: operation.assetId,
       batchId: provenance?.batchId ?? null,
+      ...operationCaptureColumns(operation.capture),
       currency: operation.currency,
       executedAt: asDateKey(operation.executedAt.slice(0, 10)),
       feesMinor: operation.feesMinor,
@@ -263,6 +271,10 @@ async function updateOperation(
   await db
     .update(assetOperations)
     .set({
+      // Replaced, never merged: an overwrite whose row is euros now must CLEAR a
+      // capture the previous import wrote, or the ficha would keep showing dollars
+      // that no longer back the stored figure (#1401).
+      ...operationCaptureColumns(input.capture),
       currency: input.currency,
       feesMinor: input.feesMinor,
       kind: input.kind,

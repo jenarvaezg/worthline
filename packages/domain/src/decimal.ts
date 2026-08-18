@@ -75,6 +75,26 @@ export function multiplyToMinor(
 }
 
 /**
+ * value × factor as a decimal string, rounded half up to `decimalPlaces` — the seam's
+ * scale-by-a-rate primitive (#1401: a unit price re-expressed in another currency
+ * through an FX rate).
+ *
+ * The factor may be a float, because an ECB rate IS one (`fx.ts` documents why), and
+ * it still crosses big.js: the product picks up no binary drift beyond the explicit
+ * rounding step, unlike `Number(price) * rate`.
+ */
+export function scaleDecimal(
+  value: DecimalString,
+  factor: number | DecimalString,
+  decimalPlaces: number,
+): DecimalString {
+  return new Big(value)
+    .times(new Big(factor))
+    .round(decimalPlaces, Big.roundHalfUp)
+    .toString();
+}
+
+/**
  * numerator ÷ denominator as a high-precision decimal string. Used to reconstruct
  * a unit price from a total amount and a unit count (ADR 0018: a MyInvestor order
  * carries the amount and the units but no price column, so the NAV is recovered as

@@ -1,5 +1,9 @@
 import { type WorthlineStore, withStore } from "@web/store";
 import type { Clock } from "@worthline/domain";
+import type {
+  ConvertCapturedOperationsOptions,
+  EcbDailyRatesFetcher,
+} from "@worthline/pricing";
 
 /**
  * The shared `_store?` action seam (issue #481).
@@ -27,6 +31,26 @@ export function isClock(value: unknown): value is Clock {
   return (
     typeof value === "object" && value !== null && "now" in value && "today" in value
   );
+}
+
+/**
+ * Test-injection seam for the ECB rate fetcher (#1401). Every capture path converts a
+ * non-EUR apunte through `@worthline/pricing`, which reaches the network; a test hands
+ * in `{ fetchDailyRates }` and gets a deterministic rate.
+ *
+ * Wrapped in an object rather than passed as a bare function so the predicate cannot
+ * mistake some other injected callback for it.
+ */
+export function isFxRatesOverride(
+  value: unknown,
+): value is { fetchDailyRates: EcbDailyRatesFetcher } {
+  return typeof value === "object" && value !== null && "fetchDailyRates" in value;
+}
+
+export function testFxRatesOverride(
+  args: IArguments | readonly unknown[],
+): ConvertCapturedOperationsOptions {
+  return testArgFromActionArgs(args, isFxRatesOverride) ?? {};
 }
 
 export function testStoreFromActionArgs(

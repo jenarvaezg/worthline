@@ -22,11 +22,15 @@
  *   separators. `Importe` is the order's total excluding fees; the unit price
  *   derives as `Importe ÷ Participaciones`, like every other adapter.
  * - `Comisión` (optional): persisted as the operation's fees; empty = 0.
+ * - `Divisa` (optional, #1401): the currency `Importe` and `Comisión` are stated in;
+ *   empty or absent means EUR. The row keeps its NATIVE figures — the conversion to
+ *   euros happens at the write, with the ECB rate of that row's execution date, so
+ *   re-reading the file can never re-price it at today's rate.
  * - `Nombre` (optional): creation prefill only.
  *
  * No `Estado` column — the plantilla only carries executed operations, so
- * every row loads or errors (all-or-nothing, ADR 0010). Currency is EUR by
- * design. Direction is always resolved (`directionResolved: true`).
+ * every row loads or errors (all-or-nothing, ADR 0010). Direction is always
+ * resolved (`directionResolved: true`).
  */
 
 import type { DecimalString } from "./decimal";
@@ -34,6 +38,7 @@ import { compareUnits, divideUnits, multiplyToMinor, normalizeDecimal } from "./
 import type { Instrument } from "./instrument-catalog";
 import type { OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";
+import { CAPTURE_CURRENCIES, isCaptureCurrency } from "./operation-currency";
 import type {
   ColumnResolution,
   StatementBrokerAdapter,
@@ -50,6 +55,7 @@ const PLANTILLA_COLUMNS = {
 } as const;
 
 const OPTIONAL_COLUMNS = {
+  currency: "Divisa",
   fees: "Comisión",
   name: "Nombre",
 } as const;
@@ -254,12 +260,25 @@ export const plantillaAdapter: StatementBrokerAdapter<PlantillaColumns> = {
 
     const name = columns.name === null ? "" : (cells[columns.name] ?? "").trim();
 
+    // #1401: the row may state its own currency. Anything outside the closed
+    // capture vocabulary aborts the load instead of being coerced to euros — a
+    // silently euro-ized dollar amount is the exact bug this column exists for.
+    const currencyRaw =
+      columns.currency === null ? "" : (cells[columns.currency] ?? "").trim();
+    const currency = currencyRaw === "" ? EUR : currencyRaw.toUpperCase();
+
+    if (!isCaptureCurrency(currency)) {
+      return rowError(
+        `tiene una divisa que no se puede registrar (${currency}); usa una de ${CAPTURE_CURRENCIES.join(", ")}`,
+      );
+    }
+
     return {
       isin,
       outcome: {
         kind: "row",
         row: {
-          currency: EUR,
+          currency,
           dateKey,
           feesMinor,
           instrument,
