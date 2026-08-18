@@ -234,24 +234,20 @@ export type {
   ContributionProgressSummary,
   ContributionReconciliationProjection,
   IsoWeekday,
-  MonthlySavingsCapacityResolution,
-  MonthlySavingsCapacitySource,
   PlannedContribution,
   PlannedContributionAmount,
   ProjectedContributionOccurrence,
 } from "./contribution-plan";
 export {
-  activeUnitContributionsMissingPrices,
   assertContributionCadence,
   assertPlannedContributionInput,
   contributionOccurrenceId,
   contributionOccurrenceMoneyMinor,
-  derivedMonthlySavingsCapacity,
   expandContributionPlan,
   expandPlannedContribution,
   parsePlannedContributionAmount,
+  plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
-  resolveMonthlySavingsCapacityForFire,
 } from "./contribution-plan";
 export type {
   DashboardShell,
@@ -493,6 +489,7 @@ export type {
 export { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 export type { EligibleTier } from "./fire-return";
 export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 export type {
   FxAggregation,
   FxConversionResult,

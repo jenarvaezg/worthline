@@ -32,12 +32,24 @@ export interface FireScopeConfig {
   targetRetirementAge?: number;
   excludedAssetIds?: string[];
   /**
-   * Editable monthly savings capacity in minor units (PRD #421, #425): the
-   * default contribution the FIRE projection assumes. Optional — when unset the
-   * UI offers a suggestion from operations history (`suggestMonthlySavingsCapacity`)
-   * but never writes it implicitly; the projection treats `undefined` as 0.
+   * Declared monthly savings capacity in minor units (PRD #421, #425): the ONLY
+   * contribution the FIRE projection assumes (#1416, ADR 0074). Read through
+   * `monthlySavingsCapacityForFire`, never off this field directly. Optional —
+   * when unset the UI offers a suggestion from operations history
+   * (`suggestMonthlySavingsCapacity`) but never writes it implicitly; the
+   * projection reads `undefined` as 0.
    */
   monthlySavingsCapacityMinor?: number;
+  /**
+   * True when the one-shot #1416 migration wrote `monthlySavingsCapacityMinor` for a
+   * workspace that had been projecting its contribution plan's total instead of a
+   * declared figure. The value is that same total — preserved, never invented — and
+   * this flag's only job is to let /ajustes say "we put this here, check it" rather
+   * than have the number appear from nowhere. Cleared by the first save of the FIRE
+   * form: `saveFireConfig` replaces the scope object, and by then the user has seen
+   * the note. Never set outside that migration.
+   */
+  monthlySavingsCapacitySeededFromPlan?: boolean;
   /**
    * Spending multiplier for Lean FIRE level (PRD #507 N1). Default 0.7.
    * Stored as a decimal fraction (e.g. 0.7, not 70).

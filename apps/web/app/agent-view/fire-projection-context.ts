@@ -1,9 +1,5 @@
 import type { FireScenario } from "@worthline/domain";
-import {
-  projectFireFromContext,
-  resolveMonthlySavingsCapacityForFire,
-  unitPriceMajorByHoldingId,
-} from "@worthline/domain";
+import { monthlySavingsCapacityForFire, projectFireFromContext } from "@worthline/domain";
 
 import type {
   AgentViewFireProjection,
@@ -23,30 +19,23 @@ import type { ScopedAgentView } from "./scoped-read";
  * projection starts from exactly the eligible total the FIRE context reports —
  * reservations and exclusions already applied. `unconfigured` when the scope has
  * no FIRE config; no figures are fabricated.
+ *
+ * The savings capacity is the declared scalar and only that (#1416, ADR 0074):
+ * the scope's contribution plan no longer overrides it, so `get_fire_projection`
+ * and `get_fire_context` report the same monthly figure by construction.
  */
 export async function buildFireProjection(
   scoped: ScopedAgentView,
 ): Promise<AgentViewFireProjection> {
-  const { store } = scoped;
   const { scope, fire } = await resolveFire(scoped);
 
   if (fire.config === undefined || fire.result === undefined) {
     return { object: "fire_projection", scope, status: "unconfigured", scenarios: [] };
   }
 
-  const config = fire.config;
   const result = fire.result;
   const currency = fire.currency;
-  const internalScopeId = await scoped.internalScopeId();
-  const contributionPlan = await store.readContributionPlan(internalScopeId);
-  const priceCache = await store.readAllPriceCacheEntries();
-  const today = new Date().toISOString().slice(0, 10);
-  const monthlyContributionMinor = resolveMonthlySavingsCapacityForFire(
-    contributionPlan,
-    config,
-    today,
-    unitPriceMajorByHoldingId(priceCache),
-  ).capacityMinor;
+  const monthlyContributionMinor = monthlySavingsCapacityForFire(fire.config);
 
   // #1026: the resolved rate, FIRE number and age all ride in the context, so
   // this projection is coherent with coast + levels by construction.

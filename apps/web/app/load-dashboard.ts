@@ -309,7 +309,10 @@ export async function loadDashboard(
   // TX-safety: these reads run after any saveSnapshot() above has committed its
   // own transaction, so no interactive tx is open here. ctx.getWorkspace() is
   // promise-memoized (Step 0), making concurrent internal calls safe.
-  const [overrides, fireConfig, goals, contributionPlan, publicIds] = await Promise.all([
+  // No contribution-plan read here (#1416): the home FIRE projection contributes
+  // the declared savings scalar and only that, so the plan is not an input to
+  // anything this page renders — one query fewer on the GET's serial budget.
+  const [overrides, fireConfig, goals, publicIds] = await Promise.all([
     store.readWarningOverrides(),
     // The FIRE reference age is derived from the members' birth dates at this
     // read (#1415), so it is measured on the page's own "today" — never a
@@ -317,9 +320,6 @@ export async function loadDashboard(
     store.readFireConfig(input.today),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
-    selectedScope
-      ? store.contributionPlan.readContributionPlan(selectedScope.id)
-      : Promise.resolve(null),
     // The hero alert's fix links name each holding by its public `wl_hld_…` id
     // (#1318); riding this wave keeps it off the GET's serial budget (#446/#783).
     store.agentView.readPublicIds(),
@@ -522,7 +522,6 @@ export async function loadDashboard(
   // ── 5. Compute dashboard state ────────────────────────────────────────────
   const state = prepareDashboardState({
     assets,
-    contributionPlan,
     fireConfig,
     ...(fx ? { fx } : {}),
     goals,

@@ -7,7 +7,6 @@
  */
 
 import { addUnits, multiplyToMinor, subtractUnits } from "./decimal";
-import type { FireScopeConfig } from "./fire";
 import type { InvestmentOperation } from "./investment-types";
 
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
@@ -84,18 +83,6 @@ export interface ProjectedContributionOccurrence {
 export interface ContributionReconciliationProjection {
   pending: ProjectedContributionOccurrence[];
   closed: ProjectedContributionOccurrence[];
-}
-
-export type MonthlySavingsCapacitySource =
-  | "plan_derived"
-  | "manual_fallback"
-  | "incomplete_unit_pricing";
-
-export interface MonthlySavingsCapacityResolution {
-  capacityMinor: number;
-  source: MonthlySavingsCapacitySource;
-  /** Active unit contributions whose holding lacks a unit price for conversion. */
-  missingUnitPriceHoldingIds?: string[];
 }
 
 const CADENCE_STEP_MONTHS: Record<
@@ -356,37 +343,24 @@ function monthlyEquivalentMinor(
   return Math.round(perOccurrence * cadenceMonthlyFactor(contribution.cadence));
 }
 
-export function activeUnitContributionsMissingPrices(
-  plan: ContributionPlan,
-  todayISO: string,
-  unitPriceMajorByHoldingId?: Record<string, string>,
-): string[] {
-  const missing = new Set<string>();
-  for (const contribution of plan.contributions) {
-    if (!isActiveOn(contribution, todayISO)) continue;
-    if (contribution.amount.mode !== "units") continue;
-    if (unitPriceMajorByHoldingId?.[contribution.destinationHoldingId] === undefined) {
-      missing.add(contribution.destinationHoldingId);
-    }
-  }
-  return [...missing].sort();
-}
-
 /**
- * Sum of active contributions' monthly-equivalent totals in minor units.
- * When the plan is empty, returns `fallbackMinor` (default 0).
- * Returns null when an active units contribution lacks a unit price.
+ * What the plan intends to contribute per month: the sum of its ACTIVE rows'
+ * monthly-equivalent amounts, in minor units. Returns null when an active
+ * units row's destination has no unit price to convert with — the total is
+ * unknown, and guessing it would be a figure nobody entered.
+ *
+ * This is a *plan* figure, not a FIRE input. The FIRE projection contributes the
+ * capacity the user declared and only that (`monthlySavingsCapacityForFire`,
+ * ADR 0074): a plan row is one destination's planned addition, so summing rows
+ * measures a subset of savings and cannot stand in for the total. The only
+ * caller today is the one-shot migration that seeded the declared scalar for
+ * workspaces that used to project this sum (#1416).
  */
-export function derivedMonthlySavingsCapacity(
+export function plannedMonthlyContributionsMinor(
   plan: ContributionPlan,
   todayISO: string,
-  fallbackMinor = 0,
   unitPriceMajorByHoldingId?: Record<string, string>,
 ): number | null {
-  if (plan.contributions.length === 0) {
-    return fallbackMinor;
-  }
-
   let sum = 0;
   for (const contribution of plan.contributions) {
     if (!isActiveOn(contribution, todayISO)) continue;
@@ -395,48 +369,6 @@ export function derivedMonthlySavingsCapacity(
     sum += monthly;
   }
   return sum;
-}
-
-/**
- * Single source of truth for `projectFire`'s flat monthly contribution input:
- * derived from the plan when it has rows, otherwise the manual scalar.
- * When unit amounts cannot be converted, falls back to the manual scalar and
- * reports the missing holding ids explicitly.
- */
-export function resolveMonthlySavingsCapacityForFire(
-  plan: ContributionPlan | null | undefined,
-  config: FireScopeConfig,
-  todayISO: string,
-  unitPriceMajorByHoldingId?: Record<string, string>,
-): MonthlySavingsCapacityResolution {
-  const fallback = config.monthlySavingsCapacityMinor ?? 0;
-  if (!plan || plan.contributions.length === 0) {
-    return { capacityMinor: fallback, source: "manual_fallback" };
-  }
-
-  const missingUnitPriceHoldingIds = activeUnitContributionsMissingPrices(
-    plan,
-    todayISO,
-    unitPriceMajorByHoldingId,
-  );
-  if (missingUnitPriceHoldingIds.length > 0) {
-    return {
-      capacityMinor: fallback,
-      source: "incomplete_unit_pricing",
-      missingUnitPriceHoldingIds,
-    };
-  }
-
-  return {
-    capacityMinor:
-      derivedMonthlySavingsCapacity(
-        plan,
-        todayISO,
-        fallback,
-        unitPriceMajorByHoldingId,
-      ) ?? fallback,
-    source: "plan_derived",
-  };
 }
 
 function assertIsoDate(value: string, label: string): void {

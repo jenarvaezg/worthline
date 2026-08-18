@@ -140,6 +140,39 @@ describe("la edad del FIRE ya no se teclea (#1415)", () => {
   });
 });
 
+describe("el ahorro del FIRE es el escalar declarado (#1416)", () => {
+  test("el campo dice que es la única cifra que la proyección usa", async () => {
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain("Es la única cifra de ahorro que usa la proyección FIRE");
+    // Sin sello de sembrado no hay banda: la nota de «revísalo» no es permanente.
+    expect(html).not.toContain("Hemos puesto este ahorro mensual");
+  });
+
+  test("una capacidad sembrada por la migración se declara y pide revisión", async () => {
+    // La v56 escribió el total del plan porque este scope proyectaba eso y no tenía
+    // escalar. Una cifra que el usuario no ha teclado no puede aparecer sin decirlo.
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        monthlySavingsCapacityMinor: 10_000,
+        monthlySavingsCapacitySeededFromPlan: true,
+        excludedAssetIds: [],
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain("Hemos puesto este ahorro mensual con el total de tu plan");
+    expect(html).toContain("Revísalo");
+  });
+});
+
 describe("las fuentes conectadas ya no viven aquí (#1223)", () => {
   test("la sección es una tarjeta-resumen: ni conectar, ni sincronizar, ni desconectar", async () => {
     calls.listSources.mockResolvedValueOnce([

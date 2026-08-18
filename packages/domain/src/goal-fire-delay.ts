@@ -24,11 +24,10 @@
  * "menos de 1 mes" in that case (months === 0 && kind === "delays").
  */
 
-import type { ContributionPlan } from "./contribution-plan";
-import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireContext } from "./fire";
 import { fireReservationHorizon, projectFireFromContext } from "./fire";
 import { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
+import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 import type { Goal } from "./goals";
 
 export type GoalFireDelay = { kind: "delays"; months: number } | { kind: "no_effect" };
@@ -53,9 +52,6 @@ export interface GoalFireDelayInput {
   thisGoalReservationMinor: number;
   /** ISO YYYY-MM-DD. */
   now: string;
-  /** Scope contribution plan for derived monthly savings (ADR 0041). */
-  contributionPlan?: ContributionPlan | null;
-  unitPriceMajorByHoldingId?: Record<string, string>;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
@@ -86,12 +82,7 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
   }
 
   // ── Project twice on the base scenario ───────────────────────────────────
-  const monthlyContribution = resolveMonthlySavingsCapacityForFire(
-    input.contributionPlan,
-    config,
-    now,
-    input.unitPriceMajorByHoldingId,
-  ).capacityMinor;
+  const monthlyContribution = monthlySavingsCapacityForFire(config);
 
   // WITHOUT this goal: gross − other reservations
   const startingWithout = Math.max(0, eligibleGrossMinor - otherReservationsMinor);

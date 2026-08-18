@@ -13,11 +13,10 @@
  * Returns null when config is degenerate (SWR or spending = 0) — caller hides the rail.
  */
 
-import type { ContributionPlan } from "./contribution-plan";
-import { resolveMonthlySavingsCapacityForFire } from "./contribution-plan";
 import type { FireContext } from "./fire";
 import { calculateFire, projectFireFromContext } from "./fire";
 import { fractionalFireYear } from "./fire-projection";
+import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 
 export type FireLevelKey = "coast" | "lean" | "barista" | "regular" | "fat";
 
@@ -41,11 +40,6 @@ export interface FireLevelsInput {
    * loose rate to forget and no fallback.
    */
   context: FireContext;
-  /** Scope contribution plan for derived monthly savings (ADR 0041). */
-  contributionPlan?: ContributionPlan | null;
-  /** ISO YYYY-MM-DD for active-contribution filtering. */
-  today?: string;
-  unitPriceMajorByHoldingId?: Record<string, string>;
 }
 
 const LEAN_DEFAULT = 0.7;
@@ -82,12 +76,9 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
   const fireResult = calculateFire(config, eligibleMinor, currency, expectedRealReturn);
   const coastAmountMinor = fireResult.coastFireRequired?.amountMinor ?? null;
 
-  const monthlyContribution = resolveMonthlySavingsCapacityForFire(
-    input.contributionPlan,
-    config,
-    input.today ?? new Date().toISOString().slice(0, 10),
-    input.unitPriceMajorByHoldingId,
-  ).capacityMinor;
+  // #1416: the declared scalar is the only savings input the projection takes,
+  // so this rail cannot disagree with the chart about how much is contributed.
+  const monthlyContribution = monthlySavingsCapacityForFire(config);
   const projection = projectFireFromContext(context, {
     monthlyContributionMinor: monthlyContribution,
     // Project to Fat so the single trajectory is tall enough to cross every

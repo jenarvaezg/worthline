@@ -1264,11 +1264,16 @@ describe("loadDashboard — initial matrix cross", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Contribution plan → FIRE projection (ADR 0041, #555)
+// Contribution plan ✕ FIRE projection (#1416, ADR 0074 — supersedes ADR 0041/#555)
 // ---------------------------------------------------------------------------
 
-describe("loadDashboard — contribution plan for FIRE", () => {
-  test("uses the persisted plan's derived monthly savings instead of the manual scalar", async () => {
+describe("loadDashboard — contribution plan does not touch the FIRE projection", () => {
+  // #1416 regression. Jorge declared 1.500 €/mes of savings and the FIRE page
+  // projected 100 €/mes: his contribution plan had a single row (100 €/mes to a
+  // pension plan) and the plan overrode the declared scalar whenever it had rows.
+  // The declared total lost to a subset of itself, five years of FIRE date apart,
+  // and nothing on screen said the app had stopped reading the field he filled in.
+  test("keeps the declared scalar when a plan exists, and when its rows have expired", async () => {
     const store = await createInMemoryStore();
     await makeWorkspace(store);
     await makeAsset(store);
@@ -1280,19 +1285,26 @@ describe("loadDashboard — contribution plan for FIRE", () => {
       expectedRealReturn: 0.05,
     });
 
-    const manualOnly = await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-    });
-    const manualBase = manualOnly.fireProjection!.scenarios.find(
-      (s) => s.label === "base",
-    )!;
+    const load = () =>
+      loadDashboard({
+        store,
+        persistence: makePersistence(),
+        scopeId: undefined,
+        selectedView: "total",
+        today: "2026-06-10",
+        now: "2026-06-10T10:00:00.000Z",
+      });
+    const baseScenario = (result: Awaited<ReturnType<typeof load>>) =>
+      result.fireProjection!.scenarios.find((s) => s.label === "base")!;
 
-    await store.contributionPlan.createPlannedContribution({
+    const declaredOnly = baseScenario(await load());
+    // Pinned to the declared figure itself, not just to "the same as before": a
+    // baseline from the same code path would survive any constant.
+    const declaredTotal = 100_000 * 12 * declaredOnly.yearsToFire!;
+    expect(declaredOnly.totalContributedMinor).toBe(declaredTotal);
+
+    // A row five times the declared scalar: it used to win outright.
+    const contribution = await store.contributionPlan.createPlannedContribution({
       scopeId: "household",
       destinationHoldingId: "asset_cash",
       amount: { mode: "money", value: 500_000 },
@@ -1300,19 +1312,16 @@ describe("loadDashboard — contribution plan for FIRE", () => {
       startDate: "2026-01-01",
     });
 
-    const withPlan = await loadDashboard({
-      store,
-      persistence: makePersistence(),
-      scopeId: undefined,
-      selectedView: "total",
-      today: "2026-06-10",
-      now: "2026-06-10T10:00:00.000Z",
-    });
-    const planBase = withPlan.fireProjection!.scenarios.find((s) => s.label === "base")!;
+    expect(baseScenario(await load()).totalContributedMinor).toBe(declaredTotal);
 
-    expect(planBase.totalContributedMinor).toBeGreaterThan(
-      manualBase.totalContributedMinor,
-    );
+    // And the other half of the bug: an EXPIRED plan derived 0, so the projection
+    // silently assumed no savings at all from the day the last row lapsed.
+    await store.contributionPlan.updatePlannedContribution(contribution.id, {
+      endDate: "2026-02-28",
+    });
+
+    expect(baseScenario(await load()).totalContributedMinor).toBe(declaredTotal);
+    expect(declaredTotal).toBeGreaterThan(0);
 
     store.close();
   });

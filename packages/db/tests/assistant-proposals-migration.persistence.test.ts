@@ -1,5 +1,10 @@
 import { openLibsqlClient } from "@db/libsql-client";
-import { migrate, readSchemaVersion, writeSchemaVersion } from "@db/migrate";
+import {
+  migrate,
+  readSchemaVersion,
+  SCHEMA_VERSION,
+  writeSchemaVersion,
+} from "@db/migrate";
 import type { Client } from "@libsql/client";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -37,6 +42,6 @@ describe("assistant proposals migration", () => {
       "provenance",
       "created_at",
     ]);
-    expect(await readSchemaVersion(client)).toBe(55);
+    expect(await readSchemaVersion(client)).toBe(SCHEMA_VERSION);
   });
 });
