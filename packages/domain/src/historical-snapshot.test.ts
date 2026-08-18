@@ -11,6 +11,7 @@ import {
   buildSnapshotAtDate,
   type DebtBalanceCurveInputs,
   globalHoldingValueAtDate,
+  rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForConnectedValue,
@@ -2960,5 +2961,55 @@ describe("recalculateSnapshotForConnectedValue", () => {
     const row = result.holdings.find((h) => h.holdingId === "asset_binance")!;
     expect(row.valueMinor).toBe(0);
     expect(result.snapshot.grossAssets.amountMinor).toBe(1_000_00);
+  });
+});
+
+describe("rebaselineChainPaymentDatesUpTo (#1435)", () => {
+  /** A monthly checkpoint of a long mortgage: each one's forward schedule runs to `endDate`. */
+  function checkpoint(baselineDate: string, nextPaymentDate: string) {
+    return {
+      annualInterestRate: "0.02",
+      baselineDate,
+      endDate: "2030-01-01",
+      nextPaymentDate,
+      outstandingBalanceMinor: 100_000_00,
+    };
+  }
+
+  const chain = [
+    checkpoint("2024-01-01", "2024-02-01"),
+    checkpoint("2024-02-01", "2024-03-01"),
+    checkpoint("2024-03-01", "2024-04-01"),
+  ];
+
+  test("emits each date ONCE across an overlapping chain, ascending", () => {
+    // Every checkpoint's own schedule reaches the target, so their date sets
+    // almost entirely overlap: three schedules of 5/4/3 boundaries = 12 dates
+    // emitted, but only 5 distinct ones. Before the dedup this returned all 12,
+    // and the ripple built the same whole-portfolio snapshot up to 3× (#1435).
+    expect(rebaselineChainPaymentDatesUpTo(chain, "2024-01-01", "2024-05-15")).toEqual([
+      "2024-01-01",
+      "2024-02-01",
+      "2024-03-01",
+      "2024-04-01",
+      "2024-05-01",
+    ]);
+  });
+
+  test("skips checkpoints baselined before the ripple floor", () => {
+    // The floor is the batch's oldest checkpoint; anything older is untouched
+    // history and must not be regenerated.
+    expect(rebaselineChainPaymentDatesUpTo(chain, "2024-03-01", "2024-05-15")).toEqual([
+      "2024-03-01",
+      "2024-04-01",
+      "2024-05-01",
+    ]);
+  });
+
+  test("is empty with no checkpoints at or after the floor", () => {
+    expect(rebaselineChainPaymentDatesUpTo(chain, "2025-01-01", "2026-01-01")).toEqual(
+      [],
+    );
+    expect(rebaselineChainPaymentDatesUpTo([], "2024-01-01", "2026-01-01")).toEqual([]);
   });
 });

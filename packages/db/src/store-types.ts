@@ -54,6 +54,7 @@ type PublicLiabilityStore = Omit<
   LiabilityStore,
   | "addBalanceAnchor"
   | "addBalanceRebaseline"
+  | "addBalanceRebaselines"
   | "addEarlyRepayment"
   | "addInterestRateRevision"
   | "createAmortizationPlan"

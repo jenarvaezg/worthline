@@ -542,6 +542,7 @@ export {
   buildSnapshotAtDate,
   globalHoldingValueAtDate,
   historicalCapturedAt,
+  rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForConnectedValue,

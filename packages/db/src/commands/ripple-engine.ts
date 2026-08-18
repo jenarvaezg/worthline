@@ -46,6 +46,7 @@ import {
   housingAssetIdsOf,
   isHousingAsset,
   listScopeOptions,
+  rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
   recalculateSnapshotForLiability,
@@ -461,14 +462,16 @@ export async function rippleHistoricalSnapshotsForOperations(
   await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
       const existing = await readSnapshots(db, scope.id);
-      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+      // Dates that already have a snapshot — and it GROWS as this loop saves, so a
+      // date reaching the loop twice is built once (#1435).
+      const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
 
       // Generate a fresh whole-portfolio snapshot at each affected past date that
       // has none yet (ADR 0012). The single forward recalc below then folds the
       // operated asset across every existing snapshot ≥ the earliest date.
       for (const dateKey of generateDates) {
         if (mode === "delete" || deps === null) continue;
-        if (dateKey >= today || existingByDate.has(dateKey)) continue;
+        if (dateKey >= today || existingDates.has(dateKey)) continue;
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(dateKey),
@@ -492,6 +495,7 @@ export async function rippleHistoricalSnapshotsForOperations(
             replace: false,
             snapshot: built.snapshot,
           });
+          existingDates.add(dateKey);
         }
       }
 
@@ -630,14 +634,12 @@ export async function rippleHistoricalSnapshotsForMixedImport(
   }
   for (const { fromDateKey } of housing) generateDates.add(fromDateKey);
   for (const { curve, fromDateKey } of debts) {
-    for (const fact of curve.balanceRebaselines ?? []) {
-      if (fact.baselineDate < fromDateKey) continue;
-      for (const dateKey of amortizationPaymentDatesUpTo(
-        amortizationPlanFromBalanceRebaseline(fact),
-        params.today,
-      )) {
-        generateDates.add(dateKey);
-      }
+    for (const dateKey of rebaselineChainPaymentDatesUpTo(
+      curve.balanceRebaselines ?? [],
+      fromDateKey,
+      params.today,
+    )) {
+      generateDates.add(dateKey);
     }
   }
   const recalcFrom = [...generateDates, ...requestedDates].reduce((min, date) =>
@@ -647,10 +649,11 @@ export async function rippleHistoricalSnapshotsForMixedImport(
 
   for (const scope of listScopeOptions(workspace)) {
     const existing = await readSnapshots(db, scope.id);
-    const existingByDate = new Set(existing.map(({ dateKey }) => dateKey));
+    // Grows as the loop saves, so a repeated date is built once (#1435).
+    const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
 
     for (const dateKey of generateDates) {
-      if (dateKey >= params.today || existingByDate.has(dateKey)) continue;
+      if (dateKey >= params.today || existingDates.has(dateKey)) continue;
       const built = buildSnapshotAtDate({
         assets: deps.assets,
         capturedAt: historicalCapturedAt(dateKey),
@@ -674,6 +677,7 @@ export async function rippleHistoricalSnapshotsForMixedImport(
           replace: false,
           snapshot: built.snapshot,
         });
+        existingDates.add(dateKey);
       }
     }
 
@@ -948,11 +952,14 @@ export async function rippleHistoricalSnapshotsForDebt(
     recalcFrom = curve.plan.disbursementDate;
   } else if (params.kind === "amortizable-rebaseline") {
     const { fromDateKey } = params;
-    generateDates = (curve.balanceRebaselines ?? [])
-      .filter((fact) => fact.baselineDate >= fromDateKey)
-      .flatMap((fact) =>
-        amortizationPaymentDatesUpTo(amortizationPlanFromBalanceRebaseline(fact), today),
-      );
+    // UNIQUE dates across the whole chain (#1435): each checkpoint's schedule runs
+    // to the contract end, so a long chain's schedules overlap almost entirely and
+    // an un-deduplicated fan-out rebuilds the same portfolio dozens of times.
+    generateDates = rebaselineChainPaymentDatesUpTo(
+      curve.balanceRebaselines ?? [],
+      fromDateKey,
+      today,
+    );
     recalcFrom = fromDateKey;
   } else {
     const { fromDateKey } = params;
@@ -975,12 +982,14 @@ export async function rippleHistoricalSnapshotsForDebt(
   await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
       const existing = await readSnapshots(db, scope.id);
-      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
+      // Dates that already have a snapshot — and it GROWS as this loop saves, so a
+      // date reaching the loop twice is built once (#1435).
+      const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
 
       // Generate a fresh whole-portfolio snapshot at each affected past date
       // that has none yet.
       for (const dateKey of generateDates) {
-        if (dateKey >= today || existingByDate.has(dateKey)) continue;
+        if (dateKey >= today || existingDates.has(dateKey)) continue;
         const built = buildSnapshotAtDate({
           assets: deps.assets,
           capturedAt: historicalCapturedAt(dateKey),
@@ -1004,6 +1013,7 @@ export async function rippleHistoricalSnapshotsForDebt(
             replace: false,
             snapshot: built.snapshot,
           });
+          existingDates.add(dateKey);
         }
       }
 

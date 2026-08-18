@@ -25,8 +25,8 @@ export interface ImportBalanceHistoryResult {
 
 /** Private persistence/ripple capabilities required by this command executor. */
 export interface ImportBalanceHistoryDependencies {
-  addBalanceRebaseline: (
-    input: AddBalanceRebaselineInput,
+  addBalanceRebaselines: (
+    inputs: readonly AddBalanceRebaselineInput[],
     provenance: FactPersistenceProvenance,
   ) => Promise<void>;
   rippleDebtRebaseline: (params: {
@@ -62,12 +62,17 @@ export async function executeImportBalanceHistoryCommand(
         today,
       });
     },
-    steps: command.rebaselines.map((rebaseline) => ({
-      persist: async (batchId) => {
-        await dependencies.addBalanceRebaseline(rebaseline, { batchId });
-        return rebaseline.baselineDate;
+    // ONE step for the whole chain (#1435): the checkpoints go in batched instead
+    // of one round-trip each, and every baseline date still reaches the ripple
+    // floor, so it starts at the oldest checkpoint exactly as before.
+    steps: [
+      {
+        persist: async (batchId) => {
+          await dependencies.addBalanceRebaselines(command.rebaselines, { batchId });
+          return command.rebaselines.map((rebaseline) => rebaseline.baselineDate);
+        },
       },
-    })),
+    ],
     today,
   });
 

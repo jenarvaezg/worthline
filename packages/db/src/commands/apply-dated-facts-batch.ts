@@ -17,9 +17,13 @@ function deepestErrorMessage(error: unknown): string | undefined {
   return typeof candidate.message === "string" ? candidate.message : undefined;
 }
 
-/** One dated fact to persist inside a batch — returns its date key. */
+/**
+ * One persistence step inside a batch — returns the date key of the fact it
+ * wrote, or ALL of them when the step persists a batch of facts in one write
+ * (a balance-history chain, #1435). Either way the keys feed the ripple floor.
+ */
 export interface DatedFactStep {
-  persist: (batchId: string) => Promise<string>;
+  persist: (batchId: string) => Promise<string | readonly string[]>;
 }
 
 export interface ApplyDatedFactsBatchParams {
@@ -58,7 +62,9 @@ export async function applyDatedFactsBatch(
       const batchId = await uow.createFactBatch(params.batch ?? { trigger: "manual" });
       const dateKeys: string[] = [];
       for (const step of params.steps) {
-        dateKeys.push(await step.persist(batchId));
+        const written = await step.persist(batchId);
+        if (typeof written === "string") dateKeys.push(written);
+        else dateKeys.push(...written);
       }
 
       await params.afterPersist?.(batchId);

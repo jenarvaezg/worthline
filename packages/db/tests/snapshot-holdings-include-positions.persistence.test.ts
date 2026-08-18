@@ -19,43 +19,7 @@ import { createStoreFromSqlite, openLibsqlClient } from "@db/index";
 import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
-/** Pull the SQL text out of any libSQL statement shape (string, `{ sql }`, or
- *  the `[sql, args?]` batch tuple). */
-function sqlText(stmt: unknown): string {
-  if (typeof stmt === "string") return stmt;
-  if (Array.isArray(stmt) && typeof stmt[0] === "string") return stmt[0];
-  if (
-    stmt &&
-    typeof stmt === "object" &&
-    typeof (stmt as { sql?: unknown }).sql === "string"
-  ) {
-    return (stmt as { sql: string }).sql;
-  }
-  return "";
-}
-
-/** Wrap a libSQL client so every SELECT it runs is reported to `tally`. */
-function instrumentClient(real: Client, tally: (sql: string) => void): Client {
-  return new Proxy(real, {
-    get(target, prop, receiver) {
-      if (prop === "execute") {
-        return (...args: unknown[]) => {
-          tally(sqlText(args[0]));
-          return (target.execute as (...a: unknown[]) => unknown)(...args);
-        };
-      }
-      if (prop === "batch") {
-        return (...args: unknown[]) => {
-          const [stmts] = args;
-          if (Array.isArray(stmts)) for (const s of stmts) tally(sqlText(s));
-          return (target.batch as (...a: unknown[]) => unknown)(...args);
-        };
-      }
-      const value = Reflect.get(target, prop, receiver);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  }) as Client;
-}
+import { instrumentClient } from "./instrument-libsql-client";
 
 /**
  * Seed one snapshot with a connected-source holding ("coins") whose value is
