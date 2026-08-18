@@ -26,7 +26,7 @@
 import type { FormErrorContext } from "@web/intake";
 import { priceFreshnessLabel } from "@web/intake";
 import type {
-  CurrencyCode,
+  CaptureCurrency,
   InvestmentOperation,
   PriceFreshnessState,
 } from "@worthline/domain";
@@ -35,11 +35,12 @@ import {
   CAPTURE_CURRENCIES,
   compareInvestmentOperations,
   formatMoneyMinorPrivacy,
+  isCaptureCurrency,
   maskMoneyString,
 } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
 
-import { readOperationPrice } from "./operation-capture-reading";
+import { readOperationFees, readOperationPrice } from "./operation-capture-reading";
 
 import {
   applyOperationMutations,
@@ -64,6 +65,13 @@ export interface OperationsEditorContext {
   marketValue?: { amountMinor: number; currency: string } | null;
   /** The unrealized profit/loss, when priced. */
   unrealizedPnl?: { amountMinor: number; currency: string } | null;
+  /**
+   * The engine's currency warning for this ledger (#1401), when it has one: its
+   * operations are not all in the currency the cost is labelled with, so the cost —
+   * and every return derived from it — cannot be trusted. Rendered here because this
+   * is where those operations are, and it is where they can be corrected.
+   */
+  currencyWarning?: string | null;
 }
 
 /**
@@ -129,7 +137,7 @@ export default function OperationsEditor({
    * apunte was captured in, so a user buying the same dollar fund for the ninth time
    * types it once. Absent means EUR.
    */
-  defaultCurrency?: CurrencyCode | undefined;
+  defaultCurrency?: CaptureCurrency | undefined;
   today: string;
 }) {
   const operationValues = formError?.formId === "operation" ? formError.values : {};
@@ -156,8 +164,14 @@ export default function OperationsEditor({
   // dollars under a «(EUR)» label — and it is a view toggle, so no page reload
   // (interaction-patterns §2). Without JS the select still posts its value and the
   // server converts identically; only the live relabelling is lost.
-  const [captureCurrency, setCaptureCurrency] = useState<CurrencyCode>(
-    operationValues["currency"] ?? defaultCurrency ?? BASE_CURRENCY,
+  // Narrowed, not trusted: `operationValues` comes back off a URL, so a hand-edited
+  // `v_currency=JPY` would otherwise sit in the picker with no matching option (and the
+  // server would refuse the submit for a reason the form never showed).
+  const roundTripped = operationValues["currency"];
+  const [captureCurrency, setCaptureCurrency] = useState<CaptureCurrency>(
+    roundTripped !== undefined && isCaptureCurrency(roundTripped)
+      ? roundTripped
+      : (defaultCurrency ?? BASE_CURRENCY),
   );
   const convertsToEur = captureCurrency !== BASE_CURRENCY;
 
@@ -269,6 +283,15 @@ export default function OperationsEditor({
         )}
       </div>
 
+      {/* The engine says the cost cannot be trusted (#1401): said next to the
+          operations it is about, in the same voice as a form refusal, because the
+          figure above it is wrong until one of these rows is fixed. */}
+      {context.currencyWarning ? (
+        <p className="errorBand" role="alert">
+          {context.currencyWarning}
+        </p>
+      ) : null}
+
       {formError?.formId === "operation" ? (
         <p className="errorBand" role="alert" id="operation-error">
           {formError.message}
@@ -317,7 +340,11 @@ export default function OperationsEditor({
           Divisa del apunte
           <select
             name="currency"
-            onChange={(event) => setCaptureCurrency(event.target.value)}
+            onChange={(event) => {
+              if (isCaptureCurrency(event.target.value)) {
+                setCaptureCurrency(event.target.value);
+              }
+            }}
             value={captureCurrency}
           >
             {CAPTURE_CURRENCIES.map((currency) => (
@@ -355,7 +382,7 @@ export default function OperationsEditor({
             execution day, which is the fact that decides whether the cost basis is
             right (#1401). */}
         {convertsToEur ? (
-          <p className="invCaptureHint">
+          <p className="opCaptureHint">
             Lo guardaremos en euros con el tipo del BCE del día de la operación.
           </p>
         ) : null}
@@ -383,6 +410,7 @@ export default function OperationsEditor({
                   .sort((a, b) => compareInvestmentOperations(b, a))
                   .map((op) => {
                     const price = readOperationPrice(op, privacyMode);
+                    const fees = readOperationFees(op, privacyMode);
 
                     return (
                       <tr key={op.id}>
@@ -396,15 +424,16 @@ export default function OperationsEditor({
                           ) : null}
                         </td>
                         <td>
-                          {op.feesMinor > 0
-                            ? formatMoneyMinorPrivacy(
-                                {
-                                  amountMinor: op.feesMinor,
-                                  currency: op.currency,
-                                },
-                                privacyMode,
-                              )
-                            : "—"}
+                          {fees === null ? (
+                            "—"
+                          ) : (
+                            <>
+                              {formatMoneyMinorPrivacy(fees.fees, privacyMode)}
+                              {fees.capture ? (
+                                <small className="opCaptureNote">{fees.capture}</small>
+                              ) : null}
+                            </>
+                          )}
                         </td>
                         <td className="rowActions">
                           <form action={deleteAction} onSubmit={onDelete(op.id)}>

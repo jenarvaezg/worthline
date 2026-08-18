@@ -42,6 +42,10 @@ import {
   SpreadsheetReadError,
   spreadsheetToDelimitedText,
 } from "@web/spreadsheet-text";
+import {
+  statementRowToCreateInput,
+  statementRowToOverwrite,
+} from "@web/statement-operation-input";
 import { type WorthlineStore } from "@web/store";
 import type { Instrument, InvestmentPriceProvider } from "@worthline/domain";
 import {
@@ -292,24 +296,6 @@ function selectionsFromForm(
   });
 }
 
-function rowToCreateInput(assetId: string, row: ParsedStatementRow, id: string) {
-  return {
-    assetId,
-    // The row arrives converted (#1401); `capture` is what the file stated, and it
-    // travels to the ledger so the operation can be read back in that currency.
-    ...(row.capture === undefined ? {} : { capture: row.capture }),
-    currency: row.currency,
-    executedAt: row.dateKey,
-    feesMinor: row.feesMinor,
-    id,
-    kind: row.kind,
-    pricePerUnit: row.pricePerUnit,
-    source: "statement" as const,
-    units: row.units,
-    ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-  };
-}
-
 /**
  * Confirm (ADR 0055): re-parse the file (never trusting the preview), re-derive
  * the buckets from the store's current investments, build the confirmed
@@ -393,31 +379,22 @@ export async function confirmImportStatementAction(
           return {
             assetId: fund.assetId,
             creates: fund.mergePlan.toCreate.map((row, j) =>
-              rowToCreateInput(
-                fund.assetId,
-                row,
-                createStableId(
+              statementRowToCreateInput({
+                assetId: fund.assetId,
+                id: createStableId(
                   "op",
                   `${fund.assetId}_${row.dateKey}`,
                   seed + index * 1000 + j,
                 ),
-              ),
+                row,
+                source: "statement",
+              }),
             ),
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
-            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
-              // An overwrite REPLACES the capture, clearing it when the row is euros
-              // now — see `updateOperation` (#1401).
-              ...(row.capture === undefined ? {} : { capture: row.capture }),
-              currency: row.currency,
-              feesMinor: row.feesMinor,
-              id: operationId,
-              kind: row.kind,
-              pricePerUnit: row.pricePerUnit,
-              source: "statement" as const,
-              units: row.units,
-              ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-            })),
+            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) =>
+              statementRowToOverwrite({ operationId, row, source: "statement" }),
+            ),
           };
         }
 
@@ -442,7 +419,12 @@ export async function confirmImportStatementAction(
               : {}),
           },
           creates: fund.rows.map((row, j) =>
-            rowToCreateInput(fund.creation.assetId, row, `create_${opSeed}_${j}`),
+            statementRowToCreateInput({
+              assetId: fund.creation.assetId,
+              id: `create_${opSeed}_${j}`,
+              row,
+              source: "statement",
+            }),
           ),
           kind: "new" as const,
         };

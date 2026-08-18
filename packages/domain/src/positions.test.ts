@@ -332,29 +332,32 @@ describe("derivePosition — the mixed-currency guard (#1401)", () => {
       currency: "EUR",
     });
 
-    expect(position.warnings).toHaveLength(1);
-    expect(position.warnings[0]).toContain("USD");
-    expect(position.warnings[0]).toContain("EUR");
+    expect(position.currencyWarning).toContain("USD");
+    expect(position.currencyWarning).toContain("EUR");
+    // NOT in `warnings`: its only consumer reads any entry there as an over-sell and
+    // would report a currency problem as «venta excede posición».
+    expect(position.warnings).toEqual([]);
   });
 
-  test("a single-currency ledger stays warning-free", () => {
+  test("a single-currency ledger says nothing", () => {
     const position = derivePosition([buy("10", "100"), sell("4", "120")], {
       assetId: "asset_inv",
       currency: "EUR",
     });
 
+    expect(position.currencyWarning).toBeUndefined();
     expect(position.warnings).toEqual([]);
   });
 
-  test("the currency warning rides ALONGSIDE the over-sell one, not instead of it", () => {
+  test("an over-sell in a mixed-currency ledger reports BOTH, each in its channel", () => {
     const position = derivePosition(
       [buy("10", "100", { currency: "USD" }), sell("12", "120", { currency: "USD" })],
       { assetId: "asset_inv", currency: "EUR" },
     );
 
-    expect(position.warnings).toHaveLength(2);
-    expect(position.warnings.some((warning) => warning.includes("unidades"))).toBe(true);
-    expect(position.warnings.some((warning) => warning.includes("USD"))).toBe(true);
+    expect(position.warnings).toHaveLength(1);
+    expect(position.warnings[0]).toContain("unidades");
+    expect(position.currencyWarning).toContain("USD");
   });
 });
 

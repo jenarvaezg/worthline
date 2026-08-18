@@ -681,7 +681,11 @@ export type {
   ScopePassiveIncomeInput,
 } from "./objetivos-passive-income";
 export { scopePassiveIncome } from "./objetivos-passive-income";
-export type { CapturedFigures, ConvertedFigures } from "./operation-currency";
+export type {
+  CaptureCurrency,
+  CapturedFigures,
+  ConvertedFigures,
+} from "./operation-currency";
 export {
   CAPTURE_CURRENCIES,
   CONVERTED_PRICE_DECIMALS,

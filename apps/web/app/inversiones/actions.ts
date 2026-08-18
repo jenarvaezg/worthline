@@ -37,6 +37,10 @@ import {
   type PayoutScheduleFields,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
+import {
+  statementRowToCreateInput,
+  statementRowToOverwrite,
+} from "@web/statement-operation-input";
 import { type WorthlineStore } from "@web/store";
 import type {
   CreateInvestmentOperationInput,
@@ -61,7 +65,9 @@ import {
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import {
+  type ConvertCapturedOperationsOptions,
   convertCapturedOperation,
+  convertStatementRows,
   fetchAndCachePrice,
   type HistoricalPriceSource,
   type PriceProvider,
@@ -148,9 +154,10 @@ export async function recordOperationAction(
   ): Promise<
     { ok: true; value: CreateInvestmentOperationInput } | { ok: false; error: string }
   > => {
-    const converted = await convertCapturedOperation(parsed, {
-      ...testFxRatesOverride(_testArgs),
-    });
+    const converted = await convertCapturedOperation(
+      parsed,
+      testFxRatesOverride(_testArgs),
+    );
     return converted.ok
       ? { ok: true, value: converted.value }
       : { ok: false, error: mapDomainViolation(converted.violations[0]) };
@@ -280,6 +287,7 @@ function countSells(plan: StatementMergePlan): number {
  */
 async function readStatementFromForm(
   formData: FormData,
+  fxOptions: ConvertCapturedOperationsOptions = {},
 ): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
   const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
@@ -303,7 +311,18 @@ async function readStatementFromForm(
     };
   }
 
-  return { ok: true, value: parsed.value };
+  // The per-holding upload is the SECOND statement door (#1401): same plantilla, same
+  // reader, its own action. It converts here for the same reason and in the same place
+  // as the whole-portfolio one — right after the parse, so the preview counts and the
+  // merge plan are computed on the euro figures the confirm will write. Leaving it out
+  // would have made this upload the one surviving way to store dollars as euros, and
+  // the new `Divisa` column would have made it easier, not harder.
+  const converted = await convertStatementRows(parsed.value.rows, fxOptions);
+  if (!converted.ok) {
+    return { message: mapDomainViolation(converted.violations[0]), ok: false };
+  }
+
+  return { ok: true, value: { ...parsed.value, rows: converted.value } };
 }
 
 /**
@@ -320,7 +339,7 @@ export async function previewStatementAction(
 ): Promise<StatementPreviewState> {
   const _store = testStoreFromActionArgs(_testArgs);
   await guardDemoWrite(currentUrlOf(formData));
-  const read = await readStatementFromForm(formData);
+  const read = await readStatementFromForm(formData, testFxRatesOverride(_testArgs));
   if (!read.ok) {
     return { message: read.message, status: "error" };
   }
@@ -403,7 +422,7 @@ export async function confirmStatementAction(
       }),
     requireId: false,
     run: async (store, { today }) => {
-      const read = await readStatementFromForm(formData);
+      const read = await readStatementFromForm(formData, testFxRatesOverride(_testArgs));
       if (!read.ok) return { error: read.message, ok: false };
 
       // ISIN guard (S4): block a mismatch before any write; backfill an empty
@@ -446,29 +465,18 @@ export async function confirmStatementAction(
       // over the dates they touch, atomically (ADR 0020 / 0018).
       await store.command.mergeInvestmentOperations({
         assetId: routeAssetId,
-        creates: plan.toCreate.map((row, i) => ({
-          assetId: routeAssetId,
-          currency: row.currency,
-          executedAt: row.dateKey,
-          feesMinor: row.feesMinor,
-          id: createStableId("op", `${routeAssetId}_${row.dateKey}`, seed + i),
-          kind: row.kind,
-          pricePerUnit: row.pricePerUnit,
-          source: "statement",
-          units: row.units,
-          ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-        })),
+        creates: plan.toCreate.map((row, i) =>
+          statementRowToCreateInput({
+            assetId: routeAssetId,
+            id: createStableId("op", `${routeAssetId}_${row.dateKey}`, seed + i),
+            row,
+            source: "statement",
+          }),
+        ),
         deletes: plan.toDelete.map((operation) => operation.id),
-        overwrites: plan.toOverwrite.map(({ operationId, row }) => ({
-          currency: row.currency,
-          feesMinor: row.feesMinor,
-          id: operationId,
-          kind: row.kind,
-          pricePerUnit: row.pricePerUnit,
-          source: "statement",
-          units: row.units,
-          ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-        })),
+        overwrites: plan.toOverwrite.map(({ operationId, row }) =>
+          statementRowToOverwrite({ operationId, row, source: "statement" }),
+        ),
         today,
       });
 

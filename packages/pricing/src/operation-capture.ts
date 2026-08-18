@@ -1,12 +1,14 @@
 import type {
   CreateInvestmentOperationInput,
   DomainResult,
+  FxRateSnapshot,
   ParsedStatementRow,
 } from "@worthline/domain";
 import {
   BASE_CURRENCY,
   convertCapturedFigures,
   convertOperationToBaseCurrency,
+  createFxRateSnapshot,
 } from "@worthline/domain";
 import type { ResolveFxRateSnapshotOptions } from "./fx-rates";
 import { resolveFxRateSnapshotForDates } from "./fx-rates";
@@ -15,8 +17,8 @@ import { resolveFxRateSnapshotForDates } from "./fx-rates";
  * The ONE door a captured operation goes through before it is persisted (#1401).
  *
  * Every capture path — the operations form, the statement importer, the assistant's
- * two proposal writers — used to stamp `currency: "EUR"` and store whatever number it
- * was handed. This pairs the pure conversion (`convertOperationToBaseCurrency`) with
+ * statement proposal — used to stamp `currency: "EUR"` and store whatever number it was
+ * handed. This pairs the pure conversion (`convertOperationToBaseCurrency`) with
  * the ECB fetch it needs, so no call site assembles that pair itself and every one of
  * them converts at the rate of the EXECUTION date.
  *
@@ -25,23 +27,20 @@ import { resolveFxRateSnapshotForDates } from "./fx-rates";
  * whose cost basis is wrong in a way nothing can tell apart from a genuine partial
  * sale — the same reasoning as the reconcile write being todo-o-nada (#1082).
  */
-export interface ConvertCapturedOperationsOptions extends ResolveFxRateSnapshotOptions {}
+
+/**
+ * What the capture door can be given: today, only the ECB fetcher a test injects. Named
+ * after this door rather than reusing `ResolveFxRateSnapshotOptions` because every call
+ * site names the type, and they are converting a capture, not resolving a snapshot.
+ */
+export type ConvertCapturedOperationsOptions = ResolveFxRateSnapshotOptions;
 
 export async function convertCapturedOperations(
   inputs: readonly CreateInvestmentOperationInput[],
   options: ConvertCapturedOperationsOptions = {},
 ): Promise<DomainResult<CreateInvestmentOperationInput[]>> {
-  const foreign = inputs.filter((input) => input.currency !== BASE_CURRENCY);
-
-  // No non-EUR apunte: nothing to fetch, nothing to convert. This is the ordinary
-  // path, and it must cost exactly what it cost before #1401 — zero requests.
-  if (foreign.length === 0) {
-    return { ok: true, value: [...inputs] };
-  }
-
-  const rates = await resolveFxRateSnapshotForDates(
-    foreign.map((input) => input.currency),
-    foreign.map((input) => input.executedAt),
+  const rates = await ratesForCaptures(
+    inputs.map((input) => ({ currency: input.currency, dateKey: input.executedAt })),
     options,
   );
 
@@ -62,26 +61,35 @@ export async function convertCapturedOperation(
   input: CreateInvestmentOperationInput,
   options: ConvertCapturedOperationsOptions = {},
 ): Promise<DomainResult<CreateInvestmentOperationInput>> {
-  const result = await convertCapturedOperations([input], options);
-  if (!result.ok) {
-    return result;
+  const rates = await ratesForCaptures(
+    [{ currency: input.currency, dateKey: input.executedAt }],
+    options,
+  );
+
+  return convertOperationToBaseCurrency(input, rates);
+}
+
+/**
+ * The ECB observations a set of captures needs: ONE request per non-EUR currency over a
+ * window covering every date. An all-EUR set fetches nothing and gets an empty snapshot
+ * — which is all a EUR conversion needs, since it never looks a rate up. That is what
+ * keeps the ordinary path costing exactly what it cost before #1401.
+ */
+function ratesForCaptures(
+  captures: readonly { currency: string; dateKey: string }[],
+  options: ConvertCapturedOperationsOptions,
+): Promise<FxRateSnapshot> {
+  const foreign = captures.filter((capture) => capture.currency !== BASE_CURRENCY);
+
+  if (foreign.length === 0) {
+    return Promise.resolve(createFxRateSnapshot({}));
   }
 
-  const [converted] = result.value;
-  // `convertCapturedOperations` returns one output per input, so this cannot be
-  // absent; the check is what makes that a type, not a comment.
-  return converted === undefined
-    ? {
-        ok: false,
-        violations: [
-          {
-            code: "operation_currency_missing_rate",
-            currency: input.currency,
-            executedAt: input.executedAt,
-          },
-        ],
-      }
-    : { ok: true, value: converted };
+  return resolveFxRateSnapshotForDates(
+    foreign.map((capture) => capture.currency),
+    foreign.map((capture) => capture.dateKey),
+    options,
+  );
 }
 
 /**
@@ -100,17 +108,7 @@ export async function convertStatementRows(
   rows: readonly ParsedStatementRow[],
   options: ConvertCapturedOperationsOptions = {},
 ): Promise<DomainResult<ParsedStatementRow[]>> {
-  const foreign = rows.filter((row) => row.currency !== BASE_CURRENCY);
-
-  if (foreign.length === 0) {
-    return { ok: true, value: [...rows] };
-  }
-
-  const rates = await resolveFxRateSnapshotForDates(
-    foreign.map((row) => row.currency),
-    foreign.map((row) => row.dateKey),
-    options,
-  );
+  const rates = await ratesForCaptures(rows, options);
 
   const converted: ParsedStatementRow[] = [];
   for (const row of rows) {

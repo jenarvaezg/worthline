@@ -82,6 +82,17 @@ export interface PositionSummary {
   realizedPnl: MoneyMinor;
   marketValue?: MoneyMinor;
   unrealizedPnl?: MoneyMinor;
+  /**
+   * Set when the folded operations are not all in {@link PositionSummary.currency}, so
+   * the summed cost cannot be trusted (#1401).
+   *
+   * Its OWN field, not a `warnings` entry: `warnings` has one consumer and it reads any
+   * entry as an over-sell (`statement-import-preview.ts` → «venta excede posición»), so
+   * a currency problem posted there would be reported to the user as a bad sell. These
+   * are different grades of news — one is about the operation being previewed, the other
+   * about the integrity of what is already stored.
+   */
+  currencyWarning?: string;
   /** The price per unit used to derive the market value, when one was known. */
   currentPricePerUnit?: DecimalString;
   warnings: string[];

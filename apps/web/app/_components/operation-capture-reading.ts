@@ -1,5 +1,9 @@
-import type { InvestmentOperation } from "@worthline/domain";
-import { BASE_CURRENCY, maskMoneyString } from "@worthline/domain";
+import type { InvestmentOperation, MoneyMinor } from "@worthline/domain";
+import {
+  BASE_CURRENCY,
+  formatMoneyMinorPrivacy,
+  maskMoneyString,
+} from "@worthline/domain";
 
 /**
  * How an operation's unit price reads in the ledger table (#1401).
@@ -22,6 +26,39 @@ export interface OperationPriceReading {
   price: string;
   /** The apunte to show underneath, or null when there is nothing to add. */
   capture: string | null;
+}
+
+/**
+ * The fees the operation was charged, as its own reading: the euros, plus what the bank
+ * charged when that was another currency. Same three states as the price — a row shows
+ * BOTH captured figures or neither, because showing the price in dollars next to fees in
+ * euros invites reading the euro figure as dollars too.
+ *
+ * Null when there were no fees: an empty cell is the existing convention («—»), and «0,00
+ * USD» is noise.
+ */
+export function readOperationFees(
+  operation: InvestmentOperation,
+  privacyMode: boolean,
+): { fees: MoneyMinor; capture: string | null } | null {
+  if (operation.feesMinor === 0 && (operation.capture?.feesMinor ?? 0) === 0) {
+    return null;
+  }
+
+  const fees = { amountMinor: operation.feesMinor, currency: operation.currency };
+  const captured = operation.capture;
+
+  if (captured === undefined || captured.feesMinor === 0) {
+    return { capture: null, fees };
+  }
+
+  return {
+    capture: formatMoneyMinorPrivacy(
+      { amountMinor: captured.feesMinor, currency: captured.currency },
+      privacyMode,
+    ),
+    fees,
+  };
 }
 
 export function readOperationPrice(

@@ -3793,8 +3793,10 @@ code {
 
 /* A non-EUR capture (#1401) says what will happen before the submit, in the same
    muted voice as a field hint — it is guidance, not a warning: the conversion is the
-   correct outcome, and the fact worth stating is WHICH day's rate it uses. */
-.invCaptureHint {
+   correct outcome, and the fact worth stating is WHICH day's rate it uses.
+   `op…`, not `inv…`: the `.invCapture*` prefix belongs to the alta's units/price grid,
+   where "capture" means something else entirely. */
+.opCaptureHint {
   margin: 0;
   font-size: 0.75rem;
   color: var(--muted);

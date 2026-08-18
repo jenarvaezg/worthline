@@ -28,7 +28,10 @@ import { money } from "./money";
  * from the ECB fetcher's type. The persisted, mass-backfill FX path (#884) is deferred.
  */
 
-export const BASE_CURRENCY: CurrencyCode = "EUR";
+// Typed as the literal, not as `CurrencyCode` (which is `"EUR" | (string & {})`, i.e.
+// any string): callers that narrow a currency to a union — the capture picker, #1401 —
+// need the base to be `"EUR"`, and nothing ever assigns anything else to it.
+export const BASE_CURRENCY = "EUR" as const satisfies CurrencyCode;
 
 /**
  * How far back an `asOf` may reach for an observation. ECB publishes business days

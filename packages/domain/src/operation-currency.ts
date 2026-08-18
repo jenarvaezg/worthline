@@ -19,16 +19,19 @@ import { money } from "./money";
  * too high, and invisible, because the market value was right and only the return
  * cojeaba. Nobody suspects the return.
  *
- * Two exports, the two halves of the fix:
+ * Two halves, and the vocabulary they need:
  *
- * - {@link convertOperationToBaseCurrency} — the ONE door a non-EUR apunte goes
- *   through before it is persisted. It converts with the rate DATED to the execution
- *   day (never today's), and keeps the original apunte so the conversion can be
- *   audited instead of re-derived.
+ * - {@link convertOperationToBaseCurrency} (over {@link convertCapturedFigures}, which a
+ *   statement row shares) — the ONE door a non-EUR apunte goes through before it is
+ *   persisted. It converts with the rate DATED to the execution day (never today's),
+ *   and keeps the original apunte so the conversion can be audited instead of
+ *   re-derived.
  * - {@link mixedCurrencyWarning} — the guard that used to be a comment. `derivePosition`
  *   folds every operation into ONE accumulator and labels it with the asset's currency;
  *   that is only sound because every operation is in that currency, an invariant
  *   nothing verified.
+ * - {@link CAPTURE_CURRENCIES} / {@link isCaptureCurrency} — which currencies may be
+ *   captured at all, and {@link lastCapturedCurrency}, which one to offer first.
  *
  * Pure: the ECB fetch is an adapter (`resolveFxRateSnapshot` in `@worthline/pricing`),
  * so this module takes a snapshot of observations and no network dependency — the same
@@ -220,9 +223,13 @@ export function mixedCurrencyWarning(
  * fee arithmetic silently mangles. What is here is what ECB publishes daily AND what
  * a European fund or broker realistically states an order in; widening it is one line
  * plus a decimals decision, which is exactly the review it deserves.
+ *
+ * `"EUR"` is spelled out rather than spread from `BASE_CURRENCY`: the `as const` is what
+ * makes {@link CaptureCurrency} a real union, and a `CurrencyCode` constant would widen
+ * it back to `string`.
  */
-export const CAPTURE_CURRENCIES: readonly CurrencyCode[] = [
-  BASE_CURRENCY,
+export const CAPTURE_CURRENCIES = [
+  "EUR",
   "USD",
   "GBP",
   "CHF",
@@ -231,11 +238,20 @@ export const CAPTURE_CURRENCIES: readonly CurrencyCode[] = [
   "DKK",
   "CAD",
   "AUD",
-];
+] as const;
+
+/**
+ * A currency an apunte may be captured in — the union, not just `CurrencyCode`.
+ *
+ * `CurrencyCode` is `"EUR" | (string & {})`, so it accepts any string: a picker typed
+ * with it would happily hold a value no `<option>` matches. Narrowing at the boundary
+ * (`isCaptureCurrency`) is what turns "one of these nine" from a comment into a type.
+ */
+export type CaptureCurrency = (typeof CAPTURE_CURRENCIES)[number];
 
 /** True when `currency` is one this app can honestly capture an apunte in. */
-export function isCaptureCurrency(currency: string): boolean {
-  return CAPTURE_CURRENCIES.includes(currency);
+export function isCaptureCurrency(currency: string): currency is CaptureCurrency {
+  return (CAPTURE_CURRENCIES as readonly string[]).includes(currency);
 }
 
 /**
@@ -256,11 +272,13 @@ export function isCaptureCurrency(currency: string): boolean {
  */
 export function lastCapturedCurrency(
   ledger: readonly InvestmentOperation[],
-): CurrencyCode | undefined {
+): CaptureCurrency | undefined {
   for (let index = ledger.length - 1; index >= 0; index -= 1) {
     const capture = ledger[index]?.capture;
     if (capture !== undefined) {
-      return capture.currency;
+      // A stored capture in a currency the vocabulary no longer offers answers
+      // undefined rather than pre-filling a picker with an option it does not have.
+      return isCaptureCurrency(capture.currency) ? capture.currency : undefined;
     }
   }
 

@@ -1,7 +1,7 @@
 import type { InvestmentOperation } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { readOperationPrice } from "./operation-capture-reading";
+import { readOperationFees, readOperationPrice } from "./operation-capture-reading";
 
 function op(overrides: Partial<InvestmentOperation> = {}): InvestmentOperation {
   return {
@@ -65,5 +65,41 @@ describe("readOperationPrice", () => {
     expect(reading.price).not.toContain("6");
     expect(reading.capture).not.toContain("8");
     expect(reading.capture).toContain("USD");
+  });
+});
+
+describe("readOperationFees", () => {
+  const usdCapture = {
+    currency: "USD",
+    eurPerUnit: 0.85,
+    feesMinor: 150,
+    pricePerUnit: "8.00",
+  };
+
+  test("no fees at all reads as nothing to show", () => {
+    expect(readOperationFees(op(), false)).toBeNull();
+  });
+
+  test("euro fees read as one figure", () => {
+    const reading = readOperationFees(op({ feesMinor: 128 }), false);
+
+    expect(reading?.fees).toEqual({ amountMinor: 128, currency: "EUR" });
+    expect(reading?.capture).toBeNull();
+  });
+
+  test("converted fees show the euros AND what the bank charged", () => {
+    const reading = readOperationFees(op({ capture: usdCapture, feesMinor: 128 }), false);
+
+    expect(reading?.fees).toEqual({ amountMinor: 128, currency: "EUR" });
+    expect(reading?.capture).toContain("US$");
+  });
+
+  test("a converted operation with no fees still shows nothing", () => {
+    const reading = readOperationFees(
+      op({ capture: { ...usdCapture, feesMinor: 0 }, feesMinor: 0 }),
+      false,
+    );
+
+    expect(reading).toBeNull();
   });
 });

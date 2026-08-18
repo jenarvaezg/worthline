@@ -143,6 +143,20 @@ describe("currency at the capture (#1401)", () => {
     expect(html).toContain("Precio por unidad (USD)");
   });
 
+  test("the engine's currency warning is rendered, as a refusal not a hint", () => {
+    const html = render({
+      currencyWarning:
+        "Las operaciones de esta inversión están en USD, pero el coste se ha sumado como si fueran EUR.",
+    });
+
+    expect(html).toContain('class="errorBand"');
+    expect(html).toContain("el coste se ha sumado como si fueran EUR");
+  });
+
+  test("no warning, no band", () => {
+    expect(render()).not.toContain('role="alert"');
+  });
+
   test("a converted row shows the euros it folded and the dollars it came from", () => {
     const html = render({}, { operations: [convertedUsdBuy] });
 

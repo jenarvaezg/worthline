@@ -186,13 +186,11 @@ export function derivePosition(
   // accumulator summed and labelled `options.currency` is only honest while every
   // operation is in that currency. Eight USD purchases summed as euros inflated a
   // cost basis by 17,7 % in total silence; the arithmetic below is unchanged, but it
-  // no longer keeps quiet about it. Writes convert at capture
+  // no longer keeps quiet about it. It rides its OWN field rather than `warnings`,
+  // whose single consumer reads any entry as an over-sell. Writes convert at capture
   // (`convertOperationToBaseCurrency`) so the state cannot be created any more —
   // this catches what an older path already wrote.
   const currencyWarning = mixedCurrencyWarning(operations, options.currency);
-  if (currencyWarning !== null) {
-    warnings.push(currencyWarning);
-  }
 
   const ordered = [...operations].sort(compareInvestmentOperations);
 
@@ -230,6 +228,7 @@ export function derivePosition(
     assetId: options.assetId,
     averageUnitCost: averageUnitCost(costMinor, units),
     costBasis: money(costMinor, options.currency),
+    ...(currencyWarning === null ? {} : { currencyWarning }),
     currency: options.currency,
     currentUnits: units,
     realizedPnl: money(realizedMinor, options.currency),

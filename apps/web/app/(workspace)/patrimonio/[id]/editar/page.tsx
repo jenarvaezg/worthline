@@ -679,6 +679,9 @@ export default async function EditarPage({
                 assetName={asset.name}
                 context={{
                   ...(position ? { currentUnits: position.currentUnits } : {}),
+                  ...(position?.currencyWarning
+                    ? { currencyWarning: position.currencyWarning }
+                    : {}),
                   ...(priceCache
                     ? {
                         // A `failed` row carries price "0" as the marker for "no
