@@ -463,7 +463,12 @@ export {
   withRate,
 } from "./fire";
 export type { BirthDate } from "./fire-current-age";
-export { ageOnDate, scopeCurrentAge, withDerivedCurrentAges } from "./fire-current-age";
+export {
+  ageOnDate,
+  parseCalendarMonth,
+  scopeCurrentAge,
+  withDerivedCurrentAges,
+} from "./fire-current-age";
 export type {
   AssembleFireEligiblePoolInput,
   FireEligiblePool,

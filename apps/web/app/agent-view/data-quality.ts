@@ -6,6 +6,7 @@ import {
   type DataQualitySignal,
   listScopeOptions,
   netUnitsByAsset,
+  systemClock,
   valuationMethodOfAsset,
 } from "@worthline/domain";
 import { deriveSourcePublicId } from "./connected-source-positions";
@@ -164,7 +165,10 @@ async function collectScopeSignals(
   const snapshots = await store.readSnapshots(internalScopeId);
   const holdingsByDate = await store.readSnapshotHoldings({ scopeId: internalScopeId });
   const snapshotIdsWithHoldings = new Set(holdingsByDate.map((row) => row.snapshotId));
-  const fireConfigByScopeId = await store.readFireConfig();
+  // One clock read for this resolution: the derived FIRE age (#1415) and the
+  // signals' own as-of date are the same day.
+  const asOfDateKey = systemClock().today();
+  const fireConfigByScopeId = await store.readFireConfig(asOfDateKey);
   const warningOverrides = await store.readWarningOverrides();
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
   const manualValueHistoryByAssetId = await store.readManualValueHistory();
@@ -254,7 +258,7 @@ async function collectScopeSignals(
   );
 
   const domainSignals = collectDataQualitySignals({
-    asOfDateKey: new Date().toISOString().slice(0, 10),
+    asOfDateKey,
     assetCreatedAtById,
     assets,
     connectedSources,

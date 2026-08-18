@@ -13,6 +13,7 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import {
+  parseCalendarMonth,
   parseWorkspaceExport,
   type RiskTolerance,
   summarizeWorkspaceExport,
@@ -95,16 +96,9 @@ export const updateMemberProfileAction = formAction({
 
     // Birth month (1-12, #1415): optional and only meaningful with a year. Out of
     // range or unparseable → unset, which the derivation reads as "year only"
-    // rather than shifting the age by a bogus month.
-    const birthMonthRaw = String(formData.get("birthMonth") ?? "").trim();
-    const birthMonthParsed = Number.parseInt(birthMonthRaw, 10);
-    const birthMonth =
-      birthMonthRaw &&
-      Number.isInteger(birthMonthParsed) &&
-      birthMonthParsed >= 1 &&
-      birthMonthParsed <= 12
-        ? birthMonthParsed
-        : undefined;
+    // rather than shifting the age by a bogus month. Same door as the derivation
+    // itself, so the two cannot disagree on what counts as a month.
+    const birthMonth = parseCalendarMonth(formData.get("birthMonth"));
 
     const fiscalCountry = String(formData.get("fiscalCountry") ?? "").trim() || undefined;
 

@@ -24,6 +24,20 @@ const MAX_PLAUSIBLE_AGE = 120;
 export type BirthDate = Pick<Member, "birthYear" | "birthMonth">;
 
 /**
+ * A calendar month as a 1-12 integer, or `undefined` for anything else. One door
+ * for the range check, so the form parser and the age derivation cannot disagree
+ * on what counts as a month: an out-of-range value is a typo, and reading it as a
+ * month would shift the derived age by a year.
+ */
+export function parseCalendarMonth(value: unknown): number | undefined {
+  const month = typeof value === "string" ? Number.parseInt(value.trim(), 10) : value;
+
+  return typeof month === "number" && Number.isInteger(month) && month >= 1 && month <= 12
+    ? month
+    : undefined;
+}
+
+/**
  * Age on `onISO` (YYYY-MM-DD) from a birth year and, when known, a birth month.
  * The birthday counts as passed for the whole of its month — we do not know the
  * day, so pretending to know it would be false precision. Returns `undefined`
@@ -37,18 +51,19 @@ export function ageOnDate(birth: BirthDate, onISO: string): number | undefined {
   }
 
   const year = Number(onISO.slice(0, 4));
-  const month = Number(onISO.slice(5, 7));
+  // The read date's month goes through the same door as the birth month: a
+  // malformed `2026-00-01` must not quietly subtract a year either.
+  const month = parseCalendarMonth(Number(onISO.slice(5, 7)));
+  const bornInMonth = parseCalendarMonth(birthMonth);
 
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
+  if (!Number.isFinite(year)) {
     return undefined;
   }
 
-  const hasMonth =
-    birthMonth !== undefined &&
-    Number.isInteger(birthMonth) &&
-    birthMonth >= 1 &&
-    birthMonth <= 12;
-  const age = year - birthYear - (hasMonth && month < birthMonth ? 1 : 0);
+  const age =
+    year -
+    birthYear -
+    (month !== undefined && bornInMonth !== undefined && month < bornInMonth ? 1 : 0);
 
   return age >= 0 && age <= MAX_PLAUSIBLE_AGE ? age : undefined;
 }

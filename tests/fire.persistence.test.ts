@@ -18,7 +18,7 @@ describe("FIRE config persistence", () => {
     };
 
     await store.saveFireConfig("household", config);
-    const result = await store.readFireConfig();
+    const result = await store.readFireConfig("2026-08-18");
 
     expect(result["household"]).toEqual(config);
   });
@@ -41,7 +41,7 @@ describe("FIRE config persistence", () => {
 
     await store.saveFireConfig("scope1", config1);
     await store.saveFireConfig("scope2", config2);
-    const result = await store.readFireConfig();
+    const result = await store.readFireConfig("2026-08-18");
 
     expect(result["scope1"]).toEqual(config1);
     expect(result["scope2"]).toEqual(config2);
@@ -50,7 +50,7 @@ describe("FIRE config persistence", () => {
   test("readFireConfig returns {} when nothing stored", async () => {
     const store = await createFileBackedStore("worthline-fire-");
 
-    expect(await store.readFireConfig()).toEqual({});
+    expect(await store.readFireConfig("2026-08-18")).toEqual({});
   });
 
   // #1415: the reference age is derived from the member's birth date at the read,

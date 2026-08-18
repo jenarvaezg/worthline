@@ -198,7 +198,7 @@ describe("saveFireConfigAction wiring", () => {
     );
 
     expect(url).toContain("ok=fire_saved");
-    const configs = await store.readFireConfig();
+    const configs = await store.readFireConfig("2026-08-18");
     expect(configs["household"]).toBeDefined();
     expect(configs["household"]!.monthlySpendingMinor).toBe(200_000);
   });
@@ -266,7 +266,7 @@ describe("saveFireConfigAction wiring", () => {
 
     expect(url).toContain("error=");
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/scope/i);
-    expect((await store.readFireConfig()).ghost_scope).toBeUndefined();
+    expect((await store.readFireConfig("2026-08-18")).ghost_scope).toBeUndefined();
   });
 });
 

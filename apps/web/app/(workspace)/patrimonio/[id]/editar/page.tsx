@@ -263,8 +263,11 @@ export default async function EditarPage({
   const payoutSchedules = asset
     ? await store.payouts.readPayoutSchedulesForHolding(id)
     : [];
+  const today = new Date().toISOString().slice(0, 10);
   const scopeFireConfig =
-    asset && selectedScope ? (await store.readFireConfig())[selectedScope.id] : undefined;
+    asset && selectedScope
+      ? (await store.readFireConfig(today))[selectedScope.id]
+      : undefined;
   const payoutMonthlySpendingMinor = scopeFireConfig?.monthlySpendingMinor ?? null;
 
   // amortized / anchored: the debt-model data (PRD #109).
@@ -295,7 +298,6 @@ export default async function EditarPage({
   const valuationCadence = liability
     ? await store.liabilities.readValuationCadence(id)
     : null;
-  const today = new Date().toISOString().slice(0, 10);
   // The curve inputs of an amortizable debt, assembled ONCE from the rows read
   // above. Both figures below come out of this same object, so the balance and
   // its accrual provably describe one curve — and the second figure costs no

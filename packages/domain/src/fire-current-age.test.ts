@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { FireScopeConfig } from "./fire";
-import { ageOnDate, scopeCurrentAge, withDerivedCurrentAges } from "./fire-current-age";
+import {
+  ageOnDate,
+  parseCalendarMonth,
+  scopeCurrentAge,
+  withDerivedCurrentAges,
+} from "./fire-current-age";
 import type { Member, Workspace } from "./workspace-types";
 import { createWorkspace } from "./workspace-types";
 
@@ -36,6 +41,27 @@ describe("ageOnDate", () => {
   it("ignores a birth month outside 1–12 instead of shifting the age", () => {
     expect(ageOnDate({ birthYear: 1963, birthMonth: 0 }, "2026-08-18")).toBe(63);
     expect(ageOnDate({ birthYear: 1963, birthMonth: 13 }, "2026-08-18")).toBe(63);
+  });
+
+  it("ignores a malformed month in the read date too", () => {
+    // Same defence on both sides: a `2026-00-01` must not quietly subtract a year
+    // from someone whose birth month is known.
+    expect(ageOnDate({ birthYear: 1963, birthMonth: 3 }, "2026-00-01")).toBe(63);
+  });
+});
+
+describe("parseCalendarMonth", () => {
+  it("accepts 1-12 from a number or the string a form posts", () => {
+    expect(parseCalendarMonth(3)).toBe(3);
+    expect(parseCalendarMonth(" 12 ")).toBe(12);
+  });
+
+  it("rejects anything that is not a calendar month", () => {
+    // One door for the range, so the form parser and the derivation cannot
+    // disagree: a bogus month would shift the derived age by a whole year.
+    for (const value of [0, 13, -1, 1.5, "", "marzo", null, undefined]) {
+      expect(parseCalendarMonth(value)).toBeUndefined();
+    }
   });
 });
 

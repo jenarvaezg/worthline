@@ -185,9 +185,10 @@ export interface AgentViewReadStore {
   /**
    * FIRE configs keyed by internal scope id (`household` | member | group), #340.
    * `currentAge` comes derived from the members' birth dates (#1415); `todayISO`
-   * is the date it is measured on (defaults to the system date).
+   * is the date it is measured on, required so the clock crosses the seam as an
+   * argument instead of being re-derived inside the store (ADR 0024).
    */
-  readFireConfig: (todayISO?: string) => Promise<Record<string, FireScopeConfig>>;
+  readFireConfig: (todayISO: string) => Promise<Record<string, FireScopeConfig>>;
   /**
    * A priced asset's valuation freshness, or null if it has no cached price
    * (#341). Sanitized: only the staleness signal, the fetch time, the providing
@@ -268,7 +269,7 @@ export interface AgentViewReadStoreDeps {
   readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
-  readFireConfig: (todayISO?: string) => Promise<Record<string, FireScopeConfig>>;
+  readFireConfig: (todayISO: string) => Promise<Record<string, FireScopeConfig>>;
   /** The price-cache row of any asset (its valuation freshness), or null. */
   readPriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;

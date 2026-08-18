@@ -1,7 +1,7 @@
 import type { PersistenceTestStore as WorthlineStore } from "@db/testing";
 import { createInMemoryStore } from "@db/testing";
 import type { AssetPrice, NetWorthSnapshot } from "@worthline/domain";
-import { EXPORT_VERSION } from "@worthline/domain";
+import { EXPORT_VERSION, parseWorkspaceExport } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 /**
@@ -664,6 +664,53 @@ describe("full holding model round-trips through export/import (#155)", () => {
     await restored.workspace.importWorkspace(doc);
 
     expect(await restored.workspace.exportWorkspace()).toEqual(doc);
+
+    source.close();
+    restored.close();
+  });
+});
+
+describe("the birth date round-trips through export/import (#1415)", () => {
+  test("year and month survive, so the restored workspace still derives an age", async () => {
+    // The birth date is now the ONLY stored age fact: if the transfer dropped it,
+    // an imported workspace would lose every FIRE age at once — the coast figures
+    // included — with nothing on screen saying why.
+    const source = await createInMemoryStore();
+    await source.workspace.initializeWorkspace({
+      members: [
+        { id: "m_jorge", name: "Jorge", birthYear: 1963, birthMonth: 3 },
+        { id: "m_ana", name: "Ana", birthYear: 1975 },
+      ],
+      mode: "household",
+    });
+    await source.saveFireConfig("household", {
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+    });
+
+    // Through the REAL gate: the file is JSON on disk and `parseWorkspaceExport`
+    // is the only validator (`importWorkspace` does not re-parse). It matters
+    // here because a zod object drops unknown keys — had `memberSchema` not
+    // learned `birthMonth`, the real import would lose it in silence while a
+    // direct `importWorkspace(doc)` test stayed green. The JSON round-trip is
+    // also what makes Ana's absent month absent rather than `undefined`.
+    const doc = await source.workspace.exportWorkspace();
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.errors.join(" · "));
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(parsed.value);
+
+    const members = (await restored.workspace.readWorkspace())!.members;
+    expect(members.find((member) => member.id === "m_jorge")).toMatchObject({
+      birthYear: 1963,
+      birthMonth: 3,
+    });
+    // Ana gave no month: the omission round-trips as an omission, not as a zero.
+    expect(members.find((member) => member.id === "m_ana")?.birthMonth).toBeUndefined();
+    // The household scope reads the oldest member, derived on the read date.
+    expect((await restored.readFireConfig("2026-08-18")).household?.currentAge).toBe(63);
 
     source.close();
     restored.close();

@@ -107,7 +107,7 @@ export async function buildContributionPlanContext(
     store.readContributionPlan(internalScopeId),
     store.readContributionReconciliations(internalScopeId),
     store.readAllPriceCacheEntries(),
-    store.readFireConfig(),
+    store.readFireConfig(today),
     store.readAssets(),
   ]);
 

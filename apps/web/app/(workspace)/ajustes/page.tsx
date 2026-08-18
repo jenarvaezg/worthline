@@ -101,7 +101,10 @@ export async function AjustesContent({
   ).flat();
   const savingsSuggestion = suggestMonthlySavingsCapacity(investmentOps);
 
-  const fireConfig = await store.readFireConfig();
+  // One clock read for this render: the derived FIRE age below and the config's own
+  // derived age must be measured on the same day (#1415).
+  const today = new Date().toISOString().slice(0, 10);
+  const fireConfig = await store.readFireConfig(today);
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
 
   // The FIRE reference age is derived from the member's birth date, never typed
@@ -111,11 +114,7 @@ export async function AjustesContent({
   // being served while quietly going stale.
   const derivedScopeAge =
     workspace && selectedScope
-      ? scopeCurrentAge(
-          workspace,
-          selectedScope.id,
-          new Date().toISOString().slice(0, 10),
-        )
+      ? scopeCurrentAge(workspace, selectedScope.id, today)
       : undefined;
   const legacyFrozenAge =
     derivedScopeAge === undefined ? fireScopeConfig?.currentAge : undefined;

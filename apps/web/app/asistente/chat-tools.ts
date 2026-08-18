@@ -1804,8 +1804,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
 
     get_member_profile: tool({
       description:
-        "Perfil de cada miembro activo: id `wl_mbr_…`, nombre, año de nacimiento (edad de " +
-        "referencia FIRE), país fiscal y tolerancia al riesgo. Para personalizar el consejo.",
+        "Perfil de cada miembro activo: id `wl_mbr_…`, nombre, año y mes de nacimiento (de " +
+        "ahí sale la edad de referencia FIRE), país fiscal y tolerancia al riesgo. Para " +
+        "personalizar el consejo.",
       inputSchema: EMPTY_SCHEMA,
       execute: () =>
         chatRead(input, async (store) => {

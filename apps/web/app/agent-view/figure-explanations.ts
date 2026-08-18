@@ -23,6 +23,7 @@ import {
   projectPortfolio,
   rungForLiability,
   securesHousingAsset,
+  systemClock,
   tierOfAsset,
 } from "@worthline/domain";
 import { deriveSourcePublicId } from "./connected-source-positions";
@@ -1227,7 +1228,9 @@ async function resolveFire(
   config: FireScopeConfig;
   result: ReturnType<typeof calculateFireForScope>;
 }> {
-  const config = (await store.readFireConfig())[facts.internalScopeId];
+  const config = (await store.readFireConfig(systemClock().today()))[
+    facts.internalScopeId
+  ];
 
   if (config === undefined) {
     throw unsupportedFigure(figure);

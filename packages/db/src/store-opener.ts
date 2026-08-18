@@ -298,7 +298,10 @@ async function buildStore(
       client.close();
     },
     // The one door every FIRE reader comes through — pages, agent view, MCP,
-    // data-health. The stored config is returned with `currentAge` DERIVED from
+    // data-health. `todayISO` is required: the date the age is measured on crosses
+    // this seam as an argument (ADR 0024), never re-derived here — an optional
+    // parameter is exactly how a reader ends up on a second, disagreeing clock.
+    // The stored config is returned with `currentAge` DERIVED from
     // the scope members' birth dates (#1415): a typed age froze, so Jorge stayed
     // 62 the year he turned 63 and every projected age drifted young. A scope
     // with no derivable age keeps whatever the stored config carried (see
@@ -318,11 +321,7 @@ async function buildStore(
 
       const stored = JSON.parse(row.value) as Record<string, FireScopeConfig>;
 
-      return withDerivedCurrentAges(
-        stored,
-        await ctx.getWorkspace(),
-        todayISO ?? new Date().toISOString().slice(0, 10),
-      );
+      return withDerivedCurrentAges(stored, await ctx.getWorkspace(), todayISO);
     },
     saveFireConfig: async (scopeId, config) => {
       const { db } = ctx;

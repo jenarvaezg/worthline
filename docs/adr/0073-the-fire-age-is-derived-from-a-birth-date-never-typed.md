@@ -43,9 +43,11 @@ none.
    returns the stored configs with `currentAge` resolved from the scope members'
    birth dates (`withDerivedCurrentAges`). Every reader — the dashboard, /objetivos,
    /ajustes, the agent view, the MCP tools, the data-health engine — comes through
-   that one function, so none of them can be the one that forgot. Callers that
-   already hold a page's «today» pass it, so a page never measures the age on a
-   second, disagreeing clock.
+   that one function, so none of them can be the one that forgot. `todayISO` is a
+   **required** parameter: the clock crosses that seam as an argument rather than
+   being re-derived inside the store (ADR 0024), and an optional one is precisely
+   how a reader ends up measuring the age on a second, disagreeing clock — making
+   it required is what turns that mistake into a compile error.
 
 3. **A scope takes its oldest active member.** In a household the oldest member's
    horizon binds first: fewer years of compounding before the target age, so a higher
@@ -93,6 +95,11 @@ none.
 - `readFireConfig` now depends on the workspace (through the memoized
   `ctx.getWorkspace()`), so a FIRE read implies a membership read. `export` still
   writes the **stored** config, not the derived one — an export carries facts.
+- `parseCalendarMonth` is the single door for the 1-12 range, shared by the form
+  parser and the derivation — including the read date's own month, so a malformed
+  `2026-00-01` cannot subtract a year either. The transfer schema keeps its own
+  `min(1).max(12)`: that is the boundary validator, and it is meant to be
+  independent.
 - `resolveScopeMemberIds` gained a non-throwing sibling, `findScopeMemberIds`. Stored
   per-scope data can outlive the group it was keyed by, and a FIRE config for a
   deleted group must not crash a page.
