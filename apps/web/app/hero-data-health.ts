@@ -114,6 +114,12 @@ export function selectHeroHealth(
  */
 const NON_FIGURE_CATEGORIES: ReadonlySet<DataQualityCategory> = new Set([
   "history_coverage",
+  // Declared-vs-measured savings (#1449) concerns the FIRE projection, exactly as
+  // MISSING_FIRE_CONFIG below does — today's net worth is unaffected either way.
+  // Its human surface is the FIRE panel on /objetivos, next to the figures it
+  // actually moves; here it would push a real doubt about today's figure off the
+  // hero. The agent view keeps it in the shared inventory.
+  "savings_coherence",
 ]);
 const NON_FIGURE_CODES: ReadonlySet<string> = new Set(["MISSING_FIRE_CONFIG"]);
 
@@ -196,6 +202,10 @@ function fixSurface(
       const href = fichaHref();
       return href ? { href, label: "Ver deuda" } : null;
     }
+    case "savings_coherence":
+      // Filtered upstream today, but it has a real destination: the declared
+      // capacity is typed in the FIRE form, which is where the gap gets settled.
+      return { href: "/ajustes", label: "Revisar ahorro" };
     case "history_coverage":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.
       return null;

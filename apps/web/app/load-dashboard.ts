@@ -525,6 +525,9 @@ export async function loadDashboard(
     fireConfig,
     ...(fx ? { fx } : {}),
     goals,
+    // The ledger the achievement-badge veto measures (#1449). Already in memory
+    // from the shared projection context — no extra I/O on this GET (#783).
+    investmentOperationsByAssetId: projectionContext.operationsByAsset,
     liabilities,
     persistence,
     positions,

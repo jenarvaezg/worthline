@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { InvestmentOperation } from "./investment-types";
-import { suggestMonthlySavingsCapacity } from "./monthly-savings";
+import { measureMonthlySavings, suggestMonthlySavingsCapacity } from "./monthly-savings";
 
 /**
  * Build an investment operation. `amount` is the gross trade value in major
@@ -95,5 +95,105 @@ describe("suggestMonthlySavingsCapacity", () => {
       monthsCovered: 1,
       basis: "operations",
     });
+  });
+});
+
+describe("measureMonthlySavings (#1449)", () => {
+  it("reports insufficient_data when the ledger is empty", () => {
+    expect(measureMonthlySavings([], { asOfDateKey: "2026-08-18" })).toMatchObject({
+      amountMinor: 0,
+      basis: "insufficient_data",
+      monthsCovered: 0,
+      operationsCount: 0,
+    });
+  });
+
+  it("keeps the sign: a net-negative window measures dis-saving", () => {
+    const operations = [op("buy", "2026-01-10", 100), op("sell", "2026-02-10", 1300)];
+
+    // net −1200 € over Aug-2025..Aug-2026, ledger starts 2026-01 → 8 months
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18" }),
+    ).toMatchObject({ amountMinor: -15_000, basis: "operations", monthsCovered: 8 });
+  });
+
+  it("divides by the months elapsed since the ledger opened, not between operations", () => {
+    // A single 1.000 € buy six months ago is 1.000 € spread over six months of
+    // living, not 1.000 €/month: the suggestion's span-between-operations rule
+    // would read it as 1.000 €/month.
+    const operations = [op("buy", "2026-03-01", 1000)];
+
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18" }),
+    ).toMatchObject({ amountMinor: 16_667, monthsCovered: 6 });
+  });
+
+  it("ignores operations older than the window but still counts its months", () => {
+    const operations = [
+      op("buy", "2023-05-10", 50_000), // way outside the 12-month window
+      op("buy", "2026-08-01", 600),
+    ];
+
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18" }),
+    ).toMatchObject({ amountMinor: 5000, monthsCovered: 12, operationsCount: 1 });
+  });
+
+  it("measures a dormant-but-old ledger as zero saved, not as no data", () => {
+    const operations = [op("buy", "2023-05-10", 50_000)];
+
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18" }),
+    ).toMatchObject({
+      amountMinor: 0,
+      basis: "operations",
+      monthsCovered: 12,
+      operationsCount: 0,
+    });
+  });
+
+  it("reports the window it measured, so a consumer can name it", () => {
+    expect(
+      measureMonthlySavings([op("buy", "2026-08-01", 600)], {
+        asOfDateKey: "2026-08-18",
+      }),
+    ).toMatchObject({ windowStartMonthKey: "2025-09", windowEndMonthKey: "2026-08" });
+  });
+
+  it("skips operations in another currency and says how many", () => {
+    const dollars: InvestmentOperation = {
+      ...op("buy", "2026-07-10", 1000),
+      id: "usd-buy",
+      currency: "USD",
+    };
+    const operations = [op("buy", "2026-07-10", 600), dollars];
+
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18", currency: "EUR" }),
+    ).toMatchObject({
+      amountMinor: 30_000, // only the 600 € buy, over 2 months
+      operationsCount: 1,
+      skippedForeignCount: 1,
+    });
+  });
+
+  it("counts every currency when the caller names none (the suggestion's behaviour)", () => {
+    const dollars: InvestmentOperation = {
+      ...op("buy", "2026-07-10", 1000),
+      id: "usd-buy",
+      currency: "USD",
+    };
+
+    expect(measureMonthlySavings([dollars], { asOfDateKey: "2026-08-18" })).toMatchObject(
+      { operationsCount: 1, skippedForeignCount: 0 },
+    );
+  });
+
+  it("honours a narrower window when asked", () => {
+    const operations = [op("buy", "2026-01-10", 1000), op("buy", "2026-08-10", 300)];
+
+    expect(
+      measureMonthlySavings(operations, { asOfDateKey: "2026-08-18", windowMonths: 3 }),
+    ).toMatchObject({ amountMinor: 10_000, monthsCovered: 3, operationsCount: 1 });
   });
 });

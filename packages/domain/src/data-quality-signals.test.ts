@@ -9,6 +9,9 @@ import {
   type DataQualitySyncAttempt,
   PERSISTENT_SYNC_FAILURE_CODE,
 } from "./data-quality-signals";
+import type { FireScopeConfig } from "./fire";
+import type { InvestmentOperation } from "./investment-types";
+import { formatMoneyMinor } from "./money";
 import { listScopeOptions, type ScopeOption } from "./scope";
 import {
   type CreateManualAssetInput,
@@ -33,6 +36,7 @@ function baseInput(
     connectedSources: [],
     debtModelByLiabilityId: new Map(),
     fireConfigByScopeId: {},
+    investmentOperationsByAssetId: new Map(),
     liabilities: [],
     manualValueHistoryByAssetId: new Map(),
     netUnitsByAssetId: new Map(),
@@ -900,5 +904,126 @@ describe("collectDataQualitySignals — PERSISTENT_SYNC_FAILURE (#1226)", () => 
     );
 
     expect(signals.filter((s) => s.code === PERSISTENT_SYNC_FAILURE_CODE)).toEqual([]);
+  });
+});
+
+describe("collectDataQualitySignals — SAVINGS_DECLARED_VS_MEASURED (#1449)", () => {
+  /** One 100 €/month buy for the 12 months ending 2026-07 (the fixture's asOf). */
+  function monthlyBuys(assetId: string, amountMajor: number): InvestmentOperation[] {
+    const months = [
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07",
+    ];
+    return months.map((month) => ({
+      assetId,
+      currency: "EUR",
+      executedAt: `${month}-10`,
+      feesMinor: 0,
+      id: `buy-${month}`,
+      kind: "buy",
+      pricePerUnit: "1",
+      units: String(amountMajor),
+    }));
+  }
+
+  function collect(
+    fireConfig: FireScopeConfig | undefined,
+    operations: InvestmentOperation[],
+    /** Book the ledger under a holding the scope does not own. */
+    ledgerHoldingId = "asset_fondo",
+  ) {
+    const { asset, input, scopeOption, workspace } = fixture();
+    const fondo = asset({
+      currentValueMinor: 50_000_00,
+      id: "asset_fondo",
+      name: "Fondo indexado",
+      providerSymbol: "IWDA.AS",
+      type: "investment",
+    });
+
+    return collectDataQualitySignals(
+      input({
+        assets: [fondo],
+        fireConfigByScopeId:
+          fireConfig === undefined ? {} : { [scopeOption.id]: fireConfig },
+        investmentOperationsByAssetId: new Map([[ledgerHoldingId, operations]]),
+        netUnitsByAssetId: new Map([["asset_fondo", "1000"]]),
+        workspace,
+      }),
+    ).filter((signal) => signal.category === "savings_coherence");
+  }
+
+  const fireConfig = (
+    monthlySavingsCapacityMinor: number | undefined,
+  ): FireScopeConfig => ({
+    monthlySpendingMinor: 200_000,
+    safeWithdrawalRate: 0.04,
+    ...(monthlySavingsCapacityMinor === undefined ? {} : { monthlySavingsCapacityMinor }),
+  });
+
+  test("flags a declared capacity the ledger cannot back", () => {
+    const signals = collect(fireConfig(150_000), monthlyBuys("asset_fondo", 120));
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      category: "savings_coherence",
+      code: "SAVINGS_DECLARED_VS_MEASURED",
+      fixable: true,
+      severity: "medium",
+    });
+    // All three figures on show, and no verdict on which one is wrong.
+    const euros = (amountMinor: number) =>
+      formatMoneyMinor({ amountMinor, currency: "EUR" });
+    expect(signals[0]?.label).toContain(euros(150_000));
+    expect(signals[0]?.label).toContain(euros(12_000));
+    expect(signals[0]?.label).toContain(euros(138_000));
+  });
+
+  test("says so plainly when the measured savings are negative", () => {
+    const operations = [
+      ...monthlyBuys("asset_fondo", 100),
+      {
+        assetId: "asset_fondo",
+        currency: "EUR" as const,
+        executedAt: "2026-04-10",
+        feesMinor: 0,
+        id: "sell-big",
+        kind: "sell" as const,
+        pricePerUnit: "1",
+        units: "5000",
+      },
+    ];
+
+    expect(collect(fireConfig(100_000), operations)[0]?.label).toContain(
+      "te descapitalizas",
+    );
+  });
+
+  test("stays quiet when declared and measured agree", () => {
+    expect(collect(fireConfig(120_000), monthlyBuys("asset_fondo", 1200))).toEqual([]);
+  });
+
+  test("stays quiet with no FIRE config to disagree with", () => {
+    expect(collect(undefined, monthlyBuys("asset_fondo", 120))).toEqual([]);
+  });
+
+  test("stays quiet with an empty ledger", () => {
+    expect(collect(fireConfig(150_000), [])).toEqual([]);
+  });
+
+  test("ignores a ledger the scope does not own", () => {
+    expect(
+      collect(fireConfig(150_000), monthlyBuys("asset_fondo", 120), "asset_ajeno"),
+    ).toEqual([]);
   });
 });

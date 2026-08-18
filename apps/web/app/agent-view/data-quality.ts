@@ -239,23 +239,28 @@ async function collectScopeSignals(
   // The fold itself, including "an empty ledger is unstarted, not closed", is the
   // domain's. Trashed ASSETS join the fold for the same reason: their units are
   // what decides whether the delete took value out of the patrimonio (#1365).
-  const netUnitsByAssetId = netUnitsByAsset(
-    new Map(
-      await Promise.all(
-        [
+  const operationsByAssetId = new Map(
+    await Promise.all(
+      [
+        ...new Set([
           ...assets
             .filter((asset) => valuationMethodOfAsset(asset) === "derived")
             .map((asset) => asset.id),
+          // Investment holdings whose instrument is not `derived` still keep an
+          // operations ledger, and the savings-coherence watch (#1449) measures
+          // over ALL of it: a window the home reads in full and the agent view
+          // reads in part would put the two at odds about the same scope.
+          ...assets.filter((asset) => asset.type === "investment").map((a) => a.id),
           ...trashedHoldings
             .filter((holding) => holding.kind === "asset")
             .map((holding) => holding.id),
-        ].map(
-          async (holdingId) =>
-            [holdingId, await store.readOperations(holdingId)] as const,
-        ),
+        ]),
+      ].map(
+        async (holdingId) => [holdingId, await store.readOperations(holdingId)] as const,
       ),
     ),
   );
+  const netUnitsByAssetId = netUnitsByAsset(operationsByAssetId);
 
   const domainSignals = collectDataQualitySignals({
     asOfDateKey,
@@ -264,6 +269,7 @@ async function collectScopeSignals(
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId,
+    investmentOperationsByAssetId: operationsByAssetId,
     liabilities,
     manualValueHistoryByAssetId,
     netUnitsByAssetId,

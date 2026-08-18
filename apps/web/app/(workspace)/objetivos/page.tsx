@@ -1,3 +1,4 @@
+import FireAchievementBadge from "@web/fire-achievement-badge";
 import FireProjectionCard from "@web/fire-projection-card";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { formatDecimalAsPercentField } from "@web/intake-primitives";
@@ -8,6 +9,7 @@ import type { FireLevel, HoldingReturnsView, PassiveIncomeLens } from "@worthlin
 import {
   collectHoldingPayouts,
   computeMonthlyContributionAllocation,
+  describeSavingsDivergence,
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   investmentReturnsById,
@@ -229,6 +231,8 @@ export async function ObjetivosContent({
   const payoutsByHolding = collectHoldingPayouts(payoutRecords, payoutSchedules, today);
 
   const {
+    achievement,
+    savingsCoherence,
     fireProjection,
     fireResult,
     fireScopeConfig,
@@ -239,6 +243,8 @@ export async function ObjetivosContent({
     assets,
     fireConfig,
     goals,
+    // The ledger behind the achievement-badge veto (#1449) — already read above.
+    investmentOperationsByAssetId: projectionContext.operationsByAsset,
     liabilities,
     persistence,
     positions: [],
@@ -446,10 +452,27 @@ export async function ObjetivosContent({
                 />
               </div>
 
-              {fireResult.percentFunded >= 100 ? (
-                <span className="statePill ready">FIRE alcanzado</span>
-              ) : fireResult.isAlreadyAtCoastFire ? (
-                <span className="statePill ready">Coast FIRE alcanzado</span>
+              {achievement ? (
+                <FireAchievementBadge
+                  achievement={achievement}
+                  currency={currency}
+                  privacyMode={privacyMode}
+                />
+              ) : null}
+
+              {/* Declarado vs medido (#1449): la proyección de arriba corre sobre
+                  la capacidad de ahorro declarada, y el libro de operaciones es lo
+                  único que puede contradecirla sin que nadie teclee nada. El aviso
+                  no dicta cuál de las dos cifras está mal. */}
+              {savingsCoherence?.state === "diverged" ? (
+                <p className="objetivosSavingsGap" role="status">
+                  {describeSavingsDivergence(
+                    savingsCoherence,
+                    workspace.baseCurrency,
+                    privacyMode,
+                  )}{" "}
+                  <Link href="/ajustes">Ajustar en Ajustes</Link>
+                </p>
               ) : null}
 
               {/* Coast FIRE explainer */}

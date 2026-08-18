@@ -149,6 +149,11 @@ const KEY_EXPORTS = [
   "buildMonthlyCloseBreakdownSeries",
   // data-quality-signals (#654 S1)
   "collectDataQualitySignals",
+  // monthly-savings / savings-coherence / fire-achievement (#425, #1449)
+  "suggestMonthlySavingsCapacity",
+  "measureMonthlySavings",
+  "assessSavingsCoherence",
+  "fireAchievement",
   "compareDataQualitySignals",
   // dates
   "daysBetween",

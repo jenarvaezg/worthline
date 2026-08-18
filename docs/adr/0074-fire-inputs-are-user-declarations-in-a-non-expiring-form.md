@@ -140,5 +140,5 @@ warning — never an input that overwrites the declaration.**
   change an unset capacity is an empty field in the form that drives the projection,
   with the measured suggestion beside it, not a hidden state.
 - Not covered here: whether the FIRE configuration should live in /objetivos rather
-  than /ajustes (#1450), and the coherence warning + achievement veto this cut makes
-  mandatory (#1449). This ADR is what makes both of them well-defined.
+  than /ajustes (#1450). The coherence warning + achievement veto this cut makes
+  mandatory (#1449) is now ADR 0075; this ADR is what makes both of them well-defined.

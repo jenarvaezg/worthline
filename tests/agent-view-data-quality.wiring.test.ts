@@ -959,6 +959,7 @@ describe("main financial context data-quality summary (#341)", () => {
         "missing_configuration",
         "price_freshness",
         "projection_gap",
+        "savings_coherence",
         "source_freshness",
         "trashed_balance",
         "warning",
@@ -1077,5 +1078,95 @@ describe("TRASHED_WITH_BALANCE (#1365)", () => {
 
     expect(page).toHaveLength(1);
     expect(page[0]!.code).toBe("TRASHED_WITH_BALANCE");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SAVINGS_DECLARED_VS_MEASURED (#1449)
+// ---------------------------------------------------------------------------
+
+describe("data-quality — declared vs measured savings (#1449)", () => {
+  /**
+   * The 12 calendar months ending this month, as `YYYY-MM`. Relative to the real
+   * clock on purpose: the endpoint reads `systemClock()`, so a seed with hard-coded
+   * 2026 dates would fall out of the measurement window as time passes and turn
+   * this guard green for the wrong reason.
+   */
+  function trailingMonths(): string[] {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, index) => {
+      const month = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (11 - index), 1),
+      );
+      return month.toISOString().slice(0, 7);
+    });
+  }
+
+  /** Declares 1.500 €/month of savings against a ledger that buys `monthlyMajor` €. */
+  async function seedDeclaredVsMeasured(monthlyMajor: number): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-savings-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo Indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    });
+
+    for (const month of trailingMonths()) {
+      await store.operations.recordOperation({
+        assetId: "asset_fund",
+        currency: "EUR",
+        executedAt: `${month}-10`,
+        feesMinor: 0,
+        id: `op_buy_${month}`,
+        kind: "buy",
+        pricePerUnit: "1",
+        units: String(monthlyMajor),
+      });
+    }
+
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+      monthlySavingsCapacityMinor: 150_000,
+    });
+    store.close();
+  }
+
+  async function savingsSignals(): Promise<Signal[]> {
+    const scopeId = await householdScopeId();
+    return signals(scopeId, "?limit=500&category=savings_coherence");
+  }
+
+  // The engine can only judge what the endpoint hands it: this is the guard on the
+  // agent view actually reading the operations ledger, not just the net units.
+  test("surfaces the gap when the ledger cannot back the declared capacity", async () => {
+    await seedDeclaredVsMeasured(120);
+
+    const found = await savingsSignals();
+
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      category: "savings_coherence",
+      code: "SAVINGS_DECLARED_VS_MEASURED",
+      fixable: true,
+      severity: "medium",
+    });
+    expect(found[0]!.label).toContain("Declaras ahorrar");
+  });
+
+  test("stays quiet when the ledger backs it", async () => {
+    await seedDeclaredVsMeasured(1500);
+
+    expect(await savingsSignals()).toEqual([]);
   });
 });
