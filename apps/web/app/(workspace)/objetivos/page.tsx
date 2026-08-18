@@ -466,11 +466,7 @@ export async function ObjetivosContent({
                   no dicta cuál de las dos cifras está mal. */}
               {savingsCoherence?.state === "diverged" ? (
                 <p className="objetivosSavingsGap" role="status">
-                  {describeSavingsDivergence(
-                    savingsCoherence,
-                    workspace.baseCurrency,
-                    privacyMode,
-                  )}{" "}
+                  {describeSavingsDivergence(savingsCoherence, currency, privacyMode)}{" "}
                   <Link href="/ajustes">Ajustar en Ajustes</Link>
                 </p>
               ) : null}

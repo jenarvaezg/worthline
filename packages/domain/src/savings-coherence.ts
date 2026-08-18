@@ -187,7 +187,7 @@ export function describeSavingsDivergence(
   return (
     `Declaras ahorrar ${amount(coherence.declaredMinor)} al mes y tus operaciones ` +
     `de los últimos ${window} miden ${measured}: ` +
-    `${amount(Math.abs(coherence.gapMinor))} de diferencia. Estas cifras no pueden ` +
-    `ser las dos verdad — revisa tu gasto, tus rentas o la capacidad declarada.`
+    `${amount(Math.abs(coherence.gapMinor))} de diferencia. Las dos no pueden ser ` +
+    `verdad a la vez — revisa tu gasto, tus rentas o la capacidad declarada.`
   );
 }

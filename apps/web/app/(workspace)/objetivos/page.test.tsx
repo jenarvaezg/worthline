@@ -1,4 +1,4 @@
-import type { ContributionPlan } from "@worthline/domain";
+import type { ContributionPlan, FireScopeConfig } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -48,13 +48,15 @@ const calls = vi.hoisted(() => {
     projectionContext,
     readAssets: vi.fn(async () => assets),
     readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets, liabilities })),
-    readFireConfig: vi.fn(async () => ({
-      household: {
-        monthlySpendingMinor: 200_000,
-        safeWithdrawalRate: 0.04,
-        expectedRealReturn: 0.05,
-      },
-    })),
+    readFireConfig: vi.fn(
+      async (): Promise<Record<string, FireScopeConfig>> => ({
+        household: {
+          monthlySpendingMinor: 200_000,
+          safeWithdrawalRate: 0.04,
+          expectedRealReturn: 0.05,
+        },
+      }),
+    ),
     readGoals: vi.fn(async () => []),
     readPayouts: vi.fn(async () => [
       {
@@ -374,6 +376,142 @@ describe("ObjetivosPage capital split (#1447)", () => {
     const html = await renderedHtml();
 
     expect(html).not.toContain("inmovilizado");
+  });
+});
+
+describe("ObjetivosPage measured savings (#1449)", () => {
+  /**
+   * The 12 calendar months ending this month. Relative to the real clock because
+   * the page reads it: months hard-coded to 2026 would drift out of the
+   * measurement window as time passes and turn this guard green for the wrong
+   * reason.
+   */
+  function trailingMonths(): string[] {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, index) =>
+      new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (11 - index), 1))
+        .toISOString()
+        .slice(0, 7),
+    );
+  }
+
+  /** 100 €/month in, and one 5.000 € withdrawal: the ledger goes down. */
+  function dissavingLedger() {
+    const months = trailingMonths();
+    return [
+      ...months.map((month) => ({
+        id: `op_buy_${month}`,
+        assetId: "asset_fondo",
+        kind: "buy" as const,
+        executedAt: `${month}-10`,
+        units: "100",
+        pricePerUnit: "1",
+        currency: "EUR" as const,
+        feesMinor: 0,
+      })),
+      {
+        id: "op_sell_big",
+        assetId: "asset_fondo",
+        kind: "sell" as const,
+        executedAt: `${months[6]}-10`,
+        units: "5000",
+        pricePerUnit: "1",
+        currency: "EUR" as const,
+        feesMinor: 0,
+      },
+    ];
+  }
+
+  /** The base fixture plus an investment holding that carries the ledger. */
+  function ledgerHoldings() {
+    const fondo = {
+      id: "asset_fondo",
+      name: "Fondo indexado",
+      type: "investment",
+      currency: "EUR",
+      currentValue: { amountMinor: 1_000_00, currency: "EUR" },
+      liquidityTier: "market",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      isPrimaryResidence: false,
+    };
+    return {
+      assets: [
+        {
+          id: "asset_cash",
+          name: "Caja",
+          type: "cash",
+          currency: "EUR",
+          currentValue: { amountMinor: 100_000_00, currency: "EUR" },
+          liquidityTier: "cash",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+        fondo,
+      ],
+      liabilities: [],
+    };
+  }
+
+  /**
+   * FIRE number = 100 € × 12 / 0,04 = 30.000 €, under the 101.000 € of eligible
+   * capital: funded on paper, whatever the ledger says. 1.500 €/mes declared.
+   */
+  function seedFundedScope(): void {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 10_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.05,
+        monthlySavingsCapacityMinor: 150_000,
+      },
+    });
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(ledgerHoldings());
+    calls.buildProjectionContext.mockResolvedValueOnce({
+      cachedPriceByAsset: new Map(),
+      manualPriceByAsset: new Map(),
+      operationsByAsset: new Map([["asset_fondo", dissavingLedger()]]),
+    });
+  }
+
+  // The veto lives in the domain, but only fires if this page hands the ledger to
+  // it — and only shows if the hero draws the attenuated badge instead of the green
+  // one. Both halves are asserted on the rendered markup.
+  test("draws the badge attenuated, with the measured figure and the gap", async () => {
+    seedFundedScope();
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("sobre el papel");
+    expect(html).not.toContain(">FIRE alcanzado<");
+    expect(html).toContain("Declaras ahorrar");
+  });
+
+  test("leaves the badge green when the ledger backs the declaration", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 10_000,
+        safeWithdrawalRate: 0.04,
+        expectedRealReturn: 0.05,
+        monthlySavingsCapacityMinor: 10_000,
+      },
+    });
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(ledgerHoldings());
+    calls.buildProjectionContext.mockResolvedValueOnce({
+      cachedPriceByAsset: new Map(),
+      manualPriceByAsset: new Map(),
+      operationsByAsset: new Map([
+        [
+          "asset_fondo",
+          dissavingLedger().filter((operation) => operation.kind === "buy"),
+        ],
+      ]),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain(">FIRE alcanzado<");
+    expect(html).not.toContain("sobre el papel");
+    expect(html).not.toContain("Declaras ahorrar");
   });
 });
 
