@@ -51,10 +51,20 @@ raised an error — it would have produced a wrong cost basis in silence.
 
 3. **One door.** `convertCapturedOperations` / `convertStatementRows`
    (`@worthline/pricing`) pair the pure conversion with the ECB fetch it needs, and
-   every capture path goes through them: the operations form, the statement importer
-   (preview *and* confirm, at the single `readStatementFromForm` door), and the
-   assistant's statement proposal. A EUR apunte short-circuits with zero requests, so
-   the ordinary path costs exactly what it cost before.
+   every capture path goes through them. There are **four**, and the count is the
+   point — the first pass through this fix converted three and left the fourth as the
+   one surviving way to store dollars as euros:
+
+   - the operations form (`recordOperationAction`);
+   - the whole-portfolio statement importer;
+   - the **per-holding** statement upload on the ficha, a separate action with its own
+     copy of `readStatementFromForm`;
+   - the assistant's statement proposal.
+
+   In both importers the conversion sits in `readStatementFromForm`, the single point
+   preview *and* confirm share, so the counts shown are the figures written (#1438). A
+   EUR apunte short-circuits with zero requests, so the ordinary path costs exactly what
+   it cost before.
 
 4. **A missing rate refuses the capture.** ECB publishes business days only; the
    snapshot already carries the previous business day forward for
@@ -78,14 +88,21 @@ raised an error — it would have produced a wrong cost basis in silence.
    wrong. Widening it is one line plus a decimals decision — which is the review it
    deserves.
 
-7. **The comment becomes a guard.** `derivePosition` emits a warning when its
-   operations are not all in the currency it labels the cost with — including the
+7. **The comment becomes a guard, in its own channel.** `derivePosition` reports when
+   its operations are not all in the currency it labels the cost with — including the
    #1401 shape, where the WHOLE ledger is in another currency (checking only for
    disagreement between operations would have stayed silent on the very case that
    cost 17,7 %). A warning, not a failure: the arithmetic is unchanged, so an
    existing portfolio still renders — it just stops being quiet about a figure that
    cannot be trusted. Writes are what prevent the state; this is what admits it when
    an older path already created it.
+
+   It rides `PositionSummary.currencyWarning`, **not** the existing `warnings` array:
+   that array has a single consumer and it reads any entry as an over-sell
+   (`statement-import-preview.ts` → «venta excede posición»), so a currency problem
+   posted there would reach the user as a bad sell. They are different grades of news —
+   one about the operation being previewed, one about the integrity of what is stored —
+   and the ficha renders the second next to the operations it is about.
 
 The conversion itself is one pure function, `convertCapturedFigures`, shared by an
 operation about to be persisted and a statement row about to become one — so a
@@ -126,6 +143,13 @@ re-imported file can never convert differently than a hand-typed apunte.
 - An **overwrite replaces** the capture, clearing it when the incoming row is euros
   now; otherwise a re-import would leave dollars on screen that no longer back the
   stored figure.
+- The row → command shape (`statementRowToCreateInput` / `statementRowToOverwrite`)
+  gets one home: it existed six times (three statement doors × create/overwrite) and
+  this change had to add the same `capture` line to all six.
+- `CaptureCurrency` is the union derived from the vocabulary, and `BASE_CURRENCY` now
+  types the literal `"EUR"` rather than the open `CurrencyCode` — otherwise a picker
+  typed with it accepts any string, and a hand-edited `v_currency=JPY` sits in the form
+  with no matching option.
 - The plantilla (our own statement format) gains an optional `Divisa` column; an
   unknown currency aborts the load naming the row. The other broker adapters state no
   currency, so their rows stay EUR — the conversion door is in place for the day one
