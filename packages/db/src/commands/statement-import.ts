@@ -63,9 +63,10 @@ export function createStatementImportCommands(
         }
 
         for (const history of balanceHistories) {
-          for (const rebaseline of history.rebaselines) {
-            await stores.liabilities.addBalanceRebaseline(rebaseline, { batchId });
-          }
+          // Batched: a statement's balance history is a chain, not one fact (#1435).
+          await stores.liabilities.addBalanceRebaselines(history.rebaselines, {
+            batchId,
+          });
         }
         for (const valuation of propertyValuations) {
           await stores.assets.addValuationAnchor(valuation, { batchId });

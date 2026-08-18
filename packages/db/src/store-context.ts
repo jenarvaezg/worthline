@@ -13,6 +13,7 @@ import type {
 import { createLiability, projectAssets, usableCachedPrice } from "@worthline/domain";
 import { and, asc, eq, isNull } from "drizzle-orm";
 
+import { chunk } from "./chunk";
 import { openDrizzle } from "./libsql-client";
 
 import {
@@ -30,6 +31,20 @@ import {
 
 /** The shared drizzle query builder type, bound to the libSQL driver. */
 export type StoreDb = ReturnType<typeof openDrizzle>;
+
+/** One row of the shared audit trail. */
+export interface AuditEntry {
+  action: string;
+  entityType: string;
+  entityId: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Audit rows per batched INSERT. Five columns each, so this stays far below the
+ * per-statement parameter cap while keeping a long import to a few round-trips.
+ */
+const AUDIT_ENTRIES_PER_INSERT = 100;
 
 /**
  * Shared substrate for every extracted *-Store (R1–R5 of the architectural
@@ -78,6 +93,12 @@ export interface StoreContext {
     entityId: string,
     details?: Record<string, unknown>,
   ) => Promise<void>;
+  /**
+   * Append MANY rows to the audit log in batched statements (#1435) — the trail
+   * still gets one row per fact, but a 42-fact import costs a handful of
+   * round-trips instead of 42.
+   */
+  writeAuditEntries: (entries: readonly AuditEntry[]) => Promise<void>;
   /** The memoized workspace for this unit of work (null before initialization). */
   getWorkspace: () => Promise<Workspace | null>;
   /** Drop the memoized workspace after a membership write. */
@@ -181,6 +202,28 @@ export function createStoreContext(
     }
   };
 
+  /**
+   * Every audit write — one row or a whole batch — goes through here, in chunked
+   * INSERTs (#1435). Reads `currentDb` at call time, so entries written inside a
+   * remote transaction land on the transaction's connection.
+   */
+  const writeAuditEntries = async (entries: readonly AuditEntry[]): Promise<void> => {
+    for (const group of chunk(entries, AUDIT_ENTRIES_PER_INSERT)) {
+      await currentDb
+        .insert(auditLog)
+        .values(
+          group.map(({ action, details = {}, entityId, entityType }) => ({
+            action,
+            detailsJson: JSON.stringify(details),
+            entityId,
+            entityType,
+            id: randomUUID(),
+          })),
+        )
+        .run();
+    }
+  };
+
   return {
     client: client_,
     db,
@@ -199,18 +242,9 @@ export function createStoreContext(
         txDepth -= 1;
       }
     },
-    writeAuditEntry: async (action, entityType, entityId, details = {}) => {
-      await currentDb
-        .insert(auditLog)
-        .values({
-          action,
-          detailsJson: JSON.stringify(details),
-          entityId,
-          entityType,
-          id: randomUUID(),
-        })
-        .run();
-    },
+    writeAuditEntry: (action, entityType, entityId, details = {}) =>
+      writeAuditEntries([{ action, details, entityId, entityType }]),
+    writeAuditEntries,
     getWorkspace: () => {
       if (cachedWorkspace === undefined) {
         cachedWorkspace = readWorkspace(currentDb);

@@ -265,7 +265,7 @@ async function buildStore(
       connectedSources: connectedSourceSeams,
       datedFacts: datedFactCommands,
       factPersistence: {
-        addBalanceRebaseline: liabilityStore.addBalanceRebaseline,
+        addBalanceRebaselines: liabilityStore.addBalanceRebaselines,
         updateLiabilityBalance: liabilityStore.updateLiabilityBalance,
       },
       investmentIdentity: {

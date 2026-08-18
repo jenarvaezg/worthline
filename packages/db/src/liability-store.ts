@@ -23,6 +23,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { chunk } from "./chunk";
 import { readCurveGovernedLiabilityIds } from "./curve-valued-holdings";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 import {
@@ -333,6 +334,15 @@ export interface LiabilityStore {
     input: AddBalanceRebaselineInput,
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
+  /**
+   * Add a whole CHAIN of re-baselines in batched writes (#1435) — the shape a
+   * balance-history reconstruction needs, where one round-trip per checkpoint is
+   * dozens of round-trips.
+   */
+  addBalanceRebaselines: (
+    inputs: readonly AddBalanceRebaselineInput[],
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   /** Read a liability's balance re-baselines, ordered ascending by baseline date. */
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
   /** Update a balance re-baseline in place. */
@@ -420,7 +430,8 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     updateEarlyRepayment: (repaymentId, input) =>
       updateEarlyRepayment(ctx, repaymentId, input),
     deleteEarlyRepayment: (repaymentId) => deleteEarlyRepayment(ctx, repaymentId),
-    addBalanceRebaseline: (input, opts) => addBalanceRebaseline(ctx, input, opts),
+    addBalanceRebaseline: (input, opts) => addBalanceRebaselines(ctx, [input], opts),
+    addBalanceRebaselines: (inputs, opts) => addBalanceRebaselines(ctx, inputs, opts),
     readBalanceRebaselines: (liabilityId) => readBalanceRebaselines(ctx, liabilityId),
     updateBalanceRebaseline: (rebaselineId, input) =>
       updateBalanceRebaseline(ctx, rebaselineId, input),
@@ -1068,35 +1079,65 @@ function deriveRebaselineStorage(input: {
   };
 }
 
-async function addBalanceRebaseline(
-  ctx: StoreContext,
+/**
+ * Re-baseline rows per batched INSERT. Twelve columns each, so a group of 50
+ * stays well below the per-statement parameter cap (#1435).
+ */
+const REBASELINES_PER_INSERT = 50;
+
+function rebaselineRow(
   input: AddBalanceRebaselineInput,
   provenance?: FactPersistenceProvenance,
-): Promise<void> {
+) {
   const derived = deriveRebaselineStorage(input);
-
-  await ctx.db
-    .insert(liabilityBalanceRebaselines)
-    .values({
-      annualInterestRate: derived.annualInterestRate,
-      baselineDate: input.baselineDate,
-      batchId: provenance?.batchId ?? null,
-      endDate: input.endDate,
-      id: input.id,
-      inputMode: derived.inputMode,
-      liabilityId: input.liabilityId,
-      monthlyPaymentMinor: derived.monthlyPaymentMinor,
-      nextPaymentDate: input.nextPaymentDate,
-      outstandingBalanceMinor: input.outstandingBalanceMinor,
-      startsAtBaseline: input.startsAtBaseline ?? false,
-      source: input.source ?? "manual",
-    })
-    .run();
-
-  await ctx.writeAuditEntry("add_balance_rebaseline", "liability", input.liabilityId, {
+  return {
+    annualInterestRate: derived.annualInterestRate,
     baselineDate: input.baselineDate,
-    rebaselineId: input.id,
-  });
+    batchId: provenance?.batchId ?? null,
+    endDate: input.endDate,
+    id: input.id,
+    inputMode: derived.inputMode,
+    liabilityId: input.liabilityId,
+    monthlyPaymentMinor: derived.monthlyPaymentMinor,
+    nextPaymentDate: input.nextPaymentDate,
+    outstandingBalanceMinor: input.outstandingBalanceMinor,
+    startsAtBaseline: input.startsAtBaseline ?? false,
+    source: input.source ?? "manual",
+  };
+}
+
+/**
+ * Persist a whole CHAIN of re-baselines (#1435). A reconstruction import applies
+ * dozens of checkpoints at once; one `await` per checkpoint is one round-trip per
+ * checkpoint against a remote Turso, so the rows — and their audit trail, still
+ * one row per fact — go in batched.
+ *
+ * A chain longer than one chunk spans several statements, so the CALLER owns the
+ * transaction (every one of them applies the chain inside `ctx.transaction`, ADR
+ * 0020) — without it a long chain could land half-written.
+ */
+async function addBalanceRebaselines(
+  ctx: StoreContext,
+  inputs: readonly AddBalanceRebaselineInput[],
+  provenance?: FactPersistenceProvenance,
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  for (const group of chunk(inputs, REBASELINES_PER_INSERT)) {
+    await ctx.db
+      .insert(liabilityBalanceRebaselines)
+      .values(group.map((input) => rebaselineRow(input, provenance)))
+      .run();
+  }
+
+  await ctx.writeAuditEntries(
+    inputs.map((input) => ({
+      action: "add_balance_rebaseline",
+      details: { baselineDate: input.baselineDate, rebaselineId: input.id },
+      entityId: input.liabilityId,
+      entityType: "liability",
+    })),
+  );
 }
 
 async function readBalanceRebaselines(

@@ -175,9 +175,9 @@ export function createDebtBalanceCommands(
       const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       await ctx.transaction(async () => {
         const batchId = await uow.createFactBatch({ trigger: "manual" });
-        for (const rebaseline of rebaselines) {
-          await stores.liabilities.addBalanceRebaseline(rebaseline, { batchId });
-        }
+        // The chain goes in batched — one round-trip per checkpoint is dozens of
+        // round-trips on a long reconstruction (#1435).
+        await stores.liabilities.addBalanceRebaselines(rebaselines, { batchId });
         if (rebaselines.length === 0) return;
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;

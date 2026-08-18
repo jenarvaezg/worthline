@@ -202,7 +202,7 @@ interface InternalCommandHostDependencies {
    */
   factPersistence: Pick<
     LiabilityStore,
-    "addBalanceRebaseline" | "updateLiabilityBalance"
+    "addBalanceRebaselines" | "updateLiabilityBalance"
   >;
   /** Read seam for the correction apply's live-data revalidation (#1051). */
   liabilityReads: Pick<LiabilityStore, "debtBalanceAtDate">;
@@ -514,7 +514,7 @@ export function createCommandHost(
   ) => {
     const result = await executeImportBalanceHistoryCommand(
       {
-        addBalanceRebaseline: factPersistence.addBalanceRebaseline,
+        addBalanceRebaselines: factPersistence.addBalanceRebaselines,
         rippleDebtRebaseline,
         uow,
       },
