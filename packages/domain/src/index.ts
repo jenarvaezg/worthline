@@ -465,6 +465,7 @@ export {
 export type { BirthDate } from "./fire-current-age";
 export {
   ageOnDate,
+  parseBirthYear,
   parseCalendarMonth,
   scopeCurrentAge,
   withDerivedCurrentAges,

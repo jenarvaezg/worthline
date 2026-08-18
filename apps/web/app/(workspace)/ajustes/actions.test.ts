@@ -134,6 +134,29 @@ describe("updateMemberProfileAction", () => {
     store.close();
   });
 
+  test("un año imposible no se guarda, para que la edad derivada no desaparezca sola (#1415)", async () => {
+    const store = await seedOneMember();
+    await runAction(
+      updateMemberProfileAction,
+      form({ id: MEMBER_ID, birthYear: "1963" }),
+      store,
+      CLOCK,
+    );
+
+    // Un 2100 guardado tal cual dejaría la ficha con pinta de rellena mientras
+    // `ageOnDate` lo rechaza: sin edad, `calculateFire` se salta el bloque de coast
+    // y /ajustes afirmaría que no hay fecha de nacimiento. Se descarta en la puerta.
+    await runAction(
+      updateMemberProfileAction,
+      form({ id: MEMBER_ID, birthYear: "2100" }),
+      store,
+      CLOCK,
+    );
+    expect((await readMember(store)).birthYear).toBeUndefined();
+
+    store.close();
+  });
+
   test("saves the optional birth month and ignores one out of range (#1415)", async () => {
     const store = await seedOneMember();
 

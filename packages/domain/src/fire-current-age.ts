@@ -69,6 +69,25 @@ export function ageOnDate(birth: BirthDate, onISO: string): number | undefined {
 }
 
 /**
+ * A birth year that yields a plausible age on `todayISO`, or `undefined`.
+ *
+ * The stored year is accepted only when the derivation can read it back: a `2100`
+ * or a mistyped `19630` would otherwise sit in the profile looking filled in while
+ * `ageOnDate` refused it, and a workspace with no legacy age would lose the whole
+ * coast block with the settings page insisting there is no birth date at all.
+ * Storing exactly what the reader accepts is what keeps the two honest.
+ */
+export function parseBirthYear(value: unknown, todayISO: string): number | undefined {
+  const year = typeof value === "string" ? Number.parseInt(value.trim(), 10) : value;
+
+  if (typeof year !== "number" || !Number.isInteger(year)) {
+    return undefined;
+  }
+
+  return ageOnDate({ birthYear: year }, todayISO) === undefined ? undefined : year;
+}
+
+/**
  * The scope's reference age: the OLDEST active member who has a birth year.
  *
  * In a multi-member scope the oldest member's horizon binds first — fewer years

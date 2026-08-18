@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FireScopeConfig } from "./fire";
 import {
   ageOnDate,
+  parseBirthYear,
   parseCalendarMonth,
   scopeCurrentAge,
   withDerivedCurrentAges,
@@ -62,6 +63,27 @@ describe("parseCalendarMonth", () => {
     for (const value of [0, 13, -1, 1.5, "", "marzo", null, undefined]) {
       expect(parseCalendarMonth(value)).toBeUndefined();
     }
+  });
+});
+
+describe("parseBirthYear", () => {
+  it("accepts a year the derivation can read back", () => {
+    expect(parseBirthYear("1963", "2026-08-18")).toBe(1963);
+    expect(parseBirthYear(1963, "2026-08-18")).toBe(1963);
+  });
+
+  it("rejects a year that would leave the profile filled in but ageless", () => {
+    // The last live route of the issue's review focus: a stored `2100` looks like
+    // a birth date on screen while `ageOnDate` refuses it, so the coast block
+    // disappears and the settings page claims there is no birth date at all.
+    for (const value of ["2100", "19630", "", "mil novecientos", "1800", null]) {
+      expect(parseBirthYear(value, "2026-08-18")).toBeUndefined();
+    }
+  });
+
+  it("moves with the clock: this year is a valid birth year, next year is not", () => {
+    expect(parseBirthYear("2026", "2026-08-18")).toBe(2026);
+    expect(parseBirthYear("2027", "2026-08-18")).toBeUndefined();
   });
 });
 

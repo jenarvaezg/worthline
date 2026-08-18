@@ -73,11 +73,22 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   // earlier journeys, and a goal only reserves FIRE capital when it has an
   // assigned holding.
   await page.goto("/ajustes");
+
+  // The reference age is no longer a FIRE field: it is derived from the member's
+  // birth date (#1415). Without it there is no FIRE horizon, and every goal falls
+  // out of it — which is exactly the «no descuenta FIRE» label this journey
+  // excludes below. Set it on the first member (the household scope reads its
+  // oldest member) for the same reason the FIRE config is set explicitly here:
+  // an earlier journey may have reset the DB.
+  const firstMember = page.locator(".memberRow").first();
+  await firstMember.getByLabel(/^Año de nacimiento/).fill("1991");
+  await firstMember.getByRole("button", { name: "Guardar perfil" }).click();
+  await expect(page).toHaveURL(/\/ajustes/);
+
   const fireSettings = page.getByRole("region", { name: "Configuración FIRE" });
   await fireSettings.getByLabel(/^Gasto mensual/).fill("2000");
   await fireSettings.getByLabel(/^Tasa de retirada segura/).fill("4");
   await fireSettings.getByLabel(/^Retorno real esperado/).fill("5");
-  await fireSettings.getByLabel(/^Edad actual/).fill("35");
   await fireSettings.getByLabel(/^Edad objetivo/).fill("65");
   await fireSettings.getByLabel(/^Ahorro mensual/).fill("1000");
   await fireSettings.getByRole("button", { name: "Guardar configuración FIRE" }).click();

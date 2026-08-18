@@ -100,6 +100,11 @@ none.
   `2026-00-01` cannot subtract a year either. The transfer schema keeps its own
   `min(1).max(12)`: that is the boundary validator, and it is meant to be
   independent.
+- `parseBirthYear` stores only a year the derivation can read back. A `2100` kept
+  as-is would sit in the profile looking filled in while `ageOnDate` refused it, so
+  a workspace with no legacy age would lose the coast block AND be told by settings
+  that it has no birth date at all. What the writer accepts is what the reader
+  accepts.
 - `resolveScopeMemberIds` gained a non-throwing sibling, `findScopeMemberIds`. Stored
   per-scope data can outlive the group it was keyed by, and a FIRE config for a
   deleted group must not crash a page.
@@ -107,7 +112,9 @@ none.
   `currentAge` as derived, so the assistant can explain where an age came from
   instead of treating it as something the user typed.
 - The demo personas got birth dates and lost their `currentAge`: the showcase should
-  not display the very frozen age this removes.
+  not display the very frozen age this removes. The e2e seed got birth dates for the
+  same reason — without one there is no FIRE horizon, so every goal falls out of it
+  and journey 37's delay-label assertion loses its subject.
 - Not covered here: the `Edad Coast` label is conceptually wrong for a different
   reason (it is not the age at which you reach coast, and that age is computed
   nowhere) — that is #1425, and it edits the same lines of `fire.ts`.
