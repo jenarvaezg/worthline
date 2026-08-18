@@ -83,7 +83,13 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   const firstMember = page.locator(".memberRow").first();
   await firstMember.getByLabel(/^Año de nacimiento/).fill("1991");
   await firstMember.getByRole("button", { name: "Guardar perfil" }).click();
-  await expect(page).toHaveURL(/\/ajustes/);
+  // Wait for the SUCCESS param, not merely for «still on /ajustes»: the action
+  // pushes a new URL and re-renders the page, and these inputs are `defaultValue`,
+  // so filling the FIRE form before that navigation lands loses every value the
+  // re-render replaces — the form then posts an empty monthly spending and the
+  // whole FIRE config is refused. A laxer regex matches the OLD url instantly and
+  // hides both the race and the refusal (which is how this passed in isolation).
+  await expect(page).toHaveURL(/[?&]ok=saved/);
 
   const fireSettings = page.getByRole("region", { name: "Configuración FIRE" });
   await fireSettings.getByLabel(/^Gasto mensual/).fill("2000");
@@ -92,7 +98,11 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   await fireSettings.getByLabel(/^Edad objetivo/).fill("65");
   await fireSettings.getByLabel(/^Ahorro mensual/).fill("1000");
   await fireSettings.getByRole("button", { name: "Guardar configuración FIRE" }).click();
-  await expect(page).toHaveURL(/\/ajustes/);
+  // Same reason, plus one more: this asserts the config was ACCEPTED. A rejected
+  // form also redirects to /ajustes (with `?error=…`), so the lax URL let a
+  // silently-refused FIRE config through and the failure surfaced 30 lines later
+  // as a goal with no FIRE horizon.
+  await expect(page).toHaveURL(/[?&]ok=fire_saved/);
 
   const checkGoalName = "Fondo e2e fireDelay";
   await page.goto("/objetivos");
