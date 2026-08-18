@@ -529,6 +529,9 @@ export async function loadDashboard(
     // from the shared projection context — no extra I/O on this GET (#783).
     investmentOperationsByAssetId: projectionContext.operationsByAsset,
     liabilities,
+    // The declared rents behind the rent-derived FIRE return (#1448) — read above
+    // for the hero's payout figures, so no extra query on this GET.
+    payoutSchedules,
     persistence,
     positions,
     priceCache,

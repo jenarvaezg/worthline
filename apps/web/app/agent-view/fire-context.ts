@@ -102,6 +102,13 @@ export async function resolveFire(
       config,
       assets,
     );
+    // The declared rents the rate reads (#1448). Without them the assistant would
+    // quote the tier default while the screen shows the rent-derived rate — the
+    // same figure with two values, which is the failure the single door exists for.
+    // Skipped when a manual `expectedRealReturn` is set: it wins over the whole
+    // computation (ADR 0074/0076), so the query would buy nothing (#783).
+    const payoutSchedules =
+      config.expectedRealReturn === undefined ? await store.readPayoutSchedules() : [];
     result = calculateFireForScope(
       config,
       assets,
@@ -109,6 +116,7 @@ export async function resolveFire(
       workspace,
       internalScopeId,
       reservedForGoalsMinor,
+      { payoutSchedules, todayISO: today },
     );
   }
 

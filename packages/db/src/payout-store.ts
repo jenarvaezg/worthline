@@ -27,6 +27,8 @@ export interface CreatePayoutScheduleInput {
   holdingId: string;
   label: string;
   amountMinor: number;
+  /** Declared cost per occurrence (#1448); omit / null for "not declared". */
+  expensesMinor?: number | null;
   cadence: PayoutCadence;
   startISO: string;
   endISO?: string | null;
@@ -36,6 +38,8 @@ export interface CreatePayoutScheduleInput {
 export interface UpdatePayoutSchedulePatch {
   label?: string;
   amountMinor?: number;
+  /** `null` clears the declaration back to "not declared" — distinct from a declared 0. */
+  expensesMinor?: number | null;
   cadence?: PayoutCadence;
   startISO?: string;
   endISO?: string | null;
@@ -89,6 +93,7 @@ function rowToSchedule(row: ScheduleRow): PayoutSchedule {
     holdingId: row.holdingId,
     label: row.label,
     amountMinor: row.amountMinor,
+    expensesMinor: row.expensesMinor,
     cadence: row.cadence,
     startISO: row.startDate,
     endISO: row.endDate,
@@ -153,6 +158,7 @@ async function createPayoutSchedule(
   const id = ctx.newId();
   const endISO = input.endISO ?? null;
   const exclusions = input.exclusions ?? [];
+  const expensesMinor = input.expensesMinor ?? null;
   await ctx.db
     .insert(payoutSchedules)
     .values({
@@ -160,6 +166,7 @@ async function createPayoutSchedule(
       holdingId: input.holdingId,
       label: input.label,
       amountMinor: input.amountMinor,
+      expensesMinor,
       cadence: input.cadence,
       startDate: input.startISO,
       endDate: endISO,
@@ -171,6 +178,7 @@ async function createPayoutSchedule(
     holdingId: input.holdingId,
     label: input.label,
     amountMinor: input.amountMinor,
+    expensesMinor,
     cadence: input.cadence,
     startISO: input.startISO,
     endISO,
@@ -186,6 +194,7 @@ async function updatePayoutSchedule(
   const set: Partial<typeof payoutSchedules.$inferInsert> = {};
   if (patch.label !== undefined) set.label = patch.label;
   if (patch.amountMinor !== undefined) set.amountMinor = patch.amountMinor;
+  if (patch.expensesMinor !== undefined) set.expensesMinor = patch.expensesMinor;
   if (patch.cadence !== undefined) set.cadence = patch.cadence;
   if (patch.startISO !== undefined) set.startDate = patch.startISO;
   if (patch.endISO !== undefined) set.endDate = patch.endISO;

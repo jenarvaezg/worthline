@@ -442,6 +442,7 @@ export {
   sectorStyleSplit,
 } from "./exposure-taxonomy";
 export type {
+  CalculateFireForScopeOptions,
   FireContext,
   FireExcludedAsset,
   FireExclusionReason,
@@ -495,7 +496,20 @@ export type {
 // `projectFire` (the scalar engine) is intentionally internal (#1122): callers
 // project through `projectFireFromContext`, the single door.
 export { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
-export type { EligibleTier } from "./fire-return";
+export type {
+  AppliedRentReturn,
+  FireRentReturnReport,
+  RentDerivedReturn,
+  RentRealReturns,
+  RentReturnNotice,
+  RentReturnNoticeReason,
+} from "./fire-rent-return";
+export {
+  annualizedMinor,
+  deriveRentRealReturns,
+  isScheduleLiveOn,
+} from "./fire-rent-return";
+export type { AssetRateOverride, EligibleTier } from "./fire-return";
 export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
 export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 export type {

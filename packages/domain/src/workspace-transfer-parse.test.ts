@@ -1437,4 +1437,51 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
     );
     expect(result.ok).toBe(true);
   });
+
+  test("a schedule with no declared expenses lands as null, never as 0 (#1448)", () => {
+    // A document written before v57 carries no `expensesMinor`. Defaulting it to 0
+    // would import "this flat costs nothing to hold" — a claim nobody made, and one
+    // that would seal a gross yield as if it were net.
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.payoutSchedules[0]?.expensesMinor).toBeNull();
+  });
+
+  test("declared expenses survive the transfer", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.payoutSchedules = [
+          {
+            id: "sch1",
+            holdingId: "a1",
+            label: "Alquiler",
+            amountMinor: 100000,
+            expensesMinor: 25000,
+            cadence: "monthly",
+            startISO: "2024-01-01",
+            endISO: null,
+            exclusions: [],
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok && result.value.payoutSchedules[0]?.expensesMinor).toBe(25000);
+  });
 });

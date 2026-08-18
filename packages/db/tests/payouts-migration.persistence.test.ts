@@ -46,12 +46,16 @@ describe("schema migration v42 (payouts)", () => {
       "end_date",
       "exclusions_json",
       "created_at",
+      // v57 (#1448) appends it here on a migrated DB; a fresh one has it beside
+      // `amount_minor`, where schema.ts declares it. SQLite's ALTER cannot insert
+      // mid-table and nothing reads a column by position.
+      "expenses_minor",
     ]);
 
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(56);
+    expect(SCHEMA_VERSION).toBe(57);
   });
 
   test("fresh schemaSql includes both payout tables", async () => {

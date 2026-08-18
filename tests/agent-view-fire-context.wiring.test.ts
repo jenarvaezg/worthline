@@ -493,3 +493,67 @@ describe("main financial context FIRE summary (#340)", () => {
     expect(fire.assumptions).toBeUndefined();
   });
 });
+
+// ── the rent-derived rate reaches the assistant too (#1448) ──────────────────
+
+describe("fire-context reports the rent-derived real return", () => {
+  /**
+   * A household whose whole eligible pool is one rented flat, with the rent and its
+   * costs declared. No manual `expectedRealReturn`: the rate is the derived one, and
+   * the tool has to quote THAT — an assistant answering with the housing rung's 3 %
+   * while the screen shows 4,5 % is the same figure with two values.
+   */
+  async function seedRentedFlat(withExpenses: boolean): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-fire-rent-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_flat",
+      liquidityTier: "illiquid",
+      name: "Piso alquilado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountMinor: 1_000_00,
+      cadence: "monthly",
+      holdingId: "asset_flat",
+      label: "Alquiler",
+      startISO: "2024-01-01",
+      ...(withExpenses ? { expensesMinor: 250_00 } : {}),
+    });
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 2_000_00,
+      safeWithdrawalRate: 0.04,
+    });
+    store.close();
+  }
+
+  test("the declared net rent is the rate the tool quotes", async () => {
+    // (1.000 − 250) × 12 = 9.000 €/año over 200.000 € → 4,5 %, not the housing 3 %.
+    await seedRentedFlat(true);
+    const scopeId = await householdScopeId();
+
+    const { body } = await fireContext(scopeId);
+
+    expect(body.data.assumptions.expectedRealReturn).toBe("0.045");
+  });
+
+  test("with no declared costs it stays on the tier default, never on the gross", async () => {
+    // The gross would be 6 %; the tool must not report it.
+    await seedRentedFlat(false);
+    const scopeId = await householdScopeId();
+
+    const { body } = await fireContext(scopeId);
+
+    expect(body.data.assumptions.expectedRealReturn).toBe("0.03");
+  });
+});

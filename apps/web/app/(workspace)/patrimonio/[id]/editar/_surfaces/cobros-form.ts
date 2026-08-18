@@ -10,7 +10,7 @@
  */
 
 import type { PayoutCadence } from "@worthline/domain";
-import { parseDecimalToMinor } from "@worthline/domain";
+import { parseDecimalToMinor, parseDecimalToMinorStrict } from "@worthline/domain";
 
 /** The cadences in render order, with their Spanish labels. */
 export const PAYOUT_CADENCE_LABELS: ReadonlyArray<{
@@ -83,6 +83,13 @@ export interface PayoutScheduleFields {
   startISO: string;
   /** Optional end date; "" means "no end". */
   endISO: string;
+  /**
+   * What the income costs, same cadence as `amount` (#1448). "" means **not
+   * declared** — and that is not the same as "0": with no declaration the FIRE
+   * return of a rented property keeps its tier default instead of sealing a gross
+   * yield, so the empty string can never be coerced to a zero here.
+   */
+  expenses: string;
 }
 
 /** A validated schedule write — holdingId is added by the action. */
@@ -92,11 +99,37 @@ export interface ParsedPayoutSchedule {
   cadence: PayoutCadence;
   startISO: string;
   endISO?: string;
+  /** Present only when the user declared it; absent means "not declared". */
+  expensesMinor?: number;
 }
 
 export type PayoutScheduleResult =
   | { ok: true; schedule: ParsedPayoutSchedule }
   | { ok: false; error: string };
+
+/**
+ * Parse a declared-expenses amount: `null` for an empty field (not declared / a
+ * declaration being withdrawn), a non-negative minor amount otherwise. Costs ABOVE
+ * the income are accepted on purpose — a flat that costs more than it earns is a
+ * real, declarable situation, and the FIRE rate shows it as the negative yield it
+ * is instead of rejecting the data.
+ */
+export function parseScheduleExpenses(
+  raw: string,
+): { ok: true; expensesMinor: number | null } | { ok: false; error: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return { ok: true, expensesMinor: null };
+  }
+  const expensesMinor = parseDecimalToMinorStrict(trimmed);
+  if (expensesMinor === null) {
+    return { ok: false, error: "Introduce unos gastos válidos (o déjalo vacío)." };
+  }
+  if (expensesMinor < 0) {
+    return { ok: false, error: "Los gastos no pueden ser negativos." };
+  }
+  return { ok: true, expensesMinor };
+}
 
 /** Parse + validate a declared schedule: label, positive amount, cadence, dates. */
 export function buildPayoutScheduleResult(
@@ -127,6 +160,10 @@ export function buildPayoutScheduleResult(
       return { ok: false, error: "La fecha de fin no puede ser anterior al inicio." };
     }
   }
+  const expenses = parseScheduleExpenses(fields.expenses);
+  if (!expenses.ok) {
+    return { ok: false, error: expenses.error };
+  }
   return {
     ok: true,
     schedule: {
@@ -135,6 +172,9 @@ export function buildPayoutScheduleResult(
       cadence,
       startISO,
       ...(endISO ? { endISO } : {}),
+      ...(expenses.expensesMinor === null
+        ? {}
+        : { expensesMinor: expenses.expensesMinor }),
     },
   };
 }

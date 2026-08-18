@@ -1246,6 +1246,13 @@ async function resolveFire(
     facts.assets,
   );
 
+  // Same declared rents `get_fire_context` reads (#1448): an explanation that
+  // quoted the tier default while the tool quoted the rent-derived rate would be
+  // explaining a figure nothing on screen holds. Skipped when a manual rate is set,
+  // which wins over the derivation anyway.
+  const payoutSchedules =
+    config.expectedRealReturn === undefined ? await store.readPayoutSchedules() : [];
+
   const result = calculateFireForScope(
     config,
     facts.assets,
@@ -1253,6 +1260,7 @@ async function resolveFire(
     facts.workspace,
     facts.internalScopeId,
     reservedForGoalsMinor,
+    { payoutSchedules, todayISO: systemClock().today() },
   );
 
   return { config, result };

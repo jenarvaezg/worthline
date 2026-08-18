@@ -1,4 +1,10 @@
-import type { ContributionPlan, FireScopeConfig } from "@worthline/domain";
+import type {
+  ContributionPlan,
+  FireScopeConfig,
+  Liability,
+  ManualAsset,
+  PayoutSchedule,
+} from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,7 +16,7 @@ const calls = vi.hoisted(() => {
     manualPriceByAsset: new Map(),
     operationsByAsset: new Map(),
   };
-  const assets = [
+  const assets: ManualAsset[] = [
     {
       id: "asset_home",
       name: "Casa",
@@ -32,7 +38,7 @@ const calls = vi.hoisted(() => {
       isPrimaryResidence: false,
     },
   ];
-  const liabilities = [
+  const liabilities: Liability[] = [
     {
       id: "liability_unsecured",
       name: "Préstamo",
@@ -47,7 +53,12 @@ const calls = vi.hoisted(() => {
     buildProjectionContext: vi.fn(async () => projectionContext),
     projectionContext,
     readAssets: vi.fn(async () => assets),
-    readCurveValuedHoldingsAtDate: vi.fn(async () => ({ assets, liabilities })),
+    readCurveValuedHoldingsAtDate: vi.fn(
+      async (): Promise<{ assets: ManualAsset[]; liabilities: Liability[] }> => ({
+        assets,
+        liabilities,
+      }),
+    ),
     readFireConfig: vi.fn(
       async (): Promise<Record<string, FireScopeConfig>> => ({
         household: {
@@ -66,7 +77,7 @@ const calls = vi.hoisted(() => {
         amountMinor: 1_200_000,
       },
     ]),
-    readPayoutSchedules: vi.fn(async () => []),
+    readPayoutSchedules: vi.fn(async (): Promise<PayoutSchedule[]> => []),
     readWarningOverrides: vi.fn(async () => []),
     readContributionPlan: vi.fn(
       async (): Promise<ContributionPlan> => ({
@@ -279,7 +290,7 @@ describe("ObjetivosPage FIRE wiring", () => {
 
 describe("ObjetivosPage capital split (#1447)", () => {
   /** Jorge's shape: brick is two thirds of the pool, with its own mortgage. */
-  function landlordLedger() {
+  function landlordLedger(): { assets: ManualAsset[]; liabilities: Liability[] } {
     return {
       assets: [
         {
@@ -423,8 +434,8 @@ describe("ObjetivosPage measured savings (#1449)", () => {
   }
 
   /** The base fixture plus an investment holding that carries the ledger. */
-  function ledgerHoldings() {
-    const fondo = {
+  function ledgerHoldings(): { assets: ManualAsset[]; liabilities: Liability[] } {
+    const fondo: ManualAsset = {
       id: "asset_fondo",
       name: "Fondo indexado",
       type: "investment",
@@ -572,5 +583,143 @@ describe("ObjetivosPage passive-income lens (#658)", () => {
 
     expect(html).toContain("Renta pasiva");
     expect(html.toLowerCase()).toContain("aún no");
+  });
+});
+
+// ── the declared rent inside the expected return (#1448) ─────────────────────
+
+describe("ObjetivosPage rent-derived real return (#1448)", () => {
+  const TODAY = new Date().toISOString().slice(0, 10);
+
+  /** A rented flat plus the cash rung, so the housing weight is not 100 %. */
+  function withRentedFlat(
+    expensesMinor?: number,
+    fireConfig: FireScopeConfig = {
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+    },
+  ) {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
+      assets: [
+        {
+          id: "asset_flat",
+          name: "Piso Navalcarnero",
+          type: "real_estate",
+          instrument: "property",
+          currency: "EUR",
+          currentValue: { amountMinor: 200_000_00, currency: "EUR" },
+          liquidityTier: "illiquid",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+        {
+          id: "asset_cash",
+          name: "Caja",
+          type: "cash",
+          currency: "EUR",
+          currentValue: { amountMinor: 100_000_00, currency: "EUR" },
+          liquidityTier: "cash",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+      ],
+      liabilities: [],
+    });
+    calls.readPayoutSchedules.mockResolvedValueOnce([
+      {
+        id: "sch_rent",
+        holdingId: "asset_flat",
+        label: "Alquiler",
+        amountMinor: 100_000,
+        cadence: "monthly",
+        startISO: "2024-01-01",
+        endISO: null,
+        exclusions: [],
+        ...(expensesMinor === undefined ? {} : { expensesMinor }),
+      },
+    ]);
+    // Queued per test (never `mockReset`, which would strip the shared default
+    // implementation for every test that runs after this one).
+    calls.readFireConfig.mockResolvedValueOnce({ household: fireConfig });
+  }
+
+  test("a declared net rent becomes the flat's own real return on screen", async () => {
+    // 1.000 €/mes − 250 €/mes = 9.000 €/año over 200.000 € → 4,5 %.
+    withRentedFlat(25_000);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Alquiler declarado en la rentabilidad");
+    expect(html).toContain("Piso Navalcarnero · 4,5 % real");
+    // The weighted portfolio rate follows: 2/3 at 4,5 % + 1/3 at 0 % (cash) = 3 %.
+    expect(html).toContain("Retorno real estimado de tu cartera: 3 %");
+  });
+
+  test("a rent with no declared costs is withheld out loud, gross figure included", async () => {
+    withRentedFlat();
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("falta declarar sus gastos");
+    // 12.000 €/año over 200.000 € = 6 % gross, named as what is NOT being used.
+    expect(html).toContain("6,0 %");
+    // The rate stays the housing default: 2/3 × 3 % = 2 %.
+    expect(html).toContain("Retorno real estimado de tu cartera: 2 %");
+  });
+
+  test("with a manual return configured the section stays away", async () => {
+    withRentedFlat(25_000, {
+      expectedRealReturn: 0.05,
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Alquiler declarado en la rentabilidad");
+    expect(html).toContain("(manual)");
+  });
+
+  test("an ended rent does not feed the rate, and the row says so", async () => {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
+      assets: [
+        {
+          id: "asset_flat",
+          name: "Piso Casarrubios",
+          type: "real_estate",
+          instrument: "property",
+          currency: "EUR",
+          currentValue: { amountMinor: 200_000_00, currency: "EUR" },
+          liquidityTier: "illiquid",
+          ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+          isPrimaryResidence: false,
+        },
+      ],
+      liabilities: [],
+    });
+    calls.readPayoutSchedules.mockResolvedValueOnce([
+      {
+        id: "sch_rent",
+        holdingId: "asset_flat",
+        label: "Alquiler",
+        amountMinor: 100_000,
+        expensesMinor: 25_000,
+        cadence: "monthly",
+        startISO: "2020-01-01",
+        // Ended yesterday relative to the page's own clock.
+        endISO: new Date(Date.parse(`${TODAY}T00:00:00Z`) - 86_400_000)
+          .toISOString()
+          .slice(0, 10),
+        exclusions: [],
+      },
+    ]);
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: { monthlySpendingMinor: 200_000, safeWithdrawalRate: 0.04 },
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("no está vigente hoy");
+    expect(html).toContain("Retorno real estimado de tu cartera: 3 %");
   });
 });

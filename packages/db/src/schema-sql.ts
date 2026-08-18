@@ -190,6 +190,7 @@ CREATE TABLE \`payout_schedules\` (
 	\`holding_id\` text NOT NULL,
 	\`label\` text NOT NULL,
 	\`amount_minor\` integer NOT NULL,
+	\`expenses_minor\` integer,
 	\`cadence\` text NOT NULL,
 	\`start_date\` text NOT NULL,
 	\`end_date\` text,

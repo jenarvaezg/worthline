@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 56;
+export const SCHEMA_VERSION = 57;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1688,6 +1688,34 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );
     }
     await writeSchemaVersion(client, 56);
+  }
+
+  if (version < 57) {
+    // #1448: `payout_schedules.expenses_minor` (nullable). A rented property whose
+    // income is declared no longer takes the housing rung's guessed 3 % real return
+    // — it takes its own NET yield. Net, because Jorge's gross rent over value is
+    // 6,3 % against a 3 % default: using the gross would overstate by as much as
+    // the default understates, and in the flattering direction.
+    //
+    // Nullable and nothing backfilled, on purpose: NULL means "not declared", and a
+    // schedule with no expenses derives NO rate at all (the tier default stays,
+    // with a notice on the FIRE panel). A zero would be a claim the user never
+    // made — that the flat costs nothing to hold.
+    // Additive ALTER (try/catch like v55): a fresh DB already has the column from
+    // schema-sql, so the duplicate is ignored.
+    try {
+      await client.executeMultiple(
+        "ALTER TABLE payout_schedules ADD COLUMN expenses_minor INTEGER",
+      );
+    } catch (error) {
+      // Only the two expected shapes are tolerated (v53/v54's narrow form rather than
+      // v55's bare `catch {}`): a re-run over a DB that already has the column, and a
+      // partial fixture DB that never created the table. Anything else — a locked DB,
+      // a syntax error — must not be swallowed under a version bump.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 57);
   }
 
   return { ranV18Backfill, ranV33Backfill };

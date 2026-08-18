@@ -15,7 +15,11 @@
 
 import { PendingSubmit } from "@web/pending-submit";
 import type { CurrencyCode, Payout, PayoutSchedule } from "@worthline/domain";
-import { formatMoneyMinorPrivacy, passiveIncomeTrailing } from "@worthline/domain";
+import {
+  formatMoneyInput,
+  formatMoneyMinorPrivacy,
+  passiveIncomeTrailing,
+} from "@worthline/domain";
 import { PAYOUT_CADENCE_LABELS } from "./cobros-form";
 import { CobrosGrid } from "./cobros-grid";
 import { buildCobroRows } from "./cobros-view";
@@ -34,7 +38,7 @@ const dayFormatter = new Intl.DateTimeFormat("es-ES", {
 });
 const formatDay = (iso: string) => dayFormatter.format(new Date(`${iso}T00:00:00Z`));
 
-/** A one-line human spec for a schedule row (amount · cadence · window). */
+/** A one-line human spec for a schedule row (amount · cadence · window · costs). */
 function scheduleSpec(
   schedule: PayoutSchedule,
   fmt: (amountMinor: number) => string,
@@ -43,7 +47,14 @@ function scheduleSpec(
   const window = schedule.endISO
     ? `${formatDay(schedule.startISO)} – ${formatDay(schedule.endISO)}`
     : `desde ${formatDay(schedule.startISO)}`;
-  return `${fmt(schedule.amountMinor)} · ${cadence} · ${window}`;
+  // The costs are named on the row because their ABSENCE is what keeps a rented
+  // property on the FIRE tier default (#1448) — an invisible blank cannot explain
+  // a rate that did not move.
+  const costs =
+    schedule.expensesMinor == null
+      ? "sin gastos declarados"
+      : `${fmt(schedule.expensesMinor)} de gastos`;
+  return `${fmt(schedule.amountMinor)} · ${cadence} · ${window} · ${costs}`;
 }
 
 export function CobrosSection({
@@ -217,7 +228,24 @@ export function CobrosSection({
             Hasta
             <input aria-label="Fecha de fin (opcional)" name="endISO" type="date" />
           </label>
+          <label>
+            Gastos
+            <input
+              aria-label="Gastos del cobro recurrente"
+              defaultValue=""
+              inputMode="decimal"
+              name="expenses"
+              placeholder="opcional"
+            />
+          </label>
         </div>
+        <p className="cobrosCap">
+          Los gastos van en la misma cadencia que el importe (comunidad, IBI, seguro,
+          agencia, mantenimiento…). Si es un inmueble alquilado, tu FIRE usará el
+          <strong> alquiler neto</strong> sobre su valor como rentabilidad real en vez del
+          retorno por defecto de su tramo. Sin gastos declarados no se usa el bruto: se
+          queda ese retorno por defecto.
+        </p>
         <div className="formActions">
           <PendingSubmit pendingLabel="Guardando…">Añadir recurrente</PendingSubmit>
         </div>
@@ -234,6 +262,28 @@ export function CobrosSection({
                 <span className="cobrosCap">{scheduleSpec(schedule, fmt)}</span>
               </div>
               <div className="cobrosScheduleActions">
+                {/* Declare (or correct) the costs of an existing rent without
+                    re-entering it: the four rents Jorge already had were declared
+                    before this field existed. */}
+                <form action={updatePayoutScheduleAction} className="cobrosExpensesForm">
+                  <input name="currentUrl" type="hidden" value={currentUrl} />
+                  <input name="scheduleId" type="hidden" value={schedule.id} />
+                  <input name="saveExpenses" type="hidden" value="1" />
+                  <input
+                    aria-label={`Gastos de ${schedule.label}`}
+                    defaultValue={
+                      schedule.expensesMinor == null
+                        ? ""
+                        : formatMoneyInput(schedule.expensesMinor)
+                    }
+                    inputMode="decimal"
+                    name="expenses"
+                    placeholder="gastos"
+                  />
+                  <button className="btnSmall" type="submit">
+                    Guardar gastos
+                  </button>
+                </form>
                 {schedule.endISO ? (
                   <form action={updatePayoutScheduleAction}>
                     <input name="currentUrl" type="hidden" value={currentUrl} />

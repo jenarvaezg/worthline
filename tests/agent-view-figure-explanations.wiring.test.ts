@@ -524,6 +524,51 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/figure-explanations/{figure}",
     });
   });
 
+  test("fire_progress explains the rent-derived rate, not the tier default (#1448)", async () => {
+    // The other half of ADR 0076 §8: an explanation quoting the housing rung's 3 %
+    // while `get_fire_context` quotes the flat's own 4,5 % would be explaining a
+    // figure nothing on screen holds. The seeded household above always carries a
+    // manual `expectedRealReturn`, which short-circuits the derivation, so this case
+    // needs its own scope with no manual rate.
+    const databasePath = await seedHousehold("worthline-agent-view-figexp-rent-");
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_flat",
+      liquidityTier: "illiquid",
+      name: "Piso alquilado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountMinor: 1_000_00,
+      cadence: "monthly",
+      expensesMinor: 250_00,
+      holdingId: "asset_flat",
+      label: "Alquiler",
+      startISO: "2024-01-01",
+    });
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 2_000_00,
+      safeWithdrawalRate: 0.04,
+    });
+    store.close();
+    const scopeId = await householdScopeId();
+
+    const { body } = await explain(scopeId, "fire_progress");
+
+    // Eligible pool: 10.000 cash (0 %) + 20.000 market (5 %) + 2.000 illiquid (3 %)
+    // + 200.000 of flat. Pinned to both figures, so the test cannot pass on a rate
+    // that merely looks plausible: with the rent it is 4,34 %, without it 3,04 %.
+    const withRent =
+      (20_000_00 * 0.05 + 2_000_00 * 0.03 + 200_000_00 * 0.045) / 232_000_00;
+    const tierDefaultsOnly =
+      (20_000_00 * 0.05 + 2_000_00 * 0.03 + 200_000_00 * 0.03) / 232_000_00;
+    expect(Number(body.data.assumptions.expectedRealReturn)).toBeCloseTo(withRent, 10);
+    expect(withRent).not.toBeCloseTo(tierDefaultsOnly, 4);
+  });
+
   test("fire_eligible_assets is 422 unsupported_figure when FIRE is unconfigured", async () => {
     await seedHousehold("worthline-agent-view-figexp-fea-unconf-");
     const scopeId = await householdScopeId();

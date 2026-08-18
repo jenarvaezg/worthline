@@ -35,6 +35,7 @@ import {
   buildPayoutScheduleResult,
   type PayoutFields,
   type PayoutScheduleFields,
+  parseScheduleExpenses,
   toggleExclusion,
 } from "@web/patrimonio/[id]/editar/_surfaces/cobros-form";
 import {
@@ -963,6 +964,7 @@ function parsePayoutScheduleFieldsFromForm(formData: FormData): PayoutScheduleFi
     cadence: str("cadence"),
     startISO: str("startISO"),
     endISO: str("endISO"),
+    expenses: str("expenses"),
   };
 }
 
@@ -1060,10 +1062,12 @@ export async function createPayoutScheduleAction(
 }
 
 /**
- * Update a schedule via the two ficha affordances (never a full re-entry):
- * "terminar hoy" posts an `endISO` (or `clearEnd=1` to reactivate a dead tail),
- * and "excluir mes" posts an `excludeDate` that is toggled against the schedule's
- * current exclusion list (read back so the toggle is honest, not a blind append).
+ * Update a schedule via the ficha affordances (never a full re-entry): "terminar
+ * hoy" posts an `endISO` (or `clearEnd=1` to reactivate a dead tail), "excluir mes"
+ * posts an `excludeDate` that is toggled against the schedule's current exclusion
+ * list (read back so the toggle is honest, not a blind append), and the expenses row
+ * posts `expenses` — a declaration that feeds the rent-derived FIRE return (#1448),
+ * with an empty field meaning "withdraw the declaration", not "zero".
  */
 export async function updatePayoutScheduleAction(
   routeAssetId: string,
@@ -1078,13 +1082,38 @@ export async function updatePayoutScheduleAction(
     guardUrl: () => returnUrl,
     missingId: "Cobro recurrente no encontrado.",
     missingIdUrl: () => returnUrl,
-    onError: ({ error }) => errorRedirectUrl(returnUrl, { message: error }),
+    // formId "payout": an invalid expenses declaration belongs beside the Cobros
+    // section that posted it, not as a bare banner at the top of the ficha.
+    onError: ({ error }) =>
+      errorRedirectUrl(returnUrl, { formId: "payout", message: error }),
     onSuccess: () => successRedirectUrl(returnUrl, "payout_schedule_updated"),
     requireId: false,
     run: async (store, { extra }) => {
       const scheduleId = extra.scheduleId!;
       const excludeDate = String(formData.get("excludeDate") ?? "").trim();
       const endISO = String(formData.get("endISO") ?? "").trim();
+
+      // `saveExpenses=1` marks the intent, so an empty field reads as "withdraw the
+      // declaration" instead of being indistinguishable from a form that never
+      // carried the input at all.
+      if (formData.get("saveExpenses") === "1") {
+        const parsed = parseScheduleExpenses(String(formData.get("expenses") ?? ""));
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error };
+        }
+        // Ficha-scoped, like the exclusion branch below: the write only lands on a
+        // schedule that belongs to the holding whose page posted it.
+        const owned = (
+          await store.payouts.readPayoutSchedulesForHolding(routeAssetId)
+        ).some((candidate) => candidate.id === scheduleId);
+        if (!owned) {
+          return { ok: false, error: "Cobro recurrente no encontrado." };
+        }
+        await store.payouts.updatePayoutSchedule(scheduleId, {
+          expensesMinor: parsed.expensesMinor,
+        });
+        return { ok: true };
+      }
 
       if (excludeDate) {
         const schedule = (

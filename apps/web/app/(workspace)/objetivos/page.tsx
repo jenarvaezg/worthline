@@ -40,6 +40,7 @@ import {
   sellableFundedPercent,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
+import { fireRentReturnLines } from "./fire-rent-return-view";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import ObjetivosSkeleton from "./objetivos-skeleton";
 
@@ -246,6 +247,9 @@ export async function ObjetivosContent({
     // The ledger behind the achievement-badge veto (#1449) — already read above.
     investmentOperationsByAssetId: projectionContext.operationsByAsset,
     liabilities,
+    // The declared rents the FIRE rate reads (#1448) — already loaded above for the
+    // passive-income lens, so the two surfaces cannot disagree about them.
+    payoutSchedules,
     persistence,
     positions: [],
     priceCache,
@@ -264,6 +268,21 @@ export async function ObjetivosContent({
   const sellableFunded = fireResult
     ? sellableFundedPercent(fireResult.capitalSplit, fireResult.fireNumber.amountMinor)
     : null;
+
+  // What the declared rents did to the expected return (#1448): the properties
+  // whose net yield replaced their rung's guess, and the rents the rate refused to
+  // read as gross. Empty for a portfolio with no declared rent.
+  // Gated on the rate actually being the derived one: with a manual
+  // `expectedRealReturn` the substitution changes nothing, and a panel promising an
+  // effect the override cancels would be worse than silence.
+  const rentReturnLines =
+    fireResult && fireScopeConfig?.expectedRealReturn === undefined
+      ? fireRentReturnLines({
+          formatMoney: (amountMinor) =>
+            formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode),
+          report: fireResult.rentReturns,
+        })
+      : [];
 
   // Monthly allocation view (#557): the plan's capital split for a window of
   // months, every month server-rendered once; the island toggles client-side.
@@ -631,6 +650,36 @@ export async function ObjetivosContent({
           </section>
         ) : null}
 
+        {/* ── El alquiler declarado en la rentabilidad (#1448) ────── */}
+        {rentReturnLines.length > 0 ? (
+          <section
+            aria-label="Alquiler declarado en la rentabilidad"
+            className="fireRent"
+          >
+            <h4 className="fireRentTitle">Alquiler declarado en la rentabilidad</h4>
+            <p className="fireRentIntro">
+              De un inmueble alquilado la app no adivina el rendimiento: usa su{" "}
+              <strong>alquiler neto</strong> sobre su valor. Sin gastos declarados no se
+              usa el bruto —{" "}
+              <span className="fireRentIntroWhy">
+                sobreestimaría tanto como el retorno por defecto se queda corto
+              </span>
+              .
+            </p>
+            <ul className="fireRentList">
+              {rentReturnLines.map((line) => (
+                <li
+                  className={`fireRentRow is-${line.kind}`}
+                  key={`${line.kind}-${line.key}`}
+                >
+                  <span className="fireRentRowTitle">{line.title}</span>
+                  <span className="fireRentRowGloss">{line.gloss}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         <div className="objetivosFireFoot">
           <span>
             Supuestos FIRE (retirada, retorno, edades) → en Ajustes
@@ -644,7 +693,7 @@ export async function ObjetivosContent({
                     (manual)
                   </span>
                 ) : (
-                  <span title="Retorno estimado ponderando tu mezcla de activos por tipo">
+                  <span title="Retorno estimado ponderando tu mezcla de activos por tipo; un inmueble con alquiler neto declarado aporta el suyo, no el de su tramo">
                     Retorno real estimado de tu cartera:{" "}
                     {formatDecimalAsPercentField(fireResult.context.effectiveRealReturn)}{" "}
                     %

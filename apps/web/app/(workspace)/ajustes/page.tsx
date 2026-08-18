@@ -364,7 +364,10 @@ export async function AjustesContent({
                 />
                 <small className="muted">
                   Vacío = se calcula automáticamente ponderando los retornos por tipo de
-                  activo. Rellena para forzar un valor fijo (anula la estimación).
+                  activo; un inmueble con alquiler y gastos declarados aporta su propio
+                  alquiler neto sobre su valor en vez del retorno de su tramo. Rellena
+                  para forzar un valor fijo (anula la estimación, y con ella el alquiler
+                  declarado).
                 </small>
               </label>
               <details suppressHydrationWarning>

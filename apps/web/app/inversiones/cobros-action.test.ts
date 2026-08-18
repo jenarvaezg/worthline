@@ -182,3 +182,84 @@ describe("payout schedule actions", () => {
     expect(await store.payouts.readPayoutSchedulesForHolding(HOLDING)).toHaveLength(0);
   });
 });
+
+describe("updatePayoutScheduleAction — declared expenses (#1448)", () => {
+  async function withSchedule(): Promise<{ store: WorthlineStore; id: string }> {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+    const schedule = await store.payouts.createPayoutSchedule({
+      amountMinor: 100_000,
+      cadence: "monthly",
+      holdingId: HOLDING,
+      label: "Alquiler",
+      startISO: "2024-01-01",
+    });
+    return { id: schedule.id, store };
+  }
+
+  test("declares the costs of a rent entered before the field existed", async () => {
+    const { id, store } = await withSchedule();
+
+    const digest = await run(
+      updatePayoutScheduleAction,
+      form({ expenses: "250,50", saveExpenses: "1", scheduleId: id }),
+      store,
+    );
+
+    expect(digest).toContain("ok=payout_schedule_updated");
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding(HOLDING))[0]?.expensesMinor,
+    ).toBe(25_050);
+  });
+
+  test("an emptied field withdraws the declaration instead of writing a zero", async () => {
+    const { id, store } = await withSchedule();
+    await store.payouts.updatePayoutSchedule(id, { expensesMinor: 25_000 });
+
+    await run(
+      updatePayoutScheduleAction,
+      form({ expenses: "", saveExpenses: "1", scheduleId: id }),
+      store,
+    );
+
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding(HOLDING))[0]?.expensesMinor,
+    ).toBeNull();
+  });
+
+  test("garbage is rejected at the section, and nothing is written", async () => {
+    const { id, store } = await withSchedule();
+
+    const digest = await run(
+      updatePayoutScheduleAction,
+      form({ expenses: "doscientos", saveExpenses: "1", scheduleId: id }),
+      store,
+    );
+
+    expect(digest).toContain("form=payout");
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding(HOLDING))[0]?.expensesMinor,
+    ).toBeNull();
+  });
+
+  test("the creation form carries the costs straight through", async () => {
+    const store = await createInMemoryStore();
+    await seedHolding(store);
+
+    await run(
+      createPayoutScheduleAction,
+      form({
+        amount: "1000",
+        cadence: "monthly",
+        expenses: "180",
+        label: "Alquiler",
+        startISO: "2024-01-01",
+      }),
+      store,
+    );
+
+    expect(
+      (await store.payouts.readPayoutSchedulesForHolding(HOLDING))[0]?.expensesMinor,
+    ).toBe(18_000);
+  });
+});

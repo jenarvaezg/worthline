@@ -389,6 +389,9 @@ const payoutScheduleSchema = z.object({
   holdingId: nonEmptyString,
   label: nonEmptyString,
   amountMinor: z.number().int(),
+  // Declared cost per occurrence (#1448). Null / absent = not declared, which is
+  // not the same statement as a declared 0, so it defaults to null and never 0.
+  expensesMinor: z.number().int().nullable().default(null),
   cadence: z.enum(["weekly", "monthly", "quarterly", "annual"]),
   startISO: nonEmptyString,
   endISO: nonEmptyString.nullable().default(null),

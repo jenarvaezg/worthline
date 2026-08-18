@@ -1512,3 +1512,78 @@ describe("loadDashboard — hero data-health alert", () => {
     store.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The rent-derived real return reaches the home too (#1448)
+// ---------------------------------------------------------------------------
+
+describe("loadDashboard — a declared net rent is the rate the home projects with", () => {
+  // The guard on ADR 0076 §8: the substitution happens in `calculateFireForScope`,
+  // and every screen has to hand it the schedules it already read. Without this
+  // test, dropping `payoutSchedules` from the `prepareDashboardState` call leaves the
+  // suite green while the home hero projects the housing rung's 3 % and /objetivos
+  // shows the flat's own 4,5 % — the same figure with two values.
+  async function rentedFlat(store: WorthlineStore, expensesMinor?: number) {
+    await makeWorkspace(store);
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 200_000_00,
+      id: "asset_flat",
+      liquidityTier: "illiquid",
+      name: "Piso alquilado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    await store.payouts.createPayoutSchedule({
+      amountMinor: 1_000_00,
+      cadence: "monthly",
+      holdingId: "asset_flat",
+      label: "Alquiler",
+      startISO: "2024-01-01",
+      ...(expensesMinor === undefined ? {} : { expensesMinor }),
+    });
+    // No manual `expectedRealReturn`: the rate in play is the derived one.
+    await store.saveFireConfig("household", {
+      monthlySpendingMinor: 2_000_00,
+      safeWithdrawalRate: 0.04,
+    });
+  }
+
+  const load = (store: WorthlineStore) =>
+    loadDashboard({
+      now: "2026-06-10T10:00:00.000Z",
+      persistence: makePersistence(),
+      scopeId: undefined,
+      selectedView: "total",
+      store,
+      today: "2026-06-10",
+    });
+
+  test("net rent over value replaces the housing default", async () => {
+    const store = await createInMemoryStore();
+    // (1.000 − 250) × 12 = 9.000 €/año over 200.000 € → 4,5 %.
+    await rentedFlat(store, 250_00);
+
+    const result = await load(store);
+
+    expect(result.fireResult!.context.realReturnUsed).toBeCloseTo(0.045, 10);
+    expect(result.fireResult!.rentReturns.applied.map((row) => row.assetId)).toEqual([
+      "asset_flat",
+    ]);
+    store.close();
+  });
+
+  test("with no declared costs it stays on the tier default, never on the gross", async () => {
+    const store = await createInMemoryStore();
+    await rentedFlat(store);
+
+    const result = await load(store);
+
+    // The gross would be 6 %; the home must not project it.
+    expect(result.fireResult!.context.realReturnUsed).toBeCloseTo(0.03, 10);
+    expect(result.fireResult!.rentReturns.notices.map((row) => row.reason)).toEqual([
+      "missing_expenses",
+    ]);
+    store.close();
+  });
+});

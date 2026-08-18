@@ -14,7 +14,7 @@ import { calculateFireForScope, projectFireFromContext, withRate } from "./fire"
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import { projectFire } from "./fire-projection";
 import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
-import type { ContributionPlan, ManualAsset, Workspace } from "./index";
+import type { ContributionPlan, ManualAsset, PayoutSchedule, Workspace } from "./index";
 
 const workspace: Workspace = {
   baseCurrency: "EUR",
@@ -71,6 +71,148 @@ describe("calculateFireForScope resolves the rate into the context", () => {
     // 60% market + 40% cash → 3%
     expect(context.effectiveRealReturn).toBeCloseTo(0.03, 10);
     expect(context.realReturnUsed).toBeCloseTo(context.effectiveRealReturn, 10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The rent-derived rate (#1448): a rented property's declared NET yield replaces
+// the housing rung's guessed 3 % — for that asset only, and never from a gross.
+// ---------------------------------------------------------------------------
+
+describe("a declared net rent resolves the rate for its own property", () => {
+  function rentedFlat(id: string, valueMinor: number): ManualAsset {
+    return { ...makeAsset(id, valueMinor, "illiquid"), instrument: "property" };
+  }
+
+  function rent(
+    holdingId: string,
+    amountMinor: number,
+    expensesMinor?: number,
+  ): PayoutSchedule {
+    return {
+      amountMinor,
+      cadence: "monthly",
+      endISO: null,
+      exclusions: [],
+      holdingId,
+      id: `sched-${holdingId}`,
+      label: "Alquiler",
+      startISO: "2024-01-01",
+      ...(expensesMinor === undefined ? {} : { expensesMinor }),
+    };
+  }
+
+  // Jorge's shape, scaled: 370.000 € of rented brick beside 168.000 € of market.
+  const brick = rentedFlat("piso", 37_000_000);
+  const market = makeAsset("fondo", 16_800_000, "market");
+
+  it("the housing default is what applies with no schedule in hand", () => {
+    const { context } = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+    );
+
+    expect(context.effectiveRealReturn).toBeCloseTo(0.0362, 4);
+  });
+
+  it("net rent over value replaces it, and the coast math follows the new rate", () => {
+    // 1.550 €/mes gross, 250 €/mes of costs → 15.600 €/año net over 370.000 € = 4,22 %.
+    const result = calculateFireForScope(
+      { ...BASE_CONFIG, currentAge: 63, targetRetirementAge: 68 },
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+    );
+
+    expect(result.rentReturns.applied).toHaveLength(1);
+    // 1.560.000 minor/año net over 37.000.000 minor of brick.
+    const brickRate = 1_560_000 / 37_000_000;
+    expect(result.rentReturns.applied[0]?.rate).toBeCloseTo(brickRate, 10);
+    expect(result.context.effectiveRealReturn).toBeCloseTo(
+      (37_000_000 / 53_800_000) * brickRate + (16_800_000 / 53_800_000) * 0.05,
+      10,
+    );
+    // The context is the only rate downstream, so coast moves with it (#1026).
+    const withRent = result.coastFireRequired!.amountMinor;
+    const withDefault = calculateFireForScope(
+      { ...BASE_CONFIG, currentAge: 63, targetRetirementAge: 68 },
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+    ).coastFireRequired!.amountMinor;
+    expect(withRent).toBeLessThan(withDefault);
+  });
+
+  it("a rent with no declared expenses leaves the rate alone and says why", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000)], todayISO: "2026-08-18" },
+    );
+
+    expect(result.context.effectiveRealReturn).toBeCloseTo(0.0362, 4);
+    expect(result.rentReturns.applied).toEqual([]);
+    expect(result.rentReturns.notices).toEqual([
+      {
+        assetId: "piso",
+        assetName: "piso",
+        // 1.550 × 12 / 370.000 = 5,03 %: the gross the app refuses to seal.
+        grossRate: expect.closeTo(0.0503, 4),
+        reason: "missing_expenses",
+      },
+    ]);
+  });
+
+  it("only that asset's rate moves: the market rung keeps its default", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market, rentedFlat("otro-piso", 10_000_000)],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+    );
+
+    const total = 37_000_000 + 16_800_000 + 10_000_000;
+    expect(result.context.effectiveRealReturn).toBeCloseTo(
+      (37_000_000 / total) * (1_560_000 / 37_000_000) +
+        (16_800_000 / total) * TIER_REAL_RETURN_DEFAULTS.market +
+        (10_000_000 / total) * TIER_REAL_RETURN_DEFAULTS.housing,
+      4,
+    );
+  });
+
+  it("a manual expectedRealReturn still wins over everything", () => {
+    const { context } = calculateFireForScope(
+      { ...BASE_CONFIG, expectedRealReturn: 0.07 },
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+    );
+
+    expect(context.realReturnUsed).toBeCloseTo(0.07, 10);
+    // The effective rate still carries the rent, so /objetivos can say what the
+    // manual figure is overriding.
+    expect(context.effectiveRealReturn).toBeCloseTo(
+      (37_000_000 / 53_800_000) * (1_560_000 / 37_000_000) +
+        (16_800_000 / 53_800_000) * TIER_REAL_RETURN_DEFAULTS.market,
+      10,
+    );
   });
 });
 

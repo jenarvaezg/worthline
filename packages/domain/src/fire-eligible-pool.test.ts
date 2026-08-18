@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assembleFireEligiblePool } from "./fire-eligible-pool";
+import type { RentDerivedReturn, RentReturnNotice } from "./fire-rent-return";
 import type { Liability, ManualAsset, Workspace } from "./index";
 
 // ---------------------------------------------------------------------------
@@ -298,5 +299,124 @@ describe("assembleFireEligiblePool", () => {
     expect(pool.eligiblePreDebtMinor).toBe(50_000);
     expect(pool.scopedDebtMinor).toBe(20_000);
     expect(pool.netEligibleMinor).toBe(30_000);
+  });
+});
+
+// ── rent-derived rates, filtered by eligibility and ownership (#1448) ─────────
+
+describe("assembleFireEligiblePool + rent-derived rates", () => {
+  const derived = (assetId: string, rate: number): RentDerivedReturn => ({
+    annualExpensesMinor: 300_000,
+    annualGrossRentMinor: 1_200_000,
+    annualNetRentMinor: 900_000,
+    assetId,
+    assetName: assetId,
+    isNetNegative: false,
+    rate,
+    scheduleIds: ["s1"],
+    valueMinor: 20_000_000,
+  });
+  const notice = (assetId: string): RentReturnNotice => ({
+    assetId,
+    assetName: assetId,
+    grossRate: 0.063,
+    reason: "missing_expenses",
+  });
+
+  it("carries the derived rate with the SCOPED value as its weight", () => {
+    const aliceScope: Workspace = {
+      ...workspace,
+      groups: [{ id: "alice-only", name: "Alice", memberIds: ["alice"] }],
+    };
+    const pool = assembleFireEligiblePool({
+      assets: [makeAsset("piso", 20_000_000, { liquidityTier: "illiquid" })],
+      config: {},
+      liabilities: [],
+      rentRealReturns: {
+        byAssetId: new Map([["piso", derived("piso", 0.045)]]),
+        notices: [],
+      },
+      scopeId: "alice-only",
+      workspace: aliceScope,
+    });
+
+    // The rate is share-invariant (declared at 100 %); the WEIGHT is Alice's half.
+    expect(pool.assetRateOverrides).toEqual([
+      { amountMinor: 10_000_000, assetId: "piso", rate: 0.045, tier: "illiquid" },
+    ]);
+  });
+
+  it("drops the rate of an asset FIRE excludes — its capital is out too", () => {
+    const pool = assembleFireEligiblePool({
+      assets: [
+        makeAsset("casa", 20_000_000, { isPrimaryResidence: true }),
+        makeAsset("otro", 10_000_000),
+      ],
+      config: { excludedAssetIds: ["otro"] },
+      liabilities: [],
+      rentRealReturns: {
+        byAssetId: new Map([
+          ["casa", derived("casa", 0.05)],
+          ["otro", derived("otro", 0.06)],
+        ]),
+        notices: [notice("casa")],
+      },
+      scopeId: "household",
+      workspace,
+    });
+
+    expect(pool.assetRateOverrides).toEqual([]);
+    expect(pool.rentReturnNotices).toEqual([]);
+  });
+
+  it("keeps a notice for an eligible asset the scope owns", () => {
+    const pool = assembleFireEligiblePool({
+      assets: [makeAsset("piso", 20_000_000)],
+      config: {},
+      liabilities: [],
+      rentRealReturns: { byAssetId: new Map(), notices: [notice("piso")] },
+      scopeId: "household",
+      workspace,
+    });
+
+    expect(pool.rentReturnNotices).toEqual([notice("piso")]);
+  });
+
+  it("stays silent about an asset the scope owns nothing of", () => {
+    const aliceScope: Workspace = {
+      ...workspace,
+      groups: [{ id: "alice-only", name: "Alice", memberIds: ["alice"] }],
+    };
+    const pool = assembleFireEligiblePool({
+      assets: [
+        makeAsset("piso-de-bob", 20_000_000, {
+          ownership: [{ memberId: "bob", shareBps: 10_000 }],
+        }),
+      ],
+      config: {},
+      liabilities: [],
+      rentRealReturns: {
+        byAssetId: new Map([["piso-de-bob", derived("piso-de-bob", 0.045)]]),
+        notices: [notice("piso-de-bob")],
+      },
+      scopeId: "alice-only",
+      workspace: aliceScope,
+    });
+
+    expect(pool.assetRateOverrides).toEqual([]);
+    expect(pool.rentReturnNotices).toEqual([]);
+  });
+
+  it("no rent input at all → nothing overridden, nothing warned", () => {
+    const pool = assembleFireEligiblePool({
+      assets: [makeAsset("piso", 20_000_000)],
+      config: {},
+      liabilities: [],
+      scopeId: "household",
+      workspace,
+    });
+
+    expect(pool.assetRateOverrides).toEqual([]);
+    expect(pool.rentReturnNotices).toEqual([]);
   });
 });
