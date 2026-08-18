@@ -21,15 +21,25 @@
 import type { LiquidityTier } from "./liquidity-ladder";
 import { LIQUIDITY_LADDER } from "./liquidity-ladder";
 
-/** Rungs you can sell in slices and rebalance — what a SWR actually assumes. */
-export const SELLABLE_TIERS: readonly LiquidityTier[] = ["cash", "market", "term-locked"];
+export type FireCapitalSideKey = "sellable" | "immobilized";
 
-/** Rungs that only convert to cash as a whole, if at all. */
-export const IMMOBILIZED_TIERS: readonly LiquidityTier[] = ["illiquid", "housing"];
-
-/** Which side of the split a rung falls on. */
-export function sideOfTier(tier: LiquidityTier): "sellable" | "immobilized" {
-  return SELLABLE_TIERS.includes(tier) ? "sellable" : "immobilized";
+/**
+ * Which side of the split a rung falls on. Exhaustive on purpose: a sixth rung
+ * on the ladder has to be placed by hand here, instead of defaulting into
+ * "immobilized" because it fell through an `else`.
+ */
+export function sideOfTier(tier: LiquidityTier): FireCapitalSideKey {
+  switch (tier) {
+    case "cash":
+    case "market":
+    case "term-locked":
+      // Sold in slices and rebalanced — what a SWR actually assumes.
+      return "sellable";
+    case "illiquid":
+    case "housing":
+      // Converts to cash as a whole, if at all.
+      return "immobilized";
+  }
 }
 
 export interface FireCapitalSide {
@@ -41,6 +51,12 @@ export interface FireCapitalSide {
   debtMinor: number;
   /** Goal reservation taken off this side (sellable first). */
   reservedMinor: number;
+  /**
+   * Debt from the OTHER side that this side had to absorb because the collateral
+   * did not cover it (an underwater mortgage). Without this the row would print
+   * a figure its own gloss contradicts — the exact failure #1447 exists to kill.
+   */
+  absorbedDebtMinor: number;
   /** The rungs carrying capital on this side, ladder-ordered — the copy's glossary. */
   tiers: LiquidityTier[];
 }
@@ -71,19 +87,26 @@ export function splitFireCapital(input: SplitFireCapitalInput): FireCapitalSplit
 
   let sellableNet = sellable.grossMinor - sellable.debtMinor;
   let immobilizedNet = immobilized.grossMinor - immobilized.debtMinor;
+  let sellableAbsorbed = 0;
+  let immobilizedAbsorbed = 0;
 
   // An underwater side spills onto the other: a mortgage larger than its house
-  // is still owed out of whatever else the scope holds.
+  // is still owed out of whatever else the scope holds. The absorbing side keeps
+  // the amount so its gloss can name it.
   if (sellableNet < 0) {
+    immobilizedAbsorbed = -sellableNet;
     immobilizedNet += sellableNet;
     sellableNet = 0;
   }
   if (immobilizedNet < 0) {
+    sellableAbsorbed = -immobilizedNet;
     sellableNet += immobilizedNet;
     immobilizedNet = 0;
   }
   // Same clamp `netEligibleMinor` applies: an underwater scope reads as 0.
+  // Both sides, so the order of the two spills above cannot leak a negative.
   sellableNet = Math.max(0, sellableNet);
+  immobilizedNet = Math.max(0, immobilizedNet);
 
   // A dated goal is funded by selling, so its reservation comes off the sellable
   // side first and only spills when there is not enough to sell.
@@ -96,11 +119,13 @@ export function splitFireCapital(input: SplitFireCapitalInput): FireCapitalSplit
   return {
     immobilized: {
       ...immobilized,
+      absorbedDebtMinor: immobilizedAbsorbed,
       amountMinor: immobilizedNet - (reserved - reservedFromSellable),
       reservedMinor: reserved - reservedFromSellable,
     },
     sellable: {
       ...sellable,
+      absorbedDebtMinor: sellableAbsorbed,
       amountMinor: sellableNet - reservedFromSellable,
       reservedMinor: reservedFromSellable,
     },
@@ -109,8 +134,8 @@ export function splitFireCapital(input: SplitFireCapitalInput): FireCapitalSplit
 
 function collectSide(
   input: SplitFireCapitalInput,
-  side: "sellable" | "immobilized",
-): Omit<FireCapitalSide, "amountMinor" | "reservedMinor"> {
+  side: FireCapitalSideKey,
+): Omit<FireCapitalSide, "amountMinor" | "reservedMinor" | "absorbedDebtMinor"> {
   let grossMinor = 0;
   let debtMinor = 0;
   const tiers: LiquidityTier[] = [];
@@ -122,7 +147,9 @@ function collectSide(
     const tierGross = input.eligibleByTierMinor[tier] ?? 0;
     grossMinor += tierGross;
     debtMinor += input.debtByTierMinor[tier] ?? 0;
-    if (tierGross > 0) {
+    // `!== 0`: a rung carrying a negative eligible value still moves the total,
+    // so leaving it unnamed would print a figure the gloss cannot explain.
+    if (tierGross !== 0) {
       tiers.push(tier);
     }
   }

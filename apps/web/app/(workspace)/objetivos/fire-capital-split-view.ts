@@ -49,6 +49,11 @@ function buildRow(
   if (side.reservedMinor > 0) {
     subtractions.push("lo reservado para objetivos");
   }
+  // The other side's debt landed here because its collateral did not cover it;
+  // saying so is what keeps the figure and its gloss from contradicting.
+  if (side.absorbedDebtMinor > 0) {
+    subtractions.push("la deuda que su garantía no cubre");
+  }
 
   const base = tiers.length > 0 ? tiers.join(" + ") : "sin activos";
   const gloss = subtractions.length > 0 ? `${base} − ${subtractions.join(" y ")}` : base;

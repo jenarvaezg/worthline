@@ -455,6 +455,48 @@ describe("calculateFireForScope", () => {
     ).toBe(result.eligibleAssets.amountMinor);
   });
 
+  it("keeps the split at zero when the scope is underwater, like the eligible total", () => {
+    const assets = [
+      makeAsset("stocks", 10_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+    ];
+    const liabilities = [makeLiability("loan", 50_000_00)];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    // The two clamps live in different modules; this pins them to each other.
+    expect(result.eligibleAssets.amountMinor).toBe(0);
+    expect(result.capitalSplit.sellable.amountMinor).toBe(0);
+    expect(result.capitalSplit.immobilized.amountMinor).toBe(0);
+  });
+
+  it("nets a pawned collection inside the immobilized side, end to end", () => {
+    const assets = [
+      makeAsset("etf", 50_000_00, false, [{ memberId: "alice", shareBps: 10_000 }]),
+      {
+        ...makeAsset("coins", 30_000_00, false, [
+          { memberId: "alice", shareBps: 10_000 },
+        ]),
+        liquidityTier: "illiquid" as const,
+      },
+    ];
+    const liabilities = [makeLiability("pawn", 10_000_00, "coins")];
+    const config = {
+      monthlySpendingMinor: 100_000,
+      safeWithdrawalRate: 0.04,
+      expectedRealReturn: 0.07,
+    };
+
+    const result = calculateFireForScope(config, assets, liabilities, workspace, "alice");
+
+    expect(result.capitalSplit.sellable.amountMinor).toBe(50_000_00);
+    expect(result.capitalSplit.immobilized.amountMinor).toBe(20_000_00);
+  });
+
   it("calculateFire returns an empty excludedAssets list", () => {
     const result = calculateFire(
       {

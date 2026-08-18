@@ -72,6 +72,30 @@ describe("splitFireCapital", () => {
 
     expect(split.immobilized.amountMinor).toBe(0);
     expect(split.sellable.amountMinor).toBe(70_000);
+    // The absorbing side records it, so the row can say why it fell short.
+    expect(split.sellable.absorbedDebtMinor).toBe(30_000);
+    expect(split.immobilized.absorbedDebtMinor).toBe(0);
+  });
+
+  it("records the spill the other way round too — an unsecured loan eating the brick", () => {
+    const split = splitFireCapital({
+      eligibleByTierMinor: { market: 20_000, housing: 300_000 },
+      debtByTierMinor: { cash: 50_000 },
+    });
+
+    expect(split.sellable.amountMinor).toBe(0);
+    expect(split.immobilized.amountMinor).toBe(270_000);
+    expect(split.immobilized.absorbedDebtMinor).toBe(30_000);
+  });
+
+  it("names a rung carrying negative eligible value instead of dropping it", () => {
+    const split = splitFireCapital({
+      eligibleByTierMinor: { market: 100_000, illiquid: -20_000, housing: 300_000 },
+      debtByTierMinor: {},
+    });
+
+    expect(split.immobilized.grossMinor).toBe(280_000);
+    expect(split.immobilized.tiers).toEqual(["illiquid", "housing"]);
   });
 
   it("clamps both sides to zero when the whole scope is underwater", () => {
@@ -128,6 +152,7 @@ describe("splitFireCapital", () => {
     const split = splitFireCapital({ eligibleByTierMinor: {}, debtByTierMinor: {} });
 
     expect(split.sellable).toEqual({
+      absorbedDebtMinor: 0,
       amountMinor: 0,
       grossMinor: 0,
       debtMinor: 0,

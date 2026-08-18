@@ -349,7 +349,7 @@ describe("ObjetivosPage capital split (#1447)", () => {
     );
   });
 
-  test("says what the sellable side alone funds, next to the whole-pool percentage", async () => {
+  test("says what the sellable side alone funds, inside the eligibility disclosure", async () => {
     calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(landlordLedger());
     calls.readFireConfig.mockResolvedValueOnce({
       household: {
@@ -361,10 +361,13 @@ describe("ObjetivosPage capital split (#1447)", () => {
 
     const html = await renderedHtml();
 
-    // 455.299,30 / 685.714,29 = 66,4 % of the pool …
-    expect(html).toContain("66,4 %");
-    // … but only 153.927,33 / 685.714,29 = 22,4 % of it can be spent in instalments.
-    expect(html).toContain("22,4 %");
+    // 455.299,30 / 685.714,29 = 66,4 % of the pool — the hero figure is unchanged.
+    expect(html).toContain('<p class="fireBig">66,4 %</p>');
+    // … but only 153.927,33 / 685.714,29 = 22,4 % of it can be spent in
+    // instalments. That caveat lives inside «¿Qué cuenta como activo elegible?»,
+    // not in the hero: #1447 splits the capital, it does not restate the %.
+    const disclosure = html.slice(html.indexOf('<details class="fireEligibleNote"'));
+    expect(disclosure.slice(0, disclosure.indexOf("</details>"))).toContain("22,4 %");
   });
 
   test("stays out of the way when nothing in the pool is immobilized", async () => {

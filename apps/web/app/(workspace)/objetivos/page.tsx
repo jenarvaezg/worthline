@@ -481,11 +481,18 @@ export async function ObjetivosContent({
                     partida por naturaleza. Una tasa de retirada supone capital
                     que se vende a trozos; el ladrillo no lo es. */}
                 {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
-                  <ul className="fireCapitalSplit">
+                  <ul
+                    aria-label="Desglose de los activos elegibles"
+                    className="fireCapitalSplit"
+                  >
                     {fireCapitalSplitRows(fireResult.capitalSplit).map((row) => (
                       <li className={`fireCapitalRow is-${row.key}`} key={row.key}>
                         <span className="fireCapitalLabel">{row.label}</span>
-                        <span className="fireCapitalGloss">{row.gloss}</span>
+                        {/* La glosa se recorta en la columna estrecha del hero:
+                            el título la devuelve entera sin partir la fila. */}
+                        <span className="fireCapitalGloss" title={row.gloss}>
+                          {row.gloss}
+                        </span>
                         <strong>
                           {formatMoneyMinorPrivacy(
                             { amountMinor: row.amountMinor, currency },

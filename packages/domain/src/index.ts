@@ -458,17 +458,8 @@ export {
   projectFireFromContext,
   withRate,
 } from "./fire";
-export type {
-  FireCapitalSide,
-  FireCapitalSplit,
-  SplitFireCapitalInput,
-} from "./fire-capital-split";
-export {
-  IMMOBILIZED_TIERS,
-  SELLABLE_TIERS,
-  sideOfTier,
-  splitFireCapital,
-} from "./fire-capital-split";
+export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
+export { splitFireCapital } from "./fire-capital-split";
 export type { BirthDate } from "./fire-current-age";
 export {
   ageOnDate,

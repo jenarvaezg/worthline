@@ -13,6 +13,7 @@ function makeSplit(overrides: {
 }): FireCapitalSplit {
   return {
     immobilized: {
+      absorbedDebtMinor: 0,
       amountMinor: 0,
       debtMinor: 0,
       grossMinor: 0,
@@ -21,6 +22,7 @@ function makeSplit(overrides: {
       ...overrides.immobilized,
     },
     sellable: {
+      absorbedDebtMinor: 0,
       amountMinor: 0,
       debtMinor: 0,
       grossMinor: 0,
@@ -90,6 +92,30 @@ describe("fireCapitalSplitRows", () => {
     );
 
     expect(rows[0]?.gloss).toBe("Mercado − lo reservado para objetivos");
+    expect(rows[1]?.gloss).toBe("Vivienda − su deuda");
+  });
+
+  test("names the debt a side had to absorb from the other one", () => {
+    const rows = fireCapitalSplitRows(
+      makeSplit({
+        immobilized: {
+          absorbedDebtMinor: 0,
+          amountMinor: 0,
+          debtMinor: 80_000,
+          grossMinor: 50_000,
+          tiers: ["housing"],
+        },
+        sellable: {
+          absorbedDebtMinor: 30_000,
+          amountMinor: 70_000,
+          grossMinor: 100_000,
+          tiers: ["market"],
+        },
+      }),
+    );
+
+    // 1.000,00 € of market printing 700,00 € has to say where the 300 € went.
+    expect(rows[0]?.gloss).toBe("Mercado − la deuda que su garantía no cubre");
     expect(rows[1]?.gloss).toBe("Vivienda − su deuda");
   });
 
