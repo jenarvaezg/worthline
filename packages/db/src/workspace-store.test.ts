@@ -54,6 +54,7 @@ describe("member profile persistence", () => {
     const store = await freshStore();
     await store.workspace.updateMemberProfile("m1", {
       birthYear: 1990,
+      birthMonth: 7,
       fiscalCountry: "ES",
       riskTolerance: "moderate",
     });
@@ -61,15 +62,29 @@ describe("member profile persistence", () => {
     const workspace = await store.workspace.readWorkspace();
     expect(memberById(workspace!.members, "m1")).toMatchObject({
       birthYear: 1990,
+      birthMonth: 7,
       fiscalCountry: "ES",
       riskTolerance: "moderate",
     });
+  });
+
+  // #1415: the month is what makes the derived FIRE age exact inside the natural
+  // year. It is optional — a year alone still derives an age — but when it is
+  // there it must survive the round-trip, or the age silently loses precision.
+  it("keeps the birth year when the month is left unset", async () => {
+    const store = await freshStore();
+    await store.workspace.updateMemberProfile("m1", { birthYear: 1963 });
+
+    const member = memberById((await store.workspace.readWorkspace())!.members, "m1");
+    expect(member.birthYear).toBe(1963);
+    expect(member.birthMonth).toBeUndefined();
   });
 
   it("clears profile fields when updated with undefined", async () => {
     const store = await freshStore();
     await store.workspace.updateMemberProfile("m1", {
       birthYear: 1990,
+      birthMonth: 7,
       fiscalCountry: "ES",
       riskTolerance: "moderate",
     });
@@ -77,6 +92,7 @@ describe("member profile persistence", () => {
 
     const member = memberById((await store.workspace.readWorkspace())!.members, "m1");
     expect(member.birthYear).toBeUndefined();
+    expect(member.birthMonth).toBeUndefined();
     expect(member.fiscalCountry).toBeUndefined();
     expect(member.riskTolerance).toBeUndefined();
   });

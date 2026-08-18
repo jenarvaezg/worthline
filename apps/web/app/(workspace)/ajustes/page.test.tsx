@@ -97,6 +97,49 @@ describe("ajustes page data loading (#636)", () => {
   });
 });
 
+describe("la edad del FIRE ya no se teclea (#1415)", () => {
+  test("el panel FIRE no ofrece campo de edad y el perfil pide mes de nacimiento", async () => {
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).not.toContain('name="currentAge"');
+    expect(html).not.toContain("Edad actual");
+    expect(html).toContain('name="birthMonth"');
+    expect(html).toContain("Mes de nacimiento");
+    // La edad objetivo sí sigue siendo una elección del usuario.
+    expect(html).toContain('name="targetRetirementAge"');
+  });
+
+  test("sin fecha de nacimiento avisa de que el coast se queda fuera", async () => {
+    // El miembro del mock no tiene año de nacimiento: sin él no hay edad, y sin
+    // edad calculateFire se salta el bloque de coast sin decir nada.
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain("Sin fecha de nacimiento no hay edad actual");
+  });
+
+  test("una edad heredada de la configuración vieja se declara congelada", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        currentAge: 48,
+        excludedAssetIds: [],
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).toContain("(48)");
+    expect(html).toContain("no se actualiza sola");
+  });
+});
+
 describe("las fuentes conectadas ya no viven aquí (#1223)", () => {
   test("la sección es una tarjeta-resumen: ni conectar, ni sincronizar, ni desconectar", async () => {
     calls.listSources.mockResolvedValueOnce([

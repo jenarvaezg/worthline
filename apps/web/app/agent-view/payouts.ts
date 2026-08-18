@@ -91,7 +91,7 @@ export async function buildScopePassiveIncome(input: {
   const [recorded, schedules, fireConfig] = await Promise.all([
     input.store.readPayouts(),
     input.store.readPayoutSchedules(),
-    input.store.readFireConfig(),
+    input.store.readFireConfig(input.todayISO),
   ]);
 
   const lens = scopePassiveIncome({

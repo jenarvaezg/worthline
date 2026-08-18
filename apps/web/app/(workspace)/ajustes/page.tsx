@@ -5,6 +5,7 @@ import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { resolvePageShell } from "@web/page-shell";
 import {
   formatMoneyMinorPrivacy,
+  scopeCurrentAge,
   suggestMonthlySavingsCapacity,
 } from "@worthline/domain";
 import Link from "next/link";
@@ -22,6 +23,26 @@ import {
 } from "./actions";
 import AjustesSkeleton from "./ajustes-skeleton";
 import { CONNECTION_ADAPTERS } from "./conexiones/connection-rows";
+
+/**
+ * Month names for the optional birth-month picker (#1415). With the month known
+ * the derived FIRE age is exact to the month; with only the year it is
+ * `year − birthYear` — honest to ±1 year, unlike an age that never moves.
+ */
+const BIRTH_MONTHS = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
 
 export default function AjustesPage({
   searchParams,
@@ -82,6 +103,22 @@ export async function AjustesContent({
 
   const fireConfig = await store.readFireConfig();
   const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
+
+  // The FIRE reference age is derived from the member's birth date, never typed
+  // (#1415), so this panel has no age field. What it DOES need to say is when the
+  // derivation has nothing to work with: without a birth year the coast figures
+  // disappear from /objetivos with no explanation, and a legacy typed age keeps
+  // being served while quietly going stale.
+  const derivedScopeAge =
+    workspace && selectedScope
+      ? scopeCurrentAge(
+          workspace,
+          selectedScope.id,
+          new Date().toISOString().slice(0, 10),
+        )
+      : undefined;
+  const legacyFrozenAge =
+    derivedScopeAge === undefined ? fireScopeConfig?.currentAge : undefined;
 
   return (
     <>
@@ -173,6 +210,20 @@ export async function AjustesContent({
                           name="birthYear"
                           placeholder="1990"
                         />
+                      </label>
+                      <label>
+                        Mes de nacimiento (opcional)
+                        <select
+                          defaultValue={member.birthMonth?.toString() ?? ""}
+                          name="birthMonth"
+                        >
+                          <option value="">—</option>
+                          {BIRTH_MONTHS.map((label, index) => (
+                            <option key={label} value={(index + 1).toString()}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label>
                         País fiscal
@@ -383,15 +434,6 @@ export async function AjustesContent({
                 </div>
               </details>
               <label>
-                Edad actual (opcional)
-                <input
-                  defaultValue={fireScopeConfig?.currentAge?.toString()}
-                  inputMode="numeric"
-                  name="currentAge"
-                  placeholder="35"
-                />
-              </label>
-              <label>
                 Edad objetivo de jubilación (por defecto 65)
                 <input
                   defaultValue={
@@ -403,6 +445,13 @@ export async function AjustesContent({
                   name="targetRetirementAge"
                 />
               </label>
+              {derivedScopeAge === undefined ? (
+                <small className="muted">
+                  {legacyFrozenAge !== undefined
+                    ? `Tu edad actual (${legacyFrozenAge}) viene de una configuración antigua y no se actualiza sola. Añade tu fecha de nacimiento en Miembros para que se calcule cada año.`
+                    : "Sin fecha de nacimiento no hay edad actual, y sin edad no se calculan el coast FIRE ni las edades de la proyección. Rellénala en Miembros."}
+                </small>
+              ) : null}
               <label>
                 Ahorro mensual (EUR)
                 <input

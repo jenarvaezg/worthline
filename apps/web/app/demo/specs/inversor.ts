@@ -56,7 +56,9 @@ function binanceHistoryMonths(): BinanceHistoryMonthSpec[] {
 
 export const INVERSOR_SPEC: PersonaSpec = {
   id: "inversor",
-  members: [{ id: LUCIA, name: "Lucía" }],
+  // La edad del FIRE se deriva de la fecha de nacimiento (#1415), así que la
+  // persona de la demo cumple años con el calendario en vez de quedarse clavada.
+  members: [{ id: LUCIA, name: "Lucía", birthYear: 1984, birthMonth: 5 }],
   mode: "individual",
   manualAssets: [
     {
@@ -294,7 +296,6 @@ export const INVERSOR_SPEC: PersonaSpec = {
   fire: [
     {
       config: {
-        currentAge: 42,
         expectedRealReturn: 0.05,
         monthlySpendingMinor: 2_200_00,
         safeWithdrawalRate: 0.04,

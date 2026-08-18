@@ -134,6 +134,32 @@ describe("updateMemberProfileAction", () => {
     store.close();
   });
 
+  test("saves the optional birth month and ignores one out of range (#1415)", async () => {
+    const store = await seedOneMember();
+
+    await runAction(
+      updateMemberProfileAction,
+      form({ id: MEMBER_ID, birthYear: "1963", birthMonth: "3" }),
+      store,
+      CLOCK,
+    );
+    expect((await readMember(store)).birthMonth).toBe(3);
+
+    // A month outside 1-12 is a typo, not a shift: it unsets the month so the age
+    // falls back to the year-only convention instead of jumping by a bogus month.
+    await runAction(
+      updateMemberProfileAction,
+      form({ id: MEMBER_ID, birthYear: "1963", birthMonth: "13" }),
+      store,
+      CLOCK,
+    );
+    const member = await readMember(store);
+    expect(member.birthYear).toBe(1963);
+    expect(member.birthMonth).toBeUndefined();
+
+    store.close();
+  });
+
   test("a blank field clears the previously stored value", async () => {
     const store = await seedOneMember();
     await runAction(

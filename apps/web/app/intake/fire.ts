@@ -79,11 +79,13 @@ export function parseFireConfigFormStrict(
       }
     : undefined;
 
-  const currentAgeRaw = (formData.get("currentAge") as string | null) ?? "";
-  const currentAgeParsed = parseInt(currentAgeRaw, 10);
-  const currentAge =
-    currentAgeRaw && !Number.isNaN(currentAgeParsed) ? currentAgeParsed : undefined;
-
+  // No `currentAge` here on purpose (#1415). The reference age is DERIVED from the
+  // member's birth date on every read (`withDerivedCurrentAges`, wired into
+  // `store.readFireConfig`), because a typed age freezes: the one Jorge entered at
+  // 62 still read 62 the year he turned 63, and every projected age drifted a year
+  // young. `FireScopeConfig.currentAge` lives on only as the legacy fallback for
+  // configs written before this change, and `saveFireConfig` carries that value
+  // forward so saving this form never erases it.
   const targetRetirementAgeRaw =
     (formData.get("targetRetirementAge") as string | null) ?? "";
   const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
@@ -144,7 +146,6 @@ export function parseFireConfigFormStrict(
       monthlySpendingMinor,
       safeWithdrawalRate: safeWithdrawalRatePct / 100,
       targetRetirementAge,
-      ...(currentAge !== undefined ? { currentAge } : {}),
       ...(hasSavingsCapacity ? { monthlySavingsCapacityMinor } : {}),
       ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),

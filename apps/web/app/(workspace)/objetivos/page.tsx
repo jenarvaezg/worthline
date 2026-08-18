@@ -191,7 +191,8 @@ export async function ObjetivosContent({
   ] = await Promise.all([
     store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
-    store.readFireConfig(),
+    // Derived FIRE age measured on this page's "today" (#1415).
+    store.readFireConfig(today),
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
     selectedScope

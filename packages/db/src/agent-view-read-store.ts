@@ -182,8 +182,12 @@ export interface AgentViewReadStore {
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   /** A liability's balance re-baselines, ascending by baseline date (ADR 0056, #1049). */
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
-  /** FIRE configs keyed by internal scope id (`household` | member | group), #340. */
-  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
+  /**
+   * FIRE configs keyed by internal scope id (`household` | member | group), #340.
+   * `currentAge` comes derived from the members' birth dates (#1415); `todayISO`
+   * is the date it is measured on (defaults to the system date).
+   */
+  readFireConfig: (todayISO?: string) => Promise<Record<string, FireScopeConfig>>;
   /**
    * A priced asset's valuation freshness, or null if it has no cached price
    * (#341). Sanitized: only the staleness signal, the fetch time, the providing
@@ -264,7 +268,7 @@ export interface AgentViewReadStoreDeps {
   readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   readBalanceAnchors: (liabilityId: string) => Promise<BalanceAnchorRecord[]>;
   readBalanceRebaselines: (liabilityId: string) => Promise<BalanceRebaselineRecord[]>;
-  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
+  readFireConfig: (todayISO?: string) => Promise<Record<string, FireScopeConfig>>;
   /** The price-cache row of any asset (its valuation freshness), or null. */
   readPriceCache: (assetId: string) => Promise<{
     freshnessState: PriceFreshnessState;
@@ -341,7 +345,7 @@ export function createAgentViewReadStore(
     readEarlyRepayments: (planId) => deps.readEarlyRepayments(planId),
     readBalanceAnchors: (liabilityId) => deps.readBalanceAnchors(liabilityId),
     readBalanceRebaselines: (liabilityId) => deps.readBalanceRebaselines(liabilityId),
-    readFireConfig: () => deps.readFireConfig(),
+    readFireConfig: (todayISO) => deps.readFireConfig(todayISO),
     readPriceFreshness: async (assetId) => {
       const cache = await deps.readPriceCache(assetId);
       if (!cache) {

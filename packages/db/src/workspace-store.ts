@@ -196,7 +196,7 @@ export interface WorkspaceStore {
   /** Overwrite a member's profile (PRD #421, #423): unset fields are cleared to NULL. */
   updateMemberProfile: (
     memberId: string,
-    profile: Pick<Member, "birthYear" | "fiscalCountry" | "riskTolerance">,
+    profile: Pick<Member, "birthYear" | "birthMonth" | "fiscalCountry" | "riskTolerance">,
   ) => Promise<void>;
   disableMember: (memberId: string, disabledAt: string) => Promise<void>;
   reactivateMember: (memberId: string) => Promise<void>;
@@ -246,6 +246,7 @@ export async function readWorkspace(db: StoreDb): Promise<Workspace | null> {
 
   const memberRows = await db
     .select({
+      birthMonth: members.birthMonth,
       birthYear: members.birthYear,
       disabledAt: members.disabledAt,
       fiscalCountry: members.fiscalCountry,
@@ -288,6 +289,7 @@ export async function readWorkspace(db: StoreDb): Promise<Workspace | null> {
       name: member.name,
       ...(member.disabledAt ? { disabledAt: member.disabledAt } : {}),
       ...(member.birthYear != null ? { birthYear: member.birthYear } : {}),
+      ...(member.birthMonth != null ? { birthMonth: member.birthMonth } : {}),
       ...(member.fiscalCountry != null ? { fiscalCountry: member.fiscalCountry } : {}),
       ...(member.riskTolerance != null ? { riskTolerance: member.riskTolerance } : {}),
     })),
@@ -328,6 +330,7 @@ async function initializeWorkspace(
         .insert(members)
         .values(
           workspace.members.map((member) => ({
+            birthMonth: member.birthMonth ?? null,
             birthYear: member.birthYear ?? null,
             disabledAt: member.disabledAt ?? null,
             fiscalCountry: member.fiscalCountry ?? null,
@@ -385,6 +388,7 @@ async function createMember(ctx: StoreContext, member: Member): Promise<void> {
     await ctx.db
       .insert(members)
       .values({
+        birthMonth: member.birthMonth ?? null,
         birthYear: member.birthYear ?? null,
         disabledAt: member.disabledAt ?? null,
         fiscalCountry: member.fiscalCountry ?? null,
@@ -413,11 +417,12 @@ async function updateMember(
 async function updateMemberProfile(
   ctx: StoreContext,
   memberId: string,
-  profile: Pick<Member, "birthYear" | "fiscalCountry" | "riskTolerance">,
+  profile: Pick<Member, "birthYear" | "birthMonth" | "fiscalCountry" | "riskTolerance">,
 ): Promise<void> {
   await ctx.db
     .update(members)
     .set({
+      birthMonth: profile.birthMonth ?? null,
       birthYear: profile.birthYear ?? null,
       fiscalCountry: profile.fiscalCountry ?? null,
       riskTolerance: profile.riskTolerance ?? null,
@@ -624,6 +629,7 @@ async function importWorkspace(
         .insert(members)
         .values(
           doc.members.map((member) => ({
+            birthMonth: member.birthMonth ?? null,
             birthYear: member.birthYear ?? null,
             disabledAt: member.disabledAt ?? null,
             fiscalCountry: member.fiscalCountry ?? null,

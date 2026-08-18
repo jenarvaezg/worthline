@@ -84,16 +84,17 @@ export async function resolveFire(
     });
   }
 
-  const config = (await store.readFireConfig())[internalScopeId];
+  // One clock read for the whole resolution: the config's derived age (#1415),
+  // the curve-valued holdings, and the goal reservation below all measure the
+  // same "today" — FIRE is current-only, so it is the only date in play.
+  const today = systemClock().today();
+  const config = (await store.readFireConfig(today))[internalScopeId];
   let result: ScopeFireResult | undefined;
 
   if (config !== undefined) {
     // Curve-valued today: FIRE eligibility counts the same live balances the
-    // dashboard shows, not the stored ledger (same clock read as the goal
-    // reservation below — FIRE is current-only, so "today" is the only date).
-    const { assets, liabilities } = await store.readCurveValuedHoldings(
-      systemClock().today(),
-    );
+    // dashboard shows, not the stored ledger.
+    const { assets, liabilities } = await store.readCurveValuedHoldings(today);
     const reservedForGoalsMinor = await goalReservationMinor(
       store,
       workspace,

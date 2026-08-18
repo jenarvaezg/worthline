@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client";
 import type { FireScopeConfig } from "@worthline/domain";
+import { withDerivedCurrentAges } from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
@@ -185,7 +186,7 @@ async function buildStore(
     readBalanceRebaselines: liabilityStore.readBalanceRebaselines,
     readDebtModel: liabilityStore.readDebtModel,
     readEarlyRepayments: liabilityStore.readEarlyRepayments,
-    readFireConfig: () => store.readFireConfig(),
+    readFireConfig: (todayISO) => store.readFireConfig(todayISO),
     readInterestRateRevisions: liabilityStore.readInterestRateRevisions,
     readInvestmentAssetsWithMeta: assetStore.readInvestmentAssetsWithMeta,
     readLiabilities: liabilityStore.readLiabilities,
@@ -296,7 +297,14 @@ async function buildStore(
     close: () => {
       client.close();
     },
-    readFireConfig: async () => {
+    // The one door every FIRE reader comes through — pages, agent view, MCP,
+    // data-health. The stored config is returned with `currentAge` DERIVED from
+    // the scope members' birth dates (#1415): a typed age froze, so Jorge stayed
+    // 62 the year he turned 63 and every projected age drifted young. A scope
+    // with no derivable age keeps whatever the stored config carried (see
+    // `withDerivedCurrentAges` — dropping to `undefined` would silently delete
+    // the whole coast block from the result).
+    readFireConfig: async (todayISO) => {
       const { db } = ctx;
       const row = await db
         .select({ value: appSettings.value })
@@ -308,7 +316,13 @@ async function buildStore(
         return {};
       }
 
-      return JSON.parse(row.value) as Record<string, FireScopeConfig>;
+      const stored = JSON.parse(row.value) as Record<string, FireScopeConfig>;
+
+      return withDerivedCurrentAges(
+        stored,
+        await ctx.getWorkspace(),
+        todayISO ?? new Date().toISOString().slice(0, 10),
+      );
     },
     saveFireConfig: async (scopeId, config) => {
       const { db } = ctx;
@@ -321,7 +335,19 @@ async function buildStore(
       const current: Record<string, FireScopeConfig> = existing
         ? (JSON.parse(existing.value) as Record<string, FireScopeConfig>)
         : {};
-      const merged = { ...current, [scopeId]: config };
+      // `currentAge` is no longer typed into the FIRE form (#1415) — the age comes
+      // from the member's birth date. A config written BEFORE that change may be
+      // the only place a workspace's age lives, so carry the legacy scalar
+      // forward: saving the rest of the form must not be what erases it (and with
+      // it `coastFireRequired`, `coastFireAge` and `isAlreadyAtCoastFire`).
+      const legacyAge = current[scopeId]?.currentAge;
+      const merged = {
+        ...current,
+        [scopeId]:
+          config.currentAge === undefined && legacyAge !== undefined
+            ? { ...config, currentAge: legacyAge }
+            : config,
+      };
       const updatedAt = new Date().toISOString();
 
       await db

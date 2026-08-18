@@ -47,7 +47,9 @@ const memberSchema = z.object({
   name: nonEmptyString,
   disabledAt: nonEmptyString.optional(),
   // Member profile (PRD #421, #423) — optional so pre-profile exports still parse.
+  // `birthMonth` (1-12, #1415) sharpens the derived FIRE age; absent = year only.
   birthYear: z.number().int().optional(),
+  birthMonth: z.number().int().min(1).max(12).optional(),
   fiscalCountry: nonEmptyString.optional(),
   riskTolerance: z.enum(["conservative", "moderate", "aggressive"]).optional(),
 });
@@ -219,6 +221,7 @@ const fireScopeConfigSchema = z.object({
   monthlySpendingMinor: z.number().int(),
   safeWithdrawalRate: z.number(),
   expectedRealReturn: z.number().optional(),
+  /** Legacy typed age (#1415): still parsed so pre-#1415 exports import intact. */
   currentAge: z.number().optional(),
   targetRetirementAge: z.number().optional(),
   excludedAssetIds: z.array(nonEmptyString).optional(),

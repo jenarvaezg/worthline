@@ -462,6 +462,8 @@ export {
   projectFireFromContext,
   withRate,
 } from "./fire";
+export type { BirthDate } from "./fire-current-age";
+export { ageOnDate, scopeCurrentAge, withDerivedCurrentAges } from "./fire-current-age";
 export type {
   AssembleFireEligiblePoolInput,
   FireEligiblePool,
@@ -848,7 +850,7 @@ export {
   returnsKindForInstrument,
 } from "./returns-display";
 export type { ScopeOption, ScopeType } from "./scope";
-export { listScopeOptions, resolveScopeMemberIds } from "./scope";
+export { findScopeMemberIds, listScopeOptions, resolveScopeMemberIds } from "./scope";
 export type { ScopedHolding } from "./scope-allocation";
 export { allocateScopedHolding } from "./scope-allocation";
 export type {

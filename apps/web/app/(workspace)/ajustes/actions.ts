@@ -93,6 +93,19 @@ export const updateMemberProfileAction = formAction({
     const birthYear =
       birthYearRaw && !Number.isNaN(birthYearParsed) ? birthYearParsed : undefined;
 
+    // Birth month (1-12, #1415): optional and only meaningful with a year. Out of
+    // range or unparseable → unset, which the derivation reads as "year only"
+    // rather than shifting the age by a bogus month.
+    const birthMonthRaw = String(formData.get("birthMonth") ?? "").trim();
+    const birthMonthParsed = Number.parseInt(birthMonthRaw, 10);
+    const birthMonth =
+      birthMonthRaw &&
+      Number.isInteger(birthMonthParsed) &&
+      birthMonthParsed >= 1 &&
+      birthMonthParsed <= 12
+        ? birthMonthParsed
+        : undefined;
+
     const fiscalCountry = String(formData.get("fiscalCountry") ?? "").trim() || undefined;
 
     const riskRaw = String(formData.get("riskTolerance") ?? "").trim();
@@ -106,6 +119,7 @@ export const updateMemberProfileAction = formAction({
     // blank input still erases the previous value.
     await store.workspace.updateMemberProfile(id, {
       ...(birthYear !== undefined ? { birthYear } : {}),
+      ...(birthMonth !== undefined ? { birthMonth } : {}),
       ...(fiscalCountry !== undefined ? { fiscalCountry } : {}),
       ...(riskTolerance !== undefined ? { riskTolerance } : {}),
     });
