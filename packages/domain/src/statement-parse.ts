@@ -20,7 +20,7 @@
 import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
-import type { OperationKind } from "./investment-types";
+import type { OperationCapture, OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import {
   getStatementBrokerAdapter,
@@ -58,6 +58,12 @@ export interface ParsedStatementRow {
   /** Always 0 — a no-fee fund subscription reconciles exactly to the amount. */
   feesMinor: number;
   currency: CurrencyCode;
+  /**
+   * Set once the row has been converted to euros (#1401): the figures the file
+   * actually stated. An adapter never fills this — `convertStatementRows` does, and
+   * `currency` is EUR from that point on.
+   */
+  capture?: OperationCapture;
 }
 
 /** A row that did not load, with the `Estado` that caused it to be skipped. */

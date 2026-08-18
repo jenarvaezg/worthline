@@ -16,6 +16,7 @@ import type {
 } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
+import { mixedCurrencyWarning } from "./operation-currency";
 
 /** Canonical ledger order: calendar date, optional UTC source instant, stable id. */
 export function compareInvestmentOperations(
@@ -89,6 +90,7 @@ export function createInvestmentOperation(
 
   return {
     assetId: input.assetId,
+    ...(input.capture === undefined ? {} : { capture: input.capture }),
     currency: input.currency,
     executedAt: input.executedAt,
     feesMinor,
@@ -180,6 +182,16 @@ export function derivePosition(
   let realizedMinor = 0;
   const warnings: string[] = [];
 
+  // The invariant this fold rests on, checked instead of assumed (#1401): ONE
+  // accumulator summed and labelled `options.currency` is only honest while every
+  // operation is in that currency. Eight USD purchases summed as euros inflated a
+  // cost basis by 17,7 % in total silence; the arithmetic below is unchanged, but it
+  // no longer keeps quiet about it. It rides its OWN field rather than `warnings`,
+  // whose single consumer reads any entry as an over-sell. Writes convert at capture
+  // (`convertOperationToBaseCurrency`) so the state cannot be created any more —
+  // this catches what an older path already wrote.
+  const currencyWarning = mixedCurrencyWarning(operations, options.currency);
+
   const ordered = [...operations].sort(compareInvestmentOperations);
 
   for (const operation of ordered) {
@@ -216,6 +228,7 @@ export function derivePosition(
     assetId: options.assetId,
     averageUnitCost: averageUnitCost(costMinor, units),
     costBasis: money(costMinor, options.currency),
+    ...(currencyWarning === null ? {} : { currencyWarning }),
     currency: options.currency,
     currentUnits: units,
     realizedPnl: money(realizedMinor, options.currency),

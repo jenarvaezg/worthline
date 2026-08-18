@@ -1,7 +1,7 @@
 "use server";
 
-import { testArgFromActionArgs } from "@web/action-store";
-import { createStableId, resolveOwnershipSplit } from "@web/intake";
+import { testArgFromActionArgs, testFxRatesOverride } from "@web/action-store";
+import { createStableId, mapDomainViolation, resolveOwnershipSplit } from "@web/intake";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
@@ -11,12 +11,17 @@ import {
   typeConflictMessage,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
 import {
+  statementRowToCreateInput,
+  statementRowToOverwrite,
+} from "@web/statement-operation-input";
+import {
   buildStatementImportPlan,
   findStatementTypeConflict,
   isIsinShaped,
   type ParsedStatementRow,
   resolveStatementImportBuckets,
 } from "@worthline/domain";
+import { convertStatementRows } from "@worthline/pricing";
 
 import { runProposalConfirm, runProposalDiscard } from "./proposal-action";
 import {
@@ -24,26 +29,6 @@ import {
   selectionsFromPreviewFunds,
   statementFromAssistantProposal,
 } from "./statement-import-proposals";
-
-function rowToCreateInput(
-  assetId: string,
-  row: ParsedStatementRow,
-  id: string,
-  source: "agent",
-) {
-  return {
-    assetId,
-    currency: row.currency,
-    executedAt: row.dateKey,
-    feesMinor: row.feesMinor,
-    id,
-    kind: row.kind,
-    pricePerUnit: row.pricePerUnit,
-    source,
-    units: row.units,
-    ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-  };
-}
 
 export type StatementImportProposalConfirmResult =
   | { status: "applied"; included: number; created: number }
@@ -68,10 +53,23 @@ export async function confirmStatementImportProposalAction(
     },
     apply: async ({ store, proposal, today }) => {
       const seed = Date.now();
-      const statement = statementFromAssistantProposal(proposal);
-      if (!statement || statement.rows.length === 0) {
+      const stated = statementFromAssistantProposal(proposal);
+      if (!stated || stated.rows.length === 0) {
         return { status: "error", message: "La propuesta no contiene movimientos." };
       }
+
+      // Belt to `buildStatementImportProposal`'s braces (#1401): the rows persisted on
+      // the proposal are already euros, so this normally costs nothing — but the write
+      // is the last place that can still refuse a non-EUR figure, and it is the one
+      // place that MUST, because everything downstream sums a single currency.
+      const converted = await convertStatementRows(
+        stated.rows,
+        testFxRatesOverride(_testArgs),
+      );
+      if (!converted.ok) {
+        return { status: "error", message: mapDomainViolation(converted.violations[0]) };
+      }
+      const statement = { ...stated, rows: converted.value };
 
       const readPort = statementImportPreviewReadPort(store);
       const preview = await buildStatementImportPreview(readPort, statement, _resolver);
@@ -113,29 +111,22 @@ export async function confirmStatementImportProposalAction(
           return {
             assetId: fund.assetId,
             creates: fund.mergePlan.toCreate.map((row, j) =>
-              rowToCreateInput(
-                fund.assetId,
-                row,
-                createStableId(
+              statementRowToCreateInput({
+                assetId: fund.assetId,
+                id: createStableId(
                   "op",
                   `${fund.assetId}_${row.dateKey}`,
                   seed + index * 1000 + j,
                 ),
-                "agent",
-              ),
+                row,
+                source: "agent",
+              }),
             ),
             deletes: fund.mergePlan.toDelete.map((operation) => operation.id),
             kind: "matched" as const,
-            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) => ({
-              currency: row.currency,
-              feesMinor: row.feesMinor,
-              id: operationId,
-              kind: row.kind,
-              pricePerUnit: row.pricePerUnit,
-              source: "agent" as const,
-              units: row.units,
-              ...(row.occurredAt === undefined ? {} : { occurredAt: row.occurredAt }),
-            })),
+            overwrites: fund.mergePlan.toOverwrite.map(({ operationId, row }) =>
+              statementRowToOverwrite({ operationId, row, source: "agent" }),
+            ),
           };
         }
 
@@ -158,12 +149,12 @@ export async function confirmStatementImportProposalAction(
               : {}),
           },
           creates: fund.rows.map((row, j) =>
-            rowToCreateInput(
-              fund.creation.assetId,
+            statementRowToCreateInput({
+              assetId: fund.creation.assetId,
+              id: `create_${opSeed}_${j}`,
               row,
-              `create_${opSeed}_${j}`,
-              "agent",
-            ),
+              source: "agent",
+            }),
           ),
           kind: "new" as const,
         };

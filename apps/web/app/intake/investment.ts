@@ -12,7 +12,7 @@ import type {
   Member,
   OperationKind,
 } from "@worthline/domain";
-import { isInvestmentPriceProvider } from "@worthline/domain";
+import { isCaptureCurrency, isInvestmentPriceProvider } from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
 
 /**
@@ -141,11 +141,25 @@ export function parseRouteOperationCommand(
   const kind: OperationKind = formData.get("kind") === "sell" ? "sell" : "buy";
   const executedAt = String(formData.get("executedAt") ?? "").trim() || today;
 
+  // The currency the apunte was CAPTURED in (#1401). A blank field is EUR — the
+  // pre-#1401 behavior, byte for byte, which is what keeps the no-JS path and every
+  // caller that never asks working unchanged. Anything outside the closed vocabulary
+  // is refused rather than coerced: a currency the money model cannot represent would
+  // mangle the fees by ×100 in silence.
+  //
+  // Nothing is converted here. This parser is pure and the ECB rate is a fetch, so it
+  // stamps what was typed and `recordOperationAction` converts before persisting.
+  const currency = String(formData.get("currency") ?? "").trim() || "EUR";
+
+  if (!isCaptureCurrency(currency)) {
+    return { ok: false, error: "Esa divisa no es válida para una operación." };
+  }
+
   return {
     ok: true,
     command: {
       assetId: routeAssetId,
-      currency: "EUR",
+      currency,
       executedAt,
       feesMinor,
       id: createStableId("op", `${routeAssetId}_${kind}`, seed),

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createStableId } from "@web/intake";
+import { createStableId, mapDomainViolation } from "@web/intake";
 import {
   buildStatementImportPreview,
   defaultIsinSymbolResolver,
@@ -18,6 +18,10 @@ import type {
   StatementImportBucket,
 } from "@worthline/domain";
 import { defaultsFor, type InvestmentPriceProvider } from "@worthline/domain";
+import {
+  type ConvertCapturedOperationsOptions,
+  convertStatementRows,
+} from "@worthline/pricing";
 
 export interface StatementImportProposalDraft {
   proposalId: string;
@@ -159,12 +163,24 @@ export async function buildStatementImportProposal(
   store: StatementImportProposalStore,
   rawExtraction: unknown,
   resolver: IsinSymbolResolver = defaultIsinSymbolResolver,
+  fxOptions: ConvertCapturedOperationsOptions = {},
 ): Promise<StatementImportProposalBuildResult> {
   const parsed = parseExtraction(rawExtraction);
   if (!parsed.ok) return parsed;
 
   const read = readStatementFromText(parsed.value.rawText, parsed.value.broker);
   if (!read.ok) return { ok: false, error: read.message };
+
+  // #1401: a document that states its own currency is converted to euros HERE, at the
+  // rate of each row's execution date, so the rows PERSISTED on the proposal — and
+  // therefore the preview card, and whatever the confirm writes days later — are the
+  // same euro figures. Dating the rate to the execution day is what makes the delay
+  // harmless: applying the proposal next week cannot re-price the operation.
+  const converted = await convertStatementRows(read.value.rows, fxOptions);
+  if (!converted.ok) {
+    return { ok: false, error: mapDomainViolation(converted.violations[0]) };
+  }
+  const statement: ParsedStatement = { ...read.value, rows: converted.value };
 
   const existing = parsed.value.proposalId
     ? await store.assistantProposals.read(parsed.value.proposalId)
@@ -186,13 +202,13 @@ export async function buildStatementImportProposal(
     ? {
         ...existingStatement,
         directionResolved:
-          existingStatement.directionResolved && read.value.directionResolved,
-        rows: [...existingStatement.rows, ...read.value.rows],
-        skipped: [...existingStatement.skipped, ...read.value.skipped],
-        isins: Array.from(new Set([...existingStatement.isins, ...read.value.isins])),
+          existingStatement.directionResolved && statement.directionResolved,
+        rows: [...existingStatement.rows, ...statement.rows],
+        skipped: [...existingStatement.skipped, ...statement.skipped],
+        isins: Array.from(new Set([...existingStatement.isins, ...statement.isins])),
         isin: null,
       }
-    : read.value;
+    : statement;
   if (combinedStatement.isins.length === 1) {
     combinedStatement.isin = combinedStatement.isins[0]!;
   }
@@ -211,7 +227,7 @@ export async function buildStatementImportProposal(
       provenance: "agent",
       sha256: createHash("sha256").update(parsed.value.rawText).digest("hex"),
     },
-    facts: read.value.rows,
+    facts: statement.rows,
   });
 
   return {

@@ -75,6 +75,7 @@ import {
 } from "./schema";
 import { readSnapshots } from "./snapshot-store";
 import {
+  operationCaptureColumns,
   readAssetOwnerships,
   readLiabilityOwnerships,
   type StoreContext,
@@ -891,6 +892,7 @@ async function importWorkspace(
         .values(
           doc.operations.map((operation) => ({
             assetId: operation.assetId,
+            ...operationCaptureColumns(operation.capture),
             currency: operation.currency,
             executedAt: asDateKey(operation.executedAt.slice(0, 10)),
             feesMinor: operation.feesMinor,

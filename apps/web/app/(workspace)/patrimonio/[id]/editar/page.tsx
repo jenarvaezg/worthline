@@ -52,6 +52,7 @@ import {
   holdingTrashImpact,
   holdingTwr,
   instrumentOfAsset,
+  lastCapturedCurrency,
   monthlyCloseValuesFromSnapshotRows,
   netUnitsByAsset,
   simpleGain,
@@ -678,6 +679,9 @@ export default async function EditarPage({
                 assetName={asset.name}
                 context={{
                   ...(position ? { currentUnits: position.currentUnits } : {}),
+                  ...(position?.currencyWarning
+                    ? { currencyWarning: position.currencyWarning }
+                    : {}),
                   ...(priceCache
                     ? {
                         // A `failed` row carries price "0" as the marker for "no
@@ -700,6 +704,9 @@ export default async function EditarPage({
                     : {}),
                 }}
                 currentUrl={currentUrl}
+                // The currency this ledger last captured an apunte in (#1401), so a
+                // dollar fund does not ask for it again on every purchase.
+                defaultCurrency={lastCapturedCurrency(operations)}
                 deleteAction={boundDeleteOperationAction}
                 formError={formError}
                 operations={operations}

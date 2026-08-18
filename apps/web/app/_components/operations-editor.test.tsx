@@ -5,7 +5,10 @@ import OperationsEditor, { RecordOperationSubmit } from "./operations-editor";
 
 const noop = async () => {};
 
-function render(context: React.ComponentProps<typeof OperationsEditor>["context"] = {}) {
+function render(
+  context: React.ComponentProps<typeof OperationsEditor>["context"] = {},
+  overrides: Partial<React.ComponentProps<typeof OperationsEditor>> = {},
+) {
   return renderToStaticMarkup(
     <OperationsEditor
       assetId="asset_1"
@@ -17,6 +20,7 @@ function render(context: React.ComponentProps<typeof OperationsEditor>["context"
       operations={[]}
       recordAction={noop}
       today="2026-06-25"
+      {...overrides}
     />,
   );
 }
@@ -82,5 +86,91 @@ describe("double-submit guard on the record button (#1394)", () => {
 
   test("the editor renders the record button in its idle state", () => {
     expect(render()).toContain("Registrar operación");
+  });
+});
+
+/** The USD apunte of #1401, as the ledger holds it after conversion. */
+const convertedUsdBuy = {
+  assetId: "asset_1",
+  capture: {
+    currency: "USD",
+    eurPerUnit: 0.85,
+    feesMinor: 0,
+    pricePerUnit: "8.00",
+  },
+  currency: "EUR",
+  executedAt: "2026-01-23",
+  feesMinor: 0,
+  id: "op_usd",
+  kind: "buy" as const,
+  pricePerUnit: "6.8",
+  units: "0.255",
+};
+
+describe("currency at the capture (#1401)", () => {
+  test("the money fields are labelled EUR by default, as before", () => {
+    const html = render();
+
+    expect(html).toContain("Precio por unidad (EUR)");
+    expect(html).toContain("Comisiones (EUR)");
+    // Nothing to warn about: a euro apunte is not converted.
+    expect(html).not.toContain("tipo del BCE");
+  });
+
+  test("the picker starts on the currency the holding last captured", () => {
+    const html = render({}, { defaultCurrency: "USD" });
+
+    expect(html).toContain("Precio por unidad (USD)");
+    expect(html).toContain("Comisiones (USD)");
+    // The server markup carries the selection, so the no-JS post sends USD too.
+    expect(html).toContain('<option value="USD" selected="">');
+    // Said before the submit, so the user knows WHICH day's rate applies.
+    expect(html).toContain("tipo del BCE del día de la operación");
+  });
+
+  test("a rejected capture round-trips the currency instead of falling back to EUR", () => {
+    const html = render(
+      {},
+      {
+        formError: {
+          formId: "operation",
+          message: "No hay tipo de cambio del BCE de USD para el 23 ene 2026.",
+          values: { currency: "USD", pricePerUnit: "8,00", units: "0,255" },
+        },
+      },
+    );
+
+    expect(html).toContain("Precio por unidad (USD)");
+  });
+
+  test("the engine's currency warning is rendered, as a refusal not a hint", () => {
+    const html = render({
+      currencyWarning:
+        "Las operaciones de esta inversión están en USD, pero el coste se ha sumado como si fueran EUR.",
+    });
+
+    expect(html).toContain('class="errorBand"');
+    expect(html).toContain("el coste se ha sumado como si fueran EUR");
+  });
+
+  test("no warning, no band", () => {
+    expect(render()).not.toContain('role="alert"');
+  });
+
+  test("a converted row shows the euros it folded and the dollars it came from", () => {
+    const html = render({}, { operations: [convertedUsdBuy] });
+
+    expect(html).toContain("6.8");
+    expect(html).toContain("8.00 USD");
+  });
+
+  test("an optimistic row still in its own currency is not read as euros", () => {
+    const { capture: _capture, ...typed } = convertedUsdBuy;
+    const html = render(
+      {},
+      { operations: [{ ...typed, currency: "USD", pricePerUnit: "8,00" }] },
+    );
+
+    expect(html).toContain("8,00 USD");
   });
 });

@@ -67,9 +67,11 @@ async function record(
   fd: FormData,
   store: WorthlineStore,
   holding = HOLDING,
+  /** The injected ECB fetcher, for the non-EUR captures of #1401. */
+  fxRates?: { fetchDailyRates: () => Promise<ReadonlyMap<string, number>> },
 ): Promise<string> {
   try {
-    await recordOperationAction(holding, fd, store);
+    await recordOperationAction(holding, fd, store, ...(fxRates ? [fxRates] : []));
     throw new Error("action did not redirect");
   } catch (err: unknown) {
     const e = err as { message?: string; digest?: string };
@@ -203,6 +205,74 @@ describe("recordOperationAction · a replay that is NOT serialized (#1394)", () 
     };
 
     expect(await record(sellForm(key), raceLoser)).toContain("ok=saved");
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
+  });
+});
+
+/**
+ * The dollar apunte (#1401). Eight MyInvestor purchases of a USD-denominated Fidelity
+ * fund were stored as euros, inflating the cost basis by 17,7 %; the form now carries
+ * the currency and the action converts at the ECB rate of the execution date.
+ */
+describe("recordOperationAction — a capture outside EUR", () => {
+  /** EUR per USD on 23-ene-2026, the day of the father's first purchase. */
+  const usdRates = { fetchDailyRates: async () => new Map([["2026-01-23", 0.85]]) };
+
+  function usdBuyForm(): FormData {
+    const fd = new FormData();
+    fd.set("currentUrl", `/patrimonio/${HOLDING}/editar`);
+    fd.set("kind", "buy");
+    fd.set("executedAt", "2026-01-23");
+    fd.set("units", "0,255");
+    fd.set("pricePerUnit", "8,00");
+    fd.set("fees", "0");
+    fd.set("currency", "USD");
+    return fd;
+  }
+
+  test("persists the euros the engine folds AND the dollars the bank stated", async () => {
+    const store = await seedHolding();
+
+    await record(usdBuyForm(), store, HOLDING, usdRates);
+
+    const [operation] = await store.operations.readOperations(HOLDING);
+    // 8,00 US$ × 0,85 = 6,80 €. Before #1401 this row read `0.255 @ 8.00 EUR`.
+    expect(operation?.currency).toBe("EUR");
+    expect(operation?.pricePerUnit).toBe("6.8");
+    expect(operation?.capture).toEqual({
+      currency: "USD",
+      eurPerUnit: 0.85,
+      feesMinor: 0,
+      pricePerUnit: "8.00",
+    });
+  });
+
+  test("writes nothing and says why when no rate covers the date", async () => {
+    const store = await seedHolding();
+
+    const redirectUrl = await record(usdBuyForm(), store, HOLDING, {
+      fetchDailyRates: async () => new Map(),
+    });
+
+    expect(await store.operations.readOperations(HOLDING)).toEqual([]);
+    // `decodeURIComponent` does NOT turn `+` back into a space (#1395).
+    expect(decodeURIComponent(redirectUrl).replaceAll("+", " ")).toContain(
+      "No hay tipo de cambio del BCE de USD",
+    );
+  });
+
+  test("a euro apunte never reaches the rate fetcher", async () => {
+    const store = await seedHolding();
+    let fetched = false;
+
+    await record(operationForm({ kind: "buy" }), store, HOLDING, {
+      fetchDailyRates: async () => {
+        fetched = true;
+        return new Map();
+      },
+    });
+
+    expect(fetched).toBe(false);
     expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
   });
 });

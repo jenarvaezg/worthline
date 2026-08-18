@@ -60,9 +60,11 @@ async function run(
   fd: FormData,
   store: WorthlineStore,
   assetId = "fund",
+  /** The injected ECB fetcher, for a file that states a non-EUR currency (#1401). */
+  fxRates?: { fetchDailyRates: () => Promise<ReadonlyMap<string, number>> },
 ): Promise<string> {
   try {
-    await confirmStatementAction(assetId, fd, store);
+    await confirmStatementAction(assetId, fd, store, ...(fxRates ? [fxRates] : []));
     throw new Error("action did not redirect");
   } catch (err: unknown) {
     const e = err as { message?: string; digest?: string };
@@ -380,5 +382,82 @@ describe("statement sells (#179)", () => {
     expect(sell).toBeDefined();
     expect(sell!.executedAt).toBe("2024-03-01");
     expect(sell!.units).toBe("3");
+  });
+});
+
+/**
+ * The per-holding upload is the SECOND statement door (#1401) — same plantilla, its own
+ * action. It was the one path left that could still store dollars as euros, and the new
+ * `Divisa` column would have made that easier rather than harder.
+ */
+describe("confirmStatementAction — la columna Divisa", () => {
+  const USD_CSV = [
+    `${HEADER};Divisa`,
+    "23/01/2026;Fondo;IE00BDZVHT63;Compra;0,255;2,04;;Fidelity Pacific ex-Japan;USD",
+  ].join("\n");
+
+  const usdRates = { fetchDailyRates: async () => new Map([["2026-01-23", 0.85]]) };
+
+  test("converts the row and keeps what the file stated", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+
+    await run(uploadForm(USD_CSV), store, "fund", usdRates);
+
+    const [operation] = await store.operations.readOperations("fund");
+    // 2,04 US$ ÷ 0,255 = 8,00 US$/ud → × 0,85 = 6,80 €/ud.
+    expect(operation?.currency).toBe("EUR");
+    expect(operation?.pricePerUnit).toBe("6.8");
+    expect(operation?.capture).toEqual({
+      currency: "USD",
+      eurPerUnit: 0.85,
+      feesMinor: 0,
+      pricePerUnit: "8",
+    });
+  });
+
+  test("writes nothing when ECB has no rate for that day", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+
+    const redirectUrl = await run(uploadForm(USD_CSV), store, "fund", {
+      fetchDailyRates: async () => new Map(),
+    });
+
+    expect(decodeURIComponent(redirectUrl).replaceAll("+", " ")).toContain(
+      "No hay tipo de cambio del BCE de USD",
+    );
+    expect(await store.operations.readOperations("fund")).toEqual([]);
+  });
+
+  test("the preview counts the converted rows, so it matches the confirm", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+
+    const state = await previewStatementAction(
+      "fund",
+      IDLE,
+      uploadForm(USD_CSV),
+      store,
+      usdRates,
+    );
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") return;
+    // One row, counted — and counted from the CONVERTED figures, since the plan is
+    // built after the conversion.
+    expect(state.created).toBe(1);
+    expect(state.skipped).toBe(0);
+  });
+
+  test("a rate outage refuses the preview instead of showing native figures", async () => {
+    const store = await createInMemoryStore();
+    await seedFund(store);
+
+    const state = await previewStatementAction("fund", IDLE, uploadForm(USD_CSV), store, {
+      fetchDailyRates: async () => new Map(),
+    });
+
+    expect(state.status).toBe("error");
   });
 });

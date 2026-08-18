@@ -73,9 +73,14 @@ function preview(
   return previewImportStatementAction(IDLE, fd, store, resolver);
 }
 
-async function confirm(fd: FormData, store: WorthlineStore): Promise<string> {
+async function confirm(
+  fd: FormData,
+  store: WorthlineStore,
+  /** The ECB fetcher, for a file that states a non-EUR currency (#1401). */
+  fxRates?: { fetchDailyRates: () => Promise<ReadonlyMap<string, number>> },
+): Promise<string> {
   try {
-    await confirmImportStatementAction(fd, store);
+    await confirmImportStatementAction(fd, store, ...(fxRates ? [fxRates] : []));
     throw new Error("action did not redirect");
   } catch (err: unknown) {
     const e = err as { message?: string; digest?: string };
@@ -717,5 +722,79 @@ describe("an identifier two holdings claim (#1366)", () => {
     expect(await store.operations.readOperations("matched_fund")).toMatchObject([
       { id: "old_opening", source: "opening" },
     ]);
+  });
+});
+
+/**
+ * A plantilla that states its own currency (#1401). Before this, «Importe» was read as
+ * euros whatever the bank actually charged: the father's eight dollar purchases landed
+ * with a cost basis 17,7 % too high.
+ */
+describe("importar-extracto — la columna Divisa", () => {
+  const USD_CSV = [
+    "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre;Divisa",
+    "23/01/2026;Fondo;IE00BDZVHT63;Compra;0,255;2,04;;Fidelity Pacific ex-Japan;USD",
+  ].join("\r\n");
+
+  const usdRates = { fetchDailyRates: async () => new Map([["2026-01-23", 0.85]]) };
+
+  function usdForm(): FormData {
+    const fd = uploadForm(USD_CSV);
+    fd.set("include_IE00BDZVHT63", "on");
+    fd.set("name_IE00BDZVHT63", "Fidelity Pacific ex-Japan");
+    return fd;
+  }
+
+  test("the preview shows the euros the confirm will write, not the dollars", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const state = await previewImportStatementAction(
+      IDLE,
+      usdForm(),
+      store,
+      undefined,
+      usdRates,
+    );
+
+    expect(state.status).toBe("ready");
+    if (state.status !== "ready") return;
+    const fund = state.funds.find((row) => row.isin === "IE00BDZVHT63");
+    // 2,04 US$ × 0,85 = 1,73 € over 0,255 participaciones.
+    expect(fund?.amountMinor).toBe(173);
+  });
+
+  test("persists the converted euros plus the dollars the file stated", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    await confirm(usdForm(), store, usdRates);
+
+    const investments = await store.assets.readInvestmentAssetsWithMeta();
+    const created = investments.find((asset) => asset.isin === "IE00BDZVHT63");
+    const operations = await store.operations.readOperations(created?.id ?? "");
+
+    expect(operations[0]?.currency).toBe("EUR");
+    expect(operations[0]?.capture).toEqual({
+      currency: "USD",
+      eurPerUnit: 0.85,
+      feesMinor: 0,
+      pricePerUnit: "8",
+    });
+  });
+
+  test("writes nothing when ECB has no rate for that day", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    const redirectUrl = await confirm(usdForm(), store, {
+      fetchDailyRates: async () => new Map(),
+    });
+
+    expect(decodeURIComponent(redirectUrl).replaceAll("+", " ")).toContain(
+      "No hay tipo de cambio del BCE de USD",
+    );
+    const investments = await store.assets.readInvestmentAssetsWithMeta();
+    expect(investments.find((asset) => asset.isin === "IE00BDZVHT63")).toBeUndefined();
   });
 });

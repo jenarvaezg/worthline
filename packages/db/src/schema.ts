@@ -303,6 +303,14 @@ export const assetOperations = sqliteTable(
     currency: text("currency").notNull(),
     feesMinor: integer("fees_minor").notNull().default(0),
     source: text("source").$type<OperationSource>().notNull().default("manual"),
+    // The apunte before conversion (#1401), all four absent together: NULL
+    // `capture_currency` reads as "this was always euros", not "the original was
+    // lost". `capture_eur_per_unit` is the applied ECB rate, TEXT like every other
+    // stored rate — the domain reads it back as a number.
+    captureCurrency: text("capture_currency"),
+    capturePricePerUnit: text("capture_price_per_unit"),
+    captureFeesMinor: integer("capture_fees_minor"),
+    captureEurPerUnit: text("capture_eur_per_unit"),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },

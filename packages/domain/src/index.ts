@@ -323,6 +323,7 @@ export {
   multiplyToMinor,
   normalizeDecimal,
   proportionMinor,
+  scaleDecimal,
   subtractUnits,
 } from "./decimal";
 export type {
@@ -619,6 +620,7 @@ export { resolveInstrumentIdentityFill } from "./instrument-identity-fill";
 export type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
+  OperationCapture,
   OperationKind,
   OperationSource,
   PositionSummary,
@@ -679,6 +681,20 @@ export type {
   ScopePassiveIncomeInput,
 } from "./objetivos-passive-income";
 export { scopePassiveIncome } from "./objetivos-passive-income";
+export type {
+  CaptureCurrency,
+  CapturedFigures,
+  ConvertedFigures,
+} from "./operation-currency";
+export {
+  CAPTURE_CURRENCIES,
+  CONVERTED_PRICE_DECIMALS,
+  convertCapturedFigures,
+  convertOperationToBaseCurrency,
+  isCaptureCurrency,
+  lastCapturedCurrency,
+  mixedCurrencyWarning,
+} from "./operation-currency";
 export type {
   DatedAmount,
   DerivedPayout,

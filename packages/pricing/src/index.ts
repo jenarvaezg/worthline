@@ -296,7 +296,7 @@ export type {
   EcbDailyRatesFetcher,
   ResolveFxRateSnapshotOptions,
 } from "./fx-rates";
-export { resolveFxRateSnapshot } from "./fx-rates";
+export { resolveFxRateSnapshot, resolveFxRateSnapshotForDates } from "./fx-rates";
 export type {
   HistoricalPriceSeries,
   HistoricalPriceSource,
@@ -341,6 +341,12 @@ export {
   refreshCoinValuations,
   syncNumistaCollection,
 } from "./numista-valuation";
+export type { ConvertCapturedOperationsOptions } from "./operation-capture";
+export {
+  convertCapturedOperation,
+  convertCapturedOperations,
+  convertStatementRows,
+} from "./operation-capture";
 export type {
   InvestmentAssetRef,
   RefreshOptions,
