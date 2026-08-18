@@ -8,35 +8,63 @@
  * inputs so the hint reacts to both — the price prefilled from the picked symbol's
  * live quote, or typed by hand when search found nothing (the manual fallback).
  *
- * The derivation is `previewOpeningUnits` — the SAME pure helper the server action
- * uses to record the opening BUY, so the preview can never drift from what gets
- * persisted (units = saldo ÷ precio).
+ * The copy is `openingCaptureCopy` — built on the SAME pure helpers the server
+ * action uses to record the opening BUY, so the preview can never drift from what
+ * gets persisted: neither the units (saldo ÷ precio, cut at the declared precision)
+ * nor the date they are stamped with.
+ *
+ * Since #1395 the pane also owns «Fecha del saldo» (optional, today by default).
+ * What the user types is then a balance AT that date — an alta is often a position
+ * that did not start today (a traspaso executed weeks ago), and dating it today left
+ * the net worth with a hole between the exit and the re-entry. The field lives in
+ * this island rather than beside it because the whole pane has to re-read itself
+ * against it: both labels change, the price stops being «the live quote» and becomes
+ * that date's NAV, and a date the server would refuse says so while you type. All of
+ * that copy comes from the pure helper, not from JSX conditionals invented here.
  */
 
 import { useState } from "react";
 
-import { previewOpeningUnits } from "./investment-units";
+import { openingCaptureCopy } from "./investment-units";
 
 export function InvestmentCapture({
+  defaultDate,
   defaultPrice,
   defaultSaldo,
   instrument,
+  livePrice,
   priceHint,
+  today,
 }: {
   instrument: string;
+  defaultDate: string;
   defaultPrice: string;
   defaultSaldo: string;
+  /** The provider quote that prefilled the price, so the copy can CHECK it. */
+  livePrice?: string | undefined;
   priceHint?: string | undefined;
+  today: string;
 }) {
   const [saldo, setSaldo] = useState(defaultSaldo);
   const [price, setPrice] = useState(defaultPrice);
+  const [date, setDate] = useState(defaultDate);
 
-  const units = previewOpeningUnits(saldo, price);
+  const { backdatedTo, hint, priceNote, refused } = openingCaptureCopy({
+    dateRaw: date,
+    livePriceRaw: livePrice,
+    priceRaw: price,
+    saldoRaw: saldo,
+    today,
+  });
 
   return (
     <div className="invCapture">
       <label className="simpleField">
-        <span>¿Cuánto tienes hoy? (€)</span>
+        <span>
+          {backdatedTo === null
+            ? "¿Cuánto tienes hoy? (€)"
+            : `¿Cuánto tenías el ${backdatedTo}? (€)`}
+        </span>
         <input
           autoComplete="off"
           inputMode="decimal"
@@ -47,7 +75,11 @@ export function InvestmentCapture({
         />
       </label>
       <label className="simpleField">
-        <span>Precio por participación (€)</span>
+        <span>
+          {backdatedTo === null
+            ? "Precio por participación (€)"
+            : `Precio por participación el ${backdatedTo} (€)`}
+        </span>
         <input
           autoComplete="off"
           inputMode="decimal"
@@ -56,14 +88,33 @@ export function InvestmentCapture({
           placeholder="50.000,00"
           value={price}
         />
-        {priceHint ? <small>{priceHint}</small> : null}
+        {priceNote === null ? (
+          priceHint ? (
+            <small>{priceHint}</small>
+          ) : null
+        ) : (
+          <small>{priceNote}</small>
+        )}
       </label>
-      <p className="invUnitsHint" aria-live="polite">
-        {units
-          ? `≈ ${Number.parseFloat(units).toLocaleString("es-ES", {
-              maximumFractionDigits: 6,
-            })} participaciones`
-          : "Escribe el saldo para ver las participaciones."}
+      <label className="simpleField">
+        <span>Fecha del saldo (opcional)</span>
+        <input
+          max={today}
+          name={`saldoDate_${instrument}`}
+          onChange={(event) => setDate(event.target.value)}
+          type="date"
+          value={date}
+        />
+        <small>Si el saldo no es de hoy, ponla y reconstruimos el histórico.</small>
+      </label>
+      {/* One live region, always polite: swapping `role` on a live node in flight is
+          unreliable in assistive tech, and the refusal is announced by the text
+          change either way — `.invUnitsRefused` carries the visual meaning. */}
+      <p
+        className={refused ? "invUnitsHint invUnitsRefused" : "invUnitsHint"}
+        aria-live="polite"
+      >
+        {hint}
       </p>
     </div>
   );

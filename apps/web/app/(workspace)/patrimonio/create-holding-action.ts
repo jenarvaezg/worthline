@@ -19,7 +19,7 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
-import { deriveOpeningUnits } from "@web/patrimonio/anadir/investment-units";
+import { resolveOpeningCapture } from "@web/patrimonio/anadir/investment-units";
 import { type WorthlineStore } from "@web/store";
 import type { DebtModel, Instrument, LiabilityType } from "@worthline/domain";
 import {
@@ -174,30 +174,29 @@ function parseInvMode(value: FormDataEntryValue | null): "saldo" | "import" | nu
   return raw === "saldo" || raw === "import" ? raw : null;
 }
 
-/** The Spanish guidance for a saldo-de-hoy derivation that lacks a price or a saldo (#597). */
-function openingUnitsErrorMessage(reason: "saldo" | "price"): string {
-  return reason === "price"
-    ? "Necesito el precio por unidad para calcular las participaciones. Búscalo o escríbelo a mano."
-    : "Indica cuánto tienes hoy en euros.";
-}
-
 /**
  * Record the opening BUY for a freshly-created derived investment from the "saldo
- * de hoy" path (#597): the already-derived units × price, dated today, persisted
- * with its history ripple via the same seam the operations editor uses. Returns a
+ * de hoy" path (#597): the already-derived units × price, dated at the resolved
+ * «Fecha del saldo» (today unless the user said otherwise, #1395), persisted with
+ * its history ripple via the same seam the operations editor uses. Returns a
  * Spanish error message on a domain violation, or null on success.
+ *
+ * `today` stays the ripple's anchor — the frontier between history and the daily
+ * capture — while the capture's own `executedAt` is the date the saldo was read at;
+ * a backdated one makes the ripple rebuild the snapshots from that day (ADR 0012 /
+ * 0020).
  */
 async function recordOpeningOperation(
   store: WorthlineStore,
   assetId: string,
-  opening: { units: string; price: string },
+  opening: { units: string; price: string; executedAt: string },
   today: string,
 ): Promise<string | null> {
   const opForm = new FormData();
   opForm.set("units", opening.units);
   opForm.set("pricePerUnit", opening.price);
   opForm.set("kind", "buy");
-  opForm.set("executedAt", today);
+  opForm.set("executedAt", opening.executedAt);
 
   const parsedOp = parseRouteOperationCommand(opForm, assetId, Date.now(), today);
 
@@ -244,6 +243,7 @@ const FIELD_KEYS = [
   "isPrimaryResidence",
   // Simple investment drawer capture fields (#597), refilled after a validation error.
   "saldo",
+  "saldoDate",
   "invMode",
 ];
 
@@ -498,18 +498,23 @@ export async function createHoldingAction(
         // the empty container exactly as before.
         const invMode = parseInvMode(actionFormData.get(`invMode_${instrument}`));
 
-        // (a) "Saldo de hoy": derive units (€ ÷ precio) up-front (pure) so a missing
-        // saldo/price fails BEFORE anything is persisted — no orphaned 0 € holding.
+        // (a) "Saldo de hoy": resolve the whole capture up-front (pure) — units
+        // (€ ÷ precio) and the date they are stamped with («Fecha del saldo», today
+        // by default, #1395) — so a missing saldo/price or an impossible date fails
+        // BEFORE anything is persisted: no orphaned 0 € holding, no operation dated
+        // on a day the calendar does not have.
         const opening =
           invMode === "saldo"
-            ? deriveOpeningUnits({
+            ? resolveOpeningCapture({
+                dateRaw: String(actionFormData.get(`saldoDate_${instrument}`) ?? ""),
                 priceRaw: String(scoped.get("manualPricePerUnit") ?? ""),
                 saldoRaw: String(actionFormData.get(`saldo_${instrument}`) ?? ""),
+                today,
               })
             : null;
 
         if (opening && !opening.ok) {
-          return { ok: false, error: errorUrl(openingUnitsErrorMessage(opening.reason)) };
+          return { ok: false, error: errorUrl(opening.error) };
         }
 
         const workspace = await store.workspace.readWorkspace();
@@ -547,10 +552,13 @@ export async function createHoldingAction(
           providerSymbol: parsed.command.providerSymbol ?? null,
         };
 
-        // Record the opening BUY dated today, so the holding lands valued — not the
-        // 0 € container the alta used to create. Never combined with (b) import: a
-        // today-dated apertura would not match the CSV's historical orders (merge
-        // keys on date) → a duplicate position; the mode exclusion prevents it (#597).
+        // Record the opening BUY at the saldo's date, so the holding lands valued —
+        // not the 0 € container the alta used to create. Dated today unless the user
+        // said the saldo is older (#1395), in which case the ripple reconstructs the
+        // history from there: dating a weeks-old traspaso today left the net worth with
+        // a hole between the exit and the re-entry. Never combined with (b) import: a
+        // synthetic apertura would not match the CSV's historical orders (merge keys
+        // on date) → a duplicate position; the mode exclusion prevents it (#597).
         if (opening?.ok) {
           const opError = await recordOpeningOperation(
             store,
