@@ -128,6 +128,79 @@ describe("assembleFireEligiblePool", () => {
     expect(pool.netEligibleMinor).toBe(200_000);
   });
 
+  // ── The debt has a rung too (#1447): it nets inside the side it belongs to.
+  it("attributes a secured debt to the rung of the asset it secures", () => {
+    const pool = assemble(
+      [
+        makeAsset("rental", 300_000, { liquidityTier: "housing" }),
+        makeAsset("etf", 100_000, { liquidityTier: "market" }),
+      ],
+      [makeLiability("mortgage", 120_000, "rental")],
+    );
+
+    expect(pool.scopedDebtByTierMinor).toEqual({ housing: 120_000 });
+    expect(pool.scopedDebtMinor).toBe(120_000);
+  });
+
+  it("lands an unassociated debt on the cash rung", () => {
+    const pool = assemble(
+      [makeAsset("etf", 100_000, { liquidityTier: "market" })],
+      [makeLiability("personal-loan", 20_000)],
+    );
+
+    expect(pool.scopedDebtByTierMinor).toEqual({ cash: 20_000 });
+  });
+
+  it("lands a debt pointing at an asset that is no longer present on the cash rung", () => {
+    const pool = assemble(
+      [makeAsset("etf", 100_000, { liquidityTier: "market" })],
+      [makeLiability("ghost-loan", 20_000, "sold-flat")],
+    );
+
+    expect(pool.scopedDebtByTierMinor).toEqual({ cash: 20_000 });
+  });
+
+  it("drops the rung attribution of a debt secured against an excluded asset", () => {
+    const pool = assemble(
+      [
+        makeAsset("home", 400_000, {
+          isPrimaryResidence: true,
+          liquidityTier: "housing",
+        }),
+        makeAsset("etf", 100_000, { liquidityTier: "market" }),
+      ],
+      [makeLiability("mortgage", 300_000, "home")],
+    );
+
+    expect(pool.scopedDebtByTierMinor).toEqual({});
+    expect(pool.scopedDebtMinor).toBe(0);
+  });
+
+  it("keeps the per-rung debt in sync with the scoped total", () => {
+    const pool = assemble(
+      [
+        makeAsset("rental", 300_000, { liquidityTier: "housing" }),
+        makeAsset("gold", 60_000, { liquidityTier: "illiquid" }),
+      ],
+      [
+        makeLiability("mortgage", 120_000, "rental"),
+        makeLiability("pawn", 10_000, "gold"),
+        makeLiability("card", 5_000),
+      ],
+    );
+
+    const perRung = Object.values(pool.scopedDebtByTierMinor).reduce(
+      (sum, minor) => sum + (minor ?? 0),
+      0,
+    );
+    expect(perRung).toBe(pool.scopedDebtMinor);
+    expect(pool.scopedDebtByTierMinor).toEqual({
+      housing: 120_000,
+      illiquid: 10_000,
+      cash: 5_000,
+    });
+  });
+
   it("nets debt secured against an eligible asset", () => {
     const pool = assemble(
       [makeAsset("rental", 300_000), makeAsset("stocks", 100_000)],

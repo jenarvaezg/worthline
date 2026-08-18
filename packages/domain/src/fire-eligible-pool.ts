@@ -14,6 +14,8 @@
 
 import { tierOfAsset } from "./classification";
 import type { FireScopeConfig } from "./fire";
+import type { LiquidityTier } from "./liquidity-ladder";
+import { rungForLiability } from "./liquidity-ladder";
 import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
@@ -53,7 +55,16 @@ export interface FireEligiblePool {
   /** Eligible net of scoped debt, clamped at 0 (an underwater scope reads as 0). */
   netEligibleMinor: number;
   /** Eligible minor per tier (gross), for the weighted real-return computation (N3, #515). */
-  eligibleByTierMinor: Partial<Record<string, number>>;
+  eligibleByTierMinor: Partial<Record<LiquidityTier, number>>;
+  /**
+   * The same scoped debt as `scopedDebtMinor`, attributed per rung (#1447): a
+   * liability rides the rung of the asset it secures, and an unassociated one
+   * (or one pointing at an asset that is gone) lands on `cash` — the ladder's
+   * own rule (`rungForLiability`, ADR 0013/0022). Sums back to `scopedDebtMinor`.
+   * It exists so `splitFireCapital` can net a mortgage inside the immobilized
+   * side instead of against the market cash.
+   */
+  scopedDebtByTierMinor: Partial<Record<LiquidityTier, number>>;
   /**
    * Assets the scope holds that were left OUT of the eligible total, with the
    * reason. Scope-relative: an asset owned entirely outside the scope contributes
@@ -78,7 +89,9 @@ export function assembleFireEligiblePool(
   const excludedAssets: FireExcludedAsset[] = [];
   const excludedAssetIds = new Set<string>();
   // Accumulate eligible minor units per tier for weighted return computation (N3, #515).
-  const eligibleByTierMinor: Partial<Record<string, number>> = {};
+  const eligibleByTierMinor: Partial<Record<LiquidityTier, number>> = {};
+  // The rung of every eligible asset, so a secured debt can inherit it below.
+  const eligibleTierByAssetId = new Map<string, LiquidityTier>();
 
   for (const asset of assets) {
     const ownedMinor = allocateScopedHolding(asset.currentValue.amountMinor, {
@@ -97,6 +110,7 @@ export function assembleFireEligiblePool(
       // Accumulate by tier for the weighted return calculation.
       const tier = tierOfAsset(asset);
       eligibleByTierMinor[tier] = (eligibleByTierMinor[tier] ?? 0) + ownedMinor;
+      eligibleTierByAssetId.set(asset.id, tier);
       continue;
     }
 
@@ -114,6 +128,7 @@ export function assembleFireEligiblePool(
   // secured against an EXCLUDED asset (primary residence / manual) is dropped with
   // that asset — netting it too would double-count the exclusion.
   let scopedDebtMinor = 0;
+  const scopedDebtByTierMinor: Partial<Record<LiquidityTier, number>> = {};
   for (const liability of liabilities) {
     if (
       liability.associatedAssetId &&
@@ -121,10 +136,14 @@ export function assembleFireEligiblePool(
     ) {
       continue;
     }
-    scopedDebtMinor += allocateScopedHolding(liability.currentBalance.amountMinor, {
+    const ownedMinor = allocateScopedHolding(liability.currentBalance.amountMinor, {
       ownership: liability.ownership,
       scopeMemberIds,
     }).ownedMinor;
+    scopedDebtMinor += ownedMinor;
+    // The rung comes from the ladder, never from a guess about the debt's type.
+    const rung = rungForLiability(liability, eligibleTierByAssetId);
+    scopedDebtByTierMinor[rung] = (scopedDebtByTierMinor[rung] ?? 0) + ownedMinor;
   }
 
   // ponytail: clamp at 0 — an underwater scope reads as 0 drawable capital, not
@@ -136,6 +155,7 @@ export function assembleFireEligiblePool(
     scopedDebtMinor,
     netEligibleMinor,
     eligibleByTierMinor,
+    scopedDebtByTierMinor,
     excludedAssets,
   };
 }
