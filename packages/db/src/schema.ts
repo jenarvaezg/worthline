@@ -63,7 +63,9 @@ export const members = sqliteTable("members", {
   name: text("name").notNull(),
   disabledAt: text("disabled_at"),
   // Member profile (PRD #421, #423). All nullable — a member may have none set.
+  // `birth_month` (1-12, #1415) sharpens the derived FIRE age to the month.
   birthYear: integer("birth_year"),
+  birthMonth: integer("birth_month"),
   fiscalCountry: text("fiscal_country"),
   riskTolerance: text("risk_tolerance").$type<RiskTolerance>(),
   createdAt: timestamp("created_at"),

@@ -724,6 +724,12 @@ export interface AgentViewFireConfig {
   monthlySpending: AgentViewMoney;
   safeWithdrawalRate: string;
   expectedRealReturn: string;
+  /**
+   * The reference age, DERIVED from the scope members' birth dates on read
+   * (#1415) — not a stored scalar. Absent when no member of the scope has a
+   * birth year and no pre-#1415 config left a typed age behind; the coast
+   * figures are then absent too.
+   */
   currentAge?: number;
   targetRetirementAge?: number;
   /**
@@ -1631,8 +1637,10 @@ export interface AgentViewMemberProfile {
   object: "member_profile";
   id: string;
   name: string;
-  /** Reference year of birth; the projection derives age from it. */
+  /** Reference year of birth; the projection derives age from it (#1415). */
   birthYear: number | null;
+  /** Reference month of birth (1-12), when known: sharpens the derived age. */
+  birthMonth: number | null;
   /** ISO 3166-1 alpha-2 fiscal country (e.g. "ES"), for tax-aware suggestions. */
   fiscalCountry: string | null;
   riskTolerance: RiskTolerance | null;

@@ -235,6 +235,7 @@ describe("agent-view MCP tools", () => {
           id: "wl_mbr_abc123",
           name: "Jose",
           birthYear: 1990,
+          birthMonth: 7,
           fiscalCountry: "ES",
           riskTolerance: "moderate",
         },

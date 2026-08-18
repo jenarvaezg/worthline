@@ -38,6 +38,25 @@ export function listScopeOptions(workspace: Workspace): ScopeOption[] {
 }
 
 export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): string[] {
+  const memberIds = findScopeMemberIds(workspace, scopeId);
+
+  if (memberIds === undefined) {
+    throw new Error(`Unknown scope ${scopeId}.`);
+  }
+
+  return memberIds;
+}
+
+/**
+ * `resolveScopeMemberIds` without the throw: `undefined` for a scope that does
+ * not exist. Readers that walk STORED per-scope data (FIRE configs keyed by
+ * scope id, #1415) need this — a config can outlive the group or member it was
+ * keyed by, and that is not an error worth crashing a page over.
+ */
+export function findScopeMemberIds(
+  workspace: Workspace,
+  scopeId: string,
+): string[] | undefined {
   if (scopeId === "household") {
     return activeMemberIds(workspace.members);
   }
@@ -57,7 +76,7 @@ export function resolveScopeMemberIds(workspace: Workspace, scopeId: string): st
     return group.memberIds.filter((memberId) => activeIds.has(memberId));
   }
 
-  throw new Error(`Unknown scope ${scopeId}.`);
+  return undefined;
 }
 
 function activeMemberIds(members: Member[]): string[] {

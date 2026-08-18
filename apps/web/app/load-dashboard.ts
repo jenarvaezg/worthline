@@ -311,7 +311,10 @@ export async function loadDashboard(
   // promise-memoized (Step 0), making concurrent internal calls safe.
   const [overrides, fireConfig, goals, contributionPlan, publicIds] = await Promise.all([
     store.readWarningOverrides(),
-    store.readFireConfig(),
+    // The FIRE reference age is derived from the members' birth dates at this
+    // read (#1415), so it is measured on the page's own "today" — never a
+    // second, disagreeing clock.
+    store.readFireConfig(input.today),
     // Goals for the selected scope (#426): reserve capital against FIRE eligibility.
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
     selectedScope

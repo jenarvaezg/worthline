@@ -333,7 +333,7 @@ describe("importWorkspace", () => {
     expect(price!.source).toBe("stooq");
     expect(await store.operations.readPriceCache("a-A1")).toBeNull();
 
-    expect(await store.readFireConfig()).toEqual(docB.fireConfig);
+    expect(await store.readFireConfig("2026-06-01")).toEqual(docB.fireConfig);
     expect(await store.readWarningOverrides()).toEqual([
       { code: "ZERO_VALUE_ASSET", entityId: "b-a1" },
     ]);
@@ -411,7 +411,7 @@ describe("importWorkspace", () => {
     expect(await store.readWarningOverrides()).toEqual([
       { code: "ZERO_VALUE_ASSET", entityId: "a-A1" },
     ]);
-    expect(await store.readFireConfig()).toHaveProperty("mA");
+    expect(await store.readFireConfig("2026-06-01")).toHaveProperty("mA");
 
     // The audit log survived the rollback too — including no import entry.
     const auditAfter = await store.readAuditLog();
@@ -474,7 +474,7 @@ describe("importWorkspace", () => {
     expect(await store.snapshots.readSnapshotHoldings()).toEqual([]);
     expect(await store.readTrash()).toEqual({ assets: [], liabilities: [] });
     expect(await store.operations.readAllPriceCacheEntries()).toEqual([]);
-    expect(await store.readFireConfig()).toEqual({});
+    expect(await store.readFireConfig("2026-06-01")).toEqual({});
     expect(await store.readWarningOverrides()).toEqual([]);
 
     store.close();

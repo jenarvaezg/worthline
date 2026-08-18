@@ -91,7 +91,7 @@ async function fingerprint(databasePath: string): Promise<string> {
   const sources = await store.connectedSources.listSources();
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
-    fireConfig: await store.readFireConfig(),
+    fireConfig: await store.readFireConfig("2026-08-18"),
     liabilities: await store.liabilities.readLiabilities(),
     positions: await Promise.all(
       sources.map(async (source) => ({

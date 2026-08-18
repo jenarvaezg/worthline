@@ -20,12 +20,16 @@ export interface Member {
   disabledAt?: string;
   /**
    * Member profile (PRD #421, #423): the reference age for FIRE projections is
-   * derived from `birthYear`; `fiscalCountry` (ISO 3166-1 alpha-2, e.g. "ES")
-   * lets the assistant avoid tax-inefficient suggestions; `riskTolerance` shapes
-   * allocation advice. All optional — a member may have none set. PII: exposed
-   * only through the authenticated MCP, never a public endpoint.
+   * derived from `birthYear` (+ `birthMonth` when known, 1-12) and nowhere else
+   * (#1415 — a typed age froze and rejuvenated the member a year per year);
+   * `fiscalCountry` (ISO 3166-1 alpha-2, e.g. "ES") lets the assistant avoid
+   * tax-inefficient suggestions; `riskTolerance` shapes allocation advice. All
+   * optional — a member may have none set. PII: exposed only through the
+   * authenticated MCP, never a public endpoint.
    */
   birthYear?: number;
+  /** Birth month (1-12), optional: sharpens the derived age to the month (#1415). */
+  birthMonth?: number;
   fiscalCountry?: string;
   riskTolerance?: RiskTolerance;
 }

@@ -36,9 +36,11 @@ function monthlyBuys(
 
 export const FAMILIA_SPEC: PersonaSpec = {
   id: "familia",
+  // La edad del FIRE se deriva de la fecha de nacimiento (#1415): el escenario
+  // de hogar toma la del miembro mayor, Marta.
   members: [
-    { id: MARTA, name: "Marta" },
-    { id: DIEGO, name: "Diego" },
+    { id: MARTA, name: "Marta", birthYear: 1987, birthMonth: 4 },
+    { id: DIEGO, name: "Diego", birthYear: 1989, birthMonth: 11 },
   ],
   mode: "household",
   manualAssets: [
@@ -171,7 +173,6 @@ export const FAMILIA_SPEC: PersonaSpec = {
   fire: [
     {
       config: {
-        currentAge: 39,
         excludedAssetIds: ["asset_familia_home", "asset_familia_car"],
         expectedRealReturn: 0.045,
         monthlySpendingMinor: 3_150_00,

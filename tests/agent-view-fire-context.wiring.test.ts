@@ -95,7 +95,7 @@ async function fingerprint(databasePath: string): Promise<string> {
   const store = await createWorthlineStoreUnsafe({ databasePath });
   const snapshot = JSON.stringify({
     assets: await store.assets.readAssets(),
-    fireConfig: await store.readFireConfig(),
+    fireConfig: await store.readFireConfig("2026-08-18"),
     liabilities: await store.liabilities.readLiabilities(),
     priceCache: await store.operations.readAllPriceCacheEntries(),
     publicIds: await store.agentView.readPublicIds(),

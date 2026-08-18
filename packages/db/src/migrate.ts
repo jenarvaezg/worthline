@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 54;
+export const SCHEMA_VERSION = 55;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1641,6 +1641,22 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!String(error).includes("no such table")) throw error;
     }
     await writeSchemaVersion(client, 54);
+  }
+
+  if (version < 55) {
+    // #1415: `members.birth_month` (1-12, nullable). The FIRE reference age is now
+    // derived from the birth date on every read instead of read back from a typed
+    // `currentAge` that froze — Jorge's stayed at 62 while he turned 63, and every
+    // age the projection printed drifted a year young in the optimistic direction.
+    //
+    // The month is optional and nothing is backfilled: with only the year the
+    // derived age is `year − birthYear`, honest to ±1 year inside the natural year.
+    // Additive ALTER (try/catch like v35/v36): a fresh DB already has the column
+    // from schema-sql, so the duplicate is ignored.
+    try {
+      await client.executeMultiple("ALTER TABLE members ADD COLUMN birth_month INTEGER");
+    } catch {}
+    await writeSchemaVersion(client, 55);
   }
 
   return { ranV18Backfill, ranV33Backfill };

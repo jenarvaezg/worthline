@@ -255,7 +255,15 @@ interface LegacyWorthlineStore {
     targets: readonly HoldingTrashTarget[],
   ) => Promise<BatchTrashResult>;
   readAuditLog: (filter?: { entityId?: string }) => Promise<AuditLogEntry[]>;
-  readFireConfig: () => Promise<Record<string, FireScopeConfig>>;
+  /**
+   * FIRE config per scope, with `currentAge` derived from the members' birth
+   * dates (#1415). `todayISO` (YYYY-MM-DD) is the date the age is measured on and
+   * is REQUIRED: the store must not re-derive the clock (ADR 0024), and an
+   * optional parameter is how a caller silently ends up measuring the age on a
+   * second, disagreeing clock. Pass the page's own "today", or read the seam
+   * explicitly at the call site.
+   */
+  readFireConfig: (todayISO: string) => Promise<Record<string, FireScopeConfig>>;
   saveFireConfig: (scopeId: string, config: FireScopeConfig) => Promise<void>;
   /**
    * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND

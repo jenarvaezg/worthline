@@ -480,7 +480,14 @@ _Avoid_: liquidity pyramid (implied a shape that never encoded amounts).
 
 **FIRE progress**:
 A scope's progress toward financial independence, calculated from FIRE-eligible assets,
-declared spending, withdrawal-rate, return, and age assumptions.
+declared spending, withdrawal-rate, return, and age assumptions. The **reference age**
+is derived from the member's **birth date**, never typed (ADR 0073); the **target
+retirement age** is the one age the user chooses.
+
+**Birth date**:
+A member's birth year and, optionally, birth month — the only stored age fact. Every
+age FIRE prints (the coast age, the years to target retirement, the three projected
+ages) is derived from it at read time, so it cannot go stale (ADR 0073).
 
 **Ownership share**:
 A member's percentage stake in one holding.
@@ -859,6 +866,7 @@ _Avoid_: imported history (implies verified), synced history.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
+- A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
 - A **return** is derived per **investment** from its **operations** and **snapshots** — **simple gain** (realized + unrealized), **money-weighted** (IRR) and **time-weighted** (Modified Dietz over **monthly closes**) — present-time, never stored, never a figure the net-worth math reads (ADR 0040).
 - A **payout** attaches to one asset **holding**; a **payout schedule** derives its past payouts as truth up to today, never beyond. Payouts feed the **return** (a recorded distribution enters the money-weighted cashflows and the realized **simple gain**) and the passive-income lens; they add no figure the net-worth math reads and never enter a **snapshot**.

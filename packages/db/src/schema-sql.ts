@@ -97,6 +97,7 @@ CREATE TABLE \`members\` (
 	\`name\` text NOT NULL,
 	\`disabled_at\` text,
 	\`birth_year\` integer,
+	\`birth_month\` integer,
 	\`fiscal_country\` text,
 	\`risk_tolerance\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,

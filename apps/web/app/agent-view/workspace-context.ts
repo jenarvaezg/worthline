@@ -68,6 +68,7 @@ export async function buildMemberProfiles(
       id: requirePublicId(memberPublicIds, member.id),
       name: member.name,
       birthYear: member.birthYear ?? null,
+      birthMonth: member.birthMonth ?? null,
       fiscalCountry: member.fiscalCountry ?? null,
       riskTolerance: member.riskTolerance ?? null,
     }));

@@ -16,6 +16,29 @@ function fireForm(overrides: Record<string, string> = {}): FormData {
   return form;
 }
 
+describe("parseFireConfigFormStrict — the age is not typed (#1415)", () => {
+  it("never produces a currentAge, even if the form still posts one", () => {
+    // The age is derived from the member's birth date at read time. A typed age
+    // froze: 62 entered in 2025 was still 62 in 2026. A stray field (an old cached
+    // page, a hand-crafted POST) must not resurrect the stale scalar.
+    const result = parseFireConfigFormStrict(fireForm({ currentAge: "62" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.currentAge).toBeUndefined();
+    }
+  });
+
+  it("still parses the target retirement age, which is a choice and not a fact", () => {
+    const result = parseFireConfigFormStrict(fireForm({ targetRetirementAge: "67" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.targetRetirementAge).toBe(67);
+    }
+  });
+});
+
 describe("parseFireConfigFormStrict — monthlySavingsCapacity (#425)", () => {
   it("parses a positive monthly savings capacity into minor units", () => {
     const result = parseFireConfigFormStrict(

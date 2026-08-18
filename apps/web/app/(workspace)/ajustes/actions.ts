@@ -13,6 +13,8 @@ import {
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
 import {
+  parseBirthYear,
+  parseCalendarMonth,
   parseWorkspaceExport,
   type RiskTolerance,
   summarizeWorkspaceExport,
@@ -87,11 +89,17 @@ export const updateMemberProfileAction = formAction({
   guardUrl: (fd) => currentUrlOf(fd),
   missingId: "Identificador de miembro no encontrado.",
   missingIdUrl: (fd) => currentUrlOf(fd),
-  run: async (store, { id, formData }) => {
-    const birthYearRaw = String(formData.get("birthYear") ?? "").trim();
-    const birthYearParsed = Number.parseInt(birthYearRaw, 10);
-    const birthYear =
-      birthYearRaw && !Number.isNaN(birthYearParsed) ? birthYearParsed : undefined;
+  run: async (store, { id, formData, today }) => {
+    // The birth date is the only stored age fact (#1415), so it is stored only when
+    // the derivation can read it back: a `2100` kept as-is would look filled in
+    // while every FIRE age silently disappeared. Same door on both sides.
+    const birthYear = parseBirthYear(formData.get("birthYear"), today);
+
+    // Birth month (1-12, #1415): optional and only meaningful with a year. Out of
+    // range or unparseable → unset, which the derivation reads as "year only"
+    // rather than shifting the age by a bogus month. Same door as the derivation
+    // itself, so the two cannot disagree on what counts as a month.
+    const birthMonth = parseCalendarMonth(formData.get("birthMonth"));
 
     const fiscalCountry = String(formData.get("fiscalCountry") ?? "").trim() || undefined;
 
@@ -106,6 +114,7 @@ export const updateMemberProfileAction = formAction({
     // blank input still erases the previous value.
     await store.workspace.updateMemberProfile(id, {
       ...(birthYear !== undefined ? { birthYear } : {}),
+      ...(birthMonth !== undefined ? { birthMonth } : {}),
       ...(fiscalCountry !== undefined ? { fiscalCountry } : {}),
       ...(riskTolerance !== undefined ? { riskTolerance } : {}),
     });

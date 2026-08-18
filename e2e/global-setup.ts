@@ -35,9 +35,11 @@ export default async function globalSetup(): Promise<void> {
 
   await store.workspace.initializeWorkspace({
     mode: "household",
+    // Birth dates, not ages (#1415): the FIRE reference age is derived from them on
+    // every read, so a seeded workspace needs them to have a FIRE horizon at all.
     members: [
-      { id: "member_seed", name: "Seed" },
-      { id: "member_socio", name: "Socio" },
+      { id: "member_seed", name: "Seed", birthYear: 1991, birthMonth: 6 },
+      { id: "member_socio", name: "Socio", birthYear: 1995 },
     ],
   });
 
