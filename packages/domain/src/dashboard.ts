@@ -1,6 +1,7 @@
 import type { FireScopeConfig } from "./fire";
 import {
   calculateFireForScope,
+  fireCountsImmobilizedCapital,
   fireReservationHorizon,
   isFireEligibleAsset,
   projectFireFromContext,
@@ -161,6 +162,17 @@ export interface DashboardState {
   presentation: NetWorthPresentation | undefined;
   fireScopeConfig: FireScopeConfig | null;
   fireResult: ReturnType<typeof calculateFireForScope> | null;
+  /**
+   * El mismo ámbito con la declaración del inmovilizado invertida (#1473) — el
+   * contrafactual que `previewFireWithAssumptions` necesita para que alternar el check
+   * responda en vivo sin escribir una segunda aritmética en el cliente. Sale del MISMO
+   * motor, con la misma reserva de metas y el mismo reloj, así que previsualizar y
+   * guardar no pueden discrepar.
+   *
+   * Null salvo que el llamador lo pida (`includeFireImmobilizedCounterfactual`): solo
+   * la pantalla que previsualiza paga por el segundo cálculo.
+   */
+  fireResultImmobilizedFlipped: ReturnType<typeof calculateFireForScope> | null;
   /** FIRE projection scenarios (PRD #421, #427); null when FIRE is unconfigured. */
   fireProjection: FireProjection | null;
   /** Compact glance data for the home FIRE card (PRD #507, S1); null when unconfigured. */
@@ -220,6 +232,12 @@ export function prepareDashboardState(input: {
    * surfaces, so passing them costs no I/O.
    */
   payoutSchedules?: readonly PayoutSchedule[];
+  /**
+   * Calcular también el ámbito con la declaración del inmovilizado invertida (#1473).
+   * Lo pide la pantalla que previsualiza supuestos en vivo; para el resto sería un
+   * segundo `calculateFireForScope` que nadie lee.
+   */
+  includeFireImmobilizedCounterfactual?: boolean;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
@@ -264,10 +282,14 @@ export function prepareDashboardState(input: {
         })()
       : 0;
 
-  const fireResult =
-    fireScopeConfig && workspace && selectedScope
+  // Una sola puerta al motor para los dos lados de la declaración del inmovilizado
+  // (#1473): el contrafactual entra por aquí con la MISMA reserva, el mismo reloj y
+  // las mismas rentas, así que el lado que la isla previsualiza es exactamente el que
+  // dejará el guardado.
+  const fireForConfig = (config: FireScopeConfig) =>
+    workspace && selectedScope
       ? calculateFireForScope(
-          fireScopeConfig,
+          config,
           assets,
           liabilities,
           workspace,
@@ -280,6 +302,16 @@ export function prepareDashboardState(input: {
             ...(input.payoutSchedules ? { payoutSchedules: input.payoutSchedules } : {}),
           },
         )
+      : null;
+
+  const fireResult = fireScopeConfig ? fireForConfig(fireScopeConfig) : null;
+
+  const fireResultImmobilizedFlipped =
+    fireScopeConfig && input.includeFireImmobilizedCounterfactual
+      ? fireForConfig({
+          ...fireScopeConfig,
+          immobilizedCountsAsFireCapital: !fireCountsImmobilizedCapital(fireScopeConfig),
+        })
       : null;
 
   // FIRE projection (#427): scenarios from the reservation-adjusted eligible
@@ -386,6 +418,7 @@ export function prepareDashboardState(input: {
     fireGlance,
     fireProjection,
     fireResult,
+    fireResultImmobilizedFlipped,
     fireScopeConfig,
     investmentAssets,
     liabilities,
@@ -431,6 +464,12 @@ export interface ObjetivosGoalView {
 export interface ObjetivosState {
   fireProjection: DashboardState["fireProjection"];
   fireResult: DashboardState["fireResult"];
+  /**
+   * El otro lado de la declaración del inmovilizado (#1473). Esta página lo pide
+   * siempre porque su isla previsualiza el check como los cuatro campos de al lado, y
+   * elegir lado exige tener el lado. Null sin config FIRE.
+   */
+  fireResultImmobilizedFlipped: DashboardState["fireResultImmobilizedFlipped"];
   fireScopeConfig: DashboardState["fireScopeConfig"];
   /** coastRequired / fireNumber clamped to [0,1]; null when coast data unavailable. */
   coastTickFraction: number | null;
@@ -484,7 +523,12 @@ export interface ObjetivosState {
 export function prepareObjetivosState(
   input: Parameters<typeof prepareDashboardState>[0],
 ): ObjetivosState {
-  const dash = prepareDashboardState(input);
+  // El contrafactual del inmovilizado se pide aquí y no en la página (#1473): quien
+  // sabe que esta pantalla previsualiza sus supuestos es esta puerta, no su llamador.
+  const dash = prepareDashboardState({
+    ...input,
+    includeFireImmobilizedCounterfactual: true,
+  });
 
   const { workspace, selectedScope } = dash;
   const assetById = new Map(input.assets.map((a) => [a.id, a]));
@@ -566,6 +610,7 @@ export function prepareObjetivosState(
     savingsCoherence: dash.savingsCoherence,
     fireProjection: dash.fireProjection,
     fireResult: dash.fireResult,
+    fireResultImmobilizedFlipped: dash.fireResultImmobilizedFlipped,
     fireScopeConfig: dash.fireScopeConfig,
     goals,
     fireLevelRail,

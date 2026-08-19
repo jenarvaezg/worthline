@@ -87,11 +87,12 @@ outside the calculation.**
   not part of my plan". This declaration is about a *nature* of capital, so it belongs
   where the natures already are — the split — and stays one checkbox instead of a
   checklist the user must maintain as assets are added.
-- **Previewing the checkbox live like the four scalar assumptions (rejected for now).**
-  `previewFireWithAssumptions` (#1450) deliberately keeps the server's pool and rate:
-  it recomputes what the assumptions move, and this declaration moves the pool itself.
-  It is saved to be seen, like the per-tier rates and the manual return beside it, and
-  the field says so.
+- **Previewing the checkbox live like the four scalar assumptions (rejected then;
+  SUPERSEDED by the Amendment (#1473) below, which also removed the fine print this
+  bullet leans on).** `previewFireWithAssumptions` (#1450)
+  deliberately keeps the server's pool and rate: it recomputes what the assumptions move,
+  and this declaration moves the pool itself. It is saved to be seen, like the per-tier
+  rates and the manual return beside it, and the field says so.
 
 ## Consequences
 
@@ -107,3 +108,32 @@ outside the calculation.**
   measure — the same one the screen shows.
 - #1428's «gasto sostenible» is defined over the sellable side; with this declaration
   off, that view and the FIRE headline finally tell the same story.
+
+## Amendment (#1473): the checkbox previews live, and the boundary is visibility
+
+The alternative rejected above — previewing the checkbox like the four scalar
+assumptions — is now the behaviour. It was reported as a bug, and correctly: the check
+is the only assumption on the form's **visible face** that did nothing until saved,
+sitting between four fields that move the figures as you type. A checkbox invites you to
+toggle it to see what happens; what happened was nothing, which reads as broken. The
+fine print that said «se aplica al guardar» did not save it — nobody reads it, and the
+rest of the panel had taught the opposite.
+
+The rule the rejection rested on ("live overrides are the ones that do not re-assemble
+the pool") was the wrong frontier. The manual rate and the per-tier returns are *folded
+away* in «supuestos finos»; the checkbox is not. **What is on the visible face responds
+live; what is folded away is saved to be seen.** The manual rate and the per-tier
+returns keep their old behaviour under this reading, unchanged.
+
+Previewing it live does not put a second arithmetic in the client, which was the real
+concern: toggling moves both the effective capital *and* the re-weighted rate (this
+ADR's own trap — the housing rung drags the rate, so dropping it lowers capital and
+raises the rate). Instead, the server computes **both sides** with the same engine
+(`prepareDashboardState`'s `includeFireImmobilizedCounterfactual` → a second
+`calculateFireForScope` with the declaration flipped, same goal reservation, same clock,
+same rents), and `previewFireWithAssumptions` **chooses a side** before applying the
+scalar overrides. So the screen the toggle paints is exactly the screen the save leaves,
+and no formula was rewritten in the island.
+
+A manual `expectedRealReturn` still wins on both sides: the rate is not re-weighted by
+toggling, only the capital moves.

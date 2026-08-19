@@ -120,6 +120,24 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   const inversorNetWorth = await page.locator(".headline strong").first().innerText();
   expect(inversorNetWorth).not.toBe(familiaNetWorth);
 
+  // 4b. El check del inmovilizado previsualiza en vivo (#1473). Se prueba en esta
+  //     persona y no en la anterior porque es la que TIENE inmovilizado (tres activos
+  //     `illiquid`): sin él, desmarcar no movería nada y el test pasaría vacío. Y la
+  //     demo no tiene nada que rechazar aquí — previsualizar no escribe, que es
+  //     justamente lo que el paso 3 comprueba del botón de guardar.
+  await page.goto("/objetivos");
+  const fireAssumptions = page.getByRole("region", { name: "Tus supuestos" });
+  const eligible = page
+    .getByRole("region", { name: "FIRE" })
+    .locator(".fireMetric", { hasText: "Activos elegibles" });
+  const withBrick = await eligible.innerText();
+  await fireAssumptions.locator('.fireConfigCheck input[type="checkbox"]').uncheck();
+  // El capital que FIRE mide baja al instante: era el bug — se alternaba y no pasaba
+  // nada hasta guardar.
+  await expect(eligible).not.toHaveText(withBrick);
+  // Y lo dice: son cifras previsualizadas, no guardadas.
+  await expect(fireAssumptions.getByText(/Aún no se han guardado/)).toBeVisible();
+
   // 5. Exiting the demo clears the persona cookie and lands on /login — the banner
   //    is gone and the sign-in affordance is shown. (The hosted-mode "/ now hits the
   //    login wall" gate is not exercisable in the auth-less demo build.) In local
