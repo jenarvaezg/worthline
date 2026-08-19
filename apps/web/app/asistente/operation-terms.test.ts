@@ -182,3 +182,36 @@ describe("resolveOperationTerms · a document with no amount to write", () => {
     expect(result.ok && result.terms.amountMinor).toBe(125_00);
   });
 });
+
+/** Jorge's real purchase (#1467): 6 participaciones por 312,55 €. */
+const JORGE: ExtractedHoldingEvent = {
+  amount: 312.55,
+  currency: "EUR",
+  date: "2026-08-19",
+  isin: "ES0173516115",
+  kind: "other",
+  label: "Compra 6 participaciones",
+  units: 6,
+};
+
+describe("resolveOperationTerms · derived price scale (#1467)", () => {
+  it("writes Jorge's price at 8 decimals, and the cost is still 312,55 €", () => {
+    const result = resolveOperationTerms(JORGE);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.terms.pricePerUnit).toBe("52.09166667");
+    expect(result.terms.units).toBe("6");
+    expect(multiplyToMinor(result.terms.units, result.terms.pricePerUnit)).toBe(312_55);
+  });
+
+  it("does not write more decimals than the canonical 8, even on a periodic division", () => {
+    const result = resolveOperationTerms({ ...JORGE, amount: 1, units: 3 });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.terms.pricePerUnit).toBe("0.33333333");
+    expect(result.terms.pricePerUnit.split(".")[1]?.length).toBeLessThanOrEqual(8);
+    expect(multiplyToMinor(result.terms.units, result.terms.pricePerUnit)).toBe(1_00);
+  });
+});

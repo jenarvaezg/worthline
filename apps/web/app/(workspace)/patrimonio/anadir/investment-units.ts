@@ -25,12 +25,12 @@ import {
 
 /**
  * Decimals a derived unit count is cut at (#1395) — this capture's name for the app's
- * units reading voice, `UNITS_READBACK_DECIMALS`. `divideUnits` defaults to 20 —
- * right for recovering a NAV from an amount (ADR 0018), wrong for participaciones:
- * a fund balance over a 319,59 € NAV landed as `3,40996276479239025001` (#1393), a
- * precision no bank publishes and that the app itself cannot read back
- * (`formatUnits` renders at most six decimals). Six is that reading voice, so what
- * the hint shows IS what gets stored.
+ * units reading voice, `UNITS_READBACK_DECIMALS`. `divideUnits` takes an explicit
+ * scale: `PRICE_READBACK_DECIMALS` for a derived NAV (ADR 0018, #1467), this six for
+ * participaciones. A fund balance over a 319,59 € NAV used to land as
+ * `3,40996276479239025001` (#1393), a precision no bank publishes and that the app
+ * itself cannot read back (`formatUnits` renders at most six decimals). Six is that
+ * reading voice, so what the hint shows IS what gets stored.
  *
  * The cut is not free: it moves the position by up to half a millionth of a unit,
  * which at a five-figure unit price is a few cents (1.234,56 € of BTC at 100.000 €

@@ -4,6 +4,8 @@ import {
   addUnits,
   averageUnitCost,
   compareUnits,
+  formatPrice,
+  formatUnits,
   multiplyToMinor,
   proportionMinor,
   subtractUnits,
@@ -40,6 +42,24 @@ describe("decimal to integer minor units", () => {
     expect(averageUnitCost(30_000, "2")).toBe("150"); // 300.00 / 2
     expect(averageUnitCost(10_000, "3")).toBe("33.3333"); // 100 / 3 at 4dp
     expect(averageUnitCost(0, "0")).toBe("0");
+  });
+});
+
+describe("reading voices", () => {
+  test("formatUnits uses es-ES separators at six decimals", () => {
+    expect(formatUnits("3.409963")).toBe("3,409963");
+    expect(formatUnits("6")).toBe("6");
+  });
+
+  test("formatPrice uses es-ES separators at eight decimals, with no padding (#1467)", () => {
+    expect(formatPrice("52.09166666666666667")).toBe("52,09166667");
+    expect(formatPrice("65.045")).toBe("65,045");
+    expect(formatPrice("6")).toBe("6");
+  });
+
+  test("a malformed figure is shown raw rather than as NaN", () => {
+    expect(formatUnits("nope")).toBe("nope");
+    expect(formatPrice("nope")).toBe("nope");
   });
 });
 

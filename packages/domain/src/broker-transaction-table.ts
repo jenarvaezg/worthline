@@ -34,6 +34,7 @@ import {
   divideUnits,
   multiplyToMinor,
   normalizeDecimal,
+  PRICE_READBACK_DECIMALS,
   scaleDecimal,
   subtractUnits,
 } from "./decimal";
@@ -733,7 +734,7 @@ function readRow(
     );
   }
 
-  const pricePerUnit = divideUnits(amount, units);
+  const pricePerUnit = divideUnits(amount, units, PRICE_READBACK_DECIMALS);
   if (price !== null && disagrees(multiply(units, absolute(price.value)), amount)) {
     uncertain = true;
     warnings.push(

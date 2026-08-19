@@ -294,3 +294,23 @@ describe("statement grouping and matching with plantilla identifiers", () => {
     ]);
   });
 });
+
+describe("parseStatement — plantilla, derived price scale (#1467)", () => {
+  test("a purchase of 6 units for 312,55 € writes the price at 8 decimals", () => {
+    const { rows } = parsedOk(
+      [HEADER, "19/08/2026;Fondo;IE00BYX5NX33;Compra;6;312,55;;Jorge"].join("\n"),
+    );
+
+    expect(rows[0]!.pricePerUnit).toBe("52.09166667");
+    expect(multiplyToMinor(rows[0]!.units, rows[0]!.pricePerUnit)).toBe(312_55);
+  });
+
+  test("a periodic division does not write more decimals than the canonical 8", () => {
+    const { rows } = parsedOk(
+      [HEADER, "19/08/2026;Fondo;IE00BYX5NX33;Compra;3;1;;"].join("\n"),
+    );
+
+    expect(rows[0]!.pricePerUnit).toBe("0.33333333");
+    expect(rows[0]!.pricePerUnit.split(".")[1]?.length).toBeLessThanOrEqual(8);
+  });
+});
