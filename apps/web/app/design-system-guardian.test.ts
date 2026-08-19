@@ -583,7 +583,9 @@ describe("Libro mayor design-system guardian (#906)", () => {
       "utf8",
     );
     const sectioned = ajustes.match(/className="ajustesPanel section"/g) ?? [];
-    expect(sectioned.length).toBe(7);
+    // 5 desde #1450: la configuración FIRE se mudó entera a /objetivos, y con ella
+    // el puntero al CRUD de objetivos que quedaba de la mudanza de #511.
+    expect(sectioned.length).toBe(5);
 
     // Admin is an interior tool on paper (canon §2): the list sits inside a
     // section and never borrows the cover register.

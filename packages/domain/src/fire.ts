@@ -50,8 +50,8 @@ export interface FireScopeConfig {
    * True when the one-shot #1416 migration wrote `monthlySavingsCapacityMinor` for a
    * workspace that had been projecting its contribution plan's total instead of a
    * declared figure. The value is that same total — preserved, never invented — and
-   * this flag's only job is to let /ajustes say "we put this here, check it" rather
-   * than have the number appear from nowhere. Cleared by the first save of the FIRE
+   * this flag's only job is to let the assumptions form say "we put this here,
+   * check it" rather than have the number appear from nowhere. Cleared by the first save of the FIRE
    * form: `saveFireConfig` replaces the scope object, and by then the user has seen
    * the note. Never set outside that migration.
    */

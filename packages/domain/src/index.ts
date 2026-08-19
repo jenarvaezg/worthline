@@ -466,6 +466,8 @@ export type {
   FireAchievementLevel,
 } from "./fire-achievement";
 export { fireAchievement } from "./fire-achievement";
+export type { FireAssumptionOverrides } from "./fire-assumption-preview";
+export { previewFireWithAssumptions } from "./fire-assumption-preview";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
 export { splitFireCapital } from "./fire-capital-split";
 export type { BirthDate, FireAgeSource } from "./fire-current-age";

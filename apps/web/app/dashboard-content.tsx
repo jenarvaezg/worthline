@@ -75,7 +75,8 @@ const DRILL_DESTINATION_LABELS: Record<DrilldownKey, string> = {
 const ONBOARDING_LINKS: Record<string, string> = {
   members: "/ajustes",
   holdings: "/patrimonio/anadir",
-  fire: "/ajustes",
+  // Los supuestos FIRE se editan junto a sus cifras desde #1450.
+  fire: "/objetivos#supuestos",
   snapshot: "/",
 };
 
@@ -634,8 +635,10 @@ export default async function DashboardContent({
                 Configura tu número FIRE para ver tu progreso hacia la independencia
                 financiera.
               </p>
-              <Link className="panelAction" href="/ajustes">
-                Configurar → Ajustes
+              {/* Los supuestos se editan en /objetivos desde #1450: mandar aquí a
+                  Ajustes sería un callejón sin salida. */}
+              <Link className="panelAction" href="/objetivos#supuestos">
+                Configurar mis supuestos
               </Link>
             </div>
           )}

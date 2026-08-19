@@ -91,21 +91,43 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   // hides both the race and the refusal (which is how this passed in isolation).
   await expect(page).toHaveURL(/[?&]ok=saved/);
 
-  const fireSettings = page.getByRole("region", { name: "Configuración FIRE" });
+  // Los supuestos FIRE se editan donde se ven (#1450): el formulario vive en
+  // /objetivos, no en /ajustes. Lo del miembro (el año de nacimiento de arriba) se
+  // queda en Ajustes, porque es del miembro y no del FIRE.
+  await page.goto("/objetivos");
+  const fireSettings = page.getByRole("region", { name: "Tus supuestos" });
   await fireSettings.getByLabel(/^Gasto mensual/).fill("2000");
-  await fireSettings.getByLabel(/^Tasa de retirada segura/).fill("4");
-  await fireSettings.getByLabel(/^Retorno real esperado/).fill("5");
+  await fireSettings.getByLabel(/^Tasa de retirada/).fill("4");
   await fireSettings.getByLabel(/^Edad objetivo/).fill("65");
   await fireSettings.getByLabel(/^Ahorro mensual/).fill("1000");
-  await fireSettings.getByRole("button", { name: "Guardar configuración FIRE" }).click();
+  // El retorno fijo vive en el pliegue de supuestos finos: cerrado, el campo existe
+  // en el DOM pero no se puede rellenar.
+  await fireSettings.locator("details.fireConfigFine > summary").click();
+  await fireSettings.getByLabel(/^Retorno real esperado/).fill("5");
+  await fireSettings.getByRole("button", { name: "Guardar supuestos" }).click();
   // Same reason, plus one more: this asserts the config was ACCEPTED. A rejected
-  // form also redirects to /ajustes (with `?error=…`), so the lax URL let a
+  // form also redirects here (with `?error=…`), so the lax URL let a
   // silently-refused FIRE config through and the failure surfaced 30 lines later
   // as a goal with no FIRE horizon.
   await expect(page).toHaveURL(/[?&]ok=fire_saved/);
 
+  // ── Editas aquí, ves ahí (#1450): el número FIRE se mueve al teclear, sin
+  //    guardar y sin recargar. 2.000 €/mes al 4 % son 600.000 €; 3.000, 900.000.
+  const fireNumber = page
+    .getByRole("region", { name: "FIRE" })
+    .locator(".fireMetric", { hasText: "Número FIRE" });
+  await expect(fireNumber).toContainText("600.000");
+  await fireSettings.getByLabel(/^Gasto mensual/).fill("3000");
+  await expect(fireNumber).toContainText("900.000");
+  // Y lo dice: unas cifras previsualizadas que no se declaran se leen como firmes.
+  await expect(fireSettings.getByText(/Aún no se han guardado/)).toBeVisible();
+  // La URL no ha cambiado: no ha habido navegación ni guardado.
+  await expect(page).toHaveURL(/[?&]ok=fire_saved/);
+  // Deshacer el borrador: lo que sigue cuenta con los 2.000 € guardados.
+  await fireSettings.getByLabel(/^Gasto mensual/).fill("2000");
+  await expect(fireNumber).toContainText("600.000");
+
   const checkGoalName = "Fondo e2e fireDelay";
-  await page.goto("/objetivos");
   await page.getByLabel("Nombre").last().fill(checkGoalName);
   await page.getByLabel("Importe objetivo (EUR)").last().fill("5000");
   await page.getByLabel("Fecha límite").last().fill("2030-01-01");
@@ -134,12 +156,13 @@ test("/objetivos: create, edit, delete a goal — CRUD lives here, not in /ajust
   await delayCard.getByRole("button", { name: "Confirmar borrado" }).click();
   await expect(page).toHaveURL(/\/objetivos/);
 
-  // ── 6. /ajustes must NOT have the goals CRUD section ─────────────────────
+  // ── 6. /ajustes no habla de objetivos ni de FIRE ─────────────────────────
+  // Ni el CRUD (que se mudó en #511) ni sus punteros: una mudanza no deja un
+  // cartel donde estaba el mueble.
   await page.goto("/ajustes");
-  // "Crear objetivo" button must be absent from /ajustes (goals CRUD moved to /objetivos)
   await expect(page.getByRole("button", { name: "Crear objetivo" })).not.toBeVisible();
-  // But there is a link pointing to /objetivos
-  await expect(page.getByRole("link", { name: /Gestionar objetivos/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Gestionar objetivos/ })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Tus supuestos" })).toHaveCount(0);
 });
 
 test("/objetivos: create form — validation failure preserves fields and anchors to form", async ({

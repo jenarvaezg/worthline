@@ -15,6 +15,7 @@ import {
   resolveScopeMemberIds,
   scopeAgeSource,
   scopePassiveIncome,
+  suggestMonthlySavingsCapacity,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
 import Link from "next/link";
@@ -32,7 +33,8 @@ import {
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
-import { FirePanel } from "./fire-panel";
+import { FireCockpit } from "./fire-cockpit";
+import { fireConfigFieldValues } from "./fire-config-form-view";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import ObjetivosSkeleton from "./objetivos-skeleton";
 
@@ -99,7 +101,7 @@ function PassiveIncomePanel({
             {lens.count} {lens.count === 1 ? "cobro" : "cobros"}
             {lens.annualSpendingMinor != null
               ? ` · cobertura sobre ${fmt(lens.annualSpendingMinor)}/año`
-              : " · añade tu gasto en Ajustes para ver la cobertura"}
+              : " · añade tu gasto en tus supuestos para ver la cobertura"}
             . Suma cobros reales del periodo, sin anualizar los parciales.
           </p>
         </>
@@ -226,6 +228,22 @@ export async function ObjetivosContent({
   const ageSource = selectedScope
     ? (scopeAgeSource(workspace, selectedScope.id, today) ?? null)
     : null;
+
+  // Los supuestos se editan aquí (#1450), así que esta página carga lo que el
+  // formulario necesita y /ajustes deja de hacerlo: la sugerencia de ahorro por
+  // histórico (#425) se saca de las operaciones que ya están leídas arriba.
+  const savingsSuggestion = suggestMonthlySavingsCapacity(contributionOperations);
+  const seededFromPlan = fireScopeConfig?.monthlySavingsCapacitySeededFromPlan === true;
+  // El borrador inicial de la isla sale de los MISMOS valores que precarga el
+  // formulario: si divergieran, la pantalla nacería creyendo que hay cambios sin
+  // guardar (o al revés, tapando los que hay).
+  const savedFieldValues = fireConfigFieldValues(fireScopeConfig);
+  const savedDraft = {
+    monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
+    monthlySpending: savedFieldValues.monthlySpending ?? "",
+    safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
+    targetRetirementAge: savedFieldValues.targetRetirementAge,
+  };
 
   // Monthly allocation view (#557): the plan's capital split for a window of
   // months, every month server-rendered once; the island toggles client-side.
@@ -384,17 +402,29 @@ export async function ObjetivosContent({
         </p>
       ) : null}
 
-      {/* ── FIRE star (#1426: cada cifra derivada dice de dónde sale) ── */}
-      <FirePanel
+      {/* ── Cockpit FIRE: los supuestos a la izquierda, sus consecuencias a la
+          derecha (#1450). Editas aquí, ves ahí — antes eran dos pantallas, y
+          ahora las cifras se mueven mientras se teclea. Todo lo que la isla
+          recibe está calculado en el servidor: la primera pintura es la RSC
+          auditable de #1426, y el cliente solo re-hace la aritmética de los
+          supuestos cuando el usuario cambia uno. ── */}
+      <FireCockpit
         achievement={achievement}
         ageSource={ageSource}
         coastTickFraction={coastTickFraction}
+        config={fireScopeConfig}
         currency={currency}
+        currentUrl={currentUrl}
+        errorMessage={formError?.formId === "fire" ? formError.message : null}
         fireLevelRail={fireLevelRail}
         fireProjection={fireProjection}
         fireResult={fireResult}
         privacyMode={privacyMode}
+        savedDraft={savedDraft}
         savingsCoherence={savingsCoherence}
+        savingsSuggestion={savingsSuggestion}
+        scopeId={selectedScope?.id ?? null}
+        seededFromPlan={seededFromPlan}
       />
 
       {monthlyAllocations ? (

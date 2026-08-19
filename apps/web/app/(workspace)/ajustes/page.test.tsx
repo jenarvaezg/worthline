@@ -97,79 +97,54 @@ describe("ajustes page data loading (#636)", () => {
   });
 });
 
-describe("la edad del FIRE ya no se teclea (#1415)", () => {
-  test("el panel FIRE no ofrece campo de edad y el perfil pide mes de nacimiento", async () => {
+describe("la configuración FIRE se mudó a /objetivos (#1450)", () => {
+  test("no queda formulario de supuestos aquí: una sola fuente, no dos", async () => {
     const html = renderToStaticMarkup(
       await AjustesContent({ searchParams: Promise.resolve({}) }),
     );
 
-    expect(html).not.toContain('name="currentAge"');
-    expect(html).not.toContain("Edad actual");
+    expect(html).not.toContain("Configuración FIRE");
+    for (const gone of [
+      'name="monthlySpending"',
+      'name="safeWithdrawalRate"',
+      'name="monthlySavingsCapacity"',
+      'name="targetRetirementAge"',
+      'name="expectedRealReturn"',
+      'name="leanMultiplier"',
+      'name="baristaIncome"',
+    ]) {
+      expect(html).not.toContain(gone);
+    }
+  });
+
+  test("ni cicatriz: aquí no queda ni la palabra FIRE", async () => {
+    // Una mudanza no deja un aviso donde estaba el mueble. Los supuestos viven en
+    // /objetivos y esta pantalla no vuelve a hablar de ellos.
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).not.toContain("FIRE");
+    expect(html).not.toContain("supuestos");
+  });
+
+  test("el año de nacimiento SÍ se queda: es del miembro, no del FIRE (#1415)", async () => {
+    const html = renderToStaticMarkup(
+      await AjustesContent({ searchParams: Promise.resolve({}) }),
+    );
+
     expect(html).toContain('name="birthMonth"');
     expect(html).toContain("Mes de nacimiento");
-    // La edad objetivo sí sigue siendo una elección del usuario.
-    expect(html).toContain('name="targetRetirementAge"');
+    expect(html).not.toContain('name="currentAge"');
   });
 
-  test("sin fecha de nacimiento avisa de que el coast se queda fuera", async () => {
-    // El miembro del mock no tiene año de nacimiento: sin él no hay edad, y sin
-    // edad calculateFire se salta el bloque de coast sin decir nada.
-    const html = renderToStaticMarkup(
-      await AjustesContent({ searchParams: Promise.resolve({}) }),
-    );
+  test("y con el formulario se va su lectura de operaciones", async () => {
+    // La sugerencia de ahorro por histórico (#425) leía las operaciones de cada
+    // holding de inversión para pintar un placeholder: sin formulario, esta
+    // página deja de pagar ese recorrido.
+    await AjustesContent({ searchParams: Promise.resolve({}) });
 
-    expect(html).toContain("Sin fecha de nacimiento no hay edad actual");
-  });
-
-  test("una edad heredada de la configuración vieja se declara congelada", async () => {
-    calls.readFireConfig.mockResolvedValueOnce({
-      household: {
-        monthlySpendingMinor: 200_000,
-        safeWithdrawalRate: 0.04,
-        currentAge: 48,
-        excludedAssetIds: [],
-      },
-    });
-
-    const html = renderToStaticMarkup(
-      await AjustesContent({ searchParams: Promise.resolve({}) }),
-    );
-
-    expect(html).toContain("(48)");
-    expect(html).toContain("no se actualiza sola");
-  });
-});
-
-describe("el ahorro del FIRE es el escalar declarado (#1416)", () => {
-  test("el campo dice que es la única cifra que la proyección usa", async () => {
-    const html = renderToStaticMarkup(
-      await AjustesContent({ searchParams: Promise.resolve({}) }),
-    );
-
-    expect(html).toContain("Es la única cifra de ahorro que usa la proyección FIRE");
-    // Sin sello de sembrado no hay banda: la nota de «revísalo» no es permanente.
-    expect(html).not.toContain("Hemos puesto este ahorro mensual");
-  });
-
-  test("una capacidad sembrada por la migración se declara y pide revisión", async () => {
-    // La v56 escribió el total del plan porque este scope proyectaba eso y no tenía
-    // escalar. Una cifra que el usuario no ha teclado no puede aparecer sin decirlo.
-    calls.readFireConfig.mockResolvedValueOnce({
-      household: {
-        monthlySpendingMinor: 200_000,
-        safeWithdrawalRate: 0.04,
-        monthlySavingsCapacityMinor: 10_000,
-        monthlySavingsCapacitySeededFromPlan: true,
-        excludedAssetIds: [],
-      },
-    });
-
-    const html = renderToStaticMarkup(
-      await AjustesContent({ searchParams: Promise.resolve({}) }),
-    );
-
-    expect(html).toContain("Hemos puesto este ahorro mensual con el total de tu plan");
-    expect(html).toContain("Revísalo");
+    expect(calls.readOperations).not.toHaveBeenCalled();
   });
 });
 

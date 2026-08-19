@@ -426,12 +426,13 @@ describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
     // 2.000 €/mes × 12 ÷ 3,5 % — the arithmetic that was nowhere on screen.
     const formula = html.slice(html.indexOf('<p class="fireFormula">'));
     expect(formula.slice(0, formula.indexOf("</p>"))).toContain(
-      `${euros(24_000_00)}/año de gasto</a> ÷ <a href="/ajustes">3,5 % de retirada</a> = <strong>${euros(
+      `${euros(24_000_00)}/año de gasto</a> ÷ <a href="#supuestos">3,5 % de retirada</a> = <strong>${euros(
         685_714_29,
       )}</strong>`,
     );
-    // Both inputs are the user's own, so they link to where they are edited.
-    expect(formula).toContain('<a href="/ajustes">');
+    // Both inputs are the user's own, so they link to where they are edited —
+    // which since #1450 is the assumptions form on this same screen.
+    expect(formula).toContain('<a href="#supuestos">');
   });
 
   test("gives the funded percentage a noun and the fraction behind it", async () => {
@@ -797,7 +798,7 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     expect(html).not.toContain("Alquiler declarado en la rentabilidad");
     // A manual rate has no weighting to show, so the fold says where it came from
     // and the tier table stays away (it would explain a rate nothing used).
-    expect(assumptionsFold(html)).toContain("fijada a mano en Ajustes");
+    expect(assumptionsFold(html)).toContain("fijada a mano en tus supuestos");
     expect(html).not.toContain("fireMixTable");
   });
 
@@ -842,5 +843,117 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
 
     expect(html).toContain("no está vigente hoy");
     expect(assumptionsFold(html)).toContain("<strong>3,0 %</strong>");
+  });
+});
+
+describe("los supuestos FIRE se editan donde se ven (#1450)", () => {
+  test("el formulario mudado vive aquí, entero y con su acción de guardado", async () => {
+    const html = await renderedHtml();
+
+    expect(html).toContain("Tus supuestos");
+    for (const field of [
+      'name="monthlySpending"',
+      'name="safeWithdrawalRate"',
+      'name="monthlySavingsCapacity"',
+      'name="targetRetirementAge"',
+    ]) {
+      expect(html).toContain(field);
+    }
+    expect(html).toContain("Guardar supuestos");
+    // El scope viaja con el formulario: la config es por ámbito.
+    expect(html).toContain('name="scopeId"');
+  });
+
+  test("los supuestos finos viajan también: guardar no puede borrarlos", async () => {
+    // El parser reconstruye la config entera desde el formulario, así que un campo
+    // que no se pinta se pierde en el siguiente guardado.
+    const html = await renderedHtml();
+
+    for (const field of [
+      'name="expectedRealReturn"',
+      'name="tierReturn_cash"',
+      'name="tierReturn_market"',
+      'name="tierReturn_term-locked"',
+      'name="tierReturn_illiquid"',
+      'name="leanMultiplier"',
+      'name="fatMultiplier"',
+      'name="baristaIncome"',
+    ]) {
+      expect(html).toContain(field);
+    }
+  });
+
+  test("cada campo editable dice qué mueve, no qué es", async () => {
+    const html = await renderedHtml();
+
+    expect(html).toContain("Define tu número FIRE: gasto anual ÷ tasa de retirada");
+    expect(html).toContain("Más baja = más prudente = número FIRE más alto");
+    expect(html).toContain("marca la velocidad a la que llegas, no el objetivo");
+    expect(html).toContain("Fija el Coast");
+  });
+
+  test("la edad y el retorno se leen con su procedencia, no se teclean", async () => {
+    const html = await renderedHtml();
+
+    expect(html).not.toContain('name="currentAge"');
+    expect(html).toContain("Edad actual");
+    // El miembro del mock no tiene año de nacimiento: sin él no hay edad, y sin
+    // edad calculateFire se salta el bloque de coast sin decir nada.
+    expect(html).toContain("Sin fecha de nacimiento no hay edad actual");
+    // La config del mock fija el retorno a mano, y la fila lo declara.
+    expect(html).toContain("5,0 % (fijado a mano)");
+  });
+
+  test("una edad heredada de la configuración vieja se declara congelada", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        currentAge: 48,
+        excludedAssetIds: [],
+      },
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("48 años");
+    expect(html).toContain("no se actualiza sola");
+  });
+
+  test("el ahorro sembrado por la migración sigue pidiendo revisión (#1416)", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        monthlySavingsCapacityMinor: 10_000,
+        monthlySavingsCapacitySeededFromPlan: true,
+        excludedAssetIds: [],
+      },
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Hemos puesto este ahorro mensual con el total de tu plan");
+    expect(html).toContain("Es la única cifra de ahorro que usa la proyección FIRE");
+  });
+
+  test("ya no manda a Ajustes a configurar: los enlaces apuntan al formulario de al lado", async () => {
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("Configurar FIRE → Ajustes");
+    expect(html).not.toContain("Los supuestos de tu FIRE");
+    expect(html).toContain('href="#supuestos"');
+    expect(html).toContain('id="supuestos"');
+  });
+
+  test("sin config el vacío pide rellenar aquí, no viajar a otra pantalla", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({});
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Rellena tus supuestos aquí al lado");
+    expect(html).toContain("Rellenar mis supuestos");
+    // Y el formulario está presente para poder hacerlo.
+    expect(html).toContain('name="monthlySpending"');
   });
 });

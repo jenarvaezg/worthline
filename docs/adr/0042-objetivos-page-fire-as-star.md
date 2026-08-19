@@ -57,6 +57,28 @@ This introduces `goalFireDelay` as the 5th consumer of the reservation path (aft
 - `FireProjectionCard` is reused without forking; the trajectory SVG renders taller on `/objetivos` via a single CSS override (`.objetivosHeroRight .fireTrajectory { height: 150px }`), not a prop.
 - **Drift watch**: `totalGoalReservationMinor` is now consumed in 4 places (dashboard, MCP, home glance, objetivos). Any change to the reservation rule must update all four. The "+X meses" S4 implementation adds a 5th.
 
+## Amendment (#1450): the FIRE assumptions move to /objetivos too
+
+This ADR split the FIRE surface by kind — `/objetivos` got the output (projection,
+scenarios, levels), `/ajustes` kept the **inputs** (monthly spending, withdrawal
+rate, return, ages). In use that split made the user edit an assumption on one
+screen and read its consequence on another, with no way to see one move the other.
+The prototyping session of 18/8 (blueprint in #1426) settled it: the assumptions
+belong beside the figures they govern.
+
+So the form **moved** — a move and never a copy, because two synchronized forms
+would be two sources of truth for one `FireScopeConfig`. `/objetivos` renders it as
+the cockpit's left panel («Tus supuestos»), each editable field carrying one line
+saying what it MOVES, and the two figures that are not typed — the derived age
+(ADR 0073) and the real return — as read-only rows with their provenance. The
+Server Action moved with it (`objetivos/fire-config-actions.ts`), so the save lands
+back on the figures it just changed.
+
+Nothing FIRE stays in `/ajustes` — not the section, not a pointer, not a notice: a
+move that leaves a sign where the furniture used to be is still two places to look.
+What stays there is what was never FIRE's: the member's birth date, which is the
+member's (ADR 0073), and the goals CRUD pointer this ADR already placed.
+
 ## N3: Category-weighted FIRE real return (issue #515)
 
 ### Model

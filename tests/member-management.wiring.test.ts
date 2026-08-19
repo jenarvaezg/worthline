@@ -1,6 +1,7 @@
 /**
- * Wiring suite: member management + FIRE config + warning override retract actions
- * (ajustes/actions.ts).
+ * Wiring suite: member management + warning override retract actions
+ * (ajustes/actions.ts). The FIRE config action moved to /objetivos with its form
+ * (#1450) and has its own suite.
  *
  * Each action is driven through its real FormData interface against an isolated
  * in-memory store.  next/cache is stubbed; NEXT_REDIRECT digest is parsed.
@@ -15,7 +16,6 @@ import {
   disableMemberAction,
   reactivateMemberAction,
   retractWarningOverrideAction,
-  saveFireConfigAction,
   updateMemberAction,
 } from "@web/ajustes/actions";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
@@ -172,101 +172,6 @@ describe("reactivateMemberAction wiring", () => {
     );
 
     expect(url).toContain("error=");
-  });
-});
-
-// ============================================================= saveFireConfig
-
-describe("saveFireConfigAction wiring", () => {
-  test("happy path: saves FIRE config and redirects with fire_saved", async () => {
-    await setupStore();
-
-    const url = await catchRedirect(() =>
-      saveFireConfigAction(
-        fd(
-          {
-            scopeId: "household",
-            monthlySpending: "2000",
-            safeWithdrawalRate: "4",
-            expectedRealReturn: "5",
-            targetRetirementAge: "55",
-          },
-          "/ajustes",
-        ),
-        store,
-      ),
-    );
-
-    expect(url).toContain("ok=fire_saved");
-    const configs = await store.readFireConfig("2026-08-18");
-    expect(configs["household"]).toBeDefined();
-    expect(configs["household"]!.monthlySpendingMinor).toBe(200_000);
-  });
-
-  test("zero monthly spending: error redirect", async () => {
-    await setupStore();
-
-    const url = await catchRedirect(() =>
-      saveFireConfigAction(
-        fd(
-          {
-            monthlySpending: "0",
-            safeWithdrawalRate: "4",
-            expectedRealReturn: "5",
-          },
-          "/ajustes",
-        ),
-        store,
-      ),
-    );
-
-    expect(url).toContain("error=");
-    // URLSearchParams encodes spaces as "+", which decodeURIComponent keeps.
-    expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/gasto mensual/i);
-  });
-
-  test("invalid withdrawal rate: error redirect", async () => {
-    await setupStore();
-
-    const url = await catchRedirect(() =>
-      saveFireConfigAction(
-        fd(
-          {
-            monthlySpending: "2000",
-            safeWithdrawalRate: "0",
-            expectedRealReturn: "5",
-          },
-          "/ajustes",
-        ),
-        store,
-      ),
-    );
-
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url)).toMatch(/tasa/i);
-  });
-
-  test("invalid scope id: error redirect and no orphan FIRE config", async () => {
-    await setupStore();
-
-    const url = await catchRedirect(() =>
-      saveFireConfigAction(
-        fd(
-          {
-            scopeId: "ghost_scope",
-            monthlySpending: "2000",
-            safeWithdrawalRate: "4",
-            expectedRealReturn: "5",
-          },
-          "/ajustes",
-        ),
-        store,
-      ),
-    );
-
-    expect(url).toContain("error=");
-    expect(decodeURIComponent(url.replace(/\+/g, " "))).toMatch(/scope/i);
-    expect((await store.readFireConfig("2026-08-18")).ghost_scope).toBeUndefined();
   });
 });
 
