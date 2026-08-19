@@ -2850,6 +2850,14 @@ code {
   color: var(--gold);
 }
 
+/* Las pistas de cada campo son texto de lectura, no etiqueta: heredaban el peso
+   600 de `.stackForm label` y el panel entero se leía en negrita (#1450). */
+.fireConfigForm label small {
+  font-size: 0.74rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
 /* Las dos cifras que se leen en vez de teclearse (#1415, #1448). */
 .fireConfigReadouts {
   border-top: 1px solid var(--hairline);
