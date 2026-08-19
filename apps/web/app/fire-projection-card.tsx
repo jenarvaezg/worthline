@@ -46,9 +46,10 @@ export default function FireProjectionCard({
   const barW = Math.max(2, slot * 0.6);
   const yOf = (value: number) => padTop + plotH - (Math.min(value, maxV) / maxV) * plotH;
   // The dashed line was unlabelled: a reader could not tell whether it was the FIRE
-  // number, a scenario or decoration (#1426). Kept clear of the top edge so the
-  // label never clips when the target sits above the whole trajectory.
-  const targetLabelY = Math.max(padTop + 9, yOf(target) - 4);
+  // number, a scenario or decoration (#1426). It sits at the LEFT, where the bars are
+  // shortest, and flips below the line when the target leaves no room above it.
+  const targetY = yOf(target);
+  const targetLabelY = targetY - 4 < padTop + 8 ? targetY + 11 : targetY - 4;
   const targetLabel = `Objetivo FIRE · ${formatMoney(target)}`;
 
   return (
