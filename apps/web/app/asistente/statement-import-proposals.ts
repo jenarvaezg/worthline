@@ -23,6 +23,9 @@ import {
   convertStatementRows,
 } from "@worthline/pricing";
 
+import type { ExtractedBrokerTransactionsDocument } from "./attachment-extraction-contract";
+import { statementFromTransactionsDocument } from "./statement-from-transactions-document";
+
 export interface StatementImportProposalDraft {
   proposalId: string;
 }
@@ -171,21 +174,96 @@ export async function buildStatementImportProposal(
   const read = readStatementFromText(parsed.value.rawText, parsed.value.broker);
   if (!read.ok) return { ok: false, error: read.message };
 
+  return assembleStatementImportProposal(
+    store,
+    {
+      documentName: parsed.value.documentName ?? `${parsed.value.broker}.csv`,
+      sha256: createHash("sha256").update(parsed.value.rawText).digest("hex"),
+      statement: read.value,
+      ...(parsed.value.proposalId === undefined
+        ? {}
+        : { proposalId: parsed.value.proposalId }),
+    },
+    resolver,
+    fxOptions,
+  );
+}
+
+/**
+ * Prepare the same proposal out of a transactions document worthline READ (#1487).
+ *
+ * The difference from the sibling above is only where the rows come from, and it is the
+ * whole point: there the model retypes a file and the app parses what it typed, here the
+ * rows are the deterministic reading's own and the model contributed nothing but the ask.
+ * Everything downstream — the euro conversion at each execution date (#1401), the ISIN
+ * routing, the preview, the all-or-nothing merge — is shared, because it is the same
+ * import.
+ *
+ * The document's reference is a hash of the ROWS rather than of a raw text there is none
+ * of: it is what identifies this reading if the same file is brought twice.
+ */
+export async function buildStatementImportProposalFromDocument(
+  store: StatementImportProposalStore,
+  input: {
+    document: ExtractedBrokerTransactionsDocument;
+    documentName?: string;
+    proposalId?: string;
+  },
+  resolver: IsinSymbolResolver = defaultIsinSymbolResolver,
+  fxOptions: ConvertCapturedOperationsOptions = {},
+): Promise<StatementImportProposalBuildResult> {
+  const read = statementFromTransactionsDocument(input.document);
+  if (!read.ok) return { ok: false, error: read.message };
+
+  const documentName = (input.documentName ?? "").trim();
+  return assembleStatementImportProposal(
+    store,
+    {
+      documentName:
+        documentName.length > 0 && documentName.length <= MAX_DOCUMENT_NAME_CHARS
+          ? documentName
+          : "transacciones-broker",
+      sha256: createHash("sha256")
+        .update(JSON.stringify(read.statement.rows))
+        .digest("hex"),
+      statement: read.statement,
+      ...(input.proposalId === undefined ? {} : { proposalId: input.proposalId }),
+    },
+    resolver,
+    fxOptions,
+  );
+}
+
+/**
+ * The half both lanes share: convert to euros, accumulate onto an existing draft,
+ * build the preview and persist the reading as the proposal's document.
+ */
+async function assembleStatementImportProposal(
+  store: StatementImportProposalStore,
+  input: {
+    statement: ParsedStatement;
+    documentName: string;
+    proposalId?: string;
+    sha256: string;
+  },
+  resolver: IsinSymbolResolver,
+  fxOptions: ConvertCapturedOperationsOptions,
+): Promise<StatementImportProposalBuildResult> {
   // #1401: a document that states its own currency is converted to euros HERE, at the
   // rate of each row's execution date, so the rows PERSISTED on the proposal — and
   // therefore the preview card, and whatever the confirm writes days later — are the
   // same euro figures. Dating the rate to the execution day is what makes the delay
   // harmless: applying the proposal next week cannot re-price the operation.
-  const converted = await convertStatementRows(read.value.rows, fxOptions);
+  const converted = await convertStatementRows(input.statement.rows, fxOptions);
   if (!converted.ok) {
     return { ok: false, error: mapDomainViolation(converted.violations[0]) };
   }
-  const statement: ParsedStatement = { ...read.value, rows: converted.value };
+  const statement: ParsedStatement = { ...input.statement, rows: converted.value };
 
-  const existing = parsed.value.proposalId
-    ? await store.assistantProposals.read(parsed.value.proposalId)
+  const existing = input.proposalId
+    ? await store.assistantProposals.read(input.proposalId)
     : null;
-  if (parsed.value.proposalId && !existing) {
+  if (input.proposalId && !existing) {
     return { ok: false, error: "La propuesta ya no existe." };
   }
   if (existing && existing.status !== "draft") {
@@ -222,11 +300,7 @@ export async function buildStatementImportProposal(
   const proposal =
     existing ?? (await store.assistantProposals.create({ kind: "statement_import" }));
   await store.assistantProposals.appendDocument(proposal.id, {
-    document: {
-      name: parsed.value.documentName ?? `${parsed.value.broker}.csv`,
-      provenance: "agent",
-      sha256: createHash("sha256").update(parsed.value.rawText).digest("hex"),
-    },
+    document: { name: input.documentName, provenance: "agent", sha256: input.sha256 },
     facts: statement.rows,
   });
 

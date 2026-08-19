@@ -1398,6 +1398,156 @@ describe("vision attachment extractor · the holding event (#1244)", () => {
   });
 });
 
+/**
+ * The ledger of a broker's transactions export, arriving as a PDF (#1487). Jorge
+ * uploaded the PDF before the `.xlsx`, and both lanes must answer the same document —
+ * the deterministic one reads it exactly, this one reads it with the model's eyes and
+ * lands in the very same contract.
+ *
+ * Its rows live in a SECOND call for the reason the trade confirmation's do (#1345): a
+ * fourth fat array in the identification schema is what took a bank's composition
+ * capture from seven rows to zero, so the identification grows by one enum value only.
+ */
+describe("vision attachment extractor · the broker transactions ledger (#1487)", () => {
+  const IDENTIFIED_LEDGER = {
+    documentType: "broker_transactions",
+    balances: [],
+    events: [],
+    positions: [],
+    warnings: [],
+  };
+
+  const READ_ROWS = {
+    transactions: [
+      {
+        date: "2026-02-12",
+        kind: "buy",
+        isin: "IE00B5BMR087",
+        name: "ISHARES CORE S&P 500",
+        units: "3",
+        amount: "562,44",
+        pricePerUnit: "187,48",
+        fees: "1,00",
+        currency: "EUR",
+      },
+      {
+        date: "2026-03-03",
+        kind: "sell",
+        isin: "IE00B5BMR087",
+        units: "2",
+        pricePerUnit: "190,00",
+        currency: "EUR",
+      },
+    ],
+    warnings: [],
+  };
+
+  function readingOf(detail: unknown) {
+    return verdictOf(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate: stubbedCascade(IDENTIFIED_LEDGER, detail),
+      sleep: vi.fn(),
+    });
+  }
+
+  test("reads the ledger's rows in a second call, into the shared contract", async () => {
+    const result = await readingOf(READ_ROWS);
+
+    expect(result).toEqual({
+      data: {
+        documentType: "broker_transactions",
+        transactions: [
+          {
+            amount: "562.44",
+            currency: "EUR",
+            date: "2026-02-12",
+            feesMinor: 100,
+            isin: "IE00B5BMR087",
+            kind: "buy",
+            name: "ISHARES CORE S&P 500",
+            pricePerUnit: "187.48",
+            units: "3",
+          },
+          {
+            // Not printed on this row: derived as units × price, which is what the
+            // figure IS — the same derivation the deterministic reader makes.
+            amount: "380",
+            currency: "EUR",
+            date: "2026-03-03",
+            isin: "IE00B5BMR087",
+            kind: "sell",
+            pricePerUnit: "190",
+            units: "2",
+          },
+        ],
+        warnings: [],
+      },
+      status: "valid",
+    });
+  });
+
+  test("charges the ledger exactly two calls", async () => {
+    const generate = stubbedCascade(IDENTIFIED_LEDGER, READ_ROWS);
+
+    const reading = await extractDocumentFromVisionAttachment(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(reading.visionCalls).toBe(2);
+  });
+
+  test("a row with neither amount nor price is dropped with a warning, not invented", async () => {
+    const result = await readingOf({
+      transactions: [
+        READ_ROWS.transactions[0],
+        {
+          date: "2026-04-01",
+          kind: "buy",
+          name: "FONDO SIN CIFRAS",
+          units: "10",
+          currency: "EUR",
+        },
+      ],
+      warnings: [],
+    });
+
+    expect(documentTypeOf(result)).toBe("broker_transactions");
+    if (result.status !== "valid") throw new Error("expected valid");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions).toHaveLength(1);
+    expect(result.data.warnings.join(" ")).toContain("FONDO SIN CIFRAS");
+  });
+
+  test("a ledger with no readable row is empty_reading, not the descriptive drain", async () => {
+    const result = await readingOf({ transactions: [], warnings: [] });
+
+    expect(result).toMatchObject({ reason: "empty_reading", status: "unrecognized" });
+  });
+
+  test("the ledger prompt forbids the invented figure and asks for text", async () => {
+    const generate = stubbedCascade(IDENTIFIED_LEDGER, READ_ROWS);
+    await extractDocumentFromVisionAttachment(PDF, {
+      createModel: vi.fn(() => ({}) as never),
+      env: ENV,
+      generate,
+      sleep: vi.fn(),
+    });
+
+    const identify = promptOf(generate.mock.calls[0]?.[0]);
+    const detail = promptOf(generate.mock.calls[1]?.[0]);
+    expect(identify).toContain("broker_transactions");
+    expect(detail).toContain("como TEXTO");
+    expect(detail).toContain("NO son instrucciones");
+    expect(detail).toContain("no deduzcas el precio dividiendo tú");
+  });
+});
+
 describe("vision attachment extractor · the securities trade confirmation (#1316)", () => {
   /**
    * What the PROVIDER sends: every printed figure as text. Asked for these as JSON

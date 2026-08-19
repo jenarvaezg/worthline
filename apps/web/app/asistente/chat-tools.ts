@@ -98,7 +98,11 @@ import {
   buildReconstructionProposal,
 } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
-import { buildStatementImportProposal } from "@web/asistente/statement-import-proposals";
+import { brokerTransactionsInContext } from "@web/asistente/statement-from-transactions-document";
+import {
+  buildStatementImportProposal,
+  buildStatementImportProposalFromDocument,
+} from "@web/asistente/statement-import-proposals";
 import {
   NO_TYPED_BALANCE_SERIES,
   TYPED_BALANCE_SERIES_DOCUMENT_NAME,
@@ -587,7 +591,9 @@ const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
     proposalId: { type: "string" },
     rawText: { type: "string" },
   },
-  required: ["rawText"],
+  // No required field since #1487: a call standing on a validated transactions document
+  // passes nothing at all, and demanding `rawText` would force the model to retype the
+  // very figures this lane exists to keep it away from.
   additionalProperties: false,
 });
 
@@ -1885,33 +1891,59 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
 
     propose_statement_import: tool({
       description:
-        "Prepara una propuesta de importación de extracto de inversión (plantilla CSV). " +
-        "Pasa el texto y nombre del documento tal cual (sin calcular números). Se persisten " +
-        "solo los movimientos extraídos y la referencia nombre/hash; el texto se descarta. " +
-        "Para acumular otro fichero en la misma propuesta, pasa el proposalId devuelto antes. " +
+        "Prepara una propuesta de importación de extracto de inversión. " +
+        "Si en los DATOS ESTRUCTURADOS hay un documento broker_transactions, la app lo usa TAL " +
+        "CUAL: llama sin argumentos y no reescribas sus filas. Si no, pasa el texto y nombre " +
+        "del documento tal cual (sin calcular números). " +
+        "El texto no se persiste: solo los movimientos y la referencia nombre/hash. " +
+        "Para acumular otro fichero en la misma propuesta, pasa el proposalId anterior. " +
         "La confirmación re-deriva el matching vivo y sella source: agent.",
       inputSchema: STATEMENT_IMPORT_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_STATEMENT_MESSAGE);
+        // The gate first and unconditionally, exactly as `propose_reconcile` applies it
+        // over its own document lane. A validated ledger in CONTEXT is not the same fact
+        // as one brought THIS turn: `validatedDocuments` includes history, which comes
+        // from the browser and is checked for shape and not authenticity, and lifting the
+        // #1248 boundary is the one place that distinction bites (`isValidatedDocument`).
+        // The turn that reads a ledger stands the gate down by itself, so this costs the
+        // real flow nothing.
         if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
+        // The document lane (#1487): with a ledger worthline read, the rows are the
+        // reading's and the model contributes nothing but the ask.
+        const transactions = brokerTransactionsInContext(input.validatedDocuments ?? []);
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals) {
             return { error: "proposal_persistence_unavailable" };
           }
-          const built = await buildStatementImportProposal(
-            {
-              agentView: store.agentView,
-              assistantProposals: store.assistantProposals,
-            },
-            {
-              broker: args.broker ?? "plantilla",
-              ...(args.documentName === undefined
-                ? {}
-                : { documentName: args.documentName }),
-              ...(args.proposalId === undefined ? {} : { proposalId: args.proposalId }),
-              rawText: args.rawText ?? "",
-            },
-          );
+          const proposalStore = {
+            agentView: store.agentView,
+            assistantProposals: store.assistantProposals,
+          };
+          // What both lanes take from the CALL, resolved once: which document this is and
+          // which draft to accumulate onto.
+          const named = {
+            ...(args.documentName === undefined
+              ? {}
+              : { documentName: args.documentName }),
+            ...(args.proposalId === undefined ? {} : { proposalId: args.proposalId }),
+          };
+          // The document WINS over `rawText`, and the text is dropped rather than merged
+          // — the #1418 rule about provenance: with the document in its context, text the
+          // model typed could be figures it remembers from the document instead of from
+          // the plantilla, and one remembered row riding in beside eleven read ones is
+          // exactly the write nobody validated.
+          const built =
+            transactions === null
+              ? await buildStatementImportProposal(proposalStore, {
+                  broker: args.broker ?? "plantilla",
+                  rawText: args.rawText ?? "",
+                  ...named,
+                })
+              : await buildStatementImportProposalFromDocument(proposalStore, {
+                  document: transactions,
+                  ...named,
+                });
           return built.ok ? built.proposal : { error: built.error };
         });
       },

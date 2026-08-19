@@ -98,6 +98,17 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * The prompt paid nothing: «enmienda en vez de reemitir» is a choice between two
  * sibling tools, so it lives in their descriptions (see `system-prompt.ts`).
+ *
+ * **NOT raised by #1487**, and that is the point worth recording. The broker
+ * transactions lane needed the model to know one thing it could not guess — that with a
+ * `broker_transactions` document on the table the call takes NO arguments — and the
+ * first draft of that sentence put the onboarding floor 145 characters over the ceiling.
+ * It was paid inside its own lane instead: the same two facts said shorter, plus 27
+ * characters recovered from `propose_statement_import`'s own older sentences («se
+ * persisten solo los movimientos extraídos…», «el proposalId devuelto antes») with their
+ * meaning intact, and the `required: ["rawText"]` the schema no longer has. The ranking's
+ * head is still `propose_holding` (2.543) and `propose_correction` (2.127), and the
+ * slimming slice they are owed is still owed.
  */
 
 describe("measureTurnFloor", () => {

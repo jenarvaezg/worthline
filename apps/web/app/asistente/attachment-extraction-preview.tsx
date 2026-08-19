@@ -1,14 +1,17 @@
+import { formatUnits } from "@worthline/domain";
 import Link from "next/link";
 
 import type { AttachmentPreviewCard } from "./attachment-chat";
 import type {
   DeclaredEffectKind,
   ExtractedBalanceSeriesDocument,
+  ExtractedBrokerTransactionsDocument,
   ExtractedHoldingEventDocument,
   ExtractedPositionsDocument,
   ExtractedPositionsMovementsDocument,
   HoldingEventKind,
   HoldingFidelity,
+  TransactionKind,
 } from "./attachment-extraction-contract";
 import { wizardPrefillHref } from "./attachment-wizard-prefill";
 import { formatIsoDayEs } from "./iso-day-es";
@@ -364,6 +367,79 @@ function PositionsMovementsPreview({
   );
 }
 
+const TRANSACTION_KIND_LABEL: Record<TransactionKind, string> = {
+  buy: "Compra",
+  sell: "Venta",
+};
+
+/**
+ * The ledger of a broker's transactions export (#1487).
+ *
+ * Its figures arrive as decimal strings, and each is rendered in the voice its own kind
+ * has: an amount at its currency's precision (money, like every other card), and the
+ * títulos through the app's units voice, six decimals — the four-decimal money formatter
+ * would show a crypto fill as «0».
+ */
+function BrokerTransactionsPreview({
+  data,
+}: {
+  data: ExtractedBrokerTransactionsDocument;
+}) {
+  const feesMinor = data.transactions.reduce(
+    (total, transaction) => total + (transaction.feesMinor ?? 0),
+    0,
+  );
+  const currencies = new Set(
+    data.transactions.map((transaction) => transaction.currency),
+  );
+  const feesCurrency = currencies.size === 1 ? [...currencies][0]! : null;
+  return (
+    <>
+      <div className="assistantAttachmentTableScroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Fecha</th>
+              <th scope="col">Operación</th>
+              <th scope="col">Producto</th>
+              <th scope="col">Títulos</th>
+              <th scope="col">Importe</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.transactions.map((transaction, index) => (
+              // Suffixed with the index like every sibling preview: two fills of ONE
+              // order share a date AND an «ID Orden», which is the real shape of a
+              // partially executed trade.
+              <tr key={`${transaction.date}-${transaction.orderId ?? ""}-${index}`}>
+                <th scope="row">
+                  {formatIsoDayEs(transaction.date)}
+                  {transaction.uncertain ? <em>Revisar lectura</em> : null}
+                </th>
+                <td>{TRANSACTION_KIND_LABEL[transaction.kind]}</td>
+                <td>{transaction.name ?? transaction.isin}</td>
+                {/* The app's units voice (six decimals), not the four-decimal money
+                    formatter above: a ledger of a crypto trade prints more than four. */}
+                <td>{formatUnits(transaction.units)}</td>
+                <td>{formatAmount(Number(transaction.amount), transaction.currency)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="assistantAttachmentBridgeHint">
+        {`Leídas ${data.transactions.length} operaciones. `}
+        {feesMinor > 0 && feesCurrency !== null
+          ? `Comisiones y costes: ${formatAmount(feesMinor / 100, feesCurrency)}. `
+          : ""}
+        La dirección de cada fila sale de la columna de operación o del signo del archivo,
+        y el precio por título del importe entre los títulos. Revísalo: nada se guarda
+        desde el chat.
+      </p>
+    </>
+  );
+}
+
 /**
  * The whole card for everything that is not a rendered document: a file name and one
  * honest sentence. It serves the three message-only verdicts AND the degraded payload
@@ -406,6 +482,8 @@ export default function AttachmentExtractionPreview({
         <BalanceSeriesPreview data={data} />
       ) : data.documentType === "holding_event" ? (
         <HoldingEventPreview data={data} />
+      ) : data.documentType === "broker_transactions" ? (
+        <BrokerTransactionsPreview data={data} />
       ) : (
         <PositionsMovementsPreview data={data} />
       )}

@@ -493,6 +493,91 @@ describe("createChatTools · propose_statement_import (#767)", () => {
       documents: [{ document: { name: "enero.csv" } }],
     });
   });
+
+  /**
+   * The document lane of #1487. Jorge's DEGIRO export is read deterministically, so the
+   * rows the proposal persists must be the READING's — the model relays nothing, and a
+   * `rawText` it typed anyway is dropped rather than merged (the #1418 provenance rule).
+   */
+  it("builds from a validated transactions document, ignoring text the model typed", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "sxr1",
+      isin: "IE00B5BMR087",
+      liquidityTier: "market",
+      name: "iShares Core S&P 500",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const ledger = extractedDocumentSchema.parse({
+      documentType: "broker_transactions",
+      transactions: [
+        {
+          amount: "562.44",
+          currency: "EUR",
+          date: "2026-02-12",
+          feesMinor: 100,
+          isin: "IE00B5BMR087",
+          kind: "buy",
+          name: "ISHARES CORE S&P 500",
+          pricePerUnit: "187.48",
+          units: "3",
+        },
+      ],
+      warnings: [],
+    });
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assistantProposals: store.assistantProposals,
+        }),
+      asOf: AS_OF,
+      validatedDocuments: [ledger],
+    });
+
+    const result = await tools["propose_statement_import"]?.execute?.(
+      { documentName: "Transactions.xlsx", rawText: "Fecha;Importe\n01/01/2026;99999" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      proposalType: "statement_import",
+      funds: [{ bucket: "matched", isin: "IE00B5BMR087" }],
+    });
+    const proposalId = result.draft.proposalId as string;
+    expect(await store.assistantProposals.read(proposalId)).toMatchObject({
+      documents: [
+        {
+          document: { name: "Transactions.xlsx" },
+          facts: [{ kind: "statement_operation", row: { units: "3", feesMinor: 100 } }],
+        },
+      ],
+    });
+  });
+
+  it("refuses without a document and without text, and says where to go", async () => {
+    const store = await createInMemoryStore();
+    const tools = createChatTools({
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assistantProposals: store.assistantProposals,
+        }),
+      asOf: AS_OF,
+    });
+
+    const result = await tools["propose_statement_import"]?.execute?.(
+      {},
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({ error: expect.any(String) });
+  });
 });
 
 describe("createChatTools · propose_reconcile (#1108, frontera de documento #1373)", () => {
