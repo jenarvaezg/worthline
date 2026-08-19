@@ -1,6 +1,7 @@
 import type {
   GoalPriority,
   IrrReason,
+  OperationKind,
   PayoutCadence,
   PriceFreshnessState,
   ReferenceDataUnavailableReason,
@@ -103,6 +104,22 @@ export interface AgentViewOperationSummary {
   grossBuyAmount: AgentViewMoney;
   grossSellAmount: AgentViewMoney;
   feesTotal: AgentViewMoney;
+  /**
+   * The traspaso legs, counted apart from the buys and sells (#1393). Absent when
+   * the holding has none, which is the common case — and the reason it is a nested
+   * object: a traspaso is neither a purchase nor a sale, so folding it into
+   * `unitsBought`/`unitsSold` would report capital that was moved as capital that
+   * was invested or cashed in.
+   */
+  transfers?: AgentViewOperationTransferSummary;
+}
+
+/** Units and gross amounts moved in and out of a holding by traspaso (#1393). */
+export interface AgentViewOperationTransferSummary {
+  unitsIn: string;
+  unitsOut: string;
+  grossInAmount: AgentViewMoney;
+  grossOutAmount: AgentViewMoney;
 }
 
 /**
@@ -1413,11 +1430,21 @@ export interface AgentViewOperation {
   object: "operation";
   /** Execution date, as `YYYY-MM-DD`. */
   date: string;
-  kind: "buy" | "sell";
+  /**
+   * Four kinds, not two (#1393): the halves of a traspaso are reported as what they
+   * are. A reader that saw `sell` on the outgoing half would count a realized gain
+   * the ledger deliberately does not have.
+   */
+  kind: OperationKind;
   units: string;
   pricePerUnit: string;
   grossAmount: AgentViewMoney;
   fees: AgentViewMoney;
+  /**
+   * The id shared by the two halves of one traspaso, present on both and on nothing
+   * else — what lets a reader pair an outgoing leg with the incoming one.
+   */
+  transferId?: string;
 }
 
 /** Cursor-paginated operations for an investment holding (PRD #328, #337). */

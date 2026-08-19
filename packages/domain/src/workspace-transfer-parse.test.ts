@@ -1485,3 +1485,73 @@ describe("parseWorkspaceExport — payouts referential integrity (PRD #652)", ()
     expect(result.ok && result.value.payoutSchedules[0]?.expensesMinor).toBe(25000);
   });
 });
+
+describe("parseWorkspaceExport — el traspaso y el apunte capturado viajan (#1393, #1401)", () => {
+  test("las dos mitades de un traspaso entran con su atadura y su coste heredado", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.operations = [
+          {
+            ...doc.operations[0]!,
+            id: "op_out",
+            kind: "transfer_out",
+            transferId: "trf_1",
+          },
+          {
+            ...doc.operations[0]!,
+            id: "op_in",
+            kind: "transfer_in",
+            transferCostMinor: 50_000,
+            transferId: "trf_1",
+          },
+        ];
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.operations.map((operation) => operation.kind)).toEqual([
+      "transfer_out",
+      "transfer_in",
+    ]);
+    expect(result.value.operations[0]?.transferId).toBe("trf_1");
+    expect(result.value.operations[1]?.transferCostMinor).toBe(50_000);
+  });
+
+  test("el apunte capturado sobrevive al documento, no se pierde al leerlo", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.operations[0] = {
+          ...doc.operations[0]!,
+          capture: {
+            currency: "USD",
+            eurPerUnit: 0.85,
+            feesMinor: 150,
+            pricePerUnit: "8.00",
+          },
+        };
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.operations[0]?.capture).toEqual({
+      currency: "USD",
+      eurPerUnit: 0.85,
+      feesMinor: 150,
+      pricePerUnit: "8.00",
+    });
+  });
+
+  test("una operación anotada por el asistente no tumba el documento entero", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.operations[0] = { ...doc.operations[0]!, source: "agent" };
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.operations[0]?.source).toBe("agent");
+  });
+});

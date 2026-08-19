@@ -2,7 +2,17 @@ import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { CurrencyCode, MoneyMinor } from "./money";
 
-export type OperationKind = "buy" | "sell";
+/**
+ * What an operation does to a position. Four kinds, not two: a **traspaso** — the
+ * Spanish fund-to-fund transfer that moves capital between products without a
+ * taxable event — is its own pair of kinds rather than a sell plus a buy (#1393).
+ *
+ * Why kinds and not a flag on `sell`: a `sell` carrying a `transferId` would make
+ * every fold that must NOT realize a gain remember to look at that column —
+ * opt-out semantics, fail-open. With their own kinds, TypeScript refuses to
+ * compile a fold that has not said what it does with them.
+ */
+export type OperationKind = "buy" | "sell" | "transfer_out" | "transfer_in";
 export type OperationSource = "manual" | "opening" | "statement" | "connected" | "agent";
 
 /**
@@ -48,6 +58,23 @@ export interface InvestmentOperation {
    * on a euro operation — see {@link OperationCapture}.
    */
   capture?: OperationCapture;
+  /**
+   * The id shared by the two halves of one traspaso, present on both and on nothing
+   * else (#1393). It is what lets a reader pair them; `batchId` cannot serve, since
+   * it groups a whole import and is not exclusive to the pair.
+   */
+  transferId?: string;
+  /**
+   * The acquisition cost the incoming units carry over from the origin, in minor
+   * units — present ONLY on a `transfer_in`.
+   *
+   * It is persisted on the row rather than recomputed by crossing over to the origin
+   * at fold time, because `derivePosition` folds the ledger of ONE asset and
+   * that purity is what makes it testable. The origin computes it once, when the pair
+   * is written; from then on the destination's cost basis is a fact of its own ledger.
+   * Same shape as the `capture` columns of #1401.
+   */
+  transferCostMinor?: number;
 }
 
 export interface CreateInvestmentOperationInput {
@@ -64,6 +91,10 @@ export interface CreateInvestmentOperationInput {
   source?: OperationSource;
   /** Set by `convertOperationToBaseCurrency`; never built by a caller (#1401). */
   capture?: OperationCapture;
+  /** The id tying this row to the other half of its traspaso (#1393). */
+  transferId?: string;
+  /** Inherited acquisition cost in minor units, on a `transfer_in` only (#1393). */
+  transferCostMinor?: number;
 }
 
 /** Derived state of a unit-based asset after folding its operations. */

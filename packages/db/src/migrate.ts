@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 58;
+export const SCHEMA_VERSION = 59;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1745,6 +1745,42 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       );`,
     );
     await writeSchemaVersion(client, 58);
+  }
+
+  if (version < 59) {
+    // #1393: `asset_operations.transfer_id` + `transfer_cost_minor` — the traspaso
+    // learns to exist in the ledger. Both nullable, and nothing is backfilled: a
+    // pre-#1393 row is a buy or a sell and genuinely knows nothing of a pair.
+    //
+    // `transfer_id` sits on BOTH halves and on nothing else, which is what makes it
+    // the atadura (`batch_id` groups a whole import, so it cannot say "these two are
+    // one move"). `transfer_cost_minor` is the inherited acquisition cost and rides
+    // only the `transfer_in`: the origin computes it when the pair is written, so
+    // `derivePosition` — which folds ONE asset's ledger — never has to cross over to
+    // another holding to learn what the incoming units cost.
+    //
+    // Additive ALTERs guarded by a column check (the v54 shape, which added the four
+    // capture columns to this same table): a fresh DB already has both from
+    // schema-sql, and a partial fixture may have no table at all.
+    try {
+      const columns = await client.execute("PRAGMA table_info(asset_operations)");
+      const present = new Set(columns.rows.map((row) => String(row.name)));
+
+      if (columns.rows.length > 0) {
+        for (const [name, definition] of [
+          ["transfer_id", "transfer_id TEXT"],
+          ["transfer_cost_minor", "transfer_cost_minor INTEGER"],
+        ] as const) {
+          if (!present.has(name)) {
+            await client.execute(`ALTER TABLE asset_operations ADD COLUMN ${definition}`);
+          }
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 59);
   }
 
   return { ranV18Backfill, ranV33Backfill };

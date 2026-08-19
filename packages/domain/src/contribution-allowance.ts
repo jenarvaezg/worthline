@@ -92,6 +92,10 @@ export function computeContributionAllowanceUsage(
 
   for (const operation of operations) {
     if (!destinations.has(operation.assetId)) continue;
+    // Buys only, so a sale never gives allowance back — and neither does the
+    // incoming half of a traspaso (#1393): moving a pension plan to another
+    // manager is not a contribution, and counting it would eat a whole year's
+    // ceiling on the day the capital merely changed hands.
     if (operation.kind !== "buy") continue;
     if (operation.executedAt.slice(0, 4) !== yearPrefix) continue;
     if (operation.currency !== currency) {

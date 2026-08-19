@@ -1,6 +1,6 @@
 import { daysBetween } from "./dates";
 import { multiplyToMinor } from "./decimal";
-import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
 import { compareInvestmentOperations } from "./positions";
@@ -168,18 +168,44 @@ export interface PortfolioTwrInput {
 /**
  * The operation ledger as signed, dated cashflows, oldest first: a buy is
  * −(units × price + fees), a sell is +(units × price − fees).
+ *
+ * A traspaso rides the very same signs (#1393): for the MEASURED holding it is a
+ * real flow — capital left this product on that day at that day's market value, and
+ * capital arrived at the other one. The IRR of a position must see it, or a fund
+ * transferred away a year in would show a return computed over a life it never had.
+ * At portfolio level the two halves are equal and opposite on the same date, so the
+ * merged stream cancels them and the portfolio figure never gets a step.
+ *
+ * What a traspaso does NOT do is realize P/L — that lives in `derivePosition`, not
+ * here. Cashflow yes, gain no: today `sell` conflates the two in one kind.
  */
 export function operationCashflows(
   operations: readonly InvestmentOperation[],
 ): DatedCashflow[] {
   return [...operations].sort(compareInvestmentOperations).map((operation) => {
     const gross = multiplyToMinor(operation.units, operation.pricePerUnit);
-    const amountMinor =
-      operation.kind === "buy"
-        ? -(gross + operation.feesMinor)
-        : gross - operation.feesMinor;
+    const amountMinor = isInflowKind(operation.kind)
+      ? gross - operation.feesMinor
+      : -(gross + operation.feesMinor);
     return { amountMinor, date: operation.executedAt.slice(0, 10) };
   });
+}
+
+/** Whether the kind moves money INTO the holder's pocket (a sell, or a traspaso out). */
+function isInflowKind(kind: OperationKind): boolean {
+  switch (kind) {
+    case "sell":
+    case "transfer_out":
+      return true;
+    case "buy":
+    case "transfer_in":
+      return false;
+    default: {
+      // A fifth kind must state its sign here before it compiles (#1393).
+      const unhandled: never = kind;
+      throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
+    }
+  }
 }
 
 export function operationTwrCashflows(

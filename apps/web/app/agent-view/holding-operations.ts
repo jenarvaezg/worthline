@@ -149,6 +149,7 @@ function toOperation(entry: SortedOperation, currency: string): AgentViewOperati
     kind: operation.kind,
     object: "operation",
     pricePerUnit: operation.pricePerUnit,
+    ...(operation.transferId === undefined ? {} : { transferId: operation.transferId }),
     units: operation.units,
   };
 }

@@ -325,6 +325,22 @@ export function operationCaptureColumns(capture: OperationCapture | undefined): 
   };
 }
 
+/**
+ * The two traspaso columns for a write (#1393), or two NULLs. Independent of each
+ * other, unlike the capture set: `transfer_id` rides both halves of the pair and
+ * `transfer_cost_minor` only the incoming one, so "id without cost" is the normal
+ * shape of a `transfer_out` rather than a half-written record.
+ */
+export function operationTransferColumns(operation: {
+  transferId?: string;
+  transferCostMinor?: number;
+}): { transferId: string | null; transferCostMinor: number | null } {
+  return {
+    transferCostMinor: operation.transferCostMinor ?? null,
+    transferId: operation.transferId ?? null,
+  };
+}
+
 export function toOperation(
   row: typeof assetOperations.$inferSelect,
 ): InvestmentOperation {
@@ -341,6 +357,10 @@ export function toOperation(
     ...(row.occurredAt === null ? {} : { occurredAt: row.occurredAt }),
     pricePerUnit: row.pricePerUnit,
     source: row.source,
+    ...(row.transferCostMinor === null
+      ? {}
+      : { transferCostMinor: row.transferCostMinor }),
+    ...(row.transferId === null ? {} : { transferId: row.transferId }),
     units: row.units,
   };
 }

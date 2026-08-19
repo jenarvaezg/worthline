@@ -438,3 +438,82 @@ describe("payouts in returns (#657)", () => {
     expect(irr.rate as number).toBeGreaterThan(0);
   });
 });
+
+describe("el traspaso en los retornos (#1393)", () => {
+  const transferOut = (units: string, price: string, at: string) =>
+    op("transfer_out", units, price, at, { transferId: "trf_1" });
+  const transferIn = (units: string, price: string, at: string, costMinor: number) =>
+    op("transfer_in", units, price, at, {
+      transferCostMinor: costMinor,
+      transferId: "trf_1",
+    });
+
+  test("el par se lee con los signos de venta y compra, a mercado del día", () => {
+    expect(operationCashflows([transferOut("5", "150", "2026-02-01")])).toEqual([
+      { amountMinor: 75_000, date: "2026-02-01" },
+    ]);
+    expect(operationCashflows([transferIn("5", "150", "2026-02-01", 50_000)])).toEqual([
+      { amountMinor: -75_000, date: "2026-02-01" },
+    ]);
+  });
+
+  test("el IRR del origen ve la salida: el traspaso es flujo real de la posición", () => {
+    const result = holdingIrr({
+      currency: "EUR",
+      // 1.000 € in, everything out a year later at 1.100 €: a 10 % money-weighted
+      // return, whether the exit was a sale or a traspaso.
+      marketValueMinor: 0,
+      operations: [
+        buy("10", "100", "2025-01-01"),
+        transferOut("10", "110", "2026-01-01"),
+      ],
+      valuationDate: "2026-01-01",
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.rate as number).toBeCloseTo(0.1, 4);
+  });
+
+  test("el IRR del destino arranca en el traspaso, no en una compra inventada", () => {
+    const result = holdingIrr({
+      currency: "EUR",
+      marketValueMinor: 121_000,
+      operations: [transferIn("10", "110", "2025-01-01", 100_000)],
+      valuationDate: "2026-01-01",
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.rate as number).toBeCloseTo(0.1, 4);
+  });
+
+  test("en la cartera el par se anula en su fecha: no hay escalón", () => {
+    const origin = { marketValueMinor: 0, operations: [] as InvestmentOperation[] };
+    const paired = portfolioIrr({
+      currency: "EUR",
+      holdings: [
+        {
+          ...origin,
+          operations: [
+            buy("10", "100", "2025-01-01"),
+            transferOut("10", "110", "2026-01-01"),
+          ],
+        },
+        {
+          marketValueMinor: 121_000,
+          operations: [transferIn("10", "110", "2026-01-01", 100_000)],
+        },
+      ],
+      valuationDate: "2027-01-01",
+    });
+    const untouched = portfolioIrr({
+      currency: "EUR",
+      holdings: [
+        { marketValueMinor: 121_000, operations: [buy("10", "100", "2025-01-01")] },
+      ],
+      valuationDate: "2027-01-01",
+    });
+
+    expect(paired.reason).toBeNull();
+    expect(paired.rate as number).toBeCloseTo(untouched.rate as number, 6);
+  });
+});

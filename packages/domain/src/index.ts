@@ -813,6 +813,7 @@ export {
   createInvestmentOperation,
   createInvestmentOperationSafe,
   derivePosition,
+  isTransferKind,
   latestOperationPrice,
   netUnitsByAsset,
   netUnitsFromOperations,

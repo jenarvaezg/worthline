@@ -103,14 +103,36 @@ function scopedNetOperationsInWindow(
   for (const operation of operations) {
     const date = operation.executedAt.slice(0, 10);
     if (!inWindow(date, windowStartExclusive, windowEndInclusive)) continue;
-    const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-    const signedMinor =
-      operation.kind === "buy"
-        ? grossMinor + operation.feesMinor
-        : -(grossMinor - operation.feesMinor);
-    netMinor += allocateByBps(signedMinor, shareBps);
+    netMinor += allocateByBps(signedOperationMinor(operation), shareBps);
   }
   return netMinor;
+}
+
+/**
+ * What one operation added to (+) or took out of (−) the holding's invested capital.
+ *
+ * A traspaso counts as the flow it is (#1393), NOT as zero: the origin's value drops
+ * on the day the units leave and the destination's rises, so a fold that ignored the
+ * pair would hand both differences to the market and print a loss and a gain that
+ * never happened. The two halves are equal and opposite on the same date, so any
+ * scope holding both nets to zero — which is exactly what a traspaso did to the
+ * user's wealth.
+ */
+function signedOperationMinor(operation: InvestmentOperation): number {
+  const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
+
+  switch (operation.kind) {
+    case "buy":
+    case "transfer_in":
+      return grossMinor + operation.feesMinor;
+    case "sell":
+    case "transfer_out":
+      return -(grossMinor - operation.feesMinor);
+    default: {
+      const unhandled: never = operation.kind;
+      throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
+    }
+  }
 }
 
 function scopedPayoutsInWindow(

@@ -191,10 +191,23 @@ const liabilitySchema = z.object({
   deletedAt: nonEmptyString.optional(),
 });
 
+/**
+ * The pre-conversion apunte (#1401). Absent on a euro operation; when present all
+ * four fields come together, which is what makes the conversion auditable after an
+ * export → import round-trip instead of silently re-derived.
+ */
+const operationCaptureSchema = z.object({
+  currency: nonEmptyString,
+  pricePerUnit: nonEmptyString,
+  feesMinor: z.number().int(),
+  eurPerUnit: z.number().positive(),
+});
+
 const operationSchema = z.object({
   id: nonEmptyString,
   assetId: nonEmptyString,
-  kind: z.enum(["buy", "sell"]),
+  /** The four kinds of the ledger, traspaso halves included (#1393). */
+  kind: z.enum(["buy", "sell", "transfer_out", "transfer_in"]),
   executedAt: nonEmptyString,
   occurredAt: nonEmptyString
     .refine(
@@ -209,7 +222,14 @@ const operationSchema = z.object({
   pricePerUnit: nonEmptyString,
   currency: nonEmptyString,
   feesMinor: z.number().int(),
-  source: z.enum(["manual", "opening", "statement", "connected"]).default("manual"),
+  source: z
+    .enum(["manual", "opening", "statement", "connected", "agent"])
+    .default("manual"),
+  capture: operationCaptureSchema.optional(),
+  /** Both halves of a traspaso carry it; nothing else does (#1393). */
+  transferId: nonEmptyString.optional(),
+  /** The inherited acquisition cost, on the `transfer_in` half only (#1393). */
+  transferCostMinor: z.number().int().nonnegative().optional(),
 });
 
 const warningOverrideSchema = z.object({
