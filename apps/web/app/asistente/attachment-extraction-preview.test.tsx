@@ -357,3 +357,59 @@ describe("AttachmentExtractionPreview", () => {
     expect(html).toContain('role="status"');
   });
 });
+
+describe("AttachmentExtractionPreview · the broker transactions ledger (#1487)", () => {
+  test("shows every trade, its direction, the costs and the reading's doubt", () => {
+    const html = renderToStaticMarkup(
+      <AttachmentExtractionPreview
+        card={{
+          kind: "parsed",
+          fileName: "Transactions.xlsx",
+          result: {
+            data: extractedDocumentSchema.parse({
+              documentType: "broker_transactions",
+              transactions: [
+                {
+                  amount: "562.44",
+                  currency: "EUR",
+                  date: "2026-02-12",
+                  feesMinor: 100,
+                  isin: "IE00B5BMR087",
+                  kind: "buy",
+                  name: "ISHARES CORE S&P 500",
+                  pricePerUnit: "187.48",
+                  units: "3",
+                },
+                {
+                  amount: "380",
+                  currency: "EUR",
+                  date: "2026-03-03",
+                  isin: "IE00B5BMR087",
+                  kind: "sell",
+                  pricePerUnit: "190",
+                  uncertain: true,
+                  units: "2",
+                },
+              ],
+              uncertain: true,
+              warnings: ["Fila 3 de la tabla: no es una compra ni una venta."],
+            }),
+            status: "valid",
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Lectura de Transactions.xlsx");
+    expect(html).toContain("ISHARES CORE S&amp;P 500");
+    expect(html).toContain("Compra");
+    expect(html).toContain("Venta");
+    // The row with no name of its own still says WHICH instrument it belongs to.
+    expect(html).toContain("IE00B5BMR087");
+    expect(html).toContain("Leídas 2 operaciones");
+    expect(html).toContain("Revisar lectura");
+    expect(html).toContain("Fila 3 de la tabla");
+    // The costs of both rows, summed and named: 1,00 € on the buy, none on the sell.
+    expect(html).toMatch(/Comisiones y costes: 1,00\s*€/);
+  });
+});

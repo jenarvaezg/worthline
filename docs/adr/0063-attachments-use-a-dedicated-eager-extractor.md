@@ -605,6 +605,81 @@ needed. The parser now validates shape only; positivity, calendar validity and f
 dates stay the per-row verdicts `validateRowBasics` already renders, and the preview shows
 every row with that one folded and its reason.
 
+## Amendment — the broker transactions ledger, read by a shared domain engine (#1487)
+
+The union gains a **fifth document**, `broker_transactions`: a broker's export of executed
+trades and nothing else — no positions table, because a transactions export does not carry
+one. That absence is the whole reason it exists. `positions_movements` requires the
+holdings table its movements hang off and demands a TEXTUAL operation column, so the most
+standard file in retail investing had no shape to land in: Jorge's DEGIRO
+`Transactions.xlsx` was refused by both lanes («no es una tabla de posiciones para
+importar» / «no reconozco aquí ningún documento que sepa extraer»), which then closed the
+unvalidated-evidence gate (#1248) for the rest of the conversation. The same inversion
+#1417 removed for the amortization schedule, one document further along.
+
+**In a transactions export the sign IS the operation.** DEGIRO prints `Número` +3 next to
+`Valor` −562,44 for a buy and both inverted for a sell, and no column anywhere says
+«compra». So direction is resolved for the TABLE, not per row — a convention belongs to a
+file — in this order: a textual operation column when one exists (it wins, always); else a
+units column that carries signs (positive is a buy); else a money column that carries them
+(negative is money out, so a buy); else nothing does, every row reads as a buy, and the
+card SAYS so while the statement travels with `directionResolved: false`.
+
+**The reader lives in the domain, and it is generic by contract, not by broker.** One
+piece — `readBrokerTransactionTable` — is shared by this lane and by the web statement gate
+(#1488), because a second alias table is a second answer to «what is this column» and the
+one that drifts is the one that mis-reads somebody's money. It is steered by the
+destination contract (a date, an instrument by ISIN or name, units, a price or an amount, a
+currency, costs, a direction) and never by a format: **a new broker is aliases plus a test
+with its fixture, never a branch of code.** DEGIRO is simply the first fixture.
+
+Explicitly rejected, and asked: letting the MODEL build the column mapping. The
+deterministic lane exists so an untrusted sheet never reaches a language model (#865), and
+the pool does not reproduce digits reliably (#1423). If the generic reader ever falls short
+on an exotic export, the acceptable v2 is a model proposing ONLY the column mapping — never
+values — with the deterministic engine re-parsing under it, visible in the preview.
+
+What the reader does that the sibling recognizers do not:
+
+- **Several fee columns are normal and all of them are money the user paid.** A real export
+  prints «Comisión AutoFX» beside «Costes de transacción y/o externos»; the fee family is
+  the one matched by prefix, because its real labels are sentences. A cost stated in
+  another currency than the trade is dropped with a warning, never converted at a rate
+  nobody printed.
+- **The currency often has no header at all**: an export puts a bare `EUR` cell in the
+  column to the right of each figure. So a money column takes its currency from that
+  header-less neighbour, then from a decoration in its own header («Valor EUR»), then from
+  an explicit `Divisa` column, and only then assumes EUR — with the same warning, and for
+  the same reason, as the balance series above.
+- **The gross amount is read, and derived only by definition**: an explicit gross column
+  first; else a net total with its own printed costs taken back out; else units × the
+  printed unit price. When a printed price disagrees with `amount ÷ units` by more than
+  1 %, the row is marked `uncertain` — that is the signature of the WRONG money column
+  having been read, which is the one mistake this reader must never make quietly.
+- **Dates accept `DD-MM-YYYY`** (and `dd/mm/yyyy`, `dd.mm.yyyy`, ISO). The assistant's own
+  `toIsoDate` was deliberately left alone: widening it would change what every other
+  deterministic reader accepts, which is a different decision from this ticket's.
+- Everything else is inherited on purpose — the header is searched for and its candidates
+  bounded, cells are read to 120 characters, the row bound counts TRADES and not sheet
+  height, and a row that is not a trade (a deposit, a dividend, a currency conversion) is
+  skipped with a warning instead of dead-ending the file.
+
+**Its destination is the statement import that already existed** (PRD #173, ADR 0055): the
+rows ARE `ParsedStatementRow`s, so the ISIN routing, the preview and the all-or-nothing
+merge were built. What `propose_statement_import` gained is a **document lane**, the
+sibling of #1373's and #1374's: with a validated ledger in context the rows come from the
+reading and the tool takes no arguments at all — a `rawText` the model typed anyway is
+DROPPED, never merged, for the provenance reason #1418 states. Two refusals are
+all-or-nothing (ADR 0010) and both route rather than block: a row with no ISIN (the planner
+silently drops one, so nine trades of eleven would import in silence) and a currency
+outside the capture vocabulary (#1401).
+
+**The vision lane learns the type too** — the two lanes must answer the same document, and
+the user uploaded the PDF first — and it learns it the way #1345 dictates: the
+identification schema grows by ONE enum value, and the ledger's rows are read in a second,
+narrower call. A fourth fat array beside `positions`, `balances` and `events` is exactly
+the shape that took a bank's composition capture from seven rows to zero.
+
 ## Consequences
 
 - Screenshot and spreadsheet implementations can evolve independently while callers

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   balanceSeriesDocumentSchema,
+  brokerTransactionsDocumentSchema,
   checkAttachmentLimits,
   datedBalanceSchema,
   extractedDocumentSchema,
@@ -970,5 +971,74 @@ describe("holding_event document", () => {
     }
     expect(result.data.event.amount).toBe(91.32);
     expect(result.data.event.declaredEffect?.kind).toBe("final_instalment_reduced");
+  });
+});
+
+/**
+ * The broker transactions ledger (#1487). Its magnitudes are DECIMAL STRINGS and not
+ * JSON numbers, so the contract's job here is to keep an exact reading exact.
+ */
+describe("brokerTransactionsDocumentSchema", () => {
+  const TRADE = {
+    amount: "562.44",
+    currency: "EUR",
+    date: "2026-02-12",
+    feesMinor: 100,
+    isin: "IE00B5BMR087",
+    kind: "buy",
+    name: "ISHARES CORE S&P 500",
+    pricePerUnit: "187.48",
+    units: "3",
+  };
+
+  test("accepts a ledger of trades and keeps its figures as written", () => {
+    const parsed = brokerTransactionsDocumentSchema.safeParse({
+      documentType: "broker_transactions",
+      transactions: [TRADE],
+      warnings: [],
+    });
+    if (!parsed.success) throw new Error("expected a valid ledger");
+    expect(parsed.data.transactions[0]?.units).toBe("3");
+    expect(parsed.data.transactions[0]?.amount).toBe("562.44");
+  });
+
+  test("keeps an eight-decimal quantity out of exponential notation", () => {
+    const parsed = brokerTransactionsDocumentSchema.safeParse({
+      documentType: "broker_transactions",
+      transactions: [{ ...TRADE, pricePerUnit: "56244000000", units: "0.00000001" }],
+      warnings: [],
+    });
+    if (!parsed.success) throw new Error("expected a valid ledger");
+    // `String(1e-8)` is «1e-8», which the schema refuses — so an already-canonical
+    // string must never be re-rendered through a float on its way in.
+    expect(parsed.data.transactions[0]?.units).toBe("0.00000001");
+  });
+
+  test("reads a Spanish figure and a JSON number into the same canonical string", () => {
+    const parsed = brokerTransactionsDocumentSchema.safeParse({
+      documentType: "broker_transactions",
+      transactions: [{ ...TRADE, amount: "1.234,56", units: 3 }],
+      warnings: [],
+    });
+    if (!parsed.success) throw new Error("expected a valid ledger");
+    expect(parsed.data.transactions[0]?.amount).toBe("1234.56");
+    expect(parsed.data.transactions[0]?.units).toBe("3");
+  });
+
+  test("refuses a signed or zero magnitude, and a row with no instrument key", () => {
+    const withoutKey = { ...TRADE, isin: undefined, name: undefined };
+    for (const transaction of [
+      { ...TRADE, units: "-3" },
+      { ...TRADE, amount: "0" },
+      withoutKey,
+    ]) {
+      expect(
+        brokerTransactionsDocumentSchema.safeParse({
+          documentType: "broker_transactions",
+          transactions: [transaction],
+          warnings: [],
+        }).success,
+      ).toBe(false);
+    }
   });
 });

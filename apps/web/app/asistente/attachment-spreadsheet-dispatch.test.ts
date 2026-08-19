@@ -33,6 +33,20 @@ describe("spreadsheet document dispatch", () => {
     expect(result.data.documentType).toBe("positions");
   });
 
+  test("recognizes a broker transactions ledger before the balance series (#1487)", () => {
+    const bytes = csvBytes([
+      "Fecha;Hora;Producto;ISIN;Número;Precio;;Valor local;;Total EUR;ID Orden",
+      "12-02-2026;09:04;ISHARES CORE S&P 500;IE00B5BMR087;3;187,48;EUR;-562,44;EUR;-562,44;aa11",
+    ]);
+    const result = extractSpreadsheetDocument(input(bytes, "Transactions.csv"));
+    expect(result.status).toBe("valid");
+    if (result.status !== "valid") throw new Error("expected valid");
+    expect(result.data.documentType).toBe("broker_transactions");
+    if (result.data.documentType !== "broker_transactions")
+      throw new Error("expected ledger");
+    expect(result.data.transactions).toHaveLength(1);
+  });
+
   test("falls through to the dated balance series of an amortization schedule", () => {
     const bytes = csvBytes([
       "Tabla de Amortización",

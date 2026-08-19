@@ -81,6 +81,12 @@ export {
   binanceValueAtDate,
   completedMonthEndDates,
 } from "./binance-history";
+export type {
+  BrokerTransactionRow,
+  BrokerTransactionTable,
+  TransactionDirectionSource,
+} from "./broker-transaction-table";
+export { readBrokerTransactionTable } from "./broker-transaction-table";
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";
 export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 export type { LiquidityTier } from "./classification";

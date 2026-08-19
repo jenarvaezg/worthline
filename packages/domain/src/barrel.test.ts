@@ -16,6 +16,8 @@ import * as domain from "./index";
  * presence to assert against.
  */
 const KEY_EXPORTS = [
+  // broker-transaction-table
+  "readBrokerTransactionTable",
   // money
   "money",
   "formatMoneyMinor",

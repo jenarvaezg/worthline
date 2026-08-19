@@ -1,3 +1,4 @@
+import { normalizeDecimal } from "@worthline/domain";
 import { z } from "zod";
 
 import { ATTACHMENT_TYPES_V1, MAX_ATTACHMENT_FILE_NAME_CHARS } from "./attachment-types";
@@ -300,6 +301,131 @@ export const positionsMovementsDocumentSchema = z
   })
   .strict();
 
+/** What a broker transactions row can be: the ledger prints trades, nothing else. */
+export const TRANSACTION_KINDS = ["buy", "sell"] as const;
+export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
+
+/** A positive magnitude with no sign, no separators and no exponent. */
+const CANONICAL_DECIMAL = /^\d+(?:\.\d+)?$/;
+
+/**
+ * A decimal rendered in plain notation, through the domain's own seam (big.js, whose
+ * exponent thresholds this app sets wide for exactly this). An unreadable value comes
+ * back untouched so the schema below refuses it, rather than being turned into `NaN`.
+ */
+function plainDecimal(value: string): string {
+  try {
+    return normalizeDecimal(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * A magnitude carried as a DECIMAL STRING and not as a JSON number (#1487).
+ *
+ * Two reasons, and the second is the load-bearing one. A trade's units may carry eight
+ * decimals (crypto) or six (participaciones) and its destination — the statement
+ * contract's `DecimalString` — is a string all the way to the write, so a round trip
+ * through a float is a precision loss with nothing to gain. And the vision lane must ask
+ * for every printed figure as text anyway: asked for a number, the pool pads zeros until
+ * it hits the token ceiling (#1316).
+ *
+ * A JSON number is still ACCEPTED and stringified, because a preview already sitting in
+ * a client history must keep revalidating, and because a model that answers `3` instead
+ * of `"3"` has said the right thing.
+ *
+ * Every conversion goes through {@link plainDecimal}, and a string that is ALREADY
+ * canonical is left untouched: `String(0.00000001)` is `"1e-8"`, which this pattern
+ * rightly refuses, so normalizing an exact reading «just in case» would be the one way
+ * this schema could destroy the precision it exists to protect.
+ */
+const positiveDecimalStringSchema = z.preprocess(
+  (value) => {
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? plainDecimal(String(value)) : value;
+    }
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (CANONICAL_DECIMAL.test(trimmed)) return trimmed;
+    const normalized = normalizeExtractedNumber(trimmed);
+    return normalized === null ? value : plainDecimal(String(normalized));
+  },
+  z
+    .string()
+    .trim()
+    .regex(CANONICAL_DECIMAL, "Debe ser un número positivo.")
+    .refine((value) => Number(value) > 0, "Debe ser mayor que cero."),
+);
+
+/**
+ * ONE executed trade read off a broker's transactions export (#1487).
+ *
+ * It is deliberately NOT {@link extractedMovementSchema}: a movement of a portfolio
+ * sheet hangs off a holdings table that states what each row is worth today, while this
+ * row is the ledger itself and carries what an operation needs to be WRITTEN — the
+ * gross amount, the unit price, the costs the broker charged, and the order reference
+ * that lets a re-import recognize the same trade (#1488).
+ *
+ * `isin` or `name` is required for the same reason a movement needs one: a trade that
+ * cannot be attributed to an instrument could never become an operation. The ISIN is the
+ * strong key and the one a real export prints (ADR 0055 routes by it).
+ */
+export const extractedTransactionSchema = z
+  .object({
+    date: isoDateSchema,
+    kind: z.enum(TRANSACTION_KINDS),
+    isin: isinSchema.optional(),
+    name: z.string().trim().min(1).max(240).optional(),
+    units: positiveDecimalStringSchema,
+    /** The gross amount of the trade, fees EXCLUDED, in `currency`. */
+    amount: positiveDecimalStringSchema,
+    /** `amount ÷ units` as the reader derived it — never re-derived downstream. */
+    pricePerUnit: positiveDecimalStringSchema,
+    currency: currencySchema,
+    /** Costs printed on the row, in `currency`'s minor units. Absent means none. */
+    feesMinor: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    /** The broker's order reference, when the export prints one. */
+    orderId: z.string().trim().min(1).max(120).optional(),
+    uncertain: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (transaction) => Boolean(transaction.isin) || Boolean(transaction.name),
+    "Una transacción necesita ISIN o nombre para vincularse a una inversión.",
+  );
+
+export type ExtractedTransaction = z.infer<typeof extractedTransactionSchema>;
+
+/**
+ * The broker transactions document (#1487): a ledger and nothing else — no positions
+ * table, because a transactions export does not carry one.
+ *
+ * That absence is the whole reason it exists as its own type. `positions_movements`
+ * requires the holdings table its movements hang off, so the most standard file a broker
+ * exports had no shape to land in: Jorge's DEGIRO `Transactions.xlsx` was refused by
+ * both lanes, which then closed the unvalidated-evidence gate (#1248) for the rest of
+ * the conversation — the same inversion #1417 had to remove for the amortization
+ * schedule, one document further along.
+ *
+ * Its destination is the statement import that already exists (PRD #173): these rows ARE
+ * the `ParsedStatementRow`s that gate consumes, so the card, the ISIN routing and the
+ * all-or-nothing merge were already built. What was missing was the reader.
+ */
+export const brokerTransactionsDocumentSchema = z
+  .object({
+    documentType: z.literal("broker_transactions"),
+    transactions: z
+      .array(extractedTransactionSchema)
+      .min(1)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows),
+    uncertain: z.boolean().optional(),
+    warnings: z
+      .array(nonEmptyStringSchema)
+      .max(ATTACHMENT_EXTRACTION_LIMITS_V1.maxWarnings),
+  })
+  .strict();
+
 /**
  * One dated balance read from a statement or amortization schedule.
  *
@@ -525,6 +651,7 @@ export const extractedDocumentSchema = z
     positionsDocumentSchema,
     balanceSeriesDocumentSchema,
     positionsMovementsDocumentSchema,
+    brokerTransactionsDocumentSchema,
     holdingEventDocumentSchema,
   ])
   .brand<"ValidatedExtractedDocument">();
@@ -535,6 +662,9 @@ export type ExtractedPositionsDocument = z.infer<typeof positionsDocumentSchema>
 export type ExtractedBalanceSeriesDocument = z.infer<typeof balanceSeriesDocumentSchema>;
 export type ExtractedPositionsMovementsDocument = z.infer<
   typeof positionsMovementsDocumentSchema
+>;
+export type ExtractedBrokerTransactionsDocument = z.infer<
+  typeof brokerTransactionsDocumentSchema
 >;
 export type ExtractedHoldingEventDocument = z.infer<typeof holdingEventDocumentSchema>;
 /** The ONE observed fact a holding-event document carries (#1244, #1316). */
