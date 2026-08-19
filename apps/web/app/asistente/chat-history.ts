@@ -15,25 +15,9 @@ import {
   FABRICATED_PROPOSAL_MODEL_NOTE,
   messagesWithFabricatedProposal,
 } from "./fabricated-proposal";
-import { isProposalToolPart, toolPartName } from "./tool-parts";
+import { isProposalToolPart, toolCallAnswered, toolPartName } from "./tool-parts";
 
 type Part = UIMessage["parts"][number];
-
-/**
- * The tool part states `convertToModelMessages` turns into a `tool-result`.
- * Every other state becomes a `tool-call` with no answer, and the SDK refuses the
- * whole prompt (`MissingToolResultsError`) as soon as a user turn follows it — so
- * a provider error mid-tool-call would otherwise poison the conversation for good.
- *
- * `approval-requested` / `approval-responded` are deliberately treated as orphans:
- * no chat tool in this repo requires approval, so such a part can only arrive from
- * a broken or hostile client, and dropping it is what keeps the turn answerable.
- */
-const RESULT_BEARING_STATES: ReadonlySet<string> = new Set([
-  "output-available",
-  "output-error",
-  "output-denied",
-]);
 
 /**
  * Left ONCE per message whose tool payloads were dropped for size. It forbids
@@ -57,8 +41,15 @@ export const DROPPED_TOOL_PAYLOAD_NOTE =
 export const INTERRUPTED_PROPOSAL_NOTE =
   "(La propuesta anterior se interrumpió y no llegó a mostrarse. Si el usuario la quiere, vuelve a proponerla.)";
 
+/**
+ * A tool call that never answered. `convertToModelMessages` turns it into a
+ * `tool-call` with no `tool-result`, and the SDK then refuses the whole prompt
+ * (`MissingToolResultsError`) as soon as a user turn follows it — so a provider error
+ * mid-tool-call would poison the conversation for good. The states that DO answer are
+ * enumerated once, in `tool-parts`.
+ */
 function isOrphanToolCall(part: Part): boolean {
-  return isToolUIPart(part) && !RESULT_BEARING_STATES.has(part.state);
+  return isToolUIPart(part) && !toolCallAnswered(part);
 }
 
 /**
@@ -102,10 +93,16 @@ export function pruneOrphanToolCalls(messages: UIMessage[]): {
  * Contradicts, in the model's own history, a turn that CLAIMED to have prepared a
  * proposal without calling any proposal tool (#1262).
  *
- * ORDER MATTERS: this must run BEFORE {@link pruneOrphanToolCalls}. That repair
- * removes a `propose_*` call whose stream died mid-flight, and a turn like that DID
- * ask for a real proposal — running afterwards would accuse it of fabricating one.
- * Its own test pins that difference.
+ * Since #1468 «fabricated» also covers the turn whose `propose_*` call ANSWERED with
+ * something that is not a proposal — a rejection — because that is a turn whose claim is
+ * just as false. The interrupted call is the one kind left out: {@link
+ * pruneOrphanToolCalls} runs next and leaves {@link INTERRUPTED_PROPOSAL_NOTE} on it,
+ * which says the truer thing — the `propose_*` tools persist before returning, so that
+ * proposal may well exist and simply never reached the screen.
+ *
+ * ORDER MATTERS: this must run BEFORE {@link pruneOrphanToolCalls}. That repair removes
+ * the interrupted call, and without the part there is nothing left to tell it apart from
+ * a ceremony invented out of thin air. Its own test pins that difference.
  *
  * The claimed prose stays. It is what the user read, and rewriting the model's
  * previous words would make the history disagree with the screen.
@@ -115,8 +112,10 @@ export function correctFabricatedProposalClaims(messages: UIMessage[]): {
   correctedMessageIds: string[];
 } {
   // The history is never in flight, so no message is exempt here.
-  const corrected = messagesWithFabricatedProposal(messages, false);
-  const correctedMessageIds = [...corrected];
+  const correctedMessageIds = [...messagesWithFabricatedProposal(messages, false)]
+    .filter(([, kind]) => kind !== "interrupted")
+    .map(([id]) => id);
+  const corrected = new Set(correctedMessageIds);
   if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
 
   return {

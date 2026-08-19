@@ -22,6 +22,7 @@ import {
   mentionsAny,
 } from "./graders";
 import {
+  claimsCeremonyOverRejectedProposal,
   fakesProposalCeremony,
   proposedHoldingLabels,
   ungroundedProposalIds,
@@ -35,6 +36,19 @@ import {
  */
 export const noFakeCeremony = (a: AssistantAnswer): Check =>
   check("no finge una propuesta que no ha pedido", !fakesProposalCeremony(a));
+
+/**
+ * The other half of the same discipline (#1468): a lane that answered with a rejection
+ * prepared nothing, so announcing the ceremony over it leaves the user hunting for a
+ * button that does not exist. Carried by every write-path question rather than by a
+ * question of its own — any of them can end in a refusal, and the check only speaks when
+ * the trace really shows one.
+ */
+export const noCeremonyOverRejection = (a: AssistantAnswer): Check =>
+  check(
+    "no anuncia una propuesta que worthline rechazó",
+    !claimsCeremonyOverRejectedProposal(a),
+  );
 
 /**
  * No identifier reached a proposal without a read behind it (#1263). The accused ids

@@ -19,17 +19,7 @@ import {
 import { computeCorrectionGate, editCorrectionPoint } from "./anchor-correction-gate";
 import {
   extractEmbeddedQuickActions,
-  parseBalanceHistoryProposal,
-  parseCorrectionProposal,
-  parseEarlyRepaymentProposal,
-  parseHoldingCreationProposal,
-  parseHoldingTrashProposal,
-  parseMixedDocumentProposal,
-  parseOperationProposal,
-  parsePropertyValuationProposal,
   parseQuickActions,
-  parseReconcileProposal,
-  parseStatementImportProposal,
   type QuickAction,
 } from "./assistant-actions";
 import AssistantAttachmentControl, {
@@ -66,7 +56,7 @@ import {
 } from "./early-repayment-proposal-action";
 import type { EarlyRepaymentProposal } from "./early-repayment-proposal-contract";
 import {
-  FABRICATED_PROPOSAL_NOTE,
+  fabricatedProposalNote,
   messagesWithFabricatedProposal,
 } from "./fabricated-proposal";
 import {
@@ -104,6 +94,7 @@ import {
   discardPropertyValuationProposalAction,
 } from "./property-valuation-proposal-action";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
+import { proposalCardInPart } from "./proposal-card-presence";
 import { proposalImpactHeader } from "./proposal-impact-header";
 import {
   hasUnvalidatedProvenance,
@@ -1758,6 +1749,13 @@ function AppNote({ className, text }: { className: string; text: string }) {
  * The proposal card a tool answer unfolds into, or `null` when the answer is not a
  * proposal (every read tool runs silently) or does not parse as one.
  *
+ * The parsing is NOT here: it comes from `proposal-card-presence`, the table the
+ * fabricated-ceremony guard reads too (#1468). Before that, this function held the
+ * only copy of «did this answer become a card», and the guard asked a different
+ * question — whether a `propose_*` tool had been called — so a rejected call silenced
+ * the warning exactly like a real card. What is left here is the half that is genuinely
+ * about rendering: which component paints which proposal.
+ *
  * A plain function and not a component because the caller has to KNOW there is a
  * card before deciding what to wrap it in: the provenance mark of #1257 opens a
  * paper entry, and an entry with a stamp and no card would be the app pointing at
@@ -1766,139 +1764,48 @@ function AppNote({ className, text }: { className: string; text: string }) {
 function proposalCardFor({
   mutationsDisabled,
   mutationsDisabledMessage,
-  name,
   part,
 }: {
   mutationsDisabled: boolean;
   mutationsDisabledMessage: string;
-  name: string;
   part: UIMessage["parts"][number];
 }): React.ReactNode | null {
-  if (name === "propose_statement_import" && "output" in part) {
-    const proposal = parseStatementImportProposal(part.output);
-    return proposal ? (
-      <StatementProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
+  const card = proposalCardInPart(part);
+  if (card === null) return null;
+  const gate = { mutationsDisabled, mutationsDisabledMessage };
+  switch (card.kind) {
+    case "balance_history":
+      return <BalanceHistoryProposalCard {...gate} proposal={card.proposal} />;
+    case "correction":
+      // Una enmienda (#1423) devuelve la MISMA propuesta de corrección, con la serie
+      // enmendada: su tarjeta es la de siempre, o no habría tarjeta.
+      return card.proposal.mode === "reconstruir" ? (
+        <ReconstructionProposalCard {...gate} proposal={card.proposal} />
+      ) : (
+        <CorrectionProposalCard {...gate} proposal={card.proposal} />
+      );
+    case "early_repayment":
+      return <EarlyRepaymentProposalCard {...gate} proposal={card.proposal} />;
+    case "holding_creation":
+      return <HoldingCreationProposalCard {...gate} proposal={card.proposal} />;
+    case "holding_trash":
+      return <HoldingTrashProposalCard {...gate} proposal={card.proposal} />;
+    case "mixed_document":
+      return <MixedDocumentProposalCard {...gate} proposal={card.proposal} />;
+    case "operation":
+      return <OperationProposalCard {...gate} proposal={card.proposal} />;
+    case "property_valuation":
+      return (
+        <PropertyValuationProposalCard
+          mutationsDisabled={mutationsDisabled}
+          proposal={card.proposal}
+        />
+      );
+    case "reconcile":
+      return <ReconcileProposalCard {...gate} proposal={card.proposal} />;
+    case "statement_import":
+      return <StatementProposalCard {...gate} proposal={card.proposal} />;
   }
-  if (
-    (name === "propose_correction" ||
-      name === "propose_reconstruction" ||
-      // Una enmienda (#1423) devuelve la MISMA propuesta de corrección, con la
-      // serie enmendada: su tarjeta es la de siempre, o no habría tarjeta.
-      name === "propose_reconstruction_amendment") &&
-    "output" in part
-  ) {
-    const proposal = parseCorrectionProposal(part.output);
-    if (!proposal) return null;
-    return proposal.mode === "reconstruir" ? (
-      <ReconstructionProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : (
-      <CorrectionProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    );
-  }
-  if (name === "propose_early_repayment" && "output" in part) {
-    const proposal = parseEarlyRepaymentProposal(part.output);
-    return proposal ? (
-      <EarlyRepaymentProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_operation" && "output" in part) {
-    const proposal = parseOperationProposal(part.output);
-    return proposal ? (
-      <OperationProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_holding" && "output" in part) {
-    const proposal = parseHoldingCreationProposal(part.output);
-    return proposal ? (
-      <HoldingCreationProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_holding_removal" && "output" in part) {
-    const proposal = parseHoldingTrashProposal(part.output, "holding_removal");
-    return proposal ? (
-      <HoldingTrashProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_holding_restoration" && "output" in part) {
-    const proposal = parseHoldingTrashProposal(part.output, "holding_restoration");
-    return proposal ? (
-      <HoldingTrashProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_balance_history_import" && "output" in part) {
-    const proposal = parseBalanceHistoryProposal(part.output);
-    return proposal ? (
-      <BalanceHistoryProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_property_valuation_anchor" && "output" in part) {
-    const proposal = parsePropertyValuationProposal(part.output);
-    return proposal ? (
-      <PropertyValuationProposalCard
-        mutationsDisabled={mutationsDisabled}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_reconcile" && "output" in part) {
-    const proposal = parseReconcileProposal(part.output);
-    return proposal ? (
-      <ReconcileProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  if (name === "propose_mixed_document_import" && "output" in part) {
-    const proposal = parseMixedDocumentProposal(part.output);
-    return proposal ? (
-      <MixedDocumentProposalCard
-        mutationsDisabled={mutationsDisabled}
-        mutationsDisabledMessage={mutationsDisabledMessage}
-        proposal={proposal}
-      />
-    ) : null;
-  }
-  // Read tools run silently; only proposal cards surface tool activity.
-  return null;
 }
 
 /**
@@ -1976,6 +1883,9 @@ function ConversationParts({
         const messageActions =
           message.role === "assistant" ? toolQuickActions(message) : [];
         const prose = printableProseByPart(message, messageActions);
+        // Which ceremony this turn faked, if any — it decides WHICH sentence the app
+        // puts next to it (#1468).
+        const fabrication = fabricated.get(message.id);
         return (
           <div className={`assistantMsg ${message.role}`} key={message.id}>
             {message.parts.map((part, i) => {
@@ -2015,7 +1925,6 @@ function ConversationParts({
                 const card = proposalCardFor({
                   mutationsDisabled,
                   mutationsDisabledMessage,
-                  name,
                   part,
                 });
                 if (card === null) return null;
@@ -2032,12 +1941,14 @@ function ConversationParts({
               }
               return null;
             })}
-            {fabricated.has(message.id) ? (
+            {fabrication === undefined ? null : (
               <AppNote
                 className="assistantFakeProposal"
-                text={FABRICATED_PROPOSAL_NOTE}
+                // Same entry, two sentences (#1468): «nunca la pidió» and «la pidió y
+                // worthline no devolvió tarjeta» leave the user with different moves.
+                text={fabricatedProposalNote(fabrication)}
               />
-            ) : null}
+            )}
             {gateNotices.gateClosed === message.id ? (
               <AppNote className="assistantGateNotice" text={UNVALIDATED_EVIDENCE_NOTE} />
             ) : null}

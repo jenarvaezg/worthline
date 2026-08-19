@@ -46,6 +46,7 @@ import { check, type GoldenQuestion, grounded, spanish } from "./golden-question
 import {
   groundedIds,
   namesTwoCashCandidates,
+  noCeremonyOverRejection,
   noFakeCeremony,
   noInterfaceCommentary,
   noInventedMechanism,
@@ -115,6 +116,7 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       ),
       groundedIds(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -141,6 +143,7 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       check("llama a un tool de propuesta", calledProposalTool(a)),
       groundedIds(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -161,6 +164,7 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       check("no propone sin resolver de qué holding habla", !calledProposalTool(a)),
       namesTwoCashCandidates(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -180,6 +184,7 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       check("no elige por su cuenta entre dos importes", !calledProposalTool(a)),
       check("pregunta cuál es el importe real", asksForTheMissingFigure(a.text)),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -235,6 +240,7 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       proposesOnHoldingNamed(a, ["small cap"]),
       groundedIds(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
       noInterfaceCommentary(a),
       noInventedMechanism(a),
     ],

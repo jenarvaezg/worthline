@@ -1,9 +1,11 @@
+import { correctionProposalOutput } from "@web/asistente/proposal-part-fixtures";
 import { describe, expect, test } from "vitest";
 
 import type { AssistantAnswer } from "./graders";
 import {
   asksForTheMissingFigure,
   calledProposalTool,
+  claimsCeremonyOverRejectedProposal,
   fakesProposalCeremony,
   proposedHoldingLabels,
   reachedForBulkImportTool,
@@ -35,6 +37,70 @@ describe("calledProposalTool", () => {
           toolCalls: [
             { input: {}, name: "get_financial_context" },
             { input: {}, name: "suggest_actions" },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("claimsCeremonyOverRejectedProposal (#1468)", () => {
+  const CLAIM = "He preparado las propuestas. A continuación tienes las tarjetas.";
+
+  test("catches the ceremony announced over a refusal", () => {
+    expect(
+      claimsCeremonyOverRejectedProposal(
+        answer({
+          text: CLAIM,
+          toolCalls: [{ input: {}, name: "propose_operation" }],
+          toolResults: [
+            {
+              name: "propose_operation",
+              output: { error: "operation_document_required" },
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("stays silent when a lane really returned a proposal", () => {
+    expect(
+      claimsCeremonyOverRejectedProposal(
+        answer({
+          text: CLAIM,
+          toolCalls: [{ input: {}, name: "propose_correction" }],
+          toolResults: [
+            { name: "propose_correction", output: correctionProposalOutput() },
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("stays silent when no proposal lane answered at all", () => {
+    // That turn is the #1262 case, and `fakesProposalCeremony` is what grades it.
+    expect(
+      claimsCeremonyOverRejectedProposal(
+        answer({
+          text: CLAIM,
+          toolResults: [{ name: "get_financial_context", output: CONTEXT_OUTPUT }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("stays silent when the refused turn claimed nothing", () => {
+    // The honest answer to a refusal: say what is missing. No accusation there.
+    expect(
+      claimsCeremonyOverRejectedProposal(
+        answer({
+          text: "No he podido prepararla: necesito el documento de la operación.",
+          toolResults: [
+            {
+              name: "propose_operation",
+              output: { error: "operation_document_required" },
+            },
           ],
         }),
       ),

@@ -15,14 +15,16 @@
  * the server knows for certain, and it is why these checks say something the
  * reading set cannot.
  *
- * Two of them deliberately reuse the production frontiers instead of restating
+ * Three of them deliberately reuse the production frontiers instead of restating
  * them: {@link fakesProposalCeremony} calls the same rule the runtime guard uses
- * (#1262) and {@link reachedForBulkImportTool} reads the same table the
+ * (#1262), {@link claimsCeremonyOverRejectedProposal} reads the same card table the
+ * screen reads (#1468) and {@link reachedForBulkImportTool} reads the same table the
  * unvalidated-evidence boundary enumerates (#1248). A second copy would let the
  * measurement and the thing being measured drift apart in silence.
  */
 
 import { claimsPreparedProposal } from "@web/asistente/fabricated-proposal";
+import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
 import { isProposalToolName } from "@web/asistente/tool-parts";
 import { unvalidatedEvidenceClassFor } from "@web/asistente/unvalidated-evidence-gate";
 
@@ -39,6 +41,24 @@ export function calledProposalTool(answer: AssistantAnswer): boolean {
  */
 export function fakesProposalCeremony(answer: AssistantAnswer): boolean {
   return claimsPreparedProposal(answer.text) && !calledProposalTool(answer);
+}
+
+/**
+ * The reciprocal (#1468): the turn DID ask a lane, worthline answered with something
+ * that is no proposal — a rejection — and the prose announced the ceremony anyway.
+ *
+ * Graded off the results, through the same table the render and the runtime guard read
+ * (`proposalCardFrom`), so the number the gate reports and the card the user does or
+ * does not see cannot disagree. It stays silent unless a proposal lane actually ANSWERED
+ * in the trace: with no answer recorded there is nothing to accuse the turn of.
+ */
+export function claimsCeremonyOverRejectedProposal(answer: AssistantAnswer): boolean {
+  const answered = answer.toolResults.filter((result) => isProposalToolName(result.name));
+  return (
+    answered.length > 0 &&
+    !answered.some((result) => proposalCardFrom(result.name, result.output) !== null) &&
+    claimsPreparedProposal(answer.text)
+  );
 }
 
 /** The turn called this exact tool. */

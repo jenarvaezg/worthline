@@ -33,6 +33,7 @@ vi.mock("next/navigation", () => ({
 
 import AssistantLayer from "./assistant-layer";
 import { FABRICATED_PROPOSAL_NOTE } from "./fabricated-proposal";
+import { proposalCardPart, rejectedProposalPart } from "./proposal-part-fixtures";
 
 const FAKE_CEREMONY =
   "He preparado la propuesta de corrección para actualizar el saldo a 5.511,96 €.\n\n" +
@@ -47,7 +48,7 @@ beforeEach(() => {
   chatStatus = "ready";
 });
 
-describe("AssistantLayer · faked proposal ceremony (#1262)", () => {
+describe("AssistantLayer · faked proposal ceremony (#1262, #1468)", () => {
   test("prints the app's warning next to a turn that invented the proposal", () => {
     chatMessages = [assistantTurn([{ text: FAKE_CEREMONY, type: "text" }])];
 
@@ -64,16 +65,7 @@ describe("AssistantLayer · faked proposal ceremony (#1262)", () => {
 
   test("stays silent when the turn really prepared one", () => {
     chatMessages = [
-      assistantTurn([
-        { text: FAKE_CEREMONY, type: "text" },
-        {
-          input: { holdingId: "wl_hld_1" },
-          output: { mode: "declare_balance", proposalId: "p1" },
-          state: "output-available",
-          toolCallId: "call-1",
-          type: "tool-propose_correction",
-        } as unknown as UIMessage["parts"][number],
-      ]),
+      assistantTurn([{ text: FAKE_CEREMONY, type: "text" }, proposalCardPart()]),
     ];
 
     const html = renderToStaticMarkup(
@@ -81,6 +73,25 @@ describe("AssistantLayer · faked proposal ceremony (#1262)", () => {
     );
 
     expect(html).not.toContain("assistantFakeProposal");
+    // The card really is on screen — the reason the note stays away.
+    expect(html).toContain("assistantProposal");
+  });
+
+  test("warns when worthline REJECTED the proposal the turn narrated (#1468)", () => {
+    // The hole this closed: a `propose_*` part was there by name, so the guard used
+    // to switch off — precisely in the turn where the user needed it most.
+    chatMessages = [
+      assistantTurn([{ text: FAKE_CEREMONY, type: "text" }, rejectedProposalPart()]),
+    ];
+
+    const html = renderToStaticMarkup(
+      <AssistantLayer onboardingSkipAction={vi.fn()} variant="onboarding" />,
+    );
+
+    expect(html).toContain("assistantFakeProposal");
+    // And it says which of the two things happened, without quoting the refusal.
+    expect(html).toContain("no recibi");
+    expect(html).not.toContain("operation_document_required");
   });
 
   test("says nothing while the turn is still streaming", () => {

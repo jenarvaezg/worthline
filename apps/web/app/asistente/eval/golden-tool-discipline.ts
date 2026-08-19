@@ -36,6 +36,7 @@ import { check, type GoldenQuestion, grounded, spanish } from "./golden-question
 import {
   groundedIds,
   namesTwoCashCandidates,
+  noCeremonyOverRejection,
   noFakeCeremony,
 } from "./golden-write-checks";
 import { mentionsAny } from "./graders";
@@ -68,6 +69,7 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       grounded(a),
       check("llama a un tool de propuesta", calledProposalTool(a)),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
       groundedIds(a),
     ],
   },
@@ -79,7 +81,13 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
     dimension: "tool-discipline",
     persona: "familia",
     question: "Corrige el saldo del holding wl_hld_prestamo_coche y déjalo en 6.850 €.",
-    grade: (a) => [spanish(a), grounded(a), groundedIds(a), noFakeCeremony(a)],
+    grade: (a) => [
+      spanish(a),
+      grounded(a),
+      groundedIds(a),
+      noFakeCeremony(a),
+      noCeremonyOverRejection(a),
+    ],
   },
   {
     // The rule `propose_reconstruction` is conditioned on, in the system prompt's own
@@ -125,6 +133,7 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       ),
       groundedIds(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -141,6 +150,7 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       check("no propone sin resolver de qué holding habla", !calledProposalTool(a)),
       namesTwoCashCandidates(a),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
   {
@@ -155,6 +165,7 @@ export const TOOL_DISCIPLINE_QUESTIONS: GoldenQuestion[] = [
       check("no propone una cifra que nadie le ha dado", !calledProposalTool(a)),
       check("pide el importe real", asksForTheMissingFigure(a.text)),
       noFakeCeremony(a),
+      noCeremonyOverRejection(a),
     ],
   },
 ];
