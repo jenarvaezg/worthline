@@ -84,10 +84,28 @@ export interface OperationsStore {
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
-  /** Delete an operation. Returns the deleted operation's asset id and date, or null if not found. */
+  /**
+   * Delete ONE operation. Returns its asset id and date, or null if not found.
+   *
+   * Refuses half a traspaso: the pair is deleted through
+   * {@link OperationsStore.deleteTransferPair}, which owns both rows (#1479).
+   */
   deleteOperation: (
     operationId: string,
   ) => Promise<{ assetId: string; executedAt: string } | null>;
+  /**
+   * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
+   * one entry per deleted row — the two asset ids and dates the caller ripples —
+   * or an empty array when no row carries that `transferId`.
+   *
+   * It is the mirror of the atomic write: a pair that entered the book together
+   * leaves together, or the surviving half claims to be one movement with a row that
+   * no longer exists — and on the destination, an inherited cost with nothing left
+   * that explains it.
+   */
+  deleteTransferPair: (
+    transferId: string,
+  ) => Promise<Array<{ assetId: string; executedAt: string }>>;
   /**
    * Overwrite an existing operation's value fields in place (statement merge,
    * ADR 0018). The id, asset, and `executedAt` date are the match key and never
@@ -115,6 +133,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     recordOperation: (input, opts) => recordOperation(ctx, input, opts),
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
+    deleteTransferPair: (transferId) => deleteTransferPair(ctx, transferId),
     updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),
     batchApplyAllValueUpdates: (assetCommands, liabilityCommands) =>
@@ -176,6 +195,55 @@ async function readOperations(
 }
 
 async function deleteOperation(
+  ctx: StoreContext,
+  operationId: string,
+): Promise<{ assetId: string; executedAt: string } | null> {
+  const kind = await ctx.db
+    .select({ kind: assetOperations.kind })
+    .from(assetOperations)
+    .where(eq(assetOperations.id, operationId))
+    .get();
+
+  // Half a traspaso is not a deletable unit (#1393). Same hazard as the statement
+  // merge overwriting one row: the pair's atomic gate owns both, and a caller holding
+  // one id calls `deleteTransferPair` with the `transferId` instead.
+  if (kind && isTransferKind(kind.kind)) {
+    throw new Error(
+      "Una mitad de un traspaso no se borra sola: borra el traspaso completo (#1393).",
+    );
+  }
+
+  return removeOperationRow(ctx, operationId);
+}
+
+/**
+ * Delete both rows of one traspaso. The rows are read first so the caller learns
+ * every (asset, date) it has to ripple, and each is removed through the same
+ * `removeOperationRow` a single delete uses — so the audit entry and the
+ * contribution-occurrence bookkeeping are identical, whichever door the row left by.
+ *
+ * No transaction here: the command layer brackets this with its ripple (ADR 0020), and
+ * a nested transaction would commit the deletes before the ripple could roll them back.
+ */
+async function deleteTransferPair(
+  ctx: StoreContext,
+  transferId: string,
+): Promise<Array<{ assetId: string; executedAt: string }>> {
+  const rows = await ctx.db
+    .select({ id: assetOperations.id })
+    .from(assetOperations)
+    .where(eq(assetOperations.transferId, transferId))
+    .all();
+
+  const deleted: Array<{ assetId: string; executedAt: string }> = [];
+  for (const { id } of rows) {
+    const result = await removeOperationRow(ctx, id);
+    if (result) deleted.push(result);
+  }
+  return deleted;
+}
+
+async function removeOperationRow(
   ctx: StoreContext,
   operationId: string,
 ): Promise<{ assetId: string; executedAt: string } | null> {

@@ -600,8 +600,33 @@ export async function deleteOperationAction(
     // One command deletes the operation AND ripples snapshots ≥ its date,
     // atomically (ADR 0020; deleting a backdated operation, PRD #107).
     run: async (store, { extra, today }) => {
+      const operationId = extra.operationId!;
+
+      // Half a traspaso is not a deletable unit (#1479): the row the button points at
+      // is one of a pair, so what the click means is «deshaz el traspaso». The store
+      // refuses the row-at-a-time delete outright, and this is where the intent is
+      // translated — the pair's own command, which removes both rows and ripples both
+      // holdings in one transaction. Read from THIS holding's ledger, so the id has to
+      // belong to the page that submitted it.
+      const transferId = (await store.operations.readOperations(routeAssetId)).find(
+        (operation) => operation.id === operationId,
+      )?.transferId;
+
+      if (transferId !== undefined) {
+        const removed = await store.command.deleteInvestmentTransfer({
+          transferId,
+          today,
+        });
+        return removed.length > 0
+          ? { ok: true }
+          : {
+              error: "No se encontró el traspaso — puede que ya se haya eliminado.",
+              ok: false,
+            };
+      }
+
       const deleted = await store.command.deleteInvestmentOperation({
-        operationId: extra.operationId!,
+        operationId,
         today,
       });
       if (!deleted) {

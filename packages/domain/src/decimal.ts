@@ -28,6 +28,19 @@ export function normalizeDecimal(value: DecimalString): DecimalString {
 }
 
 /**
+ * Decimals the app can read a unit count back at — the precision of its units
+ * VOICE, which is what {@link formatUnits} renders and therefore the only
+ * precision a DERIVED unit count may be stored at (#1395).
+ *
+ * It lives here, next to the voice it names, because three callers need the same
+ * answer: the saldo capture of the alta (`OPENING_UNITS_DECIMALS`), the assistant's
+ * derived opening, and the traspaso gate (#1479), which divides an amount by a VL
+ * twice. A second spelling of `6` is a second answer, and the one that drifts is
+ * the one that stores participaciones no bank publishes.
+ */
+export const UNITS_READBACK_DECIMALS = 6;
+
+/**
  * Render a units decimal for display: es-ES separators, up to six decimals — the
  * reading voice for participaciones/tokens, as `formatMoneyMinor` is for money.
  * A malformed string comes back untouched rather than as `NaN`: a figure the app
@@ -39,7 +52,23 @@ export function formatUnits(units: DecimalString): string {
     return units;
   }
 
-  return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 6 }).format(value);
+  return new Intl.NumberFormat("es-ES", {
+    maximumFractionDigits: UNITS_READBACK_DECIMALS,
+  }).format(value);
+}
+
+/**
+ * Integer minor units back to a decimal string, for the seam's division and
+ * comparison primitives — the inverse of {@link multiplyToMinor} at price "1".
+ *
+ * Money is stored as integer cents (CONTEXT.md) but `divideUnits` speaks decimals,
+ * so every «importe ÷ VL» has to cross this boundary. It goes through big.js rather
+ * than `amountMinor / 100`: the float division is exact for the magnitudes involved,
+ * but a division whose result feeds a stored unit count belongs behind the same seam
+ * as the rest, not next to it.
+ */
+export function minorToDecimal(amountMinor: number): DecimalString {
+  return new Big(amountMinor).div(100).toFixed(2);
 }
 
 /**

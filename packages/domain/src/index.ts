@@ -326,11 +326,13 @@ export {
   divideUnits,
   formatUnits,
   isPositiveDecimal,
+  minorToDecimal,
   multiplyToMinor,
   normalizeDecimal,
   proportionMinor,
   scaleDecimal,
   subtractUnits,
+  UNITS_READBACK_DECIMALS,
 } from "./decimal";
 export type {
   StackedBandGeometry,
@@ -562,6 +564,13 @@ export type {
   FireSustainableSpendingSides,
 } from "./fire-sustainable-spending";
 export { fireSustainableSpending } from "./fire-sustainable-spending";
+export type {
+  FundTransferIntent,
+  FundTransferOrigin,
+  FundTransferPair,
+  FundTransferPortion,
+} from "./fund-transfer";
+export { planFundTransfer } from "./fund-transfer";
 export type {
   FxAggregation,
   FxConversionResult,
@@ -819,6 +828,7 @@ export {
   latestOperationPrice,
   netUnitsByAsset,
   netUnitsFromOperations,
+  operationsUpTo,
 } from "./positions";
 export type {
   DetectPriceBackfillInput,

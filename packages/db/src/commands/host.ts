@@ -47,6 +47,8 @@ const DATED_FACT_ALIASES = {
   applyStoredContributionValue: "applyStoredContributionValue",
   recordInvestmentOperation: "recordOperationAndRipple",
   mergeInvestmentOperations: "recordOperationsAndRipple",
+  recordInvestmentTransfer: "recordTransferAndRipple",
+  deleteInvestmentTransfer: "deleteTransferAndRipple",
   deleteInvestmentOperation: "deleteOperationAndRipple",
   deleteInvestmentOperations: "deleteOperationsAndRipple",
   addValuationAnchor: "addValuationAnchorAndRipple",

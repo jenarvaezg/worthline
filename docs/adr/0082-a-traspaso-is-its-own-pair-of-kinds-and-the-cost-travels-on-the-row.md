@@ -121,7 +121,7 @@ acquisition cost the units carry over is persisted on the incoming row.**
   cent" also describes a genuine rebalance — so it must be a reviewable pass, not a
   silent one-shot that rewrites realized P/L nobody asked it to touch. Tracked
   separately under #1393.
-- Not covered here either: the atomic write gate that mints (and deletes) both halves together
-  (#1479), the "Traspasar" screen (#1480), the ledger and drilldown surfaces (#1481),
-  and the dictated traspaso (#1482). Until #1479 lands, no product path writes a
-  traspaso — this slice teaches the engine to read one.
+- Not covered here either: the atomic write gate that mints (and deletes) both halves
+  together, the "Traspasar" screen (#1480), the ledger and drilldown surfaces (#1481),
+  and the dictated traspaso (#1482). This slice teaches the engine to read a traspaso;
+  the gate that writes one landed with #1479 — see ADR 0083.
