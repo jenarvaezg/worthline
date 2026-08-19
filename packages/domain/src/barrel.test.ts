@@ -86,6 +86,10 @@ const KEY_EXPORTS = [
   "isPriceStale",
   // fire
   "calculateFire",
+  // fire-retirement-profile / fire-sustainable-spending (#1428)
+  "fireRetirementProfile",
+  "fireSustainableSpending",
+  "fireRetirementReadout",
   // warnings
   "collectWarnings",
   // scope
