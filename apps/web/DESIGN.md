@@ -113,7 +113,7 @@ worthline se siente como un libro de contabilidad doméstica preciso y cuidado: 
 
 **Vigente — landing.** «La cubierta y las páginas» es la referencia visual ya implementada: cubierta física, hoja encartada con cifras reales, páginas pautadas y contracubierta. La personalidad es precisa, serena y soberana, con riesgo visual concentrado en la cubierta y máxima legibilidad en las páginas.
 
-**Propuesto — producto (#906, pendiente de migración).** «Libro mayor» abre ese mismo objeto en las rutas de trabajo: elimina tarjetas flotantes, sombras y cromo de píldora en favor de secciones regladas, controles rectangulares y jerarquía contable. El sistema global heredado no es fuente para este documento; solo se preservan Iosevka tabular, la semántica de color, el contraste probado y la gramática de gráficas.
+**Vigente — producto (migrado en #906–#913).** «Libro mayor» abre ese mismo objeto en las rutas de trabajo: elimina tarjetas flotantes, sombras y cromo de píldora en favor de secciones regladas, controles rectangulares y jerarquía contable. El sistema global heredado no es fuente para este documento; solo se preservan Iosevka tabular, la semántica de color, el contraste probado y la gramática de gráficas.
 
 **Key Characteristics:**
 

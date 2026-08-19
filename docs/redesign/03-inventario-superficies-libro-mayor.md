@@ -1,6 +1,6 @@
 # Inventario de superficies — migración «Libro mayor»
 
-> Investigación para [Inventariar las superficies de la migración «Libro mayor»](https://github.com/jenarvaezg/worthline/issues/827). Complementa la [propuesta A](01-propuesta-a-libro-mayor.md); no la sustituye ni define la solución visual de cada superficie.
+> Matriz de aceptación de la migración «Libro mayor» ([#827](https://github.com/jenarvaezg/worthline/issues/827)): qué estados debe cubrir cada superficie y en qué viewports se verifica. No define la solución visual de ninguna — eso lo hace [`docs/design-system.md`](../design-system.md).
 
 ## Alcance
 

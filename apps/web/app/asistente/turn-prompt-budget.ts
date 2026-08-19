@@ -160,7 +160,7 @@ export const MODEL_PROMPT_CAPACITY: Readonly<Record<string, ModelPromptCapacity>
     // so there is no per-minute figure to charge here.
     tokensPerMinute: null,
     source:
-      "ai.google.dev model listing (inputTokenLimit 1 048 576, output 65 536), read 2026-07-10 · docs/research/2026-07-10-vision-gemini-free-extractor.md",
+      "ai.google.dev model listing (inputTokenLimit 1 048 576, output 65 536), read 2026-07-10",
   },
   /**
    * The fallback, and its window is not what binds it: 30 000 tokens per minute
