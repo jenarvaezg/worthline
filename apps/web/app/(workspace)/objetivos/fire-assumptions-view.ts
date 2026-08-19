@@ -1,0 +1,202 @@
+/**
+ * The assumptions behind the FIRE projection, in words (#1426).
+ *
+ * The three scenario cards (8 / 11 / 18 años) were a black box: nothing on screen
+ * said why 8, why 11, why 18 — and a figure whose inputs are invisible reads as a
+ * constant of physics rather than as arithmetic over the user's own numbers. Every
+ * input already travels to the page; this module is where they get printed.
+ *
+ * Pure and label-only (interaction-patterns §7, ADR 0036): the figures come from
+ * the engine — `fireReturnMix` for the weights, the projection's own scenarios for
+ * the shifted rates — so the fold can never quote a rate the chart did not use.
+ */
+
+import type {
+  FireAgeSource,
+  FireProjection,
+  FireReturnMix,
+  FireScopeConfig,
+  ScopeFireResult,
+} from "@worthline/domain";
+import { monthlySavingsCapacityForFire } from "@worthline/domain";
+import { formatRatePercent } from "./fire-rent-return-view";
+
+/** One printed line of the assumptions fold: what it is, its value, where it comes from. */
+export interface FireAssumptionRow {
+  key: string;
+  label: string;
+  value: string;
+  /** Provenance or definition — never a restatement of the value. */
+  gloss?: string;
+}
+
+/** One printed row of the weighted-return table. */
+export interface FireReturnMixPrintRow {
+  key: string;
+  label: string;
+  /** This slice's share of the eligible pool: `26,6 %`. */
+  weight: string;
+  /** The real return applied to it: `5,0 %`. */
+  rate: string;
+  /** What it lends to the total: `1,33 %`. */
+  contribution: string;
+  /**
+   * True when the row is one asset's own rate standing in for its rung's guess
+   * (#1448) — the caller marks it, because "Piso de Plasencia" beside "Vivienda"
+   * needs to read as a subdivision, not as a second rung.
+   */
+  isAsset: boolean;
+}
+
+const twoDecimals = new Intl.NumberFormat("es-ES", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
+
+/** A weight or a contribution as an es-ES percentage with two decimals: `1,33 %`. */
+function formatFinePercent(fraction: number): string {
+  return `${twoDecimals.format(fraction * 100)} %`;
+}
+
+export interface FireAssumptionRowsInput {
+  result: ScopeFireResult;
+  config: FireScopeConfig;
+  /** The projection actually rendered; its scenarios carry the shifted rates. */
+  projection: FireProjection | null;
+  /** Where the current age came from (#1415), when it was derived at all. */
+  ageSource: FireAgeSource | null;
+  /** Money formatter from the page (privacy mode included). */
+  formatMoney: (amountMinor: number) => string;
+}
+
+/**
+ * The rows of «Supuestos de esta proyección», in the order a reader rebuilds the
+ * chain: what you spend → what you withdraw → the target → what you add → what it
+ * grows at → the ages the years are counted between.
+ */
+export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumptionRow[] {
+  const { ageSource, config, formatMoney, projection, result } = input;
+  const annualSpendingMinor = config.monthlySpendingMinor * 12;
+  const savingsMinor = monthlySavingsCapacityForFire(config);
+  const rateIsManual = config.expectedRealReturn !== undefined;
+
+  const rows: FireAssumptionRow[] = [
+    {
+      gloss: `${formatMoney(config.monthlySpendingMinor)}/mes, el gasto que declaras`,
+      key: "spending",
+      label: "Objetivo de gasto",
+      value: `${formatMoney(annualSpendingMinor)}/año`,
+    },
+    {
+      gloss: "la parte de tu capital que retiras cada año",
+      key: "swr",
+      label: "Tasa de retirada",
+      value: formatRatePercent(config.safeWithdrawalRate),
+    },
+    {
+      gloss: `${formatMoney(annualSpendingMinor)} ÷ ${formatRatePercent(
+        config.safeWithdrawalRate,
+      )}`,
+      key: "fireNumber",
+      label: "Número FIRE",
+      value: formatMoney(result.fireNumber.amountMinor),
+    },
+    {
+      gloss: "tu capacidad de ahorro declarada: la proyección usa exactamente esta cifra",
+      key: "savings",
+      label: "Aportación",
+      value: `${formatMoney(savingsMinor)}/mes`,
+    },
+    {
+      gloss: rateIsManual
+        ? "fijada a mano en Ajustes: sustituye a la ponderación de tu mezcla"
+        : "ponderada por tu mezcla de activos — el desglose está debajo",
+      key: "return-base",
+      label: "Rentabilidad real (base)",
+      value: formatRatePercent(result.context.realReturnUsed),
+    },
+  ];
+
+  // The shifted rates are read off the scenarios that were actually projected, so
+  // «optimista» here is the rate the optimistic card counted years with — not a
+  // ±1,5 the copy assumes and the engine could one day stop applying.
+  const scenarioRow = (
+    label: "optimistic" | "pessimistic",
+    rowLabel: string,
+    gloss: string,
+  ): FireAssumptionRow | null => {
+    const scenario = projection?.scenarios.find((item) => item.label === label);
+    return scenario === undefined
+      ? null
+      : {
+          gloss,
+          key: `return-${label}`,
+          label: rowLabel,
+          value: formatRatePercent(scenario.annualReturn),
+        };
+  };
+
+  const optimistic = scenarioRow(
+    "optimistic",
+    "Rentabilidad optimista",
+    "la base más 1,5 puntos",
+  );
+  const pessimistic = scenarioRow(
+    "pessimistic",
+    "Rentabilidad pesimista",
+    "la base menos 1,5 puntos",
+  );
+  if (optimistic) {
+    rows.push(optimistic);
+  }
+  if (pessimistic) {
+    rows.push(pessimistic);
+  }
+
+  const currentAge = config.currentAge;
+  const targetAge = config.targetRetirementAge;
+  if (currentAge !== undefined || targetAge !== undefined) {
+    rows.push({
+      gloss:
+        ageSource === null
+          ? "la edad actual está configurada a mano en Ajustes"
+          : `tu edad sale de tu año de nacimiento (${ageSource.birthYear}): no se teclea y no caduca`,
+      key: "ages",
+      label: "Edad actual / objetivo",
+      value: `${currentAge ?? "—"} / ${targetAge ?? "—"}`,
+    });
+  }
+
+  return rows;
+}
+
+/**
+ * The weighted-return table: one row per slice of the eligible pool, so «3,50 %»
+ * becomes «26,6 % en mercado al 5 % → 1,33 %» and the reader sees that the brick
+ * governs the rate. Empty when the mix has nothing to explain.
+ */
+export function fireReturnMixPrintRows(mix: FireReturnMix): FireReturnMixPrintRow[] {
+  return mix.rows.map((row) => ({
+    contribution: formatFinePercent(row.contribution),
+    isAsset: row.kind === "asset",
+    key: row.key,
+    label: row.label,
+    rate: formatRatePercent(row.rate),
+    weight: formatFinePercent(row.weightFraction),
+  }));
+}
+
+/**
+ * The table's total line. `weight` is the sum of the printed weights (100 %) and
+ * `contribution` the rate they add up to — the same scalar the «Rentabilidad real
+ * (base)» row prints, since both come from `fireReturnMix`.
+ */
+export function fireReturnMixTotal(mix: FireReturnMix): {
+  weight: string;
+  contribution: string;
+} {
+  return {
+    contribution: formatFinePercent(mix.rate),
+    weight: formatFinePercent(mix.rows.reduce((sum, row) => sum + row.weightFraction, 0)),
+  };
+}

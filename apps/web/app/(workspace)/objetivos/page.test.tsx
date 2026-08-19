@@ -4,6 +4,7 @@ import type {
   Liability,
   ManualAsset,
   PayoutSchedule,
+  Workspace,
 } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import type { ReactElement, ReactNode } from "react";
@@ -91,12 +92,14 @@ const calls = vi.hoisted(() => {
     readInvestmentAssetsWithMeta: vi.fn(async () => []),
     readExposureProfiles: vi.fn(async () => []),
     readSnapshotHoldings: vi.fn(async () => []),
-    readWorkspace: vi.fn(async () => ({
-      baseCurrency: "EUR",
-      groups: [],
-      members: [{ id: "member_jose", name: "Jose" }],
-      mode: "individual",
-    })),
+    readWorkspace: vi.fn(
+      async (): Promise<Workspace> => ({
+        baseCurrency: "EUR",
+        groups: [],
+        members: [{ id: "member_jose", name: "Jose" }],
+        mode: "individual",
+      }),
+    ),
     resolvePageShell: vi.fn(async () => {
       const scopes = [{ id: "household", label: "Hogar", type: "household" }];
       return {
@@ -193,6 +196,16 @@ async function renderedHtml(
     searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
+}
+
+/** Display money as the app writes it (whole euros, es-ES). */
+const euros = (amountMinor: number) =>
+  formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, false);
+
+/** The «¿De dónde salen estos años?» fold — where every projection input is printed. */
+function assumptionsFold(html: string): string {
+  const opened = html.slice(html.indexOf('<details class="fireAssumptions"'));
+  return opened.slice(0, opened.indexOf("</details>"));
 }
 
 describe("ObjetivosPage contribution reconciliation (#556)", () => {
@@ -375,7 +388,9 @@ describe("ObjetivosPage capital split (#1447)", () => {
     const html = await renderedHtml();
 
     // 455.299,30 / 685.714,29 = 66,4 % of the pool — the hero figure is unchanged.
-    expect(html).toContain('<p class="fireBig">66,4 %</p>');
+    expect(html).toContain(
+      '<p class="fireBig">66,4 % <span class="fireBigNoun">financiado</span></p>',
+    );
     // … but only 153.927,33 / 685.714,29 = 22,4 % of it can be spent in
     // instalments. That caveat lives inside «¿Qué cuenta como activo elegible?»,
     // not in the hero: #1447 splits the capital, it does not restate the %.
@@ -387,6 +402,98 @@ describe("ObjetivosPage capital split (#1447)", () => {
     const html = await renderedHtml();
 
     expect(html).not.toContain("inmovilizado");
+  });
+});
+
+describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
+  /** Jorge's config: 2.000 €/mes at 3,5 %, with an age so Coast exists. */
+  function jorgeConfig(overrides: Partial<FireScopeConfig> = {}): FireScopeConfig {
+    return {
+      currentAge: 63,
+      monthlySavingsCapacityMinor: 10_000,
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.035,
+      targetRetirementAge: 67,
+      ...overrides,
+    };
+  }
+
+  test("prints the division the FIRE number came from, beside the number", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    const html = await renderedHtml();
+
+    // 2.000 €/mes × 12 ÷ 3,5 % — the arithmetic that was nowhere on screen.
+    const formula = html.slice(html.indexOf('<p class="fireFormula">'));
+    expect(formula.slice(0, formula.indexOf("</p>"))).toContain(
+      `${euros(24_000_00)}/año de gasto</a> ÷ <a href="/ajustes">3,5 % de retirada</a> = <strong>${euros(
+        685_714_29,
+      )}</strong>`,
+    );
+    // Both inputs are the user's own, so they link to where they are edited.
+    expect(formula).toContain('<a href="/ajustes">');
+  });
+
+  test("gives the funded percentage a noun and the fraction behind it", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain('<span class="fireBigNoun">financiado</span>');
+    // 50.000 € of 685.714 €: the two amounts, not just the ratio.
+    expect(html).toContain(
+      `<p class="fireFundedFraction">${euros(50_000_00)} de ${euros(685_714_29)}</p>`,
+    );
+  });
+
+  test("measures progress toward Coast, not the tick's position on the bar", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Hacia Coast llevas");
+    // The old copy described the tick («el 84,2 % de tu número FIRE»), which is a
+    // property of the tick and not of anyone's progress.
+    expect(html).not.toContain("% de tu número\nFIRE)");
+  });
+
+  test("opens the projection's assumptions, weighted return included", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    const fold = assumptionsFold(await renderedHtml());
+
+    expect(fold).toContain("Objetivo de gasto");
+    expect(fold).toContain("Tasa de retirada");
+    expect(fold).toContain("Aportación");
+    expect(fold).toContain("Rentabilidad optimista");
+    expect(fold).toContain("Edad actual / objetivo");
+    // The tier table: the cash rung is the whole eligible pool here, at 0 %.
+    expect(fold).toContain("Caja");
+    expect(fold).toContain("<td>100,00 %</td>");
+  });
+
+  test("cites the birth year behind the age instead of showing a typed-looking one", async () => {
+    calls.readWorkspace.mockResolvedValueOnce({
+      baseCurrency: "EUR",
+      groups: [],
+      members: [{ birthYear: 1963, id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    expect(assumptionsFold(await renderedHtml())).toContain(
+      "tu edad sale de tu año de nacimiento (1963)",
+    );
+  });
+
+  test("says what each FIRE level funds per year, and the multipliers behind them", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+
+    const html = await renderedHtml();
+
+    // Lean is 70 % of the spending: 16.800 €/año.
+    expect(html).toContain(`financia ${euros(16_800_00)}/año`);
+    expect(html).toContain("son tu mismo gasto al 70,0 % y al 150,0 %");
   });
 });
 
@@ -652,7 +759,10 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     expect(html).toContain("Alquiler declarado en la rentabilidad");
     expect(html).toContain("Piso Navalcarnero · 4,5 % real");
     // The weighted portfolio rate follows: 2/3 at 4,5 % + 1/3 at 0 % (cash) = 3 %.
-    expect(html).toContain("Retorno real estimado de tu cartera: 3 %");
+    // It lives in the assumptions fold now (#1426), with its weights beside it.
+    const fold = assumptionsFold(html);
+    expect(fold).toContain("<strong>3,0 %</strong>");
+    expect(fold).toContain("ponderada por tu mezcla de activos");
   });
 
   test("a rent with no declared costs is withheld out loud, gross figure included", async () => {
@@ -664,7 +774,7 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     // 12.000 €/año over 200.000 € = 6 % gross, named as what is NOT being used.
     expect(html).toContain("6,0 %");
     // The rate stays the housing default: 2/3 × 3 % = 2 %.
-    expect(html).toContain("Retorno real estimado de tu cartera: 2 %");
+    expect(assumptionsFold(html)).toContain("<strong>2,0 %</strong>");
   });
 
   test("with a manual return configured the section stays away", async () => {
@@ -677,7 +787,10 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     const html = await renderedHtml();
 
     expect(html).not.toContain("Alquiler declarado en la rentabilidad");
-    expect(html).toContain("(manual)");
+    // A manual rate has no weighting to show, so the fold says where it came from
+    // and the tier table stays away (it would explain a rate nothing used).
+    expect(assumptionsFold(html)).toContain("fijada a mano en Ajustes");
+    expect(html).not.toContain("fireMixTable");
   });
 
   test("an ended rent does not feed the rate, and the row says so", async () => {
@@ -720,6 +833,6 @@ describe("ObjetivosPage rent-derived real return (#1448)", () => {
     const html = await renderedHtml();
 
     expect(html).toContain("no está vigente hoy");
-    expect(html).toContain("Retorno real estimado de tu cartera: 3 %");
+    expect(assumptionsFold(html)).toContain("<strong>3,0 %</strong>");
   });
 });

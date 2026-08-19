@@ -8,7 +8,8 @@ import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import type { FireRentReturnReport } from "./fire-rent-return";
 import { deriveRentRealReturns } from "./fire-rent-return";
-import { effectiveRealReturn } from "./fire-return";
+import type { FireReturnMix } from "./fire-return";
+import { fireReturnMix } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
@@ -147,6 +148,16 @@ export interface ScopeFireResult extends FireResult {
    * pure tier weighting it always was.
    */
   readonly rentReturns: FireRentReturnReport;
+  /**
+   * The slices behind `context.effectiveRealReturn` (#1426): each rung's weight and
+   * rate, and each own-rate asset's. It is the SAME computation the rate came from
+   * (`fireReturnMix`), not a re-derivation, so a screen can print «26,6 % mercado
+   * al 5 %» knowing the rows add back up to the rate above them. Rows are empty for
+   * an empty pool, and the whole mix describes the *effective* rate — a config with
+   * a manual `expectedRealReturn` overrides that rate, and a caller showing the
+   * table must say so or hide it.
+   */
+  readonly returnMix: FireReturnMix;
 }
 
 /**
@@ -391,11 +402,21 @@ export function calculateFireForScope(
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   // A per-asset rate substitutes its tier's over its own slice (#1448) — it is not
   // an extra weight, so the eligible total the rate describes is unchanged.
-  const effective = effectiveRealReturn({
+  // The mix, not just the scalar (#1426): the rate travels with the weights it was
+  // computed from, so the screen that prints «de dónde sale el 3,50 %» reads the
+  // same arithmetic instead of repeating it.
+  const returnMix = fireReturnMix({
+    assetLabelById: Object.fromEntries(
+      [...rentRealReturns.byAssetId].map(([assetId, derived]) => [
+        assetId,
+        derived.assetName,
+      ]),
+    ),
     assetRateOverrides: pool.assetRateOverrides,
     eligibleByTierMinor,
     ...(config.tierRealReturns ? { tierRealReturns: config.tierRealReturns } : {}),
   });
+  const effective = returnMix.rate;
   const realReturnUsed = config.expectedRealReturn ?? effective;
 
   const reserved = Math.max(0, Math.min(reservedForGoalsMinor, netEligibleMinor));
@@ -432,6 +453,7 @@ export function calculateFireForScope(
     reservedForGoals: money(reserved, workspace.baseCurrency),
     context,
     capitalSplit,
+    returnMix,
     rentReturns: {
       // The overrides the pool kept ARE the rates that took effect, so the report
       // cannot advertise a substitution the rate did not receive.

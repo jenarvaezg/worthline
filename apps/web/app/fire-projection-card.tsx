@@ -7,9 +7,15 @@ const SCENARIO_LABELS: Record<FireScenario["label"], string> = {
 };
 
 export default function FireProjectionCard({
+  currentAge,
+  formatMoney,
   projection,
 }: {
   projection: FireProjection;
+  /** Money formatter from the page (privacy mode included) — the chart labels its own figures (#1426). */
+  formatMoney: (amountMinor: number) => string;
+  /** Reference age, when configured: lets a bar say which age it lands on. */
+  currentAge?: number;
 }) {
   const byLabel = (label: FireScenario["label"]) =>
     projection.scenarios.find((scenario) => scenario.label === label);
@@ -39,6 +45,11 @@ export default function FireProjectionCard({
   const slot = width / Math.max(points.length, 1);
   const barW = Math.max(2, slot * 0.6);
   const yOf = (value: number) => padTop + plotH - (Math.min(value, maxV) / maxV) * plotH;
+  // The dashed line was unlabelled: a reader could not tell whether it was the FIRE
+  // number, a scenario or decoration (#1426). Kept clear of the top edge so the
+  // label never clips when the target sits above the whole trajectory.
+  const targetLabelY = Math.max(padTop + 9, yOf(target) - 4);
+  const targetLabel = `Objetivo FIRE · ${formatMoney(target)}`;
 
   return (
     <div className="fireProjection">
@@ -74,6 +85,11 @@ export default function FireProjectionCard({
         {points.map((point, index) => {
           const cx = slot * index + slot / 2;
           const top = yOf(point.eligibleMinor);
+          // Year + figure on hover instead of twelve permanent labels: the bars stay
+          // a series, and any single one can still be read (#1426).
+          const yearLabel = point.year === 0 ? "Hoy" : `Año ${point.year}`;
+          const ageLabel =
+            currentAge === undefined ? "" : ` · a los ${currentAge + point.year}`;
           return (
             <rect
               className={point.eligibleMinor >= target ? "reached" : undefined}
@@ -83,7 +99,9 @@ export default function FireProjectionCard({
               width={barW}
               x={cx - barW / 2}
               y={top}
-            />
+            >
+              <title>{`${yearLabel}${ageLabel} · ${formatMoney(point.eligibleMinor)}`}</title>
+            </rect>
           );
         })}
         <line
@@ -93,6 +111,9 @@ export default function FireProjectionCard({
           y1={yOf(target)}
           y2={yOf(target)}
         />
+        <text className="fireTargetLabel" x={2} y={targetLabelY}>
+          {targetLabel}
+        </text>
       </svg>
     </div>
   );
