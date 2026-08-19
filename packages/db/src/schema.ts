@@ -913,6 +913,38 @@ export const contributionOccurrenceOperations = sqliteTable(
   ],
 );
 
+/**
+ * A scope's annual contribution allowances (#1427) — "cupo anual de aportación".
+ * The cap is the USER's datum (never a rule in code); what has been consumed is
+ * derived from the operation ledger on read and has no column here.
+ */
+export const contributionAllowances = sqliteTable(
+  "contribution_allowances",
+  {
+    id: text("id").primaryKey(),
+    scopeId: text("scope_id").notNull(),
+    label: text("label").notNull(),
+    annualCapMinor: integer("annual_cap_minor").notNull(),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [index("contribution_allowances_scope_idx").on(table.scopeId, table.id)],
+);
+
+/** Holdings whose real entries consume an allowance (#1427); a set, never one holding. */
+export const contributionAllowanceHoldings = sqliteTable(
+  "contribution_allowance_holdings",
+  {
+    allowanceId: text("allowance_id")
+      .notNull()
+      .references(() => contributionAllowances.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.allowanceId, table.assetId] })],
+);
+
 /** Intermediate financial goals (PRD #421, #424). */
 export const goals = sqliteTable("goals", {
   id: text("id").primaryKey(),

@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   isValueUpdateEligible,
+  keepsAnOperationLedger,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "./holding-method";
@@ -124,3 +125,36 @@ describe("valuationMethodOfLiability (#152)", () => {
 // AssetTypes route), and the liability helper consumes a DebtModel | null.
 const _typecheck: AssetType = "investment";
 void _typecheck;
+
+describe("keepsAnOperationLedger (#1427)", () => {
+  test("an investment records each entry as an operation", () => {
+    expect(
+      keepsAnOperationLedger(asset({ instrument: "fund", type: "investment" })),
+    ).toBe(true);
+  });
+
+  test("a stored-value holding does not — its contributions fold into a balance", () => {
+    expect(
+      keepsAnOperationLedger(asset({ instrument: "current_account", type: "cash" })),
+    ).toBe(false);
+    expect(keepsAnOperationLedger(asset({ type: "manual" }))).toBe(false);
+  });
+
+  test("a property does not", () => {
+    expect(
+      keepsAnOperationLedger(asset({ instrument: "property", type: "real_estate" })),
+    ).toBe(false);
+  });
+
+  test("a connected-source holding does not — it is derived from positions, not operations", () => {
+    expect(
+      keepsAnOperationLedger(
+        asset({
+          connectedSourceId: "src_binance",
+          instrument: "fund",
+          type: "investment",
+        }),
+      ),
+    ).toBe(false);
+  });
+});

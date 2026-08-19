@@ -1,6 +1,8 @@
 import type {
+  ContributionAllowance,
   ContributionPlan,
   FireScopeConfig,
+  InvestmentOperation,
   Liability,
   ManualAsset,
   PayoutSchedule,
@@ -87,6 +89,7 @@ const calls = vi.hoisted(() => {
       }),
     ),
     readContributionReconciliations: vi.fn(async () => []),
+    readContributionAllowances: vi.fn(async (): Promise<ContributionAllowance[]> => []),
     readOperations: vi.fn(async () => []),
     readAllPriceCacheEntries: vi.fn(async () => []),
     readInvestmentAssetsWithMeta: vi.fn(async () => []),
@@ -119,6 +122,9 @@ const calls = vi.hoisted(() => {
           assets: {
             readAssets: calls.readAssets,
             readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,
+          },
+          contributionAllowances: {
+            readContributionAllowances: calls.readContributionAllowances,
           },
           contributionPlan: {
             readContributionPlan: calls.readContributionPlan,
@@ -1120,5 +1126,129 @@ describe("ObjetivosPage la palabra Coast significa UNA cosa (#1425)", () => {
     expect(levels).toContain("Regular");
     expect(levels).toContain("Fat");
     expect(levels).not.toContain("Coast");
+  });
+});
+
+describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
+  const pensionPlan: ManualAsset = {
+    currency: "EUR",
+    currentValue: { amountMinor: 20_000_00, currency: "EUR" },
+    id: "asset_pp",
+    isPrimaryResidence: false,
+    liquidityTier: "term-locked",
+    name: "MyInvestor Value PP",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "investment",
+  };
+
+  /** Put a pension plan with a ledger on the page for one render. */
+  function withPensionPlan(operations: InvestmentOperation[]): void {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
+      assets: [pensionPlan],
+      liabilities: [],
+    });
+    calls.buildProjectionContext.mockResolvedValueOnce({
+      ...calls.projectionContext,
+      operationsByAsset: new Map([["asset_pp", operations]]),
+    });
+  }
+
+  function contribution(
+    id: string,
+    executedAt: string,
+    units: string,
+  ): InvestmentOperation {
+    return {
+      assetId: "asset_pp",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id,
+      kind: "buy",
+      pricePerUnit: "100",
+      units,
+    };
+  }
+
+  const cupo: ContributionAllowance = {
+    annualCapMinor: 1_500_00,
+    holdingIds: ["asset_pp"],
+    id: "cupo_pp",
+    label: "Planes de pensiones",
+    scopeId: "household",
+  };
+
+  test("el caso de Jorge: «llevo 1.300 € de los 1.500 posibles»", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([
+      contribution("op_1", "2026-02-10", "10"),
+      contribution("op_2", "2026-05-10", "3"),
+    ]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Cupo anual de aportación");
+    expect(html).toContain(euros(1_300_00));
+    expect(html).toContain(euros(1_500_00));
+    expect(html).toContain(`quedan ${euros(200_00)}`);
+  });
+
+  test("no cuenta lo aportado en otro año natural", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([
+      contribution("op_old", "2025-12-31", "10"),
+      contribution("op_now", "2026-03-01", "3"),
+    ]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain(`quedan ${euros(1_200_00)}`);
+  });
+
+  test("pasarse del tope se dice con palabras, no solo con color", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([contribution("op_1", "2026-02-10", "18")]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain(`te has pasado ${euros(300_00)}`);
+    expect(html).toContain("objetivosCupoRemainder exceeded");
+  });
+
+  test("cada cifra se puede desplegar hasta las operaciones que la componen", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([contribution("op_1", "2026-02-10", "10")]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Ver la aportación contada");
+    expect(html).toContain("10 feb 2026");
+    expect(html).toContain("MyInvestor Value PP");
+  });
+
+  test("sin cupos definidos explica qué es uno y ofrece crearlo", async () => {
+    withPensionPlan([]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("Aún no has definido ningún cupo");
+    expect(html).toContain("allowanceCreateForm");
+    expect(html).toContain("Tope anual de aportación");
+  });
+
+  test("el tope es dato del usuario, y la pantalla lo dice", async () => {
+    withPensionPlan([]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("worthline no calcula límites fiscales");
+  });
+
+  test("solo ofrece como destino activos con libro de operaciones", async () => {
+    // La lista por defecto de la página es una casa y una cuenta: ninguna registra
+    // aportaciones una a una, así que un cupo sobre ellas contaría 0 y mentiría.
+    const html = await renderedHtml();
+
+    expect(html).toContain("necesita al menos una inversión con libro de operaciones");
   });
 });

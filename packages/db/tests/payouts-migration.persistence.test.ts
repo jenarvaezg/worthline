@@ -55,7 +55,7 @@ describe("schema migration v42 (payouts)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(57);
+    expect(SCHEMA_VERSION).toBe(58);
   });
 
   test("fresh schemaSql includes both payout tables", async () => {

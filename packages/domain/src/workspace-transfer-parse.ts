@@ -420,6 +420,14 @@ const contributionPlanSchema = z.object({
   contributions: z.array(plannedContributionSchema),
 });
 
+const contributionAllowanceSchema = z.object({
+  id: nonEmptyString,
+  scopeId: nonEmptyString,
+  label: nonEmptyString,
+  annualCapMinor: z.number().int().positive(),
+  holdingIds: z.array(nonEmptyString),
+});
+
 const contributionReconciliationSchema = z.object({
   contributionId: nonEmptyString,
   occurrenceId: nonEmptyString,
@@ -455,6 +463,9 @@ const documentSchema = z.object({
   payoutSchedules: z.array(payoutScheduleSchema).default([]),
   contributionPlans: z.array(contributionPlanSchema).default([]),
   contributionReconciliations: z.array(contributionReconciliationSchema).default([]),
+  // Only the declared ceiling travels; what has been consumed is derived from the
+  // operations that travel with it (ADR 0080), so it has nothing to export.
+  contributionAllowances: z.array(contributionAllowanceSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────

@@ -477,5 +477,22 @@ CREATE TABLE \`sync_run\` (
 	FOREIGN KEY (\`source_id\`) REFERENCES \`connected_sources\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX \`sync_run_source_created_idx\` ON \`sync_run\` (\`source_id\`,\`created_at\`);
+CREATE INDEX \`sync_run_source_created_idx\` ON \`sync_run\` (\`source_id\`,\`created_at\`);--> statement-breakpoint
+CREATE TABLE \`contribution_allowances\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`scope_id\` text NOT NULL,
+	\`label\` text NOT NULL,
+	\`annual_cap_minor\` integer NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX \`contribution_allowances_scope_idx\` ON \`contribution_allowances\` (\`scope_id\`,\`id\`);--> statement-breakpoint
+CREATE TABLE \`contribution_allowance_holdings\` (
+	\`allowance_id\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	PRIMARY KEY(\`allowance_id\`, \`asset_id\`),
+	FOREIGN KEY (\`allowance_id\`) REFERENCES \`contribution_allowances\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
 `;

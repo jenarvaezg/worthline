@@ -405,6 +405,7 @@ describe("summarizeWorkspaceExport", () => {
       connectedSources: 0,
       payouts: 1,
       payoutSchedules: 1,
+      contributionAllowances: 0,
       contributionPlans: 0,
       contributionReconciliations: 0,
     });
@@ -441,6 +442,7 @@ describe("summarizeWorkspaceExport", () => {
       connectedSources: 0,
       payouts: 0,
       payoutSchedules: 0,
+      contributionAllowances: 0,
       contributionPlans: 0,
       contributionReconciliations: 0,
     });

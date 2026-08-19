@@ -51,6 +51,8 @@ import {
   assets,
   assetValuations,
   connectedSources,
+  contributionAllowanceHoldings,
+  contributionAllowances,
   contributionOccurrenceOperations,
   contributionOccurrenceReconciliations,
   earlyRepayments,
@@ -130,6 +132,8 @@ const WORKSPACE_TABLES = [
   "snapshots",
   "contribution_occurrence_operations",
   "contribution_occurrence_reconciliations",
+  "contribution_allowance_holdings",
+  "contribution_allowances",
   "asset_operations",
   "asset_price_cache",
   // Connected sources project into an asset, with positions beneath the source —
@@ -960,6 +964,32 @@ async function importWorkspace(
       }
     }
 
+    // Annual contribution ceilings (ADR 0080), restored by id after their holdings
+    // (FK). Only the declaration is in the file: what has been consumed derives
+    // from the operations restored above, so nothing is written for it.
+    if (doc.contributionAllowances.length > 0) {
+      await db
+        .insert(contributionAllowances)
+        .values(
+          doc.contributionAllowances.map((allowance) => ({
+            annualCapMinor: allowance.annualCapMinor,
+            id: allowance.id,
+            label: allowance.label,
+            scopeId: allowance.scopeId,
+          })),
+        )
+        .run();
+      const allowanceLinks = doc.contributionAllowances.flatMap((allowance) =>
+        allowance.holdingIds.map((assetId) => ({
+          allowanceId: allowance.id,
+          assetId,
+        })),
+      );
+      if (allowanceLinks.length > 0) {
+        await db.insert(contributionAllowanceHoldings).values(allowanceLinks).run();
+      }
+    }
+
     if (doc.warningOverrides.length > 0) {
       await db
         .insert(warningOverrides)
@@ -1427,6 +1457,22 @@ async function buildWorkspaceExport(
     .orderBy(asc(payoutSchedules.holdingId), asc(payoutSchedules.id))
     .all();
 
+  // Annual contribution ceilings (ADR 0080). Only the declaration is exported:
+  // what has been consumed derives from the operations already in the document.
+  const allowanceRows = await db
+    .select()
+    .from(contributionAllowances)
+    .orderBy(asc(contributionAllowances.scopeId), asc(contributionAllowances.id))
+    .all();
+  const allowanceHoldingRows = await db
+    .select()
+    .from(contributionAllowanceHoldings)
+    .orderBy(
+      asc(contributionAllowanceHoldings.allowanceId),
+      asc(contributionAllowanceHoldings.assetId),
+    )
+    .all();
+
   const contributionRows = await db
     .select()
     .from(plannedContributions)
@@ -1494,6 +1540,13 @@ async function buildWorkspaceExport(
     contributionsByScope.set(row.scopeId, plan);
   }
 
+  const allowanceHoldingsById = new Map<string, string[]>();
+  for (const row of allowanceHoldingRows) {
+    const list = allowanceHoldingsById.get(row.allowanceId) ?? [];
+    list.push(row.assetId);
+    allowanceHoldingsById.set(row.allowanceId, list);
+  }
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
@@ -1518,6 +1571,13 @@ async function buildWorkspaceExport(
     })),
     contributionPlans: [...contributionsByScope.values()],
     contributionReconciliations: [...reconciliationById.values()],
+    contributionAllowances: allowanceRows.map((row) => ({
+      annualCapMinor: row.annualCapMinor,
+      holdingIds: allowanceHoldingsById.get(row.id) ?? [],
+      id: row.id,
+      label: row.label,
+      scopeId: row.scopeId,
+    })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows
       .filter((row) => row.deletedAt === null)

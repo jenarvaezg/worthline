@@ -3078,6 +3078,86 @@ code {
   margin: 12px 0 0;
 }
 
+/* Cupo anual de aportación (#1427). Un contador de techo: llenar la barra no es
+   un logro, así que su color sube de neutro a oro y de oro a la tinta del debe.
+   El color nunca va solo — la línea impresa dice «quedan» o «te has pasado». */
+.objetivosCupoRow {
+  border-top: var(--rule-heavy);
+  margin-top: 18px;
+  padding-top: 14px;
+}
+.objetivosCupoRow:first-of-type {
+  border-top: 0;
+  margin-top: 4px;
+  padding-top: 0;
+}
+.objetivosCupoTop {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+.objetivosCupoName {
+  font-weight: 650;
+}
+/* Una ceja repetida (una por fila) no lleva versalita ni tracking: el canon §3
+   reserva eso para labels pequeños reales — cabeceras, stats, folios. */
+.objetivosCupoYear {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+/* Iosevka solo en las cifras (canon §3): la línea es prosa, y «de», «quedan» y
+   «te has pasado» son palabras, no columnas numéricas. */
+.objetivosCupoFigure {
+  margin: 8px 0 10px;
+}
+.objetivosCupoFigure strong,
+.objetivosCupoRemainder {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+}
+.objetivosCupoFigure strong {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+.objetivosCupoRemainder.exceeded {
+  color: var(--debit-rule);
+}
+.objetivosCupoNote,
+.objetivosCupoEmpty,
+.objetivosCupoHint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin: 10px 0 0;
+}
+.objetivosCupoAudit,
+.objetivosCupoEditor {
+  font-size: 0.85rem;
+  margin-top: 10px;
+}
+.objetivosCupoAudit summary,
+.objetivosCupoEditor summary {
+  color: var(--blue);
+  cursor: pointer;
+}
+.objetivosCupoEntries {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.objetivosCupoEntries li {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 8rem) minmax(0, 1fr) minmax(0, auto);
+}
+.objetivosCupoEntryAmount {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 /* Niveles FIRE rail (N1, #513) */
 .fireLevelsRail {
   border-top: 1px solid var(--hairline);
@@ -4069,6 +4149,12 @@ code {
 
 .fundedBar i.full {
   background: var(--green);
+}
+
+/* Tono de techo (#1427): la misma receta de barra, leída al revés — pasarse del
+   tope se marca con la tinta del debe, nunca como el verde de «lleno». */
+.fundedBar i.over {
+  background: var(--debit-rule);
 }
 
 /* Canon §3: «Nuevo objetivo» opens as a ruled block below the list, not a tinted

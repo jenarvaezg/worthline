@@ -324,6 +324,19 @@ worthline never auto-matches an independently entered **operation** to an occurr
 States: **pending → fulfilled** (linked) or **skipped**; past pending occurrences are a
 visible backlog.
 
+**Contribution allowance** (cupo anual de aportación):
+A ceiling on what may enter a **set** of **holdings** during one calendar year, plus how
+much of it the ledger has already spent. The **cap** is the user's declaration and never
+a rule in the code — the legal limit depends on the year's law, on employer
+contributions and on earned income, so encoding it would be tax advice with an expiry
+date. What has been **consumed** is derived on every read from the real **buy**
+**operations** of the year to those holdings — never from **planned contributions** or
+their **reconciliations**, and never stored. A sell gives no room back. Only holdings
+with an operation ledger may be marked, and the whole thing adds no figure the net-worth
+math reads. UI label: "Cupo anual de aportación". See ADR 0080.
+_Avoid_: "límite fiscal" (worthline does not know one), "cupo consumido" as a typed
+figure (it is derived).
+
 **Statement**:
 A file an external broker exports listing investment movements — one fund's or a
 whole account's (e.g. a MyInvestor orders export). The user uploads it and declares
@@ -971,6 +984,7 @@ _Avoid_: imported history (implies verified), synced history.
 - A **delta breakdown** splits the change between two **snapshots** (normally **monthly closes**) into market movement, **payouts**, and **net savings** — the residual; it reads frozen snapshots, per-holding rows, **operations**, and **payouts**, and never writes history.
 - A **data-quality signal** is derived live from persisted state; **warnings** are one category of it, and one shared collection feeds the home health block, the **agent view**, and the **financial assistant** alike.
 - A **contribution plan** forecasts additions to **holdings**; its **occurrences** are **reconciled** by hand into real **operations** / value updates (never auto-matched, never auto-applied). It feeds a what-if, but adds no figure the net-worth math reads and never enters a **snapshot** (ADR 0041). It does **not** feed the FIRE projection's monthly savings: that is the capacity the user declared and nothing else (ADR 0074) — a plan row is one destination's planned addition, so summing rows measures a subset of savings, never the total.
+- A **contribution allowance** declares a per-calendar-year ceiling for a set of **holdings** and derives what has been spent against it from the **operation** ledger — the ceiling is the user's datum, the consumption is never typed and never read off the **contribution plan**, and a counter fed by intention instead of truth would invite the very overshoot it exists to prevent (ADR 0080).
 - An **agent view** reads a **scope**'s current portfolio, historical snapshots, **FIRE progress**, data-quality signals, and the calculation facts behind them; it defaults to the household **scope**, may be narrowed to one member or member group, preserves user-authored member, group, and holding labels, exposes context rather than recommendations, excludes secrets and transfer artifacts, never changes live data, and never refreshes or captures data as a side effect of being read.
 - A **financial assistant** consumes the **agent view** and may recommend actions, but any workspace mutation still goes through an **assistant proposal** and explicit user confirmation.
 - An **assistant quick action** may open an internal source, change the screen context, or launch another read-only analysis while keeping the assistant layer open.

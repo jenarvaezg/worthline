@@ -478,6 +478,8 @@ export function okMessage(key: string | undefined): string | null {
   }
 
   const messages: Record<string, string> = {
+    allowance_deleted: "Cupo anual eliminado.",
+    allowance_saved: "Cupo anual guardado.",
     anchor_added: "Tasación registrada.",
     anchor_deleted: "Tasación eliminada.",
     anchor_saved: "Tasación actualizada.",
