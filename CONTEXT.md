@@ -211,7 +211,9 @@ for each holding (the IRR of a position must see capital leaving or arriving, at
 day's market value) and never a realized gain: the latent gain travels with the
 capital as the destination's **inherited cost**, which is why the pair cancels itself
 at portfolio level on its date. Halves are always written together, never one at a
-time — see ADR 0082.
+time — and removed together too, through the one gate that owns both rows (ADR 0082,
+ADR 0083). What the user states is the **importe** and one date; each half's units are
+that amount over its own unit price, so nobody types participaciones.
 UI label: "Traspaso".
 In prose and on screen it is always "traspaso": "transfer" on its own collides with
 the **workspace transfer** document. In code the two never meet — the transfer

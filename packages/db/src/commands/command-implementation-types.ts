@@ -30,8 +30,13 @@ import type {
   CreateInvestmentOperationInput,
   DebtModel,
   DecimalString,
+  DomainResult,
   ValuationCadence,
 } from "@worthline/domain";
+import type {
+  RecordExternalTransferInCommand,
+  RecordTransferCommand,
+} from "./investment-transfer";
 import type { FactBatchTrigger } from "./types";
 
 /**
@@ -105,6 +110,38 @@ export interface DatedFactCommandImplementations {
     today?: string;
     trigger: Extract<FactBatchTrigger, "assistant" | "statement">;
   }) => Promise<void>;
+  /**
+   * The traspaso gate (#1479, PRD #1393): mint BOTH halves of one traspaso and ripple
+   * both holdings' history, atomically in a single transaction. The units of each half
+   * and the acquisition cost that travels are DERIVED here, never supplied.
+   *
+   * Returns a `DomainResult` rather than throwing on the figures the user stated (a
+   * non-positive importe, a VL of zero, an importe larger than the position, two
+   * holdings in different currencies) so a screen can render them beside the field
+   * that produced them. Structural impossibilities still throw — an unknown holding,
+   * a non-investment one, a connected one.
+   */
+  recordTransferAndRipple: (
+    command: RecordTransferCommand,
+  ) => Promise<DomainResult<void>>;
+  /**
+   * Record an «alta por traspaso externo» (#1479): ONE `transfer_in` with no pair,
+   * because its outgoing half lives in another institution. Writes the row and ripples
+   * the destination's history atomically. The inherited cost is DECLARED — nobody here
+   * can derive it — and defaults to the amount that arrived.
+   */
+  recordExternalTransferInAndRipple: (
+    command: RecordExternalTransferInCommand,
+  ) => Promise<DomainResult<void>>;
+  /**
+   * Delete BOTH halves of one traspaso and ripple both holdings, atomically (#1479) —
+   * the mirror of the write. Returns one entry per deleted row, or an empty array when
+   * no row carries that `transferId`.
+   */
+  deleteTransferAndRipple: (params: {
+    transferId: string;
+    today?: string;
+  }) => Promise<Array<{ assetId: string; executedAt: string }>>;
   deleteOperationAndRipple: (params: {
     operationId: string;
     today?: string;

@@ -89,6 +89,68 @@ describe("dated-fact command provenance (#889)", () => {
     store.close();
   });
 
+  test("both halves of one traspaso land on ONE batch (#1479)", async () => {
+    const client = openLibsqlClient(":memory:");
+    const store = await createStoreFromSqlite(client);
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member", name: "Member" }],
+      mode: "individual",
+    });
+    for (const id of ["origin", "destination"]) {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id,
+        liquidityTier: "market",
+        name: id,
+        ownership: [{ memberId: "member", shareBps: 10_000 }],
+      });
+    }
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "origin",
+        currency: "EUR",
+        executedAt: "2026-07-01",
+        feesMinor: 0,
+        id: "opening",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    await store.command.recordInvestmentTransfer({
+      destinationAssetId: "destination",
+      destinationPricePerUnit: "50",
+      executedAt: "2026-07-10",
+      inOperationId: "in",
+      originAssetId: "origin",
+      originPricePerUnit: "120",
+      outOperationId: "out",
+      portion: { kind: "all" },
+      today: TODAY,
+      transferId: "trf",
+    });
+
+    // Two batches in total — the opening's and the traspaso's — and the traspaso's is
+    // ONE, shared by both halves. It is not what pairs them (that is `transfer_id`,
+    // ADR 0082); it is what says the two rows are one application of dated facts.
+    const batches = await client.execute(
+      "SELECT id FROM fact_batch ORDER BY created_at, id",
+    );
+    expect(batches.rows).toHaveLength(2);
+    const halves = await client.execute(
+      "SELECT DISTINCT batch_id FROM asset_operations WHERE transfer_id = 'trf'",
+    );
+    expect(halves.rows).toHaveLength(1);
+    expect(halves.rows[0]!.batch_id).not.toBeNull();
+    const opening = await client.execute(
+      "SELECT batch_id FROM asset_operations WHERE id = 'opening'",
+    );
+    expect(opening.rows[0]!.batch_id).not.toBe(halves.rows[0]!.batch_id);
+    store.close();
+  });
+
   test("a statement batch links new facts without restamping overwritten operations", async () => {
     const client = openLibsqlClient(":memory:");
     const store = await createStoreFromSqlite(client);

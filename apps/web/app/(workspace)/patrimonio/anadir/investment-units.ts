@@ -1,5 +1,10 @@
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
-import { type DecimalString, divideUnits, formatUnits } from "@worthline/domain";
+import {
+  type DecimalString,
+  divideUnits,
+  formatUnits,
+  UNITS_READBACK_DECIMALS,
+} from "@worthline/domain";
 
 /**
  * The "saldo de hoy" capture (#597, PRD #593 S2): a user who only knows what an
@@ -19,7 +24,8 @@ import { type DecimalString, divideUnits, formatUnits } from "@worthline/domain"
  */
 
 /**
- * Decimals a derived unit count is cut at (#1395). `divideUnits` defaults to 20 —
+ * Decimals a derived unit count is cut at (#1395) — this capture's name for the app's
+ * units reading voice, `UNITS_READBACK_DECIMALS`. `divideUnits` defaults to 20 —
  * right for recovering a NAV from an amount (ADR 0018), wrong for participaciones:
  * a fund balance over a 319,59 € NAV landed as `3,40996276479239025001` (#1393), a
  * precision no bank publishes and that the app itself cannot read back
@@ -33,7 +39,7 @@ import { type DecimalString, divideUnits, formatUnits } from "@worthline/domain"
  * shows a value next to these units derives it from them (see the derived branch of
  * `asistente/holding-creation-opening.ts`), never from the amount that was typed.
  */
-export const OPENING_UNITS_DECIMALS = 6;
+export const OPENING_UNITS_DECIMALS = UNITS_READBACK_DECIMALS;
 
 export interface OpeningUnitsInput {
   saldoRaw: string;

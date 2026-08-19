@@ -326,11 +326,13 @@ export {
   divideUnits,
   formatUnits,
   isPositiveDecimal,
+  minorToDecimal,
   multiplyToMinor,
   normalizeDecimal,
   proportionMinor,
   scaleDecimal,
   subtractUnits,
+  UNITS_READBACK_DECIMALS,
 } from "./decimal";
 export type {
   StackedBandGeometry,
@@ -819,6 +821,7 @@ export {
   latestOperationPrice,
   netUnitsByAsset,
   netUnitsFromOperations,
+  operationsUpTo,
 } from "./positions";
 export type {
   DetectPriceBackfillInput,
@@ -1044,6 +1047,14 @@ export type {
   StatementBroker,
 } from "./statement-parse";
 export { parseStatement, parseStatementWithAdapter } from "./statement-parse";
+export type {
+  ExternalTransferInIntent,
+  TransferIntent,
+  TransferOrigin,
+  TransferPair,
+  TransferPortion,
+} from "./transfer-plan";
+export { planExternalTransferIn, planTransfer } from "./transfer-plan";
 export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
 export {
   cadenceOrDefault,

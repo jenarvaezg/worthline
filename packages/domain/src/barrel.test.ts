@@ -51,6 +51,8 @@ const KEY_EXPORTS = [
   "createInvestmentOperation",
   "derivePosition",
   "netUnitsByAsset",
+  // transfer-plan (#1479)
+  "planTransfer",
   // returns (#548)
   "operationCashflows",
   "operationTwrCashflows",

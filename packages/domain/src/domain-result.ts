@@ -18,6 +18,29 @@ export type DomainViolation =
     }
   | { code: "investment_manual_valuation_rejected" }
   | { code: "connected_manual_valuation_rejected" }
+  // The refusals of the traspaso gate (#1479). All six are figures a user typed, so
+  // they are data rather than throws — unlike the row-level column rules of ADR 0082,
+  // which no form can reach.
+  | { code: "transfer_same_holding" }
+  | { code: "transfer_amount_not_positive" }
+  | { code: "transfer_price_not_positive"; side: "origin" | "destination" }
+  | { code: "transfer_origin_has_no_units" }
+  | {
+      /** A declared inherited cost cannot be negative (the external entry, #1479). */
+      code: "transfer_inherited_cost_negative";
+    }
+  | {
+      /** The two holdings' ledgers are in different currencies, so no cost can travel. */
+      code: "transfer_currency_mismatch";
+      origin: string;
+      destination: string;
+    }
+  | {
+      /** The stated importe divides into more participaciones than the origin holds. */
+      code: "transfer_units_exceed_position";
+      unitsRequested: string;
+      unitsHeld: string;
+    }
   | { code: "value_update_investment_holding" }
   | { code: "debt_balance_governed_by_curve" }
   | { code: "duplicate_primary_residence"; existingName: string };

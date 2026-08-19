@@ -133,6 +133,26 @@ describe("planStatementMerge (ADR 0018, S2)", () => {
     expect(plan.toCreate.map((row) => row.dateKey)).toEqual(["2024-01-10", "2024-02-10"]);
     expect(plan.untouched).toEqual([]);
   });
+
+  test("half a traspaso is NEVER replaced, even carrying source: opening (#1479)", () => {
+    // The retyping pass of #1485 leaves `source: "opening"` on every re-typed alta, and
+    // Jorge's book already holds those. `replaceOpening` is for the SYNTHETIC opening
+    // balance an alta minted, not for a fact of the ledger — and deleting this row
+    // would orphan the other half in the destination holding. The store refuses the
+    // delete outright, so proposing it would abort the whole import.
+    const half: InvestmentOperation = {
+      ...op("trf_half", "2026-06-15", "20", "50", "opening"),
+      kind: "transfer_in",
+      transferCostMinor: 100_000,
+      transferId: "trf_1",
+    };
+
+    const plan = planStatementMerge([buy("2024-01-10")], [half]);
+
+    expect(plan.toDelete).toEqual([]);
+    // And it is not silently ignored either: it keeps its place in the ledger.
+    expect(plan.untouched.map((operation) => operation.id)).toEqual(["trf_half"]);
+  });
 });
 
 describe("planStatementMerge — same-date anomalies (ADR 0018, S4)", () => {

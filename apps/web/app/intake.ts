@@ -7,7 +7,7 @@ import type {
   PortfolioGroupKey,
   PriceFreshnessState,
 } from "@worthline/domain";
-import { PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
+import { formatUnits, PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
 
 import { PRESERVED_VALUE_PREFIX } from "./current-url";
 
@@ -591,6 +591,25 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return "El valor de una inversión es siempre calculado — registra una operación o actualiza el precio.";
     case "connected_manual_valuation_rejected":
       return "El valor de un activo conectado se actualiza al sincronizar — no puedes fijarlo a mano.";
+    case "transfer_same_holding":
+      return "El origen y el destino del traspaso son la misma inversión — elige otra de destino.";
+    case "transfer_amount_not_positive":
+      return "Indica cuánto se ha traspasado, en euros.";
+    case "transfer_price_not_positive":
+      return violation.side === "origin"
+        ? "Necesito el valor liquidativo de la inversión de origen en la fecha del traspaso."
+        : "Necesito el valor liquidativo de la inversión de destino en la fecha del traspaso.";
+    case "transfer_origin_has_no_units":
+      return "Esa inversión no tiene participaciones en esa fecha, así que no hay nada que traspasar.";
+    case "transfer_inherited_cost_negative":
+      return "El coste de adquisición que traen esas participaciones no puede ser negativo.";
+    case "transfer_currency_mismatch":
+      return `Esa inversión está en ${violation.destination} y la de origen en ${violation.origin}: no puedo traspasar entre divisas distintas, porque el coste que viaja no tendría tipo de cambio.`;
+    case "transfer_units_exceed_position":
+      // The gate refuses instead of clamping, so the message has to carry the way
+      // out: the two unit counts, and the option that covers the ordinary case of a
+      // figure a cent or two over — «todo».
+      return `Ese importe son ${formatUnits(violation.unitsRequested)} participaciones y solo hay ${formatUnits(violation.unitsHeld)} en esa fecha. Baja el importe, o marca «traspasar todo».`;
     case "value_update_investment_holding":
       return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
     case "debt_balance_governed_by_curve":
