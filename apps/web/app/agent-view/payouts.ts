@@ -108,6 +108,8 @@ export async function buildScopePassiveIncome(input: {
   const currency = input.workspace.baseCurrency;
   return {
     total: moneyOf(lens.totalMinor, currency),
+    expenses: moneyOf(lens.expensesMinor, currency),
+    net: moneyOf(lens.netMinor, currency),
     count: lens.count,
     windowStart: lens.windowStartISO,
     windowEnd: lens.windowEndISO,
@@ -153,6 +155,8 @@ function toWindow(
 ): AgentViewPassiveIncomeWindow {
   return {
     total: moneyOf(window.totalMinor, currency),
+    expenses: moneyOf(window.expensesMinor, currency),
+    net: moneyOf(window.netMinor, currency),
     count: window.count,
     windowStart: window.windowStartISO,
     windowEnd: window.windowEndISO,

@@ -138,3 +138,51 @@ describe("CobrosSection — declared expenses", () => {
     expect(markup).toContain('name="saveExpenses"');
   });
 });
+
+// ── the net lens (#1463) ──────────────────────────────────────────────────────
+
+describe("CobrosSection — net passive income (#1463)", () => {
+  test("nets the headline and names gross − expenses when the schedule declares costs", () => {
+    const markup = renderSection({
+      monthlySpendingMinor: 220000,
+      schedules: [{ ...RENT, expensesMinor: 20000 }],
+    });
+
+    // 7 rents (Jan–Jul 2026) × 100.000 + the 34.000 dividend = 734.000 gross;
+    // 7 × 20.000 declared expenses = 140.000; net 594.000.
+    expect(markup).toContain("Renta pasiva neta · últimos 12 meses");
+    expect(markup).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 594000, currency: "EUR" }, false),
+    );
+    expect(markup).toContain("brutos");
+    expect(markup).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 734000, currency: "EUR" }, false),
+    );
+    expect(markup).toContain("gastos declarados");
+    expect(markup).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 140000, currency: "EUR" }, false),
+    );
+    // Coverage runs on net: 594.000 / 2.640.000 = 22.5 % — never the gross 27.8 %.
+    expect(markup).toContain("22.5");
+    expect(markup).not.toContain("27.8");
+  });
+
+  test("without declared costs the strip reads exactly as before (gross, no sub-line)", () => {
+    const markup = renderSection({ monthlySpendingMinor: 220000 });
+    expect(markup).toContain("Renta pasiva · últimos 12 meses");
+    expect(markup).not.toContain("Renta pasiva neta");
+    expect(markup).not.toContain("brutos");
+  });
+
+  test("a negative net (expenses above the rent) keeps the coverage bar at zero", () => {
+    const markup = renderSection({
+      monthlySpendingMinor: 220000,
+      schedules: [{ ...RENT, expensesMinor: 150000 }],
+    });
+
+    // 7 × (100.000 − 150.000) − dividend still positive? gross 734.000,
+    // expenses 1.050.000 → net −316.000: declarable, and the bar clamps at 0.
+    expect(markup).toContain("Renta pasiva neta");
+    expect(markup).toContain("width:0%");
+  });
+});

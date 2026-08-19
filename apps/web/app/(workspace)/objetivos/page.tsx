@@ -82,8 +82,20 @@ function PassiveIncomePanel({
         <>
           <div className="objetivosPasivaTop">
             <div className="objetivosPasivaFigure">
-              <span className="objetivosPasivaCap">Cobros · últimos 12 meses</span>
-              <strong className="objetivosPasivaBig">{fmt(lens.totalMinor)}</strong>
+              {/* Neto como titular (#1463): es de lo que se vive. El bruto no
+                  desaparece — baja a la sub-línea, solo cuando difieran. */}
+              <span className="objetivosPasivaCap">
+                {lens.expensesMinor > 0
+                  ? "Cobros netos · últimos 12 meses"
+                  : "Cobros · últimos 12 meses"}
+              </span>
+              <strong className="objetivosPasivaBig">{fmt(lens.netMinor)}</strong>
+              {lens.expensesMinor > 0 ? (
+                <span className="objetivosPasivaCap">
+                  brutos {fmt(lens.totalMinor)} − gastos declarados{" "}
+                  {fmt(lens.expensesMinor)}
+                </span>
+              ) : null}
             </div>
             {coveragePct != null ? (
               <div className="objetivosPasivaFigure objetivosPasivaCoverage">
@@ -95,7 +107,12 @@ function PassiveIncomePanel({
 
           {lens.coverageRatio != null ? (
             <div className="objetivosPasivaBar" aria-hidden="true">
-              <i style={{ width: `${Math.min(100, lens.coverageRatio * 100)}%` }} />
+              {/* Un neto negativo (gastos > renta) es declarable: la barra se queda a 0. */}
+              <i
+                style={{
+                  width: `${Math.min(100, Math.max(0, lens.coverageRatio * 100))}%`,
+                }}
+              />
             </div>
           ) : null}
 

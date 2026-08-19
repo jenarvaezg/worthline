@@ -35,9 +35,11 @@ export interface PayoutSchedule {
    * What this income costs its owner, per occurrence and in the SAME cadence as
    * `amountMinor` — the agency, the IBI, the insurance, the community fees, the
    * maintenance, the empty months (#1448). The one exception to "a payout is
-   * income-only": it adds no figure either (net rent is not a payout, and the
-   * passive-income lens stays gross), it exists so a rented property's FIRE return
-   * can be its NET yield instead of the housing rung's guessed 3 %.
+   * income-only": it adds no net-worth figure either (net rent is not a payout).
+   * Two consumers, two rules: the FIRE return uses it so a rented property yields
+   * its NET rate instead of the housing rung's guessed 3 % (and refuses to derive
+   * when it is missing), and the passive-income lens nets its window with it
+   * (#1463) — subtracting where declared, gross elsewhere.
    *
    * Absent / null means **not declared**, and nothing is assumed from it: no rate
    * is derived at all rather than the gross being used, which would flatter. A
@@ -144,6 +146,15 @@ export function deriveScheduleOccurrences(
 export interface DatedAmount {
   dateISO: string;
   amountMinor: number;
+  /**
+   * The occurrence's declared cost (#1463), carried from its schedule's
+   * `expensesMinor` — one-offs never have one. Absent means not declared, and the
+   * occurrence nets as its gross: the lens' rule is "subtract where there is a
+   * figure", unlike the FIRE rate (#1448) which refuses to derive at all. Returns
+   * and the delta breakdown ignore this on purpose: a payout stays attribution
+   * (ADR 0054), and what arrived is the gross.
+   */
+  expensesMinor?: number;
 }
 
 /**
@@ -178,10 +189,15 @@ export function collectHoldingPayouts(
   }
   for (const schedule of schedules) {
     // deriveScheduleOccurrences already caps at today and honors end/exclusions.
+    // Today's expense declaration rides every occurrence, past ones included —
+    // the same retroactivity the schedule's exclusions already have (#1463).
     for (const occurrence of deriveScheduleOccurrences(schedule, todayISO)) {
       push(occurrence.holdingId, {
         dateISO: occurrence.dateISO,
         amountMinor: occurrence.amountMinor,
+        ...(schedule.expensesMinor == null
+          ? {}
+          : { expensesMinor: schedule.expensesMinor }),
       });
     }
   }
@@ -191,7 +207,12 @@ export function collectHoldingPayouts(
 // ── trailing passive income ──────────────────────────────────────────────────
 
 export interface PassiveIncomeWindow {
+  /** Gross sum of the window's payouts — what arrived (attribution, ADR 0054). */
   totalMinor: number;
+  /** Declared expenses of the window's occurrences; 0 where nothing is declared. */
+  expensesMinor: number;
+  /** totalMinor − expensesMinor: what the owner lives on (#1463). */
+  netMinor: number;
   count: number;
   windowStartISO: string;
   windowEndISO: string;
@@ -203,7 +224,7 @@ export interface PassiveIncomeWindow {
  * exactly twelve months ago is not double-counted at both ends of a rolling read.
  */
 export function passiveIncomeTrailing(
-  rows: ReadonlyArray<{ dateISO: string; amountMinor: number }>,
+  rows: ReadonlyArray<{ dateISO: string; amountMinor: number; expensesMinor?: number }>,
   todayISO: string,
   months = 12,
 ): PassiveIncomeWindow {
@@ -213,8 +234,12 @@ export function passiveIncomeTrailing(
     const t = parse(r.dateISO).getTime();
     return t > start.getTime() && t <= today.getTime();
   });
+  const totalMinor = inWindow.reduce((acc, r) => acc + r.amountMinor, 0);
+  const expensesMinor = inWindow.reduce((acc, r) => acc + (r.expensesMinor ?? 0), 0);
   return {
-    totalMinor: inWindow.reduce((acc, r) => acc + r.amountMinor, 0),
+    totalMinor,
+    expensesMinor,
+    netMinor: totalMinor - expensesMinor,
     count: inWindow.length,
     windowStartISO: toISO(start),
     windowEndISO: todayISO,
