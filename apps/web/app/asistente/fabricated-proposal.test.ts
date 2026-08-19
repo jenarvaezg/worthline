@@ -3,8 +3,12 @@ import { describe, expect, test } from "vitest";
 
 import {
   claimsPreparedProposal,
+  FABRICATED_PROPOSAL_NOTE,
+  fabricatedProposalNote,
   messagesWithFabricatedProposal,
+  NO_PROPOSAL_RETURNED_NOTE,
 } from "./fabricated-proposal";
+import { proposalCardPart, rejectedProposalPart } from "./proposal-part-fixtures";
 
 /** The prose the model actually emitted in production (#1262), trimmed. */
 const PRODUCTION_INCIDENT =
@@ -21,19 +25,22 @@ function textPart(text: string): UIMessage["parts"][number] {
   return { text, type: "text" };
 }
 
-function proposalPart(): UIMessage["parts"][number] {
-  return {
-    input: { holdingId: "wl_hld_1" },
-    output: { mode: "declare_balance", proposalId: "p1" },
-    state: "output-available",
-    toolCallId: "call-1",
-    type: "tool-propose_correction",
-  } as unknown as UIMessage["parts"][number];
+function flagged(messages: UIMessage[], streaming = false): [string, string][] {
+  return [...messagesWithFabricatedProposal(messages, streaming)];
 }
 
 describe("claimsPreparedProposal", () => {
   test("recognises the claim the model made in production", () => {
     expect(claimsPreparedProposal(PRODUCTION_INCIDENT)).toBe(true);
+  });
+
+  test("still reads the ceremony when a payment card is only the subject", () => {
+    // The masking must not open a hole: «propuesta» carries the sentence here.
+    expect(
+      claimsPreparedProposal(
+        "He preparado la propuesta para corregir el saldo de tu tarjeta de crédito.",
+      ),
+    ).toBe(true);
   });
 
   test("recognises the other ways of asserting one exists", () => {
@@ -45,6 +52,11 @@ describe("claimsPreparedProposal", () => {
       "La propuesta está lista.",
       "La propuesta queda preparada más abajo.",
       "He dejado preparada la propuesta de amortización.",
+      // The delivery form and the noun Jorge's turn used (#1468). «Tarjeta» is the
+      // app's own word for the only place a change can be confirmed.
+      "A continuación tienes las tarjetas para confirmar cada uno de estos movimientos.",
+      "Aquí tienes la tarjeta para confirmarlo.",
+      "He preparado las tarjetas de los dos traspasos.",
     ]) {
       expect(claimsPreparedProposal(text), text).toBe(true);
     }
@@ -152,6 +164,14 @@ describe("claimsPreparedProposal", () => {
       "No, el registro no está listo todavía: falta el importe.",
       // Plain financial prose around the word «estado».
       "El estado de tu cartera es saludable.",
+      // Offering the card is still an offer, not a claim (#1468).
+      "¿Quieres que prepare las tarjetas de los dos traspasos?",
+      "No he preparado ninguna tarjeta: primero necesito el documento.",
+      // The OTHER «tarjeta» (#1468): a means of payment the workspace really holds.
+      // These are among the most ordinary honest turns there are.
+      "He actualizado el saldo de tu tarjeta de crédito.",
+      "Ya tienes la tarjeta de crédito registrada en worthline.",
+      "He creado la tarjeta de débito con el saldo que me has dado.",
     ]) {
       expect(claimsPreparedProposal(text), text).toBe(false);
     }
@@ -160,31 +180,69 @@ describe("claimsPreparedProposal", () => {
 
 describe("messagesWithFabricatedProposal", () => {
   test("flags the assistant turn that claims a proposal it never called for", () => {
-    const flagged = messagesWithFabricatedProposal(
-      [
+    expect(
+      flagged([
         { id: "u1", parts: [textPart("Actualiza el saldo")], role: "user" },
         assistantMessage("a1", [textPart(PRODUCTION_INCIDENT)]),
-      ],
-      false,
-    );
-
-    expect([...flagged]).toEqual(["a1"]);
+      ]),
+    ).toEqual([["a1", "no-call"]]);
   });
 
-  test("never flags a turn that really called a proposal tool", () => {
+  test("never flags a turn that really painted a card", () => {
     // The whole point: the card is there, so the sentence is true. This is the
     // normal path and it must stay silent.
-    const flagged = messagesWithFabricatedProposal(
-      [assistantMessage("a1", [textPart(PRODUCTION_INCIDENT), proposalPart()])],
-      false,
-    );
-
-    expect([...flagged]).toEqual([]);
+    expect(
+      flagged([
+        assistantMessage("a1", [textPart(PRODUCTION_INCIDENT), proposalCardPart()]),
+      ]),
+    ).toEqual([]);
   });
 
-  test("counts a proposal tool part in ANY state, not only a finished one", () => {
-    // A stream that died mid-call still means the model asked for a real
-    // proposal; the fabrication this guards against calls nothing at all.
+  test("flags the turn whose proposal call worthline REJECTED (#1468)", () => {
+    // Jorge's case: the model asked, the lane answered `{ error: … }`, nothing was
+    // painted — and the old guard fell silent because a tool part was there by name.
+    expect(
+      flagged([
+        assistantMessage("a1", [
+          textPart("He preparado las propuestas para registrar los movimientos."),
+          rejectedProposalPart(),
+        ]),
+      ]),
+    ).toEqual([["a1", "rejected"]]);
+  });
+
+  test("stays silent when one proposal landed and another was rejected", () => {
+    // There IS a card to confirm, so the note would speak in false about this turn.
+    expect(
+      flagged([
+        assistantMessage("a1", [
+          textPart(PRODUCTION_INCIDENT),
+          proposalCardPart(),
+          rejectedProposalPart(),
+        ]),
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a proposal payload no card can parse does not excuse the claim", () => {
+    // The shape the guard used to accept: a tool part whose output is not a proposal.
+    const unparseable = {
+      input: {},
+      output: { mode: "declare_balance", proposalId: "p1" },
+      state: "output-available",
+      toolCallId: "call-1",
+      type: "tool-propose_correction",
+    } as unknown as UIMessage["parts"][number];
+
+    expect(
+      flagged([assistantMessage("a1", [textPart(PRODUCTION_INCIDENT), unparseable])]),
+    ).toEqual([["a1", "rejected"]]);
+  });
+
+  test("tells the call that never answered apart from the one that was refused", () => {
+    // A stream that died mid-call painted no card either, so the user still gets the
+    // note; the KIND differs because `propose_*` persists before returning, and the
+    // history repair has its own, truer word for that turn.
     const started = {
       input: {},
       state: "input-streaming",
@@ -192,12 +250,33 @@ describe("messagesWithFabricatedProposal", () => {
       type: "tool-propose_early_repayment",
     } as unknown as UIMessage["parts"][number];
 
-    expect([
-      ...messagesWithFabricatedProposal(
-        [assistantMessage("a1", [textPart("He preparado la propuesta."), started])],
-        false,
-      ),
-    ]).toEqual([]);
+    expect(
+      flagged([
+        assistantMessage("a1", [textPart("He preparado la propuesta."), started]),
+      ]),
+    ).toEqual([["a1", "interrupted"]]);
+  });
+
+  test("a rejected lane outranks an interrupted one in the same turn", () => {
+    // Both painted nothing; the user reads the same note either way. The kind is
+    // what the history repair reads, and there the answered refusal is the fact
+    // worth telling the model — the interrupted call gets its own note in the prune.
+    const started = {
+      input: {},
+      state: "input-streaming",
+      toolCallId: "call-3",
+      type: "tool-propose_early_repayment",
+    } as unknown as UIMessage["parts"][number];
+
+    expect(
+      flagged([
+        assistantMessage("a1", [
+          textPart(PRODUCTION_INCIDENT),
+          started,
+          rejectedProposalPart(),
+        ]),
+      ]),
+    ).toEqual([["a1", "rejected"]]);
   });
 
   test("a read-only tool does not excuse the claim", () => {
@@ -209,12 +288,11 @@ describe("messagesWithFabricatedProposal", () => {
       type: "tool-get_financial_context",
     } as unknown as UIMessage["parts"][number];
 
-    expect([
-      ...messagesWithFabricatedProposal(
-        [assistantMessage("a1", [textPart("He preparado la propuesta."), readPart])],
-        false,
-      ),
-    ]).toEqual(["a1"]);
+    expect(
+      flagged([
+        assistantMessage("a1", [textPart("He preparado la propuesta."), readPart]),
+      ]),
+    ).toEqual([["a1", "no-call"]]);
   });
 
   test("leaves the in-flight message alone while it streams", () => {
@@ -225,32 +303,48 @@ describe("messagesWithFabricatedProposal", () => {
       assistantMessage("a2", [textPart("He preparado la propuesta.")]),
     ];
 
-    expect([...messagesWithFabricatedProposal(messages, true)]).toEqual(["a1"]);
-    expect([...messagesWithFabricatedProposal(messages, false)]).toEqual(["a1", "a2"]);
+    expect(flagged(messages, true)).toEqual([["a1", "no-call"]]);
+    expect(flagged(messages)).toEqual([
+      ["a1", "no-call"],
+      ["a2", "no-call"],
+    ]);
   });
 
   test("never flags the user's own words", () => {
     // The user may well type «he preparado la propuesta»; only the assistant can
     // fabricate the app's ceremony.
-    expect([
-      ...messagesWithFabricatedProposal(
-        [{ id: "u1", parts: [textPart("He preparado la propuesta")], role: "user" }],
-        false,
-      ),
-    ]).toEqual([]);
+    expect(
+      flagged([
+        { id: "u1", parts: [textPart("He preparado la propuesta")], role: "user" },
+      ]),
+    ).toEqual([]);
   });
 
   test("reads every text part of the turn, not just the first", () => {
-    expect([
-      ...messagesWithFabricatedProposal(
-        [
-          assistantMessage("a1", [
-            textPart("Voy a mirar tus deudas."),
-            textPart("Ya está: he preparado la propuesta."),
-          ]),
-        ],
-        false,
-      ),
-    ]).toEqual(["a1"]);
+    expect(
+      flagged([
+        assistantMessage("a1", [
+          textPart("Voy a mirar tus deudas."),
+          textPart("Ya está: he preparado la propuesta."),
+        ]),
+      ]),
+    ).toEqual([["a1", "no-call"]]);
+  });
+});
+
+describe("fabricatedProposalNote (#1468)", () => {
+  test("tells the user nothing was ever asked for", () => {
+    expect(fabricatedProposalNote("no-call")).toBe(FABRICATED_PROPOSAL_NOTE);
+  });
+
+  test("tells the user worthline returned no card, without quoting the refusal", () => {
+    for (const kind of ["rejected", "interrupted"] as const) {
+      expect(fabricatedProposalNote(kind)).toBe(NO_PROPOSAL_RETURNED_NOTE);
+    }
+    // The spine both notes share: «confirmo» in the chat applies nothing.
+    expect(NO_PROPOSAL_RETURNED_NOTE).toContain("no aplica nada");
+    // And it never asserts what worthline stored — the lanes persist before
+    // returning, so a cut-off call may well have left a proposal behind.
+    expect(NO_PROPOSAL_RETURNED_NOTE).not.toContain("no existe");
   });
 });

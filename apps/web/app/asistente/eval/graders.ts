@@ -1,4 +1,5 @@
 import type { QuickAction } from "@web/asistente/assistant-actions";
+import { PAYMENT_CARD_READING } from "@web/asistente/fabricated-proposal";
 
 /**
  * Pure graders for the assistant eval harness (#668, S6). They assert STRUCTURED
@@ -130,12 +131,13 @@ const INTERFACE_COMMENTARY = [
  * money, not about the chat's furniture — so those two readings are removed before the
  * match rather than left to fire. It is the same care the rest of this list is written
  * with, applied to the only term that has an innocent meaning here.
+ *
+ * The reading itself comes from the production guard, which had to draw the same line
+ * for the same word once «tarjeta» became ceremony vocabulary (#1468).
  */
-const CARD_AS_A_PRODUCT = /tarjetas?\s+de\s+(cr[ée]dito|d[ée]bito)/giu;
-
 export function commentsOnTheInterface(text: string): boolean {
   return mentionsAny(
-    text.replace(CARD_AS_A_PRODUCT, "medio de pago"),
+    text.replace(PAYMENT_CARD_READING, "medio de pago"),
     INTERFACE_COMMENTARY,
   );
 }

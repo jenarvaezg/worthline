@@ -30,6 +30,7 @@ import { resolveChatModels } from "@web/asistente/chat-model";
 import { countAssistantCourtesyUse } from "@web/asistente/courtesy-quota-store";
 import { DROPPED_ATTACHMENT_NOTE } from "@web/asistente/history-prose-budget";
 import { raiseMaintainerAlert } from "@web/asistente/maintainer-alert-store";
+import { correctionProposalOutput } from "@web/asistente/proposal-part-fixtures";
 import {
   readProviderCooldowns,
   recordProviderCooldown,
@@ -2731,9 +2732,8 @@ describe("historial envenenado por una tool call sin resultado (#1260)", () => {
  * propuesta…» plus a bulleted list and a request to confirm — without calling any
  * tool. Nothing was written, and the user answered «Confirmo» twice.
  */
-describe("ceremonia de propuesta falsificada (#1262)", () => {
+describe("ceremonia de propuesta falsificada (#1262, #1468)", () => {
   const CLAIM = "He preparado la propuesta de corrección para el saldo de hoy.";
-
   it("le dice al modelo, en su propio historial, que no preparó nada", async () => {
     const model = simpleAnswerModel("segunda respuesta");
     vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
@@ -2750,7 +2750,7 @@ describe("ceremonia de propuesta falsificada (#1262)", () => {
 
     expect(response.status).toBe(200);
     const turns = turnsOf(model.doStreamCalls[0]!);
-    expect(turns).toContain("no llamaste a ninguna tool propose_*");
+    expect(turns).toContain("ninguna tool propose_* devolvió una propuesta");
     // The prose the user read stays; only the correction is added.
     expect(turns).toContain(CLAIM);
   });
@@ -2773,7 +2773,7 @@ describe("ceremonia de propuesta falsificada (#1262)", () => {
                 toolCallId: "call-propuesta",
                 state: "output-available",
                 input: { holdingId: "wl_hld_1" },
-                output: { proposalId: "p1", mode: "declare_balance" },
+                output: correctionProposalOutput(),
               },
             ],
           },
@@ -2783,7 +2783,42 @@ describe("ceremonia de propuesta falsificada (#1262)", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("no llamaste a ninguna tool");
+    expect(turnsOf(model.doStreamCalls[0]!)).not.toContain("no se preparó ninguna");
+  });
+
+  it("sí corrige el turno cuya propuesta rechazó worthline (#1468)", async () => {
+    // The hole: the call was there by name, so the repair used to let the claim
+    // stand — and the model read its own «he preparado la propuesta» next turn.
+    const model = simpleAnswerModel("respuesta normal");
+    vi.mocked(resolveChatModels).mockReturnValue([resolvedModel("google", model)]);
+
+    const response = await POST(
+      chatRequest({
+        messages: [
+          userMessage("registra el traspaso entre mis planes"),
+          {
+            id: "m2",
+            role: "assistant",
+            parts: [
+              { type: "text", text: CLAIM },
+              {
+                type: "tool-propose_operation",
+                toolCallId: "call-rechazada",
+                state: "output-available",
+                input: { holdingId: "wl_hld_1" },
+                output: { error: "operation_document_required" },
+              },
+            ],
+          },
+          { id: "m3", role: "user", parts: [{ type: "text", text: "Confirmo" }] },
+        ],
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const turns = turnsOf(model.doStreamCalls[0]!);
+    expect(turns).toContain("ninguna tool propose_* devolvió una propuesta");
+    expect(turns).toContain(CLAIM);
   });
 });
 

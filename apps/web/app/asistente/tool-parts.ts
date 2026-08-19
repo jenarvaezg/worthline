@@ -40,6 +40,34 @@ export function isProposalToolPart(part: Part): boolean {
   return isToolUIPart(part) && isProposalToolName(toolPartName(part));
 }
 
+/**
+ * The tool part states `convertToModelMessages` turns into a `tool-result` — which is
+ * also, read the other way, the states in which the call CAME BACK: with an output, with
+ * an error, or denied. Every other state is a call still in flight, or one whose stream
+ * died before it answered.
+ *
+ * `approval-requested` / `approval-responded` are deliberately excluded: no chat tool in
+ * this repo requires approval, so such a part can only arrive from a broken or hostile
+ * client.
+ */
+const ANSWERED_STATES: ReadonlySet<string> = new Set([
+  "output-available",
+  "output-error",
+  "output-denied",
+]);
+
+/**
+ * Did this tool call come back at all?
+ *
+ * Two readers, one set: the history repair prunes the calls that never answered (#1260,
+ * or `convertToModelMessages` kills the conversation), and the fabricated-ceremony guard
+ * tells a REJECTED proposal apart from one whose stream died mid-flight (#1468) — the
+ * screen shows no card either way, but only the first is worth telling the model.
+ */
+export function toolCallAnswered(part: Part): boolean {
+  return isToolUIPart(part) && ANSWERED_STATES.has((part as { state: string }).state);
+}
+
 /** One tool answer in a conversation: which tool spoke, and what it said. */
 export interface ToolOutput {
   name: string;

@@ -10,6 +10,7 @@ import {
   withoutToolParts,
 } from "./chat-history";
 import { FABRICATED_PROPOSAL_MODEL_NOTE } from "./fabricated-proposal";
+import { correctionProposalOutput } from "./proposal-part-fixtures";
 
 function assistant(id: string, ...parts: unknown[]): UIMessage {
   return { id, role: "assistant", parts } as unknown as UIMessage;
@@ -436,15 +437,15 @@ describe("correctFabricatedProposalClaims (#1262)", () => {
     expect(messages[1]!.parts[0]).toEqual({ text: claim, type: "text" });
   });
 
-  it("says nothing when the turn really called a proposal tool", () => {
-    const messages: UIMessage[] = [
+  function turnWith(output: unknown): UIMessage[] {
+    return [
       {
         id: "a1",
         parts: [
           { text: claim, type: "text" },
           {
             input: {},
-            output: { proposalId: "p1" },
+            output,
             state: "output-available",
             toolCallId: "call-1",
             type: "tool-propose_correction",
@@ -453,11 +454,29 @@ describe("correctFabricatedProposalClaims (#1262)", () => {
         role: "assistant",
       },
     ];
+  }
+
+  it("says nothing when the turn really prepared a proposal", () => {
+    const messages = turnWith(correctionProposalOutput());
 
     const result = correctFabricatedProposalClaims(messages);
 
     expect(result.correctedMessageIds).toEqual([]);
     expect(result.messages).toBe(messages);
+  });
+
+  it("corrects the turn whose proposal call worthline rejected (#1468)", () => {
+    // The model called the lane, the lane said no, and the prose claimed success.
+    // Left uncorrected, that sentence is the model's own context next turn.
+    const { messages, correctedMessageIds } = correctFabricatedProposalClaims(
+      turnWith({ error: "operation_document_required" }),
+    );
+
+    expect(correctedMessageIds).toEqual(["a1"]);
+    expect(messages[0]!.parts.at(-1)).toEqual({
+      text: FABRICATED_PROPOSAL_MODEL_NOTE,
+      type: "text",
+    });
   });
 
   it("does not accuse a turn whose proposal call was cut off mid-stream", () => {

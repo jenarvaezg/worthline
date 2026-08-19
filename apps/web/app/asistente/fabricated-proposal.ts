@@ -18,6 +18,12 @@
  * offering it anyway. What the app knows for certain is which tools the turn
  * called, so «do not claim a proposal you never asked for» is checkable.
  *
+ * What it knows even better — and what this file asks since #1468 — is whether a CARD
+ * was painted. Asking about the call instead switched the guard off precisely when the
+ * call failed: a rejected `propose_operation` counted as a proposal, so the turn that
+ * tried, was refused, and narrated success anyway got no warning at all. The question
+ * now comes from {@link rendersProposalCard}, off the same table the render reads.
+ *
  * Where it runs, in two places, because the lie has two audiences:
  *
  *  - At RENDER, the same seam #1246 used to close the image-exfiltration sink. The
@@ -33,7 +39,8 @@
 
 import type { UIMessage } from "ai";
 
-import { isProposalToolPart } from "./tool-parts";
+import { rendersProposalCard } from "./proposal-card-presence";
+import { isProposalToolPart, toolCallAnswered } from "./tool-parts";
 
 /**
  * What the app says next to a faked ceremony.
@@ -50,6 +57,29 @@ export const FABRICATED_PROPOSAL_NOTE =
   "volver a pedírselo.";
 
 /**
+ * The same note when the turn DID ask worthline for the proposal and got nothing back
+ * (#1468, point 4).
+ *
+ * Until now a rejection was context for the model and nothing else: if it chose to
+ * narrate another story, the user never learnt that worthline had said no, and reading
+ * «vuelve a pedírselo» they would ask for the very same thing again. So the note says
+ * that much — and deliberately NOT what the rejection said: several of those messages
+ * are written at the model («y tú pasas 6 participaciones») and reading them on screen
+ * confuses more than it explains. Telling those apart from the ones that route the user
+ * is a separate job.
+ *
+ * True in every case it can appear, like its sibling — and NOTHING about what worthline
+ * stored: the `propose_*` tools persist before returning, so «no recibió ninguna
+ * tarjeta» is the most the screen can honestly assert about a call that was cut off
+ * (ADR 0048).
+ */
+export const NO_PROPOSAL_RETURNED_NOTE =
+  "Este mensaje no lleva ninguna propuesta: el asistente pidió una a worthline y no " +
+  "recibió ninguna tarjeta que mostrarte. Un cambio solo se aplica desde la tarjeta de " +
+  "su propuesta, con su botón: escribir «confirmo» en el chat no aplica nada. Tendrás " +
+  "que volver a pedírselo, quizá de otra forma.";
+
+/**
  * What the model is told about its own previous turn, in the history it gets back.
  *
  * A statement of fact and NOTHING else, framed like the other history repairs
@@ -58,10 +88,15 @@ export const FABRICATED_PROPOSAL_NOTE =
  * path, fired by a text heuristic, is how a regex match turns into a duplicate
  * proposal. The prompt is where behaviour rules go — and this file exists because
  * those did not hold.
+ *
+ * It used to open «no llamaste a ninguna tool propose_*», which stopped being true when
+ * #1468 widened the guard to the turn that DID call one and was rejected. The fact that
+ * holds for both — and the only one the user's screen agrees with — is that no lane
+ * returned a proposal, so that is what it says now.
  */
 export const FABRICATED_PROPOSAL_MODEL_NOTE =
-  "(En ese turno no llamaste a ninguna tool propose_*, así que no se preparó ninguna " +
-  "propuesta nueva y el usuario no vio ninguna tarjeta nueva.)";
+  "(En ese turno ninguna tool propose_* devolvió una propuesta, así que no se preparó " +
+  "ninguna propuesta nueva y el usuario no vio ninguna tarjeta nueva.)";
 
 /**
  * Assertions that the proposal ALREADY exists. Deliberately only the perfect and
@@ -80,10 +115,11 @@ const CLAIM_PATTERNS = [
   // «preparé» would never close one. And only the ACCENTED forms — unaccented
   // «prepare» is the subjunctive of an offer («¿quieres que prepare una?»).
   /\b(preparé|creé|dejé)/i,
-  // Handing it over — «aquí tienes la propuesta», «ya tienes la propuesta». The
-  // proposal has to be WHAT is handed over: «aquí tienes las opciones antes de
-  // montar una propuesta» is an offer, and review caught it being flagged.
-  /\b(aqu[íi]|ya) tienes\b[^.!?]{0,25}\bpropuestas?\b/i,
+  // Handing it over — «aquí tienes la propuesta», «ya tienes la propuesta», and
+  // «a continuación tienes las tarjetas», the delivery form Jorge's turn used
+  // (#1468). The proposal has to be WHAT is handed over: «aquí tienes las opciones
+  // antes de montar una propuesta» is an offer, and review caught it being flagged.
+  /\b(a continuaci[óo]n|aqu[íi]|ya) tienes\b[^.!?]{0,25}\b(propuestas?|tarjetas?)\b/i,
   // «La propuesta está lista» — the same assertion without the first person.
   /\bpropuestas?\b[^.!?]{0,40}\b(est[áa]|queda)\s+(lista|preparada|creada|hecha)\b/i,
 ];
@@ -115,26 +151,48 @@ const SELF_CONTAINED_CLAIM_PATTERNS = [
  */
 const NEGATION = /\b(no|nunca|tampoco)\b/i;
 
-const PROPOSAL_WORD = /\bpropuestas?\b/i;
+/**
+ * The ceremony's own nouns. «tarjeta» joined «propuesta» from a measured case (#1468):
+ * Jorge's turn used it as the noun of delivery — «A continuación tienes las tarjetas
+ * para confirmar cada uno de estos movimientos» — which is the app's own word for the
+ * one place a change can be confirmed, so a claim about one is a claim about the
+ * ceremony. Still the module's rule: widened with cases that happened, never by
+ * guessing at synonyms.
+ */
+const PROPOSAL_WORD = /\b(propuestas?|tarjetas?)\b/i;
+
+/**
+ * The OTHER «tarjeta» — a means of payment a workspace really holds, `credit_card` in
+ * the book. «He actualizado el saldo de tu tarjeta de crédito» is a sentence about the
+ * user's money, not about the ceremony, and since #1468 put «tarjeta» in the vocabulary
+ * it would otherwise read as a fabricated proposal on one of the most ordinary turns
+ * there is. Shared with the eval grader that had to make the same distinction for the
+ * same word (`commentsOnTheInterface`), so the two readings cannot drift.
+ */
+export const PAYMENT_CARD_READING = /tarjetas?\s+de\s+(cr[ée]dito|d[ée]bito)/giu;
 
 /**
  * Splits into sentences so a claim and the word «propuesta» must occur TOGETHER.
  * Without that, «He creado el holding» in one sentence plus «¿quieres que prepare
  * una propuesta?» in the next would read as a fabrication.
  *
- * Decimals are masked first: a figure like «5.511,96» would otherwise cut the very
- * sentence this exists to read.
+ * Two maskings first. Decimals, because a figure like «5.511,96» would otherwise cut
+ * the very sentence this exists to read. And the payment card, because it is the one
+ * innocent meaning the ceremony's vocabulary has (#1468).
  */
 function sentences(text: string): string[] {
-  return text.replace(/(\d)\.(\d)/g, "$1·$2").split(/[.!?\n]+/);
+  return text
+    .replace(/(\d)\.(\d)/g, "$1·$2")
+    .replace(PAYMENT_CARD_READING, "medio de pago")
+    .split(/[.!?\n]+/);
 }
 
 /**
  * Does this text assert that a proposal has been prepared?
  *
- * Scope, stated plainly: it reads the ceremony's own vocabulary — «propuesta» for
- * the gated patterns, plus the two prose-ficha shapes a measured run used to
- * dodge it (#1327: «Estado: Preparado para alta», «el registro está listo»).
+ * Scope, stated plainly: it reads the ceremony's own vocabulary — «propuesta» and
+ * «tarjeta» for the gated patterns, plus the two prose-ficha shapes a measured run
+ * used to dodge it (#1327: «Estado: Preparado para alta», «el registro está listo»).
  * Widening further remains a decision to take with measured cases, not by
  * guessing at synonyms — the cost of guessing is notes on honest turns, and
  * those are what teach a user to ignore notes.
@@ -152,26 +210,62 @@ export function claimsPreparedProposal(text: string): boolean {
 }
 
 /**
- * THE decision, in one place: an assistant turn that claims a prepared proposal
- * and carries no proposal part.
+ * How a turn came to claim a proposal nobody can confirm (#1468). The screen shows the
+ * same emptiness in all three, but they are not the same fact:
+ *
+ *  - `no-call`: the ceremony was invented outright, no lane was ever asked — the
+ *    original case (#1262).
+ *  - `rejected`: a `propose_*` lane answered and its answer carried no proposal. This
+ *    is Jorge's turn: worthline said no and the prose announced success anyway.
+ *  - `interrupted`: a lane was asked and never answered. Told apart from `rejected`
+ *    because the `propose_*` tools persist BEFORE returning, so a proposal may well
+ *    exist server-side — the history repair says so in its own words and this one must
+ *    not contradict it (`INTERRUPTED_PROPOSAL_NOTE`).
+ */
+export type FabricatedProposalKind = "no-call" | "rejected" | "interrupted";
+
+/**
+ * THE decision, in one place: an assistant turn that claims a prepared proposal while
+ * NO card was painted in it.
  *
  * Exported because both audiences ask the same question — the panel to print the
  * warning, the route to correct the model's history — and a second copy of this
  * rule would let the two drift apart in silence the day it is widened (#1254).
+ *
+ * The card question is {@link rendersProposalCard}'s, off the render's own table: a
+ * `propose_*` part whose output no parser recognises painted nothing, so it cannot
+ * excuse the claim. Whether the lane was CALLED still matters, but only to choose
+ * which sentence the user reads.
  */
-export function isFabricatedProposalTurn(message: UIMessage): boolean {
-  if (message.role !== "assistant") return false;
-  if (message.parts.some(isProposalToolPart)) return false;
-  return claimsPreparedProposal(
+export function fabricatedProposalIn(message: UIMessage): FabricatedProposalKind | null {
+  if (message.role !== "assistant") return null;
+  if (message.parts.some(rendersProposalCard)) return null;
+  const claimed = claimsPreparedProposal(
     message.parts
       .filter((part) => part.type === "text")
       .map((part) => (part as { text: string }).text)
       .join("\n"),
   );
+  if (!claimed) return null;
+  const asked = message.parts.filter(isProposalToolPart);
+  if (asked.length === 0) return "no-call";
+  return asked.some(toolCallAnswered) ? "rejected" : "interrupted";
 }
 
 /**
- * The ids of the assistant turns that claim a proposal they never asked for.
+ * What the app says next to a fabricated ceremony.
+ *
+ * Two sentences for three kinds on purpose: what the user can DO differs between «it
+ * was never asked» and «it was asked and nothing came back», and not between the two
+ * ways nothing came back — on screen those are the same empty space.
+ */
+export function fabricatedProposalNote(kind: FabricatedProposalKind): string {
+  return kind === "no-call" ? FABRICATED_PROPOSAL_NOTE : NO_PROPOSAL_RETURNED_NOTE;
+}
+
+/**
+ * The assistant turns that claim a proposal nobody prepared, by id, each with the
+ * kind of fabrication it committed.
  *
  * The in-flight message is left alone while the turn streams: prose can land
  * before the tool call within one turn, so judging it early would flash an
@@ -181,14 +275,12 @@ export function isFabricatedProposalTurn(message: UIMessage): boolean {
 export function messagesWithFabricatedProposal(
   messages: UIMessage[],
   streaming: boolean,
-): ReadonlySet<string> {
-  return new Set(
-    messages
-      .filter(
-        (message, index) =>
-          !(streaming && index === messages.length - 1) &&
-          isFabricatedProposalTurn(message),
-      )
-      .map((message) => message.id),
-  );
+): ReadonlyMap<string, FabricatedProposalKind> {
+  const fabricated = new Map<string, FabricatedProposalKind>();
+  messages.forEach((message, index) => {
+    if (streaming && index === messages.length - 1) return;
+    const kind = fabricatedProposalIn(message);
+    if (kind !== null) fabricated.set(message.id, kind);
+  });
+  return fabricated;
 }

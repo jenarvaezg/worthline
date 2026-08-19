@@ -90,7 +90,8 @@ lleva receta de panel propia: una hoja encartada sobre la página (`.assistantPa
 fondo `--panel`) ligada por su lomo —una regla gruesa, no un borde suave con
 sombra—; su masthead se abre por regla gruesa; su lanzador es un marcador
 rectangular, no un círculo flotante. Sus propuestas, la lectura de adjuntos y el
-aviso con el que la app desmiente una propuesta que el modelo se inventó (#1262)
+aviso con el que la app desmiente una propuesta que nunca llegó a existir —inventada
+por el modelo (#1262), o pedida a worthline sin que devolviera tarjeta (#1468)—
 son entradas de papel abiertas por regla gruesa (`border-top: var(--rule-heavy)`),
 no tarjetas; el turno del usuario se anota con marginalia, no como burbuja de chat.
 Cuando una propuesta nace de evidencia que worthline no ha podido validar, su
