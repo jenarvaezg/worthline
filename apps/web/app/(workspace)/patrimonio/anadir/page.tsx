@@ -2,6 +2,7 @@ import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
+import { parseOpeningCostMode } from "@web/patrimonio/anadir/investment-units";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -524,12 +525,13 @@ function InvestmentGroupPane({
 
       <div className="invModePane" data-mode="saldo">
         <InvestmentCapture
+          defaultCost={v("cost") ?? ""}
+          defaultCostMode={parseOpeningCostMode(v("costMode") ?? "") ?? undefined}
           defaultDate={v("saldoDate") ?? ""}
           defaultPrice={priceValue}
           defaultSaldo={v("saldo") ?? ""}
           instrument={id}
           key={captureKey}
-          livePrice={isSelected && livePrice ? livePrice : undefined}
           priceHint={
             isSelected && livePrice
               ? `Precio en vivo de ${group.providerLabel}.`

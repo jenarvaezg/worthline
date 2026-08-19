@@ -1,11 +1,13 @@
-import { formatUnits, multiplyToMinor } from "@worthline/domain";
+import { formatMoneyMinorExact, formatUnits, multiplyToMinor } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
   deriveOpeningUnits,
   OPENING_UNITS_DECIMALS,
   openingCaptureCopy,
+  parseOpeningCostMode,
   resolveOpeningCapture,
+  resolveOpeningCost,
   resolveOpeningDate,
 } from "./investment-units";
 
@@ -78,7 +80,7 @@ describe("deriveOpeningUnits — saldo ÷ precio (#597)", () => {
   });
 });
 
-describe("resolveOpeningDate — «Fecha del saldo» (#1395)", () => {
+describe("resolveOpeningDate — «¿Desde cuándo la tienes?» (#1395, #1490)", () => {
   const TODAY = "2026-08-17";
 
   test("an untouched field means today — the pre-#1395 behavior, unchanged", () => {
@@ -86,7 +88,7 @@ describe("resolveOpeningDate — «Fecha del saldo» (#1395)", () => {
     expect(resolveOpeningDate("   ", TODAY)).toEqual({ ok: true, date: TODAY });
   });
 
-  test("a past date is the date the saldo is read at", () => {
+  test("a past date is the day the position starts existing", () => {
     expect(resolveOpeningDate("2026-07-31", TODAY)).toEqual({
       ok: true,
       date: "2026-07-31",
@@ -125,12 +127,14 @@ describe("resolveOpeningDate — a real day, not just an ISO shape (#1395)", () 
   test("a zeroed date is refused instead of blowing up the reading", () => {
     expect(resolveOpeningDate("0000-00-00", TODAY)).toEqual({
       ok: false,
-      error: "La fecha del saldo no es válida: elígela en el calendario.",
+      error: "La fecha de la posición no es válida: elígela en el calendario.",
     });
     // The hint reads the resolved date, so the refusal must arrive BEFORE it (this
     // threw RangeError while the shape check was the only gate).
     expect(() =>
       openingCaptureCopy({
+        costMode: "total",
+        costRaw: "",
         dateRaw: "0000-00-00",
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
@@ -140,12 +144,96 @@ describe("resolveOpeningDate — a real day, not just an ISO shape (#1395)", () 
   });
 });
 
+describe("resolveOpeningCost — el coste de adquisición declarado (#1490)", () => {
+  // Jorge's real position: 27 uds worth 5.865,75 € today, bought for 4.999,86 €.
+  const UNITS = "27" as const;
+
+  test("un coste vacío es la marca «sin coste real»: no se inventa ninguno", () => {
+    expect(resolveOpeningCost({ costMode: "total", costRaw: "", units: UNITS })).toEqual({
+      declared: false,
+      ok: true,
+    });
+    expect(resolveOpeningCost({ costMode: "unit", costRaw: "  ", units: UNITS })).toEqual(
+      {
+        declared: false,
+        ok: true,
+      },
+    );
+  });
+
+  test("un coste TOTAL se reparte entre los títulos: 4.999,86 € → 185,18 €/ud", () => {
+    expect(
+      resolveOpeningCost({ costMode: "total", costRaw: "4.999,86", units: UNITS }),
+    ).toEqual({ costMinor: 499_986, declared: true, ok: true, pricePerUnit: "185.18" });
+  });
+
+  test("un precio MEDIO se persiste tal cual, y el total sale de él", () => {
+    expect(
+      resolveOpeningCost({ costMode: "unit", costRaw: "185,18", units: UNITS }),
+    ).toEqual({ costMinor: 499_986, declared: true, ok: true, pricePerUnit: "185.18" });
+  });
+
+  test("el coste que no cuadra a la unidad sigue cuadrando al céntimo", () => {
+    // A fund's units are not round: 1.000,00 € over 3,409963 participaciones is an
+    // endless decimal, and what must survive is the cost the user typed.
+    const resolved = resolveOpeningCost({
+      costMode: "total",
+      costRaw: "1.000,00",
+      units: "3.409963",
+    });
+    expect(resolved).toMatchObject({ costMinor: 100_000, declared: true, ok: true });
+    expect(
+      resolved.ok &&
+        resolved.declared &&
+        multiplyToMinor("3.409963", resolved.pricePerUnit),
+    ).toBe(100_000);
+  });
+
+  test("un coste ilegible o cero se rechaza — nunca se lee como «no lo sé»", () => {
+    for (const costRaw of ["cuatro mil", "0,00", "-100"]) {
+      const resolved = resolveOpeningCost({ costMode: "total", costRaw, units: UNITS });
+      expect(resolved.ok).toBe(false);
+      expect(!resolved.ok && resolved.error).toContain("coste");
+    }
+  });
+
+  test("el modo del formulario se lee cerrado: lo que no reconoce es «no me lo has dicho»", () => {
+    expect(parseOpeningCostMode("unit")).toBe("unit");
+    expect(parseOpeningCostMode("total")).toBe("total");
+    expect(parseOpeningCostMode("")).toBeNull();
+    expect(parseOpeningCostMode("cualquier-cosa")).toBeNull();
+  });
+
+  test("un coste sin modo se RECHAZA: las dos lecturas se llevan 27x (#1490)", () => {
+    // 185,18 € read as a total over 27 títulos is a 6,86 € cost basis and a plusvalía
+    // of 5.680 € nobody has. Defaulting here would write that silently, forever.
+    const resolved = resolveOpeningCost({
+      costMode: null,
+      costRaw: "185,18",
+      units: UNITS,
+    });
+    expect(resolved.ok).toBe(false);
+    expect(!resolved.ok && resolved.error).toContain(
+      "el total o el precio por participación",
+    );
+  });
+
+  test("sin coste, un modo ausente no molesta a nadie", () => {
+    expect(resolveOpeningCost({ costMode: null, costRaw: "", units: UNITS })).toEqual({
+      declared: false,
+      ok: true,
+    });
+  });
+});
+
 describe("resolveOpeningCapture — one answer for the whole capture (#1395)", () => {
   const TODAY = "2026-08-17";
 
   test("resolves units, price and the date the opening is stamped with", () => {
     expect(
       resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "",
         dateRaw: "2026-07-31",
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
@@ -154,9 +242,53 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
     ).toEqual({ ok: true, executedAt: "2026-07-31", price: "319.59", units: "3.409963" });
   });
 
+  test("el coste declarado es el precio con el que se escribe la apertura (#1490)", () => {
+    // The whole point: units come from what the position is WORTH today, the price
+    // the operation carries comes from what it COST. Jorge's alta stops reading as
+    // «comprado hoy por lo que vale hoy» and his 865,89 € of latent gain appear.
+    expect(
+      resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "4.999,86",
+        dateRaw: "2025-12-15",
+        priceRaw: "217,25",
+        saldoRaw: "5.865,75",
+        today: TODAY,
+      }),
+    ).toEqual({ ok: true, executedAt: "2025-12-15", price: "185.18", units: "27" });
+  });
+
+  test("sin coste, la apertura sigue naciendo al precio de hoy (statu quo, elegido)", () => {
+    expect(
+      resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "",
+        dateRaw: "",
+        priceRaw: "217,25",
+        saldoRaw: "5.865,75",
+        today: TODAY,
+      }),
+    ).toEqual({ ok: true, executedAt: TODAY, price: "217.25", units: "27" });
+  });
+
+  test("un coste ilegible refusa la captura entera, antes de escribir nada", () => {
+    expect(
+      resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "cuatro mil",
+        dateRaw: "",
+        priceRaw: "217,25",
+        saldoRaw: "5.865,75",
+        today: TODAY,
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
   test("an untouched date resolves to today", () => {
     expect(
       resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "",
         dateRaw: "",
         priceRaw: "50.000,00",
         saldoRaw: "1.000,00",
@@ -168,6 +300,8 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
   test("the money is checked BEFORE the date — the guidance names what is missing", () => {
     expect(
       resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "",
         dateRaw: "2026-12-31",
         priceRaw: "",
         saldoRaw: "1.000,00",
@@ -183,6 +317,8 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
   test("a refused date refuses the whole capture", () => {
     expect(
       resolveOpeningCapture({
+        costMode: "total",
+        costRaw: "",
         dateRaw: "2026-02-30",
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
@@ -194,19 +330,19 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
 
 describe("openingCaptureCopy — the pane says what will be persisted (#1395)", () => {
   const TODAY = "2026-08-17";
+  const NOTHING_DECLARED = { costMode: "total", costRaw: "", today: TODAY } as const;
 
   test("invites the saldo while there is nothing to derive", () => {
     expect(
       openingCaptureCopy({
+        ...NOTHING_DECLARED,
         dateRaw: "",
         priceRaw: "319,59",
         saldoRaw: "",
-        today: TODAY,
       }),
-    ).toEqual({
+    ).toMatchObject({
       backdatedTo: null,
       hint: "Escribe el saldo para ver las participaciones.",
-      priceNote: null,
       refused: false,
     });
   });
@@ -214,61 +350,35 @@ describe("openingCaptureCopy — the pane says what will be persisted (#1395)", 
   test("shows the units EXACTLY as derived — six decimals, es-ES", () => {
     expect(
       openingCaptureCopy({
+        ...NOTHING_DECLARED,
         dateRaw: "",
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
-        today: TODAY,
       }).hint,
     ).toBe("≈ 3,409963 participaciones.");
   });
 
-  test("a past saldo date says the history gets rebuilt, and re-labels the pane", () => {
+  test("a past date says the history gets rebuilt from that day", () => {
     const copy = openingCaptureCopy({
+      ...NOTHING_DECLARED,
       dateRaw: "2026-07-31",
       priceRaw: "319,59",
       saldoRaw: "1.089,79",
-      today: TODAY,
     });
     expect(copy.hint).toContain("3,409963 participaciones");
     expect(copy.hint).toContain("31 jul 2026");
     expect(copy.hint).toContain("histórico");
-    // The pane re-reads itself against that date: the price it divides by is that
-    // day's NAV, not the live quote the field was prefilled with.
     expect(copy.backdatedTo).toBe("31 jul 2026");
     expect(copy.refused).toBe(false);
   });
 
-  test("the price note CHECKS the live quote instead of only asking for the NAV", () => {
-    const stale = openingCaptureCopy({
-      dateRaw: "2026-07-31",
-      livePriceRaw: "319,59",
-      priceRaw: "319,59",
-      saldoRaw: "1.089,79",
-      today: TODAY,
-    });
-    expect(stale.priceNote).toBe(
-      "Ese precio es el de HOY, en vivo: cámbialo por el valor liquidativo del 31 jul 2026.",
-    );
-
-    const edited = openingCaptureCopy({
-      dateRaw: "2026-07-31",
-      livePriceRaw: "319,59",
-      priceRaw: "312,40",
-      saldoRaw: "1.089,79",
-      today: TODAY,
-    });
-    expect(edited.priceNote).toBe(
-      "Pon el valor liquidativo del 31 jul 2026, no el de hoy: de ahí salen las participaciones.",
-    );
-  });
-
-  test("a saldo dated today is not backdated — nothing re-labels", () => {
+  test("a position held since today is not backdated — nothing re-labels", () => {
     expect(
       openingCaptureCopy({
+        ...NOTHING_DECLARED,
         dateRaw: TODAY,
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
-        today: TODAY,
       }),
     ).toMatchObject({ backdatedTo: null, refused: false });
   });
@@ -276,16 +386,117 @@ describe("openingCaptureCopy — the pane says what will be persisted (#1395)", 
   test("a bad date takes over as a REFUSAL — the same message the server answers", () => {
     expect(
       openingCaptureCopy({
+        ...NOTHING_DECLARED,
         dateRaw: "2026-12-01",
         priceRaw: "319,59",
         saldoRaw: "1.089,79",
-        today: TODAY,
       }),
-    ).toEqual({
+    ).toMatchObject({
       backdatedTo: null,
-      hint: "La fecha del saldo no puede ser futura.",
-      priceNote: null,
+      hint: "No puedes tener la posición desde una fecha futura.",
       refused: true,
     });
+  });
+});
+
+describe("openingCaptureCopy — el coste se lee en vivo (#1490)", () => {
+  const TODAY = "2026-08-19";
+  /** Jorge's alta: 5.865,75 € of SXR1 today at 217,25 €, bought for 4.999,86 €. */
+  const JORGE = { dateRaw: "2025-12-15", priceRaw: "217,25", saldoRaw: "5.865,75" };
+  const money = (amountMinor: number) =>
+    formatMoneyMinorExact({ amountMinor, currency: "EUR" });
+
+  test("sin coste dice que no habrá plusvalía — la salida honesta, no una en blanco", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "total",
+      costRaw: "",
+      today: TODAY,
+    });
+    expect(copy.costNote).toContain("Sin coste");
+    expect(copy.costNote).toContain("plusvalía");
+    // A backdated position without a cost rebuilds its history at TODAY's price:
+    // the only figure the app has, and the user has to know that is what happens.
+    expect(copy.costNote).toContain("15 dic 2025");
+    expect(copy.refused).toBe(false);
+  });
+
+  test("un coste total se devuelve como precio medio Y como la plusvalía que destapa", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "total",
+      costRaw: "4.999,86",
+      today: TODAY,
+    });
+    // The price voice (`formatPrice`), not the money voice: the unit price echoed is
+    // the figure the operation will carry, at the precision it is stored with.
+    expect(copy.costNote).toContain("185,18 € por participación");
+    expect(copy.costNote).toContain(`+${money(865_89)}`);
+    expect(copy.costNote).toContain("latente");
+  });
+
+  test("un precio medio se devuelve como el coste total que suma", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "unit",
+      costRaw: "185,18",
+      today: TODAY,
+    });
+    expect(copy.costNote).toContain(money(4_999_86));
+    expect(copy.costNote).toContain(`+${money(865_89)}`);
+  });
+
+  test("una posición en pérdidas lo dice como minusvalía, con su signo", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "total",
+      costRaw: "6.500,00",
+      today: TODAY,
+    });
+    expect(copy.costNote).toContain("minusvalía");
+    // Read through the app's own money voice, so the assertion cannot drift from it
+    // over an invisible character (the euro sign arrives behind a NBSP).
+    expect(copy.costNote).toContain(money(-634_25));
+  });
+
+  test("un coste igual al valor de hoy no finge plusvalía ninguna", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "total",
+      costRaw: "5.865,75",
+      today: TODAY,
+    });
+    expect(copy.costNote).toContain("ni plusvalía ni minusvalía");
+  });
+
+  test("un coste ilegible se refusa JUNTO A SU CAMPO, sin borrar las participaciones", () => {
+    const copy = openingCaptureCopy({
+      ...JORGE,
+      costMode: "total",
+      costRaw: "cuatro mil",
+      today: TODAY,
+    });
+    expect(copy.costRefused).toBe(true);
+    expect(copy.costNote).toContain("coste de adquisición no se lee");
+    // The units reading is about the saldo and the price: it keeps answering.
+    expect(copy.refused).toBe(false);
+    expect(copy.hint).toContain("27 participaciones");
+  });
+
+  test("sin títulos todavía no hay coste que repartir: el pane pide el saldo primero", () => {
+    const copy = openingCaptureCopy({
+      costMode: "total",
+      costRaw: "4.999,86",
+      dateRaw: "",
+      priceRaw: "217,25",
+      saldoRaw: "",
+      today: TODAY,
+    });
+    expect(copy.refused).toBe(false);
+    expect(copy.hint).toBe("Escribe el saldo para ver las participaciones.");
+    // Never a blank the island has to fill in for itself: the field says what it is
+    // for until there are units to spread a cost over.
+    expect(copy.costNote).toBe("El dinero que pusiste, no lo que vale hoy.");
+    expect(copy.costRefused).toBe(false);
   });
 });

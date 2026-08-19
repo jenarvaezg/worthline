@@ -33,8 +33,13 @@ const ADD_HOLDING_FIELD_KEYS = [
   "assoc",
   "inheritOwnership",
   // The simple investment drawer's capture fields (#597): preserved across a
-  // symbol-pick navigation so a typed saldo / chosen mode survives re-picking.
+  // symbol-pick navigation so a typed saldo / chosen mode survives re-picking. Since
+  // #1490 that includes the acquisition cost, its mode and the date the position is
+  // held since — the three figures the user had to go and look up.
   "saldo",
+  "saldoDate",
+  "cost",
+  "costMode",
   "invMode",
 ];
 

@@ -89,8 +89,22 @@ function monthKey(index: number): string {
  * over again — this figure is measured PER HOLDING as well as per workspace, so a
  * fund that received 50.000 € would report a savings capacity nobody earned, and
  * the FIRE projection would ride it.
+ *
+ * An **apertura** is worth ZERO for the same reason (#1490): `source: "opening"` is
+ * the mark of a position the user is DECLARING, not one he bought that month. Jorge's
+ * 27 uds of the SXR1 — bought between December and January, typed into the app on 19
+ * August — landed as a 5.865,75 € buy dated that day and read as 5.865,75 € saved in
+ * August. Pre-existing wealth entering the book is not new money, whatever date the
+ * alta stamps it with; the coherence watch and the FIRE projection cannot be fed a
+ * contribution nobody made.
+ *
+ * The zero is on the MONEY, not on the operation: the row still dates the ledger
+ * (`monthsCovered`) and still counts as a witness that it is awake — exactly as a
+ * traspaso leg does. Dropping it would make a ledger that opens with an apertura read
+ * as younger than it is, and #1449 needs three months before it trusts anything.
  */
 function netInvestedMinor(operation: InvestmentOperation): number {
+  if (operation.source === "opening") return 0;
   return signedInvestedMinor(operation, "zero");
 }
 
