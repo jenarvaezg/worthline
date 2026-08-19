@@ -109,6 +109,17 @@ export interface ManualAsset {
    */
   providerSymbol?: string;
   /**
+   * The investment's ISIN (ADR 0055), when it has one. Like `providerSymbol` above
+   * this is read-only metadata for the health engine — never a figure the math
+   * reads — and it is here for one signal: an investment priced by a symbol with no
+   * ISIN is an ORPHAN (#1489). It is the identity key everything else keys on
+   * (`isin ?? providerSymbol`, ADR 0039/#539), so without it a broker statement
+   * cannot route to this holding, the exposure catalog cannot hand it its profile,
+   * and nothing can decide that `IE00B52MJY50` and `SXR1.DE` are the same product.
+   * Optional on the type for the many in-memory fixtures that predate it.
+   */
+  isin?: string;
+  /**
    * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
    * absent for a hand-maintained holding. Read-only metadata for the warnings
    * system (`MISSING_PROVIDER_SYMBOL`) — a connected-source holding is priced by
@@ -150,6 +161,8 @@ export interface CreateManualAssetInput {
   instrument?: Instrument;
   /** The investment's price-provider lookup key (ADR 0055), when known. */
   providerSymbol?: string;
+  /** The investment's ISIN (ADR 0055), when known — the identity key (#1489). */
+  isin?: string;
   /** The connected source this asset materializes a rung of (ADR 0016/0021, #248), when known. */
   connectedSourceId?: string;
 }
@@ -190,6 +203,7 @@ export function createManualAsset(
     ownership: input.ownership,
     type: input.type,
     ...(input.providerSymbol ? { providerSymbol: input.providerSymbol } : {}),
+    ...(input.isin ? { isin: input.isin } : {}),
     ...(input.connectedSourceId ? { connectedSourceId: input.connectedSourceId } : {}),
   };
 }

@@ -3,6 +3,7 @@ import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 import { parseOpeningCostMode } from "@web/patrimonio/anadir/investment-units";
+import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -19,6 +20,7 @@ import {
   calculateNetWorth,
   defaultsFor,
   formatMoneyMinorPrivacy,
+  INVESTMENT_PROFILE_INSTRUMENTS,
 } from "@worthline/domain";
 import { fetchPriceNow, isRegisteredSource } from "@worthline/pricing";
 import Link from "next/link";
@@ -505,7 +507,12 @@ function InvestmentGroupPane({
           placeholder={group.searchPlaceholder}
         />
       </Field>
-      <input name={`isin_${id}`} type="hidden" value={v("isin") ?? ""} />
+      {/* Crypto has no ISIN to ask for, and the set that decides who HAS an
+          instrument identity is the domain's — the same one the health signal reads,
+          so the question and the warning can never disagree. */}
+      {INVESTMENT_PROFILE_INSTRUMENTS.has(group.instrument) ? (
+        <IsinField className="simpleField" instrument={id} value={v("isin")} />
+      ) : null}
 
       <fieldset className="simpleChoiceGroup">
         <legend>¿Cómo lo registramos?</legend>

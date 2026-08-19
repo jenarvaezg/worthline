@@ -118,6 +118,39 @@ describe('"Importar extracto" wizard entry point (S3, #674)', () => {
   });
 });
 
+describe("the ISIN is asked for, never left empty in silence (#1489)", () => {
+  function isinInputs(html: string): string[] {
+    return (html.match(/<input[^>]*name="isin_[a-z_]+"[^>]*>/g) ?? []).filter(Boolean);
+  }
+
+  test("the groups that HAVE an ISIN carry a visible field for it", async () => {
+    const inputs = isinInputs(await renderedHtml());
+
+    // fund and pension_plan — never hidden: a field the user never sees is how a
+    // position was created without an ISIN and became an orphan for the statement
+    // merge, the exposure catalog, and the assistant.
+    expect(inputs).toHaveLength(2);
+    for (const input of inputs) {
+      expect(input, input).not.toContain('type="hidden"');
+    }
+    expect(inputs.join()).toContain('name="isin_fund"');
+    expect(inputs.join()).toContain('name="isin_pension_plan"');
+  });
+
+  test("crypto is not asked for an ISIN it cannot have", async () => {
+    expect(isinInputs(await renderedHtml()).join()).not.toContain("isin_crypto");
+  });
+
+  test("the field says what the ISIN is FOR, not just its name", async () => {
+    const html = await renderedHtml();
+
+    expect(html).toContain("ISIN");
+    // The reason it matters, in the user's words: it is what lets a statement find
+    // this position later.
+    expect(html).toContain("un extracto de tu bróker reconoce");
+  });
+});
+
 describe("vivienda-habitual default — single primary residence", () => {
   function inmuebleCheckbox(html: string): string {
     const checkbox = html

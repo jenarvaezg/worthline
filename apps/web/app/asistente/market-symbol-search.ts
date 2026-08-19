@@ -41,11 +41,27 @@ export function isMarketInstrument(instrument: Instrument | undefined | null): b
  * One symbol candidate reshaped for the chat: the `symbol` is exactly what goes
  * into `propose_holding.providerSymbol`; `market`/`currency` disambiguate the
  * listing (the exchange suffix matters — `VUSA.L` ≠ `VUSA.AS`).
+ *
+ * The `isin` is what makes this tool an IDENTITY read and not only an alta helper
+ * (#1489). Searching by an ISIN is how a broker's key becomes a price symbol: Yahoo
+ * resolves `IE00B52MJY50` into its listings and the candidate rows come back paired
+ * with the ISIN that found them, so `IE00B52MJY50 = SXR1.DE` is readable in ONE tool
+ * result. The pairing was being dropped here, which left the model holding a
+ * statement's ISIN, a portfolio's symbol, and no way to tell they are the same ETF —
+ * so it told a real user they were two different products.
+ *
+ * The direction is not symmetric, and that asymmetry is the provider's: Yahoo's search
+ * response carries no ISIN of its own, so the field is present only when the QUERY was
+ * an ISIN. Resolving a bare symbol back to its ISIN is not something any wired provider
+ * can do — which is why an alta that never captured one stays an orphan (the health
+ * signal `MISSING_INVESTMENT_ISIN`) rather than being repaired after the fact.
  */
 export interface MarketSymbolMatch {
   provider: string;
   symbol: string;
   name: string;
+  /** The candidate's ISIN, when the provider reports one (never for crypto). */
+  isin?: string;
   market?: string;
   currency?: string;
   quoteType?: string;
@@ -56,6 +72,7 @@ export function shapeMarketSymbolMatch(candidate: SymbolCandidate): MarketSymbol
     name: candidate.name,
     provider: candidate.provider,
     symbol: candidate.symbol,
+    ...(candidate.isin ? { isin: candidate.isin } : {}),
     ...(candidate.exchange ? { market: candidate.exchange } : {}),
     ...(candidate.currency ? { currency: candidate.currency } : {}),
     ...(candidate.quoteType ? { quoteType: candidate.quoteType } : {}),

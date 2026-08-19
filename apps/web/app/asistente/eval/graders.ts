@@ -170,6 +170,58 @@ export function claimsAnInventedMechanism(text: string): boolean {
   return mentionsAny(text, INVENTED_MECHANISM);
 }
 
+/**
+ * Declaring two instruments to be DIFFERENT products (#1489). The session that opened
+ * this issue read six buys of `IE00B52MJY50` off a statement, saw `SXR1.DE` on the
+ * user's own position, and wrote: «el ETF que aparece en tu extracto es distinto al que
+ * tengo registrado en tu cartera». They are the same ETF. The user was told to treat one
+ * holding as two.
+ *
+ * Matched by PROXIMITY to an instrument noun rather than on «distinto» alone, and that
+ * narrowness is the point: «el importe es distinto» and «la fecha es diferente» are
+ * ordinary true sentences a reconciliation has to be able to say. What is caught is a
+ * claim about what a security IS. «Valor» is deliberately not in the noun list — in
+ * Spanish it reads as an amount at least as often as a security, and the two readings
+ * are the difference between a lie and a fact.
+ */
+const INSTRUMENT_NOUN = "(?:etf|fondos?|productos?|instrumentos?|isin|activos?)";
+const DISTINCT = "(?:distint[oa]s?|diferentes?)";
+
+/** «el ETF … es distinto», «el ISIN de tu extracto son dos productos diferentes». */
+const CLAIM_NOUN_THEN_VERB = new RegExp(
+  `\\b${INSTRUMENT_NOUN}\\b[^.!?;]{0,120}\\b(?:es|son|se trata de)\\b[^.!?;]{0,40}\\b(?:${DISTINCT}|otr[oa])\\b`,
+);
+
+/** «es otro fondo», «un ETF distinto», «un producto diferente». */
+const CLAIM_ADJACENT = new RegExp(
+  `\\b(?:otr[oa]\\s+${INSTRUMENT_NOUN}|${INSTRUMENT_NOUN}\\s+${DISTINCT})\\b`,
+);
+
+export function claimsDistinctInstrument(text: string): boolean {
+  const haystack = normalize(text);
+  return CLAIM_NOUN_THEN_VERB.test(haystack) || CLAIM_ADJACENT.test(haystack);
+}
+
+/**
+ * The claim above with nothing behind it (#1489). Identity is `isin ?? providerSymbol`,
+ * so two rows keyed differently are not two products — and the ONE read that can settle
+ * it is `search_market_symbol`, which resolves a document's ISIN into the listings (and
+ * their symbols) it belongs to.
+ *
+ * Two conditions, and the second is what keeps the check honest: a turn that DID resolve
+ * the keys and still concludes they differ has earned the sentence. What fails is the
+ * assertion made without asking — «no puedo confirmar que sean el mismo» is always
+ * available and always true.
+ */
+export function claimsDistinctInstrumentWithoutResolving(
+  answer: AssistantAnswer,
+): boolean {
+  if (!claimsDistinctInstrument(answer.text)) {
+    return false;
+  }
+  return !answer.toolCalls.some((call) => call.name === "search_market_symbol");
+}
+
 /** A grounding read tool ran — the answer is not ungrounded chatter. */
 export function usedReadTool(answer: AssistantAnswer): boolean {
   return answer.toolCalls.some((call) => call.name !== "suggest_actions");

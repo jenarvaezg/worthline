@@ -280,6 +280,14 @@ describe("selectHeroHealth", () => {
         severity: "low",
         affected: { id: "sc1", label: "Hogar", object: "scope" },
       }),
+      // A missing ISIN (#1489) bites the NEXT statement, never today's price: the
+      // holding is valued through its provider symbol like any other.
+      signal({
+        category: "missing_configuration",
+        code: "MISSING_INVESTMENT_ISIN",
+        severity: "low",
+        affected: { id: "h1", label: "Fondo", object: "holding" },
+      }),
     ];
     const view = selectHeroHealth(nonFigure, [], publicIds);
     expect(view.impact).toBe("clean");

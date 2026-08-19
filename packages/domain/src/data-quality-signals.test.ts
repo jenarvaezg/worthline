@@ -1027,3 +1027,93 @@ describe("collectDataQualitySignals — SAVINGS_DECLARED_VS_MEASURED (#1449)", (
     ).toEqual([]);
   });
 });
+
+describe("collectDataQualitySignals — MISSING_INVESTMENT_ISIN (#1489)", () => {
+  const { asset, input } = fixture();
+
+  const fund = (id: string, overrides: Partial<CreateManualAssetInput> = {}) =>
+    asset({
+      id,
+      instrument: "etf",
+      name: `Fondo ${id}`,
+      providerSymbol: "SXR1.DE",
+      type: "investment",
+      ...overrides,
+    });
+
+  const codes = (
+    assets: ReturnType<typeof asset>[],
+    overrides: Partial<CollectDataQualitySignalsInput> = {},
+  ): string[] =>
+    collectDataQualitySignals(input({ assets, ...overrides })).map(
+      (signal) => signal.code,
+    );
+
+  test("an investment priced by a symbol with no ISIN is an orphan", () => {
+    const signals = collectDataQualitySignals(input({ assets: [fund("inv1")] }));
+    const orphan = signals.find((signal) => signal.code === "MISSING_INVESTMENT_ISIN");
+
+    expect(orphan).toMatchObject({
+      affected: { id: "inv1", label: "Fondo inv1", object: "holding" },
+      category: "missing_configuration",
+      fixable: true,
+      severity: "low",
+    });
+    expect(orphan?.label).toContain("ISIN");
+  });
+
+  test("an investment that carries its ISIN is silent", () => {
+    expect(codes([fund("inv1", { isin: "IE00B52MJY50" })])).not.toContain(
+      "MISSING_INVESTMENT_ISIN",
+    );
+  });
+
+  test("a symbol-less investment is silent — MISSING_PROVIDER_SYMBOL owns that state", () => {
+    const emitted = codes([
+      asset({ id: "inv1", instrument: "etf", name: "Fondo pelado", type: "investment" }),
+    ]);
+
+    expect(emitted).toContain("MISSING_PROVIDER_SYMBOL");
+    expect(emitted).not.toContain("MISSING_INVESTMENT_ISIN");
+  });
+
+  test("crypto is silent: a coin has no ISIN to be missing", () => {
+    expect(
+      codes([fund("inv1", { instrument: "crypto", providerSymbol: "bitcoin" })]),
+    ).not.toContain("MISSING_INVESTMENT_ISIN");
+  });
+
+  test("a connected-source holding is silent — its identity is the source's", () => {
+    expect(codes([fund("inv1", { connectedSourceId: "src_binance" })])).not.toContain(
+      "MISSING_INVESTMENT_ISIN",
+    );
+  });
+
+  test("a sold-out position is silent: no statement will ever route to it again", () => {
+    expect(
+      codes([fund("inv1")], { netUnitsByAssetId: new Map([["inv1", "0"]]) }),
+    ).not.toContain("MISSING_INVESTMENT_ISIN");
+    expect(
+      codes([fund("inv1")], { netUnitsByAssetId: new Map([["inv1", "12.5"]]) }),
+    ).toContain("MISSING_INVESTMENT_ISIN");
+  });
+
+  test("a hand-valued holding is silent — it has no instrument identity", () => {
+    expect(codes([asset({ id: "a1", name: "Cuenta", type: "cash" })])).not.toContain(
+      "MISSING_INVESTMENT_ISIN",
+    );
+  });
+
+  test("acknowledging it labels the signal instead of removing it", () => {
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [fund("inv1")],
+        warningOverrides: [{ code: "MISSING_INVESTMENT_ISIN", entityId: "inv1" }],
+      }),
+    );
+
+    expect(
+      signals.find((signal) => signal.code === "MISSING_INVESTMENT_ISIN")?.label,
+    ).toContain("marcado como intencional");
+  });
+});

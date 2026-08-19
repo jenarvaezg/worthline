@@ -147,7 +147,12 @@ reference metadata only — it does not participate in price fetching. The
 **exposure profile**. It identifies the **instrument**, never the **holding**: the
 same fund at two brokers is two holdings carrying the same ISIN, so a match on it
 resolves *what* the row is and leaves *which holding* open (ADR 0055, amendment
-#1331).
+#1331). Reference metadata, but not optional in effect: an **investment** with a
+**provider symbol** and no ISIN is an **orphan** — no **statement** can route to it, no
+**exposure profile** is inherited, and nothing can decide that a broker's ISIN and its
+own symbol name the same security. That state is a **data-health** signal
+(`MISSING_INVESTMENT_ISIN`, #1489), never a blocked alta: a **pension plan** often has
+no ISIN at all.
 
 **Exposure**:
 The composition of a scope's portfolio across axes — its largest **holdings**, its

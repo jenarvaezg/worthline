@@ -1,6 +1,7 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
+import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
   addHoldingFieldValue,
   buildSymbolSearchCurrentParams,
@@ -12,7 +13,11 @@ import { createHoldingAction } from "@web/patrimonio/create-holding-action";
 import { PendingSubmit } from "@web/pending-submit";
 import { priceSourceLabel } from "@web/price-source-label";
 import type { Instrument, Member, ValuationMethod } from "@worthline/domain";
-import { defaultsFor, LIQUIDITY_TIER_LABELS } from "@worthline/domain";
+import {
+  defaultsFor,
+  INVESTMENT_PROFILE_INSTRUMENTS,
+  LIQUIDITY_TIER_LABELS,
+} from "@worthline/domain";
 import Link from "next/link";
 import { type CSSProperties, Suspense } from "react";
 
@@ -411,7 +416,12 @@ function MethodFields({
               autoComplete="off"
             />
           </label>
-          <input name={`isin_${id}`} type="hidden" value={v("isin") ?? ""} />
+          {/* Visible since #1489, and only where an ISIN exists: the domain's own set
+              of instruments that carry one, so this form and the health signal cannot
+              disagree about who is an orphan. */}
+          {INVESTMENT_PROFILE_INSTRUMENTS.has(id) ? (
+            <IsinField instrument={id} value={v("isin")} />
+          ) : null}
           <label>
             Precio manual por unidad (EUR) <small>(opcional)</small>
             <input

@@ -2087,8 +2087,8 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     }),
     search_market_symbol: tool({
       description:
-        "Resuelve el `providerSymbol` (ticker de precios) de un instrumento de mercado por nombre o ISIN. " +
-        "Devuelve candidatos (symbol, name, market, currency) para desambiguar — el sufijo de mercado importa: VUSA.L ≠ VUSA.AS —. " +
+        "Resuelve el `providerSymbol` (ticker de precios) de un instrumento de mercado por nombre o ISIN; buscar por ISIN además IDENTIFICA, porque el candidato vuelve con ese ISIN junto a su símbolo. " +
+        "Devuelve candidatos (symbol, name, isin, market, currency) para desambiguar — el sufijo de mercado importa: VUSA.L ≠ VUSA.AS —. " +
         "`instrument` enruta el proveedor: fund/etf/stock/index → Yahoo, crypto → CoinGecko (el symbol es el id de la moneda, p. ej. `bitcoin`). " +
         "Pasa el `symbol` elegido a propose_holding.providerSymbol. Si no hay ningún candidato fiable, crea el alta igualmente (avisará de que el precio no se actualizará). Solo lectura.",
       inputSchema: MARKET_SYMBOL_SEARCH_SCHEMA,

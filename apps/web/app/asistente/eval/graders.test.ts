@@ -5,6 +5,7 @@ import {
   citesEuros,
   citesInternalSource,
   claimsAnInventedMechanism,
+  claimsDistinctInstrumentWithoutResolving,
   commentsOnTheInterface,
   declinesToInvent,
   isSpanish,
@@ -146,5 +147,58 @@ describe("claimsAnInventedMechanism", () => {
         "La posición se revaloriza al precio de hoy, así que el impacto es estimado.",
       ),
     ).toBe(false);
+  });
+});
+
+describe("claimsDistinctInstrumentWithoutResolving (#1489)", () => {
+  const claim =
+    "El ETF que aparece en tu extracto (IE00B52MJY50) es distinto al que tengo " +
+    "registrado en tu cartera, con el símbolo SXR1.DE.";
+
+  it("catches the sentence that reached a real user", () => {
+    expect(claimsDistinctInstrumentWithoutResolving(answer({ text: claim }))).toBe(true);
+  });
+
+  it("catches the fronted phrasings too", () => {
+    for (const text of [
+      "Ese ISIN corresponde a otro fondo, no al que tienes.",
+      "Se trata de un producto diferente del que figura en tu patrimonio.",
+    ]) {
+      expect(claimsDistinctInstrumentWithoutResolving(answer({ text })), text).toBe(true);
+    }
+  });
+
+  it("allows the claim once the keys were actually resolved", () => {
+    expect(
+      claimsDistinctInstrumentWithoutResolving(
+        answer({
+          text: claim,
+          toolCalls: [{ name: "search_market_symbol", input: { query: "IE00B52MJY50" } }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not punish the honest hedge", () => {
+    expect(
+      claimsDistinctInstrumentWithoutResolving(
+        answer({
+          text:
+            "No puedo confirmar que el ISIN del extracto y el símbolo de tu posición " +
+            "sean el mismo producto. ¿Lo son?",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not punish a true sentence about a figure or a date", () => {
+    for (const text of [
+      "El importe del extracto es distinto al que tienes registrado: 1.204,50 € frente a 1.180,00 €.",
+      "La fecha de la operación es diferente de la que consta en tu histórico.",
+    ]) {
+      expect(claimsDistinctInstrumentWithoutResolving(answer({ text })), text).toBe(
+        false,
+      );
+    }
   });
 });
