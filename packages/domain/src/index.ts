@@ -86,7 +86,10 @@ export type {
   BrokerTransactionTable,
   TransactionDirectionSource,
 } from "./broker-transaction-table";
-export { readBrokerTransactionTable } from "./broker-transaction-table";
+export {
+  ASSUMED_BUY_WARNING,
+  readBrokerTransactionTable,
+} from "./broker-transaction-table";
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";
 export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 export type { LiquidityTier } from "./classification";
@@ -1018,6 +1021,8 @@ export type {
   StatementRowResult,
 } from "./statement-broker-adapter";
 export { getStatementBrokerAdapter, isStatementBroker } from "./statement-broker-adapter";
+export type { BrokerTransactionsStatementResult } from "./statement-from-broker-transactions";
+export { statementFromBrokerTransactions } from "./statement-from-broker-transactions";
 export type {
   MatchedStatementFund,
   NewStatementFund,
@@ -1055,7 +1060,11 @@ export type {
   SkippedStatementRow,
   StatementBroker,
 } from "./statement-parse";
-export { parseStatement, parseStatementWithAdapter } from "./statement-parse";
+export {
+  parseStatement,
+  parseStatementWithAdapter,
+  statementHeaderMatches,
+} from "./statement-parse";
 export type {
   ExternalTransferInIntent,
   TransferIntent,

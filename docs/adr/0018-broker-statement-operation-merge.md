@@ -87,7 +87,9 @@ the per-operation `rippleHistoricalSnapshotsForOperation`.
   operation would fail to match its precise file counterpart and duplicate. Date
   is the key; quantity is not.
 - **`.xlsx` support** — deferred: MyInvestor exports `.csv`, so no spreadsheet
-  dependency is pulled in until a real `.xlsx` appears.
+  dependency is pulled in until a real `.xlsx` appears. **Landed since** (#695 for
+  the plantilla, #1488 for a broker's `Transactions.xlsx`), through a minimal
+  first-sheet reader rather than a spreadsheet model.
 
 ## Consequences
 
@@ -100,8 +102,46 @@ the per-operation `rippleHistoricalSnapshotsForOperation`.
   unknown prefix is a row error, all-or-nothing). Without it the sign rule stays
   as a best effort and the parse reports `directionResolved: false`, which both
   preview surfaces turn into an explicit warning that every row will load as a
-  buy.
+  buy. **Corrected 2026-08-19 (#1488)**: that last clause was not true and had not
+  been for some time — `directionResolved` travelled to every consumer and NO web
+  surface printed it. It went unnoticed because the plantilla, the only format the
+  portfolio gate spoke, always resolves direction, so the field was never `false`
+  there. It is true again now, and by construction rather than by copy: the gate's
+  reader (`statement-upload-read.ts`) appends the domain's own
+  `ASSUMED_BUY_WARNING` to any statement whose direction is unresolved, whichever
+  reader produced it, and the preview prints the warnings above the table. A format
+  added later cannot forget it.
 - Statement load is idempotent: re-uploading the same file overwrites matching
   dates with identical values and triggers a ripple that rebuilds nothing.
 - Editing an imported operation by hand and then re-uploading restores the file's
   value for that date — the file wins on every overlap, by design.
+
+## Amendment 2026-08-19 (#1488): the adapter registry is not the list of formats
+
+ADR 0018's seam (#480) says a new format is «a new adapter file plus one registry
+entry». That stays true for a format whose rows can be read one line at a time
+against a header on line 1 — which is what `StatementBrokerAdapter` is shaped for.
+
+A broker's pure **transactions export** cannot be read that way, and the reason is
+structural rather than incidental: its header is not on the first line (a real
+export prints a title and an account line above the table), and its DIRECTION is a
+property of the whole body, not of a row — the sign of `Número` is the operation,
+and whether the file uses signs at all is only knowable after looking at every row.
+Forcing it into the per-line interface would mean an adapter accumulating state
+across `parseRow` calls, which is the opposite of what the seam bought.
+
+So the transactions reader lives beside the registry instead of inside it
+(`readBrokerTransactionTable`, #1487 — shared with the assistant's spreadsheet
+lane, because two readers would be two answers about the same money), and the gate
+tries the declared format FIRST and falls through to it only when the file is not
+that format at all. «The plantilla refused this» covers two very different things —
+a file that is not a plantilla, and a plantilla with one malformed row whose
+all-or-nothing error is the most useful sentence anybody can be handed — and only
+the first may fall through (`statementHeaderMatches`).
+
+The consequence worth writing down: **`StatementBroker` is no longer the answer to
+«what does the statement gate read»**. That answer is `STATEMENT_GATE_FORMATS`, and
+it is a single source on purpose — the page's copy, the gate's refusals and the
+assistant's context all read it, because the second half of #1488 was the assistant
+promising a DEGIRO import at a door that spoke one format, with nothing anywhere for
+either of them to check.

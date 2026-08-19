@@ -40,7 +40,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/nunca espera a la alerta/i);
     // #865: a readable-but-unvalidated attachment is analysed, not dead-ended.
     expect(prompt).toMatch(/adjunto no estructurado/i);
-    expect(prompt).toMatch(/análisis rápido de lo que ves/i);
+    expect(prompt).toMatch(/analiza rápido lo que ves/i);
     // #1242: an attachment that could not be read keeps the turn alive — honest
     // about what happened, asking what it contains, never faking a reading.
     expect(prompt).toMatch(/adjunto no procesado/i);

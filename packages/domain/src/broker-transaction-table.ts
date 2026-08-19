@@ -86,7 +86,13 @@ const ASSUMED_CURRENCY = "EUR";
 const ASSUMED_CURRENCY_WARNING =
   "La tabla no indica la divisa de los importes; se han leído en EUR. Revísalo antes de confirmar.";
 
-const ASSUMED_BUY_WARNING =
+/**
+ * Exported since #1488: the web statement gate GUARANTEES this sentence for any statement
+ * whose direction is unresolved, whichever reader produced it, and comparing against the
+ * constant is how it avoids printing it twice. Retyping it there would be a second
+ * wording of the same doubt.
+ */
+export const ASSUMED_BUY_WARNING =
   "La tabla no dice si cada fila es una compra o una venta (ni columna de operación ni signos), " +
   "así que se han leído todas como compras. Revísalo antes de confirmar.";
 
