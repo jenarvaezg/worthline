@@ -26,6 +26,22 @@ const PLAN_CTX: BalanceHistoryDebtContext = {
   today: TODAY,
 };
 
+/**
+ * Una deuda lo bastante vieja para que un cuadro fechado en 2020 caiga DENTRO de su
+ * vida: con `PLAN_CTX` toda fila de 2020 sería pre-origen y la prueba mediría esa
+ * exclusión en vez del plegado de fechas repetidas (#1429).
+ */
+const SCHEDULE_CTX: BalanceHistoryDebtContext = {
+  ...PLAN_CTX,
+  plan: {
+    annualInterestRate: "0.03",
+    disbursementDate: "2015-01-15",
+    firstPaymentDate: "2015-02-15",
+    initialCapitalMinor: 150_000_00,
+    termMonths: 360,
+  },
+};
+
 describe("previewBalanceHistoryImport — per-row validation and drift (#696)", () => {
   test("accepts valid rows with drift computed vs the curve", () => {
     const preview = previewBalanceHistoryImport(
@@ -168,6 +184,56 @@ describe("previewBalanceHistoryImport — per-row validation and drift (#696)", 
     );
     expect(folded?.status).toBe("excluded");
     expect(folded?.balanceMinor).toBe(140_000_00);
+  });
+
+  test("un cuadro de 450 filas sobre 9 días compone 9 re-baselines (#1429)", () => {
+    // El cuadro que el test del cuaderno adjuntaba antes de #1422: 450 saldos sobre
+    // nueve fechas, cada una repetida cincuenta veces. Lo que se comprueba aquí es
+    // que la regla de #1422 —manda la última fila del día— aguanta a escala: la
+    // cadena que se persiste tiene UNA re-baseline por día, no una por fila, y las
+    // 441 anteriores se pliegan diciendo por qué en vez de encadenarse unas sobre
+    // otras. Sin esto, nueve observaciones reales llegarían al store como 450
+    // escrituras y un ripple por cada una.
+    const DAYS = 9;
+    const ROWS_PER_DAY = 50;
+    const rows = Array.from({ length: DAYS * ROWS_PER_DAY }, (_unused, index) => ({
+      balanceMinor: 100_000_00 - index * 100_00,
+      date: `2020-0${(index % DAYS) + 1}-01`,
+    }));
+
+    const plan = planBalanceHistoryImport(rows, SCHEDULE_CTX);
+
+    // Ninguna fila se pierde de la tarjeta: las 450 se ven, 441 plegadas.
+    expect(plan.previews).toHaveLength(rows.length);
+    const accepted = plan.previews.filter((row) => row.status === "accepted");
+    expect(accepted).toHaveLength(DAYS);
+    expect(
+      plan.previews.filter(
+        (row) => row.reason === BALANCE_HISTORY_MESSAGES.duplicateInBatch,
+      ),
+    ).toHaveLength(rows.length - DAYS);
+    expect(accepted.map((row) => row.date)).toEqual([
+      "2020-01-01",
+      "2020-02-01",
+      "2020-03-01",
+      "2020-04-01",
+      "2020-05-01",
+      "2020-06-01",
+      "2020-07-01",
+      "2020-08-01",
+      "2020-09-01",
+    ]);
+    // Y la que manda es la última del documento en su día: para el 1 de enero, la
+    // fila 442 (la 50ª de ese día) y no la 1 — así que la curva compuesta arranca
+    // en los 55.900 con los que el cuadro casi acaba, no en los 100.000 con los que
+    // abre. Las dos cifras son las últimas nueve filas del documento.
+    expect(accepted.map((row) => row.balanceMinor)).toEqual(
+      rows.slice(-DAYS).map((row) => row.balanceMinor),
+    );
+    expect(plan.composed).toHaveLength(DAYS);
+    expect(plan.composed.map((item) => item.baselineDate)).toEqual(
+      accepted.map((row) => row.date),
+    );
   });
 
   test("chains composition: the second row composes off the first accepted row", () => {

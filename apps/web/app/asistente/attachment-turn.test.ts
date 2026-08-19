@@ -1,5 +1,6 @@
 import { hasUnstructuredEvidenceInHistory } from "@web/asistente/attachment-chat";
 import {
+  ATTACHMENT_EXTRACTION_LIMITS_V1,
   type AttachmentExtractionResult,
   parseExtractionResult,
 } from "@web/asistente/attachment-extraction-contract";
@@ -97,6 +98,26 @@ const NOT_A_KNOWN_DOCUMENT_CSV = [
   "Concepto;Notas",
   "Cuenta corriente conjunta;pendiente de revisar con el banco",
 ].join("\n");
+
+/**
+ * The cuadro de amortización the #1419 workbook test used to attach (#1429), as a
+ * generator: `SCHEDULE_DAYS` distinct dates, each repeated as many times as the row
+ * count divides into them. A synthetic shape, but the two facts it carries are the
+ * real ones — a schedule is long, and a real one repeats a date whenever something
+ * happened twice that day.
+ */
+const SCHEDULE_DAYS = 9;
+
+function scheduleCsv(rowCount: number): string {
+  return [
+    "Cuota;Fecha;Capital;Interés;Saldo",
+    ...Array.from(
+      { length: rowCount },
+      (_unused, index) =>
+        `Cuota ${index + 1};01/0${(index % SCHEDULE_DAYS) + 1}/2020;300,00;120,00;${200_000 - index * 100},00`,
+    ),
+  ].join("\n");
+}
 
 beforeEach(() => {
   vi.mocked(extractDocumentFromVisionAttachment).mockReset();
@@ -200,6 +221,72 @@ describe("readAttachmentTurn", () => {
     const data = balanceSeriesOf(reading.preview);
     expect(data.balances.every((balance) => balance.projected === undefined)).toBe(true);
     expect(data.warnings).toEqual([]);
+  });
+
+  /**
+   * Which lane a BIG amortization schedule travels in (#1429). The question is not
+   * academic: the workbook lane's own test used to attach exactly this file, and
+   * #1417 quietly moved it — the sheet extractor learned to read `Fecha` + `Saldo`,
+   * so the model stopped receiving the grid and started receiving the reading.
+   *
+   * That is the answer we want, and this pins it: a long schedule is the document
+   * worthline knows how to type, and typed beats described.
+   */
+  it("types a 450-row schedule instead of handing over the workbook (#1429)", async () => {
+    const reading = await readAttachmentTurn(csv(scheduleCsv(450)));
+
+    // The typed lane, all the way: no grid travels alongside the reading, so the
+    // unvalidated-evidence gate (#1248) is NOT opened by a document we did read.
+    expect(reading.unstructured).toBeNull();
+    const data = balanceSeriesOf(reading.preview);
+    expect(data.balances).toHaveLength(450);
+    // «Cuota» and «Capital» are the instalment and the principal PAID, never the
+    // outstanding balance: the reading comes off the `Saldo` column alone.
+    expect(data.balances[0]).toMatchObject({ amount: 200_000, date: "2020-01-01" });
+    expect(data.balances.at(-1)).toMatchObject({ amount: 155_100, date: "2020-09-01" });
+    // Nine days, 450 observations: what the sheet says is a same-day repetition 441
+    // times over, and the reading hands all of them on rather than folding any — the
+    // folding is the import plan's job, and it needs to see the repetition to do it.
+    expect(new Set(data.balances.map((balance) => balance.date)).size).toBe(
+      SCHEDULE_DAYS,
+    );
+    // The sheet prints no currency, so the ONE assumption is stated on the card.
+    expect(data.uncertain).toBe(true);
+    expect(data.warnings.join(" ")).toContain("no indica la divisa");
+    expect(extractDocumentFromVisionAttachment).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Where «grande» stops being a size and becomes a cliff (#1429).
+   *
+   * What bounds this document is the number of OBSERVATIONS, not the height of the
+   * sheet — the balance-series extractor measures `balances.length` on purpose, so a
+   * 40-year schedule of 480 monthly rows carrying a few dozen printed balances passes
+   * comfortably. But a bank that prints the balance on EVERY row hits the contract's
+   * `maxRows`, and past it the verdict is `out_of_limits`, which is not
+   * `unrecognized`: the workbook lane only catches the second, so an oversized
+   * schedule takes NEITHER lane and the model is left with the verdict alone.
+   *
+   * That is today's answer and it is worth having in writing, because it is the
+   * opposite of the one #865 gives for a sheet we cannot type — that one at least
+   * gets described. Whether the typed lane should fall back to the grid when the
+   * reading is merely too long is a decision, not an oversight, and it is not this
+   * issue's to take; what this test guarantees is that changing it is deliberate.
+   */
+  it("leaves an over-long schedule with no lane at all, on purpose (#1429)", async () => {
+    const maxRows = ATTACHMENT_EXTRACTION_LIMITS_V1.maxRows;
+
+    const atTheLimit = await readAttachmentTurn(csv(scheduleCsv(maxRows)));
+    expect(atTheLimit.preview.result.status).toBe("valid");
+
+    const overIt = await readAttachmentTurn(csv(scheduleCsv(maxRows + 1)));
+    expect(overIt.preview.result).toMatchObject({
+      reason: "rows",
+      status: "out_of_limits",
+    });
+    // Not `unrecognized`, so `readSpreadsheetContext` never runs: no grid, no
+    // description, nothing but the card.
+    expect(overIt.unstructured).toBeNull();
   });
 
   it("trims the user-supplied file name once, here", async () => {
