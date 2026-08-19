@@ -527,6 +527,17 @@ export {
   isScheduleLiveOn,
 } from "./fire-rent-return";
 export type {
+  FireRetirementPlan,
+  FireRetirementProfile,
+  FireRetirementProfileState,
+  FireRetirementSignal,
+} from "./fire-retirement-profile";
+export {
+  fireRetirementProfile,
+  ORDINARY_RETIREMENT_AGE_DEFAULT,
+  ordinaryRetirementAgeForFire,
+} from "./fire-retirement-profile";
+export type {
   AssetRateOverride,
   EligibleTier,
   FireReturnMix,
@@ -538,6 +549,13 @@ export {
   TIER_REAL_RETURN_DEFAULTS,
 } from "./fire-return";
 export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
+export type {
+  FireSustainableSpending,
+  FireSustainableSpendingDepletion,
+  FireSustainableSpendingPart,
+  FireSustainableSpendingSides,
+} from "./fire-sustainable-spending";
+export { fireSustainableSpending } from "./fire-sustainable-spending";
 export type {
   FxAggregation,
   FxConversionResult,

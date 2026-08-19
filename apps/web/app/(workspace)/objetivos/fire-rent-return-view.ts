@@ -31,7 +31,11 @@ export interface FireRentReturnLine {
 }
 
 export interface FireRentReturnCopyInput {
-  report: FireRentReturnReport;
+  /**
+   * Solo las dos listas: la renta neta agregada del informe es un INGRESO (#1428) y se
+   * dice en la tarjeta de gasto sostenible, no en esta sección, que habla de la tasa.
+   */
+  report: Pick<FireRentReturnReport, "applied" | "notices">;
   /** Money formatter from the page (privacy mode included). */
   formatMoney: (amountMinor: number) => string;
 }

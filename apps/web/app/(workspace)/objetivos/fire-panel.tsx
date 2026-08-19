@@ -29,7 +29,9 @@ import type {
   FireCoastArrival,
   FireLevel,
   FireProjection,
+  FireRetirementProfile,
   FireScopeConfig,
+  FireSustainableSpending,
   SavingsCoherence,
   ScopeFireResult,
 } from "@worthline/domain";
@@ -49,6 +51,7 @@ import {
   sellableFundedPercent,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
+import { setRetirementPlanAction } from "./fire-config-actions";
 import {
   coastAbsenceNote,
   coastArrivalMetric,
@@ -64,6 +67,11 @@ import {
   formatRatePercent,
 } from "./fire-percent";
 import { fireRentReturnLines } from "./fire-rent-return-view";
+import {
+  fireOrdinaryPlanNote,
+  fireRetirementOfferLine,
+  fireSustainableSpendingCopy,
+} from "./fire-sustainable-spending-view";
 
 export interface FirePanelProps {
   achievement: FireAchievement | null;
@@ -87,7 +95,17 @@ export interface FirePanelProps {
    */
   previewing: boolean;
   privacyMode: boolean;
+  /**
+   * ¿El plan de este ámbito es FIRE o una jubilación ordinaria? (#1428.) Decide qué
+   * pregunta lidera el panel — y nada más: todas las cifras se siguen calculando.
+   */
+  retirementProfile: FireRetirementProfile | null;
   savingsCoherence: SavingsCoherence | null;
+  /** El ámbito y la URL que los botones del ofrecimiento necesitan para escribir. */
+  scopeId: string | null;
+  currentUrl: string;
+  /** «¿Cuánto puedo gastar sin mermar mi patrimonio?» (#1428). */
+  sustainableSpending: FireSustainableSpending | null;
 }
 
 function FireLevelCard({
@@ -142,12 +160,16 @@ export function FirePanel({
   coastArrival,
   coastTickFraction,
   currency,
+  currentUrl,
   fireLevelRail,
   fireProjection,
   fireResult,
   previewing,
   privacyMode,
+  retirementProfile,
   savingsCoherence,
+  scopeId,
+  sustainableSpending,
 }: FirePanelProps) {
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
@@ -181,6 +203,28 @@ export function FirePanel({
   const funded = fireResult
     ? fireFundedView({ formatMoney: fmt, result: fireResult })
     : null;
+
+  // La capa de #1428: el mismo panel con otra pregunta al frente. `ordinary` solo se
+  // alcanza porque el usuario lo declaró — la señal como mucho ofrece.
+  const ordinary = retirementProfile?.state === "ordinary";
+  // El ofrecimiento calla mientras hay supuestos sin guardar: sus botones ESCRIBEN, y
+  // pulsarlos a media edición se llevaría el borrador por delante.
+  const offerLine =
+    retirementProfile && !previewing ? fireRetirementOfferLine(retirementProfile) : null;
+  const sustainableCopy =
+    ordinary && sustainableSpending && fireResult
+      ? fireSustainableSpendingCopy({
+          formatMoney: fmt,
+          // Un alquiler declarado sin gastos no suma en el gasto sostenible por la
+          // misma razón que no mueve la tasa (ADR 0076), así que la tarjeta lo dice
+          // leyendo los MISMOS avisos que la sección de alquileres de abajo.
+          hasRentsPendingExpenses: fireResult.rentReturns.notices.some(
+            (notice) => notice.reason === "missing_expenses",
+          ),
+          immobilizedMinor: fireResult.capitalSplit.immobilized.amountMinor,
+          spending: sustainableSpending,
+        })
+      : null;
   const coastProgress = fireResult
     ? coastProgressPercent(
         fireResult.eligibleAssets.amountMinor,
@@ -238,22 +282,131 @@ export function FirePanel({
       className={`firePanel objetivosFirePanel${previewing ? " objetivosFirePanel--previewing" : ""}`}
     >
       <div className="panelHeader">
-        <h3>Independencia financiera · FIRE</h3>
+        <h3>{ordinary ? "Tu plan de jubilación" : "Independencia financiera · FIRE"}</h3>
         <span>
-          {previewing ? "previsualización · sin guardar" : "objetivo principal"}
+          {previewing
+            ? "previsualización · sin guardar"
+            : ordinary
+              ? "cuánto puedes gastar"
+              : "objetivo principal"}
         </span>
       </div>
+
+      {/* Detectar y OFRECER, nunca imponer (#1428). Se nombra el hecho que disparó la
+          sospecha —«tu edad objetivo son 67 años»— y no la conclusión sobre su vida;
+          decirle a alguien «no vas a hacer FIRE» sienta fatal en cuanto la detección
+          se equivoca, y aquí se equivoca con solo tocar la edad objetivo. La respuesta
+          se guarda en las DOS direcciones: un «no» que no se persistiera volvería a
+          preguntarse en cada carga. */}
+      {offerLine !== null && scopeId !== null ? (
+        <form action={setRetirementPlanAction} className="fireRetirementOffer">
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="scopeId" type="hidden" value={scopeId} />
+          {/* El aviso es el párrafo, no el formulario: `role="status"` sobre el
+              `<form>` le quitaría su propio rol y metería los dos botones dentro de
+              una región viva. */}
+          <p role="status">
+            {offerLine} ¿Quieres ver esta pantalla como plan de jubilación —cuánto puedes
+            gastar— en vez de FIRE?
+          </p>
+          <div className="fireRetirementOfferActions">
+            <button
+              className="btnSmall"
+              name="retirementPlan"
+              type="submit"
+              value="ordinary"
+            >
+              Verlo así
+            </button>
+            <button
+              className="btnSmall fireRetirementOfferDismiss"
+              name="retirementPlan"
+              type="submit"
+              value="early"
+            >
+              No, sigo con FIRE
+            </button>
+          </div>
+        </form>
+      ) : null}
 
       {fireResult && config && funded ? (
         <div className="objetivosHeroGrid">
           {/* Left: % funded + bar + coast + metrics */}
           <div className="objetivosHeroLeft">
+            {/* El titular del perfil de jubilación ordinaria (#1428): la inversa de
+                la fórmula FIRE, con los mismos insumos. Va ARRIBA porque es la
+                respuesta a la pregunta que este usuario tiene de verdad; el % de
+                abajo sigue ahí, calculado y cierto, solo deja de ser el titular. */}
+            {sustainableCopy ? (
+              <section aria-label="Gasto sostenible" className="fireSustainable">
+                <p className="fireBig">
+                  {sustainableCopy.headline}{" "}
+                  <span className="fireBigNoun">sin mermar tu patrimonio</span>
+                </p>
+                <p className="fireFundedFraction">{sustainableCopy.headlineAnnual}</p>
+
+                <ul className="fireSustainableRows">
+                  {sustainableCopy.rows.map((row) => (
+                    <li className={`fireSustainableRow is-${row.key}`} key={row.key}>
+                      <span className="fireSustainableLabel">{row.label}</span>
+                      <span className="fireSustainableGloss">{row.gloss}</span>
+                      <strong>{row.value}</strong>
+                    </li>
+                  ))}
+                </ul>
+
+                {/* La segunda versión, cuando el usuario ha dicho hasta cuándo: este
+                    perfil no necesita preservar el principal a perpetuidad, así que
+                    «agotándolo a los N» es la pregunta honesta — y la única que
+                    necesita una edad final, que es un dato suyo. */}
+                {sustainableCopy.depletion ? (
+                  <div className="fireMetric fireSustainableDepletion">
+                    <span>Agotando el capital</span>
+                    <strong>{sustainableCopy.depletion.value}</strong>
+                  </div>
+                ) : null}
+                {sustainableCopy.depletion ? (
+                  <p className="fireCoastGloss">{sustainableCopy.depletion.gloss}</p>
+                ) : (
+                  <p className="fireCoastGloss">
+                    Esta cifra no toca el principal.{" "}
+                    <a href="#supuestos">Dinos hasta qué edad debe durar tu capital</a> y
+                    verás también lo que podrías gastar agotándolo.
+                  </p>
+                )}
+
+                {sustainableCopy.exclusionNote ? (
+                  <p className="objetivosSubNote">{sustainableCopy.exclusionNote}</p>
+                ) : null}
+              </section>
+            ) : null}
+
             {/* The noun matters: a lone «68,5 %» reads as a probability of
                 arriving, not as the share of the target already funded (#1426). */}
-            <p className="fireBig">
+            <p className={ordinary ? "fireFundedDemoted" : "fireBig"}>
               {funded.percent} <span className="fireBigNoun">financiado</span>
             </p>
             <p className="fireFundedFraction">{funded.fraction}</p>
+
+            {/* La vuelta atrás vive junto a la cifra que se degradó, no escondida en
+                un formulario: quien dijo «así» tiene que poder desdecirse donde lo ve
+                (y el desplegable de supuestos lo ofrece igual). */}
+            {ordinary && scopeId !== null && !previewing ? (
+              <form action={setRetirementPlanAction} className="fireRetirementRevert">
+                <input name="currentUrl" type="hidden" value={currentUrl} />
+                <input name="scopeId" type="hidden" value={scopeId} />
+                <span>{fireOrdinaryPlanNote(funded.percent)}</span>
+                <button
+                  className="btnSmall"
+                  name="retirementPlan"
+                  type="submit"
+                  value="early"
+                >
+                  Ver como FIRE
+                </button>
+              </form>
+            ) : null}
 
             <div className="fireBar">
               {coastTickFraction !== null ? (

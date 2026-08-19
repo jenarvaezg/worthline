@@ -1,6 +1,6 @@
 import { parseMoneyMinor } from "@web/intake-primitives";
-import type { FireScopeConfig } from "@worthline/domain";
-import { parseDecimalStrict } from "@worthline/domain";
+import type { FireRetirementPlan, FireScopeConfig } from "@worthline/domain";
+import { ORDINARY_RETIREMENT_AGE_DEFAULT, parseDecimalStrict } from "@worthline/domain";
 import type { StrictParseResult } from "./shared";
 
 /**
@@ -131,6 +131,56 @@ export function parseFireConfigFormStrict(
   const leanMultiplier = hasLean ? leanMultiplierParsed! : undefined;
   const fatMultiplier = hasFat ? fatMultiplierParsed! : undefined;
 
+  // La edad a partir de la cual jubilarse ya no es *early* (#1428): un dato del
+  // usuario con defecto neutro, nunca la normativa española codificada — la edad
+  // ordinaria depende del país y del año (misma doctrina que el tope de #1427).
+  const ordinaryRetirementAgeParsed = parseInt(
+    (formData.get("ordinaryRetirementAge") as string | null) ?? "",
+    10,
+  );
+  const ordinaryRetirementAge = !Number.isNaN(ordinaryRetirementAgeParsed)
+    ? ordinaryRetirementAgeParsed
+    : ORDINARY_RETIREMENT_AGE_DEFAULT;
+
+  // Hasta qué edad tiene que durar el capital (#1428). Opcional y SIN defecto
+  // aplicado: sin este campo la tarjeta de gasto sostenible enseña solo la versión
+  // perpetua, porque inventar una esperanza de vida es meter una tabla actuarial en
+  // un motor que no la tiene.
+  const lifeExpectancyRaw = (
+    (formData.get("lifeExpectancyAge") as string | null) ?? ""
+  ).trim();
+  const lifeExpectancyParsed = lifeExpectancyRaw ? parseInt(lifeExpectancyRaw, 10) : null;
+  const hasLifeExpectancy = lifeExpectancyParsed !== null;
+
+  if (hasLifeExpectancy) {
+    if (Number.isNaN(lifeExpectancyParsed) || lifeExpectancyParsed > 130) {
+      return {
+        ok: false,
+        error: "La edad hasta la que debe durar tu capital debe ser una edad válida.",
+      };
+    }
+    // Un capital que se agota ANTES de que empiece la jubilación no responde a
+    // ninguna pregunta: el reparto saldría de un horizonte negativo.
+    if (lifeExpectancyParsed <= targetRetirementAge) {
+      return {
+        ok: false,
+        error:
+          "La edad hasta la que debe durar tu capital tiene que ser posterior a tu edad objetivo de jubilación.",
+      };
+    }
+  }
+
+  // La declaración sobre el propio plan (#1428): vacío = sin contestar, y ese es el
+  // único estado en el que la pantalla se atreve a ofrecer el cambio. Un valor que no
+  // reconocemos se lee como «sin contestar» en vez de rechazar el formulario entero:
+  // el campo no es una cifra que el usuario haya tecleado, es una elección de una
+  // lista, y perder el resto del guardado por ella sería desproporcionado.
+  const retirementPlanRaw = ((formData.get("retirementPlan") as string) ?? "").trim();
+  const retirementPlan: FireRetirementPlan | undefined =
+    retirementPlanRaw === "ordinary" || retirementPlanRaw === "early"
+      ? retirementPlanRaw
+      : undefined;
+
   // Does the immobilized capital count (#1460)? The form pairs the checkbox with a
   // hidden "off", so an UNCHECKED box still arrives — and the absence of BOTH values
   // means a FormData that does not carry the declaration at all, which has to read as
@@ -161,6 +211,9 @@ export function parseFireConfigFormStrict(
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
       ...(hasBaristaIncome ? { baristaMonthlyIncomeMinor: baristaIncomeMinor! } : {}),
       immobilizedCountsAsFireCapital,
+      ordinaryRetirementAge,
+      ...(hasLifeExpectancy ? { lifeExpectancyAge: lifeExpectancyParsed! } : {}),
+      ...(retirementPlan === undefined ? {} : { retirementPlan }),
       ...(tierRealReturns ? { tierRealReturns } : {}),
     },
   };

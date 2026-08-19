@@ -2975,6 +2975,116 @@ code {
   color: var(--blue);
 }
 
+/* ── El perfil de jubilación ordinaria (#1428) ─────────────────────────────
+   Un ofrecimiento, no un veredicto: banda de aviso con sus dos respuestas al
+   lado, en el registro de papel del resto del panel (regla y hoja, sin píldoras).
+   Vive arriba del hero porque cambia lo que el hero significa. */
+.fireRetirementOffer {
+  align-items: baseline;
+  background: var(--band);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.fireRetirementOffer p {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.fireRetirementOfferActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* La respuesta que deja las cosas como están no compite con la que las cambia. */
+.fireRetirementOfferDismiss {
+  border-color: var(--hairline);
+  color: var(--muted);
+}
+
+/* La tarjeta del gasto sostenible: el titular del perfil ordinario. Sus filas son
+   el mismo libro mayor que el split de capital (#1447) — dos mitades que suman la
+   cifra de arriba, con su aritmética en la glosa. */
+.fireSustainable {
+  display: grid;
+  gap: 6px;
+}
+
+.fireSustainableRows {
+  border-left: 1px solid var(--hairline);
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+}
+
+.fireSustainableRow {
+  align-items: baseline;
+  display: grid;
+  font-size: 0.82rem;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.fireSustainableLabel {
+  font-weight: 700;
+}
+
+/* Las rentas conservan la identidad dorada del ladrillo del que salen. */
+.fireSustainableRow.is-rents .fireSustainableLabel {
+  color: var(--gold);
+}
+
+.fireSustainableGloss {
+  color: var(--muted);
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fireSustainableRow strong {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.fireSustainableDepletion {
+  margin-top: 6px;
+}
+
+/* El % financiado cuando ha dejado de ser el titular: sigue impreso y sigue siendo
+   cierto — solo pierde el cuerpo de la cifra grande (#1428). */
+.fireFundedDemoted {
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  margin-top: 14px;
+}
+
+/* La vuelta atrás, junto a la cifra que se degradó. */
+.fireRetirementRevert {
+  align-items: baseline;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  padding-top: 10px;
+}
+
+.fireRetirementRevert span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
 /* ── Coast, junto a su tick en la barra (#1425) ────────────────────────────
    Un bloque de libro mayor, no una tarjeta: una regla arriba lo separa de la
    barra y sus filas son las mismas `.fireMetric` que el resto del hero — Coast

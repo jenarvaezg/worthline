@@ -149,6 +149,22 @@ export interface FireRentReturnReport {
   applied: AppliedRentReturn[];
   /** Declared rents that did not feed the rate, and why. */
   notices: RentReturnNotice[];
+  /**
+   * The scope's annual NET rent (minor units), already scaled to what it owns — the
+   * income half of the sustainable-spending answer (#1428, ADR 0081).
+   *
+   * It counts every rent this scope's eligible properties DERIVED a rate from, and it
+   * is deliberately independent of the immobilized declaration (#1460): a flat the
+   * user will never sell is not FIRE capital, and its rent is still money arriving
+   * every month. The two halves cannot double-count each other, because the capital
+   * half only ever reads the *sellable* side and a rented property lives on the
+   * immobilized one.
+   *
+   * Net or nothing, like the rate it came from (ADR 0076): a schedule with no declared
+   * expenses contributes 0 here and stays a notice — the gross would flatter a figure
+   * somebody may plan their retirement on.
+   */
+  netRentAnnualMinor: number;
 }
 
 export interface RentRealReturns {

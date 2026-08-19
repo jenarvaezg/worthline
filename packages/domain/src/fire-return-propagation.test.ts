@@ -194,6 +194,82 @@ describe("a declared net rent resolves the rate for its own property", () => {
     );
   });
 
+  // ── La renta neta como INGRESO, no como tasa (#1428) ───────────────────
+  // El gasto sostenible se presenta partido en «rentas netas + lo que el capital
+  // vendible soporta», así que la mitad de las rentas tiene que salir del mismo
+  // motor que la tasa: dos lecturas de la misma renta acabarían discrepando.
+
+  it("el informe publica la renta NETA anual del ámbito, no la bruta", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+    );
+
+    // (1.550 − 250) × 12 = 15.600 €/año.
+    expect(result.rentReturns.netRentAnnualMinor).toBe(1_560_000);
+  });
+
+  it("la renta se escala a lo que el ámbito posee, como el peso que entró en la tasa", () => {
+    const halfOwned: ManualAsset = {
+      ...brick,
+      ownership: [
+        { memberId: "alice", shareBps: 5_000 },
+        { memberId: "outsider", shareBps: 5_000 },
+      ],
+    };
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [halfOwned, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+    );
+
+    expect(result.rentReturns.netRentAnnualMinor).toBe(780_000);
+  });
+
+  it("sin gastos declarados no aporta nada: neto o nada, igual que la tasa", () => {
+    const result = calculateFireForScope(
+      BASE_CONFIG,
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      { payoutSchedules: [rent("piso", 155_000)], todayISO: "2026-08-18" },
+    );
+
+    expect(result.rentReturns.netRentAnnualMinor).toBe(0);
+  });
+
+  it("declarar el inmovilizado fuera del capital FIRE no borra su alquiler", () => {
+    const options = {
+      payoutSchedules: [rent("piso", 155_000, 25_000)],
+      todayISO: "2026-08-18",
+    };
+    const declaredOut = calculateFireForScope(
+      { ...BASE_CONFIG, immobilizedCountsAsFireCapital: false },
+      [brick, market],
+      [],
+      workspace,
+      "alice",
+      0,
+      options,
+    );
+
+    // El piso sale del capital y de la ponderación (#1460)…
+    expect(declaredOut.rentReturns.applied).toEqual([]);
+    // …y su renta sigue llegando todos los meses.
+    expect(declaredOut.rentReturns.netRentAnnualMinor).toBe(1_560_000);
+  });
+
   it("a manual expectedRealReturn still wins over everything", () => {
     const { context } = calculateFireForScope(
       { ...BASE_CONFIG, expectedRealReturn: 0.07 },

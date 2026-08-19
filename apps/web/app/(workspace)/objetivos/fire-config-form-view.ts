@@ -19,7 +19,11 @@ import type {
   FireScopeConfig,
   MonthlySavingsSuggestion,
 } from "@worthline/domain";
-import { fireCountsImmobilizedCapital, isManualFireReturn } from "@worthline/domain";
+import {
+  fireCountsImmobilizedCapital,
+  isManualFireReturn,
+  ORDINARY_RETIREMENT_AGE_DEFAULT,
+} from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
 import { fireAgeProvenance } from "./fire-provenance";
 
@@ -31,6 +35,16 @@ export interface FireConfigFieldValues {
   monthlySavingsCapacity?: string;
   /** Never blank, same reason: the engine's default is 65. */
   targetRetirementAge: string;
+  /**
+   * La edad a partir de la cual jubilarse ya no es *early* (#1428). Nunca vacío: el
+   * perfil se detecta contra este umbral, así que un hueco donde el motor usa 65
+   * escondería la regla con la que se está midiendo al usuario.
+   */
+  ordinaryRetirementAge: string;
+  /** Hasta qué edad debe durar el capital (#1428). Vacío = solo la versión perpetua. */
+  lifeExpectancyAge?: string;
+  /** Lo declarado sobre el propio plan (#1428). Vacío = sin contestar. */
+  retirementPlan: "" | "ordinary" | "early";
   expectedRealReturn?: string;
   tierReturns: {
     cash?: string;
@@ -96,6 +110,13 @@ export function fireConfigFieldValues(
         }),
     immobilizedCounts: config == null ? true : fireCountsImmobilizedCapital(config),
     targetRetirementAge: (config?.targetRetirementAge ?? 65).toString(),
+    ordinaryRetirementAge: (
+      config?.ordinaryRetirementAge ?? ORDINARY_RETIREMENT_AGE_DEFAULT
+    ).toString(),
+    ...(config?.lifeExpectancyAge === undefined
+      ? {}
+      : { lifeExpectancyAge: config.lifeExpectancyAge.toString() }),
+    retirementPlan: config?.retirementPlan ?? "",
     ...(config?.expectedRealReturn === undefined
       ? {}
       : { expectedRealReturn: formatDecimalAsPercentField(config.expectedRealReturn) }),
