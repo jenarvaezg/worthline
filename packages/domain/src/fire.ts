@@ -1,6 +1,6 @@
 import type { ContributionPlan } from "./contribution-plan";
 import type { FireCapitalSplit } from "./fire-capital-split";
-import { splitFireCapital } from "./fire-capital-split";
+import { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
 import { assembleFireEligiblePool, type FireExcludedAsset } from "./fire-eligible-pool";
 import type { FireGrowthAssumption } from "./fire-plan-projection";
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
@@ -72,6 +72,17 @@ export interface FireScopeConfig {
    * 0 / undefined → no Barista level shown.
    */
   baristaMonthlyIncomeMinor?: number;
+  /**
+   * Does the immobilized side of the pool — non-primary property, collections —
+   * count as FIRE capital? (#1460, ADR 0078.)
+   *
+   * A declaration, not a dogma: #1447 showed the two natures apart, and for a user
+   * who does not plan to sell the flat the honest measure is that the brick does not
+   * count at all. Read through `fireCountsImmobilizedCapital`, never off this field:
+   * `undefined` means `true`, which is what every config stored before this existed
+   * meant, so nobody's figures moved when the field appeared.
+   */
+  immobilizedCountsAsFireCapital?: boolean;
 }
 
 export interface FireResult {
@@ -136,9 +147,11 @@ export interface ScopeFireResult extends FireResult {
   readonly context: FireContext;
   /**
    * `eligibleAssets` split into what can be sold in slices and what cannot
-   * (#1447). Presentation-only: eligibility, rates and totals are unchanged —
-   * the two sides always add back up to `eligibleAssets`. Absent on
-   * `calculateFire`, which only sees a pre-computed total with no tier mix.
+   * (#1447). Its `drawableMinor` IS `eligibleAssets`: with the brick counting, that
+   * is both sides added up; with the user declaring it out (#1460) it is the sellable
+   * side alone and the immobilized row is patrimonio shown beside the figure rather
+   * than inside it. Absent on `calculateFire`, which only sees a pre-computed total
+   * with no tier mix.
    */
   readonly capitalSplit: FireCapitalSplit;
   /**
@@ -264,6 +277,17 @@ export function isManualFireReturn(
   config: Pick<FireScopeConfig, "expectedRealReturn">,
 ): boolean {
   return config.expectedRealReturn !== undefined;
+}
+
+/**
+ * Whether the scope counts its immobilized capital as FIRE capital (#1460). The one
+ * door for the declaration, so «no está declarado» resolves to the default in exactly
+ * one place — the engine, the form's checkbox and the split's grey row all ask here.
+ */
+export function fireCountsImmobilizedCapital(
+  config: Pick<FireScopeConfig, "immobilizedCountsAsFireCapital">,
+): boolean {
+  return config.immobilizedCountsAsFireCapital !== false;
 }
 
 export function isFireEligibleAsset(
@@ -409,8 +433,42 @@ export function calculateFireForScope(
     workspace,
     scopeId,
   });
-  const { excludedAssets, netEligibleMinor, eligibleByTierMinor, scopedDebtByTierMinor } =
-    pool;
+  const { excludedAssets, eligibleByTierMinor, scopedDebtByTierMinor } = pool;
+
+  // The user's declaration about brick (#1460, ADR 0078). #1447 showed the two
+  // natures apart; whoever does not plan to sell the flat can declare that it is not
+  // FIRE capital at all, and then the immobilized rungs leave the pool AND the
+  // weighting. Both, through the same predicate: dropping the capital while keeping
+  // its weight would quote a rate nobody's money holds — and it is the housing rung
+  // that drags the rate down, so forgetting the second half would make the result
+  // MORE pessimistic than what the user declared, not less.
+  const countsImmobilized = fireCountsImmobilizedCapital(config);
+  const drawableByTierMinor: Partial<Record<LiquidityTier, number>> = {};
+  for (const [tier, amountMinor] of Object.entries(eligibleByTierMinor) as [
+    LiquidityTier,
+    number,
+  ][]) {
+    if (fireDrawsFromTier(tier, countsImmobilized)) {
+      drawableByTierMinor[tier] = amountMinor;
+    }
+  }
+  // A rented flat's own rate (#1448) rides its rung: out of the pool, out of the rate.
+  const ratedOverrides = pool.assetRateOverrides.filter((override) =>
+    fireDrawsFromTier(override.tier, countsImmobilized),
+  );
+
+  // The split is where the reservation is clamped and where the figure FIRE measures
+  // comes from, so the rows on screen and `eligibleAssets` are the same arithmetic
+  // and not two readings of it (#1447, #1460).
+  const capitalSplit = splitFireCapital({
+    countsImmobilized,
+    debtByTierMinor: scopedDebtByTierMinor,
+    eligibleByTierMinor,
+    reservedForGoalsMinor,
+  });
+  const reserved =
+    capitalSplit.sellable.reservedMinor + capitalSplit.immobilized.reservedMinor;
+  const eligibleAfterReservation = capitalSplit.drawableMinor;
 
   // N3 (#515): compute effective weighted rate, then resolve the single rate to use.
   // A per-asset rate substitutes its tier's over its own slice (#1448) — it is not
@@ -425,15 +483,12 @@ export function calculateFireForScope(
         derived.assetName,
       ]),
     ),
-    assetRateOverrides: pool.assetRateOverrides,
-    eligibleByTierMinor,
+    assetRateOverrides: ratedOverrides,
+    eligibleByTierMinor: drawableByTierMinor,
     ...(config.tierRealReturns ? { tierRealReturns: config.tierRealReturns } : {}),
   });
   const effective = returnMix.rate;
   const realReturnUsed = config.expectedRealReturn ?? effective;
-
-  const reserved = Math.max(0, Math.min(reservedForGoalsMinor, netEligibleMinor));
-  const eligibleAfterReservation = netEligibleMinor - reserved;
 
   const base = calculateFire(
     config,
@@ -448,17 +503,12 @@ export function calculateFireForScope(
     realReturnUsed,
     effectiveRealReturn: effective,
     eligibleMinor: eligibleAfterReservation,
-    eligibleGrossMinor: netEligibleMinor,
+    // Gross of RESERVATION, not of debt — and of the same pool the figure came from,
+    // so a scope that leaves its brick out does not hand `goalFireDelay` a capital
+    // the FIRE number never counted.
+    eligibleGrossMinor: eligibleAfterReservation + reserved,
     fireNumberMinor: base.fireNumber.amountMinor,
   };
-
-  // The split reads the SAME pool and the SAME reservation the figure above was
-  // computed from, so it can never disagree with `eligibleAssets` (#1447).
-  const capitalSplit = splitFireCapital({
-    eligibleByTierMinor,
-    debtByTierMinor: scopedDebtByTierMinor,
-    reservedForGoalsMinor: reserved,
-  });
 
   return {
     ...base,
@@ -470,13 +520,34 @@ export function calculateFireForScope(
     rentReturns: {
       // The overrides the pool kept ARE the rates that took effect, so the report
       // cannot advertise a substitution the rate did not receive.
-      applied: pool.assetRateOverrides.flatMap((override) => {
+      applied: ratedOverrides.flatMap((override) => {
         const derived = rentRealReturns.byAssetId.get(override.assetId);
         // The override's amount IS the scoped weight the rate was applied with, so
         // the report cannot disagree with the arithmetic about how much it counted.
         return derived ? [{ ...derived, scopedValueMinor: override.amountMinor }] : [];
       }),
-      notices: pool.rentReturnNotices,
+      // A rate the pool derived for a rung FIRE no longer draws from did not take
+      // effect, so it cannot be reported as applied — and it cannot vanish either:
+      // the user declared that rent and deserves to be told why it is not moving the
+      // number (#1448's guard, under #1460's declaration).
+      notices: [
+        ...pool.rentReturnNotices,
+        ...pool.assetRateOverrides
+          .filter((override) => !fireDrawsFromTier(override.tier, countsImmobilized))
+          .flatMap((override) => {
+            const derived = rentRealReturns.byAssetId.get(override.assetId);
+            return derived
+              ? [
+                  {
+                    assetId: override.assetId,
+                    assetName: derived.assetName,
+                    grossRate: null,
+                    reason: "immobilized_not_counted" as const,
+                  },
+                ]
+              : [];
+          }),
+      ],
     },
   };
 }

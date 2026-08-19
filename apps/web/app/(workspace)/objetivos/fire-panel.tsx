@@ -298,7 +298,12 @@ export function FirePanel({
                   className="fireCapitalSplit"
                 >
                   {fireCapitalSplitRows(fireResult.capitalSplit).map((row) => (
-                    <li className={`fireCapitalRow is-${row.key}`} key={row.key}>
+                    <li
+                      className={`fireCapitalRow is-${row.key}${
+                        row.outOfCalculation ? " is-outOfCalculation" : ""
+                      }`}
+                      key={row.key}
+                    >
                       <span className="fireCapitalLabel">{row.label}</span>
                       {/* La glosa se recorta en la columna estrecha del hero:
                           el título la devuelve entera sin partir la fila. */}
@@ -378,6 +383,17 @@ export function FirePanel({
                       FIRE.
                     </>
                   ) : null}
+                </p>
+              ) : null}
+              {/* Lo declarado se dice, no se deduce de una fila gris (#1460): el
+                  usuario tiene que poder reconocer su propia decisión y saber que
+                  las cifras de arriba ya la obedecen. */}
+              {!fireResult.capitalSplit.countsImmobilized ? (
+                <p className="fireEligibleRule">
+                  Has declarado que tu patrimonio <strong>inmovilizado no cuenta</strong>{" "}
+                  como capital FIRE, así que el porcentaje, el Coast y la rentabilidad
+                  esperada de arriba se miden <strong>solo con lo vendible</strong>. Se
+                  cambia en <a href="#supuestos">tus supuestos</a>.
                 </p>
               ) : null}
               {fireResult.excludedAssets.length > 0 ? (

@@ -234,6 +234,10 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
       monthlySpending: eur(2_000_00),
       safeWithdrawalRate: "0.04",
       expectedRealReturn: "0.05",
+      // Siempre presente (#1460): sin este campo, un ámbito que dejó su ladrillo
+      // fuera y otro que lo cuenta publicarían el mismo contrato con cifras que
+      // significan cosas distintas.
+      immobilizedCountsAsFireCapital: true,
     });
 
     // Eligible = fund 100k + cash 50k = 150_000_00 (home + car excluded).

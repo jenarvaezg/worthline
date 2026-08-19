@@ -134,3 +134,45 @@ describe("parseFireConfigFormStrict — leanMultiplier/fatMultiplier (#513)", ()
     expect(result.ok).toBe(false);
   });
 });
+
+describe("parseFireConfigFormStrict — the immobilized declaration (#1460)", () => {
+  /** Lo que el formulario manda de verdad: el `hidden` primero, la casilla después. */
+  function withCheckbox(checked: boolean): FormData {
+    const form = fireForm();
+    form.set("countImmobilized", "off");
+    if (checked) {
+      form.append("countImmobilized", "on");
+    }
+    return form;
+  }
+
+  it("a checked box declares that the brick counts", () => {
+    const result = parseFireConfigFormStrict(withCheckbox(true));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.immobilizedCountsAsFireCapital).toBe(true);
+    }
+  });
+
+  it("an unchecked box declares that it does not — that is the whole point of the hidden pair", () => {
+    const result = parseFireConfigFormStrict(withCheckbox(false));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.immobilizedCountsAsFireCapital).toBe(false);
+    }
+  });
+
+  it("a form that does not carry the field at all keeps the default: it counts", () => {
+    // El agujero clásico de las casillas: «desmarcada» y «este formulario no habla del
+    // tema» mandan lo mismo (nada). Sin esta distinción, cualquier formulario que
+    // olvidara el campo declararía el ladrillo de un usuario fuera de su FIRE.
+    const result = parseFireConfigFormStrict(fireForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.immobilizedCountsAsFireCapital).toBe(true);
+    }
+  });
+});

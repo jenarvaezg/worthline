@@ -236,6 +236,10 @@ function toConfig(
 ): AgentViewFireConfig {
   return {
     expectedRealReturn: rateString(result.context.realReturnUsed),
+    // Explícito y siempre presente (#1460): un `false` cambia el significado de TODAS
+    // las cifras de al lado, y el ladrillo que deja fuera no aparece en ningún otro
+    // campo de este contrato.
+    immobilizedCountsAsFireCapital: result.capitalSplit.countsImmobilized,
     monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
     safeWithdrawalRate: rateString(config.safeWithdrawalRate),
     ...(config.currentAge === undefined ? {} : { currentAge: config.currentAge }),

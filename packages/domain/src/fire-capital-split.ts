@@ -1,21 +1,28 @@
 /**
- * The FIRE capital split (#1447): a presentation-only partition of the eligible
- * pool into what can be *sold in slices* and what cannot.
+ * The FIRE capital split (#1447): the partition of the eligible pool into what can
+ * be *sold in slices* and what cannot.
  *
  * A safe-withdrawal rate assumes a portfolio you sell down and rebalance. A flat
  * in Plasencia is not that. When two thirds of the eligible pool is brick, a
  * single "68,5 % funded" promises capital that cannot be spent in instalments —
  * so the two natures are shown apart instead of summed into one figure.
  *
- * Nothing here changes eligibility or any rate: the sides are groupings over the
- * liquidity rungs the pool already accumulates (ADR 0013/0022). There is no
- * fifth tier — `sellable` is cash + market + term-locked, `immobilized` is
- * illiquid + housing.
+ * Nothing here changes eligibility: the sides are groupings over the liquidity
+ * rungs the pool already accumulates (ADR 0013/0022). There is no fifth tier —
+ * `sellable` is cash + market + term-locked, `immobilized` is illiquid + housing.
  *
  * Debt nets INSIDE its own side: a mortgage rides the rung of the house it
  * secures (`rungForLiability`), so it can never eat the market cash in the
  * presentation. Only when a side is genuinely underwater does the excess spill
  * onto the other — the debt is real even when its collateral does not cover it.
+ *
+ * And since #1460 the split is no longer only presentation: not everyone plans to
+ * sell their flat, so the user can DECLARE that the immobilized side is not FIRE
+ * capital (ADR 0078). `countsImmobilized` carries that declaration, and
+ * `drawableMinor` is the answer to "what does FIRE measure here" — both sides when
+ * the brick counts, the sellable one alone when it does not. The partition itself
+ * is unchanged either way: the immobilized row keeps its figure so a screen can
+ * grey it out instead of hiding patrimonio the user still owns.
  */
 
 import type { LiquidityTier } from "./liquidity-ladder";
@@ -64,6 +71,16 @@ export interface FireCapitalSide {
 export interface FireCapitalSplit {
   sellable: FireCapitalSide;
   immobilized: FireCapitalSide;
+  /**
+   * The eligible capital FIRE actually measures (minor units), net of debt and of
+   * the goal reservation: both sides added up when the immobilized side counts,
+   * and `sellable.amountMinor` alone when the user declared it out (#1460).
+   * `calculateFireForScope` feeds THIS into the FIRE math, so the figure on screen
+   * and the rows under it can never tell different stories.
+   */
+  drawableMinor: number;
+  /** Whether `immobilized` is part of `drawableMinor` — the user's declaration (#1460). */
+  countsImmobilized: boolean;
 }
 
 export interface SplitFireCapitalInput {
@@ -73,13 +90,21 @@ export interface SplitFireCapitalInput {
   debtByTierMinor: Partial<Record<LiquidityTier, number>>;
   /** Capital reserved for dated goals, already subtracted from the figure on screen. */
   reservedForGoalsMinor?: number;
+  /**
+   * The user's declaration (#1460): does the immobilized side count as FIRE
+   * capital? Defaults to `true` — the behaviour every stored config had before the
+   * field existed. When `false` the reservation can only come off the sellable side,
+   * because that is the only capital FIRE is drawing from.
+   */
+  countsImmobilized?: boolean;
 }
 
 /**
  * Partition the eligible pool. `sellable.amountMinor + immobilized.amountMinor`
- * equals the eligible total the FIRE screen shows (net of debt and reservation,
- * clamped at 0) by construction — the split is a lens on that number, never a
- * second opinion about it.
+ * is the whole pool net of debt and reservation (clamped at 0) by construction,
+ * and `drawableMinor` is the part of it FIRE measures — the same number when the
+ * immobilized side counts. The split is a lens on the FIRE figure, never a second
+ * opinion about it.
  */
 export function splitFireCapital(input: SplitFireCapitalInput): FireCapitalSplit {
   const sellable = collectSide(input, "sellable");
@@ -109,27 +134,54 @@ export function splitFireCapital(input: SplitFireCapitalInput): FireCapitalSplit
   immobilizedNet = Math.max(0, immobilizedNet);
 
   // A dated goal is funded by selling, so its reservation comes off the sellable
-  // side first and only spills when there is not enough to sell.
+  // side first and only spills when there is not enough to sell — and it can only
+  // ever eat capital FIRE is drawing from: with the brick declared out (#1460) a
+  // reservation bigger than the sellable side cannot start consuming a side that is
+  // no longer in the figure.
+  const countsImmobilized = input.countsImmobilized ?? true;
+  const drawableNetMinor = countsImmobilized ? sellableNet + immobilizedNet : sellableNet;
   const reserved = Math.min(
     Math.max(0, input.reservedForGoalsMinor ?? 0),
-    sellableNet + immobilizedNet,
+    drawableNetMinor,
   );
   const reservedFromSellable = Math.min(reserved, sellableNet);
 
-  return {
-    immobilized: {
-      ...immobilized,
-      absorbedDebtMinor: immobilizedAbsorbed,
-      amountMinor: immobilizedNet - (reserved - reservedFromSellable),
-      reservedMinor: reserved - reservedFromSellable,
-    },
-    sellable: {
-      ...sellable,
-      absorbedDebtMinor: sellableAbsorbed,
-      amountMinor: sellableNet - reservedFromSellable,
-      reservedMinor: reservedFromSellable,
-    },
+  const immobilizedSide: FireCapitalSide = {
+    ...immobilized,
+    absorbedDebtMinor: immobilizedAbsorbed,
+    amountMinor: immobilizedNet - (reserved - reservedFromSellable),
+    reservedMinor: reserved - reservedFromSellable,
   };
+  const sellableSide: FireCapitalSide = {
+    ...sellable,
+    absorbedDebtMinor: sellableAbsorbed,
+    amountMinor: sellableNet - reservedFromSellable,
+    reservedMinor: reservedFromSellable,
+  };
+
+  return {
+    countsImmobilized,
+    // Read off the sides themselves, not recomputed from the nets above: the figure
+    // FIRE measures is by construction the sum of the rows printed under it.
+    drawableMinor: countsImmobilized
+      ? sellableSide.amountMinor + immobilizedSide.amountMinor
+      : sellableSide.amountMinor,
+    immobilized: immobilizedSide,
+    sellable: sellableSide,
+  };
+}
+
+/**
+ * Does FIRE draw from this rung, given the declaration (#1460)? The ONE predicate
+ * behind both halves of the answer — the capital the pool contributes and the weight
+ * it lends to the expected return — because a rung dropped from the total but kept in
+ * the weighting would produce a rate nobody's money holds.
+ */
+export function fireDrawsFromTier(
+  tier: LiquidityTier,
+  countsImmobilized: boolean,
+): boolean {
+  return countsImmobilized || sideOfTier(tier) === "sellable";
 }
 
 function collectSide(

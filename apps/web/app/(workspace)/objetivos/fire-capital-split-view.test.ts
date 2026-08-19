@@ -10,8 +10,17 @@ import {
 function makeSplit(overrides: {
   sellable?: Partial<FireCapitalSplit["sellable"]>;
   immobilized?: Partial<FireCapitalSplit["immobilized"]>;
+  /** La declaración de #1460; por defecto la de siempre: el inmovilizado cuenta. */
+  countsImmobilized?: boolean;
 }): FireCapitalSplit {
+  const countsImmobilized = overrides.countsImmobilized ?? true;
+  const immobilizedAmount = overrides.immobilized?.amountMinor ?? 0;
+  const sellableAmount = overrides.sellable?.amountMinor ?? 0;
   return {
+    countsImmobilized,
+    drawableMinor: countsImmobilized
+      ? sellableAmount + immobilizedAmount
+      : sellableAmount,
     immobilized: {
       absorbedDebtMinor: 0,
       amountMinor: 0,
@@ -140,5 +149,45 @@ describe("sellableFundedPercent", () => {
 
   test("is null without a FIRE number to divide by", () => {
     expect(sellableFundedPercent(makeSplit({}), 0)).toBeNull();
+  });
+});
+
+describe("la declaración sobre el inmovilizado en las filas (#1460)", () => {
+  const declaredOut = makeSplit({
+    countsImmobilized: false,
+    immobilized: { amountMinor: 370_000, grossMinor: 370_000, tiers: ["housing"] },
+    sellable: { amountMinor: 168_000, grossMinor: 168_000, tiers: ["market"] },
+  });
+
+  test("la fila del inmovilizado se marca fuera del cálculo, sin perder su cifra", () => {
+    const rows = fireCapitalSplitRows(declaredOut);
+    const immobilized = rows.find((row) => row.key === "immobilized")!;
+
+    expect(immobilized.outOfCalculation).toBe(true);
+    expect(immobilized.amountMinor).toBe(370_000);
+    expect(immobilized.gloss).toBe("Vivienda · fuera del cálculo");
+  });
+
+  test("lo vendible sigue siendo una fila normal", () => {
+    const sellable = fireCapitalSplitRows(declaredOut).find(
+      (row) => row.key === "sellable",
+    )!;
+
+    expect(sellable.outOfCalculation).toBe(false);
+    expect(sellable.gloss).toBe("Mercado");
+  });
+
+  test("no cuenta el % «solo con lo vendible»: ese ya ES el % financiado", () => {
+    expect(sellableFundedPercent(declaredOut, 600_000_00)).toBeNull();
+  });
+
+  test("mientras el ladrillo cuenta, ninguna fila se atenúa", () => {
+    const rows = fireCapitalSplitRows(
+      makeSplit({
+        immobilized: { amountMinor: 370_000, grossMinor: 370_000, tiers: ["housing"] },
+      }),
+    );
+
+    expect(rows.every((row) => !row.outOfCalculation)).toBe(true);
   });
 });

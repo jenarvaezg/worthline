@@ -2532,6 +2532,19 @@ code {
   color: var(--gold);
 }
 
+/* El lado que el usuario declaró fuera de su capital FIRE (#1460): sigue impreso
+   —es patrimonio suyo— pero en tinta apagada, para que la cifra de arriba no
+   parezca la suma de las dos filas. */
+.fireCapitalRow.is-outOfCalculation {
+  color: var(--muted);
+}
+
+.fireCapitalRow.is-outOfCalculation .fireCapitalLabel,
+.fireCapitalRow.is-outOfCalculation strong {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .fireCapitalGloss {
   color: var(--muted);
   font-size: 0.74rem;
@@ -2856,6 +2869,28 @@ code {
   font-size: 0.74rem;
   font-weight: 400;
   line-height: 1.5;
+}
+
+/* La declaración sobre el inmovilizado (#1460): una casilla dentro de un formulario
+   cuyas etiquetas son rejillas de una columna, así que la fila se declara aparte —
+   la casilla a la izquierda, el enunciado y su glosa apilados a la derecha. */
+.fireConfigForm label.fireConfigCheck {
+  align-items: start;
+  border-top: 1px solid var(--hairline);
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding-top: 12px;
+}
+
+.fireConfigCheck input[type="checkbox"] {
+  accent-color: var(--gold);
+  margin-top: 2px;
+}
+
+.fireConfigCheck > span {
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
 }
 
 /* Las dos cifras que se leen en vez de teclearse (#1415, #1448). */

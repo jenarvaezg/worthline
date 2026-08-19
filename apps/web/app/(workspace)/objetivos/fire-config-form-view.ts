@@ -19,7 +19,7 @@ import type {
   FireScopeConfig,
   MonthlySavingsSuggestion,
 } from "@worthline/domain";
-import { isManualFireReturn } from "@worthline/domain";
+import { fireCountsImmobilizedCapital, isManualFireReturn } from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
 import { fireAgeProvenance } from "./fire-provenance";
 
@@ -41,6 +41,12 @@ export interface FireConfigFieldValues {
   leanMultiplier?: string;
   fatMultiplier?: string;
   baristaIncome?: string;
+  /**
+   * ¿Marcada la casilla del inmovilizado? (#1460.) Nunca `undefined`: una casilla sin
+   * estado se pintaría vacía, y en este campo «vacía» significa lo contrario del
+   * valor por defecto — sin config, cuenta.
+   */
+  immobilizedCounts: boolean;
 }
 
 /** A row the user reads instead of editing: its value, and where it comes from. */
@@ -88,6 +94,7 @@ export function fireConfigFieldValues(
       : {
           monthlySavingsCapacity: majorFromMinor(config.monthlySavingsCapacityMinor),
         }),
+    immobilizedCounts: config == null ? true : fireCountsImmobilizedCapital(config),
     targetRetirementAge: (config?.targetRetirementAge ?? 65).toString(),
     ...(config?.expectedRealReturn === undefined
       ? {}

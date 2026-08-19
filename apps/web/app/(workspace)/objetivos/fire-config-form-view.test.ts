@@ -181,3 +181,26 @@ describe("la marca de agua del ahorro", () => {
     ).toBe("0");
   });
 });
+
+describe("fireConfigFieldValues — la declaración sobre el inmovilizado (#1460)", () => {
+  test("sin config la casilla nace marcada: el defecto es que cuente", () => {
+    expect(fireConfigFieldValues(null).immobilizedCounts).toBe(true);
+  });
+
+  test("una config antigua, sin el campo, también la deja marcada", () => {
+    expect(
+      fireConfigFieldValues({ monthlySpendingMinor: 200_000, safeWithdrawalRate: 0.04 })
+        .immobilizedCounts,
+    ).toBe(true);
+  });
+
+  test("una declaración de «no cuenta» se relee desmarcada", () => {
+    expect(
+      fireConfigFieldValues({
+        immobilizedCountsAsFireCapital: false,
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+      }).immobilizedCounts,
+    ).toBe(false);
+  });
+});

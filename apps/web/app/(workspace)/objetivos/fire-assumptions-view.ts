@@ -103,9 +103,14 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
       value: `${formatMoney(savingsMinor)}/mes`,
     },
     {
+      // Con el inmovilizado declarado fuera (#1460) la tabla de debajo no tiene fila de
+      // vivienda: la mezcla que pondera es la vendible, y decirlo aquí evita que la
+      // ausencia se lea como un tramo que la app se olvidó de contar.
       gloss: rateIsManual
         ? "fijada a mano en tus supuestos: sustituye a la ponderación de tu mezcla"
-        : "ponderada por tu mezcla de activos — el desglose está debajo",
+        : result.capitalSplit.countsImmobilized
+          ? "ponderada por tu mezcla de activos — el desglose está debajo"
+          : "ponderada por tu mezcla vendible: has declarado que el inmovilizado no cuenta — el desglose está debajo",
       key: "return-base",
       label: "Rentabilidad real (base)",
       value: formatRatePercent(result.context.realReturnUsed),
