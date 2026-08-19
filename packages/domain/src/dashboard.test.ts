@@ -459,6 +459,53 @@ describe("prepareObjetivosState", () => {
     expect(obj.fireScopeConfig).toEqual(dash.fireScopeConfig);
   });
 
+  test("el contrafactual del inmovilizado sale del MISMO motor que el guardado (#1473)", () => {
+    // El check se previsualiza eligiendo lado, no recalculando en el cliente: el par
+    // tiene que salir de aquí, con la MISMA reserva de metas y el mismo reloj.
+    const piso = createManualAsset(workspace, {
+      currency: "EUR",
+      currentValueMinor: 20_000_000,
+      id: "asset_obj_piso",
+      liquidityTier: "housing",
+      name: "Piso alquilado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "real_estate",
+    });
+    // Sin tasa manual: alternar el check tiene que re-ponderar la tasa, y con un
+    // `expectedRealReturn` fijado eso quedaría tapado.
+    const { expectedRealReturn: _weighted, ...weightedConfig } = fireConfig;
+    const input = {
+      ...baseInput,
+      assets: [investmentAsset, piso],
+      fireConfig: { household: weightedConfig },
+    };
+
+    const obj = prepareObjetivosState(input);
+    const flipped = obj.fireResultImmobilizedFlipped!;
+
+    expect(obj.fireResult!.capitalSplit.countsImmobilized).toBe(true);
+    expect(flipped.capitalSplit.countsImmobilized).toBe(false);
+    expect(flipped.context.eligibleMinor).toBeLessThan(
+      obj.fireResult!.context.eligibleMinor,
+    );
+    expect(flipped.context.realReturnUsed).toBeGreaterThan(
+      obj.fireResult!.context.realReturnUsed,
+    );
+
+    // La guarda: el lado previsualizado es EXACTAMENTE lo que dejará el guardado.
+    const saved = prepareObjetivosState({
+      ...input,
+      fireConfig: {
+        household: { ...weightedConfig, immobilizedCountsAsFireCapital: false },
+      },
+    });
+    expect(flipped).toEqual(saved.fireResult);
+  });
+
+  test("y el resto de superficies no paga por él: solo se calcula si se pide", () => {
+    expect(prepareDashboardState(baseInput).fireResultImmobilizedFlipped).toBeNull();
+  });
+
   test("per-goal fundedRatioBps and reservedMinor match existing helpers", () => {
     const obj = prepareObjetivosState(baseInput);
 

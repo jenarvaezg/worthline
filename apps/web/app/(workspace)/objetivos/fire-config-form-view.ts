@@ -65,6 +65,10 @@ export interface FireConfigFieldValues {
    * ¿Marcada la casilla del inmovilizado? (#1460.) Nunca `undefined`: una casilla sin
    * estado se pintaría vacía, y en este campo «vacía» significa lo contrario del
    * valor por defecto — sin config, cuenta.
+   *
+   * Desde #1473 la casilla es controlada por la isla, así que esto es el estado
+   * INICIAL de su borrador y no un `defaultChecked`: sale de aquí para que lo guardado
+   * y lo que el formulario pinta no puedan discrepar sobre si hay cambios sin guardar.
    */
   immobilizedCounts: boolean;
 }

@@ -14,13 +14,29 @@
 
 import type { FireAssumptionOverrides } from "@worthline/domain";
 
-/** Los cuatro campos editables, tal cual viajan en el estado de la isla. */
+/** Los campos editables de la cara visible, tal cual viajan en el estado de la isla. */
 export interface FireAssumptionDraft {
   monthlySpending: string;
   safeWithdrawalRate: string;
   monthlySavingsCapacity: string;
   targetRetirementAge: string;
+  /**
+   * La declaración sobre el inmovilizado (#1473). Booleano y no texto: una casilla no
+   * tiene estado ilegible, así que aquí no hay «lo ilegible no borra lo guardado» que
+   * aplicar — siempre dice sí o no, y el motor elige lado con eso.
+   */
+  countImmobilized: boolean;
 }
+
+/**
+ * Los campos del borrador que se teclean, sin el check (#1473). Existe para que un
+ * `onChange` de texto no pueda apuntar a la casilla: el genérico sobre
+ * `keyof FireAssumptionDraft` compilaba escribiendo un string donde vive un booleano.
+ */
+export type FireAssumptionTextField = Exclude<
+  keyof FireAssumptionDraft,
+  "countImmobilized"
+>;
 
 /** Un número es-ES (coma o punto) o null si el texto no lo dice. */
 function parseNumber(raw: string): number | null {
@@ -45,6 +61,9 @@ export function fireAssumptionOverrides(
   const targetAge = parseNumber(draft.targetRetirementAge);
 
   return {
+    // La declaración del ladrillo (#1473): no la traduce nadie, elige lado del par que
+    // el servidor precalculó.
+    immobilizedCountsAsFireCapital: draft.countImmobilized,
     // Un gasto de 0 daría un número FIRE de 0 y un «100 % financiado» falso; el
     // formulario ya lo rechaza al guardar, así que la vista tampoco lo previsualiza.
     ...(spending !== null && spending > 0
@@ -71,6 +90,7 @@ export function isFireAssumptionDraftDirty(
   saved: FireAssumptionDraft,
 ): boolean {
   return (
+    draft.countImmobilized !== saved.countImmobilized ||
     draft.monthlySpending !== saved.monthlySpending ||
     draft.safeWithdrawalRate !== saved.safeWithdrawalRate ||
     draft.monthlySavingsCapacity !== saved.monthlySavingsCapacity ||

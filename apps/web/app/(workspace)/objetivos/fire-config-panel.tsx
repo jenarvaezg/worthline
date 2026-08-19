@@ -25,7 +25,10 @@ import type {
   MonthlySavingsSuggestion,
 } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
-import type { FireAssumptionDraft } from "./fire-assumption-draft";
+import type {
+  FireAssumptionDraft,
+  FireAssumptionTextField,
+} from "./fire-assumption-draft";
 import { saveFireConfigAction } from "./fire-config-actions";
 import {
   FIRE_TIER_FIELDS,
@@ -77,10 +80,12 @@ export function FireConfigPanel({
   const formatMoney = (amountMinor: number) =>
     formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
   const values = fireConfigFieldValues(config);
-  // Los cuatro editables son controlados porque la isla previsualiza con ellos; el
-  // `<form>` sigue siendo un POST real, así que sin JavaScript se guarda igual.
+  // Los campos de la cara visible son controlados porque la isla previsualiza con
+  // ellos; el `<form>` sigue siendo un POST real, así que sin JavaScript se guarda
+  // igual. El tipo excluye el check (#1473): es booleano, y sin excluirlo
+  // `editField("countImmobilized")` compilaría metiéndole el string del input.
   const editField =
-    (field: keyof FireAssumptionDraft) => (event: { target: { value: string } }) =>
+    (field: FireAssumptionTextField) => (event: { target: { value: string } }) =>
       onDraftChange({ ...draft, [field]: event.target.value });
   const age = fireCurrentAgeReadout({ ageSource, config });
   const rate = fireReturnReadout({ config, realReturnUsed });
@@ -187,12 +192,19 @@ export function FireConfigPanel({
               vender su piso, y para quien no lo hará la medida honesta es que no
               cuente. El `hidden` de al lado es lo que hace que una casilla
               DESMARCADA llegue al servidor: sin él, «no cuenta» y «este formulario
-              no habla del tema» serían el mismo silencio. */}
+              no habla del tema» serían el mismo silencio.
+
+              Controlada como los cuatro campos de arriba (#1473): está en la cara
+              visible del formulario, entre supuestos que responden al teclear, y una
+              casilla invita a alternarla para ver qué pasa. Lo que pasa se ve ahora. */}
           <label className="fireConfigCheck">
             <input name="countImmobilized" type="hidden" value="off" />
             <input
-              defaultChecked={values.immobilizedCounts}
+              checked={draft.countImmobilized}
               name="countImmobilized"
+              onChange={(event) =>
+                onDraftChange({ ...draft, countImmobilized: event.target.checked })
+              }
               type="checkbox"
             />
             <span>
@@ -200,7 +212,7 @@ export function FireConfigPanel({
               <small className="muted">
                 Vivienda no habitual y colecciones. Desmárcalo si no piensas venderlo: el
                 número financiado, el Coast y la rentabilidad esperada se miden entonces
-                solo con lo vendible. Sigue siendo patrimonio, y se aplica al guardar.
+                solo con lo vendible. Sigue siendo patrimonio.
               </small>
             </span>
           </label>

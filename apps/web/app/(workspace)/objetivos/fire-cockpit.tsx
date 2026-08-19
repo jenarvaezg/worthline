@@ -15,7 +15,10 @@
  *   `projectFireFromContext` y `fireLevels`, las mismas puertas del motor que
  *   produjeron las cifras del servidor.
  * - **No recalcula el pool.** Los supuestos no cambian lo que tienes: el capital
- *   elegible, el split y la ponderación vienen del servidor y se quedan.
+ *   elegible, el split y la ponderación vienen del servidor y se quedan. La única
+ *   excepción no es una excepción a esto: la declaración del inmovilizado (#1473) sí
+ *   mueve el pool, y por eso el servidor manda los DOS lados ya calculados y aquí solo
+ *   se elige uno.
  * - **No toca lo que juzga lo guardado.** El sello de logro (#1449) y el aviso de
  *   ahorro divergente hablan de lo declarado frente a lo medido; mientras hay
  *   cambios sin guardar se atenúan en vez de opinar sobre cifras que aún no existen.
@@ -65,6 +68,13 @@ export interface FireCockpitProps {
   fireLevelRail: FireLevel[] | null;
   fireProjection: FireProjection | null;
   fireResult: ScopeFireResult | null;
+  /**
+   * El mismo ámbito con la declaración del inmovilizado invertida (#1473), calculado
+   * por el servidor. Es lo que hace que el check previsualice como los campos de al
+   * lado: cambiarlo mueve el capital Y la tasa ponderada, y esas dos cosas no se
+   * recalculan aquí — se elige el lado que el motor ya produjo.
+   */
+  fireResultImmobilizedFlipped: ScopeFireResult | null;
   privacyMode: boolean;
   /** El perfil del servidor (#1428); al teclear se recalcula con el borrador. */
   retirementProfile: FireRetirementProfile | null;
@@ -94,7 +104,14 @@ export function FireCockpit(props: FireCockpitProps) {
   const previewing = dirty && props.fireResult !== null;
   const result =
     previewing && props.fireResult
-      ? previewFireWithAssumptions(props.fireResult, fireAssumptionOverrides(draft))
+      ? previewFireWithAssumptions(
+          props.fireResult,
+          fireAssumptionOverrides(draft),
+          // El otro lado de la declaración del inmovilizado (#1473): sin él, alternar
+          // el check no tendría a dónde ir; con él, el capital, la tasa y el split
+          // salen del motor y no de una segunda aritmética escrita aquí.
+          props.fireResultImmobilizedFlipped,
+        )
       : props.fireResult;
   const projection =
     previewing && result
@@ -120,6 +137,10 @@ export function FireCockpit(props: FireCockpitProps) {
     previewing && result
       ? fireRetirementReadout({ levels: levelRail, result })
       : { profile: props.retirementProfile, spending: props.sustainableSpending };
+  // La tasa que imprime la fila de lectura del formulario es la del lado que se está
+  // viendo (#1473): desmarcar el inmovilizado la re-pondera, y el panel de supuestos no
+  // puede seguir citando la que salía con el ladrillo dentro.
+  const previewedRealReturn = result?.context.realReturnUsed ?? null;
 
   return (
     <div className="objetivosCockpit">
@@ -133,7 +154,7 @@ export function FireCockpit(props: FireCockpitProps) {
         onDraftChange={setDraft}
         previewing={previewing}
         privacyMode={props.privacyMode}
-        realReturnUsed={props.fireResult?.context.realReturnUsed ?? null}
+        realReturnUsed={previewedRealReturn}
         savingsSuggestion={props.savingsSuggestion}
         scopeId={props.scopeId}
         seededFromPlan={props.seededFromPlan}

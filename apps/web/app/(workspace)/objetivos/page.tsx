@@ -202,6 +202,9 @@ export async function ObjetivosContent({
     savingsCoherence,
     fireProjection,
     fireResult,
+    // El otro lado de la declaración del inmovilizado (#1473): la isla previsualiza el
+    // check eligiendo lado, no recalculando capital y tasa en el cliente.
+    fireResultImmobilizedFlipped,
     fireScopeConfig,
     coastArrival,
     coastTickFraction,
@@ -251,6 +254,10 @@ export async function ObjetivosContent({
   // guardar (o al revés, tapando los que hay).
   const savedFieldValues = fireConfigFieldValues(fireScopeConfig);
   const savedDraft = {
+    // La declaración del inmovilizado sale de los MISMOS valores del formulario
+    // (#1473): un defecto distinto aquí haría nacer la pantalla creyendo que el check
+    // está sin guardar.
+    countImmobilized: savedFieldValues.immobilizedCounts,
     monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
     monthlySpending: savedFieldValues.monthlySpending ?? "",
     safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
@@ -459,6 +466,7 @@ export async function ObjetivosContent({
         fireLevelRail={fireLevelRail}
         fireProjection={fireProjection}
         fireResult={fireResult}
+        fireResultImmobilizedFlipped={fireResultImmobilizedFlipped}
         privacyMode={privacyMode}
         retirementProfile={retirementProfile}
         savedDraft={savedDraft}
