@@ -2,6 +2,7 @@ import type { InvestmentOperation, MoneyMinor } from "@worthline/domain";
 import {
   BASE_CURRENCY,
   formatMoneyMinorPrivacy,
+  formatPrice,
   maskMoneyString,
 } from "@worthline/domain";
 
@@ -12,8 +13,9 @@ import {
  *
  * - a euro operation: one figure, nothing else to say;
  * - a CONVERTED one: the euros the engine folded, plus the apunte the bank stated
- *   («8,00 USD») underneath — the whole reason the original is persisted, and what
- *   lets a user reconcile a row against a statement in dollars;
+ *   («8 USD») underneath — the whole reason the original is persisted, and what
+ *   lets a user reconcile a row against a statement in dollars. Figures go through
+ *   {@link formatPrice} so a leftover 20-dp NAV still reads at 8 (#1467);
  * - a row still in its own currency: the optimistic row the island adds before the
  *   redirect, when the rate is not known yet. It is NOT euros, so it never renders as
  *   a bare number — the currency rides with it until the server settles the figure.
@@ -65,7 +67,13 @@ export function readOperationPrice(
   operation: InvestmentOperation,
   privacyMode: boolean,
 ): OperationPriceReading {
-  const read = (value: string) => (privacyMode ? maskMoneyString(value) : value);
+  const read = (value: string) => {
+    // Ledger and capture figures share the price voice: es-ES, eight decimals,
+    // no padding. Privacy masks that reading so a leftover 20-dp NAV and an
+    // 8.00 USD apunte hide the same way (#1467).
+    const formatted = formatPrice(value);
+    return privacyMode ? maskMoneyString(formatted) : formatted;
+  };
 
   if (operation.capture !== undefined) {
     return {

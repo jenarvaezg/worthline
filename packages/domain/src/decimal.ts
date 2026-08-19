@@ -41,20 +41,46 @@ export function normalizeDecimal(value: DecimalString): DecimalString {
 export const UNITS_READBACK_DECIMALS = 6;
 
 /**
+ * Decimals the app can read a unit price back at — the precision of its price
+ * voice, which is what {@link formatPrice} renders and therefore the only
+ * precision a DERIVED unit price may be stored at (#1467).
+ *
+ * Eight, matching what every provider quote is already rounded to (`PRICE_SCALE`
+ * in `@worthline/pricing`). An 8-dp price is off by at most `units × 5e-9` euros
+ * — a hundredth of a cent on a million units, well under the cent the fold
+ * rounds to, unlike a 20-dp division whose precision the app cannot even read
+ * back (#1395).
+ */
+export const PRICE_READBACK_DECIMALS = 8;
+
+/**
  * Render a units decimal for display: es-ES separators, up to six decimals — the
  * reading voice for participaciones/tokens, as `formatMoneyMinor` is for money.
  * A malformed string comes back untouched rather than as `NaN`: a figure the app
  * cannot read is still better shown raw than replaced by a lie.
  */
 export function formatUnits(units: DecimalString): string {
-  const value = Number(units);
-  if (!Number.isFinite(value)) {
-    return units;
+  return formatDecimal(units, UNITS_READBACK_DECIMALS);
+}
+
+/**
+ * Render a unit price for display: es-ES separators, up to eight decimals — the
+ * reading voice for a stored price, as {@link formatUnits} is for participaciones.
+ * No padding zeros, so a quoted 65,045 stays 65,045 and a derived 20-dp leftover
+ * still reads at the 8 the app can write back (#1467). A malformed string comes
+ * back untouched rather than as `NaN`.
+ */
+export function formatPrice(price: DecimalString): string {
+  return formatDecimal(price, PRICE_READBACK_DECIMALS);
+}
+
+function formatDecimal(value: DecimalString, maximumFractionDigits: number): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return value;
   }
 
-  return new Intl.NumberFormat("es-ES", {
-    maximumFractionDigits: UNITS_READBACK_DECIMALS,
-  }).format(value);
+  return new Intl.NumberFormat("es-ES", { maximumFractionDigits }).format(numeric);
 }
 
 /**
@@ -124,17 +150,19 @@ export function scaleDecimal(
 }
 
 /**
- * numerator ÷ denominator as a high-precision decimal string. Used to reconstruct
- * a unit price from a total amount and a unit count (ADR 0018: a MyInvestor order
- * carries the amount and the units but no price column, so the NAV is recovered as
- * amount ÷ units). The default 20 decimal places keep the result precise enough
- * that `multiplyToMinor(units, price)` folds back to the original amount with no
- * drift. Throws when the denominator is zero — a caller must guard against it.
+ * numerator ÷ denominator as a decimal string, rounded half up to `decimalPlaces`.
+ * Used to reconstruct a unit price from a total amount and a unit count (ADR 0018:
+ * a MyInvestor order carries the amount and the units but no price column, so the
+ * NAV is recovered as amount ÷ units) and to derive participaciones from a saldo.
+ * The scale is always the caller's: {@link PRICE_READBACK_DECIMALS} for a stored
+ * price, {@link UNITS_READBACK_DECIMALS} for a stored unit count — there is no
+ * 20-dp default, because that precision is one the app cannot read back (#1467).
+ * Throws when the denominator is zero — a caller must guard against it.
  */
 export function divideUnits(
   numerator: DecimalString,
   denominator: DecimalString,
-  decimalPlaces = 20,
+  decimalPlaces: number,
 ): DecimalString {
   return new Big(numerator)
     .div(new Big(denominator))

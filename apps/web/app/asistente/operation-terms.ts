@@ -25,6 +25,7 @@ import {
   formatUnits,
   multiplyToMinor,
   normalizeDecimal,
+  PRICE_READBACK_DECIMALS,
 } from "@worthline/domain";
 
 import type { ExtractedHoldingEvent } from "./attachment-extraction-contract";
@@ -156,7 +157,11 @@ export function resolveOperationTerms(
     // The price the ledger records is DERIVED so the cash amount is reproduced to the
     // cent — the same division the reconcile's matched rows persist. The printed NAV
     // (rounded to the decimals the fund quotes) is kept as a cross-check below.
-    const pricePerUnit = divideUnits(minorToDecimal(netMinor), units);
+    const pricePerUnit = divideUnits(
+      minorToDecimal(netMinor),
+      units,
+      PRICE_READBACK_DECIMALS,
+    );
     return {
       ok: true,
       terms: {

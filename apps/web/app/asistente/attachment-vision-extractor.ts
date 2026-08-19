@@ -2,6 +2,7 @@ import {
   divideUnits,
   multiplyToMinor,
   normalizeDecimal,
+  PRICE_READBACK_DECIMALS,
   parseDecimalStrict,
   scaleDecimal,
 } from "@worthline/domain";
@@ -1056,7 +1057,8 @@ function usableTransaction(
   const printedPrice = printedDecimal(transaction.pricePerUnit);
   const amount = printedAmount ?? (printedPrice && scaleDecimal(units, printedPrice, 20));
   if (!amount) return dropped;
-  const pricePerUnit = printedPrice ?? divideUnits(amount, units);
+  const pricePerUnit =
+    printedPrice ?? divideUnits(amount, units, PRICE_READBACK_DECIMALS);
 
   const isin = transaction.isin?.trim().toUpperCase() ?? "";
   const name = transaction.name?.trim() ?? "";

@@ -34,7 +34,13 @@
  */
 
 import type { DecimalString } from "./decimal";
-import { compareUnits, divideUnits, multiplyToMinor, normalizeDecimal } from "./decimal";
+import {
+  compareUnits,
+  divideUnits,
+  multiplyToMinor,
+  normalizeDecimal,
+  PRICE_READBACK_DECIMALS,
+} from "./decimal";
 import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode } from "./money";
 import { CAPTURE_CURRENCIES, isCaptureCurrency } from "./operation-currency";
@@ -283,7 +289,7 @@ export const plantillaAdapter: StatementBrokerAdapter<PlantillaColumns> = {
           feesMinor,
           instrument,
           kind,
-          pricePerUnit: divideUnits(amount, units),
+          pricePerUnit: divideUnits(amount, units, PRICE_READBACK_DECIMALS),
           units,
           ...(name ? { name } : {}),
         },
