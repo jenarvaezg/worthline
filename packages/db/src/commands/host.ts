@@ -48,6 +48,7 @@ const DATED_FACT_ALIASES = {
   recordInvestmentOperation: "recordOperationAndRipple",
   mergeInvestmentOperations: "recordOperationsAndRipple",
   recordInvestmentTransfer: "recordTransferAndRipple",
+  recordExternalTransferIn: "recordExternalTransferInAndRipple",
   deleteInvestmentTransfer: "deleteTransferAndRipple",
   deleteInvestmentOperation: "deleteOperationAndRipple",
   deleteInvestmentOperations: "deleteOperationsAndRipple",

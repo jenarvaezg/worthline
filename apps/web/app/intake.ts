@@ -601,6 +601,8 @@ export function mapDomainViolation(violation: DomainViolation): string {
         : "Necesito el valor liquidativo de la inversión de destino en la fecha del traspaso.";
     case "transfer_origin_has_no_units":
       return "Esa inversión no tiene participaciones en esa fecha, así que no hay nada que traspasar.";
+    case "transfer_inherited_cost_negative":
+      return "El coste de adquisición que traen esas participaciones no puede ser negativo.";
     case "transfer_currency_mismatch":
       return `Esa inversión está en ${violation.destination} y la de origen en ${violation.origin}: no puedo traspasar entre divisas distintas, porque el coste que viaja no tendría tipo de cambio.`;
     case "transfer_units_exceed_position":

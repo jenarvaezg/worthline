@@ -25,6 +25,7 @@ interface TransferOverrides {
   inOperationId?: string;
   originAssetId?: string;
   originPricePerUnit?: string;
+  outOperationId?: string;
   portion?: { kind: "amount"; amountMinor: number } | { kind: "all" };
   transferId?: string;
 }
@@ -214,6 +215,43 @@ describe("recordInvestmentTransfer — both or neither", () => {
     expect(await store.operations.readOperations("destino")).toEqual([]);
   });
 
+  test("a second traspaso the SAME day sees the origin the first one already reduced", async () => {
+    const store = await seed();
+    await store.command.recordInvestmentTransfer(
+      transferCommand({ portion: { amountMinor: 50_933, kind: "amount" } }),
+    );
+
+    // 23,979755 part. left in the first one, so ~23,98 remain. Asking for the same
+    // amount again is fine; asking for the ORIGINAL whole position is not — the fold
+    // includes the same day's earlier half (`operationsUpTo` is inclusive), so the
+    // second one cannot spend units the first already moved.
+    expect(
+      (
+        await store.command.recordInvestmentTransfer(
+          transferCommand({
+            inOperationId: "op_in_2",
+            outOperationId: "op_out_2",
+            portion: { amountMinor: 101_867, kind: "amount" },
+            transferId: "trf_2",
+          }),
+        )
+      ).ok,
+    ).toBe(false);
+
+    const second = await store.command.recordInvestmentTransfer(
+      transferCommand({
+        inOperationId: "op_in_2",
+        outOperationId: "op_out_2",
+        portion: { kind: "all" },
+        transferId: "trf_2",
+      }),
+    );
+    expect(second.ok).toBe(true);
+    expect((await positionOf(store, "origen")).currentUnits).toBe("0");
+    // Both slices of cost arrive: 359,70 € + 359,70 €, the whole 719,40 €.
+    expect((await positionOf(store, "destino")).costBasis.amountMinor).toBe(71_940);
+  });
+
   test("the position is folded at the TRANSFER date, not today", async () => {
     const store = await seed();
     // Bought again AFTER the traspaso date: those units did not exist on the 31st,
@@ -327,6 +365,81 @@ describe("recordInvestmentTransfer — the hostile inputs", () => {
   });
 });
 
+describe("recordExternalTransferIn — the half that has no pair", () => {
+  test("writes one transfer_in and ripples only the destination", async () => {
+    const store = await seed();
+
+    const result = await store.command.recordExternalTransferIn({
+      amountMinor: 9_546,
+      destinationAssetId: "destino",
+      destinationPricePerUnit: "12.5",
+      executedAt: "2026-01-23",
+      inOperationId: "op_ext",
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+    expect(result.ok).toBe(true);
+
+    // Jorge's real 23-ene «Alta por traspaso externo»: the outgoing half lives in
+    // another institution, so there is nothing here to pair it with.
+    const [incoming] = await store.operations.readOperations("destino");
+    expect(incoming).toMatchObject({
+      kind: "transfer_in",
+      transferCostMinor: 9_546,
+      transferId: "trf_ext",
+      units: "7.6368",
+    });
+    // The origin's ledger is untouched: this traspaso did not come from it.
+    expect((await store.operations.readOperations("origen")).length).toBe(1);
+    expect(
+      (await store.snapshots.readSnapshots()).some(
+        (snap) => snap.dateKey === "2026-01-23",
+      ),
+    ).toBe(true);
+  });
+
+  test("the declared inherited cost is what the position folds, not the amount", async () => {
+    const store = await seed();
+    await store.command.recordExternalTransferIn({
+      amountMinor: 9_546,
+      destinationAssetId: "destino",
+      destinationPricePerUnit: "12.5",
+      executedAt: "2026-01-23",
+      inOperationId: "op_ext",
+      inheritedCostMinor: 7_000,
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+
+    const position = await positionOf(store, "destino");
+    expect(position.costBasis.amountMinor).toBe(7_000);
+    // And it realizes nothing: an entry is not a gain.
+    expect(position.realizedPnl.amountMinor).toBe(0);
+  });
+
+  test("it is deleted through the same pair gate, by its own transferId", async () => {
+    const store = await seed();
+    await store.command.recordExternalTransferIn({
+      amountMinor: 9_546,
+      destinationAssetId: "destino",
+      destinationPricePerUnit: "12.5",
+      executedAt: "2026-01-23",
+      inOperationId: "op_ext",
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+
+    // The pair delete removes whatever carries the id — one row here, two for a real
+    // pair. A reader that pairs by `transferId` and finds one is looking at this.
+    const deleted = await store.command.deleteInvestmentTransfer({
+      today: TODAY,
+      transferId: "trf_ext",
+    });
+    expect(deleted.map((row) => row.assetId)).toEqual(["destino"]);
+    expect(await store.operations.readOperations("destino")).toEqual([]);
+  });
+});
+
 describe("deleteInvestmentTransfer — the pair leaves together too", () => {
   test("deleting the traspaso removes both halves and ripples both holdings", async () => {
     const store = await seed();
@@ -367,7 +480,7 @@ describe("deleteInvestmentTransfer — the pair leaves together too", () => {
     // nothing that explains it.
     await expect(
       store.command.deleteInvestmentOperation({ operationId: "op_out", today: TODAY }),
-    ).rejects.toThrow(/traspaso/);
+    ).rejects.toThrow(/Half a traspaso cannot be deleted on its own/);
 
     expect((await store.operations.readOperations("origen")).length).toBe(2);
   });

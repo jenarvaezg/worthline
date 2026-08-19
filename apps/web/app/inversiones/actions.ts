@@ -605,14 +605,11 @@ export async function deleteOperationAction(
       // Half a traspaso is not a deletable unit (#1479): the row the button points at
       // is one of a pair, so what the click means is «deshaz el traspaso». The store
       // refuses the row-at-a-time delete outright, and this is where the intent is
-      // translated — the pair's own command, which removes both rows and ripples both
-      // holdings in one transaction. Read from THIS holding's ledger, so the id has to
-      // belong to the page that submitted it.
-      const transferId = (await store.operations.readOperations(routeAssetId)).find(
-        (operation) => operation.id === operationId,
-      )?.transferId;
+      // translated — into the pair's own command, which removes both rows and ripples
+      // both holdings in one transaction.
+      const transferId = await store.operations.readTransferIdOf(operationId);
 
-      if (transferId !== undefined) {
+      if (transferId !== null) {
         const removed = await store.command.deleteInvestmentTransfer({
           transferId,
           today,

@@ -33,7 +33,10 @@ import type {
   DomainResult,
   ValuationCadence,
 } from "@worthline/domain";
-import type { RecordFundTransferCommand } from "./fund-transfer";
+import type {
+  RecordExternalTransferInCommand,
+  RecordTransferCommand,
+} from "./investment-transfer";
 import type { FactBatchTrigger } from "./types";
 
 /**
@@ -119,7 +122,16 @@ export interface DatedFactCommandImplementations {
    * a non-investment one, a connected one.
    */
   recordTransferAndRipple: (
-    command: RecordFundTransferCommand,
+    command: RecordTransferCommand,
+  ) => Promise<DomainResult<void>>;
+  /**
+   * Record an «alta por traspaso externo» (#1479): ONE `transfer_in` with no pair,
+   * because its outgoing half lives in another institution. Writes the row and ripples
+   * the destination's history atomically. The inherited cost is DECLARED — nobody here
+   * can derive it — and defaults to the amount that arrived.
+   */
+  recordExternalTransferInAndRipple: (
+    command: RecordExternalTransferInCommand,
   ) => Promise<DomainResult<void>>;
   /**
    * Delete BOTH halves of one traspaso and ripple both holdings, atomically (#1479) —

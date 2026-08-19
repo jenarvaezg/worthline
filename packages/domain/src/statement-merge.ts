@@ -24,6 +24,7 @@
  */
 
 import type { InvestmentOperation } from "./investment-types";
+import { isTransferKind } from "./positions";
 import type { ParsedStatementRow } from "./statement-parse";
 
 /** A file row matched to the existing operation it overwrites, by date. */
@@ -43,7 +44,11 @@ export interface StatementMergePlan {
   toCreate: ParsedStatementRow[];
   /** File rows whose date matches exactly one existing operation (the file wins). */
   toOverwrite: StatementOverwrite[];
-  /** Opening operations replaced by the imported history. */
+  /**
+   * Opening operations replaced by the imported history. Never a half of a
+   * traspaso, even one that carries `source: "opening"` (#1479) — see
+   * {@link planStatementMerge}.
+   */
   toDelete: InvestmentOperation[];
   /** Existing operations the load does not modify — never deleted. */
   untouched: InvestmentOperation[];
@@ -75,11 +80,19 @@ export function planStatementMerge(
   options: StatementMergeOptions = {},
 ): StatementMergePlan {
   const replaceOpening = options.replaceOpening ?? true;
-  const toDelete = replaceOpening
-    ? existing.filter((operation) => operation.source === "opening")
-    : [];
+  // `replaceOpening` exists to drop the SYNTHETIC opening balance an alta minted, so
+  // the file's real history can take its place. Half a traspaso is never that, even
+  // when it carries `source: "opening"` — which the retyping pass of #1485 leaves on
+  // every re-typed alta, and Jorge's book already holds those. Deleting one would
+  // orphan its other half, so it stays: a statement speaks buys and sells and its
+  // silence about a traspaso is not evidence the traspaso did not happen (ADR 0083).
+  // The store refuses such a delete outright; this is what keeps the whole import from
+  // hitting that refusal for a row nobody meant to touch.
+  const replaceable = (operation: InvestmentOperation): boolean =>
+    operation.source === "opening" && !isTransferKind(operation.kind);
+  const toDelete = replaceOpening ? existing.filter(replaceable) : [];
   const mergeExisting = replaceOpening
-    ? existing.filter((operation) => operation.source !== "opening")
+    ? existing.filter((operation) => !replaceable(operation))
     : existing;
   const fileDateCounts = countByKey(rows, (row) => row.dateKey);
   const assetDateCounts = countByKey(mergeExisting, dateKeyOf);

@@ -26,6 +26,10 @@ export type DomainViolation =
   | { code: "transfer_price_not_positive"; side: "origin" | "destination" }
   | { code: "transfer_origin_has_no_units" }
   | {
+      /** A declared inherited cost cannot be negative (the external entry, #1479). */
+      code: "transfer_inherited_cost_negative";
+    }
+  | {
       /** The two holdings' ledgers are in different currencies, so no cost can travel. */
       code: "transfer_currency_mismatch";
       origin: string;

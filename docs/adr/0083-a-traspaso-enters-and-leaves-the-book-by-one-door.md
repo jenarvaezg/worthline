@@ -36,7 +36,7 @@ would otherwise compute lives in a pure plan upstream of them.**
    0020). One batched ripple across the two assets, not one per half: the pair shares
    a date, so a ripple each would re-derive the same band of history twice (#1435).
 
-2. **The arithmetic is a pure module, `planFundTransfer`.** The gate owns a
+2. **The arithmetic is a pure module, `planTransfer`.** The gate owns a
    transaction; the plan owns the numbers. That split is what makes every hostile case
    a table test rather than a database fixture, and it is what will let the screen of
    #1480 preview exactly the pair it is about to write, from the same code.
@@ -61,12 +61,33 @@ would otherwise compute lives in a pure plan upstream of them.**
    message can name them and offer «todo» — which is the ordinary case behind a figure
    that is a cent or two over.
 
-6. **The currency is read from the book, never declared.** Both halves take the
+6. **The two halves may state DIFFERENT amounts.** The origin is valued the day the
+   capital leaves and the destination the day it lands, days apart, so a real traspaso
+   does not balance — 739,22 € out and 740,72 € in, measured in Jorge's book on the
+   19-ago retyping pass, with the explicit instruction that no validation should demand
+   equal amounts. `destinationAmountMinor` is optional and defaults to what left, so the
+   ordinary case still asks for ONE figure; forcing that figure onto both halves would
+   have bought 1,50 € of participaciones nobody paid for. What ties the halves is the
+   `transferId`, never the money.
+
+7. **An external entry is a first-class HALF, not a broken pair.** «Alta por traspaso
+   externo» — a plan brought in from another institution — has no outgoing half to
+   write, because the origin belongs to someone else's ledger.
+   `recordExternalTransferIn` writes ONE `transfer_in` carrying its own `transferId`, so
+   a reader that pairs by that id finds one row and can name it instead of reporting a
+   broken pair. The alternatives are both wrong: a `buy` eats a whole year of
+   contribution allowance (ADR 0080) for capital that merely moved, and a fabricated
+   `transfer_out` promises an origin that does not exist. Its inherited cost is
+   DECLARED, since nobody here can derive it, and defaults to the amount that arrived —
+   the honest reading of "I do not know what these units cost", booking no latent gain
+   rather than inventing one. Jorge did this in enero 2026 and will again.
+
+8. **The currency is read from the book, never declared.** Both halves take the
    holdings' own currency, and two holdings that disagree are refused: the inherited
    cost is an amount in the origin's currency written onto the destination's row, and
    crossing currencies would need a rate nobody stated (#1401).
 
-7. **The user's figures are data; structural impossibilities throw.** A non-positive
+9. **The user's figures are data; structural impossibilities throw.** A non-positive
    importe, a VL of zero, an importe over the position, two currencies, origin =
    destination → `DomainResult` violations a screen renders beside the field. An
    unknown holding, a non-investment one, a connected one → throw. The database is
@@ -74,7 +95,7 @@ would otherwise compute lives in a pure plan upstream of them.**
    another workspace is one this book has never heard of — a bug or an attack, not a
    typo worth coaching.
 
-8. **The pair leaves by one door too.** `deleteOperation` REFUSES half a traspaso, and
+10. **The pair leaves by one door too.** `deleteOperation` REFUSES half a traspaso, and
    `deleteInvestmentTransfer` removes both rows with one ripple. The operations table
    already renders each half as a line with its own «Eliminar», so the row-level
    delete is translated at the action: a click on half a traspaso means «deshaz el
@@ -98,14 +119,29 @@ would otherwise compute lives in a pure plan upstream of them.**
 - **Let the row-level delete through and pair up afterwards (rejected).** Same
   fail-open as a `sell` with a flag: it works only while every deleting path
   remembers.
+- **Demanding the two halves balance (rejected).** It reads like an invariant and is
+  false in the data — see decision 6.
+- **Recording an external entry as a `buy`, or as a pair with a fabricated origin
+  (rejected).** See decision 7.
 
 ## Consequences
 
 - No schema change: v59 already carries both columns.
-- `DomainViolation` grows six traspaso codes, so `mapDomainViolation`'s exhaustive
+- `DomainViolation` grows seven traspaso codes, so `mapDomainViolation`'s exhaustive
   switch refuses to compile until each has a Spanish message.
-- `planFundTransfer` is the single spelling of the traspaso arithmetic. #1480's screen
-  and #1482's dictated traspaso call it for their previews; neither re-derives units.
+- `planTransfer` is the single spelling of the traspaso arithmetic. #1480's screen and
+  #1482's dictated traspaso call it for their previews; neither re-derives units.
+- `planStatementMerge` no longer proposes deleting half a traspaso, even one carrying
+  `source: "opening"` — which every row the #1485 retyping pass re-typed from an alta
+  does, and Jorge's book already holds 42 of them. `replaceOpening` exists to drop the
+  SYNTHETIC opening balance an alta minted, never a fact of the ledger; without the
+  filter a statement import over such a holding would hit the store's refusal and abort
+  the whole load for a row nobody meant to touch.
+- A residual position IS reachable through the `amount` branch: an importe equal to the
+  whole position leaves up to a millionth of a unit behind, because the exact figure is
+  rarely representable in cents. That is inherent to stating a traspaso in euros, and it
+  is the reason «todo» exists; the screen of #1480 should steer an amount that covers
+  essentially everything towards it.
 - A traspaso whose origin later receives a BACKDATED purchase keeps the inherited cost
   it was written with. That is the cost of persisting it on the row (ADR 0082) and it
   is deliberate: re-deriving it at read time is what that ADR rejected. The correction

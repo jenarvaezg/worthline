@@ -27,7 +27,7 @@ import { assertMinorInteger } from "./money";
  * about to write, from the same code, without a round trip.
  *
  * What a caller must supply, because this module cannot know it: the state of the
- * origin's ledger on the transfer date ({@link FundTransferOrigin}), folded by
+ * origin's ledger on the transfer date ({@link TransferOrigin}), folded by
  * `derivePosition` from that holding's own operations.
  */
 
@@ -39,7 +39,7 @@ import { assertMinorInteger } from "./money";
  * inherited cost is a proportion of the cost basis over the units, so a pair taken
  * from different folds would slice a cost that never belonged to those units.
  */
-export interface FundTransferOrigin {
+export interface TransferOrigin {
   /** Participaciones held on the date, before this traspaso. */
   unitsHeld: DecimalString;
   /** Acquisition cost of those units, integer minor units. */
@@ -49,14 +49,12 @@ export interface FundTransferOrigin {
 /**
  * How much of the origin leaves. «Todo» is NOT the amount that happens to equal the
  * whole position: it is its own intent, because only it can liquidate the origin
- * exactly (see {@link planFundTransfer}).
+ * exactly (see {@link planTransfer}).
  */
-export type FundTransferPortion =
-  | { kind: "amount"; amountMinor: number }
-  | { kind: "all" };
+export type TransferPortion = { kind: "amount"; amountMinor: number } | { kind: "all" };
 
 /** Everything the user (or the assistant) states about one traspaso. */
-export interface FundTransferIntent {
+export interface TransferIntent {
   /**
    * The id that will tie the two halves. Supplied, never minted here: a replayed
    * submit must land on the SAME pair rather than a second one, so the id is a
@@ -70,11 +68,24 @@ export interface FundTransferIntent {
   destinationAssetId: string;
   /** YYYY-MM-DD — the ONE date both halves carry. */
   executedAt: string;
-  portion: FundTransferPortion;
-  /** The origin's VL on {@link FundTransferIntent.executedAt}. */
+  portion: TransferPortion;
+  /** The origin's VL on {@link TransferIntent.executedAt}. */
   originPricePerUnit: DecimalString;
   /** The destination's VL on the same date. */
   destinationPricePerUnit: DecimalString;
+  /**
+   * The amount that ARRIVED, when the bank states a different one from what left.
+   * Absent means "the same", which is the ordinary case and the only one a form needs
+   * to ask about.
+   *
+   * The two halves of a real traspaso genuinely do NOT match: the origin is valued the
+   * day the capital leaves and the destination the day it lands, days apart. Measured
+   * in Jorge's book on the 19-ago pass — 739,22 € out, 740,72 € in — with the explicit
+   * conclusion that «ninguna validación debería exigir igualdad de importes». Forcing
+   * one figure onto both halves would put 1,50 € of participaciones nobody bought into
+   * the destination. What ties the halves is the `transferId`, never the amount.
+   */
+  destinationAmountMinor?: number;
   currency: CurrencyCode;
   /**
    * The transfer commission, integer minor units. It rides the INCOMING half,
@@ -89,7 +100,7 @@ export interface FundTransferIntent {
 }
 
 /** The pair, plus the two derived figures a preview or a card wants to print. */
-export interface FundTransferPair {
+export interface TransferPair {
   out: CreateInvestmentOperationInput;
   /**
    * The incoming half. Named `incoming` rather than `in` so the field never reads
@@ -97,17 +108,22 @@ export interface FundTransferPair {
    */
   incoming: CreateInvestmentOperationInput;
   /**
-   * The euro amount that moved. Echoes the stated one for an `amount` portion, and
-   * is DERIVED at the origin's VL for «todo» — which is the figure the bank's
+   * The euro amount that LEFT. Echoes the stated one for an `amount` portion, and is
+   * DERIVED at the origin's VL for «todo» — which is the figure the bank's
    * confirmation will show.
    */
-  amountMinor: number;
+  outgoingAmountMinor: number;
+  /**
+   * The euro amount that ARRIVED — the same figure unless the caller stated a
+   * different one (see {@link TransferIntent.destinationAmountMinor}).
+   */
+  incomingAmountMinor: number;
   /** The acquisition cost that travelled, integer minor units. */
   inheritedCostMinor: number;
 }
 
 /** The violations this module can report, narrowed from the shared vocabulary. */
-type FundTransferViolation = Extract<
+type TransferViolation = Extract<
   DomainViolation,
   {
     code:
@@ -121,9 +137,9 @@ type FundTransferViolation = Extract<
 >;
 
 /** A refusal, shaped so it satisfies both this module's result types. */
-function refuse(violation: FundTransferViolation): {
+function refuse(violation: TransferViolation): {
   ok: false;
-  violations: [FundTransferViolation];
+  violations: [TransferViolation];
 } {
   return { ok: false, violations: [violation] };
 }
@@ -131,7 +147,7 @@ function refuse(violation: FundTransferViolation): {
 /** The units leaving the origin and the euro amount they stand for, or a refusal. */
 type PortionResolution =
   | { ok: true; amountMinor: number; outUnits: DecimalString }
-  | { ok: false; violations: [FundTransferViolation] };
+  | { ok: false; violations: [TransferViolation] };
 
 /**
  * Resolve one traspaso into the pair of operations that records it, or the ONE
@@ -166,10 +182,10 @@ type PortionResolution =
  * mode this gate exists to prevent — no form can produce it, so it is a bug, not
  * data.
  */
-export function planFundTransfer(
-  intent: FundTransferIntent,
-  origin: FundTransferOrigin,
-): DomainResult<FundTransferPair> {
+export function planTransfer(
+  intent: TransferIntent,
+  origin: TransferOrigin,
+): DomainResult<TransferPair> {
   if (intent.outOperationId === intent.inOperationId) {
     throw new Error("The two halves of a traspaso need distinct operation ids.");
   }
@@ -196,14 +212,20 @@ export function planFundTransfer(
   if (!resolved.ok) return resolved;
   const { amountMinor, outUnits } = resolved;
 
+  const incomingAmountMinor = intent.destinationAmountMinor ?? amountMinor;
+  assertMinorInteger(incomingAmountMinor);
+  if (incomingAmountMinor <= 0) {
+    return refuse({ code: "transfer_amount_not_positive" });
+  }
+
   const inUnits = divideUnits(
-    minorToDecimal(amountMinor),
+    minorToDecimal(incomingAmountMinor),
     intent.destinationPricePerUnit,
     UNITS_READBACK_DECIMALS,
   );
 
-  // The destination receives the units the amount buys at its VL; a commission does
-  // not shrink them, it is capitalized on top — exactly the shape of a buy, where
+  // The destination receives the units its OWN amount buys at its own VL; a commission
+  // does not shrink them, it is capitalized on top — exactly the shape of a buy, where
   // `units × price + fees` is the cost.
   if (compareUnits(inUnits, "0") <= 0) {
     return refuse({ code: "transfer_amount_not_positive" });
@@ -226,7 +248,6 @@ export function planFundTransfer(
   return {
     ok: true,
     value: {
-      amountMinor,
       incoming: {
         ...shared,
         assetId: intent.destinationAssetId,
@@ -237,6 +258,7 @@ export function planFundTransfer(
         transferCostMinor: inheritedCostMinor,
         units: inUnits,
       },
+      incomingAmountMinor,
       inheritedCostMinor,
       out: {
         ...shared,
@@ -247,13 +269,14 @@ export function planFundTransfer(
         pricePerUnit: intent.originPricePerUnit,
         units: outUnits,
       },
+      outgoingAmountMinor: amountMinor,
     },
   };
 }
 
 function resolvePortion(
-  intent: FundTransferIntent,
-  origin: FundTransferOrigin,
+  intent: TransferIntent,
+  origin: TransferOrigin,
 ): PortionResolution {
   if (intent.portion.kind === "all") {
     if (compareUnits(origin.unitsHeld, "0") <= 0) {
@@ -287,4 +310,102 @@ function resolvePortion(
   }
 
   return { amountMinor, ok: true, outUnits };
+}
+
+/**
+ * The «alta por traspaso externo» (#1479): a plan or fund brought in from ANOTHER
+ * institution, whose outgoing half lives outside this book entirely.
+ *
+ * It is a `transfer_in` with no pair — deliberately, not as a degraded traspaso. Jorge
+ * did exactly this in enero 2026 («Traer plan desde otra entidad», 95,46 €) and will
+ * again; the retyping pass of 19-ago found it and had to hand-write the row, because
+ * the alternative readings are both wrong: a `buy` eats a year of contribution
+ * allowance (ADR 0080) for capital that was merely moved, and half a real pair would
+ * promise a `transfer_out` that no holding here can ever produce.
+ *
+ * It carries its own `transferId`, so readers that pair by that id find one row and can
+ * say so — «entrada por traspaso externo» — instead of reporting a broken pair.
+ *
+ * The inherited cost is DECLARED, because nobody here can derive it: the origin's
+ * ledger belongs to another institution. Its default is the amount that arrived, which
+ * is the honest reading of "I do not know what these units cost" — it books no latent
+ * gain rather than inventing one, and the user can correct it with a figure from the
+ * old provider's statement.
+ */
+export interface ExternalTransferInIntent {
+  /** This entry's own id. Present so a reader finds ONE row, not a broken pair. */
+  transferId: string;
+  inOperationId: string;
+  destinationAssetId: string;
+  /** YYYY-MM-DD the capital landed. */
+  executedAt: string;
+  /** The amount that arrived, integer minor units. */
+  amountMinor: number;
+  /** The destination's VL on `executedAt`. */
+  destinationPricePerUnit: DecimalString;
+  currency: CurrencyCode;
+  /**
+   * The acquisition cost these units carry, as the user declares it from the old
+   * provider's paperwork. Defaults to {@link ExternalTransferInIntent.amountMinor}.
+   */
+  inheritedCostMinor?: number;
+  /** A commission the entry was charged; capitalized, exactly as on a buy. */
+  feesMinor?: number;
+  source?: OperationSource;
+  occurredAt?: string;
+}
+
+/**
+ * Resolve an external entry into the ONE row that records it, or the violation that
+ * refuses it. Same arithmetic and the same refusals as the incoming half of a pair —
+ * only the origin is missing.
+ */
+export function planExternalTransferIn(
+  intent: ExternalTransferInIntent,
+): DomainResult<CreateInvestmentOperationInput> {
+  if (compareUnits(intent.destinationPricePerUnit, "0") <= 0) {
+    return {
+      ok: false,
+      violations: [{ code: "transfer_price_not_positive", side: "destination" }],
+    };
+  }
+
+  assertMinorInteger(intent.amountMinor);
+  if (intent.amountMinor <= 0) {
+    return { ok: false, violations: [{ code: "transfer_amount_not_positive" }] };
+  }
+
+  const feesMinor = intent.feesMinor ?? 0;
+  assertMinorInteger(feesMinor);
+  if (feesMinor < 0) {
+    return { ok: false, violations: [{ code: "operation_fees_negative" }] };
+  }
+
+  const inheritedCostMinor = intent.inheritedCostMinor ?? intent.amountMinor;
+  assertMinorInteger(inheritedCostMinor);
+  if (inheritedCostMinor < 0) {
+    return { ok: false, violations: [{ code: "transfer_inherited_cost_negative" }] };
+  }
+
+  return {
+    ok: true,
+    value: {
+      assetId: intent.destinationAssetId,
+      currency: intent.currency,
+      executedAt: intent.executedAt,
+      feesMinor,
+      id: intent.inOperationId,
+      kind: "transfer_in",
+      ...(intent.occurredAt === undefined ? {} : { occurredAt: intent.occurredAt }),
+      pricePerUnit: intent.destinationPricePerUnit,
+      ...(intent.source === undefined ? {} : { source: intent.source }),
+      transferCostMinor: inheritedCostMinor,
+      transferId: intent.transferId,
+      units: divideUnits(
+        minorToDecimal(intent.amountMinor),
+        intent.destinationPricePerUnit,
+        UNITS_READBACK_DECIMALS,
+      ),
+    },
+  };
 }

@@ -94,6 +94,13 @@ export interface OperationsStore {
     operationId: string,
   ) => Promise<{ assetId: string; executedAt: string } | null>;
   /**
+   * The `transferId` of ONE operation, or null when the row is not half a traspaso
+   * (or does not exist) — the cheap lookup a caller holding an operation id needs to
+   * tell «delete this row» from «undo this traspaso» (#1479). Keyed on the primary
+   * key, so it costs a fraction of reading the holding's whole ledger to find out.
+   */
+  readTransferIdOf: (operationId: string) => Promise<string | null>;
+  /**
    * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
    * one entry per deleted row — the two asset ids and dates the caller ripples —
    * or an empty array when no row carries that `transferId`.
@@ -133,6 +140,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     recordOperation: (input, opts) => recordOperation(ctx, input, opts),
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
+    readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
     deleteTransferPair: (transferId) => deleteTransferPair(ctx, transferId),
     updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),
@@ -209,11 +217,24 @@ async function deleteOperation(
   // one id calls `deleteTransferPair` with the `transferId` instead.
   if (kind && isTransferKind(kind.kind)) {
     throw new Error(
-      "Una mitad de un traspaso no se borra sola: borra el traspaso completo (#1393).",
+      "Half a traspaso cannot be deleted on its own; delete the pair (#1393).",
     );
   }
 
   return removeOperationRow(ctx, operationId);
+}
+
+async function readTransferIdOf(
+  ctx: StoreContext,
+  operationId: string,
+): Promise<string | null> {
+  const row = await ctx.db
+    .select({ transferId: assetOperations.transferId })
+    .from(assetOperations)
+    .where(eq(assetOperations.id, operationId))
+    .get();
+
+  return row?.transferId ?? null;
 }
 
 /**

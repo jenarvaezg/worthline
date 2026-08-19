@@ -6,10 +6,10 @@
 
 import { describe, expect, test } from "vitest";
 
-import type { FundTransferIntent, FundTransferOrigin } from "./fund-transfer";
-import { planFundTransfer } from "./fund-transfer";
+import type { TransferIntent, TransferOrigin } from "./transfer-plan";
+import { planExternalTransferIn, planTransfer } from "./transfer-plan";
 
-const INTENT: FundTransferIntent = {
+const INTENT: TransferIntent = {
   currency: "EUR",
   destinationAssetId: "destino",
   destinationPricePerUnit: "319.59",
@@ -23,19 +23,19 @@ const INTENT: FundTransferIntent = {
 };
 
 /** Jorge's real case: 47,96 part. bought at ~15 €, worth 21,24 € on the day. */
-const ORIGIN: FundTransferOrigin = {
+const ORIGIN: TransferOrigin = {
   costBasisMinor: 71_940,
   unitsHeld: "47.96",
 };
 
 function plan(
-  intent: Partial<FundTransferIntent> = {},
-  origin: Partial<FundTransferOrigin> = {},
+  intent: Partial<TransferIntent> = {},
+  origin: Partial<TransferOrigin> = {},
 ) {
-  return planFundTransfer({ ...INTENT, ...intent }, { ...ORIGIN, ...origin });
+  return planTransfer({ ...INTENT, ...intent }, { ...ORIGIN, ...origin });
 }
 
-describe("planFundTransfer — the pair the gate will write", () => {
+describe("planTransfer — the pair the gate will write", () => {
   test("both halves carry the same date, the same transferId, and their own asset", () => {
     const result = plan();
     if (!result.ok) throw new Error("expected a plan");
@@ -88,7 +88,8 @@ describe("planFundTransfer — the pair the gate will write", () => {
     // that is the latent gain vanishing from the book.
     expect(result.value.incoming.transferCostMinor).toBe(71_940);
     expect(result.value.inheritedCostMinor).toBe(71_940);
-    expect(result.value.amountMinor).toBe(101_867);
+    expect(result.value.outgoingAmountMinor).toBe(101_867);
+    expect(result.value.incomingAmountMinor).toBe(101_867);
   });
 
   test("the inherited cost is a SLICE when only part of the position moves", () => {
@@ -110,7 +111,8 @@ describe("planFundTransfer — the pair the gate will write", () => {
     expect(result.value.out.units).toBe("47.96");
     expect(result.value.inheritedCostMinor).toBe(ORIGIN.costBasisMinor);
     // The euro figure is derived from those exact units at the origin's VL.
-    expect(result.value.amountMinor).toBe(101_867);
+    expect(result.value.outgoingAmountMinor).toBe(101_867);
+    expect(result.value.incomingAmountMinor).toBe(101_867);
     expect(result.value.incoming.units).toBe("3.187428");
   });
 
@@ -125,6 +127,33 @@ describe("planFundTransfer — the pair the gate will write", () => {
     });
   });
 
+  test("the two halves may state DIFFERENT amounts — the ids tie them, not the money", () => {
+    // Jorge's real 14-ago traspaso: 739,22 € left, 740,72 € arrived, because the origin
+    // is valued the day the capital leaves and the destination the day it lands. Forcing
+    // one figure on both would buy 1,50 € of participaciones nobody paid for.
+    const result = plan({
+      destinationAmountMinor: 74_072,
+      portion: { amountMinor: 73_922, kind: "amount" },
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(result.value.outgoingAmountMinor).toBe(73_922);
+    expect(result.value.incomingAmountMinor).toBe(74_072);
+    // Each half's units come from its OWN amount over its own VL.
+    expect(result.value.out.units).toBe("34.803202");
+    expect(result.value.incoming.units).toBe("2.31772");
+    // The inherited cost still comes from the ORIGIN's ledger — the amount that
+    // arrived says nothing about what the units cost.
+    expect(result.value.incoming.transferCostMinor).toBe(result.value.inheritedCostMinor);
+  });
+
+  test("an arriving amount of zero is refused like a departing one", () => {
+    expect(plan({ destinationAmountMinor: 0 })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_amount_not_positive" }],
+    });
+  });
+
   test("the source and the source instant ride both halves", () => {
     const result = plan({ occurredAt: "2026-07-31T07:58:36.000Z", source: "agent" });
     if (!result.ok) throw new Error("expected a plan");
@@ -136,7 +165,7 @@ describe("planFundTransfer — the pair the gate will write", () => {
   });
 });
 
-describe("planFundTransfer — the refusals", () => {
+describe("planTransfer — the refusals", () => {
   test("an amount of zero or less has nothing to move", () => {
     expect(plan({ portion: { amountMinor: 0, kind: "amount" } })).toEqual({
       ok: false,
@@ -202,6 +231,26 @@ describe("planFundTransfer — the refusals", () => {
     });
   });
 
+  test("«origen sin unidades» reads as an over-position amount, and says how many", () => {
+    // The `all` branch has its own violation; an `amount` against an empty position
+    // lands here, naming a zero position instead of a missing one.
+    expect(
+      plan(
+        { portion: { amountMinor: 101_867, kind: "amount" } },
+        { costBasisMinor: 0, unitsHeld: "0" },
+      ),
+    ).toEqual({
+      ok: false,
+      violations: [
+        {
+          code: "transfer_units_exceed_position",
+          unitsHeld: "0",
+          unitsRequested: "47.959981",
+        },
+      ],
+    });
+  });
+
   test("negative fees are refused like on any other operation", () => {
     expect(plan({ feesMinor: -500 })).toEqual({
       ok: false,
@@ -213,5 +262,63 @@ describe("planFundTransfer — the refusals", () => {
     // They would collide on the primary key and the pair would be half-written —
     // the one failure mode the gate exists to prevent, caught before the write.
     expect(() => plan({ inOperationId: "op_out" })).toThrow(/operation id/);
+  });
+});
+
+describe("planExternalTransferIn — la mitad que no tiene pareja", () => {
+  const EXTERNAL = {
+    amountMinor: 9_546,
+    currency: "EUR" as const,
+    destinationAssetId: "plan_traido",
+    destinationPricePerUnit: "12.5",
+    executedAt: "2026-01-23",
+    inOperationId: "op_ext",
+    transferId: "trf_ext",
+  };
+
+  test("writes ONE transfer_in with its own transferId and no origin", () => {
+    const result = planExternalTransferIn(EXTERNAL);
+    if (!result.ok) throw new Error("expected a plan");
+
+    // Jorge's real 23-ene entry: a plan brought from another institution. It is a
+    // `transfer_in` on purpose — a `buy` would eat a year of contribution allowance
+    // (ADR 0080) for capital that was only moved.
+    expect(result.value).toMatchObject({
+      assetId: "plan_traido",
+      executedAt: "2026-01-23",
+      kind: "transfer_in",
+      transferId: "trf_ext",
+      units: "7.6368",
+    });
+  });
+
+  test("the inherited cost defaults to what arrived — no invented latent gain", () => {
+    const result = planExternalTransferIn(EXTERNAL);
+    if (!result.ok) throw new Error("expected a plan");
+    expect(result.value.transferCostMinor).toBe(9_546);
+  });
+
+  test("a declared inherited cost wins — that is the old provider's figure", () => {
+    const result = planExternalTransferIn({ ...EXTERNAL, inheritedCostMinor: 7_000 });
+    if (!result.ok) throw new Error("expected a plan");
+    // 25,46 € of latent gain travels, which is what the entry is FOR.
+    expect(result.value.transferCostMinor).toBe(7_000);
+  });
+
+  test("the refusals it shares with a pair's incoming half", () => {
+    expect(planExternalTransferIn({ ...EXTERNAL, amountMinor: 0 })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_amount_not_positive" }],
+    });
+    expect(planExternalTransferIn({ ...EXTERNAL, destinationPricePerUnit: "0" })).toEqual(
+      {
+        ok: false,
+        violations: [{ code: "transfer_price_not_positive", side: "destination" }],
+      },
+    );
+    expect(planExternalTransferIn({ ...EXTERNAL, inheritedCostMinor: -1 })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_inherited_cost_negative" }],
+    });
   });
 });

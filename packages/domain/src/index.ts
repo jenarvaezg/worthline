@@ -565,13 +565,6 @@ export type {
 } from "./fire-sustainable-spending";
 export { fireSustainableSpending } from "./fire-sustainable-spending";
 export type {
-  FundTransferIntent,
-  FundTransferOrigin,
-  FundTransferPair,
-  FundTransferPortion,
-} from "./fund-transfer";
-export { planFundTransfer } from "./fund-transfer";
-export type {
   FxAggregation,
   FxConversionResult,
   FxExcludedHolding,
@@ -1054,6 +1047,14 @@ export type {
   StatementBroker,
 } from "./statement-parse";
 export { parseStatement, parseStatementWithAdapter } from "./statement-parse";
+export type {
+  ExternalTransferInIntent,
+  TransferIntent,
+  TransferOrigin,
+  TransferPair,
+  TransferPortion,
+} from "./transfer-plan";
+export { planExternalTransferIn, planTransfer } from "./transfer-plan";
 export type { InterpolateOrStepInput, ValuationCadence } from "./valuation-cadence";
 export {
   cadenceOrDefault,

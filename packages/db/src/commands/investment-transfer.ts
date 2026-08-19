@@ -3,12 +3,16 @@ import type { StoreContext } from "@db/store-context";
 import { assertAssetAllowsOperationWrite } from "@db/valuation-guard";
 import type {
   CurrencyCode,
-  DecimalString,
-  FundTransferOrigin,
-  FundTransferPortion,
-  OperationSource,
+  ExternalTransferInIntent,
+  TransferIntent,
+  TransferOrigin,
 } from "@worthline/domain";
-import { derivePosition, operationsUpTo, planFundTransfer } from "@worthline/domain";
+import {
+  derivePosition,
+  operationsUpTo,
+  planExternalTransferIn,
+  planTransfer,
+} from "@worthline/domain";
 import { eq } from "drizzle-orm";
 import type {
   DatedFactCommandImplementations,
@@ -18,35 +22,29 @@ import { rippleHistoricalSnapshotsForOperations } from "./ripple-engine";
 import type { UnitOfWork } from "./types";
 
 /**
- * One traspaso, as the caller states it. The currency is NOT a field: it is a fact of
- * the two holdings' ledgers, read behind this command and refused when they disagree,
- * so no form can declare a currency the book does not hold.
+ * One traspaso, as the caller states it — the pure {@link TransferIntent} minus the
+ * one field a caller must NOT supply, plus the ripple's clock.
+ *
+ * The currency is subtracted deliberately: it is a fact of the two holdings' ledgers,
+ * read behind this command and refused when they disagree, so no form can declare a
+ * currency the book does not hold.
  */
-export interface RecordFundTransferCommand {
-  /**
-   * The id that will tie the two halves, and the two operation ids. All three are
-   * supplied rather than minted here: a replayed submit has to land on the SAME pair
-   * instead of a second one, so they are a function of the submission (#1394) — and
-   * the store never reads a clock of its own (ADR 0024).
-   */
-  transferId: string;
-  outOperationId: string;
-  inOperationId: string;
-  originAssetId: string;
-  destinationAssetId: string;
-  /** YYYY-MM-DD — the ONE date both halves carry. */
-  executedAt: string;
-  portion: FundTransferPortion;
-  /** The origin's VL on `executedAt`. */
-  originPricePerUnit: DecimalString;
-  /** The destination's VL on the same date. */
-  destinationPricePerUnit: DecimalString;
-  /** The transfer commission; capitalized into the destination (ADR 0082). */
-  feesMinor?: number;
-  source?: OperationSource;
-  occurredAt?: string;
+export type RecordTransferCommand = Omit<TransferIntent, "currency"> & {
+  /** The day the ripple's cut-off is measured against. Defaults to the current date. */
   today?: string;
-}
+};
+
+/**
+ * An «alta por traspaso externo» as the caller states it — the pure
+ * {@link ExternalTransferInIntent} minus the currency the destination's ledger already
+ * declares, plus the ripple's clock.
+ */
+export type RecordExternalTransferInCommand = Omit<
+  ExternalTransferInIntent,
+  "currency"
+> & {
+  today?: string;
+};
 
 /**
  * The traspaso gate (#1479, PRD #1393): the ONE path that mints the two halves of a
@@ -75,15 +73,17 @@ export interface RecordFundTransferCommand {
  *   their cost to the destination.
  *
  * The rest — the arithmetic and the refusals of the stated figures — is
- * `planFundTransfer`, pure and tested without a database.
+ * `planTransfer`, pure and tested without a database.
  */
-export function createFundTransferCommands(
+export function createInvestmentTransferCommands(
   ctx: StoreContext,
   stores: DatedFactStores,
   uow: UnitOfWork,
 ): Pick<
   DatedFactCommandImplementations,
-  "recordTransferAndRipple" | "deleteTransferAndRipple"
+  | "recordTransferAndRipple"
+  | "recordExternalTransferInAndRipple"
+  | "deleteTransferAndRipple"
 > {
   return {
     recordTransferAndRipple: async (command) => {
@@ -95,19 +95,28 @@ export function createFundTransferCommands(
         return { ok: false, violations: [{ code: "transfer_same_holding" }] };
       }
 
-      const origin = await assertTransferSide(ctx, command.originAssetId);
-      const destination = await assertTransferSide(ctx, command.destinationAssetId);
+      const originCurrency = await readTransferSideCurrency(ctx, command.originAssetId);
+      const destinationCurrency = await readTransferSideCurrency(
+        ctx,
+        command.destinationAssetId,
+      );
 
-      if (origin !== destination) {
+      if (originCurrency !== destinationCurrency) {
         return {
           ok: false,
-          violations: [{ code: "transfer_currency_mismatch", destination, origin }],
+          violations: [
+            {
+              code: "transfer_currency_mismatch",
+              destination: destinationCurrency,
+              origin: originCurrency,
+            },
+          ],
         };
       }
 
-      const plan = planFundTransfer(
-        { ...command, currency: origin },
-        await originStateAt(stores, command, origin),
+      const plan = planTransfer(
+        { ...command, currency: originCurrency },
+        await originStateAt(stores, command, originCurrency),
       );
       if (!plan.ok) return plan;
 
@@ -120,6 +129,32 @@ export function createFundTransferCommands(
           sides: [
             { assetId: command.originAssetId, operationDateKeys: dateKeys },
             { assetId: command.destinationAssetId, operationDateKeys: dateKeys },
+          ],
+          today,
+        });
+      });
+
+      return { ok: true, value: undefined };
+    },
+
+    recordExternalTransferInAndRipple: async (command) => {
+      const today = command.today ?? new Date().toISOString().slice(0, 10);
+      const currency = await readTransferSideCurrency(ctx, command.destinationAssetId);
+
+      const plan = planExternalTransferIn({ ...command, currency });
+      if (!plan.ok) return plan;
+
+      // ONE row, so one asset ripples — but through the same transaction shape as the
+      // pair: an entry whose ripple fails must not stay in the book (ADR 0020).
+      await ctx.transaction(async () => {
+        const batchId = await uow.createFactBatch({ trigger: "manual" });
+        await stores.operations.recordOperation(plan.value, { batchId });
+        await ripplePair(ctx, stores, {
+          sides: [
+            {
+              assetId: command.destinationAssetId,
+              operationDateKeys: [command.executedAt.slice(0, 10)],
+            },
           ],
           today,
         });
@@ -161,9 +196,9 @@ export function createFundTransferCommands(
  */
 async function originStateAt(
   stores: DatedFactStores,
-  command: Pick<RecordFundTransferCommand, "executedAt" | "originAssetId">,
+  command: Pick<RecordTransferCommand, "executedAt" | "originAssetId">,
   currency: CurrencyCode,
-): Promise<FundTransferOrigin> {
+): Promise<TransferOrigin> {
   const dateKey = command.executedAt.slice(0, 10);
   const operations = await stores.operations.readOperations(command.originAssetId);
   const position = derivePosition(operationsUpTo(operations, dateKey), {
@@ -178,12 +213,13 @@ async function originStateAt(
 }
 
 /**
- * Check one side of the pair and answer with the currency its ledger is kept in.
+ * The currency one side of the pair keeps its ledger in, once both operation-write
+ * guards have passed on it.
  * Throws when the holding is not in this book, is not an investment, or is
  * materialized from a connected source (whose position its own sync re-rolls, so a
  * hand-written half would be overwritten on the next one).
  */
-async function assertTransferSide(
+async function readTransferSideCurrency(
   ctx: StoreContext,
   assetId: string,
 ): Promise<CurrencyCode> {

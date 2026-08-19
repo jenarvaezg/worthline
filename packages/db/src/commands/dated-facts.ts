@@ -10,8 +10,8 @@ import type {
 } from "./command-implementation-types";
 import { createDebtBalanceCommands } from "./debt-balance-facts";
 import { createDebtPlanCommands } from "./debt-plan-facts";
-import { createFundTransferCommands } from "./fund-transfer";
 import { createInvestmentOperationCommands } from "./investment-operations";
+import { createInvestmentTransferCommands } from "./investment-transfer";
 import { createOwnershipCommands } from "./ownership-facts";
 import {
   rippleHistoricalSnapshotsForDebt,
@@ -38,7 +38,7 @@ export function createDatedFactCommandImplementations(
   const uow = createUnitOfWork(ctx);
   return {
     ...createInvestmentOperationCommands(ctx, stores, uow),
-    ...createFundTransferCommands(ctx, stores, uow),
+    ...createInvestmentTransferCommands(ctx, stores, uow),
     ...createStatementImportCommands(ctx, stores, uow),
     ...createValuationCommands(ctx, stores, uow),
     ...createOwnershipCommands(ctx, stores),
