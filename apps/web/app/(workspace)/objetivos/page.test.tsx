@@ -1252,3 +1252,157 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     expect(html).toContain("necesita al menos una inversión con libro de operaciones");
   });
 });
+
+describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
+  /**
+   * Jorge, tal como llega a la pantalla: 63 años, jubilación ORDINARIA a los 67 y
+   * 2.000 €/mes de gasto declarado. Los activos por defecto de esta suite dejan
+   * 50.000 € vendibles (100.000 € de caja menos 50.000 € de préstamo) — la vivienda
+   * habitual no es elegible.
+   */
+  function ordinaryConfig(overrides: Partial<FireScopeConfig> = {}): FireScopeConfig {
+    return {
+      currentAge: 63,
+      monthlySavingsCapacityMinor: 0,
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.035,
+      expectedRealReturn: 0.035,
+      targetRetirementAge: 67,
+      ...overrides,
+    };
+  }
+
+  // Las dos señales son independientes, así que para probar UNA hay que apagar la
+  // otra: con 5.000 €/mes declarados el nivel Regular sí se cruza en el horizonte.
+  const SAVING_HARD = { monthlySavingsCapacityMinor: 500_000 };
+
+  /** La tarjeta del gasto sostenible, cuando la hay. */
+  function sustainableCard(html: string): string {
+    const opened = html.slice(html.indexOf('<section aria-label="Gasto sostenible"'));
+    return opened.slice(0, opened.indexOf("</section>"));
+  }
+
+  test("con la señal en pie, la app OFRECE — nombrando el hecho, no el veredicto", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: ordinaryConfig() });
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("tu edad objetivo son 67 años, no una jubilación anticipada");
+    expect(html).toContain("¿Quieres ver esta pantalla como plan de jubilación");
+    // Y ofrece las dos salidas: un «no» que no se pudiera guardar volvería a
+    // preguntarse en cada carga.
+    expect(html).toContain("Verlo así");
+    expect(html).toContain("No, sigo con FIRE");
+    // Ofrecer no es imponer: el titular sigue siendo el de FIRE.
+    expect(html).not.toContain('aria-label="Gasto sostenible"');
+  });
+
+  test("una config sin edad objetivo declarada no dispara nada: el 65 del motor no es su elección", async () => {
+    // El fallo que hacía inútil la señal: el formulario guardaba 65 por defecto y el
+    // umbral también es 65, así que el ofrecimiento salía para todo el mundo. Con el
+    // ahorro que sí llega a FIRE, esta config no tiene NINGUNA señal.
+    const { targetRetirementAge: _undeclared, ...withoutTargetAge } = ordinaryConfig({
+      ...SAVING_HARD,
+    });
+    calls.readFireConfig.mockResolvedValueOnce({ household: withoutTargetAge });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("¿Quieres ver esta pantalla como plan de jubilación");
+  });
+
+  test("una edad objetivo temprana no dispara nada", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ ...SAVING_HARD, targetRetirementAge: 50 }),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("¿Quieres ver esta pantalla como plan de jubilación");
+  });
+
+  test("el umbral es del usuario: subiéndolo, la misma edad objetivo deja de ser señal", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ ...SAVING_HARD, ordinaryRetirementAge: 70 }),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("¿Quieres ver esta pantalla como plan de jubilación");
+  });
+
+  test("un «no» guardado calla el ofrecimiento para siempre", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ retirementPlan: "early" }),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("¿Quieres ver esta pantalla como plan de jubilación");
+  });
+
+  test("declarado el plan, el titular es cuánto puede gastar — no cuánto le falta", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ retirementPlan: "ordinary" }),
+    });
+
+    const html = await renderedHtml();
+    const card = sustainableCard(html);
+
+    expect(html).toContain("Tu plan de jubilación");
+    // 50.000 € vendibles × 3,5 % ÷ 12 = 145,83 €/mes.
+    expect(card).toContain(`${euros(14_583)}/mes`);
+    expect(card).toContain("sin mermar tu patrimonio");
+    expect(card).toContain(`${euros(5_000_000)} de capital vendible × 3,5 % ÷ 12`);
+  });
+
+  test("el % financiado no se borra: se degrada, y se puede volver a él", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ retirementPlan: "ordinary" }),
+    });
+
+    const html = await renderedHtml();
+
+    // Sigue impreso y sigue siendo cierto — con la cifra pequeña, no la del titular.
+    expect(html).toContain('class="fireFundedDemoted"');
+    expect(html).toContain("Tu número FIRE sigue calculado");
+    expect(html).toContain("Ver como FIRE");
+  });
+
+  test("sin edad final solo hay la versión perpetua, y la tarjeta pide el dato", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ retirementPlan: "ordinary" }),
+    });
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).not.toContain("Agotando el capital");
+    expect(card).toContain("Dinos hasta qué edad debe durar tu capital");
+  });
+
+  test("con la edad final puesta y sin fecha de nacimiento, pide la fecha — no la edad otra vez", async () => {
+    const { currentAge: _dropped, ...ageless } = ordinaryConfig({
+      capitalLastsUntilAge: 90,
+      retirementPlan: "ordinary",
+    });
+    calls.readFireConfig.mockResolvedValueOnce({ household: ageless });
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).toContain("fecha de nacimiento");
+    expect(card).not.toContain("Dinos hasta qué edad");
+  });
+
+  test("con la edad final declarada aparece la segunda cifra, mayor que la perpetua", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: ordinaryConfig({ capitalLastsUntilAge: 90, retirementPlan: "ordinary" }),
+    });
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).toContain("Agotando el capital");
+    expect(card).toContain("hasta los 90 (27 años)");
+    // 50.000 € al 3,5 % repartidos en 27 años = 2.892,62 €/año → 241,05 €/mes.
+    expect(card).toContain(`${euros(24_105)}/mes`);
+  });
+});

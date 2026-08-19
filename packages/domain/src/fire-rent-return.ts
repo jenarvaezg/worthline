@@ -149,6 +149,22 @@ export interface FireRentReturnReport {
   applied: AppliedRentReturn[];
   /** Declared rents that did not feed the rate, and why. */
   notices: RentReturnNotice[];
+  /**
+   * The scope's annual NET rent (minor units), already scaled to what it owns — the
+   * income half of the sustainable-spending answer (#1428, ADR 0081).
+   *
+   * It counts every rent this scope's eligible properties DERIVED a rate from, and it
+   * is deliberately independent of the immobilized declaration (#1460): a flat the
+   * user will never sell is not FIRE capital, and its rent is still money arriving
+   * every month. The two halves cannot double-count each other, because the capital
+   * half only ever reads the *sellable* side and a rented property lives on the
+   * immobilized one.
+   *
+   * Net or nothing, like the rate it came from (ADR 0076): a schedule with no declared
+   * expenses contributes 0 here and stays a notice — the gross would flatter a figure
+   * somebody may plan their retirement on.
+   */
+  netRentAnnualMinor: number;
 }
 
 export interface RentRealReturns {
@@ -171,6 +187,38 @@ export interface DeriveRentRealReturnsInput {
   todayISO: string;
   /** The workspace's base currency: payout amounts carry no currency of their own. */
   baseCurrency: CurrencyCode;
+}
+
+/**
+ * The scope's annual NET rent (minor units) — the income half of the
+ * sustainable-spending answer (#1428, ADR 0081), assembled where the rent arithmetic
+ * lives instead of inside the FIRE result literal.
+ *
+ * `overrides` are the per-asset rates the pool kept for this scope: eligible, owned,
+ * and net-declared. Their `amountMinor` IS the scoped value the rate was weighted
+ * with, so scaling each property's declared net rent by `amountMinor / valueMinor`
+ * gives the scope's share through exactly the same proportion — one reading of
+ * ownership, not two.
+ *
+ * Pass every override the pool derived, INCLUDING the rungs the immobilized
+ * declaration took out of the capital (#1460): that declaration is about capital, and
+ * a flat nobody plans to sell still pays its rent every month.
+ */
+export function scopedNetRentAnnualMinor(
+  overrides: readonly { assetId: string; amountMinor: number }[],
+  rentRealReturns: RentRealReturns,
+): number {
+  let total = 0;
+  for (const override of overrides) {
+    const derived = rentRealReturns.byAssetId.get(override.assetId);
+    if (derived === undefined || derived.valueMinor <= 0) {
+      continue;
+    }
+    total += Math.round(
+      (derived.annualNetRentMinor * override.amountMinor) / derived.valueMinor,
+    );
+  }
+  return total;
 }
 
 /**

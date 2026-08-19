@@ -12,7 +12,10 @@ import { fireCoastArrival } from "./fire-coast-arrival";
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
+import type { FireRetirementProfile } from "./fire-retirement-profile";
+import { fireRetirementReadout } from "./fire-retirement-readout";
 import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
+import type { FireSustainableSpending } from "./fire-sustainable-spending";
 import type { FxAggregation } from "./fx";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
@@ -458,6 +461,18 @@ export interface ObjetivosState {
    * Null when no FIRE config is available for the scope.
    */
   fireLevelRail: FireLevel[] | null;
+  /**
+   * ¿El plan de este ámbito es FIRE o una jubilación ordinaria? (#1428, ADR 0081.)
+   * Decide qué pregunta lidera la pantalla, nunca ninguna cifra. Null sin config FIRE.
+   */
+  retirementProfile: FireRetirementProfile | null;
+  /**
+   * «¿Cuánto puedo gastar sin mermar mi patrimonio?» — la inversa de la fórmula FIRE
+   * (#1428). Se calcula siempre que haya con qué, porque es una cifra honesta para
+   * cualquier perfil: el estado de arriba solo decide si es el titular. Null sin
+   * config FIRE, o cuando no hay tasa de retirada con la que dividir.
+   */
+  sustainableSpending: FireSustainableSpending | null;
 }
 
 /**
@@ -536,6 +551,12 @@ export function prepareObjetivosState(
     ? fireLevels({ context: dash.fireResult.context })
     : null;
 
+  // Perfil y gasto sostenible por una sola puerta (#1428): el perfil se mide contra
+  // ESTE rail, el mismo que la pantalla pinta.
+  const retirement = dash.fireResult
+    ? fireRetirementReadout({ levels: fireLevelRail, result: dash.fireResult })
+    : null;
+
   return {
     achievement: dash.fireGlance?.achievement ?? null,
     // La edad de llegada a Coast (#1425): sale del MISMO contexto que el rail y el
@@ -548,5 +569,7 @@ export function prepareObjetivosState(
     fireScopeConfig: dash.fireScopeConfig,
     goals,
     fireLevelRail,
+    retirementProfile: retirement?.profile ?? null,
+    sustainableSpending: retirement?.spending ?? null,
   };
 }

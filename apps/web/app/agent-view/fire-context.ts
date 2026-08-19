@@ -12,9 +12,13 @@ import {
   assignedHoldingsValueMinor,
   calculateFireForScope,
   fireCoastArrival,
+  fireLevels,
   fireReservationHorizon,
+  fireRetirementProfile,
+  fireSustainableSpending,
   isFireEligibleAsset,
   listScopeOptions,
+  ordinaryRetirementAgeForFire,
   resolveScopeMemberIds,
   systemClock,
   totalGoalReservationMinor,
@@ -252,6 +256,16 @@ function toConfig(
       : {
           monthlySavingsCapacity: moneyOf(config.monthlySavingsCapacityMinor, currency),
         }),
+    // El perfil declarado y sus dos datos (#1428): el umbral con el que se mide y la
+    // edad hasta la que debe durar el capital. El umbral va siempre porque la señal se
+    // mide contra él, y un asistente que no lo vea no puede explicar de dónde sale.
+    ordinaryRetirementAge: ordinaryRetirementAgeForFire(config),
+    ...(config.retirementPlan === undefined
+      ? {}
+      : { retirementPlan: config.retirementPlan }),
+    ...(config.capitalLastsUntilAge === undefined
+      ? {}
+      : { capitalLastsUntilAge: config.capitalLastsUntilAge }),
   };
 }
 
@@ -273,6 +287,15 @@ function toResult(result: ScopeFireResult): AgentViewFireResult {
   // la misma puerta que la pantalla — un asistente que cite «Edad Coast» a secas repite
   // la confusión que el ticket vino a deshacer.
   const coastArrival = fireCoastArrival(result.context);
+  // El perfil se mide contra el MISMO rail que la pantalla (#1428): la señal de
+  // «Regular inalcanzable» sale de la proyección con el ahorro declarado, no de una
+  // segunda trayectoria calculada aquí.
+  const profile = fireRetirementProfile({
+    context: result.context,
+    levels: fireLevels({ context: result.context }),
+  });
+  const spending = fireSustainableSpending(result);
+  const currency = result.fireNumber.currency;
 
   return {
     eligibleAssets: money(result.eligibleAssets),
@@ -292,6 +315,34 @@ function toResult(result: ScopeFireResult): AgentViewFireResult {
     ...(result.isAlreadyAtCoastFire === undefined
       ? {}
       : { isAlreadyAtCoastFire: result.isAlreadyAtCoastFire }),
+    // El perfil y la respuesta que lleva (#1428): un asistente que solo publicara el
+    // «te falta el X %» repetiría exactamente el fallo del ticket con un usuario que no
+    // va a hacer FIRE. Las señales se nombran, no se concluyen: el umbral es del
+    // usuario y lo puede mover.
+    retirementProfile: {
+      signals: profile.signals.map((signal) => signal.kind),
+      state: profile.state,
+    },
+    ...(spending === null
+      ? {}
+      : {
+          sustainableSpending: {
+            capitalMonthly: moneyOf(spending.perpetual.capital.monthlyMinor, currency),
+            totalMonthly: moneyOf(spending.perpetual.total.monthlyMinor, currency),
+            ...(spending.rents === null
+              ? {}
+              : { rentsMonthly: moneyOf(spending.rents.monthlyMinor, currency) }),
+            ...(spending.depletion === null
+              ? {}
+              : {
+                  depletionMonthly: moneyOf(
+                    spending.depletion.total.monthlyMinor,
+                    currency,
+                  ),
+                  untilAge: spending.depletion.untilAge,
+                }),
+          },
+        }),
   };
 }
 

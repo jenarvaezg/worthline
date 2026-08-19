@@ -561,6 +561,26 @@ tends to the FIRE age, and that is correct: coast only buys slack if you save.
 _Avoid_: "coast age" for the *zero-contribution* figure — that is the **FIRE age if
 contributions stop**, a different question; "coast level" (it is not one).
 
+**Sustainable spending**:
+The inverse of the **FIRE number**: what a scope can spend without depleting its
+patrimony. Always two halves, never one figure — the declared **net rents** (ADR 0076)
+plus what the **sellable** side of the eligible pool supports at the withdrawal rate,
+with the **immobilized** side named as what it leaves out. It has a perpetual reading
+(the principal untouched) and, when the user declares a **final age** — how long the
+capital must last, a declaration and never an estimated life expectancy — a depleting
+one (the same capital annuitized from today's **reference age** to that final age). It is the headline for a scope
+whose **retirement plan** is declared ordinary (ADR 0081).
+_Avoid_: "safe spending" (a withdrawal rate is not a guarantee), "renta" (that is the
+rent half alone).
+
+**Retirement plan**:
+Whether a scope's plan reads as FIRE or as an ordinary retirement — the user's
+declaration, offered by the app when its signals point that way and never imposed (ADR
+0081). It changes which question leads /objetivos and nothing else: every figure is
+still computed. The threshold it is measured against, the **ordinary retirement age**,
+is a user datum with a neutral default of 65, never legislation in code.
+_Avoid_: "retirement mode" (there is no mode — same screen, same figures).
+
 **FIRE age if contributions stop**:
 The age today's capital alone would reach the full **FIRE number** at, with not one euro
 more added — an honest and cheap answer to "what if I stop saving?". It was once labelled
@@ -974,6 +994,7 @@ _Avoid_: imported history (implies verified), synced history.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE. The eligible pool is printed split by nature — what can be **sold in slices** (cash + market + term-locked) against what is **immobilized** (illiquid + housing), each side netting its own debt — and whether the immobilized side counts as FIRE capital at all is the user's declaration, defaulting to yes. Declaring it out takes those rungs out of the capital AND out of the return's weighting, through one predicate: dropping the capital while keeping the weight would quote a rate nobody's money holds (ADR 0078).
 - A figure worthline **derives** is printed with the inputs it was derived from, and its explanation is a projection of the same computation — never a second one beside it (ADR 0077). Hence the **return mix** ships with the rate, and a **reference age** ships with the **birth date** it came from. An explanation that would describe a figure the app is not using (a weighting under a hand-fixed return) is not shown at all.
+- Not every plan is a FIRE plan, and for one that is not, "you are 31,5 % short" answers a question nobody asked. worthline **detects** that profile from declared data —a target retirement age at or above the user's own **ordinary retirement age**, or a Regular level the declared **savings capacity** never reaches— and **offers** to swap the question; the swap is the user's declaration, reversible, and it moves no figure (ADR 0081). The answer it leads with is the **sustainable spending**: the inverse of the FIRE formula, split into declared **net rents** plus what the **sellable** capital supports, with a depleting variant when the user says how long the capital must last. The public pension stays out of the engine — recurring income is already inside **savings capacity**, and a withdrawal rate stops applying once a pension covers part of the spending.
 - **Coast FIRE** is a state of funding, not a level of life to fund, so it lives beside the progress bar whose tick draws it and never on the FIRE-levels rail (ADR 0079). Its age is the first year the projected trajectory crosses the coast requirement **with** the declared **savings capacity**; the age reached by leaving the capital alone is a different figure with its premise in its name (**FIRE age if contributions stop**). Every projected age prints in whole years.
 - A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.

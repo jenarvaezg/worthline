@@ -7,7 +7,8 @@ import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import type { FireRentReturnReport } from "./fire-rent-return";
-import { deriveRentRealReturns } from "./fire-rent-return";
+import { deriveRentRealReturns, scopedNetRentAnnualMinor } from "./fire-rent-return";
+import type { FireRetirementPlan } from "./fire-retirement-profile";
 import type { FireReturnMix } from "./fire-return";
 import { fireReturnMix } from "./fire-return";
 import type { LiquidityTier } from "./liquidity-ladder";
@@ -83,6 +84,37 @@ export interface FireScopeConfig {
    * meant, so nobody's figures moved when the field appeared.
    */
   immobilizedCountsAsFireCapital?: boolean;
+  /**
+   * La declaración del usuario sobre su propio plan (#1428, ADR 0081): `"ordinary"`
+   * = jubilación ordinaria, `"early"` = FIRE. `undefined` = no ha contestado, y ese
+   * es el único estado en el que la pantalla se atreve a OFRECER el cambio.
+   *
+   * Existe porque autodetectar el perfil de alguien y decirle «tú no vas a hacer
+   * FIRE» sienta fatal cuando la detección se equivoca: las señales proponen, la
+   * declaración decide, y se puede volver atrás desde el mismo formulario. No toca
+   * ninguna cifra del motor — solo qué pregunta lidera la pantalla.
+   */
+  retirementPlan?: FireRetirementPlan;
+  /**
+   * La edad a partir de la cual jubilarse ya no es *early* (#1428). Dato del usuario
+   * con defecto neutro 65, nunca normativa en el código: la edad ordinaria depende
+   * del país y del año, y codificar la española aquí sería la misma trampa que
+   * codificar el tope de aportación (#1427). Se lee por
+   * `ordinaryRetirementAgeForFire`.
+   */
+  ordinaryRetirementAge?: number;
+  /**
+   * La **edad final**: hasta qué edad tiene que durar el capital, si el usuario quiere
+   * esa versión del gasto sostenible (#1428). Opcional y sin defecto aplicado: sin este
+   * campo la tarjeta enseña solo la versión perpetua (`vendible × tasa de retirada`).
+   *
+   * No se llama «esperanza de vida» a propósito: eso sería una tabla actuarial, y
+   * worthline no tiene ninguna ni la va a estimar. Es una edad que el usuario declara,
+   * como todo lo demás aquí (ADR 0074). El motor FIRE es SWR puro y la duración viaja
+   * dentro de la elección de la tasa; este es el único sitio donde hay que decirla en
+   * voz alta.
+   */
+  capitalLastsUntilAge?: number;
 }
 
 export interface FireResult {
@@ -543,6 +575,15 @@ export function calculateFireForScope(
     capitalSplit,
     returnMix,
     rentReturns: {
+      // La renta neta que el ámbito posee (#1428): se saca de TODOS los overrides que
+      // el pool derivó, no solo de los que la tasa acabó usando. Un piso declarado
+      // fuera del capital FIRE (#1460) deja de mover la rentabilidad esperada y sigue
+      // pagando su alquiler todos los meses, así que su renta no puede desaparecer del
+      // gasto sostenible por una declaración que habla de capital.
+      netRentAnnualMinor: scopedNetRentAnnualMinor(
+        pool.assetRateOverrides,
+        rentRealReturns,
+      ),
       // The overrides the pool kept ARE the rates that took effect, so the report
       // cannot advertise a substitution the rate did not receive.
       applied: ratedOverrides.flatMap((override) => {

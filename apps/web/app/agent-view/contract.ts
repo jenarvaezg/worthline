@@ -749,6 +749,28 @@ export interface AgentViewFireConfig {
    * measures it is quoting.
    */
   immobilizedCountsAsFireCapital: boolean;
+  /**
+   * What the user DECLARED their plan to be (#1428, ADR 0081): `ordinary` = an
+   * ordinary retirement, `early` = FIRE. Absent when they have not been asked or have
+   * not answered. It changes no figure — but with `ordinary` the honest headline for
+   * this scope is `result.sustainableSpending`, not the funded percentage: quoting
+   * "you are 31,5 % short" at someone whose plan is an ordinary retirement answers a
+   * question they did not ask.
+   */
+  retirementPlan?: "ordinary" | "early";
+  /**
+   * The age at or above which retiring is no longer *early* (#1428) — the threshold the
+   * profile signal is measured against. A user datum with a neutral default of 65,
+   * never legislation: the ordinary age depends on country and year.
+   */
+  ordinaryRetirementAge: number;
+  /**
+   * The **final age**: how long the capital must last, if the user said (#1428). Present
+   * only when they did — no actuarial table is assumed on their behalf, and without it
+   * the sustainable-spending answer has only its perpetual half. Deliberately not called
+   * a life expectancy: it is a declaration, not an estimate.
+   */
+  capitalLastsUntilAge?: number;
 }
 
 /**
@@ -792,6 +814,37 @@ export interface AgentViewFireResult {
     | { kind: "unreachable" };
   /** Present only when the config carries an age. */
   isAlreadyAtCoastFire?: boolean;
+  /**
+   * Whether this scope's plan reads as FIRE or as an ordinary retirement (#1428, ADR
+   * 0081), and why. `state` is `ordinary` ONLY when the user declared it; `offer` means
+   * the app has signals but has not been answered, and `fire` is everything else. The
+   * signals are named so an assistant can say what they rest on instead of concluding
+   * "you will not reach FIRE" from a threshold the user can move.
+   */
+  retirementProfile: {
+    state: "fire" | "offer" | "ordinary";
+    signals: ("target_age_is_ordinary" | "regular_unreachable")[];
+  };
+  /**
+   * "How much can I spend without depleting my capital?" — the inverse of the FIRE
+   * formula (#1428, ADR 0081), and the honest headline for an ordinary-retirement plan.
+   *
+   * Two halves, never summed into one opaque figure: `rents` is the scope's declared NET
+   * rent, and `capitalMonthly` is what the SELLABLE side supports at the withdrawal rate
+   * (the immobilized side is not in it — a withdrawal rate assumes capital sold in
+   * slices). `depletionMonthly` is the same capital annuitized to `capitalLastsUntilAge`,
+   * present only when that age is declared. Absent when there is no withdrawal rate.
+   */
+  sustainableSpending?: {
+    /** `rents` + what the sellable capital supports, perpetually. */
+    totalMonthly: AgentViewMoney;
+    capitalMonthly: AgentViewMoney;
+    /** Declared net rent, monthly. Absent when the scope declares none. */
+    rentsMonthly?: AgentViewMoney;
+    /** Perpetual + depleting the principal by `untilAge`. Absent without that age. */
+    depletionMonthly?: AgentViewMoney;
+    untilAge?: number;
+  };
 }
 
 /**

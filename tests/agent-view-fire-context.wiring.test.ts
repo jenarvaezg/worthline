@@ -238,6 +238,9 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
       // fuera y otro que lo cuenta publicarían el mismo contrato con cifras que
       // significan cosas distintas.
       immobilizedCountsAsFireCapital: true,
+      // Siempre presente por la misma razón (#1428): es el umbral contra el que se mide
+      // la señal del perfil, y sin verlo no se puede explicar de dónde sale.
+      ordinaryRetirementAge: 65,
     });
 
     // Eligible = fund 100k + cash 50k = 150_000_00 (home + car excluded).
@@ -609,5 +612,97 @@ describe("fire-context reports the rent-derived real return", () => {
     const { body } = await fireContext(scopeId);
 
     expect(body.data.assumptions.expectedRealReturn).toBe("0.03");
+  });
+});
+
+// #1428: el perfil y la respuesta que lleva. Un asistente que solo leyera
+// `progressRatio` le diría a Jorge «te falta el 75 %», que es exactamente el fallo del
+// ticket; estos campos son la mitad del arreglo que un asistente consume.
+describe("GET fire-context — el perfil de jubilación ordinaria (#1428)", () => {
+  async function seedOrdinaryHousehold(
+    config: Partial<FireScopeConfig> = {},
+  ): Promise<void> {
+    const databasePath = tempDatabasePath("worthline-agent-view-fire-ordinary-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jorge", name: "Jorge" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 100_000_00,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "member_jorge", shareBps: 10_000 }],
+      type: "manual",
+    });
+    await store.saveFireConfig("household", {
+      ...CONFIGURED,
+      currentAge: 63,
+      monthlySavingsCapacityMinor: 0,
+      targetRetirementAge: 67,
+      ...config,
+    });
+    store.close();
+  }
+
+  test("publishes the signals as facts, and the state as `offer` until the user answers", async () => {
+    await seedOrdinaryHousehold();
+
+    const { body } = await fireContext(await householdScopeId());
+
+    // Solo la señal de la edad: con 100.000 € al 5 % el número FIRE sí se cruza
+    // dentro del horizonte, así que la otra señal no aplica — y eso es correcto.
+    expect(body.data.result.retirementProfile).toEqual({
+      signals: ["target_age_is_ordinary"],
+      state: "offer",
+    });
+    expect(body.data.config.retirementPlan).toBeUndefined();
+  });
+
+  test("publishes the sustainable spending: net rents apart from what the sellable capital supports", async () => {
+    await seedOrdinaryHousehold({ retirementPlan: "ordinary" });
+
+    const { body } = await fireContext(await householdScopeId());
+    const spending = body.data.result.sustainableSpending;
+
+    expect(body.data.result.retirementProfile.state).toBe("ordinary");
+    // 100.000 € vendibles × 4 % ÷ 12 = 333,33 €/mes; sin rentas, el total es ese.
+    expect(spending.capitalMonthly).toEqual(eur(333_33));
+    expect(spending.totalMonthly).toEqual(eur(333_33));
+    expect(spending.rentsMonthly).toBeUndefined();
+    // Sin edad final declarada no hay versión de agotamiento: no se supone ninguna.
+    expect(spending.depletionMonthly).toBeUndefined();
+  });
+
+  test("the depleting variant appears only with the declared final age", async () => {
+    await seedOrdinaryHousehold({ capitalLastsUntilAge: 90, retirementPlan: "ordinary" });
+
+    const { body } = await fireContext(await householdScopeId());
+    const spending = body.data.result.sustainableSpending;
+
+    expect(body.data.config.capitalLastsUntilAge).toBe(90);
+    expect(spending.untilAge).toBe(90);
+    // Gastar el principal en 27 años da más que conservarlo para siempre.
+    expect(spending.depletionMonthly.amountMinor).toBeGreaterThan(
+      spending.totalMonthly.amountMinor,
+    );
+  });
+
+  test("a declared `early` plan is published, and it silences the offer", async () => {
+    await seedOrdinaryHousehold({ retirementPlan: "early" });
+
+    const { body } = await fireContext(await householdScopeId());
+
+    expect(body.data.config.retirementPlan).toBe("early");
+    expect(body.data.result.retirementProfile.state).toBe("fire");
+    // Las señales siguen publicándose: el estado es una decisión, no una negación.
+    expect(body.data.result.retirementProfile.signals).toContain(
+      "target_age_is_ordinary",
+    );
   });
 });

@@ -29,7 +29,9 @@ import type {
   FireCoastArrival,
   FireLevel,
   FireProjection,
+  FireRetirementProfile,
   FireScopeConfig,
+  FireSustainableSpending,
   MonthlySavingsSuggestion,
   SavingsCoherence,
   ScopeFireResult,
@@ -37,6 +39,7 @@ import type {
 import {
   fireCoastArrival,
   fireLevels,
+  fireRetirementReadout,
   monthlySavingsCapacityForFire,
   previewFireWithAssumptions,
   projectFireFromContext,
@@ -63,6 +66,10 @@ export interface FireCockpitProps {
   fireProjection: FireProjection | null;
   fireResult: ScopeFireResult | null;
   privacyMode: boolean;
+  /** El perfil del servidor (#1428); al teclear se recalcula con el borrador. */
+  retirementProfile: FireRetirementProfile | null;
+  /** El gasto sostenible del servidor (#1428); al teclear se recalcula igual. */
+  sustainableSpending: FireSustainableSpending | null;
   /** El borrador inicial: exactamente lo guardado, tal como lo pinta el formulario. */
   savedDraft: FireAssumptionDraft;
   savingsCoherence: SavingsCoherence | null;
@@ -103,6 +110,16 @@ export function FireCockpit(props: FireCockpitProps) {
   // adelantar esa fecha mientras se teclea, no al guardar.
   const coastArrival =
     previewing && result ? fireCoastArrival(result.context) : props.coastArrival;
+  // El gasto sostenible es la inversa del número FIRE (#1428): comparte la tasa de
+  // retirada, así que tocarla tiene que mover las dos cifras a la vez o el titular
+  // contradiría al porcentaje de debajo. Y el perfil se recalcula con el borrador
+  // porque la edad objetivo es una de sus dos señales: subirla a 67 mientras se teclea
+  // es exactamente cuando la pantalla debería ofrecer el cambio. Los dos por la misma
+  // puerta que el servidor, medidos contra ESTE rail.
+  const retirement =
+    previewing && result
+      ? fireRetirementReadout({ levels: levelRail, result })
+      : { profile: props.retirementProfile, spending: props.sustainableSpending };
 
   return (
     <div className="objetivosCockpit">
@@ -129,12 +146,16 @@ export function FireCockpit(props: FireCockpitProps) {
         coastArrival={coastArrival}
         coastTickFraction={coastTick}
         currency={props.currency}
+        currentUrl={props.currentUrl}
         fireLevelRail={levelRail}
         fireProjection={projection}
         fireResult={result}
         previewing={previewing}
         privacyMode={props.privacyMode}
+        retirementProfile={retirement.profile}
         savingsCoherence={props.savingsCoherence}
+        scopeId={props.scopeId}
+        sustainableSpending={retirement.spending}
       />
     </div>
   );

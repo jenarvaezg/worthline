@@ -176,3 +176,110 @@ describe("parseFireConfigFormStrict — the immobilized declaration (#1460)", ()
     }
   });
 });
+
+describe("parseFireConfigFormStrict — el perfil de jubilación ordinaria (#1428)", () => {
+  it("una edad objetivo en blanco NO se guarda: un defecto no es una declaración", () => {
+    // El agujero que hacía inútil la señal del perfil: este parser escribía `?? 65`
+    // siempre, así que toda config guardada llevaba un 65 que nadie eligió y el
+    // ofrecimiento se disparaba para todo el mundo (el umbral por defecto es 65).
+    const result = parseFireConfigFormStrict(fireForm({ targetRetirementAge: "" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.targetRetirementAge).toBeUndefined();
+    }
+  });
+
+  it("un formulario que ni menciona la edad objetivo tampoco la inventa", () => {
+    const result = parseFireConfigFormStrict(fireForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.targetRetirementAge).toBeUndefined();
+    }
+  });
+
+  it("rechaza un umbral de edad ordinaria imposible: es la regla con la que se mide al usuario", () => {
+    for (const ordinaryRetirementAge of ["0", "500", "-3"]) {
+      const result = parseFireConfigFormStrict(fireForm({ ordinaryRetirementAge }));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("jubilación ordinaria");
+      }
+    }
+  });
+
+  it("acepta una edad final sin edad objetivo declarada, en vez de compararla con un 65 fantasma", () => {
+    const result = parseFireConfigFormStrict(fireForm({ capitalLastsUntilAge: "60" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.capitalLastsUntilAge).toBe(60);
+    }
+  });
+
+  it("el umbral de edad ordinaria es un dato del usuario, con defecto neutro 65", () => {
+    expect(parseFireConfigFormStrict(fireForm())).toMatchObject({
+      command: { ordinaryRetirementAge: 65 },
+      ok: true,
+    });
+    expect(
+      parseFireConfigFormStrict(fireForm({ ordinaryRetirementAge: "70" })),
+    ).toMatchObject({ command: { ordinaryRetirementAge: 70 }, ok: true });
+  });
+
+  it("la edad hasta la que debe durar el capital es opcional y no se inventa", () => {
+    const result = parseFireConfigFormStrict(fireForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.capitalLastsUntilAge).toBeUndefined();
+    }
+  });
+
+  it("la acepta cuando se declara", () => {
+    expect(
+      parseFireConfigFormStrict(
+        fireForm({ capitalLastsUntilAge: "90", targetRetirementAge: "67" }),
+      ),
+    ).toMatchObject({ command: { capitalLastsUntilAge: 90 }, ok: true });
+  });
+
+  it("rechaza una edad final anterior a la de jubilación: no habría años que repartir", () => {
+    const result = parseFireConfigFormStrict(
+      fireForm({ capitalLastsUntilAge: "60", targetRetirementAge: "67" }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain("posterior a tu edad objetivo");
+    }
+  });
+
+  it("rechaza una edad final imposible", () => {
+    expect(parseFireConfigFormStrict(fireForm({ capitalLastsUntilAge: "200" })).ok).toBe(
+      false,
+    );
+  });
+
+  it("guarda la declaración del plan cuando se elige", () => {
+    expect(
+      parseFireConfigFormStrict(fireForm({ retirementPlan: "ordinary" })),
+    ).toMatchObject({ command: { retirementPlan: "ordinary" }, ok: true });
+    expect(
+      parseFireConfigFormStrict(fireForm({ retirementPlan: "early" })),
+    ).toMatchObject({ command: { retirementPlan: "early" }, ok: true });
+  });
+
+  it("«sin decidir» no es una declaración, y un valor desconocido tampoco tumba el guardado", () => {
+    for (const value of ["", "jubilado", "ORDINARY"]) {
+      const result = parseFireConfigFormStrict(fireForm({ retirementPlan: value }));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.command.retirementPlan).toBeUndefined();
+      }
+    }
+  });
+});

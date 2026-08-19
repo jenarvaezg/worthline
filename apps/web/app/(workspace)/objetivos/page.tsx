@@ -207,6 +207,10 @@ export async function ObjetivosContent({
     coastTickFraction,
     goals: goalsView,
     fireLevelRail,
+    // ¿FIRE o jubilación ordinaria? (#1428.) Y la respuesta a «cuánto puedo gastar»,
+    // calculada siempre: el perfil solo decide si es el titular.
+    retirementProfile,
+    sustainableSpending,
   } = prepareObjetivosState({
     assets,
     fireConfig,
@@ -250,7 +254,7 @@ export async function ObjetivosContent({
     monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
     monthlySpending: savedFieldValues.monthlySpending ?? "",
     safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
-    targetRetirementAge: savedFieldValues.targetRetirementAge,
+    targetRetirementAge: savedFieldValues.targetRetirementAge ?? "",
   };
 
   // Monthly allocation view (#557): the plan's capital split for a window of
@@ -456,11 +460,13 @@ export async function ObjetivosContent({
         fireProjection={fireProjection}
         fireResult={fireResult}
         privacyMode={privacyMode}
+        retirementProfile={retirementProfile}
         savedDraft={savedDraft}
         savingsCoherence={savingsCoherence}
         savingsSuggestion={savingsSuggestion}
         scopeId={selectedScope?.id ?? null}
         seededFromPlan={seededFromPlan}
+        sustainableSpending={sustainableSpending}
       />
 
       {monthlyAllocations ? (

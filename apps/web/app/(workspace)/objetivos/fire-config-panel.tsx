@@ -173,11 +173,13 @@ export function FireConfigPanel({
               inputMode="numeric"
               name="targetRetirementAge"
               onChange={editField("targetRetirementAge")}
+              placeholder="65"
               value={draft.targetRetirementAge}
             />
             <small className="muted">
               Cuándo quieres jubilarte. Fija el Coast: cuánto necesitas tener ya para
-              llegar sin aportar nada más.
+              llegar sin aportar nada más. Vacío = los 65 de la marca de agua, que es lo
+              que calcula el motor sin que cuente como tu elección.
             </small>
           </label>
 
@@ -280,6 +282,54 @@ export function FireConfigPanel({
                   Fracción de tu gasto para el nivel Fat (por defecto 1,5).
                 </small>
               </label>
+              {/* El perfil de jubilación ordinaria (#1428): su umbral, su edad final y
+                  la declaración. Van en la letra pequeña porque no es lo que un
+                  usuario viene a cambiar — pero la declaración TIENE que estar aquí:
+                  es la puerta por la que se vuelve atrás sin depender de un botón que
+                  solo existe mientras la app está ofreciendo el cambio. */}
+              <label>
+                Edad de jubilación ordinaria
+                <input
+                  defaultValue={values.ordinaryRetirementAge}
+                  inputMode="numeric"
+                  name="ordinaryRetirementAge"
+                  placeholder="65"
+                />
+                <small className="muted">
+                  A partir de esta edad, jubilarse ya no es «anticipado». Es tu dato, no
+                  una norma: depende de tu país y de tu año. Con tu edad objetivo por
+                  encima, te ofrecemos ver la pantalla como plan de jubilación.
+                </small>
+              </label>
+              <label>
+                Tu capital debe durar hasta los
+                <input
+                  defaultValue={values.capitalLastsUntilAge}
+                  inputMode="numeric"
+                  name="capitalLastsUntilAge"
+                  placeholder="90"
+                />
+                <small className="muted">
+                  Opcional. Con esta edad, el gasto sostenible enseña también la versión
+                  que <strong>agota</strong> el capital, no solo la que lo conserva. Vacío
+                  = solo la perpetua; no ponemos ninguna esperanza de vida por ti.
+                </small>
+              </label>
+              <label>
+                Cómo quieres ver esta pantalla
+                <select defaultValue={values.retirementPlan} name="retirementPlan">
+                  <option value="">Sin decidir (te lo proponemos si encaja)</option>
+                  <option value="ordinary">
+                    Plan de jubilación: cuánto puedo gastar
+                  </option>
+                  <option value="early">FIRE: cuánto me falta</option>
+                </select>
+                <small className="muted">
+                  Solo cambia qué pregunta lidera la pantalla; las cifras son las mismas y
+                  se siguen calculando todas.
+                </small>
+              </label>
+
               <label>
                 Ingreso a tiempo parcial (€/mes)
                 <input
