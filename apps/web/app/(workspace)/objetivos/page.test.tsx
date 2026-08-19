@@ -946,6 +946,18 @@ describe("los supuestos FIRE se editan donde se ven (#1450)", () => {
     expect(html).toContain('id="supuestos"');
   });
 
+  test("un error sin formulario propio se pinta: el guardado no puede rebotar en silencio", async () => {
+    // El guard de la demo y un scope inexistente redirigen con un error sin
+    // `formId`. Antes de la mudanza esa banda existía en /ajustes; aquí no, así
+    // que la acción volvía sin decir nada.
+    const html = await renderedHtml({
+      error: "Acción deshabilitada en la demo — datos ficticios de solo lectura.",
+    });
+
+    expect(html).toContain("errorBand");
+    expect(html).toContain("deshabilitada en la demo");
+  });
+
   test("sin config el vacío pide rellenar aquí, no viajar a otra pantalla", async () => {
     calls.readFireConfig.mockResolvedValueOnce({});
 

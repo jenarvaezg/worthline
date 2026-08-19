@@ -396,6 +396,16 @@ export async function ObjetivosContent({
         <p>Tu independencia financiera y tus metas con fecha</p>
       </header>
 
+      {/* Un error sin formulario propio — el guard de la demo, un scope que ya no
+          existe — no tiene dónde pintarse dentro de un panel, y sin esta banda la
+          acción rebotaba en silencio: el usuario pulsaba Guardar y no pasaba nada
+          visible (#1450). */}
+      {formError && !formError.formId ? (
+        <p className="errorBand" role="alert">
+          {formError.message}
+        </p>
+      ) : null}
+
       {formOk ? (
         <p className="successBand" role="status">
           {formOk}
