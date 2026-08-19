@@ -188,6 +188,17 @@ describe("broker transaction table", () => {
     expect(table.rows[0]?.currency).toBe("USD");
   });
 
+  test("a table that never states a currency says so instead of assuming EUR in silence", () => {
+    const table = read([
+      ["Fecha", "ISIN", "Cantidad", "Importe"],
+      ["12-02-2026", "IE00B5BMR087", "3", "562,44"],
+    ]);
+
+    expect(table.assumedCurrency).toBe(true);
+    expect(table.rows[0]?.currency).toBe("EUR");
+    expect(table.warnings.join(" ")).toContain("divisa");
+  });
+
   test("an unsigned export says so instead of guessing the direction", () => {
     const table = read([
       ["Fecha", "ISIN", "Cantidad", "Importe", "Divisa"],

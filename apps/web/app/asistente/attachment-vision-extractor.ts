@@ -23,8 +23,11 @@ import {
   ATTACHMENT_EXTRACTION_LIMITS_V1,
   type AttachmentExtractionResult,
   capExtractionWarnings,
+  currencySchema,
   DECLARED_EFFECT_KINDS,
+  type ExtractedTransaction,
   extractedDocumentSchema,
+  extractedTransactionSchema,
   HOLDING_EVENT_KINDS,
   INVALID_OUTPUT_FAILURE,
   isIsoDay,
@@ -60,11 +63,6 @@ const VISION_DOCUMENT_TYPES = [
   "broker_transactions",
   "none",
 ] as const;
-
-const visionCurrencySchema = z
-  .string()
-  .trim()
-  .regex(/^[A-Z]{3}$/);
 
 /** The honesty text a reading may carry, bounded identically in both calls. */
 const visionWarningsSchema = z
@@ -104,7 +102,7 @@ const visionPrintedNumberSchema = z.string().trim().min(1).max(32);
 const visionMoneySchema = z
   .object({
     amount: visionPrintedNumberSchema.optional(),
-    currency: visionCurrencySchema.optional(),
+    currency: currencySchema.optional(),
   })
   .strict();
 
@@ -119,7 +117,7 @@ const visionMoneySchema = z
 const visionCoreEventFields = {
   date: z.string().trim().min(1).max(32),
   amount: z.number().finite(),
-  currency: visionCurrencySchema,
+  currency: currencySchema,
   label: z.string().trim().min(1).max(300),
   kind: z.enum(HOLDING_EVENT_KINDS),
   uncertain: z.boolean().optional(),
@@ -199,7 +197,7 @@ const visionIdentificationRequestSchema = z
             name: z.string().trim().min(1).max(240),
             units: z.number().finite().optional(),
             marketValueEur: z.number().finite(),
-            currency: visionCurrencySchema,
+            currency: currencySchema,
             uncertain: z.boolean().optional(),
           })
           .strict(),
@@ -211,7 +209,7 @@ const visionIdentificationRequestSchema = z
           .object({
             date: z.string().trim().min(1).max(32),
             amount: z.number().finite(),
-            currency: visionCurrencySchema,
+            currency: currencySchema,
             uncertain: z.boolean().optional(),
           })
           .strict(),
@@ -319,7 +317,7 @@ const visionEventDetailRequestSchema = z
               .object({
                 kind: z.enum(DECLARED_EFFECT_KINDS),
                 amount: z.number().finite().optional(),
-                currency: visionCurrencySchema.optional(),
+                currency: currencySchema.optional(),
               })
               .strict()
               .optional(),
@@ -327,7 +325,7 @@ const visionEventDetailRequestSchema = z
               .object({
                 date: z.string().trim().min(1).max(32),
                 amount: z.number().finite(),
-                currency: visionCurrencySchema,
+                currency: currencySchema,
               })
               .strict()
               .optional(),
@@ -616,7 +614,7 @@ const visionTransactionsRequestSchema = z
             amount: visionPrintedNumberSchema.optional(),
             pricePerUnit: visionPrintedNumberSchema.optional(),
             fees: visionPrintedNumberSchema.optional(),
-            currency: visionCurrencySchema,
+            currency: currencySchema,
             uncertain: z.boolean().optional(),
           })
           .strict(),
@@ -1044,7 +1042,7 @@ function printedDecimal(value: string | undefined): string | null {
  */
 function usableTransaction(
   transaction: VisionTransaction,
-): { transaction: Record<string, unknown> } | { warning: string } {
+): { transaction: ExtractedTransaction } | { warning: string } {
   const label = transaction.name?.trim() || transaction.isin?.trim() || transaction.date;
   const dropped = {
     warning: `No he podido leer la operación «${label}»; la he dejado fuera.`,
@@ -1065,23 +1063,22 @@ function usableTransaction(
   if (!isValidIsin(isin) && name === "") return dropped;
 
   const fees = printedDecimal(transaction.fees);
-  return {
-    transaction: {
-      amount,
-      currency: transaction.currency,
-      date: transaction.date,
-      kind: transaction.kind,
-      pricePerUnit,
-      units,
-      ...(isValidIsin(isin) ? { isin } : {}),
-      ...(name === "" ? {} : { name }),
-      // Through the decimal seam, exactly as the deterministic reader does it: two lanes
-      // this slice declares equivalent must not reach minor units by two roundings
-      // («1.005» is 100 one way and 101 the other).
-      ...(fees === null ? {} : { feesMinor: multiplyToMinor(fees, "1") }),
-      ...(transaction.uncertain ? { uncertain: true } : {}),
-    },
-  };
+  const parsed = extractedTransactionSchema.safeParse({
+    amount,
+    currency: transaction.currency,
+    date: transaction.date,
+    kind: transaction.kind,
+    pricePerUnit,
+    units,
+    ...(isValidIsin(isin) ? { isin } : {}),
+    ...(name === "" ? {} : { name }),
+    // Through the decimal seam, exactly as the deterministic reader does it: two lanes
+    // this slice declares equivalent must not reach minor units by two roundings
+    // («1.005» is 100 one way and 101 the other).
+    ...(fees === null ? {} : { feesMinor: multiplyToMinor(fees, "1") }),
+    ...(transaction.uncertain ? { uncertain: true } : {}),
+  });
+  return parsed.success ? { transaction: parsed.data } : dropped;
 }
 
 /**
@@ -1090,7 +1087,7 @@ function usableTransaction(
  * is missing is the rows, not the identification.
  */
 function brokerTransactionsFrom(detail: VisionTransactions): AttachmentExtractionResult {
-  const transactions: Record<string, unknown>[] = [];
+  const transactions: ExtractedTransaction[] = [];
   const warnings = [...detail.warnings];
   for (const row of detail.transactions ?? []) {
     const usable = usableTransaction(row);
