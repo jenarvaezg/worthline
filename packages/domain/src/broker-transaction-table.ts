@@ -34,6 +34,7 @@ import {
   divideUnits,
   multiplyToMinor,
   normalizeDecimal,
+  PRICE_READBACK_DECIMALS,
   scaleDecimal,
   subtractUnits,
 } from "./decimal";
@@ -85,7 +86,13 @@ const ASSUMED_CURRENCY = "EUR";
 const ASSUMED_CURRENCY_WARNING =
   "La tabla no indica la divisa de los importes; se han leído en EUR. Revísalo antes de confirmar.";
 
-const ASSUMED_BUY_WARNING =
+/**
+ * Exported since #1488: the web statement gate GUARANTEES this sentence for any statement
+ * whose direction is unresolved, whichever reader produced it, and comparing against the
+ * constant is how it avoids printing it twice. Retyping it there would be a second
+ * wording of the same doubt.
+ */
+export const ASSUMED_BUY_WARNING =
   "La tabla no dice si cada fila es una compra o una venta (ni columna de operación ni signos), " +
   "así que se han leído todas como compras. Revísalo antes de confirmar.";
 
@@ -267,6 +274,17 @@ const FEE_ALIASES = [
   "charges",
   "brokerage",
 ] as const;
+
+/** Label → family; the first alias listed wins if two families ever share a word. */
+const FAMILY_BY_LABEL: ReadonlyMap<string, Family> = (() => {
+  const byLabel = new Map<string, Family>();
+  for (const family of Object.keys(ALIASES) as Family[]) {
+    for (const label of ALIASES[family]) {
+      if (!byLabel.has(label)) byLabel.set(label, family);
+    }
+  }
+  return byLabel;
+})();
 
 /** How a broker says «buy» / «sell» in the column that says it outright. */
 const OPERATION_WORDS: Record<"buy" | "sell", readonly string[]> = {
@@ -457,30 +475,27 @@ interface TransactionColumns {
 function resolveColumns(row: readonly string[]): TransactionColumns | null {
   const claimed = new Set<number>();
   const found = new Map<Family, number>();
-  const headerCurrency = new Map<number, string | undefined>();
   const gross: number[] = [];
   const fees: number[] = [];
-  const blank: number[] = [];
+  const blank = new Set<number>();
+  const headers = row.map((raw) => splitHeaderCurrency(raw));
 
-  for (const [index, raw] of row.entries()) {
-    const header = splitHeaderCurrency(raw);
-    headerCurrency.set(index, header.currency);
+  for (const [index, header] of headers.entries()) {
     if (header.label === "") {
-      blank.push(index);
+      blank.add(index);
       continue;
     }
+    const family = FAMILY_BY_LABEL.get(header.label);
+    if (family === undefined) continue;
     // Every gross-amount column is kept (an export prints the local figure AND its
     // euro conversion); every family else takes its LEFTMOST match, because no ranking
     // among aliases is more truthful than the table's own order.
-    if (ALIASES.gross.includes(header.label)) {
+    if (family === "gross") {
       gross.push(index);
       claimed.add(index);
       continue;
     }
-    const family = (Object.keys(ALIASES) as Family[]).find(
-      (candidate) => candidate !== "gross" && ALIASES[candidate].includes(header.label),
-    );
-    if (family !== undefined && !found.has(family)) {
+    if (!found.has(family)) {
       found.set(family, index);
       claimed.add(index);
     }
@@ -489,10 +504,9 @@ function resolveColumns(row: readonly string[]): TransactionColumns | null {
   // The fee family matches by prefix and takes EVERY column that matches: a real export
   // prints its costs in several («Comisión AutoFX» beside «Costes de transacción y/o
   // externos»), and dropping the second one loses money the user paid.
-  for (const [index, raw] of row.entries()) {
-    if (claimed.has(index)) continue;
-    const label = splitHeaderCurrency(raw).label;
-    if (label !== "" && FEE_ALIASES.some((alias) => label.startsWith(alias))) {
+  for (const [index, header] of headers.entries()) {
+    if (claimed.has(index) || header.label === "") continue;
+    if (FEE_ALIASES.some((alias) => header.label.startsWith(alias))) {
       fees.push(index);
       claimed.add(index);
     }
@@ -509,10 +523,10 @@ function resolveColumns(row: readonly string[]): TransactionColumns | null {
   }
 
   const money = (index: number): MoneyColumn => ({
-    currency: headerCurrency.get(index),
+    currency: headers[index]?.currency,
     // A header-less column immediately to the right of a figure is where an export
     // prints that figure's currency code — the shape #1487 was filed against.
-    currencyBeside: blank.includes(index + 1) ? index + 1 : undefined,
+    currencyBeside: blank.has(index + 1) ? index + 1 : undefined,
     index,
   });
 
@@ -612,28 +626,33 @@ function resolveDirectionSource(
   rows: readonly (readonly string[])[],
   columns: TransactionColumns,
 ): TransactionDirectionSource {
-  if (columns.operation !== undefined) {
-    const stated = rows.some(
-      (row) => operationWord(cell(row, columns.operation)) !== null,
-    );
-    if (stated) return "operation";
+  if (
+    columns.operation !== undefined &&
+    rows.some((row) => operationWord(cell(row, columns.operation)) !== null)
+  ) {
+    return "operation";
   }
-  const signed = (index: number | undefined): boolean =>
-    index !== undefined &&
-    rows.some((row) => {
+
+  const moneyIndexes = [
+    ...columns.gross.map((column) => column.index),
+    ...(columns.net ? [columns.net.index] : []),
+  ];
+  let amountSigned = false;
+  for (const row of rows) {
+    const units = parseSignedDecimal(cell(row, columns.units));
+    if (units !== null && isNegative(units)) return "units_sign";
+    if (amountSigned) continue;
+    amountSigned = moneyIndexes.some((index) => {
       const value = parseSignedDecimal(cell(row, index));
       return value !== null && isNegative(value);
     });
-  if (signed(columns.units)) return "units_sign";
-  const moneyIndexes = [...columns.gross, ...(columns.net ? [columns.net] : [])];
-  if (moneyIndexes.some((column) => signed(column.index))) return "amount_sign";
-  return "assumed_buy";
+  }
+  return amountSigned ? "amount_sign" : "assumed_buy";
 }
 
-interface RowReading {
-  row: BrokerTransactionRow | null;
-  warning: string | null;
-}
+type RowReading =
+  | { row: BrokerTransactionRow; warning: string | null; currencyWasStated: boolean }
+  | { row: null; warning: string };
 
 /**
  * Read ONE data row. A row we cannot confidently read is skipped with a warning and
@@ -733,7 +752,7 @@ function readRow(
     );
   }
 
-  const pricePerUnit = divideUnits(amount, units);
+  const pricePerUnit = divideUnits(amount, units, PRICE_READBACK_DECIMALS);
   if (price !== null && disagrees(multiply(units, absolute(price.value)), amount)) {
     uncertain = true;
     warnings.push(
@@ -751,6 +770,7 @@ function readRow(
 
   const orderId = cell(raw, columns.orderId) || null;
   return {
+    currencyWasStated: rowCurrencyWasStated(raw, columns),
     row: {
       amount,
       currency,
@@ -869,22 +889,24 @@ export function readBrokerTransactionTable(
     const directionSource = resolveDirectionSource(body, columns);
     const rows: BrokerTransactionRow[] = [];
     const warnings: string[] = [];
+    let allCurrencyStated = true;
     for (const [offset, raw] of body.entries()) {
       if (raw.every((value) => value.trim() === "")) continue;
       const reading = readRow(raw, offset + 1, columns, directionSource);
       if (reading.warning) warnings.push(reading.warning);
-      if (reading.row) rows.push(reading.row);
+      if (!reading.row) continue;
+      rows.push(reading.row);
+      allCurrencyStated &&= reading.currencyWasStated;
     }
     if (rows.length === 0) continue;
 
-    const assumedCurrency = !rows.every((trade) => statedCurrency(trade, columns, body));
     return {
-      assumedCurrency,
+      assumedCurrency: !allCurrencyStated,
       directionSource,
       rows,
       warnings: [
         ...(directionSource === "assumed_buy" ? [ASSUMED_BUY_WARNING] : []),
-        ...(assumedCurrency ? [ASSUMED_CURRENCY_WARNING] : []),
+        ...(!allCurrencyStated ? [ASSUMED_CURRENCY_WARNING] : []),
         ...warnings,
       ],
     };
@@ -893,25 +915,20 @@ export function readBrokerTransactionTable(
 }
 
 /**
- * Did the table STATE this row's currency, or was {@link ASSUMED_CURRENCY} used? Asked
- * after the fact rather than threaded through the row, because the row's `currency` is
- * a resolved code either way and the difference is what the card must disclose.
+ * Did THIS row state its currency — column, header decoration or neighbour — or was
+ * {@link ASSUMED_CURRENCY} used? The row's `currency` is a resolved code either way;
+ * the difference is what the card must disclose.
  */
-function statedCurrency(
-  trade: BrokerTransactionRow,
+function rowCurrencyWasStated(
+  raw: readonly string[],
   columns: TransactionColumns,
-  body: readonly (readonly string[])[],
 ): boolean {
-  const raw = body[trade.line - 1];
-  if (!raw) return true;
-  const declared = cell(raw, columns.currency);
-  if (declared !== "") return true;
-  const stated = [
+  if (cell(raw, columns.currency) !== "") return true;
+  return [
     ...columns.gross,
     ...(columns.net ? [columns.net] : []),
     ...(columns.price ? [columns.price] : []),
-  ];
-  return stated.some(
+  ].some(
     (column) => column.currency !== undefined || cell(raw, column.currencyBeside) !== "",
   );
 }

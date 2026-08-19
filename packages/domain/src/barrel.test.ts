@@ -18,6 +18,10 @@ import * as domain from "./index";
 const KEY_EXPORTS = [
   // broker-transaction-table
   "readBrokerTransactionTable",
+  // statement-from-broker-transactions
+  "statementFromBrokerTransactions",
+  // statement-parse
+  "statementHeaderMatches",
   // money
   "money",
   "formatMoneyMinor",

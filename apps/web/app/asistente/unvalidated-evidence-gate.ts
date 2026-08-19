@@ -17,6 +17,8 @@
  */
 
 /** How a chat tool relates to evidence worthline has not validated. */
+import { STATEMENT_GATE_FORMATS } from "@web/patrimonio/importar-extracto/statement-upload-read";
+
 export type UnvalidatedEvidenceClass = "accepts" | "rejects" | "neutral";
 
 /**
@@ -257,8 +259,9 @@ export const MAX_UNVALIDATED_PROPOSALS_PER_TURN = 1;
  */
 export const UNVALIDATED_EVIDENCE_MESSAGE =
   "Ese archivo no lo he podido leer como tabla de posiciones o movimientos, así que no " +
-  "puedo llevarlo en bloque al patrimonio. En /patrimonio/importar-extracto tienes el " +
-  "formato que sí reconozco; y si tienes el extracto original del banco o del broker, " +
+  "puedo llevarlo en bloque al patrimonio. En /patrimonio/importar-extracto entran " +
+  `${STATEMENT_GATE_FORMATS.join(" o ")}, y nada más; ` +
+  "y si tienes el extracto original del banco o del broker, " +
   "ése sí puedo leerlo. Un dato puntual sí puedo prepararlo como propuesta para que lo " +
   "confirmes. Y si lo que quieres cargar es el histórico de saldos de una deuda, " +
   "escríbeme aquí las fechas y los saldos, una línea por fecha: eso sí lo leo de tu " +
@@ -268,8 +271,9 @@ export const UNVALIDATED_EVIDENCE_MESSAGE =
 export const UNVALIDATED_EVIDENCE_CAP_MESSAGE =
   "Ya he preparado una propuesta a partir de ese archivo sin validar y solo puedo hacer " +
   "una por mensaje: varios apuntes de golpe son una importación, y ese archivo no lo he " +
-  "podido leer como tabla. Para cargarlo entero mira el formato de " +
-  "/patrimonio/importar-extracto, o pásame el extracto original del banco o del broker.";
+  "podido leer como tabla. Para cargarlo entero, en /patrimonio/importar-extracto entran " +
+  `${STATEMENT_GATE_FORMATS.join(" o ")}; ` +
+  "o pásame el extracto original del banco o del broker.";
 
 /**
  * The user wrote the series and worthline could not read it (#1418).

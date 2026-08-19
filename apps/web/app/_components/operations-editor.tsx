@@ -23,6 +23,7 @@
  * skipped (§10).
  */
 
+import { formatIsoDayEs } from "@web/asistente/iso-day-es";
 import type { FormErrorContext } from "@web/intake";
 import { priceFreshnessLabel } from "@web/intake";
 import { operationKindLabel } from "@web/operation-kind-copy";
@@ -36,10 +37,12 @@ import {
   CAPTURE_CURRENCIES,
   compareInvestmentOperations,
   formatMoneyMinorPrivacy,
+  formatUnits,
   isCaptureCurrency,
   maskMoneyString,
 } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
+
 import { readOperationFees, readOperationPrice } from "./operation-capture-reading";
 
 import {
@@ -416,9 +419,9 @@ export default function OperationsEditor({
 
                     return (
                       <tr key={op.id}>
-                        <td>{op.executedAt}</td>
+                        <td>{formatIsoDayEs(op.executedAt)}</td>
                         <td>{operationKindLabel(op.kind)}</td>
-                        <td>{op.units}</td>
+                        <td>{formatUnits(op.units)}</td>
                         <td>
                           {price.price}
                           {price.capture ? (

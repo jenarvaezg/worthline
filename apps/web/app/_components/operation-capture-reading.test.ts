@@ -19,7 +19,7 @@ function op(overrides: Partial<InvestmentOperation> = {}): InvestmentOperation {
 
 describe("readOperationPrice", () => {
   test("a euro operation reads as one figure, with nothing to add", () => {
-    expect(readOperationPrice(op(), false)).toEqual({ capture: null, price: "6.8" });
+    expect(readOperationPrice(op(), false)).toEqual({ capture: null, price: "6,8" });
   });
 
   test("a converted operation shows the euros AND what the bank stated", () => {
@@ -35,7 +35,7 @@ describe("readOperationPrice", () => {
       false,
     );
 
-    expect(reading).toEqual({ capture: "8.00 USD", price: "6.8" });
+    expect(reading).toEqual({ capture: "8 USD", price: "6,8" });
   });
 
   test("an optimistic row still in its own currency says so instead of lying", () => {
@@ -46,7 +46,7 @@ describe("readOperationPrice", () => {
       false,
     );
 
-    expect(reading).toEqual({ capture: null, price: "8.00 USD" });
+    expect(reading).toEqual({ capture: null, price: "8 USD" });
   });
 
   test("privacy mode masks both figures", () => {
@@ -65,6 +65,29 @@ describe("readOperationPrice", () => {
     expect(reading.price).not.toContain("6");
     expect(reading.capture).not.toContain("8");
     expect(reading.capture).toContain("USD");
+  });
+
+  test("a 20-decimal leftover reads at 8 dp with a comma, without migrating it (#1467)", () => {
+    expect(
+      readOperationPrice(op({ pricePerUnit: "52.09166666666666667" }), false),
+    ).toEqual({ capture: null, price: "52,09166667" });
+  });
+
+  test("a quoted price keeps its decimals and uses the es-ES comma", () => {
+    expect(readOperationPrice(op({ pricePerUnit: "65.045" }), false)).toEqual({
+      capture: null,
+      price: "65,045",
+    });
+  });
+
+  test("privacy mode masks the formatted price, not the raw string", () => {
+    const reading = readOperationPrice(
+      op({ pricePerUnit: "52.09166666666666667" }),
+      true,
+    );
+
+    expect(reading.price).toBe("**,********");
+    expect(reading.price).not.toContain("52");
   });
 });
 

@@ -160,8 +160,8 @@ describe("currency at the capture (#1401)", () => {
   test("a converted row shows the euros it folded and the dollars it came from", () => {
     const html = render({}, { operations: [convertedUsdBuy] });
 
-    expect(html).toContain("6.8");
-    expect(html).toContain("8.00 USD");
+    expect(html).toContain("6,8");
+    expect(html).toContain("8 USD");
   });
 
   test("an optimistic row still in its own currency is not read as euros", () => {
@@ -172,5 +172,43 @@ describe("currency at the capture (#1401)", () => {
     );
 
     expect(html).toContain("8,00 USD");
+  });
+});
+
+const jorgeRow = {
+  assetId: "asset_1",
+  currency: "EUR",
+  executedAt: "2026-08-19",
+  feesMinor: 0,
+  id: "op_jorge",
+  kind: "buy" as const,
+  pricePerUnit: "52.09166666666666667",
+  units: "6",
+};
+
+describe("operation rows are readable (#1467)", () => {
+  test("date, units and a 20-dp leftover render in es-ES without migrating the row", () => {
+    const html = render({}, { operations: [jorgeRow] });
+
+    expect(html).toContain("19/08/2026");
+    expect(html).not.toContain(">2026-08-19<");
+    expect(html).toContain("52,09166667");
+    expect(html).not.toContain("52.09166666666666667");
+    expect(html).toContain(">6<");
+  });
+
+  test("a fractional quantity uses the es-ES comma", () => {
+    const html = render({}, { operations: [{ ...jorgeRow, units: "7.226" }] });
+
+    expect(html).toContain("7,226");
+    expect(html).not.toContain(">7.226<");
+  });
+
+  test("privacy mode still masks the formatted price", () => {
+    const html = render({}, { operations: [jorgeRow], privacyMode: true });
+
+    expect(html).toContain("**,********");
+    expect(html).not.toContain("52,09166667");
+    expect(html).toContain("19/08/2026");
   });
 });

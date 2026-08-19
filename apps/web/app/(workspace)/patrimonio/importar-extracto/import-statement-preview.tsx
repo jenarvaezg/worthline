@@ -222,9 +222,10 @@ export function ImportStatementPreview({
   return (
     <section aria-label="Importar extracto">
       <p className="infoNote">
-        Sube la plantilla de Worthline (CSV o Excel): se agrupa por identificador y se
-        reparte por toda la cartera — encaja con lo que ya tienes, ofrece crear lo que no,
-        y puedes dejar fuera lo que no quieras seguir.
+        Sube la plantilla de Worthline o el extracto de transacciones de tu bróker (CSV o
+        Excel, con columna ISIN): se agrupa por identificador y se reparte por toda la
+        cartera — encaja con lo que ya tienes, ofrece crear lo que no, y puedes dejar
+        fuera lo que no quieras seguir.
       </p>
 
       <form className="stackForm inversionesForm" onSubmit={handleSubmit}>
@@ -272,6 +273,21 @@ export function ImportStatementPreview({
 
         {shown.status === "ready" ? (
           <div className="importPreview">
+            {/* What the reading could not settle (#1488) — an assumed direction, an
+                assumed currency, a row it skipped. Above the table, because it is what
+                decides whether the figures below are worth confirming, and in the canon's
+                AVISO register rather than as an `infoNote`: `--gold` is the token for a
+                warning and `--muted` is for an aside (docs/design-system.md §1). ONE band
+                holds every line — `.warningBand` is a grid for exactly that — so five
+                doubts read as one thing to check, not as five alarms. */}
+            {shown.warnings.length > 0 ? (
+              <div className="warningBand">
+                {shown.warnings.map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
+
             <div className="tableScroll">
               <table>
                 <caption>

@@ -1,5 +1,5 @@
 import type { DecimalString } from "./decimal";
-import { scaleDecimal } from "./decimal";
+import { PRICE_READBACK_DECIMALS, scaleDecimal } from "./decimal";
 import type { DomainResult } from "./domain-result";
 import { BASE_CURRENCY, createMoneyConverter, type FxRateSnapshot } from "./fx";
 import type {
@@ -40,16 +40,11 @@ import { money } from "./money";
  */
 
 /**
- * Decimals a converted unit price is cut at. Eight, matching what every provider
- * quote is already rounded to (`PRICE_SCALE` in `@worthline/pricing`) — so a
- * converted price is no more precise than a fetched one, and the two are comparable.
- *
- * The cut moves the cost: cost is `units × price` rounded to the cent, so an 8-dp
- * price is off by at most `units × 5e-9` euros — a hundredth of a cent on a million
- * units. That is well under the cent the fold rounds to anyway, unlike the 20-dp
- * `divideUnits` default whose precision the app cannot even read back (#1395).
+ * Decimals a converted unit price is cut at — the same {@link PRICE_READBACK_DECIMALS}
+ * a derived NAV is stored at (#1467). A converted price is no more precise than a
+ * fetched one (`PRICE_SCALE` in `@worthline/pricing`), and the two are comparable.
  */
-export const CONVERTED_PRICE_DECIMALS = 8;
+export const CONVERTED_PRICE_DECIMALS = PRICE_READBACK_DECIMALS;
 
 /**
  * Re-express a captured operation in EUR at the rate of its execution date, or refuse

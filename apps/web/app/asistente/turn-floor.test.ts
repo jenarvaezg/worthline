@@ -110,6 +110,31 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * head is still `propose_holding` (2.543) and `propose_correction` (2.127), and the
  * slimming slice they are owed is still owed.
  *
+ * **NOT raised by #1488 either**, and this one had 8 characters to work with. The
+ * statement gate learned a second format (a broker's transactions export) and the
+ * prompt, which named that door without ever saying what it reads, had to start saying
+ * it — the silence a model filled by telling a user his DEGIRO file would reconcile
+ * there. The clause interpolates `STATEMENT_GATE_FORMATS`
+ * rather than restating it, so the prompt cannot drift from what the reader accepts, and
+ * it was paid inside the same rule: its own sentences said shorter with their
+ * instructions intact, and «xlsx o csv» dropped from the format's wording — the page's
+ * file input already lists the extensions, and the model never picks one. The onboarding
+ * floor moved 40.292 → 40.297, 3 characters of headroom left.
+ *
+ * TWO of the first rewordings were wrong, and `system-prompt.test.ts` caught both — which
+ * is what that test is for. «pregunta y no propongas, y si dudas de la cifra, no
+ * propongas» shortened to «pregunta; …» drops the instruction for the ambiguity it names
+ * FIRST (which holding); «reconstrucción de histórico» shortened to «reconstrucción»
+ * drops what a reconstruction is OF, and the prompt distinguishes it from a bulk import
+ * two clauses later. Both were restored and the characters found elsewhere. Slimming is
+ * rewording; a clause that carries an instruction is not spare.
+ *
+ * The rest of the ticket's copy costs the floor NOTHING, deliberately: the four routing
+ * envelopes that name the door are app text and tool results, not the turn's floor, so
+ * the full list lives there at no charge (`statement-gate-promises.test.ts` holds them to
+ * it). What the prompt carries is the one thing an envelope cannot: the boundary, before
+ * anybody has refused anything.
+ *
  * **Raised to 41.450 on 2026-08-19 by #1489**, and not the raise this file keeps telling
  * the next slice to avoid. That instruction — spend from `propose_holding` /
  * `propose_correction`, do not raise — is written for a slice that wants characters for a
@@ -119,11 +144,12 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * position he already owns, and no code can refuse a sentence — so the rule has to be in
  * the prompt, where an identity claim that spans two tools belongs (#1342's split).
  *
- * The arithmetic: the widest real floor is 40.859, up 559 from a floor that #1487 left
- * sitting EXACTLY on the old ceiling (40.300 — zero headroom, which is why any addition
- * at all had to come here). 460 of those 559 are the prompt rule; 99 are the clause that
- * tells the model an ISIN query comes back paired with its symbol. The new ceiling keeps
- * ~1,4% of headroom, the same order the #1374 and #1423 raises left.
+ * The arithmetic: the widest real floor is 40.864, up 567 from the 40.297 the note above
+ * leaves — a floor with THREE characters of headroom under the old 40.300 ceiling, which
+ * is why any addition at all had to come here. 460 of those 567 are the prompt rule, 99
+ * the clause that tells the model an ISIN query comes back paired with its symbol, and 8
+ * the `isin` in the candidate fields it now returns. The new ceiling keeps ~1,4% of
+ * headroom, the same order the #1374 and #1423 raises left.
  *
  * It paid inside its own lane twice before asking. The first draft of the tool sentence
  * was 430 characters (the pairing, the asymmetry, and why it matters); the second 200;

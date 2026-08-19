@@ -102,7 +102,7 @@ const extractedNumberSchema = z.preprocess(
   z.number().finite(),
 );
 const nonEmptyStringSchema = z.string().trim().min(1).max(300);
-const currencySchema = z
+export const currencySchema = z
   .string()
   .trim()
   .regex(/^[A-Z]{3}$/);
