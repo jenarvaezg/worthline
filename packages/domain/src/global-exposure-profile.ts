@@ -6,12 +6,24 @@ import {
   type RawGlobalExposureProfileIdentityInput,
   resolveGlobalExposureProfileIdentity,
 } from "./exposure-identity";
-import type { ExposureGeographyBucket, ExposureSectorBucket } from "./exposure-taxonomy";
-import { EXPOSURE_GEOGRAPHY_BUCKETS, EXPOSURE_SECTOR_BUCKETS } from "./exposure-taxonomy";
+import type {
+  ExposureGeographyBucket,
+  ExposureGeographyWeightKey,
+  ExposureSectorBucket,
+} from "./exposure-taxonomy";
+import {
+  CURRENCY_NOT_APPLICABLE_KEY,
+  EXPOSURE_GEOGRAPHY_BUCKETS,
+  EXPOSURE_SECTOR_BUCKETS,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
+} from "./exposure-taxonomy";
 import type { CurrencyCode } from "./money";
 
 /** Geography buckets allowed in the global catalog — same closed set as workspace v1. */
 export type GlobalExposureGeographyBucket = ExposureGeographyBucket;
+
+/** Keys a catalog geography vector may store: the six regions plus `sin_region` (#1499). */
+export type GlobalExposureGeographyWeightKey = ExposureGeographyWeightKey;
 
 /**
  * Sector buckets allowed in the global catalog — the fixed GICS-11 enum. Unlike
@@ -39,7 +51,7 @@ export const GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS = [
 ] as const satisfies readonly GlobalExposureAssetClassBucket[];
 
 export interface GlobalExposureProfileBreakdowns {
-  geography?: Partial<Record<GlobalExposureGeographyBucket, DecimalString>>;
+  geography?: Partial<Record<GlobalExposureGeographyWeightKey, DecimalString>>;
   currency?: Record<string, DecimalString>;
   assetClass?: Partial<Record<GlobalExposureAssetClassBucket, DecimalString>>;
   /** Sector vector as a fraction of the equity sleeve (≤ 1), never whole-fund (ADR 0065). */
@@ -74,7 +86,10 @@ export interface UpdateGlobalExposureProfileInput
   extends GlobalExposureProfileContentInput {}
 
 const ISO_4217_PATTERN = /^[A-Z]{3}$/;
-const GEOGRAPHY_BUCKETS = new Set<string>(EXPOSURE_GEOGRAPHY_BUCKETS);
+const GEOGRAPHY_BUCKETS = new Set<string>([
+  ...EXPOSURE_GEOGRAPHY_BUCKETS,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
+]);
 const ASSET_CLASS_BUCKETS = new Set<string>(GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS);
 const SECTOR_BUCKETS = new Set<string>(EXPOSURE_SECTOR_BUCKETS);
 
@@ -191,6 +206,14 @@ function normalizeOpenDimensionBreakdown(
 
   const normalized: Record<string, DecimalString> = {};
   for (const [bucket, weight] of Object.entries(breakdown)) {
+    if (bucket === CURRENCY_NOT_APPLICABLE_KEY) {
+      normalized[CURRENCY_NOT_APPLICABLE_KEY] = parseWeight(
+        weight,
+        dimension,
+        CURRENCY_NOT_APPLICABLE_KEY,
+      );
+      continue;
+    }
     const currency = bucket.toUpperCase();
     if (!ISO_4217_PATTERN.test(currency)) {
       throw new Error(

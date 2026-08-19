@@ -453,9 +453,12 @@ export type {
   ExposureAssetClassBucket,
   ExposureDimension,
   ExposureGeographyBucket,
+  ExposureGeographyWeightKey,
   ExposureSectorBucket,
 } from "./exposure-taxonomy";
 export {
+  CURRENCY_NOT_APPLICABLE_KEY,
+  CURRENCY_NOT_APPLICABLE_LABEL,
   EXPOSURE_ASSET_CLASS_BUCKETS,
   EXPOSURE_ASSET_CLASS_LABELS,
   EXPOSURE_DEFENSIVE_SECTORS,
@@ -463,6 +466,8 @@ export {
   EXPOSURE_GEOGRAPHY_LABELS,
   EXPOSURE_SECTOR_BUCKETS,
   EXPOSURE_SECTOR_LABELS,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
+  GEOGRAPHY_NOT_APPLICABLE_LABEL,
   sectorStyleSplit,
 } from "./exposure-taxonomy";
 export type {
@@ -596,6 +601,7 @@ export type {
   CreateGlobalExposureProfileInput,
   GlobalExposureAssetClassBucket,
   GlobalExposureGeographyBucket,
+  GlobalExposureGeographyWeightKey,
   GlobalExposureProfile,
   GlobalExposureProfileBreakdowns,
   GlobalExposureProfileContentInput,

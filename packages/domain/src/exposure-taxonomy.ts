@@ -13,6 +13,26 @@ export const EXPOSURE_GEOGRAPHY_BUCKETS = [
 
 export type ExposureGeographyBucket = (typeof EXPOSURE_GEOGRAPHY_BUCKETS)[number];
 
+/**
+ * Reserved destination in a geography vector: this fraction has no country
+ * (gold, the fund's cash). Distinct from `other`, which is a country outside
+ * the five regions. Never a chart bucket — look-through routes it to
+ * `notApplicable` (#1499).
+ */
+export const GEOGRAPHY_NOT_APPLICABLE_KEY = "sin_region" as const;
+
+/**
+ * Reserved destination in a currency vector: this fraction has no currency
+ * (the same gold/cash sleeve). Distinct from an ISO code and from `other`.
+ * Look-through routes it to `notApplicable` (#1499).
+ */
+export const CURRENCY_NOT_APPLICABLE_KEY = "sin_divisa" as const;
+
+/** Keys a geography vector may store: the six region buckets plus `sin_region`. */
+export type ExposureGeographyWeightKey =
+  | ExposureGeographyBucket
+  | typeof GEOGRAPHY_NOT_APPLICABLE_KEY;
+
 export const EXPOSURE_ASSET_CLASS_BUCKETS = [
   "equity",
   "bond",
@@ -62,6 +82,12 @@ export const EXPOSURE_GEOGRAPHY_LABELS: ReadonlyArray<{
   { bucket: "emerging", label: "Emergentes" },
   { bucket: "other", label: "Otros" },
 ];
+
+/** Spanish label for the reserved geography destination — not a taxonomy bucket. */
+export const GEOGRAPHY_NOT_APPLICABLE_LABEL = "Sin región";
+
+/** Spanish label for the reserved currency destination — not an ISO code. */
+export const CURRENCY_NOT_APPLICABLE_LABEL = "Sin divisa";
 
 /** Spanish labels for asset-class buckets — reused by admin CRUD (S4). */
 export const EXPOSURE_ASSET_CLASS_LABELS: ReadonlyArray<{

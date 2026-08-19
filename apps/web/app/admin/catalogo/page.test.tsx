@@ -129,6 +129,8 @@ describe("AdminCatalogPage", () => {
     // The detail panel shows the update form (identity fixed → "Guardar cambios").
     expect(html).toContain("Guardar cambios");
     expect(html).toContain("Rekey (cambiar identidad)");
+    expect(html).toContain("Sin región");
+    expect(html).toContain("Sin divisa");
   });
 
   test("edits the sector vector as % of equity with a derived defensive lens (S4)", async () => {

@@ -166,8 +166,11 @@ of the same security share one profile. It lives in the **control plane** as a g
 admin-curated catalog (ADR 0058): workspaces read it for **look-through** and never write
 it. Like an **instrument** it is a descriptive label and not a figure the math reads: it
 never touches **net worth**, **snapshots**, or **ripple recalculation**. Each breakdown
-is a set of bucket→weight entries that need not sum to 100% — the remainder is an implicit
-_other_ (only what is known is declared) and a breakdown over 100% is rejected. **Cash**
+is a set of bucket→weight entries that need not sum to 100%. For geography and
+currency the undeclared remainder is **unknown** coverage, never the `other` bucket —
+`other` is a declared country (or currency) outside the named set. A reserved
+`sin_region` / `sin_divisa` weight is the fraction with no country or currency (gold,
+fund cash) and counts as **not applicable**. A breakdown over 100% is rejected. **Cash**
 and **property** carry auto-derived profiles (from their instrument and the base currency);
 coins are excluded (ADR 0017).
 _Avoid_: instrument (the coarse kind — an exposure profile says what one specific security

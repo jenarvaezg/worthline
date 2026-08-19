@@ -1,13 +1,15 @@
 import type { ExposureLens } from "@web/view-state";
-import type {
-  ExposureAssetClassBucket,
-  ExposureCoverage,
-  ExposureDimensionResult,
-  ExposureGeographyBucket,
-  ExposureLookthrough,
-  ExposureSectorBucket,
-  ExposureSectorStyle,
-  MoneyMinor,
+import {
+  type ExposureAssetClassBucket,
+  type ExposureCoverage,
+  type ExposureDimensionResult,
+  type ExposureGeographyBucket,
+  type ExposureLookthrough,
+  type ExposureSectorBucket,
+  type ExposureSectorStyle,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
+  GEOGRAPHY_NOT_APPLICABLE_LABEL,
+  type MoneyMinor,
 } from "@worthline/domain";
 
 /**
@@ -34,6 +36,9 @@ const GEOGRAPHY_LABELS: Record<ExposureGeographyBucket, string> = {
 
 /** The Spanish label for a geography slice key, or the raw key if unrecognised. */
 export function geographyLabel(key: string): string {
+  if (key === GEOGRAPHY_NOT_APPLICABLE_KEY) {
+    return GEOGRAPHY_NOT_APPLICABLE_LABEL;
+  }
   return GEOGRAPHY_LABELS[key as ExposureGeographyBucket] ?? key;
 }
 

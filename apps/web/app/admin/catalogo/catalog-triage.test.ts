@@ -86,6 +86,34 @@ describe("profileNeedsCategorizing", () => {
       ),
     ).toBe(true);
   });
+
+  it("counts sin_region toward declared geography so a mixed gold fund can leave the filter", () => {
+    expect(
+      profileNeedsCategorizing(
+        profile({
+          breakdowns: {
+            geography: { europe_developed: "0.74", sin_region: "0.26" },
+            currency: { EUR: "0.74", sin_divisa: "0.26" },
+            assetClass: { commodity: "0.25", equity: "0.75" },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("still flags a geography remainder when sin_region does not fill the gap", () => {
+    expect(
+      profileNeedsCategorizing(
+        profile({
+          breakdowns: {
+            geography: { europe_developed: "0.74", sin_region: "0.25" },
+            currency: { EUR: "1" },
+            assetClass: { equity: "1" },
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("profileCoverage", () => {

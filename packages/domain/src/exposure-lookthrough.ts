@@ -6,10 +6,13 @@ import {
   INVESTMENT_PROFILE_INSTRUMENTS,
 } from "./exposure-identity";
 import {
+  CURRENCY_NOT_APPLICABLE_KEY,
   type ExposureAssetClassBucket,
   type ExposureDimension,
   type ExposureGeographyBucket,
+  type ExposureGeographyWeightKey,
   type ExposureSectorBucket,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
   sectorStyleSplit,
 } from "./exposure-taxonomy";
 import type { Instrument } from "./instrument-catalog";
@@ -22,7 +25,7 @@ type DimensionResolution =
   | { kind: "unknown" };
 
 export interface ExposureBreakdowns {
-  geography?: Partial<Record<ExposureGeographyBucket, DecimalString>>;
+  geography?: Partial<Record<ExposureGeographyWeightKey, DecimalString>>;
   currency?: Breakdown;
   assetClass?: Partial<Record<ExposureAssetClassBucket, DecimalString>>;
   /**
@@ -340,6 +343,20 @@ function addProfileDimension(input: {
     return;
   }
 
+  if (input.dimension === "geography" || input.dimension === "currency") {
+    addWholeFundPartition({
+      breakdown: resolution.breakdown,
+      coverage: input.coverage,
+      notApplicableKey:
+        input.dimension === "geography"
+          ? GEOGRAPHY_NOT_APPLICABLE_KEY
+          : CURRENCY_NOT_APPLICABLE_KEY,
+      totals: input.totals,
+      valueMinor: input.holding.valueMinor,
+    });
+    return;
+  }
+
   addBreakdown(input.totals, input.holding.valueMinor, resolution.breakdown);
   input.coverage.classified.amountMinor += input.holding.valueMinor;
 }
@@ -347,6 +364,55 @@ function addProfileDimension(input: {
 /** Reserved destination keys for the sector allocation — never GICS buckets. */
 const SECTOR_UNKNOWN_KEY = "__sector_unknown__";
 const SECTOR_NOT_APPLICABLE_KEY = "__sector_not_applicable__";
+
+/**
+ * Geography and currency partition a holding the way sector does (#1499, ADR
+ * 0065's coverage split), but whole-fund: declared region/ISO weights are
+ * classified, `sin_region`/`sin_divisa` is `notApplicable`, and the undeclared
+ * remainder is `unknown` — never stuffed into the `other` bucket. `other` stays
+ * a real taxonomy/ISO destination only when the catalog declared it.
+ */
+const WHOLE_FUND_UNKNOWN_KEY = "__unknown__";
+
+function addWholeFundPartition(input: {
+  breakdown: Breakdown;
+  coverage: ExposureCoverage;
+  notApplicableKey:
+    | typeof GEOGRAPHY_NOT_APPLICABLE_KEY
+    | typeof CURRENCY_NOT_APPLICABLE_KEY;
+  totals: Map<string, number>;
+  valueMinor: number;
+}): void {
+  let declared = new Big(0);
+  const destinations: Array<{ key: string; weight: Big }> = [];
+  for (const [bucket, weight] of Object.entries(input.breakdown)) {
+    const parsed = new Big(weight);
+    declared = declared.plus(parsed);
+    destinations.push({ key: bucket, weight: parsed });
+  }
+  if (declared.gt(1)) {
+    throw new Error("Exposure profile breakdown cannot exceed 100%.");
+  }
+
+  destinations.push({
+    key: WHOLE_FUND_UNKNOWN_KEY,
+    weight: new Big(1).minus(declared),
+  });
+
+  for (const [key, amountMinor] of allocateWeightedMinor(
+    input.valueMinor,
+    destinations,
+  )) {
+    if (key === WHOLE_FUND_UNKNOWN_KEY) {
+      input.coverage.unknown.amountMinor += amountMinor;
+    } else if (key === input.notApplicableKey) {
+      input.coverage.notApplicable.amountMinor += amountMinor;
+    } else {
+      input.totals.set(key, (input.totals.get(key) ?? 0) + amountMinor);
+      input.coverage.classified.amountMinor += amountMinor;
+    }
+  }
+}
 
 /**
  * The equity fraction a holding's sector vector scales against (ADR 0065). It is
@@ -533,9 +599,19 @@ function addCurrencyRisk(
 
   const breakdown = profile?.breakdowns.currency as Breakdown | undefined;
   if (breakdown && Object.keys(breakdown).length > 0) {
+    const isoCurrencies: Breakdown = {};
+    for (const [currency, weight] of Object.entries(breakdown)) {
+      if (currency === CURRENCY_NOT_APPLICABLE_KEY) {
+        continue;
+      }
+      isoCurrencies[currency] = weight;
+    }
+    if (Object.keys(isoCurrencies).length === 0) {
+      return;
+    }
     for (const [currency, amountMinor] of allocateBreakdown(
       holding.valueMinor,
-      breakdown,
+      isoCurrencies,
     )) {
       if (currency === baseCurrency || currency === "other") {
         continue;
@@ -605,8 +681,8 @@ function allocateBreakdown(
  * Split `valueMinor` across destinations whose `weight`s sum to exactly 1, using
  * largest-remainder rounding so the integer minors reconcile to `valueMinor`
  * with no leftover. The caller supplies every destination explicitly: the
- * whole-fund path (`allocateBreakdown`) injects an `other` bucket for the
- * remainder, while the sector path routes its remainder to coverage instead.
+ * asset-class path (`allocateBreakdown`) injects an `other` bucket for the
+ * remainder; geography/currency and sector route theirs to coverage instead.
  */
 function allocateWeightedMinor(
   valueMinor: number,

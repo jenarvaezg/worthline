@@ -301,11 +301,12 @@ export interface AgentViewExposureHolding {
 
 /**
  * How completely a look-through dimension covers the scope's gross assets, as a
- * three-way split of money (PRD #539, ADR 0039): `classified` has profile data,
- * `notApplicable` means the dimension is meaningless for the instrument
- * (geography/currency of cash or crypto), and `unknown` means the dimension
- * applies but no profile is entered. Keeping `notApplicable` distinct stops
- * crypto/cash from reading as missing data — only `unknown` is a gap to fill.
+ * three-way split of money (PRD #539, ADR 0039, ADR 0084): `classified` has
+ * declared bucket data, `notApplicable` means the dimension is meaningless for
+ * that money (cash, crypto, a declared `sin_region`/`sin_divisa` sleeve), and
+ * `unknown` means the dimension applies but that fraction has no declared
+ * bucket. Keeping `notApplicable` distinct stops crypto/cash — and gold inside a
+ * mixed fund — from reading as missing data. Only `unknown` is a gap to fill.
  * The slices never pretend to cover 100%; the coverage is how the agent reports
  * "X% classified, Y% still unknown".
  */
@@ -350,9 +351,10 @@ export interface AgentViewExposure {
   byAssetClass: AgentViewExposureDimension;
   /**
    * Present-time look-through by GICS-11 sector, equity-scaled (PRD #1018, ADR
-   * 0065). Unlike the whole-fund geography/currency dimensions, each holding's
-   * sector vector is scaled by its derived equity weight: the non-equity part
-   * reads `notApplicable`, and an equity sleeve the vector does not cover reads
+   * 0065). Unlike the whole-fund geography/currency dimensions (whose
+   * undeclared remainder is `unknown`, ADR 0084), each holding's sector vector
+   * is scaled by its derived equity weight: the non-equity part reads
+   * `notApplicable`, and an equity sleeve the vector does not cover reads
    * `unknown`. The vector is relative to the equity sleeve, so the coverage's
    * three parts still partition gross exactly.
    */
