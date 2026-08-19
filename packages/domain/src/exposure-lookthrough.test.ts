@@ -324,7 +324,7 @@ describe("lookThroughExposure", () => {
     ]);
   });
 
-  test("keeps an under-100 percent breakdown remainder as other", () => {
+  test("an under-100 percent geography remainder is unknown, never Otros", () => {
     const result = lookThroughExposure({
       baseCurrency: "EUR",
       grossAssets: { amountMinor: 100_000, currency: "EUR" },
@@ -344,7 +344,7 @@ describe("lookThroughExposure", () => {
             breakdowns: {
               assetClass: { equity: "1" },
               currency: { USD: "0.75" },
-              geography: { us: "0.7" },
+              geography: { us: "0.74" },
             },
             key: "PARTIAL",
           }),
@@ -353,21 +353,120 @@ describe("lookThroughExposure", () => {
     });
 
     expect(result.geography.slices).toEqual([
-      { key: "us", value: { amountMinor: 70_000, currency: "EUR" }, weight: "0.7" },
-      {
-        key: "other",
-        value: { amountMinor: 30_000, currency: "EUR" },
-        weight: "0.3",
-      },
+      { key: "us", value: { amountMinor: 74_000, currency: "EUR" }, weight: "0.74" },
     ]);
+    expect(result.geography.slices.some((slice) => slice.key === "other")).toBe(false);
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 74_000, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 26_000, currency: "EUR" },
+    });
     expect(result.currency.slices).toEqual([
       { key: "USD", value: { amountMinor: 75_000, currency: "EUR" }, weight: "0.75" },
+    ]);
+    expect(result.currency.slices.some((slice) => slice.key === "other")).toBe(false);
+    expect(result.currency.coverage).toEqual({
+      classified: { amountMinor: 75_000, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 25_000, currency: "EUR" },
+    });
+  });
+
+  test("a declared sin_region sleeve is notApplicable, and leftover remainder stays unknown", () => {
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 100_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_permanente",
+          instrument: "pension_plan",
+          isin: "PERMANENTE",
+          valueMinor: 100_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "PERMANENTE",
+          fixtureProfile({
+            breakdowns: {
+              assetClass: { commodity: "0.25", equity: "0.75" },
+              currency: { EUR: "0.74", sin_divisa: "0.25" },
+              geography: { europe_developed: "0.74", sin_region: "0.25" },
+            },
+            key: "PERMANENTE",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.slices).toEqual([
       {
-        key: "other",
-        value: { amountMinor: 25_000, currency: "EUR" },
-        weight: "0.25",
+        key: "europe_developed",
+        value: { amountMinor: 74_000, currency: "EUR" },
+        weight: "0.74",
       },
     ]);
+    expect(result.geography.slices.some((slice) => slice.key === "other")).toBe(false);
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 74_000, currency: "EUR" },
+      notApplicable: { amountMinor: 25_000, currency: "EUR" },
+      unknown: { amountMinor: 1_000, currency: "EUR" },
+    });
+    expect(result.currency.slices).toEqual([
+      { key: "EUR", value: { amountMinor: 74_000, currency: "EUR" }, weight: "0.74" },
+    ]);
+    expect(result.currency.coverage).toEqual({
+      classified: { amountMinor: 74_000, currency: "EUR" },
+      notApplicable: { amountMinor: 25_000, currency: "EUR" },
+      unknown: { amountMinor: 1_000, currency: "EUR" },
+    });
+    expect(result.currencyRisk).toEqual([]);
+    const geo = result.geography.coverage;
+    expect(
+      geo.classified.amountMinor +
+        geo.notApplicable.amountMinor +
+        geo.unknown.amountMinor,
+    ).toBe(100_000);
+  });
+
+  test("an explicit other bucket still paints Otros and is classified", () => {
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 100_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_canada",
+          instrument: "etf",
+          isin: "CANADA",
+          valueMinor: 100_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "CANADA",
+          fixtureProfile({
+            breakdowns: {
+              assetClass: { equity: "1" },
+              currency: { CAD: "0.05", USD: "0.95" },
+              geography: { other: "0.05", us: "0.95" },
+            },
+            key: "CANADA",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.slices).toEqual([
+      { key: "us", value: { amountMinor: 95_000, currency: "EUR" }, weight: "0.95" },
+      { key: "other", value: { amountMinor: 5_000, currency: "EUR" }, weight: "0.05" },
+    ]);
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 100_000, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
   });
 
   test("allocates tiny breakdowns without exceeding the holding value", () => {

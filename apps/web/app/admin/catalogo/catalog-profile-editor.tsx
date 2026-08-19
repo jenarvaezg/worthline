@@ -14,10 +14,14 @@
 
 import { priceSourceLabel } from "@web/price-source-label";
 import {
+  CURRENCY_NOT_APPLICABLE_KEY,
+  CURRENCY_NOT_APPLICABLE_LABEL,
   EXPOSURE_ASSET_CLASS_LABELS,
   EXPOSURE_DEFENSIVE_SECTORS,
   EXPOSURE_GEOGRAPHY_LABELS,
   EXPOSURE_SECTOR_LABELS,
+  GEOGRAPHY_NOT_APPLICABLE_KEY,
+  GEOGRAPHY_NOT_APPLICABLE_LABEL,
   GLOBAL_EXPOSURE_ASSET_CLASS_BUCKETS,
   type GlobalExposureProfile,
   SELECTABLE_INVESTMENT_PRICE_PROVIDERS,
@@ -82,12 +86,14 @@ interface EditorDraft {
   assetClass: Record<string, string>;
   sector: Record<string, string>;
   currency: CurrencyRow[];
+  currencyNotApplicable: string;
   isin: string;
   priceProvider: string;
   providerSymbol: string;
 }
 
 function draftFromProfile(profile: GlobalExposureProfile | null): EditorDraft {
+  const currencyEntries = Object.entries(profile?.breakdowns.currency ?? {});
   return {
     displayName: profile?.displayName ?? "",
     ter: profile?.ter ?? "",
@@ -96,9 +102,11 @@ function draftFromProfile(profile: GlobalExposureProfile | null): EditorDraft {
     geography: { ...(profile?.breakdowns.geography ?? {}) },
     assetClass: { ...(profile?.breakdowns.assetClass ?? {}) },
     sector: { ...(profile?.breakdowns.sector ?? {}) },
-    currency: Object.entries(profile?.breakdowns.currency ?? {}).map(
-      ([code, weight], index) => ({ id: index, code, weight }),
-    ),
+    currency: currencyEntries
+      .filter(([code]) => code !== CURRENCY_NOT_APPLICABLE_KEY)
+      .map(([code, weight], index) => ({ id: index, code, weight })),
+    currencyNotApplicable:
+      profile?.breakdowns.currency?.[CURRENCY_NOT_APPLICABLE_KEY] ?? "",
     isin: profile?.identity.kind === "isin" ? profile.identity.isin : "",
     priceProvider:
       profile?.identity.kind === "provider" ? profile.identity.priceProvider : "",
@@ -117,13 +125,19 @@ function pruneWeights(source: Record<string, string>): Record<string, string> {
   return cleaned;
 }
 
-function currencyObject(rows: CurrencyRow[]): Record<string, string> {
+function currencyObject(
+  rows: CurrencyRow[],
+  notApplicableWeight: string,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const { code, weight } of rows) {
     const key = code.trim().toUpperCase();
-    if (key && weight.trim()) {
+    if (key && key !== CURRENCY_NOT_APPLICABLE_KEY.toUpperCase() && weight.trim()) {
       out[key] = weight.trim();
     }
+  }
+  if (notApplicableWeight.trim()) {
+    out[CURRENCY_NOT_APPLICABLE_KEY] = notApplicableWeight.trim();
   }
   return out;
 }
@@ -133,7 +147,7 @@ function draftBreakdownsJson(draft: EditorDraft): string {
   const geography = pruneWeights(draft.geography);
   const assetClass = pruneWeights(draft.assetClass);
   const sector = pruneWeights(draft.sector);
-  const currency = currencyObject(draft.currency);
+  const currency = currencyObject(draft.currency, draft.currencyNotApplicable);
   if (Object.keys(geography).length) out.geography = geography;
   if (Object.keys(currency).length) out.currency = currency;
   if (Object.keys(assetClass).length) out.assetClass = assetClass;
@@ -151,7 +165,7 @@ function draftExceedsHundred(draft: EditorDraft): boolean {
     pruneWeights(draft.geography),
     pruneWeights(draft.assetClass),
     pruneWeights(draft.sector),
-    currencyObject(draft.currency),
+    currencyObject(draft.currency, draft.currencyNotApplicable),
   ].some((weights) => sumWeights(weights) > 1 + COVERAGE_EPSILON);
 }
 
@@ -367,6 +381,28 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
             </label>
           ))}
         </div>
+        <label>
+          {GEOGRAPHY_NOT_APPLICABLE_LABEL}
+          <input
+            inputMode="decimal"
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                geography: {
+                  ...draft.geography,
+                  [GEOGRAPHY_NOT_APPLICABLE_KEY]: e.target.value,
+                },
+              })
+            }
+            placeholder="0"
+            value={draft.geography[GEOGRAPHY_NOT_APPLICABLE_KEY] ?? ""}
+          />
+        </label>
+        <p className="catalogHint">
+          Distinto de Otros: Otros son países fuera de las cinco regiones;{" "}
+          {GEOGRAPHY_NOT_APPLICABLE_LABEL.toLowerCase()} es la fracción que no tiene país
+          (oro, efectivo del fondo). Lo no declarado es desconocido, no Otros.
+        </p>
         <CoverageMeter weights={pruneWeights(draft.geography)} />
       </fieldset>
 
@@ -492,7 +528,24 @@ export function CatalogSaveForm({ mode, profile, onResult }: SaveFormProps) {
         >
           Añadir divisa
         </button>
-        <CoverageMeter weights={currencyObject(draft.currency)} />
+        <label>
+          {CURRENCY_NOT_APPLICABLE_LABEL}
+          <input
+            inputMode="decimal"
+            onChange={(e) =>
+              setDraft({ ...draft, currencyNotApplicable: e.target.value })
+            }
+            placeholder="0"
+            value={draft.currencyNotApplicable}
+          />
+        </label>
+        <p className="catalogHint">
+          La fracción sin divisa (el mismo oro o efectivo). Lo no declarado es
+          desconocido, no una divisa inventada.
+        </p>
+        <CoverageMeter
+          weights={currencyObject(draft.currency, draft.currencyNotApplicable)}
+        />
       </fieldset>
 
       {state.status === "error" ? (

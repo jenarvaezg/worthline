@@ -59,6 +59,7 @@ describe("geographyLabel", () => {
     expect(geographyLabel("us")).toBe("EE. UU.");
     expect(geographyLabel("emerging")).toBe("Emergentes");
     expect(geographyLabel("other")).toBe("Otros");
+    expect(geographyLabel("sin_region")).toBe("Sin región");
   });
 
   test("falls back to the raw key for an unknown bucket (never crashes)", () => {

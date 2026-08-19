@@ -179,6 +179,35 @@ describe("global exposure profile content validation (#940)", () => {
     ).toEqual({ energy: "1" });
   });
 
+  test("accepts sin_region and sin_divisa as reserved not-applicable destinations (#1499)", () => {
+    expect(
+      validateGlobalExposureProfileContent({
+        breakdowns: {
+          geography: { europe_developed: "0.74", sin_region: "0.25" },
+          currency: { EUR: "0.74", sin_divisa: "0.25" },
+          assetClass: { commodity: "0.25", equity: "0.75" },
+        },
+      }).breakdowns,
+    ).toEqual({
+      geography: { europe_developed: "0.74", sin_region: "0.25" },
+      currency: { EUR: "0.74", sin_divisa: "0.25" },
+      assetClass: { commodity: "0.25", equity: "0.75" },
+    });
+  });
+
+  test("rejects an unknown geography key and a geography total above 1 including sin_region", () => {
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: { geography: { mars: "1" } as never },
+      }),
+    ).toThrow(/not allowed/);
+    expect(() =>
+      validateGlobalExposureProfileContent({
+        breakdowns: { geography: { us: "0.8", sin_region: "0.3" } },
+      }),
+    ).toThrow(/cannot exceed 100%/);
+  });
+
   test("rejects TER outside [0,1]", () => {
     expect(() =>
       validateGlobalExposureProfileContent({
