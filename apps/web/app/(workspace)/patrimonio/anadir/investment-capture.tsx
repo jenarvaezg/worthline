@@ -58,7 +58,7 @@ export function InvestmentCapture({
   const [cost, setCost] = useState(defaultCost ?? "");
   const [costMode, setCostMode] = useState<OpeningCostMode>(defaultCostMode ?? "total");
 
-  const { costNote, hint, refused } = openingCaptureCopy({
+  const { costNote, costRefused, hint, refused } = openingCaptureCopy({
     costMode,
     costRaw: cost,
     dateRaw: date,
@@ -92,7 +92,9 @@ export function InvestmentCapture({
         />
         {priceHint ? <small>{priceHint}</small> : null}
       </label>
-      {/* One live region, always polite: swapping `role` on a live node in flight is
+      {/* Two live regions, one per figure the pane derives (the units, the cost) —
+          each beside the fields it is about, so a refusal is read where it can be
+          fixed. Both stay polite: swapping `role` on a live node in flight is
           unreliable in assistive tech, and the refusal is announced by the text
           change either way — `.invUnitsRefused` carries the visual meaning. */}
       <p
@@ -146,8 +148,11 @@ export function InvestmentCapture({
           <span>Por participación</span>
         </label>
       </fieldset>
-      <p className="invCostNote" aria-live="polite">
-        {costNote ?? "El dinero que pusiste, no lo que vale hoy."}
+      <p
+        className={costRefused ? "invCostNote invUnitsRefused" : "invCostNote"}
+        aria-live="polite"
+      >
+        {costNote}
       </p>
     </div>
   );

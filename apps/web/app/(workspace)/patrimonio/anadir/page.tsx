@@ -526,7 +526,7 @@ function InvestmentGroupPane({
       <div className="invModePane" data-mode="saldo">
         <InvestmentCapture
           defaultCost={v("cost") ?? ""}
-          defaultCostMode={parseOpeningCostMode(v("costMode") ?? "")}
+          defaultCostMode={parseOpeningCostMode(v("costMode") ?? "") ?? undefined}
           defaultDate={v("saldoDate") ?? ""}
           defaultPrice={priceValue}
           defaultSaldo={v("saldo") ?? ""}

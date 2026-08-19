@@ -1,11 +1,12 @@
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import {
-  CONVERTED_PRICE_DECIMALS,
   type DecimalString,
   divideUnits,
   formatMoneyMinorExact,
+  formatPrice,
   formatUnits,
   multiplyToMinor,
+  PRICE_READBACK_DECIMALS,
   UNITS_READBACK_DECIMALS,
 } from "@worthline/domain";
 
@@ -89,6 +90,21 @@ export type OpeningCostResult =
   | { ok: true; declared: true; pricePerUnit: DecimalString; costMinor: number }
   | { ok: false; error: string };
 
+/**
+ * The four fields of the capture, as the form posts them (#1490). One type because
+ * the write and the pane's copy read the SAME six strings: two functions with the
+ * same six parameters is how the two drift apart.
+ */
+export interface OpeningCaptureInput {
+  /** What the user says the cost is; `null` when the form did not say. */
+  costMode: OpeningCostMode | null;
+  costRaw: string;
+  dateRaw: string;
+  priceRaw: string;
+  saldoRaw: string;
+  today: string;
+}
+
 /** Everything the opening BUY needs, or the ONE message that refused the capture. */
 export type OpeningCaptureResult =
   | { ok: true; units: DecimalString; price: DecimalString; executedAt: string }
@@ -100,6 +116,15 @@ const INVALID_DATE = "La fecha de la posición no es válida: elígela en el cal
 const FUTURE_DATE = "No puedes tener la posición desde una fecha futura.";
 const INVALID_COST =
   "El coste de adquisición no se lee: escríbelo como 4.999,86 — o déjalo vacío si no lo sabes.";
+/**
+ * A declared cost with no mode is REFUSED, never assumed (#1490). The two readings
+ * differ by the whole unit count — 185,18 € read as a total over 27 títulos is a
+ * 6,86 € cost basis and a 5.680 € plusvalía nobody has — so guessing here would
+ * write a permanent, silent lie. The form always posts a checked radio; this is the
+ * frontier for everything that is not that form.
+ */
+const UNKNOWN_COST_MODE =
+  "Dime si ese coste es el total o el precio por participación: las dos cifras son muy distintas.";
 
 function positiveDecimal(raw: string): DecimalString | null {
   const normalized = normalizeNonNegativeDecimalString(raw);
@@ -170,9 +195,14 @@ export function resolveOpeningDate(dateRaw: string, today: string): OpeningDateR
   return raw > today ? { ok: false, error: FUTURE_DATE } : { ok: true, date: raw };
 }
 
-/** The form's cost mode, read closed — anything unrecognized is the total (#1490). */
-export function parseOpeningCostMode(raw: string): OpeningCostMode {
-  return raw.trim() === "unit" ? "unit" : "total";
+/**
+ * The form's cost mode, read closed (#1490). Anything else is `null` — «no me lo has
+ * dicho» — and a declared cost with a null mode is refused rather than defaulted; see
+ * {@link UNKNOWN_COST_MODE}.
+ */
+export function parseOpeningCostMode(raw: string): OpeningCostMode | null {
+  const value = raw.trim();
+  return value === "unit" || value === "total" ? value : null;
 }
 
 /**
@@ -183,25 +213,29 @@ export function parseOpeningCostMode(raw: string): OpeningCostMode {
  * into shape; a cost that does not read is refused so the correction happens before
  * anything is written (ADR 0048).
  *
- * A **total** is divided by the units at {@link CONVERTED_PRICE_DECIMALS} — the same
- * eight decimals a converted price is cut at, and the scale every provider quote is
- * already rounded to. The cut has to be finer than the units' six: `units × price` is
- * what the ficha re-reads as the cost basis, and cutting the price at six decimals
- * would move a four-figure cost by a cent for no reason. A **unit** price is stored as
- * typed, and the total is then whatever it multiplies out to — the user's own figure,
- * not one the app re-derived.
+ * A **total** is divided by the units at {@link PRICE_READBACK_DECIMALS} — the price
+ * voice's own precision, the only scale a DERIVED unit price may be stored at (#1467).
+ * It has to be finer than the units' six: `units × price` is what the ficha re-reads
+ * as the cost basis, and cutting the price at six decimals would move a four-figure
+ * cost by a cent for no reason. A **unit** price is stored as typed, and the total is
+ * then whatever it multiplies out to — the user's own figure, not one the app
+ * re-derived.
  */
 export function resolveOpeningCost({
   costMode,
   costRaw,
   units,
 }: {
-  costMode: OpeningCostMode;
+  costMode: OpeningCostMode | null;
   costRaw: string;
   units: DecimalString;
 }): OpeningCostResult {
   if (costRaw.trim() === "") {
     return { declared: false, ok: true };
+  }
+
+  if (costMode === null) {
+    return { error: UNKNOWN_COST_MODE, ok: false };
   }
 
   const cost = positiveDecimal(costRaw);
@@ -212,7 +246,7 @@ export function resolveOpeningCost({
   const pricePerUnit =
     costMode === "unit"
       ? cost
-      : (divideUnits(cost, units, CONVERTED_PRICE_DECIMALS) as DecimalString);
+      : (divideUnits(cost, units, PRICE_READBACK_DECIMALS) as DecimalString);
 
   if (Number.parseFloat(pricePerUnit) === 0) {
     // A cost so small next to the units that it folds to a zero price is not a cost
@@ -245,14 +279,7 @@ export function resolveOpeningCapture({
   priceRaw,
   saldoRaw,
   today,
-}: {
-  costMode: OpeningCostMode;
-  costRaw: string;
-  dateRaw: string;
-  priceRaw: string;
-  saldoRaw: string;
-  today: string;
-}): OpeningCaptureResult {
+}: OpeningCaptureInput): OpeningCaptureResult {
   const units = deriveOpeningUnits({ priceRaw, saldoRaw });
   if (!units.ok) {
     return { ok: false, error: openingUnitsErrorMessage(units.reason) };
@@ -299,13 +326,17 @@ export interface OpeningCaptureCopy {
    */
   backdatedTo: string | null;
   /**
-   * What the declared cost means, in euros, or null while there are no units to
-   * spread it over. The one thing that turns #1490 from a field into an answer: it
-   * echoes the OTHER side of the cost (a total read back as a unit price, or the
-   * reverse) and the latent gain the position has been carrying unseen. Empty says
-   * so too — a cost nobody knows is a state to name, not a blank.
+   * What the cost field says, always — the one thing that turns #1490 from a field
+   * into an answer. It echoes the OTHER side of the declared cost (a total read back
+   * as a unit price, or the reverse) plus the latent gain the position has been
+   * carrying unseen; empty says what THAT means; and a cost the action would refuse
+   * says so here, beside the field it is about, instead of two fields above it.
+   * Never null: a caller must not have to invent copy for a state (`interaction-
+   * patterns` §7 — the copy lives in this pure module or it is untestable).
    */
-  costNote: string | null;
+  costNote: string;
+  /** True when `costNote` is a refusal — the island shows it as one. */
+  costRefused: boolean;
 }
 
 /** Cents-precise es-ES euros: a cost of 4.999,86 € may not read as «5.000 €». */
@@ -327,6 +358,58 @@ function latentPnlReading(valueMinor: number, costMinor: number): string {
   return `${label} latente ${amount}`;
 }
 
+type CostCopy = Pick<OpeningCaptureCopy, "costNote" | "costRefused">;
+
+/**
+ * What the cost field says once there ARE units to spread a cost over: the echo of
+ * the other side of the figure plus the latent P/L, the refusal when it does not
+ * read, or what an empty cost means. Every branch comes from `resolveOpeningCost` —
+ * the same call the write makes, so the pane cannot promise a cost the action refuses.
+ */
+function readCostCopy(input: {
+  backdatedTo: string | null;
+  costMode: OpeningCostMode | null;
+  costRaw: string;
+  pricePerUnit: DecimalString;
+  units: DecimalString;
+}): CostCopy {
+  const cost = resolveOpeningCost({
+    costMode: input.costMode,
+    costRaw: input.costRaw,
+    units: input.units,
+  });
+
+  if (!cost.ok) {
+    return { costNote: cost.error, costRefused: true };
+  }
+
+  if (!cost.declared) {
+    return {
+      costNote:
+        input.backdatedTo === null
+          ? "Sin coste no habrá plusvalía: la posición nace valiendo lo que vale hoy."
+          : `Sin coste no habrá plusvalía, y el histórico desde el ${input.backdatedTo} se reconstruye al precio de hoy.`,
+      costRefused: false,
+    };
+  }
+
+  // The declared side is echoed back as the OTHER one — a total as a unit price and
+  // the reverse — because that is the figure the user can recognize or disown. The
+  // unit price is rendered in the app's price VOICE (8 dp), not rounded to cents: it
+  // is the number the operation will carry, and #1422 says two figures shown side by
+  // side must come from the same engine.
+  const declaredSide =
+    input.costMode === "unit"
+      ? `${euros(cost.costMinor)} de coste total`
+      : `${formatPrice(cost.pricePerUnit)} € por participación`;
+  const valueMinor = multiplyToMinor(input.units, input.pricePerUnit);
+
+  return {
+    costNote: `${declaredSide} · ${latentPnlReading(valueMinor, cost.costMinor)}.`,
+    costRefused: false,
+  };
+}
+
 /**
  * The pane's copy, derived from the same helpers the action writes with: the units
  * exactly as they will be persisted, the date they are stamped with, and what the
@@ -341,57 +424,53 @@ export function openingCaptureCopy({
   priceRaw,
   saldoRaw,
   today,
-}: {
-  costMode: OpeningCostMode;
-  costRaw: string;
-  dateRaw: string;
-  priceRaw: string;
-  saldoRaw: string;
-  today: string;
-}): OpeningCaptureCopy {
+}: OpeningCaptureInput): OpeningCaptureCopy {
   // The date leads: it decides whether the alta rebuilds history, so a refusal here
   // has to surface even before there is a saldo to derive from. The action reads
   // them the other way round (money first) because there the missing figure is the
   // one that blocks the alta; both refuse the same captures, and each names the
   // field the user is looking at.
   const date = resolveOpeningDate(dateRaw, today);
+  const backdatedTo = date.ok && date.date !== today ? readOpeningDate(date.date) : null;
+  const units = deriveOpeningUnits({ priceRaw, saldoRaw });
+  // The cost reads on its own, beside its own field: a refusal there must not blank
+  // the units reading, and the units reading must not swallow a cost refusal.
+  const costCopy: CostCopy = units.ok
+    ? readCostCopy({
+        backdatedTo,
+        costMode,
+        costRaw,
+        pricePerUnit: units.price,
+        units: units.units,
+      })
+    : // No units yet: there is nothing to spread a cost over, so the field can only
+      // say what it is FOR. The submit still refuses an unreadable cost, in the same
+      // words — the pane just cannot compute the echo before the saldo exists.
+      { costNote: "El dinero que pusiste, no lo que vale hoy.", costRefused: false };
+
+  // The date leads the units hint: it decides whether the alta rebuilds history, so a
+  // refusal there has to surface even before there is a saldo to derive from. The
+  // action reads them the other way round (money first) because there the missing
+  // figure is the one that blocks the alta; both refuse the same captures, and each
+  // names the field the user is looking at.
   if (!date.ok) {
-    return { backdatedTo: null, costNote: null, hint: date.error, refused: true };
+    return { backdatedTo: null, ...costCopy, hint: date.error, refused: true };
   }
 
-  const backdatedTo = date.date === today ? null : readOpeningDate(date.date);
-  const units = deriveOpeningUnits({ priceRaw, saldoRaw });
-
   if (!units.ok) {
-    // No units yet: a cost cannot be spread over them, and inviting the saldo is the
-    // one instruction that unblocks everything else. A cost typed first is neither
-    // read back nor refused here — the submit still refuses it, in the same words.
     return {
       backdatedTo,
-      costNote: null,
+      ...costCopy,
       hint: "Escribe el saldo para ver las participaciones.",
       refused: false,
     };
-  }
-
-  const cost = resolveOpeningCost({ costMode, costRaw, units: units.units });
-  if (!cost.ok) {
-    return { backdatedTo, costNote: null, hint: cost.error, refused: true };
   }
 
   const reading = `≈ ${formatUnits(units.units)} participaciones`;
 
   return {
     backdatedTo,
-    costNote: cost.declared
-      ? `${
-          costMode === "unit"
-            ? `${euros(cost.costMinor)} de coste total`
-            : `${euros(multiplyToMinor("1" as DecimalString, cost.pricePerUnit))} por participación`
-        } · ${latentPnlReading(multiplyToMinor(units.units, units.price), cost.costMinor)}.`
-      : backdatedTo === null
-        ? "Sin coste no habrá plusvalía: la posición nace valiendo lo que vale hoy."
-        : `Sin coste no habrá plusvalía, y el histórico desde el ${backdatedTo} se reconstruye al precio de hoy.`,
+    ...costCopy,
     hint:
       backdatedTo === null
         ? `${reading}.`

@@ -197,11 +197,32 @@ describe("resolveOpeningCost — el coste de adquisición declarado (#1490)", ()
     }
   });
 
-  test("el modo del formulario se lee cerrado, con «total» por defecto", () => {
+  test("el modo del formulario se lee cerrado: lo que no reconoce es «no me lo has dicho»", () => {
     expect(parseOpeningCostMode("unit")).toBe("unit");
     expect(parseOpeningCostMode("total")).toBe("total");
-    expect(parseOpeningCostMode("")).toBe("total");
-    expect(parseOpeningCostMode("cualquier-cosa")).toBe("total");
+    expect(parseOpeningCostMode("")).toBeNull();
+    expect(parseOpeningCostMode("cualquier-cosa")).toBeNull();
+  });
+
+  test("un coste sin modo se RECHAZA: las dos lecturas se llevan 27x (#1490)", () => {
+    // 185,18 € read as a total over 27 títulos is a 6,86 € cost basis and a plusvalía
+    // of 5.680 € nobody has. Defaulting here would write that silently, forever.
+    const resolved = resolveOpeningCost({
+      costMode: null,
+      costRaw: "185,18",
+      units: UNITS,
+    });
+    expect(resolved.ok).toBe(false);
+    expect(!resolved.ok && resolved.error).toContain(
+      "el total o el precio por participación",
+    );
+  });
+
+  test("sin coste, un modo ausente no molesta a nadie", () => {
+    expect(resolveOpeningCost({ costMode: null, costRaw: "", units: UNITS })).toEqual({
+      declared: false,
+      ok: true,
+    });
   });
 });
 
@@ -407,8 +428,9 @@ describe("openingCaptureCopy — el coste se lee en vivo (#1490)", () => {
       costRaw: "4.999,86",
       today: TODAY,
     });
-    expect(copy.costNote).toContain(money(185_18));
-    expect(copy.costNote).toContain("participación");
+    // The price voice (`formatPrice`), not the money voice: the unit price echoed is
+    // the figure the operation will carry, at the precision it is stored with.
+    expect(copy.costNote).toContain("185,18 € por participación");
     expect(copy.costNote).toContain(`+${money(865_89)}`);
     expect(copy.costNote).toContain("latente");
   });
@@ -447,15 +469,18 @@ describe("openingCaptureCopy — el coste se lee en vivo (#1490)", () => {
     expect(copy.costNote).toContain("ni plusvalía ni minusvalía");
   });
 
-  test("un coste ilegible refusa la copia con el mensaje del servidor", () => {
+  test("un coste ilegible se refusa JUNTO A SU CAMPO, sin borrar las participaciones", () => {
     const copy = openingCaptureCopy({
       ...JORGE,
       costMode: "total",
       costRaw: "cuatro mil",
       today: TODAY,
     });
-    expect(copy.refused).toBe(true);
-    expect(copy.hint).toContain("coste");
+    expect(copy.costRefused).toBe(true);
+    expect(copy.costNote).toContain("coste de adquisición no se lee");
+    // The units reading is about the saldo and the price: it keeps answering.
+    expect(copy.refused).toBe(false);
+    expect(copy.hint).toContain("27 participaciones");
   });
 
   test("sin títulos todavía no hay coste que repartir: el pane pide el saldo primero", () => {
@@ -469,6 +494,9 @@ describe("openingCaptureCopy — el coste se lee en vivo (#1490)", () => {
     });
     expect(copy.refused).toBe(false);
     expect(copy.hint).toBe("Escribe el saldo para ver las participaciones.");
-    expect(copy.costNote).toBeNull();
+    // Never a blank the island has to fill in for itself: the field says what it is
+    // for until there are units to spread a cost over.
+    expect(copy.costNote).toBe("El dinero que pusiste, no lo que vale hoy.");
+    expect(copy.costRefused).toBe(false);
   });
 });
