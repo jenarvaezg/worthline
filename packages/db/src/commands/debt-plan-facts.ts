@@ -74,12 +74,8 @@ export function createDebtPlanCommands(
       // at a time would be twenty-three ripples over the same thirty years, and
       // a failure in the middle would leave half a mortgage's history rewritten.
       return ctx.transaction(async () => {
-        for (const revision of revisions) {
-          await stores.liabilities.addInterestRateRevision(revision);
-        }
-        for (const repayment of earlyRepayments) {
-          await stores.liabilities.addEarlyRepayment(repayment);
-        }
+        await stores.liabilities.addInterestRateRevisions(revisions);
+        await stores.liabilities.addEarlyRepayments(earlyRepayments);
         if (written === 0) return 0;
 
         const workspace = await ctx.getWorkspace();

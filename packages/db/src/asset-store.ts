@@ -22,6 +22,7 @@ import {
   ensureAgentViewPublicIds,
   publicIdTargetsForHolding,
 } from "./agent-view-public-ids";
+import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
@@ -174,6 +175,15 @@ export interface AssetStore {
     input: AddValuationAnchorInput,
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
+  /**
+   * Add a whole BATCH of valuation anchors in batched writes (#1440) — the shape
+   * a mixed-document import needs, where one round-trip per appraisal is dozens
+   * of round-trips.
+   */
+  addValuationAnchors: (
+    inputs: readonly AddValuationAnchorInput[],
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   /** Read an asset's valuation anchors, ordered ascending by date. */
   readValuationAnchors: (assetId: string) => Promise<ValuationAnchorRecord[]>;
   /** Read ONE valuation anchor by its id, or null. Used by the dated-fact seam. */
@@ -233,7 +243,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) => ctx.transaction(() => hardDeleteAssetTx(ctx, assetId)),
-    addValuationAnchor: (input, opts) => addValuationAnchor(ctx, input, opts),
+    addValuationAnchor: (input, opts) => addValuationAnchors(ctx, [input], opts),
+    addValuationAnchors: (inputs, opts) => addValuationAnchors(ctx, inputs, opts),
     readValuationAnchors: (assetId) => readValuationAnchors(ctx, assetId),
     readValuationAnchorById: (anchorId) => readValuationAnchorById(ctx, anchorId),
     deleteValuationAnchor: (anchorId) => deleteValuationAnchor(ctx, anchorId),
@@ -259,37 +270,75 @@ function assertValuationDate(valuationDate: string): void {
   }
 }
 
-async function addValuationAnchor(
-  ctx: StoreContext,
+/**
+ * Valuation-anchor rows per batched INSERT. Seven columns each, so a group of
+ * 50 stays well below the per-statement parameter cap (#1440).
+ */
+const VALUATIONS_PER_INSERT = 50;
+
+function valuationRow(
   input: AddValuationAnchorInput,
   provenance?: FactPersistenceProvenance,
-): Promise<void> {
-  if (!Number.isInteger(input.valueMinor)) {
-    throw new Error("Money must be stored as integer minor units.");
-  }
-  assertValuationDate(input.valuationDate);
-
-  await assertAssetAllowsStoredValuationWrite(ctx, input.assetId);
-
-  await ctx.db
-    .insert(assetValuations)
-    .values({
-      adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
-      assetId: input.assetId,
-      batchId: provenance?.batchId ?? null,
-      id: input.id,
-      source: input.source ?? "manual",
-      valuationDate: input.valuationDate,
-      valueMinor: input.valueMinor,
-    })
-    .run();
-
-  await ctx.writeAuditEntry("add_valuation_anchor", "asset", input.assetId, {
-    adjustsPriorCurve: input.adjustsPriorCurve,
-    anchorId: input.id,
+) {
+  return {
+    adjustsPriorCurve: input.adjustsPriorCurve ? 1 : 0,
+    assetId: input.assetId,
+    batchId: provenance?.batchId ?? null,
+    id: input.id,
+    source: input.source ?? "manual",
     valuationDate: input.valuationDate,
     valueMinor: input.valueMinor,
-  });
+  };
+}
+
+/**
+ * Persist a whole BATCH of housing valuation anchors (#1440). A mixed-document
+ * import applies many appraisals at once; one `await` per appraisal is one
+ * round-trip per appraisal against a remote Turso, so the rows — and their
+ * audit trail, still one row per fact — go in batched.
+ *
+ * A batch longer than one chunk spans several statements, so the CALLER owns the
+ * transaction (the statement import applies the batch inside `ctx.transaction`,
+ * ADR 0020) — without it a long batch could land half-written.
+ */
+async function addValuationAnchors(
+  ctx: StoreContext,
+  inputs: readonly AddValuationAnchorInput[],
+  provenance?: FactPersistenceProvenance,
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  for (const input of inputs) {
+    if (!Number.isInteger(input.valueMinor)) {
+      throw new Error("Money must be stored as integer minor units.");
+    }
+    assertValuationDate(input.valuationDate);
+  }
+
+  for (const assetId of new Set(inputs.map((input) => input.assetId))) {
+    await assertAssetAllowsStoredValuationWrite(ctx, assetId);
+  }
+
+  for (const group of chunk(inputs, VALUATIONS_PER_INSERT)) {
+    await ctx.db
+      .insert(assetValuations)
+      .values(group.map((input) => valuationRow(input, provenance)))
+      .run();
+  }
+
+  await ctx.writeAuditEntries(
+    inputs.map((input) => ({
+      action: "add_valuation_anchor",
+      details: {
+        adjustsPriorCurve: input.adjustsPriorCurve,
+        anchorId: input.id,
+        valuationDate: input.valuationDate,
+        valueMinor: input.valueMinor,
+      },
+      entityId: input.assetId,
+      entityType: "asset",
+    })),
+  );
 }
 
 async function readValuationAnchors(

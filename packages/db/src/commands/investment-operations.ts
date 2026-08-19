@@ -108,8 +108,8 @@ export function createInvestmentOperationCommands(
       await ctx.transaction(async () => {
         const batchId = await uow.createFactBatch({ trigger: "manual" });
         const operationDateKeys: string[] = [];
+        await stores.operations.recordOperations(creates, { batchId });
         for (const input of creates) {
-          await stores.operations.recordOperation(input, { batchId });
           operationDateKeys.push(input.executedAt.slice(0, 10));
         }
         for (const input of overwrites) {
