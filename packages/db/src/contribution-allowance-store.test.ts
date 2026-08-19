@@ -184,7 +184,7 @@ describe("contribution allowance CRUD", () => {
         label: "Planes de pensiones",
         scopeId: "household",
       }),
-    ).rejects.toThrow(/inversiones/i);
+    ).rejects.toThrow(/libro de operaciones/i);
   });
 
   it("refuses an unknown destination", async () => {
@@ -212,7 +212,7 @@ describe("contribution allowance CRUD", () => {
       store.contributionAllowances.updateContributionAllowance(created.id, {
         holdingIds: ["cuenta"],
       }),
-    ).rejects.toThrow(/inversiones/i);
+    ).rejects.toThrow(/libro de operaciones/i);
     const [row] =
       await store.contributionAllowances.readContributionAllowances("household");
     expect(row?.holdingIds).toEqual(["pp1"]);

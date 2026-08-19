@@ -56,15 +56,37 @@ describe("contributionAllowanceRowView", () => {
     expect(view.barPercent).toBeCloseTo(86.666, 2);
   });
 
-  test("warns from 90 % of the cap, before it is exceeded", () => {
+  test("no inventa un umbral de «casi»: hasta pasarse, el tono es el mismo", () => {
+    // #1427 difiere el aviso al pasarse a salud de datos (PRD #654). Un tercer tono
+    // al 90 % sería una cifra que nadie declaró, y el color a solas no dice nada:
+    // la línea impresa es la que lleva la verdad.
     const view = contributionAllowanceRowView({
       allowance,
       holdingNameById: names,
-      usage: usage({ consumedMinor: 135_000 }),
+      usage: usage({ consumedMinor: 149_999 }),
     });
 
-    expect(view.tone).toBe("near");
+    expect(view.tone).toBe("ok");
     expect(view.remainderWord).toBe("quedan");
+  });
+
+  test("carries the allowance and its entries, so the panel resolves nothing itself", () => {
+    const entries = [
+      {
+        amountMinor: 130_000,
+        dateISO: "2026-02-10",
+        holdingId: "pp1",
+        operationId: "op-1",
+      },
+    ];
+    const view = contributionAllowanceRowView({
+      allowance,
+      holdingNameById: names,
+      usage: usage({ consumedMinor: 130_000, entries }),
+    });
+
+    expect(view.allowance).toBe(allowance);
+    expect(view.entries).toBe(entries);
   });
 
   test("an exceeded cupo prints the overshoot as a positive amount", () => {
@@ -115,13 +137,27 @@ describe("contributionAllowanceRowView", () => {
 describe("contributionAllowanceDestinationOptions", () => {
   test("offers only holdings with an operation ledger", () => {
     const assets = [
-      { id: "pp1", name: "PP", type: "investment" },
-      { id: "cc", name: "Cuenta", type: "cash" },
-      { id: "piso", name: "Piso", type: "property" },
+      { id: "pp1", isPrimaryResidence: false, name: "PP", type: "investment" },
+      { id: "cc", isPrimaryResidence: false, name: "Cuenta", type: "cash" },
+      { id: "piso", isPrimaryResidence: false, name: "Piso", type: "real_estate" },
     ] as unknown as ManualAsset[];
 
     expect(contributionAllowanceDestinationOptions(assets).map((a) => a.id)).toEqual([
       "pp1",
     ]);
+  });
+
+  test("deja fuera un holding de fuente conectada: se valora por posiciones, no por operaciones", () => {
+    const assets = [
+      {
+        connectedSourceId: "src_binance",
+        id: "binance",
+        isPrimaryResidence: false,
+        name: "Binance",
+        type: "investment",
+      },
+    ] as unknown as ManualAsset[];
+
+    expect(contributionAllowanceDestinationOptions(assets)).toEqual([]);
   });
 });

@@ -41,6 +41,25 @@ export function isValueUpdateEligible(asset: ManualAsset): boolean {
 }
 
 /**
+ * Whether a holding keeps an **operation ledger** — the individual buys and sells
+ * a surface can count one by one, rather than a balance somebody sets.
+ *
+ * Two holdings are excluded and both would count zero if they were not: a
+ * stored-value holding (its contributions are folded into a balance) and a
+ * connected-source holding, which is `derived` from its **positions**, not from
+ * operations (ADR 0014/0016). The single seam the annual contribution allowance
+ * reads (#1427, ADR 0080) — the form to decide what it may offer, the store to
+ * decide what it may accept — so a picker and its guard cannot disagree about
+ * which holdings can be counted.
+ */
+export function keepsAnOperationLedger(asset: ManualAsset): boolean {
+  if (asset.connectedSourceId != null) {
+    return false;
+  }
+  return valuationMethodOfAsset(asset) === "derived";
+}
+
+/**
  * The valuation method a liability is configured by — its debt model decides:
  * `amortizable` → `amortized`, `revolving`/`informal` → `anchored`, no model →
  * `stored`. A thin alias over `defaultValuationMethodForDebtModel` so the page's

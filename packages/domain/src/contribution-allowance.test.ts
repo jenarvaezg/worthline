@@ -220,17 +220,20 @@ describe("computeContributionAllowanceUsage", () => {
     expect(usage.consumedMinor).toBe(130_000);
   });
 
-  test("sums operations as given when no currency is declared", () => {
+  test("the declared currency is required — there is no «sum it all as given» mode", () => {
+    // #1401: sumar dólares como euros fue el bug. Un modo por defecto que sumase
+    // todo tal cual sería ese mismo bug detrás de un parámetro opcional.
     const usage = computeContributionAllowanceUsage({
       allowance,
+      currency: "EUR",
       operations: [
         buy({ currency: "USD", executedAt: "2026-03-01", id: "op-usd", units: "20" }),
       ],
       todayISO: "2026-08-19",
     });
 
-    expect(usage.consumedMinor).toBe(20_000);
-    expect(usage.skippedForeignCount).toBe(0);
+    expect(usage.consumedMinor).toBe(0);
+    expect(usage.skippedForeignCount).toBe(1);
   });
 });
 

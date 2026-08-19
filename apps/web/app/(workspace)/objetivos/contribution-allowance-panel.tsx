@@ -27,7 +27,6 @@ import {
 
 const BAR_TONE_CLASS: Record<ContributionAllowanceTone, string | undefined> = {
   exceeded: "over",
-  near: "warn",
   ok: undefined,
 };
 
@@ -101,15 +100,13 @@ export function ContributionAllowancePanel({
       ) : null}
 
       {rows.map((row) => {
-        const usage = usageById.get(row.allowanceId);
-        const allowance = allowances.find((item) => item.id === row.allowanceId);
-        if (!usage || !allowance) return null;
+        const { allowance } = row;
 
         return (
           <article
             className="objetivosCupoRow"
-            id={`allowanceEdit-${row.allowanceId}`}
-            key={row.allowanceId}
+            id={`allowanceEdit-${allowance.id}`}
+            key={allowance.id}
           >
             <div className="objetivosCupoTop">
               <span className="objetivosCupoName">{row.label}</span>
@@ -126,7 +123,7 @@ export function ContributionAllowancePanel({
             </p>
 
             <div
-              aria-label={`${row.label}: ${row.consumedMinor / 100} de ${row.capMinor / 100}`}
+              aria-label={`${row.label}: ${fmt(row.consumedMinor)} de ${fmt(row.capMinor)}`}
               aria-valuemax={100}
               aria-valuemin={0}
               aria-valuenow={Math.round(row.barPercent)}
@@ -155,15 +152,15 @@ export function ContributionAllowancePanel({
 
             <details suppressHydrationWarning className="objetivosCupoAudit">
               <summary>
-                {usage.entries.length === 1
+                {row.entries.length === 1
                   ? "Ver la aportación contada"
-                  : `Ver las ${usage.entries.length} aportaciones contadas`}
+                  : `Ver las ${row.entries.length} aportaciones contadas`}
               </summary>
-              {usage.entries.length === 0 ? (
+              {row.entries.length === 0 ? (
                 <p className="muted">Ninguna aportación registrada este año.</p>
               ) : (
                 <ul className="objetivosCupoEntries">
-                  {usage.entries.map((entry) => (
+                  {row.entries.map((entry) => (
                     <li key={entry.operationId}>
                       <span>
                         {dayFormatter.format(new Date(`${entry.dateISO}T00:00:00Z`))}
@@ -184,10 +181,10 @@ export function ContributionAllowancePanel({
               <summary>Editar cupo</summary>
               <form action={updateContributionAllowanceAction} className="stackForm">
                 <input name="currentUrl" type="hidden" value={currentUrl} />
-                <input name="allowanceId" type="hidden" value={row.allowanceId} />
-                {errorFor(`allowance-${row.allowanceId}`) ? (
+                <input name="allowanceId" type="hidden" value={allowance.id} />
+                {errorFor(`allowance-${allowance.id}`) ? (
                   <p className="formError" role="alert">
-                    {errorFor(`allowance-${row.allowanceId}`)}
+                    {errorFor(`allowance-${allowance.id}`)}
                   </p>
                 ) : null}
                 <label>
@@ -220,7 +217,7 @@ export function ContributionAllowancePanel({
               </form>
               <form action={deleteContributionAllowanceAction}>
                 <input name="currentUrl" type="hidden" value={currentUrl} />
-                <input name="allowanceId" type="hidden" value={row.allowanceId} />
+                <input name="allowanceId" type="hidden" value={allowance.id} />
                 <details suppressHydrationWarning className="confirmDelete">
                   <summary>Eliminar</summary>
                   <PendingSubmit pendingLabel="Borrando…">

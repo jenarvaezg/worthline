@@ -9,6 +9,7 @@ import {
   parseMoneyMinor,
   preserveFields,
 } from "@web/intake";
+import { assertContributionAllowanceInput } from "@worthline/domain";
 
 /**
  * Annual contribution allowance intake (#1427) — "cupo anual de aportación".
@@ -36,6 +37,13 @@ function preserveAllowanceFields(formData: FormData): Record<string, string> {
   };
 }
 
+/**
+ * Read the form, then let the DOMAIN say whether it is valid. Restating the
+ * invariants here would create a second owner of the same rules, and the two
+ * would drift — the store enforces `assertContributionAllowanceInput` at the
+ * door regardless, so this layer only turns its message into a redirect the user
+ * can see beside the form that produced it.
+ */
 function parseAllowanceForm(formData: FormData): ParsedAllowanceForm {
   const label = field(formData, "label");
   const annualCapMinor = parseMoneyMinor(field(formData, "annualCap"));
@@ -44,14 +52,16 @@ function parseAllowanceForm(formData: FormData): ParsedAllowanceForm {
     .map((value) => String(value).trim())
     .filter(Boolean);
 
-  if (!label) {
-    return { ok: false, error: "El cupo necesita un nombre." };
+  // The only rule this layer owns: what the user typed has to be a number at all.
+  // "abc" is not a cap below zero, it is not a cap.
+  if (annualCapMinor === null) {
+    return { ok: false, error: "El tope anual debe ser un importe válido." };
   }
-  if (annualCapMinor === null || annualCapMinor <= 0) {
-    return { ok: false, error: "El tope anual debe ser un importe mayor que cero." };
-  }
-  if (holdingIds.length === 0) {
-    return { ok: false, error: "Marca al menos un activo que consuma el cupo." };
+
+  try {
+    assertContributionAllowanceInput({ annualCapMinor, holdingIds, label });
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 
   return { ok: true, annualCapMinor, holdingIds, label };

@@ -1,32 +1,32 @@
 import type {
   ContributionAllowance,
+  ContributionAllowanceEntry,
   ContributionAllowanceUsage,
   ManualAsset,
 } from "@worthline/domain";
+import { keepsAnOperationLedger } from "@worthline/domain";
 
 /**
  * View model for the annual contribution allowance panel (#1427).
  *
  * The arithmetic lives in the domain (`computeContributionAllowanceUsage`); this
- * module only turns one usage into the pieces the panel paints — bar width, tone,
- * the names of the destinations and the honesty notices. Pure and tested, so the
- * rules that decide "estás cerca del tope" are not buried in JSX.
+ * module only turns one allowance and its usage into everything the panel paints,
+ * so the JSX resolves nothing for itself and cannot re-derive a figure a second
+ * way. Pure and tested, so the rule that decides "te has pasado" is not buried in
+ * markup.
  */
 
-/** Share of the cap at which the counter starts warning, before it is exceeded. */
-const NEAR_CAP_RATIO = 0.9;
-
-export type ContributionAllowanceTone = "ok" | "near" | "exceeded";
+export type ContributionAllowanceTone = "ok" | "exceeded";
 
 export interface ContributionAllowanceRowView {
-  allowanceId: string;
+  allowance: ContributionAllowance;
   label: string;
   year: number;
   capMinor: number;
   consumedMinor: number;
   /** `cap − consumed`, signed: negative once the cap is exceeded. */
   remainingMinor: number;
-  /** The amount to print after the "quedan"/"te has pasado" word — always ≥ 0. */
+  /** The amount to print after the "quedan"/"excedido" word — always ≥ 0. */
   remainderAmountMinor: number;
   /** `quedan` while there is room, `excedido` once there is not. */
   remainderWord: "quedan" | "excedido";
@@ -39,6 +39,8 @@ export interface ContributionAllowanceRowView {
   unknownDestinationCount: number;
   /** In-year entries not counted because they are denominated elsewhere (#1401). */
   skippedForeignCount: number;
+  /** The counted entries, most recent first — the audit trail of the figure. */
+  entries: ContributionAllowanceEntry[];
 }
 
 export function contributionAllowanceRowView(input: {
@@ -61,32 +63,37 @@ export function contributionAllowanceRowView(input: {
   }
 
   return {
-    allowanceId: allowance.id,
+    allowance,
     barPercent: Math.max(0, Math.min(100, ratio * 100)),
     capMinor: usage.capMinor,
     consumedMinor: usage.consumedMinor,
     destinationNames,
+    entries: usage.entries,
     label: allowance.label,
     remainderAmountMinor: Math.abs(usage.remainingMinor),
     remainderWord: usage.remainingMinor < 0 ? "excedido" : "quedan",
     remainingMinor: usage.remainingMinor,
     skippedForeignCount: usage.skippedForeignCount,
-    tone: usage.exceeded ? "exceeded" : ratio >= NEAR_CAP_RATIO ? "near" : "ok",
+    // Two tones, not three: an "almost there" threshold would be a number nobody
+    // declared, and #1427 defers the over-cap warning to data quality (PRD #654).
+    // The bar filling up is the approach; the printed line is the truth.
+    tone: usage.exceeded ? "exceeded" : "ok",
     unknownDestinationCount,
     year: usage.year,
   };
 }
 
 /**
- * The holdings a cupo may point at: those with an **operation ledger**.
+ * The holdings a cupo may point at: those with an **operation ledger**
+ * (`keepsAnOperationLedger`, the same predicate the store enforces at the door).
  *
- * A cupo counts real entries, and only a unit-based (investment) holding records
- * them one by one. A stored-value destination would silently count 0 — the
+ * A cupo counts real entries, and a stored-value or connected-source holding
+ * records none it could count — a cupo over one would read "0 € de 1.500 €", the
  * counter lying downwards, which is exactly the failure this feature exists to
- * prevent — so it is not offered at all rather than offered and wrong.
+ * prevent. Not offered at all, rather than offered and wrong.
  */
 export function contributionAllowanceDestinationOptions(
   assets: readonly ManualAsset[],
 ): ManualAsset[] {
-  return assets.filter((asset) => asset.type === "investment");
+  return assets.filter(keepsAnOperationLedger);
 }

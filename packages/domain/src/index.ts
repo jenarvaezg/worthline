@@ -632,6 +632,7 @@ export {
 } from "./holding-matcher";
 export {
   isValueUpdateEligible,
+  keepsAnOperationLedger,
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "./holding-method";

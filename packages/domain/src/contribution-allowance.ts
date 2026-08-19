@@ -64,11 +64,12 @@ export interface ComputeContributionAllowanceUsageInput {
   /** The day the counter is read; its calendar year is the window. */
   todayISO: string;
   /**
-   * When set, only operations in this currency are counted and the rest are
-   * reported in `skippedForeignCount` — summing dollars as euros is the very bug
-   * #1401 fixed. Omit to sum every operation as given.
+   * The currency the cap is declared in. Only operations denominated in it are
+   * counted; the rest are reported in `skippedForeignCount` and never summed —
+   * adding dollars to euros is the very bug #1401 fixed. Required, deliberately:
+   * an "omit to sum everything as given" mode would be that bug behind a default.
    */
-  currency?: CurrencyCode;
+  currency: CurrencyCode;
 }
 
 /**
@@ -93,7 +94,7 @@ export function computeContributionAllowanceUsage(
     if (!destinations.has(operation.assetId)) continue;
     if (operation.kind !== "buy") continue;
     if (operation.executedAt.slice(0, 4) !== yearPrefix) continue;
-    if (currency !== undefined && operation.currency !== currency) {
+    if (operation.currency !== currency) {
       skippedForeignCount += 1;
       continue;
     }

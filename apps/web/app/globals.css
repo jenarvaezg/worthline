@@ -3100,23 +3100,25 @@ code {
 .objetivosCupoName {
   font-weight: 650;
 }
+/* Una ceja repetida (una por fila) no lleva versalita ni tracking: el canon §3
+   reserva eso para labels pequeños reales — cabeceras, stats, folios. */
 .objetivosCupoYear {
   color: var(--muted);
   font-size: 0.8rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
+/* Iosevka solo en las cifras (canon §3): la línea es prosa, y «de», «quedan» y
+   «te has pasado» son palabras, no columnas numéricas. */
 .objetivosCupoFigure {
+  margin: 8px 0 10px;
+}
+.objetivosCupoFigure strong,
+.objetivosCupoRemainder {
   font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
-  margin: 8px 0 10px;
 }
 .objetivosCupoFigure strong {
   font-size: 1.35rem;
   font-weight: 700;
-}
-.objetivosCupoRemainder.near {
-  color: var(--gold);
 }
 .objetivosCupoRemainder.exceeded {
   color: var(--debit-rule);
@@ -4149,12 +4151,8 @@ code {
   background: var(--green);
 }
 
-/* Tonos de techo (#1427): la misma receta de barra, leída al revés — acercarse
-   al tope avisa (oro) y pasarse se marca con la tinta del debe. */
-.fundedBar i.warn {
-  background: var(--gold);
-}
-
+/* Tono de techo (#1427): la misma receta de barra, leída al revés — pasarse del
+   tope se marca con la tinta del debe, nunca como el verde de «lleno». */
 .fundedBar i.over {
   background: var(--debit-rule);
 }

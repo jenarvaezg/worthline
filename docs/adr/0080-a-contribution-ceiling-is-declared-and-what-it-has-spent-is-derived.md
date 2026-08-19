@@ -68,11 +68,17 @@ plan.**
    downwards. The form offers only investments and the store enforces it at the door,
    so no other writer can get around it.
 
-7. **The calendar year, with no way to configure it.** Until a case appears that needs a
+7. **A marked holding's entries count in full, unweighted by ownership.** The
+   ceiling belongs to the *contributor*, and what consumes it is what he paid in —
+   not his share of what the plan is worth. A jointly-held destination therefore
+   consumes the cap with its whole ledger, which is the honest reading and the
+   conservative one; the alternative would quote a contribution nobody made.
+
+8. **The calendar year, with no way to configure it.** Until a case appears that needs a
    fiscal year that is not the natural one, offering the choice is offering a decision
    nobody has to make.
 
-8. **The counter is auditable.** Each cupo unfolds into the exact operations it added
+9. **The counter is auditable.** Each cupo unfolds into the exact operations it added
    up, dated and named (ADR 0077), and says out loud what it left out — destinations it
    cannot see, operations denominated in another currency (#1401).
 
@@ -90,7 +96,9 @@ plan.**
   model, and a migration the day he opens a second one.
 - **Warn when the ceiling is exceeded (deferred).** Going over has real consequences,
   but the notice belongs with the rest of the data-quality signals (PRD #654), not as an
-  alert bolted onto this panel. v1 is the counter and its bar.
+  alert bolted onto this panel. v1 is the counter and its bar. For the same reason there
+  is no "almost there" tone either: a 90 % threshold is a number nobody declared, and a
+  colour on its own says nothing the printed line does not say better.
 - **Stored-value destinations (deferred).** Their only record of a real entry is the
   reconciliation receipt, which exists only where a plan row exists — the
   count-the-intention trap wearing a different hat. Left out rather than counted wrong.

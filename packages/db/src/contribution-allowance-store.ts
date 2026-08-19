@@ -1,5 +1,8 @@
-import type { ContributionAllowance } from "@worthline/domain";
-import { assertContributionAllowanceInput } from "@worthline/domain";
+import type { ContributionAllowance, ManualAsset } from "@worthline/domain";
+import {
+  assertContributionAllowanceInput,
+  keepsAnOperationLedger,
+} from "@worthline/domain";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assets, contributionAllowanceHoldings, contributionAllowances } from "./schema";
@@ -68,20 +71,36 @@ async function assertLedgerDestinations(
   holdingIds: readonly string[],
 ): Promise<void> {
   const rows = await ctx.db
-    .select({ id: assets.id, type: assets.type })
+    .select({
+      connectedSourceId: assets.connectedSourceId,
+      id: assets.id,
+      instrument: assets.instrument,
+      isPrimaryResidence: assets.isPrimaryResidence,
+      type: assets.type,
+    })
     .from(assets)
     .where(inArray(assets.id, [...holdingIds]))
     .all();
-  const typeById = new Map(rows.map((row) => [row.id, row.type]));
+  const rowById = new Map(rows.map((row) => [row.id, row]));
 
   for (const holdingId of holdingIds) {
-    const type = typeById.get(holdingId);
-    if (type === undefined) {
+    const row = rowById.get(holdingId);
+    if (row === undefined) {
       throw new Error(`El activo "${holdingId}" no existe.`);
     }
-    if (type !== "investment") {
+    // Only the fields the predicate reads — it derives the method from the
+    // instrument, exactly as every read path does.
+    const asset = {
+      instrument: row.instrument ?? undefined,
+      isPrimaryResidence: row.isPrimaryResidence === 1,
+      type: row.type,
+      ...(row.connectedSourceId != null
+        ? { connectedSourceId: row.connectedSourceId }
+        : {}),
+    } as ManualAsset;
+    if (!keepsAnOperationLedger(asset)) {
       throw new Error(
-        "Un cupo solo puede apuntar a inversiones: son las únicas que registran cada aportación como operación.",
+        "Un cupo solo puede apuntar a inversiones con libro de operaciones: son las únicas que registran cada aportación una a una.",
       );
     }
   }
