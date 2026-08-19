@@ -1272,6 +1272,10 @@ describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
     };
   }
 
+  // Las dos señales son independientes, así que para probar UNA hay que apagar la
+  // otra: con 5.000 €/mes declarados el nivel Regular sí se cruza en el horizonte.
+  const SAVING_HARD = { monthlySavingsCapacityMinor: 500_000 };
+
   /** La tarjeta del gasto sostenible, cuando la hay. */
   function sustainableCard(html: string): string {
     const opened = html.slice(html.indexOf('<section aria-label="Gasto sostenible"'));
@@ -1293,9 +1297,19 @@ describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
     expect(html).not.toContain('aria-label="Gasto sostenible"');
   });
 
-  // Las dos señales son independientes, así que para probar UNA hay que apagar la
-  // otra: con 5.000 €/mes declarados el nivel Regular sí se cruza en el horizonte.
-  const SAVING_HARD = { monthlySavingsCapacityMinor: 500_000 };
+  test("una config sin edad objetivo declarada no dispara nada: el 65 del motor no es su elección", async () => {
+    // El fallo que hacía inútil la señal: el formulario guardaba 65 por defecto y el
+    // umbral también es 65, así que el ofrecimiento salía para todo el mundo. Con el
+    // ahorro que sí llega a FIRE, esta config no tiene NINGUNA señal.
+    const { targetRetirementAge: _undeclared, ...withoutTargetAge } = ordinaryConfig({
+      ...SAVING_HARD,
+    });
+    calls.readFireConfig.mockResolvedValueOnce({ household: withoutTargetAge });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain("¿Quieres ver esta pantalla como plan de jubilación");
+  });
 
   test("una edad objetivo temprana no dispara nada", async () => {
     calls.readFireConfig.mockResolvedValueOnce({
@@ -1366,9 +1380,22 @@ describe("ObjetivosPage el perfil que no va a hacer FIRE (#1428)", () => {
     expect(card).toContain("Dinos hasta qué edad debe durar tu capital");
   });
 
+  test("con la edad final puesta y sin fecha de nacimiento, pide la fecha — no la edad otra vez", async () => {
+    const { currentAge: _dropped, ...ageless } = ordinaryConfig({
+      capitalLastsUntilAge: 90,
+      retirementPlan: "ordinary",
+    });
+    calls.readFireConfig.mockResolvedValueOnce({ household: ageless });
+
+    const card = sustainableCard(await renderedHtml());
+
+    expect(card).toContain("fecha de nacimiento");
+    expect(card).not.toContain("Dinos hasta qué edad");
+  });
+
   test("con la edad final declarada aparece la segunda cifra, mayor que la perpetua", async () => {
     calls.readFireConfig.mockResolvedValueOnce({
-      household: ordinaryConfig({ lifeExpectancyAge: 90, retirementPlan: "ordinary" }),
+      household: ordinaryConfig({ capitalLastsUntilAge: 90, retirementPlan: "ordinary" }),
     });
 
     const card = sustainableCard(await renderedHtml());

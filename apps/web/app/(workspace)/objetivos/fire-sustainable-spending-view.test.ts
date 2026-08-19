@@ -1,8 +1,13 @@
-import type { FireRetirementProfile, FireSustainableSpending } from "@worthline/domain";
+import type {
+  FireRetirementProfile,
+  FireSustainableSpending,
+  RentReturnNotice,
+} from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
   fireOrdinaryPlanNote,
+  firePanelHeading,
   fireRetirementOfferLine,
   fireSustainableSpendingCopy,
 } from "./fire-sustainable-spending-view";
@@ -15,6 +20,7 @@ function spending(
 ): FireSustainableSpending {
   return {
     depletion: null,
+    depletionAbsence: "no_final_age",
     perpetual: {
       capital: { annualMinor: 350_000, monthlyMinor: 29_167 },
       total: { annualMinor: 350_000, monthlyMinor: 29_167 },
@@ -25,6 +31,10 @@ function spending(
     withdrawalRate: 0.035,
     ...overrides,
   };
+}
+
+function notice(reason: RentReturnNotice["reason"]): RentReturnNotice {
+  return { assetId: "asset_flat", assetName: "Piso", grossRate: null, reason };
 }
 
 function profile(overrides: Partial<FireRetirementProfile> = {}): FireRetirementProfile {
@@ -41,7 +51,7 @@ describe("fireSustainableSpendingCopy", () => {
   test("el titular es el mensual, y lleva su anual al lado", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: false,
+      rentNotices: [],
       immobilizedMinor: 0,
       spending: spending(),
     });
@@ -53,7 +63,7 @@ describe("fireSustainableSpendingCopy", () => {
   test("la mitad del capital cita su propia aritmética: vendible × tasa ÷ 12", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: false,
+      rentNotices: [],
       immobilizedMinor: 0,
       spending: spending(),
     });
@@ -70,7 +80,7 @@ describe("fireSustainableSpendingCopy", () => {
   test("con rentas hay dos mitades, y las rentas van primero", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: false,
+      rentNotices: [],
       immobilizedMinor: 0,
       spending: spending({
         perpetual: {
@@ -89,7 +99,7 @@ describe("fireSustainableSpendingCopy", () => {
   test("la versión de agotamiento dice hasta cuándo dura y que el principal se gasta", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: false,
+      rentNotices: [],
       immobilizedMinor: 0,
       spending: spending({
         depletion: {
@@ -98,6 +108,7 @@ describe("fireSustainableSpendingCopy", () => {
           untilAge: 90,
           years: 27,
         },
+        depletionAbsence: null,
       }),
     });
 
@@ -106,21 +117,45 @@ describe("fireSustainableSpendingCopy", () => {
     expect(copy.depletion?.gloss).toContain("el principal se gasta");
   });
 
-  test("sin edad final no hay segunda cifra", () => {
-    expect(
-      fireSustainableSpendingCopy({
-        formatMoney,
-        hasRentsPendingExpenses: false,
-        immobilizedMinor: 0,
-        spending: spending(),
-      }).depletion,
-    ).toBeNull();
+  test("sin edad final no hay segunda cifra, y el hueco pide el dato que falta", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending(),
+    });
+
+    expect(copy.depletion).toBeNull();
+    expect(copy.depletionAbsence).toContain("hasta qué edad debe durar tu capital");
+  });
+
+  test("con la edad final puesta y sin fecha de nacimiento, pide la fecha — no la edad otra vez", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({ depletionAbsence: "no_reference_age" }),
+    });
+
+    expect(copy.depletionAbsence).toContain("fecha de nacimiento");
+    expect(copy.depletionAbsence).not.toContain("hasta qué edad");
+  });
+
+  test("una edad final ya alcanzada no pide nada: lo explica", () => {
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [],
+      spending: spending({ depletionAbsence: "final_age_reached" }),
+    });
+
+    expect(copy.depletionAbsence).toContain("ya ha alcanzado");
   });
 
   test("el patrimonio inmovilizado se nombra: no está en la cifra, y por eso hay que decirlo", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: false,
+      rentNotices: [],
       immobilizedMinor: 37_000_000,
       spending: spending(),
     });
@@ -129,22 +164,41 @@ describe("fireSustainableSpendingCopy", () => {
     expect(copy.exclusionNote).toContain("no se gastan a plazos");
   });
 
-  test("un alquiler sin gastos declarados se dice, porque vale 0 hasta que se declaren", () => {
+  test("cada razón por la que un alquiler declarado no suma se dice con sus palabras", () => {
     const copy = fireSustainableSpendingCopy({
       formatMoney,
-      hasRentsPendingExpenses: true,
       immobilizedMinor: 0,
+      rentNotices: [
+        notice("missing_expenses"),
+        notice("no_live_schedule"),
+        notice("foreign_currency"),
+      ],
       spending: spending(),
     });
 
-    expect(copy.exclusionNote).toContain("sin gastos");
+    expect(copy.exclusionNote).toContain("les faltan los gastos declarados");
+    expect(copy.exclusionNote).toContain("no están vigentes hoy");
+    expect(copy.exclusionNote).toContain("divisa");
+  });
+
+  test("el aviso del inmovilizado NO cuenta como renta ausente: ese alquiler sí suma", () => {
+    // La declaración de #1460 habla de capital, no de ingresos. Anunciar su alquiler
+    // como ausente mentiría en la dirección contraria.
+    const copy = fireSustainableSpendingCopy({
+      formatMoney,
+      immobilizedMinor: 0,
+      rentNotices: [notice("immobilized_not_counted")],
+      spending: spending(),
+    });
+
+    expect(copy.exclusionNote).toBeNull();
   });
 
   test("sin nada que excluir no hay nota", () => {
     expect(
       fireSustainableSpendingCopy({
         formatMoney,
-        hasRentsPendingExpenses: false,
+        rentNotices: [],
         immobilizedMinor: 0,
         spending: spending(),
       }).exclusionNote,
@@ -210,5 +264,26 @@ describe("fireOrdinaryPlanNote", () => {
     expect(fireOrdinaryPlanNote("68,5 %")).toBe(
       "Tu número FIRE sigue calculado: 68,5 % financiado.",
     );
+  });
+});
+
+describe("firePanelHeading", () => {
+  test("la capa cambia la pregunta del encabezado", () => {
+    expect(firePanelHeading({ ordinary: true, previewing: false })).toEqual({
+      eyebrow: "cuánto puedes gastar",
+      title: "Tu plan de jubilación",
+    });
+    expect(firePanelHeading({ ordinary: false, previewing: false })).toEqual({
+      eyebrow: "objetivo principal",
+      title: "Independencia financiera · FIRE",
+    });
+  });
+
+  test("previsualizando manda el aviso de sin guardar, en los dos estados", () => {
+    for (const ordinary of [true, false]) {
+      expect(firePanelHeading({ ordinary, previewing: true }).eyebrow).toBe(
+        "previsualización · sin guardar",
+      );
+    }
   });
 });

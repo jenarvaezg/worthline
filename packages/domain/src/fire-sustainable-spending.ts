@@ -58,6 +58,20 @@ export interface FireSustainableSpendingDepletion extends FireSustainableSpendin
   years: number;
 }
 
+/**
+ * Por qué NO hay versión de agotamiento, cuando no la hay. Tres huecos distintos y
+ * cada uno se arregla en otro sitio: una cifra que desaparece sin decir por qué se lee
+ * como un fallo de la app, y pedir un dato que el usuario YA dio se lee como que no le
+ * escuchamos.
+ */
+export type FireDepletionAbsence =
+  /** No ha declarado hasta cuándo debe durar el capital. */
+  | "no_final_age"
+  /** Lo declaró, pero sin fecha de nacimiento no hay edad desde la que repartir (#1415). */
+  | "no_reference_age"
+  /** La edad final declarada ya se ha alcanzado: no quedan años que repartir. */
+  | "final_age_reached";
+
 export interface FireSustainableSpending {
   /** Las rentas netas declaradas del ámbito, o `null` si no hay ninguna. */
   rents: FireSustainableSpendingPart | null;
@@ -65,6 +79,8 @@ export interface FireSustainableSpending {
   perpetual: FireSustainableSpendingSides;
   /** Agotando el capital a la edad final declarada. `null` sin ese dato. */
   depletion: FireSustainableSpendingDepletion | null;
+  /** Por qué falta `depletion`; `null` cuando está. */
+  depletionAbsence: FireDepletionAbsence | null;
   /** El capital vendible del que sale la mitad de capital, neto de deuda y reserva. */
   sellableMinor: number;
   /** La tasa con la que se calculó la versión perpetua. */
@@ -103,11 +119,11 @@ export function fireSustainableSpending(
   const perpetual = sidesOf(Math.round(sellableMinor * withdrawalRate), rentAnnualMinor);
 
   const currentAge = config.currentAge;
-  const untilAge = config.lifeExpectancyAge;
+  const untilAge = config.capitalLastsUntilAge;
   const years =
     currentAge === undefined || untilAge === undefined ? 0 : untilAge - currentAge;
   const depletion =
-    years > 0 && untilAge !== undefined
+    untilAge !== undefined && years > 0
       ? {
           ...sidesOf(
             annuityAnnualMinor(sellableMinor, realReturnUsed, years),
@@ -120,6 +136,17 @@ export function fireSustainableSpending(
 
   return {
     depletion,
+    // El hueco lleva su razón, y las tres son distintas: falta el campo, falta la fecha
+    // de nacimiento de la que sale la edad de referencia, o esa edad ya llegó a la
+    // final declarada. Pedirle la edad final a quien ya la puso sería no escucharle.
+    depletionAbsence:
+      depletion !== null
+        ? null
+        : untilAge === undefined
+          ? "no_final_age"
+          : currentAge === undefined
+            ? "no_reference_age"
+            : "final_age_reached",
     perpetual,
     realReturnUsed,
     rents,

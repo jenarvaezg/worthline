@@ -51,7 +51,6 @@ import {
   sellableFundedPercent,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
-import { setRetirementPlanAction } from "./fire-config-actions";
 import {
   coastAbsenceNote,
   coastArrivalMetric,
@@ -67,8 +66,10 @@ import {
   formatRatePercent,
 } from "./fire-percent";
 import { fireRentReturnLines } from "./fire-rent-return-view";
+import { FireRetirementPlanForm } from "./fire-retirement-plan-form";
 import {
   fireOrdinaryPlanNote,
+  firePanelHeading,
   fireRetirementOfferLine,
   fireSustainableSpendingCopy,
 } from "./fire-sustainable-spending-view";
@@ -204,27 +205,29 @@ export function FirePanel({
     ? fireFundedView({ formatMoney: fmt, result: fireResult })
     : null;
 
-  // La capa de #1428: el mismo panel con otra pregunta al frente. `ordinary` solo se
-  // alcanza porque el usuario lo declaró — la señal como mucho ofrece.
-  const ordinary = retirementProfile?.state === "ordinary";
+  // La capa de #1428: el mismo panel con otra pregunta al frente. Se llega aquí solo
+  // porque el usuario lo declaró — la señal como mucho ofrece.
+  const declaredOrdinary = retirementProfile?.state === "ordinary";
   // El ofrecimiento calla mientras hay supuestos sin guardar: sus botones ESCRIBEN, y
   // pulsarlos a media edición se llevaría el borrador por delante.
   const offerLine =
     retirementProfile && !previewing ? fireRetirementOfferLine(retirementProfile) : null;
   const sustainableCopy =
-    ordinary && sustainableSpending && fireResult
+    declaredOrdinary && sustainableSpending && fireResult
       ? fireSustainableSpendingCopy({
           formatMoney: fmt,
-          // Un alquiler declarado sin gastos no suma en el gasto sostenible por la
-          // misma razón que no mueve la tasa (ADR 0076), así que la tarjeta lo dice
-          // leyendo los MISMOS avisos que la sección de alquileres de abajo.
-          hasRentsPendingExpenses: fireResult.rentReturns.notices.some(
-            (notice) => notice.reason === "missing_expenses",
-          ),
           immobilizedMinor: fireResult.capitalSplit.immobilized.amountMinor,
+          // Los MISMOS avisos que la sección de alquileres de abajo (#1448): un
+          // alquiler que no suma en el gasto sostenible lo dice con su razón, y las
+          // razones son tres, no solo la de los gastos sin declarar.
+          rentNotices: fireResult.rentReturns.notices,
           spending: sustainableSpending,
         })
       : null;
+  // El titular solo se troca si hay una respuesta con la que trocarlo: sin tasa de
+  // retirada no hay gasto sostenible, y un encabezado que promete «cuánto puedes
+  // gastar» sobre una tarjeta ausente es peor que no cambiar nada.
+  const heading = firePanelHeading({ ordinary: sustainableCopy !== null, previewing });
   const coastProgress = fireResult
     ? coastProgressPercent(
         fireResult.eligibleAssets.amountMinor,
@@ -282,14 +285,8 @@ export function FirePanel({
       className={`firePanel objetivosFirePanel${previewing ? " objetivosFirePanel--previewing" : ""}`}
     >
       <div className="panelHeader">
-        <h3>{ordinary ? "Tu plan de jubilación" : "Independencia financiera · FIRE"}</h3>
-        <span>
-          {previewing
-            ? "previsualización · sin guardar"
-            : ordinary
-              ? "cuánto puedes gastar"
-              : "objetivo principal"}
-        </span>
+        <h3>{heading.title}</h3>
+        <span>{heading.eyebrow}</span>
       </div>
 
       {/* Detectar y OFRECER, nunca imponer (#1428). Se nombra el hecho que disparó la
@@ -299,35 +296,29 @@ export function FirePanel({
           se guarda en las DOS direcciones: un «no» que no se persistiera volvería a
           preguntarse en cada carga. */}
       {offerLine !== null && scopeId !== null ? (
-        <form action={setRetirementPlanAction} className="fireRetirementOffer">
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="scopeId" type="hidden" value={scopeId} />
-          {/* El aviso es el párrafo, no el formulario: `role="status"` sobre el
-              `<form>` le quitaría su propio rol y metería los dos botones dentro de
-              una región viva. */}
+        <div className="fireRetirementOffer">
+          {/* El aviso es el párrafo, no el envoltorio: `role="status"` sobre algo que
+              contiene los botones los metería dentro de una región viva. */}
           <p role="status">
             {offerLine} ¿Quieres ver esta pantalla como plan de jubilación —cuánto puedes
             gastar— en vez de FIRE?
           </p>
           <div className="fireRetirementOfferActions">
-            <button
-              className="btnSmall"
-              name="retirementPlan"
-              type="submit"
-              value="ordinary"
-            >
-              Verlo así
-            </button>
-            <button
-              className="btnSmall fireRetirementOfferDismiss"
-              name="retirementPlan"
-              type="submit"
-              value="early"
-            >
-              No, sigo con FIRE
-            </button>
+            <FireRetirementPlanForm
+              currentUrl={currentUrl}
+              label="Verlo así"
+              plan="ordinary"
+              scopeId={scopeId}
+            />
+            <FireRetirementPlanForm
+              buttonClassName="btnSmall fireRetirementOfferDismiss"
+              currentUrl={currentUrl}
+              label="No, sigo con FIRE"
+              plan="early"
+              scopeId={scopeId}
+            />
           </div>
-        </form>
+        </div>
       ) : null}
 
       {fireResult && config && funded ? (
@@ -368,13 +359,16 @@ export function FirePanel({
                 ) : null}
                 {sustainableCopy.depletion ? (
                   <p className="fireCoastGloss">{sustainableCopy.depletion.gloss}</p>
-                ) : (
+                ) : null}
+                {/* Y si no hay segunda cifra, qué falta exactamente: la edad final se
+                    pide en los supuestos, la fecha de nacimiento en Ajustes, y una edad
+                    final ya alcanzada no se pide en ninguna parte. */}
+                {sustainableCopy.depletionAbsence !== null ? (
                   <p className="fireCoastGloss">
-                    Esta cifra no toca el principal.{" "}
-                    <a href="#supuestos">Dinos hasta qué edad debe durar tu capital</a> y
-                    verás también lo que podrías gastar agotándolo.
+                    {sustainableCopy.depletionAbsence}{" "}
+                    <a href="#supuestos">Tus supuestos</a>
                   </p>
-                )}
+                ) : null}
 
                 {sustainableCopy.exclusionNote ? (
                   <p className="objetivosSubNote">{sustainableCopy.exclusionNote}</p>
@@ -384,7 +378,7 @@ export function FirePanel({
 
             {/* The noun matters: a lone «68,5 %» reads as a probability of
                 arriving, not as the share of the target already funded (#1426). */}
-            <p className={ordinary ? "fireFundedDemoted" : "fireBig"}>
+            <p className={sustainableCopy !== null ? "fireFundedDemoted" : "fireBig"}>
               {funded.percent} <span className="fireBigNoun">financiado</span>
             </p>
             <p className="fireFundedFraction">{funded.fraction}</p>
@@ -392,20 +386,16 @@ export function FirePanel({
             {/* La vuelta atrás vive junto a la cifra que se degradó, no escondida en
                 un formulario: quien dijo «así» tiene que poder desdecirse donde lo ve
                 (y el desplegable de supuestos lo ofrece igual). */}
-            {ordinary && scopeId !== null && !previewing ? (
-              <form action={setRetirementPlanAction} className="fireRetirementRevert">
-                <input name="currentUrl" type="hidden" value={currentUrl} />
-                <input name="scopeId" type="hidden" value={scopeId} />
+            {declaredOrdinary && scopeId !== null && !previewing ? (
+              <div className="fireRetirementRevert">
                 <span>{fireOrdinaryPlanNote(funded.percent)}</span>
-                <button
-                  className="btnSmall"
-                  name="retirementPlan"
-                  type="submit"
-                  value="early"
-                >
-                  Ver como FIRE
-                </button>
-              </form>
+                <FireRetirementPlanForm
+                  currentUrl={currentUrl}
+                  label="Ver como FIRE"
+                  plan="early"
+                  scopeId={scopeId}
+                />
+              </div>
             ) : null}
 
             <div className="fireBar">

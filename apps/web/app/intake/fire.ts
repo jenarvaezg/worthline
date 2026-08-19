@@ -86,12 +86,24 @@ export function parseFireConfigFormStrict(
   // young. `FireScopeConfig.currentAge` lives on only as the legacy fallback for
   // configs written before this change, and `saveFireConfig` carries that value
   // forward so saving this form never erases it.
-  const targetRetirementAgeRaw =
-    (formData.get("targetRetirementAge") as string | null) ?? "";
-  const targetRetirementAgeParsed = parseInt(targetRetirementAgeRaw, 10);
-  const targetRetirementAge = !Number.isNaN(targetRetirementAgeParsed)
-    ? targetRetirementAgeParsed
-    : 65;
+  //
+  // Y la edad objetivo tampoco la rellenamos nosotros (#1428). Este parser escribía
+  // `?? 65` siempre, así que TODA config guardada llevaba un 65 que el usuario no había
+  // elegido — y la señal del perfil, que compara esa edad con el umbral (también 65 por
+  // defecto), se disparaba para todo el mundo citándole una edad que nunca escribió. El
+  // motor sigue cayendo a 65 donde hay que calcular (`calculateFire`,
+  // `fireReservationHorizon`); lo que no se hace es GUARDARLO como si fuera una
+  // declaración (ADR 0074).
+  const targetRetirementAgeRaw = (
+    (formData.get("targetRetirementAge") as string | null) ?? ""
+  ).trim();
+  const targetRetirementAgeParsed = targetRetirementAgeRaw
+    ? parseInt(targetRetirementAgeRaw, 10)
+    : null;
+  const targetRetirementAge =
+    targetRetirementAgeParsed !== null && !Number.isNaN(targetRetirementAgeParsed)
+      ? targetRetirementAgeParsed
+      : undefined;
 
   // Monthly savings capacity (#425) is optional: a blank or garbage value leaves
   // it unset so the UI's suggestion-from-history can fill it. Zero is valid — it
@@ -134,34 +146,53 @@ export function parseFireConfigFormStrict(
   // La edad a partir de la cual jubilarse ya no es *early* (#1428): un dato del
   // usuario con defecto neutro, nunca la normativa española codificada — la edad
   // ordinaria depende del país y del año (misma doctrina que el tope de #1427).
-  const ordinaryRetirementAgeParsed = parseInt(
-    (formData.get("ordinaryRetirementAge") as string | null) ?? "",
-    10,
-  );
-  const ordinaryRetirementAge = !Number.isNaN(ordinaryRetirementAgeParsed)
-    ? ordinaryRetirementAgeParsed
-    : ORDINARY_RETIREMENT_AGE_DEFAULT;
-
-  // Hasta qué edad tiene que durar el capital (#1428). Opcional y SIN defecto
-  // aplicado: sin este campo la tarjeta de gasto sostenible enseña solo la versión
-  // perpetua, porque inventar una esperanza de vida es meter una tabla actuarial en
-  // un motor que no la tiene.
-  const lifeExpectancyRaw = (
-    (formData.get("lifeExpectancyAge") as string | null) ?? ""
+  const ordinaryRetirementAgeRaw = (
+    (formData.get("ordinaryRetirementAge") as string | null) ?? ""
   ).trim();
-  const lifeExpectancyParsed = lifeExpectancyRaw ? parseInt(lifeExpectancyRaw, 10) : null;
-  const hasLifeExpectancy = lifeExpectancyParsed !== null;
+  const ordinaryRetirementAgeParsed = ordinaryRetirementAgeRaw
+    ? parseInt(ordinaryRetirementAgeRaw, 10)
+    : null;
 
-  if (hasLifeExpectancy) {
-    if (Number.isNaN(lifeExpectancyParsed) || lifeExpectancyParsed > 130) {
+  // Con rango, al contrario que `targetRetirementAge` (que no lo tenía ya antes): este
+  // umbral es la regla con la que la app mide al usuario, así que un 0 o un 500 guardados
+  // en silencio decidirían por él sin que nada en pantalla lo delate.
+  if (
+    ordinaryRetirementAgeParsed !== null &&
+    (Number.isNaN(ordinaryRetirementAgeParsed) ||
+      ordinaryRetirementAgeParsed <= 0 ||
+      ordinaryRetirementAgeParsed > 130)
+  ) {
+    return {
+      ok: false,
+      error: "La edad de jubilación ordinaria debe ser una edad válida.",
+    };
+  }
+
+  const ordinaryRetirementAge =
+    ordinaryRetirementAgeParsed ?? ORDINARY_RETIREMENT_AGE_DEFAULT;
+
+  // La EDAD FINAL: hasta cuándo tiene que durar el capital (#1428). Opcional y SIN
+  // defecto aplicado — sin este campo la tarjeta de gasto sostenible enseña solo la
+  // versión perpetua. No se llama esperanza de vida a propósito: eso sería una tabla
+  // actuarial, y esto es una declaración del usuario.
+  const finalAgeRaw = (
+    (formData.get("capitalLastsUntilAge") as string | null) ?? ""
+  ).trim();
+  const finalAgeParsed = finalAgeRaw ? parseInt(finalAgeRaw, 10) : null;
+  const hasFinalAge = finalAgeParsed !== null;
+
+  if (hasFinalAge) {
+    if (Number.isNaN(finalAgeParsed) || finalAgeParsed <= 0 || finalAgeParsed > 130) {
       return {
         ok: false,
         error: "La edad hasta la que debe durar tu capital debe ser una edad válida.",
       };
     }
-    // Un capital que se agota ANTES de que empiece la jubilación no responde a
-    // ninguna pregunta: el reparto saldría de un horizonte negativo.
-    if (lifeExpectancyParsed <= targetRetirementAge) {
+    // Un capital que se agota ANTES de la jubilación no responde a ninguna pregunta.
+    // Se mide contra la edad objetivo DECLARADA y solo contra ella: rechazar un 60
+    // citándole al usuario un 65 que la app rellenó por él es la misma trampa que esta
+    // pasada vino a quitar de la señal del perfil (ADR 0074).
+    if (targetRetirementAge !== undefined && finalAgeParsed <= targetRetirementAge) {
       return {
         ok: false,
         error:
@@ -205,14 +236,14 @@ export function parseFireConfigFormStrict(
         : {}),
       monthlySpendingMinor,
       safeWithdrawalRate: safeWithdrawalRatePct / 100,
-      targetRetirementAge,
+      ...(targetRetirementAge === undefined ? {} : { targetRetirementAge }),
       ...(hasSavingsCapacity ? { monthlySavingsCapacityMinor } : {}),
       ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
       ...(hasBaristaIncome ? { baristaMonthlyIncomeMinor: baristaIncomeMinor! } : {}),
       immobilizedCountsAsFireCapital,
       ordinaryRetirementAge,
-      ...(hasLifeExpectancy ? { lifeExpectancyAge: lifeExpectancyParsed! } : {}),
+      ...(hasFinalAge ? { capitalLastsUntilAge: finalAgeParsed } : {}),
       ...(retirementPlan === undefined ? {} : { retirementPlan }),
       ...(tierRealReturns ? { tierRealReturns } : {}),
     },

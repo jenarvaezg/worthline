@@ -254,7 +254,7 @@ export async function ObjetivosContent({
     monthlySavingsCapacity: savedFieldValues.monthlySavingsCapacity ?? "",
     monthlySpending: savedFieldValues.monthlySpending ?? "",
     safeWithdrawalRate: savedFieldValues.safeWithdrawalRate,
-    targetRetirementAge: savedFieldValues.targetRetirementAge,
+    targetRetirementAge: savedFieldValues.targetRetirementAge ?? "",
   };
 
   // Monthly allocation view (#557): the plan's capital split for a window of

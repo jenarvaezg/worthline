@@ -263,9 +263,9 @@ function toConfig(
     ...(config.retirementPlan === undefined
       ? {}
       : { retirementPlan: config.retirementPlan }),
-    ...(config.lifeExpectancyAge === undefined
+    ...(config.capitalLastsUntilAge === undefined
       ? {}
-      : { lifeExpectancyAge: config.lifeExpectancyAge }),
+      : { capitalLastsUntilAge: config.capitalLastsUntilAge }),
   };
 }
 

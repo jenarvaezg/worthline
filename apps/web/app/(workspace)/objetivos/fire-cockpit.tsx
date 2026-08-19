@@ -39,8 +39,7 @@ import type {
 import {
   fireCoastArrival,
   fireLevels,
-  fireRetirementProfile,
-  fireSustainableSpending,
+  fireRetirementReadout,
   monthlySavingsCapacityForFire,
   previewFireWithAssumptions,
   projectFireFromContext,
@@ -114,14 +113,13 @@ export function FireCockpit(props: FireCockpitProps) {
   // El gasto sostenible es la inversa del número FIRE (#1428): comparte la tasa de
   // retirada, así que tocarla tiene que mover las dos cifras a la vez o el titular
   // contradiría al porcentaje de debajo. Y el perfil se recalcula con el borrador
-  // porque la edad objetivo es una de sus dos señales: subirla a 67 mientras se
-  // teclea es exactamente cuando la pantalla debería ofrecer el cambio.
-  const sustainableSpending =
-    previewing && result ? fireSustainableSpending(result) : props.sustainableSpending;
-  const retirementProfile =
+  // porque la edad objetivo es una de sus dos señales: subirla a 67 mientras se teclea
+  // es exactamente cuando la pantalla debería ofrecer el cambio. Los dos por la misma
+  // puerta que el servidor, medidos contra ESTE rail.
+  const retirement =
     previewing && result
-      ? fireRetirementProfile({ context: result.context, levels: levelRail })
-      : props.retirementProfile;
+      ? fireRetirementReadout({ levels: levelRail, result })
+      : { profile: props.retirementProfile, spending: props.sustainableSpending };
 
   return (
     <div className="objetivosCockpit">
@@ -154,10 +152,10 @@ export function FireCockpit(props: FireCockpitProps) {
         fireResult={result}
         previewing={previewing}
         privacyMode={props.privacyMode}
-        retirementProfile={retirementProfile}
+        retirementProfile={retirement.profile}
         savingsCoherence={props.savingsCoherence}
         scopeId={props.scopeId}
-        sustainableSpending={sustainableSpending}
+        sustainableSpending={retirement.spending}
       />
     </div>
   );

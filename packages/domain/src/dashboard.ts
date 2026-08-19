@@ -13,10 +13,9 @@ import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
 import type { FireRetirementProfile } from "./fire-retirement-profile";
-import { fireRetirementProfile } from "./fire-retirement-profile";
+import { fireRetirementReadout } from "./fire-retirement-readout";
 import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 import type { FireSustainableSpending } from "./fire-sustainable-spending";
-import { fireSustainableSpending } from "./fire-sustainable-spending";
 import type { FxAggregation } from "./fx";
 import type { GoalFireDelay } from "./goal-fire-delay";
 import { goalFireDelay } from "./goal-fire-delay";
@@ -552,8 +551,10 @@ export function prepareObjetivosState(
     ? fireLevels({ context: dash.fireResult.context })
     : null;
 
-  const retirementProfile = dash.fireResult
-    ? fireRetirementProfile({ context: dash.fireResult.context, levels: fireLevelRail })
+  // Perfil y gasto sostenible por una sola puerta (#1428): el perfil se mide contra
+  // ESTE rail, el mismo que la pantalla pinta.
+  const retirement = dash.fireResult
+    ? fireRetirementReadout({ levels: fireLevelRail, result: dash.fireResult })
     : null;
 
   return {
@@ -568,11 +569,7 @@ export function prepareObjetivosState(
     fireScopeConfig: dash.fireScopeConfig,
     goals,
     fireLevelRail,
-    retirementProfile,
-    // Del MISMO resultado que el número FIRE de al lado (#1428): el gasto sostenible
-    // es su inversa, así que las dos cifras salen del mismo capital y de la misma tasa.
-    sustainableSpending: dash.fireResult
-      ? fireSustainableSpending(dash.fireResult)
-      : null,
+    retirementProfile: retirement?.profile ?? null,
+    sustainableSpending: retirement?.spending ?? null,
   };
 }

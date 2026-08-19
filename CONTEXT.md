@@ -566,8 +566,9 @@ The inverse of the **FIRE number**: what a scope can spend without depleting its
 patrimony. Always two halves, never one figure — the declared **net rents** (ADR 0076)
 plus what the **sellable** side of the eligible pool supports at the withdrawal rate,
 with the **immobilized** side named as what it leaves out. It has a perpetual reading
-(the principal untouched) and, when the user declares how long the capital must last, a
-depleting one (the same capital annuitized to that age). It is the headline for a scope
+(the principal untouched) and, when the user declares a **final age** — how long the
+capital must last, a declaration and never an estimated life expectancy — a depleting
+one (the same capital annuitized from today's **reference age** to that final age). It is the headline for a scope
 whose **retirement plan** is declared ordinary (ADR 0081).
 _Avoid_: "safe spending" (a withdrawal rate is not a guarantee), "renta" (that is the
 rent half alone).

@@ -178,6 +178,47 @@ describe("parseFireConfigFormStrict — the immobilized declaration (#1460)", ()
 });
 
 describe("parseFireConfigFormStrict — el perfil de jubilación ordinaria (#1428)", () => {
+  it("una edad objetivo en blanco NO se guarda: un defecto no es una declaración", () => {
+    // El agujero que hacía inútil la señal del perfil: este parser escribía `?? 65`
+    // siempre, así que toda config guardada llevaba un 65 que nadie eligió y el
+    // ofrecimiento se disparaba para todo el mundo (el umbral por defecto es 65).
+    const result = parseFireConfigFormStrict(fireForm({ targetRetirementAge: "" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.targetRetirementAge).toBeUndefined();
+    }
+  });
+
+  it("un formulario que ni menciona la edad objetivo tampoco la inventa", () => {
+    const result = parseFireConfigFormStrict(fireForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.targetRetirementAge).toBeUndefined();
+    }
+  });
+
+  it("rechaza un umbral de edad ordinaria imposible: es la regla con la que se mide al usuario", () => {
+    for (const ordinaryRetirementAge of ["0", "500", "-3"]) {
+      const result = parseFireConfigFormStrict(fireForm({ ordinaryRetirementAge }));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain("jubilación ordinaria");
+      }
+    }
+  });
+
+  it("acepta una edad final sin edad objetivo declarada, en vez de compararla con un 65 fantasma", () => {
+    const result = parseFireConfigFormStrict(fireForm({ capitalLastsUntilAge: "60" }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.command.capitalLastsUntilAge).toBe(60);
+    }
+  });
+
   it("el umbral de edad ordinaria es un dato del usuario, con defecto neutro 65", () => {
     expect(parseFireConfigFormStrict(fireForm())).toMatchObject({
       command: { ordinaryRetirementAge: 65 },
@@ -193,21 +234,21 @@ describe("parseFireConfigFormStrict — el perfil de jubilación ordinaria (#142
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.command.lifeExpectancyAge).toBeUndefined();
+      expect(result.command.capitalLastsUntilAge).toBeUndefined();
     }
   });
 
   it("la acepta cuando se declara", () => {
     expect(
       parseFireConfigFormStrict(
-        fireForm({ lifeExpectancyAge: "90", targetRetirementAge: "67" }),
+        fireForm({ capitalLastsUntilAge: "90", targetRetirementAge: "67" }),
       ),
-    ).toMatchObject({ command: { lifeExpectancyAge: 90 }, ok: true });
+    ).toMatchObject({ command: { capitalLastsUntilAge: 90 }, ok: true });
   });
 
   it("rechaza una edad final anterior a la de jubilación: no habría años que repartir", () => {
     const result = parseFireConfigFormStrict(
-      fireForm({ lifeExpectancyAge: "60", targetRetirementAge: "67" }),
+      fireForm({ capitalLastsUntilAge: "60", targetRetirementAge: "67" }),
     );
 
     expect(result.ok).toBe(false);
@@ -217,7 +258,7 @@ describe("parseFireConfigFormStrict — el perfil de jubilación ordinaria (#142
   });
 
   it("rechaza una edad final imposible", () => {
-    expect(parseFireConfigFormStrict(fireForm({ lifeExpectancyAge: "200" })).ok).toBe(
+    expect(parseFireConfigFormStrict(fireForm({ capitalLastsUntilAge: "200" })).ok).toBe(
       false,
     );
   });

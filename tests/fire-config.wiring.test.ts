@@ -184,7 +184,7 @@ describe("setRetirementPlanAction wiring", () => {
             safeWithdrawalRate: "3.5",
             targetRetirementAge: "67",
             monthlySavingsCapacity: "1500",
-            lifeExpectancyAge: "90",
+            capitalLastsUntilAge: "90",
           },
           "/objetivos",
         ),
@@ -211,7 +211,7 @@ describe("setRetirementPlanAction wiring", () => {
     expect(config!.monthlySpendingMinor).toBe(200_000);
     expect(config!.safeWithdrawalRate).toBeCloseTo(0.035, 10);
     expect(config!.monthlySavingsCapacityMinor).toBe(150_000);
-    expect(config!.lifeExpectancyAge).toBe(90);
+    expect(config!.capitalLastsUntilAge).toBe(90);
     expect(config!.targetRetirementAge).toBe(67);
   });
 

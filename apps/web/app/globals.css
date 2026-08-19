@@ -3029,12 +3029,18 @@ code {
   align-items: baseline;
   display: grid;
   font-size: 0.82rem;
-  gap: 8px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  /* Etiqueta y cifra en la primera línea; la aritmética debajo, con todo el ancho:
+     en la columna estrecha del hero las tres en fila dejaban la glosa sin sitio. */
+  grid-template-areas:
+    "label amount"
+    "gloss gloss";
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .fireSustainableLabel {
   font-weight: 700;
+  grid-area: label;
 }
 
 /* Las rentas conservan la identidad dorada del ladrillo del que salen. */
@@ -3042,16 +3048,21 @@ code {
   color: var(--gold);
 }
 
+/* La glosa de estas filas ES la aritmética obligatoria (ADR 0077) — «100.000 € de
+   capital vendible × 3,5 % ÷ 12» —, así que envuelve en vez de elidir: recortarla con
+   puntos suspensivos en la columna estrecha se llevaría justamente lo que la cifra
+   tiene que poder demostrar. (El split de capital sí elide: allí la glosa es prosa y
+   lleva `title`.) */
 .fireSustainableGloss {
   color: var(--muted);
   font-size: 0.74rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  grid-area: gloss;
+  line-height: 1.45;
 }
 
 .fireSustainableRow strong {
   font-variant-numeric: tabular-nums;
+  grid-area: amount;
   text-align: right;
 }
 

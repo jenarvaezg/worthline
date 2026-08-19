@@ -48,16 +48,32 @@ describe("los valores que el formulario mudado precarga (#1450)", () => {
     expect(values.tierReturns.illiquid).toBeUndefined();
   });
 
-  test("sin config los dos campos con defecto del motor los declaran, el resto van vacíos", () => {
-    // Un scope nuevo no puede enseñar campos en blanco donde el parser aplicará
-    // 4 % y 65: el formulario mentiría sobre con qué se va a calcular.
+  test("sin config la tasa declara su defecto, y el resto van vacíos", () => {
+    // Un scope nuevo no puede enseñar la tasa en blanco: el parser aplicará 4 % y el
+    // formulario mentiría sobre con qué se va a calcular.
     const values = fireConfigFieldValues(undefined);
 
     expect(values.safeWithdrawalRate).toBe("4");
-    expect(values.targetRetirementAge).toBe("65");
     expect(values.monthlySpending).toBeUndefined();
     expect(values.monthlySavingsCapacity).toBeUndefined();
     expect(values.expectedRealReturn).toBeUndefined();
+  });
+
+  test("la edad objetivo sí va vacía: su 65 es marca de agua, no valor (#1428)", () => {
+    // Este test decía lo contrario, y ese era justo el fallo: precargada con 65, el
+    // guardado escribía un 65 que el usuario no había elegido, y la señal del perfil
+    // —que compara esa edad con un umbral cuyo defecto TAMBIÉN es 65— se disparaba
+    // para todo el mundo. El defecto del motor sigue a la vista, ahora sin convertirse
+    // en declaración (ADR 0074, ADR 0081).
+    expect(fireConfigFieldValues(undefined).targetRetirementAge).toBeUndefined();
+    expect(
+      fireConfigFieldValues({ monthlySpendingMinor: 200_000, safeWithdrawalRate: 0.04 })
+        .targetRetirementAge,
+    ).toBeUndefined();
+    // Y una edad guardada sí se precarga: es la elección del usuario, no un defecto.
+    expect(
+      fireConfigFieldValues({ ...config, targetRetirementAge: 67 }).targetRetirementAge,
+    ).toBe("67");
   });
 
   test("un ahorro de cero se precarga como cero, no como vacío", () => {

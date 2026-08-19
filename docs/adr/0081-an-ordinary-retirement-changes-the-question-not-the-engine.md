@@ -57,6 +57,15 @@ does not serve him.
      engine's `?? 65` fallback here would tell every user who never touched the field
      that their plan looks like an ordinary retirement, quoting an age they never
      typed. A default is not a declaration (ADR 0074).
+
+     **This forced a change at the source.** `parseFireConfigFormStrict` used to write
+     `targetRetirementAge: ?? 65` unconditionally, so every stored config carried a 65
+     nobody chose — and with the threshold's own default at 65, guarding on
+     "is it declared?" bought nothing: the offer fired for everyone. The field is now
+     genuinely optional end to end (blank input, `65` as a watermark, absent from the
+     command when blank), and the engine keeps its `?? 65` where it has to compute. The
+     same trap is closed one line down: the final age is validated against the
+     *declared* target age only, never against the fallback.
    - `regular_unreachable`: the Regular level never crosses inside the projection
      horizon — read off the level rail the screen already computed, not a second
      trajectory. Requires a declared savings capacity, for the same reason: with none,
@@ -81,6 +90,21 @@ does not serve him.
    needs a **final age, which is a user field with no default applied**: without it the
    card shows the perpetual half alone. No actuarial table enters the model; the FIRE
    engine is pure SWR and the duration rides inside the choice of rate.
+
+   The field is `capitalLastsUntilAge`, deliberately NOT `lifeExpectancyAge`: naming it
+   after a life expectancy would claim exactly the estimate this ADR refuses to make.
+   The neutral 90 the issue asks for lives where it belongs — as the form's watermark,
+   visible without becoming a value nobody typed.
+
+   Two clocks would be worse than one: the horizon is measured from **today's**
+   reference age, not from the retirement age, because both figures describe today's
+   capital. Annuitizing today's balance over a window that starts at a future
+   retirement would spend money that window assumes has already grown.
+
+   When there is no depleting figure, the card says which datum is missing — the final
+   age, the birth date the reference age comes from, or neither (a final age already
+   reached). Asking again for a field the user has already filled reads as not
+   listening.
 
 6. **The funded percentage is not deleted.** It stays printed and stays true; it stops
    being the headline when the headline does not apply.

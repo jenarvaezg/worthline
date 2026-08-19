@@ -139,7 +139,7 @@ describe("fireSustainableSpending — las rentas van aparte", () => {
 describe("fireSustainableSpending — la versión de agotamiento", () => {
   it("anualiza el capital vendible hasta la edad final declarada", () => {
     const spending = fireSustainableSpending(
-      result({ config: { lifeExpectancyAge: 90 } }),
+      result({ config: { capitalLastsUntilAge: 90 } }),
     )!;
 
     // 100.000 € al 3,5 % repartidos en 27 años: más que el perpetuo, porque el
@@ -157,7 +157,7 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
 
   it("las rentas se suman también aquí: no se agotan con el capital", () => {
     const spending = fireSustainableSpending(
-      result({ config: { lifeExpectancyAge: 90 }, netRentAnnualMinor: 1_175_000 }),
+      result({ config: { capitalLastsUntilAge: 90 }, netRentAnnualMinor: 1_175_000 }),
     )!;
 
     expect(spending.depletion!.total.annualMinor).toBe(578_524 + 1_175_000);
@@ -165,7 +165,7 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
 
   it("con retorno cero es un reparto lineal, no una división por cero", () => {
     const spending = fireSustainableSpending(
-      result({ config: { lifeExpectancyAge: 83 }, realReturnUsed: 0 }),
+      result({ config: { capitalLastsUntilAge: 83 }, realReturnUsed: 0 }),
     )!;
 
     expect(spending.depletion!.capital).toEqual({
@@ -174,24 +174,38 @@ describe("fireSustainableSpending — la versión de agotamiento", () => {
     });
   });
 
-  it("sin edad final declarada no hay versión de agotamiento: no se inventa una esperanza de vida", () => {
-    expect(fireSustainableSpending(result())!.depletion).toBeNull();
+  it("sin edad final declarada no hay versión de agotamiento: no se inventa una edad", () => {
+    const spending = fireSustainableSpending(result())!;
+
+    expect(spending.depletion).toBeNull();
+    expect(spending.depletionAbsence).toBe("no_final_age");
   });
 
-  it("una edad final ya alcanzada no deja años que repartir", () => {
-    expect(
-      fireSustainableSpending(result({ config: { lifeExpectancyAge: 63 } }))!.depletion,
-    ).toBeNull();
-    expect(
-      fireSustainableSpending(result({ config: { lifeExpectancyAge: 50 } }))!.depletion,
-    ).toBeNull();
+  it("una edad final ya alcanzada no deja años que repartir, y lo dice así", () => {
+    for (const capitalLastsUntilAge of [63, 50]) {
+      const spending = fireSustainableSpending(
+        result({ config: { capitalLastsUntilAge } }),
+      )!;
+
+      expect(spending.depletion).toBeNull();
+      expect(spending.depletionAbsence).toBe("final_age_reached");
+    }
   });
 
-  it("sin edad actual no hay reloj contra el que medir los años", () => {
+  it("con la edad final puesta y sin fecha de nacimiento, el hueco es la OTRA falta", () => {
+    // Si esto dijera «no_final_age», la tarjeta pediría un dato que el usuario ya dio.
+    const spending = fireSustainableSpending(
+      result({ base: AGELESS_CONFIG, config: { capitalLastsUntilAge: 90 } }),
+    )!;
+
+    expect(spending.depletion).toBeNull();
+    expect(spending.depletionAbsence).toBe("no_reference_age");
+  });
+
+  it("con la versión de agotamiento presente no hay hueco que explicar", () => {
     expect(
-      fireSustainableSpending(
-        result({ base: AGELESS_CONFIG, config: { lifeExpectancyAge: 90 } }),
-      )!.depletion,
+      fireSustainableSpending(result({ config: { capitalLastsUntilAge: 90 } }))!
+        .depletionAbsence,
     ).toBeNull();
   });
 });

@@ -765,11 +765,12 @@ export interface AgentViewFireConfig {
    */
   ordinaryRetirementAge: number;
   /**
-   * How long the capital must last, if the user said (#1428). Present only when they
-   * did: no actuarial table is assumed on their behalf, and without it the
-   * sustainable-spending answer has only its perpetual half.
+   * The **final age**: how long the capital must last, if the user said (#1428). Present
+   * only when they did — no actuarial table is assumed on their behalf, and without it
+   * the sustainable-spending answer has only its perpetual half. Deliberately not called
+   * a life expectancy: it is a declaration, not an estimate.
    */
-  lifeExpectancyAge?: number;
+  capitalLastsUntilAge?: number;
 }
 
 /**
@@ -831,7 +832,7 @@ export interface AgentViewFireResult {
    * Two halves, never summed into one opaque figure: `rents` is the scope's declared NET
    * rent, and `capitalMonthly` is what the SELLABLE side supports at the withdrawal rate
    * (the immobilized side is not in it — a withdrawal rate assumes capital sold in
-   * slices). `depletionMonthly` is the same capital annuitized to `lifeExpectancyAge`,
+   * slices). `depletionMonthly` is the same capital annuitized to `capitalLastsUntilAge`,
    * present only when that age is declared. Absent when there is no withdrawal rate.
    */
   sustainableSpending?: {

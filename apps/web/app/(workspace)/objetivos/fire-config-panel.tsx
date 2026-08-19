@@ -173,11 +173,13 @@ export function FireConfigPanel({
               inputMode="numeric"
               name="targetRetirementAge"
               onChange={editField("targetRetirementAge")}
+              placeholder="65"
               value={draft.targetRetirementAge}
             />
             <small className="muted">
               Cuándo quieres jubilarte. Fija el Coast: cuánto necesitas tener ya para
-              llegar sin aportar nada más.
+              llegar sin aportar nada más. Vacío = los 65 de la marca de agua, que es lo
+              que calcula el motor sin que cuente como tu elección.
             </small>
           </label>
 
@@ -302,9 +304,9 @@ export function FireConfigPanel({
               <label>
                 Tu capital debe durar hasta los
                 <input
-                  defaultValue={values.lifeExpectancyAge}
+                  defaultValue={values.capitalLastsUntilAge}
                   inputMode="numeric"
-                  name="lifeExpectancyAge"
+                  name="capitalLastsUntilAge"
                   placeholder="90"
                 />
                 <small className="muted">

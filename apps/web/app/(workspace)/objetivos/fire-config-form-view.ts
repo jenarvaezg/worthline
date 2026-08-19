@@ -33,16 +33,22 @@ export interface FireConfigFieldValues {
   /** Never blank: the parser applies 4 % to an empty form, so the form says 4 %. */
   safeWithdrawalRate: string;
   monthlySavingsCapacity?: string;
-  /** Never blank, same reason: the engine's default is 65. */
-  targetRetirementAge: string;
+  /**
+   * La edad objetivo, en blanco cuando el usuario no ha declarado ninguna (#1428).
+   * Se prellenaba con el 65 del motor, y guardar el formulario escribía ese 65 como si
+   * el usuario lo hubiera elegido — con lo que la señal del perfil se disparaba para
+   * todo el mundo citándole una edad que nunca escribió. El defecto del motor sigue
+   * visible, ahora como marca de agua: se ve sin convertirse en declaración.
+   */
+  targetRetirementAge?: string;
   /**
    * La edad a partir de la cual jubilarse ya no es *early* (#1428). Nunca vacío: el
    * perfil se detecta contra este umbral, así que un hueco donde el motor usa 65
    * escondería la regla con la que se está midiendo al usuario.
    */
   ordinaryRetirementAge: string;
-  /** Hasta qué edad debe durar el capital (#1428). Vacío = solo la versión perpetua. */
-  lifeExpectancyAge?: string;
+  /** La edad final: hasta cuándo debe durar el capital (#1428). Vacío = solo la perpetua. */
+  capitalLastsUntilAge?: string;
   /** Lo declarado sobre el propio plan (#1428). Vacío = sin contestar. */
   retirementPlan: "" | "ordinary" | "early";
   expectedRealReturn?: string;
@@ -109,13 +115,15 @@ export function fireConfigFieldValues(
           monthlySavingsCapacity: majorFromMinor(config.monthlySavingsCapacityMinor),
         }),
     immobilizedCounts: config == null ? true : fireCountsImmobilizedCapital(config),
-    targetRetirementAge: (config?.targetRetirementAge ?? 65).toString(),
+    ...(config?.targetRetirementAge === undefined
+      ? {}
+      : { targetRetirementAge: config.targetRetirementAge.toString() }),
     ordinaryRetirementAge: (
       config?.ordinaryRetirementAge ?? ORDINARY_RETIREMENT_AGE_DEFAULT
     ).toString(),
-    ...(config?.lifeExpectancyAge === undefined
+    ...(config?.capitalLastsUntilAge === undefined
       ? {}
-      : { lifeExpectancyAge: config.lifeExpectancyAge.toString() }),
+      : { capitalLastsUntilAge: config.capitalLastsUntilAge.toString() }),
     retirementPlan: config?.retirementPlan ?? "",
     ...(config?.expectedRealReturn === undefined
       ? {}

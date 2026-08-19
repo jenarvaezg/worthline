@@ -7,7 +7,7 @@ import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import type { FireProjection } from "./fire-projection";
 import { projectFire } from "./fire-projection";
 import type { FireRentReturnReport } from "./fire-rent-return";
-import { deriveRentRealReturns } from "./fire-rent-return";
+import { deriveRentRealReturns, scopedNetRentAnnualMinor } from "./fire-rent-return";
 import type { FireRetirementPlan } from "./fire-retirement-profile";
 import type { FireReturnMix } from "./fire-return";
 import { fireReturnMix } from "./fire-return";
@@ -104,14 +104,17 @@ export interface FireScopeConfig {
    */
   ordinaryRetirementAge?: number;
   /**
-   * Hasta qué edad tiene que durar el capital, si el usuario quiere esa versión del
-   * gasto sostenible (#1428). Opcional y sin defecto aplicado: sin este campo la
-   * tarjeta enseña solo la versión perpetua (`vendible × tasa de retirada`), porque
-   * inventar una esperanza de vida es meter una tabla actuarial en un motor que no
-   * la tiene. El motor FIRE es SWR puro y la duración viaja dentro de la elección de
-   * la tasa; esta edad es el único sitio donde hace falta decirla en voz alta.
+   * La **edad final**: hasta qué edad tiene que durar el capital, si el usuario quiere
+   * esa versión del gasto sostenible (#1428). Opcional y sin defecto aplicado: sin este
+   * campo la tarjeta enseña solo la versión perpetua (`vendible × tasa de retirada`).
+   *
+   * No se llama «esperanza de vida» a propósito: eso sería una tabla actuarial, y
+   * worthline no tiene ninguna ni la va a estimar. Es una edad que el usuario declara,
+   * como todo lo demás aquí (ADR 0074). El motor FIRE es SWR puro y la duración viaja
+   * dentro de la elección de la tasa; este es el único sitio donde hay que decirla en
+   * voz alta.
    */
-  lifeExpectancyAge?: number;
+  capitalLastsUntilAge?: number;
 }
 
 export interface FireResult {
@@ -577,20 +580,10 @@ export function calculateFireForScope(
       // fuera del capital FIRE (#1460) deja de mover la rentabilidad esperada y sigue
       // pagando su alquiler todos los meses, así que su renta no puede desaparecer del
       // gasto sostenible por una declaración que habla de capital.
-      netRentAnnualMinor: pool.assetRateOverrides.reduce((total, override) => {
-        const derived = rentRealReturns.byAssetId.get(override.assetId);
-        if (derived === undefined || derived.valueMinor <= 0) {
-          return total;
-        }
-        // La renta se declara para el 100 % del inmueble y el override lleva el valor
-        // que el ámbito posee: la misma proporción con la que el peso entró en la tasa.
-        return (
-          total +
-          Math.round(
-            (derived.annualNetRentMinor * override.amountMinor) / derived.valueMinor,
-          )
-        );
-      }, 0),
+      netRentAnnualMinor: scopedNetRentAnnualMinor(
+        pool.assetRateOverrides,
+        rentRealReturns,
+      ),
       // The overrides the pool kept ARE the rates that took effect, so the report
       // cannot advertise a substitution the rate did not receive.
       applied: ratedOverrides.flatMap((override) => {

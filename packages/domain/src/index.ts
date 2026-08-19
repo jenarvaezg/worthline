@@ -538,6 +538,11 @@ export {
   ordinaryRetirementAgeForFire,
 } from "./fire-retirement-profile";
 export type {
+  FireRetirementReadout,
+  FireRetirementReadoutInput,
+} from "./fire-retirement-readout";
+export { fireRetirementReadout } from "./fire-retirement-readout";
+export type {
   AssetRateOverride,
   EligibleTier,
   FireReturnMix,
@@ -550,6 +555,7 @@ export {
 } from "./fire-return";
 export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 export type {
+  FireDepletionAbsence,
   FireSustainableSpending,
   FireSustainableSpendingDepletion,
   FireSustainableSpendingPart,

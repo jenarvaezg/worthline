@@ -190,6 +190,38 @@ export interface DeriveRentRealReturnsInput {
 }
 
 /**
+ * The scope's annual NET rent (minor units) — the income half of the
+ * sustainable-spending answer (#1428, ADR 0081), assembled where the rent arithmetic
+ * lives instead of inside the FIRE result literal.
+ *
+ * `overrides` are the per-asset rates the pool kept for this scope: eligible, owned,
+ * and net-declared. Their `amountMinor` IS the scoped value the rate was weighted
+ * with, so scaling each property's declared net rent by `amountMinor / valueMinor`
+ * gives the scope's share through exactly the same proportion — one reading of
+ * ownership, not two.
+ *
+ * Pass every override the pool derived, INCLUDING the rungs the immobilized
+ * declaration took out of the capital (#1460): that declaration is about capital, and
+ * a flat nobody plans to sell still pays its rent every month.
+ */
+export function scopedNetRentAnnualMinor(
+  overrides: readonly { assetId: string; amountMinor: number }[],
+  rentRealReturns: RentRealReturns,
+): number {
+  let total = 0;
+  for (const override of overrides) {
+    const derived = rentRealReturns.byAssetId.get(override.assetId);
+    if (derived === undefined || derived.valueMinor <= 0) {
+      continue;
+    }
+    total += Math.round(
+      (derived.annualNetRentMinor * override.amountMinor) / derived.valueMinor,
+    );
+  }
+  return total;
+}
+
+/**
  * Derive a real return per property from its declared net rent. See the module
  * doc for the two rules; everything not derived comes back as a notice, except
  * the two silent cases documented inline (a non-property asset, and a property

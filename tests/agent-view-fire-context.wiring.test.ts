@@ -680,12 +680,12 @@ describe("GET fire-context — el perfil de jubilación ordinaria (#1428)", () =
   });
 
   test("the depleting variant appears only with the declared final age", async () => {
-    await seedOrdinaryHousehold({ lifeExpectancyAge: 90, retirementPlan: "ordinary" });
+    await seedOrdinaryHousehold({ capitalLastsUntilAge: 90, retirementPlan: "ordinary" });
 
     const { body } = await fireContext(await householdScopeId());
     const spending = body.data.result.sustainableSpending;
 
-    expect(body.data.config.lifeExpectancyAge).toBe(90);
+    expect(body.data.config.capitalLastsUntilAge).toBe(90);
     expect(spending.untilAge).toBe(90);
     // Gastar el principal en 27 años da más que conservarlo para siempre.
     expect(spending.depletionMonthly.amountMinor).toBeGreaterThan(

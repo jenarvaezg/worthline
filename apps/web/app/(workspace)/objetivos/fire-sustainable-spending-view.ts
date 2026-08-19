@@ -1,24 +1,28 @@
 /**
  * La tarjeta del gasto sostenible, y el ofrecimiento que lleva a ella (#1428).
  *
- * Dos redacciones que tienen que ser coherentes entre sí, así que viven juntas:
+ * Todas las palabras de la capa viven aquí, y tienen que ser coherentes entre sí:
  *
- * - El **ofrecimiento**: por qué la app sospecha que este plan no es FIRE. Se nombra
- *   la señal, no el veredicto — «tu edad objetivo son 67 años» es un hecho que el
- *   usuario reconoce; «no vas a hacer FIRE» es una conclusión sobre su vida.
+ * - El **encabezado**: qué pregunta lidera el panel. Es lo único que la capa cambia de
+ *   la pantalla, así que la decisión se toma en un módulo con tests y no repartida por
+ *   el JSX (interaction-patterns §7).
+ * - El **ofrecimiento**: por qué la app sospecha que este plan no es FIRE. Se nombra la
+ *   señal, no el veredicto — «tu edad objetivo son 67 años» es un hecho que el usuario
+ *   reconoce; «no vas a hacer FIRE» es una conclusión sobre su vida.
  * - La **tarjeta**: la respuesta a «¿cuánto puedo gastar sin mermar mi patrimonio?»,
- *   partida en las dos mitades que la hacen honesta (rentas netas y capital vendible)
- *   y con las dos versiones que tiene (perpetua y de agotamiento).
+ *   partida en las dos mitades que la hacen honesta (rentas netas y capital vendible),
+ *   con sus dos versiones y, cuando falta una, con la razón exacta de lo que falta.
  *
  * Puro: las cifras vienen de `fireSustainableSpending` y `fireRetirementProfile`; aquí
- * solo se ponen en palabras (interaction-patterns §7). Ninguna línea vuelve a dividir
- * nada — si una frase cita una aritmética, cita la que produjo la cifra (ADR 0077).
+ * solo se ponen en palabras. Ninguna línea vuelve a dividir nada — si una frase cita
+ * una aritmética, cita la que produjo la cifra (ADR 0077).
  */
 
 import type {
   FireRetirementProfile,
   FireSustainableSpending,
   FireSustainableSpendingPart,
+  RentReturnNotice,
 } from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
 
@@ -39,16 +43,33 @@ export interface FireSustainableSpendingCopy {
   headlineAnnual: string;
   /** Las mitades, en orden: primero lo que ya llega, después lo que el capital soporta. */
   rows: FireSustainableSpendingRow[];
-  /** La versión de agotamiento, o la invitación a rellenar la edad final. */
+  /** La versión de agotamiento, o el hueco con la razón de por qué no está. */
   depletion: { value: string; gloss: string } | null;
-  /** Qué patrimonio NO está en ninguna de las dos mitades, cuando lo hay. */
+  /** Qué falta para poder enseñar la versión de agotamiento. Null cuando está. */
+  depletionAbsence: string | null;
+  /** Qué patrimonio o qué rentas NO están en la cifra, cuando hay algo que decir. */
   exclusionNote: string | null;
 }
+
+type FormatMoney = (amountMinor: number) => string;
 
 const monthly = (part: FireSustainableSpendingPart, formatMoney: FormatMoney): string =>
   `${formatMoney(part.monthlyMinor)}/mes`;
 
-type FormatMoney = (amountMinor: number) => string;
+/** El encabezado del panel: la capa cambia la pregunta, no la pantalla. */
+export function firePanelHeading(input: { ordinary: boolean; previewing: boolean }): {
+  title: string;
+  eyebrow: string;
+} {
+  return {
+    eyebrow: input.previewing
+      ? "previsualización · sin guardar"
+      : input.ordinary
+        ? "cuánto puedes gastar"
+        : "objetivo principal",
+    title: input.ordinary ? "Tu plan de jubilación" : "Independencia financiera · FIRE",
+  };
+}
 
 /**
  * La tarjeta entera, en palabras. `immobilizedMinor` es el patrimonio que no entra en
@@ -60,8 +81,12 @@ export function fireSustainableSpendingCopy(input: {
   spending: FireSustainableSpending;
   formatMoney: FormatMoney;
   immobilizedMinor: number;
-  /** Hay alquileres declarados a los que les faltan los gastos (#1448): valen 0 aquí. */
-  hasRentsPendingExpenses: boolean;
+  /**
+   * Los avisos del informe de rentas (#1448). De aquí sale qué alquileres declarados
+   * NO están en la mitad de rentas y por qué: cada razón se dice con sus palabras, en
+   * vez de hablar solo de la más común y callar las otras dos.
+   */
+  rentNotices: readonly RentReturnNotice[];
 }): FireSustainableSpendingCopy {
   const { formatMoney, immobilizedMinor, spending } = input;
   const rate = formatRatePercent(spending.withdrawalRate);
@@ -91,10 +116,11 @@ export function fireSustainableSpendingCopy(input: {
           value: monthly(spending.depletion.total, formatMoney),
         }
       : null,
+    depletionAbsence: depletionAbsenceNote(spending.depletionAbsence),
     exclusionNote: exclusionNoteOf({
       formatMoney,
-      hasRentsPendingExpenses: input.hasRentsPendingExpenses,
       immobilizedMinor,
+      rentNotices: input.rentNotices,
     }),
     headline: monthly(spending.perpetual.total, formatMoney),
     headlineAnnual: `${formatMoney(spending.perpetual.total.annualMinor)}/año`,
@@ -103,17 +129,37 @@ export function fireSustainableSpendingCopy(input: {
 }
 
 /**
- * Lo que la tarjeta deja fuera, dicho en voz alta. Dos huecos distintos y los dos
- * accionables: el patrimonio inmovilizado (que no se gasta a plazos, y por eso solo
- * cuenta a través de su renta) y los alquileres sin gastos declarados (que valen 0
- * hasta que se declaren, ADR 0076). Null cuando no hay ninguno de los dos.
+ * Por qué no hay versión de agotamiento. Tres huecos y tres arreglos distintos, y esa
+ * es toda la razón de que el motor los distinga: pedirle la edad final a quien ya la
+ * declaró —porque lo que falta es su fecha de nacimiento— se lee como no escucharle.
+ */
+function depletionAbsenceNote(
+  absence: FireSustainableSpending["depletionAbsence"],
+): string | null {
+  switch (absence) {
+    case null:
+      return null;
+    case "no_final_age":
+      return "Esta cifra no toca el principal. Dinos hasta qué edad debe durar tu capital y verás también lo que podrías gastar agotándolo.";
+    case "no_reference_age":
+      return "Para repartir tu capital hasta esa edad nos falta tu fecha de nacimiento: rellénala en Ajustes → Miembros y aparecerá la segunda cifra.";
+    case "final_age_reached":
+      return "Tu edad ya ha alcanzado la edad final que declaraste, así que no quedan años entre los que repartir el capital.";
+  }
+}
+
+/**
+ * Lo que la tarjeta deja fuera, dicho en voz alta: el patrimonio inmovilizado (que no
+ * se gasta a plazos, y por eso solo cuenta a través de su renta) y los alquileres
+ * declarados que no suman en la mitad de rentas, cada uno con su razón. Null cuando no
+ * hay nada que excluir.
  */
 function exclusionNoteOf(input: {
   formatMoney: FormatMoney;
-  hasRentsPendingExpenses: boolean;
   immobilizedMinor: number;
+  rentNotices: readonly RentReturnNotice[];
 }): string | null {
-  const { formatMoney, hasRentsPendingExpenses, immobilizedMinor } = input;
+  const { formatMoney, immobilizedMinor } = input;
   const parts: string[] = [];
 
   if (immobilizedMinor > 0) {
@@ -121,13 +167,40 @@ function exclusionNoteOf(input: {
       `Tus ${formatMoney(immobilizedMinor)} de patrimonio inmovilizado (vivienda no habitual, colecciones) no están en esta cifra: no se gastan a plazos, solo a través de lo que rentan.`,
     );
   }
-  if (hasRentsPendingExpenses) {
-    parts.push(
-      "Y hay alquileres declarados sin gastos: hasta que los declares no suman aquí, porque el bruto sobreestimaría lo que te queda.",
-    );
+
+  const rentGap = rentGapClause(input.rentNotices);
+  if (rentGap !== null) {
+    parts.push(rentGap);
   }
 
   return parts.length === 0 ? null : parts.join(" ");
+}
+
+/**
+ * Los alquileres declarados que NO están en la mitad de rentas, por razón. El aviso de
+ * `immobilized_not_counted` no cuenta: ese alquiler SÍ suma aquí (la declaración de
+ * #1460 habla de capital, no de ingresos), y anunciarlo como ausente sería mentir en la
+ * dirección contraria.
+ */
+function rentGapClause(notices: readonly RentReturnNotice[]): string | null {
+  const reasons = new Set(notices.map((notice) => notice.reason));
+  const clauses: string[] = [];
+
+  if (reasons.has("missing_expenses")) {
+    clauses.push("les faltan los gastos declarados");
+  }
+  if (reasons.has("no_live_schedule")) {
+    clauses.push("no están vigentes hoy");
+  }
+  if (reasons.has("foreign_currency")) {
+    clauses.push("están en una divisa que sus cobros no declaran");
+  }
+
+  if (clauses.length === 0) {
+    return null;
+  }
+
+  return `Y hay alquileres declarados que no suman aquí: ${clauses.join("; ")}. Mientras sea así, contarlos sobreestimaría lo que te queda.`;
 }
 
 /**
