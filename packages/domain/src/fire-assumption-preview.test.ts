@@ -105,6 +105,6 @@ describe("previsualizar unos supuestos tecleados (#1450)", () => {
 
     expect(base.coastFireRequired).toBeDefined();
     expect(withoutAge.coastFireRequired).toBeUndefined();
-    expect(withoutAge.coastFireAge).toBeUndefined();
+    expect(withoutAge.fireAgeIfContributionsStop).toBeUndefined();
   });
 });

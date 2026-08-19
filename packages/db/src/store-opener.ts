@@ -339,7 +339,7 @@ async function buildStore(
       // from the member's birth date. A config written BEFORE that change may be
       // the only place a workspace's age lives, so carry the legacy scalar
       // forward: saving the rest of the form must not be what erases it (and with
-      // it `coastFireRequired`, `coastFireAge` and `isAlreadyAtCoastFire`).
+      // it `coastFireRequired`, `fireAgeIfContributionsStop` and `isAlreadyAtCoastFire`).
       const legacyAge = current[scopeId]?.currentAge;
       const merged = {
         ...current,

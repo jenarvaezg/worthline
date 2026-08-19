@@ -107,7 +107,7 @@ describe("calculateFire", () => {
     expect(result.coastFireRequired?.amountMinor).toBe(expected);
   });
 
-  it("coastFireAge = currentAge + log(fireNumber/eligible) / log(1+return)", () => {
+  it("fireAgeIfContributionsStop = currentAge + log(fireNumber/eligible) / log(1+return)", () => {
     // eligible = 10000000, fireNumber = 60000000, return = 0.07, currentAge = 35
     // coastAge = 35 + log(60000000/10000000) / log(1.07)
     const eligible = 10_000_000;
@@ -126,10 +126,51 @@ describe("calculateFire", () => {
       "EUR",
     );
 
-    expect(result.coastFireAge).toBeCloseTo(expectedAge, 5);
+    expect(result.fireAgeIfContributionsStop).toBeCloseTo(expectedAge, 5);
   });
 
-  it("suppresses coastFireAge when the real return cannot compound to FIRE", () => {
+  it("no hay Coast sin margen de composición: retorno ≤ 0 o edad objetivo pasada (#1425)", () => {
+    const config = {
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.04,
+      currentAge: 45,
+      targetRetirementAge: 65,
+    };
+
+    // Con retorno 0 el requisito saldría IGUAL al número FIRE, y con retorno negativo
+    // o con la edad objetivo pasada saldría MAYOR: en los tres casos la promesa de
+    // «déjalo crecer solo» es falsa, así que no hay bloque de Coast que imprimir.
+    for (const result of [
+      calculateFire(config, 10_000_000, "EUR", 0),
+      calculateFire(config, 10_000_000, "EUR", -0.01),
+      calculateFire({ ...config, currentAge: 70 }, 10_000_000, "EUR", 0.04),
+      // La frontera exacta: la edad objetivo es hoy, no queda ni un año que descontar.
+      calculateFire({ ...config, currentAge: 65 }, 10_000_000, "EUR", 0.04),
+    ]) {
+      expect(result.coastFireRequired).toBeUndefined();
+      expect(result.isAlreadyAtCoastFire).toBeUndefined();
+    }
+  });
+
+  it("el requisito de Coast siempre queda POR DEBAJO del número FIRE cuando existe", () => {
+    const result = calculateFire(
+      {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        currentAge: 45,
+        targetRetirementAge: 65,
+      },
+      10_000_000,
+      "EUR",
+      0.04,
+    );
+
+    expect(result.coastFireRequired!.amountMinor).toBeLessThan(
+      result.fireNumber.amountMinor,
+    );
+  });
+
+  it("suppresses fireAgeIfContributionsStop when the real return cannot compound to FIRE", () => {
     const config = {
       monthlySpendingMinor: 200_000,
       safeWithdrawalRate: 0.04,
@@ -140,8 +181,8 @@ describe("calculateFire", () => {
     const zeroReturn = calculateFire(config, 10_000_000, "EUR", 0);
     const negativeReturn = calculateFire(config, 10_000_000, "EUR", -0.01);
 
-    expect(zeroReturn.coastFireAge).toBeUndefined();
-    expect(negativeReturn.coastFireAge).toBeUndefined();
+    expect(zeroReturn.fireAgeIfContributionsStop).toBeUndefined();
+    expect(negativeReturn.fireAgeIfContributionsStop).toBeUndefined();
   });
 });
 

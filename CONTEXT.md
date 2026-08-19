@@ -531,6 +531,31 @@ the user's **immobilized capital** counts at all is one more of those declaratio
 defaulting to yes; declaring it out measures every figure over the sellable side alone
 and re-weights the return with what is left (ADR 0078).
 
+**Coast FIRE**:
+The point where the capital already saved would grow **on its own** to the **FIRE
+number** by the **target retirement age** — a *state* of funding, not a level of life
+to fund, so it never sits on the FIRE-levels rail beside Lean/Regular/Fat (ADR
+0079). It names exactly three figures and they are not interchangeable: the *coast
+requirement* (the FIRE number discounted back over the years left, the only one that is
+a euro amount), the *age Coast is reached at* (the first year the trajectory projected
+**with** the declared **savings capacity** crosses that requirement — the figure the
+tick on the progress bar always implied), and, once the requirement is met, an
+**achievement badge** instead of an age. All three exist only when there is compounding
+room left before the target age: with a return of zero or below, or that age already
+past, the requirement would land at or above the FIRE number and none of them is printed
+— the screen says why instead. When the savings capacity tends to zero the arrival age
+tends to the FIRE age, and that is correct: coast only buys slack if you save.
+_Avoid_: "coast age" for the *zero-contribution* figure — that is the **FIRE age if
+contributions stop**, a different question; "coast level" (it is not one).
+
+**FIRE age if contributions stop**:
+The age today's capital alone would reach the full **FIRE number** at, with not one euro
+more added — an honest and cheap answer to "what if I stop saving?". It was once labelled
+«Edad Coast», which promised the age **Coast FIRE** is reached at and silently
+contradicted the coast requirement printed beside it (ADR 0079). Whole years only: a
+decimal on an age projected a decade out fakes a precision that is not there.
+_Avoid_: coast age, Edad Coast.
+
 **Measured savings**:
 Net money the operations ledger shows going into investments over the trailing 12
 calendar months, per month and **with its sign** — the one figure of the monthly flow
@@ -553,8 +578,9 @@ _Avoid_: state pill (the visual component, not the concept).
 
 **Birth date**:
 A member's birth year and, optionally, birth month — the only stored age fact. Every
-age FIRE prints (the coast age, the years to target retirement, the three projected
-ages) is derived from it at read time, so it cannot go stale (ADR 0073).
+age FIRE prints (the age **Coast FIRE** is reached at, the **FIRE age if contributions
+stop**, the years to target retirement, the three projected ages) is derived from it at
+read time, so it cannot go stale (ADR 0073).
 
 **Ownership share**:
 A member's percentage stake in one holding.
@@ -935,6 +961,7 @@ _Avoid_: imported history (implies verified), synced history.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE. The eligible pool is printed split by nature — what can be **sold in slices** (cash + market + term-locked) against what is **immobilized** (illiquid + housing), each side netting its own debt — and whether the immobilized side counts as FIRE capital at all is the user's declaration, defaulting to yes. Declaring it out takes those rungs out of the capital AND out of the return's weighting, through one predicate: dropping the capital while keeping the weight would quote a rate nobody's money holds (ADR 0078).
 - A figure worthline **derives** is printed with the inputs it was derived from, and its explanation is a projection of the same computation — never a second one beside it (ADR 0077). Hence the **return mix** ships with the rate, and a **reference age** ships with the **birth date** it came from. An explanation that would describe a figure the app is not using (a weighting under a hand-fixed return) is not shown at all.
+- **Coast FIRE** is a state of funding, not a level of life to fund, so it lives beside the progress bar whose tick draws it and never on the FIRE-levels rail (ADR 0079). Its age is the first year the projected trajectory crosses the coast requirement **with** the declared **savings capacity**; the age reached by leaving the capital alone is a different figure with its premise in its name (**FIRE age if contributions stop**). Every projected age prints in whole years.
 - A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.
 - An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
