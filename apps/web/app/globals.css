@@ -4319,10 +4319,45 @@ code {
   width: 0;
 }
 
+/* La marca binaria del chip (#1483): una casilla dibujada, vacía mientras el chip
+   no está marcado. El tinte solo no se lee en un móvil con luz — un chip marcado
+   y uno sin marcar eran la misma pastilla, y dos lectores seguidos leyeron una
+   lista de candidatos como si fuera una lista de hechos. */
+.chipChoice .chipMark {
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  flex: none;
+  font-size: 0.66rem;
+  height: 14px;
+  justify-content: center;
+  line-height: 1;
+  width: 14px;
+}
+
 .chipChoice label:has(input:checked) {
   background: rgba(42, 161, 136, 0.12);
   border-color: var(--tier-cash);
   color: var(--tier-cash);
+}
+
+.chipChoice label:has(input:checked) .chipMark {
+  background: var(--tier-cash);
+  border-color: var(--tier-cash);
+  color: var(--paper);
+}
+
+/* El ✓ EXISTE solo si el chip está marcado: pintarlo siempre y esconderlo con
+   `color: transparent` lo devolvería —invertido— en alto contraste, que es donde
+   más falta hace, y lo dejaría en el buscar-en-página de un chip sin marcar. */
+.chipChoice label:has(input:checked) .chipMark::before {
+  content: "✓";
+}
+
+/* El input va oculto, así que el foco solo se ve si lo pinta el chip (canon §5). */
+.chipChoice label:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
 }
 
 @media (max-width: 560px) {

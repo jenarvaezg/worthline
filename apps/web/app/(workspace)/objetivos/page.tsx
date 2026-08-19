@@ -1,3 +1,4 @@
+import { ChipChoice } from "@web/chip-choice";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
@@ -641,24 +642,14 @@ export async function ObjetivosContent({
                             </label>
                           ))}
                         </span>
-                        <span className="memberProfileLabel">Activos asignados</span>
-                        <span className="chipChoice">
-                          {assets.map((asset) => (
-                            <label key={asset.id}>
-                              <input
-                                defaultChecked={
-                                  editAssetIds
-                                    ? editAssetIds.includes(asset.id)
-                                    : goal.assetIds.includes(asset.id)
-                                }
-                                name="assetIds"
-                                type="checkbox"
-                                value={asset.id}
-                              />
-                              {asset.name}
-                            </label>
-                          ))}
+                        <span className="memberProfileLabel">
+                          Elige qué activos financian el objetivo
                         </span>
+                        <ChipChoice
+                          name="assetIds"
+                          options={assets}
+                          selectedIds={editAssetIds ?? goal.assetIds}
+                        />
                         <div className="goalFunded">
                           <span className="memberProfileLabel">
                             {(fundedRatioBps / 100).toFixed(0)} % financiado
@@ -772,22 +763,14 @@ export async function ObjetivosContent({
                         </label>
                       ))}
                     </span>
-                    <span className="memberProfileLabel">Activos asignados</span>
-                    <span className="chipChoice">
-                      {assets.map((asset) => (
-                        <label key={asset.id}>
-                          <input
-                            defaultChecked={
-                              createAssetIds ? createAssetIds.includes(asset.id) : false
-                            }
-                            name="assetIds"
-                            type="checkbox"
-                            value={asset.id}
-                          />
-                          {asset.name}
-                        </label>
-                      ))}
+                    <span className="memberProfileLabel">
+                      Elige qué activos financian el objetivo
                     </span>
+                    <ChipChoice
+                      name="assetIds"
+                      options={assets}
+                      selectedIds={createAssetIds ?? []}
+                    />
                     <PendingSubmit className="createGoalSubmit" pendingLabel="Creando…">
                       Crear objetivo
                     </PendingSubmit>

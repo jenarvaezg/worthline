@@ -78,6 +78,17 @@ function parseRules(file: string): CssRule[] {
   return rules;
 }
 
+/** Every source file under `app/` whose name matches — one walk, three readers. */
+function sourceFiles(pattern: RegExp): string[] {
+  return (function walk(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return walk(path);
+      return entry.isFile() && pattern.test(entry.name) ? [path] : [];
+    });
+  })(appDirectory);
+}
+
 const files = cssFiles(appDirectory);
 const rules = files.flatMap(parseRules);
 
@@ -279,21 +290,10 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // the landing when the local cover tokens were consolidated into
     // globals.css). Tokens may be defined in CSS declarations or injected
     // from TSX (inline style keys, next/font `variable:`) — both count.
-    const sourceFiles = (function walk(directory: string): string[] {
-      return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) return walk(path);
-        if (!entry.isFile()) return [];
-        return /\.(?:css|tsx?)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)
-          ? [path]
-          : [];
-      });
-    })(appDirectory);
-
     const defined = new Set<string>();
     const used = new Map<string, Set<string>>();
 
-    for (const file of sourceFiles) {
+    for (const file of sourceFiles(/^(?!.*\.test\.tsx?$).*\.(?:css|tsx?)$/)) {
       const source = readFileSync(file, "utf8");
       if (file.endsWith(".css")) {
         for (const match of source.matchAll(/(--[a-zA-Z][\w-]*)\s*:/g)) {
@@ -541,6 +541,39 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // (#1317). A footer that merely repeats the header is the mistake this pins.
     const footers = layer.match(/className="assistantProposalFolio"/g) ?? [];
     expect(footers.length).toBe(4);
+  });
+
+  test("a marked chip carries a binary mark, not only a tint (#1483)", () => {
+    // Un tinte (`rgba(...)` + borde) no se lee en un móvil con luz: dos lectores
+    // seguidos creyeron que sus ETFs consumían el cupo de pensiones mirando una
+    // lista de candidatos SIN marcar. La marca es una casilla dibujada, y su ✓
+    // EXISTE solo estando marcada — nunca pintado y escondido con color, que en
+    // alto contraste lo devolvería justo al revés.
+    expectRecipe(".chipChoice .chipMark", {
+      border: "1px solid var(--line-strong)",
+    });
+    expectRecipe(".chipChoice label:has(input:checked) .chipMark", {
+      background: "var(--tier-cash)",
+      "border-color": "var(--tier-cash)",
+      color: "var(--paper)",
+    });
+    expectRecipe(".chipChoice label:has(input:checked) .chipMark::before", {
+      content: '"✓"',
+    });
+    // El input va oculto (`opacity: 0`), así que el foco solo se ve si lo pinta
+    // el chip — canon §5: todos los controles mantienen teclado.
+    expectRecipe(".chipChoice label:has(input:focus-visible)", {
+      outline: "2px solid var(--blue)",
+    });
+
+    // Y el chip es del canon, no de un uso: `.chipChoice` se pinta en UN sitio,
+    // el componente compartido. Cuatro copias a mano fue como el defecto llegó a
+    // existir dos veces en el mismo panel.
+    const painters = sourceFiles(/\.tsx$/)
+      .filter((file) => readFileSync(file, "utf8").includes('className="chipChoice"'))
+      .map((file) => relative(appDirectory, file));
+
+    expect(painters).toEqual(["chip-choice.tsx"]);
   });
 
   test("the settings recipes trade card elevation for paper rules (#912)", () => {

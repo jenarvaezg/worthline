@@ -85,6 +85,20 @@ Solo los chips de selección de holding y las figuras intrínsecamente circulare
 conservan forma de píldora/círculo. Tarjetas, botones, tabs, badges y barras no
 usan `999px` por inercia.
 
+Un chip de selección (`.chipChoice`) dice si está marcado con una **marca binaria
+dibujada**, no solo con el tinte (#1483): cada `label` lleva su `.chipMark`
+—casilla de 14 px cuyo ✓ existe únicamente estando marcada, dibujado por el canon,
+nunca impreso y escondido con `color: transparent`, que en alto contraste lo
+devolvería justo al revés— además del tinte verde. En una pantalla de teléfono con
+luz, tinte contra tinte es una comparación, no una lectura: dos lectores seguidos
+tomaron una lista de candidatos SIN marcar por una lista de hechos. Los marcados
+salen **primero**, en orden decidido en el servidor, para que tres marcados no se
+ahoguen bajo doce sin marcar. El chip es del canon, no de un uso: lo pinta el
+componente compartido `chip-choice.tsx`, y el guardián prohíbe que ningún otro
+`.tsx` escriba markup `.chipChoice` propio. Y el encabezado de un selector
+**pregunta** («Elige qué activos…»); afirmar («Activos que…») queda para la prosa
+que solo enumera lo ya marcado.
+
 El asistente (#911) no tiene ruta propia y la propuesta A no lo receta, así que
 lleva receta de panel propia: una hoja encartada sobre la página (`.assistantPanel`,
 fondo `--panel`) ligada por su lomo —una regla gruesa, no un borde suave con

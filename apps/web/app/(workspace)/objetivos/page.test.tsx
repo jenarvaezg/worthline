@@ -1171,16 +1171,28 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     type: "investment",
   };
 
-  /** Put a pension plan with a ledger on the page for one render. */
-  function withPensionPlan(operations: InvestmentOperation[]): void {
+  /** Otro holding con libro: un candidato del selector que NO consume el cupo. */
+  const globalEtf: ManualAsset = {
+    ...pensionPlan,
+    id: "asset_etf",
+    name: "iShares Core MSCI World",
+  };
+
+  /** Put these ledger-keeping holdings on the page for one render. */
+  function withHoldings(assets: ManualAsset[], operations: InvestmentOperation[]): void {
     calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce({
-      assets: [pensionPlan],
+      assets,
       liabilities: [],
     });
     calls.buildProjectionContext.mockResolvedValueOnce({
       ...calls.projectionContext,
       operationsByAsset: new Map([["asset_pp", operations]]),
     });
+  }
+
+  /** Put a pension plan with a ledger on the page for one render. */
+  function withPensionPlan(operations: InvestmentOperation[]): void {
+    withHoldings([pensionPlan], operations);
   }
 
   function contribution(
@@ -1274,12 +1286,75 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     expect(html).toContain("worthline no calcula límites fiscales");
   });
 
+  test("el selector pregunta, la prosa afirma (#1483)", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([contribution("op_1", "2026-02-10", "10")]);
+
+    const html = await renderedHtml();
+
+    // Sobre una lista de candidatos SIN marcar, «Activos que consumen el cupo» se
+    // lee como un hecho: dos lectores creyeron que sus ETFs consumían el cupo.
+    expect(html).toContain("Elige qué activos consumen el cupo");
+    expect(html).not.toContain(">Activos que consumen el cupo<");
+    // La prosa-resumen no cambia: ahí solo salen los marcados, y sí es un hecho.
+    expect(html).toContain("este cupo: MyInvestor Value PP");
+  });
+
+  test("el chip marcado lleva marca binaria y sale el primero (#1483)", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withHoldings([globalEtf, pensionPlan], [contribution("op_1", "2026-02-10", "10")]);
+
+    const html = await renderedHtml();
+    const editor = html.slice(html.indexOf('id="allowanceEdit-cupo_pp"'));
+    const chips = editor.slice(
+      editor.indexOf('class="chipChoice"'),
+      editor.indexOf("Guardar cupo"),
+    );
+
+    // El marcado se lee sin comparar tintes: primero de la lista y con su casilla,
+    // que el canon rellena con el ✓ solo estando marcada (design-system-guardian).
+    const firstChip = chips.slice(chips.indexOf("<label"), chips.indexOf("</label>"));
+    expect(firstChip).toContain("MyInvestor Value PP");
+    expect(firstChip).toContain("checked");
+    expect(firstChip).toContain('class="chipMark"');
+    expect(chips.indexOf("MyInvestor Value PP")).toBeLessThan(
+      chips.indexOf("iShares Core MSCI World"),
+    );
+  });
+
+  test("el formulario de crear cupo pinta el mismo selector (#1483)", async () => {
+    // El defecto existía DOS veces porque el markup estaba duplicado; el chip es
+    // ahora un componente, y este test dice que la copia de crear también lo usa.
+    withPensionPlan([]);
+
+    const html = await renderedHtml();
+    const createForm = html.slice(html.indexOf('id="allowanceCreateForm"'));
+
+    expect(createForm).toContain("Elige qué activos consumen el cupo");
+    expect(createForm.slice(0, createForm.indexOf("Crear cupo"))).toContain(
+      'class="chipMark"',
+    );
+  });
+
   test("solo ofrece como destino activos con libro de operaciones", async () => {
     // La lista por defecto de la página es una casa y una cuenta: ninguna registra
     // aportaciones una a una, así que un cupo sobre ellas contaría 0 y mentiría.
     const html = await renderedHtml();
 
     expect(html).toContain("necesita al menos una inversión con libro de operaciones");
+  });
+});
+
+describe("ObjetivosPage el selector de activos de un objetivo (#1483)", () => {
+  test("pregunta como el del cupo: el mismo canon, la misma lectura", async () => {
+    const html = await renderedHtml();
+    const createForm = html.slice(html.indexOf('id="goalCreateForm"'));
+
+    expect(createForm).toContain("Elige qué activos financian el objetivo");
+    expect(html).not.toContain("Activos asignados");
+    expect(createForm.slice(0, createForm.indexOf("Crear objetivo"))).toContain(
+      'class="chipMark"',
+    );
   });
 });
 

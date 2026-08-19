@@ -1,3 +1,4 @@
+import { ChipChoice } from "@web/chip-choice";
 import { PendingSubmit } from "@web/pending-submit";
 import type {
   ContributionAllowance,
@@ -199,20 +200,14 @@ export function ContributionAllowancePanel({
                     name="annualCap"
                   />
                 </label>
-                <span className="memberProfileLabel">Activos que consumen el cupo</span>
-                <span className="chipChoice">
-                  {destinationOptions.map((asset) => (
-                    <label key={asset.id}>
-                      <input
-                        defaultChecked={allowance.holdingIds.includes(asset.id)}
-                        name="holdingIds"
-                        type="checkbox"
-                        value={asset.id}
-                      />
-                      {asset.name}
-                    </label>
-                  ))}
+                <span className="memberProfileLabel">
+                  Elige qué activos consumen el cupo
                 </span>
+                <ChipChoice
+                  name="holdingIds"
+                  options={destinationOptions}
+                  selectedIds={allowance.holdingIds}
+                />
                 <PendingSubmit pendingLabel="Guardando…">Guardar cupo</PendingSubmit>
               </form>
               <form action={deleteContributionAllowanceAction}>
@@ -268,22 +263,12 @@ export function ContributionAllowancePanel({
                 placeholder="1500"
               />
             </label>
-            <span className="memberProfileLabel">Activos que consumen el cupo</span>
-            <span className="chipChoice">
-              {destinationOptions.map((asset) => (
-                <label key={asset.id}>
-                  <input
-                    defaultChecked={
-                      preservedIds ? preservedIds.includes(asset.id) : false
-                    }
-                    name="holdingIds"
-                    type="checkbox"
-                    value={asset.id}
-                  />
-                  {asset.name}
-                </label>
-              ))}
-            </span>
+            <span className="memberProfileLabel">Elige qué activos consumen el cupo</span>
+            <ChipChoice
+              name="holdingIds"
+              options={destinationOptions}
+              selectedIds={preservedIds ?? []}
+            />
             <p className="objetivosCupoHint">
               El tope lo pones tú: worthline no calcula límites fiscales — dependen de la
               normativa del ejercicio, de las aportaciones de empresa y de tus
