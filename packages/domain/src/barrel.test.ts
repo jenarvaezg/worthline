@@ -114,6 +114,7 @@ const KEY_EXPORTS = [
   // exposure look-through (#540)
   "lookThroughExposure",
   "resolveAssetClassBreakdown",
+  "isGeoCurrencyNotApplicableAssetClass",
   "validateImportedExposureProfile",
   // portfolio-grouping (#154)
   "groupPortfolio",

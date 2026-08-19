@@ -64,6 +64,28 @@ describe("profileNeedsCategorizing", () => {
     });
     expect(profileNeedsCategorizing(fully)).toBe(false);
   });
+
+  it("does not ask for geography or currency when the profile is 100% commodity", () => {
+    expect(
+      profileNeedsCategorizing(
+        profile({ breakdowns: { assetClass: { commodity: "1" } } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not ask for geography or currency when the profile is 100% crypto", () => {
+    expect(
+      profileNeedsCategorizing(profile({ breakdowns: { assetClass: { crypto: "1" } } })),
+    ).toBe(false);
+  });
+
+  it("still needs categorizing when commodity is mixed with equity", () => {
+    expect(
+      profileNeedsCategorizing(
+        profile({ breakdowns: { assetClass: { commodity: "0.3", equity: "0.7" } } }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("profileCoverage", () => {
