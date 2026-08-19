@@ -149,6 +149,21 @@ describe("readStatementUpload", () => {
     expect(said).toHaveLength(1);
   });
 
+  test("a CSV that is not UTF-8 is told THAT, not to save it as .xlsx", () => {
+    const result = readStatementUpload({
+      broker: "plantilla",
+      // A lone 0xFF: valid latin-1, never valid UTF-8. The bytes are not a workbook, so
+      // the workbook reader's «guarda la hoja como .xlsx» would point at nothing.
+      bytes: new Uint8Array([0x46, 0x65, 0x63, 0x68, 0x61, 0x3b, 0xff]),
+      fileName: "extracto.csv",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("UTF-8");
+    expect(result.message).not.toContain("guarda la hoja");
+  });
+
   test("an unreadable workbook is a message, not a throw", () => {
     const result = readStatementUpload({
       broker: "plantilla",

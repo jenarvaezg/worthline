@@ -59,6 +59,10 @@ const UNRECOGNIZED_MESSAGE =
   "para el extracto del bróker hace falta una columna de fecha, el ISIN o el nombre del " +
   "producto, los títulos y el precio o el importe de cada operación.";
 
+const UNDECODABLE_MESSAGE =
+  "No he podido leer el texto de este archivo: los caracteres no están en UTF-8. Vuelve a " +
+  "guardarlo desde tu hoja de cálculo como CSV UTF-8, o súbelo como .xlsx.";
+
 export type StatementUploadRead =
   | { ok: false; message: string }
   | {
@@ -76,6 +80,28 @@ export interface StatementUploadInput {
   /** The uploaded name, used to tell a CSV from a workbook when the bytes cannot. */
   fileName: string;
   broker: StatementBroker;
+}
+
+/**
+ * A statement whose direction is UNRESOLVED always says so, whichever reader produced it.
+ *
+ * `directionResolved: false` has existed since ADR 0018's amendment and had no reader on
+ * any web surface — the field travelled, nothing printed it, and the ADR said otherwise.
+ * It went unnoticed because the plantilla always resolves direction; the generic reader
+ * (#1488) is the first one here that can honestly answer «no». So the guarantee lives at
+ * the gate rather than in one reader: a format added later cannot forget it.
+ *
+ * Compared against the domain's own constant, so the sentence a reader ALREADY emitted is
+ * never printed twice.
+ */
+function withDirectionDoubt(
+  statement: ParsedStatement,
+  warnings: readonly string[],
+): string[] {
+  if (statement.directionResolved || warnings.includes(ASSUMED_BUY_WARNING)) {
+    return [...warnings];
+  }
+  return [...warnings, ASSUMED_BUY_WARNING];
 }
 
 /**
@@ -136,28 +162,6 @@ function readTransactions(sheets: readonly WorkbookSheet[]): StatementUploadRead
 }
 
 /**
- * A statement whose direction is UNRESOLVED always says so, whichever reader produced it.
- *
- * `directionResolved: false` has existed since ADR 0018's amendment and had no reader on
- * any web surface — the field travelled, nothing printed it, and the ADR said otherwise.
- * It went unnoticed because the plantilla always resolves direction; the generic reader
- * (#1488) is the first one here that can honestly answer «no». So the guarantee lives at
- * the gate rather than in one reader: a format added later cannot forget it.
- *
- * Compared against the domain's own constant, so the sentence a reader ALREADY emitted is
- * never printed twice.
- */
-function withDirectionDoubt(
-  statement: ParsedStatement,
-  warnings: readonly string[],
-): string[] {
-  if (statement.directionResolved || warnings.includes(ASSUMED_BUY_WARNING)) {
-    return [...warnings];
-  }
-  return [...warnings, ASSUMED_BUY_WARNING];
-}
-
-/**
  * Read an uploaded statement: the declared format first, the generic broker-transactions
  * reader when the file is not that format at all.
  */
@@ -182,10 +186,12 @@ export function readStatementUpload(input: StatementUploadInput): StatementUploa
 
   const sheets = sheetsOf(input);
   if (sheets === null) {
-    return {
-      message: "El archivo Excel no se puede leer — guarda la hoja como .xlsx.",
-      ok: false,
-    };
+    // Reachable only for a NON-workbook upload: a real .xlsx failed earlier, inside
+    // `delimitedText`, with the workbook reader's own message. What lands here is a CSV
+    // the grid reader could not decode as UTF-8 — an es-ES export saved as latin-1 — and
+    // telling its owner to «guardar la hoja como .xlsx» would send them at the wrong
+    // problem entirely.
+    return { message: UNDECODABLE_MESSAGE, ok: false };
   }
 
   return readTransactions(sheets) ?? { message: UNRECOGNIZED_MESSAGE, ok: false };
