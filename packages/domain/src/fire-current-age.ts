@@ -134,16 +134,18 @@ export function scopeAgeSource(
     if (!inScope.has(member.id)) {
       continue;
     }
+    const { birthYear } = member;
     const age = ageOnDate(member, todayISO);
-    // `ageOnDate` already refused an implausible or missing year, so a resolved age
-    // guarantees the year is readable — hence the non-null assertion below.
-    if (age === undefined || (oldest !== undefined && age <= oldest.age)) {
+    if (birthYear === undefined || age === undefined) {
+      continue;
+    }
+    if (oldest !== undefined && age <= oldest.age) {
       continue;
     }
     const birthMonth = parseCalendarMonth(member.birthMonth);
     oldest = {
       age,
-      birthYear: member.birthYear!,
+      birthYear,
       memberId: member.id,
       memberName: member.name,
       ...(birthMonth === undefined ? {} : { birthMonth }),

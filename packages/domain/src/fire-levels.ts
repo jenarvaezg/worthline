@@ -30,6 +30,24 @@ export interface FireLevel {
   label: string;
   amountMinor: number;
   eta: FireLevelEta;
+  /**
+   * The annual spending this level is DEFINED by (minor units) — what its capital
+   * funds at the configured withdrawal rate (#1426). A capital figure alone says
+   * nothing about the life it pays for, and re-deriving it on screen would mean
+   * inverting the division that produced the amount (ADR 0077).
+   *
+   * Absent on `coast`: coast is defined by the FIRE number and the years left to the
+   * target age, not by a multiple of spending — «financia X €/año» would read as an
+   * invitation to withdraw from capital that exists precisely to be left alone.
+   */
+  fundsAnnualMinor?: number;
+  /**
+   * The multiple of declared spending this level stands for (`0.7` for Lean by
+   * default) — the input behind `amountMinor`, so a caller can say «tu mismo gasto al
+   * 70 %» without keeping its own copy of the default. Absent where the level is not
+   * a multiple of spending (`coast`, `barista`).
+   */
+  spendingMultiplier?: number;
 }
 
 export interface FireLevelsInput {
@@ -94,12 +112,16 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
     return { kind: "eta", years: Math.round(frac * 10) / 10 };
   }
 
+  const annualSpendingMinor = monthlySpendingMinor * 12;
+
   const levels: FireLevel[] = [
     {
       key: "lean",
       label: LABEL.lean,
       amountMinor: leanAmount,
       eta: etaForAmount(leanAmount),
+      fundsAnnualMinor: Math.round(annualSpendingMinor * leanMult),
+      spendingMultiplier: leanMult,
     },
   ];
 
@@ -116,6 +138,8 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
       label: LABEL.barista,
       amountMinor: baristaAmount,
       eta: etaForAmount(baristaAmount),
+      // Part-time income covers the rest, so what the CAPITAL funds is the gap.
+      fundsAnnualMinor: Math.max(0, (monthlySpendingMinor - baristaIncome) * 12),
     });
   }
 
@@ -125,12 +149,16 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
       label: LABEL.regular,
       amountMinor: regularAmount,
       eta: etaForAmount(regularAmount),
+      fundsAnnualMinor: annualSpendingMinor,
+      spendingMultiplier: 1,
     },
     {
       key: "fat",
       label: LABEL.fat,
       amountMinor: fatAmount,
       eta: etaForAmount(fatAmount),
+      fundsAnnualMinor: Math.round(annualSpendingMinor * fatMult),
+      spendingMultiplier: fatMult,
     },
   );
 

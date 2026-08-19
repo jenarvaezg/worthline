@@ -456,6 +456,7 @@ export {
   calculateFireForScope,
   fireReservationHorizon,
   isFireEligibleAsset,
+  isManualFireReturn,
   projectFireFromContext,
   withRate,
 } from "./fire";

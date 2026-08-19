@@ -3045,6 +3045,12 @@ code {
   margin: 2px 0 0;
 }
 
+/* La fracción de Coast cuelga de su fila de métrica, no del hero. */
+.fireFundedFraction--coast {
+  margin: -10px 0 0;
+  text-align: right;
+}
+
 /* La aritmética del número FIRE, bajo su fila de métrica. */
 .fireFormula {
   border-left: 1px solid var(--hairline);
@@ -3174,10 +3180,10 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
-/* Un activo con su propia tasa (#1448) es una subdivisión de su tramo, no un
-   tramo nuevo: se sangra y lleva la tinta de vivienda cuando le toca. */
+/* Un activo con su propia tasa (#1448) es una subdivisión de su tramo, no un tramo
+   nuevo: lo dice la sangría. Sin color — §1 reserva --gold para aviso/debe y la
+   identidad de vivienda es --tier-housing, y esta fila no siempre es vivienda. */
 .fireMixRow--asset th {
-  color: var(--gold);
   padding-left: 12px;
 }
 

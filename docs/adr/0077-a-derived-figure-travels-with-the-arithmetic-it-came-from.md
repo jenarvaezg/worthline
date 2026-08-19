@@ -46,9 +46,18 @@ explanation is produced by the same computation as the figure — never by a sec
 3. **The screen prints the inputs, not a link to them.** The FIRE number carries
    `gasto anual ÷ tasa de retirada = número`, with both inputs linking to where they are
    edited. The funded percentage carries its noun and its fraction
-   («68,5 % financiado — 469.671 € de 685.714 €»). Each level says what it funds per
-   year. The chart's dashed line is labelled with the target it marks, and each bar
-   carries its year and its figure.
+   («68,5 % financiado — 469.671 € de 685.714 €»), and so does progress toward Coast,
+   whose requirement now says what it was discounted from and over how many years. The
+   chart's dashed line is labelled with the target it marks, and each bar carries its
+   year and its figure.
+
+   The rule binds the *engine*, not the component: what a level funds per year
+   (`FireLevel.fundsAnnualMinor`) and the multiple of spending it stands for
+   (`spendingMultiplier`) are emitted by `fireLevels`, because computing them on screen
+   means inverting the division that produced the amount — and keeping a second copy of
+   the 0,7 / 1,5 defaults. `coast` carries neither: it is defined by the FIRE number and
+   the years left, not by a multiple of spending, so «financia X €/año» would invite
+   withdrawing from the capital that exists precisely to be left alone.
 
 4. **Inputs are explained in the open; results are explained in a fold.** The
    projection's assumptions (spending, withdrawal rate, contribution, the three

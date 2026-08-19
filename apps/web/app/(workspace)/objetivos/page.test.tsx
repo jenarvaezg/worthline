@@ -452,6 +452,10 @@ describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
     const html = await renderedHtml();
 
     expect(html).toContain("Hacia Coast llevas");
+    // The chain reaches Coast too: the requirement carries the discount behind it,
+    // and the percentage carries its two amounts.
+    expect(html).toContain("tu número FIRE descontado 4 años al");
+    expect(html).toContain('class="fireFundedFraction fireFundedFraction--coast"');
     // The old copy described the tick («el 84,2 % de tu número FIRE»), which is a
     // property of the tick and not of anyone's progress.
     expect(html).not.toContain("% de tu número\nFIRE)");
@@ -493,7 +497,11 @@ describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
 
     // Lean is 70 % of the spending: 16.800 €/año.
     expect(html).toContain(`financia ${euros(16_800_00)}/año`);
-    expect(html).toContain("son tu mismo gasto al 70,0 % y al 150,0 %");
+    expect(html).toContain("<strong>Lean</strong> es tu gasto al 70 %");
+    expect(html).toContain("<strong>Fat</strong> es tu gasto al 150 %");
+    // Coast is not a multiple of spending, so its card claims no annual figure: it is
+    // the capital meant to be left alone.
+    expect(html).not.toContain("financia 685.714");
   });
 });
 

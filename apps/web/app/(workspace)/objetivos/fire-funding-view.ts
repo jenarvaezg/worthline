@@ -14,8 +14,8 @@
  * words them (interaction-patterns §7).
  */
 
-import type { ScopeFireResult } from "@worthline/domain";
-import { formatFirePercent } from "./fire-percent";
+import type { FireScopeConfig, ScopeFireResult } from "@worthline/domain";
+import { formatFirePercent, formatRatePercent } from "./fire-percent";
 
 /**
  * Progress toward the Coast requirement, as a percentage — «cuánto me falta para
@@ -30,6 +30,40 @@ export function coastProgressPercent(
     return null;
   }
   return (eligibleMinor / coastRequiredMinor) * 100;
+}
+
+/**
+ * The Coast requirement with the compound check behind it — the one link of the chain
+ * «número FIRE → capital elegible → % → retorno ponderado → coast → escenarios» that
+ * was still a bare figure. Null when there is no coast requirement, or when the years
+ * to the target age cannot be read off the config.
+ */
+export function coastFormulaLine(input: {
+  result: ScopeFireResult;
+  config: FireScopeConfig;
+  formatMoney: (amountMinor: number) => string;
+}): string | null {
+  const { config, formatMoney, result } = input;
+  const coastRequired = result.coastFireRequired;
+  const currentAge = config.currentAge;
+
+  if (coastRequired === undefined || currentAge === undefined) {
+    return null;
+  }
+
+  // The same horizon `calculateFire` compounds over: target age (65 by default) minus
+  // the derived current age. Reading it off the config here keeps the sentence true
+  // when the user moves either age.
+  const years = (config.targetRetirementAge ?? 65) - currentAge;
+  const rate = formatRatePercent(result.context.realReturnUsed);
+  const yearsLabel = years === 1 ? "1 año" : `${years} años`;
+
+  // Said in words, not in notation: «÷ (1 + r)^n» is the formula, but a reader checking
+  // his own figure needs the sentence — the number, the horizon and the rate it was
+  // discounted at.
+  return `tu número FIRE descontado ${yearsLabel} al ${rate}: ${formatMoney(
+    result.fireNumber.amountMinor,
+  )} → ${formatMoney(coastRequired.amountMinor)}`;
 }
 
 /** The hero's funded figure with the noun and the division behind it. */

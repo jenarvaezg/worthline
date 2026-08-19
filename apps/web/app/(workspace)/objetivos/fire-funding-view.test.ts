@@ -1,6 +1,10 @@
-import type { ScopeFireResult } from "@worthline/domain";
+import type { FireScopeConfig, ScopeFireResult } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-import { coastProgressPercent, fireFundedView } from "./fire-funding-view";
+import {
+  coastFormulaLine,
+  coastProgressPercent,
+  fireFundedView,
+} from "./fire-funding-view";
 
 const formatMoney = (amountMinor: number) =>
   `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(
@@ -44,5 +48,49 @@ describe("coastProgressPercent (#1426)", () => {
     expect(coastProgressPercent(100_000_00, null)).toBeNull();
     expect(coastProgressPercent(100_000_00, undefined)).toBeNull();
     expect(coastProgressPercent(100_000_00, 0)).toBeNull();
+  });
+});
+
+describe("coastFormulaLine (#1426)", () => {
+  const config: FireScopeConfig = {
+    currentAge: 63,
+    monthlySpendingMinor: 200_000,
+    safeWithdrawalRate: 0.035,
+    targetRetirementAge: 67,
+  };
+
+  /** Only the fields the coast line reads. */
+  function coastResult(rate: number): ScopeFireResult {
+    return {
+      coastFireRequired: { amountMinor: 597_477_00, currency: "EUR" },
+      context: { realReturnUsed: rate },
+      fireNumber: { amountMinor: 685_714_29, currency: "EUR" },
+    } as ScopeFireResult;
+  }
+
+  test("closes the chain: the requirement says what it was discounted from, and how", () => {
+    expect(coastFormulaLine({ config, formatMoney, result: coastResult(0.035) })).toBe(
+      "tu número FIRE descontado 4 años al 3,5 %: 685.714 € → 597.477 €",
+    );
+  });
+
+  test("says one year in the singular", () => {
+    expect(
+      coastFormulaLine({
+        config: { ...config, targetRetirementAge: 64 },
+        formatMoney,
+        result: coastResult(0.035),
+      }),
+    ).toContain("descontado 1 año al");
+  });
+
+  test("is null when there is no coast requirement or no age to count from", () => {
+    expect(
+      coastFormulaLine({ config, formatMoney, result: {} as ScopeFireResult }),
+    ).toBeNull();
+    const { currentAge: _derived, ...ageless } = config;
+    expect(
+      coastFormulaLine({ config: ageless, formatMoney, result: coastResult(0.035) }),
+    ).toBeNull();
   });
 });

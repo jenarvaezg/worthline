@@ -18,8 +18,12 @@ import type {
   FireScopeConfig,
   ScopeFireResult,
 } from "@worthline/domain";
-import { monthlySavingsCapacityForFire } from "@worthline/domain";
-import { formatFineFirePercent, formatRatePercent } from "./fire-percent";
+import { isManualFireReturn, monthlySavingsCapacityForFire } from "@worthline/domain";
+import {
+  formatFineFirePercent,
+  formatRatePercent,
+  formatRatePoints,
+} from "./fire-percent";
 
 /** One printed line of the assumptions fold: what it is, its value, where it comes from. */
 export interface FireAssumptionRow {
@@ -68,7 +72,7 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
   const { ageSource, config, formatMoney, projection, result } = input;
   const annualSpendingMinor = config.monthlySpendingMinor * 12;
   const savingsMinor = monthlySavingsCapacityForFire(config);
-  const rateIsManual = config.expectedRealReturn !== undefined;
+  const rateIsManual = isManualFireReturn(config);
 
   const rows: FireAssumptionRow[] = [
     {
@@ -107,35 +111,36 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
     },
   ];
 
-  // The shifted rates are read off the scenarios that were actually projected, so
-  // «optimista» here is the rate the optimistic card counted years with — not a
-  // ±1,5 the copy assumes and the engine could one day stop applying.
+  // The shifted rates AND the size of their shift are read off the scenarios that were
+  // actually projected: «la base más 1,5 puntos» as fixed copy would keep claiming a
+  // shift the engine could stop applying, next to a value that had already moved.
+  const baseScenario = projection?.scenarios.find((item) => item.label === "base");
   const scenarioRow = (
     label: "optimistic" | "pessimistic",
     rowLabel: string,
-    gloss: string,
+    direction: "más" | "menos",
   ): FireAssumptionRow | null => {
     const scenario = projection?.scenarios.find((item) => item.label === label);
-    return scenario === undefined
-      ? null
-      : {
-          gloss,
-          key: `return-${label}`,
-          label: rowLabel,
-          value: formatRatePercent(scenario.annualReturn),
-        };
+    if (scenario === undefined) {
+      return null;
+    }
+    const shift =
+      baseScenario === undefined
+        ? null
+        : Math.abs(scenario.annualReturn - baseScenario.annualReturn);
+
+    return {
+      key: `return-${label}`,
+      label: rowLabel,
+      value: formatRatePercent(scenario.annualReturn),
+      ...(shift === null
+        ? {}
+        : { gloss: `la base ${direction} ${formatRatePoints(shift)}` }),
+    };
   };
 
-  const optimistic = scenarioRow(
-    "optimistic",
-    "Rentabilidad optimista",
-    "la base más 1,5 puntos",
-  );
-  const pessimistic = scenarioRow(
-    "pessimistic",
-    "Rentabilidad pesimista",
-    "la base menos 1,5 puntos",
-  );
+  const optimistic = scenarioRow("optimistic", "Rentabilidad optimista", "más");
+  const pessimistic = scenarioRow("pessimistic", "Rentabilidad pesimista", "menos");
   if (optimistic) {
     rows.push(optimistic);
   }

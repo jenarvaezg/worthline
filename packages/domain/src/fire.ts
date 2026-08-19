@@ -253,6 +253,19 @@ export function projectFireFromContext(
   });
 }
 
+/**
+ * Whether the scope's expected real return was fixed by hand instead of weighted from
+ * the tier mix (#1426). One door, because three surfaces ask the same question — the
+ * rent-substitution disclosure (#1448), the weighting table and the assumptions row —
+ * and a predicate written three times is three chances to disagree about what «manual»
+ * means.
+ */
+export function isManualFireReturn(
+  config: Pick<FireScopeConfig, "expectedRealReturn">,
+): boolean {
+  return config.expectedRealReturn !== undefined;
+}
+
 export function isFireEligibleAsset(
   asset: Pick<ManualAsset, "id" | "isPrimaryResidence">,
   config: Pick<FireScopeConfig, "excludedAssetIds">,

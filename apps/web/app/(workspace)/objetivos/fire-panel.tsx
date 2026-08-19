@@ -24,7 +24,11 @@ import type {
   SavingsCoherence,
   ScopeFireResult,
 } from "@worthline/domain";
-import { describeSavingsDivergence, formatMoneyMinorPrivacy } from "@worthline/domain";
+import {
+  describeSavingsDivergence,
+  formatMoneyMinorPrivacy,
+  isManualFireReturn,
+} from "@worthline/domain";
 import Link from "next/link";
 import {
   fireAssumptionRows,
@@ -36,8 +40,16 @@ import {
   sellableFundedPercent,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
-import { coastProgressPercent, fireFundedView } from "./fire-funding-view";
-import { formatFirePercent, formatRatePercent } from "./fire-percent";
+import {
+  coastFormulaLine,
+  coastProgressPercent,
+  fireFundedView,
+} from "./fire-funding-view";
+import {
+  formatFirePercent,
+  formatMultiplierPercent,
+  formatRatePercent,
+} from "./fire-percent";
 import { fireRentReturnLines } from "./fire-rent-return-view";
 
 export interface FirePanelProps {
@@ -57,13 +69,10 @@ function FireLevelCard({
   level,
   currency,
   privacyMode,
-  safeWithdrawalRate,
 }: {
   level: FireLevel;
   currency: string;
   privacyMode: boolean;
-  /** The withdrawal rate the level was built with, so the card can say what it funds. */
-  safeWithdrawalRate: number;
 }) {
   const reached = level.eta.kind === "reached";
   const etaLabel =
@@ -74,10 +83,6 @@ function FireLevelCard({
         : level.eta.years === 0
           ? "este año"
           : `en ~${level.eta.years.toFixed(1).replace(".", ",")} años`;
-  // What the level buys, which is what makes it legible: a capital figure alone
-  // says nothing about the life it pays for (#1426).
-  const fundsAnnualMinor = Math.round(level.amountMinor * safeWithdrawalRate);
-
   return (
     <div className={`fireLevelCard${reached ? " fireLevelCard--reached" : ""}`}>
       <span className="fireLevelLabel">{level.label}</span>
@@ -87,14 +92,19 @@ function FireLevelCard({
           privacyMode,
         )}
       </strong>
-      <span className="fireLevelFunds">
-        financia{" "}
-        {formatMoneyMinorPrivacy(
-          { amountMinor: fundsAnnualMinor, currency },
-          privacyMode,
-        )}
-        /año
-      </span>
+      {/* What the level buys, which is what makes it legible: a capital figure alone
+          says nothing about the life it pays for (#1426). The figure comes from the
+          engine that built the level — Coast has none, and says nothing. */}
+      {level.fundsAnnualMinor === undefined ? null : (
+        <span className="fireLevelFunds">
+          financia{" "}
+          {formatMoneyMinorPrivacy(
+            { amountMinor: level.fundsAnnualMinor, currency },
+            privacyMode,
+          )}
+          /año
+        </span>
+      )}
       <span className={`fireLevelEta${reached ? " fireLevelEta--reached" : ""}`}>
         {etaLabel}
       </span>
@@ -133,8 +143,12 @@ export function FirePanel({
   // Gated on the rate actually being the derived one: with a manual
   // `expectedRealReturn` the substitution changes nothing, and a panel promising an
   // effect the override cancels would be worse than silence.
+  // One predicate, asked once: three things hang off «is the rate in use the weighted
+  // one?» — the rent-substitution disclosure, the weighting table, and what the
+  // assumptions row says about provenance.
+  const rateIsWeighted = config !== null && !isManualFireReturn(config);
   const rentReturnLines =
-    fireResult && config?.expectedRealReturn === undefined
+    fireResult && rateIsWeighted
       ? fireRentReturnLines({ formatMoney: fmt, report: fireResult.rentReturns })
       : [];
 
@@ -147,6 +161,10 @@ export function FirePanel({
         fireResult.coastFireRequired?.amountMinor,
       )
     : null;
+  const coastFormula =
+    fireResult && config
+      ? coastFormulaLine({ config, formatMoney: fmt, result: fireResult })
+      : null;
   const assumptionRows =
     fireResult && config
       ? fireAssumptionRows({
@@ -161,10 +179,13 @@ export function FirePanel({
   // weighted one: with a manual override the table would explain a number the
   // projection ignored.
   const mixRows =
-    fireResult && config?.expectedRealReturn === undefined
-      ? fireReturnMixPrintRows(fireResult.returnMix)
-      : [];
+    fireResult && rateIsWeighted ? fireReturnMixPrintRows(fireResult.returnMix) : [];
   const mixTotal = fireResult ? fireReturnMixTotal(fireResult.returnMix) : null;
+  // The levels that ARE a multiple of the declared spending, in the rail's own order:
+  // «Regular» at 100 % explains nothing, so it stays out of the note.
+  const spendingMultiples = (fireLevelRail ?? []).filter(
+    (level) => level.spendingMultiplier !== undefined && level.spendingMultiplier !== 1,
+  );
 
   return (
     <section className="firePanel objetivosFirePanel" aria-label="FIRE">
@@ -290,13 +311,26 @@ export function FirePanel({
                   </strong>
                 </div>
               ) : null}
+              {/* El eslabón que le faltaba a la cadena: Coast también es una división,
+                  y hasta ahora era la única cifra derivada sin su aritmética. */}
+              {coastFormula !== null ? (
+                <p className="fireFormula">{coastFormula}</p>
+              ) : null}
               {/* «Cuánto me falta para poder dejar de aportar» — el progreso del
                   lector hacia Coast, no la posición del tick (#1426). */}
-              {coastProgress !== null ? (
-                <div className="fireMetric">
-                  <span>Hacia Coast llevas</span>
-                  <strong>{formatFirePercent(coastProgress)}</strong>
-                </div>
+              {coastProgress !== null && fireResult.coastFireRequired ? (
+                <>
+                  <div className="fireMetric">
+                    <span>Hacia Coast llevas</span>
+                    <strong>{formatFirePercent(coastProgress)}</strong>
+                  </div>
+                  {/* La misma fracción que lleva el % financiado: un porcentaje sin
+                      sus dos cifras vuelve a leerse como probabilidad. */}
+                  <p className="fireFundedFraction fireFundedFraction--coast">
+                    {fmt(fireResult.eligibleAssets.amountMinor)} de{" "}
+                    {fmt(fireResult.coastFireRequired.amountMinor)}
+                  </p>
+                </>
               ) : null}
               {config.currentAge !== undefined &&
               fireResult.coastFireAge !== undefined ? (
@@ -371,7 +405,13 @@ export function FirePanel({
                 tarjetas son una caja negra — nada dice por qué 8, 11 y 18 años. */}
             {assumptionRows.length > 0 ? (
               <details suppressHydrationWarning className="fireAssumptions">
-                <summary>¿De dónde salen estos años?</summary>
+                {/* Sin año de nacimiento no hay proyección y no hay años: el pliegue
+                    no puede prometer explicar unos que no están en pantalla. */}
+                <summary>
+                  {fireProjection
+                    ? "¿De dónde salen estos años?"
+                    : "¿De dónde salen estas cifras?"}
+                </summary>
                 <dl className="fireAssumptionList">
                   {assumptionRows.map((row) => (
                     <div className="fireAssumptionRow" key={row.key}>
@@ -416,7 +456,7 @@ export function FirePanel({
                     <tfoot>
                       <tr>
                         <th scope="row">Total</th>
-                        <td>{mixTotal.weight}</td>
+                        <td />
                         <td />
                         <td>{mixTotal.contribution}</td>
                       </tr>
@@ -450,17 +490,25 @@ export function FirePanel({
                 key={level.key}
                 level={level}
                 privacyMode={privacyMode}
-                safeWithdrawalRate={config.safeWithdrawalRate}
               />
             ))}
           </div>
           {/* Los multiplicadores que definen los niveles: sin ellos, «Lean» y
-              «Fat» son etiquetas sin aritmética (#1426). */}
+              «Fat» son etiquetas sin aritmética (#1426). Se leen del propio rail, que
+              es quien los aplicó — nadie guarda aquí una segunda copia del defecto. */}
           <p className="fireLevelsCoastNote">
-            <strong>Lean</strong> y <strong>Fat</strong> son tu mismo gasto al{" "}
-            {formatRatePercent(config.leanMultiplier ?? 0.7)} y al{" "}
-            {formatRatePercent(config.fatMultiplier ?? 1.5)}; cada nivel es ese gasto
-            anual dividido por tu tasa de retirada.
+            {spendingMultiples.length > 0 ? (
+              <>
+                {spendingMultiples.map((level, index) => (
+                  <span key={level.key}>
+                    {index > 0 ? " · " : null}
+                    <strong>{level.label}</strong> es tu gasto al{" "}
+                    {formatMultiplierPercent(level.spendingMultiplier ?? 1)}
+                  </span>
+                ))}
+                ; cada nivel es ese gasto anual dividido por tu tasa de retirada.
+              </>
+            ) : null}
             {fireLevelRail.some((level) => level.key === "coast") ? (
               <>
                 {" "}
