@@ -4,14 +4,14 @@ import { describe, expect, test } from "vitest";
 import { InvestmentCapture } from "./investment-capture";
 
 /**
- * The saldo pane's «Fecha del saldo» (#1395). Two structural facts this island
- * must keep, both of them regressions waiting to happen:
+ * The saldo pane's date (#1395) and acquisition cost (#1490). Two structural facts
+ * this island must keep, both of them regressions waiting to happen:
  *
  *  - It renders inside the ONE wizard form whose panes hide with `display:none`
- *    (ADR 0009), so the date input may NEVER be `required` — a required control in
+ *    (ADR 0009), so NO control in it may ever be `required` — a required control in
  *    a hidden pane aborts native submit for every other drawer (#677's CRITICAL).
- *  - Its `max` is today: a saldo you have not had yet is not history, and the
- *    server refuses it — the calendar should not offer it in the first place.
+ *  - The date's `max` is today: a position you do not have yet is not history, and
+ *    the server refuses it — the calendar should not offer it in the first place.
  *
  * Asserted via `renderToStaticMarkup` (interaction-patterns §7: no jsdom/RTL in
  * this repo), which also covers the hint's server-rendered first paint.
@@ -40,12 +40,18 @@ function render(props: Partial<Parameters<typeof InvestmentCapture>[0]> = {}): s
   );
 }
 
-describe("InvestmentCapture — «Fecha del saldo» (#1395)", () => {
-  test("posts an optional date input capped at today, never required", () => {
+describe("InvestmentCapture — «¿Desde cuándo la tienes?» (#1395, #1490)", () => {
+  test("posts a date input capped at today, never required", () => {
     const tag = inputTag(render(), "saldoDate_fund");
     expect(tag).toContain('type="date"');
     expect(tag).toContain(`max="${TODAY}"`);
     expect(tag).not.toContain("required");
+  });
+
+  test("shows today EXPLICITLY instead of an empty field that silently means today", () => {
+    // How a position bought in December got dated in August: the field was blank and
+    // the default was invisible, so nobody ever disagreed with it (#1490).
+    expect(inputTag(render(), "saldoDate_fund")).toContain(`value="${TODAY}"`);
   });
 
   test("refills the typed date after a validation round-trip", () => {
@@ -60,62 +66,24 @@ describe("InvestmentCapture — «Fecha del saldo» (#1395)", () => {
     expect(markup).not.toContain("3,4099627");
   });
 
-  test("a past saldo date announces the history rebuild in the same hint", () => {
+  test("a past date announces the history rebuild in the same hint", () => {
     const markup = render({ defaultDate: "2026-07-31", defaultSaldo: "1.089,79" });
     expect(markup).toContain("31 jul 2026");
     expect(markup).toContain("hist");
   });
 
-  test("a backdated saldo re-labels BOTH figures against that date", () => {
-    // The trap the field opens (review of #1395): the price field is prefilled with
-    // the LIVE quote, so a saldo dated weeks ago would be divided by today's price
-    // and the unit count would be wrong forever. Nothing but the copy can tell the
-    // two apart, so both labels — and the price note — must name the date, and the
-    // live-quote hint must be GONE (hence the real hint in this render).
+  test("the two money fields stay TODAY's — the cost is asked for separately", () => {
+    // The saldo and the price fix how many participaciones there are, so they are
+    // read as of today whatever the date says; what a backdated position needs is
+    // its COST, and that is its own field (#1490).
     const markup = render({
       defaultDate: "2026-07-31",
       defaultSaldo: "1.089,79",
-      priceHint: "Precio en vivo de Yahoo Finance.",
-    });
-    expect(markup).toContain("¿Cuánto tenías el 31 jul 2026?");
-    expect(markup).toContain("Precio por participación el 31 jul 2026");
-    expect(markup).toContain("valor liquidativo del 31 jul 2026");
-    expect(markup).not.toContain("Precio en vivo");
-  });
-
-  test("an untouched live quote under a backdated saldo is CALLED OUT, not just asked for", () => {
-    // The one state where the units come out wrong: the price is still, character
-    // for character, today's quote. The pane says so instead of hoping.
-    const markup = render({
-      defaultDate: "2026-07-31",
-      defaultPrice: "319,59",
-      defaultSaldo: "1.089,79",
-      livePrice: "319,59",
-      priceHint: "Precio en vivo de Yahoo Finance.",
-    });
-    expect(markup).toContain("Ese precio es el de HOY");
-    expect(markup).toContain("valor liquidativo del 31 jul 2026");
-  });
-
-  test("a price the user changed drops the call-out and just names the date", () => {
-    const markup = render({
-      defaultDate: "2026-07-31",
-      defaultPrice: "312,40",
-      defaultSaldo: "1.089,79",
-      livePrice: "319,59",
-    });
-    expect(markup).not.toContain("Ese precio es el de HOY");
-    expect(markup).toContain("Pon el valor liquidativo del 31 jul 2026");
-  });
-
-  test("with no date the pane keeps today's wording and the live-quote note", () => {
-    const markup = render({
-      livePrice: "319,59",
       priceHint: "Precio en vivo de Yahoo Finance.",
     });
     expect(markup).toContain("¿Cuánto tienes hoy?");
+    expect(markup).toContain("Precio por participación (€)");
     expect(markup).toContain("Precio en vivo de Yahoo Finance.");
-    expect(markup).not.toContain("valor liquidativo");
   });
 
   test("a refused date reads as a refusal, not as a neutral hint", () => {
@@ -124,5 +92,44 @@ describe("InvestmentCapture — «Fecha del saldo» (#1395)", () => {
     expect(markup).toContain("no es válida");
     // And it never invents the units of a capture the server would refuse.
     expect(markup).not.toContain("participaciones.");
+  });
+});
+
+describe("InvestmentCapture — el coste de adquisición (#1490)", () => {
+  test("posts an optional cost and its mode, neither of them required", () => {
+    const markup = render();
+    expect(inputTag(markup, "cost_fund")).not.toContain("required");
+    expect(markup).toContain('name="costMode_fund"');
+    expect(markup).toContain('value="total"');
+    expect(markup).toContain('value="unit"');
+  });
+
+  test("an empty cost says what that MEANS instead of leaving a blank", () => {
+    const markup = render({ defaultSaldo: "1.089,79" });
+    expect(markup).toContain("Sin coste no habrá plusvalía");
+  });
+
+  test("a declared total is read back as a unit price and as the latent gain", () => {
+    // Jorge's real alta: 27 uds worth 5.865,75 € today, bought for 4.999,86 €.
+    const markup = render({
+      defaultCost: "4.999,86",
+      defaultPrice: "217,25",
+      defaultSaldo: "5.865,75",
+    });
+    expect(markup).toContain("por participación");
+    expect(markup).toContain("plusval");
+    expect(markup).toContain("865,89");
+  });
+
+  test("a cost declared per participación keeps that mode checked after a round-trip", () => {
+    const markup = render({
+      defaultCost: "185,18",
+      defaultCostMode: "unit",
+      defaultPrice: "217,25",
+      defaultSaldo: "5.865,75",
+    });
+    expect(markup).toContain("de coste total");
+    expect(inputTag(markup, "costMode_fund")).not.toContain("checked");
+    expect(markup).toContain("865,89");
   });
 });
