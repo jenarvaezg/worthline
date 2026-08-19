@@ -196,6 +196,7 @@ export async function ObjetivosContent({
     fireProjection,
     fireResult,
     fireScopeConfig,
+    coastArrival,
     coastTickFraction,
     goals: goalsView,
     fireLevelRail,
@@ -421,6 +422,7 @@ export async function ObjetivosContent({
       <FireCockpit
         achievement={achievement}
         ageSource={ageSource}
+        coastArrival={coastArrival}
         coastTickFraction={coastTickFraction}
         config={fireScopeConfig}
         currency={currency}

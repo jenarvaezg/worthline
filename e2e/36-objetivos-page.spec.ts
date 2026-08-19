@@ -49,7 +49,7 @@ test("/objetivos: FIRE hero + goals section render, nav active", async ({ page }
   await expect(page.getByRole("region", { name: "FIRE", exact: true })).toBeVisible();
 });
 
-test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", async ({
+test("/objetivos: Niveles FIRE rail renders Lean/Regular/Fat labels", async ({
   page,
 }) => {
   await page.goto("/demo?persona=familia");
@@ -62,9 +62,14 @@ test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", asyn
   // La tarjeta del nivel, no cualquier «Lean» de la región: desde #1426 la nota de
   // debajo nombra los mismos niveles en negrita («Lean es tu gasto al 70 %»), y un
   // getByText suelto empata con las dos y muere por strict mode.
-  for (const label of ["Coast", "Lean", "Regular", "Fat"]) {
+  for (const label of ["Lean", "Regular", "Fat"]) {
     await expect(
       rail.locator(".fireLevelCard").getByText(label, { exact: true }),
     ).toBeVisible();
   }
+
+  // Coast se bajó de este rail (#1425): es un estado, no un nivel de vida, y vive en
+  // su propio bloque junto a la barra de progreso.
+  await expect(rail.locator(".fireLevelCard").getByText("Coast")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Coast FIRE" })).toBeVisible();
 });

@@ -26,6 +26,7 @@
 import type {
   FireAchievement,
   FireAgeSource,
+  FireCoastArrival,
   FireLevel,
   FireProjection,
   FireScopeConfig,
@@ -34,6 +35,7 @@ import type {
   ScopeFireResult,
 } from "@worthline/domain";
 import {
+  fireCoastArrival,
   fireLevels,
   monthlySavingsCapacityForFire,
   previewFireWithAssumptions,
@@ -51,6 +53,7 @@ import { FirePanel } from "./fire-panel";
 export interface FireCockpitProps {
   achievement: FireAchievement | null;
   ageSource: FireAgeSource | null;
+  coastArrival: FireCoastArrival | null;
   coastTickFraction: number | null;
   config: FireScopeConfig | null;
   currency: string;
@@ -95,6 +98,11 @@ export function FireCockpit(props: FireCockpitProps) {
   const levelRail =
     previewing && result ? fireLevels({ context: result.context }) : props.fireLevelRail;
   const coastTick = previewing && result ? coastTickOf(result) : props.coastTickFraction;
+  // La edad de llegada a Coast se mueve con el ahorro y con la edad objetivo (#1425),
+  // así que se recalcula por la misma puerta que el servidor: subir el ahorro tiene que
+  // adelantar esa fecha mientras se teclea, no al guardar.
+  const coastArrival =
+    previewing && result ? fireCoastArrival(result.context) : props.coastArrival;
 
   return (
     <div className="objetivosCockpit">
@@ -118,6 +126,7 @@ export function FireCockpit(props: FireCockpitProps) {
       <FirePanel
         achievement={props.achievement}
         ageSource={props.ageSource}
+        coastArrival={coastArrival}
         coastTickFraction={coastTick}
         currency={props.currency}
         fireLevelRail={levelRail}

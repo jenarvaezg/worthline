@@ -106,7 +106,7 @@ describe("FIRE config persistence", () => {
 
     test("a member with no birth date keeps the legacy typed age", async () => {
       // The silent failure guarded here: an age of `undefined` makes calculateFire
-      // skip the coast block, so coastFireRequired / coastFireAge / isAlreadyAtCoastFire
+      // skip the coast block, so coastFireRequired / fireAgeIfContributionsStop / isAlreadyAtCoastFire
       // vanish from the page with nothing said.
       const store = await createFileBackedStore("worthline-fire-");
       await store.workspace.initializeWorkspace({

@@ -770,8 +770,26 @@ export interface AgentViewFireResult {
   reservedForGoals?: AgentViewMoney;
   /** Present only when the config carries an age. */
   coastFireRequired?: AgentViewMoney;
-  /** Present only when a coast-FIRE age could be derived. */
-  coastFireAge?: number;
+  /**
+   * The age today's capital would reach the FULL FIRE number at **if contributions
+   * stopped right now** (#1425). It was called `coastFireAge`, which promised the age
+   * Coast is reached at — a different question, answered by `coastArrival` below. This
+   * one assumes ZERO contributions, so quoting it as a coast age contradicts the
+   * premise of `coastFireRequired` beside it. Present only when it can be derived (a
+   * compounding rate, some capital, and the FIRE number not yet reached).
+   */
+  fireAgeIfContributionsStop?: number;
+  /**
+   * When the scope reaches the coast requirement projecting WITH its declared savings
+   * (#1425) — the figure the coast tick on screen implies and nothing computed before.
+   * `reached` means the requirement is already met (so `isAlreadyAtCoastFire` is true
+   * and no age applies); `unreachable` means the declared savings never cross it inside
+   * the projection horizon. Present only when the config carries an age.
+   */
+  coastArrival?:
+    | { kind: "reached" }
+    | { kind: "eta"; years: number; age: number }
+    | { kind: "unreachable" };
   /** Present only when the config carries an age. */
   isAlreadyAtCoastFire?: boolean;
 }

@@ -103,7 +103,18 @@ export interface FireResult {
    */
   excludedAssets: FireExcludedAsset[];
   coastFireRequired?: MoneyMinor;
-  coastFireAge?: number;
+  /**
+   * La edad a la que el capital de hoy llegaría al número FIRE **completo si el usuario
+   * dejara de aportar ahora mismo** (#1425, ADR 0079). Se llamaba `coastFireAge`, y ese nombre
+   * prometía «la edad a la que llegas a Coast», que es otra pregunta y otra cifra
+   * (`fireCoastArrival`): esta asume aportación CERO y por eso contradecía en silencio
+   * la premisa del `coastFireRequired` de al lado, calculado contra la edad objetivo.
+   *
+   * La cifra es honesta y barata — «si dejo de ahorrar, ¿qué pasa?» — pero solo se
+   * puede leer con su premisa delante, así que el nombre la lleva dentro. Ausente
+   * cuando el retorno no compone (≤ 0), no hay capital, o ya se supera el número FIRE.
+   */
+  fireAgeIfContributionsStop?: number;
   isAlreadyAtCoastFire?: boolean;
 }
 
@@ -323,7 +334,8 @@ export function fireReservationHorizon(
 
 /**
  * Core FIRE math (engine-level). Accepts an explicit `realReturn` so the
- * caller controls the rate — coast and coastFireAge use this single value.
+ * caller controls the rate — el Coast requerido y `fireAgeIfContributionsStop`
+ * salen de este único valor.
  * When called from `calculateFireForScope` the rate is `realReturnUsed`
  * (the resolved override-or-effective scalar, N3 #515).
  */
@@ -355,15 +367,28 @@ export function calculateFire(
     const yearsToRetirement = targetRetirementAge - config.currentAge;
     const growthFactor = rate > -1 ? Math.pow(1 + rate, yearsToRetirement) : NaN;
 
-    if (Number.isFinite(growthFactor) && growthFactor > 0) {
+    // Coast solo existe si queda margen de composición antes de la edad objetivo
+    // (#1425, ADR 0079): `growthFactor > 1`. Con retorno ≤ 0, o con la edad objetivo
+    // ya pasada, el «requisito» sale IGUAL o MAYOR que el número FIRE, y entonces la
+    // frase que lo acompaña —«alcanza esa cifra y el interés compuesto hace el
+    // resto»— es falsa: no hay resto que hacer. Antes esa cifra se imprimía igual, y
+    // en cuanto #1425 le puso fecha la incoherencia se volvió literal («llegas a
+    // Coast tres años DESPUÉS de llegar a FIRE» para cualquiera de 65+ que no haya
+    // tocado su edad objetivo, que por defecto es 65). Se suprime el bloque entero
+    // —requisito, sello y llegada— en una sola puerta, así que el tick de la barra,
+    // el panel, el agent view y el sello de logro desaparecen juntos o no.
+    if (Number.isFinite(growthFactor) && growthFactor > 1) {
       const coastFireRequiredMinor = Math.round(fireNumberMinor / growthFactor);
 
       result.coastFireRequired = money(coastFireRequiredMinor, currency);
       result.isAlreadyAtCoastFire = eligibleAssetsMinor >= coastFireRequiredMinor;
     }
 
+    // Aportación CERO por construcción (de ahí el nombre, #1425): el número FIRE
+    // completo descontado al capital de hoy, sin un euro más. La edad a la que se
+    // llega a Coast aportando vive en `fireCoastArrival`, que proyecta la trayectoria.
     if (rate > 0 && eligibleAssetsMinor > 0 && fireNumberMinor > eligibleAssetsMinor) {
-      result.coastFireAge =
+      result.fireAgeIfContributionsStop =
         config.currentAge +
         Math.log(fireNumberMinor / eligibleAssetsMinor) / Math.log(1 + rate);
     }

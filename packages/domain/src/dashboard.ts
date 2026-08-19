@@ -7,6 +7,8 @@ import {
 } from "./fire";
 import type { FireAchievement } from "./fire-achievement";
 import { fireAchievement } from "./fire-achievement";
+import type { FireCoastArrival } from "./fire-coast-arrival";
+import { fireCoastArrival } from "./fire-coast-arrival";
 import type { FireLevel } from "./fire-levels";
 import { fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
@@ -430,6 +432,14 @@ export interface ObjetivosState {
   /** coastRequired / fireNumber clamped to [0,1]; null when coast data unavailable. */
   coastTickFraction: number | null;
   /**
+   * When the scope reaches Coast projecting WITH its declared savings (#1425). The tick
+   * on the bar always implied a date and nothing computed one: the only age the screen
+   * had assumed contributions of zero. Null when there is no coast requirement to cross
+   * at all — no age configured, or no compounding room left before the target age (ADR
+   * 0079) — which is NOT the same as `unreachable`.
+   */
+  coastArrival: FireCoastArrival | null;
+  /**
    * The achievement badge for the hero, veto included (#1449). Read off the same
    * `fireAchievement` the home card reads, so "FIRE alcanzado" cannot be a claim
    * on one screen and a caveat on the other. Null when FIRE is unconfigured.
@@ -528,6 +538,9 @@ export function prepareObjetivosState(
 
   return {
     achievement: dash.fireGlance?.achievement ?? null,
+    // La edad de llegada a Coast (#1425): sale del MISMO contexto que el rail y el
+    // gráfico, así que las tres cifras no pueden discrepar sobre cuánto se aporta.
+    coastArrival: dash.fireResult ? fireCoastArrival(dash.fireResult.context) : null,
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
     savingsCoherence: dash.savingsCoherence,
     fireProjection: dash.fireProjection,

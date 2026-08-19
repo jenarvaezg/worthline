@@ -11,6 +11,7 @@ import type {
 import {
   assignedHoldingsValueMinor,
   calculateFireForScope,
+  fireCoastArrival,
   fireReservationHorizon,
   isFireEligibleAsset,
   listScopeOptions,
@@ -266,7 +267,13 @@ function toAssumptions(
   };
 }
 
-function toResult(result: FireResult): AgentViewFireResult {
+function toResult(result: ScopeFireResult): AgentViewFireResult {
+  // Las dos edades del Coast, cada una con su premisa (#1425): la de aportación cero
+  // viene del propio resultado, y la de llegada se proyecta con el ahorro declarado por
+  // la misma puerta que la pantalla — un asistente que cite «Edad Coast» a secas repite
+  // la confusión que el ticket vino a deshacer.
+  const coastArrival = fireCoastArrival(result.context);
+
   return {
     eligibleAssets: money(result.eligibleAssets),
     fireNumber: money(result.fireNumber),
@@ -278,7 +285,10 @@ function toResult(result: FireResult): AgentViewFireResult {
     ...(result.coastFireRequired === undefined
       ? {}
       : { coastFireRequired: money(result.coastFireRequired) }),
-    ...(result.coastFireAge === undefined ? {} : { coastFireAge: result.coastFireAge }),
+    ...(result.fireAgeIfContributionsStop === undefined
+      ? {}
+      : { fireAgeIfContributionsStop: result.fireAgeIfContributionsStop }),
+    ...(coastArrival === null ? {} : { coastArrival }),
     ...(result.isAlreadyAtCoastFire === undefined
       ? {}
       : { isAlreadyAtCoastFire: result.isAlreadyAtCoastFire }),

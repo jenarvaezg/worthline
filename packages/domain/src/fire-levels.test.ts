@@ -88,25 +88,20 @@ describe("fireLevels — amounts", () => {
     expect(fat.amountMinor).toBe(Math.round((200_000 * 2.0 * 12) / 0.04));
   });
 
-  it("coast amount comes from calculateFire (coastFireRequired)", () => {
-    // growthFactor = (1.05)^30; coastRequired = fireNumber / growthFactor
-    const regular = Math.round((200_000 * 12) / 0.04);
-    const expected = Math.round(regular / Math.pow(1.05, 30));
+  it("no lleva Coast: este rail es el eje del nivel de vida, no del estado (#1425)", () => {
+    // Coast viajaba aquí y la tarjeta necesitaba un párrafo debajo explicando que no
+    // significaba lo mismo que las otras. Vive junto a la barra de progreso.
     const levels = fireLevels(input())!;
-    const coast = levels.find((l) => l.key === "coast")!;
-    expect(coast.amountMinor).toBe(expected);
+    expect(levels.map((l) => l.key)).not.toContain("coast");
   });
 
-  it("returns 4 levels in order: coast, lean, regular, fat", () => {
+  it("returns 3 levels in order: lean, regular, fat", () => {
     const levels = fireLevels(input())!;
-    expect(levels.map((l) => l.key)).toEqual(["coast", "lean", "regular", "fat"]);
+    expect(levels.map((l) => l.key)).toEqual(["lean", "regular", "fat"]);
 
     // Each level carries the annual spending it is DEFINED by (#1426), so a screen
-    // never has to invert the division that produced the amount. Coast carries none:
-    // it is the capital meant to be left alone, not a multiple of spending.
+    // never has to invert the division that produced the amount.
     const byKey = new Map(levels!.map((level) => [level.key, level]));
-    expect(byKey.get("coast")?.fundsAnnualMinor).toBeUndefined();
-    expect(byKey.get("coast")?.spendingMultiplier).toBeUndefined();
     for (const key of ["lean", "regular", "fat"] as const) {
       const level = byKey.get(key)!;
       expect(level.fundsAnnualMinor).toBe(
@@ -276,17 +271,11 @@ describe("fireLevels — Barista FIRE (N2, #514)", () => {
     expect(barista.eta.kind).toBe("reached");
   });
 
-  it("rail order is coast · lean · barista · regular · fat with Barista", () => {
+  it("rail order is lean · barista · regular · fat with Barista", () => {
     const levels = fireLevels(
       input({ config: { ...BASE_CONFIG, baristaMonthlyIncomeMinor: BARISTA_INCOME } }),
     )!;
-    expect(levels.map((l) => l.key)).toEqual([
-      "coast",
-      "lean",
-      "barista",
-      "regular",
-      "fat",
-    ]);
+    expect(levels.map((l) => l.key)).toEqual(["lean", "barista", "regular", "fat"]);
   });
 });
 
@@ -305,7 +294,7 @@ describe("fireLevels — edge cases", () => {
     expect(result).toBeNull();
   });
 
-  it("coast is absent when no currentAge configured", () => {
+  it("el rail entero sigue en pie sin edad configurada: ningún nivel dependía de ella", () => {
     const noAge: FireScopeConfig = {
       monthlySpendingMinor: BASE_CONFIG.monthlySpendingMinor,
       safeWithdrawalRate: BASE_CONFIG.safeWithdrawalRate,
@@ -313,6 +302,6 @@ describe("fireLevels — edge cases", () => {
       monthlySavingsCapacityMinor: 100_000,
     };
     const levels = fireLevels(input({ config: noAge }))!;
-    expect(levels.find((l) => l.key === "coast")).toBeUndefined();
+    expect(levels.map((l) => l.key)).toEqual(["lean", "regular", "fat"]);
   });
 });

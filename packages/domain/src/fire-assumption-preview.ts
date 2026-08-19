@@ -87,9 +87,9 @@ export function previewFireWithAssumptions(
     ...(recomputed.coastFireRequired === undefined
       ? {}
       : { coastFireRequired: recomputed.coastFireRequired }),
-    ...(recomputed.coastFireAge === undefined
+    ...(recomputed.fireAgeIfContributionsStop === undefined
       ? {}
-      : { coastFireAge: recomputed.coastFireAge }),
+      : { fireAgeIfContributionsStop: recomputed.fireAgeIfContributionsStop }),
     ...(recomputed.isAlreadyAtCoastFire === undefined
       ? {}
       : { isAlreadyAtCoastFire: recomputed.isAlreadyAtCoastFire }),

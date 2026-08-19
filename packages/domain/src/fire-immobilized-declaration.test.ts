@@ -156,7 +156,9 @@ describe("declaring the brick out moves the capital AND the rate", () => {
     expect(declaredOut.coastFireRequired!.amountMinor).toBeLessThan(
       counting.coastFireRequired!.amountMinor,
     );
-    expect(declaredOut.coastFireAge!).toBeGreaterThan(counting.coastFireAge!);
+    expect(declaredOut.fireAgeIfContributionsStop!).toBeGreaterThan(
+      counting.fireAgeIfContributionsStop!,
+    );
   });
 });
 

@@ -174,7 +174,7 @@ export function scopeCurrentAge(
  * A scope with a derivable age gets it, stale or absent stored value replaced.
  * A scope without one keeps whatever the config already carried — dropping to
  * `undefined` would make `calculateFire` skip the coast block entirely and
- * `coastFireRequired` / `coastFireAge` would vanish with no explanation.
+ * `coastFireRequired` / `fireAgeIfContributionsStop` would vanish with no explanation.
  */
 export function withDerivedCurrentAges(
   configByScopeId: Record<string, FireScopeConfig>,

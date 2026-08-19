@@ -483,7 +483,12 @@ describe("ObjetivosPage auditable FIRE figures (#1426)", () => {
   });
 
   test("measures progress toward Coast, not the tick's position on the bar", async () => {
-    calls.readFireConfig.mockResolvedValueOnce({ household: jorgeConfig() });
+    // Con una tasa que componga: sin margen de composición hasta la edad objetivo no
+    // hay Coast del que medir progreso (#1425, ADR 0079), y el pool de este fixture es
+    // todo caja al 0 %.
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: jorgeConfig({ expectedRealReturn: 0.05 }),
+    });
 
     const html = await renderedHtml();
 
@@ -1002,5 +1007,118 @@ describe("los supuestos FIRE se editan donde se ven (#1450)", () => {
     expect(html).toContain("Rellenar mis supuestos");
     // Y el formulario está presente para poder hacerlo.
     expect(html).toContain('name="monthlySpending"');
+  });
+});
+
+describe("ObjetivosPage la palabra Coast significa UNA cosa (#1425)", () => {
+  /** Jorge: 63 años, jubilación a 67, 2.000 €/mes al 3,5 %. */
+  function coastConfig(overrides: Partial<FireScopeConfig> = {}): FireScopeConfig {
+    return {
+      currentAge: 63,
+      monthlySavingsCapacityMinor: 250_000,
+      monthlySpendingMinor: 200_000,
+      safeWithdrawalRate: 0.035,
+      expectedRealReturn: 0.05,
+      targetRetirementAge: 67,
+      ...overrides,
+    };
+  }
+
+  /** El bloque de Coast: sus cuatro cifras viven juntas, junto a la barra. */
+  function coastBlock(html: string): string {
+    const opened = html.slice(html.indexOf('<section aria-label="Coast FIRE"'));
+    return opened.slice(0, opened.indexOf("</section>"));
+  }
+
+  test("fecha la llegada a Coast con las aportaciones declaradas", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: coastConfig() });
+
+    const block = coastBlock(await renderedHtml());
+
+    // La cifra que el tick prometía desde PRD #507 y que no se calculaba en ningún
+    // sitio: el primer año en que la trayectoria CON aportaciones cruza el requisito.
+    expect(block).toContain("Llegas a Coast");
+    expect(block).toMatch(/<strong>a los \d+<\/strong>/);
+    expect(block).toContain("con tus aportaciones");
+  });
+
+  test("las edades van a año entero: 72,99 se imprimía «73,0» y parecía roto", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: coastConfig() });
+
+    const block = coastBlock(await renderedHtml());
+
+    // Ni una coma decimal en ninguna de las dos edades.
+    expect(block).not.toMatch(/a los \d+,\d/);
+  });
+
+  test("la vieja «Edad Coast» lleva su premisa por nombre", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: coastConfig() });
+
+    const html = await renderedHtml();
+
+    // Es la edad a la que se llega al número FIRE COMPLETO dejando de aportar hoy —
+    // otra pregunta que la de arriba, y por eso ya no comparte prefijo con ella.
+    expect(html).not.toContain("Edad Coast");
+    expect(coastBlock(html)).toContain("Si dejas de aportar hoy");
+    expect(coastBlock(html)).toMatch(/<strong>FIRE a los \d+<\/strong>/);
+    expect(coastBlock(html)).toContain("sin aportar un euro más");
+  });
+
+  test("admite que con el ahorro declarado no se cruza el Coast", async () => {
+    // 0,1 % real y 100 €/mes sobre un requisito de ~684.000 €: no llega, y lo dice en
+    // vez de callarse o inventar una fecha.
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: coastConfig({
+        expectedRealReturn: 0.001,
+        monthlySavingsCapacityMinor: 10_000,
+      }),
+    });
+
+    const block = coastBlock(await renderedHtml());
+
+    expect(block).toContain("Llegas a Coast");
+    expect(block).toContain("no lo cruzas dentro de la proyección");
+  });
+
+  test("sin margen de composición no hay bloque de Coast, y el hueco dice por qué", async () => {
+    // Retorno 0: el «requisito» saldría igual al número FIRE y la promesa de que el
+    // interés compuesto hace el resto sería falsa (ADR 0079).
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: coastConfig({ expectedRealReturn: 0 }),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain('<section aria-label="Coast FIRE"');
+    expect(html).toContain("No hay Coast que calcular");
+    expect(html).toContain("el capital no crece solo");
+  });
+
+  test("tampoco lo hay con la edad objetivo ya pasada — y ahí la razón es otra", async () => {
+    // El caso que no pide config exótica: 70 años con la edad objetivo por defecto (65).
+    // El requisito saldría POR ENCIMA del número FIRE, o sea «llegas a Coast después de
+    // llegar a FIRE».
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: coastConfig({ currentAge: 70, targetRetirementAge: 65 }),
+    });
+
+    const html = await renderedHtml();
+
+    expect(html).not.toContain('<section aria-label="Coast FIRE"');
+    expect(html).toContain("tu edad objetivo ya ha llegado");
+  });
+
+  test("Coast se baja del rail de niveles, y con él el párrafo que lo desmentía", async () => {
+    calls.readFireConfig.mockResolvedValueOnce({ household: coastConfig() });
+
+    const html = await renderedHtml();
+    const rail = html.slice(html.indexOf('<section aria-label="Niveles FIRE"'));
+    const levels = rail.slice(0, rail.indexOf("</section>"));
+
+    // El rail responde a UNA pregunta: qué nivel de vida quiero financiar.
+    expect(levels).toContain("Lean");
+    expect(levels).toContain("Regular");
+    expect(levels).toContain("Fat");
+    expect(levels).not.toContain("Coast");
   });
 });

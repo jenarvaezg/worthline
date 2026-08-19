@@ -258,6 +258,56 @@ describe("GET /api/v1/agent-view/scopes/{scopeId}/fire-context", () => {
     expect(body.data.qualitySignals).toEqual([]);
   });
 
+  // #1425: el contrato ganó `coastArrival` y renombró `coastFireAge`. El rename lo caza
+  // `tsc`; que el campo nuevo DEJE de emitirse, no — y es exactamente la mitad del
+  // ticket que un asistente consume.
+  test("publishes both Coast ages, each with its own premise", async () => {
+    const databasePath = tempDatabasePath("worthline-agent-view-fire-coast-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 150_000_00,
+      id: "asset_fund",
+      liquidityTier: "market",
+      name: "Fondo indexado",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "manual",
+    });
+    await store.saveFireConfig("household", {
+      ...CONFIGURED,
+      currentAge: 45,
+      monthlySavingsCapacityMinor: 500_00,
+      targetRetirementAge: 65,
+    });
+    store.close();
+
+    const { body } = await fireContext(await householdScopeId());
+    const result = body.data.result;
+
+    // El requisito: el número FIRE descontado 20 años al 5 %.
+    expect(result.coastFireRequired).toEqual(eur(Math.round(FIRE_NUMBER / 1.05 ** 20)));
+    expect(result.isAlreadyAtCoastFire).toBe(false);
+
+    // La llegada, proyectada CON los 500 €/mes declarados.
+    expect(result.coastArrival.kind).toBe("eta");
+    expect(result.coastArrival.age).toBeGreaterThan(45);
+    expect(result.coastArrival.age).toBeLessThan(result.fireAgeIfContributionsStop);
+
+    // Y la de aportación cero, con su premisa en el nombre: 45 + log(4)/log(1,05).
+    expect(result.fireAgeIfContributionsStop).toBeCloseTo(
+      45 + Math.log(4) / Math.log(1.05),
+      5,
+    );
+    expect(result.coastFireAge).toBeUndefined();
+  });
+
   test("lists excluded assets with both primary-residence and manual reasons", async () => {
     const databasePath = await seedConfiguredHousehold("worthline-agent-view-fire-excl-");
     const scopeId = await householdScopeId();

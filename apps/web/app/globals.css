@@ -2975,6 +2975,30 @@ code {
   color: var(--blue);
 }
 
+/* ── Coast, junto a su tick en la barra (#1425) ────────────────────────────
+   Un bloque de libro mayor, no una tarjeta: una regla arriba lo separa de la
+   barra y sus filas son las mismas `.fireMetric` que el resto del hero — Coast
+   se lee como parte de la cadena, no como un cajón aparte. */
+.fireCoast {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  /* El mismo hueco que `.fireResults`: las líneas de aritmética que viven aquí dentro
+     (`.fireFormula`, `.fireFundedFraction--coast`) suben con márgenes negativos medidos
+     contra ese ritmo, y con un hueco menor quedarían pegadas a la fila de arriba. */
+  gap: 14px;
+  padding-top: 12px;
+}
+
+/* La premisa de cada edad, pegada debajo de su cifra: sin ella las dos edades se
+   leen como la misma familia y una contradice a la otra. */
+.fireCoastGloss {
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.5;
+  margin: 2px 0 0;
+  text-align: right;
+}
+
 /* Coast FIRE explainer paragraph */
 .objetivosCoastNote {
   color: var(--muted);
@@ -3121,7 +3145,7 @@ code {
   font-weight: 600;
 }
 
-.fireLevelsCoastNote {
+.fireLevelsNote {
   color: var(--muted);
   font-size: 0.73rem;
   line-height: 1.5;

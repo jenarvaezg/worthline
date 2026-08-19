@@ -9,6 +9,13 @@
  * `calculateFireForScope` / `projectFireFromContext` and the pure view modules
  * beside this file only word them.
  *
+ * Coast has one home, beside its tick on the bar (#1425): the requirement, the
+ * progress toward it, the age its contributions reach it at, and — with its premise
+ * spelled out in the label — the age the capital alone would reach the full FIRE
+ * number at. It is no longer a card on the «Niveles FIRE» rail, which answers a
+ * different question («¿qué nivel de vida quiero financiar?») and used to need a
+ * paragraph underneath admitting it.
+ *
  * Server-rendered (interaction-patterns §1): the only interaction here is native
  * `<details>` and the in-page anchors to «Tus supuestos» (#1450), so there is no
  * island and no client rate math.
@@ -19,6 +26,7 @@ import FireProjectionCard from "@web/fire-projection-card";
 import type {
   FireAchievement,
   FireAgeSource,
+  FireCoastArrival,
   FireLevel,
   FireProjection,
   FireScopeConfig,
@@ -29,6 +37,7 @@ import {
   describeSavingsDivergence,
   formatMoneyMinorPrivacy,
   isManualFireReturn,
+  monthlySavingsCapacityForFire,
 } from "@worthline/domain";
 import {
   fireAssumptionRows,
@@ -41,8 +50,12 @@ import {
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
 import {
+  coastAbsenceNote,
+  coastArrivalMetric,
   coastFormulaLine,
   coastProgressPercent,
+  contributionsStopMetric,
+  etaYearsLabel,
   fireFundedView,
 } from "./fire-funding-view";
 import {
@@ -56,6 +69,12 @@ export interface FirePanelProps {
   achievement: FireAchievement | null;
   /** Where the reference age came from (#1415), for the assumptions fold. */
   ageSource: FireAgeSource | null;
+  /**
+   * Cuándo se llega a Coast aportando lo declarado (#1425). Lo calcula el servidor —
+   * y la isla lo recalcula al teclear — porque sale de una trayectoria, no de una
+   * división: el panel solo lo pone en palabras.
+   */
+  coastArrival: FireCoastArrival | null;
   coastTickFraction: number | null;
   currency: string;
   fireLevelRail: FireLevel[] | null;
@@ -81,14 +100,14 @@ function FireLevelCard({
   privacyMode: boolean;
 }) {
   const reached = level.eta.kind === "reached";
+  // El mismo «cuándo» que la fila de llegada a Coast (#1425): dos formateos separados
+  // eran dos umbrales para «este año» a tres líneas de distancia.
   const etaLabel =
     level.eta.kind === "reached"
       ? "alcanzado"
       : level.eta.kind === "unreachable"
         ? "—"
-        : level.eta.years === 0
-          ? "este año"
-          : `en ~${level.eta.years.toFixed(1).replace(".", ",")} años`;
+        : etaYearsLabel(level.eta.years);
   return (
     <div className={`fireLevelCard${reached ? " fireLevelCard--reached" : ""}`}>
       <span className="fireLevelLabel">{level.label}</span>
@@ -100,17 +119,16 @@ function FireLevelCard({
       </strong>
       {/* What the level buys, which is what makes it legible: a capital figure alone
           says nothing about the life it pays for (#1426). The figure comes from the
-          engine that built the level — Coast has none, and says nothing. */}
-      {level.fundsAnnualMinor === undefined ? null : (
-        <span className="fireLevelFunds">
-          financia{" "}
-          {formatMoneyMinorPrivacy(
-            { amountMinor: level.fundsAnnualMinor, currency },
-            privacyMode,
-          )}
-          /año
-        </span>
-      )}
+          engine that built the level — Barista's is the gap its income leaves. Every
+          level on this rail has one since Coast stopped riding it (#1425). */}
+      <span className="fireLevelFunds">
+        financia{" "}
+        {formatMoneyMinorPrivacy(
+          { amountMinor: level.fundsAnnualMinor, currency },
+          privacyMode,
+        )}
+        /año
+      </span>
       <span className={`fireLevelEta${reached ? " fireLevelEta--reached" : ""}`}>
         {etaLabel}
       </span>
@@ -121,6 +139,7 @@ function FireLevelCard({
 export function FirePanel({
   achievement,
   ageSource,
+  coastArrival,
   coastTickFraction,
   currency,
   fireLevelRail,
@@ -171,6 +190,25 @@ export function FirePanel({
   const coastFormula =
     fireResult && config
       ? coastFormulaLine({ config, formatMoney: fmt, result: fireResult })
+      : null;
+  // Las dos edades del bloque de Coast, cada una con su premisa en la etiqueta (#1425):
+  // la de llegada (aportando lo declarado) y la de aportación cero, que es la que se
+  // llamaba «Edad Coast» y respondía otra pregunta. Se leen de módulos puros: el panel
+  // no vuelve a decidir cuándo una edad es un sello.
+  const coastAgeMetrics = [
+    coastArrivalMetric(coastArrival, config ? monthlySavingsCapacityForFire(config) : 0),
+    fireResult ? contributionsStopMetric({ formatMoney: fmt, result: fireResult }) : null,
+  ].filter((metric) => metric !== null);
+  // Y si no hay Coast, por qué (#1425): sin margen de composición hasta la edad objetivo
+  // el motor no emite el requisito, y una cifra que se va sin decir nada se lee como un
+  // fallo de la app.
+  const coastAbsence =
+    fireResult && config
+      ? coastAbsenceNote({
+          config,
+          realReturnUsed: fireResult.context.realReturnUsed,
+          result: fireResult,
+        })
       : null;
   const assumptionRows =
     fireResult && config
@@ -251,16 +289,6 @@ export function FirePanel({
               </p>
             ) : null}
 
-            {/* Coast FIRE explainer */}
-            {coastTickFraction !== null ? (
-              <p className="objetivosCoastNote">
-                El tick <span aria-hidden="true">▏</span> marca{" "}
-                <strong>Coast FIRE</strong>: si alcanzas esa cifra hoy y dejas de aportar,
-                el interés compuesto hace el resto — el capital crece solo hasta tu número
-                FIRE para la jubilación.
-              </p>
-            ) : null}
-
             <div className="fireResults objetivosMetrics">
               <div className="fireMetric">
                 <span>Número FIRE</span>
@@ -320,43 +348,73 @@ export function FirePanel({
                   ))}
                 </ul>
               ) : null}
-              {fireResult.coastFireRequired ? (
+            </div>
+
+            {/* ── Coast, en la columna de la barra que lo dibuja (#1425) ─────
+                El tick marca un punto del camino, así que su cifra, su progreso y
+                sus dos fechas viven aquí y no en el rail de niveles: allí Coast era
+                una tarjeta más que necesitaba un párrafo debajo avisando de que no
+                significaba lo mismo que las otras. Va DESPUÉS del número FIRE y del
+                capital elegible porque su fórmula los cita: la cadena de #1426 se lee
+                en orden. Las cuatro filas responden a cuatro preguntas distintas y
+                cada etiqueta dice a cuál. */}
+            {fireResult.coastFireRequired ? (
+              <section aria-label="Coast FIRE" className="fireCoast">
+                <p className="objetivosCoastNote">
+                  {coastTickFraction !== null ? (
+                    <>
+                      El tick <span aria-hidden="true">▏</span> marca{" "}
+                    </>
+                  ) : null}
+                  <strong>Coast FIRE</strong>: si alcanzas esa cifra y dejas de aportar,
+                  el interés compuesto hace el resto — el capital crece solo hasta tu
+                  número FIRE para la jubilación.
+                </p>
+
                 <div className="fireMetric">
                   <span>Coast requerido</span>
                   <strong>
                     {formatMoneyMinorPrivacy(fireResult.coastFireRequired, privacyMode)}
                   </strong>
                 </div>
-              ) : null}
-              {/* El eslabón que le faltaba a la cadena: Coast también es una división,
-                  y hasta ahora era la única cifra derivada sin su aritmética. */}
-              {coastFormula !== null ? (
-                <p className="fireFormula">{coastFormula}</p>
-              ) : null}
-              {/* «Cuánto me falta para poder dejar de aportar» — el progreso del
-                  lector hacia Coast, no la posición del tick (#1426). */}
-              {coastProgress !== null && fireResult.coastFireRequired ? (
-                <>
-                  <div className="fireMetric">
-                    <span>Hacia Coast llevas</span>
-                    <strong>{formatFirePercent(coastProgress)}</strong>
+                {/* El eslabón que le faltaba a la cadena: Coast también es una división,
+                    y hasta #1426 era la única cifra derivada sin su aritmética. */}
+                {coastFormula !== null ? (
+                  <p className="fireFormula">{coastFormula}</p>
+                ) : null}
+
+                {/* «Cuánto me falta para poder dejar de aportar» — el progreso del
+                    lector hacia Coast, no la posición del tick (#1426). */}
+                {coastProgress !== null ? (
+                  <>
+                    <div className="fireMetric">
+                      <span>Hacia Coast llevas</span>
+                      <strong>{formatFirePercent(coastProgress)}</strong>
+                    </div>
+                    {/* La misma fracción que lleva el % financiado: un porcentaje sin
+                        sus dos cifras vuelve a leerse como probabilidad. */}
+                    <p className="fireFundedFraction fireFundedFraction--coast">
+                      {fmt(fireResult.eligibleAssets.amountMinor)} de{" "}
+                      {fmt(fireResult.coastFireRequired.amountMinor)}
+                    </p>
+                  </>
+                ) : null}
+
+                {coastAgeMetrics.map((metric) => (
+                  <div key={metric.label}>
+                    <div className="fireMetric">
+                      <span>{metric.label}</span>
+                      <strong>{metric.value}</strong>
+                    </div>
+                    {/* La premisa, pegada a la cifra: sin ella las dos edades se leen
+                        como la misma familia y una contradice a la otra. */}
+                    <p className="fireCoastGloss">{metric.gloss}</p>
                   </div>
-                  {/* La misma fracción que lleva el % financiado: un porcentaje sin
-                      sus dos cifras vuelve a leerse como probabilidad. */}
-                  <p className="fireFundedFraction fireFundedFraction--coast">
-                    {fmt(fireResult.eligibleAssets.amountMinor)} de{" "}
-                    {fmt(fireResult.coastFireRequired.amountMinor)}
-                  </p>
-                </>
-              ) : null}
-              {config.currentAge !== undefined &&
-              fireResult.coastFireAge !== undefined ? (
-                <div className="fireMetric">
-                  <span>Edad Coast</span>
-                  <strong>{fireResult.coastFireAge.toFixed(1).replace(".", ",")}</strong>
-                </div>
-              ) : null}
-            </div>
+                ))}
+              </section>
+            ) : coastAbsence !== null ? (
+              <p className="objetivosCoastNote">{coastAbsence}</p>
+            ) : null}
 
             {/* «¿Qué cuenta como elegible?» disclosure — derived from the
                   same rule FIRE uses: all scope assets except isPrimaryResidence
@@ -525,8 +583,10 @@ export function FirePanel({
           </div>
           {/* Los multiplicadores que definen los niveles: sin ellos, «Lean» y
               «Fat» son etiquetas sin aritmética (#1426). Se leen del propio rail, que
-              es quien los aplicó — nadie guarda aquí una segunda copia del defecto. */}
-          <p className="fireLevelsCoastNote">
+              es quien los aplicó — nadie guarda aquí una segunda copia del defecto.
+              Ya no hay nada que desmentir debajo: este rail es un solo eje desde que
+              Coast dejó de viajar en él (#1425). */}
+          <p className="fireLevelsNote">
             {spendingMultiples.length > 0 ? (
               <>
                 {spendingMultiples.map((level, index) => (
@@ -537,13 +597,6 @@ export function FirePanel({
                   </span>
                 ))}
                 ; cada nivel es ese gasto anual dividido por tu tasa de retirada.
-              </>
-            ) : null}
-            {fireLevelRail.some((level) => level.key === "coast") ? (
-              <>
-                {" "}
-                <strong>Coast FIRE</strong>: si alcanzas esa cifra hoy y dejas de aportar,
-                el interés compuesto te llevará a tu número FIRE para la jubilación.
               </>
             ) : null}
           </p>
