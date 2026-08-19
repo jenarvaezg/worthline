@@ -1,10 +1,6 @@
 import type { ScopeFireResult } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-import {
-  coastProgressPercent,
-  fireFundedView,
-  formatProgressPercent,
-} from "./fire-funding-view";
+import { coastProgressPercent, fireFundedView } from "./fire-funding-view";
 
 const formatMoney = (amountMinor: number) =>
   `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(
@@ -48,12 +44,5 @@ describe("coastProgressPercent (#1426)", () => {
     expect(coastProgressPercent(100_000_00, null)).toBeNull();
     expect(coastProgressPercent(100_000_00, undefined)).toBeNull();
     expect(coastProgressPercent(100_000_00, 0)).toBeNull();
-  });
-});
-
-describe("formatProgressPercent", () => {
-  test("keeps one decimal in es-ES", () => {
-    expect(formatProgressPercent(68.45)).toBe("68,5 %");
-    expect(formatProgressPercent(100)).toBe("100,0 %");
   });
 });

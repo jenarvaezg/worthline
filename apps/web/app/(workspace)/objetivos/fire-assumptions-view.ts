@@ -19,7 +19,7 @@ import type {
   ScopeFireResult,
 } from "@worthline/domain";
 import { monthlySavingsCapacityForFire } from "@worthline/domain";
-import { formatRatePercent } from "./fire-rent-return-view";
+import { formatFineFirePercent, formatRatePercent } from "./fire-percent";
 
 /** One printed line of the assumptions fold: what it is, its value, where it comes from. */
 export interface FireAssumptionRow {
@@ -46,16 +46,6 @@ export interface FireReturnMixPrintRow {
    * needs to read as a subdivision, not as a second rung.
    */
   isAsset: boolean;
-}
-
-const twoDecimals = new Intl.NumberFormat("es-ES", {
-  maximumFractionDigits: 2,
-  minimumFractionDigits: 2,
-});
-
-/** A weight or a contribution as an es-ES percentage with two decimals: `1,33 %`. */
-function formatFinePercent(fraction: number): string {
-  return `${twoDecimals.format(fraction * 100)} %`;
 }
 
 export interface FireAssumptionRowsInput {
@@ -177,12 +167,12 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
  */
 export function fireReturnMixPrintRows(mix: FireReturnMix): FireReturnMixPrintRow[] {
   return mix.rows.map((row) => ({
-    contribution: formatFinePercent(row.contribution),
+    contribution: formatFineFirePercent(row.contribution),
     isAsset: row.kind === "asset",
     key: row.key,
     label: row.label,
     rate: formatRatePercent(row.rate),
-    weight: formatFinePercent(row.weightFraction),
+    weight: formatFineFirePercent(row.weightFraction),
   }));
 }
 
@@ -196,7 +186,9 @@ export function fireReturnMixTotal(mix: FireReturnMix): {
   contribution: string;
 } {
   return {
-    contribution: formatFinePercent(mix.rate),
-    weight: formatFinePercent(mix.rows.reduce((sum, row) => sum + row.weightFraction, 0)),
+    contribution: formatFineFirePercent(mix.rate),
+    weight: formatFineFirePercent(
+      mix.rows.reduce((sum, row) => sum + row.weightFraction, 0),
+    ),
   };
 }

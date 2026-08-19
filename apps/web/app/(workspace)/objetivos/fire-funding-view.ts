@@ -15,16 +15,7 @@
  */
 
 import type { ScopeFireResult } from "@worthline/domain";
-
-const oneDecimal = new Intl.NumberFormat("es-ES", {
-  maximumFractionDigits: 1,
-  minimumFractionDigits: 1,
-});
-
-/** A progress percentage as es-ES text: `68,5 %`. */
-export function formatProgressPercent(percent: number): string {
-  return `${oneDecimal.format(percent)} %`;
-}
+import { formatFirePercent } from "./fire-percent";
 
 /**
  * Progress toward the Coast requirement, as a percentage — «cuánto me falta para
@@ -59,6 +50,6 @@ export function fireFundedView(input: {
     fraction: `${formatMoney(result.eligibleAssets.amountMinor)} de ${formatMoney(
       result.fireNumber.amountMinor,
     )}`,
-    percent: formatProgressPercent(result.percentFunded),
+    percent: formatFirePercent(result.percentFunded),
   };
 }

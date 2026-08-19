@@ -36,12 +36,9 @@ import {
   sellableFundedPercent,
   shouldShowCapitalSplit,
 } from "./fire-capital-split-view";
-import {
-  coastProgressPercent,
-  fireFundedView,
-  formatProgressPercent,
-} from "./fire-funding-view";
-import { fireRentReturnLines, formatRatePercent } from "./fire-rent-return-view";
+import { coastProgressPercent, fireFundedView } from "./fire-funding-view";
+import { formatFirePercent, formatRatePercent } from "./fire-percent";
+import { fireRentReturnLines } from "./fire-rent-return-view";
 
 export interface FirePanelProps {
   achievement: FireAchievement | null;
@@ -298,7 +295,7 @@ export function FirePanel({
               {coastProgress !== null ? (
                 <div className="fireMetric">
                   <span>Hacia Coast llevas</span>
-                  <strong>{formatProgressPercent(coastProgress)}</strong>
+                  <strong>{formatFirePercent(coastProgress)}</strong>
                 </div>
               ) : null}
               {config.currentAge !== undefined &&
@@ -331,8 +328,8 @@ export function FirePanel({
                     <>
                       {" "}
                       Solo con lo vendible estarías al{" "}
-                      <strong>{formatProgressPercent(sellableFunded)}</strong> de tu
-                      número FIRE.
+                      <strong>{formatFirePercent(sellableFunded)}</strong> de tu número
+                      FIRE.
                     </>
                   ) : null}
                 </p>
@@ -461,9 +458,9 @@ export function FirePanel({
               «Fat» son etiquetas sin aritmética (#1426). */}
           <p className="fireLevelsCoastNote">
             <strong>Lean</strong> y <strong>Fat</strong> son tu mismo gasto al{" "}
-            {formatProgressPercent((config.leanMultiplier ?? 0.7) * 100)} y al{" "}
-            {formatProgressPercent((config.fatMultiplier ?? 1.5) * 100)}; cada nivel es
-            ese gasto anual dividido por tu tasa de retirada.
+            {formatRatePercent(config.leanMultiplier ?? 0.7)} y al{" "}
+            {formatRatePercent(config.fatMultiplier ?? 1.5)}; cada nivel es ese gasto
+            anual dividido por tu tasa de retirada.
             {fireLevelRail.some((level) => level.key === "coast") ? (
               <>
                 {" "}
