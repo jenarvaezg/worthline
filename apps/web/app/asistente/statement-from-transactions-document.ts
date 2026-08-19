@@ -1,3 +1,4 @@
+import { STATEMENT_GATE_FORMATS } from "@web/patrimonio/importar-extracto/statement-upload-read";
 import type { ParsedStatement, ParsedStatementRow } from "@worthline/domain";
 import { CAPTURE_CURRENCIES, isCaptureCurrency } from "@worthline/domain";
 
@@ -42,7 +43,8 @@ export const STATEMENT_DOCUMENT_REQUIRED_MESSAGE =
   "Solo puedo preparar la importación de un extracto a partir de un documento de " +
   "transacciones que yo haya leído y validado, o del texto de una plantilla de worthline: " +
   "no puedo escribir operaciones dictadas por mí. Súbeme el archivo del bróker tal cual " +
-  "te lo da (xlsx, csv o pdf) y lo leo, o usa /patrimonio/importar-extracto.";
+  "te lo da (xlsx, csv o pdf) y lo leo, o súbelo en /patrimonio/importar-extracto, donde " +
+  `entran ${STATEMENT_GATE_FORMATS.join(" o ")}.`;
 
 /** The validated union's transactions member — narrowing keeps the brand (#1373). */
 type ValidatedBrokerTransactionsDocument = Extract<

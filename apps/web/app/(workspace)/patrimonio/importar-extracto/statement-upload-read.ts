@@ -50,7 +50,7 @@ import { readStatementFromText } from "./statement-import-preview";
  */
 export const STATEMENT_GATE_FORMATS = [
   "la plantilla de worthline",
-  "el extracto de transacciones de un bróker (xlsx o csv, con ISIN)",
+  "el extracto de transacciones de un bróker (con ISIN)",
 ] as const;
 
 const UNRECOGNIZED_MESSAGE =

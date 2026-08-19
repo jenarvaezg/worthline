@@ -27,6 +27,7 @@
  * and neither fact changes between two turns of the same thread.
  */
 
+import { STATEMENT_GATE_FORMATS } from "@web/patrimonio/importar-extracto/statement-upload-read";
 import type { UIMessage } from "ai";
 
 import { messageWithUnstructuredEvidence } from "./attachment-chat";
@@ -50,7 +51,8 @@ export const UNVALIDATED_EVIDENCE_NOTE =
   "excepción: el histórico de saldos de una deuda. Ese escríbemelo aquí, una línea por " +
   "fecha con la fecha y el saldo, y lo leo yo de tu mensaje. Y para cargar un documento " +
   "entero el camino es /patrimonio/importar-extracto: la pestaña «Operaciones» para " +
-  "posiciones y movimientos, y «Cuadro de amortización» para el cuadro del banco.";
+  `posiciones y movimientos —entran ${STATEMENT_GATE_FORMATS.join(" o ")}—, y «Cuadro ` +
+  "de amortización» para el cuadro del banco.";
 
 /**
  * What the app says when the user DID write the series and worthline could not read it.

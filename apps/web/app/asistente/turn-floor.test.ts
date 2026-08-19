@@ -109,6 +109,31 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * meaning intact, and the `required: ["rawText"]` the schema no longer has. The ranking's
  * head is still `propose_holding` (2.543) and `propose_correction` (2.127), and the
  * slimming slice they are owed is still owed.
+ *
+ * **NOT raised by #1488 either**, and this one had 8 characters to work with. The
+ * statement gate learned a second format (a broker's transactions export) and the
+ * prompt, which named that door without ever saying what it reads, had to start saying
+ * it — the silence a model filled by telling a user his DEGIRO file would reconcile
+ * there. The clause interpolates `STATEMENT_GATE_FORMATS`
+ * rather than restating it, so the prompt cannot drift from what the reader accepts, and
+ * it was paid inside the same rule: its own sentences said shorter with their
+ * instructions intact, and «xlsx o csv» dropped from the format's wording — the page's
+ * file input already lists the extensions, and the model never picks one. The onboarding
+ * floor moved 40.292 → 40.297, 3 characters of headroom left.
+ *
+ * TWO of the first rewordings were wrong, and `system-prompt.test.ts` caught both — which
+ * is what that test is for. «pregunta y no propongas, y si dudas de la cifra, no
+ * propongas» shortened to «pregunta; …» drops the instruction for the ambiguity it names
+ * FIRST (which holding); «reconstrucción de histórico» shortened to «reconstrucción»
+ * drops what a reconstruction is OF, and the prompt distinguishes it from a bulk import
+ * two clauses later. Both were restored and the characters found elsewhere. Slimming is
+ * rewording; a clause that carries an instruction is not spare.
+ *
+ * The rest of the ticket's copy costs the floor NOTHING, deliberately: the four routing
+ * envelopes that name the door are app text and tool results, not the turn's floor, so
+ * the full list lives there at no charge (`statement-gate-promises.test.ts` holds them to
+ * it). What the prompt carries is the one thing an envelope cannot: the boundary, before
+ * anybody has refused anything.
  */
 
 describe("measureTurnFloor", () => {
