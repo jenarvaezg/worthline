@@ -393,7 +393,6 @@ export async function ObjetivosContent({
         fireLevelRail={fireLevelRail}
         fireProjection={fireProjection}
         fireResult={fireResult}
-        fireScopeConfig={fireScopeConfig}
         privacyMode={privacyMode}
         savingsCoherence={savingsCoherence}
       />

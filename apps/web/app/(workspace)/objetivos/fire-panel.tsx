@@ -52,7 +52,6 @@ export interface FirePanelProps {
   fireLevelRail: FireLevel[] | null;
   fireProjection: FireProjection | null;
   fireResult: ScopeFireResult | null;
-  fireScopeConfig: FireScopeConfig | null;
   privacyMode: boolean;
   savingsCoherence: SavingsCoherence | null;
 }
@@ -114,12 +113,16 @@ export function FirePanel({
   fireLevelRail,
   fireProjection,
   fireResult,
-  fireScopeConfig,
   privacyMode,
   savingsCoherence,
 }: FirePanelProps) {
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
+
+  // The config the figures were computed FROM, not a second copy of it: the context
+  // carries it (#1026), so the assumptions this panel prints cannot be a different
+  // spending or withdrawal rate than the ones the number above them came out of.
+  const config: FireScopeConfig | null = fireResult?.context.config ?? null;
 
   // What the sellable side alone funds (#1447): the figure the single
   // "% financiado" hides when most of the pool is brick.
@@ -134,7 +137,7 @@ export function FirePanel({
   // `expectedRealReturn` the substitution changes nothing, and a panel promising an
   // effect the override cancels would be worse than silence.
   const rentReturnLines =
-    fireResult && fireScopeConfig?.expectedRealReturn === undefined
+    fireResult && config?.expectedRealReturn === undefined
       ? fireRentReturnLines({ formatMoney: fmt, report: fireResult.rentReturns })
       : [];
 
@@ -148,10 +151,10 @@ export function FirePanel({
       )
     : null;
   const assumptionRows =
-    fireResult && fireScopeConfig
+    fireResult && config
       ? fireAssumptionRows({
           ageSource,
-          config: fireScopeConfig,
+          config,
           formatMoney: fmt,
           projection: fireProjection,
           result: fireResult,
@@ -161,7 +164,7 @@ export function FirePanel({
   // weighted one: with a manual override the table would explain a number the
   // projection ignored.
   const mixRows =
-    fireResult && fireScopeConfig?.expectedRealReturn === undefined
+    fireResult && config?.expectedRealReturn === undefined
       ? fireReturnMixPrintRows(fireResult.returnMix)
       : [];
   const mixTotal = fireResult ? fireReturnMixTotal(fireResult.returnMix) : null;
@@ -173,7 +176,7 @@ export function FirePanel({
         <span>objetivo principal</span>
       </div>
 
-      {fireResult && fireScopeConfig && funded ? (
+      {fireResult && config && funded ? (
         <div className="objetivosHeroGrid">
           {/* Left: % funded + bar + coast + metrics */}
           <div className="objetivosHeroLeft">
@@ -242,11 +245,11 @@ export function FirePanel({
                   la que se lee como constante física. */}
               <p className="fireFormula">
                 <Link href="/ajustes">
-                  {fmt(fireScopeConfig.monthlySpendingMinor * 12)}/año de gasto
+                  {fmt(config.monthlySpendingMinor * 12)}/año de gasto
                 </Link>{" "}
                 ÷{" "}
                 <Link href="/ajustes">
-                  {formatRatePercent(fireScopeConfig.safeWithdrawalRate)} de retirada
+                  {formatRatePercent(config.safeWithdrawalRate)} de retirada
                 </Link>{" "}
                 = <strong>{fmt(fireResult.fireNumber.amountMinor)}</strong>
               </p>
@@ -298,7 +301,7 @@ export function FirePanel({
                   <strong>{formatProgressPercent(coastProgress)}</strong>
                 </div>
               ) : null}
-              {fireScopeConfig.currentAge !== undefined &&
+              {config.currentAge !== undefined &&
               fireResult.coastFireAge !== undefined ? (
                 <div className="fireMetric">
                   <span>Edad Coast</span>
@@ -357,9 +360,9 @@ export function FirePanel({
               <FireProjectionCard
                 formatMoney={fmt}
                 projection={fireProjection}
-                {...(fireScopeConfig.currentAge === undefined
+                {...(config.currentAge === undefined
                   ? {}
-                  : { currentAge: fireScopeConfig.currentAge })}
+                  : { currentAge: config.currentAge })}
               />
             ) : (
               <p className="objetivosSubNote">
@@ -440,7 +443,7 @@ export function FirePanel({
       )}
 
       {/* ── Niveles FIRE rail (N1, #513) ──────────────────────── */}
-      {fireLevelRail && fireScopeConfig ? (
+      {fireLevelRail && config ? (
         <section aria-label="Niveles FIRE" className="fireLevelsRail">
           <h4 className="fireLevelsTitle">Niveles FIRE</h4>
           <div className="fireLevelsGrid">
@@ -450,7 +453,7 @@ export function FirePanel({
                 key={level.key}
                 level={level}
                 privacyMode={privacyMode}
-                safeWithdrawalRate={fireScopeConfig.safeWithdrawalRate}
+                safeWithdrawalRate={config.safeWithdrawalRate}
               />
             ))}
           </div>
@@ -458,9 +461,9 @@ export function FirePanel({
               «Fat» son etiquetas sin aritmética (#1426). */}
           <p className="fireLevelsCoastNote">
             <strong>Lean</strong> y <strong>Fat</strong> son tu mismo gasto al{" "}
-            {formatProgressPercent((fireScopeConfig.leanMultiplier ?? 0.7) * 100)} y al{" "}
-            {formatProgressPercent((fireScopeConfig.fatMultiplier ?? 1.5) * 100)}; cada
-            nivel es ese gasto anual dividido por tu tasa de retirada.
+            {formatProgressPercent((config.leanMultiplier ?? 0.7) * 100)} y al{" "}
+            {formatProgressPercent((config.fatMultiplier ?? 1.5) * 100)}; cada nivel es
+            ese gasto anual dividido por tu tasa de retirada.
             {fireLevelRail.some((level) => level.key === "coast") ? (
               <>
                 {" "}
