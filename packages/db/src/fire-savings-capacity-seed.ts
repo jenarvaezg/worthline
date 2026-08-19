@@ -30,7 +30,7 @@ export interface FireSavingsCapacitySeedDeps {
  * moment this ships, moving its FIRE date by years with nothing on screen saying
  * why. So it keeps exactly the figure it projects today, written into
  * `monthlySavingsCapacityMinor` and marked `monthlySavingsCapacitySeededFromPlan`
- * so /ajustes can say "we put this here, check it".
+ * so the assumptions form can say "we put this here, check it".
  *
  * **It preserves; it never invents.** The only figure written is the plan's own
  * active monthly total — bounded by the plan, and identical to what the retired

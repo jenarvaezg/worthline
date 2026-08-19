@@ -1,13 +1,7 @@
 import { isDemoMode } from "@web/demo/write-guard";
 import ImportWorkspaceForm from "@web/import-workspace-form";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
-import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { resolvePageShell } from "@web/page-shell";
-import {
-  formatMoneyMinorPrivacy,
-  scopeCurrentAge,
-  suggestMonthlySavingsCapacity,
-} from "@worthline/domain";
 import Link from "next/link";
 import { Suspense } from "react";
 import {
@@ -17,7 +11,6 @@ import {
   reactivateMemberAction,
   resetWorkspaceAction,
   retractWarningOverrideAction,
-  saveFireConfigAction,
   updateMemberAction,
   updateMemberProfileAction,
 } from "./actions";
@@ -69,8 +62,9 @@ export async function AjustesContent({
   // import are never offered. Export stays — it is read-only and harmless.
   const demo = await isDemoMode();
 
-  const { persistence, privacyMode, selectedScope, store, workspace } =
-    await resolvePageShell({ searchParams: resolvedSearchParams });
+  const { persistence, store, workspace } = await resolvePageShell({
+    searchParams: resolvedSearchParams,
+  });
 
   // Connected sources moved to their own page (#1223): here they are a count and
   // a link, so the settings page no longer reads positions, rung assets or the
@@ -88,42 +82,6 @@ export async function AjustesContent({
   // deleted holding has no name to show and keeps the stored id, which is the only
   // thing that still identifies it.
   const holdingNameById = new Map(allAssets.map((asset) => [asset.id, asset.name]));
-
-  // Monthly savings capacity suggestion (#425): the historical average of net
-  // money invested, offered as the default in the FIRE form. Workspace-wide
-  // across investment holdings — a soft default the user can override.
-  const investmentOps = (
-    await Promise.all(
-      allAssets
-        .filter((asset) => asset.type === "investment")
-        .map((asset) => store.operations.readOperations(asset.id)),
-    )
-  ).flat();
-  const savingsSuggestion = suggestMonthlySavingsCapacity(investmentOps);
-
-  // One clock read for this render: the derived FIRE age below and the config's own
-  // derived age must be measured on the same day (#1415).
-  const today = new Date().toISOString().slice(0, 10);
-  const fireConfig = await store.readFireConfig(today);
-  const fireScopeConfig = selectedScope ? fireConfig[selectedScope.id] : undefined;
-
-  // The FIRE reference age is derived from the member's birth date, never typed
-  // (#1415), so this panel has no age field. What it DOES need to say is when the
-  // derivation has nothing to work with: without a birth year the coast figures
-  // disappear from /objetivos with no explanation, and a legacy typed age keeps
-  // being served while quietly going stale.
-  const derivedScopeAge =
-    workspace && selectedScope
-      ? scopeCurrentAge(workspace, selectedScope.id, today)
-      : undefined;
-  const legacyFrozenAge =
-    derivedScopeAge === undefined ? fireScopeConfig?.currentAge : undefined;
-
-  // #1416: the v56 migration wrote this scope's savings capacity from the total the
-  // FIRE projection used to read off the contribution plan. A figure the user never
-  // typed must say where it came from and ask to be checked; saving this form clears
-  // the flag, because by then he has seen the note.
-  const seededFromPlan = fireScopeConfig?.monthlySavingsCapacitySeededFromPlan === true;
 
   return (
     <>
@@ -306,261 +264,6 @@ export async function AjustesContent({
             <dt>Miembros activos</dt>
             <dd>{workspace.members.filter((m) => !m.disabledAt).length}</dd>
           </dl>
-        </section>
-
-        {/* ── Configuración FIRE ───────────────────────────────────── */}
-        <section className="ajustesPanel section" aria-label="Configuración FIRE">
-          <div className="panelHeader">
-            <h2>Configuración FIRE</h2>
-            <span>Independencia financiera</span>
-          </div>
-
-          {formError?.formId === "fire" ? (
-            <p className="formError" role="alert">
-              {formError.message}
-            </p>
-          ) : null}
-
-          {selectedScope ? (
-            <form action={saveFireConfigAction} className="stackForm">
-              <input name="currentUrl" type="hidden" value={currentUrl} />
-              <input name="scopeId" type="hidden" value={selectedScope.id} />
-              <label>
-                Gasto mensual (EUR)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.monthlySpendingMinor / 100).toString()
-                      : undefined
-                  }
-                  inputMode="decimal"
-                  name="monthlySpending"
-                  placeholder="2000"
-                />
-              </label>
-              <label>
-                Tasa de retirada segura % (por defecto 4)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? formatDecimalAsPercentField(fireScopeConfig.safeWithdrawalRate)
-                      : "4"
-                  }
-                  inputMode="decimal"
-                  name="safeWithdrawalRate"
-                />
-              </label>
-              <label>
-                Retorno real esperado % (opcional — estimado por tu mezcla)
-                <input
-                  defaultValue={
-                    fireScopeConfig?.expectedRealReturn !== undefined
-                      ? formatDecimalAsPercentField(fireScopeConfig.expectedRealReturn)
-                      : undefined
-                  }
-                  inputMode="decimal"
-                  name="expectedRealReturn"
-                  placeholder="estimado por tu mezcla de activos"
-                />
-                <small className="muted">
-                  Vacío = se calcula automáticamente ponderando los retornos por tipo de
-                  activo; un inmueble con alquiler y gastos declarados aporta su propio
-                  alquiler neto sobre su valor en vez del retorno de su tramo. Rellena
-                  para forzar un valor fijo (anula la estimación, y con ella el alquiler
-                  declarado).
-                </small>
-              </label>
-              <details suppressHydrationWarning>
-                <summary className="muted">
-                  Retornos reales por tipo de activo (opcional)
-                </summary>
-                <div className="stackForm" style={{ marginTop: "0.5rem" }}>
-                  <label>
-                    Caja %
-                    <input
-                      defaultValue={
-                        fireScopeConfig?.tierRealReturns?.cash !== undefined
-                          ? formatDecimalAsPercentField(
-                              fireScopeConfig.tierRealReturns.cash,
-                            )
-                          : undefined
-                      }
-                      inputMode="decimal"
-                      name="tierReturn_cash"
-                      placeholder="0"
-                    />
-                  </label>
-                  <label>
-                    Mercado %
-                    <input
-                      defaultValue={
-                        fireScopeConfig?.tierRealReturns?.market !== undefined
-                          ? formatDecimalAsPercentField(
-                              fireScopeConfig.tierRealReturns.market,
-                            )
-                          : undefined
-                      }
-                      inputMode="decimal"
-                      name="tierReturn_market"
-                      placeholder="5"
-                    />
-                  </label>
-                  <label>
-                    A plazo %
-                    <input
-                      defaultValue={
-                        fireScopeConfig?.tierRealReturns?.["term-locked"] !== undefined
-                          ? formatDecimalAsPercentField(
-                              fireScopeConfig.tierRealReturns["term-locked"],
-                            )
-                          : undefined
-                      }
-                      inputMode="decimal"
-                      name="tierReturn_term-locked"
-                      placeholder="1.5"
-                    />
-                  </label>
-                  <label>
-                    Ilíquido %
-                    <input
-                      defaultValue={
-                        fireScopeConfig?.tierRealReturns?.illiquid !== undefined
-                          ? formatDecimalAsPercentField(
-                              fireScopeConfig.tierRealReturns.illiquid,
-                            )
-                          : undefined
-                      }
-                      inputMode="decimal"
-                      name="tierReturn_illiquid"
-                      placeholder="3"
-                    />
-                  </label>
-                  <small className="muted">
-                    Retornos reales anuales (tras inflación) por tipo. Vacío = valores por
-                    defecto (Caja 0 %, Mercado 5 %, A plazo 1,5 %, Ilíquido 3 %).
-                  </small>
-                </div>
-              </details>
-              <label>
-                Edad objetivo de jubilación (por defecto 65)
-                <input
-                  defaultValue={
-                    fireScopeConfig
-                      ? (fireScopeConfig.targetRetirementAge ?? 65).toString()
-                      : "65"
-                  }
-                  inputMode="numeric"
-                  name="targetRetirementAge"
-                />
-              </label>
-              {derivedScopeAge === undefined ? (
-                <small className="muted">
-                  {legacyFrozenAge !== undefined
-                    ? `Tu edad actual (${legacyFrozenAge}) viene de una configuración antigua y no se actualiza sola. Añade tu fecha de nacimiento en Miembros para que se calcule cada año.`
-                    : "Sin fecha de nacimiento no hay edad actual, y sin edad no se calculan el coast FIRE ni las edades de la proyección. Rellénala en Miembros."}
-                </small>
-              ) : null}
-              <label>
-                Ahorro mensual (EUR)
-                <input
-                  defaultValue={
-                    fireScopeConfig?.monthlySavingsCapacityMinor !== undefined
-                      ? (fireScopeConfig.monthlySavingsCapacityMinor / 100).toString()
-                      : undefined
-                  }
-                  inputMode="decimal"
-                  name="monthlySavingsCapacity"
-                  placeholder={
-                    savingsSuggestion.basis === "operations"
-                      ? (savingsSuggestion.amountMinor / 100).toString()
-                      : "0"
-                  }
-                />
-                <small className="muted">
-                  Es la única cifra de ahorro que usa la proyección FIRE: tu plan de
-                  aportaciones no la pisa.
-                </small>
-                {savingsSuggestion.basis === "operations" ? (
-                  <small className="muted">
-                    Sugerido por tu histórico:{" "}
-                    {formatMoneyMinorPrivacy(
-                      {
-                        amountMinor: savingsSuggestion.amountMinor,
-                        currency: workspace.baseCurrency,
-                      },
-                      privacyMode,
-                    )}
-                    /mes
-                  </small>
-                ) : null}
-              </label>
-              {seededFromPlan ? (
-                <p className="warningBand">
-                  Hemos puesto este ahorro mensual con el total de tu plan de
-                  aportaciones, que es lo que la proyección usaba antes. Revísalo: aquí va
-                  lo que ahorras cada mes, no solo lo que aportas a un destino.
-                </p>
-              ) : null}
-              <label>
-                Multiplicador Lean FIRE (opcional)
-                <input
-                  defaultValue={fireScopeConfig?.leanMultiplier?.toString()}
-                  inputMode="decimal"
-                  name="leanMultiplier"
-                  placeholder="0.7"
-                />
-                <small className="muted">
-                  Fracción del gasto mensual para el nivel Lean (por defecto 0,7)
-                </small>
-              </label>
-              <label>
-                Multiplicador Fat FIRE (opcional)
-                <input
-                  defaultValue={fireScopeConfig?.fatMultiplier?.toString()}
-                  inputMode="decimal"
-                  name="fatMultiplier"
-                  placeholder="1.5"
-                />
-                <small className="muted">
-                  Fracción del gasto mensual para el nivel Fat (por defecto 1,5)
-                </small>
-              </label>
-              <label>
-                Ingreso a tiempo parcial (€/mes, opcional)
-                <input
-                  defaultValue={
-                    fireScopeConfig?.baristaMonthlyIncomeMinor
-                      ? (fireScopeConfig.baristaMonthlyIncomeMinor / 100).toString()
-                      : undefined
-                  }
-                  inputMode="decimal"
-                  name="baristaIncome"
-                  placeholder="0"
-                />
-                <small className="muted">
-                  Barista FIRE: ingreso parcial que reduce el capital necesario. Vacío o 0
-                  = sin efecto.
-                </small>
-              </label>
-              <button type="submit">Guardar configuración FIRE</button>
-            </form>
-          ) : (
-            <p className="muted">Selecciona un scope para configurar FIRE.</p>
-          )}
-        </section>
-
-        {/* ── Objetivos ────────────────────────────────────────────── */}
-        <section className="ajustesPanel section" aria-label="Enlace objetivos">
-          <div className="panelHeader">
-            <h2>Objetivos</h2>
-            <span>metas con fecha</span>
-          </div>
-          <p className="muted">
-            Gestiona tus objetivos (crear, editar, eliminar) en la página Objetivos.
-          </p>
-          <Link className="panelAction" href="/objetivos">
-            Gestionar objetivos →
-          </Link>
         </section>
 
         {/* ── Persistencia ─────────────────────────────────────────── */}

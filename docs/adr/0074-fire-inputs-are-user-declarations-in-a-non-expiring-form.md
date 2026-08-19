@@ -71,7 +71,7 @@ warning — never an input that overwrites the declaration.**
    never declared a scalar are seeded once (enqueued by schema v56) with *the plan's
    own active total*: bounded by the plan, and identical to what the retired
    derivation returned. The written figure carries
-   `monthlySavingsCapacitySeededFromPlan`, and /ajustes says "we put this here, check
+   `monthlySavingsCapacitySeededFromPlan`, and the assumptions form says "we put this here, check
    it". A number the user never typed must never appear as if he had — which is also
    why nothing is written for the shapes that already project 0 today (a plan whose
    rows have all lapsed, or an active units row with no price: both summed to 0 under

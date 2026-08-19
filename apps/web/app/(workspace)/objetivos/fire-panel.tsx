@@ -9,8 +9,9 @@
  * `calculateFireForScope` / `projectFireFromContext` and the pure view modules
  * beside this file only word them.
  *
- * Server-rendered (interaction-patterns §1): the only interaction is native
- * `<details>`, so there is no island and no client rate math.
+ * Server-rendered (interaction-patterns §1): the only interaction here is native
+ * `<details>` and the in-page anchors to «Tus supuestos» (#1450), so there is no
+ * island and no client rate math.
  */
 
 import FireAchievementBadge from "@web/fire-achievement-badge";
@@ -29,7 +30,6 @@ import {
   formatMoneyMinorPrivacy,
   isManualFireReturn,
 } from "@worthline/domain";
-import Link from "next/link";
 import {
   fireAssumptionRows,
   fireReturnMixPrintRows,
@@ -61,6 +61,12 @@ export interface FirePanelProps {
   fireLevelRail: FireLevel[] | null;
   fireProjection: FireProjection | null;
   fireResult: ScopeFireResult | null;
+  /**
+   * Las cifras vienen de unos supuestos tecleados y todavía sin guardar (#1450).
+   * Cambia el registro del panel: lo que juzga lo declarado calla, porque aún no
+   * hay nada declarado que juzgar.
+   */
+  previewing: boolean;
   privacyMode: boolean;
   savingsCoherence: SavingsCoherence | null;
 }
@@ -120,6 +126,7 @@ export function FirePanel({
   fireLevelRail,
   fireProjection,
   fireResult,
+  previewing,
   privacyMode,
   savingsCoherence,
 }: FirePanelProps) {
@@ -188,10 +195,15 @@ export function FirePanel({
   );
 
   return (
-    <section className="firePanel objetivosFirePanel" aria-label="FIRE">
+    <section
+      aria-label="FIRE"
+      className={`firePanel objetivosFirePanel${previewing ? " objetivosFirePanel--previewing" : ""}`}
+    >
       <div className="panelHeader">
         <h3>Independencia financiera · FIRE</h3>
-        <span>objetivo principal</span>
+        <span>
+          {previewing ? "previsualización · sin guardar" : "objetivo principal"}
+        </span>
       </div>
 
       {fireResult && config && funded ? (
@@ -220,7 +232,7 @@ export function FirePanel({
               />
             </div>
 
-            {achievement ? (
+            {achievement && !previewing ? (
               <FireAchievementBadge
                 achievement={achievement}
                 currency={currency}
@@ -232,10 +244,10 @@ export function FirePanel({
                 la capacidad de ahorro declarada, y el libro de operaciones es lo
                 único que puede contradecirla sin que nadie teclee nada. El aviso
                 no dicta cuál de las dos cifras está mal. */}
-            {savingsCoherence?.state === "diverged" ? (
+            {savingsCoherence?.state === "diverged" && !previewing ? (
               <p className="objetivosSavingsGap" role="status">
                 {describeSavingsDivergence(savingsCoherence, currency, privacyMode)}{" "}
-                <Link href="/ajustes">Ajustar en Ajustes</Link>
+                <a href="#supuestos">Ajusta tu ahorro en tus supuestos</a>
               </p>
             ) : null}
 
@@ -259,16 +271,16 @@ export function FirePanel({
               {/* La cifra con su aritmética delante (#1426): los dos insumos son
                   suyos y editables, así que se nombran junto al resultado. */}
               {/* Los dos insumos son suyos y editables, así que llevan a donde se
-                  editan: una cifra derivada que no se puede rastrear ni cambiar es
-                  la que se lee como constante física. */}
+                  editan — que desde #1450 es esta misma pantalla: una cifra derivada
+                  que no se puede rastrear ni cambiar se lee como constante física. */}
               <p className="fireFormula">
-                <Link href="/ajustes">
+                <a href="#supuestos">
                   {fmt(config.monthlySpendingMinor * 12)}/año de gasto
-                </Link>{" "}
+                </a>{" "}
                 ÷{" "}
-                <Link href="/ajustes">
+                <a href="#supuestos">
                   {formatRatePercent(config.safeWithdrawalRate)} de retirada
-                </Link>{" "}
+                </a>{" "}
                 = <strong>{fmt(fireResult.fireNumber.amountMinor)}</strong>
               </p>
               <div className="fireMetric">
@@ -348,8 +360,8 @@ export function FirePanel({
               <summary>¿Qué cuenta como activo elegible?</summary>
               <p className="fireEligibleRule">
                 Cuentan todos los activos del ámbito excepto la{" "}
-                <strong>vivienda habitual</strong> y los que hayas excluido manualmente en
-                Ajustes. Cash, inversiones y criptos cuentan.
+                <strong>vivienda habitual</strong> y los que hayas excluido manualmente.
+                Cash, inversiones y criptos cuentan.
               </p>
               {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
                 <p className="fireEligibleRule">
@@ -397,7 +409,7 @@ export function FirePanel({
               />
             ) : (
               <p className="objetivosSubNote">
-                Añade tu año de nacimiento en Ajustes para ver la proyección.
+                Añade tu año de nacimiento en Ajustes → Miembros para ver la proyección.
               </p>
             )}
 
@@ -469,13 +481,15 @@ export function FirePanel({
         </div>
       ) : (
         <div className="fireEmpty">
+          {/* El vacío no manda a otra pantalla (#1450): el formulario está al lado,
+              así que el CTA lleva al formulario, no a un viaje de ida y vuelta. */}
           <p className="fireEmptyHint">
-            FIRE no está configurado para este ámbito. Añade tus supuestos en Ajustes para
-            ver cuándo alcanzas la independencia financiera.
+            FIRE no está configurado para este ámbito. Rellena tus supuestos aquí al lado
+            para ver cuándo alcanzas la independencia financiera.
           </p>
-          <Link className="panelAction" href="/ajustes">
-            Configurar FIRE → Ajustes
-          </Link>
+          <a className="panelAction" href="#supuestos">
+            Rellenar mis supuestos
+          </a>
         </div>
       )}
 
@@ -546,15 +560,6 @@ export function FirePanel({
           </ul>
         </section>
       ) : null}
-
-      <div className="objetivosFireFoot">
-        <span>
-          Los supuestos de tu FIRE (gasto, retirada, retorno, edades) → en Ajustes
-        </span>
-        <Link className="panelAction" href="/ajustes">
-          Configurar supuestos
-        </Link>
-      </div>
     </section>
   );
 }

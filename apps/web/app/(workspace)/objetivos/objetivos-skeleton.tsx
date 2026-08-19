@@ -14,13 +14,27 @@ export default function ObjetivosSkeleton() {
       className="section"
       role="status"
     >
-      <section className="firePanel">
-        <div className="panelHeader">
-          <h2>FIRE</h2>
-          <span className="skeletonText skeletonShort" />
-        </div>
-        <div className="skeletonFire" />
-      </section>
+      {/* Dos columnas como el cockpit real (#1450): un esqueleto de una sola
+          columna movería las cifras de sitio al llegar los datos. */}
+      <div className="objetivosCockpit">
+        <section className="firePanel">
+          <div className="panelHeader">
+            <h3>Tus supuestos</h3>
+            <span className="skeletonText skeletonShort" />
+          </div>
+          <div className="skeletonTier" />
+          <div className="skeletonTier" />
+          <div className="skeletonTier" />
+        </section>
+
+        <section className="firePanel">
+          <div className="panelHeader">
+            <h3>FIRE</h3>
+            <span className="skeletonText skeletonShort" />
+          </div>
+          <div className="skeletonFire" />
+        </section>
+      </div>
 
       <section className="objetivosGoalsPanel section">
         <div className="panelHeader">

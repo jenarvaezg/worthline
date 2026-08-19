@@ -41,8 +41,9 @@ none.
 
 2. **The age is derived at the read, in one door.** `store.readFireConfig(todayISO?)`
    returns the stored configs with `currentAge` resolved from the scope members'
-   birth dates (`withDerivedCurrentAges`). Every reader — the dashboard, /objetivos,
-   /ajustes, the agent view, the MCP tools, the data-health engine — comes through
+   birth dates (`withDerivedCurrentAges`). Every reader — the dashboard, /objetivos
+   (which since #1450 also hosts the assumptions form), the agent view, the MCP
+   tools, the data-health engine — comes through
    that one function, so none of them can be the one that forgot. `todayISO` is a
    **required** parameter: the clock crosses that seam as an argument rather than
    being re-derived inside the store (ADR 0024), and an optional one is precisely

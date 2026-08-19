@@ -1,6 +1,5 @@
 "use server";
 
-import { actionScopeExists, INVALID_SCOPE_MESSAGE } from "@web/action-scope";
 import { appCookieOptions } from "@web/app-cookie";
 import { guardDemoWrite } from "@web/demo/write-guard";
 import { formAction } from "@web/form-action";
@@ -8,7 +7,6 @@ import { formAction } from "@web/form-action";
 import {
   appendParam,
   errorRedirectUrl,
-  parseFireConfigFormStrict,
   parseNewMember,
   SCOPE_COOKIE_NAME,
 } from "@web/intake";
@@ -357,38 +355,6 @@ export const confirmImportAction = formAction({
           formId: "import",
         })
       : "/app",
-});
-
-// === FIRE config action ===
-
-export const saveFireConfigAction = formAction({
-  requireId: false,
-  datedFact: false,
-  guardUrl: (fd) => currentUrlOf(fd),
-  parse: ({ formData }) => {
-    const scopeId = String(formData.get("scopeId") ?? "").trim() || "household";
-    const result = parseFireConfigFormStrict(formData);
-    if (!result.ok) {
-      return {
-        ok: false,
-        redirect: errorRedirectUrl(currentUrlOf(formData), {
-          message: result.error,
-          formId: "fire",
-        }),
-      };
-    }
-    return { ok: true, value: { scopeId, command: result.command } };
-  },
-  run: async (store, { parsed }) => {
-    if (!(await actionScopeExists(store, parsed.scopeId))) {
-      return { ok: false, error: INVALID_SCOPE_MESSAGE };
-    }
-    await store.saveFireConfig(parsed.scopeId, parsed.command);
-    return { ok: true };
-  },
-  onError: ({ formData, error }) =>
-    errorRedirectUrl(currentUrlOf(formData), { message: error, formId: "fire" }),
-  onSuccess: ({ formData }) => appendParam(currentUrlOf(formData), "ok", "fire_saved"),
 });
 
 // === Warning override retract action ===

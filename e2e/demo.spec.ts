@@ -104,7 +104,10 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // «Not even offered» means never rendered, so ask the document: a screen-scoped
   // count would also pass for a danger zone tucked inside a closed fold (#1351).
   await expect(wholeDocument(page).getByText("Zona de peligro")).toHaveCount(0);
-  await page.getByRole("button", { name: "Guardar configuración FIRE" }).click();
+  // La escritura que prueba el guard es la de los supuestos FIRE, que desde #1450
+  // vive en /objetivos: el formulario se mudó, la demo lo sigue rechazando.
+  await page.goto("/objetivos");
+  await page.getByRole("button", { name: "Guardar supuestos" }).click();
   await expect(page.getByText(/deshabilitada en la demo/i)).toBeVisible();
 
   // 4. Switching persona swaps the whole workspace.

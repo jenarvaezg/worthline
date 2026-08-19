@@ -59,7 +59,12 @@ test("/objetivos: Niveles FIRE rail renders Coast/Lean/Regular/Fat labels", asyn
   const rail = page.getByRole("region", { name: "Niveles FIRE" });
   await expect(rail).toBeVisible();
 
+  // La tarjeta del nivel, no cualquier «Lean» de la región: desde #1426 la nota de
+  // debajo nombra los mismos niveles en negrita («Lean es tu gasto al 70 %»), y un
+  // getByText suelto empata con las dos y muere por strict mode.
   for (const label of ["Coast", "Lean", "Regular", "Fat"]) {
-    await expect(rail.getByText(label, { exact: true })).toBeVisible();
+    await expect(
+      rail.locator(".fireLevelCard").getByText(label, { exact: true }),
+    ).toBeVisible();
   }
 });

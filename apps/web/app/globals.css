@@ -2807,6 +2807,95 @@ code {
   /* inherits .firePanel */
 }
 
+/* Cockpit FIRE (#1450): los supuestos a la izquierda, sus consecuencias a la
+   derecha. El aside es sticky porque el usuario edita mirando el resultado —
+   perder el formulario al bajar por la proyección rompe el «editas aquí, ves ahí». */
+.objetivosCockpit {
+  align-items: start;
+  display: grid;
+  gap: 22px;
+  /* minmax(0, …) en las dos pistas, por la misma razón que el hero de abajo:
+     una glosa larga del formulario no puede ensanchar su columna. */
+  grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+}
+
+.fireConfigPanel {
+  /* Con «Supuestos finos» abierto el panel supera la altura del viewport, y un
+     sticky más alto que la ventana esconde su propio pie — el botón de guardar
+     dejaría de alcanzarse. Scroll propio en vez de recorte. */
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  position: sticky;
+  top: 16px;
+}
+
+/* El salto por ancla no debe dejar un anillo de foco sobre el panel entero. */
+.fireConfigPanel:focus {
+  outline: none;
+}
+
+/* Cifras que salen de unos supuestos tecleados y todavía sin guardar (#1450):
+   registro de aviso, como el resto de avisos del panel — nada está roto, pero lo
+   que se está leyendo aún no existe en el libro. */
+.fireConfigPreviewing {
+  border-left: 2px solid var(--gold);
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  margin: 0;
+  padding-left: 10px;
+}
+
+.objetivosFirePanel--previewing .panelHeader span {
+  color: var(--gold);
+}
+
+/* Las pistas de cada campo son texto de lectura, no etiqueta: heredaban el peso
+   600 de `.stackForm label` y el panel entero se leía en negrita (#1450). */
+.fireConfigForm label small {
+  font-size: 0.74rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* Las dos cifras que se leen en vez de teclearse (#1415, #1448). */
+.fireConfigReadouts {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-top: 12px;
+}
+
+.fireConfigReadout dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.fireConfigReadout dd {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 0;
+}
+
+.fireConfigReadoutGloss {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.fireConfigFine > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.fireConfigFine .stackForm {
+  margin-top: 10px;
+}
+
 .objetivosHeroGrid {
   display: grid;
   gap: 22px;
@@ -2928,22 +3017,6 @@ code {
   color: var(--muted);
   font-size: 0.82rem;
   margin: 12px 0 0;
-}
-
-.objetivosFireFoot {
-  align-items: center;
-  border-top: 1px solid var(--hairline);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: space-between;
-  margin-top: 14px;
-  padding-top: 12px;
-}
-
-.objetivosFireFoot span {
-  color: var(--muted);
-  font-size: 0.78rem;
 }
 
 /* Niveles FIRE rail (N1, #513) */
@@ -3312,6 +3385,17 @@ code {
   color: var(--muted);
   font-size: 0.7rem;
   font-style: italic;
+}
+
+@media (max-width: 1100px) {
+  .objetivosCockpit {
+    grid-template-columns: 1fr;
+  }
+
+  /* Apilado, un aside pegado arriba taparía las cifras al hacer scroll. */
+  .fireConfigPanel {
+    position: static;
+  }
 }
 
 @media (max-width: 820px) {

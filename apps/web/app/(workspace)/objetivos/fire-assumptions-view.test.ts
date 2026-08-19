@@ -172,7 +172,23 @@ describe("fireAssumptionRows (#1426)", () => {
       projection,
       result,
     }).find((row) => row.key === "ages")!;
-    expect(typed.gloss).toContain("a mano");
+    // Sin derivación la edad viene de una config antigua, y la glosa dice dónde se
+    // arregla — el año de nacimiento es del miembro, no del FIRE (#1450).
+    expect(typed.gloss).toContain("configuración antigua");
+    expect(typed.gloss).toContain("Miembros");
+
+    // Y si NO hay ninguna edad, no se le puede decir que la tiene puesta a mano:
+    // la fila existe por la edad objetivo, y la glosa habla del hueco real.
+    const { currentAge: _dropped, ...withoutAge } = config;
+    const absent = fireAssumptionRows({
+      ageSource: null,
+      config: withoutAge,
+      formatMoney,
+      projection,
+      result,
+    }).find((row) => row.key === "ages")!;
+    expect(absent.gloss).toContain("sin fecha de nacimiento");
+    expect(absent.gloss).not.toContain("configuración antigua");
   });
 
   test("prints the declared savings scalar, zero included", () => {

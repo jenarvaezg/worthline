@@ -24,6 +24,7 @@ import {
   formatRatePercent,
   formatRatePoints,
 } from "./fire-percent";
+import { fireAgeProvenance } from "./fire-provenance";
 
 /** One printed line of the assumptions fold: what it is, its value, where it comes from. */
 export interface FireAssumptionRow {
@@ -103,7 +104,7 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
     },
     {
       gloss: rateIsManual
-        ? "fijada a mano en Ajustes: sustituye a la ponderación de tu mezcla"
+        ? "fijada a mano en tus supuestos: sustituye a la ponderación de tu mezcla"
         : "ponderada por tu mezcla de activos — el desglose está debajo",
       key: "return-base",
       label: "Rentabilidad real (base)",
@@ -151,11 +152,19 @@ export function fireAssumptionRows(input: FireAssumptionRowsInput): FireAssumpti
   const currentAge = config.currentAge;
   const targetAge = config.targetRetirementAge;
   if (currentAge !== undefined || targetAge !== undefined) {
+    // Tres estados, no dos: sin `ageSource` la edad puede venir de una config
+    // antigua o no existir en absoluto, y decirle «la tienes a mano» a quien no
+    // tiene ninguna lo manda a buscar un campo que ya no existe (#1450).
+    const provenance = fireAgeProvenance(ageSource, config);
+    const gloss =
+      provenance.kind === "derived"
+        ? `tu edad sale de tu año de nacimiento (${provenance.birthYear}): no se teclea y no caduca`
+        : provenance.kind === "frozen"
+          ? "la edad actual viene de una configuración antigua: añade tu fecha de nacimiento en Ajustes → Miembros"
+          : "sin fecha de nacimiento no hay edad actual: añádela en Ajustes → Miembros";
+
     rows.push({
-      gloss:
-        ageSource === null
-          ? "la edad actual está configurada a mano en Ajustes"
-          : `tu edad sale de tu año de nacimiento (${ageSource.birthYear}): no se teclea y no caduca`,
+      gloss,
       key: "ages",
       label: "Edad actual / objetivo",
       value: `${currentAge ?? "—"} / ${targetAge ?? "—"}`,

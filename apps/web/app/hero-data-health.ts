@@ -204,8 +204,9 @@ function fixSurface(
     }
     case "savings_coherence":
       // Filtered upstream today, but it has a real destination: the declared
-      // capacity is typed in the FIRE form, which is where the gap gets settled.
-      return { href: "/ajustes", label: "Revisar ahorro" };
+      // capacity is typed in the FIRE form, which since #1450 sits beside the
+      // figures it governs — that is where the gap gets settled.
+      return { href: "/objetivos#supuestos", label: "Revisar ahorro" };
     case "history_coverage":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.
       return null;
