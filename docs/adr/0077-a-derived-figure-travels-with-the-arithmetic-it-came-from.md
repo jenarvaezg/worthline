@@ -70,8 +70,10 @@ explanation is produced by the same computation as the figure — never by a sec
   hover figure per bar, not a trace per point.
 - The effective-rate line in the panel's foot is gone. It printed the same rate the
   assumptions fold now prints WITH its weights, and two places printing one derived
-  figure is exactly what point 1 forbids. `docs/adr/0076`'s note about that foot line
-  is superseded on location only — the rule it states is unchanged.
+  figure is exactly what point 1 forbids. ADR 0042's «/objetivos footer: shows "Retorno
+  real estimado de tu cartera: X %"» and ADR 0076's note about that same foot line are
+  superseded **on location only** — the rate is still shown, now with its weights, and
+  the rules those ADRs state are unchanged.
 - `fireReturnMix` normalizes by the weight actually used, keeping
   `effectiveRealReturn`'s behaviour byte for byte: an empty pool still falls back to the
   market default, and now returns no rows, since a rate with no weight behind it has no
