@@ -7,6 +7,7 @@
  */
 
 import { addUnits, multiplyToMinor, subtractUnits } from "./decimal";
+import { buyCashOutMinor } from "./investment-operation-money";
 import type { InvestmentOperation } from "./investment-types";
 
 /** ISO weekday: 1 = Monday … 7 = Sunday. */
@@ -252,13 +253,8 @@ export function projectContributionReconciliation(input: {
         .map((id) => operationById.get(id))
         .filter((operation): operation is InvestmentOperation => operation !== undefined);
       const executedMinor =
-        operations.reduce(
-          (sum, operation) =>
-            sum +
-            multiplyToMinor(operation.units, operation.pricePerUnit) +
-            operation.feesMinor,
-          0,
-        ) + (reconciliation?.storedExecutionMinor ?? 0);
+        operations.reduce((sum, operation) => sum + buyCashOutMinor(operation), 0) +
+        (reconciliation?.storedExecutionMinor ?? 0);
       let summary: ContributionProgressSummary;
       if (occurrence.amount.mode === "money") {
         summary = {

@@ -75,6 +75,7 @@ describe("previewImportAction wiring", () => {
         connectedSources: 0,
         payouts: 0,
         payoutSchedules: 0,
+        contributionAllowances: 0,
         contributionPlans: 0,
         contributionReconciliations: 0,
       },

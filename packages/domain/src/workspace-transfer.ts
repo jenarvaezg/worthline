@@ -15,6 +15,7 @@
 import type { EarlyRepaymentMode } from "./amortization";
 import type { LiquidityTier } from "./classification";
 import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
+import type { ContributionAllowance } from "./contribution-allowance";
 import type { ContributionOccurrenceState, ContributionPlan } from "./contribution-plan";
 import type { DecimalString } from "./decimal";
 import type { FireScopeConfig } from "./fire";
@@ -304,6 +305,11 @@ export interface WorkspaceExportData {
   /** Forecast declarations plus explicit plan→actual attribution metadata (ADR 0041). */
   contributionPlans?: ContributionPlan[];
   contributionReconciliations?: ExportedContributionReconciliation[];
+  /**
+   * Annual contribution ceilings (ADR 0080). Only the declaration travels: what
+   * has been consumed is derived from the operations already in the document.
+   */
+  contributionAllowances?: ContributionAllowance[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
@@ -315,6 +321,7 @@ export interface WorkspaceExport
     | "payoutSchedules"
     | "contributionPlans"
     | "contributionReconciliations"
+    | "contributionAllowances"
   > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
@@ -322,6 +329,7 @@ export interface WorkspaceExport
   payoutSchedules: PayoutSchedule[];
   contributionPlans: ContributionPlan[];
   contributionReconciliations: ExportedContributionReconciliation[];
+  contributionAllowances: ContributionAllowance[];
 }
 
 /**
@@ -345,6 +353,7 @@ export interface WorkspaceExportSummary {
   payoutSchedules: number;
   contributionPlans: number;
   contributionReconciliations: number;
+  contributionAllowances: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -366,6 +375,7 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     payoutSchedules: doc.payoutSchedules.length,
     contributionPlans: doc.contributionPlans.length,
     contributionReconciliations: doc.contributionReconciliations.length,
+    contributionAllowances: doc.contributionAllowances.length,
   };
 }
 
@@ -390,5 +400,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     payoutSchedules: data.payoutSchedules ?? [],
     contributionPlans: data.contributionPlans ?? [],
     contributionReconciliations: data.contributionReconciliations ?? [],
+    contributionAllowances: data.contributionAllowances ?? [],
   };
 }

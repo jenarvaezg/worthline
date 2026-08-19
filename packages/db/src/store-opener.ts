@@ -12,6 +12,7 @@ import {
 import { createCommandHost } from "./commands/host";
 import { createConnectedSourceSeams } from "./connected-source-seams";
 import { createConnectedSourceStore } from "./connected-source-store";
+import { createContributionAllowanceStore } from "./contribution-allowance-store";
 import { createContributionPlanStore } from "./contribution-plan-store";
 import {
   migrateTarget,
@@ -174,6 +175,7 @@ async function buildStore(
   const goalStore = createGoalStore(ctx);
   const payoutStore = createPayoutStore(ctx);
   const contributionPlanStore = createContributionPlanStore(ctx);
+  const contributionAllowanceStore = createContributionAllowanceStore(ctx);
   const assistantProposalStore = createAssistantProposalStore(ctx);
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
@@ -292,6 +294,7 @@ async function buildStore(
     goals: goalStore,
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,
+    contributionAllowances: contributionAllowanceStore,
     agentView: agentViewReadStore,
     assistantProposals: assistantProposalStore,
     command: commandHost,

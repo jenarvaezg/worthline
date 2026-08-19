@@ -226,6 +226,16 @@ export {
   isContributionMonthKey,
 } from "./contribution-allocation";
 export type {
+  ComputeContributionAllowanceUsageInput,
+  ContributionAllowance,
+  ContributionAllowanceEntry,
+  ContributionAllowanceUsage,
+} from "./contribution-allowance";
+export {
+  assertContributionAllowanceInput,
+  computeContributionAllowanceUsage,
+} from "./contribution-allowance";
+export type {
   ContributionCadence,
   ContributionOccurrence,
   ContributionOccurrenceReconciliation,

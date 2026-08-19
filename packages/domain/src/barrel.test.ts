@@ -149,6 +149,9 @@ const KEY_EXPORTS = [
   "buildMonthlyCloseBreakdownSeries",
   // data-quality-signals (#654 S1)
   "collectDataQualitySignals",
+  // contribution-allowance (#1427)
+  "computeContributionAllowanceUsage",
+  "assertContributionAllowanceInput",
   // monthly-savings / savings-coherence / fire-achievement (#425, #1449)
   "suggestMonthlySavingsCapacity",
   "measureMonthlySavings",

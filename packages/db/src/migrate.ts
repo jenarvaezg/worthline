@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 57;
+export const SCHEMA_VERSION = 58;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1716,6 +1716,35 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 57);
+  }
+
+  if (version < 58) {
+    // #1427: `contribution_allowances` + `contribution_allowance_holdings` — the
+    // annual contribution allowance ("cupo anual de aportación"). Only the CEILING
+    // is stored, because only the ceiling is a datum somebody typed: the Spanish
+    // pension-plan limit depends on the year's law, on employer contributions and
+    // on earned income, so a number in this code would be tax advice with an
+    // expiry date. What has been consumed is derived from the operation ledger on
+    // every read and deliberately has no column — a stored total would drift the
+    // moment an operation is corrected.
+    await client.executeMultiple(
+      `CREATE TABLE IF NOT EXISTS contribution_allowances (
+        id TEXT PRIMARY KEY NOT NULL,
+        scope_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        annual_cap_minor INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS contribution_allowances_scope_idx
+        ON contribution_allowances(scope_id, id);
+      CREATE TABLE IF NOT EXISTS contribution_allowance_holdings (
+        allowance_id TEXT NOT NULL REFERENCES contribution_allowances(id) ON DELETE CASCADE,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        PRIMARY KEY (allowance_id, asset_id)
+      );`,
+    );
+    await writeSchemaVersion(client, 58);
   }
 
   return { ranV18Backfill, ranV33Backfill };

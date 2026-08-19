@@ -5,6 +5,7 @@ import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import type { HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
+  computeContributionAllowanceUsage,
   computeMonthlyContributionAllocation,
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
@@ -30,6 +31,8 @@ import {
   allocationMonthKeys,
   parseAllocationMonthParam,
 } from "./contribution-allocation-view";
+import { ContributionAllowancePanel } from "./contribution-allowance-panel";
+import { contributionAllowanceDestinationOptions } from "./contribution-allowance-view";
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
@@ -151,6 +154,7 @@ export async function ObjetivosContent({
     payoutSchedules,
     contributionPlan,
     contributionReconciliations,
+    contributionAllowances,
     priceCache,
     investmentMeta,
     exposureProfiles,
@@ -167,6 +171,9 @@ export async function ObjetivosContent({
       : Promise.resolve(null),
     selectedScope
       ? store.contributionPlan.readReconciliations(selectedScope.id)
+      : Promise.resolve([]),
+    selectedScope
+      ? store.contributionAllowances.readContributionAllowances(selectedScope.id)
       : Promise.resolve([]),
     store.operations.readAllPriceCacheEntries(),
     store.assets.readInvestmentAssetsWithMeta(),
@@ -283,6 +290,23 @@ export async function ObjetivosContent({
         operations: contributionOperations,
       })
     : null;
+
+  // Cupo anual de aportación (#1427): el tope lo declaró el usuario; lo consumido
+  // sale del libro de operaciones del año natural en curso — nunca de lo que el
+  // plan preveía aportar, que induciría a pasarse creyendo que queda margen.
+  const allowanceUsageById = new Map(
+    contributionAllowances.map((allowance) => [
+      allowance.id,
+      computeContributionAllowanceUsage({
+        allowance,
+        currency,
+        operations: contributionOperations,
+        todayISO: today,
+      }),
+    ]),
+  );
+  const allowanceDestinationOptions = contributionAllowanceDestinationOptions(assets);
+  const holdingNameById = new Map(assets.map((asset) => [asset.id, asset.name]));
 
   // Passive-income lens (#658): the selected scope's trailing-12m payouts,
   // weighted by ownership, against declared spending. Server-rendered figures;
@@ -459,6 +483,20 @@ export async function ObjetivosContent({
           initialYear={exposureDriftInitialYear}
           privacyMode={privacyMode}
           trajectories={exposureDriftTrajectoriesData}
+        />
+      ) : null}
+
+      {selectedScope ? (
+        <ContributionAllowancePanel
+          allowances={contributionAllowances}
+          currency={currency}
+          currentUrl={currentUrl}
+          destinationOptions={allowanceDestinationOptions}
+          formError={formError}
+          holdingNameById={holdingNameById}
+          privacyMode={privacyMode}
+          scopeId={selectedScope.id}
+          usageById={allowanceUsageById}
         />
       ) : null}
 
