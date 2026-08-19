@@ -38,11 +38,6 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import {
-  isSpreadsheet,
-  SpreadsheetReadError,
-  spreadsheetToDelimitedText,
-} from "@web/spreadsheet-text";
-import {
   statementRowToCreateInput,
   statementRowToOverwrite,
 } from "@web/statement-operation-input";
@@ -75,11 +70,11 @@ import {
   type IsinSymbolResolver,
   isIsinSymbolResolver,
   readPortfolioInvestments,
-  readStatementFromText,
   statementImportPreviewReadPort,
   typeConflictMessage,
   unresolvedChoiceMessage,
 } from "./statement-import-preview";
+import { readStatementUpload, STATEMENT_GATE_FORMATS } from "./statement-upload-read";
 
 export type {
   FundMatchChoice,
@@ -104,6 +99,12 @@ export type ImportStatementPreviewState =
   | {
       status: "ready";
       funds: FundPreviewRow[];
+      /**
+       * What the reading could not settle (#1488): a direction nothing in the file
+       * stated, an assumed currency, a row skipped. Shown before the confirm, because a
+       * reading with a doubt is honest only when the doubt is on screen (ADR 0048).
+       */
+      warnings: string[];
     };
 
 /**
@@ -122,11 +123,14 @@ export type ImportStatementPreviewState =
 async function readStatementFromForm(
   formData: FormData,
   fxOptions: ConvertCapturedOperationsOptions = {},
-): Promise<{ ok: false; message: string } | { ok: true; value: ParsedStatement }> {
+): Promise<
+  | { ok: false; message: string }
+  | { ok: true; value: ParsedStatement; warnings: string[] }
+> {
   const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
     return {
-      message: "Selecciona un formato compatible (la plantilla).",
+      message: `Selecciona un formato compatible: ${STATEMENT_GATE_FORMATS.join(" o ")}.`,
       ok: false,
     };
   }
@@ -139,33 +143,28 @@ async function readStatementFromForm(
     };
   }
 
-  // An .xlsx travels as bytes; its first sheet normalizes to the same
-  // `;`-delimited text a CSV upload carries, so every validation and Spanish
-  // error lives in the one parser (#695).
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let text: string;
-  try {
-    text = isSpreadsheet(bytes)
-      ? spreadsheetToDelimitedText(bytes)
-      : new TextDecoder().decode(bytes);
-  } catch (error) {
-    if (error instanceof SpreadsheetReadError) {
-      return { message: error.message, ok: false };
-    }
-    throw error;
+  // Which format the file IS lives in `readStatementUpload` (#1488): the declared one
+  // first, the generic broker-transactions reader when the file is not that format at
+  // all. This action only does the IO — the bytes and the FX rates.
+  const read = readStatementUpload({
+    broker,
+    bytes: new Uint8Array(await file.arrayBuffer()),
+    fileName: file.name,
+  });
+  if (!read.ok) {
+    return { message: read.message, ok: false };
   }
 
-  const parsed = readStatementFromText(text, broker);
-  if (!parsed.ok) {
-    return { message: parsed.message, ok: false };
-  }
-
-  const converted = await convertStatementRows(parsed.value.rows, fxOptions);
+  const converted = await convertStatementRows(read.statement.rows, fxOptions);
   if (!converted.ok) {
     return { message: mapDomainViolation(converted.violations[0]), ok: false };
   }
 
-  return { ok: true, value: { ...parsed.value, rows: converted.value } };
+  return {
+    ok: true,
+    value: { ...read.statement, rows: converted.value },
+    warnings: read.warnings,
+  };
 }
 
 /**
@@ -205,7 +204,7 @@ export async function previewImportStatementAction(
       return { message: preview.message, status: "error" };
     }
 
-    return { funds: preview.funds, status: "ready" };
+    return { funds: preview.funds, status: "ready", warnings: read.warnings };
   }, _store);
 }
 

@@ -37,6 +37,22 @@ const MULTI_ISIN_CSV = [
   "20/01/2024;Fondo;FR00WL000004;Compra;6,0000;300;;",
 ].join("\r\n");
 
+/** A worksheet of inline strings — one `<row>` per grid row, in column order. */
+function transactionsSheet(rows: readonly string[][]): string {
+  const cells = (row: readonly string[], index: number) =>
+    `<row r="${index + 1}">${row
+      .map(
+        (value, column) =>
+          `<c r="${String.fromCharCode(65 + column)}${index + 1}" t="inlineStr"><is><t>${value}</t></is></c>`,
+      )
+      .join("")}</row>`;
+  return (
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>` +
+    rows.map(cells).join("") +
+    `</sheetData></worksheet>`
+  );
+}
+
 function uploadForm(csv = MULTI_ISIN_CSV): FormData {
   const fd = new FormData();
   fd.set("broker", "plantilla");
@@ -570,6 +586,80 @@ describe("plantilla import (#695)", () => {
     expect(parsed.value.rows.length).toBeGreaterThanOrEqual(7);
     expect(parsed.value.rows.some((row) => row.kind === "sell")).toBe(true);
     expect(parsed.value.directionResolved).toBe(true);
+  });
+
+  test("a broker transactions .xlsx reconciles against the matched holding by ISIN (#1488)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    // A DEGIRO `Transactions.xlsx`: no `Tipo de activo`, no `Operación` — the SIGN of
+    // `Número` is the operation — and two header-less currency columns. It is the file
+    // the gate used to refuse while the assistant was sending its owner here.
+    const header = [
+      "Fecha",
+      "Hora",
+      "Producto",
+      "ISIN",
+      "Número",
+      "Precio",
+      "",
+      "Valor local",
+      "Costes de transacción y/o externos EUR",
+      "Total EUR",
+      "ID Orden",
+    ];
+    const buy = [
+      "12-02-2026",
+      "09:04",
+      "FONDO EXISTENTE",
+      "ES00WL000001",
+      "3",
+      "187,48",
+      "EUR",
+      "-562,44",
+      "-1,00",
+      "-563,44",
+      "aa11",
+    ];
+    const sell = [
+      "03-03-2026",
+      "10:15",
+      "FONDO EXISTENTE",
+      "ES00WL000001",
+      "-2",
+      "190,00",
+      "EUR",
+      "380,00",
+      "-1,00",
+      "379,00",
+      "bb22",
+    ];
+    const xlsx = zipSync({
+      "xl/worksheets/sheet1.xml": strToU8(transactionsSheet([header, buy, sell])),
+    });
+
+    const fd = new FormData();
+    fd.set("broker", "plantilla");
+    fd.set("currentUrl", "/patrimonio/importar-extracto");
+    fd.set(
+      "file",
+      new File([xlsx.buffer as ArrayBuffer], "Transactions.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+
+    const result = await preview(fd, store);
+    if (result.status !== "ready") {
+      throw new Error(`expected a ready preview, got: ${JSON.stringify(result)}`);
+    }
+    const [fund] = result.funds;
+    expect(fund?.isin).toBe("ES00WL000001");
+    expect(fund?.bucket).toBe("matched");
+    expect(fund?.executedCount).toBe(2);
+    // The sign read the sell: 3 bought and 2 sold leaves one unit, not five.
+    expect(fund?.positionImpact.afterUnits).toBe("1");
+    // Nothing in the file was left unsaid — a plain EUR export raises no doubt.
+    expect(result.warnings).toEqual([]);
   });
 
   test("an .xlsx plantilla travels through the same form path", async () => {
