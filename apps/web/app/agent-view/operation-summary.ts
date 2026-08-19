@@ -3,6 +3,7 @@ import {
   addUnits,
   compareInvestmentOperations,
   multiplyToMinor,
+  unhandledOperationKind,
 } from "@worthline/domain";
 
 import type { AgentViewMoney, AgentViewOperationSummary } from "./contract";
@@ -71,10 +72,8 @@ export function summarizeOperations(
         transferCount += 1;
         break;
       }
-      default: {
-        const unhandled: never = operation.kind;
-        throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
-      }
+      default:
+        return unhandledOperationKind(operation.kind);
     }
   }
 

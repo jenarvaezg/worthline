@@ -213,9 +213,12 @@ capital as the destination's **inherited cost**, which is why the pair cancels i
 at portfolio level on its date. Halves are always written together, never one at a
 time — see ADR 0082.
 UI label: "Traspaso".
-_Avoid_: transfer alone (collides with the **workspace transfer** document), sale +
-purchase (the modelling this replaces — it realizes a gain that never happened),
-rollover, switch.
+In prose and on screen it is always "traspaso": "transfer" on its own collides with
+the **workspace transfer** document. In code the two never meet — the transfer
+document's types are `WorkspaceExport*`/`Exported*`, so a bare `transfer*` identifier
+(`transferId`, `transferCostMinor`) belongs to this entry and nothing else.
+_Avoid_: calling it a transfer in prose or UI, sale + purchase (the modelling this
+replaces — it realizes a gain that never happened), rollover, switch.
 
 **Inherited cost**:
 The acquisition cost the units of a **traspaso** carry over from the origin, stored on

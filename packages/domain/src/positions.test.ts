@@ -528,6 +528,12 @@ describe("createInvestmentOperation — las reglas de la fila de traspaso (#1393
     ).toThrow(/transferCostMinor/);
   });
 
+  test("la mitad de salida no admite comisiones: el cargo va en la de entrada", () => {
+    expect(() =>
+      createInvestmentOperation(input({ feesMinor: 500, transferId: "trf_1" })),
+    ).toThrow(/fees/i);
+  });
+
   test("el par válido se construye y conserva sus dos columnas", () => {
     const operation = createInvestmentOperation(
       input({ kind: "transfer_in", transferCostMinor: 50_000, transferId: "trf_1" }),

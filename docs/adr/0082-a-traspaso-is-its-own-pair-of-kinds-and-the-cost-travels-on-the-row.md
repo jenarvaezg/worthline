@@ -56,11 +56,21 @@ acquisition cost the units carry over is persisted on the incoming row.**
 5. **The over-sell clamp applies unchanged.** A `transfer_out` that exceeds the units
    held is clamped with a warning, exactly like a sale — a position never goes negative.
 
-6. **A fee belongs on the incoming half.** The outgoing half has no realized P/L to
-   charge a commission against, so a transfer fee is capitalized into the destination's
-   cost, exactly as on a buy.
+6. **A fee belongs on the incoming half, and the outgoing half refuses one.** The
+   outgoing half realizes no P/L, so a commission there would have nowhere to go in the
+   position fold while the cashflow folds would still net it — the same money with two
+   answers. A transfer fee is capitalized into the destination's cost, exactly as on a
+   buy, and a `transfer_out` carrying fees is rejected at the door.
 
-7. **A traspaso row is minted only by its own gate.** The row-level rules (a transfer
+7. **The sign of a kind is spelled once.** Three folds used to write the buy/sell
+   arithmetic themselves — the IRR's cashflows, the delta breakdown, the measured
+   savings — and the traspaso is what made that untenable, because each wants a
+   different answer for it. `signedInvestedMinor(operation, policy)` is now the single
+   spelling, and the policy (`flow` / `zero`) is a required argument: both readings are
+   right, for different questions, so a caller that has not chosen has not thought
+   about it.
+
+8. **A traspaso row is minted only by its own gate.** The row-level rules (a transfer
    carries its `transferId`; a `transfer_in` carries its inherited cost; nothing else
    carries either) throw rather than becoming user-facing violations: nobody types these
    columns into a form. The statement merge is narrowed to buys and sells and refuses to
@@ -78,10 +88,11 @@ acquisition cost the units carry over is persisted on the incoming row.**
 - **Count a traspaso as zero flow everywhere (rejected).** It would hand the origin's
   drop and the destination's rise to the market band of the delta breakdown, printing a
   loss and a gain that never happened.
-- **Count it as savings (rejected).** The measured savings (ADR 0075) is money that came
-  from outside; a traspaso only changes which product holds money already invested. Per
-  holding it would report a saving nobody made, and the FIRE projection rides that
-  figure.
+- **Count it as savings (rejected).** The *measured savings* of ADR 0075 is money that
+  came from outside the portfolio; a traspaso only changes which product holds money
+  already invested. Per holding it would report a saving nobody made, and the FIRE
+  projection rides that figure. This is the `zero` policy, and it is a different
+  question from the delta breakdown's — see the consequence below.
 - **Count the incoming half against a contribution allowance (rejected).** Moving a
   pension plan to another manager is not a contribution; counting it would eat a whole
   year's ceiling (ADR 0080) on the day the capital merely changed hands.
@@ -96,7 +107,21 @@ acquisition cost the units carry over is persisted on the incoming row.**
   round-trip cannot quietly drop the atadura or the inherited cost.
 - The agent view reports the halves as what they are, paired by `transferId`, and counts
   them apart from buys and sells.
-- Not covered here: the atomic write gate that mints (and deletes) both halves together
+- The delta breakdown's third band is the residual after market and payouts, labelled
+  "Ahorro" on screen. A traspaso whose two halves are both inside the scope being read
+  cancels there and touches no band — the ordinary case. A traspaso that CROSSES the
+  scope boundary (destination inside, origin outside — one member's plan moved to
+  another's) lands in that band, because capital genuinely entered the scope and the
+  only alternative is handing it to the market band as a return that never happened.
+  It is the least wrong of three bands rather than a right one; if it ever needs its
+  own band, that is a question for the ledger surfaces (#1481), not for the engine.
+- Not covered here: the retroactive re-typing of pairs already recorded as sell + buy
+  (three of them in Jorge's book, which is why his contribution counter reads 3.627 €
+  instead of 1.049,77 €). It is a data migration over a heuristic — "same day, same
+  cent" also describes a genuine rebalance — so it must be a reviewable pass, not a
+  silent one-shot that rewrites realized P/L nobody asked it to touch. Tracked
+  separately under #1393.
+- Not covered here either: the atomic write gate that mints (and deletes) both halves together
   (#1479), the "Traspasar" screen (#1480), the ledger and drilldown surfaces (#1481),
   and the dictated traspaso (#1482). Until #1479 lands, no product path writes a
   traspaso — this slice teaches the engine to read one.

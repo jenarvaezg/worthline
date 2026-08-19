@@ -1,8 +1,8 @@
 import { daysBetween } from "./dates";
-import { multiplyToMinor } from "./decimal";
-import type { InvestmentOperation, OperationKind } from "./investment-types";
+import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
+import { signedInvestedMinor } from "./operation-flow";
 import { compareInvestmentOperations } from "./positions";
 import { deriveMonthlyCloses } from "./snapshot-policy";
 
@@ -182,30 +182,12 @@ export interface PortfolioTwrInput {
 export function operationCashflows(
   operations: readonly InvestmentOperation[],
 ): DatedCashflow[] {
-  return [...operations].sort(compareInvestmentOperations).map((operation) => {
-    const gross = multiplyToMinor(operation.units, operation.pricePerUnit);
-    const amountMinor = isInflowKind(operation.kind)
-      ? gross - operation.feesMinor
-      : -(gross + operation.feesMinor);
-    return { amountMinor, date: operation.executedAt.slice(0, 10) };
-  });
-}
-
-/** Whether the kind moves money INTO the holder's pocket (a sell, or a traspaso out). */
-function isInflowKind(kind: OperationKind): boolean {
-  switch (kind) {
-    case "sell":
-    case "transfer_out":
-      return true;
-    case "buy":
-    case "transfer_in":
-      return false;
-    default: {
-      // A fifth kind must state its sign here before it compiles (#1393).
-      const unhandled: never = kind;
-      throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
-    }
-  }
+  return [...operations].sort(compareInvestmentOperations).map((operation) => ({
+    // A cashflow is the mirror of what was invested: money into the holding is money
+    // out of the pocket. `flow`, because this figure is about ONE holding.
+    amountMinor: -signedInvestedMinor(operation, "flow"),
+    date: operation.executedAt.slice(0, 10),
+  }));
 }
 
 export function operationTwrCashflows(

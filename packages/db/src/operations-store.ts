@@ -8,7 +8,7 @@ import type {
   OperationCapture,
   OperationSource,
 } from "@worthline/domain";
-import { asDateKey, createInvestmentOperation } from "@worthline/domain";
+import { asDateKey, createInvestmentOperation, isTransferKind } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 
@@ -285,7 +285,7 @@ async function updateOperation(
   // CAN point at a `transfer_out`; rewriting it as a sale would realize a gain that
   // never happened and orphan the other half in silence. Deleting a half is the same
   // hazard and belongs to the pair's own gate (#1479), which owns both rows.
-  if (row.kind === "transfer_out" || row.kind === "transfer_in") {
+  if (isTransferKind(row.kind)) {
     throw new Error(
       "A transfer operation cannot be overwritten one row at a time (#1393).",
     );

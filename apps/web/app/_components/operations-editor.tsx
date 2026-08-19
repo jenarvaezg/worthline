@@ -308,9 +308,11 @@ export default function OperationsEditor({
 
         <label>
           Tipo
+          {/* Buys and sells only: a traspaso is one move with two halves and is
+              written through its own door, never as half a pair typed here (#1393). */}
           <select defaultValue={operationValues["kind"] ?? "buy"} name="kind">
-            <option value="buy">Compra</option>
-            <option value="sell">Venta</option>
+            <option value="buy">{operationKindLabel("buy")}</option>
+            <option value="sell">{operationKindLabel("sell")}</option>
           </select>
         </label>
 

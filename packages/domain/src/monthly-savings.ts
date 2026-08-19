@@ -1,6 +1,6 @@
-import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
+import { signedInvestedMinor } from "./operation-flow";
 
 /**
  * A suggested monthly savings capacity derived from real investment operations
@@ -91,21 +91,7 @@ function monthKey(index: number): string {
  * the FIRE projection would ride it.
  */
 function netInvestedMinor(operation: InvestmentOperation): number {
-  const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-
-  switch (operation.kind) {
-    case "buy":
-      return grossMinor + operation.feesMinor;
-    case "sell":
-      return -(grossMinor - operation.feesMinor);
-    case "transfer_in":
-    case "transfer_out":
-      return 0;
-    default: {
-      const unhandled: never = operation.kind;
-      throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
-    }
-  }
+  return signedInvestedMinor(operation, "zero");
 }
 
 /**

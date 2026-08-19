@@ -10,10 +10,10 @@
  * recorded payouts so the payout band is carved from the residual.
  */
 
-import { multiplyToMinor } from "./decimal";
 import type { ValuationMethod } from "./holding-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import { allocateByBps } from "./money";
+import { signedInvestedMinor } from "./operation-flow";
 import type { DatedAmount } from "./payouts";
 import type { SnapshotHoldingKind, SnapshotHoldingRow } from "./snapshot-holdings";
 import { deriveConfirmedMonthlyCloseIds } from "./snapshot-policy";
@@ -103,36 +103,14 @@ function scopedNetOperationsInWindow(
   for (const operation of operations) {
     const date = operation.executedAt.slice(0, 10);
     if (!inWindow(date, windowStartExclusive, windowEndInclusive)) continue;
-    netMinor += allocateByBps(signedOperationMinor(operation), shareBps);
+    // `flow`, not `zero`: this band explains ONE holding's value change. The origin
+    // drops on the day the units leave and the destination rises, so a traspaso read
+    // as a non-event would hand both differences to the market band and print a loss
+    // and a gain that never happened. Over a scope holding both halves they cancel,
+    // which is exactly what the traspaso did to the user's wealth (#1393).
+    netMinor += allocateByBps(signedInvestedMinor(operation, "flow"), shareBps);
   }
   return netMinor;
-}
-
-/**
- * What one operation added to (+) or took out of (−) the holding's invested capital.
- *
- * A traspaso counts as the flow it is (#1393), NOT as zero: the origin's value drops
- * on the day the units leave and the destination's rises, so a fold that ignored the
- * pair would hand both differences to the market and print a loss and a gain that
- * never happened. The two halves are equal and opposite on the same date, so any
- * scope holding both nets to zero — which is exactly what a traspaso did to the
- * user's wealth.
- */
-function signedOperationMinor(operation: InvestmentOperation): number {
-  const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-
-  switch (operation.kind) {
-    case "buy":
-    case "transfer_in":
-      return grossMinor + operation.feesMinor;
-    case "sell":
-    case "transfer_out":
-      return -(grossMinor - operation.feesMinor);
-    default: {
-      const unhandled: never = operation.kind;
-      throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
-    }
-  }
 }
 
 function scopedPayoutsInWindow(

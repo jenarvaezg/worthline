@@ -18,6 +18,7 @@ import type {
 import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 import { mixedCurrencyWarning } from "./operation-currency";
+import { unhandledOperationKind } from "./operation-flow";
 
 /** Canonical ledger order: calendar date, optional UTC source instant, stable id. */
 export function compareInvestmentOperations(
@@ -58,7 +59,8 @@ export function latestOperationPrice(
 
 /**
  * Validate and normalize a single investment operation. Units must be positive,
- * price non-negative, fees a non-negative integer minor amount. Throws on
+ * price non-negative, fees a non-negative integer minor amount, and the traspaso
+ * columns consistent with the kind (see `assertTransferColumns`). Throws on
  * violation so invalid operations never reach the ledger.
  *
  * Programmer-error paths still throw; only the three bound violations become data.
@@ -151,14 +153,24 @@ function assertTransferColumns(input: CreateInvestmentOperationInput): void {
       throw new Error("An inherited transferCostMinor must not be negative.");
     }
   }
+
+  // A commission has exactly ONE place to live in a traspaso: capitalized into the
+  // destination's cost, on the `transfer_in`. The outgoing half realizes no P/L, so
+  // a fee there would have nowhere to go in the position fold while the cashflow
+  // folds would still net it — the same money with two answers.
+  if (input.kind === "transfer_out" && (input.feesMinor ?? 0) !== 0) {
+    throw new Error(
+      "A transfer_out carries no fees; charge the transfer commission to the transfer_in.",
+    );
+  }
 }
 
 /**
  * Safe variant of `createInvestmentOperation`: returns a `DomainResult` instead
  * of throwing when operation bound rules are violated.
  * The three rule violations (units not positive, price negative, fees negative)
- * become data with stable machine-readable codes. Programmer errors (non-integer
- * fees) still throw.
+ * become data with stable machine-readable codes. Programmer errors still throw —
+ * non-integer fees, and the traspaso column rules, which no form can produce.
  */
 export function createInvestmentOperationSafe(
   input: CreateInvestmentOperationInput,
@@ -302,12 +314,10 @@ export function derivePosition(
         break;
       }
 
-      default: {
+      default:
         // A fifth kind must say what it does to a position here before it compiles —
         // the whole reason a traspaso got its own kinds instead of a flag (#1393).
-        const unhandled: never = operation.kind;
-        throw new Error(`Unhandled operation kind: ${String(unhandled)}`);
-      }
+        return unhandledOperationKind(operation.kind);
     }
   }
 
