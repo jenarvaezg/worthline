@@ -86,7 +86,10 @@ export type {
   BrokerTransactionTable,
   TransactionDirectionSource,
 } from "./broker-transaction-table";
-export { readBrokerTransactionTable } from "./broker-transaction-table";
+export {
+  ASSUMED_BUY_WARNING,
+  readBrokerTransactionTable,
+} from "./broker-transaction-table";
 export type { CaptureSnapshotInput, CaptureSnapshotOutput } from "./capture-snapshot";
 export { buildSnapshotId, captureSnapshotForScope } from "./capture-snapshot";
 export type { LiquidityTier } from "./classification";

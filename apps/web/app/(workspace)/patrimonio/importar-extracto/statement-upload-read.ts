@@ -8,6 +8,7 @@ import {
 } from "@web/spreadsheet-text";
 import type { ParsedStatement, StatementBroker } from "@worthline/domain";
 import {
+  ASSUMED_BUY_WARNING,
   readBrokerTransactionTable,
   statementFromBrokerTransactions,
   statementHeaderMatches,
@@ -124,10 +125,36 @@ function readTransactions(sheets: readonly WorkbookSheet[]): StatementUploadRead
     if (!table) continue;
     const mapped = statementFromBrokerTransactions(table);
     return mapped.ok
-      ? { ok: true, statement: mapped.statement, warnings: mapped.warnings }
+      ? {
+          ok: true,
+          statement: mapped.statement,
+          warnings: withDirectionDoubt(mapped.statement, mapped.warnings),
+        }
       : { message: mapped.message, ok: false };
   }
   return null;
+}
+
+/**
+ * A statement whose direction is UNRESOLVED always says so, whichever reader produced it.
+ *
+ * `directionResolved: false` has existed since ADR 0018's amendment and had no reader on
+ * any web surface — the field travelled, nothing printed it, and the ADR said otherwise.
+ * It went unnoticed because the plantilla always resolves direction; the generic reader
+ * (#1488) is the first one here that can honestly answer «no». So the guarantee lives at
+ * the gate rather than in one reader: a format added later cannot forget it.
+ *
+ * Compared against the domain's own constant, so the sentence a reader ALREADY emitted is
+ * never printed twice.
+ */
+function withDirectionDoubt(
+  statement: ParsedStatement,
+  warnings: readonly string[],
+): string[] {
+  if (statement.directionResolved || warnings.includes(ASSUMED_BUY_WARNING)) {
+    return [...warnings];
+  }
+  return [...warnings, ASSUMED_BUY_WARNING];
 }
 
 /**
@@ -145,7 +172,11 @@ export function readStatementUpload(input: StatementUploadInput): StatementUploa
   if (statementHeaderMatches(text.text, input.broker)) {
     const parsed = readStatementFromText(text.text, input.broker);
     return parsed.ok
-      ? { ok: true, statement: parsed.value, warnings: [] }
+      ? {
+          ok: true,
+          statement: parsed.value,
+          warnings: withDirectionDoubt(parsed.value, []),
+        }
       : { message: parsed.message, ok: false };
   }
 

@@ -135,6 +135,20 @@ describe("readStatementUpload", () => {
     expect(result.warnings.length).toBeGreaterThan(0);
   });
 
+  test("the assumed-buy doubt is said ONCE, not twice, when the reader already said it", () => {
+    const allBuys = [
+      "Fecha;ISIN;Producto;Número;Precio",
+      "12-02-2026;IE00B5BMR087;SXR1;3;187,48",
+    ].join("\n");
+    const result = read(allBuys);
+
+    if (!result.ok) throw new Error(result.message);
+    const said = result.warnings.filter((warning) =>
+      warning.includes("compra o una venta"),
+    );
+    expect(said).toHaveLength(1);
+  });
+
   test("an unreadable workbook is a message, not a throw", () => {
     const result = readStatementUpload({
       broker: "plantilla",
