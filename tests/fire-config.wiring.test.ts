@@ -99,6 +99,46 @@ describe("saveFireConfigAction wiring", () => {
     expect(decodeURIComponent(url)).toMatch(/tasa/i);
   });
 
+  // La declaración de #1460 viaja como casilla + `hidden`, así que el wiring la
+  // ejercita como la manda el navegador: dos valores con el mismo nombre.
+  test("unchecking the immobilized box stores the declaration", async () => {
+    await setupStore();
+    const form = fd(
+      {
+        scopeId: "household",
+        monthlySpending: "2000",
+        safeWithdrawalRate: "4",
+        countImmobilized: "off",
+      },
+      "/objetivos",
+    );
+
+    const url = await catchRedirect(() => saveFireConfigAction(form, store));
+
+    expect(url).toContain("ok=fire_saved");
+    const config = (await store.readFireConfig("2026-08-18")).household;
+    expect(config!.immobilizedCountsAsFireCapital).toBe(false);
+  });
+
+  test("a checked box saves the default declaration explicitly", async () => {
+    await setupStore();
+    const form = fd(
+      {
+        scopeId: "household",
+        monthlySpending: "2000",
+        safeWithdrawalRate: "4",
+        countImmobilized: "off",
+      },
+      "/objetivos",
+    );
+    form.append("countImmobilized", "on");
+
+    await catchRedirect(() => saveFireConfigAction(form, store));
+
+    const config = (await store.readFireConfig("2026-08-18")).household;
+    expect(config!.immobilizedCountsAsFireCapital).toBe(true);
+  });
+
   test("invalid scope id: error redirect and no orphan FIRE config", async () => {
     await setupStore();
 

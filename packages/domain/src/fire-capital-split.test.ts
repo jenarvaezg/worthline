@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitFireCapital } from "./fire-capital-split";
+import { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
 
 describe("splitFireCapital", () => {
   it("splits the eligible pool into sellable and immobilized sides", () => {
@@ -160,5 +160,72 @@ describe("splitFireCapital", () => {
       tiers: [],
     });
     expect(split.immobilized.tiers).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// La declaración del usuario sobre el inmovilizado (#1460): el mismo reparto, con
+// una respuesta distinta a «¿qué mide FIRE aquí?».
+// ---------------------------------------------------------------------------
+
+describe("splitFireCapital under the immobilized declaration", () => {
+  const pool = {
+    eligibleByTierMinor: { market: 100_000, housing: 300_000 },
+    debtByTierMinor: {},
+  };
+
+  it("counts both sides by default, so no stored config changed when the field appeared", () => {
+    const split = splitFireCapital(pool);
+
+    expect(split.countsImmobilized).toBe(true);
+    expect(split.drawableMinor).toBe(400_000);
+  });
+
+  it("draws from the sellable side alone when the brick is declared out", () => {
+    const split = splitFireCapital({ ...pool, countsImmobilized: false });
+
+    expect(split.drawableMinor).toBe(100_000);
+    // El reparto no cambia: la fila del inmovilizado conserva su cifra para poder
+    // imprimirse apagada en vez de desaparecer.
+    expect(split.immobilized.amountMinor).toBe(300_000);
+  });
+
+  it("clamps a goal reservation to the capital FIRE is actually drawing from", () => {
+    const split = splitFireCapital({
+      ...pool,
+      countsImmobilized: false,
+      reservedForGoalsMinor: 250_000,
+    });
+
+    expect(split.sellable.reservedMinor).toBe(100_000);
+    expect(split.immobilized.reservedMinor).toBe(0);
+    expect(split.drawableMinor).toBe(0);
+  });
+
+  it("still spills an underwater side's debt onto the other one", () => {
+    const split = splitFireCapital({
+      eligibleByTierMinor: { market: 100_000, housing: 300_000 },
+      debtByTierMinor: { housing: 340_000 },
+      countsImmobilized: false,
+    });
+
+    expect(split.sellable.absorbedDebtMinor).toBe(40_000);
+    expect(split.drawableMinor).toBe(60_000);
+  });
+});
+
+describe("fireDrawsFromTier", () => {
+  it("draws from every rung while the brick counts", () => {
+    expect(fireDrawsFromTier("housing", true)).toBe(true);
+    expect(fireDrawsFromTier("illiquid", true)).toBe(true);
+    expect(fireDrawsFromTier("market", true)).toBe(true);
+  });
+
+  it("drops exactly the immobilized rungs when it does not", () => {
+    expect(fireDrawsFromTier("housing", false)).toBe(false);
+    expect(fireDrawsFromTier("illiquid", false)).toBe(false);
+    expect(fireDrawsFromTier("cash", false)).toBe(true);
+    expect(fireDrawsFromTier("market", false)).toBe(true);
+    expect(fireDrawsFromTier("term-locked", false)).toBe(true);
   });
 });

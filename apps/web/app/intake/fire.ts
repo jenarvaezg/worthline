@@ -131,6 +131,16 @@ export function parseFireConfigFormStrict(
   const leanMultiplier = hasLean ? leanMultiplierParsed! : undefined;
   const fatMultiplier = hasFat ? fatMultiplierParsed! : undefined;
 
+  // Does the immobilized capital count (#1460)? The form pairs the checkbox with a
+  // hidden "off", so an UNCHECKED box still arrives — and the absence of BOTH values
+  // means a FormData that does not carry the declaration at all, which has to read as
+  // the default. Without that distinction the classic checkbox trap («unchecked sends
+  // nothing») would let any form that forgets the field silently declare a user's
+  // brick out of their FIRE.
+  const immobilizedDeclaration = formData.getAll("countImmobilized").map(String);
+  const immobilizedCountsAsFireCapital =
+    immobilizedDeclaration.length === 0 ? true : immobilizedDeclaration.includes("on");
+
   // Barista income (N2, #514): optional. 0/empty/negative → undefined (no effect).
   const baristaIncomeRaw = (formData.get("baristaIncome") as string) ?? "";
   const baristaIncomeMinor = parseMoneyMinor(baristaIncomeRaw);
@@ -150,6 +160,7 @@ export function parseFireConfigFormStrict(
       ...(leanMultiplier !== undefined ? { leanMultiplier } : {}),
       ...(fatMultiplier !== undefined ? { fatMultiplier } : {}),
       ...(hasBaristaIncome ? { baristaMonthlyIncomeMinor: baristaIncomeMinor! } : {}),
+      immobilizedCountsAsFireCapital,
       ...(tierRealReturns ? { tierRealReturns } : {}),
     },
   };

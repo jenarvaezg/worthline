@@ -739,6 +739,16 @@ export interface AgentViewFireConfig {
    * the projection treats it as zero (the UI offers a history-based suggestion).
    */
   monthlySavingsCapacity?: AgentViewMoney;
+  /**
+   * Whether the scope counts its IMMOBILIZED capital — non-primary property,
+   * collections — as FIRE capital (#1460, ADR 0078). Always present, because when it
+   * is `false` every figure in `result` is measured over the sellable side alone, and
+   * the excluded brick appears in NO other field: it is not an `excludedAssets` entry
+   * (nothing excluded it as an asset) and the eligible total simply does not contain
+   * it. An assistant quoting the FIRE number has to be able to say which of the two
+   * measures it is quoting.
+   */
+  immobilizedCountsAsFireCapital: boolean;
 }
 
 /**

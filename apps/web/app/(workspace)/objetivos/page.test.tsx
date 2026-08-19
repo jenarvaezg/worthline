@@ -398,10 +398,45 @@ describe("ObjetivosPage capital split (#1447)", () => {
     expect(disclosure.slice(0, disclosure.indexOf("</details>"))).toContain("22,4 %");
   });
 
+  // #1460: la misma cartera, con el usuario declarando que no piensa vender el piso.
+  test("measures only the sellable side when the user declared the brick out", async () => {
+    calls.readCurveValuedHoldingsAtDate.mockResolvedValueOnce(landlordLedger());
+    calls.readFireConfig.mockResolvedValueOnce({
+      household: {
+        immobilizedCountsAsFireCapital: false,
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.035,
+        expectedRealReturn: 0.05,
+      },
+    });
+
+    const html = await renderedHtml();
+
+    // El 22,4 % que antes era una nota al pie ahora ES el titular.
+    expect(html).toContain(
+      '<p class="fireBig">22,4 % <span class="fireBigNoun">financiado</span></p>',
+    );
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 153_927_33, currency: "EUR" }, false),
+    );
+    // El ladrillo no desaparece: sigue impreso, apagado y dicho.
+    expect(html).toContain("is-outOfCalculation");
+    expect(html).toContain("fuera del cálculo");
+    expect(html).toContain(
+      formatMoneyMinorPrivacy({ amountMinor: 301_371_97, currency: "EUR" }, false),
+    );
+    // Y no se pintan dos porcentajes de lo mismo.
+    expect(html).not.toContain("Solo con lo vendible estarías al");
+  });
+
   test("stays out of the way when nothing in the pool is immobilized", async () => {
     const html = await renderedHtml();
 
-    expect(html).not.toContain("inmovilizado");
+    // La palabra sí aparece: la casilla de #1460 pregunta por el inmovilizado en el
+    // formulario de supuestos, tenga el usuario ladrillo o no. Lo que no puede
+    // aparecer es el DESGLOSE, que es lo que este test vigila.
+    expect(html).not.toContain("Desglose de los activos elegibles");
+    expect(html).not.toContain("no se gasta a plazos");
   });
 });
 

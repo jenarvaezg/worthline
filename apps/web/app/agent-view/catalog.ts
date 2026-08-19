@@ -497,7 +497,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_fire_context: {
       description:
-        "Get the current FIRE context for a scope (defaults to the household scope): configured/unconfigured status, the FIRE config and assumptions, the computed result (FIRE number, eligible assets after goal reservations, gap, progress ratio, coast-FIRE facts when an age is set), the scope-weighted eligible total, and the assets excluded with their reason (primary residence or manual). Goal reservations only subtract in-horizon assigned capital that is FIRE-eligible. Figures are current-only — a dated request is rejected. Reads are side-effect-free.",
+        "Get the current FIRE context for a scope (defaults to the household scope): configured/unconfigured status, the FIRE config and assumptions, the computed result (FIRE number, eligible assets after goal reservations, gap, progress ratio, coast-FIRE facts when an age is set), the scope-weighted eligible total, and the assets excluded with their reason (primary residence or manual). Goal reservations only subtract in-horizon assigned capital that is FIRE-eligible. When config.immobilizedCountsAsFireCapital is false the scope has DECLARED that its immobilized capital (non-primary property, collections) is not FIRE capital (ADR 0078), so every figure here — eligible total, progress, coast — is measured over the sellable side alone and that capital appears in no other field: say which measure you are quoting. Figures are current-only — a dated request is rejected. Reads are side-effect-free.",
       inputSchema: {
         additionalProperties: false,
         properties: {

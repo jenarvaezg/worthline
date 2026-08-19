@@ -181,6 +181,28 @@ export function FireConfigPanel({
             </small>
           </label>
 
+          {/* La declaración sobre el ladrillo (#1460): no todo el mundo se plantea
+              vender su piso, y para quien no lo hará la medida honesta es que no
+              cuente. El `hidden` de al lado es lo que hace que una casilla
+              DESMARCADA llegue al servidor: sin él, «no cuenta» y «este formulario
+              no habla del tema» serían el mismo silencio. */}
+          <label className="fireConfigCheck">
+            <input name="countImmobilized" type="hidden" value="off" />
+            <input
+              defaultChecked={values.immobilizedCounts}
+              name="countImmobilized"
+              type="checkbox"
+            />
+            <span>
+              Mi patrimonio inmovilizado cuenta como capital FIRE
+              <small className="muted">
+                Vivienda no habitual y colecciones. Desmárcalo si no piensas venderlo: el
+                número financiado, el Coast y la rentabilidad esperada se miden entonces
+                solo con lo vendible. Sigue siendo patrimonio, y se aplica al guardar.
+              </small>
+            </span>
+          </label>
+
           {/* Las dos cifras que NO se teclean, con su procedencia (#1415, #1448):
               sin ellas el panel parecería tener campos que el usuario dejó vacíos. */}
           <dl className="fireConfigReadouts">

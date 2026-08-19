@@ -82,7 +82,14 @@ export type RentReturnNoticeReason =
    */
   | "no_live_schedule"
   /** The property is valued in a currency the payout amounts do not declare (#1401). */
-  | "foreign_currency";
+  | "foreign_currency"
+  /**
+   * The rate WAS derived, and then the scope's own declaration took its rung out of
+   * FIRE (#1460): the user said the immobilized capital does not count, so neither
+   * does its yield. Nothing is missing and nothing is wrong — which is why the copy
+   * for this one must not ask the user to fix anything.
+   */
+  | "immobilized_not_counted";
 
 /** A property whose declared net rent replaced its tier's rate. */
 export interface RentDerivedReturn {

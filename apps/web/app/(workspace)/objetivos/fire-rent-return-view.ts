@@ -101,5 +101,10 @@ function noticeGloss(notice: RentReturnNotice): string {
       return "Su alquiler declarado no está vigente hoy, así que no alimenta la rentabilidad esperada: cuenta con el retorno por defecto de su tramo.";
     case "foreign_currency":
       return "Está valorado en otra divisa y un cobro no lleva divisa propia, así que su alquiler no se usa para derivar la rentabilidad.";
+    case "immobilized_not_counted":
+      // Ni un fallo ni una invitación: es la consecuencia de lo que el usuario
+      // declaró, así que la línea no le pide arreglar nada — le recuerda dónde se
+      // cambia de opinión.
+      return "Has declarado que tu patrimonio inmovilizado no cuenta como capital FIRE, así que su alquiler tampoco alimenta la rentabilidad esperada. Se cambia en «Tus supuestos».";
   }
 }

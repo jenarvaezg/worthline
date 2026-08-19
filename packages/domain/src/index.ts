@@ -454,6 +454,7 @@ export type {
 export {
   calculateFire,
   calculateFireForScope,
+  fireCountsImmobilizedCapital,
   fireReservationHorizon,
   isFireEligibleAsset,
   isManualFireReturn,
@@ -469,7 +470,7 @@ export { fireAchievement } from "./fire-achievement";
 export type { FireAssumptionOverrides } from "./fire-assumption-preview";
 export { previewFireWithAssumptions } from "./fire-assumption-preview";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
-export { splitFireCapital } from "./fire-capital-split";
+export { fireDrawsFromTier, splitFireCapital } from "./fire-capital-split";
 export type { BirthDate, FireAgeSource } from "./fire-current-age";
 export {
   ageOnDate,

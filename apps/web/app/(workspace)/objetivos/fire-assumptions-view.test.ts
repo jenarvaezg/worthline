@@ -266,3 +266,43 @@ describe("fireReturnMixPrintRows (#1426)", () => {
     expect(fireReturnMixPrintRows(mix)).toEqual([]);
   });
 });
+
+describe("la mezcla que pondera cuando el inmovilizado no cuenta (#1460)", () => {
+  test("la glosa de la tasa dice que la mezcla es la vendible", () => {
+    const { config, projection, result } = jorge({
+      immobilizedCountsAsFireCapital: false,
+    });
+
+    const row = fireAssumptionRows({
+      ageSource: null,
+      config,
+      formatMoney,
+      projection,
+      result,
+    }).find((entry) => entry.key === "return-base")!;
+
+    expect(row.gloss).toContain("mezcla vendible");
+    // Y la tabla de debajo, en efecto, ya no lleva el ladrillo.
+    expect(
+      fireReturnMixPrintRows(result.returnMix).some((printed) =>
+        printed.label.toLowerCase().includes("vivienda"),
+      ),
+    ).toBe(false);
+  });
+
+  test("mientras cuenta, la glosa sigue hablando de la mezcla entera", () => {
+    const { config, projection, result } = jorge();
+
+    const row = fireAssumptionRows({
+      ageSource: null,
+      config,
+      formatMoney,
+      projection,
+      result,
+    }).find((entry) => entry.key === "return-base")!;
+
+    expect(row.gloss).toBe(
+      "ponderada por tu mezcla de activos — el desglose está debajo",
+    );
+  });
+});
