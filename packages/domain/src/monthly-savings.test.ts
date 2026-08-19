@@ -260,3 +260,76 @@ describe("el traspaso no es ahorro (#1393)", () => {
     expect(measured.operationsCount).toBe(3);
   });
 });
+
+describe("una apertura no es ahorro (#1490)", () => {
+  /** Jorge's real alta: 27 uds of the SXR1, at the cached price of the day he typed it. */
+  function opening(executedAt: string, amountMajor: number): InvestmentOperation {
+    return {
+      assetId: "asset-1",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `opening-${executedAt}`,
+      kind: "buy",
+      pricePerUnit: "1",
+      source: "opening",
+      units: String(amountMajor),
+    };
+  }
+
+  it("el alta de una posición vieja no fabrica ahorro del mes en que se teclea", () => {
+    // The measured case: 5.865,75 € of pre-existing wealth declared on 19/8 read as
+    // 5.865,75 € saved that month, and the FIRE coherence watch rode it.
+    const measured = measureMonthlySavings([opening("2026-08-19", 5865.75)], {
+      asOfDateKey: "2026-08-19",
+      windowMonths: 12,
+    });
+
+    expect(measured.netMinor).toBe(0);
+    expect(measured.amountMinor).toBe(0);
+  });
+
+  it("no sube la capacidad sugerida, y las aportaciones reales siguen contándose", () => {
+    const operations = [
+      opening("2026-08-19", 5865.75),
+      op("buy", "2026-07-15", 300),
+      op("buy", "2026-08-15", 300),
+    ];
+
+    expect(suggestMonthlySavingsCapacity(operations)).toEqual(
+      suggestMonthlySavingsCapacity([
+        op("buy", "2026-07-15", 300),
+        op("buy", "2026-08-15", 300),
+      ]),
+    );
+  });
+
+  it("sigue siendo testigo de que el libro existe: cero euros, no cero evidencia", () => {
+    // Same rule as a traspaso leg: the operation is worth no savings, but it dates
+    // the ledger — dropping it would shrink `monthsCovered` and make a three-month
+    // ledger read as insufficient evidence (#1449).
+    const measured = measureMonthlySavings(
+      [opening("2026-06-10", 5865.75), op("buy", "2026-08-15", 300)],
+      { asOfDateKey: "2026-08-19", windowMonths: 12 },
+    );
+
+    expect(measured.monthsCovered).toBe(3);
+    expect(measured.operationsCount).toBe(2);
+    expect(measured.netMinor).toBe(30_000);
+  });
+
+  it("una apertura de venta tampoco resta: la marca manda sobre el signo", () => {
+    // No door writes one today, but the rule is about the SOURCE, not the kind: an
+    // opening declares a position that already existed, whichever way it points.
+    const sellOpening: InvestmentOperation = {
+      ...opening("2026-08-19", 1000),
+      id: "opening-sell",
+      kind: "sell",
+    };
+
+    expect(suggestMonthlySavingsCapacity([sellOpening]).amountMinor).toBe(0);
+    expect(
+      measureMonthlySavings([sellOpening], { asOfDateKey: "2026-08-19" }).netMinor,
+    ).toBe(0);
+  });
+});

@@ -635,7 +635,9 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     );
 
     expect(url).toContain("error=");
-    expect(decodeURIComponent(url).replaceAll("+", " ")).toContain("no puede ser futura");
+    expect(decodeURIComponent(url).replaceAll("+", " ")).toContain(
+      "desde una fecha futura",
+    );
     expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
     expect(await store.snapshots.readSnapshots()).toHaveLength(0);
   });
@@ -669,6 +671,128 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
     expect(await store.snapshots.readSnapshots()).toHaveLength(0);
     expect(decoded).toContain("v_saldoDate_crypto=2026-02-30");
+  });
+
+  test("el coste declarado es el precio de la apertura, y la plusvalía latente aparece (#1490)", async () => {
+    const store = await seedStore();
+
+    // Jorge's real alta, replayed: 27 uds of the SXR1 worth 5.865,75 € today at
+    // 217,25 €, bought between December and January for 4.999,86 € in total.
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "iShares Core S&P 500",
+        symbol_fund: "SXR1.DE",
+        price_fund: "217,25",
+        invMode_fund: "saldo",
+        saldo_fund: "5.865,75",
+        saldoDate_fund: "2026-01-15",
+        cost_fund: "4.999,86",
+        costMode_fund: "total",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=investment_added");
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    expect(ops).toHaveLength(1);
+    // The units come from what it is WORTH today; the price from what it COST.
+    expect(ops[0]!.units).toBe("27");
+    expect(ops[0]!.pricePerUnit).toBe("185.18");
+    expect(ops[0]!.executedAt).toBe("2026-01-15");
+    expect(ops[0]!.source).toBe("opening");
+
+    // Cost basis 4.999,86 € against a 5.865,75 € position: the 865,89 € of latent
+    // gain that used to be erased by writing today's price as the cost.
+    const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");
+    expect(asset?.currentValue.amountMinor).toBe(5_865_75);
+  });
+
+  test("un coste por participación se persiste tal cual (#1490)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "iShares Core S&P 500",
+        symbol_fund: "SXR1.DE",
+        price_fund: "217,25",
+        invMode_fund: "saldo",
+        saldo_fund: "5.865,75",
+        cost_fund: "185,18",
+        costMode_fund: "unit",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    expect(ops[0]!.pricePerUnit).toBe("185.18");
+  });
+
+  test("un coste que no se lee refusa el alta entera y lo devuelve tecleado (#1490)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "iShares Core S&P 500",
+        symbol_fund: "SXR1.DE",
+        price_fund: "217,25",
+        invMode_fund: "saldo",
+        saldo_fund: "5.865,75",
+        cost_fund: "cinco mil",
+        costMode_fund: "total",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const decoded = decodeURIComponent(url).replaceAll("+", " ");
+    expect(decoded).toContain("coste de adquisición no se lee");
+    expect(await store.assets.readInvestmentAssetsWithMeta()).toHaveLength(0);
+    // The cost and its mode come back typed: the figure the user had to look up is
+    // not something to make him find twice.
+    expect(decoded).toContain("v_cost_fund=cinco mil");
+    expect(decoded).toContain("v_costMode_fund=total");
+  });
+
+  test("sin coste la apertura sigue naciendo al precio de hoy — pero ya es una elección (#1490)", async () => {
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "iShares Core S&P 500",
+        symbol_fund: "SXR1.DE",
+        price_fund: "217,25",
+        invMode_fund: "saldo",
+        saldo_fund: "5.865,75",
+        cost_fund: "",
+        costMode_fund: "total",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    expect(ops[0]!.pricePerUnit).toBe("217.25");
+    // And whatever the cost says, the apertura is never read as savings (#1490's
+    // engine half): `source: "opening"` is the mark that rules that out.
+    expect(ops[0]!.source).toBe("opening");
   });
 
   test("import path creates the investment with NO opening operation and routes to «Cargar movimientos»", async () => {

@@ -353,6 +353,59 @@ describe("computeDeltaBreakdownWindow — el traspaso (#1393)", () => {
   });
 });
 
+describe("computeDeltaBreakdownWindow — la apertura de una posición (#1490)", () => {
+  /**
+   * The decision of #1490: «en el delta, una apertura se trata como ya se trate el
+   * alta de un activo con valor — espejo del precedente, sin banda nueva». So the
+   * apertura keeps landing in the residual, `netSavings`, and this test is what pins
+   * that reading — the alternative (dropping it from the fold like the measured
+   * savings do) would hand its whole amount to the MARKET band and print a gain that
+   * never happened.
+   *
+   * The savings figure #1490 actually poisons is `measureMonthlySavings`, which reads
+   * the ledger and not this residual (see `monthly-savings.test.ts`).
+   */
+  const opening = (assetId: string, executedAt: string, amountMinor: number) => ({
+    ...buy(assetId, executedAt, amountMinor),
+    source: "opening" as const,
+  });
+
+  test("una apertura cae en el residuo, exactamente donde cae el alta de un activo con valor", () => {
+    const openingBands = computeDeltaBreakdownWindow({
+      aggregateDeltaMinor: 5_865_75,
+      currentRows: [row("asset_fund", 5_865_75)],
+      operationsByHoldingId: new Map([
+        ["asset_fund", [opening("asset_fund", "2026-02-15", 5_865_75)]],
+      ]),
+      ownershipByHoldingId: fullOwnership,
+      payoutsByHolding: new Map(),
+      previousRows: [],
+      scopeMemberIds: householdScope,
+      valuationMethodByHoldingId: methods,
+      windowEndInclusive: "2026-02-28",
+      windowStartExclusive: "2026-01-31",
+    });
+
+    // The mirror: the same money declared as a `stored` asset with a value.
+    const storedAltaBands = computeDeltaBreakdownWindow({
+      aggregateDeltaMinor: 5_865_75,
+      currentRows: [row("asset_cash", 5_865_75)],
+      operationsByHoldingId: new Map(),
+      ownershipByHoldingId: fullOwnership,
+      payoutsByHolding: new Map(),
+      previousRows: [],
+      scopeMemberIds: householdScope,
+      valuationMethodByHoldingId: methods,
+      windowEndInclusive: "2026-02-28",
+      windowStartExclusive: "2026-01-31",
+    });
+
+    expect(openingBands.netSavingsMinor).toBe(5_865_75);
+    expect(openingBands.marketMinor).toBe(0);
+    expect(openingBands).toEqual(storedAltaBands);
+  });
+});
+
 describe("buildMonthlyCloseBreakdownSeries", () => {
   test("returns gaps when frozen rows are missing for a close", () => {
     const jan = snapshot("2026-01-31", 100_000_00);

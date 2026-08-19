@@ -19,7 +19,10 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
-import { resolveOpeningCapture } from "@web/patrimonio/anadir/investment-units";
+import {
+  parseOpeningCostMode,
+  resolveOpeningCapture,
+} from "@web/patrimonio/anadir/investment-units";
 import { type WorthlineStore } from "@web/store";
 import type { DebtModel, Instrument, LiabilityType } from "@worthline/domain";
 import {
@@ -244,6 +247,10 @@ const FIELD_KEYS = [
   // Simple investment drawer capture fields (#597), refilled after a validation error.
   "saldo",
   "saldoDate",
+  // The acquisition cost and how it was stated (#1490): a refused capture must come
+  // back with them typed, or the user re-enters the one figure he had to look up.
+  "cost",
+  "costMode",
   "invMode",
 ];
 
@@ -499,13 +506,19 @@ export async function createHoldingAction(
         const invMode = parseInvMode(actionFormData.get(`invMode_${instrument}`));
 
         // (a) "Saldo de hoy": resolve the whole capture up-front (pure) — units
-        // (€ ÷ precio) and the date they are stamped with («Fecha del saldo», today
-        // by default, #1395) — so a missing saldo/price or an impossible date fails
-        // BEFORE anything is persisted: no orphaned 0 € holding, no operation dated
-        // on a day the calendar does not have.
+        // (€ ÷ precio), the date they are stamped with («¿Desde cuándo la tienes?»,
+        // today by default, #1395) and the price the opening carries (the declared
+        // acquisition cost, or today's price when there is none — #1490) — so a
+        // missing saldo/price, an impossible date or an unreadable cost fails BEFORE
+        // anything is persisted: no orphaned 0 € holding, no operation dated on a day
+        // the calendar does not have.
         const opening =
           invMode === "saldo"
             ? resolveOpeningCapture({
+                costMode: parseOpeningCostMode(
+                  String(actionFormData.get(`costMode_${instrument}`) ?? ""),
+                ),
+                costRaw: String(actionFormData.get(`cost_${instrument}`) ?? ""),
                 dateRaw: String(actionFormData.get(`saldoDate_${instrument}`) ?? ""),
                 priceRaw: String(scoped.get("manualPricePerUnit") ?? ""),
                 saldoRaw: String(actionFormData.get(`saldo_${instrument}`) ?? ""),

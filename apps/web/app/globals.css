@@ -7107,11 +7107,24 @@ td.rowActions > * {
   font-weight: 650;
   color: var(--ink);
 }
-/* A refused «Fecha del saldo» (#1395) reads as a refusal, not as a neutral hint:
+/* A refused date or cost (#1395, #1490) reads as a refusal, not as a neutral hint:
    same slot, `var(--red)` — the color `.errorBand` and `.formError` already use for
    a form that cannot be submitted as typed. */
 .invUnitsRefused {
   color: var(--red);
+}
+/* The acquisition cost read back (#1490): its OWN full-width slot below the cost
+   field, in the secondary voice — it states what WILL be stored (the unit price, the
+   latent P/L), not the figure that blocks the alta. A class of its own, not a second
+   `.invUnitsHint`, so «the units reading» stays one node on the page. */
+.invCostNote {
+  grid-column: 1 / -1;
+  margin: 0.1rem 0 0;
+  font-weight: 500;
+  color: var(--muted);
+}
+.invCostMode {
+  grid-column: 1 / -1;
 }
 @media (max-width: 720px) {
   .invCapture {
