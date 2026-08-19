@@ -439,6 +439,7 @@ export type {
   ExposureSectorStyle,
 } from "./exposure-lookthrough";
 export {
+  isGeoCurrencyNotApplicableAssetClass,
   lookThroughExposure,
   resolveAssetClassBreakdown,
   validateImportedExposureProfile,

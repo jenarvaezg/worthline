@@ -17,6 +17,7 @@ import {
   type GlobalExposureProfileBreakdowns,
   type GlobalExposureProfileIdentity,
   globalExposureProfileIdentityKey,
+  isGeoCurrencyNotApplicableAssetClass,
 } from "@worthline/domain";
 
 /** Tolerance for "the declared weights don't quite reach 100%". */
@@ -75,11 +76,17 @@ export function dimensionNeedsCategorizing(
   return dimensionRemainder(breakdown) > COVERAGE_EPSILON;
 }
 
-/** Whether any of the three dimensions leaves an undeclared remainder (#941). */
+/** Whether any applicable dimension leaves an undeclared remainder (#941, #1452). */
 export function profileNeedsCategorizing(profile: GlobalExposureProfile): boolean {
-  return CATALOG_DIMENSIONS.some((dimension) =>
-    dimensionNeedsCategorizing(dimensionOf(profile.breakdowns, dimension)),
+  const geoCurrencyExempt = isGeoCurrencyNotApplicableAssetClass(
+    profile.breakdowns.assetClass,
   );
+  return CATALOG_DIMENSIONS.some((dimension) => {
+    if (geoCurrencyExempt && (dimension === "geography" || dimension === "currency")) {
+      return false;
+    }
+    return dimensionNeedsCategorizing(dimensionOf(profile.breakdowns, dimension));
+  });
 }
 
 /**

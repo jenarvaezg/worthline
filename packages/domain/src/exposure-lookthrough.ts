@@ -127,6 +127,42 @@ const GEO_CURRENCY_NOT_APPLICABLE_INSTRUMENTS = new Set<Instrument>([
   "vehicle",
 ]);
 
+const GEO_CURRENCY_NOT_APPLICABLE_ASSET_CLASSES = new Set<ExposureAssetClassBucket>([
+  "commodity",
+  "crypto",
+]);
+
+/**
+ * Geography and currency do not apply when the declared asset-class vector is
+ * entirely commodity and/or crypto (#1452). An ETC of gold is stored as `etf`
+ * or `fund`, so the instrument-level set above cannot see it; the profile can.
+ */
+export function isGeoCurrencyNotApplicableAssetClass(
+  breakdown: Record<string, string | undefined> | undefined,
+): boolean {
+  if (!breakdown) {
+    return false;
+  }
+
+  let total = new Big(0);
+  for (const [bucket, weight] of Object.entries(breakdown)) {
+    if (weight === undefined) {
+      continue;
+    }
+    const parsed = new Big(weight);
+    if (parsed.eq(0)) {
+      continue;
+    }
+    if (
+      !GEO_CURRENCY_NOT_APPLICABLE_ASSET_CLASSES.has(bucket as ExposureAssetClassBucket)
+    ) {
+      return false;
+    }
+    total = total.plus(parsed);
+  }
+  return total.eq(1);
+}
+
 /**
  * A holding's resolved asset-class breakdown: the profile's stored vector when
  * present, else the single auto-derived class for instruments without a hand-
@@ -465,6 +501,10 @@ function resolveDimension(
   }
 
   if (GEO_CURRENCY_NOT_APPLICABLE_INSTRUMENTS.has(holding.instrument)) {
+    return { kind: "not-applicable" };
+  }
+
+  if (isGeoCurrencyNotApplicableAssetClass(profile?.breakdowns.assetClass)) {
     return { kind: "not-applicable" };
   }
 

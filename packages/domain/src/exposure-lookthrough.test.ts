@@ -173,6 +173,114 @@ describe("lookThroughExposure", () => {
     });
   });
 
+  test("a fund whose profile is 100% commodity is not a geography or currency gap", () => {
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 100_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_gold_etc",
+          instrument: "etf",
+          isin: "IE00GOLD",
+          valueMinor: 100_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "IE00GOLD",
+          fixtureProfile({
+            breakdowns: { assetClass: { commodity: "1" } },
+            key: "IE00GOLD",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 100_000, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+    expect(result.currency.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 100_000, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+  });
+
+  test("a fund whose profile is 100% crypto is not a geography or currency gap", () => {
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 50_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_btc_etn",
+          instrument: "etf",
+          isin: "IE00BTCETN",
+          valueMinor: 50_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "IE00BTCETN",
+          fixtureProfile({
+            breakdowns: { assetClass: { crypto: "1" } },
+            key: "IE00BTCETN",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 50_000, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+    expect(result.currency.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 50_000, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+  });
+
+  test("a mixed fund with some commodity still needs geography and currency", () => {
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 80_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_mixed",
+          instrument: "fund",
+          isin: "IE00MIXED",
+          valueMinor: 80_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "IE00MIXED",
+          fixtureProfile({
+            breakdowns: { assetClass: { commodity: "0.3", equity: "0.7" } },
+            key: "IE00MIXED",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 80_000, currency: "EUR" },
+    });
+    expect(result.currency.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 80_000, currency: "EUR" },
+    });
+  });
+
   test("rejects a profile breakdown above 100 percent", () => {
     expect(() =>
       validateImportedExposureProfile({
