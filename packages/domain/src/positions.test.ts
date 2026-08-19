@@ -387,3 +387,159 @@ describe("createInvestmentOperation — the captured apunte (#1401)", () => {
     expect("capture" in createInvestmentOperation(euroInput)).toBe(false);
   });
 });
+
+describe("derivePosition — el traspaso (#1393)", () => {
+  const transferOut = (
+    units: string,
+    price: string,
+    extra: Partial<InvestmentOperation> = {},
+  ) => op("transfer_out", units, price, { transferId: "trf_1", ...extra });
+  const transferIn = (
+    units: string,
+    price: string,
+    costMinor: number,
+    extra: Partial<InvestmentOperation> = {},
+  ) =>
+    op("transfer_in", units, price, {
+      transferCostMinor: costMinor,
+      transferId: "trf_1",
+      ...extra,
+    });
+
+  test("el origen suelta unidades y coste proporcional sin realizar P/L", () => {
+    // 10 units at 100 € = 1.000 €; half leaves at 150 € — a sell here would realize
+    // 250 €, a traspaso realizes nothing.
+    const position = derivePosition(
+      [buy("10", "100"), transferOut("5", "150", { executedAt: "2026-02-01" })],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.currentUnits).toBe("5");
+    expect(position.costBasis).toEqual({ amountMinor: 50_000, currency: "EUR" });
+    expect(position.realizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(position.warnings).toEqual([]);
+  });
+
+  test("el destino hereda el coste declarado, no unidades × precio", () => {
+    const position = derivePosition([transferIn("5", "150", 50_000)], {
+      assetId: "asset_dest",
+      currency: "EUR",
+      currentPricePerUnit: "150",
+    });
+
+    expect(position.currentUnits).toBe("5");
+    // 750 € of market value standing on 500 € of inherited cost: the 250 € of
+    // latent gain travelled intact instead of being reset by the transfer price.
+    expect(position.costBasis).toEqual({ amountMinor: 50_000, currency: "EUR" });
+    expect(position.unrealizedPnl).toEqual({ amountMinor: 25_000, currency: "EUR" });
+    expect(position.realizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
+  });
+
+  test("el par cuadra: lo que sale del origen entra en el destino", () => {
+    const origin = derivePosition(
+      [buy("10", "100"), transferOut("5", "150", { executedAt: "2026-02-01" })],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+    const destination = derivePosition(
+      [
+        transferIn("5", "150", origin.costBasis.amountMinor, {
+          executedAt: "2026-02-01",
+        }),
+      ],
+      { assetId: "asset_dest", currency: "EUR" },
+    );
+
+    expect(destination.currentUnits).toBe("5");
+    expect(destination.costBasis.amountMinor + origin.costBasis.amountMinor).toBe(
+      100_000,
+    );
+  });
+
+  test("una comisión del traspaso se capitaliza en el destino", () => {
+    const position = derivePosition(
+      [transferIn("5", "150", 50_000, { feesMinor: 1_000 })],
+      { assetId: "asset_dest", currency: "EUR" },
+    );
+
+    expect(position.costBasis).toEqual({ amountMinor: 51_000, currency: "EUR" });
+  });
+
+  test("un traspaso que excede lo disponible se ajusta con aviso, como la venta", () => {
+    const position = derivePosition(
+      [buy("2", "100"), transferOut("5", "150", { executedAt: "2026-02-01" })],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.currentUnits).toBe("0");
+    expect(position.costBasis).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(position.realizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
+    expect(position.warnings).toHaveLength(1);
+    expect(position.warnings[0]).toContain("traspaso");
+  });
+
+  test("un traspaso de entrada sin coste heredado no revienta el fold", () => {
+    // A row written before #1393 — or by hand — has no inherited cost. The fold
+    // reads it as zero rather than throwing: the ledger must still be readable.
+    const position = derivePosition(
+      [op("transfer_in", "5", "150", { transferId: "trf_1" })],
+      { assetId: "asset_dest", currency: "EUR" },
+    );
+
+    expect(position.currentUnits).toBe("5");
+    expect(position.costBasis).toEqual({ amountMinor: 0, currency: "EUR" });
+  });
+});
+
+describe("createInvestmentOperation — las reglas de la fila de traspaso (#1393)", () => {
+  const input = (
+    overrides: Partial<CreateInvestmentOperationInput>,
+  ): CreateInvestmentOperationInput => ({
+    assetId: "asset_inv",
+    currency: "EUR",
+    executedAt: "2026-02-01",
+    id: "op_trf",
+    kind: "transfer_out",
+    pricePerUnit: "150",
+    units: "5",
+    ...overrides,
+  });
+
+  test("un traspaso sin `transferId` no puede existir: nadie podría emparejarlo", () => {
+    expect(() => createInvestmentOperation(input({}))).toThrow(/transferId/);
+  });
+
+  test("un `transfer_in` sin coste heredado no puede existir", () => {
+    expect(() =>
+      createInvestmentOperation(input({ kind: "transfer_in", transferId: "trf_1" })),
+    ).toThrow(/transferCostMinor/);
+  });
+
+  test("el coste heredado no cabe en una compra ni en una venta", () => {
+    expect(() =>
+      createInvestmentOperation(input({ kind: "buy", transferCostMinor: 50_000 })),
+    ).toThrow(/transferCostMinor/);
+  });
+
+  test("el coste heredado no puede ser negativo", () => {
+    expect(() =>
+      createInvestmentOperation(
+        input({ kind: "transfer_in", transferCostMinor: -1, transferId: "trf_1" }),
+      ),
+    ).toThrow(/transferCostMinor/);
+  });
+
+  test("la mitad de salida no admite comisiones: el cargo va en la de entrada", () => {
+    expect(() =>
+      createInvestmentOperation(input({ feesMinor: 500, transferId: "trf_1" })),
+    ).toThrow(/fees/i);
+  });
+
+  test("el par válido se construye y conserva sus dos columnas", () => {
+    const operation = createInvestmentOperation(
+      input({ kind: "transfer_in", transferCostMinor: 50_000, transferId: "trf_1" }),
+    );
+
+    expect(operation.transferId).toBe("trf_1");
+    expect(operation.transferCostMinor).toBe(50_000);
+  });
+});

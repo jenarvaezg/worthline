@@ -3,6 +3,7 @@ import {
   addUnits,
   compareInvestmentOperations,
   multiplyToMinor,
+  unhandledOperationKind,
 } from "@worthline/domain";
 
 import type { AgentViewMoney, AgentViewOperationSummary } from "./contract";
@@ -34,17 +35,45 @@ export function summarizeOperations(
   let unitsSold = "0";
   let grossBuyMinor = 0;
   let grossSellMinor = 0;
+  let unitsTransferredIn = "0";
+  let unitsTransferredOut = "0";
+  let grossTransferInMinor = 0;
+  let grossTransferOutMinor = 0;
+  let transferCount = 0;
   let feesMinor = 0;
 
   for (const operation of operations) {
     feesMinor += operation.feesMinor;
     const amountMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-    if (operation.kind === "buy") {
-      unitsBought = addUnits(unitsBought, operation.units);
-      grossBuyMinor += amountMinor;
-    } else {
-      unitsSold = addUnits(unitsSold, operation.units);
-      grossSellMinor += amountMinor;
+
+    // A traspaso is counted apart from the buys and sells (#1393): it moved capital
+    // between products, so reporting it as a purchase or a sale would tell a reader
+    // that money was invested or cashed in when neither happened.
+    switch (operation.kind) {
+      case "buy": {
+        unitsBought = addUnits(unitsBought, operation.units);
+        grossBuyMinor += amountMinor;
+        break;
+      }
+      case "sell": {
+        unitsSold = addUnits(unitsSold, operation.units);
+        grossSellMinor += amountMinor;
+        break;
+      }
+      case "transfer_in": {
+        unitsTransferredIn = addUnits(unitsTransferredIn, operation.units);
+        grossTransferInMinor += amountMinor;
+        transferCount += 1;
+        break;
+      }
+      case "transfer_out": {
+        unitsTransferredOut = addUnits(unitsTransferredOut, operation.units);
+        grossTransferOutMinor += amountMinor;
+        transferCount += 1;
+        break;
+      }
+      default:
+        return unhandledOperationKind(operation.kind);
     }
   }
 
@@ -57,6 +86,16 @@ export function summarizeOperations(
     grossSellAmount: moneyOf(grossSellMinor, currency),
     latestOperationDate: dateKey(last),
     operationCount: operations.length,
+    ...(transferCount === 0
+      ? {}
+      : {
+          transfers: {
+            grossInAmount: moneyOf(grossTransferInMinor, currency),
+            grossOutAmount: moneyOf(grossTransferOutMinor, currency),
+            unitsIn: unitsTransferredIn,
+            unitsOut: unitsTransferredOut,
+          },
+        }),
     unitsBought,
     unitsSold,
   };

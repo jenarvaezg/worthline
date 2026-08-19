@@ -1,6 +1,6 @@
-import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
+import { signedInvestedMinor } from "./operation-flow";
 
 /**
  * A suggested monthly savings capacity derived from real investment operations
@@ -82,12 +82,16 @@ function monthKey(index: number): string {
  * out of pocket (units × price + fees), a `sell` is money pulled back out
  * (units × price − fees). The single definition of "savings" in this module —
  * both the suggestion and the measurement read it (#1449).
+ *
+ * A traspaso is worth ZERO here, both halves (#1393). Savings is money that came
+ * from outside; a traspaso only changes which product holds money that was already
+ * invested. Counting the incoming half as a buy would be the failure of #1449 all
+ * over again — this figure is measured PER HOLDING as well as per workspace, so a
+ * fund that received 50.000 € would report a savings capacity nobody earned, and
+ * the FIRE projection would ride it.
  */
 function netInvestedMinor(operation: InvestmentOperation): number {
-  const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-  return operation.kind === "buy"
-    ? grossMinor + operation.feesMinor
-    : -(grossMinor - operation.feesMinor);
+  return signedInvestedMinor(operation, "zero");
 }
 
 /**

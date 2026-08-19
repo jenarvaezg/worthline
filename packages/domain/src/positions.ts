@@ -12,11 +12,13 @@ import type { DomainResult, DomainViolation } from "./domain-result";
 import type {
   CreateInvestmentOperationInput,
   InvestmentOperation,
+  OperationKind,
   PositionSummary,
 } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
 import { mixedCurrencyWarning } from "./operation-currency";
+import { unhandledOperationKind } from "./operation-flow";
 
 /** Canonical ledger order: calendar date, optional UTC source instant, stable id. */
 export function compareInvestmentOperations(
@@ -57,7 +59,8 @@ export function latestOperationPrice(
 
 /**
  * Validate and normalize a single investment operation. Units must be positive,
- * price non-negative, fees a non-negative integer minor amount. Throws on
+ * price non-negative, fees a non-negative integer minor amount, and the traspaso
+ * columns consistent with the kind (see `assertTransferColumns`). Throws on
  * violation so invalid operations never reach the ledger.
  *
  * Programmer-error paths still throw; only the three bound violations become data.
@@ -88,6 +91,8 @@ export function createInvestmentOperation(
     throw new Error("Operation fees must not be negative.");
   }
 
+  assertTransferColumns(input);
+
   return {
     assetId: input.assetId,
     ...(input.capture === undefined ? {} : { capture: input.capture }),
@@ -101,16 +106,71 @@ export function createInvestmentOperation(
       : { occurredAt: asInstant(input.occurredAt) }),
     pricePerUnit: input.pricePerUnit,
     source: input.source ?? "manual",
+    ...(input.transferCostMinor === undefined
+      ? {}
+      : { transferCostMinor: input.transferCostMinor }),
+    ...(input.transferId === undefined ? {} : { transferId: input.transferId }),
     units: input.units,
   };
+}
+
+/** Whether this kind is one half of a traspaso (#1393). */
+export function isTransferKind(kind: OperationKind): boolean {
+  return kind === "transfer_out" || kind === "transfer_in";
+}
+
+/**
+ * The row-level rules of a traspaso half (#1393). These are programmer errors, not
+ * user-facing violations: the columns are never typed into a form — the write gate
+ * that mints the pair fills them — so a row that breaks them is a bug upstream, and
+ * throwing is what keeps a half-formed pair out of the ledger.
+ *
+ * What is NOT checked here: that the OTHER half exists, and that the two agree on
+ * units and date. That is a two-row invariant and it belongs to the atomic write
+ * gate (S2, #1479); a single-operation constructor cannot see the pair.
+ */
+function assertTransferColumns(input: CreateInvestmentOperationInput): void {
+  if (isTransferKind(input.kind) && input.transferId === undefined) {
+    throw new Error("A transfer operation must carry its transferId.");
+  }
+
+  if (!isTransferKind(input.kind) && input.transferId !== undefined) {
+    throw new Error("Only a transfer operation may carry a transferId.");
+  }
+
+  if (input.kind === "transfer_in" && input.transferCostMinor === undefined) {
+    throw new Error("A transfer_in must carry the inherited transferCostMinor.");
+  }
+
+  if (input.kind !== "transfer_in" && input.transferCostMinor !== undefined) {
+    throw new Error("Only a transfer_in may carry a transferCostMinor.");
+  }
+
+  if (input.transferCostMinor !== undefined) {
+    assertMinorInteger(input.transferCostMinor);
+
+    if (input.transferCostMinor < 0) {
+      throw new Error("An inherited transferCostMinor must not be negative.");
+    }
+  }
+
+  // A commission has exactly ONE place to live in a traspaso: capitalized into the
+  // destination's cost, on the `transfer_in`. The outgoing half realizes no P/L, so
+  // a fee there would have nowhere to go in the position fold while the cashflow
+  // folds would still net it — the same money with two answers.
+  if (input.kind === "transfer_out" && (input.feesMinor ?? 0) !== 0) {
+    throw new Error(
+      "A transfer_out carries no fees; charge the transfer commission to the transfer_in.",
+    );
+  }
 }
 
 /**
  * Safe variant of `createInvestmentOperation`: returns a `DomainResult` instead
  * of throwing when operation bound rules are violated.
  * The three rule violations (units not positive, price negative, fees negative)
- * become data with stable machine-readable codes. Programmer errors (non-integer
- * fees) still throw.
+ * become data with stable machine-readable codes. Programmer errors still throw —
+ * non-integer fees, and the traspaso column rules, which no form can produce.
  */
 export function createInvestmentOperationSafe(
   input: CreateInvestmentOperationInput,
@@ -161,7 +221,7 @@ export function createInvestmentOperationSafe(
 }
 
 /**
- * The position-math module. Folds an investment asset's buy/sell ledger into its
+ * The position-math module. Folds an investment asset's operation ledger into its
  * current units, cost basis, and weighted-average cost using a moving average
  * (tax-agnostic: no FIFO/LIFO). All money crosses the Money seam and all unit/price
  * arithmetic crosses the decimal seam, so this module stays pure and testable.
@@ -195,32 +255,69 @@ export function derivePosition(
   const ordered = [...operations].sort(compareInvestmentOperations);
 
   for (const operation of ordered) {
-    if (operation.kind === "buy") {
-      costMinor +=
-        multiplyToMinor(operation.units, operation.pricePerUnit) + operation.feesMinor;
-      units = addUnits(units, operation.units);
-    } else {
-      // Sell: remove units and a proportional slice of cost basis at the running
-      // weighted average. The sale price does not move the remaining cost basis,
-      // but it does realize P/L — proceeds (net of fees) minus the cost of the
-      // units sold (#548).
-      let sellUnits = operation.units;
-
-      if (compareUnits(sellUnits, units) > 0) {
-        // Overrideable warning, not a failure: clamp to what's actually held so the
-        // position never goes negative.
-        warnings.push(
-          `La venta de ${sellUnits} unidades supera las ${units} disponibles; se ajusta al máximo.`,
-        );
-        sellUnits = units;
+    switch (operation.kind) {
+      case "buy": {
+        costMinor +=
+          multiplyToMinor(operation.units, operation.pricePerUnit) + operation.feesMinor;
+        units = addUnits(units, operation.units);
+        break;
       }
 
-      const costOfUnitsSold = proportionMinor(costMinor, sellUnits, units);
-      const proceedsMinor =
-        multiplyToMinor(sellUnits, operation.pricePerUnit) - operation.feesMinor;
-      realizedMinor += proceedsMinor - costOfUnitsSold;
-      costMinor -= costOfUnitsSold;
-      units = subtractUnits(units, sellUnits);
+      case "transfer_in": {
+        // The incoming half of a traspaso (#1393). The cost basis is the one the
+        // units carried over from the origin — NOT units × price, which would reset
+        // the latent gain to zero and hand the destination a brand-new purchase it
+        // never made. A row with no inherited cost is read as zero rather than
+        // rejected: this fold's job is to read a ledger, and the gate that refuses
+        // to WRITE such a row is `createInvestmentOperation`.
+        //
+        // Fees are capitalized exactly as on a buy, which is where a transfer
+        // commission belongs: the outgoing half has no realized P/L to charge it
+        // against.
+        costMinor += (operation.transferCostMinor ?? 0) + operation.feesMinor;
+        units = addUnits(units, operation.units);
+        break;
+      }
+
+      case "sell":
+      case "transfer_out": {
+        // Both remove units and a proportional slice of cost basis at the running
+        // weighted average, and neither moves the cost of what stays. They part ways
+        // on P/L: a sell realizes it — proceeds (net of fees) minus the cost of the
+        // units sold (#548) — and a traspaso realizes NOTHING (#1393). The capital
+        // was not cashed in, it changed product; the gain travels with it as the
+        // destination's inherited cost.
+        const isTransfer = operation.kind === "transfer_out";
+        let outgoingUnits = operation.units;
+
+        if (compareUnits(outgoingUnits, units) > 0) {
+          // Overrideable warning, not a failure: clamp to what's actually held so the
+          // position never goes negative.
+          warnings.push(
+            isTransfer
+              ? `El traspaso de ${outgoingUnits} unidades supera las ${units} disponibles; se ajusta al máximo.`
+              : `La venta de ${outgoingUnits} unidades supera las ${units} disponibles; se ajusta al máximo.`,
+          );
+          outgoingUnits = units;
+        }
+
+        const costOfUnitsOut = proportionMinor(costMinor, outgoingUnits, units);
+
+        if (!isTransfer) {
+          const proceedsMinor =
+            multiplyToMinor(outgoingUnits, operation.pricePerUnit) - operation.feesMinor;
+          realizedMinor += proceedsMinor - costOfUnitsOut;
+        }
+
+        costMinor -= costOfUnitsOut;
+        units = subtractUnits(units, outgoingUnits);
+        break;
+      }
+
+      default:
+        // A fifth kind must say what it does to a position here before it compiles —
+        // the whole reason a traspaso got its own kinds instead of a flag (#1393).
+        return unhandledOperationKind(operation.kind);
     }
   }
 

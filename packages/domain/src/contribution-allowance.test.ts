@@ -237,6 +237,36 @@ describe("computeContributionAllowanceUsage", () => {
   });
 });
 
+describe("computeContributionAllowanceUsage — el traspaso no aporta (#1393)", () => {
+  test("la pata receptora de un traspaso no consume cupo", () => {
+    // Jorge's counter read «3.627 € de 1.500 — te has pasado 2.127 €» because three
+    // of the eleven buys it counted were the receiving legs of traspasos between
+    // pension plans. Moving a plan to another manager is not a contribution; this
+    // test is here so nobody "fixes" the counter later by adding them back.
+    const usage = computeContributionAllowanceUsage({
+      allowance,
+      currency: "EUR",
+      operations: [
+        buy({ executedAt: "2026-02-10", id: "op-real", pricePerUnit: "10", units: "50" }),
+        buy({
+          executedAt: "2026-03-01",
+          id: "op-traspaso",
+          kind: "transfer_in",
+          pricePerUnit: "10",
+          transferCostMinor: 60_000,
+          transferId: "trf_1",
+          units: "83.689",
+        }),
+      ],
+      todayISO: "2026-08-19",
+    });
+
+    expect(usage.consumedMinor).toBe(50_000);
+    expect(usage.entries).toHaveLength(1);
+    expect(usage.entries[0]?.operationId).toBe("op-real");
+  });
+});
+
 describe("assertContributionAllowanceInput", () => {
   test("accepts a labelled cap with at least one destination", () => {
     expect(() =>

@@ -268,6 +268,91 @@ describe("computeDeltaBreakdownWindow", () => {
   });
 });
 
+describe("computeDeltaBreakdownWindow — el traspaso (#1393)", () => {
+  const transferOwnership = new Map([
+    ["asset_origen", [{ memberId: "member_a", shareBps: 10_000 }]],
+    ["asset_destino", [{ memberId: "member_a", shareBps: 10_000 }]],
+  ]);
+  const transferMethods = new Map<string, ValuationMethod>([
+    ["asset_origen", "derived"],
+    ["asset_destino", "derived"],
+  ]);
+
+  function transferLeg(
+    kind: "transfer_out" | "transfer_in",
+    assetId: string,
+    executedAt: string,
+    amountMinor: number,
+  ): InvestmentOperation {
+    return {
+      assetId,
+      currency: "EUR",
+      executedAt: `${executedAt}T12:00:00.000Z`,
+      feesMinor: 0,
+      id: `op_${executedAt}_${assetId}`,
+      kind,
+      pricePerUnit: String(amountMinor / 100),
+      transferId: "trf_1",
+      units: "1",
+      ...(kind === "transfer_in" ? { transferCostMinor: amountMinor } : {}),
+    };
+  }
+
+  test("el par no inventa ni mercado ni ahorro: la cartera no se movió", () => {
+    // 10.000 € leave one fund and land in the other on the same day. Read as a pair
+    // of flows the two cancel; read as "value that vanished here and appeared there"
+    // they would print a 10.000 € market loss and a 10.000 € market gain.
+    const bands = computeDeltaBreakdownWindow({
+      aggregateDeltaMinor: 0,
+      currentRows: [row("asset_origen", 0), row("asset_destino", 10_000_00)],
+      operationsByHoldingId: new Map([
+        [
+          "asset_destino",
+          [transferLeg("transfer_in", "asset_destino", "2026-02-15", 10_000_00)],
+        ],
+        [
+          "asset_origen",
+          [transferLeg("transfer_out", "asset_origen", "2026-02-15", 10_000_00)],
+        ],
+      ]),
+      ownershipByHoldingId: transferOwnership,
+      payoutsByHolding: new Map(),
+      previousRows: [row("asset_origen", 10_000_00), row("asset_destino", 0)],
+      scopeMemberIds: householdScope,
+      valuationMethodByHoldingId: transferMethods,
+      windowEndInclusive: "2026-02-28",
+      windowStartExclusive: "2026-01-31",
+    });
+
+    expect(bands.marketMinor).toBe(0);
+    expect(bands.netSavingsMinor).toBe(0);
+    expect(bands.payoutsMinor).toBe(0);
+  });
+
+  test("la mitad de entrada es capital que llega, no una revalorización", () => {
+    const bands = computeDeltaBreakdownWindow({
+      aggregateDeltaMinor: 10_500_00,
+      currentRows: [row("asset_destino", 10_500_00)],
+      operationsByHoldingId: new Map([
+        [
+          "asset_destino",
+          [transferLeg("transfer_in", "asset_destino", "2026-02-15", 10_000_00)],
+        ],
+      ]),
+      ownershipByHoldingId: transferOwnership,
+      payoutsByHolding: new Map(),
+      previousRows: [row("asset_destino", 0)],
+      scopeMemberIds: householdScope,
+      valuationMethodByHoldingId: transferMethods,
+      windowEndInclusive: "2026-02-28",
+      windowStartExclusive: "2026-01-31",
+    });
+
+    expect(bands.netSavingsMinor).toBe(10_000_00);
+    expect(bands.marketMinor).toBe(500_00);
+  });
+});
+
 describe("buildMonthlyCloseBreakdownSeries", () => {
   test("returns gaps when frozen rows are missing for a close", () => {
     const jan = snapshot("2026-01-31", 100_000_00);

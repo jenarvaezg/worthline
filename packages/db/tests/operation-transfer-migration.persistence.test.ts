@@ -5,19 +5,20 @@ import type { Client } from "@libsql/client";
 import { describe, expect, test } from "vitest";
 
 /**
- * v54 (#1401): `asset_operations` learns to say which currency an apunte was CAPTURED
- * in. An existing row keeps all four columns NULL — the honest reading "this was
- * recorded as euros", not "the original was lost", so nothing is backfilled.
+ * v59 (#1393): `asset_operations` learns the traspaso — `transfer_id` on both halves
+ * of the pair, `transfer_cost_minor` on the incoming one. Existing rows keep both
+ * NULL and nothing is backfilled: a pre-#1393 row is a buy or a sell, and it
+ * genuinely knows nothing of a pair.
  */
 
 function columnNames(rows: Array<Record<string, unknown>>): string[] {
   return rows.map((row) => String(row["name"]));
 }
 
-async function seedV53(): Promise<Client> {
+async function seedV58(): Promise<Client> {
   const client = openLibsqlClient(":memory:");
   await client.execute("CREATE TABLE schema_meta (version INTEGER NOT NULL)");
-  await client.execute("INSERT INTO schema_meta (version) VALUES (53)");
+  await client.execute("INSERT INTO schema_meta (version) VALUES (58)");
   await client.executeMultiple(`
     CREATE TABLE assets (
       id TEXT PRIMARY KEY NOT NULL,
@@ -35,39 +36,32 @@ async function seedV53(): Promise<Client> {
       source TEXT DEFAULT 'manual' NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
-    INSERT INTO assets (id) VALUES ('fidelity');
+    INSERT INTO assets (id) VALUES ('fondo');
     INSERT INTO asset_operations (id, asset_id, kind, executed_at, units, price_per_unit, currency) VALUES
-      ('old_op', 'fidelity', 'buy', '2026-01-23', '0.255', '8.00', 'EUR');
+      ('old_op', 'fondo', 'buy', '2026-01-23', '10', '100.00', 'EUR');
   `);
   return client;
 }
 
-describe("schema migration v54 (operation capture)", () => {
-  test("adds the four capture columns and leaves existing rows untouched", async () => {
-    const client = await seedV53();
+describe("schema migration v59 (traspaso columns)", () => {
+  test("adds both columns and leaves existing rows untouched", async () => {
+    const client = await seedV58();
 
     await migrate(client);
 
     const columns = columnNames(
       (await client.execute("PRAGMA table_info(asset_operations)")).rows,
     );
-    expect(columns).toContain("capture_currency");
-    expect(columns).toContain("capture_price_per_unit");
-    expect(columns).toContain("capture_fees_minor");
-    expect(columns).toContain("capture_eur_per_unit");
+    expect(columns).toContain("transfer_id");
+    expect(columns).toContain("transfer_cost_minor");
 
     const rows = await client.execute(
-      `SELECT price_per_unit, currency, capture_currency, capture_price_per_unit,
-              capture_fees_minor, capture_eur_per_unit
-         FROM asset_operations`,
+      "SELECT kind, transfer_id, transfer_cost_minor FROM asset_operations",
     );
     expect(rows.rows[0]).toEqual({
-      capture_currency: null,
-      capture_eur_per_unit: null,
-      capture_fees_minor: null,
-      capture_price_per_unit: null,
-      currency: "EUR",
-      price_per_unit: "8.00",
+      kind: "buy",
+      transfer_cost_minor: null,
+      transfer_id: null,
     });
 
     expect(
@@ -76,7 +70,7 @@ describe("schema migration v54 (operation capture)", () => {
     expect(SCHEMA_VERSION).toBe(59);
   });
 
-  test("a fresh schema already has the capture columns", async () => {
+  test("a fresh schema already has both columns", async () => {
     const client = openLibsqlClient(":memory:");
 
     await client.executeMultiple(schemaSql);
@@ -84,12 +78,12 @@ describe("schema migration v54 (operation capture)", () => {
     const columns = columnNames(
       (await client.execute("PRAGMA table_info(asset_operations)")).rows,
     );
-    expect(columns).toContain("capture_currency");
-    expect(columns).toContain("capture_eur_per_unit");
+    expect(columns).toContain("transfer_id");
+    expect(columns).toContain("transfer_cost_minor");
   });
 
   test("migrating twice is a no-op", async () => {
-    const client = await seedV53();
+    const client = await seedV58();
 
     await migrate(client);
     await migrate(client);
@@ -97,6 +91,6 @@ describe("schema migration v54 (operation capture)", () => {
     const columns = columnNames(
       (await client.execute("PRAGMA table_info(asset_operations)")).rows,
     );
-    expect(columns.filter((name) => name === "capture_currency")).toHaveLength(1);
+    expect(columns.filter((name) => name === "transfer_id")).toHaveLength(1);
   });
 });

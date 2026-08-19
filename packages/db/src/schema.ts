@@ -315,6 +315,13 @@ export const assetOperations = sqliteTable(
     capturePricePerUnit: text("capture_price_per_unit"),
     captureFeesMinor: integer("capture_fees_minor"),
     captureEurPerUnit: text("capture_eur_per_unit"),
+    // The two halves of one traspaso (#1393). `transfer_id` is on BOTH rows and on
+    // nothing else, so a reader can pair them; `transfer_cost_minor` is the
+    // acquisition cost the units carry over and rides ONLY the `transfer_in` — the
+    // origin computes it once at write time so the position fold never has to cross
+    // over to another asset's ledger to learn it.
+    transferId: text("transfer_id"),
+    transferCostMinor: integer("transfer_cost_minor"),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },

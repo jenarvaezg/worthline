@@ -36,7 +36,6 @@
 import type { DecimalString } from "./decimal";
 import { compareUnits, divideUnits, multiplyToMinor, normalizeDecimal } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
-import type { OperationKind } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { CAPTURE_CURRENCIES, isCaptureCurrency } from "./operation-currency";
 import type {
@@ -44,6 +43,7 @@ import type {
   StatementBrokerAdapter,
   StatementRowResult,
 } from "./statement-broker-adapter";
+import type { ParsedStatementRow } from "./statement-parse";
 
 const PLANTILLA_COLUMNS = {
   amount: "Importe",
@@ -221,7 +221,7 @@ export const plantillaAdapter: StatementBrokerAdapter<PlantillaColumns> = {
     }
 
     const operationRaw = normalizeText((cells[columns.operation] ?? "").trim());
-    const kind: OperationKind | null =
+    const kind: ParsedStatementRow["kind"] | null =
       operationRaw === "compra" ? "buy" : operationRaw === "venta" ? "sell" : null;
     if (kind === null) {
       return rowError(

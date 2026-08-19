@@ -777,6 +777,8 @@ export {
   lastCapturedCurrency,
   mixedCurrencyWarning,
 } from "./operation-currency";
+export type { TransferFlowPolicy } from "./operation-flow";
+export { signedInvestedMinor, unhandledOperationKind } from "./operation-flow";
 export type {
   DatedAmount,
   DerivedPayout,
@@ -813,6 +815,7 @@ export {
   createInvestmentOperation,
   createInvestmentOperationSafe,
   derivePosition,
+  isTransferKind,
   latestOperationPrice,
   netUnitsByAsset,
   netUnitsFromOperations,

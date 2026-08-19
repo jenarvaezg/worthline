@@ -6,10 +6,9 @@ import type {
   Instant,
   InvestmentOperation,
   OperationCapture,
-  OperationKind,
   OperationSource,
 } from "@worthline/domain";
-import { asDateKey, createInvestmentOperation } from "@worthline/domain";
+import { asDateKey, createInvestmentOperation, isTransferKind } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 
@@ -21,7 +20,12 @@ import {
   contributionOccurrenceReconciliations,
   liabilities,
 } from "./schema";
-import { operationCaptureColumns, type StoreContext, toOperation } from "./store-context";
+import {
+  operationCaptureColumns,
+  operationTransferColumns,
+  type StoreContext,
+  toOperation,
+} from "./store-context";
 import {
   assertAssetAllowsOperationWrite,
   assertAssetAllowsStoredValuationWrite,
@@ -54,7 +58,12 @@ export interface ValueUpdateCommand {
 /** A statement-merge overwrite: replace an existing operation's values in place. */
 export interface UpdateInvestmentOperationInput {
   id: string;
-  kind: OperationKind;
+  /**
+   * Deliberately narrower than `OperationKind`: a statement merge speaks buys
+   * and sells only. A traspaso is written as a PAIR by its own gate (#1393), and
+   * neither half can be minted — or turned into something else — one row at a time.
+   */
+  kind: "buy" | "sell";
   units: DecimalString;
   pricePerUnit: DecimalString;
   currency: CurrencyCode;
@@ -143,6 +152,7 @@ async function recordOperation(
       occurredAt: operation.occurredAt ?? null,
       pricePerUnit: operation.pricePerUnit,
       source: operation.source ?? "manual",
+      ...operationTransferColumns(operation),
       units: operation.units,
     })
     .run();
@@ -257,13 +267,28 @@ async function updateOperation(
   }
 
   const row = await db
-    .select({ assetId: assetOperations.assetId, executedAt: assetOperations.executedAt })
+    .select({
+      assetId: assetOperations.assetId,
+      executedAt: assetOperations.executedAt,
+      kind: assetOperations.kind,
+    })
     .from(assetOperations)
     .where(eq(assetOperations.id, input.id))
     .get();
 
   if (!row) {
     return null;
+  }
+
+  // A merge that lands on half a traspaso stops here, loudly (#1393). The match is
+  // made on asset + date + figures, so a statement listing the day the capital left
+  // CAN point at a `transfer_out`; rewriting it as a sale would realize a gain that
+  // never happened and orphan the other half in silence. Deleting a half is the same
+  // hazard and belongs to the pair's own gate (#1479), which owns both rows.
+  if (isTransferKind(row.kind)) {
+    throw new Error(
+      "A transfer operation cannot be overwritten one row at a time (#1393).",
+    );
   }
 
   await assertAssetAllowsOperationWrite(ctx, row.assetId);

@@ -192,7 +192,8 @@ from that aggregation-time conversion.
 _Avoid_: drill-down (the per-**position** second level is a different concept), passthrough.
 
 **Operation**:
-A buy or a sell against one **investment**: date, units, price per unit, fees.
+A buy, a sell, or one half of a **traspaso** against one **investment**: date, units,
+price per unit, fees.
 Always **stored in EUR** — the cost basis folds every operation of a holding into one
 accumulator, so a ledger that mixed currencies would sum dollars as euros (which is
 exactly what happened, #1401). An apunte the user has in another currency is therefore
@@ -200,6 +201,33 @@ exactly what happened, #1401). An apunte the user has in another currency is the
 never today's — before it is written, keeping the original figures as its **capture**.
 _Avoid_: writing an operation in the currency a broker states it in; and reading the
 **capture** as optional detail — it is the only record of which rate was applied.
+
+**Traspaso**:
+Moving an **investment** position into another one without cashing it in — the
+Spanish fund-to-fund transfer, tax-neutral by construction. Recorded as ONE move with
+two halves: a `transfer_out` **operation** on the origin and a `transfer_in` on the
+destination, sharing a transfer id that is exclusive to the pair. It is a **cashflow**
+for each holding (the IRR of a position must see capital leaving or arriving, at that
+day's market value) and never a realized gain: the latent gain travels with the
+capital as the destination's **inherited cost**, which is why the pair cancels itself
+at portfolio level on its date. Halves are always written together, never one at a
+time — see ADR 0082.
+UI label: "Traspaso".
+In prose and on screen it is always "traspaso": "transfer" on its own collides with
+the **workspace transfer** document. In code the two never meet — the transfer
+document's types are `WorkspaceExport*`/`Exported*`, so a bare `transfer*` identifier
+(`transferId`, `transferCostMinor`) belongs to this entry and nothing else.
+_Avoid_: calling it a transfer in prose or UI, sale + purchase (the modelling this
+replaces — it realizes a gain that never happened), rollover, switch.
+
+**Inherited cost**:
+The acquisition cost the units of a **traspaso** carry over from the origin, stored on
+the incoming half's row. The origin computes it once, at write time, as the
+proportional slice of its own cost basis; from then on it is a fact of the
+destination's ledger, so the position fold never has to read another holding's
+history. Its absence on a `transfer_in` is a bug upstream, not a shape the ledger
+supports.
+_Avoid_: carried cost, transferred basis.
 
 **Payout**:
 Money a **holding** paid its owner on a date — a dividend, deposit or account

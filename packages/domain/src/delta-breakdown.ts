@@ -10,10 +10,10 @@
  * recorded payouts so the payout band is carved from the residual.
  */
 
-import { multiplyToMinor } from "./decimal";
 import type { ValuationMethod } from "./holding-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import { allocateByBps } from "./money";
+import { signedInvestedMinor } from "./operation-flow";
 import type { DatedAmount } from "./payouts";
 import type { SnapshotHoldingKind, SnapshotHoldingRow } from "./snapshot-holdings";
 import { deriveConfirmedMonthlyCloseIds } from "./snapshot-policy";
@@ -103,12 +103,12 @@ function scopedNetOperationsInWindow(
   for (const operation of operations) {
     const date = operation.executedAt.slice(0, 10);
     if (!inWindow(date, windowStartExclusive, windowEndInclusive)) continue;
-    const grossMinor = multiplyToMinor(operation.units, operation.pricePerUnit);
-    const signedMinor =
-      operation.kind === "buy"
-        ? grossMinor + operation.feesMinor
-        : -(grossMinor - operation.feesMinor);
-    netMinor += allocateByBps(signedMinor, shareBps);
+    // `flow`, not `zero`: this band explains ONE holding's value change. The origin
+    // drops on the day the units leave and the destination rises, so a traspaso read
+    // as a non-event would hand both differences to the market band and print a loss
+    // and a gain that never happened. Over a scope holding both halves they cancel,
+    // which is exactly what the traspaso did to the user's wealth (#1393).
+    netMinor += allocateByBps(signedInvestedMinor(operation, "flow"), shareBps);
   }
   return netMinor;
 }

@@ -197,3 +197,66 @@ describe("measureMonthlySavings (#1449)", () => {
     ).toMatchObject({ amountMinor: 10_000, monthsCovered: 3, operationsCount: 1 });
   });
 });
+
+describe("el traspaso no es ahorro (#1393)", () => {
+  function transferLeg(
+    kind: "transfer_out" | "transfer_in",
+    executedAt: string,
+    amountMajor: number,
+  ): InvestmentOperation {
+    return {
+      assetId: "asset-1",
+      currency: "EUR",
+      executedAt,
+      feesMinor: 0,
+      id: `${kind}-${executedAt}`,
+      kind,
+      pricePerUnit: "1",
+      transferId: "trf_1",
+      units: String(amountMajor),
+      ...(kind === "transfer_in" ? { transferCostMinor: amountMajor * 100 } : {}),
+    };
+  }
+
+  it("una entrada de traspaso no sube la capacidad de ahorro sugerida", () => {
+    // Measured per holding as well as per workspace: a fund that received 50.000 €
+    // must not report a saving nobody made — that is #1449's failure again, and the
+    // FIRE projection rides this figure.
+    const operations = [
+      op("buy", "2025-01-15", 1000),
+      transferLeg("transfer_in", "2025-02-15", 50_000),
+      op("buy", "2025-03-15", 1000),
+    ];
+
+    expect(suggestMonthlySavingsCapacity(operations)).toEqual(
+      suggestMonthlySavingsCapacity([
+        op("buy", "2025-01-15", 1000),
+        op("buy", "2025-03-15", 1000),
+      ]),
+    );
+  });
+
+  it("una salida de traspaso no cuenta como desahorro", () => {
+    const options = { asOfDateKey: "2025-12-31", windowMonths: 12 };
+    const measured = measureMonthlySavings(
+      [
+        op("buy", "2025-01-15", 1000),
+        transferLeg("transfer_out", "2025-02-15", 50_000),
+        op("buy", "2025-03-15", 1000),
+      ],
+      options,
+    );
+
+    const withoutTheTransfer = measureMonthlySavings(
+      [op("buy", "2025-01-15", 1000), op("buy", "2025-03-15", 1000)],
+      options,
+    );
+
+    expect(measured.amountMinor).toBeGreaterThan(0);
+    expect(measured.amountMinor).toBe(withoutTheTransfer.amountMinor);
+    expect(measured.netMinor).toBe(withoutTheTransfer.netMinor);
+    // The leg still counts as a witness that the ledger is awake (#1449): what it
+    // contributes is zero euros, not zero evidence.
+    expect(measured.operationsCount).toBe(3);
+  });
+});

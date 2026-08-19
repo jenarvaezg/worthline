@@ -20,7 +20,7 @@
 import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { Instrument } from "./instrument-catalog";
-import type { OperationCapture, OperationKind } from "./investment-types";
+import type { OperationCapture } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import {
   getStatementBrokerAdapter,
@@ -50,8 +50,13 @@ export interface ParsedStatementRow {
   /**
    * From the broker's direction signal (`Tipo de operación` when the export
    * carries it; else a negative amount/units); stored with absolute values.
+   *
+   * Buys and sells only, narrower than `OperationKind` on purpose: no statement
+   * format states a traspaso as such — it shows the leg it sees, and a reader that
+   * guessed the pair would invent an atadura the file never carried. A traspaso is
+   * written through its own gate (#1393).
    */
-  kind: OperationKind;
+  kind: "buy" | "sell";
   units: DecimalString;
   /** Reconstructed NAV: amount ÷ units, at high precision. */
   pricePerUnit: DecimalString;

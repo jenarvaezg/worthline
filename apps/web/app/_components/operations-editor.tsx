@@ -25,6 +25,7 @@
 
 import type { FormErrorContext } from "@web/intake";
 import { priceFreshnessLabel } from "@web/intake";
+import { operationKindLabel } from "@web/operation-kind-copy";
 import type {
   CaptureCurrency,
   InvestmentOperation,
@@ -39,7 +40,6 @@ import {
   maskMoneyString,
 } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
-
 import { readOperationFees, readOperationPrice } from "./operation-capture-reading";
 
 import {
@@ -308,9 +308,11 @@ export default function OperationsEditor({
 
         <label>
           Tipo
+          {/* Buys and sells only: a traspaso is one move with two halves and is
+              written through its own door, never as half a pair typed here (#1393). */}
           <select defaultValue={operationValues["kind"] ?? "buy"} name="kind">
-            <option value="buy">Compra</option>
-            <option value="sell">Venta</option>
+            <option value="buy">{operationKindLabel("buy")}</option>
+            <option value="sell">{operationKindLabel("sell")}</option>
           </select>
         </label>
 
@@ -415,7 +417,7 @@ export default function OperationsEditor({
                     return (
                       <tr key={op.id}>
                         <td>{op.executedAt}</td>
-                        <td>{op.kind === "buy" ? "Compra" : "Venta"}</td>
+                        <td>{operationKindLabel(op.kind)}</td>
                         <td>{op.units}</td>
                         <td>
                           {price.price}

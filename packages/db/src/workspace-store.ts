@@ -78,6 +78,7 @@ import {
 import { readSnapshots } from "./snapshot-store";
 import {
   operationCaptureColumns,
+  operationTransferColumns,
   readAssetOwnerships,
   readLiabilityOwnerships,
   type StoreContext,
@@ -913,6 +914,7 @@ async function importWorkspace(
               : { occurredAt: asInstant(operation.occurredAt) }),
             pricePerUnit: operation.pricePerUnit,
             source: operation.source ?? "manual",
+            ...operationTransferColumns(operation),
             units: operation.units,
           })),
         )
