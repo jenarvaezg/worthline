@@ -88,7 +88,27 @@ export function parseBirthYear(value: unknown, todayISO: string): number | undef
 }
 
 /**
- * The scope's reference age: the OLDEST active member who has a birth year.
+ * The scope's reference age together with the birth date it was derived from
+ * (#1426). A derived figure the user cannot trace is a figure they do not
+ * believe: «63 años (de tu año de nacimiento, 1963)» is the sentence that stops
+ * the reader wondering why the projection's ages sit where they do.
+ *
+ * The member named here is the one whose age BINDS — see `scopeCurrentAge` for
+ * why that is the oldest one.
+ */
+export interface FireAgeSource {
+  /** The derived age on the read date. */
+  age: number;
+  memberId: string;
+  memberName: string;
+  birthYear: number;
+  /** Only present when the member's birth month is recorded (age exact to the month). */
+  birthMonth?: number;
+}
+
+/**
+ * The scope's reference age and its provenance: the OLDEST active member who has
+ * a birth year.
  *
  * In a multi-member scope the oldest member's horizon binds first — fewer years
  * of compounding before the target retirement age, so a higher coast
@@ -96,11 +116,11 @@ export function parseBirthYear(value: unknown, todayISO: string): number | undef
  * bug this replaces. `undefined` when no member of the scope has a birth year,
  * or when the scope no longer exists.
  */
-export function scopeCurrentAge(
+export function scopeAgeSource(
   workspace: Workspace,
   scopeId: string,
   todayISO: string,
-): number | undefined {
+): FireAgeSource | undefined {
   const memberIds = findScopeMemberIds(workspace, scopeId);
 
   if (memberIds === undefined) {
@@ -108,12 +128,43 @@ export function scopeCurrentAge(
   }
 
   const inScope = new Set(memberIds);
-  const ages = workspace.members
-    .filter((member) => inScope.has(member.id))
-    .map((member) => ageOnDate(member, todayISO))
-    .filter((age): age is number => age !== undefined);
+  let oldest: FireAgeSource | undefined;
 
-  return ages.length > 0 ? Math.max(...ages) : undefined;
+  for (const member of workspace.members) {
+    if (!inScope.has(member.id)) {
+      continue;
+    }
+    const { birthYear } = member;
+    const age = ageOnDate(member, todayISO);
+    if (birthYear === undefined || age === undefined) {
+      continue;
+    }
+    if (oldest !== undefined && age <= oldest.age) {
+      continue;
+    }
+    const birthMonth = parseCalendarMonth(member.birthMonth);
+    oldest = {
+      age,
+      birthYear,
+      memberId: member.id,
+      memberName: member.name,
+      ...(birthMonth === undefined ? {} : { birthMonth }),
+    };
+  }
+
+  return oldest;
+}
+
+/**
+ * The scope's reference age — `scopeAgeSource(...)?.age`, so the age a screen
+ * prints and the birth date it cites for it can never come from different members.
+ */
+export function scopeCurrentAge(
+  workspace: Workspace,
+  scopeId: string,
+  todayISO: string,
+): number | undefined {
+  return scopeAgeSource(workspace, scopeId, todayISO)?.age;
 }
 
 /**

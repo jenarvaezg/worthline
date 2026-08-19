@@ -17,6 +17,7 @@
  */
 
 import type { FireRentReturnReport, RentReturnNotice } from "@worthline/domain";
+import { formatRatePercent } from "./fire-percent";
 
 /** One printed line of the rent-return disclosure. */
 export interface FireRentReturnLine {
@@ -27,16 +28,6 @@ export interface FireRentReturnLine {
   title: string;
   /** The audit trail in words, below the title. */
   gloss: string;
-}
-
-const percentFormatter = new Intl.NumberFormat("es-ES", {
-  maximumFractionDigits: 1,
-  minimumFractionDigits: 1,
-});
-
-/** A decimal rate as an es-ES percentage: `0.0421` → `"4,2 %"`. */
-export function formatRatePercent(rate: number): string {
-  return `${percentFormatter.format(rate * 100)} %`;
 }
 
 export interface FireRentReturnCopyInput {

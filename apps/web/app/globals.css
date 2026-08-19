@@ -2810,7 +2810,10 @@ code {
 .objetivosHeroGrid {
   display: grid;
   gap: 22px;
-  grid-template-columns: 1fr 1.3fr;
+  /* minmax(0, …), not 1fr: a bare `1fr` floors the track at its min-content width,
+     so a long holding name in the return-mix table would widen this column and
+     squeeze its neighbour (#1426). */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
   margin-top: 14px;
 }
 
@@ -3022,6 +3025,180 @@ code {
   .fireLevelsGrid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+/* ── #1426: cada cifra derivada con su procedencia ─────────────────────────
+   Canon §4: las glosas y la tabla de tramos son entradas pautadas, no tarjetas;
+   las cifras van en Iosevka tabular y alineadas a la derecha (§3, §8). */
+
+/* El sustantivo que impide leer el porcentaje como una probabilidad. */
+.fireBigNoun {
+  font-family: var(--font-sans), sans-serif;
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.fireFundedFraction {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 0;
+}
+
+/* La fracción de Coast cuelga de su fila de métrica, no del hero. */
+.fireFundedFraction--coast {
+  margin: -10px 0 0;
+  text-align: right;
+}
+
+/* La aritmética del número FIRE, bajo su fila de métrica. */
+.fireFormula {
+  border-left: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  margin: -8px 0 0;
+  padding-left: 12px;
+}
+
+.fireFormula strong {
+  color: var(--ink);
+}
+
+.fireFormula a {
+  color: var(--blue);
+}
+
+/* Lo que financia cada nivel: la vida que paga, no solo el capital. */
+.fireLevelFunds {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Los supuestos de la proyección: mismo registro de disclosure que
+   «¿Qué cuenta como activo elegible?». */
+.fireAssumptions {
+  border-top: 1px solid var(--hairline);
+  padding-top: 10px;
+}
+
+.fireAssumptions summary {
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.fireAssumptionList {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.fireAssumptionRow {
+  align-items: baseline;
+  display: grid;
+  gap: 4px 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+}
+
+.fireAssumptionRow dt {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fireAssumptionRow dd {
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  text-align: right;
+}
+
+.fireAssumptionRow dd strong {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.fireAssumptionGloss {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
+/* La media ponderada del retorno, con sus pesos. */
+.fireMixTable {
+  border-collapse: collapse;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.fireMixTable caption {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  margin-bottom: 6px;
+  text-align: left;
+}
+
+.fireMixTable th,
+.fireMixTable td {
+  font-size: 0.76rem;
+  padding: 4px 0;
+  text-align: right;
+}
+
+.fireMixTable thead th {
+  border-bottom: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fireMixTable tbody th,
+.fireMixTable tfoot th,
+.fireMixTable thead th:first-child {
+  text-align: left;
+}
+
+/* A user-authored holding name can be long: it wraps inside its cell instead of
+   widening the table. */
+.fireMixTable tbody th {
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.fireMixTable td {
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Un activo con su propia tasa (#1448) es una subdivisión de su tramo, no un tramo
+   nuevo: lo dice la sangría. Sin color — §1 reserva --gold para aviso/debe y la
+   identidad de vivienda es --tier-housing, y esta fila no siempre es vivienda. */
+.fireMixRow--asset th {
+  padding-left: 12px;
+}
+
+.fireMixTable tfoot th,
+.fireMixTable tfoot td {
+  border-top: var(--rule-heavy);
+  font-weight: 700;
+}
+
+/* La discontinua del gráfico, nombrada. */
+.fireTrajectory .fireTargetLabel {
+  fill: var(--muted);
+  font-family: var(--font-mono), "Iosevka", "SFMono-Regular", monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Goals list */

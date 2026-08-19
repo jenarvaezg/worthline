@@ -1,15 +1,11 @@
-import FireAchievementBadge from "@web/fire-achievement-badge";
-import FireProjectionCard from "@web/fire-projection-card";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
-import { formatDecimalAsPercentField } from "@web/intake-primitives";
 import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
-import type { FireLevel, HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
+import type { HoldingReturnsView, PassiveIncomeLens } from "@worthline/domain";
 import {
   collectHoldingPayouts,
   computeMonthlyContributionAllocation,
-  describeSavingsDivergence,
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   investmentReturnsById,
@@ -17,6 +13,7 @@ import {
   prepareObjetivosState,
   projectContributionReconciliation,
   resolveScopeMemberIds,
+  scopeAgeSource,
   scopePassiveIncome,
   unitPriceMajorByHoldingId,
 } from "@worthline/domain";
@@ -35,12 +32,7 @@ import {
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
-import {
-  fireCapitalSplitRows,
-  sellableFundedPercent,
-  shouldShowCapitalSplit,
-} from "./fire-capital-split-view";
-import { fireRentReturnLines } from "./fire-rent-return-view";
+import { FirePanel } from "./fire-panel";
 import { createGoalAction, deleteGoalAction, updateGoalAction } from "./goal-actions";
 import ObjetivosSkeleton from "./objetivos-skeleton";
 
@@ -119,41 +111,6 @@ function PassiveIncomePanel({
         </p>
       )}
     </section>
-  );
-}
-
-function FireLevelCard({
-  level,
-  currency,
-  privacyMode,
-}: {
-  level: FireLevel;
-  currency: string;
-  privacyMode: boolean;
-}) {
-  const reached = level.eta.kind === "reached";
-  const etaLabel =
-    level.eta.kind === "reached"
-      ? "alcanzado"
-      : level.eta.kind === "unreachable"
-        ? "—"
-        : level.eta.years === 0
-          ? "este año"
-          : `en ~${level.eta.years.toFixed(1).replace(".", ",")} años`;
-
-  return (
-    <div className={`fireLevelCard${reached ? " fireLevelCard--reached" : ""}`}>
-      <span className="fireLevelLabel">{level.label}</span>
-      <strong className="fireLevelAmount">
-        {formatMoneyMinorPrivacy(
-          { amountMinor: level.amountMinor, currency },
-          privacyMode,
-        )}
-      </strong>
-      <span className={`fireLevelEta${reached ? " fireLevelEta--reached" : ""}`}>
-        {etaLabel}
-      </span>
-    </div>
   );
 }
 
@@ -263,26 +220,12 @@ export async function ObjetivosContent({
 
   const currency = workspace.baseCurrency;
 
-  // What the sellable side alone funds (#1447): the figure the single
-  // "% financiado" hides when most of the pool is brick.
-  const sellableFunded = fireResult
-    ? sellableFundedPercent(fireResult.capitalSplit, fireResult.fireNumber.amountMinor)
+  // Where the FIRE age came from (#1415), so the assumptions fold can cite the birth
+  // year instead of showing an age that looks typed in. Same rule the reader used:
+  // `scopeCurrentAge` IS this function's `.age`.
+  const ageSource = selectedScope
+    ? (scopeAgeSource(workspace, selectedScope.id, today) ?? null)
     : null;
-
-  // What the declared rents did to the expected return (#1448): the properties
-  // whose net yield replaced their rung's guess, and the rents the rate refused to
-  // read as gross. Empty for a portfolio with no declared rent.
-  // Gated on the rate actually being the derived one: with a manual
-  // `expectedRealReturn` the substitution changes nothing, and a panel promising an
-  // effect the override cancels would be worse than silence.
-  const rentReturnLines =
-    fireResult && fireScopeConfig?.expectedRealReturn === undefined
-      ? fireRentReturnLines({
-          formatMoney: (amountMinor) =>
-            formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode),
-          report: fireResult.rentReturns,
-        })
-      : [];
 
   // Monthly allocation view (#557): the plan's capital split for a window of
   // months, every month server-rendered once; the island toggles client-side.
@@ -432,7 +375,7 @@ export async function ObjetivosContent({
     <div className="objetivosPage">
       <header className="objetivosHeader">
         <h2>Objetivos</h2>
-        <p>A dónde vas · tu independencia financiera y tus metas con fecha</p>
+        <p>Tu independencia financiera y tus metas con fecha</p>
       </header>
 
       {formOk ? (
@@ -441,272 +384,18 @@ export async function ObjetivosContent({
         </p>
       ) : null}
 
-      {/* ── FIRE star ─────────────────────────────────────────────── */}
-      <section className="firePanel objetivosFirePanel" aria-label="FIRE">
-        <div className="panelHeader">
-          <h3>Independencia financiera · FIRE</h3>
-          <span>tu objetivo estrella</span>
-        </div>
-
-        {fireResult ? (
-          <div className="objetivosHeroGrid">
-            {/* Left: % funded + bar + coast + metrics */}
-            <div className="objetivosHeroLeft">
-              <p className="fireBig">
-                {fireResult.percentFunded.toFixed(1).replace(".", ",")} %
-              </p>
-
-              <div className="fireBar">
-                {coastTickFraction !== null ? (
-                  <span
-                    aria-hidden="true"
-                    className="fireTick"
-                    style={{ left: `${coastTickFraction * 100}%` }}
-                  />
-                ) : null}
-                <i
-                  style={{
-                    width: `${Math.min(100, Math.max(0, fireResult.percentFunded))}%`,
-                  }}
-                />
-              </div>
-
-              {achievement ? (
-                <FireAchievementBadge
-                  achievement={achievement}
-                  currency={currency}
-                  privacyMode={privacyMode}
-                />
-              ) : null}
-
-              {/* Declarado vs medido (#1449): la proyección de arriba corre sobre
-                  la capacidad de ahorro declarada, y el libro de operaciones es lo
-                  único que puede contradecirla sin que nadie teclee nada. El aviso
-                  no dicta cuál de las dos cifras está mal. */}
-              {savingsCoherence?.state === "diverged" ? (
-                <p className="objetivosSavingsGap" role="status">
-                  {describeSavingsDivergence(savingsCoherence, currency, privacyMode)}{" "}
-                  <Link href="/ajustes">Ajustar en Ajustes</Link>
-                </p>
-              ) : null}
-
-              {/* Coast FIRE explainer */}
-              {coastTickFraction !== null ? (
-                <p className="objetivosCoastNote">
-                  El tick <span aria-hidden="true">▏</span> marca{" "}
-                  <strong>Coast FIRE</strong> (
-                  {(coastTickFraction * 100).toFixed(1).replace(".", ",")} % de tu número
-                  FIRE): si alcanzas esa cifra hoy y dejas de aportar, el interés
-                  compuesto hace el resto — el capital crece solo hasta tu número FIRE
-                  para la jubilación.
-                </p>
-              ) : null}
-
-              <div className="fireResults objetivosMetrics">
-                <div className="fireMetric">
-                  <span>Número FIRE</span>
-                  <strong>
-                    {formatMoneyMinorPrivacy(fireResult.fireNumber, privacyMode)}
-                  </strong>
-                </div>
-                <div className="fireMetric">
-                  <span>Activos elegibles</span>
-                  <strong>
-                    {formatMoneyMinorPrivacy(fireResult.eligibleAssets, privacyMode)}
-                  </strong>
-                </div>
-                {/* Vendible vs inmovilizado (#1447): la misma cifra de arriba,
-                    partida por naturaleza. Una tasa de retirada supone capital
-                    que se vende a trozos; el ladrillo no lo es. */}
-                {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
-                  <ul
-                    aria-label="Desglose de los activos elegibles"
-                    className="fireCapitalSplit"
-                  >
-                    {fireCapitalSplitRows(fireResult.capitalSplit).map((row) => (
-                      <li className={`fireCapitalRow is-${row.key}`} key={row.key}>
-                        <span className="fireCapitalLabel">{row.label}</span>
-                        {/* La glosa se recorta en la columna estrecha del hero:
-                            el título la devuelve entera sin partir la fila. */}
-                        <span className="fireCapitalGloss" title={row.gloss}>
-                          {row.gloss}
-                        </span>
-                        <strong>
-                          {formatMoneyMinorPrivacy(
-                            { amountMinor: row.amountMinor, currency },
-                            privacyMode,
-                          )}
-                        </strong>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {fireResult.coastFireRequired ? (
-                  <div className="fireMetric">
-                    <span>Coast requerido</span>
-                    <strong>
-                      {formatMoneyMinorPrivacy(fireResult.coastFireRequired, privacyMode)}
-                    </strong>
-                  </div>
-                ) : null}
-                {fireScopeConfig?.currentAge !== undefined &&
-                fireResult.coastFireAge !== undefined ? (
-                  <div className="fireMetric">
-                    <span>Edad Coast</span>
-                    <strong>
-                      {fireResult.coastFireAge.toFixed(1).replace(".", ",")}
-                    </strong>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* «¿Qué cuenta como elegible?» disclosure — derived from the
-                    same rule FIRE uses: all scope assets except isPrimaryResidence
-                    and manually excluded ones (config.excludedAssetIds). */}
-              <details suppressHydrationWarning className="fireEligibleNote">
-                <summary>¿Qué cuenta como activo elegible?</summary>
-                <p className="fireEligibleRule">
-                  Cuentan todos los activos del ámbito excepto la{" "}
-                  <strong>vivienda habitual</strong> y los que hayas excluido manualmente
-                  en Ajustes. Cash, inversiones y criptos cuentan.
-                </p>
-                {shouldShowCapitalSplit(fireResult.capitalSplit) ? (
-                  <p className="fireEligibleRule">
-                    La tasa de retirada supone capital que se{" "}
-                    <strong>vende a trozos</strong> y se rebalancea. Tu parte{" "}
-                    <strong>inmovilizada</strong> (vivienda no habitual, colecciones) es
-                    patrimonio, pero no se gasta a plazos: la deuda de cada inmueble se
-                    resta dentro de ese mismo lado.
-                    {sellableFunded !== null ? (
-                      <>
-                        {" "}
-                        Solo con lo vendible estarías al{" "}
-                        <strong>{sellableFunded.toFixed(1).replace(".", ",")} %</strong>{" "}
-                        de tu número FIRE.
-                      </>
-                    ) : null}
-                  </p>
-                ) : null}
-                {fireResult.excludedAssets.length > 0 ? (
-                  <ul className="fireExcludedList">
-                    {fireResult.excludedAssets.map((a) => (
-                      <li key={a.id}>
-                        <span>{a.name}</span>
-                        <span className="fireExcludedReason">
-                          {a.reason === "primary_residence"
-                            ? "vivienda habitual"
-                            : "excluido manualmente"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </details>
-            </div>
-
-            {/* Right: 3 scenarios + large trajectory */}
-            <div className="objetivosHeroRight">
-              {fireProjection ? (
-                <FireProjectionCard projection={fireProjection} />
-              ) : (
-                <p className="objetivosSubNote">
-                  Configura tu edad en Ajustes para ver la proyección.
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="fireEmpty">
-            <p className="fireEmptyHint">
-              FIRE no está configurado para este ámbito. Añade tus supuestos en Ajustes
-              para ver cuándo alcanzas la independencia financiera.
-            </p>
-            <Link className="panelAction" href="/ajustes">
-              Configurar FIRE → Ajustes
-            </Link>
-          </div>
-        )}
-
-        {/* ── Niveles FIRE rail (N1, #513) ──────────────────────── */}
-        {fireLevelRail ? (
-          <section aria-label="Niveles FIRE" className="fireLevelsRail">
-            <h4 className="fireLevelsTitle">Niveles FIRE</h4>
-            <div className="fireLevelsGrid">
-              {fireLevelRail.map((level) => (
-                <FireLevelCard
-                  currency={currency}
-                  key={level.key}
-                  level={level}
-                  privacyMode={privacyMode}
-                />
-              ))}
-            </div>
-            {fireLevelRail.some((l) => l.key === "coast") ? (
-              <p className="fireLevelsCoastNote">
-                <strong>Coast FIRE</strong>: si alcanzas esa cifra hoy y dejas de aportar,
-                el interés compuesto te llevará a tu número FIRE para la jubilación.
-              </p>
-            ) : null}
-          </section>
-        ) : null}
-
-        {/* ── El alquiler declarado en la rentabilidad (#1448) ────── */}
-        {rentReturnLines.length > 0 ? (
-          <section
-            aria-label="Alquiler declarado en la rentabilidad"
-            className="fireRent"
-          >
-            <h4 className="fireRentTitle">Alquiler declarado en la rentabilidad</h4>
-            <p className="fireRentIntro">
-              De un inmueble alquilado la app no adivina el rendimiento: usa su{" "}
-              <strong>alquiler neto</strong> sobre su valor. Sin gastos declarados no se
-              usa el bruto —{" "}
-              <span className="fireRentIntroWhy">
-                sobreestimaría tanto como el retorno por defecto se queda corto
-              </span>
-              .
-            </p>
-            <ul className="fireRentList">
-              {rentReturnLines.map((line) => (
-                <li
-                  className={`fireRentRow is-${line.kind}`}
-                  key={`${line.kind}-${line.key}`}
-                >
-                  <span className="fireRentRowTitle">{line.title}</span>
-                  <span className="fireRentRowGloss">{line.gloss}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        <div className="objetivosFireFoot">
-          <span>
-            Supuestos FIRE (retirada, retorno, edades) → en Ajustes
-            {fireResult != null ? (
-              <>
-                {" · "}
-                {fireScopeConfig?.expectedRealReturn !== undefined ? (
-                  <span title="Retorno fijo configurado manualmente">
-                    Retorno real:{" "}
-                    {formatDecimalAsPercentField(fireScopeConfig.expectedRealReturn)} %
-                    (manual)
-                  </span>
-                ) : (
-                  <span title="Retorno estimado ponderando tu mezcla de activos por tipo; un inmueble con alquiler neto declarado aporta el suyo, no el de su tramo">
-                    Retorno real estimado de tu cartera:{" "}
-                    {formatDecimalAsPercentField(fireResult.context.effectiveRealReturn)}{" "}
-                    %
-                  </span>
-                )}
-              </>
-            ) : null}
-          </span>
-          <Link className="panelAction" href="/ajustes">
-            Configurar supuestos
-          </Link>
-        </div>
-      </section>
+      {/* ── FIRE star (#1426: cada cifra derivada dice de dónde sale) ── */}
+      <FirePanel
+        achievement={achievement}
+        ageSource={ageSource}
+        coastTickFraction={coastTickFraction}
+        currency={currency}
+        fireLevelRail={fireLevelRail}
+        fireProjection={fireProjection}
+        fireResult={fireResult}
+        privacyMode={privacyMode}
+        savingsCoherence={savingsCoherence}
+      />
 
       {monthlyAllocations ? (
         <ContributionAllocation

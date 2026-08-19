@@ -4,6 +4,7 @@ import {
   ageOnDate,
   parseBirthYear,
   parseCalendarMonth,
+  scopeAgeSource,
   scopeCurrentAge,
   withDerivedCurrentAges,
 } from "./fire-current-age";
@@ -84,6 +85,57 @@ describe("parseBirthYear", () => {
   it("moves with the clock: this year is a valid birth year, next year is not", () => {
     expect(parseBirthYear("2026", "2026-08-18")).toBe(2026);
     expect(parseBirthYear("2027", "2026-08-18")).toBeUndefined();
+  });
+});
+
+describe("scopeAgeSource", () => {
+  it("names the birth date the age came from, so the screen can cite it (#1426)", () => {
+    const workspace = workspaceOf(
+      [{ id: "m1", name: "Jorge", birthYear: 1963, birthMonth: 3 }],
+      "individual",
+    );
+
+    expect(scopeAgeSource(workspace, "household", "2026-08-18")).toEqual({
+      age: 63,
+      birthMonth: 3,
+      birthYear: 1963,
+      memberId: "m1",
+      memberName: "Jorge",
+    });
+  });
+
+  it("cites the member whose age actually binds — the oldest", () => {
+    const workspace = workspaceOf(
+      [
+        { id: "m1", name: "Jorge", birthYear: 1963 },
+        { id: "m2", name: "Ana", birthYear: 1975 },
+      ],
+      "household",
+    );
+
+    expect(scopeAgeSource(workspace, "household", "2026-08-18")?.memberName).toBe(
+      "Jorge",
+    );
+  });
+
+  it("leaves out a birth month nobody recorded", () => {
+    const workspace = workspaceOf(
+      [{ id: "m1", name: "Jorge", birthYear: 1963 }],
+      "individual",
+    );
+
+    expect(scopeAgeSource(workspace, "household", "2026-08-18")).toEqual({
+      age: 63,
+      birthYear: 1963,
+      memberId: "m1",
+      memberName: "Jorge",
+    });
+  });
+
+  it("is undefined when no member of the scope has a birth year", () => {
+    const workspace = workspaceOf([{ id: "m1", name: "Jorge" }], "individual");
+
+    expect(scopeAgeSource(workspace, "household", "2026-08-18")).toBeUndefined();
   });
 });
 

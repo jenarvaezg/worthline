@@ -100,6 +100,21 @@ describe("fireLevels — amounts", () => {
   it("returns 4 levels in order: coast, lean, regular, fat", () => {
     const levels = fireLevels(input())!;
     expect(levels.map((l) => l.key)).toEqual(["coast", "lean", "regular", "fat"]);
+
+    // Each level carries the annual spending it is DEFINED by (#1426), so a screen
+    // never has to invert the division that produced the amount. Coast carries none:
+    // it is the capital meant to be left alone, not a multiple of spending.
+    const byKey = new Map(levels!.map((level) => [level.key, level]));
+    expect(byKey.get("coast")?.fundsAnnualMinor).toBeUndefined();
+    expect(byKey.get("coast")?.spendingMultiplier).toBeUndefined();
+    for (const key of ["lean", "regular", "fat"] as const) {
+      const level = byKey.get(key)!;
+      expect(level.fundsAnnualMinor).toBe(
+        Math.round(level.amountMinor * BASE_CONFIG.safeWithdrawalRate),
+      );
+      expect(level.spendingMultiplier).toBeGreaterThan(0);
+    }
+    expect(byKey.get("regular")?.spendingMultiplier).toBe(1);
   });
 });
 

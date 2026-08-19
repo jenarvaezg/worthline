@@ -7,7 +7,8 @@
 import type { FireRentReturnReport } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
-import { fireRentReturnLines, formatRatePercent } from "./fire-rent-return-view";
+import { formatRatePercent } from "./fire-percent";
+import { fireRentReturnLines } from "./fire-rent-return-view";
 
 const formatMoney = (amountMinor: number) =>
   new Intl.NumberFormat("es-ES", { currency: "EUR", style: "currency" }).format(

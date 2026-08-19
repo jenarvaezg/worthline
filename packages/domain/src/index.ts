@@ -456,6 +456,7 @@ export {
   calculateFireForScope,
   fireReservationHorizon,
   isFireEligibleAsset,
+  isManualFireReturn,
   projectFireFromContext,
   withRate,
 } from "./fire";
@@ -467,11 +468,12 @@ export type {
 export { fireAchievement } from "./fire-achievement";
 export type { FireCapitalSide, FireCapitalSplit } from "./fire-capital-split";
 export { splitFireCapital } from "./fire-capital-split";
-export type { BirthDate } from "./fire-current-age";
+export type { BirthDate, FireAgeSource } from "./fire-current-age";
 export {
   ageOnDate,
   parseBirthYear,
   parseCalendarMonth,
+  scopeAgeSource,
   scopeCurrentAge,
   withDerivedCurrentAges,
 } from "./fire-current-age";
@@ -509,8 +511,17 @@ export {
   deriveRentRealReturns,
   isScheduleLiveOn,
 } from "./fire-rent-return";
-export type { AssetRateOverride, EligibleTier } from "./fire-return";
-export { effectiveRealReturn, TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
+export type {
+  AssetRateOverride,
+  EligibleTier,
+  FireReturnMix,
+  FireReturnMixRow,
+} from "./fire-return";
+export {
+  effectiveRealReturn,
+  fireReturnMix,
+  TIER_REAL_RETURN_DEFAULTS,
+} from "./fire-return";
 export { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 export type {
   FxAggregation,

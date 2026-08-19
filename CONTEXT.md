@@ -258,6 +258,17 @@ never used, and the FIRE panel names it as the figure being withheld (ADR 0076).
 _Avoid_: rental yield (ambiguous about gross vs net — this one is always net), cap
 rate (property-investing jargon the app does not otherwise speak).
 
+**Return mix**:
+The slices behind **FIRE progress**'s weighted return: one row per **liquidity ladder**
+rung with its share of the eligible pool, its assumed return and what it lends to the
+total, plus one row per holding carrying its own **rent-derived real return** —
+a subdivision of its rung, never a rung beside it. It is the same computation the rate
+comes from, not a re-derivation, so the rate and its breakdown cannot disagree
+(ADR 0077). Presentation-only: no total reads it. It is not shown when the user fixed
+the return by hand, because it would then explain a figure nothing used.
+_Avoid_: asset allocation (that is about weights alone, and about the whole portfolio,
+not the FIRE-eligible pool), attribution (that word belongs to **payouts**, ADR 0054).
+
 **Return**:
 How an **investment**'s value has grown relative to what was put into it. worthline
 reports three complementary measures — **simple gain**, **money-weighted return** and
@@ -513,7 +524,9 @@ retirement age** is the one age the user chooses. Its inputs are the user's
 declarations, stored in a form that cannot expire; what the app measures or derives
 elsewhere is a lens or a warning, never an input that overwrites one (ADR 0074). The
 return is a weighted average of per-rung defaults, except for a holding whose income
-is declared: there it is the **rent-derived real return** (ADR 0076).
+is declared: there it is the **rent-derived real return** (ADR 0076). Every figure it
+prints is shown with the inputs it came from, and each explanation is produced by the
+same computation as the figure it explains, never by a second one (ADR 0077).
 
 **Measured savings**:
 Net money the operations ledger shows going into investments over the trailing 12
@@ -918,6 +931,7 @@ _Avoid_: imported history (implies verified), synced history.
 - Ownership of a **connected source** holding is worthline's own concern (the source has none): a normal **ownership split**, editable, defaulting to 100% the connecting **scope** member.
 - A **demo mode** deployment shows the live app over a fictional, read-only workspace; a **persona** selects which fictional workspace is shown. Both are presentation concerns — they add no figure and change no calculation, and exist only in the demo build.
 - **FIRE progress** counts FIRE-eligible assets in the selected **scope** and excludes the primary residence plus any assets manually excluded from FIRE.
+- A figure worthline **derives** is printed with the inputs it was derived from, and its explanation is a projection of the same computation — never a second one beside it (ADR 0077). Hence the **return mix** ships with the rate, and a **reference age** ships with the **birth date** it came from. An explanation that would describe a figure the app is not using (a weighting under a hand-fixed return) is not shown at all.
 - A **reference age** is never stored: it is derived from the member's **birth date** on every read, and a **scope** takes its oldest active member (the horizon that binds first). A typed age silently rejuvenated the member a year per year, always flattering the plan (ADR 0073).
 - A **savings capacity** is the scalar the user declared, and the only monthly contribution the FIRE projection assumes (ADR 0074). In FIRE live final values — a deliberate simplification. Savings measured from **operations** is the form's default and the basis of a coherence warning, never the projection's input.
 - An **exposure profile** is global reference data in the **control plane** catalog, keyed by **ISIN** (or **provider symbol**); **look-through** sums each **holding** weighted by its profile into the scope's **Exposure**, a present-time lens with explicit **coverage**. It is reference metadata — it adds no figure the net-worth math reads and never enters a **snapshot**.
