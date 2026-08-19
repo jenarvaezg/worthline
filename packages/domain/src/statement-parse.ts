@@ -125,10 +125,7 @@ export function parseStatementWithAdapter<C>(
   rawText: string,
   adapter: StatementBrokerAdapter<C>,
 ): ParseStatementResult {
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const lines = contentLines(rawText);
 
   if (lines.length === 0) {
     return fail(["El archivo está vacío."]);
@@ -183,6 +180,33 @@ export function parseStatementWithAdapter<C>(
       skipped,
     },
   };
+}
+
+/** The file's non-blank lines, trimmed — what «row» means to every adapter. */
+function contentLines(rawText: string): string[] {
+  return rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/**
+ * Does this file's first row read as `broker`'s HEADER? Asked before falling back to
+ * another reader (#1488): the web gate now tries the generic broker-transactions reader
+ * when the plantilla refuses a file, and «the plantilla refused» covers two very
+ * different things — a file that is not a plantilla at all, and a plantilla with one
+ * malformed row, whose all-or-nothing error is the most useful thing anyone can be told
+ * (ADR 0010). Only the first may fall through, and this is how they are told apart.
+ *
+ * It is a question about the HEADER on purpose, and it answers `false` for an unknown
+ * broker: a format with no reader recognizes nothing.
+ */
+export function statementHeaderMatches(rawText: string, broker: string): boolean {
+  const adapter = getStatementBrokerAdapter(broker);
+  if (!adapter) return false;
+  const [header] = contentLines(rawText);
+  if (header === undefined) return false;
+  return adapter.resolveColumns(adapter.splitRow(header)).ok;
 }
 
 function fail(errors: string[]): { ok: false; errors: [string, ...string[]] } {
