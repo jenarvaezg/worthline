@@ -7,11 +7,13 @@
  * writes an override (ADR 0023).
  */
 
+import { instrumentOfAsset } from "./classification";
 import { summarizeCoinValueGaps } from "./coin-value-gap";
 import type { SourcePosition } from "./connected-source";
 import { coinValue, positionValue } from "./connected-source";
 import { daysBetween } from "./dates";
 import { type DecimalString, formatUnits } from "./decimal";
+import { INVESTMENT_PROFILE_INSTRUMENTS } from "./exposure-identity";
 import type { FireScopeConfig } from "./fire";
 import { valuationMethodOfAsset } from "./holding-method";
 import type { InvestmentOperation } from "./investment-types";
@@ -189,6 +191,19 @@ export const STALE_MANUAL_VALUE_CODE = "STALE_MANUAL_VALUE";
 export const TRASHED_WITH_BALANCE_CODE = "TRASHED_WITH_BALANCE";
 
 /**
+ * Machine code for an investment priced by a provider symbol that carries NO ISIN
+ * (#1489) — the orphan state, detectable in one query.
+ *
+ * The system's instrument identity is `isin ?? providerSymbol` (#539, ADR 0039), so a
+ * symbol-only holding is not merely missing a label: a broker statement routing by
+ * ISIN (ADR 0055) cannot land on it, the exposure catalog cannot hand it its profile,
+ * and nothing in the product can decide that `IE00B52MJY50` and `SXR1.DE` are the same
+ * ETF — which is how the assistant came to tell a real user his statement held a
+ * DIFFERENT product from his own position.
+ */
+export const MISSING_INVESTMENT_ISIN_CODE = "MISSING_INVESTMENT_ISIN";
+
+/**
  * Signal kinds the user may acknowledge as intentional via the persisted
  * `{code, entityId}` override shape (warnings + selected signal kinds).
  */
@@ -196,6 +211,7 @@ export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
   "ZERO_VALUE_ASSET",
   "MISSING_PROVIDER_SYMBOL",
   STALE_MANUAL_VALUE_CODE,
+  MISSING_INVESTMENT_ISIN_CODE,
 ]);
 
 export function isOverrideableSignalCode(code: string): boolean {
@@ -309,6 +325,12 @@ export function collectDataQualitySignals(
       ownedAssetIds,
       input.fireConfigByScopeId,
       input.debtModelByLiabilityId,
+    ),
+    ...missingInstrumentIdentitySignals(
+      input.assets,
+      ownedAssetIds,
+      input.netUnitsByAssetId,
+      input.warningOverrides,
     ),
     ...savingsCoherenceSignals(
       input.scope,
@@ -865,6 +887,92 @@ function missingConfigurationSignals(
         severity: "medium",
       });
     }
+  }
+
+  return signals;
+}
+
+/**
+ * Whether a holding is in scope for {@link MISSING_INVESTMENT_ISIN_CODE} at all.
+ *
+ * Four exclusions, each one a state where the missing ISIN is not a pending task:
+ *  - a `stored`/`appreciating`/debt holding has no instrument identity to key;
+ *  - a holding with NO provider symbol is already saying something worse, and
+ *    `MISSING_PROVIDER_SYMBOL` says it — two signals over one hole would just teach
+ *    the user to ignore both;
+ *  - a connected-source rung is identified by its source (a Binance token has no
+ *    ISIN and never will), exactly as it is exempt from the symbol warning (#685);
+ *  - `crypto` (and anything else outside {@link INVESTMENT_PROFILE_INSTRUMENTS}) has
+ *    no ISIN to be missing — the same set that decides who gets a look-through
+ *    profile, read here so the two can never disagree about who HAS an identity.
+ */
+function isMissingIsinCandidate(asset: ManualAsset): boolean {
+  return (
+    valuationMethodOfAsset(asset) === "derived" &&
+    !asset.isin &&
+    Boolean(asset.providerSymbol) &&
+    !asset.connectedSourceId &&
+    INVESTMENT_PROFILE_INSTRUMENTS.has(instrumentOfAsset(asset))
+  );
+}
+
+/**
+ * The orphan investment: priced, valued, on screen — and unidentifiable (#1489).
+ *
+ * `low` on purpose, and the exception that proves it: nothing on screen is wrong. The
+ * price arrives through the provider symbol, so today's figure is as good as any
+ * other holding's. What is missing only bites LATER — the next statement that will not
+ * route, the exposure profile that will not be inherited, the assistant that cannot
+ * tell the same product from a different one. A `medium` here would rank a latent gap
+ * above a stale price that is wrong right now.
+ *
+ * Overrideable (ADR 0004): a product genuinely without an ISIN exists — the user marks
+ * it intentional once and the signal stops nagging, without leaving the inventory.
+ * Closed positions are silent for the reason they are silent everywhere else (#1348):
+ * a sold-out position no longer receives statements.
+ */
+function missingInstrumentIdentitySignals(
+  assets: readonly ManualAsset[],
+  ownedAssetIds: Set<string>,
+  netUnitsByAssetId: ReadonlyMap<string, DecimalString>,
+  warningOverrides: readonly WarningOverride[],
+): DataQualitySignal[] {
+  const overridden = new Set(
+    warningOverrides.map((override) => `${override.code}:${override.entityId}`),
+  );
+  const signals: DataQualitySignal[] = [];
+
+  for (const asset of assets) {
+    if (
+      !ownedAssetIds.has(asset.id) ||
+      !isMissingIsinCandidate(asset) ||
+      isClosedPosition(asset, netUnitsByAssetId)
+    ) {
+      continue;
+    }
+
+    const baseLabel =
+      `"${asset.name}" no tiene ISIN: sin él un extracto no puede casar esta posición ` +
+      "ni hereda su ficha de exposición. Añádelo en su ficha o márcalo como intencional.";
+    signals.push({
+      affected: { id: asset.id, label: asset.name, object: "holding" },
+      category: "missing_configuration",
+      code: MISSING_INVESTMENT_ISIN_CODE,
+      fixable: true,
+      label: signalLabelWithOverride(
+        baseLabel,
+        MISSING_INVESTMENT_ISIN_CODE,
+        asset.id,
+        overridden,
+        true,
+      ),
+      naturalKey: signalNaturalKey(
+        "missing_configuration",
+        MISSING_INVESTMENT_ISIN_CODE,
+        asset.id,
+      ),
+      severity: "low",
+    });
   }
 
   return signals;

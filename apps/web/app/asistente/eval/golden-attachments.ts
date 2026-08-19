@@ -50,6 +50,7 @@ import {
   noFakeCeremony,
   noInterfaceCommentary,
   noInventedMechanism,
+  noUnresolvedDistinctInstrument,
   proposesOnHoldingNamed,
 } from "./golden-write-checks";
 import {
@@ -243,6 +244,11 @@ export const ATTACHMENT_QUESTIONS: GoldenQuestion[] = [
       noCeremonyOverRejection(a),
       noInterfaceCommentary(a),
       noInventedMechanism(a),
+      // #1489: this is the one question in the harness where a document's instrument
+      // has to be matched against the portfolio's, and the receipt carries no ISIN —
+      // the exact setup in which a model concluded «es otro producto» and sent a real
+      // user off to duplicate a position he already had.
+      noUnresolvedDistinctInstrument(a),
     ],
   },
 ];

@@ -94,6 +94,38 @@ describe("resolveMarketSymbolCandidates (#1186)", () => {
     });
   });
 
+  it("pairs each candidate with the ISIN that found it — the bridge of #1489", async () => {
+    // What the provider really does with an ISIN query: it resolves the listings and
+    // echoes the ISIN onto each one (`searchYahooSymbols`).
+    searchSymbols.mockResolvedValue([
+      {
+        provider: "yahoo",
+        symbol: "SXR1.DE",
+        name: "iShares Core MSCI Pacific ex-Japan",
+        isin: "IE00B52MJY50",
+        exchange: "XETRA",
+        currency: "EUR",
+        quoteType: "ETF",
+      },
+    ]);
+
+    const matches = await resolveMarketSymbolCandidates("IE00B52MJY50", "etf");
+
+    // Dropping this field is what left the model holding a statement's ISIN, a
+    // portfolio's symbol, and no way to tell they name the same product.
+    expect(matches[0]).toMatchObject({ isin: "IE00B52MJY50", symbol: "SXR1.DE" });
+  });
+
+  it("omits the ISIN when the provider gave none, instead of an empty key", async () => {
+    searchSymbols.mockResolvedValue([
+      { provider: "coingecko", symbol: "bitcoin", name: "Bitcoin" },
+    ]);
+
+    expect(await resolveMarketSymbolCandidates("bitcoin", "crypto")).toEqual([
+      { provider: "coingecko", symbol: "bitcoin", name: "Bitcoin" },
+    ]);
+  });
+
   it("short-circuits a blank query with no network call", async () => {
     expect(await resolveMarketSymbolCandidates("   ")).toEqual([]);
     expect(searchSymbols).not.toHaveBeenCalled();

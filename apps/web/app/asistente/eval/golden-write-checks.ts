@@ -17,6 +17,7 @@ import { type Check, check } from "./golden-question";
 import {
   type AssistantAnswer,
   claimsAnInventedMechanism,
+  claimsDistinctInstrumentWithoutResolving,
   commentsOnTheInterface,
   mentionsAll,
   mentionsAny,
@@ -110,6 +111,21 @@ export const noInventedMechanism = (a: AssistantAnswer): Check =>
   check(
     "no atribuye a worthline un mecanismo que no existe",
     !claimsAnInventedMechanism(a.text),
+  );
+
+/**
+ * The turn did not declare a paper's instrument to be a DIFFERENT product from the
+ * one in the portfolio without resolving the keys first (#1489).
+ *
+ * Carried only by the questions where a document's instrument has to be matched against
+ * the portfolio's: elsewhere the sentence cannot come up, and a check that cannot fail
+ * lifts a score without measuring anything. See
+ * {@link claimsDistinctInstrumentWithoutResolving} for why the resolved case passes.
+ */
+export const noUnresolvedDistinctInstrument = (a: AssistantAnswer): Check =>
+  check(
+    "no declara «otro producto» sin resolver la identidad",
+    !claimsDistinctInstrumentWithoutResolving(a),
   );
 
 /**

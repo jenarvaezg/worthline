@@ -268,6 +268,8 @@ export interface InvestmentMeta {
   manualPricePerUnit?: DecimalString;
   /** The provider-symbol lookup key (ADR 0055), for the warnings projection. */
   providerSymbol?: string;
+  /** The ISIN (ADR 0055), for the missing-identity signal (#1489). */
+  isin?: string;
 }
 
 /**
@@ -398,6 +400,7 @@ export async function readInvestmentMeta(
   const rows = await db
     .select({
       assetId: investmentAssets.assetId,
+      isin: investmentAssets.isin,
       manualPricePerUnit: investmentAssets.manualPricePerUnit,
       providerSymbol: investmentAssets.providerSymbol,
     })
@@ -408,6 +411,7 @@ export async function readInvestmentMeta(
     byAsset.set(row.assetId, {
       ...(row.manualPricePerUnit ? { manualPricePerUnit: row.manualPricePerUnit } : {}),
       ...(row.providerSymbol ? { providerSymbol: row.providerSymbol } : {}),
+      ...(row.isin ? { isin: row.isin } : {}),
     });
 
     return byAsset;
@@ -505,9 +509,11 @@ export async function buildAssetProjectionContext(
 
   const manualPriceByAsset = new Map<string, DecimalString | undefined>();
   const providerSymbolByAsset = new Map<string, string | undefined>();
+  const isinByAsset = new Map<string, string | undefined>();
   for (const [assetId, meta] of metaByAsset) {
     manualPriceByAsset.set(assetId, meta.manualPricePerUnit);
     providerSymbolByAsset.set(assetId, meta.providerSymbol);
+    isinByAsset.set(assetId, meta.isin);
   }
 
   const cachedPriceByAsset = new Map<string, DecimalString | undefined>();
@@ -517,6 +523,7 @@ export async function buildAssetProjectionContext(
 
   return {
     cachedPriceByAsset,
+    isinByAsset,
     manualPriceByAsset,
     operationsByAsset,
     ownershipByAsset,

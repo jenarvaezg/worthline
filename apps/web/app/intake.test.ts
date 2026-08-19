@@ -1116,6 +1116,54 @@ describe("parseInvestmentAssetCommandStrict — required name, strict price", ()
     expect(result.command.priceProvider).toBe("finect");
     expect(result.command.providerSymbol).toBe("N5394");
   });
+
+  test("normalizes a hand-typed ISIN to the shape the identity key uses (#1489)", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME", isin: " ie00b52mjy50 " }),
+      members,
+      1,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // `isin ?? providerSymbol` is compared as text everywhere: a lowercase copy of
+    // the same ISIN is a second, unmatchable identity.
+    expect(result.command.isin).toBe("IE00B52MJY50");
+  });
+
+  test("rejects an ISIN that fails its own checksum instead of storing a typo", () => {
+    const result = parseInvestmentAssetCommandStrict(
+      form({ name: "ACME", isin: "IE00B52MJY51" }),
+      members,
+      1,
+    );
+
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("ISIN");
+  });
+});
+
+describe("parseUpdateInvestmentCommand — the ficha applies the same ISIN rule (#1489)", () => {
+  test("normalizes what the ficha's ISIN field carries", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "ACME", isin: "ie00b52mjy50" }),
+      "asset_acme",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.command.isin).toBe("IE00B52MJY50");
+  });
+
+  test("rejects an invalid ISIN", () => {
+    const result = parseUpdateInvestmentCommand(
+      form({ name: "ACME", isin: "NO-ES-UN-ISIN" }),
+      "asset_acme",
+    );
+
+    expect(result.ok).toBe(false);
+    expect("error" in result && result.error).toContain("ISIN");
+  });
 });
 
 describe("parseRouteOperationCommand — asset id from route, strict field errors", () => {

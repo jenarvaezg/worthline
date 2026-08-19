@@ -12,7 +12,11 @@ import type {
   Member,
   OperationKind,
 } from "@worthline/domain";
-import { isCaptureCurrency, isInvestmentPriceProvider } from "@worthline/domain";
+import {
+  isCaptureCurrency,
+  isInvestmentPriceProvider,
+  isValidIsin,
+} from "@worthline/domain";
 import { createStableId, parseOwnership, type StrictParseResult } from "./shared";
 
 /**
@@ -60,10 +64,14 @@ export function parseInvestmentAssetCommandStrict(
   }
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
-  const isin = String(formData.get("isin") ?? "").trim();
+  const isin = parseOptionalIsin(formData.get("isin"));
   const liquidityTier = parseCreateInvestmentLiquidityTier(formData.get("liquidityTier"));
   const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
   const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
+
+  if (!isin.ok) {
+    return { ok: false, error: isin.error };
+  }
 
   if (!liquidityTier) {
     return { ok: false, error: "La liquidez de la inversión no es válida." };
@@ -83,11 +91,47 @@ export function parseInvestmentAssetCommandStrict(
       ownership: parseOwnership(formData, members),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin ? { isin } : {}),
+      ...(isin.isin ? { isin: isin.isin } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },
   };
+}
+
+/**
+ * The ISIN a form carries, normalized — or a refusal (#1489).
+ *
+ * Two jobs, both boundary work. It UPPERCASES and strips whitespace, because the ISIN is
+ * the instrument's identity key (`isin ?? providerSymbol`, ADR 0055/#539) and it is
+ * compared as text: `ie00b52mjy50` typed by hand would be a second identity for the same
+ * ETF, invisible to the statement merge and to the exposure catalog. And it REFUSES a
+ * value that fails the ISO 6166 check digit, which the field could not produce while it
+ * was a hidden input the symbol search filled — a human types now, and a stored typo is
+ * an identity that will never match anything, silently, forever.
+ *
+ * Blank stays blank: the ISIN is optional by design (a pension plan often has none), and
+ * an alta that leaves it empty is flagged by the health signal, never blocked.
+ */
+function parseOptionalIsin(
+  value: FormDataEntryValue | null,
+): { ok: true; isin?: string } | { ok: false; error: string } {
+  const normalized = String(value ?? "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+
+  if (!normalized) {
+    return { ok: true };
+  }
+
+  if (!isValidIsin(normalized)) {
+    return {
+      ok: false,
+      error:
+        "El ISIN no es válido. Son 12 caracteres (p. ej. IE00B52MJY50); revísalo o déjalo en blanco.",
+    };
+  }
+
+  return { ok: true, isin: normalized };
 }
 
 /**
@@ -213,10 +257,14 @@ export function parseUpdateInvestmentCommand(
   }
 
   const unitSymbol = String(formData.get("unitSymbol") ?? "").trim();
-  const isin = String(formData.get("isin") ?? "").trim();
+  const isin = parseOptionalIsin(formData.get("isin"));
   const liquidityTier = parseUpdateInvestmentLiquidityTier(formData.get("liquidityTier"));
   const priceProvider = parseInvestmentPriceProvider(formData.get("priceProvider"));
   const providerSymbol = String(formData.get("providerSymbol") ?? "").trim();
+
+  if (!isin.ok) {
+    return { ok: false, error: isin.error };
+  }
 
   if (liquidityTier === null) {
     return { ok: false, error: "La liquidez de la inversión no es válida." };
@@ -234,7 +282,7 @@ export function parseUpdateInvestmentCommand(
       ...(liquidityTier ? { liquidityTier } : {}),
       ...(manualPrice !== undefined ? { manualPricePerUnit: manualPrice } : {}),
       ...(unitSymbol ? { unitSymbol } : {}),
-      ...(isin ? { isin } : {}),
+      ...(isin.isin ? { isin: isin.isin } : {}),
       ...(priceProvider ? { priceProvider } : {}),
       ...(providerSymbol ? { providerSymbol } : {}),
     },

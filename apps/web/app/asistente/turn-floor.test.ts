@@ -109,6 +109,32 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * meaning intact, and the `required: ["rawText"]` the schema no longer has. The ranking's
  * head is still `propose_holding` (2.543) and `propose_correction` (2.127), and the
  * slimming slice they are owed is still owed.
+ *
+ * **Raised to 41.450 on 2026-08-19 by #1489**, and not the raise this file keeps telling
+ * the next slice to avoid. That instruction — spend from `propose_holding` /
+ * `propose_correction`, do not raise — is written for a slice that wants characters for a
+ * NEW capability. This one repairs a measured incident: over six buys of `IE00B52MJY50`
+ * the assistant read the user's own position, saw `SXR1.DE`, and told him his statement
+ * held a DIFFERENT product. It does not. The failure sends a real user to duplicate a
+ * position he already owns, and no code can refuse a sentence — so the rule has to be in
+ * the prompt, where an identity claim that spans two tools belongs (#1342's split).
+ *
+ * The arithmetic: the widest real floor is 40.859, up 559 from a floor that #1487 left
+ * sitting EXACTLY on the old ceiling (40.300 — zero headroom, which is why any addition
+ * at all had to come here). 460 of those 559 are the prompt rule; 99 are the clause that
+ * tells the model an ISIN query comes back paired with its symbol. The new ceiling keeps
+ * ~1,4% of headroom, the same order the #1374 and #1423 raises left.
+ *
+ * It paid inside its own lane twice before asking. The first draft of the tool sentence
+ * was 430 characters (the pairing, the asymmetry, and why it matters); the second 200;
+ * what shipped is 99, because the prompt rule already names the tool AND the direction
+ * («resuelve el ISIN del documento»), so a second copy of the direction in the tool was
+ * the kind of duplication #1342 removed. The prompt bullet itself went 610 → 460.
+ *
+ * What it did NOT do is trim `propose_holding` or `propose_correction` blind, for the
+ * reason #1423 wrote down: their length is measured incident repair, and cutting it from
+ * an unrelated lane trades a floor for a behaviour nobody re-measured. That slice is
+ * still owed, and it is now the third PR in a row to say so.
  */
 
 describe("measureTurnFloor", () => {

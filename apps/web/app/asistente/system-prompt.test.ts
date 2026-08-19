@@ -168,7 +168,15 @@ describe("buildChatSystemPrompt", () => {
     // offering the dead end this ticket was filed for: a user who pasted 360 months
     // of balances that no lane could accept, five turns before anyone said so. Same
     // shape as #1347 — code closes the guarantee, the prompt has to open the door.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8_000);
+    //
+    // #1489 raises it to 8500 for the instrument-identity rule. The code half is
+    // real — `search_market_symbol` now returns the ISIN it resolved, so the bridge
+    // `IE00B52MJY50 = SXR1.DE` exists in a tool result — but a tool that CAN answer
+    // the question does not stop a model from never asking it: this one read a
+    // statement's ISIN, its own portfolio's symbol, and told a real user they were
+    // two different ETFs. Nothing in code can refuse a sentence. Same shape as
+    // #1347 and #1418: the tool closes the capability, the prompt closes the claim.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8_500);
   });
 
   it("pins the core read-only contract", () => {

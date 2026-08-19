@@ -18,6 +18,7 @@ import {
   type DataQualitySeverity,
   type DataQualitySignal,
   isOverrideableSignalCode,
+  MISSING_INVESTMENT_ISIN_CODE,
   type WarningOverride,
 } from "@worthline/domain";
 
@@ -121,7 +122,15 @@ const NON_FIGURE_CATEGORIES: ReadonlySet<DataQualityCategory> = new Set([
   // hero. The agent view keeps it in the shared inventory.
   "savings_coherence",
 ]);
-const NON_FIGURE_CODES: ReadonlySet<string> = new Set(["MISSING_FIRE_CONFIG"]);
+const NON_FIGURE_CODES: ReadonlySet<string> = new Set([
+  "MISSING_FIRE_CONFIG",
+  // A missing ISIN (#1489) is a LATENT identity gap: the holding is priced through
+  // its provider symbol, so today's figure is exactly as trustworthy as any other
+  // holding's. What it breaks arrives later — the next statement that will not route,
+  // the exposure profile that is never inherited — so it stays in the shared inventory
+  // (the assistant reads it) and never pushes a real doubt about today off the hero.
+  MISSING_INVESTMENT_ISIN_CODE,
+]);
 
 function bearsOnTodaysFigure(signal: DataQualitySignal): boolean {
   return (
