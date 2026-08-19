@@ -7,13 +7,21 @@ describe("public WorthlineStore mutation boundary", () => {
     expectTypeOf<WorthlineStore["command"]>().not.toHaveProperty("uow");
     expectTypeOf<WorthlineStore["command"]>().not.toHaveProperty("rippleDebtRebaseline");
     expectTypeOf<WorthlineStore["operations"]>().not.toHaveProperty("recordOperation");
+    expectTypeOf<WorthlineStore["operations"]>().not.toHaveProperty("recordOperations");
     expectTypeOf<WorthlineStore["assets"]>().not.toHaveProperty("addValuationAnchor");
+    expectTypeOf<WorthlineStore["assets"]>().not.toHaveProperty("addValuationAnchors");
     expectTypeOf<WorthlineStore["assets"]>().not.toHaveProperty("updateAsset");
     expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty(
       "addBalanceRebaseline",
     );
     expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty(
       "addBalanceRebaselines",
+    );
+    expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty(
+      "addEarlyRepayments",
+    );
+    expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty(
+      "addInterestRateRevisions",
     );
     expectTypeOf<WorthlineStore["liabilities"]>().not.toHaveProperty("updateLiability");
     expectTypeOf<WorthlineStore["connectedSources"]>().not.toHaveProperty(

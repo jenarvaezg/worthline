@@ -45,8 +45,9 @@ export function createStatementImportCommands(
 
         for (const fund of funds) {
           const assetId = fund.kind === "new" ? fund.asset.id : fund.assetId;
+          // Batched: a fund's orders are a list, not one fact (#1440).
+          await stores.operations.recordOperations(fund.creates, { batchId });
           for (const input of fund.creates) {
-            await stores.operations.recordOperation(input, { batchId });
             noteOperationDate(assetId, input.executedAt.slice(0, 10));
           }
 
@@ -68,9 +69,8 @@ export function createStatementImportCommands(
             batchId,
           });
         }
-        for (const valuation of propertyValuations) {
-          await stores.assets.addValuationAnchor(valuation, { batchId });
-        }
+        // Batched: a statement's appraisals are a list, not one fact (#1440).
+        await stores.assets.addValuationAnchors(propertyValuations, { batchId });
 
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;

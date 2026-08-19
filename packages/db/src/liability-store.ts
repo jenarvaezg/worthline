@@ -295,6 +295,14 @@ export interface LiabilityStore {
   deleteAmortizationPlan: (planId: string) => Promise<number>;
   /** Add an interest-rate revision to a plan. */
   addInterestRateRevision: (input: AddInterestRateRevisionInput) => Promise<void>;
+  /**
+   * Add a whole BATCH of rate revisions in batched writes (#1440) — the shape a
+   * cuadro-de-amortización import needs, where one round-trip per event is
+   * dozens of round-trips.
+   */
+  addInterestRateRevisions: (
+    inputs: readonly AddInterestRateRevisionInput[],
+  ) => Promise<void>;
   /** Read a plan's rate revisions, ordered ascending by date. */
   readInterestRateRevisions: (planId: string) => Promise<InterestRateRevisionRecord[]>;
   /**
@@ -314,6 +322,11 @@ export interface LiabilityStore {
   ) => Promise<InterestRateRevisionWriteResult>;
   /** Add an early repayment to a plan. */
   addEarlyRepayment: (input: AddEarlyRepaymentInput) => Promise<void>;
+  /**
+   * Add a whole BATCH of early repayments in batched writes (#1440) — sibling of
+   * `addInterestRateRevisions` for the same cuadro import.
+   */
+  addEarlyRepayments: (inputs: readonly AddEarlyRepaymentInput[]) => Promise<void>;
   /** Read a plan's early repayments, ordered ascending by date. */
   readEarlyRepayments: (planId: string) => Promise<EarlyRepaymentRecord[]>;
   /**
@@ -419,13 +432,15 @@ export function createLiabilityStore(ctx: StoreContext): LiabilityStore {
     readAmortizationPlan: (liabilityId) => readAmortizationPlan(ctx, liabilityId),
     updateAmortizationPlan: (planId, input) => updateAmortizationPlan(ctx, planId, input),
     deleteAmortizationPlan: (planId) => deleteAmortizationPlan(ctx, planId),
-    addInterestRateRevision: (input) => addInterestRateRevision(ctx, input),
+    addInterestRateRevision: (input) => addInterestRateRevisions(ctx, [input]),
+    addInterestRateRevisions: (inputs) => addInterestRateRevisions(ctx, inputs),
     readInterestRateRevisions: (planId) => readInterestRateRevisions(ctx, planId),
     updateInterestRateRevision: (revisionId, input) =>
       updateInterestRateRevision(ctx, revisionId, input),
     deleteInterestRateRevision: (revisionId) =>
       deleteInterestRateRevision(ctx, revisionId),
-    addEarlyRepayment: (input) => addEarlyRepayment(ctx, input),
+    addEarlyRepayment: (input) => addEarlyRepayments(ctx, [input]),
+    addEarlyRepayments: (inputs) => addEarlyRepayments(ctx, inputs),
     readEarlyRepayments: (planId) => readEarlyRepayments(ctx, planId),
     updateEarlyRepayment: (repaymentId, input) =>
       updateEarlyRepayment(ctx, repaymentId, input),
@@ -723,35 +738,69 @@ async function deleteAmortizationPlan(
   return result.rowsAffected;
 }
 
-async function addInterestRateRevision(
-  ctx: StoreContext,
-  input: AddInterestRateRevisionInput,
-): Promise<void> {
-  assertIsoDate(input.revisionDate, "Revision date");
-  assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
+/**
+ * Rate-revision rows per batched INSERT. Four columns each, so a group of 50
+ * stays well below the per-statement parameter cap (#1440).
+ */
+const REVISIONS_PER_INSERT = 50;
 
-  // #210: an event past the loan's final payment boundary resolves outside the
-  // term and would be silently dropped by the schedule build loop — reject it.
-  const plan = await readPlanInputById(ctx, input.planId);
-  if (plan) {
-    assertEventWithinTerm(plan, input.revisionDate, "Revision date");
+function revisionRow(input: AddInterestRateRevisionInput) {
+  return {
+    id: input.id,
+    newAnnualInterestRate: input.newAnnualInterestRate,
+    planId: input.planId,
+    revisionDate: input.revisionDate,
+  };
+}
+
+/**
+ * Persist a whole BATCH of rate revisions (#1440). A cuadro import applies
+ * dozens of events at once; one `await` per event is one round-trip per event
+ * against a remote Turso, so the rows — and their audit trail, still one row
+ * per fact — go in batched.
+ *
+ * A batch longer than one chunk spans several statements, so the CALLER owns the
+ * transaction (the cuadro import applies the batch inside `ctx.transaction`, ADR
+ * 0020) — without it a long batch could land half-written.
+ */
+async function addInterestRateRevisions(
+  ctx: StoreContext,
+  inputs: readonly AddInterestRateRevisionInput[],
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  for (const input of inputs) {
+    assertIsoDate(input.revisionDate, "Revision date");
+    assertDecimalString(input.newAnnualInterestRate, "Annual interest rate");
   }
 
-  await ctx.db
-    .insert(interestRateRevisions)
-    .values({
-      id: input.id,
-      newAnnualInterestRate: input.newAnnualInterestRate,
-      planId: input.planId,
-      revisionDate: input.revisionDate,
-    })
-    .run();
+  const plansById = new Map<string, AmortizationPlanInput | null>();
+  for (const planId of new Set(inputs.map((input) => input.planId))) {
+    plansById.set(planId, await readPlanInputById(ctx, planId));
+  }
+  for (const input of inputs) {
+    // #210: an event past the loan's final payment boundary resolves outside the
+    // term and would be silently dropped by the schedule build loop — reject it.
+    const plan = plansById.get(input.planId);
+    if (plan) assertEventWithinTerm(plan, input.revisionDate, "Revision date");
+  }
 
-  await ctx.writeAuditEntry("add_rate_revision", "amortization_plan", input.planId, {
-    newAnnualInterestRate: input.newAnnualInterestRate,
-    revisionDate: input.revisionDate,
-    revisionId: input.id,
-  });
+  for (const group of chunk(inputs, REVISIONS_PER_INSERT)) {
+    await ctx.db.insert(interestRateRevisions).values(group.map(revisionRow)).run();
+  }
+
+  await ctx.writeAuditEntries(
+    inputs.map((input) => ({
+      action: "add_rate_revision",
+      details: {
+        newAnnualInterestRate: input.newAnnualInterestRate,
+        revisionDate: input.revisionDate,
+        revisionId: input.id,
+      },
+      entityId: input.planId,
+      entityType: "amortization_plan",
+    })),
+  );
 }
 
 async function readInterestRateRevisions(
@@ -885,41 +934,69 @@ async function deleteInterestRateRevision(
   };
 }
 
-async function addEarlyRepayment(
-  ctx: StoreContext,
-  input: AddEarlyRepaymentInput,
-): Promise<void> {
-  assertIsoDate(input.repaymentDate, "Repayment date");
-  if (!Number.isInteger(input.amountMinor)) {
-    throw new Error("Money must be stored as integer minor units.");
-  }
+/**
+ * Early-repayment rows per batched INSERT. Six columns each, so a group of 50
+ * stays well below the per-statement parameter cap (#1440).
+ */
+const REPAYMENTS_PER_INSERT = 50;
 
-  // #210: an event past the loan's final payment boundary resolves outside the
-  // term and would be silently dropped by the schedule build loop — reject it.
-  const plan = await readPlanInputById(ctx, input.planId);
-  if (plan) {
-    assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
-  }
-
-  await ctx.db
-    .insert(earlyRepayments)
-    .values({
-      amountMinor: input.amountMinor,
-      id: input.id,
-      mode: input.mode,
-      planId: input.planId,
-      repaymentDate: input.repaymentDate,
-      source: input.source ?? "manual",
-    })
-    .run();
-
-  await ctx.writeAuditEntry("add_early_repayment", "amortization_plan", input.planId, {
+function repaymentRow(input: AddEarlyRepaymentInput) {
+  return {
     amountMinor: input.amountMinor,
+    id: input.id,
     mode: input.mode,
+    planId: input.planId,
     repaymentDate: input.repaymentDate,
-    repaymentId: input.id,
     source: input.source ?? "manual",
-  });
+  };
+}
+
+/**
+ * Persist a whole BATCH of early repayments (#1440). Sibling of
+ * `addInterestRateRevisions`: the cuadro import owns the transaction.
+ */
+async function addEarlyRepayments(
+  ctx: StoreContext,
+  inputs: readonly AddEarlyRepaymentInput[],
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  for (const input of inputs) {
+    assertIsoDate(input.repaymentDate, "Repayment date");
+    if (!Number.isInteger(input.amountMinor)) {
+      throw new Error("Money must be stored as integer minor units.");
+    }
+  }
+
+  const plansById = new Map<string, AmortizationPlanInput | null>();
+  for (const planId of new Set(inputs.map((input) => input.planId))) {
+    plansById.set(planId, await readPlanInputById(ctx, planId));
+  }
+  for (const input of inputs) {
+    // #210: an event past the loan's final payment boundary resolves outside the
+    // term and would be silently dropped by the schedule build loop — reject it.
+    const plan = plansById.get(input.planId);
+    if (plan) assertEventWithinTerm(plan, input.repaymentDate, "Repayment date");
+  }
+
+  for (const group of chunk(inputs, REPAYMENTS_PER_INSERT)) {
+    await ctx.db.insert(earlyRepayments).values(group.map(repaymentRow)).run();
+  }
+
+  await ctx.writeAuditEntries(
+    inputs.map((input) => ({
+      action: "add_early_repayment",
+      details: {
+        amountMinor: input.amountMinor,
+        mode: input.mode,
+        repaymentDate: input.repaymentDate,
+        repaymentId: input.id,
+        source: input.source ?? "manual",
+      },
+      entityId: input.planId,
+      entityType: "amortization_plan",
+    })),
+  );
 }
 
 async function readEarlyRepayments(

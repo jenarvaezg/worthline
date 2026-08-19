@@ -10,6 +10,8 @@ import type {
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation, isTransferKind } from "@worthline/domain";
 import { asc, eq, sql } from "drizzle-orm";
+
+import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 
 import {
@@ -83,6 +85,15 @@ export interface OperationsStore {
     input: CreateInvestmentOperationInput,
     provenance?: FactPersistenceProvenance,
   ) => Promise<void>;
+  /**
+   * Record a whole BATCH of operations in batched writes (#1440) — the shape a
+   * statement import needs, where one round-trip per order is hundreds of
+   * round-trips.
+   */
+  recordOperations: (
+    inputs: readonly CreateInvestmentOperationInput[],
+    provenance?: FactPersistenceProvenance,
+  ) => Promise<void>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
   /**
    * Delete ONE operation. Returns its asset id and date, or null if not found.
@@ -137,7 +148,8 @@ export interface OperationsStore {
 
 export function createOperationsStore(ctx: StoreContext): OperationsStore {
   return {
-    recordOperation: (input, opts) => recordOperation(ctx, input, opts),
+    recordOperation: (input, opts) => recordOperations(ctx, [input], opts),
+    recordOperations: (inputs, opts) => recordOperations(ctx, inputs, opts),
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
@@ -154,35 +166,58 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
   };
 }
 
-async function recordOperation(
-  ctx: StoreContext,
+/**
+ * Operation rows per batched INSERT. ~18 columns each, so a group of 50 stays
+ * well below the per-statement parameter cap (#1440).
+ */
+const OPERATIONS_PER_INSERT = 50;
+
+function operationRow(
   input: CreateInvestmentOperationInput,
   provenance?: FactPersistenceProvenance,
-): Promise<void> {
-  await assertAssetAllowsOperationWrite(ctx, input.assetId);
-
+) {
   const operation = createInvestmentOperation(input);
+  return {
+    assetId: operation.assetId,
+    batchId: provenance?.batchId ?? null,
+    ...operationCaptureColumns(operation.capture),
+    currency: operation.currency,
+    executedAt: asDateKey(operation.executedAt.slice(0, 10)),
+    feesMinor: operation.feesMinor,
+    id: operation.id,
+    kind: operation.kind,
+    occurredAt: operation.occurredAt ?? null,
+    pricePerUnit: operation.pricePerUnit,
+    source: operation.source ?? "manual",
+    ...operationTransferColumns(operation),
+    units: operation.units,
+  };
+}
 
-  // fees_minor has a DB default of 0; the domain constructor always supplies it,
-  // matching the raw INSERT which also always passed @feesMinor.
-  await ctx.db
-    .insert(assetOperations)
-    .values({
-      assetId: operation.assetId,
-      batchId: provenance?.batchId ?? null,
-      ...operationCaptureColumns(operation.capture),
-      currency: operation.currency,
-      executedAt: asDateKey(operation.executedAt.slice(0, 10)),
-      feesMinor: operation.feesMinor,
-      id: operation.id,
-      kind: operation.kind,
-      occurredAt: operation.occurredAt ?? null,
-      pricePerUnit: operation.pricePerUnit,
-      source: operation.source ?? "manual",
-      ...operationTransferColumns(operation),
-      units: operation.units,
-    })
-    .run();
+/**
+ * Persist a whole BATCH of operations (#1440). A statement import applies
+ * hundreds of orders at once; one `await` per order is one round-trip per
+ * order against a remote Turso, so the rows go in batched.
+ *
+ * A batch longer than one chunk spans several statements, so the CALLER owns the
+ * transaction (the statement import applies the batch inside `ctx.transaction`,
+ * ADR 0020) — without it a long batch could land half-written.
+ */
+async function recordOperations(
+  ctx: StoreContext,
+  inputs: readonly CreateInvestmentOperationInput[],
+  provenance?: FactPersistenceProvenance,
+): Promise<void> {
+  if (inputs.length === 0) return;
+
+  for (const assetId of new Set(inputs.map((input) => input.assetId))) {
+    await assertAssetAllowsOperationWrite(ctx, assetId);
+  }
+
+  const rows = inputs.map((input) => operationRow(input, provenance));
+  for (const group of chunk(rows, OPERATIONS_PER_INSERT)) {
+    await ctx.db.insert(assetOperations).values(group).run();
+  }
 }
 
 async function readOperations(

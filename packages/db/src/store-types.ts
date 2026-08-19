@@ -44,6 +44,7 @@ import type { WorkspaceStore } from "./workspace-store";
 type PublicAssetStore = Omit<
   AssetStore,
   | "addValuationAnchor"
+  | "addValuationAnchors"
   | "deleteValuationAnchor"
   | "setAnnualAppreciationRate"
   | "setValuationCadence"
@@ -57,7 +58,9 @@ type PublicLiabilityStore = Omit<
   | "addBalanceRebaseline"
   | "addBalanceRebaselines"
   | "addEarlyRepayment"
+  | "addEarlyRepayments"
   | "addInterestRateRevision"
+  | "addInterestRateRevisions"
   | "createAmortizationPlan"
   | "deleteAmortizationPlan"
   | "deleteBalanceAnchor"
@@ -75,7 +78,7 @@ type PublicLiabilityStore = Omit<
 
 type PublicOperationsStore = Omit<
   OperationsStore,
-  "deleteOperation" | "recordOperation" | "updateOperation"
+  "deleteOperation" | "recordOperation" | "recordOperations" | "updateOperation"
 >;
 
 type PublicConnectedSourceStore = Omit<ConnectedSourceStore, "syncPositions">;
