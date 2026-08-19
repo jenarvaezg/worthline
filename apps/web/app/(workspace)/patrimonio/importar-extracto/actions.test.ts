@@ -662,6 +662,72 @@ describe("plantilla import (#695)", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  test("confirming a broker transactions export writes the costs the file printed (#1488)", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    // Eleven trades across three ISINs, the shape of the file this ticket is named
+    // after: one reconciles against an existing holding, two are new. The costs travel
+    // as the operations' fees — the acceptance criterion's «costes incluidos».
+    const header = [
+      "Fecha",
+      "Producto",
+      "ISIN",
+      "Número",
+      "Precio",
+      "Costes de transacción y/o externos EUR",
+      "ID Orden",
+    ];
+    const trade = (index: number, isin: string, units: string) => [
+      `${String(index).padStart(2, "0")}-02-2026`,
+      "PRODUCTO",
+      isin,
+      units,
+      "100,00",
+      "-1,00",
+      `id${index}`,
+    ];
+    const rows = [
+      header,
+      ...[1, 2, 3, 4].map((day) => trade(day, "ES00WL000001", "2")),
+      ...[5, 6, 7, 8].map((day) => trade(day, "LU00WL000002", "1")),
+      ...[9, 10, 11].map((day) => trade(day, "IE00WL000003", "3")),
+    ];
+    const xlsx = zipSync({
+      "xl/worksheets/sheet1.xml": strToU8(transactionsSheet(rows)),
+    });
+
+    const fd = new FormData();
+    fd.set("broker", "plantilla");
+    fd.set("currentUrl", "/patrimonio/importar-extracto");
+    fd.set(
+      "file",
+      new File([xlsx.buffer as ArrayBuffer], "Transactions.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+
+    const result = await preview(fd, store);
+    if (result.status !== "ready") {
+      throw new Error(`expected a ready preview, got: ${JSON.stringify(result)}`);
+    }
+    expect(result.funds.map((fund) => fund.isin)).toEqual([
+      "ES00WL000001",
+      "LU00WL000002",
+      "IE00WL000003",
+    ]);
+    expect(result.funds.reduce((sum, fund) => sum + fund.executedCount, 0)).toBe(11);
+    expect(matchedRow(result, "ES00WL000001").executedCount).toBe(4);
+
+    fd.set("include_ES00WL000001", "on");
+    await confirm(fd, store);
+
+    const written = await store.operations.readOperations("matched_fund");
+    expect(written).toHaveLength(4);
+    expect(written.every((operation) => operation.feesMinor === 100)).toBe(true);
+    expect(written.every((operation) => operation.kind === "buy")).toBe(true);
+  });
+
   test("an .xlsx plantilla travels through the same form path", async () => {
     const store = await createInMemoryStore();
     await seed(store);

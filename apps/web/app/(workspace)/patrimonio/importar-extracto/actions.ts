@@ -74,7 +74,7 @@ import {
   typeConflictMessage,
   unresolvedChoiceMessage,
 } from "./statement-import-preview";
-import { readStatementUpload, STATEMENT_GATE_FORMATS } from "./statement-upload-read";
+import { readStatementUpload } from "./statement-upload-read";
 
 export type {
   FundMatchChoice,
@@ -127,10 +127,16 @@ async function readStatementFromForm(
   | { ok: false; message: string }
   | { ok: true; value: ParsedStatement; warnings: string[] }
 > {
+  // The declared format, which the page posts as a hidden field: an unknown value means a
+  // tampered or stale form, never a choice the user made. It does NOT list
+  // `STATEMENT_GATE_FORMATS` — this guard refuses before any reader runs, including the
+  // generic one, so naming a format it will not try would be the very promise #1488 is
+  // about.
   const broker = String(formData.get("broker") ?? "plantilla").trim();
   if (!isStatementBroker(broker)) {
     return {
-      message: `Selecciona un formato compatible: ${STATEMENT_GATE_FORMATS.join(" o ")}.`,
+      message:
+        "No reconozco el formato declarado en el formulario. Recarga la página y vuelve a subir el archivo.",
       ok: false,
     };
   }
