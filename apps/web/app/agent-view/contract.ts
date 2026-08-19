@@ -490,7 +490,12 @@ export interface AgentViewPayoutSchedule {
  * nothing annualized. The lower bound is exclusive and the upper (today) inclusive.
  */
 export interface AgentViewPassiveIncomeWindow {
+  /** Gross sum of the window's payouts — what arrived. */
   total: AgentViewMoney;
+  /** Declared expenses of the window's occurrences (#1463); zero where undeclared. */
+  expenses: AgentViewMoney;
+  /** total − expenses: what the owner lives on. The headline figure on screen. */
+  net: AgentViewMoney;
   count: number;
   windowStart: string;
   windowEnd: string;
@@ -518,14 +523,19 @@ export interface AgentViewHoldingPayouts {
  * never fabricated, and a partial-window payout is summed as-is, never annualized.
  */
 export interface AgentViewScopePassiveIncome {
+  /** Gross sum — what arrived. The screens headline `net` instead (#1463). */
   total: AgentViewMoney;
+  /** Declared expenses of the window's occurrences; zero where undeclared. */
+  expenses: AgentViewMoney;
+  /** total − expenses: what the scope lives on. */
+  net: AgentViewMoney;
   count: number;
   windowStart: string;
   windowEnd: string;
   months: number;
   /** Declared annual spending (monthly × 12) as money, or null when unknown. */
   annualSpending: AgentViewMoney | null;
-  /** `total / annualSpending` as a decimal string, or null when spending is unknown. */
+  /** `net / annualSpending` (#1463) as a decimal string, or null when spending is unknown. */
   coverageRatio: string | null;
   /** Whether the scope has any recorded payout at all (drives an empty state). */
   hasPayouts: boolean;

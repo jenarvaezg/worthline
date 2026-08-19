@@ -17,8 +17,12 @@ import { passiveIncomeTrailing } from "./payouts";
 import type { OwnershipShare } from "./workspace-types";
 
 export interface PassiveIncomeLens {
-  /** Scope-weighted sum of payouts in the trailing window (minor units). */
+  /** Scope-weighted GROSS sum of payouts in the trailing window (minor units). */
   totalMinor: number;
+  /** Scope-weighted declared expenses of the window's occurrences (#1463). */
+  expensesMinor: number;
+  /** totalMinor − expensesMinor: what the scope lives on. The headline figure. */
+  netMinor: number;
   /** Number of payout occurrences inside the window (each counted once). */
   count: number;
   /** Exclusive lower bound of the trailing window (YYYY-MM-DD). */
@@ -72,9 +76,14 @@ export function scopePassiveIncome(input: ScopePassiveIncomeInput): PassiveIncom
     const rows = payoutsByHolding.get(holding.id);
     if (!rows) continue;
     for (const row of rows) {
+      // Expenses inherit the same share as the rent they cost (#1448 decision):
+      // both are declared at the property's 100 % and both scale to the scope.
       weighted.push({
         dateISO: row.dateISO,
         amountMinor: allocateByBps(row.amountMinor, shareBps),
+        ...(row.expensesMinor === undefined
+          ? {}
+          : { expensesMinor: allocateByBps(row.expensesMinor, shareBps) }),
       });
     }
   }
@@ -88,12 +97,17 @@ export function scopePassiveIncome(input: ScopePassiveIncomeInput): PassiveIncom
     monthlySpendingMinor != null && monthlySpendingMinor > 0
       ? monthlySpendingMinor * 12
       : null;
+  // Coverage decides something — "do I already live off my holdings?" — so it
+  // runs on NET, never gross (#1463): of the gross live the agency, the IBI and
+  // the insurance before the owner does.
   const coverageRatio = annualSpendingMinor
-    ? window.totalMinor / annualSpendingMinor
+    ? window.netMinor / annualSpendingMinor
     : null;
 
   return {
     totalMinor: window.totalMinor,
+    expensesMinor: window.expensesMinor,
+    netMinor: window.netMinor,
     count: window.count,
     windowStartISO: window.windowStartISO,
     windowEndISO: window.windowEndISO,

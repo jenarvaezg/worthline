@@ -97,7 +97,8 @@ export function CobrosSection({
     monthlySpendingMinor != null && monthlySpendingMinor > 0
       ? monthlySpendingMinor * 12
       : null;
-  const coverage = annualSpending ? passive.totalMinor / annualSpending : null;
+  // Coverage decides something — it runs on NET (#1463), same rule as /objetivos.
+  const coverage = annualSpending ? passive.netMinor / annualSpending : null;
 
   return (
     <section className="cobros" aria-label="Cobros">
@@ -117,8 +118,19 @@ export function CobrosSection({
       <div className="cobrosPasiva">
         <div className="cobrosPasivaTop">
           <div>
-            <div className="cobrosCap">Renta pasiva · últimos 12 meses</div>
-            <div className="cobrosPasivaBig">{fmt(passive.totalMinor)}</div>
+            {/* Neto como titular (#1463); el bruto baja a la sub-línea cuando difieran. */}
+            <div className="cobrosCap">
+              {passive.expensesMinor > 0
+                ? "Renta pasiva neta · últimos 12 meses"
+                : "Renta pasiva · últimos 12 meses"}
+            </div>
+            <div className="cobrosPasivaBig">{fmt(passive.netMinor)}</div>
+            {passive.expensesMinor > 0 ? (
+              <div className="cobrosCap">
+                brutos {fmt(passive.totalMinor)} − gastos declarados{" "}
+                {fmt(passive.expensesMinor)}
+              </div>
+            ) : null}
           </div>
           {coverage != null ? (
             <div className="cobrosPasivaCoverage">
@@ -129,7 +141,8 @@ export function CobrosSection({
         </div>
         {coverage != null ? (
           <div className="cobrosPasivaBar">
-            <i style={{ width: `${Math.min(100, coverage * 100)}%` }} />
+            {/* Un neto negativo (gastos > renta) es declarable: la barra se queda a 0. */}
+            <i style={{ width: `${Math.min(100, Math.max(0, coverage * 100))}%` }} />
           </div>
         ) : null}
         <p className="cobrosCap">

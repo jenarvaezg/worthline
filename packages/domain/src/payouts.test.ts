@@ -211,3 +211,64 @@ describe("collectHoldingPayouts", () => {
     expect(byHolding.has("h1")).toBe(false);
   });
 });
+
+describe("expenses per occurrence (#1463)", () => {
+  test("a schedule's declared expenses ride every derived occurrence; one-offs carry none", () => {
+    const byHolding = collectHoldingPayouts(
+      [
+        {
+          id: "p1",
+          holdingId: "h1",
+          dateISO: "2025-03-01",
+          amountMinor: 50000,
+        },
+      ],
+      [schedule({ startISO: "2025-02-15", expensesMinor: 20000 })],
+      "2025-03-20",
+    );
+
+    expect(byHolding.get("h1")).toEqual(
+      expect.arrayContaining([
+        { dateISO: "2025-03-01", amountMinor: 50000 },
+        { dateISO: "2025-02-15", amountMinor: 100000, expensesMinor: 20000 },
+        { dateISO: "2025-03-15", amountMinor: 100000, expensesMinor: 20000 },
+      ]),
+    );
+  });
+
+  test("a schedule without declared expenses attaches nothing (net reads as gross)", () => {
+    const byHolding = collectHoldingPayouts(
+      [],
+      [schedule({ startISO: "2025-03-15" })],
+      "2025-03-20",
+    );
+    expect(byHolding.get("h1")).toEqual([{ dateISO: "2025-03-15", amountMinor: 100000 }]);
+  });
+
+  test("passiveIncomeTrailing sums gross, expenses and net — window rules apply to both", () => {
+    const result = passiveIncomeTrailing(
+      [
+        // before the window: neither its amount nor its expenses count
+        { dateISO: "2024-12-31", amountMinor: 5000, expensesMinor: 1000 },
+        { dateISO: "2025-06-15", amountMinor: 20000, expensesMinor: 5000 },
+        { dateISO: "2026-01-01", amountMinor: 30000 },
+      ],
+      "2026-01-01",
+      12,
+    );
+
+    expect(result.totalMinor).toBe(50000);
+    expect(result.expensesMinor).toBe(5000);
+    expect(result.netMinor).toBe(45000);
+  });
+
+  test("without expenses the window nets to its gross", () => {
+    const result = passiveIncomeTrailing(
+      [{ dateISO: "2025-06-15", amountMinor: 20000 }],
+      "2026-01-01",
+      12,
+    );
+    expect(result.expensesMinor).toBe(0);
+    expect(result.netMinor).toBe(result.totalMinor);
+  });
+});

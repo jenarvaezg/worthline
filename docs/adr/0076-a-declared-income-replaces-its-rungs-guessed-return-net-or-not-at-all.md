@@ -116,11 +116,16 @@ fixed rate the substitution changes nothing.
   before the field existed can be completed without re-entering them (which would lose
   their exclusions).
 - `PayoutSchedule.expensesMinor` is the one exception to "a payout is income-only". It
-  is still not a figure: no total anywhere subtracts it. In particular the
-  passive-income lens (#658) stays **gross**, which is a divergence a reader can notice
-  — the lens answers "what did my holdings pay me?", the FIRE rate answers "what does
-  this capital yield?". Netting the lens is a separate decision about ADR 0054's
-  income-only rule, deliberately not taken here.
+  is still not a net-worth figure: no wealth total anywhere subtracts it. ~~In
+  particular the passive-income lens (#658) stays **gross**~~ **Amended by #1463**: the
+  separate decision this bullet deferred was taken — the lens now **nets its trailing
+  window** (net headline, gross named beside it when they differ, coverage always on
+  net), because coverage decides something and of the gross live the agency, the IBI
+  and the insurance before the owner does. The lens' rule differs from the rate's on
+  purpose: the rate refuses to derive when expenses are missing (gross would flatter a
+  yield); the lens subtracts where declared and reads gross elsewhere (a dividend has
+  no hidden cost). Returns and the delta breakdown stay gross — attribution is what
+  arrived (ADR 0054).
 - The /objetivos FIRE panel gained a disclosure block; the effective-rate line in its
   foot now covers a rate that may be part rung-default and part declared yield.
 - The housing rung's 3 % default stays exactly as it was for every property with no
@@ -136,6 +141,7 @@ fixed rate the substitution changes nothing.
   a net-of-debt pool would compound the leverage twice. Revisit only with a case where
   the simplification misleads — with the mortgage's own cost already modelled by its
   **amortization plan**, netting it here again would be the double count.
-- Not covered here: whether the passive-income lens should show net rent, and whether a
-  rented property with no declared expenses deserves a **data-quality signal** rather
-  than only the FIRE panel's note.
+- Not covered here: ~~whether the passive-income lens should show net rent~~ (decided
+  in #1463 — see the amended bullet above), and whether a rented property with no
+  declared expenses deserves a **data-quality signal** rather than only the FIRE
+  panel's note.

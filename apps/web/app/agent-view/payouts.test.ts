@@ -271,3 +271,71 @@ describe("buildScopePassiveIncome", () => {
     expect(result.hasPayouts).toBe(false);
   });
 });
+
+// ── the net window (#1463) ────────────────────────────────────────────────────
+
+describe("net passive income (#1463)", () => {
+  test("trailing12m carries gross, declared expenses and net", async () => {
+    const result = await buildHoldingPayouts({
+      store: holdingStore(
+        {},
+        {
+          // 12 in-window occurrences × 90_000 gross, each costing 20_000.
+          h1: [schedule({ id: "s1", holdingId: "h1", expensesMinor: 20_000 })],
+        },
+      ),
+      assetId: "h1",
+      currency: "EUR",
+      todayISO: TODAY,
+    });
+
+    expect(result!.trailing12m.total).toEqual({
+      amountMinor: 12 * 90_000,
+      currency: "EUR",
+    });
+    expect(result!.trailing12m.expenses).toEqual({
+      amountMinor: 12 * 20_000,
+      currency: "EUR",
+    });
+    expect(result!.trailing12m.net).toEqual({
+      amountMinor: 12 * 70_000,
+      currency: "EUR",
+    });
+  });
+
+  test("the scope lens weights expenses by ownership and runs coverage on net", async () => {
+    const result = await buildScopePassiveIncome({
+      store: scopeStore({
+        payouts: [],
+        schedules: [
+          schedule({
+            id: "s_rent",
+            holdingId: "home",
+            amountMinor: 100_000,
+            expensesMinor: 40_000,
+            startISO: TODAY, // exactly one occurrence
+          }),
+        ],
+        fireConfig: {
+          member_jose: { monthlySpendingMinor: 125_000 } as unknown as FireScopeConfig,
+        },
+      }),
+      workspace,
+      internalScopeId: "member_jose",
+      holdings: [
+        ownedAsset("home", [
+          { memberId: "member_jose", shareBps: 5_000 },
+          { memberId: "member_ana", shareBps: 5_000 },
+        ]),
+      ],
+      todayISO: TODAY,
+    });
+
+    // 100_000 gross / 40_000 expenses × 50 % scope share.
+    expect(result.total).toEqual({ amountMinor: 50_000, currency: "EUR" });
+    expect(result.expenses).toEqual({ amountMinor: 20_000, currency: "EUR" });
+    expect(result.net).toEqual({ amountMinor: 30_000, currency: "EUR" });
+    // coverage on NET: 30_000 / 1_500_000 = 0.02 — never the gross 0.0333….
+    expect(result.coverageRatio).toBe("0.02");
+  });
+});

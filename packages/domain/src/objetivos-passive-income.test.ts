@@ -119,3 +119,36 @@ describe("scopePassiveIncome", () => {
     expect(result.hasPayouts).toBe(false);
   });
 });
+
+describe("net passive income (#1463)", () => {
+  it("weights expenses by the scope share and runs coverage on net", () => {
+    const result = lens(
+      new Map([
+        [
+          "h_flat",
+          [{ dateISO: "2026-03-01", amountMinor: 90_000, expensesMinor: 30_000 }],
+        ],
+      ]),
+      [{ id: "h_flat", ownership: HALF }],
+      { monthlySpendingMinor: 10_000 },
+    );
+
+    expect(result.totalMinor).toBe(45_000);
+    expect(result.expensesMinor).toBe(15_000);
+    expect(result.netMinor).toBe(30_000);
+    // coverage decides something — it runs on net, never gross
+    expect(result.coverageRatio).toBeCloseTo(30_000 / 120_000, 10);
+  });
+
+  it("without declared expenses the lens reads exactly as before", () => {
+    const result = lens(
+      new Map([["h_etf", [{ dateISO: "2026-03-01", amountMinor: 90_000 }]]]),
+      [{ id: "h_etf", ownership: FULL }],
+      { monthlySpendingMinor: 10_000 },
+    );
+
+    expect(result.expensesMinor).toBe(0);
+    expect(result.netMinor).toBe(result.totalMinor);
+    expect(result.coverageRatio).toBeCloseTo(90_000 / 120_000, 10);
+  });
+});

@@ -737,6 +737,36 @@ describe("ObjetivosPage passive-income lens (#658)", () => {
     expect(html).not.toContain("30.000");
   });
 
+  test("nets the headline when a schedule declares expenses, coverage on net (#1463)", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    calls.readPayouts.mockResolvedValueOnce([]);
+    calls.readPayoutSchedules.mockResolvedValueOnce([
+      {
+        id: "sch_rent",
+        holdingId: "asset_cash",
+        label: "Alquiler",
+        amountMinor: 100_000,
+        expensesMinor: 25_000,
+        cadence: "monthly",
+        startISO: today, // exactly one occurrence, date-independent
+        endISO: null,
+        exclusions: [],
+      },
+    ]);
+
+    const html = await renderedHtml();
+
+    // gross 1.000 − declared expenses 250 = net 750, which headlines.
+    const eur = (amountMinor: number) =>
+      formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, false);
+    expect(html).toContain("Cobros netos · últimos 12 meses");
+    expect(html).toContain(`>${eur(75_000)}<`);
+    expect(html).toContain(`brutos ${eur(100_000)} − gastos declarados ${eur(25_000)}`);
+    // coverage on net: 75.000 / 2.400.000 = 3,1 % — never the gross 4,2 %.
+    expect(html).toContain("3,1");
+    expect(html).not.toContain("4,2 %");
+  });
+
   test("shows an empty state when the scope has recorded no payouts", async () => {
     calls.readPayouts.mockResolvedValueOnce([]);
     calls.readPayoutSchedules.mockResolvedValueOnce([]);

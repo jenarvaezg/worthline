@@ -18,6 +18,8 @@ export interface CobroRow {
   dateISO: string;
   amountMinor: number;
   kind: "oneoff" | "derived";
+  /** The schedule's declared per-occurrence cost (#1463); one-offs never have one. */
+  expensesMinor?: number;
   /** The one-off's note (may be "") or the schedule's label. */
   label: string;
   /** The schedule this row derives from, or null for a one-off. */
@@ -38,6 +40,9 @@ export function buildCobroRows(
       kind: "derived" as const,
       label: occurrence.label,
       scheduleId: schedule.id,
+      ...(schedule.expensesMinor == null
+        ? {}
+        : { expensesMinor: schedule.expensesMinor }),
     })),
   );
   const oneOffs: CobroRow[] = payouts.map((payout) => ({
