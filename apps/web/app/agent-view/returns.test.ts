@@ -99,4 +99,36 @@ describe("buildPortfolioReturns byAssetClass", () => {
     expect(returns).not.toBeNull();
     expect(returns!.byAssetClass).toBeUndefined();
   });
+
+  test("marca la clase que ya no se tiene y calla el marcador en la viva (#1456)", async () => {
+    const returns = await buildPortfolioReturns({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: equityClass,
+          currentValueMinor: 12_446_600,
+          id: "h1",
+          instrument: "fund",
+          totalShareBps: 10_000,
+        },
+        {
+          assetClass: { breakdown: { crypto: "1" }, kind: "classified" },
+          currentValueMinor: 0,
+          id: "h2",
+          instrument: "fund",
+          totalShareBps: 10_000,
+        },
+      ],
+      scopeId: "household",
+      store: fakeStore({
+        h1: [buy("h1", "1000", "1000", "2023-01-01")],
+        h2: [buy("h2", "1", "58.36", "2026-02-05")],
+      }),
+      valuationDate: "2026-08-21",
+    });
+
+    const classes = returns!.byAssetClass!.classes;
+    expect(classes.find((c) => c.key === "crypto")?.closed).toBe(true);
+    expect(classes.find((c) => c.key === "equity")).not.toHaveProperty("closed");
+  });
 });

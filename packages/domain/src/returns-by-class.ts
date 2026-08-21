@@ -97,6 +97,16 @@ export interface AssetClassReturns {
   /** Whether any recorded payout was folded into this class (#657) — per-class so a
    *  payout-free class never claims income it did not receive. */
   payoutsIncluded: boolean;
+  /**
+   * Whether the class has no value attributed today: it is here because it once
+   * held something, not because it holds it now (#1456). The class is still
+   * emitted with all its measures — the domain MARKS, it never omits, so no
+   * consumer loses a figure it could want — but a reader that ranks classes by
+   * their weight in today's portfolio can fold it away. Same reasoning as a
+   * closed position (`isClosedPosition`, #1348) one level up: a value that
+   * multiplies nothing cannot compromise today's split.
+   */
+  closed: boolean;
 }
 
 export interface ReturnsByAssetClassInput {
@@ -106,7 +116,10 @@ export interface ReturnsByAssetClassInput {
 }
 
 export interface ReturnsByAssetClass {
-  /** One entry per class present, sorted by attributed value desc, then key. */
+  /**
+   * One entry per class present, sorted by attributed value desc, then key — so
+   * the classes marked `closed` (zero value today, #1456) sit last.
+   */
   classes: AssetClassReturns[];
   /** Three-way coverage of attributed value (asset class has no not-applicable). */
   coverage: ExposureCoverage;
@@ -245,6 +258,12 @@ export function returnsByAssetClass(
 
   const classes: AssetClassReturns[] = [...buckets.entries()]
     .map(([key, acc]) => ({
+      // Callers feed this engine operation-bearing holdings only, so a zero
+      // attributed value means the class was left (sold, transferred away) and
+      // not that nothing was ever bought. A market value is never negative — the
+      // `<=` is defensive, and treats an impossible negative the same way: a
+      // class in that state sustains nothing either.
+      closed: acc.marketValueMinor <= 0,
       irr: xirr([
         ...acc.cashflows,
         ...(acc.marketValueMinor > 0

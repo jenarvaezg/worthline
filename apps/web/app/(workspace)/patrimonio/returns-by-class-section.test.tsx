@@ -47,11 +47,13 @@ function marketView(overrides: {
 const result: AssetClassReturnsViewResult = {
   classes: [
     {
+      closed: false,
       key: "equity",
       value: { amountMinor: 150_000, currency: EUR },
       view: marketView({ irrRate: 0.082, totalReturnRatio: 0.5, twrRate: 0.071 }),
     },
     {
+      closed: false,
       key: "unclassified",
       value: { amountMinor: 40_000, currency: EUR },
       view: marketView({ irrRate: null, totalReturnRatio: 0.1, twrRate: null }),
@@ -101,6 +103,7 @@ describe("una TWR ausente dice por qué (#1457)", () => {
         returns={{
           classes: [
             {
+              closed: false,
               key: "commodity",
               value: { amountMinor: 99_900, currency: EUR },
               view: {
@@ -129,5 +132,98 @@ describe("una TWR ausente dice por qué (#1457)", () => {
     expect(html).toContain(
       "Sin TWR: un tramo con más movimiento que valor no es medible.",
     );
+  });
+});
+
+describe("una clase cerrada no compite con las vivas (#1456)", () => {
+  const withClosed: AssetClassReturnsViewResult = {
+    classes: [
+      ...result.classes,
+      {
+        closed: true,
+        key: "crypto",
+        value: { amountMinor: 0, currency: EUR },
+        view: marketView({ irrRate: -0.971, totalReturnRatio: -0.075, twrRate: null }),
+      },
+    ],
+    coverage: result.coverage,
+  };
+
+  test("la clase a cero se repliega tras su propio control, y las vivas quedan en la lista", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={withClosed} />,
+    );
+
+    // La lista viva llega hasta las clases con valor; la cerrada vive en el fold.
+    const [liveHtml, foldHtml] = html.split("<details");
+    expect(liveHtml).toContain("Renta variable");
+    expect(liveHtml).not.toContain("Cripto");
+    expect(foldHtml).toContain("Cripto");
+    expect(html).toContain("Clases cerradas (1)");
+    // Sigue siendo consultable: el −97,1 % está, replegado, no borrado.
+    expect(foldHtml).toContain("−97,1 %");
+  });
+
+  test("el pie de cobertura es el mismo con y sin la fila a cero", () => {
+    const footer = (returns: AssetClassReturnsViewResult): string =>
+      renderToStaticMarkup(
+        <ReturnsByClassSection privacyMode={false} returns={returns} />,
+      )
+        .split('<dl class="exposureCoverage">')[1]!
+        .split("</dl>")[0]!;
+
+    expect(footer(withClosed)).toBe(footer(result));
+  });
+
+  test("una clase en pérdidas pero con valor sigue en la lista viva", () => {
+    // Perder dinero no repliega una clase; tener cero sí. Sin este guard, la
+    // regla podría leerse como «esconde lo que va mal».
+    const losing: AssetClassReturnsViewResult = {
+      classes: [
+        {
+          closed: false,
+          key: "commodity",
+          value: { amountMinor: 40_000, currency: EUR },
+          view: marketView({ irrRate: -0.31, totalReturnRatio: -0.6, twrRate: -0.28 }),
+        },
+      ],
+      coverage: result.coverage,
+    };
+
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={losing} />,
+    );
+
+    expect(html.split("<details")[0]).toContain("Materias primas");
+    expect(html).toContain("−60,0 %");
+    expect(html).not.toContain("Clases cerradas");
+  });
+
+  test("un workspace con todo liquidado lo dice, en vez de dejar la lista muda", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection
+        privacyMode={false}
+        returns={{
+          classes: withClosed.classes.filter((entry) => entry.closed),
+          coverage: {
+            classified: { amountMinor: 0, currency: EUR },
+            notApplicable: { amountMinor: 0, currency: EUR },
+            unknown: { amountMinor: 0, currency: EUR },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Ninguna clase con valor hoy.");
+    expect(html).toContain("Clases cerradas (1)");
+  });
+
+  test("sin clases cerradas la sección se ve exactamente igual que antes", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={result} />,
+    );
+
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("Clases cerradas");
   });
 });

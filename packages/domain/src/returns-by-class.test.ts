@@ -525,3 +525,92 @@ describe("la serie de la clase se alinea antes de medirla (#1457)", () => {
     }
   });
 });
+
+describe("una clase sin valor hoy se declara cerrada (#1456)", () => {
+  test("la clase liquidada sale marcada y la viva no", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 12_446_600,
+          monthlyCloses: [],
+          operations: [buy("1000", "1000", "2023-01-01")],
+        },
+        {
+          // Un ETN de bitcoin comprado y vendido en ocho días: cero unidades desde
+          // entonces, pero la clase existe porque un día tuvo valor.
+          assetClass: classified({ crypto: "1" }),
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [
+            buy("1", "58.36", "2026-02-05", { assetId: "asset_etn" }),
+            sell("1", "54.00", "2026-02-13", { assetId: "asset_etn" }),
+          ],
+        },
+      ],
+      valuationDate: "2026-08-21",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    const crypto = result.classes.find((c) => c.key === "crypto")!;
+    expect(equity.closed).toBe(false);
+    expect(crypto.closed).toBe(true);
+    // Sigue emitida con sus medidas: el dominio marca, no omite — quien la lee
+    // decide si la enseña (#1456).
+    expect(crypto.value.amountMinor).toBe(0);
+    expect(crypto.simpleGain.totalGain.amountMinor).toBeLessThan(0);
+  });
+
+  test("una clase en pérdidas pero con valor NO está cerrada", () => {
+    // La marca separa «no tiene nada» de «va mal»: perder dinero no saca a una
+    // clase del reparto de hoy, tener cero sí.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ commodity: "1" }),
+          marketValueMinor: 40_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01")],
+        },
+      ],
+      valuationDate: "2026-08-21",
+    });
+
+    const commodity = result.classes[0]!;
+    expect(commodity.closed).toBe(false);
+    expect(commodity.simpleGain.totalReturnRatio).toBeLessThan(0);
+  });
+
+  test("marcarla no mueve la cobertura del pie", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 100_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01")],
+        },
+        {
+          assetClass: unknown,
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [
+            buy("1", "50", "2026-02-05", { assetId: "asset_x" }),
+            sell("1", "40", "2026-02-13", { assetId: "asset_x" }),
+          ],
+        },
+      ],
+      valuationDate: "2026-08-21",
+    });
+
+    // Una clase a cero no aporta nada a ninguno de los dos lados del reparto.
+    expect(result.coverage.classified.amountMinor).toBe(100_000);
+    expect(result.coverage.unknown.amountMinor).toBe(0);
+    expect(
+      result.classes.find((c) => c.key === UNCLASSIFIED_ASSET_CLASS_KEY)!.closed,
+    ).toBe(true);
+  });
+});

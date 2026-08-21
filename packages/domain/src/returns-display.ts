@@ -355,6 +355,8 @@ export interface AssetClassReturnsView {
   key: string;
   value: MoneyMinor;
   view: HoldingReturnsView;
+  /** No value attributed today: the class is history, not present weight (#1456). */
+  closed: boolean;
 }
 
 /** The per-asset-class returns display model: one entry per class + coverage. */
@@ -417,6 +419,7 @@ export function returnsByAssetClassView(
         entry.payoutsIncluded,
       );
       return {
+        closed: entry.closed,
         key: entry.key,
         value: entry.value,
         view: { ...view, caveats: [...view.caveats, CLASS_ATTRIBUTION_CAVEAT] },

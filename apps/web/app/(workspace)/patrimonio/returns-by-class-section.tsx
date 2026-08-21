@@ -15,6 +15,13 @@ import { assetClassLabel, formatExposureWeight } from "./exposure-view";
  * green/red (design-system.md). A measure that could not be computed shows an em
  * dash, never a fabricated number — and that em dash says on hover WHY the measure
  * is missing, so an absent figure reads as a signal and not as a glitch (#1457).
+ *
+ * A class the workspace no longer holds (`closed`, #1456) does not compete for the
+ * reader's attention with the ones that sustain the patrimonio: it folds away
+ * behind a native `<details>` — the same gesture the closed positions use in the
+ * balance board — because the footer announces the split is made with TODAY's
+ * weights, and a class with no value today takes no part in it. Folded, never
+ * dropped: its episode was real and stays one click away.
  */
 function signClass(ratio: number | null): "pos" | "neg" | "" {
   if (ratio === null || ratio === 0) {
@@ -29,6 +36,49 @@ function twrWhy(reason: TwrReason | null): string {
   return why === null ? "Sin TWR para esta clase." : `Sin TWR: ${why}.`;
 }
 
+/** One class's row: its label, attributed value and weight, plus the three measures. */
+function ClassRow({
+  entry,
+  weight,
+  privacyMode,
+}: {
+  entry: AssetClassReturnsViewResult["classes"][number];
+  weight: string;
+  privacyMode: boolean;
+}) {
+  return (
+    <li className="returnsClassRow">
+      <div className="returnsClassHead">
+        <span className="returnsClassLabel">{assetClassLabel(entry.key)}</span>
+        <b>{formatMoneyMinorPrivacy(entry.value, privacyMode)}</b>
+        <span className="returnsClassShare">{formatExposureWeight(weight)}</span>
+      </div>
+      <dl className="returnsClassMeasures">
+        <div>
+          <dt>Ganancia</dt>
+          <dd className={signClass(entry.view.totalReturnRatio)}>
+            {formatMeasurePct(entry.view.totalReturnRatio)}
+          </dd>
+        </div>
+        <div>
+          <dt>IRR</dt>
+          <dd>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
+        </div>
+        <div>
+          <dt>TWR</dt>
+          <dd
+            {...(entry.view.twr?.rate == null
+              ? { title: twrWhy(entry.view.twr?.reason ?? null) }
+              : {})}
+          >
+            {formatMeasurePct(entry.view.twr?.rate ?? null)}
+          </dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
 export default function ReturnsByClassSection({
   returns,
   privacyMode,
@@ -36,10 +86,11 @@ export default function ReturnsByClassSection({
   returns: AssetClassReturnsViewResult;
   privacyMode: boolean;
 }) {
-  const totalMinor = returns.classes.reduce(
-    (sum, entry) => sum + entry.value.amountMinor,
-    0,
-  );
+  // The list ranks classes by their weight TODAY, so only the live ones are in it
+  // (#1456); the closed ones all read 0 €, so the denominator is the same either way.
+  const live = returns.classes.filter((entry) => !entry.closed);
+  const closed = returns.classes.filter((entry) => entry.closed);
+  const totalMinor = live.reduce((sum, entry) => sum + entry.value.amountMinor, 0);
   const weightOf = (amountMinor: number): string =>
     totalMinor > 0 ? (amountMinor / totalMinor).toString() : "0";
 
@@ -53,41 +104,36 @@ export default function ReturnsByClassSection({
         <span>Cómo rinde cada clase de activo</span>
       </div>
 
-      <ul className="returnsClassRows">
-        {returns.classes.map((entry) => (
-          <li className="returnsClassRow" key={entry.key}>
-            <div className="returnsClassHead">
-              <span className="returnsClassLabel">{assetClassLabel(entry.key)}</span>
-              <b>{formatMoneyMinorPrivacy(entry.value, privacyMode)}</b>
-              <span className="returnsClassShare">
-                {formatExposureWeight(weightOf(entry.value.amountMinor))}
-              </span>
-            </div>
-            <dl className="returnsClassMeasures">
-              <div>
-                <dt>Ganancia</dt>
-                <dd className={signClass(entry.view.totalReturnRatio)}>
-                  {formatMeasurePct(entry.view.totalReturnRatio)}
-                </dd>
-              </div>
-              <div>
-                <dt>IRR</dt>
-                <dd>{formatMeasurePct(entry.view.irr?.rate ?? null)}</dd>
-              </div>
-              <div>
-                <dt>TWR</dt>
-                <dd
-                  {...(entry.view.twr?.rate == null
-                    ? { title: twrWhy(entry.view.twr?.reason ?? null) }
-                    : {})}
-                >
-                  {formatMeasurePct(entry.view.twr?.rate ?? null)}
-                </dd>
-              </div>
-            </dl>
-          </li>
-        ))}
-      </ul>
+      {live.length === 0 ? (
+        <p className="returnsClassEmpty">Ninguna clase con valor hoy.</p>
+      ) : (
+        <ul className="returnsClassRows">
+          {live.map((entry) => (
+            <ClassRow
+              entry={entry}
+              key={entry.key}
+              privacyMode={privacyMode}
+              weight={weightOf(entry.value.amountMinor)}
+            />
+          ))}
+        </ul>
+      )}
+
+      {closed.length > 0 ? (
+        <details suppressHydrationWarning className="returnsClassClosed">
+          <summary>Clases cerradas ({closed.length})</summary>
+          <ul className="returnsClassRows">
+            {closed.map((entry) => (
+              <ClassRow
+                entry={entry}
+                key={entry.key}
+                privacyMode={privacyMode}
+                weight={weightOf(entry.value.amountMinor)}
+              />
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <dl className="exposureCoverage">
         <div className="exposureCoveragePart classified">

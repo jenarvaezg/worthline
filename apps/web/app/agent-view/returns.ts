@@ -230,6 +230,9 @@ function buildAssetClassReturnsBlock(input: {
 
 function toAssetClassReturns(entry: AssetClassReturns): AgentViewAssetClassReturns {
   return {
+    // Present only when true, like every other state flag on the agent view: an
+    // absent `closed` reads as a live class, never as an unknown one.
+    ...(entry.closed ? { closed: true as const } : {}),
     key: entry.key,
     moneyWeighted: toMoneyWeighted(entry.irr),
     simple: simpleGainToReturn(entry.simpleGain, entry.value.currency),

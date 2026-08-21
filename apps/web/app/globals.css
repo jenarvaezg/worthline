@@ -5548,7 +5548,8 @@ code {
 }
 
 .balanceTrash > summary,
-.balanceClosed > summary {
+.balanceClosed > summary,
+.returnsClassClosed > summary {
   list-style: none;
   cursor: pointer;
   padding: 12px 0;
@@ -5559,7 +5560,8 @@ code {
 }
 
 .balanceTrash > summary::-webkit-details-marker,
-.balanceClosed > summary::-webkit-details-marker {
+.balanceClosed > summary::-webkit-details-marker,
+.returnsClassClosed > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -6306,6 +6308,19 @@ td.rowActions > * {
   font-size: 0.72rem;
   line-height: 1.5;
   margin: 12px 0 0;
+}
+
+.returnsClassEmpty {
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Classes with nothing left today fold under the live list, the same gesture the
+   closed positions use in the balance board (#1456) — and the same summary recipe,
+   shared with `.balanceClosed` above rather than restated here. */
+.returnsClassClosed {
+  border-top: 1px solid var(--hairline);
+  margin-top: 14px;
 }
 
 .housingValuation .anchorEdit {
