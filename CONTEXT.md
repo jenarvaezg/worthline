@@ -111,6 +111,19 @@ hand. Units change only through **operations**; the unit price comes from a
 **price provider** or a manual quote.
 _Avoid_: editing an investment's value directly (it is a derived figure).
 
+**Managed portfolio** (cartera gestionada):
+A roboadvisor-run portfolio (MyInvestor, Indexa, Finizens) the owner knows as one
+balance but whose composition a manager decides. A grouping entity over live
+**holdings** — never a holding itself: every member keeps summing into **net
+worth** on its own, and membership is exclusive (a position lives inside one
+portfolio). It carries its own cash — a sibling current-account member where
+contributions wait for the investment threshold — and a declared-balance
+reconciliation witness: the total the owner reads in the manager's app, stored
+with its date and compared against the derived sum, never plugged. An internal
+rebalance is a **traspaso** pair between members. UI label: "cartera gestionada".
+_Avoid_: nested holdings, container holding (its value would fight the sum),
+grouping tag (no cash, no witness, no figures).
+
 **Price provider**:
 A service that supplies unit prices for investments. Each provider implements
 the `PriceProvider` contract (`fetchPrice`). Wired providers:
