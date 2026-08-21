@@ -27,6 +27,19 @@ housing equity are derived from the instrument rather than from a tier.
   unassociated (a claim on liquid resources for its full balance). This replaces the
   invented default (`tierOfLiability`: mortgage→housing, else→cash) that silently made
   informal loans reduce liquid net worth.
+- A liability inherits its rung from the **identity** of its associated asset, never from
+  whether that asset is valued on the date being reconstructed (#1436). A debt's presence in
+  a historical snapshot is decided by its OWN dated facts (its baseline/plan date per
+  ADR 0056, or its first balance anchor) — a mortgage signed in 2004 belongs in 2004 even
+  when the flat that secures it has appraisals only from last month, which is the normal
+  shape of a real household. The consequence is accepted deliberately: in that stretch
+  housing equity reads as the debt alone (negative), which is the honest reading — the loan
+  was real and it is the home's VALUE that is unknown, not the home. What the debt must
+  never do is fall to `cash` and eat the liquid net worth, so the rung/`securesHousing`
+  classification is resolved against the live asset set (`classificationAssets` in
+  `calculateNetWorth` / `buildSnapshotHoldingRows`). Generating a snapshot and recalculating
+  one now answer the belongs-here question identically; they did not, and the same date
+  carried the debt or not depending on how its snapshot was born.
 - Snapshots freeze a holding's rung (ADR 0008); the recut changes the rung vocabulary, so
   existing snapshot-holding rows must be migrated/re-derived.
 - FIRE eligibility already keys off an explicit primary-residence flag, not the housing

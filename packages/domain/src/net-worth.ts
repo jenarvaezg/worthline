@@ -95,6 +95,15 @@ export function calculateNetWorth(input: {
   assets: ManualAsset[];
   liabilities?: Liability[];
   /**
+   * The asset set a DEBT is classified against — its liquidity rung and whether
+   * it secures housing (#1436). Defaults to `assets`, which is the whole story on
+   * the live path (every asset the workspace has is in it). The historical path
+   * passes the LIVE assets while `assets` holds only those valued on that date:
+   * a mortgage whose home has no valuation yet still nets against housing instead
+   * of falling to the `cash` rung and eating the liquid net worth.
+   */
+  classificationAssets?: ManualAsset[];
+  /**
    * FX context for non-base-currency holdings (#1065). When present, a non-base
    * value is converted to the base currency at `asOf`; when absent, or when a rate
    * is missing, the holding is EXCLUDED and reported in `fxExcluded` — never summed
@@ -105,10 +114,11 @@ export function calculateNetWorth(input: {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
   const currency = input.workspace.baseCurrency;
   const zero = money(0, currency);
+  const classificationAssets = input.classificationAssets ?? input.assets;
   const assetTierById = new Map(
-    input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
+    classificationAssets.map((asset) => [asset.id, tierOfAsset(asset)]),
   );
-  const housingAssetIds = housingAssetIdsOf(input.assets);
+  const housingAssetIds = housingAssetIdsOf(classificationAssets);
 
   let grossAssets = zero;
   let liquidAssets = zero;

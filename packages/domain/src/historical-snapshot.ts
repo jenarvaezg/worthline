@@ -422,22 +422,32 @@ function amortizableLiabilityStartDate(
     : firstRebaseline;
 }
 
+/**
+ * Whether a liability belongs in the snapshot at a historical date.
+ *
+ * A debt exists by ITS OWN dated facts — its plan/baseline date (ADR 0056: history
+ * starts when truth starts) or its first balance anchor — and NEVER by whether the
+ * asset it secures happens to be valued on that date (#1436). The old rule dropped
+ * an associated debt whose asset had no historical row, which erased the mortgage
+ * from all 256 points a real user had just reconstructed: his loan starts in 2004
+ * and the flat that secures it has appraisals only from 2026. It also made the same
+ * date carry the debt or not depending on how its snapshot was born — the
+ * recalculation path (`recalculateSnapshotForLiability`) never applied that rule.
+ * Now both paths answer this question the same way.
+ *
+ * The cost of keeping the debt is a housing equity that can go negative where the
+ * home is not valued yet. That is the honest reading (the loan was real; what is
+ * missing is the home's value, not the home) and it is what the recalculated
+ * snapshots already showed. What it must NOT do is leak onto the liquid axis:
+ * `classificationAssets` keeps such a debt on its home's rung (see the capture call
+ * below).
+ */
 function liabilityExistsAtHistoricalDate(input: {
   liability: Liability;
   curve: DebtBalanceCurveInputs | undefined;
-  liveAssetIds: ReadonlySet<string>;
-  historicalAssetIds: ReadonlySet<string>;
   targetDate: string;
 }): boolean {
-  const { curve, liability, targetDate } = input;
-
-  if (
-    liability.associatedAssetId !== undefined &&
-    input.liveAssetIds.has(liability.associatedAssetId) &&
-    !input.historicalAssetIds.has(liability.associatedAssetId)
-  ) {
-    return false;
-  }
+  const { curve, targetDate } = input;
 
   if (curve?.debtModel === "amortizable") {
     const startDate = amortizableLiabilityStartDate(curve);
@@ -558,8 +568,6 @@ export function buildSnapshotAtDate(
   }
 
   const historicalAssets: ManualAsset[] = [];
-  const historicalAssetIds = new Set<string>();
-  const liveAssetIds = new Set(input.assets.map((asset) => asset.id));
   const investmentDetails = new Map<string, InvestmentCaptureDetail>();
 
   for (const asset of input.assets) {
@@ -577,7 +585,6 @@ export function buildSnapshotAtDate(
         ...asset,
         currentValue: money(coinValueMinor, asset.currency),
       });
-      historicalAssetIds.add(asset.id);
       continue;
     }
 
@@ -588,7 +595,6 @@ export function buildSnapshotAtDate(
       ...asset,
       currentValue: money(valuation.valueMinor, asset.currency),
     });
-    historicalAssetIds.add(asset.id);
 
     if (valuation.units !== undefined) {
       investmentDetails.set(asset.id, {
@@ -604,9 +610,7 @@ export function buildSnapshotAtDate(
     if (
       !liabilityExistsAtHistoricalDate({
         curve,
-        historicalAssetIds,
         liability,
-        liveAssetIds,
         targetDate: input.targetDate,
       })
     ) {
@@ -634,6 +638,11 @@ export function buildSnapshotAtDate(
   return captureValuedNetWorthSnapshot({
     assets: historicalAssets,
     capturedAt: input.capturedAt,
+    // A debt is classified against the LIVE assets, not against the ones valued on
+    // this date (#1436): a mortgage kept while its home has no valuation yet nets
+    // against housing equity — where a reader looks for it — instead of dropping to
+    // the `cash` rung and inventing a hole in the liquid net worth.
+    classificationAssets: input.assets,
     id: input.id,
     investmentDetails,
     liabilities: historicalLiabilities,
