@@ -11,7 +11,6 @@ import {
   successRedirectUrl,
 } from "@web/intake";
 import {
-  NEW_DESTINATION,
   parseTransferForm,
   previewTransfer,
   readTransferFormValues,
@@ -20,13 +19,15 @@ import {
   type TransferDraft,
 } from "@web/patrimonio/[id]/editar/_surfaces/transfer-form";
 import type { WorthlineStore } from "@web/store";
-import type {
-  CurrencyCode,
-  DecimalString,
-  Instrument,
-  ManualAsset,
-} from "@worthline/domain";
-import { defaultsFor, derivePosition, operationsUpTo } from "@worthline/domain";
+import type { DecimalString, Instrument, ManualAsset } from "@worthline/domain";
+import { defaultsFor } from "@worthline/domain";
+
+/** A destination this submit created, as the exposure catalog wants to hear it. */
+interface CreatedDestination {
+  name: string;
+  instrument: Instrument;
+  isin?: string;
+}
 
 /**
  * The «Traspasar» server action (#1480, S3 of PRD #1393): one screen, one submit.
@@ -71,7 +72,7 @@ export async function recordTransferAction(
       values: preserveFields(formData, [...TRANSFER_FORM_FIELDS]),
     });
 
-  return formAction<TransferDraft, { newDestination: TransferDestination | null }>({
+  return formAction<TransferDraft, { created: CreatedDestination | null }>({
     datedFact: false,
     guardUrl: () => returnUrl,
     onError: ({ error }) => transferErrorUrl(error),
@@ -92,6 +93,7 @@ export async function recordTransferAction(
       }
 
       const outOperationId = createStableId("op", `${originAssetId}_transfer_out`, seed);
+      const operations = await store.operations.readOperations(originAssetId);
 
       // The replay shortcut (#1394) comes FIRST, before any figure is judged. A
       // replay looks at a ledger that already holds the traspaso, so the position it
@@ -100,24 +102,23 @@ export async function recordTransferAction(
       // tells a second submit ("my traspaso is already there") from a first one; the
       // gate's ids are primary keys, so a race that gets past this still collides
       // rather than writing twice.
-      const alreadyRecorded = (await store.operations.readOperations(originAssetId)).some(
-        (operation) => operation.id === outOperationId,
-      );
-      if (alreadyRecorded) {
-        return { ok: true, value: { newDestination: null } };
+      if (operations.some((operation) => operation.id === outOperationId)) {
+        return { ok: true, value: { created: null } };
       }
 
-      // Check the figures BEFORE creating anything. The gate would refuse them too —
-      // it is the authority — but by then a brand-new destination holding would
-      // already be in the book, empty, for a traspaso that never happened.
-      const refusal = await refuseUpFront(store, {
-        assetId: originAssetId,
-        currency: origin.currency,
-        dateKey: parsed.executedAt,
-        today,
+      // Check the figures BEFORE creating anything, with the function the SCREEN
+      // previews with — which is `planTransfer`, the gate's own arithmetic, over the
+      // ledger folded at the transfer date. The gate would refuse them too (it is the
+      // authority), but by then a brand-new destination holding would already be in
+      // the book, empty, for a traspaso that never happened.
+      const preview = previewTransfer(
         values,
-      });
-      if (refusal) return { ok: false, error: refusal };
+        { assetId: originAssetId, currency: origin.currency, operations },
+        today,
+      );
+      if (preview.status === "refused") {
+        return { ok: false, error: preview.message };
+      }
 
       const destination = await resolveDestination(store, {
         destination: parsed.destination,
@@ -152,23 +153,22 @@ export async function recordTransferAction(
         return { ok: false, error: mapDomainViolation(result.violations[0]) };
       }
 
-      return {
-        ok: true,
-        value: { newDestination: destination.created ? parsed.destination : null },
-      };
+      return { ok: true, value: { created: destination.created } };
     },
     // The just-created destination's identity joins the exposure catalog (#1097), so
     // its row is born with the holding instead of waiting for a backfill. Best
     // effort by construction: a catalog that is down must not undo a written
     // traspaso.
     afterCommit: async ({ value }) => {
-      const created = value?.newDestination;
-      if (!created || created.kind !== "new") return;
+      const created = value?.created;
+      if (!created) return;
 
       await ensureExposureCatalogStubs([
         {
           displayName: created.name,
-          instrument: null,
+          // The instrument is known here (inherited from the origin), so the catalog
+          // row is born with its provenance rather than blank (#1097/#1508).
+          instrument: created.instrument,
           isin: created.isin ?? null,
           priceProvider: null,
           providerSymbol: null,
@@ -176,42 +176,6 @@ export async function recordTransferAction(
       ]);
     },
   })(formData, ..._testArgs);
-}
-
-/**
- * The refusal the gate would answer with, computed from the origin's ledger before
- * anything is written — or null when the figures pass.
- *
- * Runs `previewTransfer`, the same function the screen prints under the fields, so
- * this check can never disagree with either the form or the writer (#1438).
- */
-async function refuseUpFront(
-  store: WorthlineStore,
-  params: {
-    assetId: string;
-    currency: CurrencyCode;
-    dateKey: string;
-    today: string;
-    values: Parameters<typeof previewTransfer>[0];
-  },
-): Promise<string | null> {
-  const operations = await store.operations.readOperations(params.assetId);
-  const position = derivePosition(operationsUpTo(operations, params.dateKey), {
-    assetId: params.assetId,
-    currency: params.currency,
-  });
-
-  const preview = previewTransfer(
-    params.values,
-    {
-      assetId: params.assetId,
-      costBasisMinor: position.costBasis.amountMinor,
-      unitsHeld: position.currentUnits,
-    },
-    params.today,
-  );
-
-  return preview.status === "refused" ? preview.message : null;
 }
 
 /**
@@ -231,9 +195,9 @@ async function resolveDestination(
     pricePerUnit: DecimalString;
     seed: number | string;
   },
-): Promise<{ assetId: string; created: boolean }> {
+): Promise<{ assetId: string; created: CreatedDestination | null }> {
   if (params.destination.kind === "existing") {
-    return { assetId: params.destination.assetId, created: false };
+    return { assetId: params.destination.assetId, created: null };
   }
 
   const id = createStableId("asset", params.destination.name, params.seed);
@@ -242,7 +206,7 @@ async function resolveDestination(
   // here rather than duplicated under a second one.
   const existing = (await store.assets.readAssets()).some((asset) => asset.id === id);
   if (existing) {
-    return { assetId: id, created: false };
+    return { assetId: id, created: null };
   }
 
   const instrument: Instrument = params.origin.instrument ?? "fund";
@@ -258,5 +222,12 @@ async function resolveDestination(
     ...(params.destination.isin ? { isin: params.destination.isin } : {}),
   });
 
-  return { assetId: id, created: true };
+  return {
+    assetId: id,
+    created: {
+      instrument,
+      name: params.destination.name,
+      ...(params.destination.isin ? { isin: params.destination.isin } : {}),
+    },
+  };
 }

@@ -5,12 +5,18 @@ import {
   parseMoneyMinor,
 } from "@web/intake-primitives";
 import type {
+  CurrencyCode,
   DecimalString,
+  InvestmentOperation,
   ManualAsset,
-  TransferOrigin,
   TransferPortion,
 } from "@worthline/domain";
-import { keepsAnOperationLedger, planTransfer } from "@worthline/domain";
+import {
+  derivePosition,
+  keepsAnOperationLedger,
+  operationsUpTo,
+  planTransfer,
+} from "@worthline/domain";
 
 /**
  * The traspaso form's pure seam (#1480, S3 of PRD #1393): the fields the screen
@@ -22,9 +28,8 @@ import { keepsAnOperationLedger, planTransfer } from "@worthline/domain";
  * the mistake #1438 measured (a preview that disagreed with the writer left 266
  * wrong snapshots). So there is one parser, and the preview runs
  * {@link planTransfer} — the very function behind the write gate — rather than a
- * client-side lookalike. The only thing the preview cannot know is the currency the
- * two ledgers keep (the gate reads it, and refuses a mismatch); it plays no part in
- * the arithmetic, so the preview passes EUR and never shows it.
+ * client-side lookalike, and folds the origin's ledger at the transfer date the way
+ * the gate folds it.
  *
  * Prior art in this folder: `cobros-form.ts`, the same shape of shared pure module
  * behind a section and its action.
@@ -148,8 +153,19 @@ export function transferDestinationOptions(
     });
 }
 
-/** The origin's folded position, plus the id the same-holding check compares. */
-export type TransferPreviewOrigin = TransferOrigin & { assetId: string };
+/**
+ * The origin, as a preview needs it: its LEDGER, not a folded position.
+ *
+ * The fold has to happen at the traspaso's date, and the date is a field the user
+ * changes — a position folded once, up front, would be today's. That is precisely the
+ * disagreement between preview and writer that #1438 measured, so the ledger travels
+ * and {@link previewTransfer} folds it the way the gate does (`operationsUpTo`).
+ */
+export interface TransferPreviewOrigin {
+  assetId: string;
+  currency: CurrencyCode;
+  operations: readonly InvestmentOperation[];
+}
 
 /**
  * What the form prints under the fields: the pair, a refusal, or nothing at all.
@@ -259,9 +275,15 @@ export function parseTransferForm(
 /**
  * The pair the gate would write from these fields, printed as the user types.
  *
- * Runs the real plan against the origin's folded position, so the participaciones on
- * screen are the participaciones that get stored — including the cut at
- * `UNITS_READBACK_DECIMALS` (#1395) and the exact-liquidation shape of «todo».
+ * Runs the real plan against the origin's position AS OF THE TRANSFER DATE, folded
+ * here with `operationsUpTo` exactly as the gate folds it — so the participaciones on
+ * screen are the participaciones that get stored, including the cut at
+ * `UNITS_READBACK_DECIMALS` (#1395), the exact-liquidation shape of «todo», and the
+ * refusal of an importe the position cannot cover. Folding today's position instead
+ * would make a backdated traspaso preview one figure and store another.
+ *
+ * The same function answers on the server (`recordTransferAction`), which is why the
+ * refusal it returns is a message and not a guess.
  */
 export function previewTransfer(
   values: TransferFormValues,
@@ -271,9 +293,14 @@ export function previewTransfer(
   const parsed = parseTransferForm(values, today);
   if (!parsed.ok) return { status: "incomplete" };
 
+  const position = derivePosition(
+    operationsUpTo(origin.operations, parsed.command.executedAt.slice(0, 10)),
+    { assetId: origin.assetId, currency: origin.currency },
+  );
+
   const plan = planTransfer(
     {
-      currency: "EUR",
+      currency: origin.currency,
       destinationAssetId:
         parsed.command.destination.kind === "existing"
           ? parsed.command.destination.assetId
@@ -290,7 +317,10 @@ export function previewTransfer(
         ? {}
         : { destinationAmountMinor: parsed.command.destinationAmountMinor }),
     },
-    { costBasisMinor: origin.costBasisMinor, unitsHeld: origin.unitsHeld },
+    {
+      costBasisMinor: position.costBasis.amountMinor,
+      unitsHeld: position.currentUnits,
+    },
   );
 
   if (!plan.ok) {
@@ -353,4 +383,31 @@ function parsePortion(
   }
 
   return { ok: true, portion: { amountMinor, kind: "amount" } };
+}
+
+/** The mutable holder of the in-flight submission key — a ref in the island. */
+export interface SubmissionKeyRef {
+  current: string | null;
+}
+
+/**
+ * Stamp the idempotency key onto a submit and publish it as the in-flight one
+ * (#1394), returning it.
+ *
+ * The two writes — onto the body and onto the ref — are the whole guard, so they live
+ * in one tested function rather than inline in the island: the window a double click
+ * exploits is the frame BEFORE any pending flag flips, which is why publishing is
+ * synchronous. A submit that arrives while one is in flight reuses its key, so the
+ * server recognises the replay instead of writing a second pair. Sibling: the
+ * operations editor's `submitOperationRecord`, which also carries an optimistic row.
+ */
+export function stampTransferSubmission(
+  formData: FormData,
+  keyRef: SubmissionKeyRef,
+  newId: () => string,
+): string {
+  const key = keyRef.current ?? newId();
+  keyRef.current = key;
+  formData.set("submissionId", key);
+  return key;
 }

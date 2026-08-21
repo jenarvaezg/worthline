@@ -8,22 +8,35 @@
  * intent → the figures a form prints) and let the plan own the numbers.
  */
 
-import type { ManualAsset } from "@worthline/domain";
+import type { InvestmentOperation, ManualAsset } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 import {
   NEW_DESTINATION,
   parseTransferForm,
   previewTransfer,
   readTransferFormValues,
+  type SubmissionKeyRef,
+  stampTransferSubmission,
   type TransferFormValues,
   transferDestinationOptions,
 } from "./transfer-form";
 
 const TODAY = "2026-08-21";
+/** 100 participaciones bought at 10 € — 1.000 € of cost basis. */
+const BUY: InvestmentOperation = {
+  assetId: "h-origin",
+  currency: "EUR",
+  executedAt: "2025-01-15",
+  feesMinor: 0,
+  id: "op_compra",
+  kind: "buy",
+  pricePerUnit: "10",
+  units: "100",
+};
 const ORIGIN = {
   assetId: "h-origin",
-  costBasisMinor: 100_000,
-  unitsHeld: "100" as const,
+  currency: "EUR" as const,
+  operations: [BUY],
 };
 
 function values(over: Partial<TransferFormValues> = {}): TransferFormValues {
@@ -251,6 +264,47 @@ describe("previewTransfer", () => {
     });
   });
 
+  test("folds the origin AT THE TRANSFER DATE, not today (#1438)", () => {
+    // A purchase made AFTER the traspaso neither backs the amount that left nor lends
+    // its cost to the destination. Folding today's position instead would preview a
+    // traspaso the gate then refuses — or, worse, accept one the position never
+    // covered on the day it happened.
+    const laterBuy: InvestmentOperation = {
+      ...BUY,
+      executedAt: "2026-08-20",
+      id: "op_posterior",
+      pricePerUnit: "12",
+      units: "500",
+    };
+
+    const preview = previewTransfer(
+      values({ amount: "5.000,00" }),
+      { ...ORIGIN, operations: [BUY, laterBuy] },
+      TODAY,
+    );
+
+    // 5.000 € ÷ 12 = 416 participaciones: covered by today's 600, not by the 100 the
+    // holding had on 14-ago.
+    expect(preview.status).toBe("refused");
+  });
+
+  test("«todo» on a past date empties the position of THAT date", () => {
+    const laterBuy: InvestmentOperation = {
+      ...BUY,
+      executedAt: "2026-08-20",
+      id: "op_posterior",
+      units: "50",
+    };
+
+    const preview = previewTransfer(
+      values({ portion: "all" }),
+      { ...ORIGIN, operations: [BUY, laterBuy] },
+      TODAY,
+    );
+
+    expect(preview).toMatchObject({ outUnits: "100", status: "ready" });
+  });
+
   test("a traspaso onto the holding itself is refused, not previewed", () => {
     const preview = previewTransfer(
       values({ destinationAssetId: ORIGIN.assetId }),
@@ -311,5 +365,37 @@ describe("transferDestinationOptions", () => {
     );
 
     expect(options.map((option) => option.assetId)).toEqual(["h-ok"]);
+  });
+});
+
+describe("stampTransferSubmission", () => {
+  test("writes the key onto the body AND publishes it as in-flight (#1394)", () => {
+    const formData = new FormData();
+    const keyRef: SubmissionKeyRef = { current: null };
+
+    const key = stampTransferSubmission(formData, keyRef, () => "k1");
+
+    expect(key).toBe("k1");
+    expect(formData.get("submissionId")).toBe("k1");
+    // Published synchronously: the second click of a double click happens before any
+    // pending flag has flipped, so the ref is the only thing that can catch it.
+    expect(keyRef.current).toBe("k1");
+  });
+
+  test("a submit while one is in flight reuses its key, so the server sees a replay", () => {
+    const keyRef: SubmissionKeyRef = { current: "k1" };
+    const formData = new FormData();
+
+    expect(stampTransferSubmission(formData, keyRef, () => "k2")).toBe("k1");
+    expect(formData.get("submissionId")).toBe("k1");
+  });
+
+  test("once it settles, the next submit is a NEW traspaso and not a replay", () => {
+    const keyRef: SubmissionKeyRef = { current: null };
+
+    stampTransferSubmission(new FormData(), keyRef, () => "k1");
+    keyRef.current = null; // what the island's `finally` does
+
+    expect(stampTransferSubmission(new FormData(), keyRef, () => "k2")).toBe("k2");
   });
 });

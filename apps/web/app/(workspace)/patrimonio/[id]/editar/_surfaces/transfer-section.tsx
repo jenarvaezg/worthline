@@ -25,13 +25,21 @@
 
 import { formatIsoDayEs } from "@web/asistente/iso-day-es";
 import type { FormErrorContext } from "@web/intake";
-import { formatMoneyMinorPrivacy, formatPrice, formatUnits } from "@worthline/domain";
+import type { CurrencyCode } from "@worthline/domain";
+import {
+  derivePosition,
+  formatMoneyMinorPrivacy,
+  formatPrice,
+  formatUnits,
+  operationsUpTo,
+} from "@worthline/domain";
 import { type FormEvent, useRef, useState, useTransition } from "react";
 
 import {
   NEW_DESTINATION,
   previewTransfer,
   readTransferFormValues,
+  stampTransferSubmission,
   type TransferDestinationOption,
   type TransferFormValues,
   type TransferPreviewOrigin,
@@ -42,7 +50,7 @@ import {
  * calls the action by hand, which leaves `useFormStatus` idle — the same reason
  * `RecordOperationSubmit` exists for the operations form.
  */
-export function RecordTransferSubmit({
+function RecordTransferSubmit({
   disabled = false,
   pending,
 }: {
@@ -71,7 +79,12 @@ export default function TransferSection({
   /** The workspace's other investment holdings, already filtered by the server. */
   destinations: readonly TransferDestinationOption[];
   formError: FormErrorContext | null;
-  /** The origin's folded position — what the preview measures the importe against. */
+  /**
+   * The origin's LEDGER plus its last known price. The ledger travels because the
+   * preview folds it at the date the user picks — a position folded on the server
+   * would be today's, and a backdated traspaso would preview figures the gate then
+   * refuses (#1438).
+   */
   origin: TransferPreviewOrigin & { pricePerUnit?: string };
   originName: string;
   privacyMode?: boolean;
@@ -111,15 +124,13 @@ export default function TransferSection({
   const destinationPriceTouched = useRef(false);
   const destinationPriceField = useRef<HTMLInputElement | null>(null);
 
-  const preview = previewTransfer(
-    values,
-    {
-      assetId: origin.assetId,
-      costBasisMinor: origin.costBasisMinor,
-      unitsHeld: origin.unitsHeld,
-    },
-    today,
-  );
+  const preview = previewTransfer(values, origin, today);
+  // The position «todo» would empty, at the date on the form — the same fold the
+  // preview and the gate run, so the figure on the radio is the figure that leaves.
+  const unitsOnDate = derivePosition(
+    operationsUpTo(origin.operations, (values.executedAt || today).slice(0, 10)),
+    { assetId: origin.assetId, currency: origin.currency },
+  ).currentUnits;
 
   const readForm = (form: HTMLFormElement) =>
     setValues(readTransferFormValues(new FormData(form)));
@@ -129,12 +140,9 @@ export default function TransferSection({
     : (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
-        const key = inFlightSubmissionId.current ?? crypto.randomUUID();
-        // Published synchronously, before the transition: a second click in the same
-        // frame has to see the key, which is exactly the window `isRecording` cannot
-        // cover.
-        inFlightSubmissionId.current = key;
-        formData.set("submissionId", key);
+        stampTransferSubmission(formData, inFlightSubmissionId, () =>
+          crypto.randomUUID(),
+        );
         startRecording(async () => {
           try {
             await recordAction(formData);
@@ -144,12 +152,17 @@ export default function TransferSection({
         });
       };
 
-  const onDestinationChange = (assetId: string) => {
-    if (destinationPriceTouched.current || !destinationPriceField.current) return;
-    const chosen = destinations.find((option) => option.assetId === assetId);
-    destinationPriceField.current.value = chosen?.pricePerUnit
-      ? formatPrice(chosen.pricePerUnit)
-      : "";
+  const onDestinationChange = (select: HTMLSelectElement) => {
+    if (!destinationPriceTouched.current && destinationPriceField.current) {
+      const chosen = destinations.find((option) => option.assetId === select.value);
+      destinationPriceField.current.value = chosen?.pricePerUnit
+        ? formatPrice(chosen.pricePerUnit)
+        : "";
+    }
+    // Re-read the form AFTER the prefill: assigning `.value` fires no input event, so
+    // without this the preview would keep last keystroke's destination VL — the
+    // prefill would be invisible to the live figures until the next keypress.
+    if (select.form) readForm(select.form);
   };
 
   const shown = destinations.filter(
@@ -196,7 +209,7 @@ export default function TransferSection({
           <select
             defaultValue={initial.destinationAssetId}
             name="destinationAssetId"
-            onChange={(event) => onDestinationChange(event.target.value)}
+            onChange={(event) => onDestinationChange(event.target)}
           >
             <option value="">Elige una inversión…</option>
             {shown.map((option) => (
@@ -269,14 +282,14 @@ export default function TransferSection({
               type="radio"
               value="all"
             />{" "}
-            Todo ({formatUnits(origin.unitsHeld)} participaciones)
+            Todo ({formatUnits(unitsOnDate)} participaciones)
           </label>
         </fieldset>
 
         <label className="transferAmountField">
-          Importe traspasado (EUR)
+          Importe traspasado ({origin.currency})
           <input
-            aria-label="Importe traspasado en euros"
+            aria-label={`Importe traspasado en ${origin.currency}`}
             defaultValue={initial.amount}
             inputMode="decimal"
             name="amount"
@@ -328,9 +341,9 @@ export default function TransferSection({
         <details suppressHydrationWarning className="transferArrival">
           <summary>El importe que llegó fue distinto</summary>
           <label>
-            Importe que llegó al destino (EUR)
+            Importe que llegó al destino ({origin.currency})
             <input
-              aria-label="Importe que llegó al destino en euros"
+              aria-label={`Importe que llegó al destino en ${origin.currency}`}
               defaultValue={initial.destinationAmount}
               inputMode="decimal"
               name="destinationAmount"
@@ -340,6 +353,7 @@ export default function TransferSection({
         </details>
 
         <TransferPreviewLine
+          currency={origin.currency}
           date={values.executedAt || today}
           preview={preview}
           privacyMode={privacyMode}
@@ -357,10 +371,13 @@ export default function TransferSection({
  * change while the user types and a screen reader would otherwise never hear them.
  */
 function TransferPreviewLine({
+  currency,
   date,
   preview,
   privacyMode,
 }: {
+  /** The currency both ledgers keep — the pair is refused across two (ADR 0083). */
+  currency: CurrencyCode;
   date: string;
   preview: ReturnType<typeof previewTransfer>;
   privacyMode: boolean;
@@ -383,7 +400,7 @@ function TransferPreviewLine({
   }
 
   const money = (amountMinor: number) =>
-    formatMoneyMinorPrivacy({ amountMinor, currency: "EUR" }, privacyMode);
+    formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
 
   return (
     <p aria-live="polite" className="opCaptureHint">

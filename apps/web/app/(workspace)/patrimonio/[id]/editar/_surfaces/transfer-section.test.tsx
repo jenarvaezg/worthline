@@ -21,9 +21,20 @@ import TransferSection from "./transfer-section";
 const TODAY = "2026-08-21";
 const ORIGIN = {
   assetId: "h-origen",
-  costBasisMinor: 100_000,
+  currency: "EUR" as const,
+  operations: [
+    {
+      assetId: "h-origen",
+      currency: "EUR" as const,
+      executedAt: "2025-01-15",
+      feesMinor: 0,
+      id: "op_compra",
+      kind: "buy" as const,
+      pricePerUnit: "10",
+      units: "100",
+    },
+  ],
   pricePerUnit: "12.00",
-  unitsHeld: "100",
 };
 const DESTINATIONS: TransferDestinationOption[] = [
   { assetId: "h-cartera", name: "Cartera Permanente PP", pricePerUnit: "14.50" },

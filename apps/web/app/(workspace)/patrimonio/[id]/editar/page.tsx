@@ -44,7 +44,6 @@ import type {
 import {
   buildHoldingReturnsView,
   collectWarnings,
-  compareUnits,
   debtAccrualAtDate,
   debtBalanceAtDate,
   detectSingleAssetBackfillCandidate,
@@ -79,6 +78,9 @@ import { SnapshotPriceCorrectionSection } from "./_surfaces/snapshot-price-corre
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
 import { transferDestinationOptions } from "./_surfaces/transfer-form";
 import TransferSection from "./_surfaces/transfer-section";
+
+/** The forms that render their own error band, next to the field that produced it. */
+const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer"];
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -592,10 +594,10 @@ export default async function EditarPage({
           </div>
         ) : null}
 
-        {formError &&
-        formError.formId !== "operation" &&
-        formError.formId !== "payout" &&
-        formError.formId !== "transfer" ? (
+        {/* The page-level band carries only the errors NO section prints itself. The
+            list is the seam: a section that grows its own band adds itself here, and
+            the reader sees at a glance which forms speak for themselves. */}
+        {formError && !SECTIONS_WITH_OWN_ERROR_BAND.includes(formError.formId ?? "") ? (
           <p className="errorBand" role="alert">
             {formError.message}
           </p>
@@ -741,23 +743,25 @@ export default async function EditarPage({
             ) : null}
 
             {/* derived: «Traspasar» — one screen, one submit for a fund-to-fund
-                traspaso (#1480, PRD #1393). Only with units to move: a traspaso from
-                an empty holding is a form that can only be refused. */}
+                traspaso (#1480, PRD #1393). Offered whenever the holding HAS a ledger,
+                not whenever it has units today: a traspaso is routinely recorded weeks
+                later, and the one that emptied the holding is exactly the row that is
+                still missing. The ledger travels so the preview can fold it at the
+                date the user picks (#1438). */}
             {asset &&
             method === "derived" &&
             !isCoinCollection &&
             !isBinanceHolding &&
-            position &&
-            compareUnits(position.currentUnits, "0") > 0 ? (
+            operations.length > 0 ? (
               <TransferSection
                 currentUrl={currentUrl}
                 destinations={transferDestinations}
                 formError={formError}
                 origin={{
                   assetId: id,
-                  costBasisMinor: position.costBasis.amountMinor,
-                  unitsHeld: position.currentUnits,
-                  ...(position.currentPricePerUnit
+                  currency: asset.currency,
+                  operations,
+                  ...(position?.currentPricePerUnit
                     ? { pricePerUnit: position.currentPricePerUnit }
                     : {}),
                 }}
