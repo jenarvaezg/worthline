@@ -442,6 +442,21 @@ function amortizableLiabilityStartDate(
  * `classificationAssets` keeps such a debt on its home's rung (see the capture call
  * below).
  */
+/**
+ * The rung a HOUSING-securing debt freezes, or null when it secures nothing that
+ * is housing — leaving the associated-asset lookup to answer (#1436).
+ *
+ * `securesHousingAsset` already answers the housing question from the live housing
+ * classification; this reads the rung off the same fact so the two can never
+ * disagree on one row (a `securesHousing: true` on the `cash` rung).
+ */
+function housingSecuringRung(
+  liability: Liability,
+  housingAssetIds: ReadonlySet<string>,
+): LiquidityTier | null {
+  return securesHousingAsset(liability, housingAssetIds) ? "housing" : null;
+}
+
 function liabilityExistsAtHistoricalDate(input: {
   liability: Liability;
   curve: DebtBalanceCurveInputs | undefined;
@@ -1198,13 +1213,23 @@ export function recalculateSnapshotForLiability(
       label: existingRow?.label ?? input.liability.name,
       // Preserve the frozen rung for an existing row; for a newly-appearing row
       // mirror the capture path EXACTLY (buildSnapshotHoldingRows): an associated
-      // debt freezes its asset's rung (resolved from the frozen asset rows like
-      // the live net-worth path), an unassociated debt freezes null — so every
+      // debt freezes its asset's rung, an unassociated debt freezes null — so every
       // ripple and the capture produce the same row set for a date (#181).
+      //
+      // A debt that secures HOUSING freezes `housing` even when its home has no
+      // frozen row on that date (#1436): the rung follows the asset's identity, not
+      // its presence, exactly as the capture path now resolves it against the live
+      // asset set (`classificationAssets`). Without this a mortgage born in a
+      // recalculation — the healing path for a date whose snapshot predates the
+      // home — froze `cash` and stayed there forever, since an existing row's rung
+      // is preserved by every later ripple (ADR 0008). It never moved a figure
+      // (`securesHousing` wins in `deriveRowAxes`), but it drew a mortgage on the
+      // cash rung of the liquidity ladder for those dates.
       liquidityTier: existingRow
         ? existingRow.liquidityTier
         : input.liability.associatedAssetId
-          ? rungForLiability(input.liability, assetRungById)
+          ? (housingSecuringRung(input.liability, input.housingAssetIds) ??
+            rungForLiability(input.liability, assetRungById))
           : null,
       // Preserve the frozen signal for an existing row; for a newly-appearing
       // row freeze it from the same classification the figures use (#180).
