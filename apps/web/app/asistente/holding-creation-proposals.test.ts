@@ -12,7 +12,9 @@ import {
 } from "./holding-creation-proposals";
 
 const TODAY = "2026-07-18";
-const clock = { today: () => TODAY };
+// Both halves are required or `isClock` rejects the seam and the real system
+// clock leaks in — which is how a date assertion here reads today's date.
+const clock = { now: () => `${TODAY}T09:00:00.000Z`, today: () => TODAY };
 
 async function seedWorkspace(): Promise<WorthlineStore> {
   const store = await createInMemoryStore();
@@ -534,6 +536,101 @@ describe("holding-creation server actions (#1105)", () => {
     expect(
       (await store.assistantProposals.read(built.proposal.draft.proposalId))?.status,
     ).toBe("applied");
+    store.close();
+  });
+
+  test("property with a declared purchase anchors it at the purchase, not today (#1436)", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      acquisitionDate: "2004-05-19",
+      acquisitionValueMinor: 150_253_03,
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      isPrimaryResidence: true,
+      name: "Piso Plasencia",
+    });
+    if (!built.ok) throw new Error(built.error);
+    // The card states the purchase BEFORE confirming — it decides from when the
+    // property exists in every historical reconstruction.
+    expect(built.proposal.holding.detail).toContain("19/05/2004");
+
+    const result = await confirmHoldingCreationProposalAction(
+      built.proposal.draft,
+      store,
+      clock,
+    );
+    expect(result).toEqual({ status: "applied" });
+
+    const asset = (await store.assets.readAssets()).find(
+      (a) => a.name === "Piso Plasencia",
+    )!;
+    const anchors = await store.assets.readValuationAnchors(asset.id);
+    const dates = anchors.map((a) => a.valuationDate).sort();
+    // The purchase anchors the curve where it happened; today's declared value is
+    // an appraisal on top of it — so a 2004 mortgage has a 2004 home to net against.
+    expect(dates[0]).toBe("2004-05-19");
+    expect(dates).toContain(TODAY);
+    expect(anchors.find((a) => a.valuationDate === "2004-05-19")?.valueMinor).toBe(
+      150_253_03,
+    );
+    expect(anchors.find((a) => a.valuationDate === TODAY)?.valueMinor).toBe(320_000_00);
+    store.close();
+  });
+
+  test("property with no declared purchase still enters by current state (ADR 0056)", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      isPrimaryResidence: true,
+      name: "Piso sin fecha",
+    });
+    if (!built.ok) throw new Error(built.error);
+    await confirmHoldingCreationProposalAction(built.proposal.draft, store, clock);
+
+    const asset = (await store.assets.readAssets()).find(
+      (a) => a.name === "Piso sin fecha",
+    )!;
+    const anchors = await store.assets.readValuationAnchors(asset.id);
+    expect(anchors.map((a) => a.valuationDate)).toEqual([TODAY]);
+    expect(anchors[0]!.valueMinor).toBe(320_000_00);
+    store.close();
+  });
+
+  test("a half-declared purchase is refused, never guessed (#1436)", async () => {
+    const store = await seedWorkspace();
+    const priceOnly = await build(store, {
+      acquisitionValueMinor: 150_253_03,
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso sin cuándo",
+    });
+    expect(priceOnly.ok).toBe(false);
+    if (!priceOnly.ok) expect(priceOnly.error).toContain("fecha de compra");
+
+    const dateOnly = await build(store, {
+      acquisitionDate: "2004-05-19",
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso sin precio",
+    });
+    expect(dateOnly.ok).toBe(false);
+    if (!dateOnly.ok) expect(dateOnly.error).toContain("precio de compra");
+
+    const future = await build(store, {
+      acquisitionDate: "2030-01-01",
+      acquisitionValueMinor: 150_253_03,
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso del futuro",
+    });
+    expect(future.ok).toBe(false);
+    if (!future.ok) expect(future.error).toContain("futura");
     store.close();
   });
 

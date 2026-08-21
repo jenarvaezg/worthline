@@ -1235,6 +1235,155 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     expect(built.snapshot.totalNetWorth.amountMinor).toBe(1_000_00);
   });
 
+  test("keeps a mortgage older than its home's first appraisal (#1436 regression)", () => {
+    // The real case: mortgage signed 2004-05-19, flat entered in the app on
+    // 2026-07-02 (its only appraisal). Reconstructing the loan wrote 256 snapshots
+    // and the mortgage was in NONE of them — the debt was dropped because its
+    // asset had no historical row. A debt exists by its own facts.
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const fondo = investment(workspace, "asset_fund", "Fondo");
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+
+    const built = buildSnapshotAtDate({
+      ...BASE,
+      assets: [piso, fondo],
+      capturedAt: "2010-01-01T12:00:00.000Z",
+      debtBalanceByLiability: new Map([
+        [
+          "liab_h",
+          {
+            anchors: [],
+            currentBalanceMinor: 100_000_00,
+            debtModel: "amortizable",
+            plan: {
+              annualInterestRate: "0.03",
+              initialCapitalMinor: 150_000_00,
+              disbursementDate: "2004-05-19",
+              firstPaymentDate: "2004-06-19",
+              termMonths: 360,
+            },
+            revisions: [],
+          } satisfies DebtBalanceCurveInputs,
+        ],
+      ]),
+      housingValuationByAsset: new Map([
+        [
+          "asset_piso",
+          {
+            anchors: [
+              {
+                adjustsPriorCurve: true,
+                valuationDate: "2026-07-02",
+                valueMinor: 200_000_00,
+              },
+            ],
+            annualAppreciationRate: "0.02",
+            currentValueMinor: 200_000_00,
+          },
+        ],
+      ]),
+      liabilities: [hipoteca],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map([
+        ["asset_fund", [buy("asset_fund", "op1", "2004-01-01", "10", "100")]],
+      ]),
+      targetDate: "2010-01-01",
+      today: "2026-08-21",
+      workspace,
+    })!;
+
+    const debtRow = built.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(debtRow).toBeDefined();
+    expect(debtRow.valueMinor).toBeGreaterThan(0);
+    expect(built.snapshot.debts.amountMinor).toBe(debtRow.valueMinor);
+    // The flat is genuinely absent (no valuation reaches back to 2010), so its
+    // equity reads as the debt alone — negative, and honest about it.
+    expect(built.holdings.some((h) => h.holdingId === "asset_piso")).toBe(false);
+    expect(built.snapshot.housingEquity.amountMinor).toBe(-debtRow.valueMinor);
+    // And it must NOT leak onto the liquid axis: it stays on its home's rung.
+    expect(debtRow.liquidityTier).toBe("housing");
+    expect(debtRow.securesHousing).toBe(true);
+    expect(built.snapshot.liquidNetWorth.amountMinor).toBe(1_000_00);
+  });
+
+  test("generating and recalculating agree on whether a debt belongs to a date (#1436)", () => {
+    // The same date must not carry the debt or not depending on how its snapshot
+    // was born: `buildSnapshotAtDate` used to apply an existence rule that
+    // `recalculateSnapshotForLiability` never knew about.
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+    const curve: DebtBalanceCurveInputs = {
+      anchors: [],
+      currentBalanceMinor: 100_000_00,
+      debtModel: "amortizable",
+      plan: {
+        annualInterestRate: "0.03",
+        initialCapitalMinor: 150_000_00,
+        disbursementDate: "2004-05-19",
+        firstPaymentDate: "2004-06-19",
+        termMonths: 360,
+      },
+      revisions: [],
+    };
+    const housingCurve = new Map([
+      [
+        "asset_piso",
+        {
+          anchors: [
+            {
+              adjustsPriorCurve: true,
+              valuationDate: "2026-07-02",
+              valueMinor: 200_000_00,
+            },
+          ],
+          annualAppreciationRate: "0.02",
+          currentValueMinor: 200_000_00,
+        },
+      ],
+    ]);
+
+    const generated = buildSnapshotAtDate({
+      ...BASE,
+      assets: [piso],
+      capturedAt: "2010-01-01T12:00:00.000Z",
+      debtBalanceByLiability: new Map([["liab_h", curve]]),
+      housingValuationByAsset: housingCurve,
+      liabilities: [hipoteca],
+      manualValueHistory: new Map(),
+      operationsByAsset: new Map(),
+      targetDate: "2010-01-01",
+      today: "2026-08-21",
+      workspace,
+    })!;
+
+    // Recalculate the very same date over the rows the generator just froze.
+    const recalculated = recalculateSnapshotForLiability({
+      curve,
+      frozenHoldings: generated.holdings,
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: hipoteca,
+      snapshot: generated.snapshot,
+      workspace,
+    })!;
+
+    const generatedRow = generated.holdings.find((h) => h.holdingId === "liab_h")!;
+    const recalculatedRow = recalculated.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(recalculatedRow.valueMinor).toBe(generatedRow.valueMinor);
+    expect(recalculatedRow.liquidityTier).toBe(generatedRow.liquidityTier);
+    expect(recalculatedRow.securesHousing).toBe(generatedRow.securesHousing);
+    expect(recalculated.snapshot.debts.amountMinor).toBe(
+      generated.snapshot.debts.amountMinor,
+    );
+    expect(recalculated.snapshot.housingEquity.amountMinor).toBe(
+      generated.snapshot.housingEquity.amountMinor,
+    );
+    expect(recalculated.snapshot.liquidNetWorth.amountMinor).toBe(
+      generated.snapshot.liquidNetWorth.amountMinor,
+    );
+  });
+
   test("the historical path freezes securesHousing on every row (#180)", () => {
     const workspace = makeWorkspace();
     const piso = housing(workspace, "asset_piso", 200_000_00);

@@ -413,6 +413,9 @@ that date. When present, it becomes a control point that overrides the declared
 **appreciation rate** in that segment; between control points the curve is sampled
 on the first of each month by default (see **Valuation cadence**). The
 appraised value is the total truth — it already includes any prior **improvements**.
+The EARLIEST market appraisal is also when the property starts existing for historical
+reconstruction, which is why an alta records the purchase where it happened when the user
+knows it (ADR 0056) instead of stamping the day it was typed.
 UI label: "Tasación de mercado".
 
 **Improvement**:

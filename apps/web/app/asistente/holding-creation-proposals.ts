@@ -61,6 +61,10 @@ export interface HoldingCreationArgs {
   currentValueMinor?: number;
   /** appreciating: whether the property is the primary residence. */
   isPrimaryResidence?: boolean;
+  /** appreciating: when the property was bought (YYYY-MM-DD), when known (#1436). */
+  acquisitionDate?: string;
+  /** appreciating: the purchase price in minor units, when known (#1436). */
+  acquisitionValueMinor?: number;
   /** debt: the outstanding balance in minor units. */
   balanceMinor?: number;
   /** debt: overrides the catalog default model when the model is known. */
@@ -115,10 +119,57 @@ function isPositiveMinor(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+/** A real calendar day in YYYY-MM-DD — `2026-99-99` is shape-valid and not a day. */
+function isRealIsoDay(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * A declared purchase for a property alta (#1436), or a Spanish rejection.
+ *
+ * Both halves are required together — the same rule the wizard's form applies:
+ * a date without a price cannot anchor the curve, and a price without a date has
+ * nowhere to sit. Nothing declared is not an error: the alta then falls back to
+ * the current-state anchor dated today (ADR 0056).
+ */
+function parseAcquisition(
+  args: HoldingCreationArgs,
+  today: string,
+):
+  | { ok: true; acquisition?: { date: string; valueMinor: number } }
+  | { ok: false; error: string } {
+  const date = (args.acquisitionDate ?? "").trim();
+  const valueMinor = args.acquisitionValueMinor;
+  if (date === "" && valueMinor === undefined) return { ok: true };
+
+  if (date === "") {
+    return {
+      ok: false,
+      error: "Falta la fecha de compra del inmueble (tengo el precio pero no el cuándo).",
+    };
+  }
+  if (!isPositiveMinor(valueMinor)) {
+    return {
+      ok: false,
+      error: "Falta el precio de compra (en céntimos) del inmueble.",
+    };
+  }
+  if (!isRealIsoDay(date)) {
+    return { ok: false, error: `La fecha de compra «${date}» no es una fecha válida.` };
+  }
+  if (date > today) {
+    return { ok: false, error: "La fecha de compra no puede ser futura." };
+  }
+  return { ok: true, acquisition: { date, valueMinor } };
+}
+
 /** Validate the args into a fully-resolved plan, or a Spanish rejection. */
 function buildPlan(
   args: HoldingCreationArgs,
   ownership: HoldingCreationPlan["ownership"],
+  today: string,
   /**
    * The declared amount is a BALANCE, not an order's cash: set when this builder
    * filled `pricePerUnit` from a live quote for a value-only alta (#1329), so the
@@ -169,6 +220,8 @@ function buildPlan(
     if (!isPositiveMinor(args.currentValueMinor)) {
       return { ok: false, error: "Falta el valor actual (en céntimos) del inmueble." };
     }
+    const acquisition = parseAcquisition(args, today);
+    if (!acquisition.ok) return acquisition;
     return {
       ok: true,
       plan: {
@@ -178,6 +231,7 @@ function buildPlan(
         isPrimaryResidence: args.isPrimaryResidence === true,
         name,
         ownership,
+        ...(acquisition.acquisition ? { acquisition: acquisition.acquisition } : {}),
       },
     };
   }
@@ -310,8 +364,16 @@ function detailOf(plan: HoldingCreationPlan): string {
     formatMoneyMinor({ amountMinor: minor, currency: "EUR" });
   switch (plan.family) {
     case "stored":
-    case "appreciating":
       return euros(plan.currentValueMinor);
+    // A declared purchase is on the card BEFORE confirming (#1436): it decides
+    // from when the property exists in every historical reconstruction, so it is
+    // not a detail to discover afterwards in a flat 22-year line.
+    case "appreciating":
+      return plan.acquisition
+        ? `${euros(plan.currentValueMinor)} · comprado el ${formatIsoDateEs(
+            plan.acquisition.date,
+          )} por ${euros(plan.acquisition.valueMinor)}`
+        : euros(plan.currentValueMinor);
     case "debt":
       return euros(plan.balanceMinor);
     case "investment":
@@ -449,9 +511,10 @@ function needsLiveQuote(
 function withoutBlankOptionals(args: HoldingCreationArgs): HoldingCreationArgs {
   const isBlank = (value: string | undefined): boolean =>
     value === undefined || value.trim() === "";
-  const { isin, pricePerUnit, providerSymbol, units, ...rest } = args;
+  const { acquisitionDate, isin, pricePerUnit, providerSymbol, units, ...rest } = args;
   return {
     ...rest,
+    ...(isBlank(acquisitionDate) ? {} : { acquisitionDate }),
     ...(isBlank(isin) ? {} : { isin }),
     ...(isBlank(pricePerUnit) ? {} : { pricePerUnit }),
     ...(isBlank(providerSymbol) ? {} : { providerSymbol }),
@@ -508,7 +571,7 @@ export async function buildHoldingCreationProposal(
     valueIsBalance = true;
   }
 
-  const built = buildPlan(effectiveArgs, ownership, valueIsBalance);
+  const built = buildPlan(effectiveArgs, ownership, today, valueIsBalance);
   if (!built.ok) return built;
   const plan = built.plan;
 

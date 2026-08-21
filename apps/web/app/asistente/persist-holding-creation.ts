@@ -66,11 +66,30 @@ export async function persistHoldingCreation(
 
   if (plan.family === "appreciating") {
     const id = createStableId("asset", plan.name, seed);
-    // real_estate alta por estado actual: acquisition anchor dated today at the
-    // declared current value (ADR 0056) — the housing seam ripples from today.
+    // A declared purchase anchors the curve WHERE IT HAPPENED (#1436): the
+    // acquisition anchor carries the purchase price at its own date and today's
+    // declared value lands as a market appraisal, so the property exists — for
+    // every historical reconstruction — from the day it was bought. That is what
+    // keeps a mortgage signed in 2004 from being reconstructed against a home the
+    // app believes was born the day it was typed.
+    //
+    // Nothing declared → alta por estado actual: anchor dated today at the
+    // declared current value (ADR 0056, the unmodelled past stays unmodelled).
+    const acquisition = plan.acquisition;
     const command: ManualAssetCreation = {
-      acquisitionDate: today,
-      acquisitionValueMinor: plan.currentValueMinor,
+      acquisitionDate: acquisition?.date ?? today,
+      acquisitionValueMinor: acquisition?.valueMinor ?? plan.currentValueMinor,
+      // Same-day purchase: the anchor already IS today's value — a second anchor
+      // on the same date is what the wizard refuses too.
+      ...(acquisition && acquisition.date !== today
+        ? {
+            initialValuation: {
+              adjustsPriorCurve: true,
+              valuationDate: today,
+              valueMinor: plan.currentValueMinor,
+            },
+          }
+        : {}),
       currency: "EUR",
       currentValueMinor: plan.currentValueMinor,
       id,

@@ -128,6 +128,14 @@ export interface BuildSnapshotHoldingRowsInput {
   scopeId: string;
   assets: ManualAsset[];
   liabilities?: Liability[];
+  /**
+   * The asset set a DEBT row is classified against — its frozen rung and
+   * `securesHousing` (#1436). Defaults to `assets`; the historical path passes the
+   * LIVE assets so a mortgage whose home is not valued on that date still freezes
+   * the housing rung instead of `cash`. Mirrors `calculateNetWorth`, so the rows
+   * and the figures never disagree about which axis a debt sits on.
+   */
+  classificationAssets?: ManualAsset[];
   /** Per-investment units and unit price, keyed by asset id. */
   investmentDetails?: ReadonlyMap<string, InvestmentCaptureDetail>;
   /**
@@ -224,13 +232,14 @@ export function buildSnapshotHoldingRows(
   input: BuildSnapshotHoldingRowsInput,
 ): SnapshotHoldingRow[] {
   const scopeMemberIds = new Set(resolveScopeMemberIds(input.workspace, input.scopeId));
+  const classificationAssets = input.classificationAssets ?? input.assets;
   const assetTierById = new Map(
-    input.assets.map((asset) => [asset.id, tierOfAsset(asset)]),
+    classificationAssets.map((asset) => [asset.id, tierOfAsset(asset)]),
   );
   // The ALL-ASSETS housing classification at capture time (#180) — the same basis
   // calculateNetWorth uses to net debts against housing. Frozen onto each row so
   // historical figures never re-derive it from live holding identity (ADR 0008).
-  const housingAssetIds = housingAssetIdsOf(input.assets);
+  const housingAssetIds = housingAssetIdsOf(classificationAssets);
   const rows: SnapshotHoldingRow[] = [];
 
   for (const asset of input.assets) {

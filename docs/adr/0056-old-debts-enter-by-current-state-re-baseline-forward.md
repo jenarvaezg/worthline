@@ -56,6 +56,14 @@ re-entering the plan.
 
 ## Consequences
 
+- The same "no wall" reading has a limit for PROPERTY: the chat alta used to date the
+  acquisition anchor on the day the property was typed, which made the flat non-existent
+  before then for every historical reconstruction — and a mortgage older than that anchor
+  came out netting against nothing (#1436). So a chat-declared property alta accepts an
+  optional **declared purchase** (date + price, both or neither): with it the acquisition
+  anchor sits where the purchase happened and the declared current value lands as a
+  **market appraisal** dated today; without it the alta stays por estado actual, anchored
+  today. Volunteering a fact stays optional — inventing one never becomes acceptable.
 - `CONTEXT.md` gains **balance re-baseline** (UI: "Recalibrar con saldo real" /
   entry mode "Alta por estado actual") and the **amortization plan** entry
   documents the current-state entry mode.

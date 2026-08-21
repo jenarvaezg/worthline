@@ -112,6 +112,8 @@ export function captureNetWorthSnapshot(
     scopeLabel: string;
     assets: ManualAsset[];
     liabilities?: Liability[];
+    /** The asset set a debt is classified against (#1436) — see calculateNetWorth. */
+    classificationAssets?: ManualAsset[];
     capturedAt: string;
     id: string;
     isMonthlyClose?: boolean;
@@ -121,6 +123,9 @@ export function captureNetWorthSnapshot(
     workspace: input.workspace,
     scopeId: input.scopeId,
     assets: input.assets,
+    ...(input.classificationAssets
+      ? { classificationAssets: input.classificationAssets }
+      : {}),
     ...(input.liabilities ? { liabilities: input.liabilities } : {}),
   });
   const warnings = collectWarnings(input.assets, input.warningOverrides ?? [], {
@@ -160,6 +165,8 @@ export function captureValuedNetWorthSnapshot(
     scopeLabel: string;
     assets: ManualAsset[];
     liabilities?: Liability[];
+    /** The asset set a debt is classified against (#1436) — see calculateNetWorth. */
+    classificationAssets?: ManualAsset[];
     capturedAt: string;
     id: string;
     isMonthlyClose?: boolean;
@@ -174,6 +181,9 @@ export function captureValuedNetWorthSnapshot(
     assets: input.assets,
     scopeId: input.scopeId,
     workspace: input.workspace,
+    ...(input.classificationAssets
+      ? { classificationAssets: input.classificationAssets }
+      : {}),
     ...(input.liabilities ? { liabilities: input.liabilities } : {}),
     ...(input.investmentDetails ? { investmentDetails: input.investmentDetails } : {}),
     ...(input.positionDetails ? { positionDetails: input.positionDetails } : {}),
