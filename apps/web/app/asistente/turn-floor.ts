@@ -30,7 +30,7 @@ import { createChatTools } from "./chat-tools";
  * point is that what a turn PAYS and what a conversation may KEEP look at each
  * other, and two copies would let them drift apart silently.
  */
-export const TURN_FLOOR_CHAR_CEILING = 42_400;
+export const TURN_FLOOR_CHAR_CEILING = 43_850;
 
 /** One tool's share of the floor: the three strings a provider receives for it. */
 export interface TurnFloorTool {

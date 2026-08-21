@@ -525,22 +525,25 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     // Each proposal states its kind through the shared folio label (the first
     // real child is the srOnly mutation status, so the title carries its class).
-    // Eleven cards: statement, correction (#1051), reconstruction (#1053),
+    // Twelve cards: statement, correction (#1051), reconstruction (#1053),
     // balance-history, valuation, mixed, holding-creation (#1105), the shared
     // baja/restauración card (#1106, one card, two folios), reconcile (#1108),
-    // early repayment (#1245) and the dated investment operation (#1374).
+    // early repayment (#1245), the dated investment operation (#1374) and the
+    // dictated traspaso (#1482).
     const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
-    expect(kindTitles.length).toBe(11);
+    expect(kindTitles.length).toBe(12);
 
     // The ledger FOOTER is a different line from the folio label above (canon §3):
     // the atomic-batch statement («1 propuesta · 1 holding · 1 lote atómico»), which
-    // only the four atomic cards print — correction, reconstruction, early repayment
-    // and the dated operation (#1374, «1 propuesta · 1 posición · 1 operación
-    // fechada»). The alta, baja and reconcile cards used to print their own kind
+    // only the five atomic cards print — correction, reconstruction, early repayment,
+    // the dated operation (#1374, «1 propuesta · 1 posición · 1 operación
+    // fechada») and the traspaso (#1482, «1 propuesta · 1 traspaso · 2 apuntes
+    // atados» — atomic in the strongest sense there is here: both halves or
+    // neither). The alta, baja and reconcile cards used to print their own kind
     // string there instead, so the reader met the same words twice in one card
     // (#1317). A footer that merely repeats the header is the mistake this pins.
     const footers = layer.match(/className="assistantProposalFolio"/g) ?? [];
-    expect(footers.length).toBe(4);
+    expect(footers.length).toBe(5);
   });
 
   test("a marked chip carries a binary mark, not only a tint (#1483)", () => {

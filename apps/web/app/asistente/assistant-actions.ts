@@ -37,6 +37,11 @@ import {
 import type { ScreenSection } from "./screen-context";
 import type { StatementImportProposal } from "./statement-import-proposals";
 import { parseStatementImportProposalDraft } from "./statement-import-proposals";
+import {
+  isTransferProposalSide,
+  parseTransferProposalDraft,
+  type TransferProposal,
+} from "./transfer-proposal-contract";
 
 /**
  * Typed read-only quick actions and internal-source destinations (#631, ADR
@@ -561,6 +566,43 @@ export function parseOperationProposal(raw: unknown): OperationProposal | null {
     return null;
   }
   return raw as unknown as OperationProposal;
+}
+
+/**
+ * Trust boundary for a traspaso proposal (#1482). Same contract as the operation's:
+ * every rendered figure is a STRING the server formatted — the echo of what worthline
+ * read in the message, both movement lines, both positions, the inherited cost — so the
+ * card cannot re-derive an importe, a VL or a quantity of participaciones. Only the
+ * shape is checked here.
+ */
+export function parseTransferProposal(raw: unknown): TransferProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "investment_transfer") return null;
+  const draft = parseTransferProposalDraft(raw.draft);
+  if (
+    !draft.ok ||
+    typeof raw.summary !== "string" ||
+    typeof raw.folio !== "string" ||
+    typeof raw.dictated !== "string" ||
+    typeof raw.inheritedCost !== "string" ||
+    typeof raw.impactCaption !== "string"
+  ) {
+    return null;
+  }
+  if (!isTransferProposalSide(raw.origin) || !isTransferProposalSide(raw.destination)) {
+    return null;
+  }
+  if (
+    !isRecord(raw.impact) ||
+    !(raw.impact.beforeMinor === null || typeof raw.impact.beforeMinor === "number") ||
+    !(raw.impact.afterMinor === null || typeof raw.impact.afterMinor === "number") ||
+    typeof raw.impact.deltaMinor !== "number"
+  ) {
+    return null;
+  }
+  if (!Array.isArray(raw.notes) || !raw.notes.every((note) => typeof note === "string")) {
+    return null;
+  }
+  return raw as unknown as TransferProposal;
 }
 
 export function parsePropertyValuationProposal(

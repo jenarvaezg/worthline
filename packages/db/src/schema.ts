@@ -990,6 +990,8 @@ export type AssistantProposalKind =
   | "reconcile"
   /** ONE dated buy/sell on an investment holding that already exists (#1374). */
   | "investment_operation"
+  /** ONE traspaso between two investment holdings that already exist (#1482). */
+  | "investment_transfer"
   | "early_repayment";
 export type AssistantProposalStatus = "draft" | "applied" | "discarded";
 export type AssistantDocumentProvenance = "agent" | "user";

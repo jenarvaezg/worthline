@@ -71,6 +71,7 @@ import {
   NO_TYPED_BALANCE_SERIES,
   typedBalanceSeriesInTurn,
 } from "@web/asistente/typed-balance-series";
+import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import {
   isGlobalVisionCallFuseBlown,
@@ -604,6 +605,12 @@ export async function POST(request: Request): Promise<Response> {
   const typedBalanceSeries = unvalidatedEvidence
     ? typedBalanceSeriesInTurn(body.messages)
     : NO_TYPED_BALANCE_SERIES;
+  // The traspaso dictated this turn (#1482). Read on EVERY turn, unlike the series
+  // above: this is not an escape from a gate, it is the only source the lane has — its
+  // importe and date are not tool arguments at all. From the RAW history for the same
+  // reason: what grounds the figures is what the person wrote, and a per-provider
+  // truncation of their message must not change what worthline read in it.
+  const typedTransfer = typedTransferInTurn(body.messages, chatAsOf(target));
   const buildTools = (history: UIMessage[]) =>
     createChatTools({
       ingestionAllowed,
@@ -621,6 +628,9 @@ export async function POST(request: Request): Promise<Response> {
       // The series the user typed this turn (#1418): it reopens the debt-history lanes
       // the gate closed, and it is what those lanes build from.
       typedBalanceSeries,
+      // The traspaso the user dictated this turn (#1482): the ONE source of its importe
+      // and its date, so `propose_transfer` never builds from the model's arguments.
+      typedTransfer,
       // Holding-id provenance (#1263): the ids worthline itself put in the history the
       // model is about to read — a payload dropped by the tool ceiling (#1260) or a
       // turn dropped by the prose budget (#1408) is no longer in its context either,

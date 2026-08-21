@@ -71,6 +71,11 @@ export const HOLDING_REFERENCE_FIELDS = new Set([
   "holdingIds",
   "liabilityId",
   "assetId",
+  // The traspaso names TWO holdings (#1482), and both are writes against real
+  // positions: an ungrounded destination would move capital into a holding the model
+  // invented, which is the same failure as an ungrounded target, twice over.
+  "originHoldingId",
+  "destinationHoldingId",
 ]);
 
 /**

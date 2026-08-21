@@ -196,6 +196,49 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * `propose_holding` (2.543) and `propose_correction` (2.127) are still the ranking's
  * head and were still not touched, for the reason #1423 gave. Fourth PR in a row.
+ *
+ * **Raised to 43.850 on 2026-08-21 by #1482**, and this is the #1374/#1423 kind: a new
+ * tool family arriving, in the PR that says so. `propose_transfer` is the lane «he
+ * traspasado 1.018,67 € del fondo A al fondo B» never had, and without it the model has
+ * exactly one way to record what the user just told it — a venta plus a compra, which
+ * realizes a plusvalía that never happened and eats a year of cupo de aportación (ADR
+ * 0080). So the raise buys the write that is CORRECT, not an extra one.
+ *
+ * The arithmetic: the widest real floor is 43.314, of which 1.062 is this lane — the
+ * tool costs 975 (desc 739 · schema 236, the cheapest of the eleven `propose_*`) plus 87
+ * for the pointer added to `propose_operation`, «un traspaso entre dos inversiones →
+ * propose_transfer (no es una venta más una compra)», which is the sibling-tools rule of
+ * #1423 and the sentence that stops the wrong write. The floor this PR started from was
+ * therefore 42.252: 148 characters of headroom under the old ceiling, so any addition at
+ * all had to come here. (#1524's note above recorded 41.902; the 350 between them arrived
+ * in slices merged since, none of which touched this ceiling.) The new ceiling keeps
+ * ~1,2% of headroom, the same order as every raise since #1374.
+ *
+ * It paid inside its own lane first, 369 characters, and each cut is the #1342 trade
+ * rather than a shortening:
+ *  - the three consequences of the instrument (no realiza plusvalía · el coste viaja ·
+ *    no consume cupo) came out of the description because the CARD prints them
+ *    (`TRANSFER_NEUTRALITY_NOTE`): the floor is paid on every turn, card copy when there
+ *    is a card. What stays is the half that ROUTES — «no una venta más una compra».
+ *  - «con identificadores que te haya devuelto una lectura» came out because the prompt
+ *    already carries it for every tool (#1263). One copy, not twelve.
+ *  - «no los pases, no los deduzcas, no los repitas de un turno anterior» came out
+ *    because the schema has no such fields and `additionalProperties: false`: a sentence
+ *    forbidding what the shape cannot express defends nothing.
+ *  - the `propose_correction` pointer came out; the two that matter for a traspaso (the
+ *    destination that does not exist yet, and the buy/sell it is not) stayed.
+ *
+ * The IMPORTE and the DATE are not in the schema at all, and that absence is worth
+ * naming here because it is what makes this the cheapest lane: worthline parses them off
+ * the user's own message (`typed-transfer.ts`), so there is no field for them and no
+ * prose explaining how to fill it — ADR 0067's rule («a mandatory field a real document
+ * cannot fill is an instruction to invent») paying for itself in characters for once.
+ *
+ * `propose_holding` is now 2.893 — it grew 350 since #1524 and is still the ranking's
+ * head, with `propose_correction` (2.127) behind it. Not touched, for the reason #1423
+ * gave: their length is measured incident repair, and cutting it blind from an unrelated
+ * lane trades a floor for a behaviour nobody re-measured. Fifth PR in a row to say so,
+ * and the first where the head GREW while saying it.
  */
 
 describe("measureTurnFloor", () => {

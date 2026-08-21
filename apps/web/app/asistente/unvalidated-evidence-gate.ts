@@ -68,6 +68,17 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
    * asking about was validated in a previous message.
    */
   propose_operation: "neutral",
+  /**
+   * `neutral`, and for a reason one step stronger than its sibling's (#1482): the
+   * traspaso's importe and date are not arguments at all. worthline parses them off the
+   * USER's own message ({@link ../typed-transfer}), so evidence it could not validate
+   * has no path into this write — the model holding an unreadable grid cannot pass a
+   * figure it remembers as something the person typed, because there is no field to put
+   * it in. Classifying it `rejects` would close the one route a person has after being
+   * told their file cannot be read in bulk, which is the dead end #1418 exists to
+   * close.
+   */
+  propose_transfer: "neutral",
 } as const satisfies Record<string, UnvalidatedEvidenceClass>;
 
 /**

@@ -182,3 +182,39 @@ The ledger surface now tells the user what the delete translation above means be
 they hit it: a traspaso row's «Eliminar» confirm carries «Se elimina el traspaso
 entero: las dos mitades», so the pair leaving by one door is announced at the row, not
 discovered after the redirect. The reader-side pairing itself is ADR 0082's amendment.
+
+## Amendment (#1482, 21-ago-2026) — the dictated traspaso goes through the same door
+
+S5 gave the chat a `propose_transfer` lane, and it changes nothing about the door: the
+confirm calls `recordInvestmentTransfer`, so a traspaso dictated to the assistant lands
+as the same pair, tied by the same `transfer_id`, with the same single date and the same
+inherited cost as one submitted from the screen. What the slice had to decide is where
+its figures come from, and the answer is not «the model's arguments».
+
+- **worthline parses the importe and the date off the USER's own message**
+  (`typed-transfer.ts`), with no model in the loop — the #1418 doctrine, applied one
+  door along. The reason is sharper here than for a balance series: the model holds the
+  whole conversation, so an `amountMinor` it handed over could be a figure it remembers
+  from a portfolio read, and this write moves real capital between two real holdings.
+  There is therefore no importe field in the tool's schema at all. What the model still
+  decides is the one thing no parser can: WHICH two holdings «el fondo A» and «el fondo
+  B» are, grounded as every id is (#1263).
+- **Everything ambiguous fails closed, naming the gap.** Two money figures in one
+  sentence are refused rather than read by position (they are the real «salió 739,22 €,
+  llegaron 740,72 €» case, and the screen has a field for each). «Todo» plus an importe
+  is refused as two intents. And **the date is required**: «he traspasado 1.018,67 €»
+  with no day in it would be a dated row nobody dated, so «hoy»/«ayer» count as written
+  and silence does not.
+- **The two VLs are the app's own price, and the card says so.** Nobody dictates a VL,
+  let alone two, so each side is valued through the ordinary selection rule (ADR 0006,
+  cached beats manual) — the same figure the screen prefills — and the card carries a
+  note whenever the price is not the transfer date's own, pointing at «Traspasar» where
+  the VL is a field. A holding with no usable price refuses, naming it. This is the
+  weakest input in the lane and it is the reason #1544 exists: the honest fix is to let
+  a traspaso declare participaciones and derive the VL, as every other operation in the
+  book already does.
+- **The replay check runs BEFORE the plan**, keyed on the date and the counterpart. A
+  ledger that already holds the traspaso is one whose position has already shrunk by
+  it, so judging the figures first would answer a repeated dictation with «baja el
+  importe» about an importe that was right — the ordering `recordTransferAction`
+  already had to learn (#1394).

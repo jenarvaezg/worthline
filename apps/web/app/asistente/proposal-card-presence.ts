@@ -33,6 +33,7 @@ import {
   parsePropertyValuationProposal,
   parseReconcileProposal,
   parseStatementImportProposal,
+  parseTransferProposal,
 } from "./assistant-actions";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 import type { CorrectionProposal } from "./correction-proposal-contract";
@@ -45,6 +46,7 @@ import type { PropertyValuationProposal } from "./property-valuation-proposal-co
 import type { ReconcileProposal } from "./reconcile-proposal-contract";
 import type { StatementImportProposal } from "./statement-import-proposals";
 import { toolPartName } from "./tool-parts";
+import type { TransferProposal } from "./transfer-proposal-contract";
 
 type Part = UIMessage["parts"][number];
 
@@ -66,7 +68,8 @@ export type ProposalCard =
   | { kind: "operation"; proposal: OperationProposal }
   | { kind: "property_valuation"; proposal: PropertyValuationProposal }
   | { kind: "reconcile"; proposal: ReconcileProposal }
-  | { kind: "statement_import"; proposal: StatementImportProposal };
+  | { kind: "statement_import"; proposal: StatementImportProposal }
+  | { kind: "transfer"; proposal: TransferProposal };
 
 /** Tags a parsed proposal, and keeps `null` meaning «no card» all the way up. */
 function card<K extends ProposalCard["kind"]>(
@@ -110,6 +113,7 @@ export const PROPOSAL_CARD_PARSERS: Record<
     card("correction", parseCorrectionProposal(output)),
   propose_statement_import: (output: unknown) =>
     card("statement_import", parseStatementImportProposal(output)),
+  propose_transfer: (output: unknown) => card("transfer", parseTransferProposal(output)),
 };
 
 /**
