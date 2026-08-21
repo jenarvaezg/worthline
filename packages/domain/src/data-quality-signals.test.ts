@@ -12,6 +12,7 @@ import {
 import type { FireScopeConfig } from "./fire";
 import type { InvestmentOperation } from "./investment-types";
 import { formatMoneyMinor } from "./money";
+import { netUnitsByAsset } from "./positions";
 import { listScopeOptions, type ScopeOption } from "./scope";
 import {
   type CreateManualAssetInput,
@@ -682,18 +683,22 @@ describe("collectDataQualitySignals — price freshness on closed positions (#13
  * 82 % of the daily drop was the delete, not the market.
  */
 describe("collectDataQualitySignals — TRASHED_WITH_BALANCE (#1365)", () => {
-  const trashed = (
-    netUnits: Array<[string, string]>,
+  const trashedWithNetUnits = (
+    netUnitsByAssetId: ReadonlyMap<string, string>,
     ownerMemberIds: readonly string[] = ["member_jose"],
   ) => {
     const { input } = fixture();
     return collectDataQualitySignals(
       input({
-        netUnitsByAssetId: new Map(netUnits),
+        netUnitsByAssetId,
         trashedHoldings: [{ id: "asset_fondo", name: "Fondo Indexado", ownerMemberIds }],
       }),
     ).filter((signal) => signal.category === "trashed_balance");
   };
+  const trashed = (
+    netUnits: Array<[string, string]>,
+    ownerMemberIds: readonly string[] = ["member_jose"],
+  ) => trashedWithNetUnits(new Map(netUnits), ownerMemberIds);
 
   test("a trashed holding with live units raises a high-severity signal naming them", () => {
     const signals = trashed([["asset_fondo", "120.5"]]);
@@ -732,6 +737,40 @@ describe("collectDataQualitySignals — TRASHED_WITH_BALANCE (#1365)", () => {
   test("the signal is scoped by ownership, since no live read can see the trash", () => {
     expect(trashed([["asset_fondo", "120.5"]], ["member_otro"])).toEqual([]);
     expect(trashed([["asset_fondo", "120.5"]], [])).toEqual([]);
+  });
+
+  // #1481: «se fue sin venta ni traspaso» por fin es literal. Un origen liquidado
+  // por transfer_out folda a cero unidades netas — salida legítima, señal muda —
+  // mientras que el mismo libro sin operación de salida sigue disparando. Se
+  // encadena netUnitsByAsset con un libro real, no un neto escrito a mano, porque
+  // lo que se fija es la cadena entera: fold → neto → señal.
+  test("un origen liquidado por traspaso es una salida legítima: la señal calla", () => {
+    const ledger = (operations: InvestmentOperation[]) =>
+      trashedWithNetUnits(netUnitsByAsset(new Map([["asset_fondo", operations]])));
+    const buy: InvestmentOperation = {
+      assetId: "asset_fondo",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy",
+      kind: "buy",
+      pricePerUnit: "100",
+      units: "10",
+    };
+    const transferOut: InvestmentOperation = {
+      assetId: "asset_fondo",
+      currency: "EUR",
+      executedAt: "2026-08-12",
+      feesMinor: 0,
+      id: "op_out",
+      kind: "transfer_out",
+      pricePerUnit: "150",
+      transferId: "trf_1",
+      units: "10",
+    };
+
+    expect(ledger([buy, transferOut])).toEqual([]);
+    expect(ledger([buy])).toHaveLength(1);
   });
 });
 

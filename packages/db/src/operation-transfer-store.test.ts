@@ -140,3 +140,57 @@ describe("asset_operations transfer columns", () => {
     ).rejects.toThrow(/transfer/i);
   });
 });
+
+describe("readTransferCounterparts (#1481)", () => {
+  it("resuelve la otra mitad del par desde cualquiera de los dos lados", async () => {
+    const store = await seed();
+    await store.command.recordInvestmentOperation(TRANSFER_OUT, { today: TODAY });
+    await store.command.recordInvestmentOperation(TRANSFER_IN, { today: TODAY });
+
+    const fromOrigin = await store.operations.readTransferCounterparts("origen");
+    const fromDestination = await store.operations.readTransferCounterparts("destino");
+
+    expect(fromOrigin.get(TRANSFER_ID)).toEqual({
+      assetId: "destino",
+      kind: "transfer_in",
+    });
+    expect(fromDestination.get(TRANSFER_ID)).toEqual({
+      assetId: "origen",
+      kind: "transfer_out",
+    });
+  });
+
+  it("la media pareja externa no aparece: sin fila contraparte no hay entrada", async () => {
+    const store = await seed();
+    // El caso real de producción (#1393): «traer plan desde otra entidad» escribe
+    // un transfer_in con transferId propio y ninguna otra fila que lo comparta.
+    await store.command.recordInvestmentOperation(
+      { ...TRANSFER_IN, id: "op_ext", transferId: "trf_ext" },
+      { today: TODAY },
+    );
+
+    const counterparts = await store.operations.readTransferCounterparts("destino");
+
+    expect(counterparts.has("trf_ext")).toBe(false);
+    expect(counterparts.size).toBe(0);
+  });
+
+  it("un libro sin traspasos devuelve el mapa vacío sin consultas de más", async () => {
+    const store = await seed();
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "origen",
+        currency: "EUR",
+        executedAt: "2026-01-01",
+        feesMinor: 0,
+        id: "op_buy",
+        kind: "buy",
+        pricePerUnit: "100",
+        units: "10",
+      },
+      { today: TODAY },
+    );
+
+    expect((await store.operations.readTransferCounterparts("origen")).size).toBe(0);
+  });
+});

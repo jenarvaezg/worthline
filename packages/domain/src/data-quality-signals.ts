@@ -448,6 +448,10 @@ function warningSeverity(severity: WarningSeverity): DataQualitySeverity {
  * that entry must not read as closed. A holding absent from the map — a cash
  * account, a flat, anything without an operations ledger — says nothing about
  * units and is silent here, rather than being flagged on a rule it cannot answer.
+ *
+ * «Sin venta ni traspaso» is literal (#1481): a ledger emptied by a `transfer_out`
+ * folds to zero net units, so a holding that LEFT by traspaso never reaches this
+ * signal — the same legitimate exit a sale is.
  */
 function trashedBalanceSignals(
   trashedHoldings: readonly DataQualityTrashedHolding[],
