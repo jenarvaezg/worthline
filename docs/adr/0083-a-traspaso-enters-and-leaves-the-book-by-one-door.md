@@ -146,6 +146,32 @@ would otherwise compute lives in a pure plan upstream of them.**
   it was written with. That is the cost of persisting it on the row (ADR 0082) and it
   is deliberate: re-deriving it at read time is what that ADR rejected. The correction
   is to delete the traspaso and record it again — which is now one action.
-- Still not covered: the "Traspasar" screen (#1480), the ledger and drilldown surfaces
-  (#1481), the dictated traspaso (#1482), and the retroactive re-typing of pairs
-  already recorded as sell + buy (#1485).
+- Still not covered: the ledger and drilldown surfaces (#1481), the dictated traspaso
+  (#1482), and the retroactive re-typing of pairs already recorded as sell + buy
+  (#1485).
+
+## Amendment (#1480, 21-ago-2026) — the screen took the offer
+
+The "Traspasar" screen shipped and it does call `planTransfer` for its preview, as the
+consequence above anticipated: `transfer-form.ts` is shared by the island and the
+server action, so the participaciones on screen, the refusal shown beside the field and
+the rows written are one derivation. Two things the ADR left implicit turned out to
+matter enough to write down:
+
+- **The preview folds `operationsUpTo(executedAt)`, not today.** A traspaso is
+  routinely recorded weeks late, and a position folded on page load is today's: the
+  screen would print figures the gate then refuses (or accept an importe the holding
+  never held on the day). The ledger therefore travels to the client, and the fold
+  happens per keystroke inside `previewTransfer`.
+- **The screen creates the destination holding.** A traspaso to a plan just opened is
+  the ordinary case, so `recordTransferAction` writes the holding — inheriting the
+  origin's instrument, currency and owners — before calling the gate, and only after
+  the figures have passed the same `planTransfer` check the gate will run. A refused
+  traspaso must not leave an empty holding behind. This is a second door onto
+  `createInvestmentAsset` beside the add wizard, deliberately: routing through the
+  wizard is what would lose the half-filled form.
+
+The «steer an amount that covers essentially everything towards «todo»» note above is
+NOT implemented: «todo» is offered as its own choice, naming the participaciones the
+position holds on the chosen date, but an importe a cent over is still refused with the
+message that offers it rather than being silently upgraded.

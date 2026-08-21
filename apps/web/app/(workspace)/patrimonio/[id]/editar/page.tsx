@@ -29,6 +29,7 @@ import {
   updateInvestmentAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/actions";
+import { recordTransferAction } from "@web/inversiones/transfer-action";
 import { resolvePageShell } from "@web/page-shell";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
@@ -75,6 +76,11 @@ import { PriceBackfillSection } from "./_surfaces/price-backfill-section";
 import { ReturnsPanel } from "./_surfaces/returns-panel";
 import { SnapshotPriceCorrectionSection } from "./_surfaces/snapshot-price-correction-section";
 import { StatementUploadSection } from "./_surfaces/statement-upload-section";
+import { transferDestinationOptions } from "./_surfaces/transfer-form";
+import TransferSection from "./_surfaces/transfer-section";
+
+/** The forms that render their own error band, next to the field that produced it. */
+const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer"];
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -195,21 +201,23 @@ export default async function EditarPage({
   const isDerived = assetMethod === "derived" && !isCoinCollection && !isBinanceHolding;
   // The four derived-investment reads are independent of one another — fetch
   // them in one wave instead of stacking serial round-trips to the store (#446).
-  const [investment, operations, priceCache, position, twrSnapshotRows] = isDerived
+  // The whole positions list is kept, not just this holding's: the traspaso picker
+  // (#1480) prefills each candidate destination's VL from its last known price, and
+  // that is the same wave — a query per candidate would be an N+1 for a prefill.
+  const [investment, operations, priceCache, positions, twrSnapshotRows] = isDerived
     ? await Promise.all([
         store.assets.readInvestmentAssetById(id),
         store.operations.readOperations(id),
         store.operations.readPriceCache(id),
-        store.snapshots
-          .readPositions()
-          .then((ps) => ps.find((p) => p.assetId === id) ?? null),
+        store.snapshots.readPositions(),
         store.snapshots.readSnapshotHoldings({
           holdingId: id,
           kind: "asset",
           scopeId: "household",
         }),
       ])
-    : [null, [], null, null, []];
+    : [null, [], null, [], []];
+  const position = positions.find((p) => p.assetId === id) ?? null;
   // The coin collection's decoupled valuation freshness (PRD #166): its own
   // `numista`-source cache row, separate from the investment derived path above.
   const coinValuationCache = isCoinCollection
@@ -232,6 +240,15 @@ export default async function EditarPage({
           snapshotRows: twrSnapshotRows,
         }) !== null
       : false;
+  // The traspaso picker's candidates (#1480): the workspace's other ledger-keeping
+  // holdings in the same currency, off the assets and positions already read.
+  const transferDestinations =
+    isDerived && asset
+      ? transferDestinationOptions(allAssets, positions, {
+          assetId: id,
+          currency: asset.currency,
+        })
+      : [];
   const isSnapshotCorrectionEligible =
     isDerived && investment !== null && operations.length > 0;
   // #1329: the «alta por valor total» state — 1 participación holding the whole
@@ -410,6 +427,11 @@ export default async function EditarPage({
     await deleteOperationAction(id, formData);
   }
 
+  async function boundRecordTransferAction(formData: FormData) {
+    "use server";
+    await recordTransferAction(id, formData);
+  }
+
   async function boundPreviewStatementAction(
     prev: StatementPreviewState,
     formData: FormData,
@@ -572,9 +594,10 @@ export default async function EditarPage({
           </div>
         ) : null}
 
-        {formError &&
-        formError.formId !== "operation" &&
-        formError.formId !== "payout" ? (
+        {/* The page-level band carries only the errors NO section prints itself. The
+            list is the seam: a section that grows its own band adds itself here, and
+            the reader sees at a glance which forms speak for themselves. */}
+        {formError && !SECTIONS_WITH_OWN_ERROR_BAND.includes(formError.formId ?? "") ? (
           <p className="errorBand" role="alert">
             {formError.message}
           </p>
@@ -715,6 +738,37 @@ export default async function EditarPage({
                 privacyMode={privacyMode}
                 readOnly={isDemo}
                 recordAction={boundRecordOperationAction}
+                today={today}
+              />
+            ) : null}
+
+            {/* derived: «Traspasar» — one screen, one submit for a fund-to-fund
+                traspaso (#1480, PRD #1393). Offered whenever the holding HAS a ledger,
+                not whenever it has units today: a traspaso is routinely recorded weeks
+                later, and the one that emptied the holding is exactly the row that is
+                still missing. The ledger travels so the preview can fold it at the
+                date the user picks (#1438). */}
+            {asset &&
+            method === "derived" &&
+            !isCoinCollection &&
+            !isBinanceHolding &&
+            operations.length > 0 ? (
+              <TransferSection
+                currentUrl={currentUrl}
+                destinations={transferDestinations}
+                formError={formError}
+                origin={{
+                  assetId: id,
+                  currency: asset.currency,
+                  operations,
+                  ...(position?.currentPricePerUnit
+                    ? { pricePerUnit: position.currentPricePerUnit }
+                    : {}),
+                }}
+                originName={asset.name}
+                privacyMode={privacyMode}
+                readOnly={isDemo}
+                recordAction={boundRecordTransferAction}
                 today={today}
               />
             ) : null}

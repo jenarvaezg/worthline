@@ -4509,6 +4509,61 @@ code {
   color: var(--muted);
 }
 
+/* ── Traspaso (#1480) ──────────────────────────────────────────────────── */
+/* One screen, one submit. The destination-creation pane and the importe field are
+   disclosed with pure CSS `:has()`, like the add wizard's drawers (ADR 0009): the
+   flow keeps working with no JS, and — the reason that matters — no field inside a
+   hidden pane ever needs a native `required`, which in a real browser aborts the
+   submit of the WHOLE form for every path (the trap #677 caught in the wizard). */
+.transferNewPane {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+}
+
+.transferForm:has(select[name="destinationAssetId"] option[value="__new__"]:checked)
+  .transferNewPane {
+  display: flex;
+}
+
+/* «Todo» is its own intent, so choosing it retires the importe field instead of
+   filling it in with a figure that would leave a millionth of a unit behind. */
+.transferForm:has(input[name="portion"][value="all"]:checked) .transferAmountField {
+  display: none;
+}
+
+.transferPortion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.transferPortion legend {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.transferPortion label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.transferArrival summary {
+  font-size: 0.8125rem;
+  color: var(--blue);
+  cursor: pointer;
+}
+
 /* ── Symbol search (#138) ──────────────────────────────────────────────── */
 .symbolSearch {
   margin-bottom: 20px;
