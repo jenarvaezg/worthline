@@ -139,7 +139,14 @@ export interface ProjectedTransfer {
   pair: TransferPair;
 }
 
-/** What the confirm re-checks: the intent, exactly as the draft persisted it. */
+/**
+ * What the confirm re-checks: the intent, exactly as the draft persisted it.
+ *
+ * No currency field, deliberately: the currency is a fact of the two ledgers, read
+ * behind {@link projectTransferWrite} and refused when they disagree — the same
+ * subtraction `RecordTransferCommand` makes for the same reason, so no caller can
+ * declare a currency the book does not hold.
+ */
 export interface TransferWrite {
   originAssetId: string;
   destinationAssetId: string;
@@ -148,7 +155,6 @@ export interface TransferWrite {
   /** Frozen at draft time, so the confirm writes the VL the card showed. */
   originPricePerUnit: DecimalString;
   destinationPricePerUnit: DecimalString;
-  currency: string;
 }
 
 /**
@@ -290,18 +296,20 @@ export async function projectTransferWrite(
 }
 
 /**
- * The VL to value one side at: the app's own price for that holding, through the SAME
- * selection rule as every other valuation (ADR 0006, cached beats manual) so the
- * participaciones the card derives match the ones the ficha would show.
+ * One side's VL and the name to refuse by: the app's own price for that holding,
+ * through the SAME selection rule as every other valuation (ADR 0006, cached beats
+ * manual) so the participaciones the card derives match the ones the ficha would show.
  *
- * `null` when the holding has no usable price at all — a hand-created plan nobody has
+ * A `null` price means the holding has none usable — a hand-created plan nobody has
  * priced yet. The lane then fails closed rather than inventing a VL: there is no honest
- * figure, and the screen of #1480 has a field for it.
+ * figure, and the screen of #1480 has a field for it. The NAME rides along from the same
+ * read the price came out of, so the refusal can say which holding without a second
+ * query for a fact this row already carries.
  */
 export async function readTransferSidePrice(
   store: Pick<TransferProjectionStore, "assets" | "operations">,
   assetId: string,
-): Promise<TransferSidePrice | null> {
+): Promise<{ name: string | null; price: TransferSidePrice | null }> {
   const [asset, cache] = await Promise.all([
     store.assets.readInvestmentAssetById(assetId),
     store.operations.readPriceCache(assetId),
@@ -310,13 +318,17 @@ export async function readTransferSidePrice(
     cachedPrice: cache?.price,
     manualPrice: asset?.manualPricePerUnit,
   });
-  if (!selected) return null;
+  const name = asset?.name ?? null;
+  if (!selected) return { name, price: null };
   return {
-    manual: selected.source === "manual",
-    pricePerUnit: selected.pricePerUnit,
-    ...(selected.source === "cached" && cache?.priceDate
-      ? { priceDate: cache.priceDate.slice(0, 10) }
-      : {}),
+    name,
+    price: {
+      manual: selected.source === "manual",
+      pricePerUnit: selected.pricePerUnit,
+      ...(selected.source === "cached" && cache?.priceDate
+        ? { priceDate: cache.priceDate.slice(0, 10) }
+        : {}),
+    },
   };
 }
 
@@ -334,7 +346,6 @@ export function transferPlanFromProposal(
 /** The persisted plan read back as the write it describes — what the confirm re-checks. */
 export function transferWriteFromPlan(plan: InvestmentTransferPlan): TransferWrite {
   return {
-    currency: plan.currency,
     destinationAssetId: plan.destinationAssetId,
     destinationPricePerUnit: plan.destinationPricePerUnit,
     executedAt: plan.executedAt,
@@ -366,7 +377,6 @@ export async function buildTransferProposal(
   if (!prices.ok) return prices;
 
   const projected = await projectTransferWrite(store, {
-    currency: prices.currency,
     destinationAssetId: args.destinationAssetId,
     destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
@@ -418,7 +428,6 @@ export async function buildTransferProposal(
     proposal: {
       destination: side({
         direction: "in",
-        holding: args.destinationHolding,
         amountMinor: pair.incomingAmountMinor,
         currency,
         pricePerUnit: prices.destination.pricePerUnit,
@@ -455,7 +464,6 @@ export async function buildTransferProposal(
       ],
       origin: side({
         direction: "out",
-        holding: args.originHolding,
         amountMinor: pair.outgoingAmountMinor,
         currency,
         pricePerUnit: prices.origin.pricePerUnit,
@@ -477,39 +485,33 @@ export async function buildTransferProposal(
  */
 export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
 
-/** Both VLs, or the refusal that names the holding without a price. */
+/**
+ * Both VLs, or the refusal that names the holding without one.
+ *
+ * It does NOT re-read the portfolio to name them: each side's row already came back
+ * from `readTransferSidePrice`, and «no existe» is
+ * {@link projectTransferWrite}'s answer to give — running its checks here in a second
+ * copy is how the two would eventually disagree about what a valid side is.
+ */
 async function readTransferPrices(
   store: TransferProjectionStore,
   args: TransferArgs,
 ): Promise<
-  | {
-      ok: true;
-      origin: TransferSidePrice;
-      destination: TransferSidePrice;
-      currency: string;
-    }
+  | { ok: true; origin: TransferSidePrice; destination: TransferSidePrice }
   | { ok: false; error: string }
 > {
-  const investments = await store.assets.readInvestmentAssetsWithMeta();
-  const origin = investments.find((item) => item.id === args.originAssetId);
-  const destination = investments.find((item) => item.id === args.destinationAssetId);
-  if (!origin) {
-    return { error: `La inversión de origen: ${NOT_AN_INVESTMENT}`, ok: false };
-  }
-  if (!destination) {
-    return { error: `La inversión de destino: ${NOT_AN_INVESTMENT}`, ok: false };
-  }
-
-  const [originPrice, destinationPrice] = await Promise.all([
+  const [origin, destination] = await Promise.all([
     readTransferSidePrice(store, args.originAssetId),
     readTransferSidePrice(store, args.destinationAssetId),
   ]);
 
-  const without = [
-    ...(originPrice === null ? [origin.name] : []),
-    ...(destinationPrice === null ? [destination.name] : []),
-  ];
-  if (originPrice === null || destinationPrice === null) {
+  if (origin.price === null || destination.price === null) {
+    const without = [
+      ...(origin.price === null ? [origin.name ?? "la inversión de origen"] : []),
+      ...(destination.price === null
+        ? [destination.name ?? "la inversión de destino"]
+        : []),
+    ];
     return {
       error:
         `No tengo valor liquidativo de ${without.map((name) => `«${name}»`).join(" ni de ")}, ` +
@@ -520,18 +522,12 @@ async function readTransferPrices(
     };
   }
 
-  return {
-    currency: origin.currency,
-    destination: destinationPrice,
-    ok: true,
-    origin: originPrice,
-  };
+  return { destination: destination.price, ok: true, origin: origin.price };
 }
 
 /** One side of the card, assembled from the projection and the copy module. */
 function side(input: {
   direction: "out" | "in";
-  holding: string;
   projected: ProjectedSide;
   units: DecimalString;
   pricePerUnit: DecimalString;
@@ -539,14 +535,12 @@ function side(input: {
   currency: string;
 }): TransferProposalSide {
   return {
-    id: input.holding,
     movementLine: transferHalfLine({
       amountMinor: input.amountMinor,
       currency: input.currency,
       pricePerUnit: input.pricePerUnit,
       units: input.units,
     }),
-    name: input.projected.name,
     positionLine: transferSideLine({
       direction: input.direction,
       name: input.projected.name,

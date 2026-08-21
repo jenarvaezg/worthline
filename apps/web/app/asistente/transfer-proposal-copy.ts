@@ -22,7 +22,7 @@
 
 import { formatPrice, formatUnits, type TransferPortion } from "@worthline/domain";
 
-import { formatDocumentMoney } from "./document-figures";
+import { currencyMark, formatDocumentMoney } from "./document-figures";
 import { formatIsoDayEs } from "./iso-day-es";
 
 /** The atomic folio: one proposal, one movement, the two rows it ties. */
@@ -76,9 +76,8 @@ export function transferHalfLine(half: {
   amountMinor: number;
   currency: string;
 }): string {
-  const symbol = half.currency === "EUR" ? "€" : half.currency;
   return (
-    `${formatUnits(half.units)} part. × ${formatPrice(half.pricePerUnit)} ${symbol}` +
+    `${formatUnits(half.units)} part. × ${formatPrice(half.pricePerUnit)} ${currencyMark(half.currency)}` +
     ` · ${formatDocumentMoney(half.amountMinor, half.currency)}`
   );
 }

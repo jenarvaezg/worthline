@@ -218,3 +218,12 @@ its figures come from, and the answer is not «the model's arguments».
   it, so judging the figures first would answer a repeated dictation with «baja el
   importe» about an importe that was right — the ordering `recordTransferAction`
   already had to learn (#1394).
+
+The asymmetry this leaves standing, deliberately and not silently: a traspaso dictated
+to the chat is recorded with no paper, while a dictated COMPRA still answers
+`operation_document_required` (#1374's frontier, still open as #1466). The two are not
+in conflict — what #1374 fenced out was the MODEL's prose, and this lane brings a
+parser instead — but the user-visible rule «lo que me escribes vale» now holds for one
+movement and not the other, and closing that is #1466's to do, with this lane as the
+worked precedent for how (`typed-transfer.ts` is the sibling `typed-holding-event.ts`
+that ticket asks for).

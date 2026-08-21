@@ -922,6 +922,161 @@ describe("createChatTools · propose_operation (#1374)", () => {
   });
 });
 
+describe("createChatTools · propose_transfer (#1482)", () => {
+  /**
+   * The lane «he traspasado 1.018,67 € del fondo A al fondo B» had none (#1482). What
+   * this block drives is the WIRING of its frontier, which the parser's own suite
+   * cannot see: the tool takes no importe and no date, so unless worthline read them
+   * off the user's message there is nothing to build from — and the refusal has to say
+   * which gap it fell into.
+   */
+  async function transferStore() {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jorge" }],
+      mode: "individual",
+    });
+    for (const [id, name, price] of [
+      ["asset-origen", "Indexado PP", "12"],
+      ["asset-destino", "Cartera Permanente PP", "14.50"],
+    ] as const) {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id,
+        instrument: "pension_plan",
+        manualPricePerUnit: price,
+        name,
+        ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      });
+    }
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "asset-origen",
+        currency: "EUR",
+        executedAt: "2025-09-15",
+        id: "op-seed",
+        kind: "buy",
+        pricePerUnit: "10",
+        units: "100",
+      },
+      { today: "2026-08-21" },
+    );
+    return store;
+  }
+
+  async function transferTools(
+    store: WorthlineStore,
+    typedTransfer: Parameters<typeof createChatTools>[0]["typedTransfer"],
+  ) {
+    const publicIds = await store.agentView.readPublicIds();
+    const idOf = (entityId: string) =>
+      publicIds.find((row) => row.entityId === entityId)?.publicId ?? "";
+    const origin = idOf("asset-origen");
+    const destination = idOf("asset-destino");
+    return {
+      destination,
+      origin,
+      tools: createChatTools({
+        asOf: "2026-08-21",
+        groundedHoldingIds: [origin, destination],
+        runWithStore: (run) =>
+          run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            operations: store.operations,
+          }),
+        ...(typedTransfer ? { typedTransfer } : {}),
+      }),
+    };
+  }
+
+  const DICTATED = {
+    status: "read",
+    transfer: {
+      executedAt: "2026-08-14",
+      portion: { amountMinor: 73_922, kind: "amount" },
+    },
+  } as const;
+
+  it("builds ONE traspaso proposal from the figures worthline read in the message", async () => {
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(store, DICTATED);
+
+    const result = await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      dictated: "14/08/2026 · 739,22\u00a0€",
+      proposalType: "investment_transfer",
+      draft: { proposalId: expect.any(String) },
+    });
+    store.close();
+  });
+
+  it("refuses when worthline read no traspaso in the message, naming both gaps", async () => {
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(store, undefined);
+
+    const result = (await tools["propose_transfer"]?.execute?.(
+      // The figures a model might try to smuggle are not even fields of the schema, so
+      // this is the whole of what it can send — and it is not enough.
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("transfer_not_in_message");
+    expect(result.message).toContain("no he visto cuánto se ha traspasado");
+    expect(result.message).toContain("no he visto la fecha");
+    store.close();
+  });
+
+  it("relays which gap the message fell into when the reading was ambiguous", async () => {
+    const store = await transferStore();
+    const { destination, origin, tools } = await transferTools(store, {
+      missing: ["ambiguous_amount"],
+      status: "incomplete",
+    });
+
+    const result = (await tools["propose_transfer"]?.execute?.(
+      { destinationHoldingId: destination, originHoldingId: origin },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("transfer_not_in_message");
+    expect(result.message).toContain("más de una cifra");
+    expect(result.message).toContain("«Traspasar»");
+    store.close();
+  });
+
+  it("refuses a call that names only one side of the pair", async () => {
+    const store = await transferStore();
+    const { origin, tools } = await transferTools(store, DICTATED);
+
+    const result = (await tools["propose_transfer"]?.execute?.(
+      { originHoldingId: origin },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("transfer_holdings_required");
+    store.close();
+  });
+
+  it("routes away from the two lanes a traspaso is NOT", async () => {
+    const store = await transferStore();
+    const { tools } = await transferTools(store, DICTATED);
+    const description = tools["propose_transfer"]?.description ?? "";
+
+    expect(description).toContain("propose_holding");
+    expect(description).toContain("propose_operation");
+    // And the sibling points back, which is what stops a venta + compra (#1393).
+    expect(tools["propose_operation"]?.description ?? "").toContain("propose_transfer");
+    store.close();
+  });
+});
+
 describe("createChatTools · propose_reconstruction (#1053)", () => {
   it("builds a superficie-C reconstruct proposal from a dated balance series", async () => {
     const store = await createInMemoryStore();

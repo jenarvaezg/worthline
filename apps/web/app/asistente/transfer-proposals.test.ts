@@ -21,7 +21,10 @@ import { derivePosition } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { confirmTransferProposalAction } from "./transfer-proposal-action";
-import { buildTransferProposal } from "./transfer-proposals";
+import {
+  buildTransferProposal,
+  TRANSFER_DICTATED_DOCUMENT_NAME,
+} from "./transfer-proposals";
 import { parseTypedTransfer } from "./typed-transfer";
 
 const ORIGIN = "origen";
@@ -88,6 +91,16 @@ async function price(store: WorthlineStore, assetId: string, value: string) {
   });
 }
 
+/** The slice of the store the builder takes — the same four the chat tool hands it. */
+function storeSlice(store: WorthlineStore) {
+  return {
+    agentView: store.agentView,
+    assets: store.assets,
+    assistantProposals: store.assistantProposals,
+    operations: store.operations,
+  };
+}
+
 /** Build the card from a message worthline parses, exactly as the tool does. */
 async function draft(store: WorthlineStore, message: string) {
   const reading = parseTypedTransfer(message, TODAY);
@@ -95,12 +108,7 @@ async function draft(store: WorthlineStore, message: string) {
     throw new Error(`the message was not read: ${JSON.stringify(reading)}`);
   }
   return buildTransferProposal(
-    {
-      agentView: store.agentView,
-      assets: store.assets,
-      assistantProposals: store.assistantProposals,
-      operations: store.operations,
-    },
+    storeSlice(store),
     {
       destinationAssetId: DESTINATION,
       destinationHolding: "wl_hld_destino",
@@ -147,6 +155,29 @@ describe("buildTransferProposal — the card of a dictated traspaso", () => {
     // it. Never exactly zero — two VLs, six decimals.
     expect(Math.abs(built.proposal.impact.deltaMinor)).toBeLessThan(5);
     expect(built.proposal.notes[0]).toContain("no realiza plusvalía");
+    store.close();
+  });
+
+  test("records the fact as backed by the USER's message, not by a document", async () => {
+    const store = await seed();
+
+    const built = await draft(store, DICTATED);
+    if (!built.ok) throw new Error(built.error);
+
+    // Provenance `user` and a name the app fixes: what grounds this write is the
+    // person's own message (#1418's rule), and letting a document's name onto it would
+    // claim paper that does not exist.
+    const proposal = await store.assistantProposals.read(built.proposal.draft.proposalId);
+    expect(proposal?.documents[0]?.document).toMatchObject({
+      name: TRANSFER_DICTATED_DOCUMENT_NAME,
+      provenance: "user",
+    });
+    // The INTENT is what is persisted — the pair is minted by the gate at confirm — so
+    // the draft carries the portion as dictated and no derived participaciones.
+    expect(proposal?.documents[0]?.facts[0]).toMatchObject({
+      kind: "investment_transfer",
+      row: { executedAt: DATE, portion: { amountMinor: 73922, kind: "amount" } },
+    });
     store.close();
   });
 
@@ -210,18 +241,87 @@ describe("buildTransferProposal — the card of a dictated traspaso", () => {
     store.close();
   });
 
+  test("refuses two ledgers in different currencies: the cost that travels has no rate", async () => {
+    const store = await seed();
+    await store.assets.createInvestmentAsset({
+      currency: "USD",
+      id: "dolares",
+      instrument: "fund",
+      liquidityTier: "market",
+      manualPricePerUnit: "14.50",
+      name: "Vanguard USD",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    const reading = parseTypedTransfer(DICTATED, TODAY);
+    if (reading.status !== "read") throw new Error("unreadable fixture");
+
+    const built = await buildTransferProposal(
+      storeSlice(store),
+      {
+        destinationAssetId: "dolares",
+        destinationHolding: "wl_hld_dolares",
+        originAssetId: ORIGIN,
+        originHolding: "wl_hld_origen",
+        transfer: reading.transfer,
+      },
+      TODAY,
+    );
+
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toContain("no puedo traspasar entre divisas distintas");
+    store.close();
+  });
+
+  test("refuses a side the sync owns, on EITHER leg (#1326)", async () => {
+    for (const owned of [ORIGIN, DESTINATION]) {
+      const store = await seed();
+      const reading = parseTypedTransfer(DICTATED, TODAY);
+      if (reading.status !== "read") throw new Error("unreadable fixture");
+
+      // The guard reads the agent view's connected sources, so that read IS the seam:
+      // a holding a source materializes has its position re-rolled by the next sync,
+      // and the gate throws on one rather than answering.
+      const built = await buildTransferProposal(
+        {
+          ...storeSlice(store),
+          agentView: {
+            ...store.agentView,
+            readConnectedSources: async () => [
+              {
+                adapter: "binance",
+                assetIds: [owned],
+                id: "src",
+                label: "Binance de Jorge",
+                positionCount: 1,
+              } as never,
+            ],
+          },
+        },
+        {
+          destinationAssetId: DESTINATION,
+          destinationHolding: "wl_hld_destino",
+          originAssetId: ORIGIN,
+          originHolding: "wl_hld_origen",
+          transfer: reading.transfer,
+        },
+        TODAY,
+      );
+
+      expect(built.ok, owned).toBe(false);
+      if (built.ok) return;
+      expect(built.error, owned).toContain("Binance de Jorge");
+      store.close();
+    }
+  });
+
   test("refuses a traspaso to the same holding", async () => {
     const store = await seed();
     const reading = parseTypedTransfer(DICTATED, TODAY);
     if (reading.status !== "read") throw new Error("unreadable fixture");
 
     const built = await buildTransferProposal(
-      {
-        agentView: store.agentView,
-        assets: store.assets,
-        assistantProposals: store.assistantProposals,
-        operations: store.operations,
-      },
+      storeSlice(store),
       {
         destinationAssetId: ORIGIN,
         destinationHolding: "wl_hld_origen",

@@ -61,9 +61,7 @@ function plain(html: string): string {
 function transferProposal(overrides: Partial<TransferProposal> = {}): TransferProposal {
   return {
     destination: {
-      id: "wl_hld_destino",
       movementLine: "50,98069 part. × 14,5 € · 739,22 €",
-      name: "Cartera Permanente PP",
       positionLine: "Entran en «Cartera Permanente PP»: 0 → 50,98069 participaciones",
     },
     dictated: "14/08/2026 · 739,22 €",
@@ -77,9 +75,7 @@ function transferProposal(overrides: Partial<TransferProposal> = {}): TransferPr
         "adquisición viaja con las participaciones.",
     ],
     origin: {
-      id: "wl_hld_origen",
       movementLine: "61,601667 part. × 12 € · 739,22 €",
-      name: "Indexado PP",
       positionLine: "Salen de «Indexado PP»: 100 → 38,398333 participaciones",
     },
     proposalType: "investment_transfer",

@@ -12,11 +12,15 @@ export interface TransferProposalDraft {
   proposalId: string;
 }
 
-/** One side of the pair, as the card prints it. */
+/**
+ * One side of the pair, as the card prints it: two sentences and nothing else.
+ *
+ * No id and no bare name, deliberately. An id is machinery the card must never print
+ * (#1263) and the holding's NAME is already inside both sentences — carrying either
+ * again would be a second copy of a fact with one home, and the persisted plan is where
+ * the ids belong (`InvestmentTransferPlan`).
+ */
 export interface TransferProposalSide {
-  /** The public holding id (`wl_hld_…`), echoed for the record. */
-  id: string;
-  name: string;
   /** «Salen de «X»: 841,262 → 804,059 participaciones». */
   positionLine: string;
   /** «37,203 part. × 19,87091 € · 739,22 €» — the half, term by term. */
@@ -61,12 +65,10 @@ export function parseTransferProposalDraft(raw: unknown) {
   return { ok: true as const, draft: { proposalId: raw.proposalId.trim() } };
 }
 
-/** Shape check for one side of the pair — three strings, nothing derived. */
+/** Shape check for one side of the pair — two strings, nothing derived. */
 export function isTransferProposalSide(value: unknown): value is TransferProposalSide {
   return (
     isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
     typeof value.positionLine === "string" &&
     typeof value.movementLine === "string"
   );

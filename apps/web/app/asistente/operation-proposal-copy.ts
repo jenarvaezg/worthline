@@ -13,6 +13,7 @@
  */
 
 import {
+  currencyMark,
   formatDocumentMoney,
   formatDocumentUnitPrice,
   formatDocumentUnits,
@@ -65,11 +66,10 @@ export interface OperationFactLine {
  * paper never stated (the preview card's «only observed fields get a row» rule).
  */
 export function operationFactLine(fact: OperationFactLine): string {
-  const symbol = fact.currency === "EUR" ? "€" : fact.currency;
   const parts = [
     formatIsoDayEs(fact.executedAt),
     operationKindLabel(fact.kind),
-    `${formatDocumentUnits(fact.units)} part. × ${formatDocumentUnitPrice(fact.pricePerUnit)} ${symbol}`,
+    `${formatDocumentUnits(fact.units)} part. × ${formatDocumentUnitPrice(fact.pricePerUnit)} ${currencyMark(fact.currency)}`,
   ];
   if (fact.feesMinor !== undefined) {
     parts.push(`comisión ${formatDocumentMoney(fact.feesMinor, fact.currency)}`);
