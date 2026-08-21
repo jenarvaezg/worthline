@@ -128,7 +128,7 @@ export default function ReturnsByClassSection({
                 entry={entry}
                 key={entry.key}
                 privacyMode={privacyMode}
-                weight="0"
+                weight={weightOf(entry.value.amountMinor)}
               />
             ))}
           </ul>

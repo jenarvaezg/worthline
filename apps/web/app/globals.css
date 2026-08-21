@@ -5548,7 +5548,8 @@ code {
 }
 
 .balanceTrash > summary,
-.balanceClosed > summary {
+.balanceClosed > summary,
+.returnsClassClosed > summary {
   list-style: none;
   cursor: pointer;
   padding: 12px 0;
@@ -5559,7 +5560,8 @@ code {
 }
 
 .balanceTrash > summary::-webkit-details-marker,
-.balanceClosed > summary::-webkit-details-marker {
+.balanceClosed > summary::-webkit-details-marker,
+.returnsClassClosed > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -6314,24 +6316,11 @@ td.rowActions > * {
 }
 
 /* Classes with nothing left today fold under the live list, the same gesture the
-   closed positions use in the balance board (#1456). */
+   closed positions use in the balance board (#1456) — and the same summary recipe,
+   shared with `.balanceClosed` above rather than restated here. */
 .returnsClassClosed {
   border-top: 1px solid var(--hairline);
   margin-top: 14px;
-}
-
-.returnsClassClosed > summary {
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
-  list-style: none;
-  padding: 12px 0;
-  text-transform: uppercase;
-}
-
-.returnsClassClosed > summary::-webkit-details-marker {
-  display: none;
 }
 
 .housingValuation .anchorEdit {

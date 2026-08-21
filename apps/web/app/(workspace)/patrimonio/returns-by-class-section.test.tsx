@@ -162,8 +162,60 @@ describe("una clase cerrada no compite con las vivas (#1456)", () => {
     expect(html).toContain("Clases cerradas (1)");
     // Sigue siendo consultable: el −97,1 % está, replegado, no borrado.
     expect(foldHtml).toContain("−97,1 %");
-    // Y el pie no se mueve por esconder una fila a cero.
-    expect(html).toContain("Clasificado");
+  });
+
+  test("el pie de cobertura es el mismo con y sin la fila a cero", () => {
+    const footer = (returns: AssetClassReturnsViewResult): string =>
+      renderToStaticMarkup(
+        <ReturnsByClassSection privacyMode={false} returns={returns} />,
+      )
+        .split('<dl class="exposureCoverage">')[1]!
+        .split("</dl>")[0]!;
+
+    expect(footer(withClosed)).toBe(footer(result));
+  });
+
+  test("una clase en pérdidas pero con valor sigue en la lista viva", () => {
+    // Perder dinero no repliega una clase; tener cero sí. Sin este guard, la
+    // regla podría leerse como «esconde lo que va mal».
+    const losing: AssetClassReturnsViewResult = {
+      classes: [
+        {
+          closed: false,
+          key: "commodity",
+          value: { amountMinor: 40_000, currency: EUR },
+          view: marketView({ irrRate: -0.31, totalReturnRatio: -0.6, twrRate: -0.28 }),
+        },
+      ],
+      coverage: result.coverage,
+    };
+
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={losing} />,
+    );
+
+    expect(html.split("<details")[0]).toContain("Materias primas");
+    expect(html).toContain("−60,0 %");
+    expect(html).not.toContain("Clases cerradas");
+  });
+
+  test("un workspace con todo liquidado lo dice, en vez de dejar la lista muda", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection
+        privacyMode={false}
+        returns={{
+          classes: withClosed.classes.filter((entry) => entry.closed),
+          coverage: {
+            classified: { amountMinor: 0, currency: EUR },
+            notApplicable: { amountMinor: 0, currency: EUR },
+            unknown: { amountMinor: 0, currency: EUR },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("Ninguna clase con valor hoy.");
+    expect(html).toContain("Clases cerradas (1)");
   });
 
   test("sin clases cerradas la sección se ve exactamente igual que antes", () => {

@@ -260,7 +260,9 @@ export function returnsByAssetClass(
     .map(([key, acc]) => ({
       // Callers feed this engine operation-bearing holdings only, so a zero
       // attributed value means the class was left (sold, transferred away) and
-      // not that nothing was ever bought.
+      // not that nothing was ever bought. A market value is never negative — the
+      // `<=` is defensive, and treats an impossible negative the same way: a
+      // class in that state sustains nothing either.
       closed: acc.marketValueMinor <= 0,
       irr: xirr([
         ...acc.cashflows,

@@ -562,6 +562,27 @@ describe("una clase sin valor hoy se declara cerrada (#1456)", () => {
     expect(crypto.simpleGain.totalGain.amountMinor).toBeLessThan(0);
   });
 
+  test("una clase en pérdidas pero con valor NO está cerrada", () => {
+    // La marca separa «no tiene nada» de «va mal»: perder dinero no saca a una
+    // clase del reparto de hoy, tener cero sí.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ commodity: "1" }),
+          marketValueMinor: 40_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01")],
+        },
+      ],
+      valuationDate: "2026-08-21",
+    });
+
+    const commodity = result.classes[0]!;
+    expect(commodity.closed).toBe(false);
+    expect(commodity.simpleGain.totalReturnRatio).toBeLessThan(0);
+  });
+
   test("marcarla no mueve la cobertura del pie", () => {
     const result = returnsByAssetClass({
       currency: "EUR",
