@@ -18,11 +18,19 @@
  * ({@link TypedTransferGap}) — never «no te he entendido», which is the refusal a
  * person cannot act on and the disease #1418 is named after.
  *
+ * What it DOES read, since #1544: the **participaciones**, when the message states
+ * them («37,203 participaciones», «34,8032023 part.»). They are marked by their own
+ * word, so they never compete with the figure in euros, and with them the origin's VL
+ * stops being a figure the app has to supply — it is derived from the two the user
+ * wrote, exactly as a buy derives its price. That is what retires the provenance
+ * caveat: there is no cached price in the arithmetic to warn about.
+ *
  * What it deliberately does NOT read:
  *
  * - **The two VLs.** Nobody dictates «a 12,3456 € el valor liquidativo» twice, and a
- *   figure guessed for either half would invent participaciones. The builder takes
- *   them from the app's own price for each holding and the card says which they were.
+ *   figure guessed for either half would invent participaciones. Where they are still
+ *   needed — a leg stated only as an importe — the builder takes them from the app's
+ *   own price for that holding and the card says which it was.
  * - **A second importe** (the one that ARRIVED, #1479). Two money figures in one
  *   sentence cannot be told apart by order without guessing, so the message is refused
  *   naming both — the screen of #1480 has a field for each.
@@ -39,7 +47,10 @@ import { isIsoDay, normalizeExtractedNumber } from "./attachment-extraction-cont
 export interface TypedTransfer {
   /** YYYY-MM-DD, always a real day, always written in the message. */
   executedAt: string;
-  /** How much of the origin left — an importe in céntimos, or «todo». */
+  /**
+   * How much of the origin left — an importe in céntimos, «todo», or the
+   * participaciones the message stated together with their importe (#1544).
+   */
   portion: TransferPortion;
 }
 
@@ -54,7 +65,9 @@ export type TypedTransferGap =
   | "date"
   /** Two or more figures could be the importe, and order is not evidence. */
   | "ambiguous_amount"
-  /** «Todo» AND an importe: two intents for one portion. */
+  /** Two or more figures are marked as participaciones, one per leg — see #1544. */
+  | "ambiguous_units"
+  /** «Todo» AND an importe (or participaciones): two intents for one portion. */
   | "conflicting_portion";
 
 export type TypedTransferReading =
@@ -77,12 +90,18 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
     "Escríbeme solo ése, en euros («1.018,67 €»). Si el importe que LLEGÓ al destino fue " +
     "distinto del que salió —pasa, y es normal—, eso se registra desde «Traspasar» en la " +
     "ficha de la posición de origen, que tiene un campo para cada uno",
+  ambiguous_units:
+    "en tu mensaje hay más de una cifra de participaciones y no sé de qué lado es cada " +
+    "una. Si tienes las de los dos lados —las que salieron y las que entraron—, eso se " +
+    "registra desde «Traspasar» en la ficha de la posición de origen, que tiene un campo " +
+    "para cada una; por aquí dime solo las que salieron, con su importe",
   amount:
     "no he visto cuánto se ha traspasado. Escríbeme el importe en euros («1.018,67 €»), " +
     "o dime «todo» si has traspasado la posición entera",
   conflicting_portion:
-    "me dices «todo» y también un importe, y son dos traspasos distintos: «todo» vacía la " +
-    "posición exacta, y un importe saca esa cifra y deja el resto. Dime cuál de los dos",
+    "me dices «todo» y también una cifra concreta, y son dos traspasos distintos: «todo» " +
+    "vacía la posición exacta, y un importe saca esa cifra y deja el resto. Dime cuál de " +
+    "los dos",
   date:
     "no he visto la fecha. Dime el día del traspaso («hoy», «ayer» o 12/08/2026): no fecho " +
     "yo un movimiento que no me has fechado",
@@ -101,9 +120,10 @@ export function typedTransferGapMessage(missing: readonly TypedTransferGap[]): s
       ? (gaps[0] ?? GAP_MESSAGES.amount)
       : `${gaps.slice(0, -1).join("; ")}; y ${gaps[gaps.length - 1]}`;
   return (
-    `Te preparo el traspaso, pero ${listed}. Lo leo de tu mensaje tal cual lo escribas — ` +
-    "las participaciones que se mueven las calculo yo con el valor liquidativo de cada " +
-    "posición."
+    `Te preparo el traspaso, pero ${listed}. Lo leo de tu mensaje tal cual lo escribas: si ` +
+    "me dices las participaciones que salieron («37,203 participaciones») junto al importe, " +
+    "el valor liquidativo lo calculo yo con esas dos cifras; si no, uso el precio que tengo " +
+    "de cada posición y te digo de cuándo es."
   );
 }
 
@@ -131,6 +151,18 @@ const MARKED_MONEY = /(?<![\d.,])(\d[\d.,]*)\s*(?:€|EUR\b|euros?\b)/giu;
 
 /** Any figure at all — the fallback reading, admitted only when there is exactly one. */
 const BARE_NUMBER = /(?<![\d.,])\d[\d.,]*/gu;
+
+/**
+ * A figure marked as PARTICIPACIONES: «37,203 participaciones», «34,8032023 part.»
+ * (#1544).
+ *
+ * Its own word is what makes it unmistakable, and it is why this reading can be added
+ * without weakening the money one: the units token is cut out of the text before the
+ * importe is counted, so a message with both figures is no longer ambiguous — it is
+ * fully stated.
+ */
+const MARKED_UNITS =
+  /(?<![\d.,])(\d[\d.,]*)\s*(?:participaci(?:ón|on|ones)\b|part(?:ic)?\.)/giu;
 
 /**
  * «Todo» as an intent, in the words people actually use. It is NOT the importe that
@@ -252,16 +284,28 @@ type PortionReading =
 /**
  * How much of the origin left, or the gap that stops us knowing.
  *
- * «Todo» together with an importe is refused rather than resolved: they are two
+ * «Todo» together with a stated figure is refused rather than resolved: they are two
  * different writes — one empties the origin exactly, the other takes a stated figure out
  * of it — and choosing between them is the app deciding what the user meant.
+ *
+ * The participaciones are read FIRST and cut out of the text, so the importe is counted
+ * over what is left (#1544). That order is what makes the fully-stated message —
+ * «37,203 participaciones (739,22 €)» — read cleanly instead of as two competing
+ * figures, and it is the reading that lets the VL be derived rather than borrowed from
+ * the app's price cache.
  */
 function portionIn(text: string): PortionReading {
   const all = ALL_PORTION_WORDS.test(text) || ALL_PORTION_PERCENT.test(text);
-  const amounts = moneyFiguresIn(text);
+  const stated = unitFiguresIn(text);
+  const amounts = moneyFiguresIn(stated.rest);
 
-  if (all && amounts.length > 0) return { gap: "conflicting_portion", ok: false };
+  if (all && (amounts.length > 0 || stated.units.length > 0)) {
+    return { gap: "conflicting_portion", ok: false };
+  }
   if (all) return { ok: true, portion: { kind: "all" } };
+  // One figure per leg is exactly what an extracto prints, and only the screen has a
+  // field for each: which of the two a lone sentence means is not ours to pick.
+  if (stated.units.length > 1) return { gap: "ambiguous_units", ok: false };
   if (amounts.length > 1) return { gap: "ambiguous_amount", ok: false };
 
   const [amount] = amounts;
@@ -271,7 +315,48 @@ function portionIn(text: string): PortionReading {
   if (!(amountMinor > 0) || !Number.isSafeInteger(amountMinor)) {
     return { gap: "amount", ok: false };
   }
+
+  const [units] = stated.units;
+  if (units !== undefined) {
+    return { ok: true, portion: { amountMinor, kind: "units", units } };
+  }
   return { ok: true, portion: { amountMinor, kind: "amount" } };
+}
+
+/** The participaciones a message states, and the message with those tokens cut out. */
+interface StatedUnits {
+  /** Decimal strings, in printed order. Empty when the message states none. */
+  units: string[];
+  rest: string;
+}
+
+/**
+ * The figures marked as participaciones, and what is left to read the importe from.
+ *
+ * The value goes through the same number reader as every other dictated figure (es-ES
+ * separators settled the same way) and back to a string: a participaciones count has
+ * fewer significant digits than a double can round-trip, so nothing is lost, and the
+ * rest of the pipeline speaks decimal strings.
+ */
+function unitFiguresIn(text: string): StatedUnits {
+  const units: string[] = [];
+  const scanner = new RegExp(MARKED_UNITS.source, MARKED_UNITS.flags);
+  let rest = "";
+  let cursor = 0;
+  let match = scanner.exec(text);
+  while (match !== null) {
+    const value = normalizeExtractedNumber(match[1]!);
+    // A token we cannot read, or a zero, is LEFT in the text: cutting it would hide it
+    // from the importe reader too, and then a message with one unreadable figure would
+    // look like a message with none.
+    if (value !== null && value > 0) {
+      units.push(String(value));
+      rest += text.slice(cursor, match.index);
+      cursor = match.index + match[0].length;
+    }
+    match = scanner.exec(text);
+  }
+  return { rest: rest + text.slice(cursor), units };
 }
 
 /**

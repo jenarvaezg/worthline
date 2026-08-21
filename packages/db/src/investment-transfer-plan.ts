@@ -13,14 +13,14 @@ import type { TransferPortion } from "@worthline/domain";
  * INTENT, and the pair itself is minted by the atomic gate at confirm time
  * (`recordTransferAndRipple`), exactly the gate the screen of #1480 submits to.
  *
- * What it therefore does NOT carry, deliberately: the two unit counts and the
- * inherited cost. They are derived — importe ÷ each holding's OWN VL, and the
- * proportion of the origin's cost basis those units carry — and the authority for
- * that arithmetic is `planTransfer`, run again at confirm against the ledger as it is
- * THEN. Freezing derived participaciones in the draft would let a card promise figures
- * a later operation on the origin has already changed (#1438's lesson: one engine, not
- * two). The card prints them for the user to read; the plan keeps only what was
- * stated.
+ * What it therefore does NOT carry, deliberately: the DERIVED figures — the unit count
+ * of a leg stated as an importe, and the inherited cost. Their authority is
+ * `planTransfer`, run again at confirm against the ledger as it is THEN. Freezing
+ * derived participaciones in the draft would let a card promise figures a later
+ * operation on the origin has already changed (#1438's lesson: one engine, not two).
+ * The card prints them for the user to read; the plan keeps only what was STATED —
+ * which, since #1544, can be the participaciones themselves, and then it is the VL that
+ * is derived and absent from here.
  */
 export interface InvestmentTransferPlan {
   /** The origin's public holding id (`wl_hld_…`) the card echoes. */
@@ -35,14 +35,21 @@ export interface InvestmentTransferPlan {
   executedAt: string;
   /**
    * How much of the origin left: an importe in integer minor units as the user wrote
-   * it, or «todo». «Todo» is kept as its own intent rather than resolved to the
-   * importe it happened to equal, because only it liquidates the origin exactly.
+   * it, the participaciones the confirmation printed with that importe (#1544), or
+   * «todo». «Todo» is kept as its own intent rather than resolved to the importe it
+   * happened to equal, because only it liquidates the origin exactly.
    */
   portion: TransferPortion;
-  /** The origin's VL used to derive the participaciones that left, decimal string. */
-  originPricePerUnit: string;
-  /** The destination's VL on the same date, decimal string. */
-  destinationPricePerUnit: string;
+  /**
+   * The origin's VL used to derive the participaciones that left, decimal string.
+   * Absent when the portion DECLARES them: then the VL is the derived figure, and
+   * freezing a copy of it here would be a second answer to the same question (#1544).
+   */
+  originPricePerUnit?: string | undefined;
+  /** The destination's VL on the same date, decimal string. Absent when the participaciones that arrived are declared. */
+  destinationPricePerUnit?: string | undefined;
+  /** The participaciones that ARRIVED, when they were stated rather than divided (#1544). */
+  destinationUnits?: string | undefined;
   /** The currency both ledgers keep, checked equal before the draft was armed. */
   currency: string;
 }

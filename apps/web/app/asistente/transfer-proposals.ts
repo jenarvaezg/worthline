@@ -26,11 +26,13 @@
  * - **The same traspaso is never written twice**: a pair already sitting on the origin
  *   at that date, towards that same destination, is reported and not doubled.
  *
- * What it does NOT ask the user for: the two VLs. Nobody dictates them, so each side's
- * comes from the app's own price for that holding — the same figure the screen prefills
- * — and the card says which VL it used and where it is from
- * ({@link transferPriceProvenanceNote}). A holding with no price at all fails closed
- * and routes to the screen, where the VL is a field.
+ * What it does NOT ask the user for: the two VLs. Nobody dictates them. A leg whose
+ * participaciones the message DID state derives its own (#1544) and needs no price at
+ * all; for the rest, the VL comes from the app's own price for that holding — the same
+ * figure the screen prefills — and the card says which VL it used and where it is from
+ * ({@link transferPriceProvenanceNote}). A leg that needs a price and has none fails
+ * closed, naming the holding, and offers both ways out: state the participaciones, or
+ * use the screen where the VL is a field.
  */
 
 import { createHash } from "node:crypto";
@@ -152,9 +154,15 @@ export interface TransferWrite {
   destinationAssetId: string;
   executedAt: string;
   portion: TransferPortion;
-  /** Frozen at draft time, so the confirm writes the VL the card showed. */
-  originPricePerUnit: DecimalString;
-  destinationPricePerUnit: DecimalString;
+  /**
+   * Frozen at draft time, so the confirm writes the VL the card showed — and absent
+   * when the portion DECLARES its participaciones, because then the VL is derived from
+   * the two figures the user wrote and there is no app price in the arithmetic (#1544).
+   */
+  originPricePerUnit?: DecimalString | undefined;
+  destinationPricePerUnit?: DecimalString | undefined;
+  /** The participaciones that arrived, when they were stated rather than divided. */
+  destinationUnits?: DecimalString | undefined;
 }
 
 /**
@@ -258,6 +266,7 @@ export async function projectTransferWrite(
       currency: origin.currency as CurrencyCode,
       destinationAssetId: write.destinationAssetId,
       destinationPricePerUnit: write.destinationPricePerUnit,
+      destinationUnits: write.destinationUnits,
       executedAt: write.executedAt,
       inOperationId: "preview_in",
       originAssetId: write.originAssetId,
@@ -348,6 +357,7 @@ export function transferWriteFromPlan(plan: InvestmentTransferPlan): TransferWri
   return {
     destinationAssetId: plan.destinationAssetId,
     destinationPricePerUnit: plan.destinationPricePerUnit,
+    destinationUnits: plan.destinationUnits,
     executedAt: plan.executedAt,
     originAssetId: plan.originAssetId,
     originPricePerUnit: plan.originPricePerUnit,
@@ -370,10 +380,11 @@ export async function buildTransferProposal(
     };
   }
 
-  // The two VLs first: without them there is no arithmetic to preview, and the refusal
-  // has to name WHICH holding has no price — «no tengo precio» about an unnamed one is
-  // a dead end.
-  const prices = await readTransferPrices(store, args);
+  // The VLs the arithmetic still needs, and only those: a leg that DECLARES its
+  // participaciones derives its own (#1544), so a holding with no price at all no
+  // longer blocks a traspaso the user stated fully. The refusal has to name WHICH
+  // holding has no price — «no tengo precio» about an unnamed one is a dead end.
+  const prices = await readTransferPrices(store, args, portion.kind !== "units");
   if (!prices.ok) return prices;
 
   const projected = await projectTransferWrite(store, {
@@ -381,7 +392,7 @@ export async function buildTransferProposal(
     destinationPricePerUnit: prices.destination.pricePerUnit,
     executedAt,
     originAssetId: args.originAssetId,
-    originPricePerUnit: prices.origin.pricePerUnit,
+    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
     portion,
   });
   if (!projected.ok) return projected;
@@ -397,8 +408,8 @@ export async function buildTransferProposal(
     executedAt,
     originAssetId: origin.assetId,
     originHolding: args.originHolding,
-    originPricePerUnit: prices.origin.pricePerUnit,
     portion,
+    ...(prices.origin === null ? {} : { originPricePerUnit: prices.origin.pricePerUnit }),
   };
 
   const proposal = await store.assistantProposals.create({ kind: "investment_transfer" });
@@ -415,13 +426,14 @@ export async function buildTransferProposal(
   });
 
   const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
-  // What the LEDGER will hold right after the pair: the destination's new units at its
-  // own VL, minus the origin's departing units at its own. Around zero by construction
-  // — a traspaso moves capital, it does not create it — and NOT exactly zero, because
-  // the two halves are valued at two different VLs and cut at six decimals.
+  // What the LEDGER will hold right after the pair: each half's units at the VL its own
+  // ROW will carry — read off the pair, so a derived VL (#1544) is measured as honestly
+  // as a quoted one. Around zero by construction — a traspaso moves capital, it does
+  // not create it — and NOT exactly zero, because the two halves are valued at two
+  // different VLs and cut at six decimals.
   const deltaMinor =
-    multiplyToMinor(pair.incoming.units, prices.destination.pricePerUnit) -
-    multiplyToMinor(pair.out.units, prices.origin.pricePerUnit);
+    multiplyToMinor(pair.incoming.units, pair.incoming.pricePerUnit) -
+    multiplyToMinor(pair.out.units, pair.out.pricePerUnit);
 
   return {
     ok: true,
@@ -430,7 +442,9 @@ export async function buildTransferProposal(
         direction: "in",
         amountMinor: pair.incomingAmountMinor,
         currency,
-        pricePerUnit: prices.destination.pricePerUnit,
+        // The VL of the ROW, not of the read: in the participaciones reading it is the
+        // derived figure, and the card exists to make that derivation checkable.
+        pricePerUnit: pair.incoming.pricePerUnit,
         projected: destination,
         units: pair.incoming.units,
       }),
@@ -447,13 +461,25 @@ export async function buildTransferProposal(
       inheritedCost: transferInheritedCostLine(pair.inheritedCostMinor, currency),
       notes: [
         TRANSFER_NEUTRALITY_NOTE,
+        // One note per leg whose VL came from the APP's price. A leg that declared its
+        // participaciones has nothing to caveat — its VL was derived from the two
+        // figures the user wrote — which is the whole point of #1544: the warning
+        // existed because the model asked for the unstable datum.
+        //
+        // The DESTINATION's note therefore survives this lane on purpose: a dictated
+        // traspaso states one unit count, and a message with two is refused as
+        // ambiguous (`typed-transfer.ts`) and routed to the screen, which has a field
+        // per leg. So the arriving half is still divided at the app's price, and still
+        // says so.
         ...[
-          transferPriceProvenanceNote({
-            executedAt,
-            name: origin.name,
-            side: "origin",
-            ...prices.origin,
-          }),
+          prices.origin === null
+            ? null
+            : transferPriceProvenanceNote({
+                executedAt,
+                name: origin.name,
+                side: "origin",
+                ...prices.origin,
+              }),
           transferPriceProvenanceNote({
             executedAt,
             name: destination.name,
@@ -466,7 +492,7 @@ export async function buildTransferProposal(
         direction: "out",
         amountMinor: pair.outgoingAmountMinor,
         currency,
-        pricePerUnit: prices.origin.pricePerUnit,
+        pricePerUnit: pair.out.pricePerUnit,
         projected: origin,
         units: pair.out.units,
       }),
@@ -496,18 +522,28 @@ export const TRANSFER_DICTATED_DOCUMENT_NAME = "traspaso-dictado-en-el-chat";
 async function readTransferPrices(
   store: TransferProjectionStore,
   args: TransferArgs,
+  /**
+   * Whether the origin's VL is still part of the arithmetic. False when the message
+   * declared the participaciones that left (#1544): the origin's price is then neither
+   * read for the plan nor missed when the holding has none.
+   */
+  needsOriginPrice: boolean,
 ): Promise<
-  | { ok: true; origin: TransferSidePrice; destination: TransferSidePrice }
+  | { ok: true; origin: TransferSidePrice | null; destination: TransferSidePrice }
   | { ok: false; error: string }
 > {
   const [origin, destination] = await Promise.all([
-    readTransferSidePrice(store, args.originAssetId),
+    needsOriginPrice
+      ? readTransferSidePrice(store, args.originAssetId)
+      : Promise.resolve({ name: null, price: null }),
     readTransferSidePrice(store, args.destinationAssetId),
   ]);
 
-  if (origin.price === null || destination.price === null) {
+  if ((needsOriginPrice && origin.price === null) || destination.price === null) {
     const without = [
-      ...(origin.price === null ? [origin.name ?? "la inversión de origen"] : []),
+      ...(needsOriginPrice && origin.price === null
+        ? [origin.name ?? "la inversión de origen"]
+        : []),
       ...(destination.price === null
         ? [destination.name ?? "la inversión de destino"]
         : []),
@@ -515,9 +551,10 @@ async function readTransferPrices(
     return {
       error:
         `No tengo valor liquidativo de ${without.map((name) => `«${name}»`).join(" ni de ")}, ` +
-        "y sin él no puedo saber cuántas participaciones se mueven. Regístralo desde " +
-        "«Traspasar» en la ficha de la posición de origen, donde los dos VL son campos que " +
-        "puedes teclear.",
+        "y sin él no puedo saber cuántas participaciones se mueven. Dime las " +
+        "participaciones que salieron junto al importe («37,203 participaciones, 739,22 €») " +
+        "y el valor liquidativo lo calculo yo; o regístralo desde «Traspasar» en la ficha de " +
+        "la posición de origen, donde cada cifra tiene su campo.",
       ok: false,
     };
   }

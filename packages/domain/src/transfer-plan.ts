@@ -4,6 +4,7 @@ import {
   divideUnits,
   minorToDecimal,
   multiplyToMinor,
+  PRICE_READBACK_DECIMALS,
   proportionMinor,
   UNITS_READBACK_DECIMALS,
 } from "./decimal";
@@ -47,11 +48,27 @@ export interface TransferOrigin {
 }
 
 /**
- * How much of the origin leaves. «Todo» is NOT the amount that happens to equal the
- * whole position: it is its own intent, because only it can liquidate the origin
- * exactly (see {@link planTransfer}).
+ * How much of the origin leaves, in the three ways a real confirmation states it.
+ *
+ * - **`amount`** — the importe, the way an ORDER is given («traspásame 739,22 €»).
+ *   The participaciones are then divided out of it at the origin's VL.
+ * - **`all`** — «todo». NOT the amount that happens to equal the whole position: it
+ *   is its own intent, because only it can liquidate the origin exactly (see
+ *   {@link planTransfer}). Its `amountMinor` is the importe the confirmation printed
+ *   for the whole position, when there is one; without it, the amount is derived at
+ *   the origin's VL.
+ * - **`units`** — the participaciones the confirmation prints, together with its
+ *   importe (#1544). This is the reading that matches the rest of the book: on a buy
+ *   or a sell the participaciones are the declared fact and the price is derived
+ *   (`InvestmentOperationPlan.pricePerUnit`), and the traspaso was the one door that
+ *   inverted it. Here the VL is derived, so a VL nobody typed — or typed with fewer
+ *   decimals than the bank publishes — can no longer put participaciones in the book
+ *   that are not the bank's.
  */
-export type TransferPortion = { kind: "amount"; amountMinor: number } | { kind: "all" };
+export type TransferPortion =
+  | { kind: "amount"; amountMinor: number }
+  | { kind: "all"; amountMinor?: number | undefined }
+  | { kind: "units"; units: DecimalString; amountMinor: number };
 
 /** Everything the user (or the assistant) states about one traspaso. */
 export interface TransferIntent {
@@ -69,10 +86,24 @@ export interface TransferIntent {
   /** YYYY-MM-DD — the ONE date both halves carry. */
   executedAt: string;
   portion: TransferPortion;
-  /** The origin's VL on {@link TransferIntent.executedAt}. */
-  originPricePerUnit: DecimalString;
-  /** The destination's VL on the same date. */
-  destinationPricePerUnit: DecimalString;
+  /**
+   * The origin's VL on {@link TransferIntent.executedAt}.
+   *
+   * Optional, because a leg that DECLARES its participaciones derives it (#1544):
+   * absent is the ordinary case when the user is copying a justificante. It is
+   * required — and refused as missing — only where nothing else can produce it: an
+   * `amount` portion, or an `all` portion with no importe stated.
+   */
+  originPricePerUnit?: DecimalString | undefined;
+  /**
+   * The participaciones that ARRIVED, when the confirmation prints them (#1544).
+   * Stated, they are what the destination's row holds and its VL is derived from
+   * them; absent, they are divided out of the arriving importe at
+   * {@link TransferIntent.destinationPricePerUnit}.
+   */
+  destinationUnits?: DecimalString | undefined;
+  /** The destination's VL on the same date — optional for the same reason as the origin's. */
+  destinationPricePerUnit?: DecimalString | undefined;
   /**
    * The amount that ARRIVED, when the bank states a different one from what left.
    * Absent means "the same", which is the ordinary case and the only one a form needs
@@ -132,7 +163,8 @@ type TransferViolation = Extract<
       | "transfer_origin_has_no_units"
       | "transfer_price_not_positive"
       | "transfer_same_holding"
-      | "transfer_units_exceed_position";
+      | "transfer_units_exceed_position"
+      | "transfer_units_not_positive";
   }
 >;
 
@@ -144,9 +176,22 @@ function refuse(violation: TransferViolation): {
   return { ok: false, violations: [violation] };
 }
 
-/** The units leaving the origin and the euro amount they stand for, or a refusal. */
-type PortionResolution =
-  | { ok: true; amountMinor: number; outUnits: DecimalString }
+/**
+ * One leg of the pair, resolved: the three figures its row and its card need, whichever
+ * two of them were declared.
+ *
+ * Two of the three are always stated and the third is always derived — never two
+ * derivations of the same figure, which is what keeps the importe reproducible to the
+ * cent no matter which reading the user typed.
+ */
+interface ResolvedLeg {
+  amountMinor: number;
+  units: DecimalString;
+  pricePerUnit: DecimalString;
+}
+
+type LegResolution =
+  | { ok: true; leg: ResolvedLeg }
   | { ok: false; violations: [TransferViolation] };
 
 /**
@@ -155,27 +200,40 @@ type PortionResolution =
  *
  * The arithmetic, and why each step is what it is:
  *
- * - **The importe rules, not the participaciones.** The bank states «traspaso
- *   1.018,67 €»; each half's units are that amount over ITS OWN VL on the date. The
- *   two unit counts are unrelated figures — that is the whole point of the
- *   instrument — and neither is ever typed by the user.
- * - **Cut at the precision the app can read back** ({@link UNITS_READBACK_DECIMALS},
- *   #1395). A raw division leaves twenty decimals that no bank publishes and that
- *   `formatUnits` cannot show, so the ficha would print a figure the ledger does not
- *   hold.
+ * - **Each leg declares two of its three figures, and the third is derived** (#1544).
+ *   Given participaciones and importe, the VL is `importe ÷ participaciones` at
+ *   {@link PRICE_READBACK_DECIMALS} — the same derivation, for the same reason, as
+ *   `InvestmentOperationPlan.pricePerUnit` on a buy: the cash figure the document
+ *   states is reproduced to the cent, and the participaciones are the bank's own,
+ *   not a division's. Given importe and VL, the participaciones are divided out
+ *   instead. Declared participaciones RULE: they are the fact the confirmation
+ *   prints, and the position IS participaciones — a VL rounded to fewer decimals than
+ *   the bank publishes writes units that are permanently not the bank's, inherited by
+ *   every later valuation, partial sale and traspaso.
+ * - **A DIVIDED unit count is cut at the precision the app can read back**
+ *   ({@link UNITS_READBACK_DECIMALS}, #1395); a DECLARED one is stored as stated. A
+ *   raw division leaves twenty decimals that no bank publishes and that `formatUnits`
+ *   cannot show, so the ficha would print a figure the ledger does not hold; a figure
+ *   copied off a justificante is already at the bank's own precision.
+ * - **The two legs are independent.** Each has its own importe (they genuinely
+ *   differ, see {@link TransferIntent.destinationAmountMinor}) and its own reading:
+ *   the origin can declare participaciones while the destination divides them, or
+ *   both can, which is the shape of a real extracto — four figures, no VL typed.
  * - **«Todo» takes the position itself, not a division.** Cutting `importe ÷ VL` at
  *   six decimals leaves up to a millionth of a unit behind, and a fund the user
  *   emptied has to read as empty — a residual position is a phantom holding in every
- *   list, warning and donut. Its euro amount is then derived from those exact units.
+ *   list, warning and donut. Its euro amount is the one the confirmation printed when
+ *   there is one (and then the VL is derived from it), otherwise it is derived from
+ *   those exact units at the stated VL.
  * - **The inherited cost is the same proportion the fold removes** (`proportionMinor`
  *   over the running weighted average, ADR 0040/0082). Computed here, once, and
  *   persisted on the incoming row: `derivePosition` folds ONE asset's ledger and
  *   must never cross over to the origin to learn it.
- * - **An amount over the position is refused, not clamped.** The fold clamps an
- *   over-sell because it is reading a ledger it did not write; a gate is the last
- *   place that can still say no, and a traspaso the bank never executed must not
- *   enter the book at all. The violation carries both unit counts so the message can
- *   name them and offer «todo».
+ * - **Units over the position are refused, not clamped** — declared or divided
+ *   alike. The fold clamps an over-sell because it is reading a ledger it did not
+ *   write; a gate is the last place that can still say no, and a traspaso the bank
+ *   never executed must not enter the book at all. The violation carries both unit
+ *   counts so the message can name them and offer «todo».
  *
  * Programmer errors still throw: two halves sharing one operation id would collide
  * on the primary key and leave the pair half-written, which is the single failure
@@ -194,11 +252,21 @@ export function planTransfer(
     return refuse({ code: "transfer_same_holding" });
   }
 
-  if (compareUnits(intent.originPricePerUnit, "0") <= 0) {
+  // A STATED VL is checked here, before either leg is resolved, so the refusals keep
+  // the order they always had. A leg that declares its participaciones states no VL,
+  // and its absence is answered by the leg itself — where it is known whether anything
+  // else could have produced it.
+  if (
+    intent.originPricePerUnit !== undefined &&
+    compareUnits(intent.originPricePerUnit, "0") <= 0
+  ) {
     return refuse({ code: "transfer_price_not_positive", side: "origin" });
   }
 
-  if (compareUnits(intent.destinationPricePerUnit, "0") <= 0) {
+  if (
+    intent.destinationPricePerUnit !== undefined &&
+    compareUnits(intent.destinationPricePerUnit, "0") <= 0
+  ) {
     return refuse({ code: "transfer_price_not_positive", side: "destination" });
   }
 
@@ -208,32 +276,17 @@ export function planTransfer(
     return refuse({ code: "operation_fees_negative" });
   }
 
-  const resolved = resolvePortion(intent, origin);
+  const resolved = resolveOriginLeg(intent, origin);
   if (!resolved.ok) return resolved;
-  const { amountMinor, outUnits } = resolved;
+  const out = resolved.leg;
 
-  const incomingAmountMinor = intent.destinationAmountMinor ?? amountMinor;
-  assertMinorInteger(incomingAmountMinor);
-  if (incomingAmountMinor <= 0) {
-    return refuse({ code: "transfer_amount_not_positive" });
-  }
-
-  const inUnits = divideUnits(
-    minorToDecimal(incomingAmountMinor),
-    intent.destinationPricePerUnit,
-    UNITS_READBACK_DECIMALS,
-  );
-
-  // The destination receives the units its OWN amount buys at its own VL; a commission
-  // does not shrink them, it is capitalized on top — exactly the shape of a buy, where
-  // `units × price + fees` is the cost.
-  if (compareUnits(inUnits, "0") <= 0) {
-    return refuse({ code: "transfer_amount_not_positive" });
-  }
+  const arrived = resolveDestinationLeg(intent, out.amountMinor);
+  if (!arrived.ok) return arrived;
+  const incoming = arrived.leg;
 
   const inheritedCostMinor = proportionMinor(
     origin.costBasisMinor,
-    outUnits,
+    out.units,
     origin.unitsHeld,
   );
 
@@ -254,11 +307,11 @@ export function planTransfer(
         feesMinor,
         id: intent.inOperationId,
         kind: "transfer_in",
-        pricePerUnit: intent.destinationPricePerUnit,
+        pricePerUnit: incoming.pricePerUnit,
         transferCostMinor: inheritedCostMinor,
-        units: inUnits,
+        units: incoming.units,
       },
-      incomingAmountMinor,
+      incomingAmountMinor: incoming.amountMinor,
       inheritedCostMinor,
       out: {
         ...shared,
@@ -266,50 +319,182 @@ export function planTransfer(
         feesMinor: 0,
         id: intent.outOperationId,
         kind: "transfer_out",
-        pricePerUnit: intent.originPricePerUnit,
-        units: outUnits,
+        pricePerUnit: out.pricePerUnit,
+        units: out.units,
       },
-      outgoingAmountMinor: amountMinor,
+      outgoingAmountMinor: out.amountMinor,
     },
   };
 }
 
-function resolvePortion(
-  intent: TransferIntent,
-  origin: TransferOrigin,
-): PortionResolution {
-  if (intent.portion.kind === "all") {
-    if (compareUnits(origin.unitsHeld, "0") <= 0) {
-      return refuse({ code: "transfer_origin_has_no_units" });
-    }
-    return {
-      amountMinor: multiplyToMinor(origin.unitsHeld, intent.originPricePerUnit),
-      ok: true,
-      outUnits: origin.unitsHeld,
-    };
+/**
+ * The VL of a leg whose participaciones and importe are both stated: the derivation a
+ * buy makes (`InvestmentOperationPlan.pricePerUnit`), except that no commission is
+ * subtracted — on this instrument it rides the incoming half capitalized ON TOP of the
+ * amount rather than inside it, so the amount that arrived is already the amount the
+ * units stand for.
+ *
+ * A figure that rounds away to zero — an importe of cents spread over millions of
+ * participaciones — is refused rather than stored: a row priced at 0 would value the
+ * whole position at nothing.
+ */
+function deriveLegPrice(amountMinor: number, units: DecimalString): DecimalString | null {
+  const price = divideUnits(minorToDecimal(amountMinor), units, PRICE_READBACK_DECIMALS);
+  return compareUnits(price, "0") <= 0 ? null : price;
+}
+
+/**
+ * One leg resolved from the two figures a confirmation prints: its participaciones and
+ * its importe, with the VL derived (#1544).
+ *
+ * Shared by all three places that reading can arrive — the origin's `units` portion,
+ * «todo» with a stated importe, and the destination's declared units — so the order of
+ * the checks and the side each refusal names have ONE home. The units are NOT cut here:
+ * a declared count is a fact the bank printed, and #1395's six decimals govern what the
+ * app DERIVES.
+ */
+function resolveDeclaredLeg(
+  amountMinor: number,
+  units: DecimalString,
+  side: "origin" | "destination",
+): LegResolution {
+  if (compareUnits(units, "0") <= 0) {
+    return refuse({ code: "transfer_units_not_positive", side });
   }
 
-  const { amountMinor } = intent.portion;
   assertMinorInteger(amountMinor);
   if (amountMinor <= 0) {
     return refuse({ code: "transfer_amount_not_positive" });
   }
 
-  const outUnits = divideUnits(
+  const pricePerUnit = deriveLegPrice(amountMinor, units);
+  if (pricePerUnit === null) {
+    return refuse({ code: "transfer_price_not_positive", side });
+  }
+
+  return { leg: { amountMinor, pricePerUnit, units }, ok: true };
+}
+
+/**
+ * The participaciones that leave, the euro amount they stand for, and the origin's VL
+ * — from whichever two of the three the caller stated.
+ */
+function resolveOriginLeg(intent: TransferIntent, origin: TransferOrigin): LegResolution {
+  const { portion } = intent;
+
+  if (portion.kind === "units") {
+    // The position check comes FIRST, before the figures are turned into a leg: a count
+    // the origin never held is a traspaso the bank never executed, and saying so names
+    // both counts instead of complaining about a VL that is fine.
+    if (
+      compareUnits(portion.units, "0") > 0 &&
+      compareUnits(portion.units, origin.unitsHeld) > 0
+    ) {
+      return refuse({
+        code: "transfer_units_exceed_position",
+        unitsHeld: origin.unitsHeld,
+        unitsRequested: portion.units,
+      });
+    }
+    return resolveDeclaredLeg(portion.amountMinor, portion.units, "origin");
+  }
+
+  if (portion.kind === "all") {
+    if (compareUnits(origin.unitsHeld, "0") <= 0) {
+      return refuse({ code: "transfer_origin_has_no_units" });
+    }
+
+    if (portion.amountMinor !== undefined) {
+      // «Todo» declares its participaciones by naming the position, so it resolves the
+      // same way: the units are the position's own, exactly, and the VL comes from the
+      // importe the confirmation printed for them.
+      return resolveDeclaredLeg(portion.amountMinor, origin.unitsHeld, "origin");
+    }
+
+    if (intent.originPricePerUnit === undefined) {
+      return refuse({ code: "transfer_price_not_positive", side: "origin" });
+    }
+    return {
+      leg: {
+        amountMinor: multiplyToMinor(origin.unitsHeld, intent.originPricePerUnit),
+        pricePerUnit: intent.originPricePerUnit,
+        units: origin.unitsHeld,
+      },
+      ok: true,
+    };
+  }
+
+  if (intent.originPricePerUnit === undefined) {
+    return refuse({ code: "transfer_price_not_positive", side: "origin" });
+  }
+
+  const { amountMinor } = portion;
+  assertMinorInteger(amountMinor);
+  if (amountMinor <= 0) {
+    return refuse({ code: "transfer_amount_not_positive" });
+  }
+
+  const units = divideUnits(
     minorToDecimal(amountMinor),
     intent.originPricePerUnit,
     UNITS_READBACK_DECIMALS,
   );
 
-  if (compareUnits(outUnits, origin.unitsHeld) > 0) {
+  if (compareUnits(units, origin.unitsHeld) > 0) {
     return refuse({
       code: "transfer_units_exceed_position",
       unitsHeld: origin.unitsHeld,
-      unitsRequested: outUnits,
+      unitsRequested: units,
     });
   }
 
-  return { amountMinor, ok: true, outUnits };
+  return {
+    leg: { amountMinor, pricePerUnit: intent.originPricePerUnit, units },
+    ok: true,
+  };
+}
+
+/**
+ * The same three figures for the half that ARRIVES.
+ *
+ * Its importe is the one the caller stated or, absent, the one that left — the
+ * ordinary case, and the only one a form needs to ask about. Its participaciones are
+ * declared or divided at its own VL; a commission does not shrink them either way, it
+ * is capitalized on top, exactly the shape of a buy where `units × price + fees` is
+ * the cost.
+ */
+function resolveDestinationLeg(
+  intent: TransferIntent,
+  outgoingAmountMinor: number,
+): LegResolution {
+  const amountMinor = intent.destinationAmountMinor ?? outgoingAmountMinor;
+  assertMinorInteger(amountMinor);
+  if (amountMinor <= 0) {
+    return refuse({ code: "transfer_amount_not_positive" });
+  }
+
+  if (intent.destinationUnits !== undefined) {
+    return resolveDeclaredLeg(amountMinor, intent.destinationUnits, "destination");
+  }
+
+  if (intent.destinationPricePerUnit === undefined) {
+    return refuse({ code: "transfer_price_not_positive", side: "destination" });
+  }
+
+  const units = divideUnits(
+    minorToDecimal(amountMinor),
+    intent.destinationPricePerUnit,
+    UNITS_READBACK_DECIMALS,
+  );
+
+  if (compareUnits(units, "0") <= 0) {
+    return refuse({ code: "transfer_amount_not_positive" });
+  }
+
+  return {
+    leg: { amountMinor, pricePerUnit: intent.destinationPricePerUnit, units },
+    ok: true,
+  };
 }
 
 /**

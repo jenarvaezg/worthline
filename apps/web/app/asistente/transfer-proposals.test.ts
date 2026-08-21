@@ -8,8 +8,9 @@
  * PRD's acceptance criterion for the slice — «un traspaso dictado termina en el mismo
  * par `transfer_id` que el flujo de S3, con los mismos invariantes (P/L quieto, coste
  * heredado, fecha única)» — plus the two things this lane owns alone: the figures come
- * from the user's message and not from the model's arguments, and the two VLs come from
- * the app's own price with the card saying so.
+ * from the user's message and not from the model's arguments, and a VL the message did
+ * not give it comes from the app's own price with the card saying so — while a leg whose
+ * participaciones WERE stated derives its VL and has nothing to caveat (#1544).
  *
  * Prior art: `transfer-action.test.ts` (the same traspaso through the screen) and
  * `early-repayment-proposal-action.test.ts` (the build → confirm shape).
@@ -38,7 +39,10 @@ const clock = { now: () => `${TODAY}T10:00:00.000Z`, today: () => TODAY };
  * 100 participaciones bought at 10 € (1.000 € of cost), quoted at 12 € the day the
  * capital leaves, and a destination plan quoted at 14,50 € that day.
  */
-async function seed({ priceDestination = true } = {}): Promise<WorthlineStore> {
+async function seed({
+  priceDestination = true,
+  priceOrigin = true,
+} = {}): Promise<WorthlineStore> {
   const store = await createInMemoryStore();
   await store.workspace.initializeWorkspace({
     members: [{ id: "mJ", name: "Jorge" }],
@@ -73,7 +77,7 @@ async function seed({ priceDestination = true } = {}): Promise<WorthlineStore> {
     },
     { today: TODAY },
   );
-  await price(store, ORIGIN, "12");
+  if (priceOrigin) await price(store, ORIGIN, "12");
   if (priceDestination) await price(store, DESTINATION, "14.50");
   return store;
 }
@@ -210,6 +214,67 @@ describe("buildTransferProposal — the card of a dictated traspaso", () => {
     if (built.ok) return;
     expect(built.error).toContain("«Cartera Permanente PP»");
     expect(built.error).toContain("«Traspasar»");
+    store.close();
+  });
+
+  test("dictated participaciones derive the VL, so there is nothing to caveat (#1544)", async () => {
+    // The origin's cached price is from ANOTHER day, which is exactly the case that
+    // used to earn a provenance note — the note existed because the model needed the
+    // unstable datum. Stated participaciones remove the need for it entirely.
+    const store = await seed();
+    for (const [assetId, price] of [
+      [ORIGIN, "13.40"],
+      [DESTINATION, "15.10"],
+    ] as const) {
+      await store.operations.upsertPrice({
+        assetId,
+        currency: "EUR",
+        fetchedAt: `${TODAY}T18:00:00.000Z`,
+        freshnessState: "fresh",
+        price,
+        priceDate: TODAY,
+        source: "finect",
+      });
+    }
+
+    const built = await draft(
+      store,
+      "El 14/08/2026 traspasé 61,601667 participaciones (739,22 €) del Indexado al Cartera Permanente",
+    );
+    if (!built.ok) throw new Error(built.error);
+
+    // Both figures echoed, because both were written.
+    expect(built.proposal.dictated).toContain("61,601667 participaciones · ");
+    expect(built.proposal.dictated).toContain("739,22");
+    // The participaciones are the stated ones, and the VL is DERIVED from them and the
+    // importe — 11,99999994 €, not the 13,40 € the app has cached. The trailing
+    // decimals are the point rather than a wart: they are where the difference between
+    // the user's two figures lands, instead of landing on the participaciones.
+    expect(built.proposal.origin.movementLine).toContain("61,601667 part. × 11,99999994");
+    expect(built.proposal.origin.positionLine).toBe(
+      "Salen de «Indexado PP»: 100 → 38,398333 participaciones",
+    );
+    // No note about where the origin's VL came from: it came from the user's own two
+    // figures. The DESTINATION's note survives, and that asymmetry is deliberate — a
+    // dictated traspaso states one unit count, so the arriving half is still divided at
+    // the app's price and still says so. Two counts route to the screen instead.
+    const notes = built.proposal.notes.join(" ");
+    expect(notes).not.toContain("VL de origen");
+    expect(notes).toContain("VL de destino");
+    store.close();
+  });
+
+  test("a traspaso stated in participaciones works even with no price for the origin", async () => {
+    const store = await seed({ priceOrigin: false });
+
+    const built = await draft(
+      store,
+      "El 14/08/2026 traspasé 61,601667 participaciones (739,22 €) del Indexado al Cartera Permanente",
+    );
+
+    // Before #1544 this was a dead end: no VL, no arithmetic. The figures the user
+    // wrote are enough.
+    expect(built.ok).toBe(true);
     store.close();
   });
 

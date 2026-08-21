@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "vitest";
 
+import { multiplyToMinor } from "./decimal";
 import type { TransferIntent, TransferOrigin } from "./transfer-plan";
 import { planExternalTransferIn, planTransfer } from "./transfer-plan";
 
@@ -162,6 +163,165 @@ describe("planTransfer — the pair the gate will write", () => {
     expect(result.value.incoming.source).toBe("agent");
     expect(result.value.out.occurredAt).toBe("2026-07-31T07:58:36.000Z");
     expect(result.value.incoming.occurredAt).toBe("2026-07-31T07:58:36.000Z");
+  });
+});
+
+describe("planTransfer — participaciones declaradas, VL derivado (#1544)", () => {
+  test("a leg stated as participaciones + importe stores the participaciones EXACTLY", () => {
+    // The justificante's own figures, both of them: 34,803202 part. for 739,22 €. No
+    // division rounds the units, and the VL is the derived figure — the inversion of
+    // the hierarchy every other operation of the book already keeps.
+    const result = plan({
+      portion: { amountMinor: 73_922, kind: "units", units: "34.8032023" },
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(result.value.out.units).toBe("34.8032023");
+    expect(result.value.outgoingAmountMinor).toBe(73_922);
+    // 739,22 € ÷ 34,8032023 part. at the precision a price can be read back at (#1467).
+    expect(result.value.out.pricePerUnit).toBe("21.23999952");
+  });
+
+  test("the declared participaciones reproduce the importe to the cent", () => {
+    const result = plan({
+      portion: { amountMinor: 73_922, kind: "units", units: "34.8032023" },
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(multiplyToMinor(result.value.out.units, result.value.out.pricePerUnit)).toBe(
+      73_922,
+    );
+  });
+
+  test("both legs can be stated that way — the four figures of a real extracto", () => {
+    // Jorge's 14-ago traspaso as the bank prints it: participaciones and importe on
+    // each side, and no VL typed anywhere.
+    const result = plan({
+      destinationAmountMinor: 74_072,
+      destinationUnits: "2.3177217",
+      originPricePerUnit: undefined,
+      destinationPricePerUnit: undefined,
+      portion: { amountMinor: 73_922, kind: "units", units: "34.8032023" },
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(result.value.out.units).toBe("34.8032023");
+    expect(result.value.incoming.units).toBe("2.3177217");
+    expect(result.value.outgoingAmountMinor).toBe(73_922);
+    expect(result.value.incomingAmountMinor).toBe(74_072);
+    expect(result.value.incoming.pricePerUnit).toBe("319.58970743");
+    // The cost still travels from the ORIGIN's ledger, proportional to the units that
+    // left — declaring them changes where they come from, not what they carry.
+    expect(result.value.incoming.transferCostMinor).toBe(result.value.inheritedCostMinor);
+  });
+
+  test("the destination's participaciones can be declared while the origin's are divided", () => {
+    const result = plan({
+      destinationPricePerUnit: undefined,
+      destinationUnits: "3.187428",
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(result.value.out.units).toBe("47.959981");
+    expect(result.value.incoming.units).toBe("3.187428");
+    expect(result.value.incoming.pricePerUnit).toBe("319.58996407");
+  });
+
+  test("the two readings agree on coherent figures — and the participaciones win", () => {
+    // 100 part. of a 12,00 € fund for 1.200,00 €: read as importe+VL or as
+    // participaciones+importe, the SAME pair comes out. Where they cannot agree —
+    // figures whose division does not land on the declared units — the declared ones
+    // rule and the VL absorbs the difference, which is the whole point of #1544.
+    const byPrice = plan(
+      { originPricePerUnit: "12", portion: { amountMinor: 120_000, kind: "amount" } },
+      { costBasisMinor: 100_000, unitsHeld: "100" },
+    );
+    const byUnits = plan(
+      {
+        originPricePerUnit: undefined,
+        portion: { amountMinor: 120_000, kind: "units", units: "100" },
+      },
+      { costBasisMinor: 100_000, unitsHeld: "100" },
+    );
+    if (!byPrice.ok || !byUnits.ok) throw new Error("expected two plans");
+
+    expect(byUnits.value.out.units).toBe(byPrice.value.out.units);
+    expect(byUnits.value.out.pricePerUnit).toBe(byPrice.value.out.pricePerUnit);
+    expect(byUnits.value.inheritedCostMinor).toBe(byPrice.value.inheritedCostMinor);
+  });
+
+  test("«todo» with the importe of the justificante derives the origin's VL too", () => {
+    // The units are still the position itself — «todo» empties the origin exactly —
+    // and the VL is now the confirmation's importe over those units, not a figure
+    // anybody had to look up.
+    const result = plan({
+      originPricePerUnit: undefined,
+      portion: { amountMinor: 101_870, kind: "all" },
+    });
+    if (!result.ok) throw new Error("expected a plan");
+
+    expect(result.value.out.units).toBe("47.96");
+    expect(result.value.outgoingAmountMinor).toBe(101_870);
+    expect(result.value.out.pricePerUnit).toBe("21.24061718");
+    expect(result.value.inheritedCostMinor).toBe(ORIGIN.costBasisMinor);
+  });
+
+  test("declared participaciones over the position are refused, naming both counts", () => {
+    const result = plan({
+      originPricePerUnit: undefined,
+      portion: { amountMinor: 101_867, kind: "units", units: "60" },
+    });
+    expect(result).toEqual({
+      ok: false,
+      violations: [
+        {
+          code: "transfer_units_exceed_position",
+          unitsHeld: "47.96",
+          unitsRequested: "60",
+        },
+      ],
+    });
+  });
+
+  test("participaciones of zero or less are refused by their own code, per side", () => {
+    expect(
+      plan({
+        originPricePerUnit: undefined,
+        portion: { amountMinor: 73_922, kind: "units", units: "0" },
+      }),
+    ).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_units_not_positive", side: "origin" }],
+    });
+    expect(plan({ destinationPricePerUnit: undefined, destinationUnits: "-1" })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_units_not_positive", side: "destination" }],
+    });
+  });
+
+  test("a leg with neither a VL nor participaciones asks for the VL, per side", () => {
+    // The intent is under-stated rather than wrong: nothing can be derived from one
+    // figure, so the refusal is the same one a VL of zero gets — and it names the side.
+    expect(plan({ originPricePerUnit: undefined })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_price_not_positive", side: "origin" }],
+    });
+    expect(plan({ destinationPricePerUnit: undefined })).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_price_not_positive", side: "destination" }],
+    });
+  });
+
+  test("declared participaciones with no importe have nothing to derive a VL from", () => {
+    expect(
+      plan({
+        originPricePerUnit: undefined,
+        portion: { amountMinor: 0, kind: "units", units: "34.8032023" },
+      }),
+    ).toEqual({
+      ok: false,
+      violations: [{ code: "transfer_amount_not_positive" }],
+    });
   });
 });
 

@@ -33,6 +33,12 @@ import {
  *
  * Prior art in this folder: `cobros-form.ts`, the same shape of shared pure module
  * behind a section and its action.
+ *
+ * Since #1544 the form has TWO readings ({@link TransferReading}), because a
+ * justificante states four figures — participaciones and importe per leg — and the VL
+ * is not one of them. The mode decides which two figures each leg is read from; the
+ * third is derived by the plan, and the preview prints it so the derivation stays
+ * checkable against the paper.
  */
 
 /**
@@ -57,10 +63,28 @@ export const TRANSFER_FORM_FIELDS = [
   "executedAt",
   "portion",
   "amount",
+  "reading",
+  "originUnits",
+  "destinationUnits",
   "originPricePerUnit",
   "destinationPricePerUnit",
   "destinationAmount",
 ] as const;
+
+/**
+ * Which two figures per leg the user is copying (#1544).
+ *
+ * - `units` — the participaciones and the importe, the four figures a justificante
+ *   prints. The VL of each leg is DERIVED, so nobody has to look one up, and the
+ *   participaciones stored are the bank's own rather than a division's.
+ * - `price` — the importe and the VL, the reading the form was born with (#1480). Kept
+ *   because it is the honest one when the paper in hand states no participaciones.
+ *
+ * It is a MODE and not a guess at what happens to be filled in: the fields of the other
+ * reading are still posted (they are hidden with CSS, exactly as the destination pane
+ * is), so sniffing them would let a stale VL from three edits ago decide the write.
+ */
+export type TransferReading = "units" | "price";
 
 /** The traspaso form's fields, exactly as typed — trimmed, nothing else. */
 export interface TransferFormValues {
@@ -72,6 +96,12 @@ export interface TransferFormValues {
   /** `"all"` for «todo»; anything else reads as an importe. */
   portion: string;
   amount: string;
+  /** `"units"` or `"price"` — see {@link TransferReading}. Blank falls back to inference. */
+  reading: string;
+  /** Participaciones that left, as the justificante prints them (`units` reading). */
+  originUnits: string;
+  /** Participaciones that arrived, likewise. */
+  destinationUnits: string;
   originPricePerUnit: string;
   destinationPricePerUnit: string;
   /** The importe that ARRIVED, when the bank states a different one. Blank = same. */
@@ -91,8 +121,11 @@ export interface TransferDraft {
   destination: TransferDestination;
   executedAt: string;
   portion: TransferPortion;
-  originPricePerUnit: DecimalString;
-  destinationPricePerUnit: DecimalString;
+  /** Present only in the `price` reading; derived from the figures otherwise (#1544). */
+  originPricePerUnit?: DecimalString | undefined;
+  destinationPricePerUnit?: DecimalString | undefined;
+  /** Present only in the `units` reading. */
+  destinationUnits?: DecimalString | undefined;
   destinationAmountMinor?: number;
 }
 
@@ -179,14 +212,21 @@ export type TransferPreview =
   | { status: "refused"; message: string }
   | {
       status: "ready";
-      /** Participaciones leaving the origin, cut at the app's read-back precision. */
+      /** Participaciones leaving the origin — as declared, or divided and cut at six decimals. */
       outUnits: DecimalString;
-      /** Participaciones arriving at the destination, at ITS own VL. */
+      /** Participaciones arriving at the destination, likewise. */
       inUnits: DecimalString;
       outgoingAmountMinor: number;
       incomingAmountMinor: number;
       /** The acquisition cost travelling with the units. */
       inheritedCostMinor: number;
+      /**
+       * The VL each half will be written at (#1544). In the `units` reading these are
+       * the DERIVED figures, and printing them is what makes the derivation checkable
+       * against the paper in hand; in the `price` reading they echo what was typed.
+       */
+      outPricePerUnit: DecimalString;
+      inPricePerUnit: DecimalString;
     };
 
 /** Read the form's fields off a `FormData`, trimmed. A missing field is blank. */
@@ -198,12 +238,27 @@ export function readTransferFormValues(formData: FormData): TransferFormValues {
     destinationAmount: read("destinationAmount"),
     destinationAssetId: read("destinationAssetId"),
     destinationPricePerUnit: read("destinationPricePerUnit"),
+    destinationUnits: read("destinationUnits"),
     executedAt: read("executedAt"),
     newDestinationIsin: read("newDestinationIsin"),
     newDestinationName: read("newDestinationName"),
     originPricePerUnit: read("originPricePerUnit"),
+    originUnits: read("originUnits"),
     portion: read("portion"),
+    reading: read("reading"),
   };
+}
+
+/**
+ * The reading these fields are stated in.
+ *
+ * The posted mode is authoritative. Absent — a hand-built `FormData`, or a client that
+ * predates #1544 — it is inferred from whether any participaciones were stated, which
+ * makes every older caller keep working unchanged.
+ */
+export function transferReading(values: TransferFormValues): TransferReading {
+  if (values.reading === "units" || values.reading === "price") return values.reading;
+  return values.originUnits || values.destinationUnits ? "units" : "price";
 }
 
 /**
@@ -222,9 +277,51 @@ export function parseTransferForm(
   const destination = parseDestination(values);
   if (!destination.ok) return destination;
 
-  const portion = parsePortion(values);
+  const reading = transferReading(values);
+
+  const portion = parsePortion(values, reading);
   if (!portion.ok) return portion;
 
+  // Each reading states exactly two figures per leg, and the third is derived by
+  // `planTransfer` (#1544). The fields of the OTHER reading are still posted — they are
+  // hidden with CSS, not removed — so they are not even read here: a VL left over from
+  // an earlier edit must never reach a write the user is stating in participaciones.
+  const legs =
+    reading === "units" ? statedDestinationUnits(values) : statedPrices(values);
+  if (!legs.ok) return legs;
+
+  // The importe that arrived is optional and means «the same» when blank — the
+  // ordinary case, and the only one the form asks about by default. Stated, it is a
+  // second figure the bank printed, and the two genuinely differ (739,22 € out,
+  // 740,72 € in, measured in Jorge's book): what ties the halves is the transferId.
+  let destinationAmountMinor: number | undefined;
+  if (values.destinationAmount) {
+    const arrived = parseMoneyMinor(values.destinationAmount);
+    if (arrived === null || arrived <= 0) {
+      return { ok: false, error: "El importe que llegó al destino no es válido." };
+    }
+    destinationAmountMinor = arrived;
+  }
+
+  return {
+    ok: true,
+    command: {
+      destination: destination.destination,
+      executedAt: values.executedAt || today,
+      portion: portion.portion,
+      ...legs.legs,
+      ...(destinationAmountMinor === undefined ? {} : { destinationAmountMinor }),
+    },
+  };
+}
+
+/** The two figures the `price` reading states per leg: each leg's VL. */
+function statedPrices(values: TransferFormValues):
+  | {
+      ok: true;
+      legs: Pick<TransferDraft, "originPricePerUnit" | "destinationPricePerUnit">;
+    }
+  | { ok: false; error: string } {
   const originPricePerUnit = normalizeNonNegativeDecimalString(values.originPricePerUnit);
   if (originPricePerUnit === null || originPricePerUnit === "0") {
     return {
@@ -246,30 +343,49 @@ export function parseTransferForm(
     };
   }
 
-  // The importe that arrived is optional and means «the same» when blank — the
-  // ordinary case, and the only one the form asks about by default. Stated, it is a
-  // second figure the bank printed, and the two genuinely differ (739,22 € out,
-  // 740,72 € in, measured in Jorge's book): what ties the halves is the transferId.
-  let destinationAmountMinor: number | undefined;
-  if (values.destinationAmount) {
-    const arrived = parseMoneyMinor(values.destinationAmount);
-    if (arrived === null || arrived <= 0) {
-      return { ok: false, error: "El importe que llegó al destino no es válido." };
-    }
-    destinationAmountMinor = arrived;
-  }
-
   return {
-    ok: true,
-    command: {
-      destination: destination.destination,
+    legs: {
       destinationPricePerUnit: destinationPricePerUnit as DecimalString,
-      executedAt: values.executedAt || today,
       originPricePerUnit: originPricePerUnit as DecimalString,
-      portion: portion.portion,
-      ...(destinationAmountMinor === undefined ? {} : { destinationAmountMinor }),
     },
+    ok: true,
   };
+}
+
+/**
+ * The `units` reading's own second figure: the participaciones that ARRIVED. Named for
+ * the one leg it reads, because the ORIGIN's ride in the portion, next to the importe
+ * they came with — «todo» states them by naming the position instead of typing a count.
+ */
+function statedDestinationUnits(
+  values: TransferFormValues,
+):
+  | { ok: true; legs: Pick<TransferDraft, "destinationUnits"> }
+  | { ok: false; error: string } {
+  const destinationUnits = statedUnitsField(values.destinationUnits, "destination");
+  if (!destinationUnits.ok) return destinationUnits;
+
+  return { legs: { destinationUnits: destinationUnits.units }, ok: true };
+}
+
+/**
+ * One participaciones field, read the way a price field is: normalized through the
+ * decimal seam, and refused by its own code so the message points at the field the user
+ * was actually asked to fill (#1544). Shared by both legs — the origin's lives in
+ * {@link parsePortion} — so a blank count reads the same on either side.
+ */
+function statedUnitsField(
+  raw: string,
+  side: "origin" | "destination",
+): { ok: true; units: DecimalString } | { ok: false; error: string } {
+  const units = normalizeNonNegativeDecimalString(raw);
+  if (units === null || units === "0") {
+    return {
+      ok: false,
+      error: mapDomainViolation({ code: "transfer_units_not_positive", side }),
+    };
+  }
+  return { ok: true, units: units as DecimalString };
 }
 
 /**
@@ -306,6 +422,7 @@ export function previewTransfer(
           ? parsed.command.destination.assetId
           : NEW_DESTINATION_PREVIEW_ID,
       destinationPricePerUnit: parsed.command.destinationPricePerUnit,
+      destinationUnits: parsed.command.destinationUnits,
       executedAt: parsed.command.executedAt,
       inOperationId: "preview_in",
       originAssetId: origin.assetId,
@@ -328,9 +445,11 @@ export function previewTransfer(
   }
 
   return {
+    inPricePerUnit: plan.value.incoming.pricePerUnit,
     inUnits: plan.value.incoming.units,
     incomingAmountMinor: plan.value.incomingAmountMinor,
     inheritedCostMinor: plan.value.inheritedCostMinor,
+    outPricePerUnit: plan.value.out.pricePerUnit,
     outUnits: plan.value.out.units,
     outgoingAmountMinor: plan.value.outgoingAmountMinor,
     status: "ready",
@@ -365,24 +484,48 @@ function parseDestination(
   };
 }
 
+/**
+ * How much of the origin leaves, in the reading the form is in.
+ *
+ * «Todo» stays its own intent in both: only it liquidates the origin exactly. What
+ * changes is what it needs beside it — nothing in the `price` reading (the importe is
+ * derived at the VL, so the field is not even read), and the justificante's importe in
+ * the `units` reading, which is what derives the VL of the whole position.
+ */
 function parsePortion(
   values: TransferFormValues,
+  reading: TransferReading,
 ): { ok: true; portion: TransferPortion } | { ok: false; error: string } {
-  // «Todo» is its own intent, not an importe that happens to equal the position:
-  // only it liquidates the origin exactly, so the importe field is not even read.
-  if (values.portion === "all") {
+  if (values.portion === "all" && reading === "price") {
     return { ok: true, portion: { kind: "all" } };
   }
 
   const amountMinor = parseMoneyMinor(values.amount);
   if (amountMinor === null || amountMinor <= 0) {
+    // «Todo» in the participaciones reading is the ONE case where the importe became
+    // obligatory where it was not before, so the refusal says what it is for instead of
+    // repeating «indícalo en euros» at someone who thought they had finished.
     return {
       ok: false,
-      error: "El importe traspasado no es válido — indícalo en euros (p. ej. 739,22).",
+      error:
+        values.portion === "all"
+          ? "Con «todo» necesito el importe del justificante: de él sale el valor liquidativo de la posición entera. Indícalo en euros (p. ej. 1.018,67)."
+          : "El importe traspasado no es válido — indícalo en euros (p. ej. 739,22).",
     };
   }
 
-  return { ok: true, portion: { amountMinor, kind: "amount" } };
+  if (values.portion === "all") {
+    return { ok: true, portion: { amountMinor, kind: "all" } };
+  }
+
+  if (reading === "price") {
+    return { ok: true, portion: { amountMinor, kind: "amount" } };
+  }
+
+  const units = statedUnitsField(values.originUnits, "origin");
+  if (!units.ok) return units;
+
+  return { ok: true, portion: { amountMinor, kind: "units", units: units.units } };
 }
 
 /** The mutable holder of the in-flight submission key — a ref in the island. */

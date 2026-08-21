@@ -19,14 +19,18 @@ const DATE = "2026-07-31";
 
 interface TransferOverrides {
   destinationAssetId?: string;
-  destinationPricePerUnit?: string;
+  destinationPricePerUnit?: string | undefined;
+  destinationUnits?: string | undefined;
   executedAt?: string;
   feesMinor?: number;
   inOperationId?: string;
   originAssetId?: string;
-  originPricePerUnit?: string;
+  originPricePerUnit?: string | undefined;
   outOperationId?: string;
-  portion?: { kind: "amount"; amountMinor: number } | { kind: "all" };
+  portion?:
+    | { kind: "amount"; amountMinor: number }
+    | { kind: "all"; amountMinor?: number }
+    | { kind: "units"; units: string; amountMinor: number };
   transferId?: string;
 }
 
@@ -155,6 +159,37 @@ describe("recordInvestmentTransfer — one submit, one pair", () => {
     expect(origin.currentUnits).toBe("23.980245");
     expect(origin.costBasis.amountMinor).toBe(35_970);
     expect((await positionOf(store, "destino")).costBasis.amountMinor).toBe(35_970);
+  });
+
+  test("a pair stated in participaciones stores them exactly, VL derived (#1544)", async () => {
+    const store = await seed();
+    // The four figures of an extracto, no VL typed: 34,8032023 part. for 739,22 € out,
+    // 2,3177217 part. for 740,72 € in.
+    const result = await store.command.recordInvestmentTransfer({
+      ...transferCommand({
+        portion: { amountMinor: 73_922, kind: "units", units: "34.8032023" },
+      }),
+      destinationAmountMinor: 74_072,
+      destinationPricePerUnit: undefined,
+      destinationUnits: "2.3177217",
+      originPricePerUnit: undefined,
+    });
+    expect(result.ok).toBe(true);
+
+    const out = (await store.operations.readOperations("origen")).find(
+      (operation) => operation.kind === "transfer_out",
+    );
+    const incoming = (await store.operations.readOperations("destino")).find(
+      (operation) => operation.kind === "transfer_in",
+    );
+    // Stored as the bank printed them — no six-decimal cut of a division.
+    expect(out?.units).toBe("34.8032023");
+    expect(incoming?.units).toBe("2.3177217");
+    // And the VL of each row is the derived figure, at the app's price precision.
+    expect(out?.pricePerUnit).toBe("21.23999952");
+    expect(incoming?.pricePerUnit).toBe("319.58970743");
+    // The position the ledger folds is the declared count, to the last decimal.
+    expect((await positionOf(store, "destino")).currentUnits).toBe("2.3177217");
   });
 
   test("the pair ripples BOTH holdings' history from the transfer date", async () => {

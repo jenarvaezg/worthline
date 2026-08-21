@@ -43,6 +43,8 @@ import {
   type TransferDestinationOption,
   type TransferFormValues,
   type TransferPreviewOrigin,
+  type TransferReading,
+  transferReading,
 } from "./transfer-form";
 
 /**
@@ -99,13 +101,19 @@ export default function TransferSection({
     destinationAmount: roundTripped["destinationAmount"] ?? "",
     destinationAssetId: roundTripped["destinationAssetId"] ?? "",
     destinationPricePerUnit: roundTripped["destinationPricePerUnit"] ?? "",
+    destinationUnits: roundTripped["destinationUnits"] ?? "",
     executedAt: roundTripped["executedAt"] ?? today,
     newDestinationIsin: roundTripped["newDestinationIsin"] ?? "",
     newDestinationName: roundTripped["newDestinationName"] ?? "",
     originPricePerUnit:
       roundTripped["originPricePerUnit"] ??
       (origin.pricePerUnit ? formatPrice(origin.pricePerUnit) : ""),
+    originUnits: roundTripped["originUnits"] ?? "",
     portion: roundTripped["portion"] ?? "amount",
+    // Participaciones by default (#1544): the ordinary reason someone is on this screen
+    // is a justificante in hand, and that paper states the participaciones and the
+    // importe of each leg — never the VL to the decimals the fund publishes.
+    reading: roundTripped["reading"] ?? "units",
   };
 
   // The form's live values, read off the form itself rather than mirrored field by
@@ -247,7 +255,8 @@ export default function TransferSection({
           </label>
           <p className="opCaptureHint">
             La crearemos con los mismos dueños y el mismo tipo de producto que{" "}
-            {originName}, y con el valor liquidativo que indiques abajo como precio.
+            {originName}, y con el valor liquidativo del traspaso como precio: el que
+            indiques abajo, o el que salga de las participaciones y el importe.
           </p>
         </div>
 
@@ -297,42 +306,99 @@ export default function TransferSection({
           />
         </label>
 
-        <label>
-          Valor liquidativo de origen el día del traspaso
-          <input
-            aria-label="Valor liquidativo de origen"
-            defaultValue={initial.originPricePerUnit}
-            inputMode="decimal"
-            name="originPricePerUnit"
-            placeholder="12,00"
-          />
-        </label>
+        {/* WHICH two figures per leg the user is copying (#1544). Participaciones by
+            default: they are what the justificante prints, they are what the position
+            IS, and a VL typed with fewer decimals than the fund publishes writes units
+            that are permanently not the bank's. The other reading stays for the paper
+            that states no participaciones. */}
+        <fieldset className="transferPortion">
+          <legend>Qué cifras tienes del justificante</legend>
+          <label>
+            <input
+              defaultChecked={initial.reading !== "price"}
+              name="reading"
+              type="radio"
+              value="units"
+            />{" "}
+            Las participaciones y el importe
+          </label>
+          <label>
+            <input
+              defaultChecked={initial.reading === "price"}
+              name="reading"
+              type="radio"
+              value="price"
+            />{" "}
+            El importe y el valor liquidativo
+          </label>
+        </fieldset>
 
-        <label>
-          Valor liquidativo de destino el día del traspaso
-          <input
-            aria-label="Valor liquidativo de destino"
-            defaultValue={initial.destinationPricePerUnit}
-            inputMode="decimal"
-            name="destinationPricePerUnit"
-            onInput={() => {
-              destinationPriceTouched.current = true;
-            }}
-            placeholder="14,50"
-            ref={destinationPriceField}
-          />
-        </label>
-
-        {/* The prefills are the LAST known prices, and a traspaso is often recorded
-            days later — dating one in the past and leaving today's VL in the field
-            would write participaciones nobody bought. Said next to the fields, only
-            when the date makes it true. */}
-        {values.executedAt && values.executedAt !== today ? (
+        <div className="transferUnitsPane">
+          <label>
+            Participaciones que salieron de {originName}
+            <input
+              aria-label="Participaciones que salieron del origen"
+              defaultValue={initial.originUnits}
+              inputMode="decimal"
+              name="originUnits"
+              placeholder="34,803202"
+            />
+          </label>
+          <label>
+            Participaciones que entraron en el destino
+            <input
+              aria-label="Participaciones que entraron en el destino"
+              defaultValue={initial.destinationUnits}
+              inputMode="decimal"
+              name="destinationUnits"
+              placeholder="2,317722"
+            />
+          </label>
           <p className="opCaptureHint">
-            El traspaso no es de hoy: los valores liquidativos que hemos prefijado son los
-            últimos conocidos, no los de esa fecha. Revísalos con el extracto.
+            Cópialas tal cual del justificante, con todos sus decimales. El valor
+            liquidativo de cada lado lo calculamos nosotros, así que no hace falta que lo
+            busques.
           </p>
-        ) : null}
+        </div>
+
+        <div className="transferPricePane">
+          <label>
+            Valor liquidativo de origen el día del traspaso
+            <input
+              aria-label="Valor liquidativo de origen"
+              defaultValue={initial.originPricePerUnit}
+              inputMode="decimal"
+              name="originPricePerUnit"
+              placeholder="12,00"
+            />
+          </label>
+
+          <label>
+            Valor liquidativo de destino el día del traspaso
+            <input
+              aria-label="Valor liquidativo de destino"
+              defaultValue={initial.destinationPricePerUnit}
+              inputMode="decimal"
+              name="destinationPricePerUnit"
+              onInput={() => {
+                destinationPriceTouched.current = true;
+              }}
+              placeholder="14,50"
+              ref={destinationPriceField}
+            />
+          </label>
+
+          {/* The prefills are the LAST known prices, and a traspaso is often recorded
+              days later — dating one in the past and leaving today's VL in the field
+              would write participaciones nobody bought. Said next to the fields, only
+              when the date makes it true. */}
+          {values.executedAt && values.executedAt !== today ? (
+            <p className="opCaptureHint">
+              El traspaso no es de hoy: los valores liquidativos que hemos prefijado son
+              los últimos conocidos, no los de esa fecha. Revísalos con el extracto.
+            </p>
+          ) : null}
+        </div>
 
         {/* The two halves of a real traspaso do NOT match: the origin is valued the
             day the capital leaves and the destination the day it lands (measured:
@@ -357,6 +423,7 @@ export default function TransferSection({
           date={values.executedAt || today}
           preview={preview}
           privacyMode={privacyMode}
+          reading={transferReading(values)}
         />
 
         <RecordTransferSubmit disabled={readOnly} pending={isRecording} />
@@ -375,18 +442,22 @@ function TransferPreviewLine({
   date,
   preview,
   privacyMode,
+  reading,
 }: {
   /** The currency both ledgers keep — the pair is refused across two (ADR 0083). */
   currency: CurrencyCode;
   date: string;
   preview: ReturnType<typeof previewTransfer>;
   privacyMode: boolean;
+  /** Which figures are being typed — so the silence names the ones still missing. */
+  reading: TransferReading;
 }) {
   if (preview.status === "incomplete") {
     return (
       <p aria-live="polite" className="opCaptureHint">
-        Indica el destino, el importe y los dos valores liquidativos y te diré cuántas
-        participaciones se mueven.
+        {reading === "units"
+          ? "Indica el destino, el importe y las participaciones de cada lado y te diré a qué valor liquidativo queda cada apunte."
+          : "Indica el destino, el importe y los dos valores liquidativos y te diré cuántas participaciones se mueven."}
       </p>
     );
   }
@@ -407,7 +478,13 @@ function TransferPreviewLine({
       El {formatIsoDayEs(date)} saldrán {formatUnits(preview.outUnits)} participaciones (
       {money(preview.outgoingAmountMinor)}) y entrarán {formatUnits(preview.inUnits)} (
       {money(preview.incomingAmountMinor)}). Viaja con ellas un coste de adquisición de{" "}
-      {money(preview.inheritedCostMinor)}, así que no se realiza plusvalía.
+      {money(preview.inheritedCostMinor)}, así que no se realiza plusvalía.{" "}
+      {/* The derived figure, printed in both readings (#1544): the VL when the
+          participaciones were declared, and the echo of what was typed when they were
+          not. Either way it is what the two apuntes will hold, so the paper in hand can
+          be checked against it. */}
+      Cada apunte queda a un valor liquidativo de {formatPrice(preview.outPricePerUnit)}{" "}
+      {currency} (origen) y {formatPrice(preview.inPricePerUnit)} {currency} (destino).
     </p>
   );
 }

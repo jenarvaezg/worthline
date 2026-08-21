@@ -140,6 +140,81 @@ describe("parseTypedTransfer (#1482)", () => {
 
     expect(reading).toEqual({ missing: ["amount"], status: "incomplete" });
   });
+
+  it("reads the participaciones next to the importe, and then the VL is ours to derive (#1544)", () => {
+    const reading = parseTypedTransfer(
+      "Hoy he traspasado 37,203 participaciones (739,22 €) del World al EM",
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      status: "read",
+      transfer: {
+        executedAt: TODAY,
+        portion: { amountMinor: 73922, kind: "units", units: "37.203" },
+      },
+    });
+  });
+
+  it("reads the abbreviated form and does not confuse it with the importe", () => {
+    const reading = parseTypedTransfer(
+      "Hoy traspasé 34,8032023 part. por 739,22 € del World al EM",
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      status: "read",
+      transfer: {
+        executedAt: TODAY,
+        portion: { amountMinor: 73922, kind: "units", units: "34.8032023" },
+      },
+    });
+  });
+
+  it("the participaciones do not become the importe when the euros are bare", () => {
+    // Two bare numbers used to be ambiguous; one of them is now MARKED as
+    // participaciones, so what is left is a single figure and it reads cleanly.
+    const reading = parseTypedTransfer(
+      "Hoy traspasé 37,203 participaciones por 1018,67 del World al EM",
+      TODAY,
+    );
+
+    expect(reading).toEqual({
+      status: "read",
+      transfer: {
+        executedAt: TODAY,
+        portion: { amountMinor: 101867, kind: "units", units: "37.203" },
+      },
+    });
+  });
+
+  it("refuses participaciones with no importe beside them", () => {
+    // Units alone derive nothing: the VL comes from the importe they were worth.
+    const reading = parseTypedTransfer(
+      "Hoy traspasé 37,203 participaciones del World al EM",
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["amount"], status: "incomplete" });
+  });
+
+  it("refuses two participaciones figures instead of guessing which leg they are", () => {
+    const reading = parseTypedTransfer(
+      "Hoy traspasé 37,203 participaciones del World y entraron 51,08 participaciones en el EM por 739,22 €",
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["ambiguous_units"], status: "incomplete" });
+  });
+
+  it("refuses «todo» together with participaciones, like «todo» with an importe", () => {
+    const reading = parseTypedTransfer(
+      "Hoy traspasé todo el World, 37,203 participaciones, al EM",
+      TODAY,
+    );
+
+    expect(reading).toEqual({ missing: ["conflicting_portion"], status: "incomplete" });
+  });
 });
 
 describe("typedTransferGapMessage (#1482)", () => {
@@ -155,11 +230,16 @@ describe("typedTransferGapMessage (#1482)", () => {
     expect(typedTransferGapMessage(["ambiguous_amount"])).toContain("«Traspasar»");
   });
 
+  it("routes the two-participaciones case to the screen too", () => {
+    expect(typedTransferGapMessage(["ambiguous_units"])).toContain("«Traspasar»");
+  });
+
   it("never says worthline cannot do it (#1524)", () => {
     for (const gap of [
       "amount",
       "date",
       "ambiguous_amount",
+      "ambiguous_units",
       "conflicting_portion",
     ] as const) {
       expect(typedTransferGapMessage([gap])).not.toMatch(/worthline no/i);

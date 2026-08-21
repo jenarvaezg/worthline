@@ -10,9 +10,10 @@
  *   the user's own text (`typed-transfer.ts`), so the card echoes them verbatim: that
  *   echo is the whole ceremony of this lane — if the parser read 1.018,67 € where the
  *   person wrote 1.018,76 €, this is the line where it is caught.
- * - **How many participaciones move, and at what VL?** Nobody dictates those: they are
- *   derived (importe ÷ each holding's own VL), and the VL comes from the app's own
- *   price. Printing both means the derivation is checkable against the bank's paper.
+ * - **How many participaciones move, and at what VL?** One of the two is always
+ *   derived: the participaciones from the importe at the app's own price, or — when the
+ *   message stated them (#1544) — the VL from the importe over those participaciones.
+ *   Printing both means the derivation is checkable against the bank's paper.
  * - **What does it do to my book?** Nothing, and that is the point of the instrument:
  *   no plusvalía, no cupo de aportación spent. Said in words on the card because a
  *   delta of «0 €» alone reads as «nothing happened».
@@ -54,10 +55,16 @@ export function transferDictatedLine(dictated: {
   portion: TransferPortion;
   currency: string;
 }): string {
+  const money = (amountMinor: number) =>
+    formatDocumentMoney(amountMinor, dictated.currency);
   const portion =
     dictated.portion.kind === "all"
       ? "todo el saldo"
-      : formatDocumentMoney(dictated.portion.amountMinor, dictated.currency);
+      : dictated.portion.kind === "units"
+        ? // Both figures, because both were WRITTEN (#1544) — and this echo is the one
+          // place where a misread participación can still be caught.
+          `${formatUnits(dictated.portion.units)} participaciones · ${money(dictated.portion.amountMinor)}`
+        : money(dictated.portion.amountMinor);
   return `${formatIsoDayEs(dictated.executedAt)} · ${portion}`;
 }
 

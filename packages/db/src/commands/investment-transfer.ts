@@ -54,8 +54,9 @@ export type RecordExternalTransferInCommand = Omit<
  * pair's promise is "both or neither" — a `transfer_out` with no matching
  * `transfer_in` takes capital out of the book, and a lone `transfer_in` claims an
  * inherited cost with no origin. Two calls cannot promise that, and no caller should
- * have to. It also derives the three figures nobody should type: each half's units
- * (importe ÷ its OWN VL) and the acquisition cost the units carry over.
+ * have to. It also derives the figures nobody should have to type: the third figure of
+ * each half — its units, or its VL when the units are the ones the confirmation
+ * declared (#1544) — and the acquisition cost the units carry over.
  *
  * What it validates, and why each check is here rather than in the pure plan:
  *

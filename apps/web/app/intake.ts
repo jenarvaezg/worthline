@@ -604,6 +604,13 @@ export function mapDomainViolation(violation: DomainViolation): string {
       return violation.side === "origin"
         ? "Necesito el valor liquidativo de la inversión de origen en la fecha del traspaso."
         : "Necesito el valor liquidativo de la inversión de destino en la fecha del traspaso.";
+    case "transfer_units_not_positive":
+      // Its own message, not the VL's (#1544): under the reading where the
+      // participaciones are the declared fact, pointing at the valor liquidativo would
+      // send the user to a field they were never asked to fill.
+      return violation.side === "origin"
+        ? "Necesito las participaciones que salieron de la inversión de origen — la cifra que imprime el justificante."
+        : "Necesito las participaciones que entraron en la inversión de destino — la cifra que imprime el justificante.";
     case "transfer_origin_has_no_units":
       return "Esa inversión no tiene participaciones en esa fecha, así que no hay nada que traspasar.";
     case "transfer_inherited_cost_negative":
@@ -614,7 +621,7 @@ export function mapDomainViolation(violation: DomainViolation): string {
       // The gate refuses instead of clamping, so the message has to carry the way
       // out: the two unit counts, and the option that covers the ordinary case of a
       // figure a cent or two over — «todo».
-      return `Ese importe son ${formatUnits(violation.unitsRequested)} participaciones y solo hay ${formatUnits(violation.unitsHeld)} en esa fecha. Baja el importe, o marca «traspasar todo».`;
+      return `Ese traspaso mueve ${formatUnits(violation.unitsRequested)} participaciones y solo hay ${formatUnits(violation.unitsHeld)} en esa fecha. Baja la cifra, o marca «traspasar todo».`;
     case "value_update_investment_holding":
       return "Las inversiones no se pueden actualizar en la puesta al día — su valor es siempre calculado.";
     case "debt_balance_governed_by_curve":

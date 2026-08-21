@@ -683,6 +683,7 @@ export function createCommandHost(
           const result = await datedFacts.recordTransferAndRipple({
             destinationAssetId: plan.destinationAssetId,
             destinationPricePerUnit: plan.destinationPricePerUnit,
+            destinationUnits: plan.destinationUnits,
             executedAt: plan.executedAt,
             inOperationId: ctx.newId(),
             originAssetId: plan.originAssetId,

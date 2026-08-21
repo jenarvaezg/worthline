@@ -39,19 +39,42 @@ const ORIGIN = {
   operations: [BUY],
 };
 
+/**
+ * A form in the VL reading — the one the screen was born with (#1480). The
+ * participaciones reading has its own helper below: the two are separate modes, and a
+ * default that carried fields from both would test neither (#1544).
+ */
 function values(over: Partial<TransferFormValues> = {}): TransferFormValues {
   return {
     amount: "739,22",
     destinationAmount: "",
     destinationAssetId: "h-destination",
     destinationPricePerUnit: "14,50",
+    destinationUnits: "",
     executedAt: "2026-08-14",
     newDestinationIsin: "",
     newDestinationName: "",
     originPricePerUnit: "12,00",
+    originUnits: "",
     portion: "amount",
+    reading: "price",
     ...over,
   };
+}
+
+/**
+ * A form as a justificante is copied: the participaciones and the importe of each leg,
+ * and no VL anywhere. The VL fields still carry the prefills the screen put in them —
+ * they are hidden, not removed — which is exactly what must NOT reach the write.
+ */
+function unitsValues(over: Partial<TransferFormValues> = {}): TransferFormValues {
+  return values({
+    amount: "739,22",
+    destinationUnits: "50,980690",
+    originUnits: "61,601667",
+    reading: "units",
+    ...over,
+  });
 }
 
 describe("readTransferFormValues", () => {
@@ -66,17 +89,23 @@ describe("readTransferFormValues", () => {
     formData.set("originPricePerUnit", "12,00");
     formData.set("destinationPricePerUnit", "14,50");
     formData.set("destinationAmount", "740,72");
+    formData.set("reading", "units");
+    formData.set("originUnits", "61,601667");
+    formData.set("destinationUnits", "50,980690");
 
     expect(readTransferFormValues(formData)).toEqual({
       amount: "739,22",
       destinationAmount: "740,72",
       destinationAssetId: NEW_DESTINATION,
       destinationPricePerUnit: "14,50",
+      destinationUnits: "50,980690",
       executedAt: "2026-08-14",
       newDestinationIsin: "es0173894017",
       newDestinationName: "Value PP",
       originPricePerUnit: "12,00",
+      originUnits: "61,601667",
       portion: "all",
+      reading: "units",
     });
   });
 
@@ -86,11 +115,14 @@ describe("readTransferFormValues", () => {
       destinationAmount: "",
       destinationAssetId: "",
       destinationPricePerUnit: "",
+      destinationUnits: "",
       executedAt: "",
       newDestinationIsin: "",
       newDestinationName: "",
       originPricePerUnit: "",
+      originUnits: "",
       portion: "",
+      reading: "",
     });
   });
 });
@@ -203,9 +235,11 @@ describe("previewTransfer", () => {
 
     // 739,22 ÷ 12 = 61,60166666…  →  six decimals (#1395), never twenty.
     expect(preview).toEqual({
+      inPricePerUnit: "14.50",
       inUnits: "50.98069",
       incomingAmountMinor: 73_922,
       inheritedCostMinor: 61_602,
+      outPricePerUnit: "12.00",
       outUnits: "61.601667",
       outgoingAmountMinor: 73_922,
       status: "ready",
@@ -313,6 +347,98 @@ describe("previewTransfer", () => {
     );
 
     expect(preview.status).toBe("refused");
+  });
+});
+
+describe("la lectura por participaciones (#1544)", () => {
+  test("stores the participaciones as typed and DERIVES each leg's VL", () => {
+    const parsed = parseTransferForm(
+      unitsValues({ destinationUnits: "50,98069", originUnits: "61,6016675" }),
+      TODAY,
+    );
+
+    // The VL fields still carry the screen's prefills; the mode is what decides, so
+    // neither of them reaches the draft.
+    expect(parsed).toEqual({
+      ok: true,
+      command: {
+        destination: { kind: "existing", assetId: "h-destination" },
+        destinationUnits: "50.98069",
+        executedAt: "2026-08-14",
+        portion: { amountMinor: 73_922, kind: "units", units: "61.6016675" },
+      },
+    });
+
+    const preview = previewTransfer(
+      unitsValues({ destinationUnits: "50,98069", originUnits: "61,6016675" }),
+      ORIGIN,
+      TODAY,
+    );
+    expect(preview).toMatchObject({
+      // Not cut to six decimals: a declared count is a fact, not a division (#1395
+      // governs DERIVED figures).
+      outUnits: "61.6016675",
+      // 739,22 € ÷ 61,6016675 part., at the precision a price reads back at.
+      outPricePerUnit: "11.99999984",
+      status: "ready",
+    });
+  });
+
+  test("«todo» keeps the exact position and derives the VL from the justificante's importe", () => {
+    const preview = previewTransfer(
+      unitsValues({ amount: "1.200,50", portion: "all" }),
+      ORIGIN,
+      TODAY,
+    );
+
+    expect(preview).toMatchObject({
+      outPricePerUnit: "12.005",
+      outUnits: "100",
+      outgoingAmountMinor: 120_050,
+      status: "ready",
+    });
+  });
+
+  test("the arrival's own importe pairs with its own participaciones", () => {
+    const preview = previewTransfer(
+      unitsValues({ destinationAmount: "740,72", destinationUnits: "51,08" }),
+      ORIGIN,
+      TODAY,
+    );
+
+    expect(preview).toMatchObject({
+      inPricePerUnit: "14.50117463",
+      inUnits: "51.08",
+      incomingAmountMinor: 74_072,
+      status: "ready",
+    });
+  });
+
+  test("declared participaciones above the position are refused, offering «todo»", () => {
+    const preview = previewTransfer(unitsValues({ originUnits: "150" }), ORIGIN, TODAY);
+
+    expect(preview.status).toBe("refused");
+    expect(preview.status === "refused" && preview.message).toContain("todo");
+  });
+
+  test.each([
+    ["participaciones que salieron en blanco", { originUnits: "" }, "salieron"],
+    ["participaciones que entraron en blanco", { destinationUnits: "" }, "entraron"],
+    ["«todo» sin el importe del justificante", { amount: "", portion: "all" }, "importe"],
+  ])("refuses %s", (_case, over, expected) => {
+    const parsed = parseTransferForm(unitsValues(over), TODAY);
+
+    expect(parsed.ok).toBe(false);
+    expect(!parsed.ok && parsed.error).toContain(expected);
+  });
+
+  test("with no mode posted, stated participaciones still rule", () => {
+    // An older client, or a hand-built FormData: the presence of the figures is the
+    // only evidence there is, and the participaciones are the declared fact.
+    const parsed = parseTransferForm(unitsValues({ reading: "" }), TODAY);
+
+    expect(parsed.ok && parsed.command.portion).toMatchObject({ kind: "units" });
+    expect(parsed.ok && parsed.command.originPricePerUnit).toBeUndefined();
   });
 });
 
