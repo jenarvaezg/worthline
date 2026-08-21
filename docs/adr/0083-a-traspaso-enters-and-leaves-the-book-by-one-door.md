@@ -227,3 +227,53 @@ parser instead — but the user-visible rule «lo que me escribes vale» now hol
 movement and not the other, and closing that is #1466's to do, with this lane as the
 worked precedent for how (`typed-transfer.ts` is the sibling `typed-holding-event.ts`
 that ticket asks for).
+
+## Amendment (#1541, 21-ago-2026) — the half with no pair got its door
+
+Decision 7 shipped an engine with no caller: `recordExternalTransferIn` had lived in
+`packages/db` since S2 with no product path onto it, so the only way to record «traer
+un plan de otra entidad» was still one of the two readings that ADR rejects. S6 puts
+the door in the **add wizard**, not in the «Traspasar» screen, and that placement is
+the decision:
+
+- **It is an alta, not a traspaso.** There is no origin holding in this book to start
+  from — the outgoing half belongs to MyInvestor's ledger — so there is no ficha to
+  hang it off and nothing to fold. It sits as a third answer to «cuánto tengo», beside
+  «sé cuánto tengo hoy» and «tengo el extracto del bróker» (#597), and the three modes
+  stay mutually exclusive so a synthetic apertura can never land next to a real entry.
+- **The pane previews with the gate's own plan.** `external-transfer-in.ts` runs
+  `planExternalTransferIn` for its live «≈ participaciones» and takes every refusal
+  about the figures from `mapDomainViolation`, so the pane, the action and the store
+  say the same words about the same number — the shape `transfer-form.ts` already had,
+  and the drift #1438 measured.
+- **The declared cost has no total-vs-unit question.** Unlike the alta's «¿cuánto te
+  costó?» (#1490), what the old provider states and what the row stores is ONE total,
+  so there is one field and no mode radio. Empty means the importe that arrived, and
+  the pane says so naming the figure rather than leaving the default invisible.
+- **The declared VL becomes the holding's manual price.** A plan brought over is the
+  case with no provider quote at all, and without a price the alta would land in the
+  list worth 0 € — the same fill-the-gap `recordTransferAction` already does for a
+  destination it creates. It overwrites the saldo pane's price field rather than only
+  filling a blank: every pane posts while hidden, so that field may hold a live quote
+  or a keystroke left over from before the mode was switched, and the two are
+  indistinguishable at the action. A cached price beats a manual one at read time (ADR
+  0006), so this only decides what a holding nobody quotes is worth — which for a
+  backdated entry is that day's VL, held until someone updates it.
+- **The row keeps `source: "manual"`, never `"opening"`.** That mark means «synthetic
+  apertura the alta invented» and is what `replaceOpening` may drop; this is a fact the
+  user declared, with its own date and its own inherited cost.
+
+The cupo is fixed by a test at the action seam, not by new code: `computeContributionAllowanceUsage`
+already counts buys only, and the test records the literal enero-2026 entry and asserts
+0 € consumed — beside its twin recording the same figures through «saldo de hoy», which
+consumes 95,46 €. The contrast is the regression guard: what spares the ceiling is the
+KIND of the row, and nothing else.
+
+On the HUMAN reader side nothing was needed: #1481's `transferRowNote` already prints
+«desde otra entidad · coste heredado …» for a `transfer_in` whose `transferId` matches
+no counterpart, and the store contract that an unpaired id is ABSENT from the map is
+what makes that reading reachable. The MCP reader did need a word: its contract said
+the `transferId` was «present on both and on nothing else», which was true only while
+this door did not exist. `get_operations` and `AgentViewOperation.transferId` now name
+the lone row — «entrada por traspaso externo», not a broken pair and not a purchase —
+so an agent reading Jorge's plan cannot report a half-written traspaso.

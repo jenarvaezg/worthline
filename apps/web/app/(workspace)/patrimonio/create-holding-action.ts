@@ -9,6 +9,7 @@ import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { formAction } from "@web/form-action";
 import { holdingDetailHref } from "@web/holding-route";
 import {
+  createStableId,
   errorRedirectUrl,
   mapDomainViolation,
   parseAssetCommandStrict,
@@ -19,6 +20,8 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
+import type { ExternalTransferCaptureResult as ExternalTransferCapture } from "@web/patrimonio/anadir/external-transfer-in";
+import { resolveExternalTransferCapture } from "@web/patrimonio/anadir/external-transfer-in";
 import {
   parseOpeningCostMode,
   resolveOpeningCapture,
@@ -171,10 +174,17 @@ function parseInstrument(value: FormDataEntryValue | null): Instrument | null {
   return (INSTRUMENTS as readonly string[]).includes(raw) ? (raw as Instrument) : null;
 }
 
-/** The simple investment drawer's two exclusive "how much you have" modes (#597). */
-function parseInvMode(value: FormDataEntryValue | null): "saldo" | "import" | null {
+/**
+ * The simple investment drawer's exclusive "how much you have" modes (#597), plus
+ * the third one #1541 added: the position was not bought, it ARRIVED — «viene
+ * traspasada de otra entidad». They are mutually exclusive by construction, which is
+ * what keeps a synthetic apertura from ever landing next to a real entry.
+ */
+function parseInvMode(
+  value: FormDataEntryValue | null,
+): "saldo" | "import" | "traspaso" | null {
   const raw = String(value ?? "").trim();
-  return raw === "saldo" || raw === "import" ? raw : null;
+  return raw === "saldo" || raw === "import" || raw === "traspaso" ? raw : null;
 }
 
 /**
@@ -218,6 +228,46 @@ async function recordOpeningOperation(
 }
 
 /**
+ * Record the «alta por traspaso externo» for a freshly-created investment (#1541):
+ * ONE `transfer_in` with no pair, because its outgoing half lives in another
+ * institution's ledger. Returns a Spanish message on a domain violation, or null.
+ *
+ * The ids are minted here off the holding's own id, which the alta has just derived
+ * for this submission — one alta, one entry, so a `transferId` of its own is all the
+ * pairing readers need to find a single row and say «desde otra entidad» (#1481).
+ *
+ * No `source: "opening"` — the row keeps the store's «manual». That mark means
+ * «synthetic apertura the alta invented» and is what `replaceOpening` is allowed to
+ * drop; this row is a fact the user declared, with its own date and its own inherited
+ * cost, and a statement import must not be able to sweep it away.
+ */
+async function recordExternalTransferEntry(
+  store: WorthlineStore,
+  assetId: string,
+  entry: Extract<ExternalTransferCapture, { ok: true }>,
+  today: string,
+): Promise<string | null> {
+  // ONE clock reading for both ids, as everywhere else in this action. The wizard
+  // does not post the submission key of #1394, so a double submit already mints two
+  // holdings here and this entry rides whichever one it belongs to; giving the two
+  // ids of ONE entry two different milliseconds would be gratuitous on top.
+  const seed = Date.now();
+
+  const result = await store.command.recordExternalTransferIn({
+    amountMinor: entry.amountMinor,
+    destinationAssetId: assetId,
+    destinationPricePerUnit: entry.pricePerUnit,
+    executedAt: entry.executedAt,
+    inheritedCostMinor: entry.inheritedCostMinor,
+    inOperationId: createStableId("op", `${assetId}_transfer_in`, seed),
+    today,
+    transferId: createStableId("trf", assetId, seed),
+  });
+
+  return result.ok ? null : mapDomainViolation(result.violations[0]);
+}
+
+/**
  * The debt model a `loan` is created with (#273): the user picks «Amortizable»
  * (a French-amortization plan, set up later in the ficha) or «Informal» (declared
  * balances, no plan/term/first-payment). Defaults to amortizable when the choice
@@ -252,6 +302,13 @@ const FIELD_KEYS = [
   "cost",
   "costMode",
   "invMode",
+  // «Viene traspasada de otra entidad» (#1541): the importe that arrived, the day it
+  // landed, that day's VL and the inherited cost. A refused entry must come back with
+  // all four typed — three of them are looked up in the old provider's paperwork.
+  "trAmount",
+  "trDate",
+  "trPrice",
+  "trCost",
 ];
 
 const SIMPLE_FIELD_KEYS = [
@@ -530,6 +587,43 @@ export async function createHoldingAction(
           return { ok: false, error: errorUrl(opening.error) };
         }
 
+        // (c) «Viene traspasada de otra entidad» (#1541): resolved the same way and
+        // for the same reason — the whole entry has to be readable BEFORE a holding
+        // exists, or a refused traspaso leaves an empty 0 € investment behind. The
+        // resolution runs `planExternalTransferIn`, the gate's own plan, so what is
+        // checked here is exactly what the gate will check again.
+        const external =
+          invMode === "traspaso"
+            ? resolveExternalTransferCapture({
+                amountRaw: String(actionFormData.get(`trAmount_${instrument}`) ?? ""),
+                costRaw: String(actionFormData.get(`trCost_${instrument}`) ?? ""),
+                dateRaw: String(actionFormData.get(`trDate_${instrument}`) ?? ""),
+                priceRaw: String(actionFormData.get(`trPrice_${instrument}`) ?? ""),
+                today,
+              })
+            : null;
+
+        if (external && !external.ok) {
+          return { ok: false, error: errorUrl(external.error) };
+        }
+
+        // A plan brought over from another manager is the case with NO provider quote
+        // — Finect may not carry it, and nobody will ever quote a hand-created one —
+        // so the VL the user just declared becomes the holding's manual price. Without
+        // it the alta would land in the list worth 0 € (#1490's lesson, and what
+        // `recordTransferAction` already does for a destination it creates).
+        //
+        // It OVERWRITES whatever the saldo pane's price field carries, rather than
+        // only filling a blank: every pane posts even while hidden (ADR 0009), so that
+        // field may hold a live quote or a keystroke left over from before the mode
+        // was switched, and the two are indistinguishable here. The declared VL is the
+        // one price the user typed in the pane they actually chose. A real quote is
+        // unaffected: a cached price beats a manual one at read time (ADR 0006), so
+        // this only decides what a holding nobody quotes is worth.
+        if (external?.ok) {
+          scoped.set("manualPricePerUnit", external.pricePerUnit);
+        }
+
         const workspace = await store.workspace.readWorkspace();
 
         if (!workspace) {
@@ -585,6 +679,27 @@ export async function createHoldingAction(
           }
         }
 
+        // The traspaso entry goes through its OWN gate — never through the opening
+        // BUY above. A purchase would eat a year of contribution allowance (ADR 0080)
+        // for capital that merely changed manager, which is exactly the miscount that
+        // printed «te has pasado 2.127 €» in Jorge's cupo, and it would claim a
+        // plusvalía the ledger never earned. `recordExternalTransferIn` writes ONE
+        // `transfer_in` carrying its own `transferId`, so the readers that pair by
+        // that id find a single row and name it «desde otra entidad» (#1481) instead
+        // of reporting a broken pair (ADR 0083, decisión 7).
+        if (external?.ok) {
+          const entryError = await recordExternalTransferEntry(
+            store,
+            parsed.command.id,
+            external,
+            today,
+          );
+
+          if (entryError) {
+            return { ok: false, error: errorUrl(entryError) };
+          }
+        }
+
         // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
         // (#173) so the broker CSV's historical orders are the only operations.
         // «Importar extracto» routes straight to the ficha, so here the public id
@@ -597,7 +712,12 @@ export async function createHoldingAction(
                 importTarget ? holdingDetailHref(importTarget) : "/patrimonio",
                 "investment_import_ready",
               )
-            : await successUrl("investment_added", parsed.command.id);
+            : // The traspaso says so in the confirmation: what the user needs to read
+              // back is not «creada» but «no la has comprado» (#1541).
+              await successUrl(
+                external ? "investment_transfer_in_added" : "investment_added",
+                parsed.command.id,
+              );
 
         // The pricing coordinates of the just-created investment, threaded out so
         // its FIRST quote is asked for in afterCommit (#1314) — the holding would

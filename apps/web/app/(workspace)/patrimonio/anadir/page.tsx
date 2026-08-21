@@ -1,6 +1,7 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
+import { ExternalTransferCapture } from "@web/patrimonio/anadir/external-transfer-capture";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
 import { parseOpeningCostMode } from "@web/patrimonio/anadir/investment-units";
 import { IsinField } from "@web/patrimonio/anadir/isin-field";
@@ -239,6 +240,7 @@ export async function AnadirHoldingContent({
       `.simpleAdd:has(input[name="instrument"][value="${group.instrument}"]:checked) .invGroupPane[data-group="${group.instrument}"]{display:grid}`,
       `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="saldo"]:checked) .invModePane[data-mode="saldo"]{display:grid}`,
       `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="import"]:checked) .invModePane[data-mode="import"]{display:block}`,
+      `.invGroupPane[data-group="${group.instrument}"]:has(input[name="invMode_${group.instrument}"][value="traspaso"]:checked) .invModePane[data-mode="traspaso"]{display:grid}`,
     ]),
     // «Alta por estado actual» (ADR 0056, #677): the default path for hipoteca/
     // préstamo; tarjeta (revolving) never gets a plan, so it keeps the plain
@@ -256,7 +258,9 @@ export async function AnadirHoldingContent({
         {isSuccess ? (
           <AddSuccessPanel
             addedId={addedId}
-            isInvestment={okKey === "investment_added"}
+            isInvestment={
+              okKey === "investment_added" || okKey === "investment_transfer_in_added"
+            }
             message={formOk!}
             netWorthLabel={netWorthLabel}
           />
@@ -476,6 +480,7 @@ function InvestmentGroupPane({
   const captureKey = `${id}:${isSelected ? (livePrice ?? "manual") : ""}:${
     (isSelected && v("symbol")) || ""
   }`;
+  const invMode = v("invMode");
 
   return (
     <div className="invGroupPane" data-group={id}>
@@ -517,16 +522,30 @@ function InvestmentGroupPane({
       <fieldset className="simpleChoiceGroup">
         <legend>¿Cómo lo registramos?</legend>
         <RadioChoice
-          checked={v("invMode") !== "import"}
+          // Read as a negative list on purpose: anything the round-trip did not
+          // bring back — absent, blank, a value from a future mode — reopens
+          // «saldo», the default. A positive test would leave the group with NO
+          // radio checked, which is a form that submits nothing.
+          checked={invMode !== "import" && invMode !== "traspaso"}
           label="Sé cuánto tengo hoy"
           name={`invMode_${id}`}
           value="saldo"
         />
         <RadioChoice
-          checked={v("invMode") === "import"}
+          checked={invMode === "import"}
           label="Tengo el extracto del bróker"
           name={`invMode_${id}`}
           value="import"
+        />
+        {/* The third way to answer «cuánto tengo» (#1541): the capital was not
+            bought, it arrived — MyInvestor's «Traer plan desde otra entidad». It is
+            an alta and not the «Traspasar» flow of #1480 because there is no origin
+            holding in this book to start from (ADR 0083, decisión 7). */}
+        <RadioChoice
+          checked={invMode === "traspaso"}
+          label="Viene traspasada de otra entidad"
+          name={`invMode_${id}`}
+          value="traspaso"
         />
       </fieldset>
 
@@ -544,6 +563,28 @@ function InvestmentGroupPane({
               ? `Precio en vivo de ${group.providerLabel}.`
               : group.symbolHint
           }
+          today={today}
+        />
+        <PaneActions />
+      </div>
+
+      <div className="invModePane" data-mode="traspaso">
+        <p className="simpleHint">
+          No es una compra: el capital ya era tuyo y solo ha cambiado de gestora, así que{" "}
+          <strong>no consume cupo de aportación</strong> y no realiza plusvalía. El coste
+          que traían las participaciones viaja con ellas.
+        </p>
+        <ExternalTransferCapture
+          defaultAmount={v("trAmount") ?? ""}
+          defaultCost={v("trCost") ?? ""}
+          defaultDate={v("trDate") ?? ""}
+          // No live-quote prefill here, unlike the saldo pane: the VL this entry
+          // needs is the one of the DAY THE CAPITAL LANDED, and today's quote for a
+          // traspaso recorded weeks later would be a wrong figure presented as a
+          // helpful one — and it is the figure that fixes the participaciones.
+          defaultPrice={v("trPrice") ?? ""}
+          instrument={id}
+          key={`tr-${captureKey}`}
           today={today}
         />
         <PaneActions />

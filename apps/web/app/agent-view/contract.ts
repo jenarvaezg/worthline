@@ -1455,8 +1455,16 @@ export interface AgentViewOperation {
   grossAmount: AgentViewMoney;
   fees: AgentViewMoney;
   /**
-   * The id shared by the two halves of one traspaso, present on both and on nothing
-   * else — what lets a reader pair an outgoing leg with the incoming one.
+   * The id of the traspaso this operation belongs to, present on the traspaso kinds
+   * and on nothing else — what lets a reader pair an outgoing leg with the incoming
+   * one.
+   *
+   * An id that appears on ONE `transfer_in` and nowhere else is not a broken pair: it
+   * is an **entrada por traspaso externo** (#1541), a position brought in from another
+   * institution whose outgoing half lives in that institution's ledger and can never
+   * be written here. Read it as capital that arrived, never as a purchase — it made no
+   * contribution and realized no gain, and its `transferCostMinor` is the cost the
+   * participaciones carried over.
    */
   transferId?: string;
 }

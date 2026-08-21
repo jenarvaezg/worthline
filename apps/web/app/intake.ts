@@ -538,6 +538,10 @@ export function okMessage(key: string | undefined): string | null {
     restored: "Restaurado.",
     saved: "Guardado.",
     transfer_recorded: "Traspaso registrado.",
+    // The alta that arrived by traspaso (#1541) says so out loud: what confirms the
+    // entry is not «creada» but «no la has comprado» — the difference the cupo and
+    // the plusvalía both hang on.
+    investment_transfer_in_added: "Inversión dada de alta por traspaso externo.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
     valuation_cadence_saved: "Cadencia de valoración guardada.",
