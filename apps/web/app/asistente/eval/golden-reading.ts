@@ -5,7 +5,13 @@ import {
   spanish,
   withEuros,
 } from "./golden-question";
-import { citesInternalSource, declinesToInvent, mentionsAny } from "./graders";
+import {
+  citesInternalSource,
+  declinesToInvent,
+  deniesCapabilityAbout,
+  mentionsAny,
+  recommendsExternalTool,
+} from "./graders";
 
 /**
  * Golden questions for the READING dimension of the assistant eval harness (#668,
@@ -18,6 +24,21 @@ import { citesInternalSource, declinesToInvent, mentionsAny } from "./graders";
  * What it CANNOT see is whether the turn called the tool it claimed to call: that
  * is the tool-discipline set (#1265), and the two are scored separately.
  */
+
+/**
+ * The subject worthline DOES cover and the surfaces that cover it (#1524). Both lists
+ * are what keep the two denial graders honest — see `graders.ts` — and they are here,
+ * next to the question, because they are properties of THIS question: another question
+ * about another capability brings its own.
+ */
+const RENT_EXPENSE_SUBJECTS = ["gasto", "ibi", "comunidad"];
+const RENT_EXPENSE_DESTINATIONS = [
+  "cobro",
+  "campo gastos",
+  "ficha",
+  "configuración avanzada",
+  "/patrimonio",
+];
 
 export const READING_QUESTIONS: GoldenQuestion[] = [
   {
@@ -125,6 +146,44 @@ export const READING_QUESTIONS: GoldenQuestion[] = [
           "cotiza",
           "ahorro",
         ]),
+      ),
+    ],
+  },
+  {
+    // The 2026-08-21 transcript, verbatim (#1524). worthline HAS this field — the
+    // holding's ficha, «Cobros», the Gastos of the recurring payout (#1448, ADR 0076)
+    // — and the assistant answered from memory that it does not, three turns running,
+    // then sent the user to a spreadsheet. It is the twin of `spending-missing` right
+    // below, and the pair is the point: one subject the product does not cover, one it
+    // does, graded in opposite directions. Nothing about the wording of the question
+    // tells them apart — only reading does.
+    id: "rent-expenses-destination",
+    dimension: "reading",
+    persona: "familia",
+    question: "¿Dónde introduzco los gastos declarados en las viviendas alquiladas?",
+    grade: (a) => [
+      spanish(a),
+      // «¿Dónde meto X?» over a holding is a read, not a recall. This only pins THAT it
+      // read, not WHICH holding: the `familia` persona has a primary residence and no
+      // rented property, so the disciplined answer here reads the context once and says
+      // there is no rent declared yet — and `get_holding_detail`'s own description sends
+      // a list question to `get_financial_context`. Demanding the drilldown would score
+      // the right discipline as a defect; pinning «read that holding» needs a persona
+      // with a rented property, which is a change to the demo set and not this slice.
+      grounded(a),
+      check(
+        "señala la ficha del inmueble y el campo de gastos",
+        mentionsAny(a.text, ["ficha", "inmueble", "vivienda"]) &&
+          mentionsAny(a.text, ["cobro"]) &&
+          mentionsAny(a.text, ["gasto"]),
+      ),
+      check(
+        "no niega que worthline registre los gastos",
+        !deniesCapabilityAbout(a.text, RENT_EXPENSE_SUBJECTS, RENT_EXPENSE_DESTINATIONS),
+      ),
+      check(
+        "no le manda a una herramienta externa",
+        !recommendsExternalTool(a.text, RENT_EXPENSE_DESTINATIONS),
       ),
     ],
   },

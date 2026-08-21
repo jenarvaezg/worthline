@@ -222,6 +222,154 @@ export function claimsDistinctInstrumentWithoutResolving(
   return !answer.toolCalls.some((call) => call.name === "search_market_symbol");
 }
 
+/**
+ * What the assistant is saying does not exist: a place in the product to type into.
+ *
+ * «Registro» is deliberately absent — «no hay registro de gastos en tus viviendas» is a
+ * READING of the user's data, and the transcript's real denials all fire on the verb
+ * patterns below without it.
+ */
+const PLACE =
+  "(?:campo|seccion|apartado|cuenta|libro|opcion|forma|manera|sitio|lugar|funcion|funcionalidad|pantalla|modulo)";
+/** Who is doing the not-having. «Worthline no tiene» is a claim; «tu piso no tiene» is a fact. */
+const PRODUCT =
+  "(?:worthline|la app|la aplicacion|el sistema|el producto|la herramienta)";
+/** The verbs a user's «¿dónde meto X?» is about. */
+const RECORD = "(?:registr|introduc|anot|declar|apunt|contempl|guard|met)[a-z]*";
+
+const CAPABILITY_DENIAL = [
+  // Impersonal passive — the grammar of a claim about the product, whatever noun the
+  // sentence hangs it on: «no se registran individualmente», «no se introduce».
+  new RegExp(`no\\s+se\\s+(?:pueden?\\s+)?${RECORD}`),
+  // Second person, same claim: «no puedes declarar los gastos de comunidad».
+  new RegExp(`no\\s+(?:puedes?|puede|podemos|es\\s+posible)[^,]{0,30}\\s${RECORD}`),
+  /no\s+(?:permite|soporta|admite|dispone\s+de|cuenta\s+con)\b/,
+  // «No existe una cuenta de gastos», «no hay un libro donde apuntarlos». Anchored on
+  // the PLACE noun, because «no hay histórico anterior a 2024» is a reading, not a
+  // denial, and the two sentences are otherwise built identically.
+  new RegExp(`no\\s+(?:existe|hay)\\s+(?:un|una|ning[uú]n|ninguna|el|la)?\\s*${PLACE}`),
+  // And the only reading of «no tiene» that is about the product rather than the data.
+  new RegExp(`${PRODUCT}\\s+no\\s+(?:tiene|incluye|ofrece|registra|guarda)`),
+];
+
+/**
+ * One normalized sentence at a time. Split on sentence enders only — a colon keeps its
+ * clause attached, which is how «no se registra tu gasto en comida: worthline mide
+ * patrimonio» stays one claim.
+ */
+function anySentence(text: string, holds: (sentence: string) => boolean): boolean {
+  return normalize(text)
+    .split(/[.!?;\n]/)
+    .some(holds);
+}
+
+/**
+ * Does the answer say where the thing IS done? This is the load-bearing exemption of
+ * both graders below, and it was learnt the hard way: the first draft of
+ * `deniesCapabilityAbout` failed SIX correct answers — every one of them a sentence the
+ * new prompt rule teaches the model to write.
+ *
+ *   «Los gastos de comunidad no se introducen en el campo Importe, SINO en el campo
+ *    Gastos del cobro recurrente.»
+ *   «El IBI no se declara aparte: se declara dentro de «Cobros», en el campo Gastos.»
+ *   «No existe un campo por cada gasto: es un único importe por cobro.»
+ *
+ * Every one carries a negation, and none of them denies a capability. The reliable
+ * signal was never the negation — it is the DESTINATION: you cannot tell a user where
+ * the field is and claim in the same breath that the product does not have it. The
+ * transcript's real answers named no destination at all; they named a spreadsheet.
+ *
+ * Checked over the WHOLE answer, not per sentence: the redirection routinely lands in
+ * the next sentence («No se registran uno a uno. Van agregados en el campo Gastos.»).
+ */
+function namesADestination(text: string, destinations: string[]): boolean {
+  const haystack = normalize(text);
+  return destinations.some((destination) => haystack.includes(normalize(destination)));
+}
+
+/**
+ * Denying that worthline HAS a capability (#1524). The transcript that opened this issue
+ * held «el registro de gastos operativos sobre una vivienda no se introduce
+ * directamente» and «esos gastos operativos no se registran individualmente en
+ * worthline» for three turns, over a field that has existed since #1448.
+ *
+ * Two scopes, and the grader is only honest with both. `subjects` keeps it off the
+ * capabilities worthline really lacks — «no se registra tu gasto en comida y ocio» is
+ * the RIGHT answer to the reading set's own `spending-missing` question, and a
+ * subject-blind matcher would score that honesty as a lie. `destinations` keeps it off
+ * the redirection, which is the answer this whole issue was filed to get: see
+ * {@link namesADestination} for the six correct sentences that taught us so.
+ *
+ * What is left is the real failure and only it: a denial about a supported subject, in
+ * an answer that points the user nowhere.
+ */
+export function deniesCapabilityAbout(
+  text: string,
+  subjects: string[],
+  destinations: string[],
+): boolean {
+  if (namesADestination(text, destinations)) return false;
+  const normalizedSubjects = subjects.map(normalize);
+  return anySentence(
+    text,
+    (sentence) =>
+      CAPABILITY_DENIAL.some((pattern) => pattern.test(sentence)) &&
+      normalizedSubjects.some((subject) => sentence.includes(subject)),
+  );
+}
+
+/**
+ * Sending the user OUT of the product (#1524). «Te recomiendo utilizar una herramienta
+ * de gestión de gastos o una hoja de cálculo externa» is what a real user was told
+ * about a field the app has, and it is a worse outcome than any wrong figure: he left
+ * the surface that was going to answer him.
+ *
+ * Applied per question, never globally, for the same reason as the check above: for a
+ * capability worthline really lacks, naming a spreadsheet is honest help. Only a
+ * question whose subject the product DOES cover attaches this one.
+ */
+const EXTERNAL_TOOL = [
+  "hoja de calculo",
+  "excel",
+  "google sheets",
+  "herramienta de gestion de gastos",
+  "herramienta externa",
+  "aplicacion externa",
+  "app de gastos",
+  "otra herramienta",
+  "otra aplicacion",
+];
+
+/**
+ * The one reading of those words that is NOT an eviction: worthline's own upload lane.
+ * «Súbeme tu Excel y te levanto las propuestas» is the onboarding contract's starring
+ * action (PRD #1167) — the spreadsheet is an INPUT to the product there, not a
+ * substitute for it — so a sentence that ingests is never counted as sending the user
+ * away, however many spreadsheets it names.
+ */
+const INGESTS_IT = /\b(?:sub|adjunt|import|carg|paso?|pega|envi|manda|le[eo])/;
+
+/**
+ * And the other reading: naming the tool in order to REFUSE it. «No hace falta un Excel
+ * aparte, worthline ya registra los gastos del alquiler» is the sentence this grader
+ * exists to reward, and the first draft failed it. Narrow and negated on purpose — the
+ * transcript's own «te recomiendo utilizar una herramienta de gestión de gastos» carries
+ * no negation and stays caught.
+ */
+const REFUSES_IT =
+  /\bno\s+(?:necesitas|hace\s+falta|te\s+mando|requieres?|uses?|hay\s+que\s+usar)|sin\s+necesidad\s+de/;
+
+export function recommendsExternalTool(text: string, destinations: string[]): boolean {
+  if (namesADestination(text, destinations)) return false;
+  return anySentence(
+    text,
+    (sentence) =>
+      EXTERNAL_TOOL.some((tool) => sentence.includes(tool)) &&
+      !INGESTS_IT.test(sentence) &&
+      !REFUSES_IT.test(sentence),
+  );
+}
+
 /** A grounding read tool ran — the answer is not ungrounded chatter. */
 export function usedReadTool(answer: AssistantAnswer): boolean {
   return answer.toolCalls.some((call) => call.name !== "suggest_actions");

@@ -500,6 +500,16 @@ export interface AgentViewPayoutSchedule {
   endDate: string | null;
   /** ISO dates removed one by one (an unpaid month). */
   exclusions: string[];
+  /**
+   * Declared expenses per occurrence — SAME cadence as `amount` (#1448, ADR 0076),
+   * or null when none are declared. The null is the load-bearing part (#1524): the
+   * trailing window's `expenses` sums undeclared as zero, so a rent with no expenses
+   * and a rent with 0 € of expenses read identically there — and they are not the
+   * same thing at all. Undeclared means the FIRE engine DISCARDS this rent's return
+   * and falls back to its tramo's default, which is precisely the question a user
+   * asking «¿dónde introduzco los gastos?» needs answered about their own property.
+   */
+  expenses: AgentViewMoney | null;
 }
 
 /**

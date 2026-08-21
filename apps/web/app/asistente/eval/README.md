@@ -203,8 +203,8 @@ The direct provider credentials are `GOOGLE_GENERATIVE_AI_API_KEY` and
 The harness protects the providers' free-tier request limits by waiting between
 golden questions. A question can use up to four model calls, so the delays are
 deliberately more conservative than `60 / RPM`: 20 seconds for Google and 55 for
-Cerebras. With 23 questions and 91 checks that is roughly 11 minutes for Google and
-25 for Cerebras. The five attachment questions add no provider call of their own
+Cerebras. With 24 questions and 96 checks that is roughly 12 minutes for Google and
+26 for Cerebras. The five attachment questions add no provider call of their own
 beyond the turn: four have their document read by the deterministic spreadsheet
 extractor and the fifth carries an already-validated extraction, all in process, with
 no key.
@@ -363,6 +363,17 @@ or the question set changes, or when provider behavior materially degrades.
 #1376 fired that rule: the set grew to 23 questions and 91 checks (`attachments` from
 18 to 26), so Gemini was re-run and its mark refreshed. **Cerebras's is stale on this
 count too** and was not edited — a mark is a run, and only a run replaces it.
+
+#1524 fires it again, on both counts at once: the system prompt gained the capability
+asymmetry rule and the destination map, and `reading` gained
+`rent-expenses-destination` — 24 questions, 96 checks. **Both marks above are stale
+and neither was edited.** No run was taken with the slice: the graders and the prompt
+rule are unit-tested in CI, and a live run needs a fresh free-tier allowance plus a
+same-day `main` baseline to mean anything (see «Reading a score change»). The
+interesting question for whoever takes it is narrow — does the new question's answer
+name the ficha and the Gastos field, and does `spending-missing` still decline? Those
+two are the pair this slice bet on: the same words are the right answer for one
+subject and a lie for the other.
 
 ### Reading a score change (#1342)
 

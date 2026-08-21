@@ -146,6 +146,10 @@ function toSchedule(
     startDate: schedule.startISO,
     endDate: schedule.endISO,
     exclusions: schedule.exclusions,
+    // `== null` on purpose: the store's absent and its explicit NULL are the same
+    // fact — nobody declared expenses — and the engine treats them the same way.
+    expenses:
+      schedule.expensesMinor == null ? null : moneyOf(schedule.expensesMinor, currency),
   };
 }
 

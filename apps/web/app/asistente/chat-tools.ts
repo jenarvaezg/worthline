@@ -1570,8 +1570,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
       description:
         "Detalle completo de UNA posición por su id `wl_hld_…`: valor, propiedad, instrumento, " +
         "su identidad (`isin`, `providerSymbol`, `units` netas), método de valoración, tramo de " +
-        "liquidez, plan de amortización o anclas de valoración, y avisos de calidad. Los hechos " +
-        "ausentes se marcan, nunca se inventan. Para una LISTA (todos los fondos, todos los " +
+        "liquidez, plan de amortización o anclas de valoración, y avisos de calidad. También sus " +
+        "COBROS declarados con su cadencia y sus `expenses` (los gastos de un alquiler; `null` = " +
+        "ninguno declarado, y entonces el FIRE descarta esa renta y usa el retorno del tramo, " +
+        "ADR 0076). " +
+        "Los hechos ausentes se marcan, nunca se inventan. Para una LISTA (todos los fondos, todos los " +
         "ISIN, todas las participaciones) usa get_financial_context con `holdingLimit` alto: " +
         "una llamada por posición se queda a medias y acaba dando por no registrado lo que " +
         "solo estaba sin leer.",
