@@ -1,3 +1,4 @@
+import { renderCapabilityDestinations } from "./capability-destinations";
 import type { MaintainerAlertPayload } from "./maintainer-alert";
 
 /**
@@ -42,10 +43,16 @@ export type MaintainerAlertRefusal =
  * The alert had nothing to diagnose. The message ROUTES rather than just blocking
  * (the lesson of #1248): it names what the channel is for, kills the «support
  * team» fiction out loud — the promise, not just the alert, is what reached the
- * user — and points at the two surfaces that own what an alert cannot fix. It
- * names them as the places to LOOK, not as the answer: which one applies depends
- * on what the user asked for, and inventing a confident wrong surface would be
- * the very failure of #1347 in a new costume.
+ * user — and points at the surfaces that own what an alert cannot fix. It names
+ * them as the places to LOOK, not as the answer: which one applies depends on what
+ * the user asked for, and inventing a confident wrong surface would be the very
+ * failure of #1347 in a new costume.
+ *
+ * The list itself moved out to `capability-destinations.ts` in #1524. It was written
+ * here first, and being written HERE is why it went stale: a refusal message is the
+ * last place anyone looks for the product's map of itself, so when #1448 added the
+ * rent-expenses field nobody added the entry — and a model that had only this list
+ * told a real user that worthline does not register expenses at all.
  */
 export const MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE =
   "Esta alerta solo sirve para un descuadre de CIFRAS de worthline (un saldo pintado " +
@@ -53,9 +60,7 @@ export const MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE =
   "conectada que no cuadra), y este intento no trae ninguno. No es un canal de " +
   "soporte: detrás no hay ningún equipo que revise ni tramite nada, así que no le " +
   "prometas al usuario gestión alguna. Dile con claridad qué no puedes hacer tú y, si " +
-  "el producto sí lo hace en alguna parte, dónde: los datos de una posición (nombre, " +
-  "ISIN, símbolo) se editan en su ficha, en /patrimonio abriendo la posición; una " +
-  "fuente conectada se gobierna en /ajustes/conexiones.";
+  `el producto sí lo hace en alguna parte, dónde: ${renderCapabilityDestinations()}`;
 
 /**
  * The two figures agree, so there is no discrepancy to raise. Refusing here matters

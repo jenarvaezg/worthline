@@ -114,6 +114,8 @@ describe("buildHoldingPayouts", () => {
         startDate: "2025-01-01",
         endDate: "2026-06-30",
         exclusions: ["2025-08-01"],
+        // Nothing declared, and said as null rather than as 0 € (#1524).
+        expenses: null,
       },
     ]);
     // The declaration list carries no derived occurrences (they live in trailing12m).
@@ -301,6 +303,41 @@ describe("net passive income (#1463)", () => {
       amountMinor: 12 * 70_000,
       currency: "EUR",
     });
+    // Per occurrence, in the schedule's own cadence — not the window's sum (#1524).
+    expect(result!.schedules[0]?.expenses).toEqual({
+      amountMinor: 20_000,
+      currency: "EUR",
+    });
+  });
+
+  test("tells an undeclared expense apart from a declared zero (#1524)", async () => {
+    // The window cannot: it sums undeclared as 0, so both rents look expense-free
+    // there. Only the schedule's own field distinguishes them, and the difference is
+    // the whole answer — undeclared means the FIRE engine discards this rent's return
+    // (ADR 0076), while a declared 0 € means the owner really pays nothing. An
+    // assistant asked «¿dónde introduzco los gastos?» has to be able to see which.
+    const store = holdingStore(
+      {},
+      {
+        h1: [
+          schedule({ id: "undeclared", holdingId: "h1" }),
+          schedule({ id: "free", holdingId: "h1", expensesMinor: 0 }),
+        ],
+      },
+    );
+    const result = await buildHoldingPayouts({
+      store,
+      assetId: "h1",
+      currency: "EUR",
+      todayISO: TODAY,
+    });
+
+    expect(result!.schedules).toHaveLength(2);
+    expect(result!.schedules[0]?.expenses).toBeNull();
+    expect(result!.schedules[1]?.expenses).toEqual({ amountMinor: 0, currency: "EUR" });
+    // And the window still reads the same for both, which is exactly the ambiguity
+    // this field exists to break.
+    expect(result!.trailing12m.expenses).toEqual({ amountMinor: 0, currency: "EUR" });
   });
 
   test("the scope lens weights expenses by ownership and runs coverage on net", async () => {

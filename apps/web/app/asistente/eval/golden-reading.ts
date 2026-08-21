@@ -5,7 +5,13 @@ import {
   spanish,
   withEuros,
 } from "./golden-question";
-import { citesInternalSource, declinesToInvent, mentionsAny } from "./graders";
+import {
+  citesInternalSource,
+  declinesToInvent,
+  deniesCapabilityAbout,
+  mentionsAny,
+  recommendsExternalTool,
+} from "./graders";
 
 /**
  * Golden questions for the READING dimension of the assistant eval harness (#668,
@@ -126,6 +132,35 @@ export const READING_QUESTIONS: GoldenQuestion[] = [
           "ahorro",
         ]),
       ),
+    ],
+  },
+  {
+    // The 2026-08-21 transcript, verbatim (#1524). worthline HAS this field — the
+    // holding's ficha, «Cobros», the Gastos of the recurring payout (#1448, ADR 0076)
+    // — and the assistant answered from memory that it does not, three turns running,
+    // then sent the user to a spreadsheet. It is the twin of `spending-missing` right
+    // below, and the pair is the point: one subject the product does not cover, one it
+    // does, graded in opposite directions. Nothing about the wording of the question
+    // tells them apart — only reading does.
+    id: "rent-expenses-destination",
+    dimension: "reading",
+    persona: "familia",
+    question: "¿Dónde introduzco los gastos declarados en las viviendas alquiladas?",
+    grade: (a) => [
+      spanish(a),
+      // «¿Dónde meto X?» over a holding is a read, not a recall.
+      grounded(a),
+      check(
+        "señala la ficha del inmueble y el campo de gastos",
+        mentionsAny(a.text, ["ficha", "patrimonio", "posición"]) &&
+          mentionsAny(a.text, ["cobro"]) &&
+          mentionsAny(a.text, ["gasto"]),
+      ),
+      check(
+        "no niega que worthline registre los gastos",
+        !deniesCapabilityAbout(a.text, ["gasto", "ibi", "comunidad"]),
+      ),
+      check("no le manda a una herramienta externa", !recommendsExternalTool(a.text)),
     ],
   },
   {

@@ -8,9 +8,11 @@ import {
   claimsDistinctInstrumentWithoutResolving,
   commentsOnTheInterface,
   declinesToInvent,
+  deniesCapabilityAbout,
   isSpanish,
   mentionsAll,
   mentionsAny,
+  recommendsExternalTool,
   usedReadTool,
 } from "./graders";
 
@@ -200,5 +202,96 @@ describe("claimsDistinctInstrumentWithoutResolving (#1489)", () => {
         false,
       );
     }
+  });
+});
+
+/**
+ * #1524 — the two graders that stop the assistant from talking a user out of a field
+ * the product has. Both are sentence-scoped and subject-scoped on purpose: the same
+ * words are the RIGHT answer about something worthline genuinely does not do, and a
+ * grader that could not tell the two apart would score honesty as a defect.
+ */
+describe("deniesCapabilityAbout", () => {
+  it("catches the 2026-08-21 denials, verbatim", () => {
+    for (const text of [
+      "En worthline, el registro de gastos operativos sobre una vivienda (como comunidad, IBI, seguros o reformas) no se introduce directamente.",
+      "Esos gastos operativos no se registran individualmente en worthline.",
+      "No existe una cuenta de gastos: worthline está construida sobre un modelo de balance.",
+      "No hay un libro de gastos donde apuntar el IBI.",
+      "No puedes declarar los gastos de comunidad de un inmueble.",
+    ]) {
+      expect(deniesCapabilityAbout(text, ["gasto", "ibi", "comunidad"]), text).toBe(true);
+    }
+  });
+
+  it("leaves the honest denial about another subject alone", () => {
+    // The `spending-missing` golden grades this as the RIGHT answer: worthline really
+    // does not track what you spend on food. A denial matcher blind to the subject
+    // would fail the model for being truthful.
+    const text =
+      "No se registra tu gasto en comida y ocio: worthline mide patrimonio, no consumo.";
+    expect(deniesCapabilityAbout(text, ["alquiler", "ibi"])).toBe(false);
+    // …and it still fires when the subject IS the one the product covers.
+    expect(deniesCapabilityAbout(text, ["gasto"])).toBe(true);
+  });
+
+  it("does not fire on a fact about the user's own data", () => {
+    // «No hay gastos declarados en este alquiler» is a READING, and the one this whole
+    // issue wanted said out loud. It must never read as «worthline cannot do it».
+    for (const text of [
+      "Tu alquiler de Plasencia no tiene gastos declarados todavía, así que tu FIRE usa el retorno por defecto del tramo.",
+      "Los gastos de ese cobro recurrente están vacíos: se declaran en la ficha del inmueble.",
+    ]) {
+      expect(deniesCapabilityAbout(text, ["gasto", "ibi"]), text).toBe(false);
+    }
+  });
+
+  it("needs the denial and the subject in the SAME sentence", () => {
+    const text = "No hay histórico anterior a 2024. Los gastos van en «Cobros».";
+    expect(deniesCapabilityAbout(text, ["gasto"])).toBe(false);
+  });
+
+  it("reads «no hay registro de X» as a reading, not as a denial", () => {
+    // The narrowest call in this grader: «registro» is a place-shaped noun, but the
+    // sentence is about the user's data. The transcript's real denials never needed it.
+    expect(
+      deniesCapabilityAbout("No hay registro de gastos en tus viviendas.", ["gasto"]),
+    ).toBe(false);
+    // «No hay forma de…» is the same shape and IS a claim about the product.
+    expect(
+      deniesCapabilityAbout("No hay forma de declarar esos gastos.", ["gasto"]),
+    ).toBe(true);
+  });
+});
+
+describe("recommendsExternalTool", () => {
+  it("catches the eviction the user actually received", () => {
+    for (const text of [
+      "Te recomiendo utilizar una herramienta de gestión de gastos o una hoja de cálculo externa.",
+      "Para eso necesitarás otra aplicación.",
+      "Anótalo en un Excel aparte.",
+    ]) {
+      expect(recommendsExternalTool(text), text).toBe(true);
+    }
+  });
+
+  it("allows worthline's own upload lane, spreadsheets included", () => {
+    // The starring action of onboarding (PRD #1167) names a spreadsheet as an INPUT.
+    // Counting that as an eviction would punish the product's own best path.
+    for (const text of [
+      "Súbeme tu Excel y te levanto las propuestas.",
+      "Si lo tienes en una hoja de cálculo, adjúntala y la leo.",
+      "Puedes importar tu hoja de cálculo desde /patrimonio/importar-extracto.",
+    ]) {
+      expect(recommendsExternalTool(text), text).toBe(false);
+    }
+  });
+
+  it("stays quiet on an answer that just names the destination", () => {
+    expect(
+      recommendsExternalTool(
+        "Los gastos de ese alquiler se declaran en la ficha del inmueble, en «Cobros».",
+      ),
+    ).toBe(false);
   });
 });

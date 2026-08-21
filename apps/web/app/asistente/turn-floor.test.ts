@@ -161,6 +161,33 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * reason #1423 wrote down: their length is measured incident repair, and cutting it from
  * an unrelated lane trades a floor for a behaviour nobody re-measured. That slice is
  * still owed, and it is now the third PR in a row to say so.
+ *
+ * **Raised to 42.400 on 2026-08-21 by #1524**, and it is the #1489 kind of raise again:
+ * a measured incident that no boundary in code can close. Asked «¿dónde introduzco los
+ * gastos declarados en las viviendas alquiladas?», the assistant answered from memory —
+ * no read at all — that worthline does not register them, held that for three turns,
+ * defended it with an architecture that does not exist («no tiene un libro de
+ * contabilidad de ingresos/gastos»), and sent a real user to a spreadsheet. The field
+ * has existed since #1448 and sat one `get_holding_detail` away. Nothing in code can
+ * refuse a sentence about what the product IS, and every tool involved already worked.
+ *
+ * The arithmetic: the widest real floor is 41.834, up 970 from #1489's 40.864. 772 of
+ * those are the prompt — the capability asymmetry plus the destination map, which the
+ * maintainer alert's refusal message now reads from the same module so the two cannot
+ * drift (`capability-destinations.ts`) — and 198 are `get_holding_detail` saying what it
+ * returns: a holding's declared payouts and their `expenses`, `null` when nobody
+ * declared any. The ceiling keeps ~1,35% of headroom, the same order as #1374, #1423
+ * and #1489.
+ *
+ * It paid inside its own lane before asking, and the payment is exactly the #1342 split:
+ * the first draft said ADR 0076's rule TWICE — «sin gastos declarados el motor descarta
+ * ese alquiler» in the prompt's banned-workaround clause and again in the tool that
+ * returns the field. The tool keeps it, because that is where the model reads
+ * `expenses`; the prompt's clause now only names the workaround as refused. 185
+ * characters, and one fewer place for the rule to drift.
+ *
+ * `propose_holding` (2.543) and `propose_correction` (2.127) are still the ranking's
+ * head and were still not touched, for the reason #1423 gave. Fourth PR in a row.
  */
 
 describe("measureTurnFloor", () => {

@@ -128,6 +128,31 @@ describe("buildChatSystemPrompt", () => {
     // The old absolute («el precio/símbolo NO es un hecho editable») would teach
     // the model to refuse the fill it now has a tool for.
     expect(prompt).not.toMatch(/precio\/símbolo NO es un hecho editable/);
+    // #1524: the asymmetry. «Yo no puedo» and «no sé dónde» are sayable; «worthline
+    // no lo hace» is not — and the reason has to be IN the prompt, because a model
+    // that thinks it is describing a product will describe it confidently.
+    expect(prompt).toMatch(/asimétrico con las capacidades/i);
+    expect(prompt).toMatch(/«worthline no lo hace» NO/);
+    expect(prompt).toMatch(/no lo sabes/i);
+    expect(prompt).toMatch(/tú eres la app hablando/i);
+    // The invented architecture («worthline no tiene un libro de contabilidad de
+    // ingresos/gastos») was the second turn of the same failure, not a slip.
+    expect(prompt).toMatch(/de memoria cómo está construida/i);
+    // The eviction: he was told to use a spreadsheet for something the app does.
+    expect(prompt).toMatch(/hoja de cálculo/i);
+    expect(prompt).toMatch(/herramienta externa/i);
+    // And the positive half: «¿dónde meto X?» over a holding is a READ, not a recall.
+    expect(prompt).toMatch(/¿dónde meto X\?/);
+    expect(prompt).toMatch(/LEE ese holding con `get_holding_detail`/);
+    // The destination that was missing, with its field and its cadence (ADR 0076).
+    expect(prompt).toMatch(/ficha del inmueble/i);
+    expect(prompt).toMatch(/campo Gastos del cobro recurrente/i);
+    expect(prompt).toMatch(/MISMA cadencia/);
+    // The workaround it reached for once cornered, refused by name and for both
+    // reasons — it corrupts the ledger AND it does not even fix the calc.
+    expect(prompt).toMatch(/alquiler NETO en el campo Importe no vale/);
+    expect(prompt).toMatch(/0054/);
+    expect(prompt).toMatch(/0076/);
   });
 
   /**
@@ -176,7 +201,26 @@ describe("buildChatSystemPrompt", () => {
     // statement's ISIN, its own portfolio's symbol, and told a real user they were
     // two different ETFs. Nothing in code can refuse a sentence. Same shape as
     // #1347 and #1418: the tool closes the capability, the prompt closes the claim.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(8_500);
+    //
+    // #1524 raises it to 9300 for the capability asymmetry and the destination map.
+    // It is the largest raise so far and the justification is the size of the failure:
+    // a model told from memory, for three turns, that worthline does not register a
+    // rental's expenses, defended it with an architecture that does not exist, and
+    // sent a real user to a spreadsheet — with the field one `get_holding_detail`
+    // away. There is no code boundary here at all: the whole event was prose, and
+    // every tool involved already worked. What paid for part of it: the old bullet's
+    // «si tus tools no soportan lo que el usuario pide, señala dónde SÍ se hace»
+    // merged into this rule instead of sitting above it, the connected-source
+    // bullet's «guía a la ruta de mapeo/fuente» dropped now that the map names the
+    // route, and — per #1342's own ownership seam — what `get_holding_detail`
+    // RETURNS (a holding's declared payouts, with their expenses) went into that
+    // tool's description rather than being spelled out here.
+    //
+    // Note what this number is NOT paying for twice: the destinations themselves are
+    // one string in `capability-destinations.ts`, read by this prompt and by the
+    // maintainer alert's refusal message. Before #1524 that list lived only inside
+    // the refusal, which is exactly why the rent entry was never added to it.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_300);
   });
 
   it("pins the core read-only contract", () => {
