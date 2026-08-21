@@ -32,7 +32,7 @@ function emptyMessage(reason: HoldingBenchmarkUnavailableReason): string {
     case "benchmark_unmapped":
       return "El índice no está en el catálogo.";
     case "twr_unavailable":
-      return "La TWR necesita al menos dos cierres mensuales.";
+      return "No hay una TWR medible en este periodo.";
     case "zero_start_value":
       return "La comparación necesita un valor inicial positivo.";
     default:

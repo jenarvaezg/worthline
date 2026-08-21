@@ -334,7 +334,10 @@ the default **return**. Distinct from the **time-weighted return**, which strips
 **Time-weighted return**:
 The chain-linked sub-period return (**Modified Dietz** over **monthly closes**) that removes
 the effect of cashflow timing — the measure comparable to a benchmark index. Distinct from
-the **money-weighted return** (IRR), which keeps timing in. See ADR 0040.
+the **money-weighted return** (IRR), which keeps timing in. Not always measurable: a
+sub-period whose flow dwarfs its opening value would contribute a factor at or below
+zero, and the chain is then reported as unavailable with its reason rather than as a
+percentage — a TWR below −100% is a broken chain, not a loss. See ADR 0040.
 
 **Contribution plan**:
 A scope's set of **planned contributions** — its forward savings intentions. A forecast
@@ -710,7 +713,10 @@ information — a dated fact or a changed parameter; a purely cosmetic edit like
 rename still never touches history).
 
 **Monthly close**:
-The last **snapshot** of a calendar month. Derived, never declared by the user.
+The last **snapshot** of a calendar month. Derived, never declared by the user. Per
+**holding** it is the last snapshot _that holding appears in_ that month, so two
+holdings can carry their close on different days; anything that sums holdings (a
+class **return**, ADR 0040) aligns them by month rather than by exact date.
 
 **Delta breakdown**:
 The split of a scope's net-worth change between two **monthly closes** into where

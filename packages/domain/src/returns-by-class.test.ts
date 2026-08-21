@@ -363,6 +363,76 @@ describe("la serie de la clase se alinea antes de medirla (#1457)", () => {
     expect(equity.twr.rate).toBeCloseTo((160 / 150) * (1 + december) - 1, 10);
   });
 
+  test("al holding que sigue en cartera no lo expulsa una pasada perdida al final", () => {
+    // La señal de salida es no tener ya valor, no que a su serie le falte el
+    // último cierre: si la pasada del último mes se perdió para él (#1339), el
+    // holding sigue ahí y arrastra su último valor conocido.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 110_000,
+          monthlyCloses: [
+            { date: "2025-11-30", valueMinor: 100_000 },
+            { date: "2025-12-31", valueMinor: 110_000 },
+          ],
+          operations: [buy("10", "100", "2025-10-01")],
+        },
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 50_000, // sigue en cartera
+          monthlyCloses: [{ date: "2025-11-30", valueMinor: 50_000 }],
+          operations: [buy("5", "100", "2025-10-01", { assetId: "asset_b" })],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    // Alineada: nov = 150.000, dic = 160.000 (B arrastra sus 50.000), sin flujos.
+    expect(equity.twr.reason).toBeNull();
+    expect(equity.twr.rate).toBeCloseTo(160 / 150 - 1, 10);
+  });
+
+  test("el caso reproducido deja de dar un imposible cuando la serie se alinea", () => {
+    // materias primas, nov–dic 2025: dos holdings de la clase cerrando en días
+    // distintos convertían una aportación normal en un flujo gigante frente a un
+    // valor artificialmente pequeño.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ commodity: "1" }),
+          marketValueMinor: 999_00,
+          monthlyCloses: [
+            { date: "2025-11-28", valueMinor: 1_010_700 },
+            { date: "2025-12-10", valueMinor: 99_900 },
+          ],
+          operations: [buy("1", "10107", "2025-10-01")],
+        },
+        {
+          assetClass: classified({ commodity: "1" }),
+          marketValueMinor: 620_000,
+          monthlyCloses: [
+            { date: "2025-11-30", valueMinor: 10_000 },
+            { date: "2025-12-31", valueMinor: 620_000 },
+          ],
+          operations: [
+            buy("1", "100", "2025-11-20", { assetId: "asset_b" }),
+            buy("1", "6127", "2025-12-05", { assetId: "asset_b" }),
+          ],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const commodity = result.classes.find((c) => c.key === "commodity")!;
+    expect(commodity.twr.reason).toBeNull();
+    expect(commodity.twr.rate).not.toBeNull();
+    expect(commodity.twr.rate as number).toBeGreaterThan(-1);
+  });
+
   test("un holding vendido deja de aportar valor tras su último cierre", () => {
     const result = returnsByAssetClass({
       currency: "EUR",
@@ -405,7 +475,7 @@ describe("la serie de la clase se alinea antes de medirla (#1457)", () => {
     // Un alta de hoy todavía no aparece en ninguna captura (la pasada diaria aún
     // no ha corrido): sin valor en la serie, su compra sería un flujo enorme sin
     // contrapartida y hundiría la medida de toda la clase.
-    const withNewHolding = returnsByAssetClass({
+    const result = returnsByAssetClass({
       currency: "EUR",
       holdings: [
         {
@@ -427,7 +497,7 @@ describe("la serie de la clase se alinea antes de medirla (#1457)", () => {
       valuationDate: "2026-01-15",
     });
 
-    const equity = withNewHolding.classes.find((c) => c.key === "equity")!;
+    const equity = result.classes.find((c) => c.key === "equity")!;
     // La clase mide lo que su serie sostiene: el +10% del holding con historia.
     expect(equity.twr.reason).toBeNull();
     expect(equity.twr.rate).toBeCloseTo(0.1, 10);

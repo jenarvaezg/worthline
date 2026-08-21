@@ -117,8 +117,15 @@ interface BucketAccumulator {
   twrCashflows: TwrCashflow[];
   marketValueMinor: number;
   /** One class-weighted monthly-close series per contributing holding slice. */
-  monthlySeries: MonthlyCloseValue[][];
+  monthlySeries: HoldingCloseSeries[];
   payoutsIncluded: boolean;
+}
+
+/** One holding slice's class-weighted monthly closes, plus whether it is still held. */
+interface HoldingCloseSeries {
+  closes: readonly MonthlyCloseValue[];
+  /** A holding with value today is still in the class even if its last close is missing. */
+  stillHeld: boolean;
 }
 
 /**
@@ -226,12 +233,13 @@ export function returnsByAssetClass(
       // pass for it (#1339) — and a date union then alternates between "the whole
       // class" and "one holding", turning an ordinary flow into a giant one against
       // an artificially small value (#1457).
-      acc.monthlySeries.push(
-        holding.monthlyCloses.map((close) => ({
+      acc.monthlySeries.push({
+        closes: holding.monthlyCloses.map((close) => ({
           date: close.date,
           valueMinor: allocateByBps(close.valueMinor, bps),
         })),
-      );
+        stillHeld: holding.marketValueMinor > 0,
+      });
     }
   }
 
@@ -266,6 +274,11 @@ export function returnsByAssetClass(
   return { classes, coverage: coverageFrom(classes, input.currency) };
 }
 
+/** The "YYYY-MM" a close belongs to — the granularity a monthly close really has. */
+function monthKeyOf(date: string): string {
+  return date.slice(0, 7);
+}
+
 /**
  * The class's monthly-close series from its holdings' own series, aligned by
  * CALENDAR MONTH rather than by exact date.
@@ -278,48 +291,54 @@ export function returnsByAssetClass(
  *
  * Per month the series takes the latest close date any holding reports (the
  * month's close) and sums, for every holding, its close for that month — or, when
- * a month is missing from its series, the last value it is known to have had. The
- * carry stops at the holding's last close: past that it has LEFT the class (sold,
- * transferred away) and contributes nothing, and its sell sits in `twrCashflows`
- * so Modified Dietz reads the step as a flow, not a price move.
+ * a month is missing from its series, the last value it is known to have had.
+ *
+ * A holding stops contributing only once it has LEFT the class — and the signal
+ * for that is having no value today, not a missing last close. A best-effort
+ * capture can skip the final pass for a holding that is still held (#1339); reading
+ * that as an exit would drop its value with no sell to offset it. A holding that is
+ * genuinely gone (sold, transferred away) has no value left, and its sell sits in
+ * `twrCashflows`, so Modified Dietz reads the step as a flow, not a price move.
  */
-function alignMonthlyCloses(
-  series: readonly (readonly MonthlyCloseValue[])[],
-): MonthlyCloseValue[] {
-  const closesByMonth = series
-    .map((closes) => {
+function alignMonthlyCloses(series: readonly HoldingCloseSeries[]): MonthlyCloseValue[] {
+  const slices = series
+    .filter((slice) => slice.closes.length > 0)
+    .map((slice) => {
       const byMonth = new Map<string, MonthlyCloseValue>();
       // Ascending, so the month's last close wins.
-      for (const close of [...closes].sort((left, right) =>
+      for (const close of [...slice.closes].sort((left, right) =>
         left.date.localeCompare(right.date),
       )) {
-        byMonth.set(close.date.slice(0, 7), close);
+        byMonth.set(monthKeyOf(close.date), close);
       }
-      return byMonth;
-    })
-    .filter((byMonth) => byMonth.size > 0);
+      const monthKeys = [...byMonth.keys()];
+      return {
+        byMonth,
+        carried: null as number | null,
+        lastMonth: monthKeys[monthKeys.length - 1]!,
+        stillHeld: slice.stillHeld,
+      };
+    });
 
   const months = [
-    ...new Set(closesByMonth.flatMap((byMonth) => [...byMonth.keys()])),
+    ...new Set(slices.flatMap((slice) => [...slice.byMonth.keys()])),
   ].sort();
-  const lastMonths = closesByMonth.map((byMonth) => [...byMonth.keys()].sort().at(-1));
-  const carried: (number | null)[] = closesByMonth.map(() => null);
 
   return months.map((month) => {
     let date = `${month}-01`;
     let valueMinor = 0;
-    closesByMonth.forEach((byMonth, index) => {
-      const close = byMonth.get(month);
+    for (const slice of slices) {
+      const close = slice.byMonth.get(month);
       if (close) {
-        carried[index] = close.valueMinor;
+        slice.carried = close.valueMinor;
         if (close.date > date) {
           date = close.date;
         }
-      } else if (month > lastMonths[index]!) {
-        carried[index] = null;
+      } else if (!slice.stillHeld && month > slice.lastMonth) {
+        slice.carried = null;
       }
-      valueMinor += carried[index] ?? 0;
-    });
+      valueMinor += slice.carried ?? 0;
+    }
     return { date, valueMinor };
   });
 }

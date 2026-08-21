@@ -80,6 +80,14 @@ export function holdingTwrIndexSeries(input: {
 
     const periodRate =
       (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
+    // Same chain, same rule as `timeWeightedReturn` (#1457): a factor at or below
+    // zero means Modified Dietz cannot measure this subperiod, and multiplying it
+    // in would make the rest of the curve meaningless — two negatives read as a
+    // gain. No series at all, so the card says the comparison is unavailable
+    // rather than drawing an impossible line.
+    if (1 + periodRate <= 0) {
+      return [];
+    }
     factor *= 1 + periodRate;
     points.push({ dateKey: end.date, value: 100 * factor });
   }

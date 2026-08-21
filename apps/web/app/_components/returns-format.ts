@@ -1,4 +1,4 @@
-import type { HoldingReturnsView } from "@worthline/domain";
+import type { HoldingReturnsView, TwrReason } from "@worthline/domain";
 
 /**
  * Presentation formatting for investment returns (#551). The measure SELECTION
@@ -18,6 +18,27 @@ export function formatRatioPct(ratio: number): string {
 /** Like {@link formatRatioPct}, but a null rate/ratio renders as an em dash. */
 export function formatMeasurePct(rate: number | null): string {
   return rate === null ? "—" : formatRatioPct(rate);
+}
+
+/**
+ * Why a TWR is an em dash, in plain words (#1457). An absent measure that says
+ * nothing reads as a bug; the reason turns it into an honest signal — and, for a
+ * subperiod Modified Dietz cannot measure, says the figure was suppressed on
+ * purpose rather than lost.
+ */
+export function twrUnavailableReason(reason: TwrReason | null): string | null {
+  switch (reason) {
+    case "insufficient_monthly_closes":
+      return "hacen falta al menos dos cierres mensuales";
+    case "zero_time_span":
+      return "los cierres no abarcan tiempo";
+    case "zero_denominator":
+      return "no hay base sobre la que medirla";
+    case "non_measurable_subperiod":
+      return "un tramo con más movimiento que valor no es medible";
+    default:
+      return null;
+  }
 }
 
 function formatIsoDate(date: string): string {
@@ -47,7 +68,11 @@ export function returnsTooltipLines(view: HoldingReturnsView): string[] {
     const twrStart = view.twr?.startDate
       ? ` desde ${formatIsoDate(view.twr.startDate)}`
       : "";
-    lines.push(`TWR${twrStart}: ${formatMeasurePct(view.twr?.rate ?? null)}`);
+    const twrWhy =
+      view.twr && view.twr.rate === null ? twrUnavailableReason(view.twr.reason) : null;
+    lines.push(
+      `TWR${twrStart}: ${formatMeasurePct(view.twr?.rate ?? null)}${twrWhy ? ` (${twrWhy})` : ""}`,
+    );
     if (view.twr?.annualized && view.twr.annualizedRate !== null) {
       lines.push(`TWR anualizado: ${formatRatioPct(view.twr.annualizedRate)}`);
     }

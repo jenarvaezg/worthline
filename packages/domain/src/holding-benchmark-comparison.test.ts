@@ -39,6 +39,20 @@ describe("holding TWR index series", () => {
     expect(series[1]?.value).toBeCloseTo(110, 10);
     expect(series[2]?.value).toBeCloseTo(121, 10);
   });
+
+  test("un tramo con 1 + R ≤ 0 no produce índice: la curva sería imposible (#1457)", () => {
+    // El mismo encadenado que `timeWeightedReturn`, así que la misma regla: un
+    // factor negativo rompe el signo de toda la curva.
+    expect(
+      holdingTwrIndexSeries({
+        monthlyCloses: [
+          { date: "2025-11-28", valueMinor: 1_010_700 },
+          { date: "2025-12-10", valueMinor: 99_900 },
+        ],
+        operations: [op("buy", "1", "6127", "2025-12-05")],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("holding benchmark comparison", () => {

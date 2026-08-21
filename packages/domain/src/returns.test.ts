@@ -245,6 +245,21 @@ describe("timeWeightedReturn", () => {
     expect(result.rate).toBeCloseTo(expected, 10);
   });
 
+  test("snapshot rows feed TWR as the last available close in each month", () => {
+    expect(
+      monthlyCloseValuesFromSnapshotRows([
+        { snapshotId: "jan_1", dateKey: "2024-01-15", valueMinor: 90_000 },
+        { snapshotId: "jan_2", dateKey: "2024-01-31", valueMinor: 100_000 },
+        { snapshotId: "feb_1", dateKey: "2024-02-20", valueMinor: 110_000 },
+      ]),
+    ).toEqual([
+      { date: "2024-01-31", valueMinor: 100_000 },
+      { date: "2024-02-20", valueMinor: 110_000 },
+    ]);
+  });
+});
+
+describe("una cadena de TWR con el signo roto (#1457)", () => {
   test("un tramo con 1 + R ≤ 0 devuelve TWR no disponible, no un imposible (#1457)", () => {
     // El caso reproducido en el workspace real: materias primas, nov–dic 2025.
     // El flujo del periodo (+6.127 €) es enorme frente al valor de la clase, así
@@ -290,19 +305,6 @@ describe("timeWeightedReturn", () => {
     expect(result.reason).toBeNull();
     expect(result.rate).toBeCloseTo(-0.9, 10);
     expect(result.rate as number).toBeGreaterThan(-1);
-  });
-
-  test("snapshot rows feed TWR as the last available close in each month", () => {
-    expect(
-      monthlyCloseValuesFromSnapshotRows([
-        { snapshotId: "jan_1", dateKey: "2024-01-15", valueMinor: 90_000 },
-        { snapshotId: "jan_2", dateKey: "2024-01-31", valueMinor: 100_000 },
-        { snapshotId: "feb_1", dateKey: "2024-02-20", valueMinor: 110_000 },
-      ]),
-    ).toEqual([
-      { date: "2024-01-31", valueMinor: 100_000 },
-      { date: "2024-02-20", valueMinor: 110_000 },
-    ]);
   });
 });
 
