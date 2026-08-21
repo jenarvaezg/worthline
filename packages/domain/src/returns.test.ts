@@ -245,6 +245,53 @@ describe("timeWeightedReturn", () => {
     expect(result.rate).toBeCloseTo(expected, 10);
   });
 
+  test("un tramo con 1 + R ≤ 0 devuelve TWR no disponible, no un imposible (#1457)", () => {
+    // El caso reproducido en el workspace real: materias primas, nov–dic 2025.
+    // El flujo del periodo (+6.127 €) es enorme frente al valor de la clase, así
+    // que R cae por debajo de −100% y el factor se volvería negativo.
+    const result = timeWeightedReturn({
+      cashflows: [{ amountMinor: 612_700, date: "2025-12-05" }],
+      monthlyCloses: [
+        { date: "2025-11-28", valueMinor: 1_010_700 },
+        { date: "2025-12-10", valueMinor: 99_900 },
+      ],
+    });
+
+    expect(result.rate).toBeNull();
+    expect(result.annualizedRate).toBeNull();
+    expect(result.reason).toBe("non_measurable_subperiod");
+    expect(result.startDate).toBe("2025-11-28");
+    expect(result.endDate).toBe("2025-12-10");
+  });
+
+  test("un tramo no medible corta la cadena aunque el resto sea medible (#1457)", () => {
+    const result = timeWeightedReturn({
+      cashflows: [{ amountMinor: 1_000_000, date: "2024-02-15" }],
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 50_000 },
+        { date: "2024-03-31", valueMinor: 60_000 },
+      ],
+    });
+
+    expect(result.rate).toBeNull();
+    expect(result.reason).toBe("non_measurable_subperiod");
+  });
+
+  test("una pérdida grande pero medible sigue siendo una rentabilidad (#1457)", () => {
+    const result = timeWeightedReturn({
+      cashflows: [],
+      monthlyCloses: [
+        { date: "2024-01-31", valueMinor: 100_000 },
+        { date: "2024-02-29", valueMinor: 10_000 },
+      ],
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.rate).toBeCloseTo(-0.9, 10);
+    expect(result.rate as number).toBeGreaterThan(-1);
+  });
+
   test("snapshot rows feed TWR as the last available close in each month", () => {
     expect(
       monthlyCloseValuesFromSnapshotRows([

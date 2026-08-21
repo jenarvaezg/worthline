@@ -137,7 +137,8 @@ export interface TwrCashflow {
 export type TwrReason =
   | "insufficient_monthly_closes"
   | "zero_time_span"
-  | "zero_denominator";
+  | "zero_denominator"
+  | "non_measurable_subperiod";
 
 /** Time-weighted return over the available monthly-close span. */
 export interface TwrResult {
@@ -298,6 +299,26 @@ export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
 
     const periodRate =
       (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
+
+    // A TWR chains factors `(1 + R)`. Once a factor turns zero or negative the
+    // chain stops meaning anything — two negative factors multiply back to a
+    // positive, so the product no longer even preserves the sign of the loss, and
+    // the result can land below −100%, which no return ever is (#1457). `R ≤ −1`
+    // is the signal that Modified Dietz does not apply to this subperiod (the
+    // period flow dwarfs the opening value), so the whole measure is reported as
+    // unavailable with its reason rather than published as a percentage.
+    if (1 + periodRate <= 0) {
+      return {
+        annualized: false,
+        annualizedRate: null,
+        endDate,
+        rate: null,
+        reason: "non_measurable_subperiod",
+        spanDays,
+        startDate,
+      };
+    }
+
     factor *= 1 + periodRate;
   }
 

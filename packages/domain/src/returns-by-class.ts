@@ -116,7 +116,8 @@ interface BucketAccumulator {
   cashflows: DatedCashflow[];
   twrCashflows: TwrCashflow[];
   marketValueMinor: number;
-  monthlyByDate: Map<string, number>;
+  /** One class-weighted monthly-close series per contributing holding slice. */
+  monthlySeries: MonthlyCloseValue[][];
   payoutsIncluded: boolean;
 }
 
@@ -164,7 +165,7 @@ export function returnsByAssetClass(
     const created: BucketAccumulator = {
       cashflows: [],
       marketValueMinor: 0,
-      monthlyByDate: new Map(),
+      monthlySeries: [],
       payoutsIncluded: false,
       twrCashflows: [],
     };
@@ -204,26 +205,33 @@ export function returnsByAssetClass(
           date: flow.date,
         });
       }
+      acc.marketValueMinor += allocateByBps(holding.marketValueMinor, bps);
+      // TWR measures a value series, so series AND flows must describe the same set
+      // of holdings: one with no monthly closes — an alta from today, absent from
+      // every capture so far — contributes neither. Letting its purchase in as a
+      // flow with no value behind it drags the whole class's measure under (#1457).
+      if (holding.monthlyCloses.length === 0) {
+        continue;
+      }
       for (const flow of twrCashflows) {
         acc.twrCashflows.push({
           amountMinor: allocateByBps(flow.amountMinor, bps),
           date: flow.date,
         });
       }
-      acc.marketValueMinor += allocateByBps(holding.marketValueMinor, bps);
-      // Merge closes by date across the class's holdings. Worthline snapshots are
-      // portfolio-wide (one capture/day covering every holding, ADR 0005), so a
-      // month's close date is shared across co-existing holdings — the union does
-      // not desync them. A holding that ENTERS or EXITS mid-span shifts the class
-      // value on that boundary, but its buy/sell is in `twrCashflows` (scaled the
-      // same way), so Modified Dietz offsets the step rather than reading it as a
-      // price move.
-      for (const close of holding.monthlyCloses) {
-        acc.monthlyByDate.set(
-          close.date,
-          (acc.monthlyByDate.get(close.date) ?? 0) + allocateByBps(close.valueMinor, bps),
-        );
-      }
+      // Each holding contributes its OWN class-weighted series; the class series is
+      // built by aligning them per month (`alignMonthlyCloses`), never by unioning
+      // raw dates. Two holdings of one class can close the same month on different
+      // days — one entered mid-month, or the best-effort daily capture skipped a
+      // pass for it (#1339) — and a date union then alternates between "the whole
+      // class" and "one holding", turning an ordinary flow into a giant one against
+      // an artificially small value (#1457).
+      acc.monthlySeries.push(
+        holding.monthlyCloses.map((close) => ({
+          date: close.date,
+          valueMinor: allocateByBps(close.valueMinor, bps),
+        })),
+      );
     }
   }
 
@@ -245,7 +253,7 @@ export function returnsByAssetClass(
       }),
       twr: timeWeightedReturn({
         cashflows: acc.twrCashflows,
-        monthlyCloses: monthlyClosesFrom(acc.monthlyByDate),
+        monthlyCloses: alignMonthlyCloses(acc.monthlySeries),
       }),
       value: money(acc.marketValueMinor, input.currency),
     }))
@@ -258,10 +266,62 @@ export function returnsByAssetClass(
   return { classes, coverage: coverageFrom(classes, input.currency) };
 }
 
-function monthlyClosesFrom(byDate: ReadonlyMap<string, number>): MonthlyCloseValue[] {
-  return [...byDate.entries()]
-    .map(([date, valueMinor]) => ({ date, valueMinor }))
-    .sort((left, right) => left.date.localeCompare(right.date));
+/**
+ * The class's monthly-close series from its holdings' own series, aligned by
+ * CALENDAR MONTH rather than by exact date.
+ *
+ * A monthly close means "what this holding was worth at the end of month M", and
+ * each holding derives its own from the snapshot rows it appears in — so the day
+ * carrying that close can differ between holdings of the same class. Summing by
+ * exact date makes every such day a partial sum of the class, which is the
+ * sawtooth #1457 reproduced.
+ *
+ * Per month the series takes the latest close date any holding reports (the
+ * month's close) and sums, for every holding, its close for that month — or, when
+ * a month is missing from its series, the last value it is known to have had. The
+ * carry stops at the holding's last close: past that it has LEFT the class (sold,
+ * transferred away) and contributes nothing, and its sell sits in `twrCashflows`
+ * so Modified Dietz reads the step as a flow, not a price move.
+ */
+function alignMonthlyCloses(
+  series: readonly (readonly MonthlyCloseValue[])[],
+): MonthlyCloseValue[] {
+  const closesByMonth = series
+    .map((closes) => {
+      const byMonth = new Map<string, MonthlyCloseValue>();
+      // Ascending, so the month's last close wins.
+      for (const close of [...closes].sort((left, right) =>
+        left.date.localeCompare(right.date),
+      )) {
+        byMonth.set(close.date.slice(0, 7), close);
+      }
+      return byMonth;
+    })
+    .filter((byMonth) => byMonth.size > 0);
+
+  const months = [
+    ...new Set(closesByMonth.flatMap((byMonth) => [...byMonth.keys()])),
+  ].sort();
+  const lastMonths = closesByMonth.map((byMonth) => [...byMonth.keys()].sort().at(-1));
+  const carried: (number | null)[] = closesByMonth.map(() => null);
+
+  return months.map((month) => {
+    let date = `${month}-01`;
+    let valueMinor = 0;
+    closesByMonth.forEach((byMonth, index) => {
+      const close = byMonth.get(month);
+      if (close) {
+        carried[index] = close.valueMinor;
+        if (close.date > date) {
+          date = close.date;
+        }
+      } else if (month > lastMonths[index]!) {
+        carried[index] = null;
+      }
+      valueMinor += carried[index] ?? 0;
+    });
+    return { date, valueMinor };
+  });
 }
 
 function coverageFrom(

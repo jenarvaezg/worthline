@@ -26,7 +26,18 @@ function op(
   };
 }
 
-const buy = (units: string, price: string, at: string) => op("buy", units, price, at);
+const buy = (
+  units: string,
+  price: string,
+  at: string,
+  extra: Partial<InvestmentOperation> = {},
+) => op("buy", units, price, at, extra);
+const sell = (
+  units: string,
+  price: string,
+  at: string,
+  extra: Partial<InvestmentOperation> = {},
+) => op("sell", units, price, at, extra);
 
 const classified = (breakdown: Record<string, string>): AssetClassResolution => ({
   breakdown,
@@ -272,5 +283,175 @@ describe("returnsByAssetClass", () => {
     // 100_000 × 50% × 40% bond = 20_000.
     const bond = result.classes.find((c) => c.key === "bond")!;
     expect(bond.simpleGain.totalGain.amountMinor).toBe(20_000);
+  });
+});
+
+describe("la serie de la clase se alinea antes de medirla (#1457)", () => {
+  test("dos holdings que cierran en fechas distintas miden como la serie alineada", () => {
+    // La captura diaria es best-effort (#1339): dos holdings de la misma clase
+    // pueden cerrar el mes en días distintos. Unir por fecha exacta convertía la
+    // serie en dientes de sierra entre «toda la clase» y «un holding».
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 110_000,
+          monthlyCloses: [
+            { date: "2025-11-30", valueMinor: 100_000 },
+            { date: "2025-12-31", valueMinor: 110_000 },
+          ],
+          operations: [buy("10", "100", "2025-10-01")],
+        },
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 55_000,
+          monthlyCloses: [
+            { date: "2025-11-29", valueMinor: 50_000 },
+            { date: "2025-12-30", valueMinor: 55_000 },
+          ],
+          operations: [buy("5", "100", "2025-10-01", { assetId: "asset_b" })],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    // Alineada: nov = 150.000, dic = 165.000 → +10%, sin flujos en el tramo.
+    expect(equity.twr.reason).toBeNull();
+    expect(equity.twr.rate).toBeCloseTo(0.1, 10);
+    expect(equity.twr.startDate).toBe("2025-11-30");
+    expect(equity.twr.endDate).toBe("2025-12-31");
+  });
+
+  test("un mes sin cierre para un holding arrastra su último valor conocido", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 120_000,
+          monthlyCloses: [
+            { date: "2025-10-31", valueMinor: 100_000 },
+            { date: "2025-11-30", valueMinor: 110_000 },
+            { date: "2025-12-31", valueMinor: 120_000 },
+          ],
+          operations: [buy("10", "100", "2025-09-01")],
+        },
+        {
+          // La pasada de noviembre se perdió (#1339): sin cierre ese mes.
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 100_000,
+          monthlyCloses: [
+            { date: "2025-10-31", valueMinor: 50_000 },
+            { date: "2025-12-31", valueMinor: 100_000 },
+          ],
+          operations: [
+            buy("5", "100", "2025-09-01", { assetId: "asset_b" }),
+            buy("5", "100", "2025-12-20", { assetId: "asset_b" }),
+          ],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    // Alineada: oct = 150.000, nov = 160.000 (B arrastra su cierre de octubre),
+    // dic = 220.000, con la aportación de 50.000 el 20/12 dentro del tramo.
+    const december = 10_000 / (160_000 + 50_000 * (11 / 31));
+    expect(equity.twr.reason).toBeNull();
+    expect(equity.twr.rate).toBeCloseTo((160 / 150) * (1 + december) - 1, 10);
+  });
+
+  test("un holding vendido deja de aportar valor tras su último cierre", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 110_000,
+          monthlyCloses: [
+            { date: "2025-11-30", valueMinor: 100_000 },
+            { date: "2025-12-31", valueMinor: 110_000 },
+          ],
+          operations: [buy("10", "100", "2025-10-01")],
+        },
+        {
+          // Vendido a mitad de diciembre: su serie termina en noviembre.
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 0,
+          monthlyCloses: [{ date: "2025-11-28", valueMinor: 50_000 }],
+          operations: [
+            buy("5", "100", "2025-10-01", { assetId: "asset_b" }),
+            sell("5", "104", "2025-12-15", { assetId: "asset_b" }),
+          ],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    // Serie 150.000 → 110.000 con una salida de 52.000 el 15/12, ponderada por
+    // los 16 días que restan del tramo: Dietz absorbe el escalón de la venta.
+    const weighted = -52_000 * (16 / 31);
+    expect(equity.twr.reason).toBeNull();
+    expect(equity.twr.rate).toBeCloseTo(
+      (110_000 - 150_000 + 52_000) / (150_000 + weighted),
+      10,
+    );
+  });
+
+  test("un holding sin serie de cierres no aporta flujos a la TWR de la clase", () => {
+    // Un alta de hoy todavía no aparece en ninguna captura (la pasada diaria aún
+    // no ha corrido): sin valor en la serie, su compra sería un flujo enorme sin
+    // contrapartida y hundiría la medida de toda la clase.
+    const withNewHolding = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 110_000,
+          monthlyCloses: [
+            { date: "2025-11-30", valueMinor: 100_000 },
+            { date: "2025-12-31", valueMinor: 110_000 },
+          ],
+          operations: [buy("10", "100", "2025-10-01")],
+        },
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 500_000,
+          monthlyCloses: [],
+          operations: [buy("50", "100", "2025-12-20", { assetId: "asset_b" })],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    const equity = withNewHolding.classes.find((c) => c.key === "equity")!;
+    // La clase mide lo que su serie sostiene: el +10% del holding con historia.
+    expect(equity.twr.reason).toBeNull();
+    expect(equity.twr.rate).toBeCloseTo(0.1, 10);
+  });
+
+  test("ninguna clase publica un TWR por debajo de −100%", () => {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ commodity: "1" }),
+          marketValueMinor: 99_900,
+          monthlyCloses: [
+            { date: "2025-11-28", valueMinor: 1_010_700 },
+            { date: "2025-12-10", valueMinor: 99_900 },
+          ],
+          operations: [buy("1", "10107", "2025-10-01"), buy("1", "6127", "2025-12-05")],
+        },
+      ],
+      valuationDate: "2026-01-15",
+    });
+
+    for (const entry of result.classes) {
+      expect(entry.twr.rate === null || entry.twr.rate > -1).toBe(true);
+    }
   });
 });
