@@ -58,8 +58,20 @@ const profiles = new Map<string, ExposureProfile>([
 ]);
 
 const holdings: ExposureLookthroughHolding[] = [
-  { currency: EUR, id: "a", instrument: "etf", isin: "US-EQ", valueMinor: 60_000 },
-  { currency: EUR, id: "b", instrument: "fund", isin: "EU-BOND", valueMinor: 30_000 },
+  {
+    currency: EUR,
+    id: "a",
+    instrument: "etf",
+    providerSymbol: "US-EQ",
+    valueMinor: 60_000,
+  },
+  {
+    currency: EUR,
+    id: "b",
+    instrument: "fund",
+    providerSymbol: "EU-BOND",
+    valueMinor: 30_000,
+  },
   { currency: EUR, id: "c", instrument: "crypto", valueMinor: 10_000 },
 ];
 

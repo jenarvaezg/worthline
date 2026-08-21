@@ -137,7 +137,7 @@ describe("buildHoldingSearch (uso real 2026-07-30)", () => {
     const store = await seed();
     await createEmptyFund(store, {
       id: "zero",
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       name: "Fondo Cerrado Global",
       providerSymbol: "0P0000TEST.F",
     });
@@ -147,7 +147,7 @@ describe("buildHoldingSearch (uso real 2026-07-30)", () => {
     expect(page.matches[0]?.matchedOn).toBe("providerSymbol");
     expect(page.matches[0]?.providerSymbol).toBe("0P0000TEST.F");
 
-    const byIsin = await search(store, "lu0000000123");
+    const byIsin = await search(store, "lu0000000124");
     expect(byIsin.matches[0]?.matchedOn).toBe("isin");
   });
 

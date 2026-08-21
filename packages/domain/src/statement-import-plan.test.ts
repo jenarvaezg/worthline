@@ -10,12 +10,12 @@ import { parseStatement } from "./statement-parse";
 
 const MULTI_ISIN_FIXTURE = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "05/01/2026;Fondo;ES00WL000001;Compra;34,2857;1200;;",
-  "05/02/2026;Fondo;ES00WL000001;Compra;33,9120;1200;;",
-  "10/01/2026;Fondo;LU00WL000002;Compra;12,3456;600;;",
-  "10/02/2026;Fondo;LU00WL000002;Compra;12,4011;600;;",
-  "15/01/2026;Fondo;IE00WL000003;Compra;21,0000;900;;",
-  "15/02/2026;Fondo;IE00WL000003;Compra;20,7500;900;;",
+  "05/01/2026;Fondo;ES00WL000009;Compra;34,2857;1200;;",
+  "05/02/2026;Fondo;ES00WL000009;Compra;33,9120;1200;;",
+  "10/01/2026;Fondo;LU00WL000022;Compra;12,3456;600;;",
+  "10/02/2026;Fondo;LU00WL000022;Compra;12,4011;600;;",
+  "15/01/2026;Fondo;IE00WL000001;Compra;21,0000;900;;",
+  "15/02/2026;Fondo;IE00WL000001;Compra;20,7500;900;;",
 ].join("\r\n");
 
 function parsedMultiIsin() {
@@ -47,12 +47,12 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
   test("groups a synthetic broker file by ISIN, resolves matched/new buckets, and honors include/ignore decisions", () => {
     const statement = parsedMultiIsin();
 
-    expect(statement.isins).toEqual(["ES00WL000001", "LU00WL000002", "IE00WL000003"]);
+    expect(statement.isins).toEqual(["ES00WL000009", "LU00WL000022", "IE00WL000001"]);
 
     const buckets = resolveStatementImportBuckets(statement, [
       {
         assetId: "asset_existing",
-        isin: "ES00WL000001",
+        isin: "ES00WL000009",
         name: "Fondo existente",
         operations: [op("op_existing", "asset_existing", "2026-01-05")],
       },
@@ -66,9 +66,9 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
         skipped: bucket.skipped.length,
       })),
     ).toEqual([
-      { bucket: "matched", isin: "ES00WL000001", rows: 2, skipped: 0 },
-      { bucket: "new", isin: "LU00WL000002", rows: 2, skipped: 0 },
-      { bucket: "new", isin: "IE00WL000003", rows: 2, skipped: 0 },
+      { bucket: "matched", isin: "ES00WL000009", rows: 2, skipped: 0 },
+      { bucket: "new", isin: "LU00WL000022", rows: 2, skipped: 0 },
+      { bucket: "new", isin: "IE00WL000001", rows: 2, skipped: 0 },
     ]);
     const matched = buckets[0];
     expect(matched?.bucket).toBe("matched");
@@ -79,7 +79,7 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
     expect(matched.mergePlan.toCreate.map((row) => row.dateKey)).toEqual(["2026-02-05"]);
 
     const plan = buildStatementImportPlan(buckets, [
-      { action: "include", isin: "ES00WL000001" },
+      { action: "include", isin: "ES00WL000009" },
       {
         action: "include",
         creation: {
@@ -89,16 +89,16 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
           ownership: [{ memberId: "mJ", shareBps: 10_000 }],
           providerSymbol: "BRUJULA.FAKE",
         },
-        isin: "LU00WL000002",
+        isin: "LU00WL000022",
       },
-      { action: "ignore", isin: "IE00WL000003" },
+      { action: "ignore", isin: "IE00WL000001" },
     ]);
 
     expect(plan.included.map((fund) => [fund.kind, fund.isin])).toEqual([
-      ["matched", "ES00WL000001"],
-      ["new", "LU00WL000002"],
+      ["matched", "ES00WL000009"],
+      ["new", "LU00WL000022"],
     ]);
-    expect(plan.ignored.map((fund) => fund.isin)).toEqual(["IE00WL000003"]);
+    expect(plan.ignored.map((fund) => fund.isin)).toEqual(["IE00WL000001"]);
   });
 
   test("a re-upload resolves a previously-created ISIN as matched and creates no duplicate operation dates", () => {
@@ -107,7 +107,7 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
     const buckets = resolveStatementImportBuckets(statement, [
       {
         assetId: "asset_lu",
-        isin: "LU00WL000002",
+        isin: "LU00WL000022",
         name: "Fondo Brújula FAKE",
         operations: [
           op("op_lu_jan", "asset_lu", "2026-01-10"),
@@ -116,7 +116,7 @@ describe("multi-ISIN statement import plan (ADR 0055)", () => {
       },
     ]);
 
-    const lu = buckets.find((bucket) => bucket.isin === "LU00WL000002");
+    const lu = buckets.find((bucket) => bucket.isin === "LU00WL000022");
     expect(lu?.bucket).toBe("matched");
     if (lu?.bucket !== "matched") throw new Error("expected matched bucket");
     expect(lu.mergePlan.toCreate).toEqual([]);
@@ -136,7 +136,7 @@ describe("an identifier claimed by two investments (#1366)", () => {
   const claimants = () => [
     {
       assetId: "asset_closed",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       name: "Fondo viejo (bróker antiguo)",
       operations: [
         op("op_closed_opening", "asset_closed", "2025-12-01", {
@@ -151,7 +151,7 @@ describe("an identifier claimed by two investments (#1366)", () => {
     },
     {
       assetId: "asset_live",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       name: "Fondo vivo (bróker actual)",
       operations: [op("op_live", "asset_live", "2026-02-05", { units: "5" })],
     },
@@ -172,13 +172,13 @@ describe("an identifier claimed by two investments (#1366)", () => {
   test("including it without naming a holding is refused, never resolved by order", () => {
     const buckets = resolveStatementImportBuckets(parsedMultiIsin(), claimants());
     const selections = [
-      { action: "include", isin: "ES00WL000001" } as const,
-      { action: "ignore", isin: "LU00WL000002" } as const,
-      { action: "ignore", isin: "IE00WL000003" } as const,
+      { action: "include", isin: "ES00WL000009" } as const,
+      { action: "ignore", isin: "LU00WL000022" } as const,
+      { action: "ignore", isin: "IE00WL000001" } as const,
     ];
 
-    expect(findUnresolvedStatementChoice(buckets, selections)).toBe("ES00WL000001");
-    expect(() => buildStatementImportPlan(buckets, selections)).toThrow(/ES00WL000001/);
+    expect(findUnresolvedStatementChoice(buckets, selections)).toBe("ES00WL000009");
+    expect(() => buildStatementImportPlan(buckets, selections)).toThrow(/ES00WL000009/);
   });
 
   test("an assetId no claimant carries is refused too — a stale preview never writes", () => {
@@ -186,15 +186,15 @@ describe("an identifier claimed by two investments (#1366)", () => {
 
     expect(
       findUnresolvedStatementChoice(buckets, [
-        { action: "include", assetId: "asset_gone", isin: "ES00WL000001" },
+        { action: "include", assetId: "asset_gone", isin: "ES00WL000009" },
       ]),
-    ).toBe("ES00WL000001");
+    ).toBe("ES00WL000009");
   });
 
   test("the chosen holding is the only one written: the other's operations survive", () => {
     const buckets = resolveStatementImportBuckets(parsedMultiIsin(), claimants());
     const selections = [
-      { action: "include", assetId: "asset_live", isin: "ES00WL000001" } as const,
+      { action: "include", assetId: "asset_live", isin: "ES00WL000009" } as const,
     ];
 
     expect(findUnresolvedStatementChoice(buckets, selections)).toBeNull();
@@ -211,7 +211,7 @@ describe("an identifier claimed by two investments (#1366)", () => {
   test("choosing the closed holding is the user's call, and then it is the one written", () => {
     const buckets = resolveStatementImportBuckets(parsedMultiIsin(), claimants());
     const plan = buildStatementImportPlan(buckets, [
-      { action: "include", assetId: "asset_closed", isin: "ES00WL000001" },
+      { action: "include", assetId: "asset_closed", isin: "ES00WL000009" },
     ]);
     const [fund] = plan.included;
     if (fund?.kind !== "matched") throw new Error("expected a matched fund");
@@ -229,14 +229,14 @@ describe("an identifier claimed by two investments (#1366)", () => {
         isin: null,
         name: "Cripto A",
         operations: [],
-        providerSymbol: "es00wl000001",
+        providerSymbol: "es00wl000009",
       },
       {
         assetId: "asset_b",
         isin: null,
         name: "Cripto B",
         operations: [],
-        providerSymbol: "ES00WL000001",
+        providerSymbol: "ES00WL000009",
       },
     ]);
 
@@ -258,7 +258,7 @@ describe("an identifier claimed by two investments (#1366)", () => {
     expect(bucket.claimants.map((claimant) => claimant.assetId)).toEqual(["asset_live"]);
     expect(
       findUnresolvedStatementChoice(buckets, [
-        { action: "include", isin: "ES00WL000001" },
+        { action: "include", isin: "ES00WL000009" },
       ]),
     ).toBeNull();
   });
@@ -267,7 +267,7 @@ describe("an identifier claimed by two investments (#1366)", () => {
     const named = parseStatement(
       [
         "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-        "05/01/2026;Fondo;ES00WL000001;Compra;34,2857;1200;;Fondo viejo (bróker antiguo)",
+        "05/01/2026;Fondo;ES00WL000009;Compra;34,2857;1200;;Fondo viejo (bróker antiguo)",
       ].join("\r\n"),
       "plantilla",
     );

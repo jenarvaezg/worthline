@@ -102,7 +102,7 @@ describe("matchHoldings — strong key (ISIN)", () => {
   test("an ISIN the portfolio does not hold falls through to create", () => {
     const portfolio = [holding({ holdingId: "h1", isin: "IE00B4L5Y983" })];
     const match = only(
-      matchHoldings([row({ rowId: "r1", isin: "LU0000000000" })], portfolio),
+      matchHoldings([row({ rowId: "r1", isin: "LU0000000009" })], portfolio),
     );
     expect(match).toMatchObject({ decision: "create", confidence: "none", key: "none" });
     expect(match.candidates).toEqual([]);

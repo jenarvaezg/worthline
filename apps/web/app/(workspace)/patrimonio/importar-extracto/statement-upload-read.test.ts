@@ -6,7 +6,7 @@ import { readStatementUpload, STATEMENT_GATE_FORMATS } from "./statement-upload-
 /** The plantilla (#695) — the format the gate has always spoken. */
 const PLANTILLA = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "05/01/2024;Fondo;ES00WL000001;Compra;34,2857;1200;;",
+  "05/01/2024;Fondo;ES00WL000009;Compra;34,2857;1200;;",
 ].join("\r\n");
 
 /**
@@ -34,7 +34,7 @@ describe("readStatementUpload", () => {
 
     if (!result.ok) throw new Error(result.message);
     expect(result.statement.rows).toHaveLength(1);
-    expect(result.statement.isins).toEqual(["ES00WL000001"]);
+    expect(result.statement.isins).toEqual(["ES00WL000009"]);
     expect(result.warnings).toEqual([]);
   });
 
@@ -84,7 +84,7 @@ describe("readStatementUpload", () => {
     // back as an unrelated complaint instead of «esta fila está mal» (ADR 0010).
     const broken = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-      "05/01/2024;Fondo;ES00WL000001;Compra;no son participaciones;1200;;",
+      "05/01/2024;Fondo;ES00WL000009;Compra;no son participaciones;1200;;",
     ].join("\n");
     const result = read(broken);
 

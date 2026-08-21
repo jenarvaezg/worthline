@@ -71,7 +71,7 @@ describe("maintainerAlertRefusalFor · the alert is not a support ticket (#1347)
       maintainerAlertRefusalFor(
         payloadOver({
           summary:
-            "El usuario desea asignar el ISIN LU0000000000 al fondo, pero propose_correction no lo permite.",
+            "El usuario desea asignar el ISIN LU0000000009 al fondo, pero propose_correction no lo permite.",
         }),
       ),
     ).toBe("maintainer_alert_without_discrepancy");

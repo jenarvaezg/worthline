@@ -58,17 +58,23 @@ function isLookthroughProvider(value: string): value is InvestmentPriceProvider 
 
 /**
  * The look-through key a holding resolves under and the catalog keys a profile
- * on: the ISIN when present, else the raw provider symbol — never the
+ * on: the ISIN when it IS one, else the provider symbol — never the
  * `p:provider:symbol` composite {@link globalExposureProfileIdentityKey} stores
  * internally. The single definition of the "ISIN else provider symbol" rule:
  * `resolveProfile` (holding side) and {@link exposureProfileLookthroughMap}
  * (catalog side) both read it, so the two sides can never key differently.
+ *
+ * The ISIN is validated with the SAME rule the registration identity applies
+ * ({@link deriveExposureCatalogIdentity}), because the registration is what
+ * decided where the row lives (#1453): a DGS code stored in the isin column
+ * registered the row under the symbol, so reading under the raw column value
+ * found nothing and the holding turned «sin clasificar» silently.
  */
 export function exposureLookthroughKey(source: {
   isin?: string | null;
   providerSymbol?: string | null;
 }): string | null {
-  return source.isin ?? source.providerSymbol ?? null;
+  return validIsinOrNull(source.isin) ?? trimToNull(source.providerSymbol);
 }
 
 /**
@@ -83,6 +89,17 @@ export function globalExposureProfileIdentityKey(
   return identity.kind === "isin"
     ? identity.isin
     : `p:${identity.priceProvider}:${identity.providerSymbol}`;
+}
+
+/**
+ * The ISIN an identity or key may trust: trimmed, upper-cased and checksum-valid
+ * — or null. The one normalization both the registration identity and the
+ * look-through key apply (#1453), so "what counts as an ISIN" can never diverge
+ * between where a row is stored and where it is searched.
+ */
+export function validIsinOrNull(value: string | null | undefined): string | null {
+  const normalized = (value ?? "").trim().toUpperCase();
+  return normalized && isValidIsin(normalized) ? normalized : null;
 }
 
 export function isValidIsin(value: string): boolean {
@@ -190,8 +207,8 @@ export function deriveExposureCatalogIdentity(
   }
 
   // ISIN is the stronger identity — the look-through prefers it over the symbol.
-  const isin = (source.isin ?? "").trim().toUpperCase();
-  if (isin && isValidIsin(isin)) {
+  const isin = validIsinOrNull(source.isin);
+  if (isin) {
     return { isin, kind: "isin" };
   }
 

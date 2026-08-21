@@ -293,7 +293,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
 
   test("a file whose ISIN differs from the asset's blocks confirm and writes nothing", async () => {
     const store = await createInMemoryStore();
-    await seedFundWithIsin(store, "LU0000000000");
+    await seedFundWithIsin(store, "LU0000000009");
 
     const digest = await run(uploadForm(CSV), store);
     expect(digest).toContain("error=");
@@ -302,7 +302,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
 
   test("preview surfaces an ISIN mismatch as an error", async () => {
     const store = await createInMemoryStore();
-    await seedFundWithIsin(store, "LU0000000000");
+    await seedFundWithIsin(store, "LU0000000009");
 
     const state = await preview(uploadForm(CSV), store);
     expect(state.status).toBe("error");
@@ -317,7 +317,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
       "IE00BYX5NX33",
     );
 
-    const digest = await run(uploadForm(csvForIsin("LU0000000000")), store);
+    const digest = await run(uploadForm(csvForIsin("LU0000000009")), store);
     expect(digest).toContain("error=");
   });
 
@@ -328,7 +328,7 @@ describe("statement ISIN guard + anomalies (#178)", () => {
     const mixed = [
       HEADER,
       "01/02/2024;Fondo;IE00BYX5NX33;Compra;7,226;100;;",
-      "01/03/2024;Fondo;LU0000000000;Compra;7,180;100;;",
+      "01/03/2024;Fondo;LU0000000009;Compra;7,180;100;;",
     ].join("\n");
 
     const digest = await run(uploadForm(mixed), store);

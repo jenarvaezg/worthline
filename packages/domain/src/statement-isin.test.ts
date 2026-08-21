@@ -19,7 +19,7 @@ describe("resolveStatementIsinGuard (ADR 0018, S4)", () => {
   });
 
   test("different ISINs mismatch (block)", () => {
-    expect(resolveStatementIsinGuard("IE00BYX5NX33", "LU0000000000")).toEqual({
+    expect(resolveStatementIsinGuard("IE00BYX5NX33", "LU0000000009")).toEqual({
       status: "mismatch",
     });
   });
@@ -44,6 +44,13 @@ describe("resolveStatementIsinGuard (ADR 0018, S4)", () => {
     expect(resolveStatementIsinGuard("ie00byx5nx33", " IE00BYX5NX33 ")).toEqual({
       status: "match",
     });
+  });
+
+  test("a non-ISIN in the file column never backfills — the guard proceeds without writing (#1453)", () => {
+    // A DGS code (or any garbage) in the isin column carries no ISIN identity:
+    // writing it would store the profile key under a value the catalog never
+    // registers, so the holding turns «sin clasificar» silently.
+    expect(resolveStatementIsinGuard("N5394", null)).toEqual({ status: "absent" });
   });
 });
 
@@ -78,11 +85,11 @@ describe("resolvePerHoldingStatementIsinGuard (ADR 0055 one-fund case)", () => {
   test("any row with a different ISIN rejects the per-holding upload", () => {
     expect(
       resolvePerHoldingStatementIsinGuard(
-        statementWithIsins(["IE00BYX5NX33", "LU0000000000"]),
+        statementWithIsins(["IE00BYX5NX33", "LU0000000009"]),
         "IE00BYX5NX33",
       ),
     ).toEqual({
-      fileIsins: ["IE00BYX5NX33", "LU0000000000"],
+      fileIsins: ["IE00BYX5NX33", "LU0000000009"],
       status: "mismatch",
     });
   });
@@ -97,5 +104,11 @@ describe("resolvePerHoldingStatementIsinGuard (ADR 0055 one-fund case)", () => {
       isin: "IE00BYX5NX33",
       status: "backfill",
     });
+  });
+
+  test("a single non-ISIN in the file column never backfills an empty holding (#1453)", () => {
+    expect(
+      resolvePerHoldingStatementIsinGuard(statementWithIsins(["N5394"]), null),
+    ).toEqual({ status: "absent" });
   });
 });

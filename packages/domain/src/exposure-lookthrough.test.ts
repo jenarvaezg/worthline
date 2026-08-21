@@ -31,7 +31,7 @@ describe("lookThroughExposure", () => {
   test("value-weights seeded single-region and multi-region profiles", () => {
     const profiles = new Map<string, ExposureProfile>([
       [
-        "IE00SP500",
+        "IE00SP500002",
         fixtureProfile({
           breakdowns: {
             assetClass: { equity: "1" },
@@ -39,7 +39,7 @@ describe("lookThroughExposure", () => {
             geography: { us: "1" },
           },
           hedged: false,
-          key: "IE00SP500",
+          key: "IE00SP500002",
         }),
       ],
       [
@@ -68,14 +68,14 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_sp500",
           instrument: "etf",
-          isin: "IE00SP500",
+          providerSymbol: "IE00SP500002",
           valueMinor: 100_000,
         },
         {
           currency: "EUR",
           id: "asset_world",
           instrument: "fund",
-          isin: "IE00WORLD",
+          providerSymbol: "IE00WORLD",
           valueMinor: 200_000,
         },
       ],
@@ -141,7 +141,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_unprofiled_fund",
           instrument: "fund",
-          isin: "IE00MISSING",
+          providerSymbol: "IE00MISSING",
           valueMinor: 40_000,
         },
       ],
@@ -182,7 +182,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_gold_etc",
           instrument: "etf",
-          isin: "IE00GOLD",
+          providerSymbol: "IE00GOLD",
           valueMinor: 100_000,
         },
       ],
@@ -218,7 +218,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_btc_etn",
           instrument: "etf",
-          isin: "IE00BTCETN",
+          providerSymbol: "IE00BTCETN",
           valueMinor: 50_000,
         },
       ],
@@ -254,7 +254,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_mixed",
           instrument: "fund",
-          isin: "IE00MIXED",
+          providerSymbol: "IE00MIXED",
           valueMinor: 80_000,
         },
       ],
@@ -324,6 +324,40 @@ describe("lookThroughExposure", () => {
     ]);
   });
 
+  test("resolves by provider symbol when the isin column holds a non-ISIN (#1453)", () => {
+    // The real case: a pension plan with its DGS code in the isin column. The
+    // catalog registered the profile under the provider symbol (the derivation
+    // validates); the look-through must not search under the garbage value.
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      grossAssets: { amountMinor: 90_000, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_plan",
+          instrument: "pension_plan",
+          isin: "N5394",
+          providerSymbol: "N5394-Myinvestor",
+          valueMinor: 90_000,
+        },
+      ],
+      profiles: new Map([
+        [
+          "N5394-Myinvestor",
+          fixtureProfile({
+            breakdowns: { assetClass: { equity: "1" }, geography: { us: "1" } },
+            key: "N5394-Myinvestor",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.geography.slices).toEqual([
+      { key: "us", value: { amountMinor: 90_000, currency: "EUR" }, weight: "1" },
+    ]);
+    expect(result.geography.coverage.unknown.amountMinor).toBe(0);
+  });
+
   test("an under-100 percent geography remainder is unknown, never Otros", () => {
     const result = lookThroughExposure({
       baseCurrency: "EUR",
@@ -333,7 +367,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_partial",
           instrument: "etf",
-          isin: "PARTIAL",
+          providerSymbol: "PARTIAL",
           valueMinor: 100_000,
         },
       ],
@@ -381,7 +415,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_permanente",
           instrument: "pension_plan",
-          isin: "PERMANENTE",
+          providerSymbol: "PERMANENTE",
           valueMinor: 100_000,
         },
       ],
@@ -439,7 +473,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_canada",
           instrument: "etf",
-          isin: "CANADA",
+          providerSymbol: "CANADA",
           valueMinor: 100_000,
         },
       ],
@@ -478,7 +512,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_tiny",
           instrument: "etf",
-          isin: "TINY",
+          providerSymbol: "TINY",
           valueMinor: 1,
         },
       ],
@@ -541,14 +575,14 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_unhedged",
           instrument: "etf",
-          isin: "UNHEDGED",
+          providerSymbol: "UNHEDGED",
           valueMinor: 100_000,
         },
         {
           currency: "EUR",
           id: "asset_hedged",
           instrument: "etf",
-          isin: "HEDGED",
+          providerSymbol: "HEDGED",
           valueMinor: 200_000,
         },
       ],
@@ -588,7 +622,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_agent",
           instrument: "etf",
-          isin: "AGENT",
+          providerSymbol: "AGENT",
           valueMinor: 100_000,
         },
       ],
@@ -635,14 +669,14 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_equity",
           instrument: "fund",
-          isin: "EQUITY",
+          providerSymbol: "EQUITY",
           valueMinor: 100_000,
         },
         {
           currency: "EUR",
           id: "asset_bond",
           instrument: "fund",
-          isin: "BOND",
+          providerSymbol: "BOND",
           valueMinor: 100_000,
         },
         {
@@ -675,7 +709,7 @@ describe("lookThroughExposure", () => {
           currency: "EUR",
           id: "asset_mixed",
           instrument: "fund",
-          isin: "MIXED",
+          providerSymbol: "MIXED",
           valueMinor: 100_000,
         },
       ],
@@ -764,20 +798,20 @@ describe("lookThroughExposure", () => {
           currency: asset.currency,
           id: asset.id,
           instrument: "fund",
-          isin: "IE00SP500",
+          providerSymbol: "IE00SP500002",
           valueMinor: asset.currentValue.amountMinor,
         },
       ],
       profiles: new Map([
         [
-          "IE00SP500",
+          "IE00SP500002",
           fixtureProfile({
             breakdowns: {
               assetClass: { equity: "1" },
               currency: { USD: "1" },
               geography: { us: "1" },
             },
-            key: "IE00SP500",
+            key: "IE00SP500002",
           }),
         ],
       ]),
@@ -804,7 +838,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_tech",
           instrument: "etf",
-          isin: "IE00TECH",
+          providerSymbol: "IE00TECH",
           valueMinor: 100_000,
         },
       ],
@@ -851,7 +885,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_mixed",
           instrument: "fund",
-          isin: "IE00MIX",
+          providerSymbol: "IE00MIX",
           valueMinor: 100_000,
         },
       ],
@@ -918,7 +952,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_noac",
           instrument: "fund",
-          isin: "IE00NOAC",
+          providerSymbol: "IE00NOAC",
           valueMinor: 40_000,
         },
       ],
@@ -950,7 +984,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_partial",
           instrument: "etf",
-          isin: "IE00PART",
+          providerSymbol: "IE00PART",
           valueMinor: 100_000,
         },
       ],
@@ -992,7 +1026,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_style",
           instrument: "etf",
-          isin: "IE00STYLE",
+          providerSymbol: "IE00STYLE",
           valueMinor: 100_000,
         },
       ],
@@ -1026,7 +1060,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_tiny",
           instrument: "fund",
-          isin: "IE00TINY",
+          providerSymbol: "IE00TINY",
           valueMinor: 3,
         },
       ],
@@ -1063,7 +1097,7 @@ describe("lookThroughExposure sector dimension", () => {
           currency: "EUR",
           id: "asset_mixed",
           instrument: "fund",
-          isin: "IE00MIX",
+          providerSymbol: "IE00MIX",
           valueMinor: 100_000,
         },
       ],

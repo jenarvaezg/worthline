@@ -459,13 +459,27 @@ describe("buildHoldingCreationProposal (#1105) · duplicate warning", () => {
     store.close();
   });
 
+  test("a non-ISIN in the isin arg refuses the draft with the form's message (#1453)", async () => {
+    const store = await seedWorkspace();
+    const built = await build(store, {
+      family: "investment",
+      instrument: "pension_plan",
+      isin: "N5394",
+      name: "Plan de pensiones",
+    });
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.error).toMatch(/ISIN no es válido/);
+    store.close();
+  });
+
   test("an ISIN match warns but never blocks", async () => {
     const store = await seedWorkspace();
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "existing",
       instrument: "fund",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       liquidityTier: "market",
       name: "Fondo existente",
       ownership: [{ memberId: "m", shareBps: 10_000 }],
@@ -473,7 +487,7 @@ describe("buildHoldingCreationProposal (#1105) · duplicate warning", () => {
     const built = await build(store, {
       family: "investment",
       instrument: "fund",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       name: "Otro nombre",
     });
     expect(built.ok).toBe(true);

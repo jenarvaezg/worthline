@@ -36,26 +36,26 @@ interface FundPreview extends FundConfig {
 
 const SYNTHETIC_PLANTILLA_FILE = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "05/01/2026;Fondo;ES00WL000001;Compra;34,2857;1200;;",
-  "05/02/2026;Fondo;ES00WL000001;Compra;33,9120;1200;;",
-  "10/01/2026;Fondo;LU00WL000002;Compra;12,3456;600;;",
-  "10/02/2026;Fondo;LU00WL000002;Compra;12,4011;600;;",
-  "15/01/2026;Fondo;IE00WL000003;Compra;21,0000;900;;",
-  "15/02/2026;Fondo;IE00WL000003;Compra;20,7500;900;;",
-  "20/01/2026;Fondo;FR00WL000004;Compra;6,0000;300;;",
+  "05/01/2026;Fondo;ES00WL000009;Compra;34,2857;1200;;",
+  "05/02/2026;Fondo;ES00WL000009;Compra;33,9120;1200;;",
+  "10/01/2026;Fondo;LU00WL000022;Compra;12,3456;600;;",
+  "10/02/2026;Fondo;LU00WL000022;Compra;12,4011;600;;",
+  "15/01/2026;Fondo;IE00WL000001;Compra;21,0000;900;;",
+  "15/02/2026;Fondo;IE00WL000001;Compra;20,7500;900;;",
+  "20/01/2026;Fondo;FR00WL000009;Compra;6,0000;300;;",
   "25/01/2026;Fondo;NL00WL000005;Compra;9,0100;450;;",
 ].join("\r\n");
 
 const FUND_ORDER = [
-  "ES00WL000001",
-  "LU00WL000002",
-  "IE00WL000003",
-  "FR00WL000004",
+  "ES00WL000009",
+  "LU00WL000022",
+  "IE00WL000001",
+  "FR00WL000009",
   "NL00WL000005",
 ] as const;
 
 const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
-  ES00WL000001: {
+  ES00WL000009: {
     bucket: "matched",
     includeByDefault: true,
     lookupState: "matched",
@@ -67,7 +67,7 @@ const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
     reason: "ISIN encontrado en una inversión existente.",
     symbol: "AURORA.FAKE",
   },
-  LU00WL000002: {
+  LU00WL000022: {
     bucket: "new",
     includeByDefault: true,
     lookupState: "found",
@@ -80,7 +80,7 @@ const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
     reason: "No existe en cartera; lookup resuelto.",
     symbol: "BRUJULA.FAKE",
   },
-  IE00WL000003: {
+  IE00WL000001: {
     bucket: "new",
     includeByDefault: true,
     lookupState: "found",
@@ -93,7 +93,7 @@ const FUND_CONFIG: Record<(typeof FUND_ORDER)[number], FundConfig> = {
     reason: "No existe en cartera; lookup resuelto.",
     symbol: "PUERTO.FAKE",
   },
-  FR00WL000004: {
+  FR00WL000009: {
     bucket: "new",
     includeByDefault: false,
     lookupState: "unresolved",

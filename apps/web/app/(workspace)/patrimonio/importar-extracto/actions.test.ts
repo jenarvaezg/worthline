@@ -28,13 +28,13 @@ const IDLE: ImportStatementPreviewState = { status: "idle" };
 // holding, three are new — one resolvable, one not, all rows load.
 const MULTI_ISIN_CSV = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "05/01/2024;Fondo;ES00WL000001;Compra;34,2857;1200;;",
-  "05/02/2024;Fondo;ES00WL000001;Compra;33,9120;1200;;",
-  "10/01/2024;Fondo;LU00WL000002;Compra;12,3456;600;;",
-  "10/02/2024;Fondo;LU00WL000002;Compra;12,4011;600;;",
-  "15/01/2024;Fondo;IE00WL000003;Compra;21,0000;900;;",
-  "15/02/2024;Fondo;IE00WL000003;Compra;20,7500;900;;",
-  "20/01/2024;Fondo;FR00WL000004;Compra;6,0000;300;;",
+  "05/01/2024;Fondo;ES00WL000009;Compra;34,2857;1200;;",
+  "05/02/2024;Fondo;ES00WL000009;Compra;33,9120;1200;;",
+  "10/01/2024;Fondo;LU00WL000022;Compra;12,3456;600;;",
+  "10/02/2024;Fondo;LU00WL000022;Compra;12,4011;600;;",
+  "15/01/2024;Fondo;IE00WL000001;Compra;21,0000;900;;",
+  "15/02/2024;Fondo;IE00WL000001;Compra;20,7500;900;;",
+  "20/01/2024;Fondo;FR00WL000009;Compra;6,0000;300;;",
 ].join("\r\n");
 
 /** A worksheet of inline strings — one `<row>` per grid row, in column order. */
@@ -69,7 +69,7 @@ async function seed(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "matched_fund",
-    isin: "ES00WL000001",
+    isin: "ES00WL000009",
     liquidityTier: "market",
     manualPricePerUnit: "35",
     name: "Fondo existente",
@@ -148,10 +148,10 @@ describe("previewImportStatementAction (#673)", () => {
         skippedCount: fund.skippedCount,
       })),
     ).toEqual([
-      { bucket: "matched", executedCount: 2, isin: "ES00WL000001", skippedCount: 0 },
-      { bucket: "new", executedCount: 2, isin: "LU00WL000002", skippedCount: 0 },
-      { bucket: "new", executedCount: 2, isin: "IE00WL000003", skippedCount: 0 },
-      { bucket: "new", executedCount: 1, isin: "FR00WL000004", skippedCount: 0 },
+      { bucket: "matched", executedCount: 2, isin: "ES00WL000009", skippedCount: 0 },
+      { bucket: "new", executedCount: 2, isin: "LU00WL000022", skippedCount: 0 },
+      { bucket: "new", executedCount: 2, isin: "IE00WL000001", skippedCount: 0 },
+      { bucket: "new", executedCount: 1, isin: "FR00WL000009", skippedCount: 0 },
     ]);
 
     const matched = result.funds[0];
@@ -167,26 +167,26 @@ describe("previewImportStatementAction (#673)", () => {
     await seed(store);
 
     const resolver = fakeResolver({
-      IE00WL000003: { status: "error" },
-      LU00WL000002: {
+      IE00WL000001: { status: "error" },
+      LU00WL000022: {
         name: "Fondo Brújula",
         provider: "yahoo",
         status: "found",
         symbol: "BRUJULA.FAKE",
       },
-      // FR00WL000004 intentionally omitted -> not_found
+      // FR00WL000009 intentionally omitted -> not_found
     });
 
     const result = await preview(uploadForm(), store, resolver);
 
-    expect(newRow(result, "LU00WL000002").lookup).toEqual({
+    expect(newRow(result, "LU00WL000022").lookup).toEqual({
       name: "Fondo Brújula",
       provider: "yahoo",
       status: "found",
       symbol: "BRUJULA.FAKE",
     });
-    expect(newRow(result, "IE00WL000003").lookup).toEqual({ status: "error" });
-    expect(newRow(result, "FR00WL000004").lookup).toEqual({ status: "not_found" });
+    expect(newRow(result, "IE00WL000001").lookup).toEqual({ status: "error" });
+    expect(newRow(result, "FR00WL000009").lookup).toEqual({ status: "not_found" });
   });
 
   test("does not write anything", async () => {
@@ -228,13 +228,13 @@ describe("previewImportStatementAction (#673)", () => {
       plantillaForm(
         [
           "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
-          "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+          "01/01/2024;Fondo;ES00WL000009;Compra;10;1000;",
         ].join("\r\n"),
       ),
       store,
     );
 
-    expect(matchedRow(result, "ES00WL000001").positionImpact).toEqual({
+    expect(matchedRow(result, "ES00WL000009").positionImpact).toEqual({
       afterUnits: "20",
       afterValueMinor: 2000_00,
       beforeUnits: "10",
@@ -260,13 +260,13 @@ describe("previewImportStatementAction (#673)", () => {
       plantillaForm(
         [
           "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
-          "01/04/2024;Fondo;ES00WL000001;Venta;12;1200;",
+          "01/04/2024;Fondo;ES00WL000009;Venta;12;1200;",
         ].join("\r\n"),
       ),
       store,
     );
 
-    expect(matchedRow(result, "ES00WL000001").positionImpact).toMatchObject({
+    expect(matchedRow(result, "ES00WL000009").positionImpact).toMatchObject({
       afterUnits: "0",
       afterValueMinor: 0,
       flags: ["oversell", "near_zero"],
@@ -290,12 +290,12 @@ describe("previewImportStatementAction (#673)", () => {
     const fd = plantillaForm(
       [
         "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
-        "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+        "01/01/2024;Fondo;ES00WL000009;Compra;10;1000;",
       ].join("\r\n"),
     );
     const result = await preview(fd, store);
 
-    const matched = matchedRow(result, "ES00WL000001");
+    const matched = matchedRow(result, "ES00WL000009");
     expect(matched.toCreateCount).toBe(1);
     expect(matched.toDeleteCount).toBe(1);
     expect(matched.positionImpact).toMatchObject({
@@ -304,7 +304,7 @@ describe("previewImportStatementAction (#673)", () => {
       flags: [],
     });
 
-    fd.set("include_ES00WL000001", "on");
+    fd.set("include_ES00WL000009", "on");
     await confirm(fd, store);
 
     expect(await store.operations.readOperations("matched_fund")).toMatchObject([
@@ -329,11 +329,11 @@ describe("previewImportStatementAction (#673)", () => {
     const fd = plantillaForm(
       [
         "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Nombre",
-        "01/01/2024;Fondo;ES00WL000001;Compra;10;1000;",
+        "01/01/2024;Fondo;ES00WL000009;Compra;10;1000;",
       ].join("\r\n"),
     );
-    fd.set("include_ES00WL000001", "on");
-    fd.set("replaceOpeningSeen_ES00WL000001", "on");
+    fd.set("include_ES00WL000009", "on");
+    fd.set("replaceOpeningSeen_ES00WL000009", "on");
 
     await confirm(fd, store);
 
@@ -350,11 +350,11 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     await seed(store);
 
     const fd = uploadForm();
-    fd.set("include_ES00WL000001", "on");
-    fd.set("include_LU00WL000002", "on");
-    fd.set("name_LU00WL000002", "Fondo Brújula");
-    fd.set("symbol_LU00WL000002", "BRUJULA.FAKE");
-    // IE00WL000003 and FR00WL000004 left unchecked -> excluded.
+    fd.set("include_ES00WL000009", "on");
+    fd.set("include_LU00WL000022", "on");
+    fd.set("name_LU00WL000022", "Fondo Brújula");
+    fd.set("symbol_LU00WL000022", "BRUJULA.FAKE");
+    // IE00WL000001 and FR00WL000009 left unchecked -> excluded.
 
     const digest = await confirm(fd, store);
     expect(digest).toContain("ok=statement_import_loaded");
@@ -368,14 +368,14 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     );
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "LU00WL000002");
+    const created = metas.find((meta) => meta.isin === "LU00WL000022");
     expect(created).toBeDefined();
     expect(created?.providerSymbol).toBe("BRUJULA.FAKE");
     expect(await store.operations.readOperations(created!.id)).toHaveLength(2);
 
     // The excluded ISINs never got a holding created — an untouched fund.
-    expect(metas.some((meta) => meta.isin === "IE00WL000003")).toBe(false);
-    expect(metas.some((meta) => meta.isin === "FR00WL000004")).toBe(false);
+    expect(metas.some((meta) => meta.isin === "IE00WL000001")).toBe(false);
+    expect(metas.some((meta) => meta.isin === "FR00WL000009")).toBe(false);
     expect(metas).toHaveLength(2); // the seeded one + the one new inclusion
   });
 
@@ -384,15 +384,15 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     await seed(store);
 
     const fd = uploadForm();
-    fd.set("include_FR00WL000004", "on");
+    fd.set("include_FR00WL000009", "on");
     // name/symbol left blank.
 
     await confirm(fd, store);
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "FR00WL000004");
+    const created = metas.find((meta) => meta.isin === "FR00WL000009");
     expect(created).toBeDefined();
-    expect(created?.name).toBe("FR00WL000004"); // falls back to the ISIN
+    expect(created?.name).toBe("FR00WL000009"); // falls back to the ISIN
     expect(created?.providerSymbol).toBeUndefined();
   });
 
@@ -401,16 +401,16 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
     await seed(store);
 
     const fd = uploadForm();
-    fd.set("include_FR00WL000004", "on");
-    fd.set("name_FR00WL000004", "Vanguard US Equity Index Fund EUR Hedged");
-    fd.set("symbol_FR00WL000004", "Vanguard US Equity Index Fund EUR Hedged");
+    fd.set("include_FR00WL000009", "on");
+    fd.set("name_FR00WL000009", "Vanguard US Equity Index Fund EUR Hedged");
+    fd.set("symbol_FR00WL000009", "Vanguard US Equity Index Fund EUR Hedged");
 
     await confirm(fd, store);
 
     // No provider quotes by name: with no symbol the holding is valued at cost
     // instead of rewriting a `failed` price row on every daily retry.
     const created = (await store.assets.readInvestmentAssetsWithMeta()).find(
-      (meta) => meta.isin === "FR00WL000004",
+      (meta) => meta.isin === "FR00WL000009",
     );
     expect(created?.name).toBe("Vanguard US Equity Index Fund EUR Hedged");
     expect(created?.providerSymbol).toBeUndefined();
@@ -422,9 +422,9 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
     const fd = () => {
       const form = uploadForm();
-      form.set("include_ES00WL000001", "on");
-      form.set("include_LU00WL000002", "on");
-      form.set("symbol_LU00WL000002", "BRUJULA.FAKE");
+      form.set("include_ES00WL000009", "on");
+      form.set("include_LU00WL000022", "on");
+      form.set("symbol_LU00WL000022", "BRUJULA.FAKE");
       return form;
     };
 
@@ -433,7 +433,7 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     expect(metas).toHaveLength(2); // no duplicate holding created on re-confirm
-    const created = metas.find((meta) => meta.isin === "LU00WL000002");
+    const created = metas.find((meta) => meta.isin === "LU00WL000022");
     expect(await store.operations.readOperations(created!.id)).toHaveLength(2);
     expect(await store.operations.readOperations("matched_fund")).toHaveLength(2);
   });
@@ -456,8 +456,8 @@ describe("confirmImportStatementAction — all-or-nothing (#673)", () => {
 
 const PLANTILLA_CSV = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "01/02/2024;Fondo;LU00WL000002;Compra;10;500;;Fondo Plantilla",
-  "05/02/2024;Fondo;LU00WL000002;Venta;4;220;;",
+  "01/02/2024;Fondo;LU00WL000022;Compra;10;500;;Fondo Plantilla",
+  "05/02/2024;Fondo;LU00WL000022;Venta;4;220;;",
   "03/02/2024;Cripto;bitcoin;Compra;0,01;500;;Bitcoin",
 ].join("\r\n");
 
@@ -486,7 +486,7 @@ describe("plantilla import (#695)", () => {
 
     const result = await preview(plantillaForm(), store);
     if (result.status !== "ready") throw new Error("expected a ready preview");
-    const fund = newRow(result, "LU00WL000002");
+    const fund = newRow(result, "LU00WL000022");
     // The row's own Nombre backs the (not-found) lookup; an ISIN-shaped
     // identifier suggests no symbol.
     expect(fund.suggestedName).toBe("Fondo Plantilla");
@@ -498,14 +498,14 @@ describe("plantilla import (#695)", () => {
     // Confirm: the new fund is created WITH its declared instrument and ISIN;
     // the crypto rows merge into the existing holding, no duplicate.
     const fd = plantillaForm();
-    fd.set("include_LU00WL000002", "on");
-    fd.set("name_LU00WL000002", "Fondo Plantilla");
+    fd.set("include_LU00WL000022", "on");
+    fd.set("name_LU00WL000022", "Fondo Plantilla");
     fd.set("include_bitcoin", "on");
     await confirm(fd, store);
 
     const metas = await store.assets.readInvestmentAssetsWithMeta();
     expect(metas).toHaveLength(3);
-    const created = metas.find((meta) => meta.isin === "LU00WL000002");
+    const created = metas.find((meta) => meta.isin === "LU00WL000022");
     expect(created).toBeDefined();
     const ops = await store.operations.readOperations(created!.id);
     expect(ops.map((op) => op.kind).sort()).toEqual(["buy", "sell"]);
@@ -519,7 +519,7 @@ describe("plantilla import (#695)", () => {
     const result = await preview(plantillaForm(), store);
     if (result.status !== "ready") throw new Error("expected a ready preview");
 
-    expect(newRow(result, "LU00WL000002").amountMinor).toBe(280_00);
+    expect(newRow(result, "LU00WL000022").amountMinor).toBe(280_00);
   });
 
   test("a crypto identifier that creates suggests itself as the provider symbol", async () => {
@@ -561,8 +561,8 @@ describe("plantilla import (#695)", () => {
 
     const mixed = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe",
-      "01/02/2024;Fondo;LU00WL000002;Compra;10;500",
-      "02/02/2024;ETF;LU00WL000002;Compra;1;50",
+      "01/02/2024;Fondo;LU00WL000022;Compra;10;500",
+      "02/02/2024;ETF;LU00WL000022;Compra;1;50",
     ].join("\r\n");
 
     const result = await preview(plantillaForm(mixed), store);
@@ -612,7 +612,7 @@ describe("plantilla import (#695)", () => {
       "12-02-2026",
       "09:04",
       "FONDO EXISTENTE",
-      "ES00WL000001",
+      "ES00WL000009",
       "3",
       "187,48",
       "EUR",
@@ -625,7 +625,7 @@ describe("plantilla import (#695)", () => {
       "03-03-2026",
       "10:15",
       "FONDO EXISTENTE",
-      "ES00WL000001",
+      "ES00WL000009",
       "-2",
       "190,00",
       "EUR",
@@ -653,7 +653,7 @@ describe("plantilla import (#695)", () => {
       throw new Error(`expected a ready preview, got: ${JSON.stringify(result)}`);
     }
     const [fund] = result.funds;
-    expect(fund?.isin).toBe("ES00WL000001");
+    expect(fund?.isin).toBe("ES00WL000009");
     expect(fund?.bucket).toBe("matched");
     expect(fund?.executedCount).toBe(2);
     // The sign read the sell: 3 bought and 2 sold leaves one unit, not five.
@@ -689,9 +689,9 @@ describe("plantilla import (#695)", () => {
     ];
     const rows = [
       header,
-      ...[1, 2, 3, 4].map((day) => trade(day, "ES00WL000001", "2")),
-      ...[5, 6, 7, 8].map((day) => trade(day, "LU00WL000002", "1")),
-      ...[9, 10, 11].map((day) => trade(day, "IE00WL000003", "3")),
+      ...[1, 2, 3, 4].map((day) => trade(day, "ES00WL000009", "2")),
+      ...[5, 6, 7, 8].map((day) => trade(day, "LU00WL000022", "1")),
+      ...[9, 10, 11].map((day) => trade(day, "IE00WL000001", "3")),
     ];
     const xlsx = zipSync({
       "xl/worksheets/sheet1.xml": strToU8(transactionsSheet(rows)),
@@ -712,14 +712,14 @@ describe("plantilla import (#695)", () => {
       throw new Error(`expected a ready preview, got: ${JSON.stringify(result)}`);
     }
     expect(result.funds.map((fund) => fund.isin)).toEqual([
-      "ES00WL000001",
-      "LU00WL000002",
-      "IE00WL000003",
+      "ES00WL000009",
+      "LU00WL000022",
+      "IE00WL000001",
     ]);
     expect(result.funds.reduce((sum, fund) => sum + fund.executedCount, 0)).toBe(11);
-    expect(matchedRow(result, "ES00WL000001").executedCount).toBe(4);
+    expect(matchedRow(result, "ES00WL000009").executedCount).toBe(4);
 
-    fd.set("include_ES00WL000001", "on");
+    fd.set("include_ES00WL000009", "on");
     await confirm(fd, store);
 
     const written = await store.operations.readOperations("matched_fund");
@@ -735,7 +735,7 @@ describe("plantilla import (#695)", () => {
     // A one-row workbook: enough to prove the bytes→text branch feeds the parser.
     const sheet = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>
 <row r="1"><c r="A1" t="inlineStr"><is><t>Fecha</t></is></c><c r="B1" t="inlineStr"><is><t>Tipo de activo</t></is></c><c r="C1" t="inlineStr"><is><t>Identificador</t></is></c><c r="D1" t="inlineStr"><is><t>Operación</t></is></c><c r="E1" t="inlineStr"><is><t>Participaciones</t></is></c><c r="F1" t="inlineStr"><is><t>Importe</t></is></c></row>
-<row r="2"><c r="A2" t="inlineStr"><is><t>01/02/2024</t></is></c><c r="B2" t="inlineStr"><is><t>Fondo</t></is></c><c r="C2" t="inlineStr"><is><t>LU00WL000002</t></is></c><c r="D2" t="inlineStr"><is><t>Venta</t></is></c><c r="E2"><v>4</v></c><c r="F2"><v>220</v></c></row>
+<row r="2"><c r="A2" t="inlineStr"><is><t>01/02/2024</t></is></c><c r="B2" t="inlineStr"><is><t>Fondo</t></is></c><c r="C2" t="inlineStr"><is><t>LU00WL000022</t></is></c><c r="D2" t="inlineStr"><is><t>Venta</t></is></c><c r="E2"><v>4</v></c><c r="F2"><v>220</v></c></row>
 </sheetData></worksheet>`;
     const xlsx = zipSync({ "xl/worksheets/sheet1.xml": strToU8(sheet) });
 
@@ -751,14 +751,14 @@ describe("plantilla import (#695)", () => {
 
     const result = await preview(fd, store);
     if (result.status !== "ready") throw new Error("expected a ready preview");
-    expect(newRow(result, "LU00WL000002").executedCount).toBe(1);
+    expect(newRow(result, "LU00WL000022").executedCount).toBe(1);
   });
 });
 
 describe("an identifier two holdings claim (#1366)", () => {
   const ONE_ISIN_CSV = [
     "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-    "05/01/2024;Fondo;ES00WL000001;Compra;10;1000;;",
+    "05/01/2024;Fondo;ES00WL000009;Compra;10;1000;;",
   ].join("\r\n");
 
   /**
@@ -781,7 +781,7 @@ describe("an identifier two holdings claim (#1366)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "live_fund",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       liquidityTier: "market",
       manualPricePerUnit: "35",
       name: "Mismo fondo, bróker actual",
@@ -795,7 +795,7 @@ describe("an identifier two holdings claim (#1366)", () => {
 
     const matched = matchedRow(
       await preview(plantillaForm(ONE_ISIN_CSV), store),
-      "ES00WL000001",
+      "ES00WL000009",
     );
 
     expect(matched.ambiguous).toBe(true);
@@ -819,7 +819,7 @@ describe("an identifier two holdings claim (#1366)", () => {
     await seedTwoClaimants(store);
 
     const fd = plantillaForm(ONE_ISIN_CSV);
-    fd.set("include_ES00WL000001", "on");
+    fd.set("include_ES00WL000009", "on");
 
     const digest = await confirm(fd, store);
     expect(digest).toContain("error=");
@@ -835,8 +835,8 @@ describe("an identifier two holdings claim (#1366)", () => {
     await seedTwoClaimants(store);
 
     const fd = plantillaForm(ONE_ISIN_CSV);
-    fd.set("include_ES00WL000001", "on");
-    fd.set("assetId_ES00WL000001", "some_other_holding");
+    fd.set("include_ES00WL000009", "on");
+    fd.set("assetId_ES00WL000009", "some_other_holding");
 
     expect(await confirm(fd, store)).toContain("error=");
     expect(await store.operations.readOperations("matched_fund")).toHaveLength(1);
@@ -848,8 +848,8 @@ describe("an identifier two holdings claim (#1366)", () => {
     await seedTwoClaimants(store);
 
     const fd = plantillaForm(ONE_ISIN_CSV);
-    fd.set("include_ES00WL000001", "on");
-    fd.set("assetId_ES00WL000001", "live_fund");
+    fd.set("include_ES00WL000009", "on");
+    fd.set("assetId_ES00WL000009", "live_fund");
     // Trashed between preview and confirm: the identifier is unambiguous again,
     // but the holding the user named is gone — and the survivor is NOT a
     // substitute for it, deletes and overwrites included.
@@ -866,8 +866,8 @@ describe("an identifier two holdings claim (#1366)", () => {
     await seedTwoClaimants(store);
 
     const fd = plantillaForm(ONE_ISIN_CSV);
-    fd.set("include_ES00WL000001", "on");
-    fd.set("assetId_ES00WL000001", "live_fund");
+    fd.set("include_ES00WL000009", "on");
+    fd.set("assetId_ES00WL000009", "live_fund");
 
     expect(await confirm(fd, store)).toContain("ok=statement_import_loaded");
 

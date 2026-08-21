@@ -12,7 +12,7 @@ const row: ParsedStatementRow = {
   currency: "EUR",
   dateKey: "2026-06-15",
   feesMinor: 125,
-  isin: "ES0123456789",
+  isin: "ES0123456784",
   kind: "buy",
   pricePerUnit: "12.5",
   units: "8",

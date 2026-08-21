@@ -18,24 +18,24 @@ const IDLE = { status: "idle" as const };
 
 const MULTI_ISIN_CSV = [
   "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-  "05/01/2024;Fondo;ES00WL000001;Compra;34,2857;1200;;",
-  "05/02/2024;Fondo;ES00WL000001;Compra;33,9120;1200;;",
-  "10/01/2024;Fondo;LU00WL000002;Compra;12,3456;600;;",
-  "10/02/2024;Fondo;LU00WL000002;Compra;12,4011;600;;",
-  "15/01/2024;Fondo;IE00WL000003;Compra;21,0000;900;;",
-  "15/02/2024;Fondo;IE00WL000003;Compra;20,7500;900;;",
-  "20/01/2024;Fondo;FR00WL000004;Compra;6,0000;300;;",
+  "05/01/2024;Fondo;ES00WL000009;Compra;34,2857;1200;;",
+  "05/02/2024;Fondo;ES00WL000009;Compra;33,9120;1200;;",
+  "10/01/2024;Fondo;LU00WL000022;Compra;12,3456;600;;",
+  "10/02/2024;Fondo;LU00WL000022;Compra;12,4011;600;;",
+  "15/01/2024;Fondo;IE00WL000001;Compra;21,0000;900;;",
+  "15/02/2024;Fondo;IE00WL000001;Compra;20,7500;900;;",
+  "20/01/2024;Fondo;FR00WL000009;Compra;6,0000;300;;",
 ].join("\r\n");
 
 const RESOLVER_RESULTS: Record<string, IsinLookupResult> = {
-  LU00WL000002: {
+  LU00WL000022: {
     name: "Fondo Brújula",
     provider: "yahoo",
     status: "found",
     symbol: "BRUJULA.FAKE",
   },
-  IE00WL000003: { status: "not_found" },
-  FR00WL000004: { status: "not_found" },
+  IE00WL000001: { status: "not_found" },
+  FR00WL000009: { status: "not_found" },
 };
 
 function fakeResolver(results: Record<string, IsinLookupResult>): IsinSymbolResolver {
@@ -52,7 +52,7 @@ async function seedMatchedFund(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "matched_fund",
-    isin: "ES00WL000001",
+    isin: "ES00WL000009",
     liquidityTier: "market",
     manualPricePerUnit: "35",
     name: "Fondo existente",
@@ -180,7 +180,7 @@ describe("buildStatementImportProposal", () => {
 
     const secondCsv = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-      "10/03/2024;Fondo;LU00WL000002;Compra;10,0000;500;;",
+      "10/03/2024;Fondo;LU00WL000022;Compra;10,0000;500;;",
     ].join("\r\n");
     const second = await buildStatementImportProposal(
       store,
@@ -197,7 +197,7 @@ describe("buildStatementImportProposal", () => {
 
     expect(second.proposal.draft).toEqual(first.proposal.draft);
     expect(
-      second.proposal.funds.find((fund) => fund.isin === "LU00WL000002")?.executedCount,
+      second.proposal.funds.find((fund) => fund.isin === "LU00WL000022")?.executedCount,
     ).toBe(3);
     expect(
       (await store.assistantProposals.read(first.proposal.draft.proposalId))?.documents,
@@ -224,7 +224,7 @@ describe("confirmStatementImportProposalAction regression", () => {
           currency: "EUR",
           dateKey: "2024-04-10",
           feesMinor: 0,
-          isin: "ES00WL000001",
+          isin: "ES00WL000009",
           kind: "buy",
           occurredAt: asInstant("2024-04-10T11:25:00.000Z"),
           pricePerUnit: "10",
@@ -252,11 +252,11 @@ describe("confirmStatementImportProposalAction regression", () => {
     await seedMatchedFund(agentStore);
 
     const manualFd = uploadForm();
-    for (const isin of ["ES00WL000001", "LU00WL000002", "IE00WL000003", "FR00WL000004"]) {
+    for (const isin of ["ES00WL000009", "LU00WL000022", "IE00WL000001", "FR00WL000009"]) {
       manualFd.set(`include_${isin}`, "on");
     }
-    manualFd.set("name_LU00WL000002", "Fondo Brújula");
-    manualFd.set("symbol_LU00WL000002", "BRUJULA.FAKE");
+    manualFd.set("name_LU00WL000022", "Fondo Brújula");
+    manualFd.set("symbol_LU00WL000022", "BRUJULA.FAKE");
 
     await previewImportStatementAction(IDLE, manualFd, manualStore, TEST_RESOLVER);
     await confirmManual(manualStore, manualFd);
@@ -283,7 +283,7 @@ describe("confirmStatementImportProposalAction regression", () => {
     expect(await unitsByIsin(manualStore)).toEqual(await unitsByIsin(agentStore));
 
     const brujula = (await agentStore.assets.readInvestmentAssetsWithMeta()).find(
-      (asset) => asset.isin === "LU00WL000002",
+      (asset) => asset.isin === "LU00WL000022",
     );
     expect(brujula?.providerSymbol).toBe("BRUJULA.FAKE");
 
@@ -303,7 +303,7 @@ describe("confirmStatementImportProposalAction regression", () => {
 
     const csv = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-      "10/01/2024;Fondo;LU00WL000002;Compra;12,0000;600;;",
+      "10/01/2024;Fondo;LU00WL000022;Compra;12,0000;600;;",
     ].join("\r\n");
     const built = await buildStatementImportProposal(
       store,
@@ -317,7 +317,7 @@ describe("confirmStatementImportProposalAction regression", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "created_after_preview",
-      isin: "LU00WL000002",
+      isin: "LU00WL000022",
       liquidityTier: "market",
       name: "Creado tras preview",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -380,7 +380,7 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "second_claimant",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       liquidityTier: "market",
       name: "Mismo fondo, otro bróker",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -388,8 +388,8 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
 
     const csv = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-      "05/01/2024;Fondo;ES00WL000001;Compra;10;1000;;",
-      "10/01/2024;Fondo;LU00WL000002;Compra;12,0000;600;;",
+      "05/01/2024;Fondo;ES00WL000009;Compra;10;1000;;",
+      "10/01/2024;Fondo;LU00WL000022;Compra;12,0000;600;;",
     ].join("\r\n");
     const built = await buildStatementImportProposal(
       store,
@@ -400,7 +400,7 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     if (!built.ok) return;
 
     // The card must say it, or the exclusion is a silent drop.
-    const ambiguous = built.proposal.funds.find((fund) => fund.isin === "ES00WL000001");
+    const ambiguous = built.proposal.funds.find((fund) => fund.isin === "ES00WL000009");
     expect(ambiguous?.bucket === "matched" && ambiguous.ambiguous).toBe(true);
 
     expect(
@@ -414,7 +414,7 @@ describe("an identifier two holdings claim, confirmed from the chat (#1366)", ()
     expect(await store.operations.readOperations("matched_fund")).toHaveLength(0);
     expect(await store.operations.readOperations("second_claimant")).toHaveLength(0);
     const metas = await store.assets.readInvestmentAssetsWithMeta();
-    const created = metas.find((meta) => meta.isin === "LU00WL000002");
+    const created = metas.find((meta) => meta.isin === "LU00WL000022");
     expect(await store.operations.readOperations(created!.id)).toHaveLength(1);
   });
 });
