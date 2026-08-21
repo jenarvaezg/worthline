@@ -116,14 +116,25 @@ export async function recordTransferAction(
         { assetId: originAssetId, currency: origin.currency, operations },
         today,
       );
-      if (preview.status === "refused") {
-        return { ok: false, error: preview.message };
+      if (preview.status !== "ready") {
+        // `incomplete` cannot happen here — the same parse already succeeded above, and
+        // it is the only thing that produces it — but the preview is where the
+        // destination's VL comes from, so this narrows instead of asserting.
+        return {
+          ok: false,
+          error:
+            preview.status === "refused"
+              ? preview.message
+              : "Faltan datos del traspaso — revisa el importe y las participaciones.",
+        };
       }
 
       const destination = await resolveDestination(store, {
         destination: parsed.destination,
         origin,
-        pricePerUnit: parsed.destinationPricePerUnit,
+        // The VL a brand-new destination is born priced at is the one the pair will be
+        // WRITTEN at — which in the `units` reading is derived, not typed (#1544).
+        pricePerUnit: preview.inPricePerUnit,
         seed,
       });
 
@@ -136,6 +147,7 @@ export async function recordTransferAction(
       const result = await store.command.recordInvestmentTransfer({
         destinationAssetId: destination.assetId,
         destinationPricePerUnit: parsed.destinationPricePerUnit,
+        destinationUnits: parsed.destinationUnits,
         executedAt: parsed.executedAt,
         inOperationId,
         originAssetId,

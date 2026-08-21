@@ -4,13 +4,17 @@
  * The acceptance criterion of the umbrella issue, measured rather than asserted in
  * prose. It records TWO traspasos, in this order and for this reason:
  *
- * 1. **To a destination that already exists** — the ordinary path, and the one that
- *    fails silently if the hidden «crear destino» pane ever grows a native
- *    `required`: in a real browser that aborts the submit of the WHOLE form, so the
- *    action is never called and the URL never changes. A FormData-level test cannot
+ * 1. **To a destination that already exists, stated in participaciones** — the default
+ *    reading (#1544) and the ordinary path, and the one that fails silently if any
+ *    hidden pane — «crear destino», or the OTHER reading's VL fields — ever grows a
+ *    native `required`: in a real browser that aborts the submit of the WHOLE form, so
+ *    the action is never called and the URL never changes. A FormData-level test cannot
  *    see this (#677); only a browser can.
- * 2. **To a destination created on the way in** — the pane itself, and the reason it
- *    is in this form at all: a plan just opened at the bank.
+ * 2. **To a destination created on the way in, stated as importe + VL** — the creation
+ *    pane, the reason it is in this form at all (a plan just opened at the bank), and
+ *    the other reading, which has to keep working after the toggle is switched: the
+ *    panes are disclosed by CSS `:has()`, so a browser is the only place that proves
+ *    the fields the user can actually reach are the ones the parser reads.
  *
  * Both are then checked for the two properties that make a traspaso a traspaso rather
  * than a sale plus a purchase:
@@ -55,6 +59,16 @@ function transferForm(page: import("@playwright/test").Page) {
   return page.getByRole("form", { name: "Traspasar a otra inversión" });
 }
 
+/**
+ * The destination picker, located by its field name rather than by its label:
+ * «inversión de destino» is a substring of three other accessible names in this form
+ * (the search box, the created holding's name and its ISIN), so a label lookup is
+ * ambiguous and fails Playwright's strict mode.
+ */
+function destinationPicker(page: import("@playwright/test").Page) {
+  return transferForm(page).locator('select[name="destinationAssetId"]');
+}
+
 test("traspaso: one screen, one submit — to an existing fund and to a new one", async ({
   page,
 }) => {
@@ -81,18 +95,27 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   let form = transferForm(page);
   await expect(form).toBeVisible();
 
-  // The origin's cached price arrives prefilled — the VL of the day is the figure the
-  // user is least likely to have to hand.
+  // The origin's cached price arrives prefilled in the VL pane, even while that pane is
+  // the hidden one — the VL of the day is the figure the user is least likely to have to
+  // hand, and switching reading must not find an empty field.
   await expect(form.getByLabel("Valor liquidativo de origen")).toHaveValue("100");
 
-  await form.getByLabel("Inversión de destino").selectOption({ label: EXISTING });
+  // The reading the screen opens in: the figures a justificante prints (#1544). The VL
+  // fields are not reachable here, and no VL is typed anywhere in this traspaso.
+  await expect(form.getByLabel("Participaciones que salieron del origen")).toBeVisible();
+  await expect(form.getByLabel("Valor liquidativo de destino")).toBeHidden();
+
+  await destinationPicker(page).selectOption({ label: EXISTING });
   await form.getByLabel("Importe traspasado en EUR").fill("200");
-  await form.getByLabel("Valor liquidativo de destino").fill("50");
+  await form.getByLabel("Participaciones que salieron del origen").fill("2");
+  await form.getByLabel("Participaciones que entraron en el destino").fill("4");
 
   // The preview prints the pair BEFORE it is written, from the same code the gate
-  // writes with: 200 ÷ 100 out, 200 ÷ 50 in.
+  // writes with: the participaciones as stated, and the VL each apunte will carry
+  // derived from them (200 ÷ 2 = 100 out, 200 ÷ 4 = 50 in).
   await expect(form).toContainText("saldrán 2 participaciones");
   await expect(form).toContainText("entrarán 4");
+  await expect(form).toContainText("100 EUR (origen)");
 
   await form.getByRole("button", { name: "Registrar traspaso" }).click();
   await expect(page).toHaveURL(/ok=transfer_recorded/);
@@ -101,19 +124,26 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   // The origin's ledger says what happened, in its own words — not "Venta".
   await openAdvancedSettings(page);
   await expect(page.locator(".recentOpsPanel")).toContainText("Traspaso (salida)");
-  await expect(page.locator(".operacionContext")).toContainText("800,00 €");
+  // 8 of the 10 participaciones are left, worth 800 € — the context panel prints a
+  // round figure without decimals, so this asserts the figure and not its padding.
+  await expect(page.locator(".operacionContext")).toContainText("Unidades actuales8");
+  await expect(page.locator(".operacionContext")).toContainText("800 €");
   expect(await netWorth(page)).toBe(netAfterBuy);
 
-  // 3. Traspaso to a destination CREATED on the way in — one screen, one submit.
+  // 3. Traspaso to a destination CREATED on the way in, stated the other way — one
+  //    screen, one submit, and the VL pane reached through the toggle.
   await openFicha(page, ORIGIN);
   form = transferForm(page);
-  await form.getByLabel("Inversión de destino").selectOption("__new__");
+  await destinationPicker(page).selectOption("__new__");
   // The pane is disclosed by CSS `:has()`, so it is reachable with or without JS.
   const newName = form.getByLabel("Nombre de la inversión de destino");
   await expect(newName).toBeVisible();
   await newName.fill(CREATED);
+  await form.getByLabel("El importe y el valor liquidativo").check();
+  const destinationPrice = form.getByLabel("Valor liquidativo de destino");
+  await expect(destinationPrice).toBeVisible();
   await form.getByLabel("Importe traspasado en EUR").fill("400");
-  await form.getByLabel("Valor liquidativo de destino").fill("50");
+  await destinationPrice.fill("50");
   await form.getByRole("button", { name: "Registrar traspaso" }).click();
 
   await expect(page).toHaveURL(/ok=transfer_recorded/);
@@ -125,14 +155,18 @@ test("traspaso: one screen, one submit — to an existing fund and to a new one"
   expect(
     await page
       .locator(".returnsPanel")
-      .getByText(/^[+-]?0,00\s€$/)
+      // A round figure prints without decimals in this panel, so both spellings of
+      // «nothing was realized» count — what matters is the zero.
+      .getByText(/^[+-]?0(,00)?\s€$/)
       .count(),
   ).toBeGreaterThan(0);
 
   // 5. Both destinations hold the capital that left, and net worth never moved: no
   //    step in the curve.
   expect(await netWorth(page)).toBe(netAfterBuy);
-  await expect(holdingRow(page, EXISTING)).toContainText("200,00 €");
-  await expect(holdingRow(page, CREATED)).toContainText("400,00 €");
-  await expect(holdingRow(page, ORIGIN)).toContainText("400,00 €");
+  // The list prints a round figure without decimals, and prefixes a computed value
+  // with «≈» — so the assertion is on the figure, not on its punctuation.
+  await expect(holdingRow(page, EXISTING)).toContainText("200 €");
+  await expect(holdingRow(page, CREATED)).toContainText("400 €");
+  await expect(holdingRow(page, ORIGIN)).toContainText("400 €");
 });

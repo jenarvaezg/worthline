@@ -237,8 +237,10 @@ day's market value) and never a realized gain: the latent gain travels with the
 capital as the destination's **inherited cost**, which is why the pair cancels itself
 at portfolio level on its date. Halves are always written together, never one at a
 time — and removed together too, through the one gate that owns both rows (ADR 0082,
-ADR 0083). What the user states is the **importe** and one date; each half's units are
-that amount over its own unit price, so nobody types participaciones.
+ADR 0083). What the user states is one date and, per half, two of its three figures:
+the participaciones and the **importe** the confirmation prints — the ordinary case,
+and then the unit price is derived, as on every buy and sell (#1544) — or the importe
+and the unit price, and then the units are derived from them.
 The one traspaso that is a single row is the **external entry**: a plan brought in
 from another institution, whose outgoing half lives in that institution's ledger and
 can never be written here. It is an alta — the third way the add wizard answers «cuánto

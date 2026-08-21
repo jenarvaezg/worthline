@@ -4529,9 +4529,31 @@ code {
 }
 
 /* «Todo» is its own intent, so choosing it retires the importe field instead of
-   filling it in with a figure that would leave a millionth of a unit behind. */
-.transferForm:has(input[name="portion"][value="all"]:checked) .transferAmountField {
+   filling it in with a figure that would leave a millionth of a unit behind. Only in
+   the VL reading, though: when the user is copying participaciones (#1544) the importe
+   of the justificante is exactly what derives the VL of the whole position. */
+.transferForm:has(input[name="reading"][value="price"]:checked):has(
+  input[name="portion"][value="all"]:checked
+)
+.transferAmountField {
   display: none;
+}
+
+/* The two readings (#1544): each states two figures per leg and derives the third, so
+   only one pane is ever on screen. Disclosed with `:has()` like the panes above — no
+   JS, and nothing inside a hidden pane ever carries a native `required`. The parser
+   reads the MODE, not whichever fields happen to be filled, so a leftover VL from an
+   earlier edit can never decide a write stated in participaciones. */
+.transferUnitsPane,
+.transferPricePane {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.transferForm:has(input[name="reading"][value="units"]:checked) .transferUnitsPane,
+.transferForm:has(input[name="reading"][value="price"]:checked) .transferPricePane {
+  display: flex;
 }
 
 .transferPortion {

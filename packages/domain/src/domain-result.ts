@@ -18,12 +18,22 @@ export type DomainViolation =
     }
   | { code: "investment_manual_valuation_rejected" }
   | { code: "connected_manual_valuation_rejected" }
-  // The refusals of the traspaso gate (#1479). All six are figures a user typed, so
-  // they are data rather than throws — unlike the row-level column rules of ADR 0082,
-  // which no form can reach.
+  // The refusals of the traspaso gate (#1479, #1544). Every one of them is about a
+  // figure a user typed, so they are data rather than throws — unlike the row-level
+  // column rules of ADR 0082, which no form can reach.
   | { code: "transfer_same_holding" }
   | { code: "transfer_amount_not_positive" }
   | { code: "transfer_price_not_positive"; side: "origin" | "destination" }
+  | {
+      /**
+       * The participaciones DECLARED for one leg are not a positive figure (#1544).
+       * Its own code rather than the price's: under the reading where the units are
+       * the stated fact and the VL is derived, «necesito el valor liquidativo» would
+       * point at a field the user was never asked to fill.
+       */
+      code: "transfer_units_not_positive";
+      side: "origin" | "destination";
+    }
   | { code: "transfer_origin_has_no_units" }
   | {
       /** A declared inherited cost cannot be negative (the external entry, #1479). */
@@ -36,7 +46,10 @@ export type DomainViolation =
       destination: string;
     }
   | {
-      /** The stated importe divides into more participaciones than the origin holds. */
+      /**
+       * The traspaso moves more participaciones than the origin holds — whether they
+       * were declared or divided out of an importe (#1544).
+       */
       code: "transfer_units_exceed_position";
       unitsRequested: string;
       unitsHeld: string;

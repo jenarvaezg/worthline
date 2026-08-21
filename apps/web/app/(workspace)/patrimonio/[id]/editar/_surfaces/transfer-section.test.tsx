@@ -100,8 +100,23 @@ describe("TransferSection", () => {
   test("the preview line asks for what is missing instead of shouting an error", () => {
     const html = render();
 
-    expect(html).toContain("cuántas participaciones se mueven");
+    // The default reading is the justificante's (#1544), so what is asked for is the
+    // participaciones — and what is promised back is the derived VL.
+    expect(html).toContain("las participaciones de cada lado");
     expect(html).not.toContain("errorBand");
+  });
+
+  test("offers the two readings, with the participaciones one preselected (#1544)", () => {
+    const html = render();
+
+    expect(html).toContain('name="reading"');
+    expect(html).toContain("Las participaciones y el importe");
+    expect(html).toContain("El importe y el valor liquidativo");
+    // The units reading is the checked radio: the ordinary reason to be on this screen
+    // is a justificante, and it prints participaciones, never the fund's VL.
+    expect(html).toMatch(/name="reading" checked="" value="units"/);
+    expect(html).toContain('name="originUnits"');
+    expect(html).toContain('name="destinationUnits"');
   });
 
   test("a rejected submit round-trips its message and its typed values", () => {

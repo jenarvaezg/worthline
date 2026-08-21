@@ -41,7 +41,10 @@ would otherwise compute lives in a pure plan upstream of them.**
    a table test rather than a database fixture, and it is what will let the screen of
    #1480 preview exactly the pair it is about to write, from the same code.
 
-3. **The importe rules, and the units are cut where the app can read them.** Each
+3. **The importe rules, and the units are cut where the app can read them.**
+   *(Inverted by the #1544 amendment below: a leg may now declare its participaciones
+   and derive its VL. The rest of this point still holds for a leg stated as an
+   importe.)* Each
    half's participaciones are `importe ÷ its own VL`, rounded to
    `UNITS_READBACK_DECIMALS` — the six decimals `formatUnits` renders (#1395). A raw
    division stores a precision no bank publishes and the ficha cannot print. That
@@ -277,3 +280,56 @@ the `transferId` was «present on both and on nothing else», which was true onl
 this door did not exist. `get_operations` and `AgentViewOperation.transferId` now name
 the lone row — «entrada por traspaso externo», not a broken pair and not a purchase —
 so an agent reading Jorge's plan cannot report a half-written traspaso.
+## Amendment (#1544, 21-ago-2026) — the participaciones are the declared fact, the VL is derived
+
+Decision 3 above — «the importe rules» — is **inverted**, additively. It was the only
+door in the book where the participaciones were derived and the price was declared: on a
+buy or a sell it is the other way round (`InvestmentOperationPlan.pricePerUnit` is
+`(importe − comisión) ÷ participaciones`, «so the cash amount the document states is
+reproduced to the cent»), and the printed NAV is kept only as a cross-check.
+
+Why the inversion is the honest model, and not just symmetry: **the position IS
+participaciones.** `derivePosition` folds units, «todo» liquidates units, the
+reconciliation against the extracto compares units. When the units come out of `importe
+÷ VL`, a VL rounded — or typed with fewer decimals than the fund publishes — writes units
+that are not the bank's, and that error is permanent: every later valuation, partial sale
+and traspaso inherits it. A confirmation, meanwhile, prints the exact participaciones of
+each leg. worthline does not record ORDERS (which really are given in euros, the reason
+decision 3 read as it did); it records CONFIRMATIONS.
+
+- **`TransferPortion` gains `{ kind: "units", units, amountMinor }`,** and
+  `TransferIntent` gains `destinationUnits`. Each leg now states two of its three
+  figures and the third is derived: given participaciones and importe, the VL is
+  `importe ÷ participaciones` at `PRICE_READBACK_DECIMALS` (#1467); given importe and
+  VL, the units are still `importe ÷ VL` cut at `UNITS_READBACK_DECIMALS`. Both prices
+  in `TransferIntent` are therefore optional, and a leg that states neither figure is
+  refused naming its side.
+- **A DECLARED unit count is stored as stated; only a DERIVED one is cut at six
+  decimals.** #1395 governs what the app may derive, not what a bank printed.
+- **«Todo» may now carry the confirmation's importe,** and then the VL of the whole
+  position is derived from it. Its exactness is untouched — the units are still the
+  position itself — so decision 4 stands. The visible consequence, stated rather than
+  smuggled: on the screen's default reading «todo» now REQUIRES that importe, because
+  nothing else can produce a VL there. Nothing is retired (the VL reading still derives
+  the amount from the position), but the default path for «todo» asks for one figure
+  more, and the refusal says what it is for.
+- **Where the two readings cannot agree, the participaciones win** and the VL absorbs
+  the difference (`61,601667 part.` for `739,22 €` derives `11,99999994 €`, not `12 €`).
+  On coherent figures they produce the same pair, which is a test.
+- **The screen offers both readings, participaciones first** (#1480 amended), because
+  the ordinary reason to be on that screen is a justificante in hand. The mode decides
+  which fields are read — never which happen to be filled, since the hidden pane still
+  posts its values.
+- **The dictated lane reads «37,203 participaciones» beside the importe** (#1482
+  amended). The units token is marked by its own word, so it never competes with the
+  euro figure, and it is cut out before the importe is counted. When it is present the
+  origin's VL is no longer borrowed from the price cache — so the provenance note of the
+  #1482 amendment disappears for that leg, and a holding with no price at all stops
+  being a dead end. The DESTINATION's note survives there on purpose: a dictated
+  traspaso states ONE unit count, and two in one sentence fail closed
+  (`ambiguous_units`) and route to the screen that has a field per leg — so the arriving
+  half is still divided at the app's price, and still says so.
+
+What did NOT change: the door, the pair, the shared `transfer_id`, the single date, the
+inherited cost as a proportion of the origin's basis, the refusal of units over the
+position, and «todo» as its own intent.

@@ -1023,10 +1023,11 @@ const OPERATION_PROPOSAL_SCHEMA = jsonSchema<{
  * holdings — the one judgement no parser can make, «el fondo A» is an id — plus a
  * summary.
  *
- * The importe and the date are deliberately NOT here. They are read off the user's own
- * message by worthline ({@link ../typed-transfer}), so there is no field for the model
- * to fill with a figure it remembers, which is the frontier this lane rests on. The two
- * VLs are not here either: the app values each side with its own price.
+ * The importe, the date and the participaciones are deliberately NOT here. They are
+ * read off the user's own message by worthline ({@link ../typed-transfer}), so there is
+ * no field for the model to fill with a figure it remembers, which is the frontier this
+ * lane rests on. The two VLs are not here either: a leg that states its participaciones
+ * derives its own (#1544), and one that does not is valued at the app's own price.
  */
 const TRANSFER_PROPOSAL_SCHEMA = jsonSchema<{
   originHoldingId?: string;
@@ -2499,7 +2500,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         // (TRANSFER_NEUTRALITY_NOTE), and the floor is paid on every turn while card
         // copy is paid when there is a card — the #1342 trade. Nor is «the ids come
         // from a read»: that is the prompt's own cross-tool rule (#1263).
-        "El importe y la fecha NO son argumentos: los lee la app del mensaje del usuario, tal cual los escriba —incluido «todo»—, y si faltan o son ambiguos te devuelve qué pedirle. Las participaciones las calcula la app con el valor liquidativo de cada posición. " +
+        "El importe, la fecha y las participaciones NO son argumentos: los lee la app del mensaje del usuario, tal cual los escriba —incluido «todo»—, y si faltan o son ambiguos te devuelve qué pedirle. Si el usuario escribe las participaciones que salieron, la app deriva de ellas el valor liquidativo; si no, usa el precio que ya tiene de cada posición. " +
         "NO es ésta: la posición de destino aún no existe → primero `propose_holding` y después el traspaso; una compra, una venta o una aportación → `propose_operation`.",
       inputSchema: TRANSFER_PROPOSAL_SCHEMA,
       execute: (args) => {
