@@ -47,6 +47,7 @@ export function ContributionAllowancePanel({
   holdingNameById,
   privacyMode,
   scopeId,
+  trashedHoldingIds,
   usageById,
 }: {
   allowances: ContributionAllowance[];
@@ -64,6 +65,8 @@ export function ContributionAllowancePanel({
   privacyMode: boolean;
   scopeId: string;
   usageById: ReadonlyMap<string, ContributionAllowanceUsage>;
+  /** Destinations whose holding is in the trash — counted, and labelled as such (#1509). */
+  trashedHoldingIds?: ReadonlySet<string>;
 }) {
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy({ amountMinor, currency }, privacyMode);
@@ -71,7 +74,14 @@ export function ContributionAllowancePanel({
   const rows = allowances.flatMap((allowance) => {
     const usage = usageById.get(allowance.id);
     return usage
-      ? [contributionAllowanceRowView({ allowance, holdingNameById, usage })]
+      ? [
+          contributionAllowanceRowView({
+            allowance,
+            holdingNameById,
+            usage,
+            ...(trashedHoldingIds ? { trashedHoldingIds } : {}),
+          }),
+        ]
       : [];
   });
 
