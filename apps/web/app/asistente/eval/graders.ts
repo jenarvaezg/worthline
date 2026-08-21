@@ -253,31 +253,69 @@ const CAPABILITY_DENIAL = [
 ];
 
 /**
+ * One normalized sentence at a time. Split on sentence enders only — a colon keeps its
+ * clause attached, which is how «no se registra tu gasto en comida: worthline mide
+ * patrimonio» stays one claim.
+ */
+function anySentence(text: string, holds: (sentence: string) => boolean): boolean {
+  return normalize(text)
+    .split(/[.!?;\n]/)
+    .some(holds);
+}
+
+/**
+ * Does the answer say where the thing IS done? This is the load-bearing exemption of
+ * both graders below, and it was learnt the hard way: the first draft of
+ * `deniesCapabilityAbout` failed SIX correct answers — every one of them a sentence the
+ * new prompt rule teaches the model to write.
+ *
+ *   «Los gastos de comunidad no se introducen en el campo Importe, SINO en el campo
+ *    Gastos del cobro recurrente.»
+ *   «El IBI no se declara aparte: se declara dentro de «Cobros», en el campo Gastos.»
+ *   «No existe un campo por cada gasto: es un único importe por cobro.»
+ *
+ * Every one carries a negation, and none of them denies a capability. The reliable
+ * signal was never the negation — it is the DESTINATION: you cannot tell a user where
+ * the field is and claim in the same breath that the product does not have it. The
+ * transcript's real answers named no destination at all; they named a spreadsheet.
+ *
+ * Checked over the WHOLE answer, not per sentence: the redirection routinely lands in
+ * the next sentence («No se registran uno a uno. Van agregados en el campo Gastos.»).
+ */
+function namesADestination(text: string, destinations: string[]): boolean {
+  const haystack = normalize(text);
+  return destinations.some((destination) => haystack.includes(normalize(destination)));
+}
+
+/**
  * Denying that worthline HAS a capability (#1524). The transcript that opened this issue
  * held «el registro de gastos operativos sobre una vivienda no se introduce
  * directamente» and «esos gastos operativos no se registran individualmente en
  * worthline» for three turns, over a field that has existed since #1448.
  *
- * Scoped to a SENTENCE that also names one of `subjects`, and that scoping is the whole
- * design. «No se registra» is a sentence the assistant must be able to say — the reading
- * set's own `spending-missing` question grades it as the RIGHT answer, because worthline
- * genuinely does not track what you spend on food. A global denial matcher would mark
- * that honest answer as a lie, which is the failure mode this harness's README warns
- * about. So the caller passes the subject the product DOES support, and only a denial
- * landing on that subject fails.
+ * Two scopes, and the grader is only honest with both. `subjects` keeps it off the
+ * capabilities worthline really lacks — «no se registra tu gasto en comida y ocio» is
+ * the RIGHT answer to the reading set's own `spending-missing` question, and a
+ * subject-blind matcher would score that honesty as a lie. `destinations` keeps it off
+ * the redirection, which is the answer this whole issue was filed to get: see
+ * {@link namesADestination} for the six correct sentences that taught us so.
  *
- * Split on sentence enders only — a colon keeps its clause attached, which is how «no se
- * registra tu gasto en comida: worthline mide patrimonio» stays one claim.
+ * What is left is the real failure and only it: a denial about a supported subject, in
+ * an answer that points the user nowhere.
  */
-export function deniesCapabilityAbout(text: string, subjects: string[]): boolean {
+export function deniesCapabilityAbout(
+  text: string,
+  subjects: string[],
+  destinations: string[],
+): boolean {
+  if (namesADestination(text, destinations)) return false;
   const normalizedSubjects = subjects.map(normalize);
-  return normalize(text)
-    .split(/[.!?;\n]/)
-    .some(
-      (sentence) =>
-        CAPABILITY_DENIAL.some((pattern) => pattern.test(sentence)) &&
-        normalizedSubjects.some((subject) => sentence.includes(subject)),
-    );
+  return anySentence(
+    text,
+    (sentence) =>
+      CAPABILITY_DENIAL.some((pattern) => pattern.test(sentence)) &&
+      normalizedSubjects.some((subject) => sentence.includes(subject)),
+  );
 }
 
 /**
@@ -311,14 +349,25 @@ const EXTERNAL_TOOL = [
  */
 const INGESTS_IT = /\b(?:sub|adjunt|import|carg|paso?|pega|envi|manda|le[eo])/;
 
-export function recommendsExternalTool(text: string): boolean {
-  return normalize(text)
-    .split(/[.!?;\n]/)
-    .some(
-      (sentence) =>
-        EXTERNAL_TOOL.some((tool) => sentence.includes(tool)) &&
-        !INGESTS_IT.test(sentence),
-    );
+/**
+ * And the other reading: naming the tool in order to REFUSE it. «No hace falta un Excel
+ * aparte, worthline ya registra los gastos del alquiler» is the sentence this grader
+ * exists to reward, and the first draft failed it. Narrow and negated on purpose — the
+ * transcript's own «te recomiendo utilizar una herramienta de gestión de gastos» carries
+ * no negation and stays caught.
+ */
+const REFUSES_IT =
+  /\bno\s+(?:necesitas|hace\s+falta|te\s+mando|requieres?|uses?|hay\s+que\s+usar)|sin\s+necesidad\s+de/;
+
+export function recommendsExternalTool(text: string, destinations: string[]): boolean {
+  if (namesADestination(text, destinations)) return false;
+  return anySentence(
+    text,
+    (sentence) =>
+      EXTERNAL_TOOL.some((tool) => sentence.includes(tool)) &&
+      !INGESTS_IT.test(sentence) &&
+      !REFUSES_IT.test(sentence),
+  );
 }
 
 /** A grounding read tool ran — the answer is not ungrounded chatter. */

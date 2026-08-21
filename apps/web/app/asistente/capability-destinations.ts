@@ -71,13 +71,26 @@ export const CAPABILITY_DESTINATIONS: CapabilityDestination[] = [
   },
 ];
 
-/**
- * The map as one sentence, for a prompt or a refusal message. The banned workarounds
- * ride along at the end: they are part of the answer to «¿dónde se hace?», because the
- * transcript that opened #1524 shows what a model does when it only has the negative.
- */
+/** The destinations alone — «dónde se hace cada cosa», one sentence. */
 export function renderCapabilityDestinations(): string {
-  const where = CAPABILITY_DESTINATIONS.map((entry) => entry.where).join("; ");
+  return `${CAPABILITY_DESTINATIONS.map((entry) => entry.where).join("; ")}.`;
+}
+
+/**
+ * The same map plus the workarounds refused by name — for the SYSTEM PROMPT only.
+ *
+ * Split from {@link renderCapabilityDestinations} because the two consumers are asking
+ * different questions. The prompt is teaching conduct across every turn, so «no metas el
+ * neto en el importe» belongs in it. The maintainer alert's refusal is answering one
+ * rejected alert, and a lecture about rental expenses inside a figures-mismatch refusal
+ * is noise the reader did not ask for — the message's own doc comment says it names the
+ * surfaces «as the places to LOOK, not as the answer».
+ *
+ * Both still read the SAME entries, which is the invariant #1524 asked for; only the
+ * conduct half is prompt-only.
+ */
+export function renderCapabilityDestinationsForPrompt(): string {
   const never = CAPABILITY_DESTINATIONS.flatMap((entry) => entry.neverInstead ?? []);
-  return never.length === 0 ? `${where}.` : `${where}. Y ${never.join("; ")}.`;
+  const where = renderCapabilityDestinations();
+  return never.length === 0 ? where : `${where} Y ${never.join("; ")}.`;
 }

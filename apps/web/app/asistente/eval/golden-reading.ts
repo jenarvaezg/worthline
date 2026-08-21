@@ -25,6 +25,21 @@ import {
  * is the tool-discipline set (#1265), and the two are scored separately.
  */
 
+/**
+ * The subject worthline DOES cover and the surfaces that cover it (#1524). Both lists
+ * are what keep the two denial graders honest — see `graders.ts` — and they are here,
+ * next to the question, because they are properties of THIS question: another question
+ * about another capability brings its own.
+ */
+const RENT_EXPENSE_SUBJECTS = ["gasto", "ibi", "comunidad"];
+const RENT_EXPENSE_DESTINATIONS = [
+  "cobro",
+  "campo gastos",
+  "ficha",
+  "configuración avanzada",
+  "/patrimonio",
+];
+
 export const READING_QUESTIONS: GoldenQuestion[] = [
   {
     id: "liquid-vs-total",
@@ -148,19 +163,28 @@ export const READING_QUESTIONS: GoldenQuestion[] = [
     question: "¿Dónde introduzco los gastos declarados en las viviendas alquiladas?",
     grade: (a) => [
       spanish(a),
-      // «¿Dónde meto X?» over a holding is a read, not a recall.
+      // «¿Dónde meto X?» over a holding is a read, not a recall. This only pins THAT it
+      // read, not WHICH holding: the `familia` persona has a primary residence and no
+      // rented property, so the disciplined answer here reads the context once and says
+      // there is no rent declared yet — and `get_holding_detail`'s own description sends
+      // a list question to `get_financial_context`. Demanding the drilldown would score
+      // the right discipline as a defect; pinning «read that holding» needs a persona
+      // with a rented property, which is a change to the demo set and not this slice.
       grounded(a),
       check(
         "señala la ficha del inmueble y el campo de gastos",
-        mentionsAny(a.text, ["ficha", "patrimonio", "posición"]) &&
+        mentionsAny(a.text, ["ficha", "inmueble", "vivienda"]) &&
           mentionsAny(a.text, ["cobro"]) &&
           mentionsAny(a.text, ["gasto"]),
       ),
       check(
         "no niega que worthline registre los gastos",
-        !deniesCapabilityAbout(a.text, ["gasto", "ibi", "comunidad"]),
+        !deniesCapabilityAbout(a.text, RENT_EXPENSE_SUBJECTS, RENT_EXPENSE_DESTINATIONS),
       ),
-      check("no le manda a una herramienta externa", !recommendsExternalTool(a.text)),
+      check(
+        "no le manda a una herramienta externa",
+        !recommendsExternalTool(a.text, RENT_EXPENSE_DESTINATIONS),
+      ),
     ],
   },
   {

@@ -1,11 +1,19 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
   CAPABILITY_DESTINATIONS,
   renderCapabilityDestinations,
+  renderCapabilityDestinationsForPrompt,
 } from "./capability-destinations";
 import { MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE } from "./maintainer-alert-evidence";
 import { buildChatSystemPrompt } from "./system-prompt";
+
+/** Repo-relative read, so the static checks below say which file they are asserting. */
+const source = (path: string): string =>
+  readFileSync(join(process.cwd(), "app", path), "utf8");
 
 describe("capability destinations (#1524)", () => {
   it("names the rent-expenses surface the 2026-08-21 transcript could not find", () => {
@@ -58,17 +66,49 @@ describe("capability destinations (#1524)", () => {
 
     for (const entry of CAPABILITY_DESTINATIONS) {
       expect(prompt, entry.id).toContain(entry.where);
+      expect(MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE, entry.id).toContain(
+        entry.where,
+      );
     }
-    expect(MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE).toContain(
-      renderCapabilityDestinations(),
-    );
-    expect(prompt).toContain(renderCapabilityDestinations());
+  });
+
+  it("has both consumers CALL the module rather than carry their own copy", () => {
+    // The check above compares CONTENT, and content is not enough: a consumer that
+    // stopped importing this module and inlined the same prose today would still pass
+    // it, and would drift the moment an entry changed. So this one is static — the two
+    // files must call the renderer, and must not hold a destination literal of their
+    // own. It is the exact failure mode the module was extracted to end.
+    for (const file of [
+      "asistente/system-prompt.ts",
+      "asistente/maintainer-alert-evidence.ts",
+    ]) {
+      const text = source(file);
+      expect(text, file).toContain('from "./capability-destinations"');
+      expect(text, file).toMatch(/renderCapabilityDestinations(ForPrompt)?\(\)/);
+      expect(text, file).not.toContain("/ajustes/conexiones");
+      expect(text, file).not.toContain("campo Gastos");
+    }
+  });
+
+  it("keeps the rent workaround OUT of the alert refusal", () => {
+    // Two renderers, one map. The prompt teaches conduct on every turn, so «no metas el
+    // neto en el importe» belongs there; a figures-mismatch refusal lecturing about
+    // rental expenses is noise, and that message's own contract is to name surfaces «as
+    // the places to LOOK, not as the answer».
+    const workaround = CAPABILITY_DESTINATIONS.find(
+      (entry) => entry.id === "rent-expenses",
+    )?.neverInstead;
+
+    expect(workaround).toBeDefined();
+    expect(buildChatSystemPrompt(null)).toContain(workaround);
+    expect(MAINTAINER_ALERT_WITHOUT_DISCREPANCY_MESSAGE).not.toContain(workaround);
   });
 
   it("renders the workarounds after the destinations, in one sentence", () => {
-    const rendered = renderCapabilityDestinations();
+    const rendered = renderCapabilityDestinationsForPrompt();
 
     expect(rendered.endsWith(".")).toBe(true);
+    expect(rendered.startsWith(renderCapabilityDestinations())).toBe(true);
     for (const entry of CAPABILITY_DESTINATIONS) {
       expect(rendered, entry.id).toContain(entry.where);
       if (entry.neverInstead) {
@@ -77,5 +117,19 @@ describe("capability destinations (#1524)", () => {
         );
       }
     }
+  });
+
+  it("names the accordion the UI actually renders", () => {
+    // The rent destination quotes «Configuración avanzada» because `CobrosSection` sits
+    // inside that `<details>`. Nothing in the type system ties this prose to the page,
+    // so a rename there would leave the assistant confidently sending users to a
+    // control that no longer exists — the drift this module was born to prevent,
+    // pointing at the UI instead of at a sibling module. Anchored by reading the page.
+    const page = source("(workspace)/patrimonio/[id]/editar/page.tsx");
+    const rent = CAPABILITY_DESTINATIONS.find((entry) => entry.id === "rent-expenses");
+
+    expect(page).toContain("<summary>Configuración avanzada</summary>");
+    expect(page).toContain("<CobrosSection");
+    expect(rent?.where).toContain("Configuración avanzada");
   });
 });
