@@ -9,7 +9,7 @@ import type {
   OperationSource,
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation, isTransferKind } from "@worthline/domain";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 
 import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
@@ -112,6 +112,18 @@ export interface OperationsStore {
    */
   readTransferIdOf: (operationId: string) => Promise<string | null>;
   /**
+   * For every traspaso half on this asset's ledger, WHERE the other half lives,
+   * keyed by the `transferId` that ties them (#1481) — what a reader needs to print
+   * the pair as one move without loading any other holding's ledger. Only the asset
+   * id travels: the counterpart's kind is the opposite of the caller's by the pair
+   * invariant, so carrying it would be a second copy of a derivable fact. A
+   * `transferId` with no counterpart row anywhere is ABSENT from the map — the
+   * external traspaso (see `TransferRowCounterpart`, the semantics' one home).
+   */
+  readTransferCounterparts: (
+    assetId: string,
+  ) => Promise<ReadonlyMap<string, { assetId: string }>>;
+  /**
    * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
    * one entry per deleted row — the two asset ids and dates the caller ripples —
    * or an empty array when no row carries that `transferId`.
@@ -153,6 +165,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
     readOperations: (assetId) => readOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
+    readTransferCounterparts: (assetId) => readTransferCounterparts(ctx, assetId),
     deleteTransferPair: (transferId) => deleteTransferPair(ctx, transferId),
     updateOperation: (input) => updateOperation(ctx, input),
     batchApplyValueUpdates: (commands) => batchApplyValueUpdates(ctx, commands),
@@ -270,6 +283,53 @@ async function readTransferIdOf(
     .get();
 
   return row?.transferId ?? null;
+}
+
+/**
+ * Two narrow queries, not a self-join over the whole table: the ledger's own
+ * transfer ids first (usually a handful), then only the rows of OTHER assets that
+ * share one. A ledger with no traspaso pays a single indexed lookup and stops.
+ */
+async function readTransferCounterparts(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<ReadonlyMap<string, { assetId: string }>> {
+  const own = await ctx.db
+    .select({ transferId: assetOperations.transferId })
+    .from(assetOperations)
+    .where(
+      and(eq(assetOperations.assetId, assetId), isNotNull(assetOperations.transferId)),
+    )
+    .all();
+
+  // Drizzle's row type does not narrow on the `isNotNull` WHERE above, so the
+  // null checks here and below are for the compiler, not for a reachable case.
+  const transferIds = [
+    ...new Set(own.flatMap((row) => (row.transferId === null ? [] : [row.transferId]))),
+  ];
+  if (transferIds.length === 0) return new Map();
+
+  const counterparts = await ctx.db
+    .select({
+      assetId: assetOperations.assetId,
+      transferId: assetOperations.transferId,
+    })
+    .from(assetOperations)
+    .where(
+      and(
+        inArray(assetOperations.transferId, transferIds),
+        ne(assetOperations.assetId, assetId),
+      ),
+    )
+    .all();
+
+  const byTransferId = new Map<string, { assetId: string }>();
+  for (const row of counterparts) {
+    if (row.transferId !== null) {
+      byTransferId.set(row.transferId, { assetId: row.assetId });
+    }
+  }
+  return byTransferId;
 }
 
 /**

@@ -175,3 +175,10 @@ The «steer an amount that covers essentially everything towards «todo»» note
 NOT implemented: «todo» is offered as its own choice, naming the participaciones the
 position holds on the chosen date, but an importe a cent over is still refused with the
 message that offers it rather than being silently upgraded.
+
+## Amendment (#1481, 21-ago-2026) — the row says which door
+
+The ledger surface now tells the user what the delete translation above means before
+they hit it: a traspaso row's «Eliminar» confirm carries «Se elimina el traspaso
+entero: las dos mitades», so the pair leaving by one door is announced at the row, not
+discovered after the redirect. The reader-side pairing itself is ADR 0082's amendment.

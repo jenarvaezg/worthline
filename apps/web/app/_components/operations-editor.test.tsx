@@ -212,3 +212,128 @@ describe("operation rows are readable (#1467)", () => {
     expect(html).toContain("19/08/2026");
   });
 });
+
+describe("el par de traspaso se lee como un movimiento, no como compraventa (#1481)", () => {
+  const transferOut = {
+    assetId: "asset_1",
+    currency: "EUR",
+    executedAt: "2026-08-12",
+    feesMinor: 0,
+    id: "op_out",
+    kind: "transfer_out" as const,
+    pricePerUnit: "150",
+    transferId: "trf_1",
+    units: "5",
+  };
+  const transferIn = {
+    assetId: "asset_1",
+    currency: "EUR",
+    executedAt: "2026-08-12",
+    feesMinor: 0,
+    id: "op_in",
+    kind: "transfer_in" as const,
+    pricePerUnit: "150",
+    transferCostMinor: 97_718,
+    transferId: "trf_1",
+    units: "5",
+  };
+
+  test("la salida nombra su destino en la fila", () => {
+    const html = render(
+      {},
+      {
+        operations: [transferOut],
+        transferCounterparts: { op_out: { kind: "holding", name: "Fondo Azul" } },
+      },
+    );
+
+    expect(html).toContain("Traspaso (salida)");
+    expect(html).toContain("a Fondo Azul");
+  });
+
+  test("un traspaso es UNA entrada del libro, nunca una venta o compra sueltas", () => {
+    const html = render(
+      {},
+      {
+        operations: [transferOut],
+        transferCounterparts: { op_out: { kind: "holding", name: "Fondo Azul" } },
+      },
+    );
+
+    // Una sola fila de traspaso en el libro del origen — y ninguna celda de tipo
+    // que la disfrace de compraventa (las palabras existen solo como opciones del
+    // formulario de registrar, nunca como el tipo de esta fila).
+    expect(html.match(/Traspaso \(/g)).toHaveLength(1);
+    expect(html).not.toContain("<td>Venta</td>");
+    expect(html).not.toContain("<td>Compra</td>");
+  });
+
+  test("la entrada nombra su origen y enseña el coste heredado, céntimo a céntimo", () => {
+    const html = render(
+      {},
+      {
+        operations: [transferIn],
+        transferCounterparts: { op_in: { kind: "holding", name: "Fondo Rojo" } },
+      },
+    );
+
+    expect(html).toContain("Traspaso (entrada)");
+    expect(html).toContain("desde Fondo Rojo");
+    expect(html).toContain("coste heredado 977,18");
+  });
+
+  test("la media pareja externa dice «desde otra entidad»", () => {
+    const html = render(
+      {},
+      {
+        operations: [{ ...transferIn, id: "op_ext", transferId: "trf_ext" }],
+        transferCounterparts: { op_ext: { kind: "external" } },
+      },
+    );
+
+    expect(html).toContain("desde otra entidad");
+  });
+
+  test("sin mapa de contrapartes la fila no afirma un destino", () => {
+    const html = render({}, { operations: [transferOut] });
+
+    expect(html).toContain("Traspaso (salida)");
+    expect(html).not.toContain("otra entidad");
+  });
+
+  test("eliminar media fila avisa de que se lleva el traspaso entero", () => {
+    const html = render(
+      {},
+      {
+        operations: [transferOut],
+        transferCounterparts: { op_out: { kind: "holding", name: "Fondo Azul" } },
+      },
+    );
+
+    expect(html).toContain("las dos mitades");
+  });
+
+  test("una compra ni lleva nota de traspaso ni avisa de pares", () => {
+    const html = render(
+      {},
+      {
+        operations: [
+          {
+            assetId: "asset_1",
+            currency: "EUR",
+            executedAt: "2026-08-12",
+            feesMinor: 0,
+            id: "op_buy",
+            kind: "buy" as const,
+            pricePerUnit: "150",
+            units: "5",
+          },
+        ],
+      },
+    );
+
+    expect(html).toContain("Compra");
+    expect(html).not.toContain("las dos mitades");
+    expect(html).not.toContain("coste heredado");
+  });
+});

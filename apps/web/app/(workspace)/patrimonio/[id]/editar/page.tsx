@@ -1,4 +1,5 @@
 import OperationsEditor from "@web/_components/operations-editor";
+import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import { isDemoMode } from "@web/demo/write-guard";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
@@ -204,19 +205,24 @@ export default async function EditarPage({
   // The whole positions list is kept, not just this holding's: the traspaso picker
   // (#1480) prefills each candidate destination's VL from its last known price, and
   // that is the same wave — a query per candidate would be an N+1 for a prefill.
-  const [investment, operations, priceCache, positions, twrSnapshotRows] = isDerived
-    ? await Promise.all([
-        store.assets.readInvestmentAssetById(id),
-        store.operations.readOperations(id),
-        store.operations.readPriceCache(id),
-        store.snapshots.readPositions(),
-        store.snapshots.readSnapshotHoldings({
-          holdingId: id,
-          kind: "asset",
-          scopeId: "household",
-        }),
-      ])
-    : [null, [], null, [], []];
+  const [investment, operations, priceCache, positions, twrSnapshotRows, counterparts] =
+    isDerived
+      ? await Promise.all([
+          store.assets.readInvestmentAssetById(id),
+          store.operations.readOperations(id),
+          store.operations.readPriceCache(id),
+          store.snapshots.readPositions(),
+          store.snapshots.readSnapshotHoldings({
+            holdingId: id,
+            kind: "asset",
+            scopeId: "household",
+          }),
+          // Where each traspaso half's other half lives (#1481), so the operations
+          // table prints the pair as one move («a Fondo Azul») instead of a loose
+          // sale or buy.
+          store.operations.readTransferCounterparts(id),
+        ])
+      : [null, [], null, [], [], new Map<string, never>()];
   const position = positions.find((p) => p.assetId === id) ?? null;
   // The coin collection's decoupled valuation freshness (PRD #166): its own
   // `numista`-source cache row, separate from the investment derived path above.
@@ -249,6 +255,15 @@ export default async function EditarPage({
           currency: asset.currency,
         })
       : [];
+  // The traspaso rows' counterpart names (#1481): join this ledger's halves with
+  // the store's counterpart map and the live holdings' names. A counterpart whose
+  // holding is not in `allAssets` (Papelera) resolves as `unresolved` — the row
+  // claims nothing rather than mislabelling it as external.
+  const transferCounterparts = transferCounterpartByOperationId(
+    operations,
+    counterparts,
+    new Map(allAssets.map((a) => [a.id, a.name])),
+  );
   const isSnapshotCorrectionEligible =
     isDerived && investment !== null && operations.length > 0;
   // #1329: the «alta por valor total» state — 1 participación holding the whole
@@ -739,6 +754,7 @@ export default async function EditarPage({
                 readOnly={isDemo}
                 recordAction={boundRecordOperationAction}
                 today={today}
+                transferCounterparts={transferCounterparts}
               />
             ) : null}
 

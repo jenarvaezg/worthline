@@ -125,3 +125,30 @@ acquisition cost the units carry over is persisted on the incoming row.**
   together, the "Traspasar" screen (#1480), the ledger and drilldown surfaces (#1481),
   and the dictated traspaso (#1482). This slice teaches the engine to read a traspaso;
   the gate that writes one landed with #1479 — see ADR 0083.
+
+## Amendment (#1481, 21-ago-2026) — the readers caught up
+
+The ledger and drilldown surfaces listed as not covered above shipped. What the slice
+settled:
+
+- **The pair is presented as one move, never as a loose sale + buy.** The operations
+  table annotates each half with its counterpart — «a Fondo Azul» on the origin,
+  «desde Fondo Rojo» on the destination — resolved by `readTransferCounterparts`
+  (two narrow queries; no other holding's ledger is loaded) and joined server-side by
+  the pure `transferCounterpartByOperationId`. The wording lives with the kind labels
+  in `operation-kind-copy.ts` (`transferRowNote`), one home as before.
+- **The inherited cost prints on the `transfer_in` row, cents-exact** — it is the
+  figure a user checks against the origin's statement, so neither side may round
+  (the #1315 rule). Privacy mode masks it rather than dropping it.
+- **A half-pair with no counterpart row is EXTERNAL, not broken**: «desde otra
+  entidad» / «a otra entidad». One already exists in production (a plan brought in
+  from another entity), so the readers tolerate it by design and no validation may
+  demand the halves' amounts match — real pairs settle on different days' VL.
+- **A counterpart whose holding cannot be named (Papelera) claims nothing** — the
+  note stays silent about it instead of mislabelling it as external.
+- **The health signal's phrase became literal**: a ledger emptied by `transfer_out`
+  folds to zero net units, so «se fue sin venta ni traspaso» never fires for an
+  origin liquidated by traspaso. That was true by construction since this ADR's
+  engine; #1481 pins it with a regression over the whole chain (fold → net → signal).
+- The band question raised above (a scope-crossing traspaso in the delta breakdown)
+  stays where it was: no own band; the residual carries it.

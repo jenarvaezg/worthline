@@ -26,7 +26,11 @@
 import { formatIsoDayEs } from "@web/asistente/iso-day-es";
 import type { FormErrorContext } from "@web/intake";
 import { priceFreshnessLabel } from "@web/intake";
-import { operationKindLabel } from "@web/operation-kind-copy";
+import {
+  operationKindLabel,
+  type TransferRowCounterpart,
+  transferRowNote,
+} from "@web/operation-kind-copy";
 import type {
   CaptureCurrency,
   InvestmentOperation,
@@ -39,6 +43,7 @@ import {
   formatMoneyMinorPrivacy,
   formatUnits,
   isCaptureCurrency,
+  isTransferKind,
   maskMoneyString,
 } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
@@ -122,6 +127,7 @@ export default function OperationsEditor({
   deleteAction,
   defaultCurrency,
   today,
+  transferCounterparts,
 }: {
   /** The holding id the optimistic row is tagged with (the bound actions own it server-side). */
   assetId: string;
@@ -142,6 +148,14 @@ export default function OperationsEditor({
    */
   defaultCurrency?: CaptureCurrency | undefined;
   today: string;
+  /**
+   * Where each traspaso half's OTHER half lives (#1481), keyed by operation id —
+   * server-resolved via `transferCounterpartByOperationId`. Absent entries (or an
+   * absent map: an optimistic row, a caller that has none) claim nothing about the
+   * counterpart; the row still prints its kind and, on a `transfer_in`, its
+   * inherited cost.
+   */
+  transferCounterparts?: Record<string, TransferRowCounterpart>;
 }) {
   const operationValues = formError?.formId === "operation" ? formError.values : {};
 
@@ -416,11 +430,28 @@ export default function OperationsEditor({
                   .map((op) => {
                     const price = readOperationPrice(op, privacyMode);
                     const fees = readOperationFees(op, privacyMode);
+                    // The traspaso half reads as one move with an origin and a
+                    // destination (#1481) — never as a loose sale or buy.
+                    const transferNote = transferRowNote({
+                      counterpart: transferCounterparts?.[op.id] ?? {
+                        kind: "unresolved",
+                      },
+                      kind: op.kind,
+                      privacyMode,
+                      ...(op.transferCostMinor !== undefined
+                        ? { transferCostMinor: op.transferCostMinor }
+                        : {}),
+                    });
 
                     return (
                       <tr key={op.id}>
                         <td>{formatIsoDayEs(op.executedAt)}</td>
-                        <td>{operationKindLabel(op.kind)}</td>
+                        <td>
+                          {operationKindLabel(op.kind)}
+                          {transferNote ? (
+                            <small className="opCaptureNote">{transferNote}</small>
+                          ) : null}
+                        </td>
                         <td>{formatUnits(op.units)}</td>
                         <td>
                           {price.price}
@@ -446,6 +477,13 @@ export default function OperationsEditor({
                             <input name="operationId" type="hidden" value={op.id} />
                             <details suppressHydrationWarning className="confirmDelete">
                               <summary>Eliminar</summary>
+                              {isTransferKind(op.kind) ? (
+                                // The pair leaves the book by one door (ADR 0083):
+                                // deleting half deletes the whole traspaso.
+                                <small className="opCaptureNote">
+                                  Se elimina el traspaso entero: las dos mitades.
+                                </small>
+                              ) : null}
                               <button type="submit">Confirmar</button>
                             </details>
                           </form>
