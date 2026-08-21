@@ -71,6 +71,9 @@ export function transferRowNote(input: {
   }
 
   if (input.kind === "transfer_in" && input.transferCostMinor !== undefined) {
+    // Always BASE_CURRENCY, not the operation's capture currency: the ledger is
+    // stored in EUR (#1401) and the inherited cost is a fold-derived figure, so
+    // euros is the only currency it exists in.
     const exact = formatMoneyMinorExact({
       amountMinor: input.transferCostMinor,
       currency: BASE_CURRENCY,

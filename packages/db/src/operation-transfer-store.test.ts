@@ -150,14 +150,8 @@ describe("readTransferCounterparts (#1481)", () => {
     const fromOrigin = await store.operations.readTransferCounterparts("origen");
     const fromDestination = await store.operations.readTransferCounterparts("destino");
 
-    expect(fromOrigin.get(TRANSFER_ID)).toEqual({
-      assetId: "destino",
-      kind: "transfer_in",
-    });
-    expect(fromDestination.get(TRANSFER_ID)).toEqual({
-      assetId: "origen",
-      kind: "transfer_out",
-    });
+    expect(fromOrigin.get(TRANSFER_ID)).toEqual({ assetId: "destino" });
+    expect(fromDestination.get(TRANSFER_ID)).toEqual({ assetId: "origen" });
   });
 
   it("la media pareja externa no aparece: sin fila contraparte no hay entrada", async () => {

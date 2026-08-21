@@ -25,7 +25,7 @@ describe("transferCounterpartByOperationId (#1481)", () => {
   test("una mitad emparejada resuelve el nombre de su contraparte", () => {
     const result = transferCounterpartByOperationId(
       [operation({ id: "op_out", kind: "transfer_out", transferId: "trf_1" })],
-      new Map([["trf_1", { assetId: "destino", kind: "transfer_in" as const }]]),
+      new Map([["trf_1", { assetId: "destino" }]]),
       names,
     );
 
@@ -47,7 +47,7 @@ describe("transferCounterpartByOperationId (#1481)", () => {
   test("una contraparte sin nombre (papelera) queda como irresoluble, no como externa", () => {
     const result = transferCounterpartByOperationId(
       [operation({ id: "op_out", kind: "transfer_out", transferId: "trf_1" })],
-      new Map([["trf_1", { assetId: "borrado", kind: "transfer_in" as const }]]),
+      new Map([["trf_1", { assetId: "borrado" }]]),
       names,
     );
 

@@ -6,7 +6,6 @@ import type {
   Instant,
   InvestmentOperation,
   OperationCapture,
-  OperationKind,
   OperationSource,
 } from "@worthline/domain";
 import { asDateKey, createInvestmentOperation, isTransferKind } from "@worthline/domain";
@@ -113,16 +112,17 @@ export interface OperationsStore {
    */
   readTransferIdOf: (operationId: string) => Promise<string | null>;
   /**
-   * For every traspaso half on this asset's ledger, the OTHER half's whereabouts,
+   * For every traspaso half on this asset's ledger, WHERE the other half lives,
    * keyed by the `transferId` that ties them (#1481) — what a reader needs to print
-   * the pair as one move («a Fondo Azul», «desde Fondo Rojo») without loading any
-   * other holding's ledger. A `transferId` with no counterpart row anywhere is
-   * ABSENT from the map: that is the external traspaso (the other half lives in
-   * another entity), and pretending it has a local counterpart would be a lie.
+   * the pair as one move without loading any other holding's ledger. Only the asset
+   * id travels: the counterpart's kind is the opposite of the caller's by the pair
+   * invariant, so carrying it would be a second copy of a derivable fact. A
+   * `transferId` with no counterpart row anywhere is ABSENT from the map — the
+   * external traspaso (see `TransferRowCounterpart`, the semantics' one home).
    */
   readTransferCounterparts: (
     assetId: string,
-  ) => Promise<ReadonlyMap<string, { assetId: string; kind: OperationKind }>>;
+  ) => Promise<ReadonlyMap<string, { assetId: string }>>;
   /**
    * Delete BOTH halves of one traspaso, by the id that ties them (#1479). Returns
    * one entry per deleted row — the two asset ids and dates the caller ripples —
@@ -293,7 +293,7 @@ async function readTransferIdOf(
 async function readTransferCounterparts(
   ctx: StoreContext,
   assetId: string,
-): Promise<ReadonlyMap<string, { assetId: string; kind: OperationKind }>> {
+): Promise<ReadonlyMap<string, { assetId: string }>> {
   const own = await ctx.db
     .select({ transferId: assetOperations.transferId })
     .from(assetOperations)
@@ -302,6 +302,8 @@ async function readTransferCounterparts(
     )
     .all();
 
+  // Drizzle's row type does not narrow on the `isNotNull` WHERE above, so the
+  // null checks here and below are for the compiler, not for a reachable case.
   const transferIds = [
     ...new Set(own.flatMap((row) => (row.transferId === null ? [] : [row.transferId]))),
   ];
@@ -310,7 +312,6 @@ async function readTransferCounterparts(
   const counterparts = await ctx.db
     .select({
       assetId: assetOperations.assetId,
-      kind: assetOperations.kind,
       transferId: assetOperations.transferId,
     })
     .from(assetOperations)
@@ -322,10 +323,10 @@ async function readTransferCounterparts(
     )
     .all();
 
-  const byTransferId = new Map<string, { assetId: string; kind: OperationKind }>();
+  const byTransferId = new Map<string, { assetId: string }>();
   for (const row of counterparts) {
     if (row.transferId !== null) {
-      byTransferId.set(row.transferId, { assetId: row.assetId, kind: row.kind });
+      byTransferId.set(row.transferId, { assetId: row.assetId });
     }
   }
   return byTransferId;

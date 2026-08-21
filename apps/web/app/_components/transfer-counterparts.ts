@@ -10,12 +10,11 @@ import type { InvestmentOperation } from "@worthline/domain";
 import { isTransferKind } from "@worthline/domain";
 
 /**
- * One entry per traspaso half on the ledger, keyed by operation id:
- *  - a counterpart row whose holding has a name → `holding` (printable);
- *  - no counterpart row anywhere → `external` (the real half-pair of #1393:
- *    a plan brought in from another entity);
- *  - a counterpart row whose holding cannot be named (Papelera) → `unresolved`,
- *    which claims nothing rather than mislabelling it as external.
+ * One entry per traspaso half on the ledger, keyed by operation id. The three
+ * outcomes and what each may claim are defined on {@link TransferRowCounterpart}
+ * — this function only decides which one the joined data supports: a named
+ * holding, no counterpart row at all (`external`), or a row whose holding is
+ * missing from the name map (`unresolved`, e.g. the Papelera).
  */
 export function transferCounterpartByOperationId(
   operations: readonly InvestmentOperation[],

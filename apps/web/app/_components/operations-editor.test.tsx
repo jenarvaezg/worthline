@@ -251,6 +251,23 @@ describe("el par de traspaso se lee como un movimiento, no como compraventa (#14
     expect(html).toContain("a Fondo Azul");
   });
 
+  test("un traspaso es UNA entrada del libro, nunca una venta o compra sueltas", () => {
+    const html = render(
+      {},
+      {
+        operations: [transferOut],
+        transferCounterparts: { op_out: { kind: "holding", name: "Fondo Azul" } },
+      },
+    );
+
+    // Una sola fila de traspaso en el libro del origen — y ninguna celda de tipo
+    // que la disfrace de compraventa (las palabras existen solo como opciones del
+    // formulario de registrar, nunca como el tipo de esta fila).
+    expect(html.match(/Traspaso \(/g)).toHaveLength(1);
+    expect(html).not.toContain("<td>Venta</td>");
+    expect(html).not.toContain("<td>Compra</td>");
+  });
+
   test("la entrada nombra su origen y enseña el coste heredado, céntimo a céntimo", () => {
     const html = render(
       {},
