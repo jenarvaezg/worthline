@@ -537,6 +537,7 @@ export function okMessage(key: string | undefined): string | null {
     goal_saved: "Objetivo guardado.",
     restored: "Restaurado.",
     saved: "Guardado.",
+    transfer_recorded: "Traspaso registrado.",
     trash_emptied: "Papelera vaciada.",
     valores_actualizados: "Valores actualizados.",
     valuation_cadence_saved: "Cadencia de valoración guardada.",

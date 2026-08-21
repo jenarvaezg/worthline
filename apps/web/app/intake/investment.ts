@@ -111,8 +111,12 @@ export function parseInvestmentAssetCommandStrict(
  *
  * Blank stays blank: the ISIN is optional by design (a pension plan often has none), and
  * an alta that leaves it empty is flagged by the health signal, never blocked.
+ *
+ * Exported because the alta is no longer the only door an ISIN comes through: the
+ * traspaso form creates its destination holding in the same submit (#1480), and a
+ * second reading of the same field would be a second identity rule.
  */
-function parseOptionalIsin(
+export function parseOptionalIsin(
   value: FormDataEntryValue | null,
 ): { ok: true; isin?: string } | { ok: false; error: string } {
   const normalized = String(value ?? "")
