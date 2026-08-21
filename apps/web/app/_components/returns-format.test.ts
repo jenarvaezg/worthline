@@ -104,3 +104,29 @@ describe("returnsTooltipLines", () => {
     expect(lines).toContain(APPRECIATING_CAVEAT);
   });
 });
+
+describe("una TWR ausente dice por qué (#1457)", () => {
+  test("el tramo no medible se nombra, no se deja en un guion mudo", () => {
+    const lines = returnsTooltipLines(
+      marketView({
+        twr: {
+          annualized: false,
+          annualizedRate: null,
+          endDate: "2025-12-10",
+          rate: null,
+          reason: "non_measurable_subperiod",
+          spanDays: 12,
+          startDate: "2025-11-28",
+        },
+      }),
+    );
+
+    expect(lines).toContain(
+      "TWR desde 28/11/2025: — (un tramo con más movimiento que valor no es medible)",
+    );
+  });
+
+  test("una TWR medida no arrastra ninguna coletilla", () => {
+    expect(returnsTooltipLines(marketView())).toContain("TWR desde 31/01/2024: +7,4 %");
+  });
+});

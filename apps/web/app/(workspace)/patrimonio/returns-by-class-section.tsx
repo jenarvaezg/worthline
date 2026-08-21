@@ -1,5 +1,5 @@
-import { formatMeasurePct } from "@web/_components/returns-format";
-import type { AssetClassReturnsViewResult } from "@worthline/domain";
+import { formatMeasurePct, twrUnavailableReason } from "@web/_components/returns-format";
+import type { AssetClassReturnsViewResult, TwrReason } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 
 import { assetClassLabel, formatExposureWeight } from "./exposure-view";
@@ -13,13 +13,20 @@ import { assetClassLabel, formatExposureWeight } from "./exposure-view";
  * them. A class with no resolvable holdings is `Sin clasificar` — honest coverage,
  * never hidden — and gains/losses use the semantic sign colours, not raw
  * green/red (design-system.md). A measure that could not be computed shows an em
- * dash, never a fabricated number.
+ * dash, never a fabricated number — and that em dash says on hover WHY the measure
+ * is missing, so an absent figure reads as a signal and not as a glitch (#1457).
  */
 function signClass(ratio: number | null): "pos" | "neg" | "" {
   if (ratio === null || ratio === 0) {
     return "";
   }
   return ratio > 0 ? "pos" : "neg";
+}
+
+/** The hover text behind a missing TWR: the reason, never just its absence. */
+function twrWhy(reason: TwrReason | null): string {
+  const why = twrUnavailableReason(reason);
+  return why === null ? "Sin TWR para esta clase." : `Sin TWR: ${why}.`;
 }
 
 export default function ReturnsByClassSection({
@@ -69,7 +76,13 @@ export default function ReturnsByClassSection({
               </div>
               <div>
                 <dt>TWR</dt>
-                <dd>{formatMeasurePct(entry.view.twr?.rate ?? null)}</dd>
+                <dd
+                  {...(entry.view.twr?.rate == null
+                    ? { title: twrWhy(entry.view.twr?.reason ?? null) }
+                    : {})}
+                >
+                  {formatMeasurePct(entry.view.twr?.rate ?? null)}
+                </dd>
               </div>
             </dl>
           </li>

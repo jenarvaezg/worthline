@@ -92,3 +92,42 @@ describe("ReturnsByClassSection", () => {
     expect(html).toContain("+50,0 %");
   });
 });
+
+describe("una TWR ausente dice por qué (#1457)", () => {
+  test("el guion de la clase lleva el motivo al pasar por encima", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection
+        privacyMode={false}
+        returns={{
+          classes: [
+            {
+              key: "commodity",
+              value: { amountMinor: 99_900, currency: EUR },
+              view: {
+                ...marketView({ irrRate: 0.05, totalReturnRatio: 0.1, twrRate: null }),
+                twr: {
+                  annualized: false,
+                  annualizedRate: null,
+                  endDate: "2025-12-10",
+                  rate: null,
+                  reason: "non_measurable_subperiod",
+                  spanDays: 12,
+                  startDate: "2025-11-28",
+                },
+              },
+            },
+          ],
+          coverage: {
+            classified: { amountMinor: 99_900, currency: EUR },
+            notApplicable: { amountMinor: 0, currency: EUR },
+            unknown: { amountMinor: 0, currency: EUR },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain(
+      "Sin TWR: un tramo con más movimiento que valor no es medible.",
+    );
+  });
+});

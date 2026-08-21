@@ -137,7 +137,8 @@ export interface TwrCashflow {
 export type TwrReason =
   | "insufficient_monthly_closes"
   | "zero_time_span"
-  | "zero_denominator";
+  | "zero_denominator"
+  | "non_measurable_subperiod";
 
 /** Time-weighted return over the available monthly-close span. */
 export interface TwrResult {
@@ -219,37 +220,46 @@ export function monthlyCloseValuesFromSnapshotRows(
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
+/** The span a TWR was attempted over — what an unavailable result still reports. */
+interface TwrSpan {
+  startDate: string | null;
+  endDate: string | null;
+  spanDays: number;
+}
+
+/** A TWR that could not be measured: no rate, no annualization, the reason kept. */
+function twrUnavailable(reason: TwrReason, span: TwrSpan): TwrResult {
+  return {
+    annualized: false,
+    annualizedRate: null,
+    endDate: span.endDate,
+    rate: null,
+    reason,
+    spanDays: span.spanDays,
+    startDate: span.startDate,
+  };
+}
+
 export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
   const monthlyCloses = [...input.monthlyCloses].sort((left, right) =>
     left.date.localeCompare(right.date),
   );
 
   if (monthlyCloses.length < 2) {
-    return {
-      annualized: false,
-      annualizedRate: null,
+    return twrUnavailable("insufficient_monthly_closes", {
       endDate: monthlyCloses[0]?.date ?? null,
-      rate: null,
-      reason: "insufficient_monthly_closes",
       spanDays: 0,
       startDate: monthlyCloses[0]?.date ?? null,
-    };
+    });
   }
 
   const startDate = monthlyCloses[0]!.date;
   const endDate = monthlyCloses[monthlyCloses.length - 1]!.date;
   const spanDays = daysBetween(startDate, endDate);
+  const span: TwrSpan = { endDate, spanDays, startDate };
 
   if (spanDays <= 0) {
-    return {
-      annualized: false,
-      annualizedRate: null,
-      endDate,
-      rate: null,
-      reason: "zero_time_span",
-      spanDays,
-      startDate,
-    };
+    return twrUnavailable("zero_time_span", span);
   }
 
   let factor = 1;
@@ -259,15 +269,7 @@ export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
     const periodDays = daysBetween(start.date, end.date);
 
     if (periodDays <= 0) {
-      return {
-        annualized: false,
-        annualizedRate: null,
-        endDate,
-        rate: null,
-        reason: "zero_time_span",
-        spanDays,
-        startDate,
-      };
+      return twrUnavailable("zero_time_span", span);
     }
 
     const periodCashflows = input.cashflows.filter(
@@ -285,19 +287,23 @@ export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
     const denominator = start.valueMinor + weightedCashflowMinor;
 
     if (denominator === 0) {
-      return {
-        annualized: false,
-        annualizedRate: null,
-        endDate,
-        rate: null,
-        reason: "zero_denominator",
-        spanDays,
-        startDate,
-      };
+      return twrUnavailable("zero_denominator", span);
     }
 
     const periodRate =
       (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
+
+    // A TWR chains factors `(1 + R)`. Once a factor turns zero or negative the
+    // chain stops meaning anything — two negative factors multiply back to a
+    // positive, so the product no longer even preserves the sign of the loss, and
+    // the result can land below −100%, which no return ever is (#1457). `R ≤ −1`
+    // is the signal that Modified Dietz does not apply to this subperiod (the
+    // period flow dwarfs the opening value), so the whole measure is reported as
+    // unavailable with its reason rather than published as a percentage.
+    if (1 + periodRate <= 0) {
+      return twrUnavailable("non_measurable_subperiod", span);
+    }
+
     factor *= 1 + periodRate;
   }
 

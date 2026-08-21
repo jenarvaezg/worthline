@@ -30,7 +30,7 @@ test("holding ficha shows vs-benchmark card when tracked index is assigned", asy
   await expect(benchmark).toContainText("vs MSCI World");
   // A freshly added holding has no monthly-close history yet — the card degrades
   // honestly instead of fabricating a verdict (ADR 0060).
-  await expect(benchmark).toContainText("La TWR necesita al menos dos cierres mensuales");
+  await expect(benchmark).toContainText("No hay una TWR medible en este periodo");
 });
 
 test("holding ficha omits vs-benchmark when no tracked index is assigned", async ({
