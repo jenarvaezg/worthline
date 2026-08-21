@@ -1384,6 +1384,95 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     );
   });
 
+  test("a mortgage born in a recalculation freezes the housing rung, not cash (#1436)", () => {
+    // The healing path for a date whose snapshot predates the home: the debt row
+    // does not exist yet, so the recalculation MINTS it. It used to read the rung
+    // off the frozen asset rows — no home row there, so `cash` — and an existing
+    // row's rung is preserved by every later ripple, which froze a mortgage on the
+    // cash rung of the liquidity ladder for good.
+    const workspace = makeWorkspace();
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+    const curve: DebtBalanceCurveInputs = {
+      anchors: [],
+      currentBalanceMinor: 100_000_00,
+      debtModel: "amortizable",
+      plan: {
+        annualInterestRate: "0.03",
+        initialCapitalMinor: 150_000_00,
+        disbursementDate: "2004-05-19",
+        firstPaymentDate: "2004-06-19",
+        termMonths: 360,
+      },
+      revisions: [],
+    };
+
+    // A snapshot with only a cash account frozen — no home row, no debt row.
+    const cuenta = cash(workspace, "asset_cash", 5_000_00);
+    const base = captureValuedNetWorthSnapshot({
+      ...BASE,
+      assets: [cuenta],
+      capturedAt: "2010-01-01T12:00:00.000Z",
+      workspace,
+    });
+
+    const recalculated = recalculateSnapshotForLiability({
+      curve,
+      frozenHoldings: base.holdings,
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: hipoteca,
+      snapshot: base.snapshot,
+      workspace,
+    })!;
+
+    const minted = recalculated.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(minted.securesHousing).toBe(true);
+    expect(minted.liquidityTier).toBe("housing");
+    // The rung it used to freeze would have put the debt on the liquid axis had
+    // securesHousing not covered for it — the two now agree on one row.
+    expect(recalculated.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00);
+    expect(recalculated.snapshot.housingEquity.amountMinor).toBe(-minted.valueMinor);
+  });
+
+  test("an unassociated debt born in a recalculation still freezes a null rung (#181)", () => {
+    const workspace = makeWorkspace();
+    const prestamo = createLiability(workspace, {
+      balanceMinor: 5_000_00,
+      currency: "EUR",
+      id: "liab_loan",
+      name: "Préstamo",
+      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      type: "debt",
+    });
+    const base = captureValuedNetWorthSnapshot({
+      ...BASE,
+      assets: [cash(workspace, "asset_cash", 5_000_00)],
+      capturedAt: "2010-01-01T12:00:00.000Z",
+      workspace,
+    });
+
+    const recalculated = recalculateSnapshotForLiability({
+      curve: {
+        anchors: [{ anchorDate: "2009-01-01", balanceMinor: 4_000_00 }],
+        currentBalanceMinor: 5_000_00,
+        debtModel: "revolving",
+      },
+      frozenHoldings: base.holdings,
+      housingAssetIds: new Set(["asset_piso"]),
+      liability: prestamo,
+      snapshot: base.snapshot,
+      workspace,
+    })!;
+
+    const minted = recalculated.holdings.find((h) => h.holdingId === "liab_loan")!;
+    expect(minted.securesHousing).toBe(false);
+    expect(minted.liquidityTier).toBe(null);
+    // A null rung reads as `cash` on the liquid axis (deriveRowAxes), so an
+    // unassociated debt still lowers the liquid net worth.
+    expect(recalculated.snapshot.liquidNetWorth.amountMinor).toBe(
+      5_000_00 - minted.valueMinor,
+    );
+  });
+
   test("the historical path freezes securesHousing on every row (#180)", () => {
     const workspace = makeWorkspace();
     const piso = housing(workspace, "asset_piso", 200_000_00);
