@@ -100,12 +100,12 @@ describe("projectExposureDrift", () => {
     const holdings: ExposureLookthroughHolding[] = [
       holding({
         id: "h_eu",
-        isin: "IE00EU",
+        providerSymbol: "IE00EU",
         valueMinor: 1_000_000,
       }),
       holding({
         id: "h_us",
-        isin: "IE00US",
+        providerSymbol: "IE00US",
         valueMinor: 0,
       }),
     ];
@@ -142,12 +142,12 @@ describe("projectExposureDrift", () => {
     const holdings: ExposureLookthroughHolding[] = [
       holding({
         id: "h_eu",
-        isin: "IE00EU",
+        providerSymbol: "IE00EU",
         valueMinor: 500_000,
       }),
       holding({
         id: "h_us",
-        isin: "IE00US",
+        providerSymbol: "IE00US",
         valueMinor: 500_000,
       }),
     ];
@@ -190,7 +190,7 @@ describe("projectExposureDrift", () => {
     const holdings: ExposureLookthroughHolding[] = [
       holding({
         id: "h_known",
-        isin: "IE00EU",
+        providerSymbol: "IE00EU",
         valueMinor: 600_000,
       }),
       holding({
@@ -228,7 +228,7 @@ describe("projectExposureDrift", () => {
 
   it("excludes contributions to a destination outside the holdings set instead of distorting weights", () => {
     const holdings: ExposureLookthroughHolding[] = [
-      holding({ id: "h_eu", isin: "IE00EU", valueMinor: 1_000_000 }),
+      holding({ id: "h_eu", providerSymbol: "IE00EU", valueMinor: 1_000_000 }),
     ];
 
     const projection = projectExposureDrift({

@@ -15,7 +15,7 @@ function fund(overrides: Partial<FundSelectionState> = {}): FundSelectionState {
     bucket: "matched",
     executedCount: 2,
     included: true,
-    isin: "ES00WL000001",
+    isin: "ES00WL000009",
     skippedCount: 0,
     symbolEmpty: false,
     ...overrides,

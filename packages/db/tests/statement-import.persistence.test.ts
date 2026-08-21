@@ -13,7 +13,7 @@ async function seed(store: WorthlineStore): Promise<void> {
   await store.assets.createInvestmentAsset({
     currency: "EUR",
     id: "matched_fund",
-    isin: "ES00WL000001",
+    isin: "ES00WL000009",
     liquidityTier: "market",
     name: "Fondo existente",
     ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -52,7 +52,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
           asset: {
             currency: "EUR",
             id: "new_fund",
-            isin: "LU00WL000002",
+            isin: "LU00WL000022",
             liquidityTier: "market",
             name: "Fondo nuevo",
             ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -92,7 +92,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
     });
 
     expect(await store.assets.readInvestmentAssetById("new_fund")).toMatchObject({
-      isin: "LU00WL000002",
+      isin: "LU00WL000022",
       providerSymbol: "NUEVO.FAKE",
     });
     expect(await store.operations.readOperations("matched_fund")).toMatchObject([
@@ -117,7 +117,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
           asset: {
             currency: "EUR",
             id: "fund_a",
-            isin: "LU00WL000003",
+            isin: "LU00WL000006",
             liquidityTier: "market",
             name: "Fondo A",
             ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -150,7 +150,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
           asset: {
             currency: "EUR",
             id: "fund_b",
-            isin: "LU00WL000004",
+            isin: "LU00WL000014",
             liquidityTier: "market",
             name: "Fondo B",
             ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -209,7 +209,7 @@ describe("applyStatementImportAndRipple (ADR 0055)", () => {
             asset: {
               currency: "EUR",
               id: "new_fund",
-              isin: "LU00WL000002",
+              isin: "LU00WL000022",
               liquidityTier: "market",
               name: "Fondo nuevo",
               ownership: [{ memberId: "mJ", shareBps: 10_000 }],

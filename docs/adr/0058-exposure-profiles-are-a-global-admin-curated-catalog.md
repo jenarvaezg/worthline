@@ -20,3 +20,19 @@ This preserves the #1014 surface guardian: workspace code still must not write p
 The stub is registered **best-effort**: a control-plane outage never blocks or fails the holding write that triggered it (the stub is created on the next write or sync touching the same identity, since registration is idempotent). Non-market holdings (cash, property, crypto, coins) have no catalog identity, so connected sources — which yield only crypto/coins today — register nothing; a future fund-yielding source flows through the same derivation for free. The per-workspace override remains out of scope (YAGNI, unchanged).
 
 Holdings that predate this seam are seeded by a **one-shot backfill** (`scripts/backfill-exposure-catalog-stubs.ts`): it walks the control plane's workspace registry, reads each workspace's investment assets, derives their identities through the same pure helper, and registers stubs — idempotent and non-destructive, so it never touches a curated row and re-running is a no-op. (An earlier iteration deferred this to purely organic population; the backfill was added so the catalog is complete on day one rather than filling in over weeks.)
+
+## Amendment (#1453): the key trusts only what an ISIN is
+
+The `isin ?? providerSymbol` rule above is now, on both sides, «a **valid** ISIN
+when the column carries one, else the provider symbol». A pension plan's DGS code
+stored in the `isin` column made the two halves of the rule diverge: the
+registration identity validated (ISO 6166 check digit) and fell back to the
+symbol, while the look-through key read the raw column and searched under the
+code — the catalog had the row, the holding rendered «sin clasificar», nothing
+warned. `exposureLookthroughKey` now applies the same `validIsinOrNull`
+normalization the registration identity uses, so the stored key and the lookup
+key cannot disagree; and the interactive identity writes (`createInvestmentAsset`,
+`updateInvestmentAsset`, `backfillInvestmentIsin`, `patchInvestmentIdentity`, the
+assistant's draft) refuse a non-ISIN at the door. The workspace-document import
+stays exempt — a restore preserves the document as-is — which is safe precisely
+because the reading key validates.

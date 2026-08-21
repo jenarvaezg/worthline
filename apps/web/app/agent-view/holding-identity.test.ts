@@ -12,7 +12,7 @@
 
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
-import type { InvestmentOperation } from "@worthline/domain";
+import { type InvestmentOperation, isValidIsin } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { buildFinancialContext } from "./financial-context";
@@ -109,14 +109,14 @@ describe("resolveHoldingIdentity", () => {
   test("carries the registered ISIN, provider symbol and net units held", () => {
     expect(
       resolveHoldingIdentity({
-        meta: { isin: "LU0000000123", providerSymbol: "0P0000TEST.F" },
+        meta: { isin: "LU0000000124", providerSymbol: "0P0000TEST.F" },
         operations: ledger([
           ["buy", "10"],
           ["sell", "2.5"],
         ]),
       }),
     ).toEqual({
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       providerSymbol: "0P0000TEST.F",
       units: "7.5",
     });
@@ -174,7 +174,7 @@ describe("buildFinancialContext · instrument identity per row (#1346)", () => {
     const store = await seed();
     await createFund(store, {
       id: "fund-a",
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       name: "Fondo Global",
       operations: [
         ["buy", "10"],
@@ -184,7 +184,7 @@ describe("buildFinancialContext · instrument identity per row (#1346)", () => {
     });
     await createFund(store, {
       id: "fund-b",
-      isin: "ES0000000456",
+      isin: "ES0000000457",
       name: "Fondo Ibérico",
       operations: [["buy", "40"]],
     });
@@ -197,14 +197,14 @@ describe("buildFinancialContext · instrument identity per row (#1346)", () => {
     const cash = rows.get(await publicIdOf(store, "cash"));
 
     expect(fundA).toMatchObject({
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       providerSymbol: "0P0000TEST.F",
       units: "7.5",
     });
     // A fund with an ISIN but no provider symbol reports the ISIN and stays silent about the
     // symbol — the enumeration answer is «this one has no symbol registered», never
     // «no ISIN consta» for the whole list.
-    expect(fundB).toMatchObject({ isin: "ES0000000456", units: "40" });
+    expect(fundB).toMatchObject({ isin: "ES0000000457", units: "40" });
     expect(fundB && "providerSymbol" in fundB).toBe(false);
     // A cash account has no instrument identity at all: absent, not blank.
     expect(cash).toBeDefined();
@@ -218,10 +218,19 @@ describe("buildFinancialContext · instrument identity per row (#1346)", () => {
     // paid on every question. Measured, not assumed: three short fields per
     // investment row (#1346), against a ~1.000-byte row.
     const store = await seed();
+    // The store refuses a non-ISIN (#1453), so each synthetic base closes with
+    // a real ISO 6166 check digit.
+    const isinFor = (index: number): string => {
+      const base = `LU000000${index.toString().padStart(3, "0")}`;
+      for (let digit = 0; digit <= 9; digit += 1) {
+        if (isValidIsin(`${base}${digit}`)) return `${base}${digit}`;
+      }
+      throw new Error(`No check digit fits ${base}`);
+    };
     for (let index = 0; index < 20; index += 1) {
       await createFund(store, {
         id: `fund-${index}`,
-        isin: `LU000000${index.toString().padStart(4, "0")}`,
+        isin: isinFor(index),
         name: `Fondo ${index}`,
         operations: [["buy", "10"]],
         providerSymbol: `0P00000${index.toString().padStart(3, "0")}.F`,
@@ -250,7 +259,7 @@ describe("buildHoldingDetail · the same identity as the row that led here (#134
     const store = await seed();
     await createFund(store, {
       id: "fund-a",
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       name: "Fondo Global",
       operations: [
         ["buy", "10"],
@@ -273,7 +282,7 @@ describe("buildHoldingDetail · the same identity as the row that led here (#134
     );
 
     expect(detail).toMatchObject({
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       providerSymbol: "0P0000TEST.F",
       units: "7.5",
     });
@@ -317,7 +326,7 @@ describe("buildHoldingSearch · net units per match (#1346)", () => {
     const store = await seed();
     await createFund(store, {
       id: "fund-a",
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       name: "Fondo Global",
       operations: [
         ["buy", "10"],
@@ -335,7 +344,7 @@ describe("buildHoldingSearch · net units per match (#1346)", () => {
     });
 
     expect(page.matches[0]).toMatchObject({
-      isin: "LU0000000123",
+      isin: "LU0000000124",
       providerSymbol: "0P0000TEST.F",
       units: "7.5",
     });

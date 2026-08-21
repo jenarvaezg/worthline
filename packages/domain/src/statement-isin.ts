@@ -11,6 +11,7 @@
  * mixed-ISIN statements as the ADR 0055 one-fund case.
  */
 
+import { isValidIsin } from "./exposure-identity";
 import type { ParsedStatement } from "./statement-parse";
 
 export type StatementIsinGuard =
@@ -40,8 +41,11 @@ export function resolveStatementIsinGuard(
   }
 
   if (asset === null) {
-    // Backfill with the file's value as it was written (normalized to upper).
-    return { isin: file, status: "backfill" };
+    // Backfill only what an ISIN is (#1453): a broker code in the file's isin
+    // column would be stored as the holding's identity and make the exposure
+    // catalog key and the look-through key diverge. Nothing to guard against an
+    // empty holding anyway, so the load proceeds without writing.
+    return isValidIsin(file) ? { isin: file, status: "backfill" } : { status: "absent" };
   }
 
   return file === asset ? { status: "match" } : { status: "mismatch" };
@@ -81,9 +85,13 @@ export function resolvePerHoldingStatementIsinGuard(
   }
 
   if (asset === null) {
-    return fileIsins.length === 1
+    if (fileIsins.length !== 1) {
+      return { fileIsins, status: "mismatch" };
+    }
+    // Same #1453 rule as the single-file guard: never backfill a non-ISIN.
+    return isValidIsin(fileIsins[0]!)
       ? { isin: fileIsins[0]!, status: "backfill" }
-      : { fileIsins, status: "mismatch" };
+      : { status: "absent" };
   }
 
   return fileIsins.every((isin) => isin === asset)

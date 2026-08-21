@@ -15,6 +15,7 @@ import {
   createManualAsset,
   defaultInstrumentForAssetType,
   defaultInvestmentPriceProvider,
+  validIsinOrNull,
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
@@ -671,7 +672,7 @@ async function createInvestmentAsset(
       .insert(investmentAssets)
       .values({
         assetId: asset.id,
-        isin: input.isin ?? null,
+        isin: normalizedIsinColumnValue(input.isin),
         manualPricePerUnit: input.manualPricePerUnit ?? null,
         manualPricedAt: pricedAt,
         priceProvider: input.priceProvider ?? null,
@@ -879,6 +880,29 @@ async function updateAssetValuation(
   await ctx.writeAuditEntry("update_valuation", "asset", assetId, { currentValueMinor });
 }
 
+/**
+ * The isin column stores an ISIN or nothing (#1453). Every interactive identity
+ * write funnels through here: a non-ISIN in the column makes the exposure catalog
+ * register the row under the provider key while the look-through searches under
+ * the raw value, so the holding turns «sin clasificar» with nothing warning about
+ * it. The UI and assistant boundaries refuse earlier with friendly messages —
+ * this is the backstop under all of them. The one exempt write is the
+ * workspace-document import (`workspace-store.ts`), which preserves the document
+ * as-is (#1416: a restore must not fail on legacy data); the validated
+ * look-through key still classifies such a row correctly.
+ */
+function normalizedIsinColumnValue(value: string | null | undefined): string | null {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return null;
+  const normalized = validIsinOrNull(trimmed);
+  if (normalized === null) {
+    throw new Error(
+      `"${trimmed}" is not a valid ISIN (12 characters, ISO 6166 check digit) — refuse it or leave the column empty.`,
+    );
+  }
+  return normalized;
+}
+
 async function updateInvestmentAsset(
   ctx: StoreContext,
   input: UpdateInvestmentAssetInput,
@@ -901,7 +925,7 @@ async function updateInvestmentAsset(
       .update(investmentAssets)
       .set({
         unitSymbol: input.unitSymbol ?? null,
-        isin: input.isin ?? null,
+        isin: normalizedIsinColumnValue(input.isin),
         priceProvider: input.priceProvider ?? null,
         providerSymbol: input.providerSymbol ?? null,
         manualPricePerUnit: input.manualPricePerUnit ?? null,
@@ -923,14 +947,17 @@ async function backfillInvestmentIsin(
   assetId: string,
   isin: string,
 ): Promise<number> {
+  const normalized = normalizedIsinColumnValue(isin);
   const result = await ctx.db
     .update(investmentAssets)
-    .set({ isin })
+    .set({ isin: normalized })
     .where(eq(investmentAssets.assetId, assetId))
     .run();
 
   if (result.rowsAffected > 0) {
-    await ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, { isin });
+    await ctx.writeAuditEntry("backfill_investment_isin", "asset", assetId, {
+      isin: normalized,
+    });
   }
 
   return result.rowsAffected;
@@ -942,7 +969,7 @@ async function patchInvestmentIdentity(
   patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
 ): Promise<number> {
   const fields: Partial<typeof investmentAssets.$inferInsert> = {
-    ...(patch.isin === undefined ? {} : { isin: patch.isin }),
+    ...(patch.isin === undefined ? {} : { isin: normalizedIsinColumnValue(patch.isin) }),
     ...(patch.providerSymbol === undefined
       ? {}
       : { providerSymbol: patch.providerSymbol }),

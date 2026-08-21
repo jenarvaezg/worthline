@@ -20,6 +20,7 @@
 import { DEMO_DISABLED_MESSAGE } from "@web/demo/write-guard";
 import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
+import { isValidIsin } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -73,8 +74,20 @@ const ISIN_COUNTRIES = [
   "CZ",
 ] as const;
 
-const ALL_ISINS = ISIN_COUNTRIES.map(
-  (country, i) => `${country}00WL${String(i + 1).padStart(6, "0")}`,
+/**
+ * Close each synthetic 11-char base with a real ISO 6166 check digit: the store
+ * refuses a non-ISIN in the isin column (#1453), fixtures included.
+ */
+function withIsinCheckDigit(base11: string): string {
+  for (let digit = 0; digit <= 9; digit += 1) {
+    const candidate = `${base11}${digit}`;
+    if (isValidIsin(candidate)) return candidate;
+  }
+  throw new Error(`No check digit fits ${base11}`);
+}
+
+const ALL_ISINS = ISIN_COUNTRIES.map((country, i) =>
+  withIsinCheckDigit(`${country}00WL${String(i + 1).padStart(5, "0")}`),
 );
 const MATCHED_ISINS = ALL_ISINS.slice(0, 6);
 

@@ -24,6 +24,57 @@ describe("exposureLookthroughKey", () => {
   test("yields null when neither field is present", () => {
     expect(exposureLookthroughKey({})).toBeNull();
   });
+
+  test("a non-ISIN in the isin column falls back to the provider symbol (#1453)", () => {
+    // The real case: a pension plan's DGS code stored in the isin column. The
+    // registration identity already fell back to the symbol; the look-through
+    // key must fall the same way or the profile is stored under one key and
+    // looked up under another.
+    expect(
+      exposureLookthroughKey({ isin: "N5394", providerSymbol: "N5394-Myinvestor" }),
+    ).toBe("N5394-Myinvestor");
+  });
+
+  test("normalises a valid ISIN (trim + upper-case) like the registration identity", () => {
+    expect(exposureLookthroughKey({ isin: `  ${VWRL_ISIN.toLowerCase()}  ` })).toBe(
+      VWRL_ISIN,
+    );
+  });
+
+  test("a non-ISIN with no symbol yields null, never a garbage key", () => {
+    expect(exposureLookthroughKey({ isin: "N5394" })).toBeNull();
+  });
+
+  test("blank fields are absent (an empty-string isin falls through)", () => {
+    expect(exposureLookthroughKey({ isin: "", providerSymbol: "VWCE" })).toBe("VWCE");
+    expect(exposureLookthroughKey({ isin: "   ", providerSymbol: "  " })).toBeNull();
+  });
+
+  test("keys under the exact key the catalog registered when the ISIN is invalid (#1453)", () => {
+    // Registration side: the DGS code fails validation, the row registers under
+    // the provider identity. Reading side: the same holding must produce the key
+    // that identity maps to — the two rules are one rule again.
+    const identity = deriveExposureCatalogIdentity({
+      instrument: "pension_plan",
+      isin: "N5394",
+      providerSymbol: "N5394-Myinvestor",
+    });
+    expect(identity).toEqual({
+      kind: "provider",
+      priceProvider: "finect",
+      providerSymbol: "N5394-Myinvestor",
+    });
+
+    const map = exposureProfileLookthroughMap([
+      profile({ identity: identity!, breakdowns: { assetClass: { equity: "1" } } }),
+    ]);
+    const holdingKey = exposureLookthroughKey({
+      isin: "N5394",
+      providerSymbol: "N5394-Myinvestor",
+    });
+    expect(holdingKey).not.toBeNull();
+    expect(map.has(holdingKey!)).toBe(true);
+  });
 });
 
 describe("deriveExposureCatalogIdentity", () => {

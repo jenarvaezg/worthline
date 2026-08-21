@@ -11,6 +11,7 @@
 
 import { createHash } from "node:crypto";
 import { resolveOwnershipSplit } from "@web/intake";
+import { parseOptionalIsin } from "@web/intake/investment";
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import { priceSourceLabel } from "@web/price-source-label";
 import type {
@@ -260,6 +261,12 @@ function buildPlan(
     };
   }
 
+  // The one identity rule of the alta form (#1489/#1453): a chat-extracted ISIN
+  // that fails the ISO 6166 check would persist a key the exposure catalog never
+  // registers, so it is refused at draft time — same message the ficha shows.
+  const parsedIsin = parseOptionalIsin(args.isin ?? null);
+  if (!parsedIsin.ok) return { ok: false, error: parsedIsin.error };
+
   // investment: an optional opening BUY dated today, resolved by the one module
   // that owns `importe = títulos × precio + comisión` (#1315). Nothing declared →
   // an empty container (no 0 € valuation invented); a half-declared opening fails
@@ -269,7 +276,7 @@ function buildPlan(
     instrument,
     name,
     ownership,
-    ...(args.isin ? { isin: args.isin.trim() } : {}),
+    ...(parsedIsin.isin ? { isin: parsedIsin.isin } : {}),
     ...(args.providerSymbol ? { providerSymbol: args.providerSymbol.trim() } : {}),
   };
   const resolved = resolveHoldingCreationOpening(

@@ -64,6 +64,46 @@ describe("patchInvestmentIdentity (#1349)", () => {
     }
   });
 
+  test("refuses a non-ISIN in the isin field and writes nothing (#1453)", async () => {
+    const store = await seedStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "fund",
+        liquidityTier: "market",
+        name: "Fondo",
+        ownership: [{ memberId: "m", shareBps: 10_000 }],
+      });
+
+      await expect(
+        store.assets.patchInvestmentIdentity("fund", { isin: "N5394" }),
+      ).rejects.toThrow(/ISIN/);
+      const meta = await store.assets.readInvestmentAssetById("fund");
+      expect(meta?.isin).toBeUndefined();
+    } finally {
+      store.close();
+    }
+  });
+
+  test("stores a valid ISIN normalized to upper case", async () => {
+    const store = await seedStore();
+    try {
+      await store.assets.createInvestmentAsset({
+        currency: "EUR",
+        id: "fund",
+        liquidityTier: "market",
+        name: "Fondo",
+        ownership: [{ memberId: "m", shareBps: 10_000 }],
+      });
+
+      await store.assets.patchInvestmentIdentity("fund", { isin: " ie00b03hcz61 " });
+      const meta = await store.assets.readInvestmentAssetById("fund");
+      expect(meta?.isin).toBe("IE00B03HCZ61");
+    } finally {
+      store.close();
+    }
+  });
+
   test("a symbol fill clears the price cache row the old configuration left", async () => {
     const store = await seedStore();
     try {
@@ -134,6 +174,79 @@ describe("patchInvestmentIdentity (#1349)", () => {
       // A cache row minted for the previous configuration would price the new
       // symbol from the old figure.
       expect(await store.operations.readPriceCache("fund")).toBeNull();
+    } finally {
+      store.close();
+    }
+  });
+});
+
+/**
+ * The isin column accepts only what an ISIN is (#1453): every write path funnels
+ * through the store, so refusing here cuts the whole failure class — a non-ISIN
+ * stored in the column makes the exposure catalog register the row under the
+ * provider key while the look-through searches under the garbage value, and the
+ * holding turns «sin clasificar» with nothing warning about it.
+ */
+describe("isin column validation (#1453)", () => {
+  async function seedFund(store: Awaited<ReturnType<typeof seedStore>>) {
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "fund",
+      liquidityTier: "market",
+      name: "Fondo",
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+    });
+  }
+
+  test("createInvestmentAsset refuses a non-ISIN", async () => {
+    const store = await seedStore();
+    try {
+      await expect(
+        store.assets.createInvestmentAsset({
+          currency: "EUR",
+          id: "fund",
+          isin: "N5394",
+          liquidityTier: "market",
+          name: "Fondo",
+          ownership: [{ memberId: "m", shareBps: 10_000 }],
+        }),
+      ).rejects.toThrow(/ISIN/);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("updateInvestmentAsset refuses a non-ISIN and writes nothing", async () => {
+    const store = await seedStore();
+    try {
+      await seedFund(store);
+      await expect(
+        store.assets.updateInvestmentAsset({
+          id: "fund",
+          isin: "N5394",
+          name: "Fondo renombrado",
+        }),
+      ).rejects.toThrow(/ISIN/);
+      const meta = await store.assets.readInvestmentAssetById("fund");
+      expect(meta?.isin).toBeUndefined();
+      expect(meta?.name).toBe("Fondo");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("backfillInvestmentIsin refuses a non-ISIN and normalizes a valid one", async () => {
+    const store = await seedStore();
+    try {
+      await seedFund(store);
+      await expect(store.assets.backfillInvestmentIsin("fund", "N5394")).rejects.toThrow(
+        /ISIN/,
+      );
+
+      const updated = await store.assets.backfillInvestmentIsin("fund", "ie00b03hcz61");
+      expect(updated).toBe(1);
+      const meta = await store.assets.readInvestmentAssetById("fund");
+      expect(meta?.isin).toBe("IE00B03HCZ61");
     } finally {
       store.close();
     }

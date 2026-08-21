@@ -207,7 +207,7 @@ describe("mixed document proposal router", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "fund",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       liquidityTier: "market",
       manualPricePerUnit: "10",
       name: "Fondo",
@@ -255,13 +255,13 @@ describe("mixed document proposal router", () => {
             broker: "plantilla",
             confidence: "certain",
             kind: "investment_statement",
-            rawText: `${header}\r\n05/01/2024;Fondo;ES00WL000001;Compra;2;20;;Fondo`,
+            rawText: `${header}\r\n05/01/2024;Fondo;ES00WL000009;Compra;2;20;;Fondo`,
           },
           {
             broker: "plantilla",
             confidence: "certain",
             kind: "investment_statement",
-            rawText: `${header}\r\n05/02/2024;Fondo;ES00WL000001;Compra;3;30;;Fondo`,
+            rawText: `${header}\r\n05/02/2024;Fondo;ES00WL000009;Compra;3;30;;Fondo`,
           },
           {
             confidence: "certain",

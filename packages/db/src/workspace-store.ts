@@ -745,7 +745,10 @@ async function importWorkspace(
       }
 
       // Every investment gets its metadata row (all-null when the file
-      // carries none) — read paths expect the row to exist.
+      // carries none) — read paths expect the row to exist. The isin is written
+      // AS THE DOCUMENT SAYS, deliberately skipping the #1453 write guard: a
+      // restore preserves, never derives (#1416), and a legacy non-ISIN here
+      // still classifies correctly because the look-through key validates.
       if (asset.type === "investment") {
         await db
           .insert(investmentAssets)

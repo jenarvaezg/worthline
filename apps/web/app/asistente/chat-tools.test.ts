@@ -29,7 +29,7 @@ import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
 import type { AgentViewReadStore, WorthlineStore } from "@worthline/db";
 import { createInMemoryStore as createWorthlineInMemoryStore } from "@worthline/db";
-import { formatMoneyMinor } from "@worthline/domain";
+import { formatMoneyMinor, isValidIsin } from "@worthline/domain";
 import { afterEach, describe, expect, it } from "vitest";
 
 const AS_OF = "2026-06-19";
@@ -458,7 +458,7 @@ describe("createChatTools · propose_statement_import (#767)", () => {
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "matched_fund",
-      isin: "ES00WL000001",
+      isin: "ES00WL000009",
       liquidityTier: "market",
       name: "Fondo existente",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
@@ -473,7 +473,7 @@ describe("createChatTools · propose_statement_import (#767)", () => {
     });
     const rawText = [
       "Fecha;Tipo de activo;Identificador;Operación;Participaciones;Importe;Comisión;Nombre",
-      "05/01/2024;Fondo;ES00WL000001;Compra;10,0000;500;;",
+      "05/01/2024;Fondo;ES00WL000009;Compra;10,0000;500;;",
     ].join("\r\n");
 
     const result = await tools["propose_statement_import"]?.execute?.(
@@ -484,7 +484,7 @@ describe("createChatTools · propose_statement_import (#767)", () => {
     expect(result).toMatchObject({
       proposalType: "statement_import",
       draft: { proposalId: expect.any(String) },
-      funds: [{ bucket: "matched", isin: "ES00WL000001" }],
+      funds: [{ bucket: "matched", isin: "ES00WL000009" }],
     });
     expect(JSON.stringify(result)).not.toContain(rawText);
     const proposalId = result.draft.proposalId as string;
@@ -1376,7 +1376,7 @@ describe("createChatTools · raise_maintainer_alert (#1050)", () => {
           holdingId: "wl_hld_unknown",
           category: "infidelity",
           summary:
-            "El usuario desea asignar el ISIN LU0000000000 al fondo, pero propose_correction no permite editarlo.",
+            "El usuario desea asignar el ISIN LU0000000009 al fondo, pero propose_correction no permite editarlo.",
         },
         toolCallContext(),
       )) as { error?: string; message?: string };
@@ -2498,12 +2498,21 @@ describe("createChatTools · the instrument inventory in ONE read (#1346)", () =
       members: [{ id: "m", name: "Titular" }],
       mode: "individual",
     });
+    // The store refuses a non-ISIN (#1453): each synthetic base closes with a
+    // real ISO 6166 check digit.
+    const isinFor = (index: number): string => {
+      const base = `LU000000${index.toString().padStart(3, "0")}`;
+      for (let digit = 0; digit <= 9; digit += 1) {
+        if (isValidIsin(`${base}${digit}`)) return `${base}${digit}`;
+      }
+      throw new Error(`No check digit fits ${base}`);
+    };
     for (let index = 0; index < 12; index += 1) {
       await store.assets.createInvestmentAsset({
         currency: "EUR",
         id: `fund-${index}`,
         instrument: "fund",
-        isin: `LU000000${index.toString().padStart(4, "0")}`,
+        isin: isinFor(index),
         name: `Fondo ${index}`,
         ownership: SOLO,
         providerSymbol: `0P00000${index.toString().padStart(3, "0")}.F`,

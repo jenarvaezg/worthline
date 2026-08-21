@@ -31,7 +31,7 @@ async function seedV40WithExposureProfile(): Promise<Client> {
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   );`);
-  await client.execute("INSERT INTO exposure_profiles (key) VALUES ('IE00SP500')");
+  await client.execute("INSERT INTO exposure_profiles (key) VALUES ('IE00SP500002')");
   return client;
 }
 
