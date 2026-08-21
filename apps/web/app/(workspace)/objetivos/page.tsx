@@ -33,7 +33,10 @@ import {
   parseAllocationMonthParam,
 } from "./contribution-allocation-view";
 import { ContributionAllowancePanel } from "./contribution-allowance-panel";
-import { contributionAllowanceDestinationOptions } from "./contribution-allowance-view";
+import {
+  contributionAllowanceDestinationOptions,
+  contributionAllowanceOperations,
+} from "./contribution-allowance-view";
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
 import { parseExposureDriftGrowth, parseExposureDriftYear } from "./exposure-drift-view";
@@ -323,19 +326,41 @@ export async function ObjetivosContent({
   // Cupo anual de aportación (#1427): el tope lo declaró el usuario; lo consumido
   // sale del libro de operaciones del año natural en curso — nunca de lo que el
   // plan preveía aportar, que induciría a pasarse creyendo que queda margen.
+  //
+  // Y lo consumido sale del libro de sus DESTINOS, no de los holdings que esta
+  // página pinta (#1509): un plan traspasado se vacía y se manda a la papelera,
+  // y sus aportaciones de este año siguen habiendo consumido cupo. Solo se paga
+  // la lectura de la papelera cuando algún destino marcado no está vivo.
+  const liveHoldingIds = new Set(assets.map((asset) => asset.id));
+  const allowanceOperations = contributionAllowanceOperations({
+    allowances: contributionAllowances,
+    liveHoldingIds,
+    liveOperations: contributionOperations,
+    operationsByAsset: projectionContext.operationsByAsset,
+  });
+  const hasTrashedDestination = contributionAllowances.some((allowance) =>
+    allowance.holdingIds.some((holdingId) => !liveHoldingIds.has(holdingId)),
+  );
+  const trashedHoldings = hasTrashedDestination ? (await store.readTrash()).assets : [];
   const allowanceUsageById = new Map(
     contributionAllowances.map((allowance) => [
       allowance.id,
       computeContributionAllowanceUsage({
         allowance,
         currency,
-        operations: contributionOperations,
+        operations: allowanceOperations,
         todayISO: today,
       }),
     ]),
   );
   const allowanceDestinationOptions = contributionAllowanceDestinationOptions(assets);
-  const holdingNameById = new Map(assets.map((asset) => [asset.id, asset.name]));
+  // Los nombres incluyen los de la papelera: un destino cuyas aportaciones SÍ se
+  // cuentan tiene que poder nombrarse, o el panel lo tacharía de invisible (#1509).
+  const holdingNameById = new Map([
+    ...assets.map((asset): [string, string] => [asset.id, asset.name]),
+    ...trashedHoldings.map((holding): [string, string] => [holding.id, holding.name]),
+  ]);
+  const trashedHoldingIds = new Set(trashedHoldings.map((holding) => holding.id));
 
   // Passive-income lens (#658): the selected scope's trailing-12m payouts,
   // weighted by ownership, against declared spending. Server-rendered figures;
@@ -528,6 +553,7 @@ export async function ObjetivosContent({
           holdingNameById={holdingNameById}
           privacyMode={privacyMode}
           scopeId={selectedScope.id}
+          trashedHoldingIds={trashedHoldingIds}
           usageById={allowanceUsageById}
         />
       ) : null}

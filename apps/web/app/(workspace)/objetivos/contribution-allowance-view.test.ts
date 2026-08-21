@@ -1,12 +1,14 @@
 import type {
   ContributionAllowance,
   ContributionAllowanceUsage,
+  InvestmentOperation,
   ManualAsset,
 } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import {
   contributionAllowanceDestinationOptions,
+  contributionAllowanceOperations,
   contributionAllowanceRowView,
 } from "./contribution-allowance-view";
 
@@ -159,5 +161,128 @@ describe("contributionAllowanceDestinationOptions", () => {
     ] as unknown as ManualAsset[];
 
     expect(contributionAllowanceDestinationOptions(assets)).toEqual([]);
+  });
+});
+
+describe("contributionAllowanceOperations — un destino en la papelera sigue contando (#1509)", () => {
+  const op = (
+    assetId: string,
+    id: string,
+    kind: InvestmentOperation["kind"] = "buy",
+  ): InvestmentOperation =>
+    ({
+      assetId,
+      currency: "EUR",
+      executedAt: "2026-05-05",
+      feesMinor: 0,
+      id,
+      kind,
+      pricePerUnit: "10",
+      units: "15",
+    }) as InvestmentOperation;
+
+  test("añade las operaciones del destino marcado que ya no está vivo", () => {
+    // El caso real: un PP traspasado se vacía y se manda a la papelera, y sus
+    // aportaciones de este año siguen habiendo consumido cupo.
+    const operations = contributionAllowanceOperations({
+      allowances: [{ ...allowance, holdingIds: ["pp1", "borrado"] }],
+      liveHoldingIds: new Set(["pp1"]),
+      liveOperations: [op("pp1", "o1")],
+      operationsByAsset: new Map([
+        ["pp1", [op("pp1", "o1")]],
+        ["borrado", [op("borrado", "o2"), op("borrado", "o3")]],
+      ]),
+    });
+
+    expect(operations.map((o) => o.id)).toEqual(["o1", "o2", "o3"]);
+  });
+
+  test("no duplica un destino que sí está vivo", () => {
+    const operations = contributionAllowanceOperations({
+      allowances: [allowance],
+      liveHoldingIds: new Set(["pp1"]),
+      liveOperations: [op("pp1", "o1")],
+      operationsByAsset: new Map([["pp1", [op("pp1", "o1")]]]),
+    });
+
+    expect(operations.map((o) => o.id)).toEqual(["o1"]);
+  });
+
+  test("ignora un holding borrado que ningún cupo marca", () => {
+    const operations = contributionAllowanceOperations({
+      allowances: [allowance],
+      liveHoldingIds: new Set(["pp1"]),
+      liveOperations: [op("pp1", "o1")],
+      operationsByAsset: new Map([
+        ["pp1", [op("pp1", "o1")]],
+        ["otro-borrado", [op("otro-borrado", "o9")]],
+      ]),
+    });
+
+    expect(operations.map((o) => o.id)).toEqual(["o1"]);
+  });
+
+  test("sin cupos no añade nada", () => {
+    const operations = contributionAllowanceOperations({
+      allowances: [],
+      liveHoldingIds: new Set(["pp1"]),
+      liveOperations: [op("pp1", "o1")],
+      operationsByAsset: new Map([["borrado", [op("borrado", "o2")]]]),
+    });
+
+    expect(operations.map((o) => o.id)).toEqual(["o1"]);
+  });
+
+  test("un destino marcado sin operación ninguna no rompe nada", () => {
+    const operations = contributionAllowanceOperations({
+      allowances: [{ ...allowance, holdingIds: ["pp1", "fantasma"] }],
+      liveHoldingIds: new Set(["pp1"]),
+      liveOperations: [op("pp1", "o1")],
+      operationsByAsset: new Map([["pp1", [op("pp1", "o1")]]]),
+    });
+
+    expect(operations.map((o) => o.id)).toEqual(["o1"]);
+  });
+});
+
+describe("un destino en la papelera se nombra, no se cuenta como invisible (#1509)", () => {
+  const withTrash = new Map([...names, ["borrado", "Planes traspasados"]]);
+
+  test("deja de contar como destino no visto y dice que está en la papelera", () => {
+    const view = contributionAllowanceRowView({
+      allowance: { ...allowance, holdingIds: ["pp1", "borrado"] },
+      holdingNameById: withTrash,
+      trashedHoldingIds: new Set(["borrado"]),
+      usage: usage({ consumedMinor: 130_000 }),
+    });
+
+    expect(view.unknownDestinationCount).toBe(0);
+    expect(view.destinationNames).toEqual([
+      "MyInvestor Value PP",
+      "Planes traspasados (en la papelera)",
+    ]);
+  });
+
+  test("un asset_id que no existe en absoluto SIGUE contando como no visto", () => {
+    const view = contributionAllowanceRowView({
+      allowance: { ...allowance, holdingIds: ["pp1", "fantasma"] },
+      holdingNameById: withTrash,
+      trashedHoldingIds: new Set(["borrado"]),
+      usage: usage({ consumedMinor: 0 }),
+    });
+
+    expect(view.unknownDestinationCount).toBe(1);
+    expect(view.destinationNames).toEqual(["MyInvestor Value PP"]);
+  });
+
+  test("sin papelera se comporta igual que antes", () => {
+    const view = contributionAllowanceRowView({
+      allowance: { ...allowance, holdingIds: ["pp1", "pp2"] },
+      holdingNameById: names,
+      usage: usage({ consumedMinor: 0 }),
+    });
+
+    expect(view.unknownDestinationCount).toBe(0);
+    expect(view.destinationNames).toEqual(["MyInvestor Value PP", "Plan de empleo"]);
   });
 });

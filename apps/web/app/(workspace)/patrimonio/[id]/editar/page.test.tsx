@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
   debtBalanceAtDate: vi.fn(async () => 174_500_00),
@@ -193,6 +193,19 @@ describe("EditarPage progressive disclosure (#604)", () => {
  * `current_balance_minor` form is then a write into the void (#1290).
  */
 describe("EditarPage — the raw balance door follows the engine (#1290)", () => {
+  // The modelled figure below is a function of TODAY: every cuota the plan pays
+  // moves it. Left on the real clock this test passed for one month and then
+  // started failing on the 21st, when the second cuota fell. Freezing the day is
+  // what makes the pinned figure mean "the plan produces this", not "the calendar
+  // happens to agree".
+  beforeAll(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-08-10T12:00:00.000Z"));
+  });
+  afterAll(() => {
+    vi.useRealTimers();
+  });
+
   const PLAN = {
     annualInterestRate: "0.0589",
     disbursementDate: "2026-06-21",

@@ -2,6 +2,7 @@ import type {
   ContributionAllowance,
   ContributionAllowanceEntry,
   ContributionAllowanceUsage,
+  InvestmentOperation,
   ManualAsset,
 } from "@worthline/domain";
 import { keepsAnOperationLedger } from "@worthline/domain";
@@ -35,7 +36,11 @@ export interface ContributionAllowanceRowView {
   tone: ContributionAllowanceTone;
   /** Names of the destinations that consume this allowance, in the stored order. */
   destinationNames: string[];
-  /** Marked destinations whose holding is not on this page — their entries are unseen. */
+  /**
+   * Marked destinations whose holding does not exist at all — their entries are
+   * genuinely unseen. A destination merely in the trash does NOT count here: its
+   * entries are counted (#1509), so it is named instead of tallied as invisible.
+   */
   unknownDestinationCount: number;
   /** In-year entries not counted because they are denominated elsewhere (#1401). */
   skippedForeignCount: number;
@@ -46,9 +51,12 @@ export interface ContributionAllowanceRowView {
 export function contributionAllowanceRowView(input: {
   allowance: ContributionAllowance;
   usage: ContributionAllowanceUsage;
+  /** Names of every holding a destination may resolve to, INCLUDING trashed ones (#1509). */
   holdingNameById: ReadonlyMap<string, string>;
+  /** Which of those names belong to a holding in the trash, so the label can say so. */
+  trashedHoldingIds?: ReadonlySet<string>;
 }): ContributionAllowanceRowView {
-  const { allowance, holdingNameById, usage } = input;
+  const { allowance, holdingNameById, trashedHoldingIds, usage } = input;
   const ratio = usage.consumedRatio ?? 0;
 
   const destinationNames: string[] = [];
@@ -59,7 +67,11 @@ export function contributionAllowanceRowView(input: {
       unknownDestinationCount += 1;
       continue;
     }
-    destinationNames.push(name);
+    // A trashed destination is named and marked, not hidden: its contributions
+    // are counted, so calling it "not on this screen" would be the lie (#1509).
+    destinationNames.push(
+      trashedHoldingIds?.has(holdingId) ? `${name} (en la papelera)` : name,
+    );
   }
 
   return {
@@ -81,6 +93,48 @@ export function contributionAllowanceRowView(input: {
     unknownDestinationCount,
     year: usage.year,
   };
+}
+
+/**
+ * The operations a cupo counts (#1509).
+ *
+ * A cupo counts **facts of the calendar year**, not live holdings: money paid
+ * into a pension plan in May consumed that year's room, and sending the holding
+ * to the trash in August does not hand it back. But the page's operation list is
+ * built by walking the holdings it paints, so a trashed destination silently
+ * dropped its contributions out of the sum — Jorge's counter read 1.104 € and
+ * offered 396 € when 1.300 € was already in and only 200 € was left.
+ *
+ * So the destinations a cupo marks decide what to read, not the holdings that
+ * happen to be alive. Deliberately additive over `liveOperations`: it only pulls
+ * in ids the live list cannot have contributed, so nothing is counted twice, and
+ * an id no cupo marks stays out even when its operations are in the map.
+ *
+ * The domain (`computeContributionAllowanceUsage`) still owns which of these
+ * count — buys only, in-year, in the cap's currency.
+ */
+export function contributionAllowanceOperations(input: {
+  allowances: readonly ContributionAllowance[];
+  /** The operations already gathered from the live holdings on the page. */
+  liveOperations: readonly InvestmentOperation[];
+  /** Every asset's ledger, trashed holdings included (`readAllOperations`). */
+  operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  liveHoldingIds: ReadonlySet<string>;
+}): InvestmentOperation[] {
+  const { allowances, liveHoldingIds, liveOperations, operationsByAsset } = input;
+
+  const missing = new Set<string>();
+  for (const allowance of allowances) {
+    for (const holdingId of allowance.holdingIds) {
+      if (!liveHoldingIds.has(holdingId)) missing.add(holdingId);
+    }
+  }
+  if (missing.size === 0) return [...liveOperations];
+
+  return [
+    ...liveOperations,
+    ...[...missing].flatMap((holdingId) => operationsByAsset.get(holdingId) ?? []),
+  ];
 }
 
 /**
