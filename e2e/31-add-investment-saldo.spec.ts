@@ -3,9 +3,11 @@
  *
  * The wizard's investment drawer: pick one of the 3 behavior groups → search (or
  * type the symbol by hand — the manual fallback used here to avoid live network)
- * → capture "how much you have" via one of two MUTUALLY-EXCLUSIVE modes:
+ * → capture "how much you have" via one of three MUTUALLY-EXCLUSIVE modes:
  *   (a) saldo-de-hoy → derives units + records an opening BUY, lands VALUED.
  *   (b) importar extracto → no synthetic opening, routes to «Cargar movimientos».
+ *   (c) viene traspasada de otra entidad (#1541) → ONE `transfer_in` with its own
+ *       transferId, never a compra: the capital only changed manager.
  *
  * Runs after journey 30 so the holdings it adds don't perturb earlier totals.
  */
@@ -107,6 +109,54 @@ test("importar extracto: routes to «Cargar movimientos» with no opening operat
   await expect(
     page.getByRole("region", { name: "Operaciones de la inversión" }),
   ).toBeVisible();
+});
+
+test("viene traspasada de otra entidad: alta por traspaso externo, no por compra (#1541)", async ({
+  page,
+}) => {
+  await openInvestmentGroup(page, "pension_plan");
+
+  await page.locator('input[name="name_pension_plan"]').fill("Plan traspasado E2E");
+  await page.locator('input[name="symbol_pension_plan"]').fill("N5394-Myinvestor");
+
+  await page
+    .locator('label:has(input[name="invMode_pension_plan"][value="traspaso"])')
+    .click();
+
+  const pane = page.locator(
+    '.invGroupPane[data-group="pension_plan"] .invModePane[data-mode="traspaso"]',
+  );
+  await expect(pane).toContainText("no consume cupo de aportación");
+
+  await pane.locator('input[name="trAmount_pension_plan"]').fill("95,46");
+  await pane.locator('input[name="trPrice_pension_plan"]').fill("12,50");
+
+  // The live hint runs the gate's own plan: 95,46 / 12,50 = 7,6368 participaciones.
+  await expect(pane.locator(".invUnitsHint")).toContainText("7,6368 participaciones");
+  await expect(pane).toContainText("sin plusvalía latente inventada");
+
+  // A declared inherited cost reveals the latent gain it carries over.
+  await pane.locator('input[name="trCost_pension_plan"]').fill("80,00");
+  await expect(pane).toContainText("plusvalía latente");
+  await expect(pane).toContainText("15,46");
+  await pane.locator('input[name="trCost_pension_plan"]').fill("");
+
+  await pane.getByRole("button", { name: "Añadir" }).click();
+
+  // The confirmation says «traspaso», not «creada»: the difference the cupo and the
+  // plusvalía both hang on.
+  await expect(page).toHaveURL(/\/patrimonio\/anadir\?ok=investment_transfer_in_added/);
+  await expect(page.getByRole("heading", { name: /traspaso externo/ })).toBeVisible();
+
+  // The row reads as half a traspaso whose origin lives elsewhere (#1481) — never
+  // as a compra.
+  await page.getByRole("link", { name: /Añadir movimientos/ }).click();
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/, { timeout: 10_000 });
+  const operations = page.getByRole("region", {
+    name: "Operaciones de la inversión",
+  });
+  await expect(operations).toContainText("Traspaso (entrada)");
+  await expect(operations).toContainText("desde otra entidad");
 });
 
 test("submit errors keep the current scroll position", async ({ page }) => {

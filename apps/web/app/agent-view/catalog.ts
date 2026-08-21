@@ -695,7 +695,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_operations: {
       description:
-        "Get an investment holding's operations (buys, sells, and the two halves of a traspaso — `transfer_out`/`transfer_in`, paired by `transferId`) with date filters and cursor pagination; newest-first by default. A traspaso moves capital between products: it realizes no gain, so never read one as a sale. Non-investment holdings are rejected.",
+        "Get an investment holding's operations (buys, sells, and the two halves of a traspaso — `transfer_out`/`transfer_in`, paired by `transferId`) with date filters and cursor pagination; newest-first by default. A traspaso moves capital between products: it realizes no gain, so never read one as a sale. A `transfer_in` whose `transferId` matches no other row is an entrada por traspaso externo — a position brought in from another institution, whose outgoing half is in that institution's ledger; it is not a broken pair and not a purchase. Non-investment holdings are rejected.",
       inputSchema: {
         additionalProperties: false,
         properties: {

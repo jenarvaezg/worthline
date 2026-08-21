@@ -239,6 +239,13 @@ at portfolio level on its date. Halves are always written together, never one at
 time — and removed together too, through the one gate that owns both rows (ADR 0082,
 ADR 0083). What the user states is the **importe** and one date; each half's units are
 that amount over its own unit price, so nobody types participaciones.
+The one traspaso that is a single row is the **external entry**: a plan brought in
+from another institution, whose outgoing half lives in that institution's ledger and
+can never be written here. It is an alta — the third way the add wizard answers «cuánto
+tengo» (#1541) — it carries a `transfer_id` of its own so a reader finds one row and
+names it «desde otra entidad» instead of reporting a broken pair, and its **inherited
+cost** is declared by the user, defaulting to the importe that arrived. It is not a
+purchase, so it consumes no **contribution allowance**.
 UI label: "Traspaso".
 In prose and on screen it is always "traspaso": "transfer" on its own collides with
 the **workspace transfer** document. In code the two never meet — the transfer

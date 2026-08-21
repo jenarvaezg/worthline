@@ -303,8 +303,14 @@ export function resolveOpeningCapture({
   };
 }
 
-/** es-ES reading of a saldo date for the pane's copy: "31 jul 2026". */
-function readOpeningDate(dateKey: string): string {
+/**
+ * es-ES reading of a saldo date for the pane's copy: "31 jul 2026".
+ *
+ * Exported since #1541: the «viene traspasada de otra entidad» pane of the same
+ * wizard reads its date back in the same words, and two spellings of «al 23 ene 2026»
+ * in two panes of one form is how a wizard starts sounding like two products.
+ */
+export function readOpeningDate(dateKey: string): string {
   return new Intl.DateTimeFormat("es-ES", {
     day: "numeric",
     month: "short",
@@ -339,8 +345,14 @@ export interface OpeningCaptureCopy {
   costRefused: boolean;
 }
 
-/** Cents-precise es-ES euros: a cost of 4.999,86 € may not read as «5.000 €». */
-function euros(amountMinor: number): string {
+/**
+ * Cents-precise es-ES euros: a cost of 4.999,86 € may not read as «5.000 €».
+ *
+ * Exported alongside {@link latentPnlReading} since #1541 — the sibling pane reads
+ * the same kind of figure back, and a second rounding rule for money inside one
+ * wizard is how two panes start disagreeing about the same cents.
+ */
+export function euros(amountMinor: number): string {
   return formatMoneyMinorExact({ amountMinor, currency: "EUR" });
 }
 
@@ -349,8 +361,12 @@ function euros(amountMinor: number): string {
  * (units × the price the user typed, the SAME figures the write uses — #1422) minus
  * what the position cost. Signed the way the repo signs a delta: `+` when it is a
  * gain, the formatter's own `-` when it is a loss.
+ *
+ * Exported since #1541 for the sibling pane, where the two figures are the importe
+ * that arrived and the inherited cost it carries. Same sentence, same signing rule:
+ * the user is looking at one wizard, not at two features.
  */
-function latentPnlReading(valueMinor: number, costMinor: number): string {
+export function latentPnlReading(valueMinor: number, costMinor: number): string {
   const pnlMinor = valueMinor - costMinor;
   if (pnlMinor === 0) return "ni plusvalía ni minusvalía: vale justo lo que costó";
   const label = pnlMinor > 0 ? "plusvalía" : "minusvalía";

@@ -12,6 +12,7 @@
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
 import {
+  computeContributionAllowanceUsage,
   defaultInstrumentForLiability,
   fixedClock,
   valuationMethodOfLiability,
@@ -1200,5 +1201,219 @@ describe("createHoldingAction — «alta por estado actual» wizard drawer mode 
 
     expect(url).toContain("error=");
     expect(await store.liabilities.readLiabilities()).toHaveLength(0);
+  });
+});
+
+/**
+ * «Viene traspasada de otra entidad» (#1541, S6 of PRD #1393).
+ *
+ * The worked case is literal and it is in production: on 23-ene-2026 MyInvestor's
+ * «Traer plan desde otra entidad» landed 95,46 € into Jorge's pension plan. The alta
+ * had no way to say that, so the row was written by hand in the 19-ago retyping pass
+ * — and the two things he could have done instead are the two ADR 0083 rejected: a
+ * `buy` eats a year of contribution allowance (ADR 0080) for capital that merely
+ * changed manager, and a fabricated outgoing half promises an origin that does not
+ * exist.
+ */
+describe("createHoldingAction — investment drawer, «viene traspasada de otra entidad» (#1541)", () => {
+  /** The enero-2026 alta, as the pane posts it. */
+  const ENERO = {
+    simpleDrawer: "inversion",
+    instrument: "pension_plan",
+    name_pension_plan: "Plan de pensiones MyInvestor",
+    symbol_pension_plan: "N5394-Myinvestor",
+    invMode_pension_plan: "traspaso",
+    trAmount_pension_plan: "95,46",
+    trDate_pension_plan: "2026-01-23",
+    trPrice_pension_plan: "12,50",
+    ownershipPreset: "scope",
+    scopeMemberId: "mJ",
+  };
+
+  test("writes ONE transfer_in with its own transferId, not a compra", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(form(ENERO), store);
+
+    expect(url).toContain("ok=investment_transfer_in_added");
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+
+    expect(ops).toHaveLength(1);
+    expect(ops[0]!.kind).toBe("transfer_in");
+    expect(ops[0]!.executedAt).toBe("2026-01-23");
+    expect(ops[0]!.units).toBe("7.6368");
+    expect(ops[0]!.transferId).toBeTruthy();
+    // «manual», never «opening»: that mark means a synthetic apertura the alta
+    // invented, and `replaceOpening` is allowed to drop those. This row is a fact
+    // the user declared, with its own date and its own inherited cost.
+    expect(ops[0]!.source).toBe("manual");
+  });
+
+  test("the entry does NOT consume the year's contribution allowance (ADR 0080)", async () => {
+    const store = await seedStore();
+    await runAction(form(ENERO), store);
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const usage = computeContributionAllowanceUsage({
+      allowance: {
+        annualCapMinor: 150_000,
+        holdingIds: [meta.id],
+        id: "cupo",
+        label: "Planes de pensiones",
+        scopeId: "mJ",
+      },
+      currency: "EUR",
+      operations: await store.operations.readOperations(meta.id),
+      // Read inside the same calendar year as the entry — the window that would
+      // have counted it.
+      todayISO: "2026-06-15",
+    });
+
+    expect(usage.consumedMinor).toBe(0);
+    expect(usage.entries).toEqual([]);
+    expect(usage.remainingMinor).toBe(150_000);
+  });
+
+  test("the SAME figures through «sé cuánto tengo hoy» would have eaten 95,46 € of cupo", async () => {
+    // The contrast is the point: the counter is live, and what spares it is the kind
+    // of the row — this is the miscount that printed «te has pasado 2.127 €».
+    const store = await seedStore();
+
+    await runAction(
+      form({
+        ...ENERO,
+        invMode_pension_plan: "saldo",
+        saldo_pension_plan: "95,46",
+        price_pension_plan: "12,50",
+        saldoDate_pension_plan: "2026-01-23",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const usage = computeContributionAllowanceUsage({
+      allowance: {
+        annualCapMinor: 150_000,
+        holdingIds: [meta.id],
+        id: "cupo",
+        label: "Planes de pensiones",
+        scopeId: "mJ",
+      },
+      currency: "EUR",
+      operations: await store.operations.readOperations(meta.id),
+      todayISO: "2026-06-15",
+    });
+
+    expect(usage.consumedMinor).toBe(9_546);
+  });
+
+  test("the inherited cost defaults to what arrived — no plusvalía latente invented", async () => {
+    const store = await seedStore();
+    await runAction(form(ENERO), store);
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+
+    expect(ops[0]!.transferCostMinor).toBe(9_546);
+  });
+
+  test("a declared inherited cost is what the participaciones carry", async () => {
+    const store = await seedStore();
+    await runAction(form({ ...ENERO, trCost_pension_plan: "80,00" }), store);
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+
+    expect(ops[0]!.transferCostMinor).toBe(8_000);
+  });
+
+  test("the loose half has no counterpart, so a reader can name it «otra entidad» (#1481)", async () => {
+    const store = await seedStore();
+    await runAction(form(ENERO), store);
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    const counterparts = await store.operations.readTransferCounterparts(meta.id);
+
+    // Absent from the map is the contract for «the other half lives outside
+    // worthline» — never a broken pair.
+    expect(counterparts.has(ops[0]!.transferId!)).toBe(false);
+  });
+
+  test("the declared VL becomes the holding's price, so the plan does not land at 0 €", async () => {
+    const store = await seedStore();
+    await runAction(form(ENERO), store);
+
+    const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");
+
+    expect(asset?.currentValue.amountMinor).toBe(9_546);
+  });
+
+  test("a price left over in the hidden saldo pane does not outrank the declared VL", async () => {
+    // Every pane posts even while hidden (ADR 0009), so `price_*` can carry a figure
+    // the user typed before switching modes. The VL of the pane they actually chose
+    // is the price of record; a real provider quote still beats it at read time
+    // (ADR 0006), so nothing that IS quoted is affected.
+    const store = await seedStore();
+
+    await runAction(form({ ...ENERO, price_pension_plan: "999,00" }), store);
+
+    const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");
+
+    expect(asset?.currentValue.amountMinor).toBe(9_546);
+  });
+
+  test("the entry rebuilds the history from the day the capital landed (ADR 0020)", async () => {
+    const store = await seedStore();
+    await runAction(form(ENERO), store);
+
+    const snapshots = await store.snapshots.readSnapshots();
+
+    expect(snapshots.map((snap) => snap.dateKey)).toContain("2026-01-23");
+  });
+
+  test("a future entry date is refused and leaves no empty holding behind", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({ ...ENERO, trDate_pension_plan: "2026-07-01" }),
+      store,
+    );
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url).replaceAll("+", " ")).toContain(
+      "desde una fecha futura",
+    );
+    expect(await store.assets.readAssets()).toHaveLength(0);
+  });
+
+  test("a VL of zero is refused with the gate's own words, and nothing is written", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(form({ ...ENERO, trPrice_pension_plan: "0" }), store);
+
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url).replaceAll("+", " ")).toContain(
+      "valor liquidativo de la inversión de destino",
+    );
+    expect(await store.assets.readAssets()).toHaveLength(0);
+  });
+
+  test("a refused entry comes back with the four figures still typed (#1329)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({ ...ENERO, trCost_pension_plan: "ochenta" }),
+      store,
+    );
+    const decoded = decodeURIComponent(url);
+
+    expect(decoded).toContain("v_trAmount_pension_plan=95,46");
+    expect(decoded).toContain("v_trDate_pension_plan=2026-01-23");
+    expect(decoded).toContain("v_trPrice_pension_plan=12,50");
+    expect(decoded).toContain("v_trCost_pension_plan=ochenta");
+    expect(decoded).toContain("v_invMode_pension_plan=traspaso");
   });
 });
