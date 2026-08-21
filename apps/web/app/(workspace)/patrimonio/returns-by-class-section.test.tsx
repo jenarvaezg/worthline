@@ -47,11 +47,13 @@ function marketView(overrides: {
 const result: AssetClassReturnsViewResult = {
   classes: [
     {
+      closed: false,
       key: "equity",
       value: { amountMinor: 150_000, currency: EUR },
       view: marketView({ irrRate: 0.082, totalReturnRatio: 0.5, twrRate: 0.071 }),
     },
     {
+      closed: false,
       key: "unclassified",
       value: { amountMinor: 40_000, currency: EUR },
       view: marketView({ irrRate: null, totalReturnRatio: 0.1, twrRate: null }),
@@ -101,6 +103,7 @@ describe("una TWR ausente dice por qué (#1457)", () => {
         returns={{
           classes: [
             {
+              closed: false,
               key: "commodity",
               value: { amountMinor: 99_900, currency: EUR },
               view: {
@@ -129,5 +132,46 @@ describe("una TWR ausente dice por qué (#1457)", () => {
     expect(html).toContain(
       "Sin TWR: un tramo con más movimiento que valor no es medible.",
     );
+  });
+});
+
+describe("una clase cerrada no compite con las vivas (#1456)", () => {
+  const withClosed: AssetClassReturnsViewResult = {
+    classes: [
+      ...result.classes,
+      {
+        closed: true,
+        key: "crypto",
+        value: { amountMinor: 0, currency: EUR },
+        view: marketView({ irrRate: -0.971, totalReturnRatio: -0.075, twrRate: null }),
+      },
+    ],
+    coverage: result.coverage,
+  };
+
+  test("la clase a cero se repliega tras su propio control, y las vivas quedan en la lista", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={withClosed} />,
+    );
+
+    // La lista viva llega hasta las clases con valor; la cerrada vive en el fold.
+    const [liveHtml, foldHtml] = html.split("<details");
+    expect(liveHtml).toContain("Renta variable");
+    expect(liveHtml).not.toContain("Cripto");
+    expect(foldHtml).toContain("Cripto");
+    expect(html).toContain("Clases cerradas (1)");
+    // Sigue siendo consultable: el −97,1 % está, replegado, no borrado.
+    expect(foldHtml).toContain("−97,1 %");
+    // Y el pie no se mueve por esconder una fila a cero.
+    expect(html).toContain("Clasificado");
+  });
+
+  test("sin clases cerradas la sección se ve exactamente igual que antes", () => {
+    const html = renderToStaticMarkup(
+      <ReturnsByClassSection privacyMode={false} returns={result} />,
+    );
+
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("Clases cerradas");
   });
 });

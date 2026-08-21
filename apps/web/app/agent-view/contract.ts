@@ -444,6 +444,13 @@ export interface AgentViewAssetClassReturns {
   simple: AgentViewSimpleReturn;
   moneyWeighted: AgentViewMoneyWeightedReturn;
   timeWeighted: AgentViewTimeWeightedReturn;
+  /**
+   * Present (and always `true`) when the class holds nothing today: it is in the
+   * list because it once did (#1456). Its measures still describe a real, closed
+   * episode — an eight-day trade annualizes to an alarming rate that says nothing
+   * about today's portfolio — so read it as history, never as present weight.
+   */
+  closed?: true;
 }
 
 /**

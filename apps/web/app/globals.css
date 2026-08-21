@@ -6308,6 +6308,32 @@ td.rowActions > * {
   margin: 12px 0 0;
 }
 
+.returnsClassEmpty {
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Classes with nothing left today fold under the live list, the same gesture the
+   closed positions use in the balance board (#1456). */
+.returnsClassClosed {
+  border-top: 1px solid var(--hairline);
+  margin-top: 14px;
+}
+
+.returnsClassClosed > summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  list-style: none;
+  padding: 12px 0;
+  text-transform: uppercase;
+}
+
+.returnsClassClosed > summary::-webkit-details-marker {
+  display: none;
+}
+
 .housingValuation .anchorEdit {
   margin-bottom: 8px;
 }
