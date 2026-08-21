@@ -25,6 +25,17 @@ export function formatDocumentMoney(amountMinor: number, currency = "EUR"): stri
   return amountMinor % 100 === 0 ? formatMoneyMinor(money) : formatMoneyMinorExact(money);
 }
 
+/**
+ * The mark a currency wears next to a figure the formatters above do NOT format — a
+ * unit price or a VL, which are printed by the decimal seam and then need their symbol
+ * back. One home because two lanes print it (`operation-proposal-copy.ts`'s fact line
+ * and `transfer-proposal-copy.ts`'s two halves) and a card that said «€» where its
+ * sibling said «EUR» would be the drift this module exists to prevent.
+ */
+export function currencyMark(currency: string): string {
+  return currency === "EUR" ? "€" : currency;
+}
+
 const unitPrice = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 4 });
 
 /**

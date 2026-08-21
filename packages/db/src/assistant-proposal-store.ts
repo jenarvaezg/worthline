@@ -5,6 +5,7 @@ import type { CorrectionPlan } from "./correction-plan";
 import type { EarlyRepaymentPlan } from "./early-repayment-plan";
 import type { HoldingCreationPlan } from "./holding-creation-plan";
 import type { InvestmentOperationPlan } from "./investment-operation-plan";
+import type { InvestmentTransferPlan } from "./investment-transfer-plan";
 import {
   type AssistantDocumentProvenance,
   type AssistantProposalKind,
@@ -137,6 +138,18 @@ export interface InvestmentOperationFact {
   row: InvestmentOperationPlan;
 }
 
+/**
+ * ONE traspaso between two investment holdings that already exist (#1482), stored as
+ * one self-contained fact. Sibling of {@link InvestmentOperationFact}, and different
+ * from it in the one way that matters: what is persisted is the INTENT — the two
+ * holdings, the date and the importe the user dictated — because the pair of rows it
+ * becomes is minted by the atomic gate at confirm time, never half-written here.
+ */
+export interface InvestmentTransferFact {
+  kind: "investment_transfer";
+  row: InvestmentTransferPlan;
+}
+
 export type AssistantProposalFact =
   | StatementOperationFact
   | DebtBalanceObservationFact
@@ -146,6 +159,7 @@ export type AssistantProposalFact =
   | HoldingTrashActionFact
   | HoldingReconcileFact
   | InvestmentOperationFact
+  | InvestmentTransferFact
   | DebtEarlyRepaymentFact;
 
 export interface AssistantProposalDocument {
@@ -205,6 +219,7 @@ async function createProposal(
     input.kind !== "holding_restoration" &&
     input.kind !== "reconcile" &&
     input.kind !== "investment_operation" &&
+    input.kind !== "investment_transfer" &&
     input.kind !== "early_repayment"
   ) {
     throw new Error(`Unsupported assistant proposal kind: ${String(input.kind)}`);
@@ -248,6 +263,9 @@ function normalizeFact(
     return { kind: fact.kind, row: fact.row };
   }
   if (fact.kind === "investment_operation" && "row" in fact) {
+    return { kind: fact.kind, row: fact.row };
+  }
+  if (fact.kind === "investment_transfer" && "row" in fact) {
     return { kind: fact.kind, row: fact.row };
   }
   if (fact.kind === "property_valuation_anchor" && "row" in fact) {
@@ -394,6 +412,7 @@ async function readProposal(
           fact.kind !== "holding_trash_action" &&
           fact.kind !== "holding_reconcile" &&
           fact.kind !== "investment_operation" &&
+          fact.kind !== "investment_transfer" &&
           fact.kind !== "debt_early_repayment"
         ) {
           throw new Error(`Unsupported assistant proposal fact kind: ${fact.kind}`);
@@ -402,6 +421,12 @@ async function readProposal(
           return {
             kind: fact.kind,
             row: JSON.parse(fact.payloadJson) as InvestmentOperationFact["row"],
+          };
+        }
+        if (fact.kind === "investment_transfer") {
+          return {
+            kind: fact.kind,
+            row: JSON.parse(fact.payloadJson) as InvestmentTransferFact["row"],
           };
         }
         if (fact.kind === "holding_reconcile") {

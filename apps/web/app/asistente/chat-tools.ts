@@ -103,12 +103,17 @@ import {
   buildStatementImportProposal,
   buildStatementImportProposalFromDocument,
 } from "@web/asistente/statement-import-proposals";
+import { buildTransferProposal } from "@web/asistente/transfer-proposals";
 import {
   NO_TYPED_BALANCE_SERIES,
   TYPED_BALANCE_SERIES_DOCUMENT_NAME,
   type TypedBalanceRow,
   type TypedBalanceSeriesReading,
 } from "@web/asistente/typed-balance-series";
+import {
+  type TypedTransferReading,
+  typedTransferGapMessage,
+} from "@web/asistente/typed-transfer";
 import {
   consumesUnvalidatedEvidenceBudget,
   createUnvalidatedProposalBudget,
@@ -258,6 +263,16 @@ export interface ChatToolsInput {
    * behaviour exactly.
    */
   typedBalanceSeries?: TypedBalanceSeriesReading;
+  /**
+   * The traspaso this turn's own message states, read by worthline itself (#1482).
+   *
+   * The whole `propose_transfer` lane builds from THIS and never from the model's
+   * arguments: a traspaso writes two rows plus an inherited cost, so an importe the
+   * model «remembered» from a portfolio read would move real capital between two real
+   * holdings. Absent by default — the lane then refuses and says what it is missing,
+   * which is the honest behaviour for a caller that does not read the message.
+   */
+  typedTransfer?: TypedTransferReading;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to
@@ -1000,6 +1015,31 @@ const OPERATION_PROPOSAL_SCHEMA = jsonSchema<{
     summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
   },
   required: ["holdingId", "kind"],
+  additionalProperties: false,
+});
+
+/**
+ * `propose_transfer` (#1482). Three arguments, and none of them is a figure: the two
+ * holdings — the one judgement no parser can make, «el fondo A» is an id — plus a
+ * summary.
+ *
+ * The importe and the date are deliberately NOT here. They are read off the user's own
+ * message by worthline ({@link ../typed-transfer}), so there is no field for the model
+ * to fill with a figure it remembers, which is the frontier this lane rests on. The two
+ * VLs are not here either: the app values each side with its own price.
+ */
+const TRANSFER_PROPOSAL_SCHEMA = jsonSchema<{
+  originHoldingId?: string;
+  destinationHoldingId?: string;
+  summary?: string;
+}>({
+  type: "object",
+  properties: {
+    originHoldingId: { type: "string" },
+    destinationHoldingId: { type: "string" },
+    summary: { type: "string", maxLength: PROPOSAL_SUMMARY_MAX_CHARS },
+  },
+  required: ["originHoldingId", "destinationHoldingId"],
   additionalProperties: false,
 });
 
@@ -2368,7 +2408,11 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         // floor is paid on every turn and a rejection only when it fires, and each one
         // answers with an actionable message anyway. A description carries this tool's
         // argument semantics, not the app's catalogue of refusals (#1342).
-        "NO es ésta: la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction.",
+        // The traspaso pointer is the sibling-tools rule of #1423 applied here, and it
+        // earns its characters: without it the model books a traspaso as a venta plus a
+        // compra, which realizes a plusvalía that never happened and eats a year of
+        // cupo de aportación — the exact failure PRD #1393 exists to end.
+        "NO es ésta: un traspaso entre dos inversiones → propose_transfer (no es una venta más una compra); la cartera entera → propose_reconcile; un extracto con muchas órdenes → propose_statement_import; la posición aún no existe → propose_holding; el valor o el nombre están mal → propose_correction.",
       inputSchema: OPERATION_PROPOSAL_SCHEMA,
       execute: (args) => {
         if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
@@ -2438,6 +2482,71 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               event: resolved.event,
               kind,
               publicHoldingId,
+              ...(args.summary === undefined ? {} : { summary: args.summary }),
+            },
+            input.asOf,
+          );
+          return built.ok ? built.proposal : { error: built.error };
+        });
+      },
+    }),
+    propose_transfer: tool({
+      description:
+        "Anota UN TRASPASO entre dos inversiones que YA EXISTEN, cuando el usuario te lo cuenta por el chat («he traspasado hoy 1.018,67 € del fondo A al fondo B»): UN movimiento con dos patas atadas, no una venta más una compra. " +
+        "Tú decides las dos posiciones y nada más: `originHoldingId` y `destinationHoldingId`. " +
+        // The three consequences of the instrument (no plusvalía, cost travels, no cupo
+        // spent) are NOT here: the card prints them for the user
+        // (TRANSFER_NEUTRALITY_NOTE), and the floor is paid on every turn while card
+        // copy is paid when there is a card — the #1342 trade. Nor is «the ids come
+        // from a read»: that is the prompt's own cross-tool rule (#1263).
+        "El importe y la fecha NO son argumentos: los lee la app del mensaje del usuario, tal cual los escriba —incluido «todo»—, y si faltan o son ambiguos te devuelve qué pedirle. Las participaciones las calcula la app con el valor liquidativo de cada posición. " +
+        "NO es ésta: la posición de destino aún no existe → primero `propose_holding` y después el traspaso; una compra, una venta o una aportación → `propose_operation`.",
+      inputSchema: TRANSFER_PROPOSAL_SCHEMA,
+      execute: (args) => {
+        if (ingestionGated) return premiumRequired(PAYWALL_OPERATION_MESSAGE);
+        const originHoldingId = args.originHoldingId?.trim();
+        const destinationHoldingId = args.destinationHoldingId?.trim();
+        if (!originHoldingId || !destinationHoldingId) {
+          return Promise.resolve({
+            error: "transfer_holdings_required",
+            message:
+              "Un traspaso tiene dos posiciones: de dónde sale y a dónde entra. Lee la " +
+              "cartera y pasa los dos identificadores que te devuelva.",
+          });
+        }
+        // The user's-own-message frontier (#1482, #1418's doctrine): the importe and the
+        // date come from the parse, never from the arguments — so a turn where the app
+        // read nothing is refused BEFORE the store is opened, naming what is missing.
+        const typed = input.typedTransfer;
+        if (typed === undefined || typed.status !== "read") {
+          return Promise.resolve({
+            error: "transfer_not_in_message",
+            message: typedTransferGapMessage(
+              typed === undefined ? ["amount", "date"] : typed.missing,
+            ),
+          });
+        }
+        return input.runWithStore(async (store) => {
+          if (!store.assistantProposals || !store.assets || !store.operations) {
+            return { error: "proposal_persistence_unavailable" };
+          }
+          const [originAssetId, destinationAssetId] = await Promise.all([
+            resolveInternalHoldingId(store.agentView, originHoldingId),
+            resolveInternalHoldingId(store.agentView, destinationHoldingId),
+          ]);
+          const built = await buildTransferProposal(
+            {
+              agentView: store.agentView,
+              assets: store.assets,
+              assistantProposals: store.assistantProposals,
+              operations: store.operations,
+            },
+            {
+              destinationAssetId,
+              destinationHolding: destinationHoldingId,
+              originAssetId,
+              originHolding: originHoldingId,
+              transfer: typed.transfer,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },
             input.asOf,

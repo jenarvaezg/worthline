@@ -7,6 +7,7 @@ import type { ConnectedSourceSeams } from "@db/connected-source-seams";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
 import type { EarlyRepaymentPlan } from "@db/early-repayment-plan";
 import type { InvestmentOperationPlan } from "@db/investment-operation-plan";
+import type { InvestmentTransferPlan } from "@db/investment-transfer-plan";
 import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { OperationsStore } from "@db/operations-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
@@ -133,6 +134,27 @@ export interface CommandHost extends DatedFactAliases {
    * the same path a reconcile row takes, and stamps `source: "agent"`.
    */
   applyAssistantOperationProposal: (params: {
+    proposalId: string;
+    today: string;
+  }) => Promise<void>;
+  /**
+   * Apply one investment-transfer proposal (#1482) and resolve it in the SAME
+   * transaction. The write is reconstructed from the persisted intent — the two
+   * holdings, the date, the importe and the two VLs the card showed — and goes through
+   * `recordTransferAndRipple`, the ONE gate that mints a pair (#1479). So a traspaso
+   * dictated to the chat lands as the very same two rows, tied by the same
+   * `transferId`, as one submitted from the screen of #1480.
+   *
+   * The three ids are minted HERE and not carried in the draft: a proposal can only be
+   * applied once (`applyDraftAssistantProposal` refuses a resolved one, in the same
+   * transaction), so idempotency is the draft's status rather than a seeded id.
+   *
+   * A domain refusal — an importe the position no longer covers, a VL that stopped
+   * being positive — THROWS, so the whole apply rolls back and the card says why. The
+   * confirm action re-runs the same plan against live data first, which is where a
+   * refusal gets its Spanish sentence; this is the backstop underneath it.
+   */
+  applyAssistantTransferProposal: (params: {
     proposalId: string;
     today: string;
   }) => Promise<void>;
@@ -279,6 +301,22 @@ function investmentOperationPlanOf(proposal: AssistantProposal): InvestmentOpera
   if (facts.length !== 1 || !fact || fact.kind !== "investment_operation") {
     throw new Error(
       `Investment-operation proposal "${proposal.id}" carries no single operation plan.`,
+    );
+  }
+  return fact.row;
+}
+
+/** Extract the single traspaso plan an `investment_transfer` proposal carries. */
+function investmentTransferPlanOf(proposal: AssistantProposal): InvestmentTransferPlan {
+  const facts = proposal.documents
+    .flatMap((document) => document.facts)
+    .filter((item) => item.kind === "investment_transfer");
+  const [fact] = facts;
+  // Exactly one, for the same reason as the operation above: a draft carrying two
+  // traspasos is a bug to surface, never half a pair to write.
+  if (facts.length !== 1 || !fact || fact.kind !== "investment_transfer") {
+    throw new Error(
+      `Investment-transfer proposal "${proposal.id}" carries no single transfer plan.`,
     );
   }
   return fact.row;
@@ -623,6 +661,47 @@ export function createCommandHost(
             today,
             trigger: "assistant",
           });
+        },
+      ),
+    applyAssistantTransferProposal: async ({ proposalId, today }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "investment_transfer") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" is not an investment transfer.`,
+            );
+          }
+          return proposal;
+        },
+        async () => {
+          const proposal = await assistantProposals.read(proposalId);
+          if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
+          const plan = investmentTransferPlanOf(proposal);
+          const result = await datedFacts.recordTransferAndRipple({
+            destinationAssetId: plan.destinationAssetId,
+            destinationPricePerUnit: plan.destinationPricePerUnit,
+            executedAt: plan.executedAt,
+            inOperationId: ctx.newId(),
+            originAssetId: plan.originAssetId,
+            originPricePerUnit: plan.originPricePerUnit,
+            outOperationId: ctx.newId(),
+            portion: plan.portion,
+            source: "agent",
+            today,
+            transferId: ctx.newId(),
+          });
+          // The gate answers a bad figure with data, not an exception. Here it has to
+          // become one: the pair is the write, so a refusal at this depth must roll the
+          // apply back rather than leave the draft marked applied with nothing written.
+          if (!result.ok) {
+            throwCommandResultError({
+              code: result.violations[0]?.code ?? "transfer_refused",
+              error: `El traspaso ya no se puede registrar (${result.violations[0]?.code ?? "rechazado"}). Vuelve a pedirlo con los datos de ahora.`,
+            });
+          }
         },
       ),
     applyAssistantBalanceHistoryProposal: async ({

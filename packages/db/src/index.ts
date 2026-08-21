@@ -28,6 +28,7 @@ export type {
   HoldingCreationFact,
   HoldingReconcileFact,
   InvestmentOperationFact,
+  InvestmentTransferFact,
   PropertyValuationAnchorFact,
   ReconcileDocument,
   ReconcileDocumentHolding,
@@ -176,6 +177,7 @@ export type {
   StoredHoldingCreationPlan,
 } from "./holding-creation-plan";
 export type { InvestmentOperationPlan } from "./investment-operation-plan";
+export type { InvestmentTransferPlan } from "./investment-transfer-plan";
 export {
   createJobQueue,
   createSyncJobWorker,
