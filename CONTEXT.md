@@ -152,7 +152,10 @@ resolves *what* the row is and leaves *which holding* open (ADR 0055, amendment
 **exposure profile** is inherited, and nothing can decide that a broker's ISIN and its
 own symbol name the same security. That state is a **data-health** signal
 (`MISSING_INVESTMENT_ISIN`, #1489), never a blocked alta: a **pension plan** often has
-no ISIN at all.
+no ISIN at all. The column accepts only what an ISIN is: every interactive write
+validates the ISO 6166 check digit and refuses the rest (#1453) — a broker code in
+this column would make the **exposure profile** key diverge from where the row was
+registered.
 
 **Exposure**:
 The composition of a scope's portfolio across axes — its largest **holdings**, its
@@ -165,7 +168,8 @@ over current holdings, not a figure: it re-describes the portfolio, never change
 The canonical description of what an **investment** actually holds underneath — its
 breakdown by geography (a fixed set of world regions), by underlying currency, and by
 asset class, plus the index it tracks, its TER, and whether its currency exposure is
-**hedged** to the base currency. Shared and keyed by its identity — **ISIN** when present,
+**hedged** to the base currency. Shared and keyed by its identity — a **valid ISIN**
+when present (ISO 6166-checked on both the registration and the lookup side, #1453),
 else its **provider symbol** (a pension plan often has no ISIN), so two **holdings**
 of the same security share one profile. It lives in the **control plane** as a global,
 admin-curated catalog (ADR 0058): workspaces read it for **look-through** and never write

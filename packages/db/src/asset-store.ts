@@ -15,7 +15,7 @@ import {
   createManualAsset,
   defaultInstrumentForAssetType,
   defaultInvestmentPriceProvider,
-  isValidIsin,
+  validIsinOrNull,
   valueHousingAtDate,
 } from "@worthline/domain";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
@@ -881,18 +881,21 @@ async function updateAssetValuation(
 }
 
 /**
- * The isin column stores an ISIN or nothing (#1453). Every identity write funnels
- * through here: a non-ISIN in the column makes the exposure catalog register the
- * row under the provider key while the look-through searches under the raw value,
- * so the holding turns «sin clasificar» with nothing warning about it. The UI and
- * assistant boundaries refuse earlier with friendly messages — this is the
- * backstop under all of them.
+ * The isin column stores an ISIN or nothing (#1453). Every interactive identity
+ * write funnels through here: a non-ISIN in the column makes the exposure catalog
+ * register the row under the provider key while the look-through searches under
+ * the raw value, so the holding turns «sin clasificar» with nothing warning about
+ * it. The UI and assistant boundaries refuse earlier with friendly messages —
+ * this is the backstop under all of them. The one exempt write is the
+ * workspace-document import (`workspace-store.ts`), which preserves the document
+ * as-is (#1416: a restore must not fail on legacy data); the validated
+ * look-through key still classifies such a row correctly.
  */
 function normalizedIsinColumnValue(value: string | null | undefined): string | null {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return null;
-  const normalized = trimmed.toUpperCase();
-  if (!isValidIsin(normalized)) {
+  const normalized = validIsinOrNull(trimmed);
+  if (normalized === null) {
     throw new Error(
       `"${trimmed}" is not a valid ISIN (12 characters, ISO 6166 check digit) — refuse it or leave the column empty.`,
     );

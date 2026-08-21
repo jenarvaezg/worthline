@@ -431,6 +431,7 @@ export {
   INVESTMENT_PROFILE_INSTRUMENTS,
   isValidIsin,
   resolveGlobalExposureProfileIdentity,
+  validIsinOrNull,
 } from "./exposure-identity";
 export type {
   AssetClassResolution,
