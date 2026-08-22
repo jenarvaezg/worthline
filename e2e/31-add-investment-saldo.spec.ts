@@ -151,7 +151,9 @@ test("viene traspasada de otra entidad: alta por traspaso externo, no por compra
   // The row reads as half a traspaso whose origin lives elsewhere (#1481) — never
   // as a compra.
   await page.getByRole("link", { name: /Añadir movimientos/ }).click();
-  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/\/patrimonio\/.+\/editar\?abrir=operaciones/, {
+    timeout: 10_000,
+  });
   const operations = page.getByRole("region", {
     name: "Operaciones de la inversión",
   });

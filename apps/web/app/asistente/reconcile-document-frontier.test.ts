@@ -103,6 +103,22 @@ describe("resolveReconcileDocument", () => {
     expect(result.error.message).toContain("operación puntual");
   });
 
+  it("names the chat statement import when the document in play is a transactions extract (#1513)", () => {
+    // Jorge's DEGIRO file: worthline had already read it as broker_transactions, and
+    // the reconcile refusal still said «no hay ninguno» and sent him to re-upload.
+    const result = resolveReconcileDocument([{ name: "exJapan" }], null, {
+      hasBrokerTransactions: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.error).toBe("reconcile_document_required");
+    expect(result.error.message).toMatch(/importaci[oó]n de extracto/i);
+    expect(result.error.message).toContain("propose_statement_import");
+    expect(result.error.message).not.toMatch(/súbeme/i);
+    expect(result.error.message).not.toContain("/patrimonio/importar-extracto");
+  });
+
   it("rejects a row the document does not contain, naming what it does contain", () => {
     // The exact invention of the issue: the workspace's OTHER pension plan.
     const result = resolveReconcileDocument(

@@ -38,6 +38,10 @@ export type StatementFromDocumentError =
  * No validated transactions document is on the table. The message ROUTES rather than
  * only refusing (the #1248 rule): what a person arriving here has is either the file
  * itself — which this lane reads, if they attach it — or the plantilla of the web gate.
+ *
+ * This is the EMPTY-context copy. When a positions/movements document IS already on
+ * the table, {@link statementDocumentRequiredMessage} names the reconcile lane
+ * instead of asking for another upload (#1513).
  */
 export const STATEMENT_DOCUMENT_REQUIRED_MESSAGE =
   "Solo puedo preparar la importación de un extracto a partir de un documento de " +
@@ -45,6 +49,35 @@ export const STATEMENT_DOCUMENT_REQUIRED_MESSAGE =
   "no puedo escribir operaciones dictadas por mí. Súbeme el archivo del bróker tal cual " +
   "te lo da (xlsx, csv o pdf) y lo leo, o súbelo en /patrimonio/importar-extracto, donde " +
   `entran ${STATEMENT_GATE_FORMATS.join(" o ")}.`;
+
+/**
+ * The document on the table is positions/movements, not a transactions extract. The
+ * refusal still stands — this lane cannot invent a ledger — but the next step is the
+ * chat reconcile of THAT document, not another upload (#1513).
+ */
+const STATEMENT_DOCUMENT_REQUIRED_WITH_POSITIONS_MESSAGE =
+  "Solo puedo preparar la importación de un extracto a partir de un documento de " +
+  "transacciones, y lo que hay en esta conversación es un documento de posiciones o " +
+  "movimientos ya leído y validado: no hace falta volver a subirlo. Eso se fusiona " +
+  "con la cartera desde el chat ahora mismo con propose_reconcile.";
+
+export interface StatementDocumentContext {
+  hasPositionsMovements?: boolean;
+}
+
+/**
+ * Pick the statement-required copy from what IS on the table. An empty context keeps
+ * the original routing to the web gate; a positions document names the chat reconcile
+ * and never asks to re-upload (#1513).
+ */
+export function statementDocumentRequiredMessage(
+  context: StatementDocumentContext = {},
+): string {
+  if (context.hasPositionsMovements) {
+    return STATEMENT_DOCUMENT_REQUIRED_WITH_POSITIONS_MESSAGE;
+  }
+  return STATEMENT_DOCUMENT_REQUIRED_MESSAGE;
+}
 
 /** The validated union's transactions member — narrowing keeps the brand (#1373). */
 type ValidatedBrokerTransactionsDocument = Extract<

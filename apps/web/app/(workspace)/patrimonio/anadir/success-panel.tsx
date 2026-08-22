@@ -1,6 +1,6 @@
 "use client";
 
-import { holdingDetailHref } from "@web/holding-route";
+import { holdingOperationsHref } from "@web/holding-route";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
@@ -8,8 +8,10 @@ import { useEffect, useRef } from "react";
  * The add wizard's success screen with a loop (S5, #600). After each alta the
  * action returns here instead of the holdings list, so first runs chain adds
  * without friction: the running net worth is the hook, «Añadir otra» restarts
- * the loop, «Ver mi patrimonio» exits. Investments also offer the statement
- * route. A client island only so it can manage focus — moving it to the result
+ * the loop, «Ver mi patrimonio» exits. Investments also offer the movements
+ * surface already unfolded (`?abrir=operaciones`): that block lives inside
+ * collapsed «Configuración avanzada», so the ficha alone would show nothing.
+ * A client island only so it can manage focus — moving it to the result
  * heading when the screen lands (a11y: the user is never stranded at the top).
  */
 export function AddSuccessPanel({
@@ -43,7 +45,7 @@ export function AddSuccessPanel({
           + Añadir otra
         </Link>
         {isInvestment && addedId ? (
-          <Link className="actionLink" href={holdingDetailHref(addedId)}>
+          <Link className="actionLink" href={holdingOperationsHref(addedId)}>
             Añadir movimientos / Importar extracto
           </Link>
         ) : null}

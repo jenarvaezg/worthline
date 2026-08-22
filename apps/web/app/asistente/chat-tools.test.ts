@@ -561,22 +561,54 @@ describe("createChatTools · propose_statement_import (#767)", () => {
   });
 
   it("refuses without a document and without text, and says where to go", async () => {
-    const store = await createInMemoryStore();
     const tools = createChatTools({
-      runWithStore: (run) =>
-        run({
-          agentView: store.agentView,
-          assistantProposals: store.assistantProposals,
-        }),
+      runWithStore: () => {
+        throw new Error("the statement import must not open the store to refuse");
+      },
       asOf: AS_OF,
     });
 
-    const result = await tools["propose_statement_import"]?.execute?.(
+    const result = (await tools["propose_statement_import"]?.execute?.(
       {},
       toolCallContext(),
-    );
+    )) as { error?: string; message?: string };
 
-    expect(result).toMatchObject({ error: expect.any(String) });
+    expect(result.error).toBe("statement_document_required");
+    expect(result.message).toContain("/patrimonio/importar-extracto");
+  });
+
+  it("names the chat reconcile when the document in play is positions and movements (#1513)", async () => {
+    const cartera = extractedDocumentSchema.parse({
+      documentType: "positions_movements",
+      holdings: [
+        {
+          name: "Amundi MSCI World",
+          type: "Fondo",
+          value: 12_000,
+          currency: "EUR",
+          fidelity: "value_only",
+        },
+      ],
+      movements: [],
+      warnings: [],
+    });
+    const tools = createChatTools({
+      runWithStore: () => {
+        throw new Error("the statement import must not open the store to refuse");
+      },
+      asOf: AS_OF,
+      validatedDocuments: [cartera],
+    });
+
+    const result = (await tools["propose_statement_import"]?.execute?.(
+      {},
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("statement_document_required");
+    expect(result.message).toContain("propose_reconcile");
+    expect(result.message).not.toMatch(/súbeme/i);
+    expect(result.message).not.toContain("/patrimonio/importar-extracto");
   });
 });
 
@@ -718,6 +750,39 @@ describe("createChatTools · propose_reconcile (#1108, frontera de documento #13
 
     expect(result.error).toBe("reconcile_document_required");
     expect(result.message).toContain("importar-extracto");
+  });
+
+  it("does not tell the user to re-upload a transactions extract already in context (#1513)", async () => {
+    // Jorge's loop: the file was already read as broker_transactions; the model
+    // reached for reconcile («corrige la posición») and the refusal sent him back
+    // to /patrimonio/importar-extracto.
+    const ledger = extractedDocumentSchema.parse({
+      documentType: "broker_transactions",
+      transactions: [
+        {
+          amount: "562.44",
+          currency: "EUR",
+          date: "2026-02-12",
+          isin: "IE00B5BMR087",
+          kind: "buy",
+          name: "ISHARES CORE S&P 500",
+          pricePerUnit: "187.48",
+          units: "3",
+        },
+      ],
+      warnings: [],
+    });
+    const tools = refusingTools([ledger]);
+
+    const result = (await tools["propose_reconcile"]?.execute?.(
+      { holdings: [{ name: "exJapan" }] },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("reconcile_document_required");
+    expect(result.message).toContain("propose_statement_import");
+    expect(result.message).not.toMatch(/súbeme/i);
+    expect(result.message).not.toContain("/patrimonio/importar-extracto");
   });
 
   it("refuses a row that is not in the validated document (#1373)", async () => {

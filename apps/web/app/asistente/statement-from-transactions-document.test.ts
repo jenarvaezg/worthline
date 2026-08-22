@@ -7,6 +7,8 @@ import {
 } from "./attachment-extraction-contract";
 import {
   brokerTransactionsInContext,
+  STATEMENT_DOCUMENT_REQUIRED_MESSAGE,
+  statementDocumentRequiredMessage,
   statementFromTransactionsDocument,
 } from "./statement-from-transactions-document";
 
@@ -119,6 +121,24 @@ describe("statementFromTransactionsDocument", () => {
     if (read.ok) return;
     expect(read.error).toBe("statement_currency_unsupported");
     expect(read.message).toContain("COP");
+  });
+});
+
+describe("statementDocumentRequiredMessage (#1513)", () => {
+  test("still routes to the web gate when there is no document at all", () => {
+    const message = statementDocumentRequiredMessage({});
+
+    expect(message).toBe(STATEMENT_DOCUMENT_REQUIRED_MESSAGE);
+    expect(message).toContain("/patrimonio/importar-extracto");
+  });
+
+  test("names the chat reconcile when the document in play is positions and movements", () => {
+    const message = statementDocumentRequiredMessage({ hasPositionsMovements: true });
+
+    expect(message).toMatch(/reconcile/i);
+    expect(message).toContain("propose_reconcile");
+    expect(message).not.toMatch(/súbeme/i);
+    expect(message).not.toContain("/patrimonio/importar-extracto");
   });
 });
 

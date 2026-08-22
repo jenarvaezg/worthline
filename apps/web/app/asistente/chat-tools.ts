@@ -98,7 +98,10 @@ import {
   buildReconstructionProposal,
 } from "@web/asistente/reconstruction-proposals";
 import type { ScreenSection } from "@web/asistente/screen-context";
-import { brokerTransactionsInContext } from "@web/asistente/statement-from-transactions-document";
+import {
+  brokerTransactionsInContext,
+  statementDocumentRequiredMessage,
+} from "@web/asistente/statement-from-transactions-document";
 import {
   buildStatementImportProposal,
   buildStatementImportProposalFromDocument,
@@ -1957,7 +1960,18 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         if (unvalidatedEvidence) return unvalidatedEvidenceRejected();
         // The document lane (#1487): with a ledger worthline read, the rows are the
         // reading's and the model contributes nothing but the ask.
-        const transactions = brokerTransactionsInContext(input.validatedDocuments ?? []);
+        const documents = input.validatedDocuments ?? [];
+        const transactions = brokerTransactionsInContext(documents);
+        // No ledger and no plantilla text: refuse before opening the store, and name
+        // the lane that matches whatever document IS on the table (#1513).
+        if (transactions === null && !(args.rawText ?? "").trim()) {
+          return Promise.resolve({
+            error: "statement_document_required",
+            message: statementDocumentRequiredMessage({
+              hasPositionsMovements: positionsMovementsInContext(documents) !== null,
+            }),
+          });
+        }
         return input.runWithStore(async (store) => {
           if (!store.assistantProposals) {
             return { error: "proposal_persistence_unavailable" };
@@ -2362,13 +2376,17 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
         // The document-only frontier (#1373): the rows come from the extraction, the
         // model only picks among them. Checked BEFORE the store is opened — a call
         // with nothing to stand on is refused, not half-resolved against live data.
+        const documents = input.validatedDocuments ?? [];
         const resolved = resolveReconcileDocument(
           (args.holdings ?? []).map((holding) => ({
             ...(typeof holding.name === "string" ? { name: holding.name } : {}),
             ...(typeof holding.isin === "string" ? { isin: holding.isin } : {}),
             ...(typeof holding.value === "number" ? { value: holding.value } : {}),
           })),
-          positionsMovementsInContext(input.validatedDocuments ?? []),
+          positionsMovementsInContext(documents),
+          {
+            hasBrokerTransactions: brokerTransactionsInContext(documents) !== null,
+          },
         );
         if (!resolved.ok) return Promise.resolve(resolved.error);
         return input.runWithStore(async (store) => {
