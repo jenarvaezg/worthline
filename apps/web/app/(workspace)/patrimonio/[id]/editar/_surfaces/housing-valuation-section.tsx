@@ -58,6 +58,14 @@ export function HousingValuationSection({
   const sorted = [...anchors].sort((a, b) =>
     b.valuationDate.localeCompare(a.valuationDate),
   );
+  // #1437: the acquisition is a named field, not an anonymous table row. The
+  // editor below targets its anchor through the same update action; errors ride
+  // the standard `anchor-<id>` band.
+  const acquisition = anchors.find((a) => a.kind === "acquisition") ?? null;
+  const acquisitionValues =
+    acquisition && formError?.formId === `anchor-${acquisition.id}`
+      ? formError.values
+      : {};
 
   return (
     <section className="housingValuation" aria-label="Valoración del inmueble">
@@ -106,6 +114,50 @@ export function HousingValuationSection({
           <button type="submit">Guardar cadencia</button>
         </form>
       </details>
+
+      {acquisition ? (
+        <form
+          action={updateValuationAnchorAction}
+          aria-label="Editar adquisición"
+          className="stackForm"
+        >
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="id" type="hidden" value={assetId} />
+          <input name="anchorId" type="hidden" value={acquisition.id} />
+          <label>
+            Fecha de adquisición
+            <input
+              aria-label="Fecha de adquisición"
+              defaultValue={
+                acquisitionValues["valuationDate"] ?? acquisition.valuationDate
+              }
+              max={today}
+              name="valuationDate"
+              required
+              type="date"
+            />
+          </label>
+          <label>
+            Precio de adquisición (EUR)
+            <input
+              aria-label="Precio de adquisición en EUR"
+              defaultValue={
+                acquisitionValues["anchorValue"] ??
+                formatMoneyInput(acquisition.valueMinor)
+              }
+              inputMode="decimal"
+              min="0"
+              name="anchorValue"
+              required
+            />
+          </label>
+          <p className="infoNote">
+            La fecha de adquisición marca desde cuándo el inmueble existe en el histórico;
+            cambiarla reescribe su curva de valor desde entonces.
+          </p>
+          <button type="submit">Guardar adquisición</button>
+        </form>
+      ) : null}
 
       <form
         action={addValuationAnchorAction}
@@ -231,7 +283,13 @@ function AnchorRow({
           privacyMode,
         )}
       </td>
-      <td>{anchor.adjustsPriorCurve ? "Tasación" : "Mejora"}</td>
+      <td>
+        {anchor.kind === "acquisition"
+          ? "Adquisición"
+          : anchor.adjustsPriorCurve
+            ? "Tasación"
+            : "Mejora"}
+      </td>
       <td className="rowActions">
         <details suppressHydrationWarning className="anchorEdit" open={editing}>
           <summary>Editar</summary>
@@ -249,15 +307,17 @@ function AnchorRow({
             </div>
           </form>
         </details>
-        <form action={deleteValuationAnchorAction}>
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={assetId} />
-          <input name="anchorId" type="hidden" value={anchor.id} />
-          <details suppressHydrationWarning className="confirmDelete">
-            <summary>Eliminar</summary>
-            <button type="submit">Confirmar</button>
-          </details>
-        </form>
+        {anchor.kind !== "acquisition" ? (
+          <form action={deleteValuationAnchorAction}>
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="id" type="hidden" value={assetId} />
+            <input name="anchorId" type="hidden" value={anchor.id} />
+            <details suppressHydrationWarning className="confirmDelete">
+              <summary>Eliminar</summary>
+              <button type="submit">Confirmar</button>
+            </details>
+          </form>
+        ) : null}
       </td>
     </tr>
   );

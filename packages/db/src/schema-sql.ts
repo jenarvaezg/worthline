@@ -264,6 +264,7 @@ CREATE TABLE \`asset_valuations\` (
 	\`value_minor\` integer NOT NULL,
 	\`valuation_date\` text NOT NULL,
 	\`adjusts_prior_curve\` integer NOT NULL,
+	\`kind\` text,
 	\`source\` text DEFAULT 'manual' NOT NULL,
 	\`batch_id\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,

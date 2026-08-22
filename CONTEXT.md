@@ -433,7 +433,9 @@ _Avoid_: import (the full-workspace replace), pisar, sync (a connected source's 
 A declared value of a **holding** at a specific date. Used to reconstruct historical
 values for **snapshots**. Two kinds: **market appraisal** (reflects market movement,
 a control point on the appreciation curve) and **improvement** (discrete value increment such
-as a renovation, does not alter the underlying appreciation rate).
+as a renovation, does not alter the underlying appreciation rate). One market appraisal
+may additionally carry `kind = 'acquisition'` (#1437): the **acquisition anchor**, the
+purchase that starts the property's history — editable by name in the UI, never deletable.
 _Avoid_: price point, historical value (too vague).
 
 **Market appraisal**:
@@ -442,7 +444,8 @@ that date. When present, it becomes a control point that overrides the declared
 **appreciation rate** in that segment; between control points the curve is sampled
 on the first of each month by default (see **Valuation cadence**). The
 appraised value is the total truth — it already includes any prior **improvements**.
-The EARLIEST market appraisal is also when the property starts existing for historical
+The acquisition (marked `kind = 'acquisition'` since #1437; before that, inferred as
+the earliest market appraisal) is when the property starts existing for historical
 reconstruction, which is why an alta records the purchase where it happened when the user
 knows it (ADR 0056) instead of stamping the day it was typed.
 UI label: "Tasación de mercado".

@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 59;
+export const SCHEMA_VERSION = 60;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1781,6 +1781,64 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 59);
+  }
+
+  if (version < 60) {
+    // #1437: `asset_valuations.kind` — mark which anchor is the acquisition, so
+    // the UI can name it and the delete path can guard it. Forward-only,
+    // nullable. Backfill in two passes:
+    //  1. an id embedding the `_acquisition` marker (seeded by the assistant's
+    //     creation path since PRD #108 — marker sits inside the id, before the
+    //     stable-id seed);
+    //  2. otherwise, per asset with no such row, its OLDEST market appraisal —
+    //     a pre-#1437 asset's acquisition is its first truth. An asset whose
+    //     only anchors are improvements gets nothing (there is genuinely no
+    //     acquisition to claim).
+    try {
+      const columns = await client.execute("PRAGMA table_info(asset_valuations)");
+      const present = new Set(columns.rows.map((row) => String(row.name)));
+
+      if (
+        columns.rows.length > 0 &&
+        !present.has("kind") &&
+        // A partial fixture may carry a degenerate asset_valuations; the
+        // backfill below needs the full v50+ shape to make sense of rows.
+        present.has("asset_id") &&
+        present.has("valuation_date") &&
+        present.has("adjusts_prior_curve")
+      ) {
+        await client.execute("ALTER TABLE asset_valuations ADD COLUMN kind TEXT");
+        // The marker sits INSIDE the id: createStableId appends its seed after
+        // the name (`anchor_<asset>_acquisition_<seed>`), so this is a
+        // contains-match, never a suffix match.
+        await client.execute(
+          "UPDATE asset_valuations SET kind = 'acquisition'" +
+            " WHERE id LIKE '%\\_acquisition%' ESCAPE '\\'",
+        );
+        await client.executeMultiple(`
+          UPDATE asset_valuations SET kind = 'acquisition'
+          WHERE id IN (
+            SELECT id FROM (
+              SELECT v.id,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY v.asset_id
+                       ORDER BY v.valuation_date ASC, v.id ASC
+                     ) AS rn
+              FROM asset_valuations v
+              WHERE v.adjusts_prior_curve = 1
+                AND v.asset_id NOT IN (
+                  SELECT candidate.asset_id FROM asset_valuations candidate
+                  WHERE candidate.id LIKE '%\\_acquisition%' ESCAPE '\\'
+                )
+            ) WHERE rn = 1
+          );
+        `);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 60);
   }
 
   return { ranV18Backfill, ranV33Backfill };
