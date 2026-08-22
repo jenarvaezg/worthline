@@ -30,6 +30,8 @@ import {
   type Workspace,
 } from "@worthline/domain";
 
+import { readAmortizableStartByLiabilityId } from "./data-quality-amortizable-start";
+
 export interface DashboardDataQualityInput {
   /** The agent-view read store — the seam for the few extra reads (#654). */
   agentView: AgentViewReadStore;
@@ -130,6 +132,10 @@ export async function collectDashboardDataQualitySignals(
   );
   const positionsBySourceId = new Map(positionEntries);
   const debtModelByLiabilityId = new Map<string, DebtModel | null>(debtModelEntries);
+  const amortizableStartByLiabilityId = await readAmortizableStartByLiabilityId(
+    agentView,
+    debtModelByLiabilityId,
+  );
 
   // A snapshot has holdings when the (already windowed) rows carry its date. Out
   // of the window this can under-count, so only the low-severity
@@ -145,6 +151,7 @@ export async function collectDashboardDataQualitySignals(
     asOfDateKey: input.asOfDateKey,
     assetCreatedAtById,
     assets: input.assets,
+    amortizableStartByLiabilityId,
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId: input.fireConfigByScopeId,
@@ -159,6 +166,11 @@ export async function collectDashboardDataQualitySignals(
     scope: { internalScopeId: input.scope.id, scopeLabel: input.scope.label },
     scopeOption: input.scope,
     snapshotIdsWithHoldings,
+    snapshotHoldings: input.holdingRows.map((row) => ({
+      dateKey: row.dateKey,
+      holdingId: row.holdingId,
+      kind: row.kind,
+    })),
     snapshots: input.snapshots,
     sourceFreshnessBySourceId,
     syncAttemptsBySourceId: new Map(syncAttemptEntries),

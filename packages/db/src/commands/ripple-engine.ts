@@ -41,6 +41,7 @@ import {
   amortizationPaymentDatesUpTo,
   amortizationPlanFromBalanceRebaseline,
   buildSnapshotAtDate,
+  debtMissingFromAllGeneratedMessage,
   globalHoldingValueAtDate,
   historicalCapturedAt,
   housingAssetIdsOf,
@@ -54,6 +55,8 @@ import {
   resolveScopeMemberIds,
 } from "@worthline/domain";
 import { and, eq, like } from "drizzle-orm";
+
+import { type DebtRippleCounts, EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 
 // ── Historical snapshots ripple engine (ADR 0012, PRD #107) ──────────────────
 //
@@ -924,19 +927,19 @@ export async function rippleHistoricalSnapshotsForDebt(
         eventDateKey: string;
         today: string;
       },
-): Promise<void> {
+): Promise<DebtRippleCounts> {
   const { db } = ctx;
   const { liabilityId, today } = params;
 
   // The liability's identity — including trashed, since it existed on the
   // snapshot dates even if it was trashed afterwards.
   const liability = await readLiabilityIdentity(db, liabilityId);
-  if (!liability) return;
+  if (!liability) return EMPTY_DEBT_RIPPLE_COUNTS;
 
   // Build deps once — the same for every scope (lesson from #114).
   const deps = await buildHistoricalSnapshotDeps(db, workspace);
   const curve = deps.debtBalanceByLiability.get(liabilityId);
-  if (!curve || curve.debtModel === null) return; // no model → nothing to ripple
+  if (!curve || curve.debtModel === null) return EMPTY_DEBT_RIPPLE_COUNTS;
 
   // Housing assets — a debt securing one nets historical housing equity (ADR 0013).
   const housingAssetIds = housingAssetIdsOf(deps.assets);
@@ -946,7 +949,7 @@ export async function rippleHistoricalSnapshotsForDebt(
   let generateDates: string[];
   let recalcFrom: string;
   if (params.kind === "amortizable-plan") {
-    if (!curve.plan) return;
+    if (!curve.plan) return EMPTY_DEBT_RIPPLE_COUNTS;
     generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
     // The debt appears at the disbursement date (ADR 0019), the earliest boundary.
     recalcFrom = curve.plan.disbursementDate;
@@ -979,6 +982,12 @@ export async function rippleHistoricalSnapshotsForDebt(
     recalcFrom = fromDateKey;
   }
 
+  const counts: DebtRippleCounts = {
+    generated: 0,
+    generatedWithLiability: 0,
+    recalculated: 0,
+  };
+
   await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
       const existing = await readSnapshots(db, scope.id);
@@ -1008,6 +1017,10 @@ export async function rippleHistoricalSnapshotsForDebt(
           workspace,
         });
         if (built) {
+          counts.generated += 1;
+          if (built.holdings.some((row) => row.holdingId === liabilityId)) {
+            counts.generatedWithLiability += 1;
+          }
           await saveSnapshot({
             holdings: built.holdings,
             replace: false,
@@ -1050,6 +1063,7 @@ export async function rippleHistoricalSnapshotsForDebt(
         });
 
         if (recalculated) {
+          counts.recalculated += 1;
           await saveSnapshot({
             holdings: recalculated.holdings,
             replace: true,
@@ -1060,7 +1074,28 @@ export async function rippleHistoricalSnapshotsForDebt(
         }
       }
     }
+
+    if (counts.generated > 0 && counts.generatedWithLiability === 0) {
+      // Log before throw so the abort is not silent (#1438); the nested
+      // transaction then rolls back every snapshot this loop saved.
+      logDebtRipple(liabilityId, counts);
+      throw new Error(debtMissingFromAllGeneratedMessage(counts.generated));
+    }
+    logDebtRipple(liabilityId, counts);
   });
+  return counts;
+}
+
+function logDebtRipple(liabilityId: string, counts: DebtRippleCounts): void {
+  const payload = { liabilityId, ...counts };
+  if (counts.generated > 0 && counts.generatedWithLiability < counts.generated) {
+    console.warn(
+      "debt ripple omitted the liability from some generated snapshots",
+      payload,
+    );
+    return;
+  }
+  console.info("debt ripple", payload);
 }
 
 /**

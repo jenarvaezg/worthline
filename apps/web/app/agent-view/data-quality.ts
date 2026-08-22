@@ -1,3 +1,4 @@
+import { readAmortizableStartByLiabilityId } from "@web/data-quality-amortizable-start";
 import type { AgentViewReadStore } from "@worthline/db";
 import {
   collectDataQualitySignals,
@@ -215,6 +216,10 @@ async function collectScopeSignals(
       ),
     ),
   );
+  const amortizableStartByLiabilityId = await readAmortizableStartByLiabilityId(
+    store,
+    debtModelByLiabilityId,
+  );
 
   const positionsBySourceId = new Map(
     await Promise.all(
@@ -266,6 +271,7 @@ async function collectScopeSignals(
     asOfDateKey,
     assetCreatedAtById,
     assets,
+    amortizableStartByLiabilityId,
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId,
@@ -281,6 +287,11 @@ async function collectScopeSignals(
     },
     scopeOption,
     snapshotIdsWithHoldings,
+    snapshotHoldings: holdingsByDate.map((row) => ({
+      dateKey: row.dateKey,
+      holdingId: row.holdingId,
+      kind: row.kind,
+    })),
     snapshots,
     sourceFreshnessBySourceId,
     syncAttemptsBySourceId,

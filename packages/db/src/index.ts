@@ -54,6 +54,7 @@ export type {
   CommandExecutor,
   CommandHost,
   CommandResult,
+  DebtRippleCounts,
   DeleteValuationAnchorCommand,
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
@@ -68,6 +69,7 @@ export type {
   UpdateValuationAnchorCommand,
 } from "./commands";
 export {
+  EMPTY_DEBT_RIPPLE_COUNTS,
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
   executeRecordHousingValuationCommand,

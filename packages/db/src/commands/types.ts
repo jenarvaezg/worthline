@@ -20,6 +20,25 @@ export interface RipplePlan {
   today: string;
 }
 
+/**
+ * What one debt ripple did, in snapshots (#1438). `generated` counts fresh
+ * whole-portfolio snapshots built; `generatedWithLiability` those that carry
+ * the triggering liability's row; `recalculated` the frozen ones whose row was
+ * re-derived. The confirm message reads its N and M from here — never from the
+ * number of re-baselines, which says nothing about what got written.
+ */
+export interface DebtRippleCounts {
+  generated: number;
+  generatedWithLiability: number;
+  recalculated: number;
+}
+
+export const EMPTY_DEBT_RIPPLE_COUNTS: DebtRippleCounts = {
+  generated: 0,
+  generatedWithLiability: 0,
+  recalculated: 0,
+};
+
 /** Closed vocabulary for the application paths that can originate dated facts. */
 export type FactBatchTrigger =
   | "manual"

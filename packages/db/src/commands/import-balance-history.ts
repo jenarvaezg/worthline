@@ -4,11 +4,13 @@ import type { AddBalanceRebaselineInput } from "@db/liability-store";
 import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
 import type {
   CommandResult,
+  DebtRippleCounts,
   FactBatchInput,
   FactBatchTrigger,
   RipplePlan,
   UnitOfWork,
 } from "./types";
+import { EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 
 export interface ImportBalanceHistoryCommand {
   liabilityId: string;
@@ -21,6 +23,7 @@ export interface ImportBalanceHistoryCommand {
 export interface ImportBalanceHistoryResult {
   created: number;
   ripple: RipplePlan | null;
+  snapshots: DebtRippleCounts;
 }
 
 /** Private persistence/ripple capabilities required by this command executor. */
@@ -33,7 +36,7 @@ export interface ImportBalanceHistoryDependencies {
     liabilityId: string;
     fromDateKey: string;
     today: string;
-  }) => Promise<void>;
+  }) => Promise<DebtRippleCounts>;
   uow: UnitOfWork;
 }
 
@@ -52,11 +55,12 @@ export async function executeImportBalanceHistoryCommand(
   batch: FactBatchInput = { trigger: command.trigger ?? "manual" },
 ): Promise<CommandResult<ImportBalanceHistoryResult>> {
   const today = defaultToday(command.today);
+  let snapshots: DebtRippleCounts = EMPTY_DEBT_RIPPLE_COUNTS;
 
   const result = await applyDatedFactsBatch(dependencies.uow, {
     batch,
     ripple: async (fromDateKey) => {
-      await dependencies.rippleDebtRebaseline({
+      snapshots = await dependencies.rippleDebtRebaseline({
         fromDateKey,
         liabilityId: command.liabilityId,
         today,
@@ -85,6 +89,7 @@ export async function executeImportBalanceHistoryCommand(
     value: {
       created: command.rebaselines.length,
       ripple: result.value,
+      snapshots,
     },
   };
 }

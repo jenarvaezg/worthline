@@ -5,6 +5,8 @@
  * can share the draft type without pulling in the store.
  */
 
+import type { DebtSnapshotMembership } from "@worthline/domain";
+
 import type { CorrectionGuarantee, CorrectionPoint } from "./anchor-correction-gate";
 import type { BalanceReconciliation } from "./balance-reconciliation";
 
@@ -64,6 +66,11 @@ export interface ReconstructionCorrectionProposal extends CorrectionProposalBase
   anchorMinor: number;
   /** The full three-witness verdict the card renders (#1422). */
   reconciliation: BalanceReconciliation;
+  /**
+   * How many of the dates the ripple will materialize would omit this debt
+   * (#1438). `missing === total` turns Confirmar off; a partial miss warns.
+   */
+  snapshotMembership: DebtSnapshotMembership;
 }
 
 export type CorrectionProposal =

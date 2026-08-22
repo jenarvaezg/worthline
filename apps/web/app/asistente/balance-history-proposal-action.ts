@@ -1,6 +1,7 @@
 "use server";
 
 import { createStableId } from "@web/intake";
+import type { DebtRippleCounts } from "@worthline/db";
 
 import { parseBalanceHistoryProposalDraft } from "./balance-history-proposal-contract";
 import {
@@ -13,7 +14,7 @@ export async function confirmBalanceHistoryProposalAction(
   rawDraft: unknown,
   ..._testArgs: unknown[]
 ) {
-  return runProposalConfirm<{ created: number }>({
+  return runProposalConfirm<DebtRippleCounts>({
     rawDraft,
     testArgs: _testArgs,
     kind: "balance_history_import",
@@ -41,7 +42,7 @@ export async function confirmBalanceHistoryProposalAction(
       // El descuadre NO bloquea (#1422). Es la misma puerta que dejaba muerta la
       // tarjeta de reconstrucción, en la lane hermana: la tarjeta enseña el
       // veredicto y sus testigos antes de pulsar, y quien pulsa manda.
-      await store.command.applyAssistantBalanceHistoryProposal({
+      const snapshots = await store.command.applyAssistantBalanceHistoryProposal({
         liabilityId: observations.liabilityId,
         proposalId: proposal.id,
         rebaselines: projected.plan.composed.map((row) => ({
@@ -57,7 +58,7 @@ export async function confirmBalanceHistoryProposalAction(
         })),
         today,
       });
-      return { status: "applied", created: projected.plan.composed.length };
+      return { status: "applied", ...snapshots };
     },
   });
 }

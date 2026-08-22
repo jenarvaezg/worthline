@@ -1,3 +1,5 @@
+import type { DebtSnapshotMembership } from "@worthline/domain";
+
 import type { BalanceReconciliation } from "./balance-reconciliation";
 
 export interface BalanceHistoryProposalDraft {
@@ -17,6 +19,11 @@ export interface BalanceHistoryProposal {
   }>;
   curve: Array<{ date: string; balanceMinor: number }>;
   reconciliation: BalanceReconciliation;
+  /**
+   * How many of the dates the ripple will materialize would omit this debt
+   * (#1438). Same preflight as the reconstruction card: total miss ⇒ no confirm.
+   */
+  snapshotMembership: DebtSnapshotMembership;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

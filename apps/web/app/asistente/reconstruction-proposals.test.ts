@@ -199,7 +199,7 @@ describe("buildReconstructionProposal (#1053)", () => {
       clock,
     );
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
     expect(rebaselines).toHaveLength(REPEATED_DATES.length);
     store.close();
@@ -214,6 +214,40 @@ describe("buildReconstructionProposal (#1053)", () => {
     );
     if (!built.ok) throw new Error(built.error);
     expect(built.proposal.guarantee.state).toBe("mismatch");
+    store.close();
+  });
+
+  test("membership of a series after the start leaves Confirmar on (#1438)", async () => {
+    const store = await seedMortgage();
+    const built = await buildReconstructionProposal(store, args(SERIES), TODAY);
+    if (!built.ok) throw new Error(built.error);
+    expect(built.proposal.snapshotMembership.missing).toBe(0);
+    expect(built.proposal.snapshotMembership.total).toBeGreaterThan(0);
+    store.close();
+  });
+
+  test("a series wholly before a locked start has nothing to apply (#1438)", async () => {
+    const store = await seedMortgage();
+    await store.command.addBalanceRebaseline(
+      {
+        annualInterestRate: "0.03",
+        baselineDate: TODAY,
+        endDate: "2046-01-15",
+        id: "origin",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-08-12",
+        outstandingBalanceMinor: 140_000_00,
+        startsAtBaseline: true,
+      },
+      { today: TODAY },
+    );
+    // El planificador no compone fechas anteriores al origen: no hay propuesta
+    // que confirmar, y el aborto de membresía total no llega a pintarse.
+    const built = await buildReconstructionProposal(store, args(SERIES), TODAY);
+    expect(built).toEqual({
+      error: "La propuesta no contiene saldos aplicables.",
+      ok: false,
+    });
     store.close();
   });
 
@@ -437,7 +471,7 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
       clock,
     );
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");
     expect(rebaselines.length).toBeGreaterThan(0);
     expect(rebaselines.every((row) => row.source === "agent")).toBe(true);
@@ -467,7 +501,7 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
       clock,
     );
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     expect(
       (await store.assistantProposals.read(built.proposal.draft.proposalId))?.status,
     ).toBe("applied");
@@ -497,7 +531,7 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
       clock,
     );
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
     // El ancla deja de mentir: pasa a ser lo que dice la curva aceptada.
     const [liability] = await store.liabilities.readLiabilities();
@@ -552,7 +586,7 @@ describe("confirmCorrectionProposalAction · reconstruct depth (#1053)", () => {
       clock,
     );
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     // Dos puntos, no cuatro: los que la enmienda quitó no vuelven por la puerta
     // de atrás del confirmar.
     const rebaselines = await store.liabilities.readBalanceRebaselines("mortgage");

@@ -135,6 +135,7 @@ const KEY_EXPORTS = [
   "captureSnapshotForScope",
   // historical-snapshot
   "buildSnapshotAtDate",
+  "liabilityExistsAtHistoricalDate",
   "recalculateSnapshotForAsset",
   "recalculateSnapshotForLiability",
   "amortizationPaymentDatesUpTo",

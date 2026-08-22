@@ -293,6 +293,7 @@ export type {
   DataQualityScopeContext,
   DataQualitySeverity,
   DataQualitySignal,
+  DataQualitySnapshotHolding,
   DataQualitySourceFreshness,
   DataQualitySyncAttempt,
   DataQualityTrashedHolding,
@@ -301,6 +302,7 @@ export {
   collectDataQualitySignals,
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
+  DEBT_MISSING_FROM_HISTORY_CODE,
   dataQualitySignalSortKey,
   isOverrideableSignalCode,
   MISSING_INVESTMENT_ISIN_CODE,
@@ -627,6 +629,7 @@ export {
 export type {
   BuildSnapshotAtDateInput,
   DebtBalanceCurveInputs,
+  DebtSnapshotMembership,
   FrozenIdentityCapture,
   GlobalHoldingValueInput,
   HousingCurveInputs,
@@ -638,10 +641,14 @@ export type {
   RecalculateSnapshotInput,
 } from "./historical-snapshot";
 export {
+  amortizableLiabilityStartDate,
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
+  debtMissingFromAllGeneratedMessage,
+  debtSnapshotMembership,
   globalHoldingValueAtDate,
   historicalCapturedAt,
+  liabilityExistsAtHistoricalDate,
   rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForCoinAcquisition,

@@ -222,6 +222,7 @@ export async function buildReconstructionProposal(
       proposalType: "correction",
       reconciliation,
       series,
+      snapshotMembership: projected.snapshotMembership,
       summary: boundProposalSummary(
         args.summary,
         `Reconstrucción de «${projected.liability.name}»${

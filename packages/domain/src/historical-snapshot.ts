@@ -403,7 +403,14 @@ function firstBalanceAnchorDate(
   return anchors[0];
 }
 
-function amortizableLiabilityStartDate(
+/**
+ * The amortizable start date the membership predicate reads (#1438): the first
+ * `startsAtBaseline`, else the earliest re-baseline, else the plan's
+ * disbursement — exported so the preflight and the data-quality signal answer
+ * «¿cuándo empieza L?» with the SAME rule the predicate applies, never a
+ * re-implementation that can drift.
+ */
+export function amortizableLiabilityStartDate(
   curve: DebtBalanceCurveInputs | undefined,
 ): string | undefined {
   const startingBaseline = (curve?.balanceRebaselines ?? [])
@@ -420,6 +427,21 @@ function amortizableLiabilityStartDate(
   return curve.plan.disbursementDate < firstRebaseline
     ? curve.plan.disbursementDate
     : firstRebaseline;
+}
+
+/**
+ * The rung a HOUSING-securing debt freezes, or null when it secures nothing that
+ * is housing — leaving the associated-asset lookup to answer (#1436).
+ *
+ * `securesHousingAsset` already answers the housing question from the live housing
+ * classification; this reads the rung off the same fact so the two can never
+ * disagree on one row (a `securesHousing: true` on the `cash` rung).
+ */
+function housingSecuringRung(
+  liability: Liability,
+  housingAssetIds: ReadonlySet<string>,
+): LiquidityTier | null {
+  return securesHousingAsset(liability, housingAssetIds) ? "housing" : null;
 }
 
 /**
@@ -441,23 +463,11 @@ function amortizableLiabilityStartDate(
  * snapshots already showed. What it must NOT do is leak onto the liquid axis:
  * `classificationAssets` keeps such a debt on its home's rung (see the capture call
  * below).
- */
-/**
- * The rung a HOUSING-securing debt freezes, or null when it secures nothing that
- * is housing — leaving the associated-asset lookup to answer (#1436).
  *
- * `securesHousingAsset` already answers the housing question from the live housing
- * classification; this reads the rung off the same fact so the two can never
- * disagree on one row (a `securesHousing: true` on the `cash` rung).
+ * Exported so the reconstruction preflight and recalc call the SAME predicate
+ * generate already uses (#1438) — never a re-implementation that can drift.
  */
-function housingSecuringRung(
-  liability: Liability,
-  housingAssetIds: ReadonlySet<string>,
-): LiquidityTier | null {
-  return securesHousingAsset(liability, housingAssetIds) ? "housing" : null;
-}
-
-function liabilityExistsAtHistoricalDate(input: {
+export function liabilityExistsAtHistoricalDate(input: {
   liability: Liability;
   curve: DebtBalanceCurveInputs | undefined;
   targetDate: string;
@@ -480,6 +490,50 @@ function liabilityExistsAtHistoricalDate(input: {
   }
 
   return true;
+}
+
+/**
+ * How many of `dates` a generate would persist WITHOUT this liability (#1438).
+ * The reconstruction card reads `missing === total` as "do not offer Confirmar"
+ * and a partial miss as a warning; it never redraws the SVG from this.
+ */
+export interface DebtSnapshotMembership {
+  total: number;
+  missing: number;
+  startDate?: string;
+}
+
+export function debtSnapshotMembership(input: {
+  dates: readonly string[];
+  liability: Liability;
+  curve: DebtBalanceCurveInputs | undefined;
+}): DebtSnapshotMembership {
+  const startDate =
+    input.curve?.debtModel === "amortizable"
+      ? amortizableLiabilityStartDate(input.curve)
+      : undefined;
+  let missing = 0;
+  for (const targetDate of input.dates) {
+    if (
+      !liabilityExistsAtHistoricalDate({
+        curve: input.curve,
+        liability: input.liability,
+        targetDate,
+      })
+    ) {
+      missing += 1;
+    }
+  }
+  return {
+    missing,
+    total: input.dates.length,
+    ...(startDate === undefined ? {} : { startDate }),
+  };
+}
+
+/** The sentence a zero-of-N generate must say — preflight and the ripple throw. */
+export function debtMissingFromAllGeneratedMessage(count: number): string {
+  return `Ninguno de los ${count} puntos escribirá esta deuda en el histórico: no existiría en esas fechas.`;
 }
 
 /**
@@ -1179,6 +1233,25 @@ export function recalculateSnapshotForLiability(
     (row) => row.holdingId === input.liability.id && row.kind === "liability",
   );
   const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.liability.id);
+
+  // Same question, same answer as generate (#1438, ADR 0013): a date the debt
+  // does not belong to yet carries NO row — not a recomputed one, and not an
+  // existing frozen one either, which would preserve a membership the write
+  // path (`buildSnapshotAtDate`) never would have produced.
+  if (
+    !liabilityExistsAtHistoricalDate({
+      curve: input.curve,
+      liability: input.liability,
+      targetDate,
+    })
+  ) {
+    return assembleRippleSnapshot({
+      currency,
+      frozenHoldings: input.frozenHoldings,
+      rows,
+      snapshot: input.snapshot,
+    });
+  }
 
   // Value the liability on the target date via the unified dispatcher (#150
   // carry-over): the curve's model picks amortized / anchored, and a null model

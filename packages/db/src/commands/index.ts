@@ -33,7 +33,9 @@ export {
 } from "./ownership-split";
 export type {
   CommandResult,
+  DebtRippleCounts,
   FactBatchInput,
   FactBatchTrigger,
   RipplePlan,
 } from "./types";
+export { EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
