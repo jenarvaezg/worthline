@@ -28,6 +28,22 @@ import type { InvestmentOperation } from "./investment-types";
 export type TransferFlowPolicy = "flow" | "zero";
 
 /**
+ * A position the user is **declaring**, not money they put in that day
+ * (#1490, #1567).
+ *
+ * `source: "opening"` is the mark both alta doors stamp on «sé cuánto tengo hoy»:
+ * the units were already theirs, and the date is the day they typed it. Counting
+ * that row as a contribution — savings, cupo — invents a flow nobody made. Two
+ * folds ask this question (`netInvestedMinor`, `computeContributionAllowanceUsage`);
+ * one predicate, so a third cannot "fix" one and miss the other.
+ */
+export function isDeclaredOpening(
+  operation: Pick<InvestmentOperation, "source">,
+): boolean {
+  return operation.source === "opening";
+}
+
+/**
  * Positive = money the holder put IN (a buy, and — under `flow` — the incoming half
  * of a traspaso). Negative = money that came back OUT (a sell, and the outgoing
  * half). Fees are capitalized on the way in and netted off on the way out, exactly

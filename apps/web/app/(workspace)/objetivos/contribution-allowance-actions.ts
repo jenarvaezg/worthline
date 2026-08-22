@@ -9,48 +9,49 @@ import {
   parseMoneyMinor,
   preserveFields,
 } from "@web/intake";
-import { assertContributionAllowanceInput } from "@worthline/domain";
+import type { WorthlineStore } from "@web/store";
+import {
+  assertContributionAllowanceInput,
+  consumesContributionAllowance,
+} from "@worthline/domain";
 
 /**
- * Annual contribution allowance intake (#1427) — "cupo anual de aportación".
+ * Annual contribution allowance intake (#1427, #1567) — "cupo anual de aportación".
  *
- * The cap is a plain declared amount: this layer parses it and the store owns
- * the invariants (`assertContributionAllowanceInput`). Nothing here knows what a
- * legal contribution limit is, and nothing here ever should — the limit depends
- * on the year's law, on employer contributions and on earned income, so a number
- * in this code would be tax advice with an expiry date.
+ * The cap is a plain declared amount. Destinations are **not** a form field: they
+ * are every `pension_plan` with a ledger, resolved here so the user never ticks
+ * "afecta al cupo". The store still persists the snapshot (export); usage always
+ * re-derives from the instrument.
+ *
+ * Nothing here knows what a legal contribution limit is — the limit depends on
+ * the year's law, on employer contributions and on earned income, so a number in
+ * this code would be tax advice with an expiry date.
  */
 
 type ParsedAllowanceForm =
-  | { ok: true; label: string; annualCapMinor: number; holdingIds: string[] }
+  | { ok: true; label: string; annualCapMinor: number }
   | { ok: false; error: string };
 
 function field(formData: FormData, name: string): string {
   return String(formData.get(name) ?? "").trim();
 }
 
-/** Allowance form fields worth refilling after a validation error (holdings included). */
 function preserveAllowanceFields(formData: FormData): Record<string, string> {
-  return {
-    ...preserveFields(formData, ["label", "annualCap"]),
-    holdingIds: formData.getAll("holdingIds").map(String).join(","),
-  };
+  return preserveFields(formData, ["label", "annualCap"]);
+}
+
+async function pensionPlanHoldingIds(store: WorthlineStore): Promise<string[]> {
+  const assets = await store.assets.readAssets();
+  return assets.filter(consumesContributionAllowance).map((asset) => asset.id);
 }
 
 /**
- * Read the form, then let the DOMAIN say whether it is valid. Restating the
- * invariants here would create a second owner of the same rules, and the two
- * would drift — the store enforces `assertContributionAllowanceInput` at the
- * door regardless, so this layer only turns its message into a redirect the user
- * can see beside the form that produced it.
+ * Read the form (name + cap). Destinations are resolved from the ledger in `run`,
+ * then the DOMAIN says whether the whole input is valid.
  */
 function parseAllowanceForm(formData: FormData): ParsedAllowanceForm {
   const label = field(formData, "label");
   const annualCapMinor = parseMoneyMinor(field(formData, "annualCap"));
-  const holdingIds = formData
-    .getAll("holdingIds")
-    .map((value) => String(value).trim())
-    .filter(Boolean);
 
   // The only rule this layer owns: what the user typed has to be a number at all.
   // "abc" is not a cap below zero, it is not a cap.
@@ -58,16 +59,27 @@ function parseAllowanceForm(formData: FormData): ParsedAllowanceForm {
     return { ok: false, error: "El tope anual debe ser un importe válido." };
   }
 
-  try {
-    assertContributionAllowanceInput({ annualCapMinor, holdingIds, label });
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-
-  return { ok: true, annualCapMinor, holdingIds, label };
+  return { ok: true, annualCapMinor, label };
 }
 
 type ValidAllowanceForm = Extract<ParsedAllowanceForm, { ok: true }>;
+
+async function resolvedAllowanceInput(
+  store: WorthlineStore,
+  form: ValidAllowanceForm,
+): Promise<{ ok: true; holdingIds: string[] } | { ok: false; error: string }> {
+  const holdingIds = await pensionPlanHoldingIds(store);
+  try {
+    assertContributionAllowanceInput({
+      annualCapMinor: form.annualCapMinor,
+      holdingIds,
+      label: form.label,
+    });
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  return { ok: true, holdingIds };
+}
 
 export async function createContributionAllowanceAction(
   formData: FormData,
@@ -96,9 +108,11 @@ export async function createContributionAllowanceAction(
       if (!(await actionScopeExists(store, parsed.scopeId))) {
         return { ok: false, error: INVALID_SCOPE_MESSAGE };
       }
+      const resolved = await resolvedAllowanceInput(store, parsed.form);
+      if (!resolved.ok) return resolved;
       await store.contributionAllowances.createContributionAllowance({
         annualCapMinor: parsed.form.annualCapMinor,
-        holdingIds: parsed.form.holdingIds,
+        holdingIds: resolved.holdingIds,
         label: parsed.form.label,
         scopeId: parsed.scopeId,
       });
@@ -150,12 +164,11 @@ export async function updateContributionAllowanceAction(
       return { ok: true, value: { form: parsed, id } };
     },
     run: async (store, { parsed }) => {
+      const resolved = await resolvedAllowanceInput(store, parsed.form);
+      if (!resolved.ok) return resolved;
       await store.contributionAllowances.updateContributionAllowance(parsed.id, {
         annualCapMinor: parsed.form.annualCapMinor,
-        // Always sent: the form paints every eligible holding as a checkbox, so an
-        // absent name means "unchecked", never "leave the set as it was". Reading it
-        // as the latter would make a destination impossible to remove.
-        holdingIds: parsed.form.holdingIds,
+        holdingIds: resolved.holdingIds,
         label: parsed.form.label,
       });
       return { ok: true };

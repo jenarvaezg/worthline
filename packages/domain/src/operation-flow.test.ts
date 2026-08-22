@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { InvestmentOperation } from "./investment-types";
-import { signedInvestedMinor } from "./operation-flow";
+import { isDeclaredOpening, signedInvestedMinor } from "./operation-flow";
 
 function op(
   kind: InvestmentOperation["kind"],
@@ -45,5 +45,13 @@ describe("signedInvestedMinor", () => {
     const incoming = signedInvestedMinor(op("transfer_in", { transferId: "t" }), "flow");
 
     expect(out + incoming).toBe(0);
+  });
+});
+
+describe("isDeclaredOpening (#1567)", () => {
+  test("an alta stamp is an apertura; a real buy is not", () => {
+    expect(isDeclaredOpening(op("buy", { source: "opening" }))).toBe(true);
+    expect(isDeclaredOpening(op("buy", { source: "manual" }))).toBe(false);
+    expect(isDeclaredOpening(op("buy"))).toBe(false);
   });
 });

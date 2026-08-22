@@ -237,6 +237,32 @@ describe("computeContributionAllowanceUsage", () => {
   });
 });
 
+describe("computeContributionAllowanceUsage — una apertura no es una aportación (#1567)", () => {
+  test("dar de alta un plan que ya existía deja el cupo del año intacto", () => {
+    // The measured case of #1504: 20.000 € typed in August as «sé cuánto tengo hoy»
+    // landed as a buy dated that day and ate the year's ceiling. An apertura declares
+    // pre-existing wealth, not money put in this year.
+    const usage = computeContributionAllowanceUsage({
+      allowance,
+      currency: "EUR",
+      operations: [
+        buy({
+          executedAt: "2026-08-19",
+          id: "op-opening",
+          pricePerUnit: "10",
+          source: "opening",
+          units: "2000",
+        }),
+        buy({ executedAt: "2026-02-10", id: "op-real", pricePerUnit: "10", units: "50" }),
+      ],
+      todayISO: "2026-08-19",
+    });
+
+    expect(usage.consumedMinor).toBe(50_000);
+    expect(usage.entries.map((entry) => entry.operationId)).toEqual(["op-real"]);
+  });
+});
+
 describe("computeContributionAllowanceUsage — el traspaso no aporta (#1393)", () => {
   test("la pata receptora de un traspaso no consume cupo", () => {
     // Jorge's counter read «3.627 € de 1.500 — te has pasado 2.127 €» because three
@@ -305,6 +331,6 @@ describe("assertContributionAllowanceInput", () => {
         holdingIds: [],
         label: "Planes de pensiones",
       }),
-    ).toThrow(/destino/i);
+    ).toThrow(/plan de pensiones/i);
   });
 });

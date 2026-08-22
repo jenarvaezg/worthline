@@ -391,7 +391,14 @@ async function buildStore(
         .all(),
     readTrash: async () => ({
       assets: await ctx.db
-        .select({ id: assets.id, name: assets.name })
+        .select({
+          connectedSourceId: assets.connectedSourceId,
+          id: assets.id,
+          instrument: assets.instrument,
+          isPrimaryResidence: assets.isPrimaryResidence,
+          name: assets.name,
+          type: assets.type,
+        })
         .from(assets)
         .where(isNotNull(assets.deletedAt))
         .orderBy(asc(assets.name))

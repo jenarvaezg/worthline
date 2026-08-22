@@ -1,4 +1,3 @@
-import { ChipChoice } from "@web/chip-choice";
 import { PendingSubmit } from "@web/pending-submit";
 import type {
   ContributionAllowance,
@@ -53,7 +52,7 @@ export function ContributionAllowancePanel({
   allowances: ContributionAllowance[];
   currency: string;
   currentUrl: string;
-  /** Holdings a cupo may point at — those with an operation ledger. */
+  /** Pension plans in the current scope — destinos derived, never ticked (#1567). */
   destinationOptions: ManualAsset[];
   /** Which form bounced, with its message and what was typed into it. */
   formError: {
@@ -88,9 +87,6 @@ export function ContributionAllowancePanel({
   const errorFor = (formId: string) =>
     formError?.formId === formId ? formError.message : null;
   const createValues = formError?.formId === "allowance" ? formError.values : {};
-  const preservedIds = createValues.holdingIds
-    ? createValues.holdingIds.split(",").filter(Boolean)
-    : null;
 
   return (
     <section
@@ -151,8 +147,9 @@ export function ContributionAllowancePanel({
               Consume{row.destinationNames.length === 1 ? "" : "n"} este cupo:{" "}
               {row.destinationNames.length > 0
                 ? row.destinationNames.join(", ")
-                : "ningún activo visible"}
-              . Cuenta las compras reales del año natural, no lo que el plan preveía.
+                : "ningún plan de pensiones visible"}
+              . Cuenta las aportaciones reales a tus planes de pensiones este año, no lo
+              que el plan preveía.
               {row.unknownDestinationCount > 0
                 ? ` ${row.unknownDestinationCount} destino${row.unknownDestinationCount === 1 ? "" : "s"} marcado${row.unknownDestinationCount === 1 ? "" : "s"} no está${row.unknownDestinationCount === 1 ? "" : "n"} en esta pantalla: sus aportaciones no se han contado.`
                 : ""}
@@ -210,14 +207,6 @@ export function ContributionAllowancePanel({
                     name="annualCap"
                   />
                 </label>
-                <span className="memberProfileLabel">
-                  Elige qué activos consumen el cupo
-                </span>
-                <ChipChoice
-                  name="holdingIds"
-                  options={destinationOptions}
-                  selectedIds={allowance.holdingIds}
-                />
                 <PendingSubmit pendingLabel="Guardando…">Guardar cupo</PendingSubmit>
               </form>
               <form action={deleteContributionAllowanceAction}>
@@ -239,9 +228,8 @@ export function ContributionAllowancePanel({
         <div className="memberProfileLabel">Nuevo cupo</div>
         {destinationOptions.length === 0 ? (
           <p className="muted">
-            Un cupo cuenta compras reales, así que necesita al menos una inversión con
-            libro de operaciones. Da de alta el plan de pensiones (o el fondo) y sus
-            aportaciones antes de fijarle un tope.
+            Un cupo cuenta aportaciones reales a planes de pensiones. Da de alta el plan y
+            sus aportaciones antes de fijarle un tope.
           </p>
         ) : (
           <form
@@ -273,12 +261,6 @@ export function ContributionAllowancePanel({
                 placeholder="1500"
               />
             </label>
-            <span className="memberProfileLabel">Elige qué activos consumen el cupo</span>
-            <ChipChoice
-              name="holdingIds"
-              options={destinationOptions}
-              selectedIds={preservedIds ?? []}
-            />
             <p className="objetivosCupoHint">
               El tope lo pones tú: worthline no calcula límites fiscales — dependen de la
               normativa del ejercicio, de las aportaciones de empresa y de tus

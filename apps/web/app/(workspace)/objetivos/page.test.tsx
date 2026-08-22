@@ -90,6 +90,7 @@ const calls = vi.hoisted(() => {
     ),
     readContributionReconciliations: vi.fn(async () => []),
     readContributionAllowances: vi.fn(async (): Promise<ContributionAllowance[]> => []),
+    readTrash: vi.fn(async () => ({ assets: [] as ManualAsset[], liabilities: [] })),
     readOperations: vi.fn(async () => []),
     readAllPriceCacheEntries: vi.fn(async () => []),
     readInvestmentAssetsWithMeta: vi.fn(async () => []),
@@ -143,6 +144,7 @@ const calls = vi.hoisted(() => {
             readPayoutSchedules: calls.readPayoutSchedules,
           },
           readFireConfig: calls.readFireConfig,
+          readTrash: calls.readTrash,
           readWarningOverrides: calls.readWarningOverrides,
           snapshots: {
             buildProjectionContext: calls.buildProjectionContext,
@@ -1164,6 +1166,7 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     currency: "EUR",
     currentValue: { amountMinor: 20_000_00, currency: "EUR" },
     id: "asset_pp",
+    instrument: "pension_plan",
     isPrimaryResidence: false,
     liquidityTier: "term-locked",
     name: "MyInvestor Value PP",
@@ -1171,10 +1174,12 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     type: "investment",
   };
 
-  /** Otro holding con libro: un candidato del selector que NO consume el cupo. */
+  /** Otro holding con libro: un ETF que NO consume el cupo, aunque tenga operaciones. */
   const globalEtf: ManualAsset = {
     ...pensionPlan,
     id: "asset_etf",
+    instrument: "etf",
+    liquidityTier: "market",
     name: "iShares Core MSCI World",
   };
 
@@ -1286,62 +1291,57 @@ describe("ObjetivosPage cupo anual de aportación (#1427)", () => {
     expect(html).toContain("worthline no calcula límites fiscales");
   });
 
-  test("el selector pregunta, la prosa afirma (#1483)", async () => {
-    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
-    withPensionPlan([contribution("op_1", "2026-02-10", "10")]);
-
-    const html = await renderedHtml();
-
-    // Sobre una lista de candidatos SIN marcar, «Activos que consumen el cupo» se
-    // lee como un hecho: dos lectores creyeron que sus ETFs consumían el cupo.
-    expect(html).toContain("Elige qué activos consumen el cupo");
-    expect(html).not.toContain(">Activos que consumen el cupo<");
-    // La prosa-resumen no cambia: ahí solo salen los marcados, y sí es un hecho.
-    expect(html).toContain("este cupo: MyInvestor Value PP");
-  });
-
-  test("el chip marcado lleva marca binaria y sale el primero (#1483)", async () => {
+  test("ya no hay selector de destinos: el cupo cuenta los planes de pensiones (#1567)", async () => {
     calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
     withHoldings([globalEtf, pensionPlan], [contribution("op_1", "2026-02-10", "10")]);
 
     const html = await renderedHtml();
-    const editor = html.slice(html.indexOf('id="allowanceEdit-cupo_pp"'));
-    const chips = editor.slice(
-      editor.indexOf('class="chipChoice"'),
-      editor.indexOf("Guardar cupo"),
+    const cupoPanel = html.slice(
+      html.indexOf('aria-label="Cupo anual de aportación"'),
+      html.indexOf("Plan de aportaciones"),
     );
 
-    // El marcado se lee sin comparar tintes: primero de la lista y con su casilla,
-    // que el canon rellena con el ✓ solo estando marcada (design-system-guardian).
-    const firstChip = chips.slice(chips.indexOf("<label"), chips.indexOf("</label>"));
-    expect(firstChip).toContain("MyInvestor Value PP");
-    expect(firstChip).toContain("checked");
-    expect(firstChip).toContain('class="chipMark"');
-    expect(chips.indexOf("MyInvestor Value PP")).toBeLessThan(
-      chips.indexOf("iShares Core MSCI World"),
-    );
+    expect(cupoPanel).not.toContain("Elige qué activos consumen el cupo");
+    expect(cupoPanel).not.toContain('class="chipChoice"');
+    expect(cupoPanel).toContain("este cupo: MyInvestor Value PP");
+    expect(cupoPanel).not.toContain("iShares Core MSCI World");
   });
 
-  test("el formulario de crear cupo pinta el mismo selector (#1483)", async () => {
-    // El defecto existía DOS veces porque el markup estaba duplicado; el chip es
-    // ahora un componente, y este test dice que la copia de crear también lo usa.
+  test("el formulario de crear cupo tampoco pide destinos (#1567)", async () => {
     withPensionPlan([]);
 
     const html = await renderedHtml();
     const createForm = html.slice(html.indexOf('id="allowanceCreateForm"'));
 
-    expect(createForm).toContain("Elige qué activos consumen el cupo");
-    expect(createForm.slice(0, createForm.indexOf("Crear cupo"))).toContain(
+    expect(createForm).not.toContain("Elige qué activos consumen el cupo");
+    expect(createForm.slice(0, createForm.indexOf("Crear cupo"))).not.toContain(
       'class="chipMark"',
     );
   });
 
-  test("solo ofrece como destino activos con libro de operaciones", async () => {
-    // La lista por defecto de la página es una casa y una cuenta: ninguna registra
-    // aportaciones una a una, así que un cupo sobre ellas contaría 0 y mentiría.
+  test("una apertura no infla el cupo del año (#1567)", async () => {
+    calls.readContributionAllowances.mockResolvedValueOnce([cupo]);
+    withPensionPlan([
+      {
+        ...contribution("op_opening", "2026-08-19", "20"),
+        source: "opening",
+      },
+      contribution("op_real", "2026-02-10", "10"),
+    ]);
+
     const html = await renderedHtml();
 
-    expect(html).toContain("necesita al menos una inversión con libro de operaciones");
+    expect(html).toContain(euros(1_000_00));
+    expect(html).toContain(`quedan ${euros(500_00)}`);
+    expect(html).not.toContain("te has pasado");
+  });
+
+  test("sin planes de pensiones no se puede crear el cupo", async () => {
+    // La lista por defecto de la página es una casa y una cuenta: ninguna es un
+    // plan de pensiones, así que un cupo sobre ellas contaría 0 y mentiría.
+    const html = await renderedHtml();
+
+    expect(html).toContain("cuenta aportaciones reales a planes de pensiones");
   });
 });
 

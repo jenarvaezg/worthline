@@ -684,6 +684,7 @@ export {
   reassignToNew,
 } from "./holding-matcher";
 export {
+  consumesContributionAllowance,
   isValueUpdateEligible,
   keepsAnOperationLedger,
   valuationMethodOfAsset,
@@ -807,7 +808,11 @@ export {
   mixedCurrencyWarning,
 } from "./operation-currency";
 export type { TransferFlowPolicy } from "./operation-flow";
-export { signedInvestedMinor, unhandledOperationKind } from "./operation-flow";
+export {
+  isDeclaredOpening,
+  signedInvestedMinor,
+  unhandledOperationKind,
+} from "./operation-flow";
 export type {
   DatedAmount,
   DerivedPayout,

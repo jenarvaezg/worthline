@@ -1,9 +1,11 @@
 import type {
+  AssetType,
   BinanceHistoryCurve,
   CreateInvestmentOperationInput,
   CreateManualAssetInput,
   DecimalString,
   FireScopeConfig,
+  Instrument,
   ValuationCadence,
   WarningOverride,
 } from "@worthline/domain";
@@ -114,7 +116,15 @@ export interface AuditLogEntry {
 }
 
 export interface TrashView {
-  assets: Array<{ id: string; name: string }>;
+  assets: Array<{
+    id: string;
+    name: string;
+    /** Filled by `readTrash` so the cupo can classify destinos in the trash (#1567). */
+    type?: AssetType;
+    instrument?: Instrument | null;
+    isPrimaryResidence?: number;
+    connectedSourceId?: string | null;
+  }>;
   liabilities: Array<{ id: string; name: string }>;
 }
 

@@ -8,6 +8,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  consumesContributionAllowance,
   isValueUpdateEligible,
   keepsAnOperationLedger,
   valuationMethodOfAsset,
@@ -152,6 +153,37 @@ describe("keepsAnOperationLedger (#1427)", () => {
         asset({
           connectedSourceId: "src_binance",
           instrument: "fund",
+          type: "investment",
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("consumesContributionAllowance (#1567)", () => {
+  test("a pension plan with a ledger consumes the cupo", () => {
+    expect(
+      consumesContributionAllowance(
+        asset({ instrument: "pension_plan", type: "investment" }),
+      ),
+    ).toBe(true);
+  });
+
+  test("a fund with a ledger does not — destinos come from the instrument, not a tick", () => {
+    expect(
+      consumesContributionAllowance(asset({ instrument: "fund", type: "investment" })),
+    ).toBe(false);
+    expect(
+      consumesContributionAllowance(asset({ instrument: "etf", type: "investment" })),
+    ).toBe(false);
+  });
+
+  test("a connected-source pension plan does not — it has no operation ledger", () => {
+    expect(
+      consumesContributionAllowance(
+        asset({
+          connectedSourceId: "src",
+          instrument: "pension_plan",
           type: "investment",
         }),
       ),

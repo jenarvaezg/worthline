@@ -31,7 +31,9 @@ describe("trash (soft-deleted records)", () => {
     expect((await store.readTrash()).assets).toEqual([]);
 
     await store.assets.softDeleteAsset("a1", "2026-06-09T00:00:00.000Z");
-    expect((await store.readTrash()).assets).toEqual([{ id: "a1", name: "Cuenta" }]);
+    expect((await store.readTrash()).assets).toEqual([
+      expect.objectContaining({ id: "a1", name: "Cuenta" }),
+    ]);
     expect((await store.assets.readAssets()).some((asset) => asset.id === "a1")).toBe(
       false,
     );
