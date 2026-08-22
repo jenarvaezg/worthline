@@ -4288,6 +4288,42 @@ code {
   padding-top: 16px;
 }
 
+/* Carteras gestionadas (ADR 0085, #1547): la lista es un inventario de líneas
+   con regla entre filas — jerarquía por espacio y filete, nunca por sombra. */
+.carterasBack {
+  margin-bottom: 8px;
+}
+
+.carterasList {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  padding-left: 0;
+}
+
+.carterasRow {
+  align-items: baseline;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.carterasRow:first-child {
+  border-top: none;
+}
+
+.carterasRowTotal {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.carterasWeight {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .createGoalSubmit {
   justify-self: end;
 }

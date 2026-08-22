@@ -119,6 +119,9 @@ export async function PatrimonioContent({
           <span>Activos y deudas</span>
         </div>
         <div className="patrimonioActions">
+          <Link className="actionLink" href="/patrimonio/carteras">
+            Carteras gestionadas
+          </Link>
           <Link className="actionLink" href="/patrimonio/anadir">
             + Añadir holding
           </Link>

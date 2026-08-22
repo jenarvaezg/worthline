@@ -17,6 +17,7 @@ export interface AgentViewPublicIdTarget {
 
 const PUBLIC_ID_PREFIX: Record<ExportedPublicIdEntityType, string> = {
   holding: "wl_hld_",
+  managed_portfolio: "wl_prt_",
   member: "wl_mbr_",
   member_group: "wl_grp_",
   scope: "wl_scp_",
@@ -67,6 +68,16 @@ export function publicIdTargetsForMemberGroup(
  */
 export function publicIdTargetsForHolding(holdingId: string): AgentViewPublicIdTarget[] {
   return [{ entityType: "holding", entityId: holdingId }];
+}
+
+/**
+ * The agent-view public-id target of one managed portfolio (#1547): the ficha is
+ * addressed by its own `wl_prt_…` id, never by an internal storage id.
+ */
+export function publicIdTargetsForManagedPortfolio(
+  portfolioId: string,
+): AgentViewPublicIdTarget[] {
+  return [{ entityType: "managed_portfolio", entityId: portfolioId }];
 }
 
 export async function ensureAgentViewPublicIds(

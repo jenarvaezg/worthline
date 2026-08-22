@@ -62,6 +62,8 @@ import {
   liabilityBalanceAnchors,
   liabilityBalanceRebaselines,
   liabilityOwnerships,
+  managedPortfolioHoldings,
+  managedPortfolios,
   memberGroupMembers,
   memberGroups,
   members,
@@ -133,6 +135,8 @@ const WORKSPACE_TABLES = [
   "snapshots",
   "contribution_occurrence_operations",
   "contribution_occurrence_reconciliations",
+  "managed_portfolio_holdings",
+  "managed_portfolios",
   "contribution_allowance_holdings",
   "contribution_allowances",
   "asset_operations",
@@ -995,6 +999,32 @@ async function importWorkspace(
       }
     }
 
+    // Managed portfolios (ADR 0085, #1547), restored by id after their holdings
+    // (FK) — the members themselves are ordinary assets restored above, cash
+    // sibling included. Only the grouping travels; the value stays derived.
+    if (doc.managedPortfolios.length > 0) {
+      await db
+        .insert(managedPortfolios)
+        .values(
+          doc.managedPortfolios.map((portfolio) => ({
+            id: portfolio.id,
+            name: portfolio.name,
+            provider: portfolio.provider ?? null,
+            scopeId: portfolio.scopeId,
+          })),
+        )
+        .run();
+      const portfolioLinks = doc.managedPortfolios.flatMap((portfolio) =>
+        portfolio.holdingIds.map((assetId) => ({
+          assetId,
+          portfolioId: portfolio.id,
+        })),
+      );
+      if (portfolioLinks.length > 0) {
+        await db.insert(managedPortfolioHoldings).values(portfolioLinks).run();
+      }
+    }
+
     if (doc.warningOverrides.length > 0) {
       await db
         .insert(warningOverrides)
@@ -1552,6 +1582,28 @@ async function buildWorkspaceExport(
     allowanceHoldingsById.set(row.allowanceId, list);
   }
 
+  // Managed portfolios (ADR 0085). Only the grouping is exported; its members
+  // (cash sibling included) travel as the ordinary asset rows above.
+  const portfolioRows = await db
+    .select()
+    .from(managedPortfolios)
+    .orderBy(asc(managedPortfolios.scopeId), asc(managedPortfolios.id))
+    .all();
+  const portfolioHoldingRows = await db
+    .select()
+    .from(managedPortfolioHoldings)
+    .orderBy(
+      asc(managedPortfolioHoldings.portfolioId),
+      asc(managedPortfolioHoldings.assetId),
+    )
+    .all();
+  const portfolioHoldingsById = new Map<string, string[]>();
+  for (const row of portfolioHoldingRows) {
+    const list = portfolioHoldingsById.get(row.portfolioId) ?? [];
+    list.push(row.assetId);
+    portfolioHoldingsById.set(row.portfolioId, list);
+  }
+
   return serializeWorkspaceExport({
     workspace: { baseCurrency: workspace.baseCurrency, mode: workspace.mode },
     members: workspace.members,
@@ -1583,6 +1635,13 @@ async function buildWorkspaceExport(
       label: row.label,
       scopeId: row.scopeId,
     })),
+    managedPortfolios: portfolioRows.map((row) => ({
+      holdingIds: portfolioHoldingsById.get(row.id) ?? [],
+      id: row.id,
+      name: row.name,
+      provider: row.provider ?? null,
+      scopeId: row.scopeId,
+    })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows
       .filter((row) => row.deletedAt === null)
@@ -1610,6 +1669,7 @@ async function buildWorkspaceExport(
       workspace,
       assetRows.map((row) => row.id),
       liabilityRows.map((row) => row.id),
+      portfolioRows.map((row) => row.id),
     ),
   });
 }
@@ -1619,11 +1679,16 @@ async function currentAgentViewPublicIds(
   workspace: Workspace,
   holdingIds: string[],
   liabilityIds: string[],
+  portfolioIds: string[] = [],
 ): Promise<ExportedPublicId[]> {
   const liveTargets = new Set(
     [
       ...publicIdTargetsForWorkspace(workspace),
       ...[...holdingIds, ...liabilityIds].flatMap((id) => publicIdTargetsForHolding(id)),
+      ...portfolioIds.map((id) => ({
+        entityId: id,
+        entityType: "managed_portfolio" as const,
+      })),
     ].map((target) => `${target.entityType}:${target.entityId}`),
   );
 

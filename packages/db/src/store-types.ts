@@ -35,6 +35,7 @@ import type {
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
+import type { ManagedPortfolioStore } from "./managed-portfolio-store";
 import type { OperationsStore, UpdateInvestmentOperationInput } from "./operations-store";
 import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
@@ -225,6 +226,8 @@ interface LegacyWorthlineStore {
    * user declared; what has been consumed is derived from the operation ledger.
    */
   contributionAllowances: ContributionAllowanceStore;
+  /** Managed portfolios + their exclusive memberships (ADR 0085, #1547). */
+  managedPortfolios: ManagedPortfolioStore;
   /** Narrow read-only port for the external agent-view API. */
   agentView: AgentViewReadStore;
   /** Durable, explicitly resolved assistant proposals (#767). */

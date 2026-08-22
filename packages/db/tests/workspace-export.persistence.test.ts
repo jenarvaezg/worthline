@@ -207,6 +207,16 @@ async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
     source: "manual",
     staleReason: "price older than its source TTL",
   });
+
+  // A managed portfolio (ADR 0085) grouping the live investment, with its
+  // auto-created cash sibling as a member.
+  await store.managedPortfolios.createManagedPortfolio({
+    cashOwnership: [{ memberId: "m1", shareBps: 10000 }],
+    memberHoldingIds: ["a_inv"],
+    name: "Cartera Metal",
+    provider: "MyInvestor",
+    scopeId: "household",
+  });
 }
 
 describe("exportWorkspace", () => {
@@ -230,8 +240,15 @@ describe("exportWorkspace", () => {
 
     expect(doc.groups).toEqual([{ id: "g1", memberIds: ["m1", "m2"], name: "Familia" }]);
 
-    // Live assets only — trashed ones must not appear here.
-    expect(doc.assets.map((a) => a.id)).toEqual(["a_cash", "a_home", "a_inv"]);
+    // Live assets only — trashed ones must not appear here. The managed
+    // portfolio's auto-created cash sibling is a live asset like any other
+    // (compared as a set: the export's row order is its own concern).
+    const cashMemberId = doc.managedPortfolios[0]!.holdingIds.find(
+      (id) => id !== "a_inv",
+    )!;
+    expect(doc.assets.map((a) => a.id).sort()).toEqual(
+      ["a_cash", "a_home", "a_inv", cashMemberId].sort(),
+    );
 
     const cash = doc.assets.find((a) => a.id === "a_cash")!;
     expect(cash).toStrictEqual({
@@ -389,6 +406,27 @@ describe("exportWorkspace", () => {
     // The audit log is deliberately NOT a section.
     expect(Object.keys(doc)).not.toContain("audit");
     expect(Object.keys(doc)).not.toContain("auditLog");
+
+    // Managed portfolios (ADR 0085): the grouping with flattened membership —
+    // the members themselves are the ordinary asset rows above.
+    expect(doc.managedPortfolios).toHaveLength(1);
+    const portfolio = doc.managedPortfolios[0]!;
+    expect(portfolio.name).toBe("Cartera Metal");
+    expect(portfolio.provider).toBe("MyInvestor");
+    expect(portfolio.scopeId).toBe("household");
+    expect(new Set(portfolio.holdingIds)).toEqual(new Set(["a_inv", cashMemberId]));
+
+    // The grouping's own public id rides in the registry section (wl_prt_).
+    const portfolioPublicId = doc.publicIds.find(
+      (row) => row.entityType === "managed_portfolio" && row.entityId === portfolio.id,
+    )!;
+    expect(portfolioPublicId.publicId.startsWith("wl_prt_")).toBe(true);
+    // …and so does the cash sibling's holding id.
+    expect(
+      doc.publicIds.some(
+        (row) => row.entityType === "holding" && row.entityId === cashMemberId,
+      ),
+    ).toBe(true);
 
     store.close();
   });

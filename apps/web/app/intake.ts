@@ -508,6 +508,10 @@ export function okMessage(key: string | undefined): string | null {
     investment_import_ready:
       "Inversión creada. Ahora carga el extracto para añadir sus movimientos.",
     liability_added: "Deuda añadida.",
+    // Carteras gestionadas (ADR 0085, #1547).
+    cartera_borrada: "Cartera gestionada eliminada. Sus holdings no se han tocado.",
+    cartera_creada: "Cartera creada. Asigna sus fondos en «Miembros».",
+    cartera_guardada: "Cartera guardada.",
     member_deleted: "Miembro borrado definitivamente.",
     numista_connected: "Colección Numista conectada.",
     numista_credentials_updated:

@@ -28,8 +28,15 @@ export interface HoldingPublicIdReader {
 /** The agent-view registry prefix for a holding (`packages/db/agent-view-public-ids.ts`). */
 export const PUBLIC_HOLDING_ID_PREFIX = "wl_hld_";
 
+/** The registry prefix for a managed portfolio's ficha (#1547). */
+export const PUBLIC_MANAGED_PORTFOLIO_ID_PREFIX = "wl_prt_";
+
 export function isPublicHoldingId(id: string): boolean {
   return id.startsWith(PUBLIC_HOLDING_ID_PREFIX);
+}
+
+export function isPublicManagedPortfolioId(id: string): boolean {
+  return id.startsWith(PUBLIC_MANAGED_PORTFOLIO_ID_PREFIX);
 }
 
 /** The holding's ficha — the single surface where a holding is edited/managed (#152). */
@@ -50,6 +57,16 @@ export function holdingOperationsHref(publicHoldingId: string): string {
 /** The holding's row on the board, as an anchor target (the ficha's «← Volver»). */
 export function holdingBoardHref(publicHoldingId: string): string {
   return `/patrimonio#${publicHoldingId}`;
+}
+
+/** The managed-portfolios index — the section's list + alta surface (#1547). */
+export function managedPortfoliosIndexHref(): string {
+  return "/patrimonio/carteras";
+}
+
+/** A managed portfolio's ficha (composition, cash, members) (#1547). */
+export function managedPortfolioFichaHref(publicPortfolioId: string): string {
+  return `/patrimonio/carteras/${publicPortfolioId}`;
 }
 
 export interface HoldingPublicIdIndex {
@@ -89,6 +106,48 @@ export function resolveHoldingRoute(
   index: HoldingPublicIdIndex,
 ): string | null {
   if (!isPublicHoldingId(routeId)) return null;
+
+  return index.internalByPublic.get(routeId) ?? null;
+}
+
+/** Both directions of the registry restricted to managed portfolios (#1547). */
+export interface ManagedPortfolioPublicIdIndex {
+  /** Internal portfolio id → public `wl_prt_…` id. */
+  publicByInternal: ReadonlyMap<string, string>;
+  /** Public `wl_prt_…` id → internal portfolio id. */
+  internalByPublic: ReadonlyMap<string, string>;
+}
+
+/**
+ * Index the public-id registry rows for managed portfolios in both directions.
+ * The `wl_prt_` space is disjoint from holdings' — a grouping entity is not a
+ * holding (ADR 0085), and its URLs say so.
+ */
+export function managedPortfolioPublicIdIndex(
+  rows: readonly ExportedPublicId[],
+): ManagedPortfolioPublicIdIndex {
+  const publicByInternal = new Map<string, string>();
+  const internalByPublic = new Map<string, string>();
+
+  for (const row of rows) {
+    if (row.entityType !== "managed_portfolio") continue;
+    publicByInternal.set(row.entityId, row.publicId);
+    internalByPublic.set(row.publicId, row.entityId);
+  }
+
+  return { internalByPublic, publicByInternal };
+}
+
+/**
+ * The internal id a `/patrimonio/carteras/[id]` route segment names, or null —
+ * which renders as a plain 404. Same discipline as {@link resolveHoldingRoute}:
+ * an internal id is not a URL vocabulary.
+ */
+export function resolveManagedPortfolioRoute(
+  routeId: string,
+  index: ManagedPortfolioPublicIdIndex,
+): string | null {
+  if (!isPublicManagedPortfolioId(routeId)) return null;
 
   return index.internalByPublic.get(routeId) ?? null;
 }

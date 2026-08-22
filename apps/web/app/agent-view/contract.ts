@@ -209,6 +209,22 @@ export interface AgentViewHoldingMatch extends AgentViewHoldingIdentity {
   matchedOn: "label" | "providerSymbol" | "isin";
   /** Present only when a connected source materializes this holding. */
   connectedSource?: AgentViewHoldingProvenance;
+  /**
+   * The managed portfolio this holding belongs to (ADR 0085), when one does —
+   * membership is exclusive, so there is at most ONE. Present only for members.
+   */
+  managedPortfolio?: AgentViewHoldingPortfolioMembership;
+}
+
+/**
+ * A holding's membership in a managed portfolio (ADR 0085): which grouping owns
+ * it and under what public name. The portfolio is a grouping entity, never a
+ * holding — this mark says «estos fondos son uno» without pretending otherwise.
+ */
+export interface AgentViewHoldingPortfolioMembership {
+  id: string;
+  label: string;
+  object: "managed_portfolio";
 }
 
 /** What a holding lookup echoes back about its own bounds — no cursor: it is a top-N. */
@@ -269,6 +285,21 @@ export interface AgentViewConnectedSourceSummary {
   /** Freshness facts: status, last successful sync, last failed sync (#339). */
   freshness: AgentViewSourceFreshnessSummary;
   projectedHoldings: AgentViewObjectReference[];
+}
+
+/**
+ * A managed portfolio of this scope (ADR 0085), named with its members — the
+ * «estos fondos son uno» the owner reads in his manager's app. The value is
+ * derived from those members (never a stored figure); a scope's summary only
+ * lists portfolios whose members are visible in it.
+ */
+export interface AgentViewManagedPortfolioSummary {
+  id: string;
+  object: "managed_portfolio";
+  label: string;
+  /** The manager behind the portfolio, when declared. */
+  provider: string | null;
+  members: AgentViewObjectReference[];
 }
 
 /** Summarized holdings plus the cap facts (PRD #328 main-context caps). */
@@ -750,6 +781,8 @@ export interface AgentViewFinancialContext {
   passiveIncome: AgentViewScopePassiveIncome;
   holdings: AgentViewHoldingsBlock;
   connectedSources: AgentViewConnectedSourceSummary[];
+  /** The scope's managed portfolios with their members (ADR 0085, #1547). */
+  managedPortfolios: AgentViewManagedPortfolioSummary[];
   /** The scope's FIRE progress summary; status-only when unconfigured (#340). */
   fire: AgentViewFireSummary;
   /** The scope's data-quality summary: counts + the top signals (#341). */
@@ -1084,6 +1117,8 @@ export interface AgentViewHoldingDetail extends AgentViewHoldingIdentity {
   payouts?: AgentViewHoldingPayouts | null;
   /** Present only when a connected source materialized this holding. */
   sourceSummary?: AgentViewHoldingSourceSummary;
+  /** Present only when the holding is a member of a managed portfolio (ADR 0085). */
+  managedPortfolio?: AgentViewHoldingPortfolioMembership;
   /** Present only for an appreciating asset that has valuation anchors (#338). */
   valuationAnchors?: AgentViewValuationAnchor[];
   /** Present only for an amortized liability that has an amortization plan (#338). */

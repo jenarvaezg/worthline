@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 61;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1850,6 +1850,40 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 60);
+  }
+
+  if (version < 61) {
+    // #1547 (ADR 0085): `managed_portfolios` + `managed_portfolio_holdings` —
+    // the managed portfolio ("cartera gestionada") as a GROUPING entity, never
+    // a holding. Only the name and an optional provider are typed data; the
+    // portfolio's value is derived from its members on read, and the declared
+    // balance (the reconciliation witness, ADR 0085) arrives in S4 — no figure
+    // column exists to go stale behind a member's price.
+    //
+    // Membership is EXCLUSIVE: `asset_id` carries a UNIQUE index because a
+    // position lives physically inside one portfolio (deliberately unlike
+    // goals/allowances, where overlap is a legitimate view). Members keep
+    // summing into net worth exactly as before — this table touches no engine.
+    await client.executeMultiple(
+      `CREATE TABLE IF NOT EXISTS managed_portfolios (
+        id TEXT PRIMARY KEY NOT NULL,
+        scope_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        provider TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS managed_portfolios_scope_idx
+        ON managed_portfolios(scope_id, id);
+      CREATE TABLE IF NOT EXISTS managed_portfolio_holdings (
+        portfolio_id TEXT NOT NULL REFERENCES managed_portfolios(id) ON DELETE CASCADE,
+        asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+        PRIMARY KEY (portfolio_id, asset_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS managed_portfolio_holdings_asset_unique
+        ON managed_portfolio_holdings(asset_id);`,
+    );
+    await writeSchemaVersion(client, 61);
   }
 
   return { ranV18Backfill, ranV33Backfill };

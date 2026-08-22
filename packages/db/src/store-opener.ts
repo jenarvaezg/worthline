@@ -23,6 +23,7 @@ import { seedDeclaredFireSavingsCapacity } from "./fire-savings-capacity-seed";
 import { createGoalStore } from "./goal-store";
 import { createLiabilityStore } from "./liability-store";
 import { openLibsqlClient } from "./libsql-client";
+import { createManagedPortfolioStore } from "./managed-portfolio-store";
 import { type MigrateResult, migrate } from "./migrate";
 import { createOperationsStore } from "./operations-store";
 import { createPayoutStore } from "./payout-store";
@@ -176,6 +177,7 @@ async function buildStore(
   const payoutStore = createPayoutStore(ctx);
   const contributionPlanStore = createContributionPlanStore(ctx);
   const contributionAllowanceStore = createContributionAllowanceStore(ctx);
+  const managedPortfolioStore = createManagedPortfolioStore(ctx);
   const assistantProposalStore = createAssistantProposalStore(ctx);
   const agentViewReadStore = createAgentViewReadStore(ctx, {
     listConnectedSources: connectedSourceStore.listSources,
@@ -185,6 +187,7 @@ async function buildStore(
     readCurveValuedHoldings: (dateKey) =>
       snapshotStore.readCurveValuedHoldingsAtDate(dateKey),
     readGoals: goalStore.readGoals,
+    readManagedPortfolios: managedPortfolioStore.readManagedPortfolios,
     readBalanceAnchors: liabilityStore.readBalanceAnchors,
     readBalanceRebaselines: liabilityStore.readBalanceRebaselines,
     readDebtModel: liabilityStore.readDebtModel,
@@ -295,6 +298,7 @@ async function buildStore(
     payouts: payoutStore,
     contributionPlan: contributionPlanStore,
     contributionAllowances: contributionAllowanceStore,
+    managedPortfolios: managedPortfolioStore,
     agentView: agentViewReadStore,
     assistantProposals: assistantProposalStore,
     command: commandHost,

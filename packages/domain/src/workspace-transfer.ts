@@ -22,6 +22,7 @@ import type { FireScopeConfig } from "./fire";
 import type { ValuationMethod } from "./holding-valuation";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
+import type { ManagedPortfolio } from "./managed-portfolio";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import type { Payout, PayoutSchedule } from "./payouts";
 import type { AssetPrice, InvestmentPriceProvider } from "./prices";
@@ -247,7 +248,12 @@ export interface ExportedConnectedSource {
   positions: ExportedPosition[];
 }
 
-export type ExportedPublicIdEntityType = "scope" | "member" | "member_group" | "holding";
+export type ExportedPublicIdEntityType =
+  | "scope"
+  | "member"
+  | "member_group"
+  | "holding"
+  | "managed_portfolio";
 
 export interface ExportedPublicId {
   entityType: ExportedPublicIdEntityType;
@@ -310,6 +316,13 @@ export interface WorkspaceExportData {
    * has been consumed is derived from the operations already in the document.
    */
   contributionAllowances?: ContributionAllowance[];
+  /**
+   * Managed portfolios (ADR 0085) with their memberships flattened onto the
+   * entity, like allowances. The member holdings travel as ordinary assets —
+   * including the auto-created cash sibling — so only the grouping itself is
+   * extra data here.
+   */
+  managedPortfolios?: ManagedPortfolio[];
 }
 
 /** The versioned export document — the on-disk JSON shape. */
@@ -322,6 +335,7 @@ export interface WorkspaceExport
     | "contributionPlans"
     | "contributionReconciliations"
     | "contributionAllowances"
+    | "managedPortfolios"
   > {
   version: typeof EXPORT_VERSION;
   publicIds: ExportedPublicId[];
@@ -330,6 +344,7 @@ export interface WorkspaceExport
   contributionPlans: ContributionPlan[];
   contributionReconciliations: ExportedContributionReconciliation[];
   contributionAllowances: ContributionAllowance[];
+  managedPortfolios: ManagedPortfolio[];
 }
 
 /**
@@ -354,6 +369,7 @@ export interface WorkspaceExportSummary {
   contributionPlans: number;
   contributionReconciliations: number;
   contributionAllowances: number;
+  managedPortfolios: number;
 }
 
 /** Count every section of an (already validated) export document. */
@@ -376,6 +392,7 @@ export function summarizeWorkspaceExport(doc: WorkspaceExport): WorkspaceExportS
     contributionPlans: doc.contributionPlans.length,
     contributionReconciliations: doc.contributionReconciliations.length,
     contributionAllowances: doc.contributionAllowances.length,
+    managedPortfolios: doc.managedPortfolios.length,
   };
 }
 
@@ -401,5 +418,6 @@ export function serializeWorkspaceExport(data: WorkspaceExportData): WorkspaceEx
     contributionPlans: data.contributionPlans ?? [],
     contributionReconciliations: data.contributionReconciliations ?? [],
     contributionAllowances: data.contributionAllowances ?? [],
+    managedPortfolios: data.managedPortfolios ?? [],
   };
 }
