@@ -24,8 +24,13 @@ const ASSET_NAME_PATTERN = /plasencia/i;
 const NEW_ACQUISITION = {
   /** 19 de mayo de 2004, escrito en el Excel de Papá. */
   valuationDate: "2004-05-19",
-  /** 150.253,03 € en unidades menores. */
-  valueMinor: 15_025_303,
+  /**
+   * 103.661,34 € — el «coste de adquisición compraventa» de la escritura,
+   * confirmado por él el 18-ago-2026. NO los 150.253,03 € de las hojas
+   * «Análisis» del Excel: cifra calculada por él, no la escriturada. Y NO los
+   * 110.718,95 € del total: suman gastos del préstamo, no del piso.
+   */
+  valueMinor: 10_366_134,
 };
 
 const eur = (minor: number) =>
