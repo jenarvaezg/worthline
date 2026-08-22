@@ -81,6 +81,65 @@ describe("parseQuickActions", () => {
       ]),
     ).toEqual([{ type: "openInternalSource", label: "x", href: "/patrimonio" }]);
   });
+
+  it("drops a chip whose label starts with a write verb, for both types (#1515)", () => {
+    // ADR 0053: a chip is a destination or a follow-up question, never an act
+    // on the portfolio. The label is free text, so the first word is the check.
+    expect(
+      parseQuickActions([
+        {
+          type: "openInternalSource",
+          label: "Confirmar Reconciliación",
+          href: "/patrimonio",
+        },
+        {
+          type: "runSuggestedAnalysis",
+          label: "Aplicar los movimientos",
+          prompt: "¿Qué movimientos quedaron fuera?",
+        },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("keeps navigation whose first word is not the write (#1515)", () => {
+    // The words «Importar» and «patrimonio» appear, but not as the act: first
+    // word is «Ir» / «Ver», which is how a destination is phrased.
+    expect(
+      parseQuickActions([
+        {
+          type: "openInternalSource",
+          label: "Ir a Importar Extracto",
+          href: "/patrimonio",
+        },
+        {
+          type: "openInternalSource",
+          label: "Ver impacto en patrimonio",
+          href: "/patrimonio",
+        },
+        {
+          type: "runSuggestedAnalysis",
+          label: "¿Y si importo otro extracto?",
+          prompt: "¿Qué pasaría si importo otro extracto?",
+        },
+      ]),
+    ).toEqual([
+      {
+        type: "openInternalSource",
+        label: "Ir a Importar Extracto",
+        href: "/patrimonio",
+      },
+      {
+        type: "openInternalSource",
+        label: "Ver impacto en patrimonio",
+        href: "/patrimonio",
+      },
+      {
+        type: "runSuggestedAnalysis",
+        label: "¿Y si importo otro extracto?",
+        prompt: "¿Qué pasaría si importo otro extracto?",
+      },
+    ]);
+  });
 });
 
 describe("resolveModelQuickActions", () => {
@@ -122,6 +181,18 @@ describe("resolveModelQuickActions", () => {
         resolveModelQuickActions([{ type: "openInternalSource", label: "x", figure }]),
       ).toEqual([]);
     }
+  });
+
+  it("drops a write-promising label the same way parseQuickActions does (#1515)", () => {
+    expect(
+      resolveModelQuickActions([
+        {
+          type: "openInternalSource",
+          label: "Confirmar Reconciliación",
+          section: "patrimonio",
+        },
+      ]),
+    ).toEqual([]);
   });
 });
 

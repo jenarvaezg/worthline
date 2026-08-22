@@ -48,6 +48,14 @@ describe("splitProseActionBlock", () => {
     ]);
   });
 
+  it("does not turn a write-promising label into a chip (#1515)", () => {
+    expect(
+      splitProseActionBlock(
+        "Texto.\n\nAcciones recomendadas:\n- [Confirmar Reconciliación](/patrimonio)",
+      ),
+    ).toEqual({ cleaned: "Texto.", actions: [] });
+  });
+
   it("never lets prose reach an external destination", () => {
     const text = "Texto.\n\nAcciones recomendadas:\n- [Mira esto](https://evil.test)";
     // The link is not made clickable — and the bullet does not survive as markdown
@@ -315,6 +323,21 @@ describe("mergeQuickActions", () => {
       NUMISTA_CHIP,
       question,
     ]);
+  });
+
+  it("drops a write-promising chip that arrived from another channel (#1515)", () => {
+    expect(
+      mergeQuickActions(
+        [
+          {
+            type: "openInternalSource",
+            label: "Confirmar Reconciliación",
+            href: "/patrimonio",
+          },
+        ],
+        [],
+      ),
+    ).toEqual([]);
   });
 
   it("de-duplicates on the destination, not the wording", () => {
