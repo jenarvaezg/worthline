@@ -48,7 +48,7 @@ beforeEach(() => {
   chatStatus = "ready";
 });
 
-describe("AssistantLayer · faked proposal ceremony (#1262, #1468)", () => {
+describe("AssistantLayer · faked proposal ceremony (#1262, #1468, #1515)", () => {
   test("prints the app's warning next to a turn that invented the proposal", () => {
     chatMessages = [assistantTurn([{ text: FAKE_CEREMONY, type: "text" }])];
 
@@ -92,6 +92,49 @@ describe("AssistantLayer · faked proposal ceremony (#1262, #1468)", () => {
     // And it says which of the two things happened, without quoting the refusal.
     expect(html).toContain("no recibi");
     expect(html).not.toContain("operation_document_required");
+  });
+
+  test("drops the Confirmar chip on the turn that invented the ceremony (#1515)", () => {
+    // Jorge's DEGIRO turn: worthline refused the proposal, the note of #1468
+    // told him «confirmo» in the chat applies nothing — and under it sat a
+    // primary chip labelled «Confirmar Reconciliación». That chip is a
+    // navigation (`openInternalSource`), not a proposal confirm; clicking it
+    // spun the `.navPending` ring and applied nothing. The chip itself is the
+    // ceremony, so it must not render.
+    chatMessages = [
+      assistantTurn([
+        { text: FAKE_CEREMONY, type: "text" },
+        rejectedProposalPart(),
+        {
+          type: "tool-suggest_actions",
+          toolCallId: "t1",
+          state: "output-available",
+          input: {},
+          output: {
+            actions: [
+              {
+                type: "openInternalSource",
+                label: "Confirmar Reconciliación",
+                href: "/patrimonio",
+              },
+              {
+                type: "openInternalSource",
+                label: "Ver impacto en patrimonio",
+                href: "/historico",
+              },
+            ],
+          },
+        } as unknown as UIMessage["parts"][number],
+      ]),
+    ];
+
+    const html = renderToStaticMarkup(
+      <AssistantLayer onboardingSkipAction={vi.fn()} variant="onboarding" />,
+    );
+
+    expect(html).toContain("assistantFakeProposal");
+    expect(html).not.toContain("Confirmar Reconciliación");
+    expect(html).toContain("Ver impacto en patrimonio");
   });
 
   test("says nothing while the turn is still streaming", () => {

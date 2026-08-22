@@ -131,6 +131,68 @@ function boundedString(value: unknown, max: number): string | null {
 }
 
 /**
+ * A chip label that promises a write on the portfolio (ADR 0053, #1515).
+ *
+ * Quick actions are read-only: a label is a destination («Ver…», «Ir a…») or a
+ * follow-up question, never an act. The model writes the label in free text, so
+ * the first word is the check — «Ir a Importar Extracto» is navigation,
+ * «Importar Extracto» is a write. Discard the chip, don't rewrite the label: a
+ * rewritten caption would say something the model didn't, and the model may
+ * offer up to four, so losing one still leaves a way out.
+ */
+const WRITE_LABEL_STARTERS = new Set([
+  "anota",
+  "anotad",
+  "anotar",
+  "anote",
+  "anoten",
+  "aplica",
+  "aplicad",
+  "aplicar",
+  "aplique",
+  "apliquen",
+  "confirma",
+  "confirmad",
+  "confirmar",
+  "confirme",
+  "confirmen",
+  "corrige",
+  "corregid",
+  "corregir",
+  "corrija",
+  "corrijan",
+  "ejecuta",
+  "ejecutad",
+  "ejecutar",
+  "ejecute",
+  "ejecuten",
+  "guarda",
+  "guardad",
+  "guardar",
+  "guarde",
+  "guarden",
+  "importa",
+  "importad",
+  "importar",
+  "importe",
+  "importen",
+  "registra",
+  "registrad",
+  "registrar",
+  "registre",
+  "registren",
+]);
+
+function labelPromisesWrite(label: string): boolean {
+  const first = label.trim().split(/\s+/u, 1)[0] ?? "";
+  const word = first
+    .toLocaleLowerCase("es")
+    .replace(/^[«»"'¡¿]+/u, "")
+    .replace(/[«»"'.,;:!?]+$/u, "");
+  return WRITE_LABEL_STARTERS.has(word);
+}
+
+/**
  * Validate model-proposed actions into the typed set, dropping anything outside
  * it or malformed (ADR 0053). Runs on already-server-resolved actions as a
  * final trust boundary before render, and capped.
@@ -143,7 +205,7 @@ export function parseQuickActions(raw: unknown): QuickAction[] {
     if (item === null || typeof item !== "object") continue;
     const candidate = item as Record<string, unknown>;
     const label = boundedString(candidate["label"], MAX_LABEL);
-    if (label === null) continue;
+    if (label === null || labelPromisesWrite(label)) continue;
 
     if (candidate["type"] === "openInternalSource") {
       const written = boundedString(candidate["href"], MAX_LABEL);
@@ -191,7 +253,7 @@ export function resolveModelQuickActions(raw: unknown): QuickAction[] {
   for (const item of raw) {
     if (!isRecord(item)) continue;
     const label = boundedString(item["label"], MAX_LABEL);
-    if (label === null) continue;
+    if (label === null || labelPromisesWrite(label)) continue;
 
     if (item["type"] === "openInternalSource") {
       const rawHref = boundedString(item["href"], MAX_LABEL);

@@ -2,6 +2,7 @@ import {
   MAX_ACTIONS,
   MAX_LABEL,
   MAX_PROMPT,
+  parseQuickActions,
   type QuickAction,
   resolveModelQuickActions,
 } from "./assistant-actions";
@@ -160,10 +161,12 @@ export function mergeQuickActions(
   const merged: QuickAction[] = [];
   const seen = new Set<string>();
   for (const action of [...proseActions, ...toolActions]) {
-    const key = actionKey(action);
+    const [kept] = parseQuickActions([action]);
+    if (kept === undefined) continue;
+    const key = actionKey(kept);
     if (seen.has(key)) continue;
     seen.add(key);
-    merged.push(action);
+    merged.push(kept);
     if (merged.length === MAX_ACTIONS) break;
   }
   return merged;
@@ -222,7 +225,7 @@ function proseItemAction(
     if (label === "" || label.length > MAX_LABEL) return null;
     const href = internalProseLinkHref((link[2] ?? "").trim());
     if (href !== null && href.length <= MAX_LABEL) {
-      return { type: "openInternalSource", label, href };
+      return parseQuickActions([{ type: "openInternalSource", label, href }])[0] ?? null;
     }
     return matchingToolAction(label, toolActions);
   }
