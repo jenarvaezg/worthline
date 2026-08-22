@@ -307,7 +307,7 @@ describe("correction proposal server actions (#1051)", () => {
 
     const result = await confirmCorrectionProposalAction(draft, store, clock);
 
-    expect(result).toEqual({ status: "applied" });
+    expect(result).toMatchObject({ status: "applied" });
     expect(await store.liabilities.readBalanceAnchors("loan")).toHaveLength(1);
     expect((await store.assistantProposals.read(draft.proposalId))?.status).toBe(
       "applied",

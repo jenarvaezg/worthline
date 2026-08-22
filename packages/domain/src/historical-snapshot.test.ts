@@ -10,6 +10,8 @@ import {
   amortizationPaymentDatesUpTo,
   buildSnapshotAtDate,
   type DebtBalanceCurveInputs,
+  debtMissingFromAllGeneratedMessage,
+  debtSnapshotMembership,
   globalHoldingValueAtDate,
   rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
@@ -1942,6 +1944,136 @@ describe("recalculateSnapshotForLiability", () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  describe("membership aligned with generate (#1438)", () => {
+    test("a date before the debt's start injects NO row — not even a frozen one", () => {
+      const workspace = makeWorkspace();
+      // The plan disburses in 2020; the snapshot is dated 2019 — the debt did
+      // not exist yet, so the recalc must drop even the frozen row.
+      const earlySnapshot = {
+        ...snapshotWithHousingDebt(200_000_00, 120_000_00),
+        capturedAt: "2019-06-01T12:00:00.000Z",
+        dateKey: "2019-06-01",
+      };
+      const result = recalculateSnapshotForLiability({
+        curve: amortizableCurve,
+        frozenHoldings: [pisoRow(200_000_00), mortgageRow(120_000_00)],
+        housingAssetIds: new Set(["asset_piso"]),
+        liability: makeMortgage(workspace, 100_000_00),
+        snapshot: earlySnapshot,
+        workspace,
+      })!;
+
+      expect(result.holdings.find((h) => h.holdingId === "liab_h")).toBeUndefined();
+      expect(result.snapshot.debts.amountMinor).toBe(0);
+      expect(result.holdings.find((h) => h.holdingId === "asset_piso")).toEqual(
+        pisoRow(200_000_00),
+      );
+    });
+
+    test("a date after the start keeps injecting the row (same as generate)", () => {
+      const workspace = makeWorkspace();
+      const lateSnapshot: NetWorthSnapshot = {
+        capturedAt: "2021-06-01T12:00:00.000Z",
+        dateKey: "2021-06-01",
+        debts: eur(0),
+        grossAssets: eur(200_000_00),
+        housingEquity: eur(200_000_00),
+        id: "snap_late",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(0),
+        monthKey: "2021-06",
+        scopeId: "member_jose",
+        scopeLabel: "Jose",
+        totalNetWorth: eur(200_000_00),
+        warnings: [],
+      };
+      const recalculated = recalculateSnapshotForLiability({
+        curve: amortizableCurve,
+        frozenHoldings: [pisoRow(200_000_00)],
+        housingAssetIds: new Set(["asset_piso"]),
+        liability: makeMortgage(workspace, 100_000_00),
+        snapshot: lateSnapshot,
+        workspace,
+      })!;
+      const generated = buildSnapshotAtDate({
+        assets: [],
+        capturedAt: "2021-06-01T12:00:00.000Z",
+        debtBalanceByLiability: new Map([["liab_h", amortizableCurve]]),
+        id: "snap_late",
+        liabilities: [makeMortgage(workspace, 100_000_00)],
+        manualValueHistory: new Map(),
+        operationsByAsset: new Map(),
+        scopeId: "member_jose",
+        scopeLabel: "Jose",
+        targetDate: "2021-06-01",
+        workspace,
+      });
+
+      // Same membership question, same answer: both paths carry the debt.
+      expect(recalculated.holdings.some((h) => h.holdingId === "liab_h")).toBe(true);
+      expect(generated?.holdings.some((h) => h.holdingId === "liab_h")).toBe(true);
+    });
+  });
+});
+
+describe("debtSnapshotMembership (#1438)", () => {
+  const workspace = createWorkspace({
+    members: [{ id: "member_jose", name: "Jose" }],
+    mode: "individual",
+  });
+  const liability = createLiability(workspace, {
+    balanceMinor: 100_000_00,
+    currency: "EUR",
+    id: "liab_h",
+    name: "Hipoteca",
+    ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    type: "mortgage",
+  });
+  const curve: DebtBalanceCurveInputs = {
+    currentBalanceMinor: 100_000_00,
+    debtModel: "amortizable",
+    plan: {
+      annualInterestRate: "0.03",
+      disbursementDate: "2020-01-01",
+      firstPaymentDate: "2020-02-01",
+      initialCapitalMinor: 150_000_00,
+      termMonths: 240,
+    },
+  };
+
+  test("every date after the start is present — missing is 0", () => {
+    expect(
+      debtSnapshotMembership({
+        curve,
+        dates: ["2020-01-01", "2021-06-01", "2024-12-01"],
+        liability,
+      }),
+    ).toEqual({ missing: 0, startDate: "2020-01-01", total: 3 });
+  });
+
+  test("a long series whose dates all precede the start is a total miss", () => {
+    expect(
+      debtSnapshotMembership({
+        curve,
+        dates: ["2004-01-01", "2010-06-01", "2019-12-01"],
+        liability,
+      }),
+    ).toEqual({ missing: 3, startDate: "2020-01-01", total: 3 });
+    expect(debtMissingFromAllGeneratedMessage(3)).toBe(
+      "Ninguno de los 3 puntos escribirá esta deuda en el histórico: no existiría en esas fechas.",
+    );
+  });
+
+  test("dates straddling the start are a partial miss", () => {
+    expect(
+      debtSnapshotMembership({
+        curve,
+        dates: ["2019-06-01", "2020-01-01", "2021-06-01"],
+        liability,
+      }),
+    ).toEqual({ missing: 1, startDate: "2020-01-01", total: 3 });
   });
 });
 

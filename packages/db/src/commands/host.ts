@@ -20,13 +20,17 @@ import {
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./command-implementation-types";
-import type { ImportBalanceHistoryCommand } from "./import-balance-history";
+import type {
+  ImportBalanceHistoryCommand,
+  ImportBalanceHistoryResult,
+} from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
 import {
   rippleHistoricalSnapshotsForDebt,
   throwCommandResultError,
 } from "./ripple-engine";
-import type { FactBatchInput } from "./types";
+import type { DebtRippleCounts, FactBatchInput } from "./types";
+import { EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 import { createUnitOfWork } from "./unit-of-work";
 
 type DatedFactCommands = DatedFactCommandImplementations;
@@ -162,7 +166,7 @@ export interface CommandHost extends DatedFactAliases {
     params: Parameters<DatedFactCommands["importBalanceHistoryAndRipple"]>[0] & {
       proposalId: string;
     },
-  ) => Promise<void>;
+  ) => Promise<DebtRippleCounts>;
   applyAssistantPropertyValuationProposal: (params: {
     proposalId: string;
     anchor: Parameters<DatedFactCommands["addValuationAnchorAndRipple"]>[0];
@@ -188,7 +192,7 @@ export interface CommandHost extends DatedFactAliases {
        */
       redeclaredBalanceMinor?: number;
     };
-  }) => Promise<void>;
+  }) => Promise<DebtRippleCounts>;
   /**
    * Apply one early-repayment proposal (#1245) and resolve it in the SAME
    * transaction. The write is reconstructed from the persisted fact, never from
@@ -200,7 +204,9 @@ export interface CommandHost extends DatedFactAliases {
     proposalId: string;
     today: string;
   }) => Promise<void>;
-  importBalanceHistory: (command: ImportBalanceHistoryCommand) => Promise<number>;
+  importBalanceHistory: (
+    command: ImportBalanceHistoryCommand,
+  ) => Promise<ImportBalanceHistoryResult>;
 
   syncConnectedSource: ConnectedSourceSeams["syncConnectedSource"];
   /**
@@ -246,22 +252,23 @@ interface InternalCommandHostDependencies {
   snapshotOrchestrator: SnapshotOrchestrator;
 }
 
-async function applyDraftAssistantProposal(
+async function applyDraftAssistantProposal<T>(
   ctx: StoreContext,
   assistantProposals: AssistantProposalStore,
   proposalId: string,
   requireExpectedKind: (proposal: AssistantProposal | null) => AssistantProposal,
-  apply: () => Promise<unknown>,
-): Promise<void> {
-  await ctx.transaction(async () => {
+  apply: () => Promise<T>,
+): Promise<T> {
+  return ctx.transaction(async () => {
     const proposal = requireExpectedKind(await assistantProposals.read(proposalId));
     if (proposal.status !== "draft") {
       throw new Error(
         `Assistant proposal "${proposalId}" is already resolved as ${proposal.status}.`,
       );
     }
-    await apply();
+    const value = await apply();
     await assistantProposals.markApplied(proposalId);
+    return value;
   });
 }
 
@@ -539,10 +546,10 @@ export function createCommandHost(
     liabilityId: string;
     fromDateKey: string;
     today: string;
-  }) => {
+  }): Promise<DebtRippleCounts> => {
     const workspace = await ctx.getWorkspace();
-    if (!workspace) return;
-    await rippleHistoricalSnapshotsForDebt(ctx, workspace, snapshots.saveSnapshot, {
+    if (!workspace) return EMPTY_DEBT_RIPPLE_COUNTS;
+    return rippleHistoricalSnapshotsForDebt(ctx, workspace, snapshots.saveSnapshot, {
       fromDateKey,
       kind: "amortizable-rebaseline",
       liabilityId,
@@ -563,7 +570,7 @@ export function createCommandHost(
       batch,
     );
     if (!result.ok) throwCommandResultError(result);
-    return result.value.created;
+    return result.value;
   };
   return {
     ...datedFactAliases(datedFacts),
@@ -725,7 +732,7 @@ export function createCommandHost(
           importBalanceHistory(
             { liabilityId, rebaselines, ...(today === undefined ? {} : { today }) },
             { trigger: "assistant" },
-          ),
+          ).then((outcome) => outcome.snapshots),
       ),
     applyAssistantPropertyValuationProposal: async ({ proposalId, anchor, today }) =>
       applyDraftAssistantProposal(
@@ -806,7 +813,7 @@ export function createCommandHost(
                 reconstruct.redeclaredBalanceMinor,
               );
             }
-            await importBalanceHistory(
+            const outcome = await importBalanceHistory(
               {
                 liabilityId: reconstruct.liabilityId,
                 rebaselines: reconstruct.rebaselines,
@@ -814,7 +821,7 @@ export function createCommandHost(
               },
               { trigger: "assistant" },
             );
-            return;
+            return outcome.snapshots;
           }
           const proposal = await assistantProposals.read(proposalId);
           if (!proposal) throw new Error(`Assistant proposal "${proposalId}" vanished.`);
@@ -824,6 +831,7 @@ export function createCommandHost(
             correctionPlanOf(proposal),
             today,
           );
+          return EMPTY_DEBT_RIPPLE_COUNTS;
         },
       ),
     applyStatementImport: (params) =>

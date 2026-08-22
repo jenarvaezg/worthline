@@ -104,6 +104,7 @@ function jorgeProposal(
         origin: "assistant",
       },
     ],
+    snapshotMembership: { missing: 0, total: 2 },
     summary: "Reconstrucción de «Hipoteca Santander»",
   };
 }
@@ -194,5 +195,33 @@ describe("ReconstructionProposalCard · el cuadro que no se podía aplicar (#142
     );
 
     expect(confirmButton(html)).toContain("disabled");
+  });
+
+  test("membresía total-miss apaga Confirmar y dice por qué (#1438)", () => {
+    const html = plain(
+      markupFor({
+        ...jorgeProposal(),
+        snapshotMembership: { missing: 256, startDate: "2024-01-01", total: 256 },
+      }),
+    );
+
+    expect(confirmButton(html)).toContain("disabled");
+    expect(html).toContain(
+      "Ninguno de los 256 puntos escribirá esta deuda en el histórico: no existiría en esas fechas.",
+    );
+  });
+
+  test("membresía parcial avisa y deja confirmar (#1438)", () => {
+    const html = plain(
+      markupFor({
+        ...jorgeProposal(),
+        snapshotMembership: { missing: 12, startDate: "2020-01-01", total: 256 },
+      }),
+    );
+
+    expect(confirmButton(html)).not.toContain("disabled");
+    expect(html).toContain(
+      "12 de 256 puntos no incluirán esta deuda (anteriores al inicio). El resto sí.",
+    );
   });
 });

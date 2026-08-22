@@ -58,10 +58,11 @@ export async function persistBalanceHistoryImport(
     startsAtBaseline: false,
   }));
 
-  return store.command.importBalanceHistory({
+  const outcome = await store.command.importBalanceHistory({
     liabilityId,
     rebaselines,
     today,
     trigger: "csv",
   });
+  return outcome.created;
 }

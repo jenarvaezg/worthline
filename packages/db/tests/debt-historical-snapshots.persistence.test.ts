@@ -876,9 +876,9 @@ describe("historical snapshots from balance anchors", () => {
 
     // Move an1 LATER (2025-01-01 → 2025-09-01) WITHOUT telling the seam the old
     // date. The from-date must be min(old, new) = the OLD date (2025-01-01), so the
-    // stale 2025-01-01 snapshot is recalculated. With an1 gone from that date, the
-    // earliest anchor is now an2 (8_000_00), and "before the first anchor is flat at
-    // the first balance" → the 2025-01-01 snapshot must flip 3_000_00 → 8_000_00. If
+    // stale 2025-01-01 snapshot is recalculated. With an1 gone, the earliest remaining
+    // anchor is an2 (2025-06-01); 2025-01-01 is before that, so generate would omit
+    // the card (#1438 / ADR 0013) and recalc must too — debts go 3_000_00 → 0. If
     // the seam wrongly rippled from the NEW date (2025-09-01), it would stay stale.
     const changes = await store.command.updateBalanceAnchor(
       "an1",
@@ -887,7 +887,7 @@ describe("historical snapshots from balance anchors", () => {
     );
 
     expect(changes).toBe(1);
-    expect(await debtsAt(store, "2025-01-01")).toBe(8_000_00);
+    expect(await debtsAt(store, "2025-01-01")).toBe(0);
     store.close();
   });
 
@@ -1483,12 +1483,12 @@ describe("debt dated-fact seams (ADR 0020) — persist + ripple are one transact
     );
     expect(await debtsAt(store, "2025-01-01")).toBe(3_000_00);
 
-    // Deleting the earlier anchor: 2025-01-01 now back-extrapolates from the only
-    // remaining anchor (6_000_00 flat, no curve).
+    // Deleting the earlier anchor: 2025-01-01 is before the only remaining one
+    // (2025-06-01), so generate would omit the card and recalc must too (#1438).
     const changes = await store.command.deleteBalanceAnchor("an1", { today: TODAY });
 
     expect(changes).toBe(1);
-    expect(await debtsAt(store, "2025-01-01")).toBe(6_000_00);
+    expect(await debtsAt(store, "2025-01-01")).toBe(0);
     store.close();
   });
 

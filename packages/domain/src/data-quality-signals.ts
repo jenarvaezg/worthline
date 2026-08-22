@@ -177,8 +177,32 @@ export interface CollectDataQualitySignalsInput {
    * the watch rather than accusing anyone.
    */
   investmentOperationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  /**
+   * Frozen holding rows the coverage rules inspect (#1438). Required — not
+   * optional — for the same reason `netUnitsByAssetId` is: both consumers feed
+   * the same evidence. The home already holds the chart window's `holdingRows`
+   * (same honesty as `MISSING_SNAPSHOT_ROWS`: out of window can under-count);
+   * the agent-view already reads `readSnapshotHoldings({ scopeId })` in full.
+   * `{ dateKey, holdingId, kind }` is enough — the signal never reads values.
+   */
+  snapshotHoldings: readonly DataQualitySnapshotHolding[];
+  /**
+   * Amortizable start date keyed by liability id (#1438). Empty = there are no
+   * amortizable debts to evaluate, not "skip the signal". Both callers that
+   * already read `debtModelByLiabilityId` fill this from the plan / first
+   * re-baseline via `amortizableLiabilityStartDate` — the same rule the
+   * membership predicate applies.
+   */
+  amortizableStartByLiabilityId: ReadonlyMap<string, string>;
   /** Calendar day the collection runs against (`YYYY-MM-DD`). */
   asOfDateKey: string;
+}
+
+/** One frozen holding row as the history-coverage signal reads it (#1438). */
+export interface DataQualitySnapshotHolding {
+  dateKey: string;
+  holdingId: string;
+  kind: "asset" | "liability";
 }
 
 /** Fixed v1 threshold for stale manual values (PRD #654 S2). */
@@ -189,6 +213,12 @@ export const STALE_MANUAL_VALUE_CODE = "STALE_MANUAL_VALUE";
 
 /** Machine code for a trashed holding whose position still holds units (#1365). */
 export const TRASHED_WITH_BALANCE_CODE = "TRASHED_WITH_BALANCE";
+
+/**
+ * Machine code for an amortizable debt that is absent from every historical
+ * snapshot after its start (#1438). One per debt, not one per snapshot.
+ */
+export const DEBT_MISSING_FROM_HISTORY_CODE = "DEBT_MISSING_FROM_HISTORY";
 
 /**
  * Machine code for an investment priced by a provider symbol that carries NO ISIN
@@ -344,6 +374,10 @@ export function collectDataQualitySignals(
       input.scope,
       input.snapshots,
       input.snapshotIdsWithHoldings,
+      input.liabilities,
+      input.debtModelByLiabilityId,
+      input.amortizableStartByLiabilityId,
+      input.snapshotHoldings,
     ),
     ...projectionGapSignals(
       input.connectedSources,
@@ -1047,6 +1081,10 @@ function historyCoverageSignals(
   scope: DataQualityScopeContext,
   snapshots: readonly NetWorthSnapshot[],
   snapshotIdsWithHoldings: ReadonlySet<string>,
+  liabilities: readonly Liability[],
+  debtModelByLiabilityId: ReadonlyMap<string, DebtModel | null>,
+  amortizableStartByLiabilityId: ReadonlyMap<string, string>,
+  snapshotHoldings: readonly DataQualitySnapshotHolding[],
 ): DataQualitySignal[] {
   const signals: DataQualitySignal[] = [];
 
@@ -1098,6 +1136,65 @@ function historyCoverageSignals(
     });
   }
 
+  signals.push(
+    ...debtMissingFromHistorySignals(
+      liabilities,
+      debtModelByLiabilityId,
+      amortizableStartByLiabilityId,
+      snapshotHoldings,
+    ),
+  );
+
+  return signals;
+}
+
+/**
+ * One signal per amortizable debt that is in NONE of the snapshots-with-holdings
+ * dated on or after its start (#1438). Silent when that range has no holdings
+ * rows at all — that is already `NO_SNAPSHOTS` / `SPARSE_SNAPSHOTS`.
+ */
+function debtMissingFromHistorySignals(
+  liabilities: readonly Liability[],
+  debtModelByLiabilityId: ReadonlyMap<string, DebtModel | null>,
+  amortizableStartByLiabilityId: ReadonlyMap<string, string>,
+  snapshotHoldings: readonly DataQualitySnapshotHolding[],
+): DataQualitySignal[] {
+  const signals: DataQualitySignal[] = [];
+  for (const liability of liabilities) {
+    if (debtModelByLiabilityId.get(liability.id) !== "amortizable") continue;
+    const startDate = amortizableStartByLiabilityId.get(liability.id);
+    if (startDate === undefined) continue;
+
+    const inRange = snapshotHoldings.filter((row) => row.dateKey >= startDate);
+    const datesWithHoldings = new Set(inRange.map((row) => row.dateKey));
+    if (datesWithHoldings.size === 0) continue;
+
+    const presentOn = new Set(
+      inRange
+        .filter((row) => row.kind === "liability" && row.holdingId === liability.id)
+        .map((row) => row.dateKey),
+    );
+    if (presentOn.size > 0) continue;
+
+    signals.push({
+      affected: {
+        id: liability.id,
+        label: liability.name,
+        object: "holding",
+      },
+      category: "history_coverage",
+      code: DEBT_MISSING_FROM_HISTORY_CODE,
+      fixable: true,
+      label: `La deuda "${liability.name}" no aparece en ninguna captura histórica posterior a su inicio (${startDate}).`,
+      naturalKey: signalNaturalKey(
+        "history_coverage",
+        DEBT_MISSING_FROM_HISTORY_CODE,
+        liability.id,
+      ),
+      observedDate: startDate,
+      severity: "high",
+    });
+  }
   return signals;
 }
 

@@ -59,7 +59,7 @@ describe("importBalanceHistory command (#969)", () => {
     const client = openLibsqlClient(":memory:");
     const store = await seedAmortizableMortgage(await createStoreFromSqlite(client));
 
-    const created = await store.command.importBalanceHistory({
+    const { created } = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -101,7 +101,7 @@ describe("importBalanceHistory command (#969)", () => {
     const beforeOldest = await debtsAt(store, "2026-03-15");
     expect(beforeOldest).toBeDefined();
 
-    const created = await store.command.importBalanceHistory({
+    const { created } = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -137,13 +137,19 @@ describe("importBalanceHistory command (#969)", () => {
     expect(await debtsAt(store, "2026-04-15")).toBe(145_000_00);
     expect(await debtsAt(store, "2026-06-15")).toBe(140_000_00);
 
+    const holdingsAtApril = await store.snapshots.readSnapshotHoldings({
+      from: "2026-04-15",
+      to: "2026-04-15",
+    });
+    expect(holdingsAtApril.some((row) => row.holdingId === "mortgage")).toBe(true);
+
     store.close();
   });
 
   test("audit-trails each created re-baseline", async () => {
     const store = await seedAmortizableMortgage();
 
-    const created = await store.command.importBalanceHistory({
+    const { created } = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [
         {
@@ -183,7 +189,7 @@ describe("importBalanceHistory command (#969)", () => {
     const store = await seedAmortizableMortgage();
     const before = await debtsAt(store, "2026-03-15");
 
-    const created = await store.command.importBalanceHistory({
+    const { created } = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [],
       today: TODAY,
@@ -226,6 +232,112 @@ describe("importBalanceHistory command (#969)", () => {
       }),
     ).rejects.toThrow();
     expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(0);
+
+    store.close();
+  });
+
+  test("each generated snapshot carries the triggering liability (#1438)", async () => {
+    const store = await seedAmortizableMortgage();
+    // Mid-cycle dates the plan never minted — so this import actually generates.
+    const { snapshots } = await store.command.importBalanceHistory({
+      liabilityId: "mortgage",
+      rebaselines: [
+        {
+          annualInterestRate: "0.03",
+          baselineDate: "2026-03-20",
+          endDate: "2046-01-15",
+          id: "reb-mid",
+          liabilityId: "mortgage",
+          nextPaymentDate: "2026-04-20",
+          outstandingBalanceMinor: 145_000_00,
+          startsAtBaseline: false,
+        },
+      ],
+      today: TODAY,
+    });
+    expect(snapshots.generated).toBeGreaterThan(0);
+    expect(snapshots.generatedWithLiability).toBe(snapshots.generated);
+    const holdings = await store.snapshots.readSnapshotHoldings({
+      from: "2026-03-20",
+      to: "2026-03-20",
+    });
+    expect(holdings.some((row) => row.holdingId === "mortgage")).toBe(true);
+
+    store.close();
+  });
+
+  test("omitting L on every generated date throws and persists nothing (#1438)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jose" }],
+      mode: "individual",
+    });
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 10_000_00,
+      id: "cash",
+      liquidityTier: "cash",
+      name: "Cuenta",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "cash",
+    });
+    await store.liabilities.createLiability({
+      balanceMinor: 150_000_00,
+      currency: "EUR",
+      id: "mortgage",
+      name: "Hipoteca",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("mortgage", "amortizable");
+    const origin = "2026-01-15";
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.03",
+        disbursementDate: origin,
+        firstPaymentDate: "2026-02-15",
+        id: "plan1",
+        initialCapitalMinor: 150_000_00,
+        liabilityId: "mortgage",
+        termMonths: 240,
+      },
+      { today: origin },
+    );
+    await store.command.addBalanceRebaseline(
+      {
+        annualInterestRate: "0.03",
+        baselineDate: origin,
+        endDate: "2046-01-15",
+        id: "origin",
+        liabilityId: "mortgage",
+        nextPaymentDate: "2026-02-15",
+        outstandingBalanceMinor: 150_000_00,
+        startsAtBaseline: true,
+      },
+      { today: origin },
+    );
+    const before = (await store.snapshots.readSnapshots()).length;
+
+    await expect(
+      store.command.importBalanceHistory({
+        liabilityId: "mortgage",
+        rebaselines: [
+          {
+            annualInterestRate: "0.03",
+            baselineDate: "2025-01-15",
+            endDate: "2045-01-15",
+            id: "too-early",
+            liabilityId: "mortgage",
+            nextPaymentDate: "2025-02-15",
+            outstandingBalanceMinor: 148_000_00,
+            startsAtBaseline: false,
+          },
+        ],
+        today: origin,
+      }),
+    ).rejects.toThrow("Ninguno de los");
+    expect((await store.snapshots.readSnapshots()).length).toBe(before);
+    expect(await store.liabilities.readBalanceRebaselines("mortgage")).toHaveLength(1);
 
     store.close();
   });

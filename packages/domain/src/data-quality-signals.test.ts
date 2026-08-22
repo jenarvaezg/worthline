@@ -16,6 +16,7 @@ import { netUnitsByAsset } from "./positions";
 import { listScopeOptions, type ScopeOption } from "./scope";
 import {
   type CreateManualAssetInput,
+  createLiability,
   createManualAsset,
   createWorkspace,
   type Workspace,
@@ -34,6 +35,7 @@ function baseInput(
     asOfDateKey: "2026-07-11",
     assetCreatedAtById: new Map(),
     assets: [],
+    amortizableStartByLiabilityId: new Map(),
     connectedSources: [],
     debtModelByLiabilityId: new Map(),
     fireConfigByScopeId: {},
@@ -49,6 +51,7 @@ function baseInput(
     },
     scopeOption,
     snapshotIdsWithHoldings: new Set(),
+    snapshotHoldings: [],
     snapshots: [],
     sourceFreshnessBySourceId: new Map(),
     syncAttemptsBySourceId: new Map(),
@@ -1154,5 +1157,102 @@ describe("collectDataQualitySignals — MISSING_INVESTMENT_ISIN (#1489)", () => 
     expect(
       signals.find((signal) => signal.code === "MISSING_INVESTMENT_ISIN")?.label,
     ).toContain("marcado como intencional");
+  });
+});
+
+describe("collectDataQualitySignals — DEBT_MISSING_FROM_HISTORY (#1438)", () => {
+  const mortgage = (workspace: Workspace) =>
+    createLiability(workspace, {
+      balanceMinor: 100_000_00,
+      currency: "EUR",
+      id: "liab_h",
+      name: "Hipoteca Santander",
+      ownership: owner(),
+      type: "mortgage",
+    });
+
+  test("amortizable with start in 2004 and N holdings snapshots all without that row → one signal", () => {
+    const { input, workspace } = fixture();
+    const liability = mortgage(workspace);
+    const signals = collectDataQualitySignals(
+      input({
+        amortizableStartByLiabilityId: new Map([["liab_h", "2004-06-01"]]),
+        debtModelByLiabilityId: new Map([["liab_h", "amortizable"]]),
+        liabilities: [liability],
+        snapshotHoldings: [
+          { dateKey: "2010-01-01", holdingId: "asset_cash", kind: "asset" },
+          { dateKey: "2015-01-01", holdingId: "asset_cash", kind: "asset" },
+          { dateKey: "2020-01-01", holdingId: "asset_cash", kind: "asset" },
+        ],
+      }),
+    ).filter((signal) => signal.code === "DEBT_MISSING_FROM_HISTORY");
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      affected: { id: "liab_h", label: "Hipoteca Santander", object: "holding" },
+      category: "history_coverage",
+      fixable: true,
+      observedDate: "2004-06-01",
+      severity: "high",
+    });
+    expect(signals[0]!.label).toBe(
+      'La deuda "Hipoteca Santander" no aparece en ninguna captura histórica posterior a su inicio (2004-06-01).',
+    );
+  });
+
+  test("the same debt present in at least one snapshot of the range → zero signals", () => {
+    const { input, workspace } = fixture();
+    const liability = mortgage(workspace);
+    const signals = collectDataQualitySignals(
+      input({
+        amortizableStartByLiabilityId: new Map([["liab_h", "2004-06-01"]]),
+        debtModelByLiabilityId: new Map([["liab_h", "amortizable"]]),
+        liabilities: [liability],
+        snapshotHoldings: [
+          { dateKey: "2010-01-01", holdingId: "asset_cash", kind: "asset" },
+          { dateKey: "2015-01-01", holdingId: "liab_h", kind: "liability" },
+        ],
+      }),
+    ).filter((signal) => signal.code === "DEBT_MISSING_FROM_HISTORY");
+
+    expect(signals).toHaveLength(0);
+  });
+
+  test("no snapshots with holdings in the range → zero signals (does not duplicate NO_SNAPSHOTS)", () => {
+    const { input, workspace } = fixture();
+    const liability = mortgage(workspace);
+    const signals = collectDataQualitySignals(
+      input({
+        amortizableStartByLiabilityId: new Map([["liab_h", "2004-06-01"]]),
+        debtModelByLiabilityId: new Map([["liab_h", "amortizable"]]),
+        liabilities: [liability],
+        snapshotHoldings: [
+          { dateKey: "2000-01-01", holdingId: "asset_cash", kind: "asset" },
+        ],
+        snapshots: [],
+      }),
+    );
+
+    expect(signals.map((signal) => signal.code)).not.toContain(
+      "DEBT_MISSING_FROM_HISTORY",
+    );
+  });
+
+  test("a new debt against history that predates its start is silent", () => {
+    const { input, workspace } = fixture();
+    const liability = mortgage(workspace);
+    const signals = collectDataQualitySignals(
+      input({
+        amortizableStartByLiabilityId: new Map([["liab_h", "2024-01-01"]]),
+        debtModelByLiabilityId: new Map([["liab_h", "amortizable"]]),
+        liabilities: [liability],
+        snapshotHoldings: [
+          { dateKey: "2010-01-01", holdingId: "asset_cash", kind: "asset" },
+          { dateKey: "2015-01-01", holdingId: "asset_cash", kind: "asset" },
+        ],
+      }),
+    ).filter((signal) => signal.code === "DEBT_MISSING_FROM_HISTORY");
+
+    expect(signals).toHaveLength(0);
   });
 });

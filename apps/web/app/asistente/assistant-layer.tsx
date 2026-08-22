@@ -51,6 +51,11 @@ import type {
   ReconstructionCorrectionProposal,
 } from "./correction-proposal-contract";
 import {
+  historyReconstructedCopy,
+  snapshotMembershipAllowsConfirm,
+  snapshotMembershipNotice,
+} from "./debt-history-copy";
+import {
   confirmEarlyRepaymentProposalAction,
   discardEarlyRepaymentProposalAction,
 } from "./early-repayment-proposal-action";
@@ -1517,7 +1522,9 @@ function ReconstructionProposalCard({
     series,
   });
   const verified = !dirty && proposal.guarantee.state === "reconciled";
-  const canConfirm = gate.canConfirm;
+  const canConfirm =
+    gate.canConfirm && snapshotMembershipAllowsConfirm(proposal.snapshotMembership);
+  const membershipNotice = snapshotMembershipNotice(proposal.snapshotMembership);
   const drift = dirty
     ? null
     : anchorDriftSentence(proposal.reconciliation, formatPositionMoney);
@@ -1617,14 +1624,21 @@ function ReconstructionProposalCard({
         </ul>
       </details>
       <p className="assistantProposalFolio">{proposal.folio}</p>
+      {membershipNotice === null ? null : (
+        <p className={membershipNotice.className}>{membershipNotice.text}</p>
+      )}
       {result ? (
         <p
           aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          className={
+            result.status === "applied"
+              ? historyReconstructedCopy(result).className
+              : "assistantError"
+          }
           role="status"
         >
           {result.status === "applied"
-            ? "Historia reconstruida."
+            ? historyReconstructedCopy(result).text
             : result.status === "discarded"
               ? "Propuesta descartada."
               : result.message}
@@ -1679,7 +1693,12 @@ function BalanceHistoryProposalCard({
   // La misma puerta de #1422, en la otra lane del mismo documento: exigir que el
   // extremo cuadre para dejar confirmar dejaba el botón muerto sin salida ninguna.
   // El veredicto se dice; aplicar es decisión del usuario.
-  const confirmDisabled = pending || mutationsDisabled || result?.status === "applied";
+  const confirmDisabled =
+    pending ||
+    mutationsDisabled ||
+    result?.status === "applied" ||
+    !snapshotMembershipAllowsConfirm(proposal.snapshotMembership);
+  const membershipNotice = snapshotMembershipNotice(proposal.snapshotMembership);
   const balanceHistoryDrift = anchorDriftSentence(
     proposal.reconciliation,
     formatPositionMoney,
@@ -1730,14 +1749,21 @@ function BalanceHistoryProposalCard({
       {balanceHistoryDrift === null ? null : (
         <p className="assistantWarning">{balanceHistoryDrift}</p>
       )}
+      {membershipNotice === null ? null : (
+        <p className={membershipNotice.className}>{membershipNotice.text}</p>
+      )}
       {result ? (
         <p
           aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
+          className={
+            result.status === "applied"
+              ? historyReconstructedCopy(result).className
+              : "assistantError"
+          }
           role="status"
         >
           {result.status === "applied"
-            ? `Historial aplicado (${result.created} saldos).`
+            ? historyReconstructedCopy(result).text
             : result.message}
         </p>
       ) : mutationsDisabled ? (

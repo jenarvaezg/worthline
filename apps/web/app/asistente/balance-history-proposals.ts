@@ -11,7 +11,11 @@ import type {
   AssistantProposalStore,
   WorthlineStore,
 } from "@worthline/db";
-import { debtBalanceAtDate } from "@worthline/domain";
+import {
+  debtBalanceAtDate,
+  debtSnapshotMembership,
+  rebaselineChainPaymentDatesUpTo,
+} from "@worthline/domain";
 
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 import { reconcileReconstructedBalance } from "./balance-reconciliation";
@@ -85,6 +89,20 @@ export async function projectBalanceHistoryProposal(
     ...ctx.balanceRebaselines,
     ...plan.composed.map((row) => ({ ...row, startsAtBaseline: false })),
   ];
+  const fromDateKey = plan.composed.reduce(
+    (earliest, row) => (row.baselineDate < earliest ? row.baselineDate : earliest),
+    plan.composed[0]!.baselineDate,
+  );
+  const snapshotMembership = debtSnapshotMembership({
+    curve: {
+      balanceRebaselines: resultingRebaselines,
+      currentBalanceMinor: ctx.currentBalanceMinor,
+      debtModel: "amortizable",
+      ...(ctx.plan === undefined ? {} : { plan: ctx.plan }),
+    },
+    dates: rebaselineChainPaymentDatesUpTo(resultingRebaselines, fromDateKey, today),
+    liability,
+  });
   const balanceAt = (targetDate: string) =>
     balanceHistoryCurveAt(ctx, resultingRebaselines, targetDate);
   const resultingMinor = balanceAt(today);
@@ -106,6 +124,7 @@ export async function projectBalanceHistoryProposal(
       modelMinor,
       resultingMinor,
     }),
+    snapshotMembership,
   };
 }
 
@@ -159,6 +178,7 @@ export async function buildBalanceHistoryProposal(
       })),
       curve: projected.curve,
       reconciliation: projected.reconciliation,
+      snapshotMembership: projected.snapshotMembership,
     },
   };
 }

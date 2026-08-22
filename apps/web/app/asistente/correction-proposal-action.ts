@@ -3,7 +3,11 @@
 import { createStableId } from "@web/intake";
 import { parseBalanceHistoryRows } from "@web/patrimonio/import-balance-history";
 import type { WorthlineStore } from "@web/store";
-import type { AssistantProposal, ReconstructCorrectionPlan } from "@worthline/db";
+import type {
+  AssistantProposal,
+  DebtRippleCounts,
+  ReconstructCorrectionPlan,
+} from "@worthline/db";
 
 import { projectBalanceHistoryProposal } from "./balance-history-proposals";
 import { parseCorrectionProposalDraft } from "./correction-proposal-contract";
@@ -52,7 +56,7 @@ export async function confirmCorrectionProposalAction(
   ..._testArgs: unknown[]
 ) {
   const editedRows = editedRowsFromArgs(_testArgs);
-  return runProposalConfirm({
+  return runProposalConfirm<DebtRippleCounts>({
     rawDraft,
     testArgs: _testArgs,
     kind: "correction",
@@ -68,10 +72,11 @@ export async function confirmCorrectionProposalAction(
         if (plan?.mode === "reconstruct") {
           return await applyReconstruction(store, proposal.id, plan, editedRows, today);
         }
-        await store.command.applyAssistantCorrectionProposal({
+        const snapshots = await store.command.applyAssistantCorrectionProposal({
           proposalId: proposal.id,
           today,
         });
+        return { status: "applied", ...snapshots };
       } catch (error) {
         // A stale draft (live data moved since drafting) or a domain violation
         // rolls the whole apply back; surface it honestly, nothing persisted.
@@ -81,7 +86,6 @@ export async function confirmCorrectionProposalAction(
             error instanceof Error ? error.message : "No se pudo aplicar la corrección.",
         };
       }
-      return { status: "applied" };
     },
   });
 }
@@ -107,7 +111,7 @@ async function applyReconstruction(
   plan: ReconstructCorrectionPlan,
   editedRows: unknown[] | undefined,
   today: string,
-): Promise<ProposalApplyResult> {
+): Promise<ProposalApplyResult<DebtRippleCounts>> {
   const parsed = parseBalanceHistoryRows(editedRows ?? plan.observations);
   if (!parsed.ok) return { message: parsed.error, status: "error" };
   // Las filas que llegan de la tarjeta ya traen la edición del usuario aplicada
@@ -128,7 +132,7 @@ async function applyReconstruction(
   );
   if (!projected.ok) return { message: projected.error, status: "error" };
   const { anchor, resultingMinor } = projected.reconciliation;
-  await store.command.applyAssistantCorrectionProposal({
+  const snapshots = await store.command.applyAssistantCorrectionProposal({
     proposalId,
     reconstruct: {
       liabilityId: plan.liabilityId,
@@ -148,7 +152,7 @@ async function applyReconstruction(
     },
     today,
   });
-  return { status: "applied" };
+  return { status: "applied", ...snapshots };
 }
 
 export async function discardCorrectionProposalAction(

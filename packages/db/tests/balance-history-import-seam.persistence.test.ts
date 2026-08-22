@@ -138,7 +138,7 @@ describe("importBalanceHistoryAndRipple — batched re-baseline seam (#696)", ()
     const store = await seedAmortizableMortgage();
     const before = await debtsAt(store, "2026-03-15");
 
-    const created = await store.command.importBalanceHistory({
+    const { created } = await store.command.importBalanceHistory({
       liabilityId: "mortgage",
       rebaselines: [],
       today: TODAY,
