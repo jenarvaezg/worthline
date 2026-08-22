@@ -33,12 +33,14 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+import type { DebtSnapshotMembership } from "@worthline/domain";
 import AssistantLayer from "./assistant-layer";
+import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 import { reconcileReconstructedBalance } from "./balance-reconciliation";
 import type { ReconstructionCorrectionProposal } from "./correction-proposal-contract";
 
 function markupFor(
-  proposal: ReconstructionCorrectionProposal,
+  proposal: ReconstructionCorrectionProposal | BalanceHistoryProposal,
   tool = "propose_reconstruction",
 ): string {
   chatMessages = [
@@ -223,5 +225,63 @@ describe("ReconstructionProposalCard · el cuadro que no se podía aplicar (#142
     expect(html).toContain(
       "12 de 256 puntos no incluirán esta deuda (anteriores al inicio). El resto sí.",
     );
+  });
+
+  /**
+   * La lane hermana comparte el mismo preflight (#1438) y su tarjeta no tenía
+   * cobertura de markup: omisión total apaga SU Confirmar, parcial avisa.
+   */
+  describe("BalanceHistoryProposalCard · el mismo preflight (#1438)", () => {
+    function balanceHistoryProposal(
+      membership: DebtSnapshotMembership,
+    ): BalanceHistoryProposal {
+      const reconciliation = reconcileReconstructedBalance({
+        declaredMinor: 52_375_33,
+        modelMinor: 51_886_90,
+        resultingMinor: 51_881_00,
+      });
+      return {
+        curve: [{ balanceMinor: reconciliation.resultingMinor, date: "2026-08-17" }],
+        draft: { proposalId: "wl_prp_bh" },
+        liability: { id: "wl_hld_hipoteca", name: "Hipoteca Santander" },
+        points: [
+          {
+            balanceMinor: reconciliation.resultingMinor,
+            date: "2026-08-17",
+            driftMinor: null,
+            status: "accepted",
+          },
+        ],
+        proposalType: "balance_history_import",
+        reconciliation,
+        snapshotMembership: membership,
+      };
+    }
+
+    test("omisión total: sin botón y con la frase honesta", () => {
+      const html = plain(
+        markupFor(
+          balanceHistoryProposal({ missing: 9, total: 9 }),
+          "propose_balance_history_import",
+        ),
+      );
+
+      expect(confirmButton(html)).toContain("disabled");
+      expect(html).toContain(
+        "Ninguno de los 9 puntos escribirá esta deuda en el histórico",
+      );
+    });
+
+    test("omisión parcial: aviso y botón vivo", () => {
+      const html = plain(
+        markupFor(
+          balanceHistoryProposal({ missing: 3, total: 9 }),
+          "propose_balance_history_import",
+        ),
+      );
+
+      expect(confirmButton(html)).not.toContain("disabled");
+      expect(html).toContain("3 de 9 puntos no incluirán esta deuda");
+    });
   });
 });

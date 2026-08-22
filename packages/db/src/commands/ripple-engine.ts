@@ -933,13 +933,21 @@ export async function rippleHistoricalSnapshotsForDebt(
 
   // The liability's identity — including trashed, since it existed on the
   // snapshot dates even if it was trashed afterwards.
+  // El silencio es lo que costó dos días (#1438): también las salidas sin
+  // trabajo dejan su línea en el log, igual que las que sí ripplean.
   const liability = await readLiabilityIdentity(db, liabilityId);
-  if (!liability) return EMPTY_DEBT_RIPPLE_COUNTS;
+  if (!liability) {
+    console.info({ liabilityId }, "debt ripple: no identity, nothing to ripple");
+    return EMPTY_DEBT_RIPPLE_COUNTS;
+  }
 
   // Build deps once — the same for every scope (lesson from #114).
   const deps = await buildHistoricalSnapshotDeps(db, workspace);
   const curve = deps.debtBalanceByLiability.get(liabilityId);
-  if (!curve || curve.debtModel === null) return EMPTY_DEBT_RIPPLE_COUNTS;
+  if (!curve || curve.debtModel === null) {
+    console.info({ liabilityId }, "debt ripple: no debt model, nothing to ripple");
+    return EMPTY_DEBT_RIPPLE_COUNTS;
+  }
 
   // Housing assets — a debt securing one nets historical housing equity (ADR 0013).
   const housingAssetIds = housingAssetIdsOf(deps.assets);
@@ -949,7 +957,13 @@ export async function rippleHistoricalSnapshotsForDebt(
   let generateDates: string[];
   let recalcFrom: string;
   if (params.kind === "amortizable-plan") {
-    if (!curve.plan) return EMPTY_DEBT_RIPPLE_COUNTS;
+    if (!curve.plan) {
+      console.info(
+        { liabilityId },
+        "debt ripple: amortizable without plan, nothing to generate",
+      );
+      return EMPTY_DEBT_RIPPLE_COUNTS;
+    }
     generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
     // The debt appears at the disbursement date (ADR 0019), the earliest boundary.
     recalcFrom = curve.plan.disbursementDate;
@@ -1018,7 +1032,11 @@ export async function rippleHistoricalSnapshotsForDebt(
         });
         if (built) {
           counts.generated += 1;
-          if (built.holdings.some((row) => row.holdingId === liabilityId)) {
+          if (
+            built.holdings.some(
+              (row) => row.holdingId === liabilityId && row.kind === "liability",
+            )
+          ) {
             counts.generatedWithLiability += 1;
           }
           await saveSnapshot({
