@@ -36,6 +36,8 @@ import { ContributionAllowancePanel } from "./contribution-allowance-panel";
 import {
   contributionAllowanceDestinationOptions,
   contributionAllowanceOperations,
+  trashAssetToHolding,
+  withDerivedAllowanceDestinations,
 } from "./contribution-allowance-view";
 import { ContributionReconciliation } from "./contribution-reconciliation";
 import { ExposureDriftSection } from "./exposure-drift-section";
@@ -327,23 +329,29 @@ export async function ObjetivosContent({
   // sale del libro de operaciones del año natural en curso — nunca de lo que el
   // plan preveía aportar, que induciría a pasarse creyendo que queda margen.
   //
-  // Y lo consumido sale del libro de sus DESTINOS, no de los holdings que esta
-  // página pinta (#1509): un plan traspasado se vacía y se manda a la papelera,
-  // y sus aportaciones de este año siguen habiendo consumido cupo. Solo se paga
-  // la lectura de la papelera cuando algún destino marcado no está vivo.
+  // Y lo consumido sale de los planes de pensiones del alcance, vivos o en la
+  // papelera (#1509, #1567): un plan traspasado se vacía y se manda a la papelera,
+  // y sus aportaciones de este año siguen habiendo consumido cupo. Un fondo
+  // marcado en un snapshot viejo no cuenta, ni vivo ni en la papelera. Un PP
+  // dado de alta después del último save cuenta porque los destinos se
+  // re-derivan del instrumento en cada lectura.
   const liveHoldingIds = new Set(assets.map((asset) => asset.id));
+  const trashedHoldings =
+    contributionAllowances.length > 0 ? (await store.readTrash()).assets : [];
+  const derivedAllowances = contributionAllowances.map((allowance) =>
+    withDerivedAllowanceDestinations(allowance, [
+      ...assets,
+      ...trashedHoldings.map(trashAssetToHolding),
+    ]),
+  );
   const allowanceOperations = contributionAllowanceOperations({
-    allowances: contributionAllowances,
+    allowances: derivedAllowances,
     liveHoldingIds,
     liveOperations: contributionOperations,
     operationsByAsset: projectionContext.operationsByAsset,
   });
-  const hasTrashedDestination = contributionAllowances.some((allowance) =>
-    allowance.holdingIds.some((holdingId) => !liveHoldingIds.has(holdingId)),
-  );
-  const trashedHoldings = hasTrashedDestination ? (await store.readTrash()).assets : [];
   const allowanceUsageById = new Map(
-    contributionAllowances.map((allowance) => [
+    derivedAllowances.map((allowance) => [
       allowance.id,
       computeContributionAllowanceUsage({
         allowance,
@@ -545,7 +553,7 @@ export async function ObjetivosContent({
 
       {selectedScope ? (
         <ContributionAllowancePanel
-          allowances={contributionAllowances}
+          allowances={derivedAllowances}
           currency={currency}
           currentUrl={currentUrl}
           destinationOptions={allowanceDestinationOptions}

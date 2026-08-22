@@ -25,7 +25,8 @@ async function freshStore(): Promise<
       currency: "EUR",
       currentValueMinor: 1_000_00,
       id,
-      liquidityTier: "market",
+      instrument: "pension_plan",
+      liquidityTier: "term-locked",
       name: id,
       ownership: [{ memberId: "m1", shareBps: 10_000 }],
       type: "investment",
@@ -104,7 +105,7 @@ describe("contribution allowance CRUD", () => {
         label: "Planes de pensiones",
         scopeId: "household",
       }),
-    ).rejects.toThrow(/destino/i);
+    ).rejects.toThrow(/plan de pensiones/i);
   });
 
   it("rejects a non-positive cap", async () => {
@@ -169,13 +170,13 @@ describe("contribution allowance CRUD", () => {
       store.contributionAllowances.updateContributionAllowance(created.id, {
         holdingIds: [],
       }),
-    ).rejects.toThrow(/destino/i);
+    ).rejects.toThrow(/plan de pensiones/i);
     const [row] =
       await store.contributionAllowances.readContributionAllowances("household");
     expect(row?.holdingIds).toEqual(["pp1"]);
   });
 
-  it("refuses a destination with no operation ledger — it would count 0 and lie", async () => {
+  it("refuses a destination that is not a pension plan — it would count the wrong thing", async () => {
     const store = await freshStore();
     await expect(
       store.contributionAllowances.createContributionAllowance({
@@ -184,7 +185,29 @@ describe("contribution allowance CRUD", () => {
         label: "Planes de pensiones",
         scopeId: "household",
       }),
-    ).rejects.toThrow(/libro de operaciones/i);
+    ).rejects.toThrow(/planes de pensiones/i);
+  });
+
+  it("refuses a fund with a ledger — destinos come from the instrument (#1567)", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 1_000_00,
+      id: "etf1",
+      instrument: "etf",
+      liquidityTier: "market",
+      name: "World",
+      ownership: [{ memberId: "m1", shareBps: 10_000 }],
+      type: "investment",
+    });
+    await expect(
+      store.contributionAllowances.createContributionAllowance({
+        annualCapMinor: 1_500_00,
+        holdingIds: ["etf1"],
+        label: "Planes de pensiones",
+        scopeId: "household",
+      }),
+    ).rejects.toThrow(/planes de pensiones/i);
   });
 
   it("refuses an unknown destination", async () => {
@@ -212,7 +235,7 @@ describe("contribution allowance CRUD", () => {
       store.contributionAllowances.updateContributionAllowance(created.id, {
         holdingIds: ["cuenta"],
       }),
-    ).rejects.toThrow(/libro de operaciones/i);
+    ).rejects.toThrow(/planes de pensiones/i);
     const [row] =
       await store.contributionAllowances.readContributionAllowances("household");
     expect(row?.holdingIds).toEqual(["pp1"]);

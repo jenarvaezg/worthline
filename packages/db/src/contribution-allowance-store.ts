@@ -1,7 +1,7 @@
 import type { ContributionAllowance, ManualAsset } from "@worthline/domain";
 import {
   assertContributionAllowanceInput,
-  keepsAnOperationLedger,
+  consumesContributionAllowance,
 } from "@worthline/domain";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
@@ -58,15 +58,14 @@ export function createContributionAllowanceStore(
 }
 
 /**
- * Every destination must be a holding with an operation ledger.
+ * Every destination must be a pension plan with an operation ledger (#1567).
  *
- * A cupo counts real entries one by one, and only a unit-based (investment)
- * holding records them. Pointing one at a cash account or a property would print
- * "0 € de 1.500 €" — the counter lying downwards, which is the failure this
- * feature exists to prevent. The form only offers eligible holdings; this is the
+ * The cupo counts aportaciones to plans, not every investment. Pointing one at a
+ * fund or a cash account would either invent a contribution that is not fiscal,
+ * or print "0 € de 1.500 €". The action no longer offers a picker; this is the
  * rule at the door, so no other writer can get around it.
  */
-async function assertLedgerDestinations(
+async function assertPensionPlanDestinations(
   ctx: StoreContext,
   holdingIds: readonly string[],
 ): Promise<void> {
@@ -98,9 +97,9 @@ async function assertLedgerDestinations(
         ? { connectedSourceId: row.connectedSourceId }
         : {}),
     } as ManualAsset;
-    if (!keepsAnOperationLedger(asset)) {
+    if (!consumesContributionAllowance(asset)) {
       throw new Error(
-        "Un cupo solo puede apuntar a inversiones con libro de operaciones: son las únicas que registran cada aportación una a una.",
+        "Un cupo solo cuenta aportaciones a planes de pensiones: son el instrumento nativo, y los únicos que registran cada aportación una a una.",
       );
     }
   }
@@ -164,7 +163,7 @@ async function createContributionAllowance(
     label,
   });
   if (!input.scopeId.trim()) throw new Error("scopeId is required.");
-  await assertLedgerDestinations(ctx, holdingIds);
+  await assertPensionPlanDestinations(ctx, holdingIds);
 
   const id = ctx.newId();
   await ctx.transaction(async () => {
@@ -214,7 +213,7 @@ async function updateContributionAllowance(
   const holdingIds = normalizeHoldingIds(patch.holdingIds ?? currentHoldings);
   assertContributionAllowanceInput({ annualCapMinor, holdingIds, label });
   if (patch.holdingIds !== undefined) {
-    await assertLedgerDestinations(ctx, holdingIds);
+    await assertPensionPlanDestinations(ctx, holdingIds);
   }
 
   await ctx.transaction(async () => {

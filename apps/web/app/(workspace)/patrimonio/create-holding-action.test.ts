@@ -1276,9 +1276,7 @@ describe("createHoldingAction — investment drawer, «viene traspasada de otra 
     expect(usage.remainingMinor).toBe(150_000);
   });
 
-  test("the SAME figures through «sé cuánto tengo hoy» would have eaten 95,46 € of cupo", async () => {
-    // The contrast is the point: the counter is live, and what spares it is the kind
-    // of the row — this is the miscount that printed «te has pasado 2.127 €».
+  test("«sé cuánto tengo hoy» tampoco consume cupo: una apertura no es una aportación (#1567)", async () => {
     const store = await seedStore();
 
     await runAction(
@@ -1306,7 +1304,9 @@ describe("createHoldingAction — investment drawer, «viene traspasada de otra 
       todayISO: "2026-06-15",
     });
 
-    expect(usage.consumedMinor).toBe(9_546);
+    expect(usage.consumedMinor).toBe(0);
+    expect(usage.entries).toEqual([]);
+    expect(usage.remainingMinor).toBe(150_000);
   });
 
   test("the inherited cost defaults to what arrived — no plusvalía latente invented", async () => {

@@ -339,7 +339,7 @@ describe("importWorkspace", () => {
     ]);
 
     expect(await store.readTrash()).toEqual({
-      assets: [{ id: "b-a9", name: "Viejo B" }],
+      assets: [expect.objectContaining({ id: "b-a9", name: "Viejo B" })],
       liabilities: [{ id: "b-l9", name: "Deuda vieja B" }],
     });
 
@@ -407,7 +407,9 @@ describe("importWorkspace", () => {
       "l-A1",
     ]);
     expect((await store.snapshots.readSnapshots()).map((s) => s.id)).toEqual(["snap-A"]);
-    expect((await store.readTrash()).assets).toEqual([{ id: "a-A2", name: "Trasto A" }]);
+    expect((await store.readTrash()).assets).toEqual([
+      expect.objectContaining({ id: "a-A2", name: "Trasto A" }),
+    ]);
     expect(await store.readWarningOverrides()).toEqual([
       { code: "ZERO_VALUE_ASSET", entityId: "a-A1" },
     ]);

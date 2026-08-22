@@ -1,6 +1,6 @@
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
-import { signedInvestedMinor } from "./operation-flow";
+import { isDeclaredOpening, signedInvestedMinor } from "./operation-flow";
 
 /**
  * A suggested monthly savings capacity derived from real investment operations
@@ -104,7 +104,7 @@ function monthKey(index: number): string {
  * as younger than it is, and #1449 needs three months before it trusts anything.
  */
 function netInvestedMinor(operation: InvestmentOperation): number {
-  if (operation.source === "opening") return 0;
+  if (isDeclaredOpening(operation)) return 0;
   return signedInvestedMinor(operation, "zero");
 }
 
