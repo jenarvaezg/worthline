@@ -731,6 +731,8 @@ export type {
   OperationKind,
   OperationSource,
   PositionSummary,
+  PositionWarning,
+  PositionWarningCode,
 } from "./investment-types";
 export type {
   DeriveInvestmentValuationInput,
@@ -808,6 +810,8 @@ export {
 } from "./operation-currency";
 export type { TransferFlowPolicy } from "./operation-flow";
 export { signedInvestedMinor, unhandledOperationKind } from "./operation-flow";
+export type { OversellExcessKind } from "./oversell";
+export { classifyOversellExcess, oversellConfirmMessage } from "./oversell";
 export type {
   DatedAmount,
   DerivedPayout,
@@ -844,6 +848,7 @@ export {
   createInvestmentOperation,
   createInvestmentOperationSafe,
   derivePosition,
+  hasOversellPositionWarning,
   isTransferKind,
   latestOperationPrice,
   netUnitsByAsset,

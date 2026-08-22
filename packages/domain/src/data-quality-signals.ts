@@ -240,6 +240,8 @@ export const MISSING_INVESTMENT_ISIN_CODE = "MISSING_INVESTMENT_ISIN";
 export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
   "ZERO_VALUE_ASSET",
   "MISSING_PROVIDER_SYMBOL",
+  "OVERSELL",
+  "OVER_TRANSFER",
   STALE_MANUAL_VALUE_CODE,
   MISSING_INVESTMENT_ISIN_CODE,
 ]);
@@ -318,6 +320,7 @@ export function collectDataQualitySignals(
       input.warningOverrides,
       ownedAssetIds,
       input.netUnitsByAssetId,
+      input.investmentOperationsByAssetId,
     ),
     ...trashedBalanceSignals(
       input.trashedHoldings,
@@ -418,6 +421,7 @@ function warningSignals(
   warningOverrides: readonly WarningOverride[],
   ownedAssetIds: Set<string>,
   netUnitsByAssetId: ReadonlyMap<string, DecimalString>,
+  operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>,
 ): DataQualitySignal[] {
   const overridden = new Set(
     warningOverrides.map((override) => `${override.code}:${override.entityId}`),
@@ -426,7 +430,10 @@ function warningSignals(
   // Overrides are NOT passed to `collectWarnings`: an acknowledged warning stays
   // in the inventory and gets labelled instead of dropped. The closed-position
   // filter is different — a sold-out position has no pending task at all (#1348).
-  return collectWarnings([...assets], [], { netUnitsByAssetId })
+  return collectWarnings([...assets], [], {
+    netUnitsByAssetId,
+    operationsByAssetId,
+  })
     .filter((warning) => ownedAssetIds.has(warning.entityId))
     .map((warning) => warningToSignal(warning, overridden, assets));
 }

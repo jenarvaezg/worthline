@@ -190,6 +190,11 @@ export default function OperationsEditor({
       ? roundTripped
       : (defaultCurrency ?? BASE_CURRENCY),
   );
+  const [clientOversell, setClientOversell] = useState<string | null>(null);
+  const serverOversell =
+    formError?.formId === "operation" && formError.values["oversellPending"] === "1";
+  const oversellMessage = clientOversell ?? (serverOversell ? formError.message : null);
+  const oversellPending = oversellMessage !== null;
   const convertsToEur = captureCurrency !== BASE_CURRENCY;
 
   // Record: build the optimistic row from the form, apply it, then run the action —
@@ -203,6 +208,7 @@ export default function OperationsEditor({
         const plan = planOperationSubmit({
           assetId,
           formData,
+          heldUnits: context.currentUnits ?? "0",
           inFlightSubmissionId: inFlightSubmissionId.current,
           newId: () => crypto.randomUUID(),
           today,
@@ -211,6 +217,10 @@ export default function OperationsEditor({
           return; // let the native post + server validation surface the error
         }
         event.preventDefault();
+        if (plan.kind === "confirm-oversell") {
+          setClientOversell(plan.message);
+          return;
+        }
         submitOperationRecord({
           addPending,
           formData,
@@ -309,7 +319,11 @@ export default function OperationsEditor({
         </p>
       ) : null}
 
-      {formError?.formId === "operation" ? (
+      {oversellPending ? (
+        <p className="warningBand" role="alert" id="operation-error">
+          {oversellMessage}
+        </p>
+      ) : formError?.formId === "operation" ? (
         <p className="errorBand" role="alert" id="operation-error">
           {formError.message}
         </p>
@@ -404,6 +418,18 @@ export default function OperationsEditor({
           <p className="opCaptureHint">
             Lo guardaremos en euros con el tipo del BCE del día de la operación.
           </p>
+        ) : null}
+
+        {oversellPending ? (
+          <label className="checkLine">
+            <input
+              defaultChecked={operationValues["oversellConfirmed"] === "1"}
+              name="oversellConfirmed"
+              type="checkbox"
+              value="1"
+            />{" "}
+            Confirmo la venta
+          </label>
         ) : null}
 
         <RecordOperationSubmit pending={isRecording} />

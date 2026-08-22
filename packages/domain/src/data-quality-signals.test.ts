@@ -260,6 +260,70 @@ describe("collectDataQualitySignals", () => {
     });
   });
 
+  test("an oversell on the ledger is a medium warning, silenced by override", () => {
+    const { asset, input } = fixture();
+    const operationsByAssetId = new Map([
+      [
+        "inv_jorge",
+        [
+          {
+            assetId: "inv_jorge",
+            currency: "EUR" as const,
+            executedAt: "2026-01-01",
+            feesMinor: 0,
+            id: "buy",
+            kind: "buy" as const,
+            pricePerUnit: "10",
+            units: "31.999",
+          },
+          {
+            assetId: "inv_jorge",
+            currency: "EUR" as const,
+            executedAt: "2026-02-01",
+            feesMinor: 0,
+            id: "sell",
+            kind: "sell" as const,
+            pricePerUnit: "10",
+            units: "32",
+          },
+        ],
+      ],
+    ]);
+    const holding = asset({
+      id: "inv_jorge",
+      instrument: "etf",
+      name: "Amundi Europe",
+      providerSymbol: "AE.PA",
+      type: "investment",
+    });
+
+    const signals = collectDataQualitySignals(
+      input({
+        assets: [holding],
+        investmentOperationsByAssetId: operationsByAssetId,
+        netUnitsByAssetId: new Map([["inv_jorge", "0"]]),
+      }),
+    );
+    const oversell = signals.filter((signal) => signal.code === "OVERSELL");
+
+    expect(oversell).toHaveLength(1);
+    expect(oversell[0]).toMatchObject({
+      category: "warning",
+      severity: "medium",
+    });
+
+    const labelled = collectDataQualitySignals(
+      input({
+        assets: [holding],
+        investmentOperationsByAssetId: operationsByAssetId,
+        netUnitsByAssetId: new Map([["inv_jorge", "0"]]),
+        warningOverrides: [{ code: "OVERSELL", entityId: "inv_jorge" }],
+      }),
+    ).find((signal) => signal.code === "OVERSELL");
+
+    expect(labelled?.label).toContain("marcado como intencional");
+  });
+
   test("orders by severity desc, then category, then affected id, then natural key", () => {
     const signals = collectDataQualitySignals(seededInput()).sort(
       compareDataQualitySignals,

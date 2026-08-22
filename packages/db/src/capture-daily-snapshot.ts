@@ -11,6 +11,7 @@ import type {
   CoinPosition,
   DecimalString,
   InvestmentCaptureDetail,
+  InvestmentOperation,
   Liability,
   LiquidityTier,
   ManualAsset,
@@ -54,6 +55,11 @@ export interface SharedSnapshotInputs {
    * de datos shows: a sold-out position asks for no symbol (#1348).
    */
   netUnitsByAssetId: ReadonlyMap<string, DecimalString>;
+  /**
+   * The investment ledger already in hand (#1443). Freezes OVERSELL / OVER_TRANSFER
+   * the same way `netUnitsByAssetId` freezes the closed-position filter.
+   */
+  operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>;
   /** Acknowledged warnings, so the capture does not freeze what the user dismissed. */
   warningOverrides: WarningOverride[];
 }
@@ -131,6 +137,7 @@ export async function captureDailySnapshotForWorkspace(
       investmentDetails: shared.investmentDetails,
       liabilities: shared.liabilities,
       netUnitsByAssetId: shared.netUnitsByAssetId,
+      operationsByAssetId: shared.operationsByAssetId,
       positionDetails,
       scope,
       warningOverrides: shared.warningOverrides,
@@ -234,6 +241,7 @@ export async function buildSharedSnapshotInputs(
     investmentDetails,
     liabilities,
     netUnitsByAssetId: netUnitsByAsset(ctx.operationsByAsset),
+    operationsByAssetId: ctx.operationsByAsset,
     positionDetails,
     scopes,
     warningOverrides,
@@ -267,6 +275,7 @@ export async function buildTodaySnapshotForScope(
     investmentDetails: shared.investmentDetails,
     liabilities: shared.liabilities,
     netUnitsByAssetId: shared.netUnitsByAssetId,
+    operationsByAssetId: shared.operationsByAssetId,
     positionDetails: shared.positionDetails,
     scope,
     warningOverrides: shared.warningOverrides,

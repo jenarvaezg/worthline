@@ -8,6 +8,7 @@ import type {
 import {
   createInvestmentOperation,
   derivePosition,
+  hasOversellPositionWarning,
   netUnitsByAsset,
   netUnitsFromOperations,
 } from "./positions";
@@ -171,8 +172,34 @@ describe("derivePosition — oversell", () => {
 
     expect(position.currentUnits).toBe("0");
     expect(position.costBasis).toEqual({ amountMinor: 0, currency: "EUR" });
-    expect(position.warnings).toHaveLength(1);
-    expect(position.warnings[0]).toContain("unidades");
+    expect(position.warnings).toEqual([
+      expect.objectContaining({
+        code: "OVERSELL",
+        message: expect.stringContaining("unidades"),
+      }),
+    ]);
+  });
+
+  test("a coded oversell is what the importer keys off — not a non-empty array", () => {
+    expect(
+      hasOversellPositionWarning([
+        {
+          code: "OVERSELL",
+          message:
+            "La venta de 32 unidades supera las 31.999 disponibles; se ajusta al máximo.",
+        },
+      ]),
+    ).toBe(true);
+    expect(
+      hasOversellPositionWarning([
+        {
+          code: "OVER_TRANSFER",
+          message:
+            "El traspaso de 5 unidades supera las 2 disponibles; se ajusta al máximo.",
+        },
+      ]),
+    ).toBe(true);
+    expect(hasOversellPositionWarning([])).toBe(false);
   });
 
   test("a position never goes negative even after an oversell", () => {
@@ -355,8 +382,12 @@ describe("derivePosition — the mixed-currency guard (#1401)", () => {
       { assetId: "asset_inv", currency: "EUR" },
     );
 
-    expect(position.warnings).toHaveLength(1);
-    expect(position.warnings[0]).toContain("unidades");
+    expect(position.warnings).toEqual([
+      expect.objectContaining({
+        code: "OVERSELL",
+        message: expect.stringContaining("unidades"),
+      }),
+    ]);
     expect(position.currencyWarning).toContain("USD");
   });
 });
@@ -473,8 +504,12 @@ describe("derivePosition — el traspaso (#1393)", () => {
     expect(position.currentUnits).toBe("0");
     expect(position.costBasis).toEqual({ amountMinor: 0, currency: "EUR" });
     expect(position.realizedPnl).toEqual({ amountMinor: 0, currency: "EUR" });
-    expect(position.warnings).toHaveLength(1);
-    expect(position.warnings[0]).toContain("traspaso");
+    expect(position.warnings).toEqual([
+      expect.objectContaining({
+        code: "OVER_TRANSFER",
+        message: expect.stringContaining("traspaso"),
+      }),
+    ]);
   });
 
   test("un traspaso de entrada sin coste heredado no revienta el fold", () => {

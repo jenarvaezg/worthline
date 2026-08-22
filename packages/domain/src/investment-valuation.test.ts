@@ -480,8 +480,12 @@ describe("deriveInvestmentValuation — derived value", () => {
       manualPrice: undefined,
     });
 
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain("unidades");
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: "OVERSELL",
+        message: expect.stringContaining("unidades"),
+      }),
+    ]);
     expect(result.valueMinor).toBe(0); // 0 units after oversell clamp
   });
 });

@@ -52,11 +52,14 @@ import type {
   StatementMergePlan,
 } from "@worthline/domain";
 import {
+  compareUnits,
   createInvestmentOperationSafe,
   defaultInvestmentPriceProvider,
   detectSingleAssetBackfillCandidate,
   detectValueOnlyOpening,
   isStatementBroker,
+  netUnitsFromOperations,
+  oversellConfirmMessage,
   parseStatement,
   planSnapshotPriceCorrection,
   planStatementMerge,
@@ -89,6 +92,8 @@ const OPERATION_FORM_FIELDS = [
   "pricePerUnit",
   "fees",
   "currency",
+  "oversellConfirmed",
+  "oversellPending",
 ];
 
 const EDIT_INVESTMENT_FIELDS = [
@@ -200,6 +205,19 @@ export async function recordOperationAction(
     // One command persists the operation AND ripples its snapshots atomically
     // (ADR 0020; backdated operation → reconstruct history, PRD #107).
     run: async (store, { parsed, today }) => {
+      if (parsed.kind === "sell") {
+        const held = netUnitsFromOperations(
+          await store.operations.readOperations(routeAssetId),
+        );
+        if (
+          compareUnits(parsed.units, held) > 0 &&
+          formData.get("oversellConfirmed") !== "1"
+        ) {
+          formData.set("oversellPending", "1");
+          return { error: oversellConfirmMessage(held, parsed.units), ok: false };
+        }
+      }
+
       // The no-JS path has no dedupe key: clock-seeded id, single write, exactly
       // as before.
       if (!submissionId) {

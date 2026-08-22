@@ -37,6 +37,26 @@ async function seedHolding(): Promise<WorthlineStore> {
   return store;
 }
 
+async function seedBuy(
+  store: WorthlineStore,
+  units = "100",
+  holding = HOLDING,
+): Promise<void> {
+  await store.command.recordInvestmentOperation(
+    {
+      assetId: holding,
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      feesMinor: 0,
+      id: `seed-buy-${holding}`,
+      kind: "buy",
+      pricePerUnit: "10",
+      units,
+    },
+    { today: "2026-08-22" },
+  );
+}
+
 /** The sell the father recorded — twice. */
 function sellForm(submissionId?: string): FormData {
   return operationForm({ kind: "sell", ...(submissionId ? { submissionId } : {}) });
@@ -44,10 +64,12 @@ function sellForm(submissionId?: string): FormData {
 
 function operationForm({
   kind = "sell",
+  oversellConfirmed,
   submissionId,
   units = "47,96",
 }: {
   kind?: string;
+  oversellConfirmed?: boolean;
   submissionId?: string;
   units?: string;
 }): FormData {
@@ -59,6 +81,7 @@ function operationForm({
   fd.set("pricePerUnit", "21,24");
   fd.set("fees", "0");
   if (submissionId !== undefined) fd.set("submissionId", submissionId);
+  if (oversellConfirmed) fd.set("oversellConfirmed", "1");
   return fd;
 }
 
@@ -83,18 +106,23 @@ async function record(
 describe("recordOperationAction · submissionId idempotency (#1394)", () => {
   test("two submits of the SAME submissionId leave one operation", async () => {
     const store = await seedHolding();
+    await seedBuy(store);
     const key = "9f2c4d7a1b3e4f5a8c9d0e1f2a3b4c5d";
 
     expect(await record(sellForm(key), store)).toContain("ok=saved");
     expect(await record(sellForm(key), store)).toContain("ok=saved");
 
     const operations = await store.operations.readOperations(HOLDING);
-    expect(operations).toHaveLength(1);
-    expect(operations[0]).toMatchObject({ kind: "sell", units: "47.96" });
+    expect(operations.filter((operation) => operation.kind === "sell")).toHaveLength(1);
+    expect(operations.find((operation) => operation.kind === "sell")).toMatchObject({
+      kind: "sell",
+      units: "47.96",
+    });
   });
 
   test("the replay reports success — the user never sees a phantom failure", async () => {
     const store = await seedHolding();
+    await seedBuy(store);
     const key = "aaaabbbbccccddddeeeeffff00001111";
 
     await record(sellForm(key), store);
@@ -123,19 +151,23 @@ describe("recordOperationAction · submissionId idempotency (#1394)", () => {
     // as an accident: only reachable by editing the form between two clicks of
     // the same frame, and the honest answer is that the FIRST submission won.
     const store = await seedHolding();
+    await seedBuy(store);
     const key = "7777777777777777";
 
     await record(operationForm({ submissionId: key, units: "47,96" }), store);
     await record(operationForm({ submissionId: key, units: "10" }), store);
 
     const operations = await store.operations.readOperations(HOLDING);
-    expect(operations).toHaveLength(1);
-    expect(operations[0]?.units).toBe("47.96");
+    expect(operations.filter((operation) => operation.kind === "sell")).toHaveLength(1);
+    expect(operations.find((operation) => operation.kind === "sell")?.units).toBe(
+      "47.96",
+    );
   });
 
   test("a genuine write failure still surfaces as an error", async () => {
     // The replay check must not turn every failed record into a silent success.
     const store = await seedHolding();
+    await seedBuy(store);
     const failing: WorthlineStore = {
       ...store,
       command: {
@@ -149,7 +181,7 @@ describe("recordOperationAction · submissionId idempotency (#1394)", () => {
     await expect(
       recordOperationAction(HOLDING, sellForm("8888888888888888"), failing),
     ).rejects.toThrow("la escritura falló de verdad");
-    expect(await store.operations.readOperations(HOLDING)).toHaveLength(0);
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
   });
 
   test("a key only dedupes within its own holding", async () => {
@@ -161,22 +193,29 @@ describe("recordOperationAction · submissionId idempotency (#1394)", () => {
       name: "Otro fondo",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
     });
+    await seedBuy(store);
+    await seedBuy(store, "100", "h2");
     const key = "5555555555555555";
 
     await record(sellForm(key), store);
     await record(sellForm(key), store, "h2");
 
-    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
-    expect(await store.operations.readOperations("h2")).toHaveLength(1);
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(2);
+    expect(await store.operations.readOperations("h2")).toHaveLength(2);
   });
 
   test("without a submissionId (no JS) each submit records, as before", async () => {
     const store = await seedHolding();
+    await seedBuy(store);
 
     await record(sellForm(), store);
     await record(sellForm(), store);
 
-    expect(await store.operations.readOperations(HOLDING)).toHaveLength(2);
+    expect(
+      (await store.operations.readOperations(HOLDING)).filter(
+        (operation) => operation.kind === "sell",
+      ),
+    ).toHaveLength(2);
   });
 });
 
@@ -190,6 +229,7 @@ describe("recordOperationAction · a replay that is NOT serialized (#1394)", () 
     // shares one connection, so a genuine overlap rolls the WINNER's row back
     // too, which is an artefact of the test double and not of production.
     const store = await seedHolding();
+    await seedBuy(store);
     const key = "3333333333333333";
     const raceLoser: WorthlineStore = {
       ...store,
@@ -205,7 +245,11 @@ describe("recordOperationAction · a replay that is NOT serialized (#1394)", () 
     };
 
     expect(await record(sellForm(key), raceLoser)).toContain("ok=saved");
-    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
+    expect(
+      (await store.operations.readOperations(HOLDING)).filter(
+        (operation) => operation.kind === "sell",
+      ),
+    ).toHaveLength(1);
   });
 });
 
@@ -273,6 +317,62 @@ describe("recordOperationAction — a capture outside EUR", () => {
     });
 
     expect(fetched).toBe(false);
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
+  });
+});
+
+describe("recordOperationAction · oversell confirm (#1443)", () => {
+  function readable(digest: string): string {
+    return decodeURIComponent(digest).replaceAll("+", " ");
+  }
+
+  test("a sell past held without confirm writes nothing and asks for confirm", async () => {
+    const store = await seedHolding();
+    await seedBuy(store, "31.999");
+
+    const digest = await record(operationForm({ kind: "sell", units: "32" }), store);
+
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
+    expect(readable(digest)).toContain("redondeo del bróker");
+    expect(readable(digest)).toContain("form=operation");
+    expect(readable(digest)).toContain("v_oversellPending=1");
+    expect(readable(digest)).not.toContain("ok=saved");
+  });
+
+  test("a 10× mistype uses the fat-finger copy", async () => {
+    const store = await seedHolding();
+    await seedBuy(store, "31.999");
+
+    const digest = await record(operationForm({ kind: "sell", units: "320" }), store);
+
+    expect(readable(digest)).toContain("supera con mucho la posición");
+    expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
+  });
+
+  test("confirming persists the typed units, not the clamped ones", async () => {
+    const store = await seedHolding();
+    await seedBuy(store, "31.999");
+
+    expect(
+      await record(
+        operationForm({ kind: "sell", oversellConfirmed: true, units: "32" }),
+        store,
+      ),
+    ).toContain("ok=saved");
+
+    const sells = (await store.operations.readOperations(HOLDING)).filter(
+      (operation) => operation.kind === "sell",
+    );
+    expect(sells).toHaveLength(1);
+    expect(sells[0]?.units).toBe("32");
+  });
+
+  test("a buy never asks for confirm even when the position is empty", async () => {
+    const store = await seedHolding();
+
+    expect(await record(operationForm({ kind: "buy", units: "32" }), store)).toContain(
+      "ok=saved",
+    );
     expect(await store.operations.readOperations(HOLDING)).toHaveLength(1);
   });
 });

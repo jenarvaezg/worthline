@@ -215,6 +215,53 @@ describe("planOperationSubmit · double-submit guard (#1394)", () => {
 
     expect(plan.kind).toBe("native");
   });
+
+  test("a sell past held without confirm asks for confirmation instead of optimism", () => {
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({ kind: "sell", units: "32", pricePerUnit: "10" }),
+      heldUnits: "31.999",
+      inFlightSubmissionId: null,
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan).toEqual({
+      kind: "confirm-oversell",
+      message: expect.stringContaining("redondeo del bróker"),
+    });
+  });
+
+  test("a confirmed oversell proceeds optimistically", () => {
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({
+        kind: "sell",
+        oversellConfirmed: "1",
+        pricePerUnit: "10",
+        units: "32",
+      }),
+      heldUnits: "31.999",
+      inFlightSubmissionId: null,
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan.kind).toBe("optimistic");
+  });
+
+  test("a buy never asks for oversell confirm", () => {
+    const plan = planOperationSubmit({
+      assetId: "asset-1",
+      formData: form({ kind: "buy", units: "32", pricePerUnit: "10" }),
+      heldUnits: "0",
+      inFlightSubmissionId: null,
+      newId: ids(),
+      today: "2026-06-24",
+    });
+
+    expect(plan.kind).toBe("optimistic");
+  });
 });
 
 describe("submitOperationRecord · the wiring the guard rests on (#1394)", () => {

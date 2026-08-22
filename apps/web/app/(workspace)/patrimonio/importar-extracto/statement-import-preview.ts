@@ -20,6 +20,7 @@ import type {
 import {
   derivePosition,
   findStatementTypeConflict,
+  hasOversellPositionWarning,
   isIsinShaped,
   isProviderSymbolShaped,
   isStatementBroker,
@@ -250,7 +251,7 @@ function derivePositionImpact(
   const flags: PositionImpactFlag[] = [];
 
   if (isNearlyDouble(beforeValueMinor, afterValueMinor)) flags.push("nearly_doubles");
-  if (after.warnings.length > 0) flags.push("oversell");
+  if (hasOversellPositionWarning(after.warnings)) flags.push("oversell");
   if (beforeValueMinor > 0 && afterValueMinor === 0) flags.push("near_zero");
 
   return {

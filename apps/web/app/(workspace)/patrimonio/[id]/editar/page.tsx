@@ -413,6 +413,7 @@ export default async function EditarPage({
   const warnings = asset
     ? collectWarnings([asset], overrides, {
         netUnitsByAssetId: netUnitsByAsset(new Map([[id, operations]])),
+        operationsByAssetId: new Map([[id, operations]]),
       })
     : [];
   const ownershipScopeMemberId =

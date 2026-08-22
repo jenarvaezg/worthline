@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { AssetType, ManualAsset } from "./index";
+import type { AssetType, InvestmentOperation, ManualAsset } from "./index";
 import { CLOSED_POSITION_UNITS_EPSILON, collectWarnings } from "./warnings";
 
 function asset(
@@ -179,5 +179,107 @@ describe("collectWarnings — closed positions do not need a symbol (#1348)", ()
     expect(codes([asset("a1", "Cuenta", 0, "cash")], [["a1", "0"]])).toEqual([
       "ZERO_VALUE_ASSET",
     ]);
+  });
+});
+
+describe("collectWarnings — OVERSELL / OVER_TRANSFER from the ledger (#1443)", () => {
+  const jorge = asset(
+    "inv1",
+    "Amundi IS Core MSCI Europe IE-C",
+    0,
+    "investment",
+    "AE.PA",
+  );
+
+  function ledger(buys: string, sells: string): InvestmentOperation[] {
+    return [
+      {
+        assetId: "inv1",
+        currency: "EUR",
+        executedAt: "2026-01-01",
+        feesMinor: 0,
+        id: "buy",
+        kind: "buy",
+        pricePerUnit: "10",
+        units: buys,
+      },
+      {
+        assetId: "inv1",
+        currency: "EUR",
+        executedAt: "2026-02-01",
+        feesMinor: 0,
+        id: "sell",
+        kind: "sell",
+        pricePerUnit: "10",
+        units: sells,
+      },
+    ];
+  }
+
+  test("Jorge's 31.999 vs 32 is an overrideable OVERSELL", () => {
+    const warnings = collectWarnings([jorge], [], {
+      operationsByAssetId: new Map([["inv1", ledger("31.999", "32")]]),
+    });
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: "OVERSELL",
+        entityId: "inv1",
+        entityType: "asset",
+        severity: "overrideable",
+      }),
+    ]);
+    expect(warnings[0]?.message).toContain("Amundi IS Core MSCI Europe IE-C");
+  });
+
+  test("a persisted override silences it", () => {
+    expect(
+      collectWarnings([jorge], [{ code: "OVERSELL", entityId: "inv1" }], {
+        operationsByAssetId: new Map([["inv1", ledger("31.999", "32")]]),
+      }),
+    ).toEqual([]);
+  });
+
+  test("without an oversell the ledger adds nothing", () => {
+    expect(
+      collectWarnings([jorge], [], {
+        operationsByAssetId: new Map([["inv1", ledger("32", "31")]]),
+      }).map((warning) => warning.code),
+    ).toEqual([]);
+  });
+
+  test("an over-transfer is OVER_TRANSFER, not OVERSELL", () => {
+    const warnings = collectWarnings([jorge], [], {
+      operationsByAssetId: new Map([
+        [
+          "inv1",
+          [
+            {
+              assetId: "inv1",
+              currency: "EUR",
+              executedAt: "2026-01-01",
+              feesMinor: 0,
+              id: "buy",
+              kind: "buy",
+              pricePerUnit: "10",
+              units: "2",
+            },
+            {
+              assetId: "inv1",
+              currency: "EUR",
+              executedAt: "2026-02-01",
+              feesMinor: 0,
+              id: "out",
+              kind: "transfer_out",
+              pricePerUnit: "10",
+              transferId: "trf_1",
+              units: "5",
+            },
+          ],
+        ],
+      ]),
+    });
+
+    expect(warnings.map((warning) => warning.code)).toEqual(["OVER_TRANSFER"]);
   });
 });
