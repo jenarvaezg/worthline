@@ -19,12 +19,21 @@
 import { demoNowDate } from "@web/demo/demo-clock";
 import { runBootstrapHealthcheck, type WorthlineStore } from "@worthline/db";
 import type { LocalPersistenceStatus } from "@worthline/domain";
+import { headers } from "next/headers";
 import { after, connection } from "next/server";
 import { cache } from "react";
 
+import { perfEnd, perfStart, storeOpenLabel } from "./perf-log";
 import { openAuthorizedStore, type Principal, withAuthorizedStore } from "./principal";
 import { isReachable, readStoreTarget } from "./read-store-target";
 import type { StoreTarget } from "./store-resolver";
+
+/**
+ * First `openStore` in this process is the cold path (#1538): libSQL client
+ * init, first Turso handshake. Later opens in the same process are warm.
+ * Distinguishes "this page is slow" from "this lambda just woke up".
+ */
+let processHasOpenedStore = false;
 
 // Re-exported so request-scoped callers (pages, server actions) import both the
 // store opener and its type from this seam — never from `@worthline/db` directly,
@@ -138,9 +147,33 @@ async function requirePrincipal(target?: StoreTarget): Promise<Principal> {
   return resolved;
 }
 
+/**
+ * Pathname for the store-open label. Fail-open: unit tests and non-request
+ * callers have no header store, and an unknown internal header must not
+ * become the store-open duration. Prefer the explicit `x-pathname` (if a
+ * proxy stamps it) then Next/Vercel's `x-matched-path`.
+ */
+async function readPerfPathname(): Promise<string | undefined> {
+  try {
+    const headerList = await headers();
+    return headerList.get("x-pathname") ?? headerList.get("x-matched-path") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Open a store. Caller owns the lifecycle (must call `store.close()`). */
 export async function openStore(target?: StoreTarget): Promise<WorthlineStore> {
-  return openAuthorizedStore(await requirePrincipal(target));
+  const principal = await requirePrincipal(target);
+  const pathname = await readPerfPathname();
+  const startedAt = perfStart();
+  const label = storeOpenLabel(!processHasOpenedStore, pathname);
+  processHasOpenedStore = true;
+  try {
+    return await openAuthorizedStore(principal);
+  } finally {
+    perfEnd(label, startedAt);
+  }
 }
 
 /** Run a unit of work against a freshly opened store, always closing it after. */
@@ -156,8 +189,9 @@ export async function withStore<T>(
  * One libSQL connection per RSC request, closed after the response (incl.
  * Suspense) — the `after()` close policy of the request-scoped seam. It reaches
  * the connection through the same {@link openStore} path (single reachability
- * guard, single port) as `withStore`; only the close TIMING differs: `withStore`
- * closes inline in a `finally`, this defers to `after()` (#1025).
+ * guard, single port, `store-open` timing — #1538) as `withStore`; only the
+ * close TIMING differs: `withStore` closes inline in a `finally`, this defers
+ * to `after()` (#1025).
  */
 export const getRequestStore = cache(async (): Promise<WorthlineStore> => {
   const store = await openStore();
