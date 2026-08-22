@@ -63,6 +63,8 @@ export async function persistManualAssetCreation(
           adjustsPriorCurve: true,
           assetId: assetCommand.id,
           id: createStableId("anchor", `${assetCommand.id}_acquisition`, seed),
+          // #1437: first-class from birth — not just an id-suffix convention.
+          kind: "acquisition",
           valuationDate: acquisitionDate,
           valueMinor: acquisitionValueMinor,
         },

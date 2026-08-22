@@ -99,6 +99,12 @@ export interface AddValuationAnchorInput {
   /** True for a market appraisal (total truth), false for an improvement. */
   adjustsPriorCurve: boolean;
   source?: "manual" | "agent";
+  /**
+   * #1437: `'acquisition'` marks the anchor that starts the housing's history —
+   * it may be edited by name but never deleted. Null for a plain appraisal or
+   * improvement.
+   */
+  kind?: "acquisition";
 }
 
 /** A stored housing valuation anchor as read back from the store. */
@@ -106,6 +112,8 @@ export interface ValuationAnchorRecord extends HousingValuationAnchor {
   id: string;
   assetId: string;
   source: "manual" | "agent";
+  /** #1437: `'acquisition'` when this anchor starts the housing's history. */
+  kind: "acquisition" | null;
 }
 
 /** Fields that can be patched on an existing housing valuation anchor. */
@@ -286,6 +294,7 @@ function valuationRow(
     assetId: input.assetId,
     batchId: provenance?.batchId ?? null,
     id: input.id,
+    kind: input.kind ?? null,
     source: input.source ?? "manual",
     valuationDate: input.valuationDate,
     valueMinor: input.valueMinor,
@@ -357,6 +366,7 @@ async function readValuationAnchors(
     adjustsPriorCurve: row.adjustsPriorCurve === 1,
     assetId: row.assetId,
     id: row.id,
+    kind: row.kind ?? null,
     source: row.source,
     valuationDate: row.valuationDate,
     valueMinor: row.valueMinor,
@@ -379,6 +389,7 @@ async function readValuationAnchorById(
     adjustsPriorCurve: row.adjustsPriorCurve === 1,
     assetId: row.assetId,
     id: row.id,
+    kind: row.kind ?? null,
     source: row.source,
     valuationDate: row.valuationDate,
     valueMinor: row.valueMinor,

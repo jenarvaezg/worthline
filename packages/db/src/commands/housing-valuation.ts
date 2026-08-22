@@ -75,6 +75,16 @@ export async function executeDeleteValuationAnchorCommand(
   command: DeleteValuationAnchorCommand,
 ): Promise<CommandResult<{ changes: number }>> {
   const today = defaultToday(command.today);
+  // #1437: the acquisition anchor starts the housing's history — deleting it
+  // would silently amputate every snapshot before the next appraisal. It may be
+  // edited (date/value), never removed.
+  const anchor = await store.assets.readValuationAnchorById(command.anchorId);
+  if (anchor?.kind === "acquisition") {
+    return {
+      ok: false,
+      error: "El ancla de adquisición no se puede eliminar — edita su fecha o valor.",
+    };
+  }
   const changes = await store.command.deleteValuationAnchor(command.anchorId, {
     today,
   });

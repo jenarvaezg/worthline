@@ -210,6 +210,8 @@ export const assetValuations = sqliteTable(
     valueMinor: integer("value_minor").notNull(),
     valuationDate: text("valuation_date").notNull(),
     adjustsPriorCurve: integer("adjusts_prior_curve").notNull(),
+    /** #1437: `'acquisition'` marks the anchor that starts the housing's history. */
+    kind: text("kind").$type<"acquisition">(),
     source: text("source").$type<"manual" | "agent">().notNull().default("manual"),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),

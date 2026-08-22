@@ -41,6 +41,75 @@ async function grossAt(
     ?.grossAssets.amountMinor;
 }
 
+describe("acquisition anchor (#1437)", () => {
+  test("an anchor added with kind 'acquisition' reads back marked", async () => {
+    const store = await seedHousing();
+
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1_acquisition",
+        kind: "acquisition",
+        valuationDate: "2004-05-19",
+        valueMinor: 150_253_03,
+      },
+    });
+
+    expect((await store.assets.readValuationAnchors("piso"))[0]!.kind).toBe(
+      "acquisition",
+    );
+    expect((await store.assets.readValuationAnchorById("a1_acquisition"))!.kind).toBe(
+      "acquisition",
+    );
+    store.close();
+  });
+
+  test("anchors added without a kind read back unmarked", async () => {
+    const store = await seedHousing();
+
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1",
+        valuationDate: "2024-06-01",
+        valueMinor: 120_000_00,
+      },
+    });
+
+    expect((await store.assets.readValuationAnchors("piso"))[0]!.kind).toBeNull();
+    store.close();
+  });
+
+  test("delete rejects the acquisition anchor and leaves it in place", async () => {
+    const store = await seedHousing();
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a1_acquisition",
+        kind: "acquisition",
+        valuationDate: "2004-05-19",
+        valueMinor: 150_253_03,
+      },
+    });
+
+    const result = await executeDeleteValuationAnchorCommand(store, {
+      anchorId: "a1_acquisition",
+      today: TODAY,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("adquisición");
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
+    store.close();
+  });
+});
+
 describe("housing valuation commands", () => {
   test("add anchor via command generates a historical snapshot at the anchor date", async () => {
     const store = await seedHousing();

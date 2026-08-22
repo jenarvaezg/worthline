@@ -568,6 +568,30 @@ describe("deleteValuationAnchorAction", () => {
     store.close();
   });
 
+  test("rejects deleting the acquisition anchor (#1437)", async () => {
+    const store = await seedHousing();
+    await store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "piso",
+      id: "piso_acquisition",
+      kind: "acquisition",
+      valuationDate: "2004-05-19",
+      valueMinor: 150_253_03,
+    });
+
+    const url = await runAction(
+      deleteValuationAnchorAction,
+      form({ id: "piso", anchorId: "piso_acquisition" }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("error=");
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain("adquisición");
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
+
+    store.close();
+  });
+
   test("an unknown anchorId reports not-found without touching the existing anchor", async () => {
     const { store } = await seedWithAnchor();
 
