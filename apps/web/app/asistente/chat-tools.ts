@@ -40,7 +40,9 @@ import {
   type QuickAction,
   sourceHref,
 } from "@web/asistente/assistant-actions";
+import type { ValidatedAttachment } from "@web/asistente/attachment-chat";
 import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
+import { MAX_ATTACHMENT_FILE_NAME_CHARS } from "@web/asistente/attachment-types";
 import { buildBalanceHistoryProposal } from "@web/asistente/balance-history-proposals";
 import {
   buildCorrectionProposal,
@@ -107,6 +109,11 @@ import {
   buildStatementImportProposalFromDocument,
 } from "@web/asistente/statement-import-proposals";
 import { buildTransferProposal } from "@web/asistente/transfer-proposals";
+import { TOOL_PROMPT_BUDGET } from "@web/asistente/turn-prompt-budget";
+import {
+  extractedDocumentDetail,
+  typedDocumentCard,
+} from "@web/asistente/typed-attachment-prompt";
 import {
   NO_TYPED_BALANCE_SERIES,
   TYPED_BALANCE_SERIES_DOCUMENT_NAME,
@@ -255,6 +262,13 @@ export interface ChatToolsInput {
    * lane — a fixture or an eval that wants a reconcile must bring the document.
    */
   validatedDocuments?: readonly ExtractedDocument[];
+  /**
+   * The same documents, with the file names the DATOS ESTRUCTURADOS block uses
+   * (#1492). `get_extracted_document` looks up by `fileName` here; a name that is
+   * not in this list is refused, never invented. Write tools keep reading rows
+   * off {@link validatedDocuments}.
+   */
+  validatedAttachments?: readonly ValidatedAttachment[];
   /**
    * What this turn's own message turned out to hold, read by worthline itself (#1418).
    * A `read` series is what reopens the two debt-series lanes of
@@ -1936,6 +1950,51 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
           // Final trust boundary: only the typed, bounded, internal-href set renders.
           return { actions: parseQuickActions(built) satisfies QuickAction[] };
         }),
+    }),
+
+    get_extracted_document: tool({
+      description:
+        "Lee el detalle entero de un adjunto validado en este turno, por su fileName. " +
+        "Úsala cuando los DATOS ESTRUCTURADOS traigan solo el RESUMEN, o para citar una " +
+        "fila concreta de un extracto. Si el fichero no está entre los 3 en contexto, " +
+        "la app rechaza.",
+      inputSchema: jsonSchema<{ fileName: string }>({
+        additionalProperties: false,
+        properties: {
+          fileName: { maxLength: MAX_ATTACHMENT_FILE_NAME_CHARS, type: "string" },
+        },
+        required: ["fileName"],
+        type: "object",
+      }),
+      execute: (args) => {
+        const fileName = args.fileName.trim();
+        const match = (input.validatedAttachments ?? []).find(
+          (attachment) => attachment.fileName === fileName,
+        );
+        if (!match) {
+          return {
+            error: "not_in_context",
+            message:
+              "Ese fichero no está en el contexto de este turno. Solo puedes pedir " +
+              "uno de los adjuntos validados que ves en DATOS ESTRUCTURADOS.",
+          };
+        }
+        const card = typedDocumentCard(match.fileName, match.document, false);
+        const detail = extractedDocumentDetail(match.document);
+        if (
+          detail !== null &&
+          JSON.stringify(detail).length > TOOL_PROMPT_BUDGET.totalChars
+        ) {
+          return {
+            card,
+            error: "too_large",
+            message:
+              "El detalle de este documento no cabe en una respuesta de tool. " +
+              "Usa la ficha; no pidas el detalle entero.",
+          };
+        }
+        return { card, detail };
+      },
     }),
 
     propose_statement_import: tool({

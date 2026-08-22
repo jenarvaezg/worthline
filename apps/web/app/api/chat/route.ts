@@ -3,6 +3,7 @@ import {
   hasUnstructuredEvidenceInHistory,
   isValidatedDocument,
   prepareAttachmentMessagesForModel,
+  validatedAttachmentsForTools,
   validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
 import { ATTACHMENT_EXTRACTION_LIMITS_V1 } from "@web/asistente/attachment-extraction-contract";
@@ -625,6 +626,8 @@ export async function POST(request: Request): Promise<Response> {
       // the same reason as the grounded ids: what grounds a write is what the model
       // sees, and since #1408 that differs per provider.
       validatedDocuments: validatedDocumentsForTools(history, currentPreview),
+      // Same list, with file names, for get_extracted_document (#1492).
+      validatedAttachments: validatedAttachmentsForTools(history, currentPreview),
       // The series the user typed this turn (#1418): it reopens the debt-history lanes
       // the gate closed, and it is what those lanes build from.
       typedBalanceSeries,
@@ -700,14 +703,11 @@ export async function POST(request: Request): Promise<Response> {
           prepareAttachmentMessagesForModel(
             fitted.messages,
             currentPreview,
-            // THIS turn's unvalidated reading is rendered here, against the budget of
-            // the model that is about to read it (#1419) — the whole workbook where
-            // the primary's million-token window allows it, a sample where the
-            // fallback's per-minute allowance does not. It is charged to the
-            // attachment lane's share because that is what it is: the freshest
-            // document of the lane whose older cards `fitHistoryToBudget` has just
-            // dropped to the same ceiling.
-            unstructuredAttachment?.fitTo(budget.attachmentChars) ?? null,
+            // The reading, not the already-fitted block: remaining budget after the
+            // typed cards is computed inside, so a historical series and this turn's
+            // notebook share one ceiling instead of stacking (#1492, #1419).
+            unstructuredAttachment ?? null,
+            budget.attachmentChars,
           ),
         ),
         tools: buildTools(fitted.messages),
