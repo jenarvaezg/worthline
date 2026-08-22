@@ -35,7 +35,9 @@ bundler-safe and identical across vitest, `next dev`, and `next build`.
 
 ## Consequences
 
-- Fresh databases always get the full target schema in one step.
+- Fresh databases always get the full target schema in one step. Once `schemaSql`
+  is applied on a version-0 database, `SCHEMA_VERSION` is sealed and the ladder
+  is not walked (#1464).
 - Existing databases are evolved forward through explicit, versioned steps.
 - `schemaSql` must be kept in sync with `schema.ts` — drift means fresh databases
   will be missing columns that the forward migrations then try to add.

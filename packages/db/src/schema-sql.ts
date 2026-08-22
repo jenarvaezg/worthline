@@ -173,6 +173,7 @@ CREATE TABLE \`investment_assets\` (
 	\`provider_symbol\` text,
 	\`manual_price_per_unit\` text,
 	\`manual_priced_at\` text,
+	\`benchmark_distributing\` integer DEFAULT 0 NOT NULL,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
@@ -226,6 +227,13 @@ CREATE TABLE \`audit_log\` (
 );
 --> statement-breakpoint
 CREATE INDEX \`audit_log_entity_created_idx\` ON \`audit_log\` (\`entity_id\`,\`created_at\`);--> statement-breakpoint
+CREATE TABLE \`warning_overrides\` (
+	\`code\` text NOT NULL,
+	\`entity_id\` text NOT NULL,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	PRIMARY KEY(\`code\`, \`entity_id\`)
+);
+--> statement-breakpoint
 CREATE TABLE \`snapshot_holdings\` (
 	\`id\` text PRIMARY KEY NOT NULL,
 	\`snapshot_id\` text NOT NULL,

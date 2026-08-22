@@ -160,7 +160,9 @@ test("demo: landing → familia → blocked edit → switch persona", async ({ p
   // begun streaming, so the browser is already on `/app` for a moment and only then
   // moves. `toHaveURL` polls, so waiting for the settled URL is deterministic while
   // waiting for the intermediate one is a race — one this test won on every machine
-  // that was fast enough, and lost in CI (#1389).
+  // that was fast enough, and lost in CI (#1389). The remaining default window
+  // is enough because #1464 kills the cold `migrate()` peak in the store, not
+  // by widening this expect.
   await expect(page).toHaveURL(/\/empezar$/);
   // The point of the entry, which the URL alone no longer states: it leaves the login
   // wall behind and lands inside the app, on its first page rather than on /login.
