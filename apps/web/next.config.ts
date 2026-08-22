@@ -4,9 +4,7 @@ import { securityHeaders } from "./app/security-headers";
 const nextConfig: NextConfig = {
   // Instant Navigations (#1229): Cache Components + Partial Prefetching so each
   // workspace tab paints its prefetched shell (chrome + Suspense skeleton) on
-  // soft click without a server round-trip. Replaces the Router Cache
-  // `staleTimes.dynamic` knob from #1191 — that model no longer applies once
-  // cacheComponents owns the caching contract.
+  // soft click without a server round-trip.
   cacheComponents: true,
   partialPrefetching: true,
   devIndicators: false,
@@ -25,6 +23,13 @@ const nextConfig: NextConfig = {
     ];
   },
   experimental: {
+    // Router Cache for dynamic navigations (#1531): a revisit inside this
+    // window is served from the client cache with no server round-trip.
+    // #1229 retired this believing `cacheComponents` had replaced it — false,
+    // the repo ships zero `"use cache"` directives. Rationale, measurement and
+    // long-term replacement (`"use cache"` + `cacheLife`): #1531;
+    // `app/router-cache.test.ts` guards against silent removal.
+    staleTimes: { dynamic: 30 },
     // NOTE: `viewTransition` is deliberately absent (#1379). The flag only
     // resolves a React build that EXPORTS `<ViewTransition>`; it does not add a
     // boundary, and without one React never sets `shouldStartViewTransition`, so
