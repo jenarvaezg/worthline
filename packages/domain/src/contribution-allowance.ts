@@ -1,6 +1,7 @@
 import { buyCashOutMinor } from "./investment-operation-money";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
+import { isDeclaredOpening } from "./operation-flow";
 
 /**
  * Cupo anual de aportación (#1427) — a ceiling on what may enter a set of
@@ -26,9 +27,10 @@ export interface ContributionAllowance {
   /** The ceiling for one calendar year, in minor units. User data. */
   annualCapMinor: number;
   /**
-   * The holdings whose real entries consume this allowance. A set, not one
-   * holding: a tax cap is the contributor's and aggregates every plan he holds,
-   * so the second plan needs no migration.
+   * The holdings whose real entries consume this allowance. Persisted as a
+   * last-saved snapshot; usage always re-derives from instrument `pension_plan`
+   * (#1567). A set, not one holding: a tax cap is the contributor's and aggregates
+   * every plan he holds, so the second plan needs no migration.
    */
   holdingIds: string[];
 }
@@ -97,6 +99,10 @@ export function computeContributionAllowanceUsage(
     // manager is not a contribution, and counting it would eat a whole year's
     // ceiling on the day the capital merely changed hands.
     if (operation.kind !== "buy") continue;
+    // An apertura is a buy that declares pre-existing wealth, not a contribution
+    // (#1567, #1504): counting it would eat the year's ceiling on the day the
+    // position merely entered the book.
+    if (isDeclaredOpening(operation)) continue;
     if (operation.executedAt.slice(0, 4) !== yearPrefix) continue;
     if (operation.currency !== currency) {
       skippedForeignCount += 1;
@@ -147,6 +153,6 @@ export function assertContributionAllowanceInput(input: {
     // A cupo with no destination counts nothing, and would print "0 € de 1.500 €"
     // — the counter lying downwards, which is the failure this feature exists to
     // avoid.
-    throw new Error("El cupo necesita al menos un activo destino.");
+    throw new Error("El cupo necesita al menos un plan de pensiones.");
   }
 }

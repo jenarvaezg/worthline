@@ -10,6 +10,7 @@ import {
   contributionAllowanceDestinationOptions,
   contributionAllowanceOperations,
   contributionAllowanceRowView,
+  withDerivedAllowanceDestinations,
 } from "./contribution-allowance-view";
 
 const allowance: ContributionAllowance = {
@@ -137,9 +138,39 @@ describe("contributionAllowanceRowView", () => {
 });
 
 describe("contributionAllowanceDestinationOptions", () => {
-  test("offers only holdings with an operation ledger", () => {
+  test("offers only pension plans, not every holding with a ledger (#1567)", () => {
     const assets = [
-      { id: "pp1", isPrimaryResidence: false, name: "PP", type: "investment" },
+      {
+        id: "pp1",
+        instrument: "pension_plan",
+        isPrimaryResidence: false,
+        name: "PP",
+        type: "investment",
+      },
+      {
+        id: "etf",
+        instrument: "etf",
+        isPrimaryResidence: false,
+        name: "World",
+        type: "investment",
+      },
+      { id: "cc", isPrimaryResidence: false, name: "Cuenta", type: "cash" },
+    ] as unknown as ManualAsset[];
+
+    expect(contributionAllowanceDestinationOptions(assets).map((a) => a.id)).toEqual([
+      "pp1",
+    ]);
+  });
+
+  test("offers only pension plans with an operation ledger", () => {
+    const assets = [
+      {
+        id: "pp1",
+        instrument: "pension_plan",
+        isPrimaryResidence: false,
+        name: "PP",
+        type: "investment",
+      },
       { id: "cc", isPrimaryResidence: false, name: "Cuenta", type: "cash" },
       { id: "piso", isPrimaryResidence: false, name: "Piso", type: "real_estate" },
     ] as unknown as ManualAsset[];
@@ -161,6 +192,72 @@ describe("contributionAllowanceDestinationOptions", () => {
     ] as unknown as ManualAsset[];
 
     expect(contributionAllowanceDestinationOptions(assets)).toEqual([]);
+  });
+});
+
+describe("withDerivedAllowanceDestinations — el instrumento manda, no el join (#1567)", () => {
+  const pp = (id: string) =>
+    ({
+      id,
+      instrument: "pension_plan",
+      isPrimaryResidence: false,
+      name: id,
+      type: "investment",
+    }) as unknown as ManualAsset;
+
+  test("un plan nuevo cuenta aunque el cupo se guardara sin él", () => {
+    expect(
+      withDerivedAllowanceDestinations(allowance, [
+        pp("pp1"),
+        pp("pp-nuevo"),
+        {
+          id: "etf",
+          instrument: "etf",
+          isPrimaryResidence: false,
+          name: "World",
+          type: "investment",
+        } as unknown as ManualAsset,
+      ]).holdingIds,
+    ).toEqual(["pp1", "pp-nuevo"]);
+  });
+
+  test("un ETF marcado en el snapshot deja de contar si sigue vivo", () => {
+    expect(
+      withDerivedAllowanceDestinations({ ...allowance, holdingIds: ["pp1", "etf"] }, [
+        pp("pp1"),
+        {
+          id: "etf",
+          instrument: "etf",
+          isPrimaryResidence: false,
+          name: "World",
+          type: "investment",
+        } as unknown as ManualAsset,
+      ]).holdingIds,
+    ).toEqual(["pp1"]);
+  });
+
+  test("un plan en la papelera sigue contando si es un PP (#1509)", () => {
+    expect(
+      withDerivedAllowanceDestinations(allowance, [pp("pp1"), pp("borrado")]).holdingIds,
+    ).toEqual(["pp1", "borrado"]);
+  });
+
+  test("un ETF en la papelera no cuenta, aunque el snapshot lo marcara (#1567)", () => {
+    expect(
+      withDerivedAllowanceDestinations(
+        { ...allowance, holdingIds: ["pp1", "etf-borrado"] },
+        [
+          pp("pp1"),
+          {
+            id: "etf-borrado",
+            instrument: "etf",
+            isPrimaryResidence: false,
+            name: "World",
+            type: "investment",
+          } as unknown as ManualAsset,
+        ],
+      ).holdingIds,
+    ).toEqual(["pp1"]);
   });
 });
 

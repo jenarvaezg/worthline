@@ -47,16 +47,28 @@ export function isValueUpdateEligible(asset: ManualAsset): boolean {
  * Two holdings are excluded and both would count zero if they were not: a
  * stored-value holding (its contributions are folded into a balance) and a
  * connected-source holding, which is `derived` from its **positions**, not from
- * operations (ADR 0014/0016). The single seam the annual contribution allowance
- * reads (#1427, ADR 0080) — the form to decide what it may offer, the store to
- * decide what it may accept — so a picker and its guard cannot disagree about
- * which holdings can be counted.
+ * operations (ADR 0014/0016). The annual contribution allowance (#1567) further
+ * restricts destinations to `pension_plan` via `consumesContributionAllowance`.
  */
 export function keepsAnOperationLedger(asset: ManualAsset): boolean {
   if (asset.connectedSourceId != null) {
     return false;
   }
   return valuationMethodOfAsset(asset) === "derived";
+}
+
+/**
+ * Whether a holding's real entries consume a **contribution allowance** (#1567).
+ *
+ * The cupo counts aportaciones to **pension plans**, not every investment with a
+ * ledger. A fund can keep operations and still not be a destination — marking one
+ * by hand was the selector #1483 had to reword, and the palanca that let an
+ * apertura eat the year's ceiling (#1504). Instrument `pension_plan` is the native
+ * type; the ledger predicate stays as the inner gate so a connected-source plan
+ * (no operations) cannot print "0 € de 1.500 €".
+ */
+export function consumesContributionAllowance(asset: ManualAsset): boolean {
+  return keepsAnOperationLedger(asset) && instrumentOfAsset(asset) === "pension_plan";
 }
 
 /**

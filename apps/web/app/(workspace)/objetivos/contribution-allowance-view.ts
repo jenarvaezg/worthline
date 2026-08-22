@@ -1,11 +1,13 @@
-import type {
-  ContributionAllowance,
-  ContributionAllowanceEntry,
-  ContributionAllowanceUsage,
-  InvestmentOperation,
-  ManualAsset,
+import {
+  type AssetType,
+  type ContributionAllowance,
+  type ContributionAllowanceEntry,
+  type ContributionAllowanceUsage,
+  consumesContributionAllowance,
+  type Instrument,
+  type InvestmentOperation,
+  type ManualAsset,
 } from "@worthline/domain";
-import { keepsAnOperationLedger } from "@worthline/domain";
 
 /**
  * View model for the annual contribution allowance panel (#1427).
@@ -138,16 +140,63 @@ export function contributionAllowanceOperations(input: {
 }
 
 /**
- * The holdings a cupo may point at: those with an **operation ledger**
- * (`keepsAnOperationLedger`, the same predicate the store enforces at the door).
- *
- * A cupo counts real entries, and a stored-value or connected-source holding
- * records none it could count — a cupo over one would read "0 € de 1.500 €", the
- * counter lying downwards, which is exactly the failure this feature exists to
- * prevent. Not offered at all, rather than offered and wrong.
+ * The holdings whose real entries consume a cupo: **pension plans** with an
+ * operation ledger (`consumesContributionAllowance`). Derived from the instrument,
+ * never ticked by hand (#1567) — a fund with a ledger is not a destination, and a
+ * plan given of alta after the cupo was saved still counts.
  */
 export function contributionAllowanceDestinationOptions(
   assets: readonly ManualAsset[],
 ): ManualAsset[] {
-  return assets.filter(keepsAnOperationLedger);
+  return assets.filter(consumesContributionAllowance);
+}
+
+/**
+ * A trashed asset as a holding the cupo overlay can classify (#1567).
+ *
+ * TrashView now carries the instrument fields; the rest of ManualAsset is dummy
+ * because `consumesContributionAllowance` does not read value, rung or ownership.
+ */
+export function trashAssetToHolding(row: {
+  connectedSourceId?: string | null;
+  id: string;
+  instrument?: Instrument | null;
+  isPrimaryResidence?: number;
+  name: string;
+  type?: AssetType;
+}): ManualAsset {
+  return {
+    currency: "EUR",
+    currentValue: { amountMinor: 0, currency: "EUR" },
+    id: row.id,
+    isPrimaryResidence: row.isPrimaryResidence === 1,
+    liquidityTier: "term-locked",
+    name: row.name,
+    ownership: [],
+    type: row.type ?? "manual",
+    ...(row.instrument != null ? { instrument: row.instrument } : {}),
+    ...(row.connectedSourceId != null
+      ? { connectedSourceId: row.connectedSourceId }
+      : {}),
+  };
+}
+
+/**
+ * Overlay the instrument-derived destination set onto a stored allowance (#1567).
+ *
+ * Every `pension_plan` with a ledger in `holdings` consumes the cupo — live or
+ * in the papelera (#1509). A fund that was ticked in an old snapshot does not,
+ * even if it has since been sent to the trash. Pass live + trash holdings; the
+ * stored join table is not consulted.
+ */
+export function withDerivedAllowanceDestinations(
+  allowance: ContributionAllowance,
+  holdings: readonly ManualAsset[],
+): ContributionAllowance {
+  return {
+    ...allowance,
+    holdingIds: contributionAllowanceDestinationOptions(holdings).map(
+      (holding) => holding.id,
+    ),
+  };
 }

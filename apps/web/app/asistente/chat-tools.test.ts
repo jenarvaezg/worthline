@@ -2805,6 +2805,87 @@ describe("createChatTools · the instrument inventory in ONE read (#1346)", () =
   );
 });
 
+describe("createChatTools · get_extracted_document (#1492)", () => {
+  const ledger = extractedDocumentSchema.parse({
+    documentType: "broker_transactions",
+    transactions: [
+      {
+        amount: "562.44",
+        currency: "EUR",
+        date: "2026-02-12",
+        feesMinor: 100,
+        isin: "IE00B5BMR087",
+        kind: "buy",
+        name: "ISHARES CORE S&P 500",
+        orderId: "DEG-ROW-XYZ",
+        pricePerUnit: "187.48",
+        units: "3",
+      },
+    ],
+    warnings: [],
+  });
+
+  function toolsFor(
+    attachments: NonNullable<
+      Parameters<typeof createChatTools>[0]["validatedAttachments"]
+    > = [{ document: ledger, fileName: "Transactions.xlsx" }],
+  ) {
+    return createChatTools({
+      asOf: AS_OF,
+      runWithStore: async () => {
+        throw new Error("get_extracted_document does not open the store");
+      },
+      validatedAttachments: attachments,
+      validatedDocuments: attachments.map((attachment) => attachment.document),
+    });
+  }
+
+  it("returns the compact rows of a fileName that is in context", async () => {
+    const result = (await toolsFor()["get_extracted_document"]?.execute?.(
+      { fileName: "Transactions.xlsx" },
+      toolCallContext(),
+    )) as {
+      card: { n: number };
+      detail: { columns: string[]; rows: unknown[][] };
+    };
+    expect(result.card.n).toBe(1);
+    expect(result.detail.columns).toContain("orderId");
+    expect(result.detail.rows[0]).toContain("DEG-ROW-XYZ");
+  });
+
+  it("refuses a fileName that is not among the documents in context", async () => {
+    const result = (await toolsFor()["get_extracted_document"]?.execute?.(
+      { fileName: "otro.xlsx" },
+      toolCallContext(),
+    )) as { error: string };
+    expect(result.error).toBe("not_in_context");
+    expect(JSON.stringify(result)).not.toContain("DEG-ROW-XYZ");
+  });
+
+  it("refuses too_large when the compact detail exceeds 80 000 characters", async () => {
+    const bulky = extractedDocumentSchema.parse({
+      documentType: "positions",
+      positions: Array.from({ length: 500 }, (_, index) => ({
+        currency: "EUR",
+        marketValueEur: 1,
+        name: `${String(index).padStart(3, "0")}${"N".repeat(237)}`,
+      })),
+      warnings: [],
+    });
+    const result = (await toolsFor([{ document: bulky, fileName: "posiciones.csv" }])[
+      "get_extracted_document"
+    ]?.execute?.({ fileName: "posiciones.csv" }, toolCallContext())) as {
+      card: { n: number };
+      error: string;
+      detail?: unknown;
+    };
+    expect(result.error).toBe("too_large");
+    expect(result.card.n).toBe(500);
+    expect(result.detail).toBeUndefined();
+    expect(JSON.stringify(result).length).toBeLessThan(80_000);
+  });
+});
+
 /** Execute a tool tolerating a builder that throws on fixture-empty args. */
 async function callToolSafely(
   tools: ReturnType<typeof createChatTools>,
