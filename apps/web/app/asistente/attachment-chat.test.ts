@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
 
@@ -1008,6 +1009,19 @@ describe("attachment chat context", () => {
 });
 
 describe("typed attachment prompt budget (#1492)", () => {
+  test("stays importable from the client assistant layer", () => {
+    // Root layout mounts the assistant on every page, including `/`. Pulling
+    // `turn-prompt-budget` into this module pulls `chat-tools` → `@worthline/db`
+    // → `node:module`, and Turbopack refuses to write the `/page` client chunk.
+    const source = readFileSync(new URL("./attachment-chat.ts", import.meta.url), "utf8");
+    const imports = source
+      .split("\n")
+      .filter((line) => /^\s*import\s/.test(line))
+      .join("\n");
+    expect(imports).not.toMatch(
+      /turn-prompt-budget|chat-tools|@worthline\/db|node:module/,
+    );
+  });
   function isoDay(offset: number): string {
     return new Date(Date.UTC(2020, 0, 1 + offset)).toISOString().slice(0, 10);
   }

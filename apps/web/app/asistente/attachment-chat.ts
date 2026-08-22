@@ -11,10 +11,18 @@ import {
   UNSTRUCTURED_SPREADSHEET_MESSAGE,
   UNSTRUCTURED_VISION_MESSAGE,
 } from "@web/asistente/attachment-types";
-import { MAX_ATTACHMENT_CHARS } from "@web/asistente/turn-prompt-budget";
 import { typedPromptDocuments } from "@web/asistente/typed-attachment-prompt";
 import type { UIMessage } from "ai";
 import { z } from "zod";
+
+/**
+ * Wide render when the caller has no provider. Same figure as the
+ * `MAX_ATTACHMENT_CHARS` ceiling in `turn-prompt-budget.ts`, kept HERE so this
+ * module stays importable from the client assistant layer: that file imports the
+ * turn floor, which imports the chat tools, which import the db client
+ * (`node:module`) — a chain Turbopack cannot put on `/page`.
+ */
+const DEFAULT_ATTACHMENT_CHARS = 256_000;
 
 const fileNameSchema = z.string().trim().min(1).max(MAX_ATTACHMENT_FILE_NAME_CHARS);
 
@@ -562,13 +570,13 @@ export function messageWithUnstructuredEvidence(
  * `attachmentChars` is the same share `turnPromptBudget` already gives the
  * notebook (#1419, #1492). One ceiling for every attachment block of the turn
  * (typed + unstructured + verdict). Callers that do not know the provider
- * (unit tests) get the wide render ({@link MAX_ATTACHMENT_CHARS}).
+ * (unit tests) get the wide render ({@link DEFAULT_ATTACHMENT_CHARS}).
  */
 export function prepareAttachmentMessagesForModel(
   messages: UIMessage[],
   currentPreview?: AttachmentPreviewData | null,
   unstructured?: UnstructuredPromptInput | null,
-  attachmentChars: number = MAX_ATTACHMENT_CHARS,
+  attachmentChars: number = DEFAULT_ATTACHMENT_CHARS,
 ): UIMessage[] {
   const stripped = messages
     .map((message) => ({

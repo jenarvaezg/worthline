@@ -91,7 +91,7 @@ const MAX_PROSE_CHARS = 200_000;
 /** One structured positions card, so an attachment turn is never born starved. */
 const MIN_ATTACHMENT_CHARS = 16_000;
 /** What attachment history was already allowed to reach before #1408 — now shrunk to, never refused at. */
-export const MAX_ATTACHMENT_CHARS = 256_000;
+const MAX_ATTACHMENT_CHARS = 256_000;
 /**
  * How the margin left after the floor and the tools is split between the two
  * client-written budgets. Prose is the smaller share because an attachment card is
