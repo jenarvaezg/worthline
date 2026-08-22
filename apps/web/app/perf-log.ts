@@ -1,7 +1,9 @@
 /**
- * Structured timing logs (#448). The store seam and the two pages that open a
- * store by hand bracket their store work with `perfStart()` / `perfEnd()`, which
- * emits one concise line per unit of work:
+ * Structured timing logs (#448, #1538). The store seam brackets every open
+ * (`openStore` / `getRequestStore` → `store-open` / `store-open:cold`, with the
+ * request path when known — `store-open:/historico`; `withAuthorizedStore` →
+ * `store`) and the two pages that wrap their own work (`home-shell`, `dashboard`)
+ * with `perfStart()` / `perfEnd()`, which emits one concise line per unit of work:
  *
  *   [perf] <label> dur=<ms>ms
  *
@@ -25,4 +27,14 @@ export function perfStart(): number {
 export function perfEnd(label: string, startedAt: number): void {
   if (SILENT) return;
   console.log(`[perf] ${label} dur=${Math.round(performance.now() - startedAt)}ms`);
+}
+
+/**
+ * Page store-open label (#1538). Cold = first `openStore` in this process.
+ * When the request path is known it is appended so each route is greppable
+ * (`store-open:/objetivos`), the same role `home-shell` / `dashboard` play.
+ */
+export function storeOpenLabel(isCold: boolean, pathname?: string | null): string {
+  const base = isCold ? "store-open:cold" : "store-open";
+  return pathname ? `${base}:${pathname}` : base;
 }
