@@ -50,6 +50,7 @@ import {
   type AgentViewHoldingsBlock,
   AgentViewHttpError,
   type AgentViewLiquidityRung,
+  type AgentViewManagedPortfolioSummary,
   type AgentViewMoney,
   type AgentViewOperationSummary,
   type AgentViewOwnershipShare,
@@ -219,6 +220,7 @@ export async function buildFinancialContext(
     ),
     links: buildLinks(scoped.scopeId),
     liquidityBreakdown: buildLiquidityBreakdown(figuresInput).map(toLiquidityRung),
+    managedPortfolios: await buildManagedPortfolios(store, holdingSummaries),
     passiveIncome: await buildScopePassiveIncome({
       store,
       workspace,
@@ -443,6 +445,56 @@ async function buildConnectedSources(
   );
 
   return summaries.filter((source) => source.projectedHoldings.length > 0);
+}
+
+/**
+ * Managed portfolios (ADR 0085, #1547) of this scope, named with the members
+ * the scope can see. A portfolio is listed only when at least one of its
+ * members is visible here — same visibility rule as connected sources — and
+ * membership rides the ONE read the caller already made for exclusivity.
+ */
+async function buildManagedPortfolios(
+  store: AgentViewReadStore,
+  holdingSummaries: AgentViewHoldingSummary[],
+): Promise<AgentViewManagedPortfolioSummary[]> {
+  const labelByPublicId = new Map(
+    holdingSummaries.map((holding) => [holding.id, holding.label]),
+  );
+  const publicIdRows = await store.readPublicIds();
+  const holdingPublicIds = publicIdMap(publicIdRows, "holding");
+  const portfolioPublicIds = publicIdMap(publicIdRows, "managed_portfolio");
+
+  const portfolios = await store.readManagedPortfolios();
+
+  const summaries: AgentViewManagedPortfolioSummary[] = [];
+  for (const portfolio of portfolios) {
+    const publicId = portfolioPublicIds.get(portfolio.id);
+    if (!publicId) continue;
+
+    const members = portfolio.holdingIds
+      .map((assetId) => holdingPublicIds.get(assetId))
+      .filter(
+        (memberId): memberId is string =>
+          memberId !== undefined && labelByPublicId.has(memberId),
+      )
+      .map((memberId) => ({
+        id: memberId,
+        label: labelByPublicId.get(memberId) ?? "",
+        object: "holding" as const,
+      }));
+
+    if (members.length === 0) continue;
+
+    summaries.push({
+      id: publicId,
+      label: portfolio.name,
+      object: "managed_portfolio",
+      provider: portfolio.provider,
+      members,
+    });
+  }
+
+  return summaries.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function toHoldingsBlock(

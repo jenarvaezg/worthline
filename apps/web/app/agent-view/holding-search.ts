@@ -27,11 +27,13 @@ import { connectedSourceByAssetId } from "./connected-source-provenance";
 import {
   type AgentViewHoldingDirection,
   type AgentViewHoldingMatch,
+  type AgentViewHoldingPortfolioMembership,
   type AgentViewHoldingProvenance,
   type AgentViewHoldingSearchPage,
   AgentViewHttpError,
 } from "./contract";
 import { resolveHoldingIdentity } from "./holding-identity";
+import { managedPortfoliosByAssetId } from "./managed-portfolio-membership";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -150,9 +152,14 @@ export async function buildHoldingSearch(
         a.holding.internalId.localeCompare(b.holding.internalId),
     );
 
-  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const publicIdRows = await store.readPublicIds();
+  const holdingPublicIds = publicIdMap(publicIdRows, "holding");
   const provenanceByAssetId = connectedSourceByAssetId(
     await store.readConnectedSources(),
+  );
+  const portfolioByAssetId = managedPortfoliosByAssetId(
+    await store.readManagedPortfolios(),
+    publicIdMap(publicIdRows, "managed_portfolio"),
   );
 
   return {
@@ -165,6 +172,7 @@ export async function buildHoldingSearch(
           connectedSource: provenanceByAssetId.get(entry.holding.internalId),
           currency: workspace.baseCurrency,
           holding: entry.holding,
+          managedPortfolio: portfolioByAssetId.get(entry.holding.internalId),
           matchedOn: entry.matchedOn,
           operations: entry.holding.isInvestment
             ? await store.readOperations(entry.holding.internalId)
@@ -258,6 +266,7 @@ function toHoldingMatch(input: {
   publicId: string;
   currency: string;
   connectedSource: AgentViewHoldingProvenance | undefined;
+  managedPortfolio: AgentViewHoldingPortfolioMembership | undefined;
   operations: readonly InvestmentOperation[] | undefined;
 }): AgentViewHoldingMatch {
   const { holding } = input;
@@ -276,6 +285,7 @@ function toHoldingMatch(input: {
     matchedOn: input.matchedOn,
     object: "holding",
     ...(input.connectedSource ? { connectedSource: input.connectedSource } : {}),
+    ...(input.managedPortfolio ? { managedPortfolio: input.managedPortfolio } : {}),
   };
 }
 

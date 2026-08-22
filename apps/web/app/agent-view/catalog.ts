@@ -472,6 +472,9 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         "A holding materialized by a connected source carries connectedSource {adapter, label}: the SYNC owns " +
         "that value. Never declare, correct, or remove such a holding — it is refused; the repair path is " +
         "syncing or re-mapping the source in /ajustes/conexiones. No mark means the holding is hand-maintained. " +
+        "The managedPortfolios block names each cartera gestionada (ADR 0085) with its member holdings: a group " +
+        "of funds the owner reads as ONE balance in his manager's app — the members keep summing into net worth " +
+        "as themselves, so never add the portfolio's name as an extra row. " +
         "Every investment row also carries its instrument identity: isin, providerSymbol and units (net units " +
         'still held). So ANSWER AN ENUMERATION QUESTION FROM THIS READ — "list every fund with its ISIN and ' +
         'participaciones" is ONE call with holdingLimit raised (up to 100), NEVER one get_holding_detail per ' +
@@ -620,7 +623,9 @@ export function createAgentViewCatalog(): AgentViewCatalog {
         "it returns the public id (wl_hld_…) a correction or a baja needs, the label, direction, instrument, " +
         "current value, which field matched (label | providerSymbol | isin), the instrument identity when known " +
         "(isin, providerSymbol, units still held), and connectedSource {adapter, label} " +
-        "when a sync owns the holding (never write to those). Ranked by absolute value descending and capped " +
+        "when a sync owns the holding (never write to those). A member of a managed portfolio (cartera " +
+        "gestionada) also carries managedPortfolio {id (wl_prt_…), label} — these fondos son uno: group them " +
+        "and never treat the portfolio as a holding itself. Ranked by absolute value descending and capped " +
         `(default ${DEFAULT_HOLDING_MATCH_LIMIT}, max ${MAX_HOLDING_MATCH_LIMIT}); meta.truncated says the cap ` +
         "dropped matches — narrow the query rather than guessing. An empty query is a 422. Trashed holdings are " +
         "NOT searched (they live in get_trash_summary). Reads are side-effect-free.",
@@ -647,7 +652,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_holding_detail: {
       description:
-        "Get one holding's full detail by its public ID: value, ownership, instrument, its identity (isin, providerSymbol, units still held), valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). Missing or unsupported facts are flagged in the quality summary, never guessed. This is a ONE-holding read: for a LIST (every fund, every ISIN, every units count) use get_financial_context with holdingLimit raised, or find_holdings — never a call per holding.",
+        "Get one holding's full detail by its public ID: value, ownership, instrument, its identity (isin, providerSymbol, units still held), valuation method, liquidity tier, an operation summary (investments), returns, exposure profile, vsBenchmark (TWR vs tracked index when mapped), and calculation facts — valuation anchors (appreciating assets), the amortization plan with rate revisions and early repayments (amortized liabilities), or balance anchors with interpolation semantics (anchored liabilities). A member of a managed portfolio (cartera gestionada) also carries managedPortfolio {id, label}. Missing or unsupported facts are flagged in the quality summary, never guessed. This is a ONE-holding read: for a LIST (every fund, every ISIN, every units count) use get_financial_context with holdingLimit raised, or find_holdings — never a call per holding.",
       inputSchema: {
         additionalProperties: false,
         properties: {

@@ -980,6 +980,47 @@ export const goalHoldings = sqliteTable(
   (table) => [primaryKey({ columns: [table.goalId, table.assetId] })],
 );
 
+/**
+ * A managed portfolio (ADR 0085, #1547) — a grouping entity, never a holding.
+ * Only what somebody typed lives here (name, optional provider); the value is
+ * derived from its members on read, and the reconciliation witness arrives in
+ * S4. The engine, snapshots and ripples are not touched by this table.
+ */
+export const managedPortfolios = sqliteTable(
+  "managed_portfolios",
+  {
+    id: text("id").primaryKey(),
+    scopeId: text("scope_id").notNull(),
+    name: text("name").notNull(),
+    provider: text("provider"),
+    createdAt: timestamp("created_at"),
+    updatedAt: timestamp("updated_at"),
+  },
+  (table) => [index("managed_portfolios_scope_idx").on(table.scopeId, table.id)],
+);
+
+/**
+ * Membership of a managed portfolio (#1547). Unlike goals/allowances, membership
+ * is EXCLUSIVE — a position lives physically inside one portfolio, so the join
+ * carries a UNIQUE index on the holding itself; overlap would be a data error,
+ * not a legitimate second view. Members keep summing into net worth untouched.
+ */
+export const managedPortfolioHoldings = sqliteTable(
+  "managed_portfolio_holdings",
+  {
+    portfolioId: text("portfolio_id")
+      .notNull()
+      .references(() => managedPortfolios.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.portfolioId, table.assetId] }),
+    uniqueIndex("managed_portfolio_holdings_asset_unique").on(table.assetId),
+  ],
+);
+
 export type AssistantProposalKind =
   | "statement_import"
   | "balance_history_import"

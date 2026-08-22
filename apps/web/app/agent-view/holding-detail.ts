@@ -38,6 +38,7 @@ import {
   liabilityHoldingFacts,
 } from "./holding-facts";
 import { resolveHoldingIdentity } from "./holding-identity";
+import { managedPortfoliosByAssetId } from "./managed-portfolio-membership";
 import { summarizeOperations } from "./operation-summary";
 import { buildHoldingPayouts } from "./payouts";
 import { buildHoldingReturns } from "./returns";
@@ -122,6 +123,10 @@ export async function buildHoldingDetail(
     const investmentMeta = (await store.readInvestmentAssetsWithMeta()).find(
       (row) => row.id === internalHoldingId,
     );
+    const managedPortfolio = managedPortfoliosByAssetId(
+      await store.readManagedPortfolios(),
+      publicIdMap(await store.readPublicIds(), "managed_portfolio"),
+    ).get(internalHoldingId);
 
     return {
       // Same identity the compact context row and a `find_holdings` match carry
@@ -174,6 +179,7 @@ export async function buildHoldingDetail(
       }),
       ...(operationSummary ? { operationSummary } : {}),
       ...(sourceSummary ? { sourceSummary } : {}),
+      ...(managedPortfolio ? { managedPortfolio } : {}),
       ...factBlocks(facts),
     };
   }

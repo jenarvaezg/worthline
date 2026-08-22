@@ -506,4 +506,24 @@ CREATE TABLE \`contribution_allowance_holdings\` (
 	FOREIGN KEY (\`allowance_id\`) REFERENCES \`contribution_allowances\`(\`id\`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
 );
+--> statement-breakpoint
+CREATE TABLE \`managed_portfolios\` (
+	\`id\` text PRIMARY KEY NOT NULL,
+	\`scope_id\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`provider\` text,
+	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
+	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX \`managed_portfolios_scope_idx\` ON \`managed_portfolios\` (\`scope_id\`,\`id\`);--> statement-breakpoint
+CREATE TABLE \`managed_portfolio_holdings\` (
+	\`portfolio_id\` text NOT NULL,
+	\`asset_id\` text NOT NULL,
+	PRIMARY KEY(\`portfolio_id\`, \`asset_id\`),
+	FOREIGN KEY (\`portfolio_id\`) REFERENCES \`managed_portfolios\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (\`asset_id\`) REFERENCES \`assets\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX \`managed_portfolio_holdings_asset_unique\` ON \`managed_portfolio_holdings\` (\`asset_id\`);
 `;

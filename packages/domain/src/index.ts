@@ -750,6 +750,16 @@ export {
   selectInvestmentPrice,
 } from "./investment-valuation";
 export { LIQUIDITY_LADDER, LIQUIDITY_TIER_LABELS } from "./liquidity-ladder";
+export type {
+  ManagedPortfolio,
+  ManagedPortfolioFigures,
+  ManagedPortfolioMemberFigure,
+  ManagedPortfolioSlice,
+} from "./managed-portfolio";
+export {
+  assertManagedPortfolioInput,
+  computeManagedPortfolioFigures,
+} from "./managed-portfolio";
 export { isIsinShaped } from "./matching-keys";
 export type { CurrencyCode, MoneyMinor } from "./money";
 export {

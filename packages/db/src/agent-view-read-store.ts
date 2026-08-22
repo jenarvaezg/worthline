@@ -9,6 +9,7 @@ import type {
   Goal,
   InvestmentOperation,
   Liability,
+  ManagedPortfolio,
   ManualAsset,
   ManualValuePoint,
   NetWorthSnapshot,
@@ -214,6 +215,8 @@ export interface AgentViewReadStore {
   readTrashedHoldings: () => Promise<AgentViewTrashedHolding[]>;
   /** Goals (optionally for one scope) with their assigned holdings (#424). A pure read. */
   readGoals: (scopeId?: string) => Promise<Goal[]>;
+  /** Managed portfolios (optionally for one scope) with their memberships (ADR 0085). */
+  readManagedPortfolios: (scopeId?: string) => Promise<ManagedPortfolio[]>;
   /**
    * Investment-asset reference metadata — its identity (`isin`, `providerSymbol`)
    * and price provider (PRD #539). A pure read; used to key each holding to its
@@ -279,6 +282,7 @@ export interface AgentViewReadStoreDeps {
   } | null>;
   readWarningOverrides: () => Promise<WarningOverride[]>;
   readGoals: (scopeId?: string) => Promise<Goal[]>;
+  readManagedPortfolios: (scopeId?: string) => Promise<ManagedPortfolio[]>;
   readInvestmentAssetsWithMeta: () => Promise<InvestmentAssetMeta[]>;
   readPayouts: () => Promise<Payout[]>;
   readPayoutsForHolding: (holdingId: string) => Promise<Payout[]>;
@@ -303,6 +307,7 @@ export function createAgentViewReadStore(
     readCurveValuedHoldings: (dateKey) => deps.readCurveValuedHoldings(dateKey),
     readOperations: (assetId) => deps.readOperations(assetId),
     readGoals: (scopeId) => deps.readGoals(scopeId),
+    readManagedPortfolios: (scopeId) => deps.readManagedPortfolios(scopeId),
     readConnectedSources: async () => {
       const rows = await deps.listConnectedSources();
       return Promise.all(

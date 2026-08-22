@@ -171,6 +171,9 @@ const KEY_EXPORTS = [
   "computeContributionAllowanceUsage",
   "assertContributionAllowanceInput",
   "keepsAnOperationLedger",
+  // managed-portfolio (ADR 0085, #1547)
+  "computeManagedPortfolioFigures",
+  "assertManagedPortfolioInput",
   // monthly-savings / savings-coherence / fire-achievement (#425, #1449)
   "suggestMonthlySavingsCapacity",
   "measureMonthlySavings",

@@ -389,7 +389,7 @@ const connectedSourceSchema = z.object({
 });
 
 const publicIdSchema = z.object({
-  entityType: z.enum(["scope", "member", "member_group", "holding"]),
+  entityType: z.enum(["scope", "member", "member_group", "holding", "managed_portfolio"]),
   entityId: nonEmptyString,
   publicId: nonEmptyString,
 });
@@ -448,6 +448,14 @@ const contributionAllowanceSchema = z.object({
   holdingIds: z.array(nonEmptyString),
 });
 
+const managedPortfolioSchema = z.object({
+  id: nonEmptyString,
+  scopeId: nonEmptyString,
+  name: nonEmptyString,
+  provider: z.string().nullable(),
+  holdingIds: z.array(nonEmptyString),
+});
+
 const contributionReconciliationSchema = z.object({
   contributionId: nonEmptyString,
   occurrenceId: nonEmptyString,
@@ -486,6 +494,8 @@ const documentSchema = z.object({
   // Only the declared ceiling travels; what has been consumed is derived from the
   // operations that travel with it (ADR 0080), so it has nothing to export.
   contributionAllowances: z.array(contributionAllowanceSchema).default([]),
+  // ADR 0085: the grouping travels; its members travel as ordinary assets.
+  managedPortfolios: z.array(managedPortfolioSchema).default([]),
 });
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -663,6 +673,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
   collectReferentialIntegrityErrors(errors, doc, allAssets, allLiabilities);
   collectConnectedSourceErrors(errors, doc, allAssets);
   collectPayoutErrors(errors, doc, allAssets);
+  collectManagedPortfolioErrors(errors, doc, allAssets);
   collectDatabaseKeyErrors(errors, doc);
   collectPublicIdErrors(errors, doc);
   collectSnapshotReconciliationErrors(errors, doc);
@@ -672,6 +683,7 @@ function collectDomainErrors(doc: WorkspaceExport): string[] {
 
 const publicIdPrefixByEntityType: Record<ExportedPublicIdEntityType, string> = {
   holding: "wl_hld_",
+  managed_portfolio: "wl_prt_",
   member: "wl_mbr_",
   member_group: "wl_grp_",
   scope: "wl_scp_",
@@ -742,6 +754,9 @@ function publicIdTargetsForWorkspaceExport(doc: WorkspaceExport): string[] {
     ),
     ...[...doc.liabilities, ...doc.trash.liabilities].map((liability) =>
       publicIdTarget("holding", liability.id),
+    ),
+    ...doc.managedPortfolios.map((portfolio) =>
+      publicIdTarget("managed_portfolio", portfolio.id),
     ),
   ];
 }
@@ -1219,6 +1234,47 @@ function collectReferentialIntegrityErrors(
 
   // Snapshot holdings' holdingId is deliberately NOT checked: snapshot rows are
   // frozen history with no live foreign key into holdings (ADR 0008).
+}
+
+/**
+ * Managed portfolio memberships (ADR 0085) must point at assets that travel in
+ * the same file (the cash sibling included — it is an ordinary asset row), and
+ * exclusivity must hold inside the file: a holding may be a member of only one
+ * portfolio, mirroring the live UNIQUE index.
+ */
+function collectManagedPortfolioErrors(
+  errors: string[],
+  doc: WorkspaceExport,
+  allAssets: ExportedAsset[],
+): void {
+  const assetIds = new Set(allAssets.map((asset) => asset.id));
+
+  collectDuplicateIdErrors(
+    errors,
+    "cartera gestionada",
+    doc.managedPortfolios.map((portfolio) => portfolio.id),
+  );
+
+  const memberOwner = new Map<string, string>();
+  for (const portfolio of doc.managedPortfolios) {
+    for (const holdingId of portfolio.holdingIds) {
+      if (!assetIds.has(holdingId)) {
+        errors.push(
+          `La cartera "${portfolio.name}" (${portfolio.id}) referencia un activo inexistente: ${holdingId}.`,
+        );
+        continue;
+      }
+      const owner = memberOwner.get(holdingId);
+      if (owner !== undefined && owner !== portfolio.id) {
+        const other = doc.managedPortfolios.find((candidate) => candidate.id === owner);
+        errors.push(
+          `El activo ${holdingId} es miembro de dos carteras ("${other?.name ?? owner}" y "${portfolio.name}"); la membresía es exclusiva.`,
+        );
+      } else if (owner === undefined) {
+        memberOwner.set(holdingId, portfolio.id);
+      }
+    }
+  }
 }
 
 /**

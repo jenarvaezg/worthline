@@ -108,6 +108,18 @@ function makeDocumentB(): WorkspaceExport {
         ownership: [{ memberId: "b-m1", shareBps: 10000 }],
       },
       {
+        // The managed portfolio's auto-created cash sibling travels as the
+        // ordinary asset row it is (ADR 0085).
+        id: "b-pc",
+        name: "Efectivo Cartera B",
+        type: "cash",
+        currency: "EUR",
+        currentValue: eur(734),
+        liquidityTier: "cash",
+        isPrimaryResidence: false,
+        ownership: [{ memberId: "b-m1", shareBps: 10000 }],
+      },
+      {
         id: "b-a2",
         name: "Fondo B",
         type: "investment",
@@ -232,6 +244,15 @@ function makeDocumentB(): WorkspaceExport {
       },
     ],
     connectedSources: [],
+    managedPortfolios: [
+      {
+        id: "b-mp1",
+        scopeId: "household",
+        name: "Cartera B",
+        provider: "Indexa",
+        holdingIds: ["b-a2", "b-pc"],
+      },
+    ],
   });
 }
 
@@ -284,12 +305,25 @@ describe("importWorkspace", () => {
     ]);
 
     const assets = await store.assets.readAssets();
-    expect(assets.map((a) => a.id)).toEqual(["b-a1", "b-a2"]);
-    expect(assets[0]!.name).toBe("Cuenta B");
-    expect(assets[0]!.currentValue).toEqual(eur(200000));
+    expect(assets.map((a) => a.id)).toEqual(["b-a1", "b-a2", "b-pc"]);
+    const cuentaB = assets.find((a) => a.id === "b-a1")!;
+    expect(cuentaB.name).toBe("Cuenta B");
+    expect(cuentaB.currentValue).toEqual(eur(200000));
     // Investment value is derived from its operations and cached price
     // (2 units × 110 = 220.00 €), never stored (ADR 0006).
-    expect(assets[1]!.currentValue).toEqual(eur(22000));
+    const investment = assets.find((a) => a.id === "b-a2")!;
+    expect(investment.currentValue).toEqual(eur(22000));
+
+    // The managed portfolio grouping round-trips with its memberships intact.
+    expect(await store.managedPortfolios.readManagedPortfolios("household")).toEqual([
+      {
+        id: "b-mp1",
+        scopeId: "household",
+        name: "Cartera B",
+        provider: "Indexa",
+        holdingIds: ["b-a2", "b-pc"],
+      },
+    ]);
 
     const liabilities = await store.liabilities.readLiabilities();
     expect(liabilities.map((l) => l.id)).toEqual(["b-l1"]);
@@ -344,13 +378,13 @@ describe("importWorkspace", () => {
     });
 
     // Investment metadata round-trips for edit pages.
-    const investment = await store.assets.readInvestmentAssetById("b-a2");
-    expect(investment).not.toBeNull();
-    expect(investment!.unitSymbol).toBe("VWCE");
-    expect(investment!.isin).toBe("IE00BK5BQT80");
-    expect(investment!.priceProvider).toBe("stooq");
-    expect(investment!.providerSymbol).toBe("VWCE.DE");
-    expect(investment!.manualPricePerUnit).toBe("100");
+    const investmentRow = await store.assets.readInvestmentAssetById("b-a2");
+    expect(investmentRow).not.toBeNull();
+    expect(investmentRow!.unitSymbol).toBe("VWCE");
+    expect(investmentRow!.isin).toBe("IE00BK5BQT80");
+    expect(investmentRow!.priceProvider).toBe("stooq");
+    expect(investmentRow!.providerSymbol).toBe("VWCE.DE");
+    expect(investmentRow!.manualPricePerUnit).toBe("100");
 
     // Nothing of A remains anywhere.
     expect(assets.some((a) => a.id.startsWith("a-A"))).toBe(false);
@@ -436,7 +470,7 @@ describe("importWorkspace", () => {
     expect(audit[0]!.entityType).toBe("workspace");
     expect(audit[0]!.entityId).toBe("default");
     expect(audit[0]!.details).toMatchObject({
-      assets: 2,
+      assets: 3,
       liabilities: 1,
       members: 2,
       operations: 1,
@@ -454,7 +488,11 @@ describe("importWorkspace", () => {
     await store.workspace.importWorkspace(makeDocumentB());
 
     expect(await store.workspace.readWorkspace()).not.toBeNull();
-    expect((await store.assets.readAssets()).map((a) => a.id)).toEqual(["b-a1", "b-a2"]);
+    expect((await store.assets.readAssets()).map((a) => a.id)).toEqual([
+      "b-a1",
+      "b-a2",
+      "b-pc",
+    ]);
     expect((await store.readAuditLog()).map((e) => e.action)).toEqual([
       "import_workspace",
     ]);

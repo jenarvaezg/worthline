@@ -184,6 +184,34 @@ describe("buildHoldingSearch (uso real 2026-07-30)", () => {
     });
   });
 
+  test("names a member's managed portfolio (ADR 0085), with its own public id", async () => {
+    const store = await seed();
+    await createEmptyFund(store, { id: "f1", name: "Fondo Metal Europa" });
+    const created = await store.managedPortfolios.createManagedPortfolio({
+      cashOwnership: SOLO,
+      memberHoldingIds: ["f1"],
+      name: "Cartera Indexada Metal",
+      provider: "MyInvestor",
+      scopeId: "household",
+    });
+    const portfolioPublicId = (await store.agentView.readPublicIds()).find(
+      (row) => row.entityType === "managed_portfolio" && row.entityId === created.id,
+    )?.publicId;
+    if (!portfolioPublicId) throw new Error("no wl_prt_ id for the portfolio");
+
+    const page = await search(store, "metal");
+
+    expect(page.matches[0]?.managedPortfolio).toEqual({
+      id: portfolioPublicId,
+      label: "Cartera Indexada Metal",
+      object: "managed_portfolio",
+    });
+    // A non-member carries no membership mark at all.
+    await createCash(store, { id: "out", name: "Cuenta fuera", valueMinor: 100 });
+    const outside = await search(store, "fuera");
+    expect(outside.matches[0]?.managedPortfolio).toBeUndefined();
+  });
+
   test("finds a debt by name too, so «borra este préstamo» resolves", async () => {
     const store = await seed();
     await store.liabilities.createLiability({
