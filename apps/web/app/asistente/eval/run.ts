@@ -68,6 +68,7 @@ async function askAssistant(
       asOf,
       typedBalanceSeries: turn.typedBalanceSeries,
       unvalidatedEvidence: turn.unvalidatedEvidence,
+      validatedAttachments: turn.validatedAttachments,
       validatedDocuments: turn.validatedDocuments,
     }),
     stopWhen: stepCountIs(MAX_STEPS),

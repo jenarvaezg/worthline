@@ -25,6 +25,8 @@ import {
   isValidatedDocument,
   parseAttachmentPreviewData,
   prepareAttachmentMessagesForModel,
+  type ValidatedAttachment,
+  validatedAttachmentsForTools,
   validatedDocumentsForTools,
 } from "@web/asistente/attachment-chat";
 import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
@@ -218,6 +220,13 @@ export function validatedDocumentsFor(
   return validatedDocumentsForTools(history, reading?.preview ?? null);
 }
 
+export function validatedAttachmentsFor(
+  reading: AttachmentTurnReading | null,
+  history: UIMessage[] = [],
+): ValidatedAttachment[] {
+  return validatedAttachmentsForTools(history, reading?.preview ?? null);
+}
+
 /**
  * The turn as the model receives it: the question, plus whatever the attachment seam
  * made of its document. Composed by `prepareAttachmentMessagesForModel` — the route's
@@ -243,14 +252,12 @@ export async function buildTurnMessages(
     prepareAttachmentMessagesForModel(
       messages,
       reading?.preview ?? null,
-      // The candidate's OWN budget, as the route resolves it (#1419): a workbook is
-      // rendered against the model that will read it, so grading a narrow fallback on
-      // the primary's book — or the primary on the fallback's sample — measures a turn
-      // no user would ever get.
-      reading?.unstructured?.fitTo(
-        turnPromptBudget({ modelId: candidate.model, provider: candidate.provider })
-          .attachmentChars,
-      ) ?? null,
+      // The reading, not the already-fitted block: remaining budget after the
+      // typed cards is computed inside, so a historical series and this turn's
+      // notebook share one ceiling (#1492, #1419).
+      reading?.unstructured ?? null,
+      turnPromptBudget({ modelId: candidate.model, provider: candidate.provider })
+        .attachmentChars,
     ),
   );
 }
@@ -283,6 +290,8 @@ export interface GoldenTurn {
   typedBalanceSeries: TypedBalanceSeriesReading;
   /** The rows a document lane may write from (#1373, #1376). */
   validatedDocuments: ExtractedDocument[];
+  /** Same documents with file names, for `get_extracted_document` (#1492). */
+  validatedAttachments: ValidatedAttachment[];
 }
 
 /**
@@ -317,5 +326,6 @@ export async function prepareGoldenTurn(
     typedBalanceSeries: typedBalanceSeriesFor(question, unvalidatedEvidence),
     unvalidatedEvidence,
     validatedDocuments: validatedDocumentsFor(reading, history),
+    validatedAttachments: validatedAttachmentsFor(reading, history),
   };
 }
