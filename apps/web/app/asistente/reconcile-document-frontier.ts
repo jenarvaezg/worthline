@@ -53,6 +53,10 @@ export interface ReconcileFrontierError {
  * lane (`propose_operation`, #1374). Naming the lane is what turns a dead end into an
  * answer, and until that lane existed this same sentence had to send people to the
  * holding's ficha.
+ *
+ * This is the EMPTY-context copy. When a document of another type IS already on the
+ * table, {@link reconcileDocumentRequiredMessage} names the lane that accepts it
+ * instead of asking for another upload (#1513).
  */
 export const RECONCILE_DOCUMENT_REQUIRED_MESSAGE =
   "El reconcile de cartera solo lo puedo preparar sobre un documento de posiciones o " +
@@ -62,6 +66,36 @@ export const RECONCILE_DOCUMENT_REQUIRED_MESSAGE =
   "anota con su justificante: súbeme el recibo y la preparo como propuesta de " +
   "operación. Si es la cartera entera, súbeme el extracto o el Excel, o usa " +
   "/patrimonio/importar-extracto.";
+
+/**
+ * The document on the table is a broker transactions extract, not positions. The
+ * refusal still stands — this lane cannot invent a holdings table — but the next
+ * step is the chat import of THAT extract, not another upload (#1513).
+ */
+const RECONCILE_DOCUMENT_REQUIRED_WITH_TRANSACTIONS_MESSAGE =
+  "El reconcile de cartera solo lo puedo preparar sobre un documento de posiciones o " +
+  "movimientos, y lo que hay en esta conversación es un extracto de transacciones ya " +
+  "leído y validado: no hace falta volver a subirlo. La importación de extracto se " +
+  "prepara desde el chat ahora mismo con propose_statement_import, sin argumentos, y " +
+  "usa el documento tal cual.";
+
+export interface ReconcileDocumentContext {
+  hasBrokerTransactions?: boolean;
+}
+
+/**
+ * Pick the reconcile-required copy from what IS on the table. An empty context keeps
+ * the original routing to the web gate; a transactions extract names the chat import
+ * and never asks to re-upload (#1513).
+ */
+export function reconcileDocumentRequiredMessage(
+  context: ReconcileDocumentContext = {},
+): string {
+  if (context.hasBrokerTransactions) {
+    return RECONCILE_DOCUMENT_REQUIRED_WITH_TRANSACTIONS_MESSAGE;
+  }
+  return RECONCILE_DOCUMENT_REQUIRED_MESSAGE;
+}
 
 /**
  * The row named nothing the document contains. Almost always the same mistake as
@@ -174,13 +208,14 @@ function describeClaim(claim: ReconcileRowClaim): string {
 export function resolveReconcileDocument(
   claims: readonly ReconcileRowClaim[],
   validated: ExtractedPositionsMovementsDocument | null,
+  context: ReconcileDocumentContext = {},
 ): ReconcileDocumentResolution {
   if (validated === null) {
     return {
       ok: false,
       error: {
         error: "reconcile_document_required",
-        message: RECONCILE_DOCUMENT_REQUIRED_MESSAGE,
+        message: reconcileDocumentRequiredMessage(context),
       },
     };
   }
