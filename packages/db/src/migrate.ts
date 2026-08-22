@@ -168,6 +168,17 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       .replaceAll("CREATE UNIQUE INDEX ", "CREATE UNIQUE INDEX IF NOT EXISTS ")
       .replaceAll("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ");
     await client.executeMultiple(safeSql);
+    // ADR 0002: a fresh DB already has the full target schema from `schemaSql`.
+    // Walking the ladder would re-run ~SCHEMA_VERSION no-op DDL steps, each with
+    // its own `writeSchemaVersion` — the cold-open peak that flake'd the demo
+    // e2e (#1464). Seal the current version and skip the rest. Version ≥ 2
+    // still walks (existing DBs). Version 0 with orphan pre-v2 tables is out of
+    // contract (the `.local` file is disposable; hosted workspaces are born
+    // through this path).
+    if (version === 0) {
+      await writeSchemaVersion(client, SCHEMA_VERSION);
+      return { ranV18Backfill: false, ranV33Backfill: false };
+    }
     await writeSchemaVersion(client, 2);
   }
 
