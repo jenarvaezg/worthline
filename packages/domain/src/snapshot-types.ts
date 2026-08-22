@@ -1,4 +1,5 @@
 import type { DecimalString } from "./decimal";
+import type { InvestmentOperation } from "./investment-types";
 import type { MoneyMinor } from "./money";
 import { subtractMoney } from "./money";
 import type { NetWorthFraming, NetWorthSummary } from "./net-worth";
@@ -98,6 +99,12 @@ export interface SnapshotWarningInputs {
   /** Net units still held per holding (`netUnitsByAsset`); absent = open (#1348). */
   netUnitsByAssetId?: ReadonlyMap<string, DecimalString>;
   /**
+   * The investment ledger keyed by holding id (#1443). Absent = do not look at
+   * the book, matching {@link CollectWarningsOptions.operationsByAssetId}. The
+   * daily capture already holds this map; historical reconstruction may not.
+   */
+  operationsByAssetId?: ReadonlyMap<string, readonly InvestmentOperation[]>;
+  /**
    * Acknowledgements that an overrideable warning is intentional. Overrides are
    * not dated, so only the live capture path supplies them — the historical
    * backfill would apply today's acknowledgements to a past date.
@@ -130,6 +137,9 @@ export function captureNetWorthSnapshot(
   });
   const warnings = collectWarnings(input.assets, input.warningOverrides ?? [], {
     ...(input.netUnitsByAssetId ? { netUnitsByAssetId: input.netUnitsByAssetId } : {}),
+    ...(input.operationsByAssetId
+      ? { operationsByAssetId: input.operationsByAssetId }
+      : {}),
   });
 
   return createNetWorthSnapshot({

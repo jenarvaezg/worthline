@@ -14,6 +14,7 @@ import type {
   InvestmentOperation,
   OperationKind,
   PositionSummary,
+  PositionWarning,
 } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { assertMinorInteger, money, subtractMoney } from "./money";
@@ -240,7 +241,7 @@ export function derivePosition(
   let units: DecimalString = "0";
   let costMinor = 0;
   let realizedMinor = 0;
-  const warnings: string[] = [];
+  const warnings: PositionWarning[] = [];
 
   // The invariant this fold rests on, checked instead of assumed (#1401): ONE
   // accumulator summed and labelled `options.currency` is only honest while every
@@ -292,12 +293,14 @@ export function derivePosition(
 
         if (compareUnits(outgoingUnits, units) > 0) {
           // Overrideable warning, not a failure: clamp to what's actually held so the
-          // position never goes negative.
-          warnings.push(
-            isTransfer
+          // position never goes negative. Coded so the importer, ficha and hero can
+          // tell an oversell from any future warning on this channel (#1443).
+          warnings.push({
+            code: isTransfer ? "OVER_TRANSFER" : "OVERSELL",
+            message: isTransfer
               ? `El traspaso de ${outgoingUnits} unidades supera las ${units} disponibles; se ajusta al máximo.`
               : `La venta de ${outgoingUnits} unidades supera las ${units} disponibles; se ajusta al máximo.`,
-          );
+          });
           outgoingUnits = units;
         }
 
@@ -394,4 +397,13 @@ export function netUnitsByAsset(
   }
 
   return netUnits;
+}
+
+/** True when the fold clamped a sell or a traspaso past what was held (#1443). */
+export function hasOversellPositionWarning(
+  warnings: readonly PositionWarning[],
+): boolean {
+  return warnings.some(
+    (warning) => warning.code === "OVERSELL" || warning.code === "OVER_TRANSFER",
+  );
 }

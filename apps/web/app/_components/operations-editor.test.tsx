@@ -157,6 +157,43 @@ describe("currency at the capture (#1401)", () => {
     expect(render()).not.toContain('role="alert"');
   });
 
+  test("an oversell form error uses the gold warning band and the confirm checkbox", () => {
+    const html = render(
+      { currentUnits: "31.999" },
+      {
+        formError: {
+          formId: "operation",
+          message:
+            "Tienes 31,999; vas a vender 32. Si es el redondeo del bróker, confirma. Si no, corrige las unidades.",
+          values: { oversellPending: "1", units: "32" },
+        },
+      },
+    );
+
+    expect(html).toContain('class="warningBand"');
+    expect(html).not.toContain('id="operation-error" class="errorBand"');
+    expect(html).toContain("redondeo del bróker");
+    expect(html).toContain("Confirmo la venta");
+    expect(html).toContain('name="oversellConfirmed"');
+    expect(html).toContain('type="checkbox"');
+  });
+
+  test("a regular operation error stays a red error band, with no confirm checkbox", () => {
+    const html = render(
+      {},
+      {
+        formError: {
+          formId: "operation",
+          message: "Las unidades son obligatorias.",
+          values: {},
+        },
+      },
+    );
+
+    expect(html).toContain('class="errorBand"');
+    expect(html).not.toContain("Confirmo la venta");
+  });
+
   test("a converted row shows the euros it folded and the dollars it came from", () => {
     const html = render({}, { operations: [convertedUsdBuy] });
 

@@ -97,6 +97,15 @@ export interface CreateInvestmentOperationInput {
   transferCostMinor?: number;
 }
 
+/** Machine code for a clamp in {@link derivePosition}: a sell or traspaso past what is held. */
+export type PositionWarningCode = "OVERSELL" | "OVER_TRANSFER";
+
+/** A coded, overrideable clamp from the position fold (#1443). */
+export interface PositionWarning {
+  code: PositionWarningCode;
+  message: string;
+}
+
 /** Derived state of a unit-based asset after folding its operations. */
 export interface PositionSummary {
   assetId: string;
@@ -117,14 +126,13 @@ export interface PositionSummary {
    * Set when the folded operations are not all in {@link PositionSummary.currency}, so
    * the summed cost cannot be trusted (#1401).
    *
-   * Its OWN field, not a `warnings` entry: `warnings` has one consumer and it reads any
-   * entry as an over-sell (`statement-import-preview.ts` → «venta excede posición»), so
-   * a currency problem posted there would be reported to the user as a bad sell. These
-   * are different grades of news — one is about the operation being previewed, the other
-   * about the integrity of what is already stored.
+   * Its OWN field, not a `warnings` entry: coded oversell/over-transfer clamps live
+   * on {@link PositionSummary.warnings}, and the statement importer keys the
+   * «venta excede posición» flag off those codes (#1443). A currency problem posted
+   * there would still be the wrong grade of news.
    */
   currencyWarning?: string;
   /** The price per unit used to derive the market value, when one was known. */
   currentPricePerUnit?: DecimalString;
-  warnings: string[];
+  warnings: PositionWarning[];
 }

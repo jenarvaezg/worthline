@@ -1,7 +1,7 @@
 import type { DecimalString } from "./decimal";
 import { isPositiveDecimal } from "./decimal";
 import type { DomainViolation } from "./domain-result";
-import type { InvestmentOperation } from "./investment-types";
+import type { InvestmentOperation, PositionWarning } from "./investment-types";
 import { derivePosition } from "./positions";
 import type { ManualAsset } from "./workspace-types";
 
@@ -109,8 +109,8 @@ export interface InvestmentValuation {
   pricePerUnit: DecimalString | undefined;
   /** Which source supplied the price, if any. */
   priceSource: InvestmentPriceSource | undefined;
-  /** Any warnings raised during position derivation (e.g. oversell). */
-  warnings: string[];
+  /** Coded clamps raised during position derivation (e.g. oversell). */
+  warnings: PositionWarning[];
 }
 
 /**

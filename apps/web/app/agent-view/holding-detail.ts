@@ -348,6 +348,7 @@ function holdingHasWarnings(
   // as open: this boolean only ever answers for `internalHoldingId`.
   return collectWarnings(assets, [], {
     netUnitsByAssetId: netUnitsByAsset(new Map([[internalHoldingId, operations]])),
+    operationsByAssetId: new Map([[internalHoldingId, operations]]),
   }).some((warning) => warning.entityId === internalHoldingId);
 }
 

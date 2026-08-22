@@ -262,6 +262,7 @@ export async function loadPatrimonio(
   // ledger is already in hand from the shared projection context — no extra I/O.
   const warnings = collectWarnings(assets, overrides, {
     netUnitsByAssetId: netUnitsByAsset(projectionContext.operationsByAsset),
+    operationsByAssetId: projectionContext.operationsByAsset,
   });
 
   const projection = selectedScope

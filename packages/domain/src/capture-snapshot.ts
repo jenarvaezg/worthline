@@ -99,6 +99,9 @@ export function captureSnapshotForScope(
     // warning is not frozen. Absent = the previous reading (every holding open,
     // nothing acknowledged).
     ...(input.netUnitsByAssetId ? { netUnitsByAssetId: input.netUnitsByAssetId } : {}),
+    ...(input.operationsByAssetId
+      ? { operationsByAssetId: input.operationsByAssetId }
+      : {}),
     ...(input.warningOverrides ? { warningOverrides: input.warningOverrides } : {}),
   });
 

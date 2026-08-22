@@ -1,5 +1,6 @@
-import { parseMoneyMinor } from "@web/intake-primitives";
+import { normalizeDecimalString, parseMoneyMinor } from "@web/intake-primitives";
 import type { InvestmentOperation } from "@worthline/domain";
+import { compareUnits, oversellConfirmMessage } from "@worthline/domain";
 
 /**
  * Pure optimistic-merge for the investment operations editor (#521, S5 of #485,
@@ -105,17 +106,24 @@ export function parseOperationDraft(
  */
 export type OperationSubmitPlan =
   | { kind: "native" }
-  | { kind: "optimistic"; draft: InvestmentOperation; submissionId: string };
+  | { kind: "optimistic"; draft: InvestmentOperation; submissionId: string }
+  | { kind: "confirm-oversell"; message: string };
 
 export function planOperationSubmit({
   assetId,
   formData,
+  heldUnits,
   inFlightSubmissionId,
   newId,
   today,
 }: {
   assetId: string;
   formData: FormData;
+  /**
+   * Units currently held, from the live ledger (without the row being typed).
+   * Absent skips the client-side oversell confirm — the action still gates.
+   */
+  heldUnits?: string;
   inFlightSubmissionId: string | null;
   /** Fresh unique id per call (the island passes `crypto.randomUUID`). */
   newId: () => string;
@@ -125,6 +133,23 @@ export function planOperationSubmit({
   // collide with the row the first one already added.
   const draft = parseOperationDraft(formData, assetId, today, newId());
   if (!draft) return { kind: "native" };
+
+  if (
+    draft.kind === "sell" &&
+    heldUnits !== undefined &&
+    formData.get("oversellConfirmed") !== "1"
+  ) {
+    const sold = normalizeDecimalString(draft.units, {
+      allowNegative: false,
+      fallback: "0",
+    });
+    if (sold !== "0" && compareUnits(sold, heldUnits) > 0) {
+      return {
+        kind: "confirm-oversell",
+        message: oversellConfirmMessage(heldUnits, sold),
+      };
+    }
+  }
 
   return { draft, kind: "optimistic", submissionId: inFlightSubmissionId ?? newId() };
 }

@@ -57,6 +57,10 @@ const KEY_EXPORTS = [
   "createInvestmentOperation",
   "derivePosition",
   "netUnitsByAsset",
+  "hasOversellPositionWarning",
+  // oversell (#1443)
+  "classifyOversellExcess",
+  "oversellConfirmMessage",
   // transfer-plan (#1479)
   "planTransfer",
   // returns (#548)

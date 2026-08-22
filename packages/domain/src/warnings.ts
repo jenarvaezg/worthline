@@ -1,5 +1,7 @@
 import { compareUnits, type DecimalString } from "./decimal";
 import { valuationMethodOfAsset } from "./holding-method";
+import type { InvestmentOperation } from "./investment-types";
+import { derivePosition } from "./positions";
 import type { ManualAsset } from "./workspace-types";
 
 export type WarningSeverity = "blocking" | "overrideable";
@@ -45,6 +47,14 @@ export interface CollectWarningsOptions {
    * than a closed position.
    */
   netUnitsByAssetId?: ReadonlyMap<string, DecimalString>;
+  /**
+   * The investment ledger keyed by holding id (#1443). Same pattern as
+   * {@link netUnitsByAssetId}: callers that already have the operations pass them
+   * so `OVERSELL` / `OVER_TRANSFER` from `derivePosition` surface here — the
+   * channel the ficha, tablero and hero already paint. Absent = do not look at
+   * the book (previous reading).
+   */
+  operationsByAssetId?: ReadonlyMap<string, readonly InvestmentOperation[]>;
 }
 
 /**
@@ -106,6 +116,39 @@ export function collectWarnings(
         entityId: a.id,
         message: `"${a.name}" no tiene símbolo de proveedor de precio. Indícalo o márcalo como intencional si cotiza a mano.`,
       });
+
+    const operations = options.operationsByAssetId?.get(a.id);
+    if (
+      valuationMethodOfAsset(a) === "derived" &&
+      operations !== undefined &&
+      operations.length > 0
+    ) {
+      const position = derivePosition([...operations], {
+        assetId: a.id,
+        currency: a.currentValue.currency,
+      });
+      const codes = new Set(position.warnings.map((warning) => warning.code));
+
+      if (codes.has("OVERSELL")) {
+        warnings.push({
+          code: "OVERSELL",
+          entityId: a.id,
+          entityType: "asset",
+          message: `"${a.name}" tiene ventas/traspasos por encima de las unidades compradas; la posición se muestra a cero recortada.`,
+          severity: "overrideable",
+        });
+      }
+
+      if (codes.has("OVER_TRANSFER")) {
+        warnings.push({
+          code: "OVER_TRANSFER",
+          entityId: a.id,
+          entityType: "asset",
+          message: `"${a.name}" tiene ventas/traspasos por encima de las unidades compradas; la posición se muestra a cero recortada.`,
+          severity: "overrideable",
+        });
+      }
+    }
   }
 
   return warnings.filter(
