@@ -312,6 +312,22 @@ describe("BalanceBoard (#271)", () => {
     expect(html).toContain("Prestamo Saldado");
   });
 
+  test("a trashed row says how the holding left the book (#1549)", () => {
+    const html = render({
+      trash: {
+        assets: [
+          { id: "t_a", name: "Groupama", trashExit: "mis_entry" },
+          { id: "t_b", name: "Cuenta Vieja" },
+        ],
+        liabilities: [],
+      },
+    });
+    expect(html).toContain("error de registro");
+    // A holding archived with nothing inside recorded no exit, and says nothing:
+    // exactly one row carries the aside.
+    expect(html.match(/balanceTrashExit/g)).toHaveLength(1);
+  });
+
   test("renders an empty state when there are no holdings", () => {
     expect(render({ groups: [] })).toContain("Sin activos");
   });

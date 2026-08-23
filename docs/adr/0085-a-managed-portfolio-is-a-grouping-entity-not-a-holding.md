@@ -58,6 +58,19 @@ never an asset, never a parent in a holding hierarchy.
   gate**: sending any investment holding with value to the trash offers three
   exits — sold, transferred to… (a #1393 transfer pair), or mis-entry — so
   money never evaporates. A type is metadata the owner cannot know a priori.
+  Implemented in #1549 at the store seam (`softDeleteAsset`), not in the Server
+  Action, so the assistant's baja meets the same refusal. Only `mis_entry`
+  unlocks a live position; the other two name a movement already written.
+- **The container's cash cannot be trashed while the portfolio lives** (#1549).
+  It is the only member the owner did not create — the alta did — and its
+  balance is real money (up to 150 € + 0,5 % of the portfolio waiting to be
+  invested), so a silent delete would be the Groupama shape under another
+  instrument label. Offering it the three exits was the alternative and was
+  rejected: none of them describes what happened to a casilla of a container
+  ("lo saqué a mi cuenta" is a movement the app cannot yet record as a pair
+  between a cash account and a fund). Dissolving the portfolio releases it as an
+  ordinary account — dissolving a group never deletes money — and from there it
+  is archivable like any other.
 - **The write path is unchanged.** Operations stay per holding; an internal
   rebalance is a #1393 transfer pair between members. A "contribution to the
   portfolio" operation with automatic split waits for a connector that knows

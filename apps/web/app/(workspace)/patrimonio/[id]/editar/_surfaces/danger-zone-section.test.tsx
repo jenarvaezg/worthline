@@ -8,10 +8,12 @@ import { DangerZoneSection } from "./danger-zone-section";
  * Sending a holding to the Papelera used to say only "podrás recuperarlo" — true,
  * reassuring, and silent about the part that matters: with units still inside, the
  * value leaves the patrimonio at the next capture with no sale, traspaso, or
- * deposit recorded (#1365). The two cases must read differently; the clean one must
- * not gain a single step.
+ * deposit recorded (#1365). #1549 turned that warning into a door with three exits.
+ * The two cases must read differently; the clean one must not gain a single step.
  */
 const CURRENT_URL = "/patrimonio/wl_hld_fondo/editar";
+const TRANSFER_HREF = `${CURRENT_URL}?abrir=traspaso&archivar=1#traspaso`;
+const TODAY = "2026-08-23";
 
 function render(trashImpact: HoldingTrashImpact | null, kind: "asset" | "liability") {
   // The props are discriminated on `kind`: only an asset can carry an impact, so
@@ -23,6 +25,8 @@ function render(trashImpact: HoldingTrashImpact | null, kind: "asset" | "liabili
         holdingId="asset_fondo"
         kind="asset"
         privacyMode={false}
+        today={TODAY}
+        transferHref={TRANSFER_HREF}
         trashImpact={trashImpact}
       />
     ) : (
@@ -48,7 +52,7 @@ describe("DangerZoneSection — the clean delete stays clean (#1365)", () => {
 
     expect(html).toContain("El activo se moverá a la Papelera y podrás recuperarlo.");
     expect(html).not.toContain("sale de tu patrimonio");
-    expect(html).not.toContain("Registrar la venta");
+    expect(html).not.toContain("¿Qué pasó con este activo?");
   });
 
   test("a debt keeps its own copy — a liability has no units to sell", () => {
@@ -58,11 +62,12 @@ describe("DangerZoneSection — the clean delete stays clean (#1365)", () => {
     expect(html).toContain("Eliminar deuda");
   });
 
-  test("both cases stay a two-step confirm — the friction is words, not clicks", () => {
-    for (const html of [render(null, "asset"), render(IMPACT, "asset")]) {
-      expect(html).toContain("<summary>Eliminar activo</summary>");
-      expect(html.match(/Confirmar eliminación/g)).toHaveLength(1);
-    }
+  test("the clean case is one confirm and one button — no exit to choose", () => {
+    const html = render(null, "asset");
+
+    expect(html).toContain("<summary>Eliminar activo</summary>");
+    expect(html.match(/Confirmar eliminación/g)).toHaveLength(1);
+    expect(html).not.toContain('name="exit"');
   });
 });
 
@@ -70,23 +75,12 @@ describe("DangerZoneSection — the whole truth when there is money inside (#136
   test("names the units, the value leaving, and that nothing records where it went", () => {
     const html = render(IMPACT, "asset");
 
-    expect(html).toContain("120,5 unidades");
+    expect(html).toContain("120,5 participaciones");
     // No thousands separator asserted: the test runtime's ICU renders "4320 €"
     // where the browser renders "4.320 €" (same convention as the #1290 tests).
     expect(html).toContain("4320");
     expect(html).toContain("sale de tu patrimonio en la próxima captura");
     expect(html).toContain("no hay venta, ni traspaso, ni ingreso en ninguna cuenta");
-  });
-
-  test("offers the correct exit as a working link into the operations surface", () => {
-    const html = render(IMPACT, "asset");
-
-    expect(html).toContain("Registrar la venta");
-    // `?abrir=operaciones` unfolds the advanced block server-side; a bare fragment
-    // would scroll to a collapsed <details> and reveal nothing.
-    expect(html).toContain(
-      `href="${CURRENT_URL}?abrir=operaciones#operaciones"`.replace(/&/g, "&amp;"),
-    );
   });
 
   test("says when the figure is a cost basis rather than a market valuation", () => {
@@ -102,11 +96,86 @@ describe("DangerZoneSection — the whole truth when there is money inside (#136
         holdingId="asset_fondo"
         kind="asset"
         privacyMode
+        today={TODAY}
+        transferHref={TRANSFER_HREF}
         trashImpact={IMPACT}
       />,
     );
 
     expect(html).not.toContain("4320");
-    expect(html).toContain("120,5 unidades");
+    expect(html).toContain("120,5 participaciones");
+  });
+});
+
+describe("DangerZoneSection — the door's three exits (#1549)", () => {
+  test("offers exactly the three exits, none of them preselected", () => {
+    const html = render(IMPACT, "asset");
+
+    for (const exit of ["sold", "transferred", "mis_entry"]) {
+      expect(html).toContain(`value="${exit}"`);
+    }
+    expect(html).not.toContain("checked");
+  });
+
+  test("«lo vendí» asks only for the two figures a confirmation states", () => {
+    const html = render(IMPACT, "asset");
+
+    expect(html).toContain('name="soldAt"');
+    expect(html).toContain('name="soldAmount"');
+    expect(html).toContain(`value="${TODAY}"`);
+    expect(html).toContain("Registrar la venta y eliminar");
+  });
+
+  test("no field carries a native `required` — a hidden one aborts every submit (#677)", () => {
+    expect(render(IMPACT, "asset")).not.toContain("required");
+  });
+
+  test("«lo traspasé» links to the traspaso surface carrying the archive intent", () => {
+    const html = render(IMPACT, "asset");
+
+    expect(html).toContain(TRANSFER_HREF.replace(/&/g, "&amp;"));
+  });
+
+  test("with no traspaso surface on the ficha, that exit is not offered at all", () => {
+    const html = renderToStaticMarkup(
+      <DangerZoneSection
+        currentUrl={CURRENT_URL}
+        holdingId="asset_fondo"
+        kind="asset"
+        privacyMode={false}
+        today={TODAY}
+        transferHref={null}
+        trashImpact={IMPACT}
+      />,
+    );
+
+    expect(html).not.toContain('value="transferred"');
+    expect(html).toContain('value="sold"');
+  });
+
+  test("«error de registro» says what it archives and what it costs", () => {
+    const html = render(IMPACT, "asset");
+
+    expect(html).toContain("ese valor nunca existió");
+    expect(html).toContain("Eliminar sin operación");
+  });
+});
+
+describe("DangerZoneSection — a cartera's cash box has no door (#1549)", () => {
+  test("names the portfolio and offers no delete at all", () => {
+    const html = renderToStaticMarkup(
+      <DangerZoneSection
+        containerPortfolio="Cartera Indexada Metal"
+        currentUrl={CURRENT_URL}
+        holdingId="asset_cash"
+        kind="asset"
+        privacyMode={false}
+        trashImpact={null}
+      />,
+    );
+
+    expect(html).toContain("Cartera Indexada Metal");
+    expect(html).toContain("la casilla queda como una cuenta normal");
+    expect(html).not.toContain("Eliminar activo");
   });
 });

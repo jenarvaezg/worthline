@@ -143,7 +143,10 @@ describe("hardDeleteAsset", () => {
   test("an investment hard delete cascades its operations away", async () => {
     const store = await setupStore();
     await seedInvestmentWithOps(store);
-    await store.assets.softDeleteAsset("inv1", "2026-06-09T00:00:00.000Z");
+    // The position still holds units, so the Papelera's door asks where the money
+    // went (#1549). This test is about the hard delete underneath it: declare the
+    // mis-entry and get on with destroying the row.
+    await store.assets.softDeleteAsset("inv1", "2026-06-09T00:00:00.000Z", "mis_entry");
 
     expect(await store.assets.hardDeleteAsset("inv1")).toBe(1);
     expect(await store.operations.readOperations("inv1")).toEqual([]);

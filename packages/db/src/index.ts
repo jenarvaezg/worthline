@@ -263,6 +263,7 @@ export {
 export type {
   ApplyStatementImportParams,
   AuditLogEntry,
+  BatchTrashFailureReason,
   BatchTrashResult,
   BootstrapHealthcheckOptions,
   CreateHousingHoldingCommand,

@@ -11,9 +11,10 @@ import type {
   DomainWarning,
   HoldingReturnsView,
   PortfolioGroup,
+  TrashExit,
   UnifiedHolding,
 } from "@worthline/domain";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, trashExitLabel } from "@worthline/domain";
 import Link from "next/link";
 import {
   type FormEvent,
@@ -765,6 +766,7 @@ function TrashRow({
   currentUrl,
   optimisticSubmit,
   readOnly,
+  trashExit = null,
 }: {
   id: string;
   name: string;
@@ -773,10 +775,20 @@ function TrashRow({
   currentUrl: string;
   optimisticSubmit: OptimisticSubmit;
   readOnly: boolean;
+  /** How the holding left the book, when the door recorded it (#1549). */
+  trashExit?: TrashExit | null;
 }) {
   return (
     <div className="balanceTrashRow">
-      <span>{name}</span>
+      <span>
+        {name}
+        {/* The door's answer, said where the row now lives: «error de registro» is a
+            declaration about the book, and a Papelera that does not repeat it turns
+            the declaration into something only the database remembers. */}
+        {trashExit ? (
+          <small className="balanceTrashExit"> · {trashExitLabel(trashExit)}</small>
+        ) : null}
+      </span>
       <span className="balanceTrashRowActions">
         {/* Restore is NOT optimistic (§4): the board row it re-adds cannot be
             reconstructed from the trash's {id,name}, so faking it would show a wrong
@@ -1052,6 +1064,7 @@ export default function BalanceBoard({
                 optimisticSubmit={optimisticSubmit}
                 readOnly={readOnly}
                 restoreAction={restoreAssetAction}
+                trashExit={item.trashExit ?? null}
               />
             ))}
             {model.trash.liabilities.map((item) => (

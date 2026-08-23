@@ -424,10 +424,36 @@ export default async function EditarPage({
   // one the ficha shows above it. Null for a sold-out position (and for every
   // holding with no operations ledger), which is what keeps the clean delete clean.
   const trashImpact = holdingTrashImpact(position);
-  // The sale link in that notice returns HERE with the advanced block unfolded
-  // (interaction-patterns §3: the state is read from the URL on load). A bare
-  // fragment would scroll to a collapsed <details> and reveal nothing.
-  const advancedOpen = resolvedSearchParams?.abrir === "operaciones";
+  // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
+  // unfolded and the archive intent in the URL (#1549) — the traspaso surface is
+  // inside a collapsed <details>, so a bare fragment would reveal nothing. The
+  // intent must survive a real navigation (the server renders the hidden field), so
+  // unlike #1365's sale link this one is not a pushState reveal.
+  const abrir = resolvedSearchParams?.abrir;
+  const advancedOpen = abrir === "operaciones" || abrir === "traspaso";
+  const archiveOriginAfterTransfer = resolvedSearchParams?.archivar === "1";
+  // The cash sibling of a live managed portfolio cannot be trashed on its own (ADR
+  // 0085, #1549): it is the container's casilla, created by the alta. Only asked for
+  // a non-investment holding — the only shape a cash member can have — so an
+  // investment ficha pays no extra read.
+  // The Traspasar surface exists on this ficha only for a derived holding with a
+  // ledger; the Papelera's traspaso exit is offered only when there is a door to
+  // send the owner to.
+  const showsTransferSurface =
+    asset !== null &&
+    method === "derived" &&
+    !isCoinCollection &&
+    !isBinanceHolding &&
+    operations.length > 0;
+  const transferHref = showsTransferSurface
+    ? `${currentUrl}?abrir=traspaso&archivar=1#traspaso`
+    : null;
+  const containerPortfolio =
+    asset && asset.type !== "investment"
+      ? ((await store.managedPortfolios.readManagedPortfolios()).find((portfolio) =>
+          portfolio.holdingIds.includes(id),
+        )?.name ?? null)
+      : null;
 
   // Bind the holding id to the operations actions so the `derived` surface posts
   // back to this detail page (#153 collapsed the /inversiones management routes;
@@ -765,12 +791,9 @@ export default async function EditarPage({
                 later, and the one that emptied the holding is exactly the row that is
                 still missing. The ledger travels so the preview can fold it at the
                 date the user picks (#1438). */}
-            {asset &&
-            method === "derived" &&
-            !isCoinCollection &&
-            !isBinanceHolding &&
-            operations.length > 0 ? (
+            {showsTransferSurface ? (
               <TransferSection
+                archiveOrigin={archiveOriginAfterTransfer}
                 currentUrl={currentUrl}
                 destinations={transferDestinations}
                 formError={formError}
@@ -886,10 +909,13 @@ export default async function EditarPage({
         {/* Danger zone — two-step delete, with the truth about what it withdraws */}
         {asset ? (
           <DangerZoneSection
+            containerPortfolio={containerPortfolio}
             currentUrl={currentUrl}
             holdingId={id}
             kind="asset"
             privacyMode={privacyMode}
+            today={today}
+            transferHref={transferHref}
             trashImpact={trashImpact}
           />
         ) : (

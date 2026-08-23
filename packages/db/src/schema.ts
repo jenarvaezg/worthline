@@ -19,6 +19,7 @@ import type {
   RiskTolerance,
   SnapshotHoldingKind,
   SourceAdapter,
+  TrashExit,
   ValuationCadence,
   ValuationMethod,
   WorkspaceMode,
@@ -175,6 +176,16 @@ export const assets = sqliteTable(
      */
     connectedSourceId: text("connected_source_id"),
     deletedAt: text("deleted_at"),
+    /**
+     * How the holding LEFT the book, as the trash door recorded it (#1549, ADR
+     * 0085): sold | transferred | mis_entry. Null for a holding that was never
+     * trashed, and for the ordinary trash of a position with nothing inside —
+     * the door only asks where the money went when there is money inside. Only
+     * `mis_entry` is a declaration in its own right («ese valor nunca existió»);
+     * the other two merely name the movement already written on the ledger.
+     * Cleared on restore: the row is live again and left by nothing.
+     */
+    trashExit: text("trash_exit").$type<TrashExit>(),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
   },

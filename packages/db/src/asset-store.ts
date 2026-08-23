@@ -2,6 +2,7 @@ import type {
   AssetProjectionContext,
   CreateManualAssetInput,
   DecimalString,
+  HoldingTrashRefusal,
   HousingValuationAnchor,
   Instrument,
   InstrumentIdentityPatch,
@@ -9,6 +10,7 @@ import type {
   LiquidityTier,
   ManualAsset,
   OwnershipShare,
+  TrashExit,
   ValuationCadence,
 } from "@worthline/domain";
 import {
@@ -27,7 +29,18 @@ import { chunk } from "./chunk";
 import type { FactPersistenceProvenance } from "./fact-provenance";
 import { assetOwnerships, assets, assetValuations, investmentAssets } from "./schema";
 import { hardDeleteAssetTx, readAssets, type StoreContext } from "./store-context";
+import { checkAssetTrashGate } from "./trash-gate";
 import { assertAssetAllowsStoredValuationWrite } from "./valuation-guard";
+
+/**
+ * What the Papelera's door answered (#1549). `refused` is a first-class outcome,
+ * not an exception and not a `0`: the caller has a message to render and a fact to
+ * render it from, and «no existe» must never read as «no puedes».
+ */
+export type SoftDeleteAssetOutcome =
+  | { status: "deleted" }
+  | { status: "not_found" }
+  | { status: "refused"; refusal: HoldingTrashRefusal };
 
 export interface CreateInvestmentAssetInput {
   id: string;
@@ -173,8 +186,22 @@ export interface AssetStore {
     assetId: string,
     patch: InstrumentIdentityPatch & { priceProvider?: InvestmentPriceProvider },
   ) => Promise<number>;
-  /** Soft-delete an asset (moves it to the trash). Returns 1 if moved, 0 if not found. */
-  softDeleteAsset: (assetId: string, deletedAt: string) => Promise<number>;
+  /**
+   * Soft-delete an asset (moves it to the trash), through the Papelera's gate
+   * (#1549): a position with units still inside is REFUSED unless the caller
+   * declares the `mis_entry` exit, and a managed portfolio's cash sibling is
+   * refused outright while the portfolio lives. The gate is here, not in the
+   * Server Action, because the assistant writes below the web's guards.
+   *
+   * `exit` is also what the row remembers about how the holding left, so a
+   * caller that has just recorded the sale or the traspaso passes `sold` /
+   * `transferred` — those name the movement, they do not unlock anything.
+   */
+  softDeleteAsset: (
+    assetId: string,
+    deletedAt: string,
+    exit?: TrashExit | null,
+  ) => Promise<SoftDeleteAssetOutcome>;
   /** Restore a trashed asset. Returns 1 if restored, 0 if not found or not in trash. */
   restoreAsset: (assetId: string) => Promise<number>;
   /** Hard-delete a trashed asset (live data + overrides; snapshots untouched). Returns 1 if removed, 0 if not found or not in trash. */
@@ -249,7 +276,8 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     backfillInvestmentIsin: (assetId, isin) => backfillInvestmentIsin(ctx, assetId, isin),
     patchInvestmentIdentity: (assetId, patch) =>
       patchInvestmentIdentity(ctx, assetId, patch),
-    softDeleteAsset: (assetId, deletedAt) => softDeleteAsset(ctx, assetId, deletedAt),
+    softDeleteAsset: (assetId, deletedAt, exit) =>
+      softDeleteAsset(ctx, assetId, deletedAt, exit ?? null),
     restoreAsset: (assetId) => restoreAsset(ctx, assetId),
     hardDeleteAsset: (assetId) => ctx.transaction(() => hardDeleteAssetTx(ctx, assetId)),
     addValuationAnchor: (input, opts) => addValuationAnchors(ctx, [input], opts),
@@ -1005,22 +1033,31 @@ async function softDeleteAsset(
   ctx: StoreContext,
   assetId: string,
   deletedAt: string,
-): Promise<number> {
+  exit: TrashExit | null,
+): Promise<SoftDeleteAssetOutcome> {
+  const refusal = await checkAssetTrashGate(ctx, assetId, exit);
+  if (refusal) {
+    return { refusal, status: "refused" };
+  }
+
   const result = await ctx.db
     .update(assets)
-    .set({ deletedAt })
+    .set({ deletedAt, trashExit: exit })
     .where(eq(assets.id, assetId))
     .run();
-  if (result.rowsAffected > 0) {
-    await ctx.writeAuditEntry("delete_asset", "asset", assetId, { deletedAt });
+  if (result.rowsAffected === 0) {
+    return { status: "not_found" };
   }
-  return result.rowsAffected;
+
+  await ctx.writeAuditEntry("delete_asset", "asset", assetId, { deletedAt, exit });
+  return { status: "deleted" };
 }
 
 async function restoreAsset(ctx: StoreContext, assetId: string): Promise<number> {
   const result = await ctx.db
     .update(assets)
-    .set({ deletedAt: null })
+    // The exit goes with the deletion it explained: a live row left by nothing.
+    .set({ deletedAt: null, trashExit: null })
     .where(and(eq(assets.id, assetId), isNotNull(assets.deletedAt)))
     .run();
   if (result.rowsAffected > 0) {

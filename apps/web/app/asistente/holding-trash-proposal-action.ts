@@ -3,6 +3,7 @@
 import type { WorthlineStore } from "@web/store";
 import type {
   AssistantProposal,
+  BatchTrashFailureReason,
   BatchTrashResult,
   HoldingTrashTarget,
 } from "@worthline/db";
@@ -60,15 +61,38 @@ async function confirmTrashProposal(
   });
 }
 
-/** Map an atomic batch failure to a Spanish, user-facing message. */
+/**
+ * Map an atomic batch failure to a Spanish, user-facing message.
+ *
+ * Two of the four reasons are the Papelera's gate (#1549), which the chat's baja
+ * goes through like every other writer. It cannot hand the gate an exit: saying
+ * «ese valor nunca existió» is a statement about the book that belongs to its
+ * owner, from the holding's own ficha — so the message sends him there instead of
+ * pretending the chat can decide it.
+ */
 function trashFailureMessage(result: {
   ok: false;
-  reason: "not_found" | "not_in_trash";
+  reason: BatchTrashFailureReason;
   holdingId: string;
 }): string {
-  return result.reason === "not_in_trash"
-    ? "Uno de los holdings ya no está en la papelera; no se ha restaurado nada."
-    : "Uno de los holdings ya no existe; no se ha dado de baja nada.";
+  switch (result.reason) {
+    case "not_in_trash":
+      return "Uno de los holdings ya no está en la papelera; no se ha restaurado nada.";
+    case "needs_exit":
+      return (
+        "Uno de los holdings todavía conserva participaciones: antes de darlo de baja hay " +
+        "que decir a dónde fue el dinero (lo vendiste, lo traspasaste, o fue un error de " +
+        "registro). Puedes hacerlo desde su ficha. No se ha dado de baja nada."
+      );
+    case "portfolio_cash":
+      return (
+        "Uno de los holdings es el efectivo de una cartera gestionada: para quitarlo hay " +
+        "que borrar la cartera, y entonces queda como una cuenta normal. No se ha dado de " +
+        "baja nada."
+      );
+    case "not_found":
+      return "Uno de los holdings ya no existe; no se ha dado de baja nada.";
+  }
 }
 
 async function discardTrashProposal(

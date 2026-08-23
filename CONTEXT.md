@@ -823,9 +823,23 @@ the only doorway to destroying one. UI label: "Papelera".
 Recoverable does not mean free: while a holding is in the trash the next
 **capture** stops counting it, so trashing one that still holds units drops the
 **net worth** by its value with no **operation**, transfer, or **cash account**
-movement recording where the money went. The delete confirmation names that value
-and offers the correct exit (record the sale first), and a **data-quality signal**
-flags the state afterwards — friction only where there is money inside (#1365).
+movement recording where the money went. A **data-quality signal** flags that
+state afterwards — friction only where there is money inside (#1365).
+
+**Trash exit**:
+What the **trash** door records about where a **holding**'s money went, for a
+holding archived with units still on its ledger: `sold`, `transferred`, or
+`mis_entry` (#1549, ADR 0085). Archiving such a holding is refused unless one of
+the three is satisfied, at the store seam every writer passes — the ficha and the
+**assistant**'s baja alike. `sold` and `transferred` are not permissions: they
+name a movement already written (a closing **operation**, or a **traspaso** pair),
+which is what left the position empty. `mis_entry` is the only declaration that
+archives money still inside, and it says the value was never real — it is stored
+on the row, shown in the Papelera, and it is what silences the signal. Cleared on
+restore. A **managed portfolio**'s cash sibling has no exit at all: it cannot be
+trashed while its portfolio lives — dissolving the portfolio releases it as an
+ordinary account, with its balance intact.
+_Avoid_: "motivo de borrado" (a reason is explanatory; an exit is enforced).
 
 **Hard delete**:
 The irreversible destruction of an entity's live data. Frozen **snapshots** are

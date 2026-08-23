@@ -1,24 +1,37 @@
 /**
- * Danger zone — the two-step baja of a holding (#1365).
+ * Danger zone — the Papelera's door (#1365, then #1549).
  *
- * The trash is a soft delete, and for a holding with nothing inside the copy that
- * has always been here is the whole truth: it moves to the Papelera and can be
- * recovered. For a holding whose position still holds units it is not — the value
- * leaves the patrimonio at the next capture and the histórico records no sale, no
- * traspaso, and no deposit into any account. That case gets the number it is about
- * to withdraw and the correct exit (record the sale first); the clean case is left
- * exactly as it was, same words, same number of steps. Friction goes only where
- * there is money inside.
+ * For a holding with nothing inside the copy that has always been here is the whole
+ * truth: it moves to the Papelera and can be recovered. For a holding whose position
+ * still holds units it is not — the value leaves the patrimonio at the next capture
+ * and the histórico records no sale, no traspaso, and no deposit into any account.
+ * That is the Groupama episode (#1365): 7.642 € gone from a real book with nothing
+ * to explain them.
  *
- * Extracted from the editar page while adding that branch: the zone is now a
- * decision, not a paragraph.
+ * #1365 gave that case a warning. #1549 gives it a DOOR: three exits, and none of
+ * them evaporates money.
+ *
+ * - **«Lo vendí»** — the sale is recorded here, from the two figures a bank
+ *   confirmation states (date and importe), and the holding is archived after it.
+ * - **«Lo traspasé a…»** — the link goes to this same ficha's Traspasar surface,
+ *   which is the ONE door a traspaso enters the book by (ADR 0083); arriving from
+ *   here it archives the origin itself once the pair leaves it empty.
+ * - **«Fue un error de registro»** — archives with the value inside, and says on the
+ *   row that the value was never real.
+ *
+ * Everything is disclosed with CSS `:has()` and no field carries a native
+ * `required`, for the reason the add wizard learned the hard way (#677): a
+ * constraint inside a `display:none` pane aborts the submit of the whole form. The
+ * server (`deleteAssetAction`, and under it the gate in `softDeleteAsset`) is what
+ * makes an exit obligatory — the CSS only makes it obvious.
+ *
+ * The clean case keeps its words and its number of steps, exactly as before.
  */
 
 import { deleteAssetAction, deleteLiabilityAction } from "@web/patrimonio/actions";
 import type { HoldingTrashImpact } from "@worthline/domain";
 import { formatMoneyMinorPrivacy, formatUnits } from "@worthline/domain";
-
-import { RevealSectionLink } from "./reveal-section-link";
+import Link from "next/link";
 
 interface DangerZoneCommonProps {
   /** The holding's own public `wl_hld_…` URL, where the action returns (#1318). */
@@ -40,18 +53,55 @@ type DangerZoneSectionProps = DangerZoneCommonProps &
         kind: "asset";
         /** What the trash would take with it, or null when it takes nothing. */
         trashImpact: HoldingTrashImpact | null;
+        /**
+         * The managed portfolio whose cash box this holding is (ADR 0085), when it
+         * is one: the door is closed while the cartera lives, so there is nothing
+         * to confirm and no exit to offer.
+         */
+        containerPortfolio?: string | null;
+        /**
+         * The Traspasar surface's href on this same ficha, when the ficha has one.
+         * Absent — a coin collection, a synced holding — and the traspaso exit is
+         * not offered, because there is no door to send the owner to.
+         */
+        transferHref?: string | null;
+        /** Today, the date the closing sale defaults to. */
+        today?: string;
       }
-    | { kind: "liability"; trashImpact?: never }
+    | {
+        kind: "liability";
+        trashImpact?: never;
+        containerPortfolio?: never;
+        transferHref?: never;
+        today?: never;
+      }
   );
 
 export function DangerZoneSection({
+  containerPortfolio,
   currentUrl,
   holdingId,
   kind,
   privacyMode = false,
+  today,
+  transferHref,
   trashImpact,
 }: DangerZoneSectionProps) {
   const isAsset = kind === "asset";
+
+  if (containerPortfolio) {
+    return (
+      <div className="dangerZone">
+        <h3>Zona de peligro</h3>
+        <p className="warningBand">
+          Este efectivo es la caja de la cartera «{containerPortfolio}»: la creó el alta
+          de la cartera, no tú, y guarda las aportaciones que aún no se han invertido. No
+          se puede eliminar por su cuenta. Si quieres quitarlo, borra la cartera: al
+          disolverla la casilla queda como una cuenta normal, con su saldo intacto.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="dangerZone">
@@ -62,19 +112,22 @@ export function DangerZoneSection({
         <details suppressHydrationWarning className="confirmDelete">
           <summary>{isAsset ? "Eliminar activo" : "Eliminar deuda"}</summary>
           {trashImpact ? (
-            <TrashImpactNotice
-              currentUrl={currentUrl}
+            <TrashGate
               impact={trashImpact}
               privacyMode={privacyMode}
+              today={today ?? ""}
+              transferHref={transferHref ?? null}
             />
           ) : (
-            <p>
-              {isAsset
-                ? "El activo se moverá a la Papelera y podrás recuperarlo."
-                : "La deuda se moverá a la Papelera y podrás recuperarla."}
-            </p>
+            <>
+              <p>
+                {isAsset
+                  ? "El activo se moverá a la Papelera y podrás recuperarlo."
+                  : "La deuda se moverá a la Papelera y podrás recuperarla."}
+              </p>
+              <button type="submit">Confirmar eliminación</button>
+            </>
           )}
-          <button type="submit">Confirmar eliminación</button>
         </details>
       </form>
     </div>
@@ -82,42 +135,96 @@ export function DangerZoneSection({
 }
 
 /**
- * The whole truth for a holding with units inside: what leaves, that nothing
- * records where it went, and the exit that does. The sale link reveals the
- * operations surface on this same ficha with no round-trip, falling back to
- * `?abrir=operaciones` (which the server renders unfolded) with no JS — a bare
- * `#operaciones` would scroll to a collapsed `<details>` and show nothing.
+ * The door itself, for a holding with money inside: what leaves, that nothing
+ * records where it went, and the three exits that do.
+ *
+ * No exit is preselected. "Nothing chosen" must not resolve to a default, because
+ * every default here is an answer the app would be giving on the owner's behalf
+ * about where his money went — and with none chosen there is no submit button on
+ * screen at all.
  */
-function TrashImpactNotice({
-  currentUrl,
+function TrashGate({
   impact,
   privacyMode,
+  today,
+  transferHref,
 }: {
-  currentUrl: string;
   impact: HoldingTrashImpact;
   privacyMode: boolean;
+  today: string;
+  transferHref: string | null;
 }) {
   const value = formatMoneyMinorPrivacy(impact.value, privacyMode);
 
   return (
-    <div className="warningBand">
-      <p>
-        ⚠ Este activo conserva <strong>{formatUnits(impact.netUnits)} unidades</strong>,
-        valoradas {impact.basis === "cost" ? "a coste " : ""}en <strong>{value}</strong>.
-        Al moverlo a la Papelera ese valor sale de tu patrimonio en la próxima captura, y
-        el histórico no registra a dónde fue: no hay venta, ni traspaso, ni ingreso en
-        ninguna cuenta.
-      </p>
-      <p>
-        Si ya lo vendiste, registra primero la venta y elimínalo después: así el histórico
-        refleja que ese dinero se convirtió en liquidez.
-      </p>
-      <RevealSectionLink
-        href={`${currentUrl}?abrir=operaciones#operaciones`}
-        sectionId="operaciones"
-      >
-        Registrar la venta →
-      </RevealSectionLink>
+    <div className="trashGate">
+      <div className="warningBand">
+        <p>
+          ⚠ Este activo conserva{" "}
+          <strong>{formatUnits(impact.netUnits)} participaciones</strong>, valoradas{" "}
+          {impact.basis === "cost" ? "a coste " : ""}en <strong>{value}</strong>. Al
+          moverlo a la Papelera ese valor sale de tu patrimonio en la próxima captura, y
+          el histórico no registra a dónde fue: no hay venta, ni traspaso, ni ingreso en
+          ninguna cuenta.
+        </p>
+        <p>Dinos a dónde fue el dinero y lo registramos antes de archivarlo.</p>
+      </div>
+
+      <fieldset className="trashExits">
+        <legend>¿Qué pasó con este activo?</legend>
+        <label>
+          <input name="exit" type="radio" value="sold" />
+          Lo vendí
+        </label>
+        {transferHref ? (
+          <label>
+            <input name="exit" type="radio" value="transferred" />
+            Lo traspasé a otro producto
+          </label>
+        ) : null}
+        <label>
+          <input name="exit" type="radio" value="mis_entry" />
+          Fue un error de registro: ese valor nunca existió
+        </label>
+      </fieldset>
+
+      <div className="trashExitPane trashSoldPane">
+        <label>
+          Fecha de la venta
+          <input defaultValue={today} name="soldAt" type="date" />
+        </label>
+        <label>
+          Importe recibido
+          <input inputMode="decimal" name="soldAmount" placeholder="0,00" type="text" />
+        </label>
+        <p className="opCaptureHint">
+          Se registrará la venta de las {formatUnits(impact.netUnits)} participaciones que
+          quedan, y después el activo se irá a la Papelera.
+        </p>
+        <button type="submit">Registrar la venta y eliminar</button>
+      </div>
+
+      {transferHref ? (
+        <div className="trashExitPane trashTransferPane">
+          <p>
+            Un traspaso se registra en su propia pantalla, porque mueve las
+            participaciones a otra inversión y le lleva el coste de adquisición. Al
+            guardarlo desde allí, este activo se irá solo a la Papelera.
+          </p>
+          <Link className="actionLink" href={transferHref}>
+            Registrar el traspaso →
+          </Link>
+        </div>
+      ) : null}
+
+      <div className="trashExitPane trashMisEntryPane">
+        <p>
+          Se archivará tal cual, sin registrar ninguna operación, y quedará dicho en la
+          Papelera que ese valor era un error de registro. El patrimonio bajará por ese
+          importe: era un valor que nunca tuviste.
+        </p>
+        <button type="submit">Eliminar sin operación</button>
+      </div>
     </div>
   );
 }

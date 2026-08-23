@@ -337,3 +337,50 @@ describe("recordTransferAction — refusals land on the form, not on a broken sc
     expect(redirect).toContain("misma inversión");
   });
 });
+
+/**
+ * The Papelera's «Lo traspasé a…» exit (#1549). Arriving from the trash door, the
+ * traspaso is the movement that explains where the origin's money went — so the
+ * archive rides the SAME submit. A second gesture, later, is exactly the one
+ * Groupama never got.
+ */
+describe("recordTransferAction — the traspaso exit of the Papelera door (#1549)", () => {
+  test("«todo» plus the archive intent leaves the origin in the trash, marked as traspasado", async () => {
+    const store = await seed();
+
+    expect(
+      await submit(transferForm({ archiveOrigin: "1", portion: "all" }), store),
+    ).toContain("ok=transfer_recorded");
+
+    const trashed = await store.agentView.readTrashedHoldings();
+    expect(trashed).toHaveLength(1);
+    expect(trashed[0]).toMatchObject({ id: ORIGIN, trashExit: "transferred" });
+    // The money is in the destination, not gone: the pair is written either way.
+    expect((await positionOf(store, DESTINATION)).currentUnits).not.toBe("0");
+
+    store.close();
+  });
+
+  test("a PARTIAL traspaso is written but archives nothing — a live position is not litter", async () => {
+    const store = await seed();
+
+    expect(await submit(transferForm({ archiveOrigin: "1" }), store)).toContain(
+      "ok=transfer_recorded",
+    );
+
+    expect(await store.agentView.readTrashedHoldings()).toEqual([]);
+    expect((await positionOf(store, ORIGIN)).currentUnits).not.toBe("0");
+
+    store.close();
+  });
+
+  test("without the intent, emptying the origin leaves it exactly where it was", async () => {
+    const store = await seed();
+
+    await submit(transferForm({ portion: "all" }), store);
+
+    expect(await store.agentView.readTrashedHoldings()).toEqual([]);
+
+    store.close();
+  });
+});

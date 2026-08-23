@@ -85,7 +85,13 @@ describe("investment position persistence", () => {
       ),
     ).toEqual(["asset_acme"]);
 
-    await store.assets.softDeleteAsset("asset_acme", "2026-06-11T10:00:00.000Z");
+    // The position holds 10 units, so the door needs an exit (#1549); what this
+    // test is about is the LIVE read excluding trash, either way.
+    await store.assets.softDeleteAsset(
+      "asset_acme",
+      "2026-06-11T10:00:00.000Z",
+      "mis_entry",
+    );
 
     expect(await store.snapshots.readPositions("member_jose")).toEqual([]);
 

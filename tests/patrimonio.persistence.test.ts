@@ -327,8 +327,8 @@ describe("batchApplyAllValueUpdates — atomic asset+liability pass", () => {
   });
 });
 
-describe("softDeleteAsset / restoreAsset — returns affected row count", () => {
-  test("returns 1 when the asset exists", async () => {
+describe("softDeleteAsset / restoreAsset — the door's verdict, and the row count", () => {
+  test("archives an existing holding, and restore reports its one row", async () => {
     const store = await setupStore();
     await store.assets.createManualAsset({
       id: "a_del",
@@ -340,16 +340,21 @@ describe("softDeleteAsset / restoreAsset — returns affected row count", () => 
       isPrimaryResidence: false,
       ownership: [{ memberId: "m_ana", shareBps: 10_000 }],
     });
-    expect(await store.assets.softDeleteAsset("a_del", new Date().toISOString())).toBe(1);
+    // Since #1549 the soft delete answers a VERDICT, not a row count: it is a door
+    // that can refuse (money still inside, a cartera's cash box), and "0 rows" could
+    // never tell «no existe» from «no puedes».
+    expect(await store.assets.softDeleteAsset("a_del", new Date().toISOString())).toEqual(
+      { status: "deleted" },
+    );
     expect(await store.assets.restoreAsset("a_del")).toBe(1);
     store.close();
   });
 
-  test("returns 0 when the id does not exist", async () => {
+  test("reports not-found when the id does not exist", async () => {
     const store = await setupStore();
-    expect(await store.assets.softDeleteAsset("ghost_id", new Date().toISOString())).toBe(
-      0,
-    );
+    expect(
+      await store.assets.softDeleteAsset("ghost_id", new Date().toISOString()),
+    ).toEqual({ status: "not_found" });
     expect(await store.assets.restoreAsset("ghost_id")).toBe(0);
     store.close();
   });

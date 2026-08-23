@@ -19,6 +19,7 @@ import type {
   PriceFreshnessState,
   SourceAdapter,
   SourcePosition,
+  TrashExit,
   WarningOverride,
   Workspace,
 } from "@worthline/domain";
@@ -99,6 +100,13 @@ export interface AgentViewTrashedHolding {
    * holding's owned share, exactly as the household figure does (PRD #1103 S3).
    */
   ownership: OwnershipShare[];
+  /**
+   * How the holding LEFT the book, when the Papelera's door recorded it (#1549):
+   * sold | transferred | mis_entry. Null for a liability, for a row archived
+   * before the door existed, and for the ordinary trash of a position with
+   * nothing inside.
+   */
+  trashExit: TrashExit | null;
 }
 
 /**
@@ -415,6 +423,7 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
       id: assets.id,
       instrument: assets.instrument,
       name: assets.name,
+      trashExit: assets.trashExit,
     })
     .from(assets)
     .where(isNotNull(assets.deletedAt))
@@ -469,6 +478,7 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
       instrument: row.instrument,
       kind: "asset" as const,
       name: row.name,
+      trashExit: row.trashExit,
       valueMinor: row.currentValueMinor,
       ...trashedOf(assetOwners.get(row.id) ?? []),
     })),
@@ -478,6 +488,8 @@ async function readTrashedHoldings(db: StoreDb): Promise<AgentViewTrashedHolding
       instrument: row.instrument,
       kind: "liability" as const,
       name: row.name,
+      // A liability keeps no operations ledger, so it has no exit to record.
+      trashExit: null,
       valueMinor: row.currentBalanceMinor,
       ...trashedOf(liabilityOwners.get(row.id) ?? []),
     })),

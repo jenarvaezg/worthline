@@ -351,6 +351,9 @@ async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<s
     name: "Fondo borrado con saldo",
     ownership: owner,
   });
+  // Archived before its ledger exists — the only way to reach this state since the
+  // Papelera's door (#1549), and the shape of the rows archived before it existed.
+  await store.assets.softDeleteAsset("asset_trashed_fund", "2026-07-01T10:00:00.000Z");
   await store.operations.recordOperation({
     assetId: "asset_trashed_fund",
     currency: "EUR",
@@ -361,7 +364,6 @@ async function seedAllCategories(prefix = "worthline-agent-view-dq-"): Promise<s
     pricePerUnit: "100",
     units: "10",
   });
-  await store.assets.softDeleteAsset("asset_trashed_fund", "2026-07-01T10:00:00.000Z");
 
   // No FIRE config saved, no snapshots captured → missing_configuration +
   // history_coverage signals.
@@ -1008,6 +1010,14 @@ describe("TRASHED_WITH_BALANCE (#1365)", () => {
       name: "Fondo Indexado",
       ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
     });
+    // Archived BEFORE its ledger exists, which is how a row reaches this state at
+    // all now: since #1549 the Papelera's door refuses to archive a holding with
+    // units unless the owner declares «fue un error de registro», and that
+    // declaration silences this very signal. What the signal still hunts is the
+    // rows archived before the door existed — the ones in Jorge's real book.
+    if (options.trashed) {
+      await store.assets.softDeleteAsset("asset_fund", "2026-07-01T10:00:00.000Z");
+    }
     await store.operations.recordOperation({
       assetId: "asset_fund",
       currency: "EUR",
@@ -1029,9 +1039,6 @@ describe("TRASHED_WITH_BALANCE (#1365)", () => {
         pricePerUnit: "120",
         units: "10",
       });
-    }
-    if (options.trashed) {
-      await store.assets.softDeleteAsset("asset_fund", "2026-07-01T10:00:00.000Z");
     }
     store.close();
   }

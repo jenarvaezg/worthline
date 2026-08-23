@@ -6024,6 +6024,66 @@ td.rowActions > * {
   margin: 0 0 12px;
 }
 
+/* The Papelera's door (#1549). Three exits, disclosed with pure CSS `:has()` like
+   the traspaso panes and the add wizard's drawers (ADR 0009) — no JS, and nothing
+   inside a hidden pane ever carries a native `required` (the #677 trap). Each
+   exit's submit lives INSIDE its pane, so with no exit chosen there is no button on
+   screen: the gate is visible before the server has to state it. */
+.trashGate {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.trashExits {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.trashExits legend {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  padding: 0 4px;
+}
+
+.trashExits label {
+  align-items: center;
+  display: flex;
+  font-size: 0.85rem;
+  gap: 8px;
+}
+
+.trashExitPane {
+  border-left: 2px solid var(--line);
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 12px;
+}
+
+.trashGate:has(input[name="exit"][value="sold"]:checked) .trashSoldPane,
+.trashGate:has(input[name="exit"][value="transferred"]:checked) .trashTransferPane,
+.trashGate:has(input[name="exit"][value="mis_entry"]:checked) .trashMisEntryPane {
+  display: flex;
+}
+
+.trashTransferPane .actionLink {
+  align-self: flex-start;
+}
+
+/* How a Papelera row left the book (#1549) — a quiet aside next to the name, never
+   a badge: it explains a row that is already archived, it does not ask for action. */
+.balanceTrashExit {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 /* Import preview (#104): file content summary + errors before confirm. */
 .importPreview {
   display: grid;
