@@ -24,6 +24,24 @@ bun dev   →   http://localhost:3000/patrimonio/prototipo-cartera-grupo
 
 La ruta devuelve 404 en producción (`NODE_ENV === "production"`).
 
+## Veredicto (Jose, 23-08)
+
+**Gana la mezcla, `?variant=e`** — y es la que abre por defecto:
+
+- la **fila y el raíl de A** (la cartera es una fila más, los hijos se indentan),
+- el **chip «CARTERA» de C** (dice lo que la fila es sin gastar palabras),
+- las **divisiones de B**: la barra de peso de la fila se divide en segmentos,
+  uno por miembro, así que el reparto se lee sin desplegar.
+
+La barra de la fila conserva su único significado de siempre (cuánto pesa esta
+fila en su sección) y solo gana textura por dentro. Al desplegar, una segunda
+barra reescala ese mismo reparto al 100 % de la cartera, que es la escala en la
+que los porcentajes de los hijos se comprueban con el ojo. **Duda para la
+implementación:** si esa segunda barra sobra, o si al revés debería sustituir a
+los porcentajes de las filas hijas.
+
+A, B, C y D se quedan en la rama como fuente primaria de por qué E es lo que es.
+
 ## Las variantes
 
 | | Qué propone | Apuesta | Coste |
@@ -32,6 +50,7 @@ La ruta devuelve 404 en producción (`NODE_ENV === "production"`).
 | **B** Mini-panel anidado | Un panel dentro del panel, con su **barra de composición propia visible aun cerrada** | Lo que importa de una gestionada es el reparto, no la lista | Rompe el ritmo de filas: mete un objeto con marco en la lista |
 | **C** Fila opaca + cajón | La cartera es una fila normal con un chip; el desglose se abre en un cajón a ancho completo bajo el tablero | Σ filas = bruto se defiende solo si una cartera es SIEMPRE una fila | Renuncia a la jerarquía en la lista; el desglose vive lejos |
 | **D** Sección propia sobre los ejes | Las carteras salen del eje y se agrupan en cabeza del panel; el desglose son fichas de peso | Elimina la pregunta «¿en qué bucket cae la Metal?» | El eje deja de ser exhaustivo |
+| **E** La mezcla ★ | A + chip de C + barra de fila dividida por miembros (B) | La lista sigue siendo filas homogéneas y aun así se lee el reparto | Con la cartera pesando poco en su sección, las divisiones se pierden |
 
 ## Fixture
 

@@ -428,3 +428,57 @@
   text-decoration-thickness: 2px;
   text-underline-offset: 4px;
 }
+
+/* ── Variante E: la mezcla (A + chip de C + divisiones de B) ────────────── */
+
+/* La barra de peso de la fila, ahora dividida por miembros. El ancho lo pone
+   el peso en la sección; los segmentos reparten ESE ancho.
+   `:global(.balanceRowBar) > .eSegBar` porque la regla de globals.css
+   (`.balanceRowBar > span { display: block }`) gana por especificidad y deja
+   los segmentos en línea, sin ancho. */
+:global(.balanceRowBar) > .eSegBar {
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: 100%;
+  min-width: 2px;
+  overflow: hidden;
+}
+
+.eSeg {
+  display: block;
+  height: 100%;
+  min-width: 1px;
+}
+
+.eSeg + .eSeg {
+  border-left: 1px solid var(--panel);
+}
+
+/* El mismo reparto reescalado al 100 % de la cartera, sobre los hijos. */
+.eInnerBar {
+  background: var(--hairline);
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: 8px;
+  margin: 6px 0 8px;
+  overflow: hidden;
+}
+
+.eInnerBar .eSeg + .eSeg {
+  border-left: 1.5px solid var(--panel);
+}
+
+.eChild {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 3px 0;
+}
+
+.eChildWeight {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}

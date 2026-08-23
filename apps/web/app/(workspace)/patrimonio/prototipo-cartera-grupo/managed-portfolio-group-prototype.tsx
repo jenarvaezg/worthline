@@ -34,13 +34,18 @@ import VariantA, { VARIANT_A_NAME } from "./variant-a-subseccion";
 import VariantB, { VARIANT_B_NAME } from "./variant-b-mini-panel";
 import VariantC, { VARIANT_C_NAME } from "./variant-c-cajon";
 import VariantD, { VARIANT_D_NAME } from "./variant-d-seccion-propia";
+import VariantE, { VARIANT_E_NAME } from "./variant-e-mezcla";
 
 const VARIANTS = [
+  { key: "e", name: VARIANT_E_NAME },
   { key: "a", name: VARIANT_A_NAME },
   { key: "b", name: VARIANT_B_NAME },
   { key: "c", name: VARIANT_C_NAME },
   { key: "d", name: VARIANT_D_NAME },
 ];
+
+/** La mezcla es la que gana el default: es el candidato a implementar. */
+const DEFAULT_VARIANT = "e";
 
 const AXES: Axis[] = ["direction", "rung", "instrument"];
 
@@ -54,7 +59,7 @@ export default function ManagedPortfolioGroupPrototype() {
   const params = useSearchParams();
   const [open, setOpen] = useState(false);
 
-  const variant = params.get("variant") ?? "a";
+  const variant = params.get("variant") ?? DEFAULT_VARIANT;
   const axis = (params.get("eje") as Axis | null) ?? "direction";
   const bucketMode = (params.get("bucket") as BucketMode | null) ?? "own";
 
@@ -164,11 +169,12 @@ export default function ManagedPortfolioGroupPrototype() {
         </div>
       </dl>
 
+      {variant === "a" ? <VariantA {...props} /> : null}
       {variant === "b" ? <VariantB {...props} /> : null}
       {variant === "c" ? <VariantC {...props} /> : null}
       {variant === "d" ? <VariantD {...props} /> : null}
-      {variant !== "b" && variant !== "c" && variant !== "d" ? (
-        <VariantA {...props} />
+      {variant !== "a" && variant !== "b" && variant !== "c" && variant !== "d" ? (
+        <VariantE {...props} />
       ) : null}
 
       <PrototypeSwitcher
