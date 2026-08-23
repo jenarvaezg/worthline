@@ -17,6 +17,8 @@
  * los porcentajes de los hijos se pueden leer.
  */
 
+import Link from "next/link";
+
 import { barColor, money, PlainRow, pct, SubHead } from "./board-bits";
 import type { Section, Unit } from "./grouping";
 import styles from "./prototipo-cartera-grupo.module.css";
@@ -28,13 +30,19 @@ type PortfolioUnit = Extract<Unit, { kind: "portfolio" }>;
 
 /** Los segmentos del reparto interno, en una escala u otra. */
 function Segments({ unit, scaleMinor }: { unit: PortfolioUnit; scaleMinor: number }) {
-  return unit.members.map((member, index) => (
+  return unit.members.map((member) => (
     <span
       className={styles.eSeg}
       key={member.id}
       style={{
+        // El color lo pone el escalón del miembro y nada más (design-system §5):
+        // una rampa de opacidad por tamaño sería color decorativo en un tablero
+        // donde el color significa liquidez. Las divisiones las hacen las
+        // separaciones, no el tono.
         background: barColor(member.tier, true),
-        opacity: 1 - Math.min(index, 7) * 0.085,
+        // Sin min-width: un suelo por segmento hace que 8 miembros ocupen 8 px
+        // en una barra de 3 px y el recorte se coma los últimos. Que un miembro
+        // diminuto desaparezca es más honesto que una barra desproporcionada.
         width: `${(member.amountMinor / (scaleMinor || 1)) * 100}%`,
       }}
       title={`${member.name} · ${money(member.amountMinor)}`}
@@ -61,10 +69,21 @@ function GroupRow({
     <>
       <div className={`balanceRow${banded ? " band" : ""}`}>
         <div className="balanceRowName">
-          <button className={styles.aToggle} onClick={onToggle} type="button">
-            <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-            {unit.name}
-          </button>
+          {/* El triángulo despliega; el NOMBRE navega a la ficha de cartera
+              (S1, #1547). Si el nombre entero fuese el toggle, el grupo se
+              comería la puerta que S1 acaba de construir. */}
+          <span className={styles.eNameRow}>
+            <button
+              aria-expanded={open}
+              aria-label={open ? "Colapsar la cartera" : "Expandir la cartera"}
+              className={styles.eCaret}
+              onClick={onToggle}
+              type="button"
+            >
+              <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+            </button>
+            <Link href={`/patrimonio/carteras/${unit.id}`}>{unit.name}</Link>
+          </span>
           <div className="balanceRowSub">
             <span className={styles.cChip}>cartera</span>
             <span>

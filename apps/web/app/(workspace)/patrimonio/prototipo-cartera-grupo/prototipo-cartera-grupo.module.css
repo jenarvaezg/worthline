@@ -482,3 +482,23 @@
   min-width: 44px;
   text-align: right;
 }
+
+.eNameRow {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.eCaret {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+}
+
+.eCaret:hover {
+  color: var(--blue);
+}

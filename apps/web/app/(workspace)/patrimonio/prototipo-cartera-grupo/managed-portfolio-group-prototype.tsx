@@ -61,7 +61,7 @@ export default function ManagedPortfolioGroupPrototype() {
 
   const variant = params.get("variant") ?? DEFAULT_VARIANT;
   const axis = (params.get("eje") as Axis | null) ?? "direction";
-  const bucketMode = (params.get("bucket") as BucketMode | null) ?? "own";
+  const bucketMode = (params.get("bucket") as BucketMode | null) ?? "dominant";
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params.toString());

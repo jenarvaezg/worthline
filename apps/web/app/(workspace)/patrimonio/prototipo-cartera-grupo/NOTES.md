@@ -40,6 +40,18 @@ que los porcentajes de los hijos se comprueban con el ojo. **Duda para la
 implementación:** si esa segunda barra sobra, o si al revés debería sustituir a
 los porcentajes de las filas hijas.
 
+**Decidido también (Jose, 23-08):** en el eje Instrumento la cartera **hereda el
+instrumento dominante («Fondo»)** — nada de bucket propio. `?bucket=` sigue en el
+prototipo para ver la alternativa, pero el defecto ya es `dominant`.
+
+**Pega medida de E, sin resolver en el prototipo:** con el eje Activos/Pasivos la
+barra de la fila mide **2,91 px** y los 8 segmentos —solo con sus separadores de
+1 px— suman **8 px**: se recortan y se ven tres, los tres primeros por orden y no
+por peso. No es un suelo mal puesto, es que las divisiones no caben. Al
+implementarlo, los cortes deben pintarse con un `linear-gradient` de paradas duras
+en vez de hijos con borde: a 3 px degrada solo al color dominante, sin recorte y
+sin mentir.
+
 A, B, C y D se quedan en la rama como fuente primaria de por qué E es lo que es.
 
 ## Las variantes
