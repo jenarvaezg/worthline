@@ -690,6 +690,16 @@ export {
   valuationMethodOfAsset,
   valuationMethodOfLiability,
 } from "./holding-method";
+export type {
+  HoldingTrashGateInput,
+  HoldingTrashRefusal,
+  TrashExit,
+} from "./holding-trash-exit";
+export {
+  checkHoldingTrashGate,
+  parseTrashExit,
+  trashExitLabel,
+} from "./holding-trash-exit";
 export type { HoldingTrashImpact } from "./holding-trash-impact";
 export { holdingTrashImpact } from "./holding-trash-impact";
 export type {

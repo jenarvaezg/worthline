@@ -40,6 +40,7 @@ import {
   type StoreContext,
 } from "./store-context";
 import type {
+  BatchTrashFailureReason,
   BatchTrashResult,
   HoldingTrashTarget,
   WorthlineStore,
@@ -95,7 +96,7 @@ export async function createStoreFromSqlite(
 class BatchTrashAbort extends Error {
   constructor(
     readonly holdingId: string,
-    readonly reason: "not_found" | "not_in_trash",
+    readonly reason: BatchTrashFailureReason,
   ) {
     super("batch trash aborted");
     this.name = "BatchTrashAbort";
@@ -112,16 +113,15 @@ class BatchTrashAbort extends Error {
 async function runBatchTrash(
   ctx: StoreContext,
   targets: readonly HoldingTrashTarget[],
-  reason: "not_found" | "not_in_trash",
-  apply: (target: HoldingTrashTarget) => Promise<number>,
+  apply: (target: HoldingTrashTarget) => Promise<BatchTrashFailureReason | null>,
 ): Promise<BatchTrashResult> {
   try {
     const count = await ctx.transaction(async () => {
       let touched = 0;
       for (const target of targets) {
-        const affected = await apply(target);
-        if (affected === 0) throw new BatchTrashAbort(target.holdingId, reason);
-        touched += affected;
+        const failure = await apply(target);
+        if (failure) throw new BatchTrashAbort(target.holdingId, failure);
+        touched += 1;
       }
       return touched;
     });
@@ -401,6 +401,7 @@ async function buildStore(
           instrument: assets.instrument,
           isPrimaryResidence: assets.isPrimaryResidence,
           name: assets.name,
+          trashExit: assets.trashExit,
           type: assets.type,
         })
         .from(assets)
@@ -436,18 +437,33 @@ async function buildStore(
 
         return { assets: assetsRemoved, liabilities: liabilitiesRemoved };
       }),
+    // The assistant's baja goes through the SAME Papelera gate as the ficha
+    // (#1549): the batch carries no exit, so a holding with money still inside
+    // aborts the whole unit. Declaring «fue un error de registro» is a statement
+    // about the book that only its owner can make, from the holding's own ficha —
+    // never a box the chat ticks on his behalf.
     batchSoftDeleteHoldings: (targets, deletedAt) =>
-      runBatchTrash(ctx, targets, "not_found", (target) =>
-        target.kind === "asset"
-          ? assetStore.softDeleteAsset(target.holdingId, deletedAt)
-          : liabilityStore.softDeleteLiability(target.holdingId, deletedAt),
-      ),
+      runBatchTrash(ctx, targets, async (target) => {
+        if (target.kind !== "asset") {
+          const affected = await liabilityStore.softDeleteLiability(
+            target.holdingId,
+            deletedAt,
+          );
+          return affected === 0 ? "not_found" : null;
+        }
+        const outcome = await assetStore.softDeleteAsset(target.holdingId, deletedAt);
+        if (outcome.status === "deleted") return null;
+        if (outcome.status === "not_found") return "not_found";
+        return outcome.refusal.reason;
+      }),
     batchRestoreHoldings: (targets) =>
-      runBatchTrash(ctx, targets, "not_in_trash", (target) =>
-        target.kind === "asset"
-          ? assetStore.restoreAsset(target.holdingId)
-          : liabilityStore.restoreLiability(target.holdingId),
-      ),
+      runBatchTrash(ctx, targets, async (target) => {
+        const affected =
+          target.kind === "asset"
+            ? await assetStore.restoreAsset(target.holdingId)
+            : await liabilityStore.restoreLiability(target.holdingId);
+        return affected === 0 ? "not_in_trash" : null;
+      }),
     readAuditLog: async (filter) => {
       const { db } = ctx;
       const rows = filter?.entityId

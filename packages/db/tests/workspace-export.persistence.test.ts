@@ -177,7 +177,10 @@ async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
     pricePerUnit: "50000",
     units: "0.1",
   });
-  await store.assets.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z");
+  // The Papelera's gate refuses a position with units still inside unless the owner
+  // declares the mis-entry (#1549), so the fixture declares it — and the export must
+  // carry the declaration.
+  await store.assets.softDeleteAsset("a_inv2", "2026-04-01T00:00:00.000Z", "mis_entry");
 
   await store.liabilities.createLiability({
     balanceMinor: 30000,
@@ -382,6 +385,10 @@ describe("exportWorkspace", () => {
     expect(trashedInvestment.deletedAt).toBe("2026-04-01T00:00:00.000Z");
     expect("currentValue" in trashedInvestment).toBe(false);
     expect(trashedInvestment.investment).toEqual({ unitSymbol: "BTC" });
+    expect(trashedInvestment.trashExit).toBe("mis_entry");
+    // A holding archived with nothing inside records no exit: the door only asks
+    // where the money went when there is money inside.
+    expect("trashExit" in trashedManual).toBe(false);
 
     expect(doc.trash.liabilities).toHaveLength(1);
     expect(doc.trash.liabilities[0]!.id).toBe("l_old");

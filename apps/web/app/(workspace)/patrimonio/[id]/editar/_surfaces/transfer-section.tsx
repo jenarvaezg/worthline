@@ -67,6 +67,7 @@ function RecordTransferSubmit({
 }
 
 export default function TransferSection({
+  archiveOrigin = false,
   currentUrl,
   destinations,
   formError,
@@ -77,6 +78,14 @@ export default function TransferSection({
   recordAction,
   today,
 }: {
+  /**
+   * Arrived here from the Papelera's «Lo traspasé a…» exit (#1549): the origin is on
+   * its way to the trash, and this traspaso is the movement that explains where its
+   * money went. The archive rides the SAME submit — a second gesture, later, is
+   * exactly the one Groupama never got — and only happens if the traspaso leaves the
+   * origin empty.
+   */
+  archiveOrigin?: boolean;
   currentUrl: string;
   /** The workspace's other investment holdings, already filtered by the server. */
   destinations: readonly TransferDestinationOption[];
@@ -193,6 +202,13 @@ export default function TransferSection({
         </p>
       ) : null}
 
+      {archiveOrigin ? (
+        <p className="warningBand">
+          Vienes de la Papelera: al registrar este traspaso, «{originName}» se irá a la
+          Papelera si el traspaso lo deja sin participaciones.
+        </p>
+      ) : null}
+
       <form
         action={recordAction}
         aria-label="Traspasar a otra inversión"
@@ -201,6 +217,7 @@ export default function TransferSection({
         onSubmit={onSubmit}
       >
         <input name="currentUrl" type="hidden" value={currentUrl} />
+        {archiveOrigin ? <input name="archiveOrigin" type="hidden" value="1" /> : null}
 
         <label>
           Buscar entre tus inversiones <small>(opcional)</small>

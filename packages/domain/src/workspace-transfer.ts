@@ -19,6 +19,7 @@ import type { ContributionAllowance } from "./contribution-allowance";
 import type { ContributionOccurrenceState, ContributionPlan } from "./contribution-plan";
 import type { DecimalString } from "./decimal";
 import type { FireScopeConfig } from "./fire";
+import type { TrashExit } from "./holding-trash-exit";
 import type { ValuationMethod } from "./holding-valuation";
 import type { Instrument } from "./instrument-catalog";
 import type { InvestmentOperation } from "./investment-types";
@@ -188,6 +189,12 @@ export interface ExportedAsset {
   ownership: OwnershipShare[];
   investment?: ExportedInvestmentMeta;
   deletedAt?: string;
+  /**
+   * How the holding left the book, when the Papelera's door recorded it (#1549):
+   * sold | transferred | mis_entry. Appears only inside the trash section, next to
+   * `deletedAt`, and only when the door had something to record.
+   */
+  trashExit?: TrashExit;
 }
 
 /**

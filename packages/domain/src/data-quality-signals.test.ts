@@ -794,6 +794,30 @@ describe("collectDataQualitySignals — TRASHED_WITH_BALANCE (#1365)", () => {
     expect(trashed([["asset_fondo", "0.00001"]])).toEqual([]);
   });
 
+  test("«fue un error de registro» calla la señal: la pregunta ya está respondida (#1549)", () => {
+    const { input } = fixture();
+    const withExit = (trashExit: "sold" | "mis_entry" | null) =>
+      collectDataQualitySignals(
+        input({
+          netUnitsByAssetId: new Map([["asset_fondo", "120.5"]]),
+          trashedHoldings: [
+            {
+              id: "asset_fondo",
+              name: "Fondo Indexado",
+              ownerMemberIds: ["member_jose"],
+              trashExit,
+            },
+          ],
+        }),
+      ).filter((signal) => signal.category === "trashed_balance");
+
+    expect(withExit("mis_entry")).toEqual([]);
+    // Solo esa declaración. «Lo vendí» sobre un libro que sigue con unidades no es
+    // una salida: es una venta que nadie registró, que es justo lo que la señal caza.
+    expect(withExit("sold")).toHaveLength(1);
+    expect(withExit(null)).toHaveLength(1);
+  });
+
   test("a trashed holding with no ledger at all is silent, not flagged on a rule it cannot answer", () => {
     // A trashed cash account or flat has no operations, so it is absent from the
     // map. Absent must not read as "has units" — that would flag every trashed

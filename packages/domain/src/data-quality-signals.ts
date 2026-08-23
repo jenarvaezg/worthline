@@ -16,6 +16,7 @@ import { type DecimalString, formatUnits } from "./decimal";
 import { INVESTMENT_PROFILE_INSTRUMENTS } from "./exposure-identity";
 import type { FireScopeConfig } from "./fire";
 import { valuationMethodOfAsset } from "./holding-method";
+import type { TrashExit } from "./holding-trash-exit";
 import type { InvestmentOperation } from "./investment-types";
 import type { PriceFreshnessState } from "./prices";
 import { describeSavingsDivergence, scopeSavingsCoherence } from "./savings-coherence";
@@ -88,6 +89,13 @@ export interface DataQualityTrashedHolding {
   id: string;
   name: string;
   ownerMemberIds: readonly string[];
+  /**
+   * How the holding left the book, when the Papelera's door recorded it (#1549).
+   * `mis_entry` is the one exit this rule reads: it is the owner saying the value
+   * was never real, which is precisely the question the signal asks. Absent on a
+   * row archived before the door existed — and those keep raising it, honestly.
+   */
+  trashExit?: TrashExit | null;
 }
 
 export interface DataQualityConnectedSource {
@@ -493,6 +501,12 @@ function warningSeverity(severity: WarningSeverity): DataQualitySeverity {
  * «Sin venta ni traspaso» is literal (#1481): a ledger emptied by a `transfer_out`
  * folds to zero net units, so a holding that LEFT by traspaso never reaches this
  * signal — the same legitimate exit a sale is.
+ *
+ * The third exit is silent for a different reason (#1549): «fue un error de
+ * registro» is the owner declaring that the value was never real. The units are
+ * still on the ledger — restoring the holding must bring it back as it was — so only
+ * the declaration itself can distinguish this from the silence the rule hunts. A
+ * signal that survived being answered would be a signal nobody can ever clear.
  */
 function trashedBalanceSignals(
   trashedHoldings: readonly DataQualityTrashedHolding[],
@@ -503,6 +517,10 @@ function trashedBalanceSignals(
 
   for (const holding of trashedHoldings) {
     if (!holding.ownerMemberIds.some((memberId) => scopeMemberIds.has(memberId))) {
+      continue;
+    }
+
+    if (holding.trashExit === "mis_entry") {
       continue;
     }
 

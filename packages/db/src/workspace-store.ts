@@ -706,6 +706,7 @@ async function importWorkspace(
           isPrimaryResidence: asset.isPrimaryResidence ? 1 : 0,
           liquidityTier: asset.liquidityTier,
           name: asset.name,
+          trashExit: asset.trashExit ?? null,
           type: asset.type,
           // The full holding model (ADR 0015, #155): derive the method from type
           // when the file omits it (a v1-shaped file the user hand-rolled).
@@ -1343,6 +1344,9 @@ async function buildWorkspaceExport(
           }
         : {}),
       ...(row.deletedAt ? { deletedAt: row.deletedAt } : {}),
+      // How it left the book (#1549). Travels with the deletion it explains, so a
+      // restored backup does not re-raise a signal its owner already answered.
+      ...(row.trashExit ? { trashExit: row.trashExit } : {}),
     };
   };
 

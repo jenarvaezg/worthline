@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 61;
+export const SCHEMA_VERSION = 62;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1884,6 +1884,25 @@ export async function migrate(client: Client): Promise<MigrateResult> {
         ON managed_portfolio_holdings(asset_id);`,
     );
     await writeSchemaVersion(client, 61);
+  }
+
+  if (version < 62) {
+    // #1549 (ADR 0085): `assets.trash_exit` — how a holding LEFT the book when the
+    // trash door asked. Nullable with no backfill on purpose: every row already in
+    // the Papelera was archived BEFORE the door existed, and inventing an exit for
+    // it would be the app answering a question only the owner can (the very shape
+    // of the Groupama episode, #1365). They stay null and keep raising
+    // TRASHED_WITH_BALANCE if they hold units, which is the honest state.
+    try {
+      await client.execute("ALTER TABLE assets ADD COLUMN trash_exit TEXT");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // `no such table` is tolerated for the same reason the v60 step tolerates
+      // it: a migration test walks the ladder over a PARTIAL fixture that never
+      // created `assets`, and a real database always has it.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 62);
   }
 
   return { ranV18Backfill, ranV33Backfill };

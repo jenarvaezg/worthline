@@ -147,6 +147,7 @@ describe("collectDashboardDataQualitySignals — trashed with balance (#1365)", 
     name: "Fondo sin símbolo",
     ownerMemberIds: ["member_jose"],
     ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+    trashExit: null,
     valueMinor: 0,
   };
 

@@ -171,6 +171,8 @@ const assetSchema = z.object({
   ownership: z.array(ownershipShareSchema),
   investment: investmentMetaSchema.optional(),
   deletedAt: nonEmptyString.optional(),
+  /** How it left the book, when the Papelera's door recorded it (#1549). */
+  trashExit: z.enum(["sold", "transferred", "mis_entry"]).optional(),
 });
 
 const liabilitySchema = z.object({

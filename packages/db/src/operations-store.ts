@@ -162,7 +162,7 @@ export function createOperationsStore(ctx: StoreContext): OperationsStore {
   return {
     recordOperation: (input, opts) => recordOperations(ctx, [input], opts),
     recordOperations: (inputs, opts) => recordOperations(ctx, inputs, opts),
-    readOperations: (assetId) => readOperations(ctx, assetId),
+    readOperations: (assetId) => readAssetOperations(ctx, assetId),
     deleteOperation: (operationId) => deleteOperation(ctx, operationId),
     readTransferIdOf: (operationId) => readTransferIdOf(ctx, operationId),
     readTransferCounterparts: (assetId) => readTransferCounterparts(ctx, assetId),
@@ -233,7 +233,14 @@ async function recordOperations(
   }
 }
 
-async function readOperations(
+/**
+ * ONE holding's ledger, in the canonical order every fold depends on.
+ *
+ * Exported as a plain function (not only through the store) because the Papelera's
+ * gate folds the same ledger from inside `softDeleteAsset` (#1549), and a second
+ * copy of this query is a second copy of the ORDER BY that `derivePosition` assumes.
+ */
+export async function readAssetOperations(
   ctx: StoreContext,
   assetId: string,
 ): Promise<InvestmentOperation[]> {

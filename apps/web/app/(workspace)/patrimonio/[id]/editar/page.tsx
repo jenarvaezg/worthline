@@ -81,7 +81,7 @@ import { transferDestinationOptions } from "./_surfaces/transfer-form";
 import TransferSection from "./_surfaces/transfer-section";
 
 /** The forms that render their own error band, next to the field that produced it. */
-const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer"];
+const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer", "trash"];
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -424,10 +424,37 @@ export default async function EditarPage({
   // one the ficha shows above it. Null for a sold-out position (and for every
   // holding with no operations ledger), which is what keeps the clean delete clean.
   const trashImpact = holdingTrashImpact(position);
-  // The sale link in that notice returns HERE with the advanced block unfolded
-  // (interaction-patterns §3: the state is read from the URL on load). A bare
-  // fragment would scroll to a collapsed <details> and reveal nothing.
-  const advancedOpen = resolvedSearchParams?.abrir === "operaciones";
+  // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
+  // unfolded and the archive intent in the URL (#1549) — the traspaso surface is
+  // inside a collapsed <details>, so a bare fragment would reveal nothing. The
+  // intent must survive a real navigation (the server renders the hidden field), so
+  // unlike #1365's sale link this one is not a pushState reveal.
+  const abrir = resolvedSearchParams?.abrir;
+  const advancedOpen = abrir === "operaciones" || abrir === "traspaso";
+  const archiveOriginAfterTransfer = resolvedSearchParams?.archivar === "1";
+  // Whether this ficha's ledger takes apuntes written BY HAND — a derived holding
+  // that is neither a coin collection nor a synced one, and that already has a
+  // ledger. It gates the Traspasar surface and, with it, the two Papelera exits that
+  // write an apunte: on a source-owned ledger, «lo vendí» would record a sale the
+  // ficha refuses to show and the next sync would undo.
+  const hasManualLedger =
+    asset !== null &&
+    method === "derived" &&
+    !isCoinCollection &&
+    !isBinanceHolding &&
+    operations.length > 0;
+  const manualLedger = hasManualLedger
+    ? { transferHref: `${currentUrl}?abrir=traspaso&archivar=1#traspaso` }
+    : null;
+  // The cash sibling of a live managed portfolio cannot be trashed on its own (ADR
+  // 0085, #1549): it is the container's casilla, created by the alta. The SAME read
+  // the gate makes, so the ficha can never offer a delete the store would refuse.
+  // Only asked for a non-investment holding — the only shape a cash member can have
+  // — so an investment ficha pays no extra read.
+  const containerPortfolio =
+    asset && asset.type !== "investment"
+      ? await store.managedPortfolios.readCashContainerName(id)
+      : null;
 
   // Bind the holding id to the operations actions so the `derived` surface posts
   // back to this detail page (#153 collapsed the /inversiones management routes;
@@ -765,12 +792,9 @@ export default async function EditarPage({
                 later, and the one that emptied the holding is exactly the row that is
                 still missing. The ledger travels so the preview can fold it at the
                 date the user picks (#1438). */}
-            {asset &&
-            method === "derived" &&
-            !isCoinCollection &&
-            !isBinanceHolding &&
-            operations.length > 0 ? (
+            {hasManualLedger ? (
               <TransferSection
+                archiveOrigin={archiveOriginAfterTransfer}
                 currentUrl={currentUrl}
                 destinations={transferDestinations}
                 formError={formError}
@@ -886,10 +910,14 @@ export default async function EditarPage({
         {/* Danger zone — two-step delete, with the truth about what it withdraws */}
         {asset ? (
           <DangerZoneSection
+            containerPortfolio={containerPortfolio}
             currentUrl={currentUrl}
+            formError={formError}
             holdingId={id}
             kind="asset"
             privacyMode={privacyMode}
+            manualLedger={manualLedger}
+            today={today}
             trashImpact={trashImpact}
           />
         ) : (

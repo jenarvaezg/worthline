@@ -6,6 +6,7 @@ import type {
   DecimalString,
   FireScopeConfig,
   Instrument,
+  TrashExit,
   ValuationCadence,
   WarningOverride,
 } from "@worthline/domain";
@@ -125,6 +126,8 @@ export interface TrashView {
     instrument?: Instrument | null;
     isPrimaryResidence?: number;
     connectedSourceId?: string | null;
+    /** How it left the book, when the Papelera's door recorded it (#1549). */
+    trashExit?: TrashExit | null;
   }>;
   liabilities: Array<{ id: string; name: string }>;
 }
@@ -140,9 +143,17 @@ export interface HoldingTrashTarget {
  * carries the number of rows touched; a failure names the offending holding and
  * why it aborted, with the whole batch already rolled back.
  */
+export type BatchTrashFailureReason =
+  | "not_found"
+  | "not_in_trash"
+  /** The Papelera's gate refused: the holding still holds units (#1549). */
+  | "needs_exit"
+  /** The holding is a live managed portfolio's cash box (ADR 0085, #1549). */
+  | "portfolio_cash";
+
 export type BatchTrashResult =
   | { ok: true; count: number }
-  | { ok: false; reason: "not_found" | "not_in_trash"; holdingId: string };
+  | { ok: false; reason: BatchTrashFailureReason; holdingId: string };
 
 /**
  * The full real_estate creation command for `store.command.createHousingHolding`.
