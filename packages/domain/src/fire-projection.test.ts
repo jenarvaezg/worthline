@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectFire } from "./fire-projection";
+import { projectFire, projectFireFamily } from "./fire-projection";
 
 describe("projectFire", () => {
   it("returns three scenarios in order with ±1.5% shifts off the base return", () => {
@@ -117,5 +117,61 @@ describe("projectFire", () => {
 
     expect(base.yearsToFire).toBe(10);
     expect(base.ageAtFire).toBeNull();
+  });
+});
+
+describe("projectFireFamily", () => {
+  const baseInput = {
+    startingEligibleMinor: 0,
+    monthlyContributionMinor: 100_000,
+    expectedRealReturn: 0,
+    fireNumberMinor: 12_000_000,
+    currentAge: 30,
+  };
+
+  it("chart projection matches projectFire to the regular target", () => {
+    const family = projectFireFamily({
+      ...baseInput,
+      horizonTargetMinor: 18_000_000,
+    });
+
+    expect(family.chart).toEqual(projectFire(baseInput));
+  });
+
+  it("rail projection matches projectFire to the horizon target", () => {
+    const family = projectFireFamily({
+      ...baseInput,
+      horizonTargetMinor: 18_000_000,
+    });
+
+    expect(family.rail).toEqual(
+      projectFire({ ...baseInput, fireNumberMinor: 18_000_000 }),
+    );
+  });
+
+  it("already at the regular target still grows the rail to the horizon", () => {
+    const input = {
+      startingEligibleMinor: 12_000_000,
+      monthlyContributionMinor: 100_000,
+      expectedRealReturn: 0,
+      fireNumberMinor: 12_000_000,
+      currentAge: 40,
+      horizonTargetMinor: 18_000_000,
+    };
+    const family = projectFireFamily(input);
+
+    expect(family.chart).toEqual(
+      projectFire({
+        startingEligibleMinor: 12_000_000,
+        monthlyContributionMinor: 100_000,
+        expectedRealReturn: 0,
+        fireNumberMinor: 12_000_000,
+        currentAge: 40,
+      }),
+    );
+    expect(family.rail.scenarios.find((s) => s.label === "base")!.yearsToFire).toBe(5);
+    expect(
+      family.chart.scenarios.find((s) => s.label === "base")!.trajectory,
+    ).toHaveLength(1);
   });
 });

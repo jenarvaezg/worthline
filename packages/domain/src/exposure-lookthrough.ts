@@ -101,9 +101,29 @@ export interface ExposureLookthrough {
   currencyRisk: ExposureAllocationSlice[];
 }
 
+export type LookthroughDimension =
+  | "geography"
+  | "currency"
+  | "assetClass"
+  | "sector"
+  | "currencyRisk";
+
+const ALL_LOOKTHROUGH_DIMENSIONS: readonly LookthroughDimension[] = [
+  "geography",
+  "currency",
+  "assetClass",
+  "sector",
+  "currencyRisk",
+];
+
 export interface ExposureLookthroughInput {
   assetClassFilter?: ExposureAssetClassBucket;
   baseCurrency: CurrencyCode;
+  /**
+   * Axes to compute. Omitted → all six (including derived sector style, which
+   * follows `sector`). Drift what-if only needs geography + asset class (#1537).
+   */
+  dimensions?: readonly LookthroughDimension[];
   grossAssets: MoneyMinor;
   holdings: readonly ExposureLookthroughHolding[];
   profiles: ReadonlyMap<string, ExposureProfile>;
@@ -235,6 +255,7 @@ export function lookThroughExposure(
         currency,
       }
     : input.grossAssets;
+  const wanted = new Set(input.dimensions ?? ALL_LOOKTHROUGH_DIMENSIONS);
   const geographyTotals = new Map<string, number>();
   const currencyTotals = new Map<string, number>();
   const currencyRiskTotals = new Map<string, number>();
@@ -250,57 +271,79 @@ export function lookThroughExposure(
   for (const { holding, profile, valueMinor } of projectedHoldings) {
     const filteredHolding = { ...holding, valueMinor };
 
-    addProfileDimension({
-      assetClassFilter: input.assetClassFilter,
-      coverage: coverage.geography,
-      dimension: "geography",
-      holding: filteredHolding,
-      profile,
-      totals: geographyTotals,
-    });
-    addProfileDimension({
-      assetClassFilter: input.assetClassFilter,
-      coverage: coverage.currency,
-      dimension: "currency",
-      holding: filteredHolding,
-      profile,
-      totals: currencyTotals,
-    });
-    addProfileDimension({
-      assetClassFilter: input.assetClassFilter,
-      coverage: coverage.assetClass,
-      dimension: "assetClass",
-      holding: filteredHolding,
-      profile,
-      totals: assetClassTotals,
-    });
-    addSectorDimension({
-      assetClassFilter: input.assetClassFilter,
-      coverage: coverage.sector,
-      holding: filteredHolding,
-      profile,
-      totals: sectorTotals,
-    });
-    addCurrencyRisk(currencyRiskTotals, filteredHolding, profile, input.baseCurrency);
+    if (wanted.has("geography")) {
+      addProfileDimension({
+        assetClassFilter: input.assetClassFilter,
+        coverage: coverage.geography,
+        dimension: "geography",
+        holding: filteredHolding,
+        profile,
+        totals: geographyTotals,
+      });
+    }
+    if (wanted.has("currency")) {
+      addProfileDimension({
+        assetClassFilter: input.assetClassFilter,
+        coverage: coverage.currency,
+        dimension: "currency",
+        holding: filteredHolding,
+        profile,
+        totals: currencyTotals,
+      });
+    }
+    if (wanted.has("assetClass")) {
+      addProfileDimension({
+        assetClassFilter: input.assetClassFilter,
+        coverage: coverage.assetClass,
+        dimension: "assetClass",
+        holding: filteredHolding,
+        profile,
+        totals: assetClassTotals,
+      });
+    }
+    if (wanted.has("sector")) {
+      addSectorDimension({
+        assetClassFilter: input.assetClassFilter,
+        coverage: coverage.sector,
+        holding: filteredHolding,
+        profile,
+        totals: sectorTotals,
+      });
+    }
+    if (wanted.has("currencyRisk")) {
+      addCurrencyRisk(currencyRiskTotals, filteredHolding, profile, input.baseCurrency);
+    }
   }
 
-  const sectorSlices = slicesFromTotals(sectorTotals, exposureGrossAssets);
+  const sectorSlices = wanted.has("sector")
+    ? slicesFromTotals(sectorTotals, exposureGrossAssets)
+    : [];
 
   return {
-    assetClass: {
-      coverage: coverage.assetClass,
-      slices: slicesFromTotals(assetClassTotals, exposureGrossAssets),
-    },
-    currency: {
-      coverage: coverage.currency,
-      slices: slicesFromTotals(currencyTotals, exposureGrossAssets),
-    },
-    currencyRisk: slicesFromTotals(currencyRiskTotals, exposureGrossAssets),
-    geography: {
-      coverage: coverage.geography,
-      slices: slicesFromTotals(geographyTotals, exposureGrossAssets),
-    },
-    sector: { coverage: coverage.sector, slices: sectorSlices },
+    assetClass: wanted.has("assetClass")
+      ? {
+          coverage: coverage.assetClass,
+          slices: slicesFromTotals(assetClassTotals, exposureGrossAssets),
+        }
+      : emptyDimensionResult(currency),
+    currency: wanted.has("currency")
+      ? {
+          coverage: coverage.currency,
+          slices: slicesFromTotals(currencyTotals, exposureGrossAssets),
+        }
+      : emptyDimensionResult(currency),
+    currencyRisk: wanted.has("currencyRisk")
+      ? slicesFromTotals(currencyRiskTotals, exposureGrossAssets)
+      : [],
+    geography: wanted.has("geography")
+      ? {
+          coverage: coverage.geography,
+          slices: slicesFromTotals(geographyTotals, exposureGrossAssets),
+        }
+      : emptyDimensionResult(currency),
+    sector: wanted.has("sector")
+      ? { coverage: coverage.sector, slices: sectorSlices }
+      : emptyDimensionResult(currency),
     sectorStyle: sectorStyleFromSlices(sectorSlices),
   };
 }
@@ -734,6 +777,10 @@ function emptyCoverage(currency: CurrencyCode): ExposureCoverage {
     notApplicable: { amountMinor: 0, currency },
     unknown: { amountMinor: 0, currency },
   };
+}
+
+function emptyDimensionResult(currency: CurrencyCode): ExposureDimensionResult {
+  return { coverage: emptyCoverage(currency), slices: [] };
 }
 
 function weightOf(amountMinor: number, grossMinor: number): string {

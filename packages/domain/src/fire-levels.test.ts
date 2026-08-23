@@ -304,4 +304,22 @@ describe("fireLevels — edge cases", () => {
     const levels = fireLevels(input({ config: noAge }))!;
     expect(levels.map((l) => l.key)).toEqual(["lean", "regular", "fat"]);
   });
+
+  it("reuses a precomputed Fat-tall projection without changing ETAs", () => {
+    const fatAmount = Math.round(
+      (BASE_CONFIG.monthlySpendingMinor * 1.5 * 12) / BASE_CONFIG.safeWithdrawalRate,
+    );
+    const context = ctx();
+    const projection = projectFire({
+      expectedRealReturn: BASE_CONFIG.expectedRealReturn!,
+      fireNumberMinor: fatAmount,
+      monthlyContributionMinor: BASE_CONFIG.monthlySavingsCapacityMinor!,
+      startingEligibleMinor: 0,
+      ...(BASE_CONFIG.currentAge === undefined
+        ? {}
+        : { currentAge: BASE_CONFIG.currentAge }),
+    });
+
+    expect(fireLevels({ context, projection })).toEqual(fireLevels({ context }));
+  });
 });

@@ -9,6 +9,8 @@
 
 import { describe, expect, it } from "vitest";
 import type { FireContext, FireScopeConfig } from "./fire";
+import { projectFireFromContext } from "./fire";
+import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 import { goalFireDelay } from "./goal-fire-delay";
 import type { Goal } from "./goals";
 
@@ -285,5 +287,27 @@ describe("goalFireDelay – clamps and edge cases", () => {
     } else {
       expect(result.kind).toBe("no_effect");
     }
+  });
+
+  it("reuses a caller-supplied WITH projection without changing the delay", () => {
+    const context = ctx({ eligibleGrossMinor: 30_000_000 });
+    const thisGoalReservationMinor = 2_000_000;
+    const startingWith = Math.max(
+      0,
+      context.eligibleGrossMinor - thisGoalReservationMinor,
+    );
+    const withProjection = projectFireFromContext(context, {
+      monthlyContributionMinor: monthlySavingsCapacityForFire(context.config),
+      startingEligibleMinor: startingWith,
+    });
+    const input = {
+      context,
+      goal: makeGoal({ targetAmountMinor: 2_000_000 }),
+      now: "2026-06-25",
+      otherReservationsMinor: 0,
+      thisGoalReservationMinor,
+    };
+
+    expect(goalFireDelay({ ...input, withProjection })).toEqual(goalFireDelay(input));
   });
 });

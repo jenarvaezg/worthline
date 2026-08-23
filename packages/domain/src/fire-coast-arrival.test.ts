@@ -193,4 +193,32 @@ describe("fireCoastArrival — la edad a la que SÍ se llega a Coast", () => {
       kind: "reached",
     });
   });
+
+  it("reuses a caller-supplied Fire result instead of calling calculateFire again", () => {
+    const context = ctx({ eligibleMinor: 20_000_000 });
+    const fireResult = calculateFire(
+      context.config,
+      context.eligibleMinor,
+      context.currency,
+      context.realReturnUsed,
+    );
+
+    expect(fireCoastArrival(context, { fireResult })).toEqual(fireCoastArrival(context));
+  });
+
+  it("interpolates Coast on a taller shared trajectory without changing the arrival", () => {
+    const context = ctx({ eligibleMinor: 20_000_000 });
+    const fatAmount = Math.round(
+      (context.config.monthlySpendingMinor * 1.5 * 12) /
+        context.config.safeWithdrawalRate,
+    );
+    const tall = projectFireFromContext(context, {
+      fireNumberMinor: fatAmount,
+      monthlyContributionMinor: monthlySavingsCapacityForFire(context.config),
+    });
+
+    expect(fireCoastArrival(context, { projection: tall })).toEqual(
+      fireCoastArrival(context),
+    );
+  });
 });

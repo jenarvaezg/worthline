@@ -5,7 +5,11 @@ import { assembleFireEligiblePool, type FireExcludedAsset } from "./fire-eligibl
 import type { FireGrowthAssumption } from "./fire-plan-projection";
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import type { FireProjection } from "./fire-projection";
-import { projectFire } from "./fire-projection";
+import {
+  type FireProjectionFamily,
+  projectFire,
+  projectFireFamily,
+} from "./fire-projection";
 import type { FireRentReturnReport } from "./fire-rent-return";
 import { deriveRentRealReturns, scopedNetRentAnnualMinor } from "./fire-rent-return";
 import type { FireRetirementPlan } from "./fire-retirement-profile";
@@ -304,6 +308,30 @@ export function projectFireFromContext(
     monthlyContributionMinor: input.monthlyContributionMinor ?? 0,
     expectedRealReturn: context.realReturnUsed,
     fireNumberMinor,
+    ...(currentAge === undefined ? {} : { currentAge }),
+    ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+  });
+}
+
+/**
+ * One growth loop, two views (#1537): the chart sliced to the regular FIRE
+ * number and the rail grown to `horizonTargetMinor` (Fat). Scalar only — plan
+ * mode is the contribution what-if, not the /objetivos family.
+ */
+export function projectFireFamilyFromContext(
+  context: FireContext,
+  input: ProjectFireFromContextInput & { horizonTargetMinor: number },
+): FireProjectionFamily {
+  const startingEligibleMinor = input.startingEligibleMinor ?? context.eligibleMinor;
+  const fireNumberMinor = input.fireNumberMinor ?? context.fireNumberMinor;
+  const currentAge = context.config.currentAge;
+
+  return projectFireFamily({
+    expectedRealReturn: context.realReturnUsed,
+    fireNumberMinor,
+    horizonTargetMinor: input.horizonTargetMinor,
+    monthlyContributionMinor: input.monthlyContributionMinor ?? 0,
+    startingEligibleMinor,
     ...(currentAge === undefined ? {} : { currentAge }),
     ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
   });

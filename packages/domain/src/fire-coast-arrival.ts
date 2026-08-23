@@ -25,8 +25,14 @@
  * concepto de Coast solo tiene holgura si ahorras.
  */
 
-import { calculateFire, type FireContext, projectFireFromContext } from "./fire";
-import { fractionalFireYear } from "./fire-projection";
+import {
+  calculateFire,
+  type FireContext,
+  type FireResult,
+  projectFireFromContext,
+} from "./fire";
+import type { FireProjection } from "./fire-projection";
+import { fractionalFireYear, yearsUntilTarget } from "./fire-projection";
 import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 
 export type FireCoastArrival =
@@ -53,14 +59,22 @@ export type FireCoastArrival =
  * requisito que cruzar. Ojo: eso NO es un `unreachable`, que dice «con más ahorro
  * llegarías»; aquí no hay a dónde llegar.
  */
-export function fireCoastArrival(context: FireContext): FireCoastArrival | null {
+export function fireCoastArrival(
+  context: FireContext,
+  options?: {
+    fireResult?: FireResult;
+    /** Shared trajectory (#1537); Coast is interpolated on it instead of reprojected. */
+    projection?: FireProjection;
+  },
+): FireCoastArrival | null {
   const { config, currency, eligibleMinor, realReturnUsed } = context;
   const currentAge = config.currentAge;
 
   // El requisito sale de la misma función que lo imprime en pantalla: si esto lo
   // volviera a dividir por su cuenta, la frontera «ya estoy» / «me faltan X años»
   // podría caer en un sitio distinto del que dice la cifra de al lado.
-  const coast = calculateFire(config, eligibleMinor, currency, realReturnUsed);
+  const coast =
+    options?.fireResult ?? calculateFire(config, eligibleMinor, currency, realReturnUsed);
   const requiredMinor = coast.coastFireRequired?.amountMinor;
 
   if (requiredMinor === undefined || currentAge === undefined) {
@@ -71,16 +85,22 @@ export function fireCoastArrival(context: FireContext): FireCoastArrival | null 
     return { kind: "reached" };
   }
 
-  const projection = projectFireFromContext(context, {
-    // El escalar declarado y nada más (#1416, ADR 0074): la trayectoria que fecha
-    // esta edad es la misma que pinta el gráfico de arriba.
-    monthlyContributionMinor: monthlySavingsCapacityForFire(config),
-    fireNumberMinor: requiredMinor,
-  });
+  const projection =
+    options?.projection ??
+    projectFireFromContext(context, {
+      // El escalar declarado y nada más (#1416, ADR 0074): la trayectoria que fecha
+      // esta edad es la misma que pinta el gráfico de arriba.
+      monthlyContributionMinor: monthlySavingsCapacityForFire(config),
+      fireNumberMinor: requiredMinor,
+    });
   const base = projection.scenarios.find((scenario) => scenario.label === "base")!;
-  const fraction = fractionalFireYear(base.trajectory, requiredMinor, base.yearsToFire);
+  const yearsToCoast =
+    options?.projection === undefined
+      ? base.yearsToFire
+      : yearsUntilTarget(base.trajectory, requiredMinor);
+  const fraction = fractionalFireYear(base.trajectory, requiredMinor, yearsToCoast);
 
-  if (fraction === null) {
+  if (fraction === null || yearsToCoast === null) {
     return { kind: "unreachable" };
   }
 
@@ -90,7 +110,7 @@ export function fireCoastArrival(context: FireContext): FireCoastArrival | null 
     // proyección imprime «a los 99 años» justo al lado. Dos ETAs sacadas de una sola
     // trayectoria bajo dos convenciones de redondeo es exactamente lo que ADR 0077
     // vino a impedir — y con la interpolación en la glosa no se pierde precisión.
-    age: base.ageAtFire!,
+    age: options?.projection === undefined ? base.ageAtFire! : currentAge + yearsToCoast,
     kind: "eta",
     years: Math.round(fraction * 10) / 10,
   };

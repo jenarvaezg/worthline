@@ -71,6 +71,50 @@ export function buildExposureDriftProjection(
   });
 }
 
+/**
+ * One assemble, two growth assumptions (#1537). Flat and historical share the
+ * same scope-weighted holdings and profiles; only the year loop differs.
+ */
+export function buildExposureDriftTrajectories(
+  input: Omit<BuildExposureDriftInput, "growthAssumption">,
+): Record<FireGrowthAssumption, ExposureDriftPoint[]> {
+  const { holdings, profiles } = assembleExposureDriftHoldings({
+    baseCurrency: input.workspace.baseCurrency,
+    workspace: input.workspace,
+    scope: input.scope,
+    assets: input.assets,
+    liabilities: input.liabilities,
+    investmentMeta: input.investmentMeta,
+    exposureProfiles: input.exposureProfiles,
+    plan: input.contributionPlan,
+  });
+
+  const holdingAnnualReturnById = holdingAnnualReturnByIdForProjection({
+    holdingIds: holdings.map((holding) => holding.id),
+    returnsById: input.holdingReturnsById,
+    assumedAnnualReturn: input.assumedAnnualReturn,
+  });
+
+  const project = (growthAssumption: FireGrowthAssumption) =>
+    projectExposureDrift({
+      todayISO: input.today,
+      baseCurrency: input.workspace.baseCurrency,
+      plan: input.contributionPlan,
+      growthAssumption,
+      assumedAnnualReturn: input.assumedAnnualReturn,
+      holdingAnnualReturnById,
+      unitPriceMajorByHoldingId: input.unitPrices,
+      holdings,
+      profiles,
+      ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+    }).trajectory;
+
+  return exposureDriftTrajectories({
+    flat: project("flat"),
+    historical: project("historical"),
+  });
+}
+
 export function exposureDriftTrajectories(input: {
   flat: ExposureDriftPoint[];
   historical: ExposureDriftPoint[];

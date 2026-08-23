@@ -148,3 +148,144 @@ export function projectFire(input: FireProjectionInput): FireProjection {
     ],
   };
 }
+
+export interface FireProjectionFamilyInput extends FireProjectionInput {
+  /** Keep growing until this target (Fat) even after crossing `fireNumberMinor`. */
+  horizonTargetMinor: number;
+}
+
+export interface FireProjectionFamily {
+  /** Trajectory sliced to the regular FIRE number — the chart payload. */
+  chart: FireProjection;
+  /** Trajectory tall enough to cross the horizon target — the level rail. */
+  rail: FireProjection;
+}
+
+/**
+ * One growth loop per scenario, two views (#1537): the chart stops at the
+ * regular FIRE number (byte-identical to `projectFire`), while the rail keeps
+ * going until Fat so Lean/Regular/Fat interpolate on the same path.
+ */
+export function projectFireFamily(
+  input: FireProjectionFamilyInput,
+): FireProjectionFamily {
+  const pairs = (
+    [
+      ["optimistic", input.expectedRealReturn + RETURN_SHIFT],
+      ["base", input.expectedRealReturn],
+      ["pessimistic", input.expectedRealReturn - RETURN_SHIFT],
+    ] as const
+  ).map(([label, annualReturn]) => projectScenarioPair(label, annualReturn, input));
+
+  return {
+    chart: {
+      fireNumberMinor: input.fireNumberMinor,
+      scenarios: pairs.map((pair) => pair.chart),
+    },
+    rail: {
+      fireNumberMinor: input.horizonTargetMinor,
+      scenarios: pairs.map((pair) => pair.rail),
+    },
+  };
+}
+
+function projectScenarioPair(
+  label: FireScenarioLabel,
+  annualReturn: number,
+  input: FireProjectionFamilyInput,
+): { chart: FireScenario; rail: FireScenario } {
+  const maxYears = input.maxYears ?? DEFAULT_MAX_YEARS;
+  const annualContributionMinor = input.monthlyContributionMinor * 12;
+  const fireTarget = input.fireNumberMinor;
+  const horizonTarget = input.horizonTargetMinor;
+  const stopTarget = Math.max(fireTarget, horizonTarget);
+
+  const trajectory: FireTrajectoryPoint[] = [
+    { year: 0, eligibleMinor: input.startingEligibleMinor },
+  ];
+  let capital = input.startingEligibleMinor;
+  let yearsToFire: number | null = capital >= fireTarget ? 0 : null;
+  let yearsToHorizon: number | null = capital >= horizonTarget ? 0 : null;
+
+  if (capital < stopTarget) {
+    for (let year = 1; year <= maxYears; year += 1) {
+      capital = capital * (1 + annualReturn) + annualContributionMinor;
+      trajectory.push({ year, eligibleMinor: Math.round(capital) });
+      if (yearsToFire === null && capital >= fireTarget) {
+        yearsToFire = year;
+      }
+      if (yearsToHorizon === null && capital >= horizonTarget) {
+        yearsToHorizon = year;
+      }
+      if (capital >= stopTarget) {
+        break;
+      }
+    }
+  }
+
+  return {
+    chart: scenarioFromTrajectory(
+      label,
+      annualReturn,
+      input,
+      trajectory,
+      yearsToFire,
+      maxYears,
+      annualContributionMinor,
+    ),
+    rail: scenarioFromTrajectory(
+      label,
+      annualReturn,
+      input,
+      trajectory,
+      yearsToHorizon,
+      maxYears,
+      annualContributionMinor,
+    ),
+  };
+}
+
+function scenarioFromTrajectory(
+  label: FireScenarioLabel,
+  annualReturn: number,
+  input: FireProjectionInput,
+  trajectory: FireTrajectoryPoint[],
+  yearsToTarget: number | null,
+  maxYears: number,
+  annualContributionMinor: number,
+): FireScenario {
+  const sliced =
+    yearsToTarget === 0
+      ? trajectory.slice(0, 1)
+      : yearsToTarget === null
+        ? trajectory
+        : trajectory.slice(0, yearsToTarget + 1);
+  const reachedYear = yearsToTarget ?? maxYears;
+  const ageAtFire =
+    yearsToTarget !== null && input.currentAge !== undefined
+      ? input.currentAge + yearsToTarget
+      : null;
+
+  return {
+    ageAtFire,
+    annualReturn,
+    finalEligibleMinor: sliced.at(-1)!.eligibleMinor,
+    label,
+    totalContributedMinor: annualContributionMinor * reachedYear,
+    trajectory: sliced,
+    yearsToFire: yearsToTarget,
+  };
+}
+
+/** First whole year the (rounded) trajectory is at or above `target`; null if never. */
+export function yearsUntilTarget(
+  trajectory: readonly { year: number; eligibleMinor: number }[],
+  target: number,
+): number | null {
+  for (const point of trajectory) {
+    if (point.eligibleMinor >= target) {
+      return point.year;
+    }
+  }
+  return null;
+}
