@@ -295,7 +295,11 @@ describe("applyStatementImportAndRipple one-pass writes (#770)", () => {
     const affected = (await store.snapshots.readSnapshots()).filter(
       ({ dateKey }) => dateKey >= "2024-01-01",
     );
-    expect(snapshotWrites()).toBe(affected.length);
+    expect(affected.length).toBe(3);
+    // One-pass (#770): each snapshot is persisted once. The INSERT itself is
+    // batched (#1532), so statement count is O(chunks) not O(snapshots).
+    expect(snapshotWrites()).toBeGreaterThan(0);
+    expect(snapshotWrites()).toBeLessThan(affected.length);
     store.close();
   });
 
@@ -398,7 +402,9 @@ describe("applyStatementImportAndRipple one-pass writes (#770)", () => {
       ({ dateKey }) => dateKey >= "2024-02-01",
     );
     expect(affected.length).toBeGreaterThan(1);
-    expect(snapshotWrites()).toBe(affected.length);
+    // One-pass (#770) still holds; writes travel as a batched INSERT (#1532).
+    expect(snapshotWrites()).toBeGreaterThan(0);
+    expect(snapshotWrites()).toBeLessThan(affected.length);
     store.close();
   });
 });

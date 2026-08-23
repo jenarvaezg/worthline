@@ -26,13 +26,23 @@ export function sqlText(stmt: unknown): string {
   return "";
 }
 
-/** Wrap a libSQL client so every SQL statement it runs is reported to `tally`. */
-export function instrumentClient(real: Client, tally: (sql: string) => void): Client {
+/**
+ * Wrap a libSQL client so every SQL statement it runs is reported to `tally`.
+ * `onRoundTrip` fires once per `execute`/`batch` call — a `batch` of N statements
+ * is one round-trip, which is the bound #1532 cares about (statements may still
+ * grow with history; trips must not).
+ */
+export function instrumentClient(
+  real: Client,
+  tally: (sql: string) => void,
+  onRoundTrip?: () => void,
+): Client {
   return new Proxy(real, {
     get(target, prop, receiver) {
       if (prop === "execute") {
         return (...args: unknown[]) => {
           tally(sqlText(args[0]));
+          onRoundTrip?.();
           return (target.execute as (...a: unknown[]) => unknown)(...args);
         };
       }
@@ -40,6 +50,7 @@ export function instrumentClient(real: Client, tally: (sql: string) => void): Cl
         return (...args: unknown[]) => {
           const [stmts] = args;
           if (Array.isArray(stmts)) for (const s of stmts) tally(sqlText(s));
+          onRoundTrip?.();
           return (target.batch as (...a: unknown[]) => unknown)(...args);
         };
       }

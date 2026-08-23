@@ -1,3 +1,4 @@
+import type { InArgs, InStatement } from "@libsql/client";
 import type {
   AssetProjectionContext,
   DomainWarning,
@@ -31,6 +32,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm";
+import { chunk } from "./chunk";
 import { valueLiveHoldingsAtDate } from "./curve-valued-holdings";
 import { assets, snapshotHoldings, snapshotPositionHoldings, snapshots } from "./schema";
 import {
@@ -182,8 +184,19 @@ export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
   };
 }
 
+/**
+ * Snapshot / holding / position rows per batched INSERT. Snapshot rows have
+ * ~14 columns, so 50 stays well under SQLite's parameter cap — same grouping
+ * as fact inserts (#1440, #1532).
+ */
+const SNAPSHOT_ROWS_PER_INSERT = 50;
+const HOLDING_ROWS_PER_INSERT = 50;
+const POSITION_ROWS_PER_INSERT = 50;
+const IDS_PER_IN = 50;
+
+const pendingSnapshotWrites = new WeakMap<StoreContext, SaveSnapshotInput[]>();
+
 async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promise<void> {
-  const { db } = ctx;
   const snapshot = input.snapshot;
 
   // Backstop the reconciliation invariant (ADR 0008, extended to all five
@@ -205,130 +218,214 @@ async function saveSnapshot(ctx: StoreContext, input: SaveSnapshotInput): Promis
         totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
       });
     }
-
-    // Upsert on (scope_id, date_key): concurrent first-loads degrade
-    // gracefully — the second write updates rather than throwing.
-    // explicit replace flag keeps the old id-based delete path for callers
-    // that need to force a specific snapshot id.
-    //
-    // Either way the same-day snapshot is superseded, so its holding rows
-    // go with it — at most one set of rows per scope per day. The delete
-    // must run before the upsert because the upsert rewrites the parent
-    // snapshot id that the rows' foreign key points at.
-    const existing = await db
-      .select({ id: snapshots.id })
-      .from(snapshots)
-      .where(
-        and(
-          eq(snapshots.scopeId, snapshot.scopeId),
-          eq(snapshots.dateKey, asDateKey(snapshot.dateKey)),
-        ),
-      )
-      .get();
-
-    if (existing) {
-      // Drop the prior frozen rows AND their per-position children (ADR 0035)
-      // before the re-insert; the unique (snapshot, holding, position_key) index
-      // would otherwise reject a same-day recapture. On the replace path the FK
-      // cascade would also clear the children, but the no-replace upsert keeps the
-      // snapshot row, so the explicit delete is what frees the children there.
-      await db
-        .delete(snapshotPositionHoldings)
-        .where(eq(snapshotPositionHoldings.snapshotId, existing.id))
-        .run();
-      await db
-        .delete(snapshotHoldings)
-        .where(eq(snapshotHoldings.snapshotId, existing.id))
-        .run();
-
-      if (input.replace) {
-        await db.delete(snapshots).where(eq(snapshots.id, existing.id)).run();
-      }
-    }
-
-    await db
-      .insert(snapshots)
-      .values({
-        capturedAt: asInstant(snapshot.capturedAt),
-        currency: snapshot.totalNetWorth.currency,
-        dateKey: asDateKey(snapshot.dateKey),
-        debtsMinor: snapshot.debts.amountMinor,
-        grossAssetsMinor: snapshot.grossAssets.amountMinor,
-        housingEquityMinor: snapshot.housingEquity.amountMinor,
-        id: snapshot.id,
-        // The monthly close is DERIVED — the last snapshot of each month wins
-        // (ADR 0005); the declared flag is retired and the read side ignores
-        // this column. Write a constant 0 rather than carrying the dead flag,
-        // and never clear other rows' closes (that branch was unreachable
-        // write-only code that would have mutated frozen history if revived) (#185).
-        isMonthlyClose: 0,
-        liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
-        monthKey: snapshot.monthKey,
-        scopeId: snapshot.scopeId,
-        scopeLabel: snapshot.scopeLabel,
-        totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
-        warningsJson: JSON.stringify(snapshot.warnings),
-      })
-      .onConflictDoUpdate({
-        target: [snapshots.scopeId, snapshots.dateKey],
-        set: {
-          id: sql`excluded.id`,
-          scopeLabel: sql`excluded.scope_label`,
-          capturedAt: sql`excluded.captured_at`,
-          monthKey: sql`excluded.month_key`,
-          // is_monthly_close is derived (ADR 0005) and always written 0; no need
-          // to copy it on conflict — the inserted constant already stands (#185).
-          currency: sql`excluded.currency`,
-          totalNetWorthMinor: sql`excluded.total_net_worth_minor`,
-          liquidNetWorthMinor: sql`excluded.liquid_net_worth_minor`,
-          housingEquityMinor: sql`excluded.housing_equity_minor`,
-          grossAssetsMinor: sql`excluded.gross_assets_minor`,
-          debtsMinor: sql`excluded.debts_minor`,
-          warningsJson: sql`excluded.warnings_json`,
-        },
-      })
-      .run();
-
-    if (input.holdings && input.holdings.length > 0) {
-      await db
-        .insert(snapshotHoldings)
-        .values(
-          input.holdings.map((row) => ({
-            countsAsHousing: row.countsAsHousing ? 1 : 0,
-            holdingId: row.holdingId,
-            id: ctx.newId(),
-            kind: row.kind,
-            label: row.label,
-            liquidityTier: row.liquidityTier,
-            securesHousing: row.securesHousing ? 1 : 0,
-            snapshotId: snapshot.id,
-            unitPrice: row.unitPrice ?? null,
-            units: row.units ?? null,
-            valueMinor: row.valueMinor,
-          })),
-        )
-        .run();
-
-      // Per-position child rows of any connected-source holding (ADR 0035). They
-      // reconcile to their parent holding by construction (the capture builds them
-      // that way and assertSnapshotHoldingsReconcile re-checks the sub-sum above).
-      const positionRows = input.holdings.flatMap((row) =>
-        (row.positions ?? []).map((position) => ({
-          id: ctx.newId(),
-          imageUrl: position.imageUrl,
-          label: position.label,
-          metal: position.metal,
-          parentHoldingId: row.holdingId,
-          positionKey: position.positionKey,
-          snapshotId: snapshot.id,
-          valueMinor: position.valueMinor,
-        })),
-      );
-      if (positionRows.length > 0) {
-        await db.insert(snapshotPositionHoldings).values(positionRows).run();
-      }
-    }
+    enqueueSnapshotWrite(ctx, input);
   });
+}
+
+function enqueueSnapshotWrite(ctx: StoreContext, input: SaveSnapshotInput): void {
+  let queue = pendingSnapshotWrites.get(ctx);
+  if (!queue) {
+    queue = [];
+    pendingSnapshotWrites.set(ctx, queue);
+    ctx.registerBeforeCommit({
+      discard: () => {
+        pendingSnapshotWrites.delete(ctx);
+      },
+      flush: async () => {
+        const items = pendingSnapshotWrites.get(ctx) ?? [];
+        pendingSnapshotWrites.delete(ctx);
+        await persistSnapshots(ctx, items);
+      },
+    });
+  }
+  queue.push(input);
+}
+
+function asStatement(builder: {
+  toSQL: () => { params: unknown[]; sql: string };
+}): InStatement {
+  const compiled = builder.toSQL();
+  return { args: compiled.params as InArgs, sql: compiled.sql };
+}
+
+function snapshotInsertValues(snapshot: NetWorthSnapshot) {
+  return {
+    capturedAt: asInstant(snapshot.capturedAt),
+    currency: snapshot.totalNetWorth.currency,
+    dateKey: asDateKey(snapshot.dateKey),
+    debtsMinor: snapshot.debts.amountMinor,
+    grossAssetsMinor: snapshot.grossAssets.amountMinor,
+    housingEquityMinor: snapshot.housingEquity.amountMinor,
+    id: snapshot.id,
+    // The monthly close is DERIVED — the last snapshot of each month wins
+    // (ADR 0005); the declared flag is retired and the read side ignores
+    // this column. Write a constant 0 rather than carrying the dead flag,
+    // and never clear other rows' closes (that branch was unreachable
+    // write-only code that would have mutated frozen history if revived) (#185).
+    isMonthlyClose: 0,
+    liquidNetWorthMinor: snapshot.liquidNetWorth.amountMinor,
+    monthKey: snapshot.monthKey,
+    scopeId: snapshot.scopeId,
+    scopeLabel: snapshot.scopeLabel,
+    totalNetWorthMinor: snapshot.totalNetWorth.amountMinor,
+    warningsJson: JSON.stringify(snapshot.warnings),
+  };
+}
+
+const SNAPSHOT_CONFLICT_SET = {
+  id: sql`excluded.id`,
+  scopeLabel: sql`excluded.scope_label`,
+  capturedAt: sql`excluded.captured_at`,
+  monthKey: sql`excluded.month_key`,
+  // is_monthly_close is derived (ADR 0005) and always written 0; no need
+  // to copy it on conflict — the inserted constant already stands (#185).
+  currency: sql`excluded.currency`,
+  totalNetWorthMinor: sql`excluded.total_net_worth_minor`,
+  liquidNetWorthMinor: sql`excluded.liquid_net_worth_minor`,
+  housingEquityMinor: sql`excluded.housing_equity_minor`,
+  grossAssetsMinor: sql`excluded.gross_assets_minor`,
+  debtsMinor: sql`excluded.debts_minor`,
+  warningsJson: sql`excluded.warnings_json`,
+};
+
+/**
+ * Persist a queued group of snapshot writes as chunked SQL sent through
+ * `batchWrites` (#1532). One existence SELECT, then grouped deletes/inserts —
+ * round-trips stay O(chunks), not O(snapshots). Callers still queue one
+ * snapshot at a time; this is the flush.
+ */
+async function persistSnapshots(
+  ctx: StoreContext,
+  inputs: readonly SaveSnapshotInput[],
+): Promise<void> {
+  if (inputs.length === 0) return;
+  const { db } = ctx;
+  // Last write wins per (scope, date), matching sequential upserts.
+  const byKey = new Map<string, SaveSnapshotInput>();
+  for (const input of inputs) {
+    byKey.set(`${input.snapshot.scopeId}:${asDateKey(input.snapshot.dateKey)}`, input);
+  }
+  const uniqueInputs = [...byKey.values()];
+
+  const scopeIds = [...new Set(uniqueInputs.map((input) => input.snapshot.scopeId))];
+  const dateKeys = [
+    ...new Set(uniqueInputs.map((input) => asDateKey(input.snapshot.dateKey))),
+  ];
+  const existingRows = await db
+    .select({
+      dateKey: snapshots.dateKey,
+      id: snapshots.id,
+      scopeId: snapshots.scopeId,
+    })
+    .from(snapshots)
+    .where(
+      and(inArray(snapshots.scopeId, scopeIds), inArray(snapshots.dateKey, dateKeys)),
+    )
+    .all();
+
+  const existingByKey = new Map(
+    existingRows.map((row) => [`${row.scopeId}:${row.dateKey}`, row.id]),
+  );
+  const existingIds = [
+    ...new Set(
+      uniqueInputs.flatMap((input) => {
+        const id = existingByKey.get(
+          `${input.snapshot.scopeId}:${asDateKey(input.snapshot.dateKey)}`,
+        );
+        return id === undefined ? [] : [id];
+      }),
+    ),
+  ];
+  const replaceIds = [
+    ...new Set(
+      uniqueInputs.flatMap((input) => {
+        if (!input.replace) return [];
+        const id = existingByKey.get(
+          `${input.snapshot.scopeId}:${asDateKey(input.snapshot.dateKey)}`,
+        );
+        return id === undefined ? [] : [id];
+      }),
+    ),
+  ];
+
+  const stmts: InStatement[] = [];
+
+  for (const group of chunk(existingIds, IDS_PER_IN)) {
+    stmts.push(
+      asStatement(
+        db
+          .delete(snapshotPositionHoldings)
+          .where(inArray(snapshotPositionHoldings.snapshotId, group)),
+      ),
+    );
+    stmts.push(
+      asStatement(
+        db.delete(snapshotHoldings).where(inArray(snapshotHoldings.snapshotId, group)),
+      ),
+    );
+  }
+  for (const group of chunk(replaceIds, IDS_PER_IN)) {
+    stmts.push(asStatement(db.delete(snapshots).where(inArray(snapshots.id, group))));
+  }
+
+  for (const group of chunk(
+    uniqueInputs.map((input) => snapshotInsertValues(input.snapshot)),
+    SNAPSHOT_ROWS_PER_INSERT,
+  )) {
+    stmts.push(
+      asStatement(
+        db
+          .insert(snapshots)
+          .values(group)
+          .onConflictDoUpdate({
+            set: SNAPSHOT_CONFLICT_SET,
+            target: [snapshots.scopeId, snapshots.dateKey],
+          }),
+      ),
+    );
+  }
+
+  const holdingRows = uniqueInputs.flatMap((input) =>
+    (input.holdings ?? []).map((row) => ({
+      countsAsHousing: row.countsAsHousing ? 1 : 0,
+      holdingId: row.holdingId,
+      id: ctx.newId(),
+      kind: row.kind,
+      label: row.label,
+      liquidityTier: row.liquidityTier,
+      securesHousing: row.securesHousing ? 1 : 0,
+      snapshotId: input.snapshot.id,
+      unitPrice: row.unitPrice ?? null,
+      units: row.units ?? null,
+      valueMinor: row.valueMinor,
+    })),
+  );
+  for (const group of chunk(holdingRows, HOLDING_ROWS_PER_INSERT)) {
+    stmts.push(asStatement(db.insert(snapshotHoldings).values(group)));
+  }
+
+  // Per-position child rows of any connected-source holding (ADR 0035). They
+  // reconcile to their parent holding by construction (the capture builds them
+  // that way and assertSnapshotHoldingsReconcile re-checks the sub-sum above).
+  const positionRows = uniqueInputs.flatMap((input) =>
+    (input.holdings ?? []).flatMap((row) =>
+      (row.positions ?? []).map((position) => ({
+        id: ctx.newId(),
+        imageUrl: position.imageUrl,
+        label: position.label,
+        metal: position.metal,
+        parentHoldingId: row.holdingId,
+        positionKey: position.positionKey,
+        snapshotId: input.snapshot.id,
+        valueMinor: position.valueMinor,
+      })),
+    ),
+  );
+  for (const group of chunk(positionRows, POSITION_ROWS_PER_INSERT)) {
+    stmts.push(asStatement(db.insert(snapshotPositionHoldings).values(group)));
+  }
+
+  await ctx.batchWrites(stmts);
 }
 
 export async function readSnapshots(
