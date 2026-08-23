@@ -118,7 +118,9 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await expect(revisionTable.getByText("3.5 %")).toBeVisible();
 
   // 8. The past plan produced historical snapshots — visible in /historico.
-  await page.goto("/historico");
+  //     `range=all`: since #1535 the page reads a WINDOW, and its 1A default would
+  //     hide the rows this plan produced six years ago (same fix as journey 23).
+  await page.goto("/historico?range=all");
   await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
   await expect(page.locator(".dateKey").first()).toBeVisible();
   const snapshotDates = await page.locator(".dateKey").count();
@@ -177,8 +179,10 @@ test("debt model: amortizable plan + revisions, revolving anchors, future reject
   await openAdvancedSettings(page);
   await expect(anchorTable.getByText(/14\.000/)).toBeVisible();
 
-  // 14. The past anchor produced a historical snapshot — visible in /historico.
-  await page.goto("/historico");
+  // 14. The past anchor produced a historical snapshot — visible in /historico,
+  //     asked for over the whole range: the anchor is two years old and the
+  //     default 1A window ends before it (#1535).
+  await page.goto("/historico?range=all");
   await expect(page.locator(".dateKey", { hasText: anchorDate })).toBeVisible();
 
   // 15. Delete the anchor (two-step confirm).
