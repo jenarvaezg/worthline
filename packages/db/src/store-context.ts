@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Client, Transaction } from "@libsql/client";
+import type { Client, InStatement, Transaction } from "@libsql/client";
 import type {
   AssetProjectionContext,
   DecimalString,
@@ -48,6 +48,18 @@ export interface AuditEntry {
 const AUDIT_ENTRIES_PER_INSERT = 100;
 
 /**
+ * Write statements per `batchWrites` chunk (#1532). Same order of magnitude as
+ * the fact-insert groups of 50 — well under Turso's batch payload cap.
+ */
+const STATEMENTS_PER_BATCH = 50;
+
+/** Queued work that runs just before the outermost transaction commits (#1532). */
+export interface BeforeCommitHook {
+  discard: () => void;
+  flush: () => Promise<void>;
+}
+
+/**
  * Shared substrate for every extracted *-Store (R1–R5 of the architectural
  * refactor, PRD #120). One StoreContext is built per WorthlineStore lifetime in
  * buildStore and threaded into each focused store factory, so the libSQL
@@ -87,6 +99,20 @@ export interface StoreContext {
    * failure, so the whole unit rolls back together under one flattened tx).
    */
   transaction: <T>(work: () => T | Promise<T>) => Promise<T>;
+  /**
+   * Run `flush` just before the outermost transaction commits (#1532). Nested
+   * transactions share that commit. `discard` runs instead on rollback, so a
+   * queued write never outlives a failed unit of work.
+   */
+  registerBeforeCommit: (hook: BeforeCommitHook) => void;
+  /**
+   * Execute write statements as a group (#1532). Remote (interactive tx):
+   * `Transaction.batch` — one HTTP round-trip per chunk, no nested BEGIN.
+   * Local (already inside hand-rolled BEGIN): sequential `execute` on the
+   * shared connection — `Client.batch` would issue a nested BEGIN, and an
+   * interactive tx on `:memory:` cannot see the in-memory database.
+   */
+  batchWrites: (stmts: readonly InStatement[]) => Promise<void>;
   /** Append one row to the audit log. Shared concern (ADR audit trail). */
   writeAuditEntry: (
     action: string,
@@ -162,6 +188,44 @@ export function createStoreContext(
 
   // Flatten-nesting depth: only the outermost transaction issues BEGIN/COMMIT.
   let txDepth = 0;
+  let beforeCommitHooks: BeforeCommitHook[] = [];
+
+  const discardBeforeCommit = (): void => {
+    const hooks = beforeCommitHooks;
+    beforeCommitHooks = [];
+    for (const hook of hooks) hook.discard();
+  };
+
+  const runBeforeCommit = async (): Promise<void> => {
+    const hooks = beforeCommitHooks;
+    beforeCommitHooks = [];
+    try {
+      for (const hook of hooks) await hook.flush();
+    } catch (err) {
+      for (const hook of hooks) hook.discard();
+      throw err;
+    }
+  };
+
+  /**
+   * Grouped writes (#1532). Inside a remote interactive tx we use
+   * `Transaction.batch` (one stream round-trip, no nested BEGIN). Locally we
+   * already hold a hand-rolled BEGIN, so we `execute` on the shared connection
+   * — `Client.batch` would BEGIN again, and an interactive tx on `:memory:`
+   * would not see this database.
+   */
+  const batchWrites = async (stmts: readonly InStatement[]): Promise<void> => {
+    if (stmts.length === 0) return;
+    for (const group of chunk(stmts, STATEMENTS_PER_BATCH)) {
+      if (isRemote && currentClient !== client) {
+        await (currentClient as Transaction).batch(group);
+      } else {
+        for (const stmt of group) {
+          await currentClient.execute(stmt);
+        }
+      }
+    }
+  };
 
   // REMOTE: one interactive tx (a single stream); redirect db/client onto it.
   const runRemoteTransaction = async <T>(work: () => T | Promise<T>): Promise<T> => {
@@ -170,9 +234,11 @@ export function createStoreContext(
     currentDb = openDrizzle(tx as unknown as Client);
     try {
       const result = await work();
+      await runBeforeCommit();
       await tx.commit();
       return result;
     } catch (err) {
+      discardBeforeCommit();
       try {
         await tx.rollback();
       } catch {
@@ -191,9 +257,11 @@ export function createStoreContext(
     await client.execute("BEGIN");
     try {
       const result = await work();
+      await runBeforeCommit();
       await client.execute("COMMIT");
       return result;
     } catch (err) {
+      discardBeforeCommit();
       try {
         await client.execute("ROLLBACK");
       } catch {
@@ -243,6 +311,10 @@ export function createStoreContext(
         txDepth -= 1;
       }
     },
+    registerBeforeCommit: (hook) => {
+      beforeCommitHooks.push(hook);
+    },
+    batchWrites,
     writeAuditEntry: (action, entityType, entityId, details = {}) =>
       writeAuditEntries([{ action, details, entityId, entityType }]),
     writeAuditEntries,
