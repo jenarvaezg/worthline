@@ -4,6 +4,7 @@ import {
   fireCountsImmobilizedCapital,
   fireReservationHorizon,
   isFireEligibleAsset,
+  projectFireFamilyFromContext,
   projectFireFromContext,
 } from "./fire";
 import type { FireAchievement } from "./fire-achievement";
@@ -11,7 +12,7 @@ import { fireAchievement } from "./fire-achievement";
 import type { FireCoastArrival } from "./fire-coast-arrival";
 import { fireCoastArrival } from "./fire-coast-arrival";
 import type { FireLevel } from "./fire-levels";
-import { fireLevels } from "./fire-levels";
+import { fireLevelAmounts, fireLevels } from "./fire-levels";
 import type { FireProjection } from "./fire-projection";
 import type { FireRetirementProfile } from "./fire-retirement-profile";
 import { fireRetirementReadout } from "./fire-retirement-readout";
@@ -238,12 +239,25 @@ export function prepareDashboardState(input: {
    * segundo `calculateFireForScope` que nadie lee.
    */
   includeFireImmobilizedCounterfactual?: boolean;
+  /**
+   * Compute the FIRE chart projection. /objetivos skips this and uses one
+   * `projectFireFamilyFromContext` so chart, rail, coast and goals share a
+   * single growth loop (#1537). Default true — the home glance still needs it.
+   */
+  includeFireProjection?: boolean;
+  /**
+   * Compute net-worth summary, presentation, pyramid, deltas and onboarding.
+   * /objetivos throws these away (#1537). Default true for the dashboard.
+   */
+  includeNetWorthSurfaces?: boolean;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
   const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const includeFireProjection = input.includeFireProjection !== false;
+  const includeNetWorthSurfaces = input.includeNetWorthSurfaces !== false;
 
   const summary =
-    workspace && selectedScope
+    includeNetWorthSurfaces && workspace && selectedScope
       ? calculateNetWorth({
           assets,
           ...(input.fx ? { fx: input.fx } : {}),
@@ -321,19 +335,20 @@ export function prepareDashboardState(input: {
   // capacity is the declared scalar and nothing else (#1416, ADR 0074): the
   // contribution plan used to override it here, substituting one destination's
   // planned addition for the user's declared total.
-  const fireProjection = fireResult
-    ? projectFireFromContext(fireResult.context, {
-        monthlyContributionMinor: monthlySavingsCapacityForFire(
-          fireResult.context.config,
-        ),
-      })
-    : null;
+  const fireProjection =
+    includeFireProjection && fireResult
+      ? projectFireFromContext(fireResult.context, {
+          monthlyContributionMinor: monthlySavingsCapacityForFire(
+            fireResult.context.config,
+          ),
+        })
+      : null;
 
   const selectedMemberIds =
     workspace && selectedScope ? resolveScopeMemberIds(workspace, selectedScope.id) : [];
 
   const pyramid =
-    workspace && selectedScope
+    includeNetWorthSurfaces && workspace && selectedScope
       ? buildLiquidityBreakdown({
           assets,
           ...(input.fx ? { fx: input.fx } : {}),
@@ -344,9 +359,10 @@ export function prepareDashboardState(input: {
       : [];
 
   const latestSnapshot = input.snapshots.at(-1);
-  const deltas = latestSnapshot
-    ? calculateSnapshotDeltas(input.snapshots, latestSnapshot.id)
-    : undefined;
+  const deltas =
+    includeNetWorthSurfaces && latestSnapshot
+      ? calculateSnapshotDeltas(input.snapshots, latestSnapshot.id)
+      : undefined;
 
   const dashboard: DashboardShell = {
     productName: "worthline",
@@ -357,12 +373,14 @@ export function prepareDashboardState(input: {
 
   const activeMembers = workspace?.members.filter((member) => !member.disabledAt) ?? [];
   const investmentAssets = assets.filter((asset) => asset.type === "investment");
-  const onboarding = deriveOnboardingProgress({
-    activeMemberCount: activeMembers.length,
-    holdingCount: assets.length + liabilities.length,
-    hasFireConfig: fireScopeConfig !== null,
-    snapshotCount: input.snapshots.length,
-  });
+  const onboarding = includeNetWorthSurfaces
+    ? deriveOnboardingProgress({
+        activeMemberCount: activeMembers.length,
+        holdingCount: assets.length + liabilities.length,
+        hasFireConfig: fireScopeConfig !== null,
+        snapshotCount: input.snapshots.length,
+      })
+    : [];
 
   // Declared-vs-measured savings (#1449): the same reading the health engine
   // alerts on, over the same scope-owned holdings — so the badge on screen and
@@ -528,6 +546,8 @@ export function prepareObjetivosState(
   const dash = prepareDashboardState({
     ...input,
     includeFireImmobilizedCounterfactual: true,
+    includeFireProjection: false,
+    includeNetWorthSurfaces: false,
   });
 
   const { workspace, selectedScope } = dash;
@@ -559,6 +579,18 @@ export function prepareObjetivosState(
   }
   const totalReservation = [...goalReservationMap.values()].reduce((s, v) => s + v, 0);
 
+  const amounts = dash.fireResult
+    ? fireLevelAmounts(dash.fireResult.context.config)
+    : null;
+  const family = dash.fireResult
+    ? projectFireFamilyFromContext(dash.fireResult.context, {
+        monthlyContributionMinor: monthlySavingsCapacityForFire(
+          dash.fireResult.context.config,
+        ),
+        horizonTargetMinor: amounts?.fatMinor ?? dash.fireResult.context.fireNumberMinor,
+      })
+    : null;
+
   const goals: ObjetivosGoalView[] = (input.goals ?? []).map((goal) => {
     const assignedMinor = assignedHoldingsValueMinor(
       goal.assetIds,
@@ -583,6 +615,7 @@ export function prepareObjetivosState(
             otherReservationsMinor,
             thisGoalReservationMinor: goalReservationMap.get(goal.id) ?? 0,
             now,
+            ...(family ? { withProjection: family.chart } : {}),
           })
         : { kind: "no_effect" as const },
     };
@@ -592,7 +625,10 @@ export function prepareObjetivosState(
   // (#1026), so rail ETAs are coherent with the projection chart and coast by
   // construction — the context carries the SAME net eligible the chart starts from.
   const fireLevelRail = dash.fireResult
-    ? fireLevels({ context: dash.fireResult.context })
+    ? fireLevels({
+        context: dash.fireResult.context,
+        ...(family ? { projection: family.rail } : {}),
+      })
     : null;
 
   // Perfil y gasto sostenible por una sola puerta (#1428): el perfil se mide contra
@@ -605,10 +641,15 @@ export function prepareObjetivosState(
     achievement: dash.fireGlance?.achievement ?? null,
     // La edad de llegada a Coast (#1425): sale del MISMO contexto que el rail y el
     // gráfico, así que las tres cifras no pueden discrepar sobre cuánto se aporta.
-    coastArrival: dash.fireResult ? fireCoastArrival(dash.fireResult.context) : null,
+    coastArrival: dash.fireResult
+      ? fireCoastArrival(dash.fireResult.context, {
+          fireResult: dash.fireResult,
+          ...(family ? { projection: family.chart } : {}),
+        })
+      : null,
     coastTickFraction: dash.fireGlance?.coastTickFraction ?? null,
     savingsCoherence: dash.savingsCoherence,
-    fireProjection: dash.fireProjection,
+    fireProjection: family?.chart ?? null,
     fireResult: dash.fireResult,
     fireResultImmobilizedFlipped: dash.fireResultImmobilizedFlipped,
     fireScopeConfig: dash.fireScopeConfig,

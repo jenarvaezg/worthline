@@ -22,10 +22,7 @@ import {
 } from "@worthline/domain";
 import Link from "next/link";
 import { Suspense } from "react";
-import {
-  buildExposureDriftProjection,
-  exposureDriftTrajectories,
-} from "./build-exposure-drift";
+import { buildExposureDriftTrajectories } from "./build-exposure-drift";
 import { ContributionAllocation } from "./contribution-allocation";
 import {
   ALLOCATION_MONTH_PARAM,
@@ -387,81 +384,69 @@ export async function ObjetivosContent({
   const exposureDriftHorizon =
     fireProjection?.scenarios.find((scenario) => scenario.label === "base")
       ?.yearsToFire ?? 20;
-  const instrumentByAsset = new Map(
-    assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
-  );
-  const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
-  for (const row of returnSnapshotRows) {
-    if (!projectionContext.operationsByAsset.has(row.holdingId)) {
-      continue;
-    }
-    const rows = snapshotRowsByAsset.get(row.holdingId);
-    if (rows) {
-      rows.push(row);
-    } else {
-      snapshotRowsByAsset.set(row.holdingId, [row]);
-    }
-  }
-  const monthlyClosesByAsset = new Map(
-    [...snapshotRowsByAsset].map(([assetId, rows]) => [
-      assetId,
-      monthlyCloseValuesFromSnapshotRows(rows),
-    ]),
-  );
-  const payoutsByAsset = new Map(
-    [...payoutsByHolding].map(([assetId, rows]) => [
-      assetId,
-      rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
-    ]),
-  );
-  const investmentReturns = investmentReturnsById({
-    cachedPriceByAsset: projectionContext.cachedPriceByAsset,
-    currency: workspace.baseCurrency,
-    instrumentByAsset,
-    manualPriceByAsset: projectionContext.manualPriceByAsset,
-    monthlyClosesByAsset,
-    operationsByAsset: projectionContext.operationsByAsset,
-    payoutsByAsset,
-    valuationDate: today,
-  });
-  const holdingReturnsById = new Map<string, HoldingReturnsView | null>(
-    [...investmentReturns].map(([assetId, view]) => [assetId, view]),
-  );
-  const exposureDriftTrajectoriesData =
+  const exposureDriftPlan =
     contributionPlan && selectedScope && contributionPlan.contributions.length > 0
-      ? exposureDriftTrajectories({
-          flat: buildExposureDriftProjection({
-            workspace,
-            scope: selectedScope,
-            assets,
-            liabilities,
-            investmentMeta,
-            exposureProfiles,
-            contributionPlan,
-            growthAssumption: "flat",
-            assumedAnnualReturn,
-            holdingReturnsById,
-            unitPrices,
-            today,
-            maxYears: exposureDriftHorizon,
-          }).trajectory,
-          historical: buildExposureDriftProjection({
-            workspace,
-            scope: selectedScope,
-            assets,
-            liabilities,
-            investmentMeta,
-            exposureProfiles,
-            contributionPlan,
-            growthAssumption: "historical",
-            assumedAnnualReturn,
-            holdingReturnsById,
-            unitPrices,
-            today,
-            maxYears: exposureDriftHorizon,
-          }).trajectory,
-        })
+      ? { plan: contributionPlan, scope: selectedScope }
       : null;
+  let holdingReturnsById = new Map<string, HoldingReturnsView | null>();
+  if (exposureDriftPlan) {
+    const instrumentByAsset = new Map(
+      assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
+    );
+    const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
+    for (const row of returnSnapshotRows) {
+      if (!projectionContext.operationsByAsset.has(row.holdingId)) {
+        continue;
+      }
+      const rows = snapshotRowsByAsset.get(row.holdingId);
+      if (rows) {
+        rows.push(row);
+      } else {
+        snapshotRowsByAsset.set(row.holdingId, [row]);
+      }
+    }
+    const monthlyClosesByAsset = new Map(
+      [...snapshotRowsByAsset].map(([assetId, rows]) => [
+        assetId,
+        monthlyCloseValuesFromSnapshotRows(rows),
+      ]),
+    );
+    const payoutsByAsset = new Map(
+      [...payoutsByHolding].map(([assetId, rows]) => [
+        assetId,
+        rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
+      ]),
+    );
+    const investmentReturns = investmentReturnsById({
+      cachedPriceByAsset: projectionContext.cachedPriceByAsset,
+      currency: workspace.baseCurrency,
+      instrumentByAsset,
+      manualPriceByAsset: projectionContext.manualPriceByAsset,
+      monthlyClosesByAsset,
+      operationsByAsset: projectionContext.operationsByAsset,
+      payoutsByAsset,
+      valuationDate: today,
+    });
+    holdingReturnsById = new Map<string, HoldingReturnsView | null>(
+      [...investmentReturns].map(([assetId, view]) => [assetId, view]),
+    );
+  }
+  const exposureDriftTrajectoriesData = exposureDriftPlan
+    ? buildExposureDriftTrajectories({
+        workspace,
+        scope: exposureDriftPlan.scope,
+        assets,
+        liabilities,
+        investmentMeta,
+        exposureProfiles,
+        contributionPlan: exposureDriftPlan.plan,
+        assumedAnnualReturn,
+        holdingReturnsById,
+        unitPrices,
+        today,
+        maxYears: exposureDriftHorizon,
+      })
+    : null;
   const exposureDriftInitialGrowth = parseExposureDriftGrowth(
     typeof resolvedSearchParams.driftGrowth === "string"
       ? resolvedSearchParams.driftGrowth

@@ -22,6 +22,7 @@
 
 import type { FireContext } from "./fire";
 import { projectFireFromContext } from "./fire";
+import type { FireProjection } from "./fire-projection";
 import { fractionalFireYear } from "./fire-projection";
 import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 
@@ -65,6 +66,33 @@ export interface FireLevelsInput {
    * loose rate to forget and no fallback.
    */
   context: FireContext;
+  /**
+   * Precomputed Fat-tall projection (#1537). When omitted, the rail projects
+   * to Fat itself. The trajectory must be tall enough to cross Fat.
+   */
+  projection?: FireProjection;
+}
+
+export interface FireLevelAmounts {
+  fatMinor: number;
+  leanMinor: number;
+  regularMinor: number;
+}
+
+/** Capital targets for the level rail; null when the config cannot fund a rail. */
+export function fireLevelAmounts(
+  config: FireLevelsInput["context"]["config"],
+): FireLevelAmounts | null {
+  const { monthlySpendingMinor, safeWithdrawalRate } = config;
+  if (!safeWithdrawalRate || !monthlySpendingMinor) return null;
+
+  const leanMult = config.leanMultiplier ?? LEAN_DEFAULT;
+  const fatMult = config.fatMultiplier ?? FAT_DEFAULT;
+  return {
+    fatMinor: Math.round((monthlySpendingMinor * fatMult * 12) / safeWithdrawalRate),
+    leanMinor: Math.round((monthlySpendingMinor * leanMult * 12) / safeWithdrawalRate),
+    regularMinor: Math.round((monthlySpendingMinor * 12) / safeWithdrawalRate),
+  };
 }
 
 const LEAN_DEFAULT = 0.7;
@@ -80,30 +108,29 @@ const LABEL: Record<FireLevelKey, string> = {
 export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
   const { context } = input;
   const { config, eligibleMinor } = context;
-  const { monthlySpendingMinor, safeWithdrawalRate } = config;
+  const amounts = fireLevelAmounts(config);
+  if (!amounts) return null;
 
-  if (!safeWithdrawalRate || !monthlySpendingMinor) return null;
-
+  const { monthlySpendingMinor } = config;
   const leanMult = config.leanMultiplier ?? LEAN_DEFAULT;
   const fatMult = config.fatMultiplier ?? FAT_DEFAULT;
-
-  const regularAmount = Math.round((monthlySpendingMinor * 12) / safeWithdrawalRate);
-  const leanAmount = Math.round(
-    (monthlySpendingMinor * leanMult * 12) / safeWithdrawalRate,
-  );
-  const fatAmount = Math.round(
-    (monthlySpendingMinor * fatMult * 12) / safeWithdrawalRate,
-  );
+  const {
+    fatMinor: fatAmount,
+    leanMinor: leanAmount,
+    regularMinor: regularAmount,
+  } = amounts;
 
   // #1416: the declared scalar is the only savings input the projection takes,
   // so this rail cannot disagree with the chart about how much is contributed.
   const monthlyContribution = monthlySavingsCapacityForFire(config);
-  const projection = projectFireFromContext(context, {
-    monthlyContributionMinor: monthlyContribution,
-    // Project to Fat so the single trajectory is tall enough to cross every
-    // level; all four levels interpolate on it (rate/age ride in the context).
-    fireNumberMinor: fatAmount,
-  });
+  const projection =
+    input.projection ??
+    projectFireFromContext(context, {
+      monthlyContributionMinor: monthlyContribution,
+      // Project to Fat so the single trajectory is tall enough to cross every
+      // level; all four levels interpolate on it (rate/age ride in the context).
+      fireNumberMinor: fatAmount,
+    });
   const base = projection.scenarios.find((s) => s.label === "base")!;
 
   function etaForAmount(targetMinor: number): FireLevelEta {
@@ -132,7 +159,9 @@ export function fireLevels(input: FireLevelsInput): FireLevel[] | null {
   if (baristaIncome > 0) {
     const baristaAmount = Math.max(
       0,
-      Math.round(((monthlySpendingMinor - baristaIncome) * 12) / safeWithdrawalRate),
+      Math.round(
+        ((monthlySpendingMinor - baristaIncome) * 12) / config.safeWithdrawalRate,
+      ),
     );
     levels.push({
       key: "barista",

@@ -26,6 +26,7 @@
 
 import type { FireContext } from "./fire";
 import { fireReservationHorizon, projectFireFromContext } from "./fire";
+import type { FireProjection } from "./fire-projection";
 import { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 import { monthlySavingsCapacityForFire } from "./fire-savings-capacity";
 import type { Goal } from "./goals";
@@ -52,6 +53,12 @@ export interface GoalFireDelayInput {
   thisGoalReservationMinor: number;
   /** ISO YYYY-MM-DD. */
   now: string;
+  /**
+   * Precomputed WITH projection (#1537) — the chart's base scenario, whose
+   * starting eligible is already net of every in-horizon reservation. When
+   * omitted, the helper projects WITH itself.
+   */
+  withProjection?: FireProjection;
 }
 
 export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
@@ -97,10 +104,12 @@ export function goalFireDelay(input: GoalFireDelayInput): GoalFireDelay {
     startingEligibleMinor: startingWithout,
   }).scenarios.find((s) => s.label === "base")!;
 
-  const baseWith = projectFireFromContext(context, {
-    monthlyContributionMinor: monthlyContribution,
-    startingEligibleMinor: startingWith,
-  }).scenarios.find((s) => s.label === "base")!;
+  const baseWith =
+    input.withProjection?.scenarios.find((s) => s.label === "base") ??
+    projectFireFromContext(context, {
+      monthlyContributionMinor: monthlyContribution,
+      startingEligibleMinor: startingWith,
+    }).scenarios.find((s) => s.label === "base")!;
 
   // ── Interpolate fractional fire years ────────────────────────────────────
   const fracWithout = fractionalFireYear(

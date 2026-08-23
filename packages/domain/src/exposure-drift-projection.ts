@@ -214,6 +214,7 @@ function lookthroughAtBuckets(
   // coverage.
   return lookThroughExposure({
     baseCurrency: input.baseCurrency,
+    dimensions: ["assetClass", "geography"],
     grossAssets: { amountMinor: grossMinor, currency: input.baseCurrency },
     holdings,
     profiles: input.profiles,

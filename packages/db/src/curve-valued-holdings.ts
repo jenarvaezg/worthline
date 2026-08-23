@@ -148,14 +148,22 @@ export async function readDebtBalanceInputs(
   const inputs = new Map<string, DebtBalanceCurveInputs>();
   if (liveLiabilities.length === 0) return inputs;
 
-  const modelRows = await db
-    .select({
-      id: liabilities.id,
-      debtModel: liabilities.debtModel,
-      valuationCadence: liabilities.valuationCadence,
-    })
-    .from(liabilities)
-    .all();
+  const [modelRows, anchorRows, planRows, revisionRows, repaymentRows, rebaselineRows] =
+    await Promise.all([
+      db
+        .select({
+          id: liabilities.id,
+          debtModel: liabilities.debtModel,
+          valuationCadence: liabilities.valuationCadence,
+        })
+        .from(liabilities)
+        .all(),
+      db.select().from(liabilityBalanceAnchors).all(),
+      db.select().from(amortizationPlans).all(),
+      db.select().from(interestRateRevisions).all(),
+      db.select().from(earlyRepayments).all(),
+      db.select().from(liabilityBalanceRebaselines).all(),
+    ]);
   const modelById = new Map<string, DebtModel | null>();
   const cadenceById = new Map<string, ValuationCadence | null>();
   for (const row of modelRows) {
@@ -163,7 +171,6 @@ export async function readDebtBalanceInputs(
     cadenceById.set(row.id, row.valuationCadence ?? null);
   }
 
-  const anchorRows = await db.select().from(liabilityBalanceAnchors).all();
   const anchorsByLiability = new Map<
     string,
     { anchorDate: string; balanceMinor: number }[]
@@ -174,11 +181,9 @@ export async function readDebtBalanceInputs(
     anchorsByLiability.set(row.liabilityId, list);
   }
 
-  const planRows = await db.select().from(amortizationPlans).all();
   const planByLiability = new Map<string, (typeof planRows)[number]>();
   for (const row of planRows) planByLiability.set(row.liabilityId, row);
 
-  const revisionRows = await db.select().from(interestRateRevisions).all();
   const revisionsByPlan = new Map<
     string,
     { revisionDate: string; newAnnualInterestRate: DecimalString }[]
@@ -192,7 +197,6 @@ export async function readDebtBalanceInputs(
     revisionsByPlan.set(row.planId, list);
   }
 
-  const repaymentRows = await db.select().from(earlyRepayments).all();
   const repaymentsByPlan = new Map<
     string,
     { repaymentDate: string; amountMinor: number; mode: EarlyRepaymentMode }[]
@@ -207,7 +211,6 @@ export async function readDebtBalanceInputs(
     repaymentsByPlan.set(row.planId, list);
   }
 
-  const rebaselineRows = await db.select().from(liabilityBalanceRebaselines).all();
   const rebaselinesByLiability = new Map<
     string,
     {

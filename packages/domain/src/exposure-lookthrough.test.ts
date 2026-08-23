@@ -114,6 +114,55 @@ describe("lookThroughExposure", () => {
     });
   });
 
+  test("dimensions option skips unrequested axes and matches the full look-through on requested ones", () => {
+    const profiles = new Map<string, ExposureProfile>([
+      [
+        "IE00SP500002",
+        fixtureProfile({
+          breakdowns: {
+            assetClass: { equity: "1" },
+            currency: { USD: "1" },
+            geography: { us: "1" },
+            sector: { information_technology: "1" },
+          },
+          hedged: false,
+          key: "IE00SP500002",
+        }),
+      ],
+    ]);
+    const input = {
+      baseCurrency: "EUR" as const,
+      grossAssets: { amountMinor: 100_000, currency: "EUR" as const },
+      holdings: [
+        {
+          currency: "EUR" as const,
+          id: "asset_sp500",
+          instrument: "etf" as const,
+          providerSymbol: "IE00SP500002",
+          valueMinor: 100_000,
+        },
+      ],
+      profiles,
+    };
+
+    const full = lookThroughExposure(input);
+    const partial = lookThroughExposure({
+      ...input,
+      dimensions: ["geography", "assetClass"],
+    });
+
+    expect(partial.geography).toEqual(full.geography);
+    expect(partial.assetClass).toEqual(full.assetClass);
+    expect(partial.currency.slices).toEqual([]);
+    expect(partial.currency.coverage).toEqual({
+      classified: { amountMinor: 0, currency: "EUR" },
+      notApplicable: { amountMinor: 0, currency: "EUR" },
+      unknown: { amountMinor: 0, currency: "EUR" },
+    });
+    expect(partial.sector.slices).toEqual([]);
+    expect(partial.currencyRisk).toEqual([]);
+  });
+
   test("auto-derived cash crypto and commodity holdings are not geography gaps", () => {
     const result = lookThroughExposure({
       baseCurrency: "EUR",
