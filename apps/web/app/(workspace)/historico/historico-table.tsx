@@ -53,6 +53,14 @@ function showsAsZeroEur(contributionMinor: number): boolean {
   return Math.round(contributionMinor / 100) === 0;
 }
 
+function indexByHoldingId(
+  recs: readonly SnapshotHoldingRecord[],
+): Map<string, SnapshotHoldingRecord> {
+  const byHolding = new Map<string, SnapshotHoldingRecord>();
+  for (const rec of recs) byHolding.set(rec.holdingId, rec);
+  return byHolding;
+}
+
 /**
  * Assemble the newest-first rows the table renders: aggregate Δ vs the previous
  * day, the confirmed monthly-close flag, and the per-holding movers behind each
@@ -84,15 +92,18 @@ export function buildHistoricoRows(
         : undefined;
       const prevRecs = prev ? (bySnapshot.get(prev.id) ?? []) : [];
       const curRecs = bySnapshot.get(snapshot.id) ?? [];
+      const prevByHolding = indexByHoldingId(prevRecs);
+      const curByHolding = indexByHoldingId(curRecs);
       // Enrich each holding mover with its per-position movers (ADR 0035), derived
       // from the two days' frozen position rows. A connected holding that froze a
-      // breakdown gets a second level; a plain holding gets none.
+      // breakdown gets a second level; a plain holding gets none. Indexed by
+      // holdingId once per day so the inner lookup is O(1), not O(H) (#1535).
       const movers: HistoricoMover[] = (
         prev ? deriveHoldingDeltas(prevRecs, curRecs) : []
       ).map((mover) => {
         const positions = derivePositionDeltas(
-          prevRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
-          curRecs.find((r) => r.holdingId === mover.holdingId)?.positions ?? [],
+          prevByHolding.get(mover.holdingId)?.positions ?? [],
+          curByHolding.get(mover.holdingId)?.positions ?? [],
         ).filter((p) => !showsAsZeroEur(p.contributionMinor));
         return positions.length > 0 ? { ...mover, positions } : mover;
       });

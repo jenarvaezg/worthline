@@ -246,6 +246,7 @@ export type {
   ScopedPositionsWithDetails,
   SnapshotHoldingQuery,
   SnapshotHoldingRecord,
+  SnapshotQuery,
   SnapshotStore,
 } from "./snapshot-store";
 /**

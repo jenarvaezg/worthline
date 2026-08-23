@@ -96,7 +96,7 @@ test("housing valuation: rate, anchor CRUD, future rejected, past snapshot in hi
   await expect(anchorTable.getByText(/190\.000/)).toBeVisible();
 
   // 8. The past anchor produced a historical snapshot — visible in /historico.
-  await page.goto("/historico");
+  await page.goto("/historico?range=all");
   await expect(page.getByRole("heading", { name: "Histórico" })).toBeVisible();
   await expect(page.locator(".dateKey", { hasText: "2024-03-15" })).toBeVisible();
 

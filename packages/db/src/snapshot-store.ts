@@ -58,6 +58,14 @@ export interface SaveSnapshotInput {
 }
 
 /**
+ * Optional inclusive date-key window for `readSnapshots` (#1535).
+ */
+export interface SnapshotQuery {
+  from?: string;
+  to?: string;
+}
+
+/**
  * Filter for reading frozen holding rows: by scope and optional date-key window
  * (inclusive), and/or targeted to a single holding by its id + kind. The
  * holding-id / kind pair lets a caller (e.g. the housing valuation ripples,
@@ -114,7 +122,7 @@ export interface ScopedPositionsWithDetails {
  */
 export interface SnapshotStore {
   saveSnapshot: (input: SaveSnapshotInput) => Promise<void>;
-  readSnapshots: (scopeId?: string) => Promise<NetWorthSnapshot[]>;
+  readSnapshots: (scopeId?: string, query?: SnapshotQuery) => Promise<NetWorthSnapshot[]>;
   readSnapshotHoldings: (
     query?: SnapshotHoldingQuery,
   ) => Promise<SnapshotHoldingRecord[]>;
@@ -160,7 +168,7 @@ export interface SnapshotStore {
 export function createSnapshotStore(ctx: StoreContext): SnapshotStore {
   return {
     saveSnapshot: (input) => saveSnapshot(ctx, input),
-    readSnapshots: (scopeId) => readSnapshots(ctx.db, scopeId),
+    readSnapshots: (scopeId, query) => readSnapshots(ctx.db, scopeId, query),
     readSnapshotHoldings: (query) => readSnapshotHoldings(ctx.db, query),
     readPositions: async (scopeId) =>
       readPositions(ctx.db, await ctx.getWorkspace(), scopeId),
@@ -431,19 +439,22 @@ async function persistSnapshots(
 export async function readSnapshots(
   db: StoreDb,
   scopeId?: string,
+  query: SnapshotQuery = {},
 ): Promise<NetWorthSnapshot[]> {
-  const rows = await (scopeId
-    ? db
-        .select()
-        .from(snapshots)
-        .where(eq(snapshots.scopeId, scopeId))
-        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
-        .all()
-    : db
-        .select()
-        .from(snapshots)
-        .orderBy(asc(snapshots.capturedAt), asc(snapshots.id))
-        .all());
+  const conditions: SQL[] = [];
+  if (scopeId !== undefined) {
+    conditions.push(eq(snapshots.scopeId, scopeId));
+  }
+  if (query.from !== undefined) {
+    conditions.push(gte(snapshots.dateKey, asDateKey(query.from)));
+  }
+  if (query.to !== undefined) {
+    conditions.push(lte(snapshots.dateKey, asDateKey(query.to)));
+  }
+
+  const base = db.select().from(snapshots);
+  const filtered = conditions.length > 0 ? base.where(and(...conditions)) : base;
+  const rows = await filtered.orderBy(asc(snapshots.capturedAt), asc(snapshots.id)).all();
 
   return rows.map((row) => ({
     capturedAt: row.capturedAt,
