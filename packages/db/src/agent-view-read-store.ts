@@ -202,8 +202,14 @@ export interface AgentViewReadStore {
    * so it can label them, and NEVER writes a new override.
    */
   readWarningOverrides: () => Promise<WarningOverride[]>;
-  /** Manual value audit history keyed by asset id (PRD #654 S2). */
-  readManualValueHistory: () => Promise<ReadonlyMap<string, readonly ManualValuePoint[]>>;
+  /**
+   * Manual value audit history keyed by holding id (PRD #654 S2).
+   * Pass the holding ids that will be looked up — the read filters in SQL
+   * rather than transferring the whole audit log (#1534).
+   */
+  readManualValueHistory: (
+    entityIds: readonly string[],
+  ) => Promise<ReadonlyMap<string, readonly ManualValuePoint[]>>;
   /** Asset creation timestamps keyed by asset id — stale-manual fallback. */
   readAssetCreatedAtById: () => Promise<ReadonlyMap<string, string>>;
   /**
@@ -365,7 +371,8 @@ export function createAgentViewReadStore(
       };
     },
     readWarningOverrides: () => deps.readWarningOverrides(),
-    readManualValueHistory: async () => readManualValueHistory(ctx.db),
+    readManualValueHistory: async (entityIds) =>
+      readManualValueHistory(ctx.db, entityIds),
     readAssetCreatedAtById: async () => {
       const rows = await ctx.db
         .select({ createdAt: assets.createdAt, id: assets.id })

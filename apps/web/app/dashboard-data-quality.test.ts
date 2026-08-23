@@ -19,7 +19,7 @@ import {
   listScopeOptions,
   type ManualAsset,
 } from "@worthline/domain";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { collectDashboardDataQualitySignals } from "./dashboard-data-quality";
 
@@ -92,6 +92,25 @@ async function heroCodes(operations: readonly InvestmentOperation[]): Promise<st
 }
 
 describe("collectDashboardDataQualitySignals — closed positions (#1348)", () => {
+  test("asks only for the loaded assets' manual-value history (#1534)", async () => {
+    const readManualValueHistory = vi.fn(async () => new Map());
+    await collectDashboardDataQualitySignals({
+      agentView: { ...emptyStore(), readManualValueHistory } as AgentViewReadStore,
+      asOfDateKey: "2026-07-11",
+      assets: [symbollessFund()],
+      fireConfigByScopeId: { [scope.id]: undefined },
+      holdingRows: [],
+      liabilities: [],
+      operationsByAsset: new Map(),
+      overrides: [],
+      priceCache: [],
+      scope,
+      snapshots: [],
+      workspace,
+    });
+    expect(readManualValueHistory).toHaveBeenCalledWith(["asset_fund"]);
+  });
+
   test("a sold-out fund raises no warning on the hero", async () => {
     expect(
       await heroCodes([

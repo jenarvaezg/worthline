@@ -115,7 +115,7 @@ export async function collectDashboardDataQualitySignals(
     Promise.all(
       mortgageIds.map(async (id) => [id, await agentView.readDebtModel(id)] as const),
     ),
-    agentView.readManualValueHistory(),
+    agentView.readManualValueHistory(input.assets.map((asset) => asset.id)),
     agentView.readAssetCreatedAtById(),
     agentView.readTrashedHoldings(),
   ]);
