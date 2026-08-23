@@ -13,6 +13,7 @@ import { DangerZoneSection } from "./danger-zone-section";
  */
 const CURRENT_URL = "/patrimonio/wl_hld_fondo/editar";
 const TRANSFER_HREF = `${CURRENT_URL}?abrir=traspaso&archivar=1#traspaso`;
+const MANUAL_LEDGER = { transferHref: TRANSFER_HREF };
 const TODAY = "2026-08-23";
 
 function render(trashImpact: HoldingTrashImpact | null, kind: "asset" | "liability") {
@@ -26,7 +27,7 @@ function render(trashImpact: HoldingTrashImpact | null, kind: "asset" | "liabili
         kind="asset"
         privacyMode={false}
         today={TODAY}
-        transferHref={TRANSFER_HREF}
+        manualLedger={MANUAL_LEDGER}
         trashImpact={trashImpact}
       />
     ) : (
@@ -97,7 +98,7 @@ describe("DangerZoneSection — the whole truth when there is money inside (#136
         kind="asset"
         privacyMode
         today={TODAY}
-        transferHref={TRANSFER_HREF}
+        manualLedger={MANUAL_LEDGER}
         trashImpact={IMPACT}
       />,
     );
@@ -136,21 +137,28 @@ describe("DangerZoneSection — the door's three exits (#1549)", () => {
     expect(html).toContain(TRANSFER_HREF.replace(/&/g, "&amp;"));
   });
 
-  test("with no traspaso surface on the ficha, that exit is not offered at all", () => {
+  test("a source-owned ledger keeps ONLY the exit that writes nothing", () => {
+    // A coin collection or a synced holding hides every operations surface: an
+    // apunte written from here is one the ficha refuses to show and the next sync
+    // undoes. The warning stays — the money is still inside — and «error de
+    // registro» stays with it, because it writes nothing.
     const html = renderToStaticMarkup(
       <DangerZoneSection
         currentUrl={CURRENT_URL}
         holdingId="asset_fondo"
         kind="asset"
+        manualLedger={null}
         privacyMode={false}
         today={TODAY}
-        transferHref={null}
         trashImpact={IMPACT}
       />,
     );
 
     expect(html).not.toContain('value="transferred"');
-    expect(html).toContain('value="sold"');
+    expect(html).not.toContain('value="sold"');
+    expect(html).not.toContain('name="soldAmount"');
+    expect(html).toContain('value="mis_entry"');
+    expect(html).toContain("sale de tu patrimonio en la próxima captura");
   });
 
   test("«error de registro» says what it archives and what it costs", () => {
@@ -175,7 +183,7 @@ describe("DangerZoneSection — a refused exit comes back intact (#1329)", () =>
         kind="asset"
         privacyMode={false}
         today={TODAY}
-        transferHref={TRANSFER_HREF}
+        manualLedger={MANUAL_LEDGER}
         trashImpact={IMPACT}
       />,
     );
@@ -201,7 +209,7 @@ describe("DangerZoneSection — a refused exit comes back intact (#1329)", () =>
         kind="asset"
         privacyMode={false}
         today={TODAY}
-        transferHref={TRANSFER_HREF}
+        manualLedger={MANUAL_LEDGER}
         trashImpact={IMPACT}
       />,
     );

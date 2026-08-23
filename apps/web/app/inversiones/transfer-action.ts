@@ -76,11 +76,18 @@ export async function recordTransferAction(
       values: preserveFields(formData, [...TRANSFER_FORM_FIELDS]),
     });
 
-  return formAction<TransferDraft, { created: CreatedDestination | null }>({
+  return formAction<
+    TransferDraft,
+    { created: CreatedDestination | null; originTrashed: boolean }
+  >({
     datedFact: false,
     guardUrl: () => returnUrl,
     onError: ({ error }) => transferErrorUrl(error),
-    onSuccess: () => successRedirectUrl(returnUrl, "transfer_recorded"),
+    onSuccess: ({ value }) =>
+      successRedirectUrl(
+        returnUrl,
+        value?.originTrashed ? "transfer_recorded_origin_trashed" : "transfer_recorded",
+      ),
     parse: ({ today }) => {
       const parsed = parseTransferForm(values, today);
       return parsed.ok
@@ -107,7 +114,7 @@ export async function recordTransferAction(
       // gate's ids are primary keys, so a race that gets past this still collides
       // rather than writing twice.
       if (operations.some((operation) => operation.id === outOperationId)) {
-        return { ok: true, value: { created: null } };
+        return { ok: true, value: { created: null, originTrashed: false } };
       }
 
       // Check the figures BEFORE creating anything, with the function the SCREEN
@@ -169,13 +176,13 @@ export async function recordTransferAction(
         return { ok: false, error: mapDomainViolation(result.violations[0]) };
       }
 
-      await archiveOriginIfAsked(store, {
+      const originTrashed = await archiveOriginIfAsked(store, {
         archive: formData.get("archiveOrigin") === "1",
         now,
         originAssetId,
       });
 
-      return { ok: true, value: { created: destination.created } };
+      return { ok: true, value: { created: destination.created, originTrashed } };
     },
     // The just-created destination's identity joins the exposure catalog (#1097), so
     // its row is born with the holding instead of waiting for a backfill. Best
@@ -211,19 +218,29 @@ export async function recordTransferAction(
  * traspaso (already written, already rippled) is not undone for it. The user lands
  * on a ficha whose position is smaller and whose danger zone still asks its
  * question.
+ *
+ * Returns whether the origin was actually archived, because the promise the banner
+ * made ("se irá a la Papelera si el traspaso lo deja sin participaciones") has two
+ * outcomes and the user must be told which one happened — a refusal or a partial
+ * traspaso would otherwise read exactly like a success.
  */
 async function archiveOriginIfAsked(
   store: WorthlineStore,
   params: { archive: boolean; now: string; originAssetId: string },
-): Promise<void> {
-  if (!params.archive) return;
+): Promise<boolean> {
+  if (!params.archive) return false;
 
   const remaining = netUnitsFromOperations(
     await store.operations.readOperations(params.originAssetId),
   );
-  if (!unitsReadAsClosed(remaining)) return;
+  if (!unitsReadAsClosed(remaining)) return false;
 
-  await store.assets.softDeleteAsset(params.originAssetId, params.now, "transferred");
+  const outcome = await store.assets.softDeleteAsset(
+    params.originAssetId,
+    params.now,
+    "transferred",
+  );
+  return outcome.status === "deleted";
 }
 
 /**

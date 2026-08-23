@@ -69,11 +69,19 @@ type DangerZoneSectionProps = DangerZoneCommonProps &
          */
         containerPortfolio?: string | null;
         /**
-         * The Traspasar surface's href on this same ficha, when the ficha has one.
-         * Absent — a coin collection, a synced holding — and the traspaso exit is
-         * not offered, because there is no door to send the owner to.
+         * The doors this ficha's OWN ledger opens, or null when it opens none.
+         *
+         * A coin collection or a synced holding hides every operations surface: the
+         * ledger is written by its source, not by hand. Offering «lo vendí» there
+         * would write an apunte the ficha itself refuses to show — and on a
+         * connected holding the store rejects it outright (#883/#945). Those fichas
+         * keep only «error de registro», the exit that writes nothing.
+         *
+         * One prop rather than two booleans that always move together: both exits
+         * answer the same question, and splitting them lets a future edit offer a
+         * sale where a traspaso is impossible.
          */
-        transferHref?: string | null;
+        manualLedger?: { transferHref: string } | null;
         /** Today, the date the closing sale defaults to. */
         today: string;
       }
@@ -81,7 +89,7 @@ type DangerZoneSectionProps = DangerZoneCommonProps &
         kind: "liability";
         trashImpact?: never;
         containerPortfolio?: never;
-        transferHref?: never;
+        manualLedger?: never;
         today?: never;
       }
   );
@@ -92,9 +100,9 @@ export function DangerZoneSection({
   formError = null,
   holdingId,
   kind,
+  manualLedger,
   privacyMode = false,
   today,
-  transferHref,
   trashImpact,
 }: DangerZoneSectionProps) {
   const isAsset = kind === "asset";
@@ -131,10 +139,10 @@ export function DangerZoneSection({
           {trashImpact ? (
             <TrashGate
               impact={trashImpact}
+              manualLedger={manualLedger ?? null}
               privacyMode={privacyMode}
               refusal={refusal}
               today={today ?? ""}
-              transferHref={transferHref ?? null}
             />
           ) : (
             <>
@@ -163,16 +171,16 @@ export function DangerZoneSection({
  */
 function TrashGate({
   impact,
+  manualLedger,
   privacyMode,
   refusal,
   today,
-  transferHref,
 }: {
   impact: HoldingTrashImpact;
+  manualLedger: { transferHref: string } | null;
   privacyMode: boolean;
   refusal: FormErrorContext | null;
   today: string;
-  transferHref: string | null;
 }) {
   const value = formatMoneyMinorPrivacy(impact.value, privacyMode);
   const typed = refusal?.values ?? {};
@@ -199,25 +207,27 @@ function TrashGate({
 
       <fieldset className="trashExits">
         <legend>¿Qué pasó con este activo?</legend>
-        <label>
-          <input
-            defaultChecked={chosenExit === "sold"}
-            name="exit"
-            type="radio"
-            value="sold"
-          />
-          Lo vendí
-        </label>
-        {transferHref ? (
-          <label>
-            <input
-              defaultChecked={chosenExit === "transferred"}
-              name="exit"
-              type="radio"
-              value="transferred"
-            />
-            Lo traspasé a otro producto
-          </label>
+        {manualLedger ? (
+          <>
+            <label>
+              <input
+                defaultChecked={chosenExit === "sold"}
+                name="exit"
+                type="radio"
+                value="sold"
+              />
+              Lo vendí
+            </label>
+            <label>
+              <input
+                defaultChecked={chosenExit === "transferred"}
+                name="exit"
+                type="radio"
+                value="transferred"
+              />
+              Lo traspasé a otro producto
+            </label>
+          </>
         ) : null}
         <label>
           <input
@@ -230,36 +240,38 @@ function TrashGate({
         </label>
       </fieldset>
 
-      <div className="trashExitPane trashSoldPane">
-        <label>
-          Fecha de la venta
-          <input defaultValue={typed["soldAt"] ?? today} name="soldAt" type="date" />
-        </label>
-        <label>
-          Importe recibido
-          <input
-            defaultValue={typed["soldAmount"] ?? ""}
-            inputMode="decimal"
-            name="soldAmount"
-            placeholder="0,00"
-            type="text"
-          />
-        </label>
-        <p className="opCaptureHint">
-          Se registrará la venta de las {formatUnits(impact.netUnits)} participaciones que
-          quedan, y después el activo se irá a la Papelera.
-        </p>
-        <button type="submit">Registrar la venta y eliminar</button>
-      </div>
+      {manualLedger ? (
+        <div className="trashExitPane trashSoldPane">
+          <label>
+            Fecha de la venta
+            <input defaultValue={typed["soldAt"] ?? today} name="soldAt" type="date" />
+          </label>
+          <label>
+            Importe recibido
+            <input
+              defaultValue={typed["soldAmount"] ?? ""}
+              inputMode="decimal"
+              name="soldAmount"
+              placeholder="0,00"
+              type="text"
+            />
+          </label>
+          <p className="opCaptureHint">
+            Se registrará la venta de las {formatUnits(impact.netUnits)} participaciones
+            que quedan, y después el activo se irá a la Papelera.
+          </p>
+          <button type="submit">Registrar la venta y eliminar</button>
+        </div>
+      ) : null}
 
-      {transferHref ? (
+      {manualLedger ? (
         <div className="trashExitPane trashTransferPane">
           <p>
             Un traspaso se registra en su propia pantalla, porque mueve las
             participaciones a otra inversión y le lleva el coste de adquisición. Al
             guardarlo desde allí, este activo se irá solo a la Papelera.
           </p>
-          <Link className="actionLink" href={transferHref}>
+          <Link className="actionLink" href={manualLedger.transferHref}>
             Registrar el traspaso →
           </Link>
         </div>

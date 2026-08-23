@@ -542,6 +542,11 @@ export function okMessage(key: string | undefined): string | null {
     restored: "Restaurado.",
     saved: "Guardado.",
     transfer_recorded: "Traspaso registrado.",
+    // The Papelera's traspaso exit (#1549) confirms BOTH halves of what it promised:
+    // silence about the archive would leave the user checking the Papelera by hand,
+    // and a partial traspaso — which archives nothing — reads identical otherwise.
+    transfer_recorded_origin_trashed:
+      "Traspaso registrado, y el origen se ha ido a la Papelera.",
     // The alta that arrived by traspaso (#1541) says so out loud: what confirms the
     // entry is not «creada» but «no la has comprado» — the difference the cupo and
     // the plusvalía both hang on.

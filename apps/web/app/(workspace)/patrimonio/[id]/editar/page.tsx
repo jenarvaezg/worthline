@@ -432,17 +432,19 @@ export default async function EditarPage({
   const abrir = resolvedSearchParams?.abrir;
   const advancedOpen = abrir === "operaciones" || abrir === "traspaso";
   const archiveOriginAfterTransfer = resolvedSearchParams?.archivar === "1";
-  // The Traspasar surface exists on this ficha only for a derived holding with a
-  // ledger; the Papelera's traspaso exit is offered only when there is a door to
-  // send the owner to.
-  const showsTransferSurface =
+  // Whether this ficha's ledger takes apuntes written BY HAND — a derived holding
+  // that is neither a coin collection nor a synced one, and that already has a
+  // ledger. It gates the Traspasar surface and, with it, the two Papelera exits that
+  // write an apunte: on a source-owned ledger, «lo vendí» would record a sale the
+  // ficha refuses to show and the next sync would undo.
+  const hasManualLedger =
     asset !== null &&
     method === "derived" &&
     !isCoinCollection &&
     !isBinanceHolding &&
     operations.length > 0;
-  const transferHref = showsTransferSurface
-    ? `${currentUrl}?abrir=traspaso&archivar=1#traspaso`
+  const manualLedger = hasManualLedger
+    ? { transferHref: `${currentUrl}?abrir=traspaso&archivar=1#traspaso` }
     : null;
   // The cash sibling of a live managed portfolio cannot be trashed on its own (ADR
   // 0085, #1549): it is the container's casilla, created by the alta. The SAME read
@@ -790,7 +792,7 @@ export default async function EditarPage({
                 later, and the one that emptied the holding is exactly the row that is
                 still missing. The ledger travels so the preview can fold it at the
                 date the user picks (#1438). */}
-            {showsTransferSurface ? (
+            {hasManualLedger ? (
               <TransferSection
                 archiveOrigin={archiveOriginAfterTransfer}
                 currentUrl={currentUrl}
@@ -914,8 +916,8 @@ export default async function EditarPage({
             holdingId={id}
             kind="asset"
             privacyMode={privacyMode}
+            manualLedger={manualLedger}
             today={today}
-            transferHref={transferHref}
             trashImpact={trashImpact}
           />
         ) : (

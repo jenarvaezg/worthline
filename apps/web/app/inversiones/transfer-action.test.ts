@@ -348,9 +348,10 @@ describe("recordTransferAction — the traspaso exit of the Papelera door (#1549
   test("«todo» plus the archive intent leaves the origin in the trash, marked as traspasado", async () => {
     const store = await seed();
 
+    // The banner promised two things; the confirmation says both happened.
     expect(
       await submit(transferForm({ archiveOrigin: "1", portion: "all" }), store),
-    ).toContain("ok=transfer_recorded");
+    ).toContain("ok=transfer_recorded_origin_trashed");
 
     const trashed = await store.agentView.readTrashedHoldings();
     expect(trashed).toHaveLength(1);
@@ -364,8 +365,9 @@ describe("recordTransferAction — the traspaso exit of the Papelera door (#1549
   test("a PARTIAL traspaso is written but archives nothing — a live position is not litter", async () => {
     const store = await seed();
 
+    // …and when it archives nothing, it does NOT claim it did.
     expect(await submit(transferForm({ archiveOrigin: "1" }), store)).toContain(
-      "ok=transfer_recorded",
+      "ok=transfer_recorded;",
     );
 
     expect(await store.agentView.readTrashedHoldings()).toEqual([]);
