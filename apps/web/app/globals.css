@@ -5425,6 +5425,120 @@ code {
   border-radius: var(--radius-sm);
 }
 
+/* === #1548 managed portfolio: one row that unfolds into its members ======== */
+
+/* The header's name line: caret (toggles) + name (links to the ficha). Two
+   affordances, because the group must not swallow the door to the ficha. */
+.balanceGroupName {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.balanceGroupName a {
+  color: var(--ink);
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.balanceGroupName a:hover {
+  color: var(--blue);
+}
+
+.balanceGroupCaret {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.balanceGroupCaret:hover {
+  color: var(--blue);
+}
+
+.balanceGroupCaret:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Says what the row is without spending a word of the name (canon §5: a mark
+   exists only if the state does — a loose holding never renders one). */
+.balanceGroupChip {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding: 0 5px;
+  text-transform: uppercase;
+}
+
+/* Keeps the header's grid aligned with the rows' ⋯ column: a portfolio has no
+   row menu (its actions live in the ficha), but the columns must still line up. */
+.balanceGroupSpacer {
+  display: block;
+  width: 1.05rem;
+}
+
+/* The members: a breakdown under a rail, NOT summands. No weight bars — the bar
+   is what says "this adds", and only the header adds. */
+.balanceGroupMembers {
+  border-left: 2px solid var(--tier-market);
+  margin: 2px 16px 8px 34px;
+  padding-left: 12px;
+}
+
+/* The header's split rescaled to the portfolio's own 100 %: the scale in which
+   the weights below can be checked by eye. */
+.balanceGroupSplit {
+  border-radius: var(--radius-sm);
+  height: 6px;
+  margin: 6px 0 8px;
+}
+
+.balanceGroupMember {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 3px 0;
+}
+
+.balanceGroupMemberName {
+  color: var(--muted);
+  font-size: 0.8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.balanceGroupMemberName a {
+  color: var(--muted);
+}
+
+.balanceGroupMemberName a:hover {
+  color: var(--blue);
+}
+
+.balanceGroupMemberShare,
+.balanceGroupMemberAmount {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.balanceGroupMemberShare {
+  min-width: 46px;
+  text-align: right;
+}
+
 /* Row actions: a native <details> popover so the row stays calm (zero JS). */
 .balanceActions {
   position: relative;

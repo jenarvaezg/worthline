@@ -4,8 +4,10 @@ import { formatRatioPct, returnsTooltipLines } from "@web/_components/returns-fo
 import { holdingDetailHref } from "@web/holding-route";
 import { PendingSubmit } from "@web/pending-submit";
 import { boardRefreshHover } from "@web/price-refresh";
+import { pushMirroredUrl, useViewStateSync } from "@web/url-view-state";
 import type { TrashView } from "@worthline/db";
 import type {
+  BoardUnit,
   DomainWarning,
   HoldingReturnsView,
   PortfolioGroup,
@@ -13,8 +15,13 @@ import type {
 } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
-import { type FormEvent, useOptimistic, useTransition } from "react";
-
+import {
+  type FormEvent,
+  useCallback,
+  useOptimistic,
+  useState,
+  useTransition,
+} from "react";
 import {
   acknowledgeWarningAction,
   deleteAssetAction,
@@ -25,6 +32,11 @@ import {
   restoreAssetAction,
   restoreLiabilityAction,
 } from "./actions";
+import {
+  readOpenPortfoliosFromUrl,
+  toggleOpenPortfolio,
+  urlWithOpenPortfolios,
+} from "./board-fold";
 import {
   applyBoardMutations,
   type BoardModel,
@@ -40,6 +52,18 @@ import {
  * to its SECTION, so a dominant holding never flattens the smaller rungs into nothing.
  * A footer reconciles Activos − Pasivos = Patrimonio neto, and the Papelera is part
  * of that footer rather than a stray panel.
+ *
+ * A managed portfolio (#1548, ADR 0085) is ONE row of this board: collapsed it
+ * is a summand like any other, expanded its members indent under a rail as a
+ * breakdown — no bar of their own, because the bar is what says "this adds".
+ * Σ rows = bruto therefore holds in both states, which is the whole point. The
+ * header carries a chip so the row says what it is without being opened, the
+ * caret opens it and the NAME links to the portfolio ficha (the door S1 built);
+ * its weight bar is divided by member, so the inner split reads without opening
+ * anything. The cuts are painted with a `linear-gradient` rather than child
+ * elements: with the portfolio at 0,7 % of its section the bar is ~3px wide and
+ * eight bordered children would need 8px — they would be clipped, showing three
+ * arbitrary members. A gradient degrades on its own to the dominant colour.
  *
  * Optimistic mutations (#521, S5 of #485, interaction-patterns §4/§7/§8). This is the
  * ADR 0036 client island for the board: deleting a row (and emptying / hard-deleting
@@ -183,7 +207,23 @@ interface Section {
   key: string;
   label: string;
   tier: UnifiedHolding["tier"];
-  rows: UnifiedHolding[];
+  /** The section's summands: loose rows and whole managed portfolios (#1548). */
+  units: BoardUnit[];
+}
+
+/** A summand's magnitude — a block's is the sum of its members. */
+function unitMagnitude(unit: BoardUnit): number {
+  return unit.kind === "portfolio" ? unit.signedMinor : magnitude(unit.holding);
+}
+
+/** The rung a summand paints in — a block's is its dominant one. */
+function unitTier(unit: BoardUnit): UnifiedHolding["tier"] {
+  return unit.kind === "portfolio" ? unit.tier : unit.holding.tier;
+}
+
+/** A summand's label, for composition-bar hovers. */
+function unitName(unit: BoardUnit): string {
+  return unit.kind === "portfolio" ? unit.portfolio.name : unit.holding.name;
 }
 
 /**
@@ -198,34 +238,44 @@ function sectionsFor(
 ): Section[] {
   return groups
     .map((g) => {
-      const rows = g.holdings
-        .filter((h) => h.direction === direction)
-        .sort((a, b) => magnitude(b) - magnitude(a));
-      return { key: g.key, label: g.label, tier: rows[0]?.tier ?? "cash", rows };
+      const units = g.units
+        .filter((unit) =>
+          unit.kind === "portfolio"
+            ? direction === "asset"
+            : unit.holding.direction === direction,
+        )
+        .sort((a, b) => unitMagnitude(b) - unitMagnitude(a));
+      const first = units[0];
+      return {
+        key: g.key,
+        label: g.label,
+        tier: first ? unitTier(first) : "cash",
+        units,
+      };
     })
-    .filter((s) => s.rows.length > 0);
+    .filter((s) => s.units.length > 0);
 }
 
-const sectionTotal = (rows: UnifiedHolding[]) =>
-  rows.reduce((acc, h) => acc + magnitude(h), 0);
+const sectionTotal = (units: BoardUnit[]) =>
+  units.reduce((acc, unit) => acc + unitMagnitude(unit), 0);
 
 /** Composition segments for a pane: by subsection when subdivided, else by holding. */
 function paneSegments(sections: Section[], isAsset: boolean) {
-  const denom = sections.reduce((acc, s) => acc + sectionTotal(s.rows), 0) || 1;
+  const denom = sections.reduce((acc, s) => acc + sectionTotal(s.units), 0) || 1;
   const color = (tier: UnifiedHolding["tier"]) => barColor(tier, isAsset);
   const segments =
     sections.length > 1
       ? sections.map((s) => ({
           key: s.key,
-          value: sectionTotal(s.rows),
+          value: sectionTotal(s.units),
           color: color(s.tier),
           label: s.label,
         }))
-      : (sections[0]?.rows ?? []).map((h) => ({
-          key: h.id,
-          value: magnitude(h),
-          color: color(h.tier),
-          label: h.name,
+      : (sections[0]?.units ?? []).map((unit) => ({
+          key: unit.key,
+          value: unitMagnitude(unit),
+          color: color(unitTier(unit)),
+          label: unitName(unit),
         }));
   return { denom, segments };
 }
@@ -378,6 +428,161 @@ function HoldingRow({
   );
 }
 
+/**
+ * The weight bar of a portfolio block, cut by member (#1548).
+ *
+ * A `linear-gradient` with hard stops rather than child elements: the bar's
+ * width is the block's weight in its section, which on the Activos/Pasivos axis
+ * can be ~3px — eight children with a 1px separator each would need 8px and get
+ * clipped, showing three members chosen by order instead of by size. A gradient
+ * has nothing to clip: at 3px it degrades to the dominant colour, at full width
+ * every cut is there. Each member keeps ITS OWN rung colour (design-system §5);
+ * the cuts are hairlines of the paper, never a decorative ramp.
+ */
+function memberGradient(members: readonly UnifiedHolding[], totalMinor: number): string {
+  if (totalMinor <= 0 || members.length === 0) {
+    return "var(--tier-market)";
+  }
+  const stops: string[] = [];
+  const at = (value: number) => `${Math.round(value * 100) / 100}%`;
+  let cursor = 0;
+  members.forEach((member, index) => {
+    const start = cursor;
+    cursor += (magnitude(member) / totalMinor) * 100;
+    // A hairline of paper between members — in percent, so it shrinks with the
+    // bar instead of eating it.
+    const from = index > 0 ? Math.min(start + 0.6, cursor) : start;
+    if (index > 0) {
+      stops.push(`var(--panel) ${at(start)} ${at(from)}`);
+    }
+    stops.push(`${tierVar(member.tier)} ${at(from)} ${at(cursor)}`);
+  });
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+}
+
+/**
+ * A managed portfolio as one row of the board, with its members folded under it
+ * (#1548). Collapsed the header is the summand; expanded the members indent as
+ * a breakdown that adds nothing — so the pane's total is the same either way.
+ *
+ * The caret toggles and the name links: if the whole name were the toggle, the
+ * group would swallow the ficha door S1 built.
+ */
+function PortfolioBlock({
+  unit,
+  currency,
+  isHousehold,
+  open,
+  onToggle,
+  publicId,
+  publicIdByHolding,
+  sectionDenom,
+  privacyMode,
+  banded,
+}: {
+  unit: Extract<BoardUnit, { kind: "portfolio" }>;
+  currency: Currency;
+  isHousehold: boolean;
+  open: boolean;
+  onToggle: (publicId: string) => void;
+  /** The portfolio's public `wl_prt_…` id, or null when it has no registry row. */
+  publicId: string | null;
+  publicIdByHolding: PublicIdByHolding;
+  sectionDenom: number;
+  privacyMode: boolean;
+  banded: boolean;
+}) {
+  const total = unit.signedMinor;
+  const pct = (total / (sectionDenom || 1)) * 100;
+  const label = `${unit.members.length} ${unit.members.length === 1 ? "posición" : "posiciones"}`;
+
+  return (
+    <>
+      <div className={`balanceRow${banded ? " band" : ""}`} id={publicId ?? undefined}>
+        <div className="balanceRowName">
+          <span className="balanceGroupName">
+            <button
+              aria-controls={publicId ? `${publicId}-miembros` : undefined}
+              aria-expanded={open}
+              className="balanceGroupCaret"
+              disabled={publicId === null}
+              onClick={() => publicId && onToggle(publicId)}
+              type="button"
+            >
+              <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+              <span className="srOnly">
+                {open
+                  ? `Colapsar ${unit.portfolio.name}`
+                  : `Desplegar ${unit.portfolio.name}`}
+              </span>
+            </button>
+            {publicId ? (
+              <Link href={`/patrimonio/carteras/${publicId}`}>{unit.portfolio.name}</Link>
+            ) : (
+              <span>{unit.portfolio.name}</span>
+            )}
+          </span>
+          <div className="balanceRowSub">
+            <span className="balanceGroupChip">cartera</span>
+            {unit.portfolio.provider ? <span>{unit.portfolio.provider}</span> : null}
+            <span>· {label}</span>
+          </div>
+        </div>
+
+        <div className="balanceRowAmount">{money(total, currency, privacyMode)}</div>
+        <span aria-hidden="true" className="balanceGroupSpacer" />
+
+        <div className="balanceRowBar">
+          <span
+            style={{
+              background: memberGradient(unit.members, total),
+              width: `${pct}%`,
+            }}
+          />
+        </div>
+      </div>
+
+      {open ? (
+        <div
+          className="balanceGroupMembers"
+          id={publicId ? `${publicId}-miembros` : undefined}
+        >
+          {/* The same split, rescaled to the portfolio's own 100 % — the scale in
+              which the members' weights below can be checked by eye. */}
+          <div
+            aria-hidden="true"
+            className="balanceGroupSplit"
+            style={{ background: memberGradient(unit.members, total) }}
+          />
+          {unit.members.map((member) => {
+            const memberPublicId = publicIdByHolding[member.id];
+            const share = total > 0 ? (magnitude(member) / total) * 100 : 0;
+            const own = ownershipLabel(member, isHousehold);
+            return (
+              <div className="balanceGroupMember" key={member.id}>
+                <span className="balanceGroupMemberName">
+                  {memberPublicId ? (
+                    <Link href={holdingDetailHref(memberPublicId)}>{member.name}</Link>
+                  ) : (
+                    member.name
+                  )}
+                  {own ? <span className="balanceRowSub"> · {own}</span> : null}
+                </span>
+                <span className="balanceGroupMemberShare">
+                  {share.toFixed(1).replace(".", ",")} %
+                </span>
+                <span className="balanceGroupMemberAmount">
+                  {money(magnitude(member), currency, privacyMode)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function Pane({
   title,
   total,
@@ -394,6 +599,9 @@ function Pane({
   optimisticSubmit,
   returnsById,
   readOnly,
+  openPortfolios,
+  onTogglePortfolio,
+  publicIdByPortfolio,
 }: {
   title: string;
   total: number;
@@ -411,6 +619,10 @@ function Pane({
   optimisticSubmit: OptimisticSubmit;
   returnsById: ReturnsById;
   readOnly: boolean;
+  /** Public ids of the portfolios rendered unfolded (#1548). */
+  openPortfolios: ReadonlySet<string>;
+  onTogglePortfolio: (publicId: string) => void;
+  publicIdByPortfolio: PublicIdByHolding;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;
@@ -453,7 +665,7 @@ function Pane({
         <p className="balancePaneEmpty">{isAsset ? "Sin activos." : "Sin deudas."}</p>
       ) : (
         sections.map((s) => {
-          const secDenom = sectionTotal(s.rows) || 1;
+          const secDenom = sectionTotal(s.units) || 1;
           return (
             <div key={s.key}>
               {showSubs ? (
@@ -472,26 +684,42 @@ function Pane({
                   </span>
                 </div>
               ) : null}
-              {s.rows.map((h) => (
-                <HoldingRow
-                  banded={bandCursor++ % 2 === 1}
-                  currency={currency}
-                  currentUrl={currentUrl}
-                  holding={h}
-                  isAsset={isAsset}
-                  isHousehold={isHousehold}
-                  key={h.id}
-                  nowIso={nowIso}
-                  optimisticSubmit={optimisticSubmit}
-                  privacyMode={privacyMode}
-                  publicIdByHolding={publicIdByHolding}
-                  readOnly={readOnly}
-                  returns={returnsById.get(h.id)}
-                  sectionDenom={secDenom}
-                  showTierLabel={!showSubs}
-                  warnings={warnings}
-                />
-              ))}
+              {s.units.map((unit) =>
+                unit.kind === "portfolio" ? (
+                  <PortfolioBlock
+                    banded={bandCursor++ % 2 === 1}
+                    currency={currency}
+                    isHousehold={isHousehold}
+                    key={unit.key}
+                    onToggle={onTogglePortfolio}
+                    open={openPortfolios.has(publicIdByPortfolio[unit.key] ?? "")}
+                    privacyMode={privacyMode}
+                    publicId={publicIdByPortfolio[unit.key] ?? null}
+                    publicIdByHolding={publicIdByHolding}
+                    sectionDenom={secDenom}
+                    unit={unit}
+                  />
+                ) : (
+                  <HoldingRow
+                    banded={bandCursor++ % 2 === 1}
+                    currency={currency}
+                    currentUrl={currentUrl}
+                    holding={unit.holding}
+                    isAsset={isAsset}
+                    isHousehold={isHousehold}
+                    key={unit.key}
+                    nowIso={nowIso}
+                    optimisticSubmit={optimisticSubmit}
+                    privacyMode={privacyMode}
+                    publicIdByHolding={publicIdByHolding}
+                    readOnly={readOnly}
+                    returns={returnsById.get(unit.holding.id)}
+                    sectionDenom={secDenom}
+                    showTierLabel={!showSubs}
+                    warnings={warnings}
+                  />
+                ),
+              )}
             </div>
           );
         })
@@ -593,6 +821,17 @@ export interface BalanceBoardProps {
    * holding becomes a link, so this is where the two id spaces meet.
    */
   publicIdByHolding: PublicIdByHolding;
+  /**
+   * Public `wl_prt_…` id per internal portfolio id (#1548) — the group header
+   * is a link to the ficha and the fold param names portfolios in the URL.
+   */
+  publicIdByPortfolio?: PublicIdByHolding;
+  /**
+   * Portfolios rendered unfolded on the FIRST paint, read from the URL by the
+   * server (#1548). Server-rendering the fold is what keeps a shared link from
+   * flashing collapsed before hydration.
+   */
+  initialOpenPortfolios?: ReadonlySet<string>;
   /** Server render instant — anchors the derived-value badge's relative date (#303). */
   nowIso: string;
   privacyMode: boolean;
@@ -621,6 +860,8 @@ export default function BalanceBoard({
   trash,
   currentUrl,
   publicIdByHolding,
+  publicIdByPortfolio = {},
+  initialOpenPortfolios,
   nowIso,
   privacyMode,
   readOnly = false,
@@ -636,6 +877,24 @@ export default function BalanceBoard({
       applyBoardMutations(current, [mutation]),
   );
   const [isPending, startTransition] = useTransition();
+
+  // The fold is URL state (§3): the server paints the first frame from the
+  // param, the island takes it from there and mirrors every toggle with
+  // `pushState`, so Back closes what Forward opened and the link is shareable.
+  // No navigation, no round-trip — folding a group re-reads nothing.
+  const [openPortfolios, setOpenPortfolios] = useState<ReadonlySet<string>>(
+    () => initialOpenPortfolios ?? new Set(),
+  );
+  const syncFoldFromUrl = useCallback(() => {
+    setOpenPortfolios(readOpenPortfoliosFromUrl(window.location.href));
+  }, []);
+  useViewStateSync(syncFoldFromUrl);
+
+  const togglePortfolio = (publicId: string) => {
+    const next = toggleOpenPortfolio(openPortfolios, publicId);
+    setOpenPortfolios(next);
+    pushMirroredUrl(urlWithOpenPortfolios(window.location.href, next));
+  };
 
   // Apply the optimistic merge, then run the action — both inside the transition so
   // `useOptimistic` tracks the change and `isPending` stays true until the action's
@@ -659,17 +918,28 @@ export default function BalanceBoard({
   // Split fully-sold positions out of the live sections before building them —
   // they fold at the assets pane's foot instead. All 0 €, so no total changes.
   const operatedIds = operatedAssetIds ?? new Set<string>();
+  // Only LOOSE rows fold away. A sold-out member stays inside its portfolio: the
+  // block promises N positions and its 0 € member costs the total nothing, while
+  // moving it out would make the header's count disagree with what unfolds.
   const closedRows = model.groups
-    .flatMap((g) => g.holdings.filter((h) => isClosedPosition(h, operatedIds)))
+    .flatMap((g) =>
+      g.units.flatMap((unit) =>
+        unit.kind === "holding" && isClosedPosition(unit.holding, operatedIds)
+          ? [unit.holding]
+          : [],
+      ),
+    )
     .sort((a, b) => a.name.localeCompare(b.name));
   const liveGroups = model.groups.map((g) => ({
     ...g,
-    holdings: g.holdings.filter((h) => !isClosedPosition(h, operatedIds)),
+    units: g.units.filter(
+      (unit) => unit.kind === "portfolio" || !isClosedPosition(unit.holding, operatedIds),
+    ),
   }));
   const assetSections = sectionsFor(liveGroups, "asset");
   const debtSections = sectionsFor(liveGroups, "liability");
-  const grossAssets = assetSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
-  const totalDebts = debtSections.reduce((acc, s) => acc + sectionTotal(s.rows), 0);
+  const grossAssets = assetSections.reduce((acc, s) => acc + sectionTotal(s.units), 0);
+  const totalDebts = debtSections.reduce((acc, s) => acc + sectionTotal(s.units), 0);
   const net = grossAssets - totalDebts;
   const trashCount = model.trash.assets.length + model.trash.liabilities.length;
 
@@ -700,9 +970,12 @@ export default function BalanceBoard({
         isAsset
         isHousehold={isHousehold}
         nowIso={nowIso}
+        onTogglePortfolio={togglePortfolio}
+        openPortfolios={openPortfolios}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
         publicIdByHolding={publicIdByHolding}
+        publicIdByPortfolio={publicIdByPortfolio}
         readOnly={readOnly}
         returnsById={returns}
         sections={assetSections}
@@ -716,9 +989,12 @@ export default function BalanceBoard({
         isAsset={false}
         isHousehold={isHousehold}
         nowIso={nowIso}
+        onTogglePortfolio={togglePortfolio}
+        openPortfolios={openPortfolios}
         optimisticSubmit={optimisticSubmit}
         privacyMode={privacyMode}
         publicIdByHolding={publicIdByHolding}
+        publicIdByPortfolio={publicIdByPortfolio}
         readOnly={readOnly}
         returnsById={returns}
         sections={debtSections}

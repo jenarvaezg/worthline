@@ -124,8 +124,9 @@ const KEY_EXPORTS = [
   "resolveAssetClassBreakdown",
   "isGeoCurrencyNotApplicableAssetClass",
   "validateImportedExposureProfile",
-  // portfolio-grouping (#154)
+  // portfolio-grouping (#154, #1548)
   "groupPortfolio",
+  "signedMinor",
   // dashboard
   "prepareDashboardState",
   "deriveOnboardingProgress",

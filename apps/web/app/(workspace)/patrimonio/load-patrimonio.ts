@@ -22,7 +22,7 @@
  */
 
 import { resolveFxAggregation } from "@web/fx-context";
-import { holdingPublicIdIndex } from "@web/holding-route";
+import { holdingPublicIdIndex, managedPortfolioPublicIdIndex } from "@web/holding-route";
 import type { InvestmentAssetMeta, TrashView, WorthlineStore } from "@worthline/db";
 import type {
   AssetClassResolution,
@@ -108,6 +108,12 @@ export interface LoadPatrimonioResult {
    * links, and a holding is named in a URL only by its public id.
    */
   publicIdByHolding: Readonly<Record<string, string>>;
+  /**
+   * Public `wl_prt_…` id per internal portfolio id (#1548): the group header
+   * links to the ficha and the fold param names portfolios in the URL — both
+   * places where only a public id may appear.
+   */
+  publicIdByPortfolio: Readonly<Record<string, string>>;
   /** Modelling/data warnings surfaced on the board (minus overridden ones). */
   warnings: DomainWarning[];
   /** Soft-deleted holdings (#268) for the board's papelera. */
@@ -152,6 +158,7 @@ export async function loadPatrimonio(
     payoutRecords,
     payoutSchedules,
     publicIds,
+    managedPortfolios,
   ] = await Promise.all([
     store.operations.readAllPriceCacheEntries(),
     store.assets.readInvestmentAssetsWithMeta(),
@@ -162,6 +169,7 @@ export async function loadPatrimonio(
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
     store.agentView.readPublicIds(),
+    store.managedPortfolios.readManagedPortfolios(),
   ]);
 
   // Per-holding simple total gain, inline on the board (#551, ADR 0040). Folds
@@ -278,7 +286,17 @@ export async function loadPatrimonio(
 
   // The one unified list, grouped by the selected axis (#154, S8). The selected
   // group doubles as the filter; BalanceBoard splits each group across the two panes.
-  const groups = projection ? groupPortfolio(projection, selectedGroup) : [];
+  //
+  // Managed portfolios of the SELECTED scope only (#1548): a portfolio belongs
+  // to one scope, and grouping by somebody else's would pull rows the board is
+  // not showing. Members absent from the projection are simply not part of the
+  // block — `groupPortfolio` builds it from whoever is present.
+  const scopedPortfolios = selectedScope
+    ? managedPortfolios.filter((portfolio) => portfolio.scopeId === selectedScope.id)
+    : [];
+  const groups = projection
+    ? groupPortfolio(projection, selectedGroup, scopedPortfolios)
+    : [];
 
   return {
     exposureContext: {
@@ -302,6 +320,9 @@ export async function loadPatrimonio(
     // its public `wl_hld_…` id (#1318) — never by the internal storage id the
     // projection rows carry. Hand the board the translation, not the URLs, so
     // the domain stays out of routing.
+    publicIdByPortfolio: Object.fromEntries(
+      managedPortfolioPublicIdIndex(publicIds).publicByInternal,
+    ),
     publicIdByHolding: Object.fromEntries(
       holdingPublicIdIndex(publicIds).publicByInternal,
     ),

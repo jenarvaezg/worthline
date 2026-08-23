@@ -124,6 +124,16 @@ rebalance is a **traspaso** pair between members. UI label: "cartera gestionada"
 _Avoid_: nested holdings, container holding (its value would fight the sum),
 grouping tag (no cash, no witness, no figures).
 
+**Summand** (sumando):
+What the unified /patrimonio list is made of: either a loose **holding** or a
+whole **managed portfolio** as one block. A grouping axis buckets summands, so a
+portfolio is filed by its own aggregates — its dominant rung, its dominant
+instrument — and is never taken apart by a view. Collapsed, its header IS the
+summand; expanded, its members show as a breakdown that adds nothing, so
+Σ summands = gross holds in both states.
+_Avoid_: counting a block and its members in the same total; letting an axis
+scatter a portfolio's members among the loose rows.
+
 **Price provider**:
 A service that supplies unit prices for investments. Each provider implements
 the `PriceProvider` contract (`fetchPrice`). Wired providers:

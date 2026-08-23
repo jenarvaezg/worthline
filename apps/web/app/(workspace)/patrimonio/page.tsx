@@ -20,6 +20,7 @@ import { systemClock } from "@worthline/domain";
 import Link from "next/link";
 import { Suspense } from "react";
 import BalanceBoard from "./balance-board";
+import { BOARD_FOLD_PARAM, readOpenPortfolios } from "./board-fold";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
 import {
@@ -57,6 +58,15 @@ export async function PatrimonioContent({
   const formOk = resolveOkMessage(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
   const selectedGroup = parseGroupParam(resolvedSearchParams?.group);
+  // Which managed portfolios come unfolded (#1548). Read on the server so a
+  // shared link paints open instead of flashing collapsed after hydration.
+  const openPortfolios = readOpenPortfolios(
+    new URLSearchParams(
+      typeof resolvedSearchParams?.[BOARD_FOLD_PARAM] === "string"
+        ? `${BOARD_FOLD_PARAM}=${resolvedSearchParams[BOARD_FOLD_PARAM]}`
+        : "",
+    ),
+  );
 
   const { persistence, privacyMode, selectedScope, store, workspace } =
     await resolvePageShell({ searchParams: resolvedSearchParams });
@@ -72,6 +82,7 @@ export async function PatrimonioContent({
     hasPricedHoldings,
     operatedAssetIds,
     publicIdByHolding,
+    publicIdByPortfolio,
     returnsById,
     trash,
     warnings,
@@ -159,11 +170,13 @@ export async function PatrimonioContent({
       <BalanceBoard
         currentUrl={currentUrl}
         groups={groups}
+        initialOpenPortfolios={openPortfolios}
         isHousehold={isHousehold}
         nowIso={persistence.checkedAt}
         operatedAssetIds={operatedAssetIds}
         privacyMode={privacyMode}
         publicIdByHolding={publicIdByHolding}
+        publicIdByPortfolio={publicIdByPortfolio}
         readOnly={isDemo}
         returnsById={returnsById}
         trash={trash}
