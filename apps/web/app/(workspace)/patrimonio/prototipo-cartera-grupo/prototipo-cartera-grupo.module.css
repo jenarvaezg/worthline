@@ -1,0 +1,420 @@
+/* PROTOTIPO (#1548) — solo lo que el tablero real no tiene ya en globals.css.
+   Todo lo que se pueda pintar con clases de producción (balanceRow, balancePane,
+   balanceSub…) se pinta con ellas: aquí viven el andamio de la página, la barra
+   de variantes y las piezas nuevas que cada variante propone. */
+
+.page {
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 32px 20px 120px;
+}
+
+.head p {
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.head h1 {
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 760;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+  margin: 0 0 10px;
+}
+
+.lede {
+  color: var(--muted);
+  font-size: 0.85rem !important;
+  letter-spacing: 0 !important;
+  max-width: 62ch;
+  text-transform: none !important;
+}
+
+.controls {
+  align-items: center;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  padding: 14px 0;
+}
+
+.pill {
+  background: none;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 650;
+  padding: 3px 10px;
+}
+
+.pill:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.pillActive {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-strong);
+}
+
+.toggleAll {
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 650;
+  padding: 3px 10px;
+}
+
+/* El estado, a la vista tras cada acción (regla 5 del skill de prototipos). */
+.state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+  margin: 14px 0 4px;
+}
+
+.state div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.state dt {
+  color: var(--muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.state dd {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  margin: 0;
+}
+
+.ok {
+  color: var(--tier-cash);
+}
+
+.bad {
+  color: var(--debit-rule);
+}
+
+/* ── Variante A: raíl de jerarquía ──────────────────────────────────────── */
+
+.aToggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-weight: 650;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+}
+
+.aToggle:hover {
+  color: var(--blue);
+}
+
+.aRail {
+  border-left: 2px solid var(--tier-market);
+  margin: 2px 16px 6px 30px;
+  padding-left: 12px;
+}
+
+.aChild {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.aChildName {
+  color: var(--muted);
+  font-size: 0.78rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aChildAmount {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Variante B: mini-panel anidado ─────────────────────────────────────── */
+
+.bCard {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  margin: 8px 12px;
+  padding: 10px 12px 12px;
+}
+
+.bHead {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.bTitle {
+  min-width: 0;
+}
+
+.bTotal {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bBar {
+  background: var(--hairline);
+  border-radius: var(--radius-sm);
+  display: flex;
+  height: 10px;
+  margin-top: 9px;
+  overflow: hidden;
+}
+
+.bSeg {
+  height: 100%;
+  min-width: 3px;
+}
+
+.bSeg + .bSeg {
+  border-left: 1.5px solid var(--panel);
+}
+
+.bMore {
+  background: none;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 650;
+  margin-top: 8px;
+  padding: 0;
+}
+
+.bRows {
+  margin-top: 6px;
+}
+
+.bRow {
+  border-top: 1px solid var(--hairline);
+  display: grid;
+  font-size: 0.78rem;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 4px 0;
+}
+
+.bRow > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bRow > span:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+}
+
+.bWeight {
+  color: var(--muted);
+  min-width: 46px;
+  text-align: right;
+}
+
+/* ── Variante C: chip discreto y cajón a pie de tablero ─────────────────── */
+
+.cChip {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  padding: 0 5px;
+  text-transform: uppercase;
+}
+
+.cOpen {
+  background: none;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 650;
+  justify-self: end;
+  padding: 0 2px;
+}
+
+.cDrawer {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  padding: 14px 16px 10px;
+}
+
+.cDrawerHead {
+  align-items: baseline;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 8px;
+}
+
+.cTable {
+  columns: 2;
+  column-gap: 28px;
+  margin-top: 6px;
+}
+
+.cTableRow {
+  break-inside: avoid;
+  display: grid;
+  font-size: 0.8rem;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 4px 0;
+}
+
+.cTableRow > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cTableRow > span:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+}
+
+.cTableRow > span:nth-child(2) {
+  color: var(--muted);
+}
+
+/* ── Variante D: sección hoisted por encima de los ejes ─────────────────── */
+
+.dHoist {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 6px;
+}
+
+.dHoistHead {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.66rem;
+  font-weight: 700;
+  justify-content: space-between;
+  letter-spacing: 0.05em;
+  padding: 9px 16px 3px;
+  text-transform: uppercase;
+}
+
+.dBlock {
+  padding-bottom: 2px;
+}
+
+.dToggle {
+  align-items: center;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  font-weight: 650;
+  gap: 6px;
+  padding: 0;
+  text-align: left;
+}
+
+.dToggle:hover {
+  color: var(--blue);
+}
+
+.dChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 4px 16px 10px;
+}
+
+.dChip {
+  align-items: baseline;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  display: flex;
+  gap: 6px;
+  font-size: 0.72rem;
+  max-width: 100%;
+  padding: 2px 7px;
+}
+
+.dChipName {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dChipWeight {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+/* ── La barra de variantes: fea a propósito, no es parte del diseño ─────── */
+
+.switcher {
+  align-items: center;
+  background: var(--ink);
+  border-radius: 999px;
+  bottom: 20px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  color: var(--paper-strong);
+  display: flex;
+  gap: 4px;
+  left: 50%;
+  padding: 6px 8px;
+  position: fixed;
+  transform: translateX(-50%);
+  z-index: 60;
+}
+
+.switcherBtn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 10px;
+}
+
+.switcherLabel {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  min-width: 22ch;
+  text-align: center;
+}
