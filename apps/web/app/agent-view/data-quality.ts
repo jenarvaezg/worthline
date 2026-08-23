@@ -172,7 +172,9 @@ async function collectScopeSignals(
   const fireConfigByScopeId = await store.readFireConfig(asOfDateKey);
   const warningOverrides = await store.readWarningOverrides();
   const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
-  const manualValueHistoryByAssetId = await store.readManualValueHistory();
+  const manualValueHistoryByAssetId = await store.readManualValueHistory(
+    assets.map((asset) => asset.id),
+  );
   const assetCreatedAtById = await store.readAssetCreatedAtById();
 
   const priceFreshnessByAssetId = new Map(

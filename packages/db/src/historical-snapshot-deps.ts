@@ -118,7 +118,10 @@ export async function buildHistoricalSnapshotDeps(
     debtBalanceByLiability: await readDebtBalanceInputs(db, reconstructedLiabilities),
     housingValuationByAsset: await readHousingCurveInputs(db, reconstructedAssets),
     liabilities: reconstructedLiabilities,
-    manualValueHistory: await readManualValueHistory(db),
+    manualValueHistory: await readManualValueHistory(db, [
+      ...reconstructedAssets.map((asset) => asset.id),
+      ...reconstructedLiabilities.map((liability) => liability.id),
+    ]),
     operationsByAsset: await readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
