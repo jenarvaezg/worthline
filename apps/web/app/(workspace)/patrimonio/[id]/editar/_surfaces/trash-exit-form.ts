@@ -31,6 +31,9 @@ import {
  * ripples its snapshots exactly like a sale typed on the ficha — one engine (#1438).
  */
 
+/** The form id a refused exit comes back under, so the door renders its own band. */
+export const TRASH_FORM_ID = "trash";
+
 /** The fields a rejected submit round-trips, so nothing typed is lost (#1329). */
 export const TRASH_EXIT_FORM_FIELDS = ["exit", "soldAt", "soldAmount"] as const;
 

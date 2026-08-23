@@ -161,6 +161,57 @@ describe("DangerZoneSection — the door's three exits (#1549)", () => {
   });
 });
 
+describe("DangerZoneSection — a refused exit comes back intact (#1329)", () => {
+  test("reopens the door, keeps the exit chosen and the figures typed", () => {
+    const html = renderToStaticMarkup(
+      <DangerZoneSection
+        currentUrl={CURRENT_URL}
+        formError={{
+          formId: "trash",
+          message: "Escribe el importe que recibiste por la venta.",
+          values: { exit: "sold", soldAmount: "7642,00", soldAt: "2026-08-01" },
+        }}
+        holdingId="asset_fondo"
+        kind="asset"
+        privacyMode={false}
+        today={TODAY}
+        transferHref={TRANSFER_HREF}
+        trashImpact={IMPACT}
+      />,
+    );
+
+    // An error band above a folded <details> answers a question nobody can see.
+    expect(html).toContain('<details class="confirmDelete" open=""');
+    expect(html).toContain("Escribe el importe que recibiste");
+    expect(html).toContain('name="exit" checked="" value="sold"');
+    expect(html).toContain('value="7642,00"');
+    expect(html).toContain('value="2026-08-01"');
+  });
+
+  test("an error from ANOTHER form leaves the door shut and empty", () => {
+    const html = renderToStaticMarkup(
+      <DangerZoneSection
+        currentUrl={CURRENT_URL}
+        formError={{
+          formId: "transfer",
+          message: "El importe supera la posición.",
+          values: { amount: "999" },
+        }}
+        holdingId="asset_fondo"
+        kind="asset"
+        privacyMode={false}
+        today={TODAY}
+        transferHref={TRANSFER_HREF}
+        trashImpact={IMPACT}
+      />,
+    );
+
+    expect(html).not.toContain('open=""');
+    expect(html).not.toContain("El importe supera la posición");
+    expect(html).not.toContain("checked");
+  });
+});
+
 describe("DangerZoneSection — a cartera's cash box has no door (#1549)", () => {
   test("names the portfolio and offers no delete at all", () => {
     const html = renderToStaticMarkup(
@@ -170,6 +221,7 @@ describe("DangerZoneSection — a cartera's cash box has no door (#1549)", () =>
         holdingId="asset_cash"
         kind="asset"
         privacyMode={false}
+        today={TODAY}
         trashImpact={null}
       />,
     );

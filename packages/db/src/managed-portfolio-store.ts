@@ -69,15 +69,54 @@ export interface ManagedPortfolioStore {
     patch: UpdateManagedPortfolioPatch,
   ) => Promise<void>;
   deleteManagedPortfolio: (id: string) => Promise<void>;
+  /**
+   * The portfolio whose CASH sibling this holding is, by name — or null when it is
+   * not one (#1549). The Papelera's gate reads it to refuse, and the ficha reads it
+   * to say so before the owner tries; one query so the two cannot disagree.
+   */
+  readCashContainerName: (holdingId: string) => Promise<string | null>;
 }
 
 export function createManagedPortfolioStore(ctx: StoreContext): ManagedPortfolioStore {
   return {
     createManagedPortfolio: (input) => createManagedPortfolio(ctx, input),
     deleteManagedPortfolio: (id) => deleteManagedPortfolio(ctx, id),
+    readCashContainerName: (holdingId) => readCashContainerPortfolioName(ctx, holdingId),
     readManagedPortfolios: (scopeId) => readManagedPortfolios(ctx, scopeId),
     updateManagedPortfolio: (id, patch) => updateManagedPortfolio(ctx, id, patch),
   };
+}
+
+/**
+ * The name of the managed portfolio whose CASH sibling this holding is, or null.
+ *
+ * Only the cash box is protected from the Papelera (#1549), not every member: a
+ * member fund is an ordinary position with an ordinary ledger, and selling it and
+ * archiving it is a legitimate thing to do inside a live cartera. The cash is
+ * different — the alta created it, the owner never did, and while the cartera lives
+ * it is a casilla of the container (ADR 0085). Members other than the cash sibling
+ * are investments by construction, so "is a member and is not an investment" IS "is
+ * the cash box".
+ *
+ * A plain function as well as a store method: the gate calls it from inside
+ * `softDeleteAsset`, where there is a `ctx` and no store.
+ */
+export async function readCashContainerPortfolioName(
+  ctx: StoreContext,
+  holdingId: string,
+): Promise<string | null> {
+  const row = await ctx.db
+    .select({ name: managedPortfolios.name, type: assets.type })
+    .from(managedPortfolioHoldings)
+    .innerJoin(
+      managedPortfolios,
+      eq(managedPortfolios.id, managedPortfolioHoldings.portfolioId),
+    )
+    .innerJoin(assets, eq(assets.id, managedPortfolioHoldings.assetId))
+    .where(eq(managedPortfolioHoldings.assetId, holdingId))
+    .get();
+
+  return row && row.type !== "investment" ? row.name : null;
 }
 
 function normalizeProvider(provider: string | null | undefined): string | null {

@@ -28,10 +28,13 @@
  * The clean case keeps its words and its number of steps, exactly as before.
  */
 
+import type { FormErrorContext } from "@web/intake";
 import { deleteAssetAction, deleteLiabilityAction } from "@web/patrimonio/actions";
-import type { HoldingTrashImpact } from "@worthline/domain";
-import { formatMoneyMinorPrivacy, formatUnits } from "@worthline/domain";
+import type { HoldingTrashImpact, TrashExit } from "@worthline/domain";
+import { formatMoneyMinorPrivacy, formatUnits, parseTrashExit } from "@worthline/domain";
 import Link from "next/link";
+
+import { TRASH_FORM_ID } from "./trash-exit-form";
 
 interface DangerZoneCommonProps {
   /** The holding's own public `wl_hld_…` URL, where the action returns (#1318). */
@@ -39,6 +42,12 @@ interface DangerZoneCommonProps {
   /** Internal storage id — hidden form plumbing, never a URL (#1318). */
   holdingId: string;
   privacyMode?: boolean;
+  /**
+   * A refused submit, so the door reopens where it was: its own error band, the
+   * exit still chosen, and the figures still typed (#1329). Only read when the
+   * error belongs to this form.
+   */
+  formError?: FormErrorContext | null;
 }
 
 /**
@@ -66,7 +75,7 @@ type DangerZoneSectionProps = DangerZoneCommonProps &
          */
         transferHref?: string | null;
         /** Today, the date the closing sale defaults to. */
-        today?: string;
+        today: string;
       }
     | {
         kind: "liability";
@@ -80,6 +89,7 @@ type DangerZoneSectionProps = DangerZoneCommonProps &
 export function DangerZoneSection({
   containerPortfolio,
   currentUrl,
+  formError = null,
   holdingId,
   kind,
   privacyMode = false,
@@ -88,6 +98,7 @@ export function DangerZoneSection({
   trashImpact,
 }: DangerZoneSectionProps) {
   const isAsset = kind === "asset";
+  const refusal = formError?.formId === TRASH_FORM_ID ? formError : null;
 
   if (containerPortfolio) {
     return (
@@ -109,12 +120,19 @@ export function DangerZoneSection({
       <form action={isAsset ? deleteAssetAction : deleteLiabilityAction}>
         <input name="currentUrl" type="hidden" value={currentUrl} />
         <input name="id" type="hidden" value={holdingId} />
-        <details suppressHydrationWarning className="confirmDelete">
+        <details
+          suppressHydrationWarning
+          className="confirmDelete"
+          // A refusal reopens the door it came from: an error band above a folded
+          // `<details>` is an answer to a question the user can no longer see.
+          open={refusal !== null}
+        >
           <summary>{isAsset ? "Eliminar activo" : "Eliminar deuda"}</summary>
           {trashImpact ? (
             <TrashGate
               impact={trashImpact}
               privacyMode={privacyMode}
+              refusal={refusal}
               today={today ?? ""}
               transferHref={transferHref ?? null}
             />
@@ -146,18 +164,27 @@ export function DangerZoneSection({
 function TrashGate({
   impact,
   privacyMode,
+  refusal,
   today,
   transferHref,
 }: {
   impact: HoldingTrashImpact;
   privacyMode: boolean;
+  refusal: FormErrorContext | null;
   today: string;
   transferHref: string | null;
 }) {
   const value = formatMoneyMinorPrivacy(impact.value, privacyMode);
+  const typed = refusal?.values ?? {};
+  const chosenExit: TrashExit | null = parseTrashExit(typed["exit"]);
 
   return (
     <div className="trashGate">
+      {refusal ? (
+        <p className="errorBand" role="alert">
+          {refusal.message}
+        </p>
+      ) : null}
       <div className="warningBand">
         <p>
           ⚠ Este activo conserva{" "}
@@ -173,17 +200,32 @@ function TrashGate({
       <fieldset className="trashExits">
         <legend>¿Qué pasó con este activo?</legend>
         <label>
-          <input name="exit" type="radio" value="sold" />
+          <input
+            defaultChecked={chosenExit === "sold"}
+            name="exit"
+            type="radio"
+            value="sold"
+          />
           Lo vendí
         </label>
         {transferHref ? (
           <label>
-            <input name="exit" type="radio" value="transferred" />
+            <input
+              defaultChecked={chosenExit === "transferred"}
+              name="exit"
+              type="radio"
+              value="transferred"
+            />
             Lo traspasé a otro producto
           </label>
         ) : null}
         <label>
-          <input name="exit" type="radio" value="mis_entry" />
+          <input
+            defaultChecked={chosenExit === "mis_entry"}
+            name="exit"
+            type="radio"
+            value="mis_entry"
+          />
           Fue un error de registro: ese valor nunca existió
         </label>
       </fieldset>
@@ -191,11 +233,17 @@ function TrashGate({
       <div className="trashExitPane trashSoldPane">
         <label>
           Fecha de la venta
-          <input defaultValue={today} name="soldAt" type="date" />
+          <input defaultValue={typed["soldAt"] ?? today} name="soldAt" type="date" />
         </label>
         <label>
           Importe recibido
-          <input inputMode="decimal" name="soldAmount" placeholder="0,00" type="text" />
+          <input
+            defaultValue={typed["soldAmount"] ?? ""}
+            inputMode="decimal"
+            name="soldAmount"
+            placeholder="0,00"
+            type="text"
+          />
         </label>
         <p className="opCaptureHint">
           Se registrará la venta de las {formatUnits(impact.netUnits)} participaciones que

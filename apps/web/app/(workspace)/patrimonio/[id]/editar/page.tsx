@@ -81,7 +81,7 @@ import { transferDestinationOptions } from "./_surfaces/transfer-form";
 import TransferSection from "./_surfaces/transfer-section";
 
 /** The forms that render their own error band, next to the field that produced it. */
-const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer"];
+const SECTIONS_WITH_OWN_ERROR_BAND = ["operation", "payout", "transfer", "trash"];
 
 /**
  * Block (#1229): this route opts out of Instant Navigations validation.
@@ -432,10 +432,6 @@ export default async function EditarPage({
   const abrir = resolvedSearchParams?.abrir;
   const advancedOpen = abrir === "operaciones" || abrir === "traspaso";
   const archiveOriginAfterTransfer = resolvedSearchParams?.archivar === "1";
-  // The cash sibling of a live managed portfolio cannot be trashed on its own (ADR
-  // 0085, #1549): it is the container's casilla, created by the alta. Only asked for
-  // a non-investment holding — the only shape a cash member can have — so an
-  // investment ficha pays no extra read.
   // The Traspasar surface exists on this ficha only for a derived holding with a
   // ledger; the Papelera's traspaso exit is offered only when there is a door to
   // send the owner to.
@@ -448,11 +444,14 @@ export default async function EditarPage({
   const transferHref = showsTransferSurface
     ? `${currentUrl}?abrir=traspaso&archivar=1#traspaso`
     : null;
+  // The cash sibling of a live managed portfolio cannot be trashed on its own (ADR
+  // 0085, #1549): it is the container's casilla, created by the alta. The SAME read
+  // the gate makes, so the ficha can never offer a delete the store would refuse.
+  // Only asked for a non-investment holding — the only shape a cash member can have
+  // — so an investment ficha pays no extra read.
   const containerPortfolio =
     asset && asset.type !== "investment"
-      ? ((await store.managedPortfolios.readManagedPortfolios()).find((portfolio) =>
-          portfolio.holdingIds.includes(id),
-        )?.name ?? null)
+      ? await store.managedPortfolios.readCashContainerName(id)
       : null;
 
   // Bind the holding id to the operations actions so the `derived` surface posts
@@ -911,6 +910,7 @@ export default async function EditarPage({
           <DangerZoneSection
             containerPortfolio={containerPortfolio}
             currentUrl={currentUrl}
+            formError={formError}
             holdingId={id}
             kind="asset"
             privacyMode={privacyMode}

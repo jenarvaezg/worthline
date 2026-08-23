@@ -8,6 +8,7 @@ import {
   mapDomainViolation,
   parseEntityId,
   parseOwnership,
+  preserveFields,
   successRedirectUrl,
 } from "@web/intake";
 import type { WorthlineStore } from "@web/store";
@@ -26,6 +27,8 @@ import { convertCapturedOperation } from "@worthline/pricing";
 
 import {
   parseTrashSaleForm,
+  TRASH_EXIT_FORM_FIELDS,
+  TRASH_FORM_ID,
   trashRefusalMessage,
 } from "./[id]/editar/_surfaces/trash-exit-form";
 import {
@@ -47,7 +50,10 @@ import {
  *
  * - **«Lo vendí»** records the closing sale FIRST, through the ordinary operation
  *   command — same ripple, same snapshots as a sale typed on the ficha — and then
- *   archives a position that is now empty.
+ *   archives a position that is now empty. The sale is written and rippled BEFORE
+ *   the archive and outside its transaction: if the archive then fails, the book
+ *   holds a recorded sale on a live holding — visible, editable, and never money
+ *   that left without a trace, which is the one failure this door must not have.
  * - **«Fue un error de registro»** archives with the value still inside, and says so
  *   on the row: the only declaration that unlocks the gate, because it is the only
  *   one that claims the money was never there.
@@ -96,8 +102,16 @@ export async function deleteAssetAction(
           return { ok: false, error: trashRefusalMessage(outcome.refusal) };
       }
     },
+    // A refused exit round-trips what was typed AND which exit was chosen (#1329):
+    // the door lives inside a `<details>` the user has to open, and losing the
+    // importe he just copied off the bank's confirmation is the friction that sends
+    // him back to deleting the holding in silence.
     onError: ({ formData, error }) =>
-      errorRedirectUrl(baseUrl(formData), { message: error }),
+      errorRedirectUrl(baseUrl(formData), {
+        formId: TRASH_FORM_ID,
+        message: error,
+        values: preserveFields(formData, [...TRASH_EXIT_FORM_FIELDS]),
+      }),
     onSuccess: () => successRedirectUrl("/patrimonio", "deleted_recoverable"),
   })(formData, ..._testArgs);
 }
