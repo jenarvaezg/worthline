@@ -271,6 +271,24 @@ describe("snapshot holding rows persistence", () => {
     });
     expect(openEnded).toHaveLength(4);
 
+    // `readSnapshots` accepts the same inclusive date-key window (#1535).
+    expect(
+      (await store.snapshots.readSnapshots("household")).map((row) => row.dateKey),
+    ).toEqual(["2026-06-08", "2026-06-09", "2026-06-10"]);
+    expect(
+      (
+        await store.snapshots.readSnapshots("household", {
+          from: "2026-06-09",
+          to: "2026-06-09",
+        })
+      ).map((row) => row.dateKey),
+    ).toEqual(["2026-06-09"]);
+    expect(
+      (await store.snapshots.readSnapshots("household", { from: "2026-06-09" })).map(
+        (row) => row.dateKey,
+      ),
+    ).toEqual(["2026-06-09", "2026-06-10"]);
+
     store.close();
   });
 
