@@ -5,7 +5,7 @@ import type {
   PriceSource,
   UnifiedHolding,
 } from "@worthline/domain";
-import { buildHoldingReturnsView, money } from "@worthline/domain";
+import { buildHoldingReturnsView, money, signedMinor } from "@worthline/domain";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
@@ -65,7 +65,18 @@ function group(
   amountMinor: number,
   holdings: UnifiedHolding[],
 ): PortfolioGroup {
-  return { key, label, holdings, totalMinor: { amountMinor, currency: EUR } };
+  return {
+    holdings,
+    key,
+    label,
+    totalMinor: { amountMinor, currency: EUR },
+    units: holdings.map((holding) => ({
+      holding,
+      key: holding.id,
+      kind: "holding" as const,
+      signedMinor: signedMinor(holding),
+    })),
+  };
 }
 
 /** A rung-grouped portfolio: a Mercado section (2 derived assets) and a Vivienda
@@ -394,5 +405,108 @@ describe("BalanceBoard closed positions", () => {
 
     expect(html).toContain("Posiciones cerradas (1)");
     expect(html).not.toContain("Sin activos.");
+  });
+});
+
+// ── managed portfolio groups (#1548) ────────────────────────────────────────
+
+/** A block over two members plus the container's cash — Jorge's Metal, small. */
+function metalGroup(): PortfolioGroup {
+  const members = [
+    assetRow("a_metal_us", "iShares US Equity Index S", 589_98, { derived: true }),
+    assetRow("a_metal_pac", "Fidelity MSCI Pacific", 39_77, { derived: true }),
+    assetRow("a_metal_cash", "Efectivo de la cartera", 7_34, { tier: "cash" }),
+  ];
+  const total = members.reduce((acc, m) => acc + signedMinor(m), 0);
+  return {
+    holdings: members,
+    key: "market",
+    label: "Mercado",
+    totalMinor: { amountMinor: total, currency: EUR },
+    units: [
+      {
+        instrument: "fund",
+        key: "mp_metal",
+        kind: "portfolio",
+        members,
+        portfolio: {
+          holdingIds: members.map((m) => m.id),
+          id: "mp_metal",
+          name: "Cartera Indexada Metal",
+          provider: "MyInvestor",
+        },
+        signedMinor: total,
+        tier: "market",
+      },
+    ],
+  };
+}
+
+const metalPublicIds = { mp_metal: "wl_prt_metal1" };
+
+describe("managed portfolio group (#1548)", () => {
+  test("collapsed, the header is the summand and no member is listed", () => {
+    const html = render({
+      groups: [metalGroup()],
+      publicIdByPortfolio: metalPublicIds,
+    });
+    expect(html).toContain("Cartera Indexada Metal");
+    expect(html).not.toContain("iShares US Equity Index S");
+    // 589,98 + 39,77 + 7,34 = 637,09 → the board rounds figures to whole euros
+    expect(html).toContain("637\u00a0€");
+  });
+
+  test("the pane total is the same collapsed and expanded", () => {
+    const collapsed = render({
+      groups: [metalGroup()],
+      publicIdByPortfolio: metalPublicIds,
+    });
+    const expanded = render({
+      groups: [metalGroup()],
+      initialOpenPortfolios: new Set(["wl_prt_metal1"]),
+      publicIdByPortfolio: metalPublicIds,
+    });
+    const total = (html: string) =>
+      html.match(/balancePaneTotal totalRule">([^<]+)</)?.[1];
+    expect(total(collapsed)).toBe(total(expanded));
+    expect(total(collapsed)).toContain("637\u00a0€");
+  });
+
+  test("expanded, the members show with their weights", () => {
+    const html = render({
+      groups: [metalGroup()],
+      initialOpenPortfolios: new Set(["wl_prt_metal1"]),
+      publicIdByPortfolio: metalPublicIds,
+    });
+    expect(html).toContain("iShares US Equity Index S");
+    expect(html).toContain("Efectivo de la cartera");
+    // 589,98 / 637,09 = 92,6 %
+    expect(html).toContain("92,6 %");
+  });
+
+  test("the name links to the ficha and the chip says what the row is", () => {
+    const html = render({
+      groups: [metalGroup()],
+      publicIdByPortfolio: metalPublicIds,
+    });
+    expect(html).toContain('href="/patrimonio/carteras/wl_prt_metal1"');
+    expect(html).toContain("cartera</span>");
+  });
+
+  test("members link to their own ficha by public id, never the internal one", () => {
+    const html = render({
+      groups: [metalGroup()],
+      initialOpenPortfolios: new Set(["wl_prt_metal1"]),
+      publicIdByPortfolio: metalPublicIds,
+    });
+    expect(html).toContain("wl_hld_a_metal_us");
+    expect(html).not.toContain('href="/patrimonio/a_metal_us"');
+  });
+
+  test("a portfolio with no registry row still renders, unlinked and inert", () => {
+    const html = render({ groups: [metalGroup()], publicIdByPortfolio: {} });
+    expect(html).toContain("Cartera Indexada Metal");
+    expect(html).not.toContain("/patrimonio/carteras/");
+    expect(html).toContain("disabled");
   });
 });

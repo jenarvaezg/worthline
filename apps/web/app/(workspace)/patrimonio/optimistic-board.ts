@@ -1,5 +1,5 @@
 import type { TrashView } from "@worthline/db";
-import type { PortfolioGroup } from "@worthline/domain";
+import { type BoardUnit, type PortfolioGroup, signedMinor } from "@worthline/domain";
 
 /**
  * Pure optimistic-merge for the /patrimonio balance board (#521, S5 of #485,
@@ -10,6 +10,14 @@ import type { PortfolioGroup } from "@worthline/domain";
  * React, no `window`) so it unit-tests in the node env while the component
  * stays a thin `useOptimistic` shell — the `composition-chart-hover` /
  * `view-state` split.
+ *
+ * Managed portfolio blocks (#1548) fold the same way: deleting a member
+ * shrinks its block and its total, and the last member leaving takes the block
+ * with it — never a header quoting a value nobody backs. What the merge does
+ * NOT do is re-bucket: a block whose dominant rung changes because its largest
+ * member left stays where the server put it until the redirect settles. Faking
+ * a jump between subsections would be a guess about grouping, not an echo of
+ * the click.
  *
  * Only PREDICTABLE board mutations live here (§4): `delete` (row → trash),
  * `hardDelete` and `emptyTrash` (trash shrinks). `restore` is intentionally
@@ -30,6 +38,31 @@ export interface BoardModel {
   trash: TrashView;
 }
 
+/**
+ * One summand with a holding removed: the row itself vanishes, a portfolio
+ * block loses one member (and its value), and a block left with nobody
+ * vanishes too. Returns a list so a caller can `flatMap` the disappearance.
+ */
+function withoutHolding(unit: BoardUnit, holdingId: string): BoardUnit[] {
+  if (unit.kind === "holding") {
+    return unit.holding.id === holdingId ? [] : [unit];
+  }
+  const members = unit.members.filter((member) => member.id !== holdingId);
+  if (members.length === unit.members.length) {
+    return [unit];
+  }
+  if (members.length === 0) {
+    return [];
+  }
+  return [
+    {
+      ...unit,
+      members,
+      signedMinor: members.reduce((acc, member) => acc + signedMinor(member), 0),
+    },
+  ];
+}
+
 function applyOne(model: BoardModel, mutation: BoardMutation): BoardModel {
   switch (mutation.kind) {
     case "delete": {
@@ -39,10 +72,18 @@ function applyOne(model: BoardModel, mutation: BoardMutation): BoardModel {
       if (!removed) {
         return model;
       }
-      const groups = model.groups.map((g) => ({
-        ...g,
-        holdings: g.holdings.filter((h) => h.id !== mutation.id),
-      }));
+      const groups = model.groups.map((g) => {
+        const units = g.units.flatMap((unit) => withoutHolding(unit, mutation.id));
+        return {
+          ...g,
+          // Rebuilt FROM the units so the flattened view can never disagree
+          // with the summands it is supposed to be the flattening of.
+          holdings: units.flatMap((u) =>
+            u.kind === "holding" ? [u.holding] : u.members,
+          ),
+          units,
+        };
+      });
       const entry = { id: removed.id, name: removed.name };
       const intoAssets = removed.direction === "asset";
       return {

@@ -841,11 +841,17 @@ export {
   passiveIncomeTrailing,
 } from "./payouts";
 export type {
+  BoardUnit,
+  ManagedPortfolioGrouping,
   PortfolioGroup,
   PortfolioGroupKey,
   UnifiedHolding,
 } from "./portfolio-grouping";
-export { groupPortfolio, PORTFOLIO_GROUP_KEYS } from "./portfolio-grouping";
+export {
+  groupPortfolio,
+  PORTFOLIO_GROUP_KEYS,
+  signedMinor,
+} from "./portfolio-grouping";
 export type {
   AssetsSection,
   LiabilitiesSection,

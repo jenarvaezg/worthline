@@ -184,3 +184,157 @@ describe("groupPortfolio — signed group totals", () => {
     }
   });
 });
+
+// ── managed portfolios as summands (#1548, ADR 0085) ─────────────────────────
+
+/**
+ * Jorge's Cartera Indexada Metal in miniature: funds of different sizes plus
+ * the container's cash sibling, so the dominance rules have something to
+ * choose between and the cash rung has a chance to leak.
+ */
+const metalFundBig = createManualAsset(workspace, {
+  currency: "EUR",
+  currentValueMinor: 58_998,
+  id: "asset_metal_us",
+  instrument: "fund",
+  liquidityTier: "market",
+  name: "iShares US Equity Index S",
+  ownership: own,
+  type: "investment",
+});
+
+const metalFundSmall = createManualAsset(workspace, {
+  currency: "EUR",
+  currentValueMinor: 3_977,
+  id: "asset_metal_pacific",
+  instrument: "fund",
+  liquidityTier: "market",
+  name: "Fidelity MSCI Pacific ex-Japan",
+  ownership: own,
+  type: "investment",
+});
+
+const metalCash = createManualAsset(workspace, {
+  currency: "EUR",
+  currentValueMinor: 734,
+  id: "asset_metal_cash",
+  instrument: "current_account",
+  liquidityTier: "cash",
+  name: "Efectivo de la cartera",
+  ownership: own,
+  type: "investment",
+});
+
+const metal = {
+  holdingIds: ["asset_metal_us", "asset_metal_pacific", "asset_metal_cash"],
+  id: "mp_metal",
+  name: "Cartera Indexada Metal",
+  provider: "MyInvestor",
+};
+
+const withMetal = projectPortfolio({
+  assets: [cash, broker, metalFundBig, metalFundSmall, metalCash, home],
+  liabilities: [mortgage],
+  scope: { id: "household", label: "Hogar", type: "household" },
+  workspace,
+});
+
+const metalTotal = 58_998 + 3_977 + 734;
+
+describe("groupPortfolio — a managed portfolio is one summand", () => {
+  const groups = groupPortfolio(withMetal, "direction", [metal]);
+  const assets = groups.find((g) => g.key === "assets")!;
+
+  test("the portfolio renders as a single unit, not as its members", () => {
+    const portfolios = assets.units.filter((u) => u.kind === "portfolio");
+    expect(portfolios).toHaveLength(1);
+    expect(portfolios[0]!.key).toBe("mp_metal");
+    expect(assets.units.map((u) => u.key)).not.toContain("asset_metal_us");
+  });
+
+  test("the block's value is the sum of its members", () => {
+    const block = assets.units.find((u) => u.kind === "portfolio")!;
+    expect(block.signedMinor).toBe(metalTotal);
+  });
+
+  test("members stay in `holdings`, so the group's total is unchanged", () => {
+    expect(assets.holdings.map((h) => h.id)).toContain("asset_metal_us");
+    const withoutGrouping = groupPortfolio(withMetal, "direction");
+    expect(assets.totalMinor.amountMinor).toBe(
+      withoutGrouping.find((g) => g.key === "assets")!.totalMinor.amountMinor,
+    );
+  });
+
+  test("Σ summands = the group total, on every axis", () => {
+    for (const key of PORTFOLIO_GROUP_KEYS) {
+      for (const group of groupPortfolio(withMetal, key, [metal])) {
+        const sum = group.units.reduce((acc, u) => acc + u.signedMinor, 0);
+        expect(sum).toBe(group.totalMinor.amountMinor);
+      }
+    }
+  });
+
+  test("members are ordered largest first", () => {
+    const block = assets.units.find((u) => u.kind === "portfolio")!;
+    expect(block.kind === "portfolio" && block.members.map((m) => m.id)).toEqual([
+      "asset_metal_us",
+      "asset_metal_pacific",
+      "asset_metal_cash",
+    ]);
+  });
+});
+
+describe("groupPortfolio — the portfolio rules over the axes", () => {
+  test("Instrumento: the block inherits its dominant instrument, undivided", () => {
+    const groups = groupPortfolio(withMetal, "instrument", [metal]);
+    const funds = groups.find((g) => g.key === "fund")!;
+    // The loose Broker and the Metal block — never the Metal's own funds.
+    expect(funds.units.map((u) => u.key).sort()).toEqual(["asset_broker", "mp_metal"]);
+  });
+
+  test("Instrumento: the container's cash does not leak into Cuenta corriente", () => {
+    const groups = groupPortfolio(withMetal, "instrument", [metal]);
+    const currentAccounts = groups.find((g) => g.key === "current_account");
+    expect(currentAccounts?.units.map((u) => u.key) ?? []).not.toContain(
+      "asset_metal_cash",
+    );
+  });
+
+  test("Liquidez: the block sits on its dominant rung, not on its members'", () => {
+    const groups = groupPortfolio(withMetal, "rung", [metal]);
+    expect(groups.find((g) => g.key === "market")!.units.map((u) => u.key)).toContain(
+      "mp_metal",
+    );
+    expect(groups.find((g) => g.key === "cash")!.units.map((u) => u.key)).not.toContain(
+      "asset_metal_cash",
+    );
+  });
+
+  test("the net worth is the same with and without the grouping", () => {
+    for (const key of PORTFOLIO_GROUP_KEYS) {
+      const net = (portfolios: (typeof metal)[]) =>
+        groupPortfolio(withMetal, key, portfolios).reduce(
+          (acc, g) => acc + g.totalMinor.amountMinor,
+          0,
+        );
+      expect(net([metal])).toBe(net([]));
+    }
+  });
+});
+
+describe("groupPortfolio — portfolios with nobody present", () => {
+  test("a portfolio whose members are absent produces no summand", () => {
+    const groups = groupPortfolio(withMetal, "direction", [
+      { holdingIds: ["asset_gone"], id: "mp_empty", name: "Vacía", provider: null },
+    ]);
+    expect(groups.flatMap((g) => g.units).map((u) => u.key)).not.toContain("mp_empty");
+  });
+
+  test("a portfolio built from whoever IS present quotes only them", () => {
+    const groups = groupPortfolio(withMetal, "direction", [
+      { ...metal, holdingIds: ["asset_metal_us", "asset_not_in_this_scope"] },
+    ]);
+    const block = groups.flatMap((g) => g.units).find((u) => u.key === "mp_metal")!;
+    expect(block.signedMinor).toBe(58_998);
+  });
+});

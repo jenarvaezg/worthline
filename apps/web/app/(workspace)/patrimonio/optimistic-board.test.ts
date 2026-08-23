@@ -1,5 +1,5 @@
 import type { TrashView } from "@worthline/db";
-import type { PortfolioGroup, UnifiedHolding } from "@worthline/domain";
+import { type PortfolioGroup, signedMinor, type UnifiedHolding } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { applyBoardMutations, type BoardModel } from "./optimistic-board";
@@ -37,10 +37,42 @@ function liability(id: string, name: string, balanceMinor: number): UnifiedHoldi
 
 function group(key: string, holdings: UnifiedHolding[]): PortfolioGroup {
   return {
+    holdings,
     key,
     label: key,
-    holdings,
     totalMinor: { amountMinor: 0, currency: "EUR" },
+    units: holdings.map((holding) => ({
+      holding,
+      key: holding.id,
+      kind: "holding" as const,
+      signedMinor: signedMinor(holding),
+    })),
+  };
+}
+
+/** A managed portfolio block over the given members (#1548). */
+function portfolioGroup(key: string, members: UnifiedHolding[]): PortfolioGroup {
+  return {
+    holdings: members,
+    key,
+    label: key,
+    totalMinor: { amountMinor: 0, currency: "EUR" },
+    units: [
+      {
+        instrument: "fund",
+        key: "mp_metal",
+        kind: "portfolio",
+        members,
+        portfolio: {
+          holdingIds: members.map((m) => m.id),
+          id: "mp_metal",
+          name: "Cartera Indexada Metal",
+          provider: "MyInvestor",
+        },
+        signedMinor: members.reduce((acc, m) => acc + signedMinor(m), 0),
+        tier: "market",
+      },
+    ],
   };
 }
 
@@ -137,5 +169,45 @@ describe("applyBoardMutations · edges and composition", () => {
 
     expect(next.groups[0]!.holdings).toEqual([]);
     expect(next.trash).toEqual({ assets: [], liabilities: [] });
+  });
+});
+
+describe("applyBoardMutations · delete inside a managed portfolio (#1548)", () => {
+  const members = [
+    asset("a_us", "iShares US", 589_98),
+    asset("a_cash", "Efectivo", 7_34),
+  ];
+
+  test("the block loses the member and its value, and keeps rendering", () => {
+    const base = { groups: [portfolioGroup("market", members)], trash: emptyTrash };
+    const next = applyBoardMutations(base, [{ id: "a_us", kind: "delete" }]);
+    const block = next.groups[0]!.units[0]!;
+    expect(block.kind).toBe("portfolio");
+    expect(block.kind === "portfolio" && block.members.map((m) => m.id)).toEqual([
+      "a_cash",
+    ]);
+    expect(block.signedMinor).toBe(7_34);
+  });
+
+  test("`holdings` follows the units, so the pane total cannot drift", () => {
+    const base = { groups: [portfolioGroup("market", members)], trash: emptyTrash };
+    const next = applyBoardMutations(base, [{ id: "a_us", kind: "delete" }]);
+    expect(next.groups[0]!.holdings.map((h) => h.id)).toEqual(["a_cash"]);
+  });
+
+  test("the deleted member lands in the trash like any other row", () => {
+    const base = { groups: [portfolioGroup("market", members)], trash: emptyTrash };
+    const next = applyBoardMutations(base, [{ id: "a_us", kind: "delete" }]);
+    expect(next.trash.assets.map((e) => e.id)).toEqual(["a_us"]);
+  });
+
+  test("the last member leaving takes the block with it — no empty header", () => {
+    const base = {
+      groups: [portfolioGroup("market", [members[0]!])],
+      trash: emptyTrash,
+    };
+    const next = applyBoardMutations(base, [{ id: "a_us", kind: "delete" }]);
+    expect(next.groups[0]!.units).toEqual([]);
+    expect(next.groups[0]!.holdings).toEqual([]);
   });
 });
