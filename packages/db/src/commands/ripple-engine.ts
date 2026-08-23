@@ -839,17 +839,26 @@ export async function rippleHistoricalSnapshotsForValuation(
         }
       }
 
+      // Read the affected scope's frozen rows in ONE batched query for the whole
+      // ≥ change-date range (#1533), then group them by snapshot date in memory —
+      // instead of one query per recalculated snapshot. The batched read uses the
+      // same ordering as the single-date read it replaces (dateKey, scopeId,
+      // kind, label, holdingId), so each snapshot's grouped rows arrive in the
+      // byte-identical order recalculateSnapshotForHousing saw before,
+      // preserving ADR 0012 behavior exactly. A date absent from the map had no
+      // frozen rows (a legacy capture predating holdings, ADR 0008) and is left
+      // untouched.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        await readSnapshotHoldings(db, { scopeId: scope.id, from: fromDateKey }),
+      );
+
       // Recalculate every existing snapshot on or after the change date by
       // re-evaluating only the housing asset's row from the curve (or
       // last-known-value when the curve is now empty — Fix 1).
       for (const snap of existing) {
         if (snap.dateKey < fromDateKey) continue;
 
-        const frozenHoldings = await readSnapshotHoldings(db, {
-          scopeId: scope.id,
-          from: snap.dateKey,
-          to: snap.dateKey,
-        });
+        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
 
         // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
         if (frozenHoldings.length === 0) continue;
@@ -1231,14 +1240,21 @@ export async function rippleHistoricalSnapshotsForOwnership(
     // household row's frozen unit price / cost-basis flag is honored so an
     // investment's re-valued global matches the price the snapshot captured.
     const globalByDate = new Map<string, number>();
+    // One batched household read of THIS holding (#1533), not one query per
+    // snapshot. Passing holdingId skips the second positions read (those serve
+    // the connected-coin drilldown, never this re-weight). Grouped by date, the
+    // per-snapshot `.find` is an in-memory lookup.
+    const householdFrozenByDate = groupFrozenHoldingsByDate(
+      await readSnapshotHoldings(db, {
+        holdingId,
+        kind,
+        scopeId: "household",
+      }),
+    );
     for (const snap of await readSnapshots(db, "household")) {
-      const row = (
-        await readSnapshotHoldings(db, {
-          from: snap.dateKey,
-          scopeId: "household",
-          to: snap.dateKey,
-        })
-      ).find((r) => r.holdingId === holdingId && r.kind === kind);
+      const row = (householdFrozenByDate.get(snap.dateKey) ?? []).find(
+        (r) => r.holdingId === holdingId && r.kind === kind,
+      );
       if (!row) continue;
 
       const globalValueMinor = asset
@@ -1259,15 +1275,18 @@ export async function rippleHistoricalSnapshotsForOwnership(
     if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
 
     for (const scope of listScopeOptions(workspace)) {
+      // One batched read of this scope's frozen rows (#1533), grouped by date —
+      // instead of one query per re-weighted snapshot. Same ordering as the
+      // single-date read it replaces, so recalculateSnapshotForOwnership sees
+      // byte-identical rows and ADR 0012 / ADR 0020 behavior is preserved.
+      const frozenByDate = groupFrozenHoldingsByDate(
+        await readSnapshotHoldings(db, { scopeId: scope.id }),
+      );
       for (const snap of await readSnapshots(db, scope.id)) {
         const globalValueMinor = globalByDate.get(snap.dateKey);
         if (globalValueMinor === undefined) continue;
 
-        const frozenHoldings = await readSnapshotHoldings(db, {
-          from: snap.dateKey,
-          scopeId: scope.id,
-          to: snap.dateKey,
-        });
+        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
         // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
         if (frozenHoldings.length === 0) continue;
 
