@@ -418,3 +418,13 @@
   min-width: 22ch;
   text-align: center;
 }
+
+/* C: la fila queda marcada mientras su cajón está abierto — sin esto, la
+   relación entre la fila pulsada y el cajón de abajo no se ve. */
+.cActiveName {
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--blue);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}

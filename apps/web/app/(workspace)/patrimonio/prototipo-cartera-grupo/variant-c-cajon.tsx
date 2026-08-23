@@ -12,7 +12,16 @@
  * Apuesta: el invariante «Σ filas = bruto» se defiende solo si una cartera es
  * siempre exactamente una fila. Renuncia a la jerarquía visual y se apoya en el
  * cajón (y, en producción, en la ficha) para todo lo demás.
+ *
+ * Aprendido probándola: el cajón nace lejos de la fila que lo abre —con un
+ * tablero de altura normal cae fuera de la vista y el botón parece muerto—, así
+ * que la variante SOLO es honesta si al abrirse lleva la vista al cajón y deja
+ * la fila marcada mientras está abierto. Ese acompañamiento es parte de la
+ * propuesta, no un adorno: si al implementarla se olvida, la variante no
+ * funciona.
  */
+
+import { useEffect, useRef } from "react";
 
 import { money, PlainRow, pct, SubHead } from "./board-bits";
 import type { Section, Unit } from "./grouping";
@@ -37,7 +46,7 @@ function PortfolioRow({
   return (
     <div className={`balanceRow${banded ? " band" : ""}`}>
       <div className="balanceRowName">
-        <span>{unit.name}</span>
+        <span className={open ? styles.cActiveName : undefined}>{unit.name}</span>
         <div className="balanceRowSub">
           <span className={styles.cChip}>cartera</span>
           <span>
@@ -133,6 +142,14 @@ function Pane({
 }
 
 export default function VariantC({ assets, liabilities, open, onToggle }: VariantProps) {
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+
+  // Sin esto el botón parece no hacer nada: el cajón se abre por debajo del
+  // tablero, fuera de la vista.
+  useEffect(() => {
+    if (open) drawerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [open]);
+
   const portfolios = assets
     .flatMap((section) => section.units)
     .filter((unit): unit is Extract<Unit, { kind: "portfolio" }> => {
@@ -154,7 +171,7 @@ export default function VariantC({ assets, liabilities, open, onToggle }: Varian
 
       {open
         ? portfolios.map((unit) => (
-            <div className={styles.cDrawer} key={unit.id}>
+            <div className={styles.cDrawer} key={unit.id} ref={drawerRef}>
               <div className={styles.cDrawerHead}>
                 <div>
                   <strong>{unit.name}</strong>

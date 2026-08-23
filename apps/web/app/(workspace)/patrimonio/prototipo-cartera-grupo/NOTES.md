@@ -67,6 +67,12 @@ dentro lleva la nota que lo recuerda.
   sigue titulando «Activos» debajo de «Carteras gestionadas», y se lee raro: si
   D gana, esa sección residual necesita nombre propio («Resto», o ninguno).
 
+- **C no funciona sin acompañamiento**: el cajón nace al pie del tablero, así que
+  con una lista de altura normal el botón «desglose» parece muerto — el cajón se
+  abre fuera de la vista. La variante solo es honesta llevando la vista al cajón
+  al abrirlo y dejando la fila marcada mientras dura. Si C gana, eso es parte de
+  lo que hay que implementar, no un detalle.
+
 ## Preguntas abiertas para el veredicto
 
 1. ¿Colapsada por defecto o expandida por defecto? (Aquí arranca colapsada.)
