@@ -1,4 +1,5 @@
 import { ChipChoice } from "@web/chip-choice";
+import { holdingPublicIdIndex } from "@web/holding-route";
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { PendingSubmit } from "@web/pending-submit";
@@ -179,6 +180,7 @@ export async function ObjetivosContent({
     investmentMeta,
     exposureProfiles,
     returnSnapshotRows,
+    publicIdRows,
   ] = await Promise.all([
     store.snapshots.readCurveValuedHoldingsAtDate(today, projectionContext),
     selectedScope ? store.goals.readGoals(selectedScope.id) : Promise.resolve([]),
@@ -203,7 +205,12 @@ export async function ObjetivosContent({
       kind: "asset",
       scopeId: selectedScope?.id ?? "household",
     }),
+    store.agentView.readPublicIds(),
   ]);
+
+  const publicIdByAssetId = Object.fromEntries(
+    holdingPublicIdIndex(publicIdRows).publicByInternal,
+  );
 
   // Derived from projectionContext.operationsByAsset (already read above via
   // buildProjectionContext) instead of one readOperations query per investment
@@ -509,6 +516,7 @@ export async function ObjetivosContent({
         savingsCoherence={savingsCoherence}
         savingsSuggestion={savingsSuggestion}
         scopeId={selectedScope?.id ?? null}
+        publicIdByAssetId={publicIdByAssetId}
         seededFromPlan={seededFromPlan}
         sustainableSpending={sustainableSpending}
       />

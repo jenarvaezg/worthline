@@ -101,7 +101,7 @@ export function CobrosSection({
   const coverage = annualSpending ? passive.netMinor / annualSpending : null;
 
   return (
-    <section className="cobros" aria-label="Cobros">
+    <section className="cobros" aria-label="Cobros" id="cobros" tabIndex={-1}>
       <h3>Cobros</h3>
       <p className="infoNote">
         Dividendos, intereses o alquileres que este activo te paga. Regístralos uno a uno
@@ -282,17 +282,19 @@ export function CobrosSection({
                   <input name="currentUrl" type="hidden" value={currentUrl} />
                   <input name="scheduleId" type="hidden" value={schedule.id} />
                   <input name="saveExpenses" type="hidden" value="1" />
-                  <input
-                    aria-label={`Gastos de ${schedule.label}`}
-                    defaultValue={
-                      schedule.expensesMinor == null
-                        ? ""
-                        : formatMoneyInput(schedule.expensesMinor)
-                    }
-                    inputMode="decimal"
-                    name="expenses"
-                    placeholder="gastos"
-                  />
+                  <label>
+                    Gastos
+                    <input
+                      aria-label={`Gastos de ${schedule.label}`}
+                      defaultValue={
+                        schedule.expensesMinor == null
+                          ? ""
+                          : formatMoneyInput(schedule.expensesMinor)
+                      }
+                      inputMode="decimal"
+                      name="expenses"
+                    />
+                  </label>
                   <button className="btnSmall" type="submit">
                     Guardar gastos
                   </button>

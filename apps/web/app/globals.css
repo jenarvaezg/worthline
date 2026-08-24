@@ -2610,6 +2610,10 @@ code {
   color: var(--muted);
 }
 
+.fireRentRow.is-withheld a.fireRentRowTitle {
+  color: var(--blue);
+}
+
 .fireRentRowGloss {
   color: var(--muted);
   font-size: 0.74rem;
@@ -10426,6 +10430,12 @@ td.rowActions > * {
 }
 .cobrosScheduleActions form.cobrosExpensesForm {
   display: inline-flex;
+}
+.cobrosExpensesForm label {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  font-size: 0.8rem;
 }
 .cobrosExpensesForm input {
   min-height: 30px;

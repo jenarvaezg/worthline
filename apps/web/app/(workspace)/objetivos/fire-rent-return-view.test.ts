@@ -166,4 +166,108 @@ describe("fireRentReturnLines", () => {
 
     expect(lines.map((line) => line.kind)).toEqual(["applied", "withheld"]);
   });
+
+  test("a withheld rent with a public id links to cobros on the ficha, never the internal id", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      publicIdByAssetId: { asset_casarrubios: "wl_hld_casa" },
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "asset_casarrubios",
+            assetName: "Piso Casarrubios",
+            grossRate: 0.063,
+            reason: "missing_expenses",
+          },
+        ],
+      },
+    });
+
+    expect(line?.href).toBe("/patrimonio/wl_hld_casa/editar?abrir=cobros#cobros");
+    expect(line?.href).not.toContain("asset_");
+    // The title is the destination: the gloss no longer names «Cobros» or the ficha
+    // as a place to go looking (#1510).
+    expect(line?.gloss).not.toContain("Cobros");
+    expect(line?.gloss).not.toContain("ficha");
+  });
+
+  test("a withheld rent without a public id still prints, with no href", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "asset_sin_registro",
+            assetName: "Piso",
+            grossRate: 0.05,
+            reason: "missing_expenses",
+          },
+        ],
+      },
+    });
+
+    expect(line?.title).toBe("Piso");
+    expect(line?.href).toBeNull();
+  });
+
+  test("no-live-schedule and foreign-currency withheld lines also link to cobros", () => {
+    const lines = fireRentReturnLines({
+      formatMoney,
+      publicIdByAssetId: { a1: "wl_hld_aaaa", a2: "wl_hld_bbbb" },
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "a1",
+            assetName: "Local",
+            grossRate: null,
+            reason: "no_live_schedule",
+          },
+          {
+            assetId: "a2",
+            assetName: "Miami",
+            grossRate: null,
+            reason: "foreign_currency",
+          },
+        ],
+      },
+    });
+
+    expect(lines[0]?.href).toBe("/patrimonio/wl_hld_aaaa/editar?abrir=cobros#cobros");
+    expect(lines[1]?.href).toBe("/patrimonio/wl_hld_bbbb/editar?abrir=cobros#cobros");
+    expect(lines.every((line) => !line.href?.includes("asset_"))).toBe(true);
+  });
+
+  test("an immobilized rent links to tus supuestos, not the ficha", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      publicIdByAssetId: { asset_piso: "wl_hld_piso" },
+      report: {
+        applied: [],
+        notices: [
+          {
+            assetId: "asset_piso",
+            assetName: "Piso",
+            grossRate: 0.04,
+            reason: "immobilized_not_counted",
+          },
+        ],
+      },
+    });
+
+    expect(line?.href).toBe("#supuestos");
+    expect(line?.href).not.toContain("asset_");
+  });
+
+  test("an applied rent is not a link", () => {
+    const [line] = fireRentReturnLines({
+      formatMoney,
+      publicIdByAssetId: { "a-naval": "wl_hld_naval" },
+      report: { applied: [APPLIED], notices: [] },
+    });
+
+    expect(line?.href).toBeNull();
+  });
 });

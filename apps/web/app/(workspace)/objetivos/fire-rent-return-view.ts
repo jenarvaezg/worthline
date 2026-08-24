@@ -16,6 +16,7 @@
  * keep. The rate itself is printed once, by the panel, from the context.
  */
 
+import { holdingCobrosHref } from "@web/holding-route";
 import type { FireRentReturnReport, RentReturnNotice } from "@worthline/domain";
 import { formatRatePercent } from "./fire-percent";
 
@@ -28,6 +29,12 @@ export interface FireRentReturnLine {
   title: string;
   /** The audit trail in words, below the title. */
   gloss: string;
+  /**
+   * Where to go to act on this line (#1510). Null when there is nowhere to go
+   * (applied rents, or a withheld rent whose holding has no public id).
+   * Never an internal `asset_…` id — those are not a URL vocabulary (#1318).
+   */
+  href: string | null;
 }
 
 export interface FireRentReturnCopyInput {
@@ -38,6 +45,11 @@ export interface FireRentReturnCopyInput {
   report: Pick<FireRentReturnReport, "applied" | "notices">;
   /** Money formatter from the page (privacy mode included). */
   formatMoney: (amountMinor: number) => string;
+  /**
+   * Public `wl_hld_…` ids keyed by internal asset id. Missing entries mean the
+   * line still prints, but without a ficha link.
+   */
+  publicIdByAssetId?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -47,7 +59,7 @@ export interface FireRentReturnCopyInput {
 export function fireRentReturnLines(
   input: FireRentReturnCopyInput,
 ): FireRentReturnLine[] {
-  const { formatMoney, report } = input;
+  const { formatMoney, publicIdByAssetId = {}, report } = input;
 
   const applied = report.applied.map((entry): FireRentReturnLine => {
     const yearly = `${formatMoney(entry.annualNetRentMinor)}/año netos sobre ${formatMoney(
@@ -70,6 +82,7 @@ export function fireRentReturnLines(
           )}.`;
     return {
       gloss: `${body}${share}`,
+      href: null,
       key: entry.assetId,
       kind: "applied",
       title: `${entry.assetName} · ${formatRatePercent(entry.rate)} real`,
@@ -79,6 +92,7 @@ export function fireRentReturnLines(
   const withheld = report.notices.map(
     (notice): FireRentReturnLine => ({
       gloss: noticeGloss(notice),
+      href: withheldHref(notice, publicIdByAssetId),
       key: notice.assetId,
       kind: "withheld",
       title: notice.assetName,
@@ -88,12 +102,26 @@ export function fireRentReturnLines(
   return [...applied, ...withheld];
 }
 
+function withheldHref(
+  notice: RentReturnNotice,
+  publicIdByAssetId: Readonly<Record<string, string>>,
+): string | null {
+  // Immobilized capital is a declaration on this page, not a field on the ficha.
+  if (notice.reason === "immobilized_not_counted") {
+    return "#supuestos";
+  }
+  const publicId = publicIdByAssetId[notice.assetId];
+  return publicId ? holdingCobrosHref(publicId) : null;
+}
+
 function noticeGloss(notice: RentReturnNotice): string {
   switch (notice.reason) {
     case "missing_expenses":
       // The gross is named, and named as what it is NOT: seeing 6,3 % beside the
-      // reason is what makes declaring the costs worth the trouble.
-      return `Su alquiler declarado no se usa todavía: falta declarar sus gastos en «Cobros», en la ficha del inmueble. Cuenta con el retorno por defecto de su tramo${
+      // reason is what makes declaring the costs worth the trouble. The title is
+      // the destination (#1510): the gloss no longer names «Cobros» or the ficha
+      // as a place to go looking.
+      return `Su alquiler declarado no se usa todavía: falta declarar sus gastos. Cuenta con el retorno por defecto de su tramo${
         notice.grossRate === null
           ? ""
           : `, no con el ${formatRatePercent(notice.grossRate)} que daría el alquiler bruto`
