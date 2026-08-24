@@ -8,16 +8,26 @@ import type {
   ManualAsset,
   ManualValuePoint,
   SnapshotHoldingKind,
+  ValuedNetWorthSnapshot,
   Workspace,
 } from "@worthline/domain";
-import { listScopeOptions, selectInvestmentPrice } from "@worthline/domain";
+import {
+  buildSnapshotAtDate,
+  historicalCapturedAt,
+  listScopeOptions,
+  selectInvestmentPrice,
+} from "@worthline/domain";
 import { asc, eq } from "drizzle-orm";
 
 import { mapPositionRow } from "./connected-source-store";
 import { readDebtBalanceInputs, readHousingCurveInputs } from "./curve-valued-holdings";
 import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, connectedSources, positions } from "./schema";
-import { readSnapshotHoldings, type SnapshotHoldingRecord } from "./snapshot-store";
+import {
+  readSnapshotHoldings,
+  type SaveSnapshotInput,
+  type SnapshotHoldingRecord,
+} from "./snapshot-store";
 import {
   readAllOperations,
   readAllPriceCache,
@@ -125,6 +135,75 @@ export async function buildHistoricalSnapshotDeps(
     operationsByAsset: await readAllOperations(db),
     scopes: listScopeOptions(workspace),
   };
+}
+
+/**
+ * Build a fresh whole-portfolio `histsnap_` from shared deps (ADR 0012). Every
+ * generate branch in the ripple engine / gap-fill / price-backfill used to pack
+ * the same `buildSnapshotAtDate({ assets: deps.assets, … })` bag — one seam
+ * keeps id prefix, capturedAt, and dep wiring identical.
+ */
+export function buildHistoricalBackfillFromDeps(input: {
+  deps: HistoricalSnapshotDeps;
+  scopeId: string;
+  scopeLabel: string;
+  dateKey: string;
+  today: string;
+  workspace: Workspace;
+  /** Optional unit-price overrides (price-backfill path, ADR 0033). */
+  capturedUnitPrices?: ReadonlyMap<string, string>;
+}): ValuedNetWorthSnapshot | null {
+  return buildSnapshotAtDate({
+    assets: input.deps.assets,
+    capturedAt: historicalCapturedAt(input.dateKey),
+    coinPositionsByAsset: input.deps.coinPositionsByAsset,
+    costBasisAssetIds: input.deps.costBasisAssetIds,
+    debtBalanceByLiability: input.deps.debtBalanceByLiability,
+    housingValuationByAsset: input.deps.housingValuationByAsset,
+    id: `${BACKFILL_SNAPSHOT_ID_PREFIX}${input.scopeId}_${input.dateKey}`,
+    liabilities: input.deps.liabilities,
+    manualValueHistory: input.deps.manualValueHistory,
+    operationsByAsset: input.deps.operationsByAsset,
+    scopeId: input.scopeId,
+    scopeLabel: input.scopeLabel,
+    targetDate: input.dateKey,
+    today: input.today,
+    workspace: input.workspace,
+    ...(input.capturedUnitPrices !== undefined
+      ? { capturedUnitPrices: input.capturedUnitPrices }
+      : {}),
+  });
+}
+
+/**
+ * Generate and persist a missing past `histsnap_` when `dateKey` is before today
+ * and absent from `existingDates`. Returns the built snapshot, or null when
+ * skipped / the portfolio had nothing to capture. Callers that track dates with
+ * a growing Set should `existingDates.add(dateKey)` after a non-null result
+ * (#1435).
+ */
+export async function generateHistoricalBackfillIfMissing(input: {
+  deps: HistoricalSnapshotDeps;
+  scopeId: string;
+  scopeLabel: string;
+  dateKey: string;
+  today: string;
+  workspace: Workspace;
+  existingDates: { has(dateKey: string): boolean };
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>;
+  capturedUnitPrices?: ReadonlyMap<string, string>;
+}): Promise<ValuedNetWorthSnapshot | null> {
+  if (input.dateKey >= input.today || input.existingDates.has(input.dateKey)) {
+    return null;
+  }
+  const built = buildHistoricalBackfillFromDeps(input);
+  if (!built) return null;
+  await input.saveSnapshot({
+    holdings: built.holdings,
+    replace: false,
+    snapshot: built.snapshot,
+  });
+  return built;
 }
 
 /**
