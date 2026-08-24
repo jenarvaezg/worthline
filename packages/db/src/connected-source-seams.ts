@@ -2,7 +2,6 @@ import type { BinanceHistoryCurve, CoinPosition, Workspace } from "@worthline/do
 import {
   binanceCurveStartDate,
   binanceValueAtDate,
-  buildSnapshotAtDate,
   carryForwardTokenUnitPrices,
   coinPositionSnapshotInput,
   coinValue,
@@ -19,6 +18,8 @@ import {
   type SourcePositionInput,
 } from "./connected-source-store";
 import {
+  BACKFILL_SNAPSHOT_ID_PREFIX,
+  buildHistoricalBackfillFromDeps,
   buildHistoricalSnapshotDeps,
   groupFrozenHoldingsByDate,
   readFrozenIdentityCaptures,
@@ -228,23 +229,17 @@ async function backfillBinanceHistoricalSnapshots(
         }
 
         // No snapshot at this date → generate the base whole-portfolio snapshot
-        // (mirror the `rippleHistoricalSnapshots` generate branch), then OVERRIDE
-        // its binance row to the reconstructed value: the base values the holding
-        // at its stored/live basis (wrong for the past) — the SET corrects it.
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(dateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${dateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
+        // (same seam as every other ADR 0012 generate), then OVERRIDE its binance
+        // row to the reconstructed value: the base values the holding at its
+        // stored/live basis (wrong for the past) — the SET corrects it.
+        // Do NOT use generateHistoricalBackfillIfMissing: this path may need an
+        // empty shell when the portfolio had nothing else that day but Binance
+        // still carries a non-zero reconstructed value.
+        const built = buildHistoricalBackfillFromDeps({
+          dateKey,
+          deps,
           scopeId: scope.id,
           scopeLabel: scope.label,
-          targetDate: dateKey,
           today,
           workspace,
         });
@@ -257,7 +252,7 @@ async function backfillBinanceHistoricalSnapshots(
           holdings: [],
           snapshot: createNetWorthSnapshot({
             capturedAt: historicalCapturedAt(dateKey),
-            id: `histsnap_${scope.id}_${dateKey}`,
+            id: `${BACKFILL_SNAPSHOT_ID_PREFIX}${scope.id}_${dateKey}`,
             isMonthlyClose: false,
             scopeId: scope.id,
             scopeLabel: scope.label,

@@ -2,6 +2,7 @@ import type { AssetStore } from "@db/asset-store";
 import {
   BACKFILL_SNAPSHOT_ID_PREFIX,
   buildHistoricalSnapshotDeps,
+  generateHistoricalBackfillIfMissing,
   groupFrozenHoldingsByDate,
   type HistoricalSnapshotDeps,
   readFrozenIdentityCaptures,
@@ -40,10 +41,8 @@ import type {
 import {
   amortizationPaymentDatesUpTo,
   amortizationPlanFromBalanceRebaseline,
-  buildSnapshotAtDate,
   debtMissingFromAllGeneratedMessage,
   globalHoldingValueAtDate,
-  historicalCapturedAt,
   housingAssetIdsOf,
   isHousingAsset,
   listScopeOptions,
@@ -317,30 +316,16 @@ export async function rippleHistoricalSnapshots(
         !existingByDate.has(operationDateKey)
       ) {
         const deps = await buildHistoricalSnapshotDeps(db, workspace);
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(operationDateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${operationDateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
+        await generateHistoricalBackfillIfMissing({
+          dateKey: operationDateKey,
+          deps,
+          existingDates: existingByDate,
+          saveSnapshot,
           scopeId: scope.id,
           scopeLabel: scope.label,
-          targetDate: operationDateKey,
           today,
           workspace,
         });
-        if (built) {
-          await saveSnapshot({
-            holdings: built.holdings,
-            replace: false,
-            snapshot: built.snapshot,
-          });
-        }
       }
 
       // Read the affected scope's frozen rows in ONE batched query for the whole
@@ -487,32 +472,17 @@ export async function rippleHistoricalSnapshotsForOperations(
       // operated asset across every existing snapshot ≥ the earliest date.
       for (const dateKey of generateDates) {
         if (mode === "delete" || deps === null) continue;
-        if (dateKey >= today || existingDates.has(dateKey)) continue;
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(dateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${dateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
+        const built = await generateHistoricalBackfillIfMissing({
+          dateKey,
+          deps,
+          existingDates,
+          saveSnapshot,
           scopeId: scope.id,
           scopeLabel: scope.label,
-          targetDate: dateKey,
           today,
           workspace,
         });
-        if (built) {
-          await saveSnapshot({
-            holdings: built.holdings,
-            replace: false,
-            snapshot: built.snapshot,
-          });
-          existingDates.add(dateKey);
-        }
+        if (built) existingDates.add(dateKey);
       }
 
       // Read the affected scope's frozen rows in ONE batched query for the whole
@@ -669,32 +639,17 @@ export async function rippleHistoricalSnapshotsForMixedImport(
     const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
 
     for (const dateKey of generateDates) {
-      if (dateKey >= params.today || existingDates.has(dateKey)) continue;
-      const built = buildSnapshotAtDate({
-        assets: deps.assets,
-        capturedAt: historicalCapturedAt(dateKey),
-        coinPositionsByAsset: deps.coinPositionsByAsset,
-        costBasisAssetIds: deps.costBasisAssetIds,
-        debtBalanceByLiability: deps.debtBalanceByLiability,
-        housingValuationByAsset: deps.housingValuationByAsset,
-        id: `histsnap_${scope.id}_${dateKey}`,
-        liabilities: deps.liabilities,
-        manualValueHistory: deps.manualValueHistory,
-        operationsByAsset: deps.operationsByAsset,
+      const built = await generateHistoricalBackfillIfMissing({
+        dateKey,
+        deps,
+        existingDates,
+        saveSnapshot,
         scopeId: scope.id,
         scopeLabel: scope.label,
-        targetDate: dateKey,
         today: params.today,
         workspace,
       });
-      if (built) {
-        await saveSnapshot({
-          holdings: built.holdings,
-          replace: false,
-          snapshot: built.snapshot,
-        });
-        existingDates.add(dateKey);
-      }
+      if (built) existingDates.add(dateKey);
     }
 
     const frozenByDate = groupFrozenHoldingsByDate(
@@ -825,32 +780,16 @@ export async function rippleHistoricalSnapshotsForValuation(
 
       // Generate a fresh whole-portfolio snapshot at the change date when it is
       // in the past and none exists there yet.
-      if (fromDateKey < today && !existingByDate.has(fromDateKey)) {
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(fromDateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${fromDateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          targetDate: fromDateKey,
-          today,
-          workspace,
-        });
-        if (built) {
-          await saveSnapshot({
-            holdings: built.holdings,
-            replace: false,
-            snapshot: built.snapshot,
-          });
-        }
-      }
+      await generateHistoricalBackfillIfMissing({
+        dateKey: fromDateKey,
+        deps,
+        existingDates: existingByDate,
+        saveSnapshot,
+        scopeId: scope.id,
+        scopeLabel: scope.label,
+        today,
+        workspace,
+      });
 
       // Read the affected scope's frozen rows in ONE batched query for the whole
       // ≥ change-date range (#1533), then group them by snapshot date in memory —
@@ -1026,40 +965,26 @@ export async function rippleHistoricalSnapshotsForDebt(
       // Generate a fresh whole-portfolio snapshot at each affected past date
       // that has none yet.
       for (const dateKey of generateDates) {
-        if (dateKey >= today || existingDates.has(dateKey)) continue;
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(dateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${dateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
+        const built = await generateHistoricalBackfillIfMissing({
+          dateKey,
+          deps,
+          existingDates,
+          saveSnapshot,
           scopeId: scope.id,
           scopeLabel: scope.label,
-          targetDate: dateKey,
           today,
           workspace,
         });
-        if (built) {
-          counts.generated += 1;
-          if (
-            built.holdings.some(
-              (row) => row.holdingId === liabilityId && row.kind === "liability",
-            )
-          ) {
-            counts.generatedWithLiability += 1;
-          }
-          await saveSnapshot({
-            holdings: built.holdings,
-            replace: false,
-            snapshot: built.snapshot,
-          });
-          existingDates.add(dateKey);
+        if (!built) continue;
+        counts.generated += 1;
+        if (
+          built.holdings.some(
+            (row) => row.holdingId === liabilityId && row.kind === "liability",
+          )
+        ) {
+          counts.generatedWithLiability += 1;
         }
+        existingDates.add(dateKey);
       }
 
       // Read the affected scope's frozen rows in ONE batched query for the whole

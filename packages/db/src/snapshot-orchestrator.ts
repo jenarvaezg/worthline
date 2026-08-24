@@ -1,15 +1,14 @@
 import type { DecimalString, Workspace } from "@worthline/domain";
 import {
-  buildSnapshotAtDate,
-  historicalCapturedAt,
   listScopeOptions,
   planPriceBackfill,
   recalculateSnapshotForAsset,
 } from "@worthline/domain";
 
 import {
-  BACKFILL_SNAPSHOT_ID_PREFIX,
+  buildHistoricalBackfillFromDeps,
   buildHistoricalSnapshotDeps,
+  generateHistoricalBackfillIfMissing,
   groupFrozenHoldingsByDate,
   readFrozenIdentityCaptures,
   readInvestmentIdentity,
@@ -90,21 +89,12 @@ export async function rippleHistoricalSnapshotsForPriceBackfill(
           // wins over the cost-basis fallback). Other holdings are valued by the
           // same fresh-capture path the operation ripple uses.
           const deps = await buildHistoricalSnapshotDeps(db, workspace);
-          const built = buildSnapshotAtDate({
-            assets: deps.assets,
-            capturedAt: historicalCapturedAt(dateKey),
+          const built = buildHistoricalBackfillFromDeps({
             capturedUnitPrices: new Map([[assetId, point.unitPriceDecimal]]),
-            coinPositionsByAsset: deps.coinPositionsByAsset,
-            costBasisAssetIds: deps.costBasisAssetIds,
-            debtBalanceByLiability: deps.debtBalanceByLiability,
-            housingValuationByAsset: deps.housingValuationByAsset,
-            id: `${BACKFILL_SNAPSHOT_ID_PREFIX}${scope.id}_${dateKey}`,
-            liabilities: deps.liabilities,
-            manualValueHistory: deps.manualValueHistory,
-            operationsByAsset: deps.operationsByAsset,
+            dateKey,
+            deps,
             scopeId: scope.id,
             scopeLabel: scope.label,
-            targetDate: dateKey,
             today: dateKey,
             workspace,
           });
@@ -205,31 +195,17 @@ export async function gapFillHistoricalSnapshots(
       for (const dateKey of sortedDates) {
         if (existingDates.has(dateKey)) continue; // imported snapshot stays intact
 
-        const built = buildSnapshotAtDate({
-          assets: deps.assets,
-          capturedAt: historicalCapturedAt(dateKey),
-          coinPositionsByAsset: deps.coinPositionsByAsset,
-          costBasisAssetIds: deps.costBasisAssetIds,
-          debtBalanceByLiability: deps.debtBalanceByLiability,
-          housingValuationByAsset: deps.housingValuationByAsset,
-          id: `histsnap_${scope.id}_${dateKey}`,
-          liabilities: deps.liabilities,
-          manualValueHistory: deps.manualValueHistory,
-          operationsByAsset: deps.operationsByAsset,
+        const built = await generateHistoricalBackfillIfMissing({
+          dateKey,
+          deps,
+          existingDates,
+          saveSnapshot,
           scopeId: scope.id,
           scopeLabel: scope.label,
-          targetDate: dateKey,
           today,
           workspace,
         });
-
-        if (built) {
-          await saveSnapshot({
-            holdings: built.holdings,
-            replace: false,
-            snapshot: built.snapshot,
-          });
-        }
+        if (built) existingDates.add(dateKey);
       }
     }
   };
