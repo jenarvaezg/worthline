@@ -8,9 +8,9 @@ import { isPublicPath } from "./auth-gate";
  * Gated pages — including a logged-out demo on `/patrimonio` that carries the
  * persona cookie — still match; that cookie is checked inside the proxy.
  *
- * Next.js matchers cannot call a function, so this string is the matcher and
- * {@link shouldInvokeProxy} is the same decision for the handler. `proxy-match.test.ts`
- * pins them against each other.
+ * Next.js parses `config.matcher` as a static string (an imported const is
+ * rejected at build). This value is copied into `proxy.ts`; `proxy-match.test.ts`
+ * pins the copy, {@link shouldInvokeProxy}, and this string against each other.
  */
 export const PROXY_MATCHER =
   "/((?!_next/static|_next/image|favicon.ico|api/cron|api/auth|api/mcp|\\.well-known|login(?:/|$)|demo(?:/|$)|.*\\.(?:ico|png|svg|jpe?g|gif|webp|json|js|txt|xml|map|webmanifest|woff2?)$).+)";

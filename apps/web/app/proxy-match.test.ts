@@ -57,8 +57,8 @@ describe("shouldInvokeProxy (#1536)", () => {
     }
   });
 
-  test("proxy.ts uses the shared matcher and skips Auth.js on public paths", () => {
-    expect(proxySource).toContain("PROXY_MATCHER");
+  test("proxy.ts inlines the matcher (Next requires a static string) and skips Auth.js on public paths", () => {
+    expect(proxySource).toContain(JSON.stringify(PROXY_MATCHER));
     expect(proxySource).toContain("shouldInvokeProxy");
     expect(proxySource).not.toMatch(/export default auth\(/);
   });

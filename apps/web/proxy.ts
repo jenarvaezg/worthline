@@ -1,7 +1,7 @@
 import authConfig from "@web/auth.config";
 import { shouldRedirectToLogin } from "@web/auth-gate";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
-import { PROXY_MATCHER, shouldInvokeProxy } from "@web/proxy-match";
+import { shouldInvokeProxy } from "@web/proxy-match";
 import { buildLoginRedirectUrl } from "@web/return-to";
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
@@ -45,6 +45,9 @@ export default function proxy(...args: Parameters<typeof gated>) {
   return gated(...args);
 }
 
+// Literal string: Next parses `config.matcher` statically and rejects an import.
 export const config = {
-  matcher: [PROXY_MATCHER],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/cron|api/auth|api/mcp|\\.well-known|login(?:/|$)|demo(?:/|$)|.*\\.(?:ico|png|svg|jpe?g|gif|webp|json|js|txt|xml|map|webmanifest|woff2?)$).+)",
+  ],
 };
