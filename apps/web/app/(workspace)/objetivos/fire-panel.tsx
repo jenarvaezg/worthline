@@ -41,6 +41,7 @@ import {
   isManualFireReturn,
   monthlySavingsCapacityForFire,
 } from "@worthline/domain";
+import Link from "next/link";
 import {
   fireAssumptionRows,
   fireReturnMixPrintRows,
@@ -105,6 +106,11 @@ export interface FirePanelProps {
   /** El ámbito y la URL que los botones del ofrecimiento necesitan para escribir. */
   scopeId: string | null;
   currentUrl: string;
+  /**
+   * Public `wl_hld_…` ids keyed by internal asset id, so a withheld rent can
+   * link to its ficha without putting `asset_…` in a URL (#1510, #1318).
+   */
+  publicIdByAssetId: Readonly<Record<string, string>>;
   /** «¿Cuánto puedo gastar sin mermar mi patrimonio?» (#1428). */
   sustainableSpending: FireSustainableSpending | null;
 }
@@ -167,6 +173,7 @@ export function FirePanel({
   fireResult,
   previewing,
   privacyMode,
+  publicIdByAssetId,
   retirementProfile,
   savingsCoherence,
   scopeId,
@@ -198,7 +205,11 @@ export function FirePanel({
   const rateIsWeighted = config !== null && !isManualFireReturn(config);
   const rentReturnLines =
     fireResult && rateIsWeighted
-      ? fireRentReturnLines({ formatMoney: fmt, report: fireResult.rentReturns })
+      ? fireRentReturnLines({
+          formatMoney: fmt,
+          publicIdByAssetId,
+          report: fireResult.rentReturns,
+        })
       : [];
 
   const funded = fireResult
@@ -765,7 +776,13 @@ export function FirePanel({
                 className={`fireRentRow is-${line.kind}`}
                 key={`${line.kind}-${line.key}`}
               >
-                <span className="fireRentRowTitle">{line.title}</span>
+                {line.href ? (
+                  <Link className="fireRentRowTitle" href={line.href}>
+                    {line.title}
+                  </Link>
+                ) : (
+                  <span className="fireRentRowTitle">{line.title}</span>
+                )}
                 <span className="fireRentRowGloss">{line.gloss}</span>
               </li>
             ))}

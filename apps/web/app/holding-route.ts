@@ -54,6 +54,16 @@ export function holdingOperationsHref(publicHoldingId: string): string {
   return `${holdingDetailHref(publicHoldingId)}?abrir=operaciones#operaciones`;
 }
 
+/**
+ * The ficha with the cobros surface unfolded and scrolled into view (#1510).
+ * That surface lives inside collapsed «Configuración avanzada»; a bare `#cobros`
+ * would scroll to a closed `<details>` and show nothing. `?abrir=cobros` is what
+ * the server renders open.
+ */
+export function holdingCobrosHref(publicHoldingId: string): string {
+  return `${holdingDetailHref(publicHoldingId)}?abrir=cobros#cobros`;
+}
+
 /** The holding's row on the board, as an anchor target (the ficha's «← Volver»). */
 export function holdingBoardHref(publicHoldingId: string): string {
   return `/patrimonio#${publicHoldingId}`;

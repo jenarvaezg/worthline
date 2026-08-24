@@ -56,6 +56,7 @@ const calls = vi.hoisted(() => {
     buildProjectionContext: vi.fn(async () => projectionContext),
     projectionContext,
     readAssets: vi.fn(async () => assets),
+    readPublicIds: vi.fn(async () => []),
     readCurveValuedHoldingsAtDate: vi.fn(
       async (): Promise<{ assets: ManualAsset[]; liabilities: Liability[] }> => ({
         assets,
@@ -120,6 +121,7 @@ const calls = vi.hoisted(() => {
         scopes,
         selectedScope: scopes[0],
         store: {
+          agentView: { readPublicIds: calls.readPublicIds },
           assets: {
             readAssets: calls.readAssets,
             readInvestmentAssetsWithMeta: calls.readInvestmentAssetsWithMeta,

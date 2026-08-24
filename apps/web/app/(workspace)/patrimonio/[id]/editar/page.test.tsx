@@ -186,6 +186,12 @@ describe("EditarPage progressive disclosure (#604)", () => {
     );
     expect(await renderedHtml()).not.toContain('class="editAdvanced" open=""');
   });
+
+  test("?abrir=cobros unfolds the advanced block on load", async () => {
+    expect(await renderedHtml(PUBLIC_ID, { abrir: "cobros" })).toContain(
+      '<details class="editAdvanced" open=""',
+    );
+  });
 });
 
 /**

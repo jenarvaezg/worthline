@@ -430,7 +430,8 @@ export default async function EditarPage({
   // intent must survive a real navigation (the server renders the hidden field), so
   // unlike #1365's sale link this one is not a pushState reveal.
   const abrir = resolvedSearchParams?.abrir;
-  const advancedOpen = abrir === "operaciones" || abrir === "traspaso";
+  const advancedOpen =
+    abrir === "operaciones" || abrir === "traspaso" || abrir === "cobros";
   const archiveOriginAfterTransfer = resolvedSearchParams?.archivar === "1";
   // Whether this ficha's ledger takes apuntes written BY HAND — a derived holding
   // that is neither a coin collection nor a synced one, and that already has a

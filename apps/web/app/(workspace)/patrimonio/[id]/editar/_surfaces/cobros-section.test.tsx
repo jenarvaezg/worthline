@@ -124,6 +124,15 @@ describe("CobrosSection — declared expenses", () => {
     expect(renderSection()).toContain("sin gastos declarados");
   });
 
+  test("the section is the #cobros fragment target and the declared-row expenses field is labelled", () => {
+    const markup = renderSection();
+
+    expect(markup).toContain('id="cobros"');
+    // Visible label on the already-declared row — not only the alta form, and not
+    // a placeholder standing in for a label (#1510).
+    expect(markup).toMatch(/cobrosExpensesForm[\s\S]*?<label[\s\S]*?>Gastos/);
+  });
+
   test("a rent with declared costs names them, and the row can be corrected", () => {
     const markup = renderSection({
       schedules: [{ ...RENT, expensesMinor: 25_000 }],

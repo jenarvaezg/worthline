@@ -86,6 +86,8 @@ export interface FireCockpitProps {
   savingsSuggestion: MonthlySavingsSuggestion;
   scopeId: string | null;
   seededFromPlan: boolean;
+  /** Public holding ids keyed by internal asset id (#1510). */
+  publicIdByAssetId: Readonly<Record<string, string>>;
 }
 
 /** El tick de Coast en la barra: la misma fracción que calcula el servidor. */
@@ -173,6 +175,7 @@ export function FireCockpit(props: FireCockpitProps) {
         fireResult={result}
         previewing={previewing}
         privacyMode={props.privacyMode}
+        publicIdByAssetId={props.publicIdByAssetId}
         retirementProfile={retirement.profile}
         savingsCoherence={props.savingsCoherence}
         scopeId={props.scopeId}
