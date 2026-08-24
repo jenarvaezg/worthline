@@ -7,6 +7,7 @@ import {
 } from "@worthline/domain";
 
 import type { AgentViewMoney, AgentViewOperationSummary } from "./contract";
+import { moneyOf } from "./money";
 
 /**
  * Fold an investment holding's operations into compact totals (PRD #328). Raw
@@ -103,8 +104,4 @@ export function summarizeOperations(
 
 function dateKey(operation: InvestmentOperation): string {
   return operation.executedAt.slice(0, 10);
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
 }

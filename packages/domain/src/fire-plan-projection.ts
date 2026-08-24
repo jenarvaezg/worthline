@@ -18,10 +18,9 @@ import {
   type FireScenarioLabel,
   type FireTrajectoryPoint,
   projectFire,
+  RETURN_SHIFT,
 } from "./fire-projection";
-
-/** Returns shifted from the base by ±1.5 % (PRD #421) — same as `projectFire`. */
-const RETURN_SHIFT = 0.015;
+import { addHoldingContributions, growHoldingBuckets } from "./projection-buckets";
 
 /**
  * Synthetic bucket for aggregate starting eligible when no per-holding split is
@@ -173,33 +172,6 @@ function totalBucketMinor(buckets: Map<string, number>): number {
   return total;
 }
 
-function growBuckets(
-  buckets: Map<string, number>,
-  input: FirePlanProjectionInput,
-  scenarioShift: number,
-): void {
-  const effectiveShift = input.growthAssumption === "flat" ? 0 : scenarioShift;
-  for (const [holdingId, amount] of [...buckets.entries()]) {
-    const rate = bucketGrowthRate(holdingId, input) + effectiveShift;
-    buckets.set(holdingId, amount * (1 + rate));
-  }
-}
-
-function addContributions(
-  buckets: Map<string, number>,
-  contributions: Map<string, number> | undefined,
-): number {
-  if (contributions === undefined) {
-    return 0;
-  }
-  let added = 0;
-  for (const [holdingId, amountMinor] of contributions.entries()) {
-    buckets.set(holdingId, (buckets.get(holdingId) ?? 0) + amountMinor);
-    added += amountMinor;
-  }
-  return added;
-}
-
 function projectPlanScenario(
   label: FireScenarioLabel,
   scenarioShift: number,
@@ -216,11 +188,18 @@ function projectPlanScenario(
   let capital = totalBucketMinor(buckets);
   let yearsToFire: number | null = capital >= target ? 0 : null;
   let totalContributedMinor = 0;
+  const effectiveShift = input.growthAssumption === "flat" ? 0 : scenarioShift;
 
   if (yearsToFire === null) {
     for (let year = 1; year <= maxYears; year += 1) {
-      growBuckets(buckets, input, scenarioShift);
-      totalContributedMinor += addContributions(buckets, contributionsByYear.get(year));
+      growHoldingBuckets(
+        buckets,
+        (holdingId) => bucketGrowthRate(holdingId, input) + effectiveShift,
+      );
+      totalContributedMinor += addHoldingContributions(
+        buckets,
+        contributionsByYear.get(year),
+      );
       capital = totalBucketMinor(buckets);
       trajectory.push({ year, eligibleMinor: Math.round(capital) });
 

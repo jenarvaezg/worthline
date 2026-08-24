@@ -6,7 +6,6 @@ import type {
   Liability,
   LiquidityTierBreakdown,
   ManualAsset,
-  MoneyMinor,
   NetWorthSnapshot,
   ScopeOption,
   Workspace,
@@ -35,17 +34,17 @@ import {
   type AgentViewFigureIncludedHolding,
   type AgentViewFigureName,
   type AgentViewFigureSnapshotReference,
-  type AgentViewFireAssumptions,
   AgentViewHttpError,
   type AgentViewLiquidityRung,
   type AgentViewLiquidityTier,
-  type AgentViewMoney,
   type AgentViewObjectReference,
   type AgentViewScope,
 } from "./contract";
 import { buildDataQuality, MAX_DATA_QUALITY_LIMIT } from "./data-quality";
 import { ratioStringFromBps } from "./financial-context";
-import { goalReservationMinor } from "./fire-context";
+import { goalReservationMinor, progressRatioOf, toAssumptions } from "./fire-context";
+import { unknownScope } from "./http-errors";
+import { money, moneyOf } from "./money";
 import {
   publicIdMap,
   requirePublicId,
@@ -1137,7 +1136,7 @@ async function explainFireEligibleAssets(
 
   return {
     asOf,
-    assumptions: fireAssumptions(config, result, facts.currency),
+    assumptions: toAssumptions(config, result, facts.currency),
     excludedHoldings: result.excludedAssets.map((excluded) => ({
       holding: holdingRef(facts.holdingPublicIds, excluded.id, excluded.name),
       reason: excluded.reason,
@@ -1184,7 +1183,7 @@ async function explainFireProgress(
 
   return {
     asOf,
-    assumptions: fireAssumptions(config, result, facts.currency),
+    assumptions: toAssumptions(config, result, facts.currency),
     excludedHoldings: result.excludedAssets.map((excluded) => ({
       holding: holdingRef(facts.holdingPublicIds, excluded.id, excluded.name),
       reason: excluded.reason,
@@ -1211,7 +1210,7 @@ async function explainFireProgress(
     links: links(facts.scope.id),
     qualityNotes: await qualityNotesFor(store, facts, eligibleIds),
     scope: facts.scope,
-    value: { ratio: fireProgressRatio(result.eligibleAssets, result.fireNumber) },
+    value: { ratio: progressRatioOf(result) },
   };
 }
 
@@ -1281,28 +1280,6 @@ function eligibleAssetIds(
       .filter((asset) => !asset.isPrimaryResidence && !manuallyExcluded.has(asset.id))
       .map((asset) => asset.id),
   );
-}
-
-function fireAssumptions(
-  config: FireScopeConfig,
-  result: ReturnType<typeof calculateFireForScope>,
-  currency: string,
-): AgentViewFireAssumptions {
-  return {
-    expectedRealReturn: result.context.realReturnUsed.toString(),
-    monthlySpending: moneyOf(config.monthlySpendingMinor, currency),
-    safeWithdrawalRate: config.safeWithdrawalRate.toString(),
-  };
-}
-
-/** `eligibleAssets / fireNumber` as a non-negative decimal string (`0` if unreachable). */
-function fireProgressRatio(eligibleAssets: MoneyMinor, fireNumber: MoneyMinor): string {
-  if (fireNumber.amountMinor <= 0) {
-    return "0";
-  }
-
-  const bps = Math.round((eligibleAssets.amountMinor * 10_000) / fireNumber.amountMinor);
-  return ratioStringFromBps(bps);
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────────
@@ -1535,27 +1512,11 @@ function links(publicScopeId: string): Record<string, string> {
   };
 }
 
-function money(value: MoneyMinor): AgentViewMoney {
-  return { amountMinor: value.amountMinor, currency: value.currency };
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
 function unsupportedFigure(figure: AgentViewFigureName): AgentViewHttpError {
   return new AgentViewHttpError({
     code: "unprocessable_entity",
     details: { figure, reason: "unsupported_figure" },
     message: "This figure is not supported for the selected scope.",
     status: 422,
-  });
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
   });
 }

@@ -38,7 +38,9 @@ import {
   liabilityHoldingFacts,
 } from "./holding-facts";
 import { resolveHoldingIdentity } from "./holding-identity";
+import { unknownHolding } from "./http-errors";
 import { managedPortfoliosByAssetId } from "./managed-portfolio-membership";
+import { moneyOf } from "./money";
 import { summarizeOperations } from "./operation-summary";
 import { buildHoldingPayouts } from "./payouts";
 import { buildHoldingReturns } from "./returns";
@@ -447,16 +449,4 @@ async function buildSourceSummary(
   }
 
   return { adapter: source.adapter, label: source.label, lastSyncAt: source.lastSyncAt };
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function unknownHolding(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown holding.",
-    status: 404,
-  });
 }

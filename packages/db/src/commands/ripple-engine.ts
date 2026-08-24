@@ -238,6 +238,29 @@ async function pruneOrphanedBackfillSnapshot(
 }
 
 /**
+ * Persist a ripple recalculation, or drop the snapshot when no holdings remain
+ * (e.g. the deleted operation was the only basis). Returns whether a snapshot
+ * was saved.
+ */
+async function persistRecalculatedSnapshot(
+  db: StoreDb,
+  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
+  snap: Pick<NetWorthSnapshot, "id">,
+  recalculated: ValuedNetWorthSnapshot | null,
+): Promise<boolean> {
+  if (recalculated) {
+    await saveSnapshot({
+      holdings: recalculated.holdings,
+      replace: true,
+      snapshot: recalculated.snapshot,
+    });
+    return true;
+  }
+  await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
+  return false;
+}
+
+/**
  * Ripple effect (ADR 0012): a backdated operation change regenerates the
  * snapshot at its date and recalculates the existing snapshots it affects.
  *
@@ -374,17 +397,7 @@ export async function rippleHistoricalSnapshots(
           workspace,
         });
 
-        if (recalculated) {
-          await saveSnapshot({
-            holdings: recalculated.holdings,
-            replace: true,
-            snapshot: recalculated.snapshot,
-          });
-        } else {
-          // No holdings remain (e.g. the deleted operation was the only basis):
-          // drop the snapshot rather than leave it showing stale values.
-          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
-        }
+        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
       }
     }
   });
@@ -874,15 +887,7 @@ export async function rippleHistoricalSnapshotsForValuation(
           workspace,
         });
 
-        if (recalculated) {
-          await saveSnapshot({
-            holdings: recalculated.holdings,
-            replace: true,
-            snapshot: recalculated.snapshot,
-          });
-        } else {
-          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
-        }
+        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
       }
     }
   });
@@ -1089,15 +1094,8 @@ export async function rippleHistoricalSnapshotsForDebt(
           workspace,
         });
 
-        if (recalculated) {
+        if (await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated)) {
           counts.recalculated += 1;
-          await saveSnapshot({
-            holdings: recalculated.holdings,
-            replace: true,
-            snapshot: recalculated.snapshot,
-          });
-        } else {
-          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
         }
       }
     }
@@ -1301,15 +1299,7 @@ export async function rippleHistoricalSnapshotsForOwnership(
           workspace,
         });
 
-        if (recalculated) {
-          await saveSnapshot({
-            holdings: recalculated.holdings,
-            replace: true,
-            snapshot: recalculated.snapshot,
-          });
-        } else {
-          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
-        }
+        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
       }
     }
   });

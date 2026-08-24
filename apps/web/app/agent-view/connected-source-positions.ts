@@ -19,6 +19,7 @@ import {
 } from "./contract";
 import { compareDateId, decodeCursor, dropAfterCursor, encodeCursor } from "./cursor";
 import { derivePublicId } from "./derived-id";
+import { unknownHolding } from "./http-errors";
 import {
   publicIdMap,
   requirePublicId,
@@ -425,14 +426,6 @@ export function derivePositionPublicId(sourceId: string, externalId: string): st
 /** This position's stable sort key: its group key, then its derived public ID. */
 function positionKey(entry: ProjectedPosition): { dateKey: string; publicId: string } {
   return { dateKey: entry.groupKey, publicId: entry.publicId };
-}
-
-function unknownHolding(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown holding.",
-    status: 404,
-  });
 }
 
 function unknownSource(): AgentViewHttpError {

@@ -35,6 +35,7 @@ import type {
   AgentViewSimpleReturn,
   AgentViewTimeWeightedReturn,
 } from "./contract";
+import { moneyOf } from "./money";
 
 const YEAR_DAYS = 365;
 
@@ -468,8 +469,4 @@ function earliest(left: string | null, right: string | null): string | null {
     return left;
   }
   return right < left ? right : left;
-}
-
-function moneyOf(amountMinor: number, currency: CurrencyCode): AgentViewMoney {
-  return { amountMinor, currency };
 }

@@ -64,6 +64,7 @@ import {
 } from "./exposure-catalog";
 import { buildFireSummary } from "./fire-context";
 import { resolveHoldingIdentity } from "./holding-identity";
+import { money, moneyOf } from "./money";
 import { summarizeOperations } from "./operation-summary";
 import { buildScopePassiveIncome } from "./payouts";
 import { buildPortfolioReturns } from "./returns";
@@ -782,14 +783,6 @@ function clampHoldingLimit(requested: number | undefined): number {
   }
 
   return Math.max(1, Math.min(requested, MAX_HOLDING_LIMIT));
-}
-
-function money(value: MoneyMinor): AgentViewMoney {
-  return { amountMinor: value.amountMinor, currency: value.currency };
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
 }
 
 /**

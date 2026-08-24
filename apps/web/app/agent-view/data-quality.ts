@@ -29,6 +29,7 @@ import {
   encodeCursor,
 } from "./cursor";
 import { derivePublicId } from "./derived-id";
+import { unknownScope } from "./http-errors";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -383,12 +384,4 @@ function emptyCategoryCounts(): Record<AgentViewDataQualityCategory, number> {
   return Object.fromEntries(
     DATA_QUALITY_CATEGORY_ORDER.map((category) => [category, 0]),
   ) as Record<AgentViewDataQualityCategory, number>;
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
-  });
 }
