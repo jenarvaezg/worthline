@@ -25,6 +25,32 @@ export function formatMeasurePct(rate: number | null): string {
 }
 
 /**
+ * The semantic sign of a measure, for the two-colour rule of the design system: a
+ * gain and a loss read differently, and neither reads as raw green/red. Zero — and
+ * an absent measure — is neutral: there is nothing to colour.
+ *
+ * Here rather than in each surface because "which way did this go" is the same
+ * question on every returns block, and three copies of it is how one of them ends
+ * up painting a −0,0 % green.
+ */
+export function signClass(value: number | null): "pos" | "neg" | "" {
+  if (value === null || value === 0) {
+    return "";
+  }
+  return value > 0 ? "pos" : "neg";
+}
+
+/**
+ * The hover line behind a missing TWR, naming what it is missing FOR ("esta
+ * clase", "esta cartera"): an absent measure that says nothing reads as a bug, and
+ * the reason turns it into an honest signal (#1457).
+ */
+export function twrUnavailableTitle(reason: TwrReason | null, subject: string): string {
+  const why = twrUnavailableReason(reason);
+  return why === null ? `Sin TWR para ${subject}.` : `Sin TWR: ${why}.`;
+}
+
+/**
  * Why a TWR is an em dash, in plain words (#1457). An absent measure that says
  * nothing reads as a bug; the reason turns it into an honest signal — and, for a
  * subperiod Modified Dietz cannot measure, says the figure was suppressed on

@@ -1028,6 +1028,8 @@ export {
   returnsByAssetClassView,
   returnsKindForInstrument,
 } from "./returns-display";
+export type { SubsetReturns, SubsetReturnsSlice } from "./returns-subset";
+export { subsetReturns } from "./returns-subset";
 export type {
   AssessSavingsCoherenceInput,
   SavingsCoherence,
