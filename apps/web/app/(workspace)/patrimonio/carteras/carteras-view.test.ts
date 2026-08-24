@@ -4,6 +4,7 @@ import {
   managedPortfolioMemberOptions,
   portfolioCompositionView,
   portfolioListRowView,
+  portfolioWitnessView,
 } from "./carteras-view";
 
 const asset = (overrides: Partial<ManualAsset> & { id: string }): ManualAsset => ({
@@ -66,6 +67,7 @@ describe("portfolioListRowView", () => {
         name: "Metal",
         provider: "MyInvestor",
         scopeId: "household",
+        witness: null,
       },
       valueMinorByHoldingId: new Map([
         ["f1", 600_00],
@@ -92,6 +94,7 @@ describe("portfolioListRowView", () => {
         name: "Metal",
         provider: null,
         scopeId: "household",
+        witness: null,
       },
       valueMinorByHoldingId: new Map(),
     });
@@ -109,6 +112,7 @@ describe("portfolioCompositionView", () => {
     name: "Metal",
     provider: null,
     scopeId: "household",
+    witness: null,
   };
 
   it("derives total, weights and labels, marking the efectivo sibling", () => {
@@ -164,5 +168,131 @@ describe("portfolioCompositionView", () => {
 
     expect(view.unknownMemberIds).toEqual(["gone"]);
     expect(view.rows.map((row) => row.holdingId)).toEqual(["f1"]);
+  });
+});
+
+describe("portfolioWitnessView", () => {
+  /** The real Metal: seven funds at 1.479,26 €, 7,34 € in the cash box. */
+  const FUNDS_MINOR = 147_926;
+  const DECLARED_MINOR = 149_737;
+
+  function view(input: {
+    declaredMinor: number | null;
+    cashMinor?: number;
+    declaredCurrency?: string;
+    fundsValue?: number | null;
+    /** The currency the FUNDS member is held in — unconverted (#1550). */
+    fundsCurrency?: string;
+  }) {
+    const fundsValue = input.fundsValue === undefined ? FUNDS_MINOR : input.fundsValue;
+    return portfolioWitnessView({
+      baseCurrency: "EUR",
+      portfolio: {
+        holdingIds: ["fondos", "efectivo"],
+        id: "prt_metal",
+        name: "Cartera Indexada Metal",
+        provider: "MyInvestor",
+        scopeId: "household",
+        witness:
+          input.declaredMinor === null
+            ? null
+            : {
+                declaredDate: "2026-08-21",
+                declaredValue: {
+                  amountMinor: input.declaredMinor,
+                  currency: input.declaredCurrency ?? "EUR",
+                },
+              },
+      },
+      typeByHoldingId: new Map([
+        ["fondos", "investment"],
+        ["efectivo", "cash"],
+      ]),
+      moneyByHoldingId: new Map([
+        ...(fundsValue === null
+          ? []
+          : ([
+              [
+                "fondos",
+                {
+                  amountMinor: fundsValue,
+                  currency: input.fundsCurrency ?? "EUR",
+                },
+              ],
+            ] as Array<[string, { amountMinor: number; currency: string }]>)),
+        ["efectivo", { amountMinor: input.cashMinor ?? 734, currency: "EUR" }],
+      ]),
+    });
+  }
+
+  it("invites a witness when none was declared, without claiming a drift", () => {
+    const result = view({ declaredMinor: null });
+
+    expect(result.state).toBe("no_witness");
+    expect(result.declaredMinor).toBeNull();
+    expect(result.driftLabel).toBeNull();
+    expect(result.isDiverged).toBe(false);
+    // The three figures still read: funds, cash apart, and the sum.
+    expect(result.investmentMinor).toBe(FUNDS_MINOR);
+    expect(result.cashMinor).toBe(734);
+    expect(result.totalMinor).toBe(FUNDS_MINOR + 734);
+  });
+
+  it("reads the real Metal as aligned, careing the FUNDS only", () => {
+    const result = view({ declaredMinor: DECLARED_MINOR });
+
+    expect(result.state).toBe("aligned");
+    expect(result.driftLabel).toBe("−1,2 %");
+    expect(result.declaredDateLabel).toBe("21/08/2026");
+    expect(result.message).toContain("Cuadra");
+    expect(result.message).toContain("fuera del careo");
+  });
+
+  it("stays aligned with the cash box full (~157 €) — the #1550 regression", () => {
+    const result = view({ cashMinor: 15_749, declaredMinor: DECLARED_MINOR });
+
+    expect(result.state).toBe("aligned");
+    expect(result.driftLabel).toBe("−1,2 %");
+    expect(result.cashMinor).toBe(15_749);
+  });
+
+  it("warns when the declared balance sits 5 % away from the funds", () => {
+    const result = view({ declaredMinor: Math.round(FUNDS_MINOR / 0.95) });
+
+    expect(result.state).toBe("diverged");
+    expect(result.isDiverged).toBe(true);
+    expect(result.driftLabel).toBe("−5,0 %");
+    expect(result.message).toContain("Manda lo que worthline calcula");
+  });
+
+  it("says WHY it cannot careo a witness in another currency", () => {
+    const result = view({ declaredCurrency: "USD", declaredMinor: DECLARED_MINOR });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.isDiverged).toBe(false);
+    expect(result.message).toContain("otra divisa");
+  });
+
+  it("refuses to careo when a member is held in another currency (same rule as the signal)", () => {
+    // The ficha converts for the TOTAL, but the careo reads unconverted money:
+    // otherwise it would claim a drift the data-health signal cannot see (#1422).
+    const result = view({ declaredMinor: DECLARED_MINOR, fundsCurrency: "USD" });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.message).toContain("no está en tu divisa");
+  });
+
+  it("says WHY a stored declared balance of zero cannot be careed", () => {
+    const result = view({ declaredMinor: 0 });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.message).toContain("no es positivo");
+  });
+
+  it("refuses to careo an incomplete derived side", () => {
+    const result = view({ declaredMinor: DECLARED_MINOR, fundsValue: null });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.message).toContain("incompleta");
   });
 });

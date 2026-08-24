@@ -202,6 +202,63 @@ describe("managed portfolio CRUD", () => {
     await expect(createMetal(store, ["f1"])).resolves.toBeDefined();
   });
 
+  it("stores, updates and clears the declared balance (#1550)", async () => {
+    const { store } = await freshStore();
+    const created = await createMetal(store, ["f1"]);
+
+    // An alta declares nothing: the witness is typed on the ficha afterwards.
+    expect(created.witness).toBeNull();
+    const [born] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(born?.witness).toBeNull();
+
+    await store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
+      declaredDate: "2026-08-21",
+      declaredValue: { amountMinor: 149_737, currency: "EUR" },
+    });
+    const [declared] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(declared?.witness).toEqual({
+      declaredDate: "2026-08-21",
+      declaredValue: { amountMinor: 149_737, currency: "EUR" },
+    });
+
+    // Only the LATEST is kept: declaring again replaces it.
+    await store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
+      declaredDate: "2026-08-23",
+      declaredValue: { amountMinor: 150_000, currency: "EUR" },
+    });
+    const [updated] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(updated?.witness?.declaredDate).toBe("2026-08-23");
+
+    await store.managedPortfolios.declareManagedPortfolioBalance(created.id, null);
+    const [cleared] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(cleared?.witness).toBeNull();
+
+    // The declared balance NEVER moves the book: the member's own value is
+    // whatever its ledger derives (ADR 0006 — no operations, so zero), before
+    // the declaration and after it.
+    const assets = await store.assets.readAssets();
+    expect(assets.find((asset) => asset.id === "f1")?.currentValue).toEqual({
+      amountMinor: 0,
+      currency: "EUR",
+    });
+  });
+
+  it("refuses a non-positive declared balance and an unknown portfolio", async () => {
+    const { store } = await freshStore();
+    const created = await createMetal(store, ["f1"]);
+
+    await expect(
+      store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
+        declaredDate: "2026-08-21",
+        declaredValue: { amountMinor: 0, currency: "EUR" },
+      }),
+    ).rejects.toThrow(/importe positivo/);
+
+    await expect(
+      store.managedPortfolios.declareManagedPortfolioBalance("prt_inexistente", null),
+    ).rejects.toThrow(/not found/);
+  });
+
   it("scopes reads — another scope's portfolio is invisible", async () => {
     const { store } = await freshStore();
     await store.managedPortfolios.createManagedPortfolio({

@@ -959,6 +959,7 @@ describe("main financial context data-quality summary (#341)", () => {
         "history_coverage",
         "manual_value_freshness",
         "missing_configuration",
+        "portfolio_reconciliation",
         "price_freshness",
         "projection_gap",
         "savings_coherence",
@@ -1175,5 +1176,190 @@ describe("data-quality — declared vs measured savings (#1449)", () => {
     await seedDeclaredVsMeasured(1500);
 
     expect(await savingsSignals()).toEqual([]);
+  });
+});
+
+describe("data-quality — el saldo declarado de una cartera gestionada (#1550)", () => {
+  /**
+   * The real Metal of the acceptance criteria: seven funds worth 1.479,26 €
+   * (folded here into one member with the same value) and the container's cash
+   * sibling, against the 1.497,37 € read in MyInvestor on 21-08 → −1,21 %.
+   */
+  const FUNDS_MINOR = 147_926;
+  const DECLARED_MINOR = 149_737;
+
+  /** Seeds the Metal and declares `declaredMinor`, with `cashMinor` in its box. */
+  async function seedMetal(input: {
+    declaredMinor: number | null;
+    cashMinor: number;
+  }): Promise<{ portfolioPublicId: string }> {
+    const databasePath = tempDatabasePath("worthline-agent-view-dq-cartera-");
+    process.env.WORTHLINE_DB_PATH = databasePath;
+    process.env.WORTHLINE_AGENT_VIEW_TOKEN = "local-agent-token";
+
+    const store = await createWorthlineStoreUnsafe({ databasePath });
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "member_jose", name: "Jose" }],
+      mode: "individual",
+    });
+    const owner = [{ memberId: "member_jose", shareBps: 10_000 }];
+
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset_fondos",
+      liquidityTier: "market",
+      name: "Fondos de la Metal",
+      ownership: owner,
+      providerSymbol: "IWDA.AS",
+    });
+    await store.operations.recordOperation({
+      assetId: "asset_fondos",
+      currency: "EUR",
+      executedAt: "2026-01-10",
+      feesMinor: 0,
+      id: "op_buy_metal",
+      kind: "buy",
+      pricePerUnit: "1",
+      units: "100",
+    });
+    // 100 × 14,7926 = 1.479,26 € — the derived value of the funds today.
+    await store.operations.upsertPrice({
+      assetId: "asset_fondos",
+      currency: "EUR",
+      fetchedAt: new Date().toISOString(),
+      freshnessState: "fresh",
+      price: "14.7926",
+      source: "yahoo",
+    });
+
+    const portfolio = await store.managedPortfolios.createManagedPortfolio({
+      cashOwnership: owner,
+      memberHoldingIds: ["asset_fondos"],
+      name: "Cartera Indexada Metal",
+      provider: "MyInvestor",
+      scopeId: "household",
+    });
+    const cashId = portfolio.holdingIds.find((id) => id !== "asset_fondos")!;
+    await store.assets.updateAssetValuation(cashId, input.cashMinor);
+
+    if (input.declaredMinor !== null) {
+      await store.managedPortfolios.declareManagedPortfolioBalance(portfolio.id, {
+        declaredDate: "2026-08-21",
+        declaredValue: { amountMinor: input.declaredMinor, currency: "EUR" },
+      });
+    }
+
+    const publicIds = await store.agentView.readPublicIds();
+    const portfolioPublicId = publicIds.find(
+      (row) => row.entityType === "managed_portfolio" && row.entityId === portfolio.id,
+    )!.publicId;
+    store.close();
+    return { portfolioPublicId };
+  }
+
+  async function witnessSignals(): Promise<Signal[]> {
+    const scopeId = await householdScopeId();
+    return signals(scopeId, "?limit=500&category=portfolio_reconciliation");
+  }
+
+  test("stays quiet at the real drift of the Metal (−1,21 %)", async () => {
+    await seedMetal({ cashMinor: 734, declaredMinor: DECLARED_MINOR });
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("stays quiet with the cash box FULL (~157 €): the careo excludes it", async () => {
+    // 150 € + 0,5 % × 1.497,37 = 157,49 € waiting to be invested. Careing the
+    // cash would fire a ~9 % drift before every single contribution — the
+    // regression of the 23-08 correction on #1550.
+    await seedMetal({ cashMinor: 15_749, declaredMinor: DECLARED_MINOR });
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("names the cartera by its public id when the drift passes 2 %", async () => {
+    const { portfolioPublicId } = await seedMetal({
+      cashMinor: 734,
+      declaredMinor: Math.round(FUNDS_MINOR / 0.95),
+    });
+
+    const found = await witnessSignals();
+
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      affected: {
+        id: portfolioPublicId,
+        label: "Cartera Indexada Metal",
+        object: "managed_portfolio",
+      },
+      category: "portfolio_reconciliation",
+      code: "PORTFOLIO_DECLARED_VS_DERIVED",
+      fixable: true,
+      observedDate: "2026-08-21",
+      severity: "medium",
+    });
+    expect(portfolioPublicId.startsWith("wl_prt_")).toBe(true);
+  });
+
+  test("declares nothing to careo without a witness", async () => {
+    await seedMetal({ cashMinor: 15_749, declaredMinor: null });
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("se apaga sola al actualizar el testigo, sin reconocer nada", async () => {
+    await seedMetal({ cashMinor: 734, declaredMinor: Math.round(FUNDS_MINOR / 0.95) });
+    expect(await witnessSignals()).toHaveLength(1);
+
+    // Declaring the right balance is the whole repair: the signal is derived, so
+    // there is no override to write and nothing to acknowledge.
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios("household");
+    await store.managedPortfolios.declareManagedPortfolioBalance(portfolio!.id, {
+      declaredDate: "2026-08-23",
+      declaredValue: { amountMinor: DECLARED_MINOR, currency: "EUR" },
+    });
+    store.close();
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("se apaga sola al cambiar la composición de la cartera", async () => {
+    await seedMetal({ cashMinor: 734, declaredMinor: Math.round(FUNDS_MINOR / 0.95) });
+    expect(await witnessSignals()).toHaveLength(1);
+
+    // The other repair the issue names: the composition changes (here the fund
+    // leaves the cartera), so there is no investment value to careo any more.
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios("household");
+    await store.managedPortfolios.updateManagedPortfolio(portfolio!.id, {
+      memberHoldingIds: [],
+    });
+    store.close();
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("the financial context carries the careo, cash apart", async () => {
+    await seedMetal({ cashMinor: 15_749, declaredMinor: DECLARED_MINOR });
+    const scopeId = await householdScopeId();
+
+    const { body } = await financialContext(scopeId);
+    const cartera = body.data.managedPortfolios[0];
+
+    expect(cartera.label).toBe("Cartera Indexada Metal");
+    expect(cartera.reconciliation).toMatchObject({
+      cashValue: { amountMinor: 15_749, currency: "EUR" },
+      declaredDate: "2026-08-21",
+      declaredValue: { amountMinor: DECLARED_MINOR, currency: "EUR" },
+      driftBps: -121,
+      investmentValue: { amountMinor: FUNDS_MINOR, currency: "EUR" },
+      state: "aligned",
+      thresholdBps: 200,
+    });
   });
 });

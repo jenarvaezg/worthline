@@ -33,6 +33,7 @@ function emptyStore(trashedHoldings: AgentViewTrashedHolding[] = []): AgentViewR
   return {
     readAssetCreatedAtById: async () => new Map(),
     readConnectedSources: async () => [],
+    readManagedPortfolios: async () => [],
     readManualValueHistory: async () => new Map(),
     readTrashedHoldings: async () => trashedHoldings,
   } as unknown as AgentViewReadStore;

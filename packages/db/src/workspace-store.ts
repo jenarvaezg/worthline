@@ -41,6 +41,7 @@ import {
   readAgentViewPublicIds,
 } from "./agent-view-public-ids";
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
+import { managedPortfolioWitnessOfRow } from "./managed-portfolio-store";
 import {
   agentViewPublicIds,
   amortizationPlans,
@@ -1008,6 +1009,9 @@ async function importWorkspace(
         .insert(managedPortfolios)
         .values(
           doc.managedPortfolios.map((portfolio) => ({
+            declaredCurrency: portfolio.witness?.declaredValue.currency ?? null,
+            declaredDate: portfolio.witness?.declaredDate ?? null,
+            declaredValueMinor: portfolio.witness?.declaredValue.amountMinor ?? null,
             id: portfolio.id,
             name: portfolio.name,
             provider: portfolio.provider ?? null,
@@ -1645,6 +1649,9 @@ async function buildWorkspaceExport(
       name: row.name,
       provider: row.provider ?? null,
       scopeId: row.scopeId,
+      // The declared balance (#1550): typed data, so it travels. The
+      // all-or-nothing rule is the store's, read through its own mapper.
+      witness: managedPortfolioWitnessOfRow(row),
     })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows

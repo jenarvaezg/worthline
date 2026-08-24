@@ -4324,8 +4324,27 @@ code {
 }
 
 .carterasWeight {
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+/* El testigo (#1550): el gestor enseña el efectivo en su propia casilla, así que
+   la ficha reparte la cifra grande en dos lecturas — fondos y caja — antes de
+   carear. Dos columnas de texto, sin tarjetas ni tintes (canon §3). */
+.carterasHeroSplit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 4px 0 0;
+}
+
+/* Las dos cifras del reparto son cuerpo, no display: la del hero sigue siendo la
+   única cifra dominante (canon §3), así que aquí solo numérica tabular. */
+.carterasHeroSplitFigure {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
 }
 
 .createGoalSubmit {

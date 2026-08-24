@@ -172,7 +172,11 @@ async function collectScopeSignals(
   const asOfDateKey = systemClock().today();
   const fireConfigByScopeId = await store.readFireConfig(asOfDateKey);
   const warningOverrides = await store.readWarningOverrides();
-  const holdingPublicIds = publicIdMap(await store.readPublicIds(), "holding");
+  const publicIdRows = await store.readPublicIds();
+  const holdingPublicIds = publicIdMap(publicIdRows, "holding");
+  // Las carteras gestionadas se nombran por su id público `wl_prt_…` (#1550), el
+  // mismo con el que el agente puede pedir su ficha.
+  const portfolioPublicIds = publicIdMap(publicIdRows, "managed_portfolio");
   const manualValueHistoryByAssetId = await store.readManualValueHistory(
     assets.map((asset) => asset.id),
   );
@@ -238,6 +242,16 @@ async function collectScopeSignals(
   // both the row and its ledger have to be asked for by id.
   const trashedHoldings = await store.readTrashedHoldings();
 
+  // Las carteras gestionadas con su saldo declarado, y los holdings valorados por
+  // CURVA a la misma fecha (#1550): el careo del testigo tiene que citar las mismas
+  // cifras que pinta el tablero, no los valores almacenados (#1422). Es la misma
+  // lectura que ya hacen `get_financial_context` y la ficha de un holding.
+  const managedPortfolios = await store.readManagedPortfolios();
+  const curveValued = await store.readCurveValuedHoldings(asOfDateKey);
+  const holdingValueByHoldingId = new Map(
+    curveValued.assets.map((asset) => [asset.id, asset.currentValue]),
+  );
+
   // Net units per holding, so a sold-out position is silent here for the same
   // reasons it is on the home hero (#1348). Folded for EVERY `derived` holding,
   // not just the ones a given signal can fire on: the engine now reads this map
@@ -278,8 +292,10 @@ async function collectScopeSignals(
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId,
+    holdingValueByHoldingId,
     investmentOperationsByAssetId: operationsByAssetId,
     liabilities,
+    managedPortfolios,
     manualValueHistoryByAssetId,
     netUnitsByAssetId,
     positionsBySourceId,
@@ -306,7 +322,7 @@ async function collectScopeSignals(
   return {
     scope,
     signals: domainSignals.map((signal) =>
-      toAgentViewSignal(signal, holdingPublicIds, scope.id),
+      toAgentViewSignal(signal, holdingPublicIds, portfolioPublicIds, scope.id),
     ),
   };
 }
@@ -314,6 +330,7 @@ async function collectScopeSignals(
 function toAgentViewSignal(
   signal: DataQualitySignal,
   holdingPublicIds: Map<string, string>,
+  portfolioPublicIds: Map<string, string>,
   scopePublicId: string,
 ): AgentViewDataQualitySignal {
   return {
@@ -330,7 +347,12 @@ function toAgentViewSignal(
     ...(signal.affected === undefined
       ? {}
       : {
-          affected: toAgentViewAffected(signal.affected, holdingPublicIds, scopePublicId),
+          affected: toAgentViewAffected(
+            signal.affected,
+            holdingPublicIds,
+            portfolioPublicIds,
+            scopePublicId,
+          ),
         }),
     severity: signal.severity,
   };
@@ -339,8 +361,17 @@ function toAgentViewSignal(
 function toAgentViewAffected(
   affected: DataQualityAffectedRef,
   holdingPublicIds: Map<string, string>,
+  portfolioPublicIds: Map<string, string>,
   scopePublicId: string,
 ): AgentViewObjectReference {
+  if (affected.object === "managed_portfolio") {
+    return {
+      id: requirePublicId(portfolioPublicIds, affected.id),
+      label: affected.label,
+      object: "managed_portfolio",
+    };
+  }
+
   if (affected.object === "holding") {
     return {
       id: requirePublicId(holdingPublicIds, affected.id),

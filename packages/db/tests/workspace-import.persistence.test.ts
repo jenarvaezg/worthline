@@ -251,6 +251,11 @@ function makeDocumentB(): WorkspaceExport {
         name: "Cartera B",
         provider: "Indexa",
         holdingIds: ["b-a2", "b-pc"],
+        // The declared balance is typed data and travels with the entity (#1550).
+        witness: {
+          declaredDate: "2026-06-10",
+          declaredValue: { amountMinor: 22_100, currency: "EUR" },
+        },
       },
     ],
   });
@@ -322,6 +327,10 @@ describe("importWorkspace", () => {
         name: "Cartera B",
         provider: "Indexa",
         holdingIds: ["b-a2", "b-pc"],
+        witness: {
+          declaredDate: "2026-06-10",
+          declaredValue: { amountMinor: 22_100, currency: "EUR" },
+        },
       },
     ]);
 

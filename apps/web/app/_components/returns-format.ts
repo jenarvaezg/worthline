@@ -1,4 +1,8 @@
-import type { HoldingReturnsView, TwrReason } from "@worthline/domain";
+import {
+  formatDateKeyEs,
+  type HoldingReturnsView,
+  type TwrReason,
+} from "@worthline/domain";
 
 /**
  * Presentation formatting for investment returns (#551). The measure SELECTION
@@ -41,11 +45,6 @@ export function twrUnavailableReason(reason: TwrReason | null): string | null {
   }
 }
 
-function formatIsoDate(date: string): string {
-  const [year, month, day] = date.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 /**
  * The hover lines explaining a holding's (or the portfolio's) returns. Market
  * instruments list the three measures with the total-vs-annualized distinction
@@ -66,7 +65,7 @@ export function returnsTooltipLines(view: HoldingReturnsView): string[] {
     }
     lines.push(`IRR anual: ${formatMeasurePct(view.irr?.rate ?? null)}`);
     const twrStart = view.twr?.startDate
-      ? ` desde ${formatIsoDate(view.twr.startDate)}`
+      ? ` desde ${formatDateKeyEs(view.twr.startDate)}`
       : "";
     const twrWhy =
       view.twr && view.twr.rate === null ? twrUnavailableReason(view.twr.reason) : null;

@@ -1,5 +1,13 @@
-import type { ManagedPortfolio, OwnershipShare } from "@worthline/domain";
-import { assertManagedPortfolioInput, createManualAsset } from "@worthline/domain";
+import type {
+  ManagedPortfolio,
+  ManagedPortfolioWitness,
+  OwnershipShare,
+} from "@worthline/domain";
+import {
+  assertManagedPortfolioInput,
+  assertManagedPortfolioWitnessInput,
+  createManualAsset,
+} from "@worthline/domain";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 
 import {
@@ -19,10 +27,11 @@ import type { StoreContext } from "./store-context";
  * Managed portfolio persistence (ADR 0085, #1547) — the "cartera gestionada"
  * rows and their EXCLUSIVE memberships.
  *
- * The entity stores only what somebody typed (name, optional provider). Its
- * value is derived from the members on read — no total lives here to go stale
- * behind a member's price — and the declared balance (the reconciliation
- * witness) arrives in S4. Registration auto-creates the container's cash as a
+ * The entity stores only what somebody typed (name, optional provider, and the
+ * last declared balance since #1550). Its value is derived from the members on
+ * read — no total lives here to go stale behind a member's price — and the
+ * declared balance is a WITNESS the engine never reads: it exists so a careo can
+ * disagree out loud, never to plug a figure (#1422). Registration auto-creates the container's cash as a
  * sibling holding: a normal `current_account` at 0 € that keeps summing into
  * net worth like any other member, so valuation, snapshots and health come for
  * free instead of a parallel cash machinery on the entity. Membership rules are
@@ -70,6 +79,17 @@ export interface ManagedPortfolioStore {
   ) => Promise<void>;
   deleteManagedPortfolio: (id: string) => Promise<void>;
   /**
+   * Declare (or clear, with `null`) the portfolio's last read balance (#1550).
+   * A write of its own rather than a field of the edit patch: it is a DATED FACT
+   * about a day, it gets its own audit row (the only place the succession of
+   * declared balances is kept until a connector can produce the series), and the
+   * form that types it is not the form that assigns members.
+   */
+  declareManagedPortfolioBalance: (
+    id: string,
+    witness: ManagedPortfolioWitness | null,
+  ) => Promise<void>;
+  /**
    * The portfolio whose CASH sibling this holding is, by name — or null when it is
    * not one (#1549). The Papelera's gate reads it to refuse, and the ficha reads it
    * to say so before the owner tries; one query so the two cannot disagree.
@@ -80,6 +100,8 @@ export interface ManagedPortfolioStore {
 export function createManagedPortfolioStore(ctx: StoreContext): ManagedPortfolioStore {
   return {
     createManagedPortfolio: (input) => createManagedPortfolio(ctx, input),
+    declareManagedPortfolioBalance: (id, witness) =>
+      declareManagedPortfolioBalance(ctx, id, witness),
     deleteManagedPortfolio: (id) => deleteManagedPortfolio(ctx, id),
     readCashContainerName: (holdingId) => readCashContainerPortfolioName(ctx, holdingId),
     readManagedPortfolios: (scopeId) => readManagedPortfolios(ctx, scopeId),
@@ -264,7 +286,87 @@ async function readManagedPortfolios(
     name: row.name,
     provider: row.provider ?? null,
     scopeId: row.scopeId,
+    witness: managedPortfolioWitnessOfRow(row),
   }));
+}
+
+/**
+ * The three witness columns travel together: any one missing reads as "no
+ * witness declared" rather than a half-witness the careo would have to guess at.
+ *
+ * Exported because the workspace export reads the same row shape (#1550): two
+ * copies of an all-or-nothing rule are two chances to disagree about what a half
+ * witness means.
+ */
+export function managedPortfolioWitnessOfRow(row: {
+  declaredValueMinor: number | null;
+  declaredCurrency: string | null;
+  declaredDate: string | null;
+}): ManagedPortfolioWitness | null {
+  if (
+    row.declaredValueMinor == null ||
+    row.declaredCurrency == null ||
+    row.declaredDate == null
+  ) {
+    return null;
+  }
+
+  return {
+    declaredDate: row.declaredDate,
+    declaredValue: {
+      amountMinor: row.declaredValueMinor,
+      currency: row.declaredCurrency,
+    },
+  };
+}
+
+/**
+ * Store or clear the declared balance. The value is validated by the domain
+ * (positive, dated) and written as-is: the book keeps deriving its own total, so
+ * a witness that turns out to be wrong is corrected by declaring another one —
+ * nothing downstream was moved by it.
+ */
+async function declareManagedPortfolioBalance(
+  ctx: StoreContext,
+  id: string,
+  witness: ManagedPortfolioWitness | null,
+): Promise<void> {
+  const existing = await ctx.db
+    .select({ id: managedPortfolios.id })
+    .from(managedPortfolios)
+    .where(eq(managedPortfolios.id, id))
+    .get();
+  if (!existing) throw new Error(`Managed portfolio "${id}" not found.`);
+
+  if (witness !== null) {
+    assertManagedPortfolioWitnessInput(witness);
+  }
+
+  await ctx.db
+    .update(managedPortfolios)
+    .set({
+      declaredCurrency: witness?.declaredValue.currency ?? null,
+      declaredDate: witness?.declaredDate ?? null,
+      declaredValueMinor: witness?.declaredValue.amountMinor ?? null,
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(managedPortfolios.id, id))
+    .run();
+
+  // The audit row is the only durable trace of the SUCCESSION of declared
+  // balances (the entity keeps just the latest), so it carries the figures.
+  await ctx.writeAuditEntry(
+    "declare_managed_portfolio_balance",
+    "managed_portfolio",
+    id,
+    witness === null
+      ? { cleared: true }
+      : {
+          declaredCurrency: witness.declaredValue.currency,
+          declaredDate: witness.declaredDate,
+          declaredValueMinor: witness.declaredValue.amountMinor,
+        },
+  );
 }
 
 async function createManagedPortfolio(
@@ -348,6 +450,8 @@ async function createManagedPortfolio(
     name,
     provider,
     scopeId: input.scopeId,
+    // An alta declares no balance: the witness is typed on the ficha afterwards.
+    witness: null,
   };
 }
 

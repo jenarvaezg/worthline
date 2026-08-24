@@ -1487,9 +1487,9 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     get_data_quality: tool({
       description:
         "Señales de calidad de datos del scope: avisos de dominio, precios/sincronizaciones " +
-        "obsoletos o fallidos, configuración ausente, historial escaso y activos en la " +
-        "papelera con saldo vivo. Útil para «¿qué " +
-        "posiciones parecen obsoletas o sospechosas?». Filtra por categoría o severidad.",
+        "obsoletos o fallidos, configuración ausente, historial escaso, carteras gestionadas " +
+        "cuyo valor se aparta del saldo declarado y activos en la papelera con saldo vivo. " +
+        "Filtra por categoría o severidad.",
       inputSchema: jsonSchema<{
         scopeId?: string;
         category?: string;
@@ -1509,6 +1509,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
               "source_freshness",
               "missing_configuration",
               "savings_coherence",
+              "portfolio_reconciliation",
               "history_coverage",
               "projection_gap",
             ],

@@ -1004,6 +1004,16 @@ export const managedPortfolios = sqliteTable(
     scopeId: text("scope_id").notNull(),
     name: text("name").notNull(),
     provider: text("provider"),
+    /**
+     * The last balance declared from the manager's app (#1550) — the
+     * reconciliation witness, NEVER a figure the book adopts. The three columns
+     * travel together: all null (no witness) or all set. The value is the market
+     * value of the FUNDS, without the container's cash (ADR 0085 amended), and
+     * only the latest is kept — the historical series waits for a connector.
+     */
+    declaredValueMinor: integer("declared_value_minor"),
+    declaredCurrency: text("declared_currency"),
+    declaredDate: text("declared_date"),
     createdAt: timestamp("created_at"),
     updatedAt: timestamp("updated_at"),
   },

@@ -11,7 +11,12 @@
  * clean-is-empty) without a DOM.
  */
 
-import { type HoldingPublicIdIndex, holdingDetailHref } from "@web/holding-route";
+import {
+  type HoldingPublicIdIndex,
+  holdingDetailHref,
+  type ManagedPortfolioPublicIdIndex,
+  managedPortfolioFichaHref,
+} from "@web/holding-route";
 import {
   compareDataQualitySignals,
   type DataQualityCategory,
@@ -75,6 +80,12 @@ export function selectHeroHealth(
   signals: readonly DataQualitySignal[],
   overrides: readonly WarningOverride[],
   publicIds: HoldingPublicIdIndex,
+  /**
+   * The carteras gestionadas registry (#1550): a portfolio signal links to the
+   * portfolio's own ficha, addressed by its public `wl_prt_…` id — never by the
+   * internal one the signal carries.
+   */
+  portfolioPublicIds: ManagedPortfolioPublicIdIndex,
 ): HeroHealthView {
   const overridden = new Set(
     overrides.map((override) => `${override.code}:${override.entityId}`),
@@ -99,7 +110,7 @@ export function selectHeroHealth(
   const shown = tier.slice(0, HERO_HEALTH_MAX_ALERTS);
 
   return {
-    alerts: shown.map((signal) => toAlert(signal, publicIds)),
+    alerts: shown.map((signal) => toAlert(signal, publicIds, portfolioPublicIds)),
     hiddenCount: tier.length - shown.length,
     impact: topSeverity === "high" ? "error" : "warning",
   };
@@ -151,8 +162,9 @@ function isAcknowledged(
 function toAlert(
   signal: DataQualitySignal,
   publicIds: HoldingPublicIdIndex,
+  portfolioPublicIds: ManagedPortfolioPublicIdIndex,
 ): HeroHealthAlert {
-  const fix = fixSurface(signal, publicIds);
+  const fix = fixSurface(signal, publicIds, portfolioPublicIds);
   return {
     affectedLabel: signal.affected?.label,
     fixLabel: fix?.label,
@@ -171,6 +183,7 @@ function toAlert(
 function fixSurface(
   signal: DataQualitySignal,
   publicIds: HoldingPublicIdIndex,
+  portfolioPublicIds: ManagedPortfolioPublicIdIndex,
 ): { href: string; label: string } | null {
   const affected = signal.affected;
   // A signal names its holding by the internal storage id; the link must name it
@@ -210,6 +223,16 @@ function fixSurface(
       // filtered out upstream (it does not bear on today's figure).
       const href = fichaHref();
       return href ? { href, label: "Ver deuda" } : null;
+    }
+    case "portfolio_reconciliation": {
+      // The cartera's own ficha: the composition, the cash and the declared
+      // balance are all there, which is everything the careo disagreed about.
+      const publicId = affected
+        ? portfolioPublicIds.publicByInternal.get(affected.id)
+        : undefined;
+      return publicId
+        ? { href: managedPortfolioFichaHref(publicId), label: "Ver cartera" }
+        : null;
     }
     case "savings_coherence":
       // Filtered upstream today, but it has a real destination: the declared

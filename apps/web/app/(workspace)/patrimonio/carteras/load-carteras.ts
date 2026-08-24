@@ -45,6 +45,15 @@ export interface CarterasReadModel {
   nameById: ReadonlyMap<string, string>;
   /** Every live holding's type, so the ficha can mark the efectivo row. */
   typeByHoldingId: ReadonlyMap<string, string>;
+  /**
+   * Every live holding's value in the currency it is HELD in — unconverted
+   * (#1550). The careo of the declared balance reads this one, not the converted
+   * figures above: the data-health signal has no FX layer, so careing a
+   * converted sum here would let the ficha and the signal reach different
+   * verdicts about the same cartera (#1422). The composition and the totals keep
+   * using the converted values, which is what the patrimonio is made of.
+   */
+  moneyByHoldingId: ReadonlyMap<string, MoneyMinor>;
   /** The live curve-valued holdings — what the member chips offer from. */
   assets: readonly ManualAsset[];
   /** Internal portfolio id → public `wl_prt_…` id (ficha links). */
@@ -116,6 +125,7 @@ export async function loadCarteras(input: LoadCarterasInput): Promise<CarterasRe
     publicIdByPortfolio: Object.fromEntries(
       managedPortfolioPublicIdIndex(publicIds).publicByInternal,
     ),
+    moneyByHoldingId: moneyByHolding,
     typeByHoldingId: new Map(curveValued.assets.map((asset) => [asset.id, asset.type])),
     valueMinorByHoldingId,
     excludedForeignCount,

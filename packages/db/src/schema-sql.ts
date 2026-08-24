@@ -513,6 +513,9 @@ CREATE TABLE \`managed_portfolios\` (
 	\`scope_id\` text NOT NULL,
 	\`name\` text NOT NULL,
 	\`provider\` text,
+	\`declared_value_minor\` integer,
+	\`declared_currency\` text,
+	\`declared_date\` text,
 	\`created_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	\`updated_at\` text DEFAULT CURRENT_TIMESTAMP NOT NULL
 );

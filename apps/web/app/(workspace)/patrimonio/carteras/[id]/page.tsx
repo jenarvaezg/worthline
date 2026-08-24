@@ -8,16 +8,18 @@ import {
 import { buildCurrentUrlFor, parseFormError, resolveOkMessage } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import {
+  declareManagedPortfolioBalanceAction,
   deleteManagedPortfolioAction,
   updateManagedPortfolioAction,
 } from "@web/patrimonio/carteras/carteras-actions";
 import {
   managedPortfolioMemberOptions,
   portfolioCompositionView,
+  portfolioWitnessView,
 } from "@web/patrimonio/carteras/carteras-view";
 import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
 import { PendingSubmit } from "@web/pending-submit";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -27,9 +29,11 @@ import { Suspense } from "react";
  * `wl_prt_…` id only (ADR 0069 discipline), like every holding ficha.
  *
  * Everything is derived on read: the total is the sum of its members + efectivo
- * (the same curve-valued figures the board prints), the composition shows each
- * member's weight, and the witness balance arrives in S4 — nothing here claims
- * a return (S6) or a declared saldo yet.
+ * (the same curve-valued figures the board prints), and the composition shows
+ * each member's weight. The declared balance (#1550) is a WITNESS shown beside
+ * the derived figures — never a value the book adopts — and the cash is shown
+ * apart because the careo excludes it, exactly as the manager's app does.
+ * Nothing here claims a return yet (S6).
  */
 
 export default function ManagedPortfolioFichaPage({
@@ -99,6 +103,13 @@ async function FichaContent({
     valueMinorByHoldingId: model.valueMinorByHoldingId,
   });
 
+  const witness = portfolioWitnessView({
+    baseCurrency: workspace.baseCurrency,
+    moneyByHoldingId: model.moneyByHoldingId,
+    portfolio,
+    typeByHoldingId: model.typeByHoldingId,
+  });
+
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy(
       { amountMinor, currency: workspace.baseCurrency },
@@ -124,6 +135,8 @@ async function FichaContent({
   const selectableIds = new Set(options.map((option) => option.id));
 
   const errorFor = formError?.formId === `cartera-${portfolio.id}` ? formError : null;
+  const witnessError = formError?.formId === `testigo-${portfolio.id}` ? formError : null;
+  const witnessValues = witnessError?.values ?? {};
   const editValues = errorFor?.values ?? {};
   const preservedIds = editValues.holdingIds
     ? editValues.holdingIds.split(",").filter(Boolean)
@@ -139,7 +152,7 @@ async function FichaContent({
         <h2>{portfolio.name}</h2>
         <span>
           {portfolio.provider ? `${portfolio.provider} · ` : ""}
-          valor derivado de sus miembros — el saldo declarado llega con el testigo (S4)
+          valor derivado de sus miembros, careado contra el saldo que declares
         </span>
       </header>
 
@@ -159,13 +172,27 @@ async function FichaContent({
           <span>Total derivado</span>
           <strong>{fmt(composition.totalMinor)}</strong>
         </div>
+        <p className="carterasHeroSplit">
+          <span>
+            Valor de mercado (tus fondos){" "}
+            <span className="carterasHeroSplitFigure">
+              {fmt(witness.investmentMinor)}
+            </span>
+          </span>
+          <span>
+            Efectivo de la cartera{" "}
+            <span className="carterasHeroSplitFigure">{fmt(witness.cashMinor)}</span>
+          </span>
+        </p>
         <p className="muted">
           {composition.rows.length + composition.unknownMemberIds.length}{" "}
           {composition.rows.length + composition.unknownMemberIds.length === 1
             ? "miembro"
             : "miembros"}
-          {" · "}la suma de sus holdings y su efectivo. Crear o editar la cartera nunca
-          mueve tu patrimonio bruto: los miembros ya sumaban.
+          {" · "}la suma de sus holdings y su efectivo. Tu gestor enseña el efectivo
+          aparte, y aquí también: el saldo que declaras se carea solo contra los fondos.
+          Crear o editar la cartera nunca mueve tu patrimonio bruto: los miembros ya
+          sumaban.
           {model.excludedForeignCount > 0
             ? ` ${model.excludedForeignCount} holding${
                 model.excludedForeignCount === 1 ? "" : "s"
@@ -219,6 +246,96 @@ async function FichaContent({
               : `${composition.unknownMemberIds.length} miembros marcados ya no están vivos: no suman al total, y al guardar esta ficha dejan de ser miembros.`}
           </p>
         ) : null}
+      </section>
+
+      <section
+        aria-label="Saldo declarado"
+        className="section"
+        id={`portfolioWitness-${portfolio.id}`}
+      >
+        <div className="panelHeader">
+          <h3>Saldo declarado</h3>
+          <span>el careo con la app de tu gestor — sin la caja</span>
+        </div>
+
+        <table>
+          <tbody>
+            <tr>
+              <th scope="row">Valor de mercado según worthline</th>
+              <td className="carterasWeight">{fmt(witness.investmentMinor)}</td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Saldo que declaraste
+                {witness.declaredDateLabel ? ` · ${witness.declaredDateLabel}` : ""}
+              </th>
+              <td className="carterasWeight">
+                {witness.declaredMinor === null ? "—" : fmt(witness.declaredMinor)}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">Deriva</th>
+              <td className="carterasWeight">{witness.driftLabel ?? "—"}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        {witness.isDiverged ? (
+          <p className="warningBand" role="status">
+            {witness.message}
+          </p>
+        ) : (
+          <p className="muted">{witness.message}</p>
+        )}
+
+        <form action={declareManagedPortfolioBalanceAction} className="stackForm">
+          <input name="currentUrl" type="hidden" value={currentUrl} />
+          <input name="portfolioId" type="hidden" value={portfolio.id} />
+          {witnessError ? (
+            <p className="formError" role="alert">
+              {witnessError.message}
+            </p>
+          ) : null}
+          <label>
+            Valor de mercado de la cartera, sin el efectivo ({workspace.baseCurrency})
+            <input
+              defaultValue={
+                witnessValues.declaredValue ??
+                (witness.declaredMinor === null
+                  ? ""
+                  : formatMoneyInput(witness.declaredMinor))
+              }
+              inputMode="decimal"
+              name="declaredValue"
+            />
+          </label>
+          <label>
+            Fecha en la que lo leíste
+            <input
+              defaultValue={witnessValues.declaredDate ?? witness.declaredDate ?? today}
+              max={today}
+              name="declaredDate"
+              type="date"
+            />
+          </label>
+          <p className="muted">
+            Teclea el número grande que ves en tu gestor: el valor de mercado de los
+            fondos. El efectivo de la cartera ya lo lleva worthline en su propia fila, y
+            no entra en este careo.
+          </p>
+          <PendingSubmit pendingLabel="Guardando…">Guardar saldo declarado</PendingSubmit>
+        </form>
+
+        {witness.declaredMinor === null ? null : (
+          <form action={declareManagedPortfolioBalanceAction}>
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="portfolioId" type="hidden" value={portfolio.id} />
+            <input name="clear" type="hidden" value="1" />
+            <PendingSubmit pendingLabel="Borrando…">
+              Borrar el saldo declarado
+            </PendingSubmit>
+          </form>
+        )}
       </section>
 
       <section

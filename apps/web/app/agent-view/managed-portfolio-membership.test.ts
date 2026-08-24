@@ -17,6 +17,7 @@ describe("managedPortfoliosByAssetId", () => {
           name: "Metal",
           provider: null,
           scopeId: "household",
+          witness: null,
         },
         {
           holdingIds: ["f2"],
@@ -24,6 +25,7 @@ describe("managedPortfoliosByAssetId", () => {
           name: "Otra",
           provider: null,
           scopeId: "household",
+          witness: null,
         },
       ],
       publicIds,
@@ -51,6 +53,7 @@ describe("managedPortfoliosByAssetId", () => {
           name: "Sin registro",
           provider: null,
           scopeId: "household",
+          witness: null,
         },
       ],
       publicIds,
