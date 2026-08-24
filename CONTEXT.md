@@ -160,6 +160,24 @@ ficha and the signal reach different verdicts about the same cartera.
 _Avoid_: careing it against the total including cash (compares two different
 things); adjusting any figure to make it match.
 
+**Portfolio return** (rentabilidad de la cartera):
+How a **managed portfolio** has done, measured on its INVESTMENT members and
+never on its cash: the container's cash has no cost of acquisition and does not
+quote, so inside the rate it is drag that swings between 0 € and `150 € + 0,5 %`
+with every contribution — and the manager's own figure excludes it too. It comes
+from the shared subset engine every other return in the app rides (`subsetReturns`,
+the one the per-asset-class decomposition uses), fed the same member values the
+ficha's careo prints. **Traspasos between two members cancel on their own date**:
+moving money from one fund of the cartera to another is not capital the cartera
+received, and counting it as such would inflate what it took to earn the gain.
+A member with no ledger — the **undetailed aggregate**, an alta with no operations
+— is named as unmeasured, never folded in silently, and stays in the portfolio's
+VALUE.
+_Avoid_: an ad-hoc formula in the ficha; the cash inside the rate; reading the
+figure as the manager's «plusvalía» when there have been reembolsos (the app's is
+the total gain over everything contributed, the manager's the latent gain over
+what the surviving participaciones cost).
+
 **Summand** (sumando):
 What the unified /patrimonio list is made of: either a loose **holding** or a
 whole **managed portfolio** as one block. A grouping axis buckets summands, so a

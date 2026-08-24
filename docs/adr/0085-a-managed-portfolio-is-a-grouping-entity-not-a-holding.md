@@ -194,6 +194,44 @@ The two altas are exclusive at the STORE door, not only in the form: the declare
 balance the aggregate is born at is the value of the whole composition, so an alta
 that also enumerated funds would count the same money twice from birth.
 
+## Amendment (2026-08-24, #1552): the return is the shared subset engine, and traspasos cancel on their date
+
+S6 measured the portfolio's own return. Two decisions the original text left open:
+
+**One engine, one subset.** The aggregation the per-asset-class decomposition
+already performed — scale each holding's flows, merge them, align the monthly
+closes by calendar month — was EXTRACTED (`subsetReturns`) rather than copied
+beside it. A cartera's «+11,32 %» and a class's are the same question about a
+different subset, and a second implementation is how two surfaces end up
+disagreeing about the same money (#1422). The ficha feeds it the same member
+values its careo prints, so the rate's base is the figure right above it.
+
+**A same-day flow is netted before anything is measured.** A traspaso's two halves
+are equal and opposite on the same date (ADR 0082) and the subset holds both, so
+the day nets to whatever the fee took. Without netting the pair still cancels in
+the gain but INFLATES the denominator, and a cartera that never received a cent
+from outside would read as if it had been funded twice. The correction applies to
+the per-class figures too — it was the same defect there.
+
+**What the app measures is not what the manager prints, when there have been
+reembolsos.** Careed against the real Metal (24-08): worthline reads 1.472,52 €
+invested and 126,42 € of gain where MyInvestor showed 1.345,12 € and 152,25 € on
+21-08. Three quantified differences, no unexplained residue:
+
+- NAV freshness and window: the seven funds read 1.479,25 € against the 1.497,36 €
+  of the 21-08 witness (−1,2 %, inside the band the careo already documents).
+- The January rebalance (sold 119,69 € on 30-01, bought back on 11-02) is a sell
+  and a buy TWELVE DAYS APART in the ledger, not a traspaso pair — so it does not
+  net, and both halves are real capital movements the app must show.
+- Method: worthline's simple gain is realized + unrealized over EVERYTHING
+  contributed; the manager's «plusvalía» is the latent gain of the surviving
+  participaciones over what those cost. The gap is exactly the 7,71 € the
+  rebalance realized as a loss, and the denominator gap exactly the 127,40 € those
+  sold participaciones had cost.
+
+Neither figure is wrong; the ficha says which one it is showing, and says it only
+when there have been reembolsos — a cartera that never sold has nothing to explain.
+
 ## Consequences
 
 - The entity travels in workspace export/import and is exposed through
@@ -201,6 +239,7 @@ that also enumerated funds would count the same money twice from birth.
 - The shape is deliberately the silhouette a future MyInvestor connector
   (#1000/#173) would populate: the portfolio moves from owner-typed to
   connector-fed without changing model.
-- The portfolio's own return (the «+11,32 %» the owner sees) must come from
-  the same returns engine as every other figure (witness discipline, ADR 0075
-  spirit) — a later slice, never an ad-hoc formula in the ficha.
+- The portfolio's own return (the «+11,32 %» the owner sees) comes from the same
+  returns engine as every other figure (witness discipline, ADR 0075 spirit) —
+  never an ad-hoc formula in the ficha. Done in S6 (#1552); see the amendment
+  above for what that engine does with a traspaso and with a reembolso.

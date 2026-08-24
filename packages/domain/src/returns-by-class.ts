@@ -1,24 +1,16 @@
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
-import { allocateByBps, money } from "./money";
+import { money } from "./money";
 import type {
-  DatedCashflow,
   DatedPayout,
   IrrResult,
   MonthlyCloseValue,
   SimpleGain,
-  TwrCashflow,
   TwrResult,
 } from "./returns";
-import {
-  operationCashflows,
-  operationTwrCashflows,
-  payoutCashflows,
-  simpleGainFromCashflows,
-  timeWeightedReturn,
-  xirr,
-} from "./returns";
+import type { SubsetReturnsSlice } from "./returns-subset";
+import { FULL_SHARE_BPS, subsetReturns } from "./returns-subset";
 
 /**
  * Per-asset-class investment returns (#552, ADR 0040 fast-follow, gated on #539
@@ -52,8 +44,6 @@ import {
 export const UNCLASSIFIED_ASSET_CLASS_KEY = "unclassified";
 /** The bucket that collects the declared-under-100% remainder of a breakdown. */
 export const OTHER_ASSET_CLASS_KEY = "other";
-
-const FULL_SHARE_BPS = 10_000;
 
 /** One holding's return inputs plus its resolved asset-class breakdown. */
 export interface AssetClassReturnsHolding {
@@ -125,22 +115,6 @@ export interface ReturnsByAssetClass {
   coverage: ExposureCoverage;
 }
 
-interface BucketAccumulator {
-  cashflows: DatedCashflow[];
-  twrCashflows: TwrCashflow[];
-  marketValueMinor: number;
-  /** One class-weighted monthly-close series per contributing holding slice. */
-  monthlySeries: HoldingCloseSeries[];
-  payoutsIncluded: boolean;
-}
-
-/** One holding slice's class-weighted monthly closes, plus whether it is still held. */
-interface HoldingCloseSeries {
-  closes: readonly MonthlyCloseValue[];
-  /** A holding with value today is still in the class even if its last close is missing. */
-  stillHeld: boolean;
-}
-
 /**
  * A holding's asset-class weights as `[bucketKey, shareBps]` pairs. Classified
  * breakdowns map each bucket to its weight in basis points; a declared-under-100%
@@ -176,114 +150,55 @@ function classShares(resolution: AssetClassResolution): Array<[string, number]> 
 export function returnsByAssetClass(
   input: ReturnsByAssetClassInput,
 ): ReturnsByAssetClass {
-  const buckets = new Map<string, BucketAccumulator>();
-  const ensure = (key: string): BucketAccumulator => {
-    const existing = buckets.get(key);
-    if (existing) {
-      return existing;
-    }
-    const created: BucketAccumulator = {
-      cashflows: [],
-      marketValueMinor: 0,
-      monthlySeries: [],
-      payoutsIncluded: false,
-      twrCashflows: [],
-    };
-    buckets.set(key, created);
-    return created;
-  };
+  // One bucket per class, each a list of SLICES of the contributing holdings: the
+  // aggregation itself — the double scaling, the same-day netting, the monthly
+  // alignment — belongs to `subsetReturns`, which the cartera gestionada rides too
+  // (#1552). A class and a cartera are the same question about a different subset.
+  const buckets = new Map<string, SubsetReturnsSlice[]>();
 
   for (const holding of input.holdings) {
-    const ownershipBps = holding.ownershipBps ?? FULL_SHARE_BPS;
-    // Ownership scales the operation cashflows to the owned slice (mirroring the
-    // portfolio block's per-flow scaling); `marketValueMinor` / `monthlyCloses`
-    // arrive already on the caller's basis, so only the class weight applies to
-    // them below. Both on one basis → each class's simple gain / IRR is coherent.
-    // Operations and recorded payouts share one signed stream (a payout is a
-    // positive inflow); TWR excludes payouts (#657 scope) and stays on operations.
-    const hasPayouts = (holding.payouts?.length ?? 0) > 0;
-    const cashflows = [
-      ...operationCashflows(holding.operations),
-      ...payoutCashflows(holding.payouts),
-    ].map((flow) => ({
-      amountMinor: allocateByBps(flow.amountMinor, ownershipBps),
-      date: flow.date,
-    }));
-    const twrCashflows = operationTwrCashflows(holding.operations).map((flow) => ({
-      amountMinor: allocateByBps(flow.amountMinor, ownershipBps),
-      date: flow.date,
-    }));
-
     for (const [bucket, bps] of classShares(holding.assetClass)) {
-      const acc = ensure(bucket);
-      if (hasPayouts) {
-        acc.payoutsIncluded = true;
+      const slices = buckets.get(bucket);
+      const slice: SubsetReturnsSlice = {
+        marketValueMinor: holding.marketValueMinor,
+        monthlyCloses: holding.monthlyCloses,
+        operations: holding.operations,
+        shareBps: bps,
+        ...(holding.ownershipBps === undefined
+          ? {}
+          : { ownershipBps: holding.ownershipBps }),
+        ...(holding.payouts === undefined ? {} : { payouts: holding.payouts }),
+      };
+      if (slices) {
+        slices.push(slice);
+      } else {
+        buckets.set(bucket, [slice]);
       }
-      for (const flow of cashflows) {
-        acc.cashflows.push({
-          amountMinor: allocateByBps(flow.amountMinor, bps),
-          date: flow.date,
-        });
-      }
-      acc.marketValueMinor += allocateByBps(holding.marketValueMinor, bps);
-      // TWR measures a value series, so series AND flows must describe the same set
-      // of holdings: one with no monthly closes — an alta from today, absent from
-      // every capture so far — contributes neither. Letting its purchase in as a
-      // flow with no value behind it drags the whole class's measure under (#1457).
-      if (holding.monthlyCloses.length === 0) {
-        continue;
-      }
-      for (const flow of twrCashflows) {
-        acc.twrCashflows.push({
-          amountMinor: allocateByBps(flow.amountMinor, bps),
-          date: flow.date,
-        });
-      }
-      // Each holding contributes its OWN class-weighted series; the class series is
-      // built by aligning them per month (`alignMonthlyCloses`), never by unioning
-      // raw dates. Two holdings of one class can close the same month on different
-      // days — one entered mid-month, or the best-effort daily capture skipped a
-      // pass for it (#1339) — and a date union then alternates between "the whole
-      // class" and "one holding", turning an ordinary flow into a giant one against
-      // an artificially small value (#1457).
-      acc.monthlySeries.push({
-        closes: holding.monthlyCloses.map((close) => ({
-          date: close.date,
-          valueMinor: allocateByBps(close.valueMinor, bps),
-        })),
-        stillHeld: holding.marketValueMinor > 0,
-      });
     }
   }
 
   const classes: AssetClassReturns[] = [...buckets.entries()]
-    .map(([key, acc]) => ({
-      // Callers feed this engine operation-bearing holdings only, so a zero
-      // attributed value means the class was left (sold, transferred away) and
-      // not that nothing was ever bought. A market value is never negative — the
-      // `<=` is defensive, and treats an impossible negative the same way: a
-      // class in that state sustains nothing either.
-      closed: acc.marketValueMinor <= 0,
-      irr: xirr([
-        ...acc.cashflows,
-        ...(acc.marketValueMinor > 0
-          ? [{ amountMinor: acc.marketValueMinor, date: input.valuationDate }]
-          : []),
-      ]),
-      key,
-      payoutsIncluded: acc.payoutsIncluded,
-      simpleGain: simpleGainFromCashflows({
-        cashflows: acc.cashflows,
+    .map(([key, slices]) => {
+      const returns = subsetReturns({
         currency: input.currency,
-        marketValueMinor: acc.marketValueMinor,
+        slices,
         valuationDate: input.valuationDate,
-      }),
-      twr: timeWeightedReturn({
-        cashflows: acc.twrCashflows,
-        monthlyCloses: alignMonthlyCloses(acc.monthlySeries),
-      }),
-      value: money(acc.marketValueMinor, input.currency),
-    }))
+      });
+      return {
+        // Callers feed this engine operation-bearing holdings only, so a zero
+        // attributed value means the class was left (sold, transferred away) and
+        // not that nothing was ever bought. A market value is never negative — the
+        // `<=` is defensive, and treats an impossible negative the same way: a
+        // class in that state sustains nothing either.
+        closed: returns.marketValueMinor <= 0,
+        irr: returns.irr,
+        key,
+        payoutsIncluded: returns.payoutsIncluded,
+        simpleGain: returns.simpleGain,
+        twr: returns.twr,
+        value: money(returns.marketValueMinor, input.currency),
+      };
+    })
     .sort(
       (left, right) =>
         right.value.amountMinor - left.value.amountMinor ||
@@ -291,75 +206,6 @@ export function returnsByAssetClass(
     );
 
   return { classes, coverage: coverageFrom(classes, input.currency) };
-}
-
-/** The "YYYY-MM" a close belongs to — the granularity a monthly close really has. */
-function monthKeyOf(date: string): string {
-  return date.slice(0, 7);
-}
-
-/**
- * The class's monthly-close series from its holdings' own series, aligned by
- * CALENDAR MONTH rather than by exact date.
- *
- * A monthly close means "what this holding was worth at the end of month M", and
- * each holding derives its own from the snapshot rows it appears in — so the day
- * carrying that close can differ between holdings of the same class. Summing by
- * exact date makes every such day a partial sum of the class, which is the
- * sawtooth #1457 reproduced.
- *
- * Per month the series takes the latest close date any holding reports (the
- * month's close) and sums, for every holding, its close for that month — or, when
- * a month is missing from its series, the last value it is known to have had.
- *
- * A holding stops contributing only once it has LEFT the class — and the signal
- * for that is having no value today, not a missing last close. A best-effort
- * capture can skip the final pass for a holding that is still held (#1339); reading
- * that as an exit would drop its value with no sell to offset it. A holding that is
- * genuinely gone (sold, transferred away) has no value left, and its sell sits in
- * `twrCashflows`, so Modified Dietz reads the step as a flow, not a price move.
- */
-function alignMonthlyCloses(series: readonly HoldingCloseSeries[]): MonthlyCloseValue[] {
-  const slices = series
-    .filter((slice) => slice.closes.length > 0)
-    .map((slice) => {
-      const byMonth = new Map<string, MonthlyCloseValue>();
-      // Ascending, so the month's last close wins.
-      for (const close of [...slice.closes].sort((left, right) =>
-        left.date.localeCompare(right.date),
-      )) {
-        byMonth.set(monthKeyOf(close.date), close);
-      }
-      const monthKeys = [...byMonth.keys()];
-      return {
-        byMonth,
-        carried: null as number | null,
-        lastMonth: monthKeys[monthKeys.length - 1]!,
-        stillHeld: slice.stillHeld,
-      };
-    });
-
-  const months = [
-    ...new Set(slices.flatMap((slice) => [...slice.byMonth.keys()])),
-  ].sort();
-
-  return months.map((month) => {
-    let date = `${month}-01`;
-    let valueMinor = 0;
-    for (const slice of slices) {
-      const close = slice.byMonth.get(month);
-      if (close) {
-        slice.carried = close.valueMinor;
-        if (close.date > date) {
-          date = close.date;
-        }
-      } else if (!slice.stillHeld && month > slice.lastMonth) {
-        slice.carried = null;
-      }
-      valueMinor += slice.carried ?? 0;
-    }
-    return { date, valueMinor };
-  });
 }
 
 function coverageFrom(

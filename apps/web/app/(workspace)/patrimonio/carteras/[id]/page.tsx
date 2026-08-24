@@ -1,3 +1,4 @@
+import { formatMeasurePct, twrUnavailableReason } from "@web/_components/returns-format";
 import { ChipChoice } from "@web/chip-choice";
 import {
   holdingPublicIdIndex,
@@ -20,6 +21,7 @@ import {
   portfolioWitnessView,
 } from "@web/patrimonio/carteras/carteras-view";
 import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
+import { loadPortfolioReturns } from "@web/patrimonio/carteras/load-portfolio-returns";
 import { PendingSubmit } from "@web/pending-submit";
 import {
   formatMoneyInput,
@@ -41,7 +43,9 @@ import { Suspense } from "react";
  * apart because the careo excludes it, exactly as the manager's app does. A
  * cartera registered without enumerating its composition (#1551) also carries a
  * "(sin detallar)" aggregate, with the block that walks its progressive
- * substitution. Nothing here claims a return yet (S6).
+ * substitution. The return (#1552) is measured on the FUNDS by the same engine
+ * every other return in the app rides — the cash is in the value and out of the
+ * rate, exactly as the manager's app reports it.
  */
 
 export default function ManagedPortfolioFichaPage({
@@ -129,6 +133,15 @@ async function FichaContent({
       holdingPublicIdIndex(publicIdRows).publicByInternal,
     ),
     typeByHoldingId: model.typeByHoldingId,
+  });
+
+  // The return of the cartera (#1552). Reads nothing when no member has a ledger.
+  const returns = await loadPortfolioReturns({
+    baseCurrency: workspace.baseCurrency,
+    model,
+    portfolio,
+    store,
+    today,
   });
 
   const fmt = (amountMinor: number) =>
@@ -226,6 +239,60 @@ async function FichaContent({
               } en esta suma.`
             : ""}
         </p>
+      </section>
+
+      <section aria-label="Rentabilidad" className="section">
+        <div className="panelHeader">
+          <h3>Rentabilidad</h3>
+          <span>cómo han ido tus fondos — el efectivo no entra</span>
+        </div>
+
+        {returns === null ? (
+          <p className="muted">
+            Todavía no hay fondos con operaciones de los que derivar una rentabilidad. Lo
+            que la cartera vale ya cuenta en tu patrimonio; el retorno aparecerá en cuanto
+            detalles sus fondos con sus compras.
+          </p>
+        ) : (
+          <>
+            <table>
+              <tbody>
+                <tr>
+                  <th scope="row">Invertido</th>
+                  <td className="carterasWeight">{fmt(returns.investedMinor)}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Plusvalía</th>
+                  <td className={`carterasWeight ${signClass(returns.gainMinor)}`}>
+                    {fmt(returns.gainMinor)}
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Rentabilidad</th>
+                  <td
+                    className={`carterasWeight ${signClass(returns.view.totalReturnRatio)}`}
+                  >
+                    {formatMeasurePct(returns.view.totalReturnRatio)}
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">TWR</th>
+                  <td
+                    className="carterasWeight"
+                    {...(returns.view.twr?.rate == null
+                      ? { title: twrWhy(returns.view.twr?.reason ?? null) }
+                      : {})}
+                  >
+                    {formatMeasurePct(returns.view.twr?.rate ?? null)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p className="muted">{returns.message}</p>
+            <p className="muted">{returns.view.caveats.join(" ")}</p>
+          </>
+        )}
       </section>
 
       <section aria-label="Composición" className="section">
@@ -520,6 +587,24 @@ async function FichaContent({
       </section>
     </div>
   );
+}
+
+/**
+ * The semantic sign of a figure (design-system.md): a gain and a loss read
+ * differently, and neither reads as raw green/red.
+ */
+function signClass(value: number | null): "pos" | "neg" | "" {
+  if (value === null || value === 0) {
+    return "";
+  }
+  return value > 0 ? "pos" : "neg";
+}
+
+/** Why a TWR is an em dash, on hover: an absent measure that says nothing reads
+ *  as a bug, the reason turns it into a signal (#1457). */
+function twrWhy(reason: Parameters<typeof twrUnavailableReason>[0]): string {
+  const why = twrUnavailableReason(reason);
+  return why === null ? "Sin TWR para esta cartera." : `Sin TWR: ${why}.`;
 }
 
 function FichaSkeleton() {

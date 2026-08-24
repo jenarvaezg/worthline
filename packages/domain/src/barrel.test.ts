@@ -78,6 +78,8 @@ const KEY_EXPORTS = [
   "simpleGainFromCashflows",
   // returns-by-class (#552)
   "returnsByAssetClass",
+  // returns-subset
+  "subsetReturns",
   "returnsByAssetClassView",
   // investment-valuation
   "deriveInvestmentValuation",

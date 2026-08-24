@@ -206,6 +206,36 @@ describe("returnsByAssetClass", () => {
     expect(equity.simpleGain.totalReturnRatio).toBe(0);
   });
 
+  test("un traspaso entre dos fondos de la misma clase no infla lo invertido de la clase", () => {
+    // Las dos mitades caen en el mismo bucket el mismo día (ADR 0082): son dinero
+    // moviéndose DENTRO de la clase, no capital nuevo que la clase recibiera.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [
+            buy("10", "100", "2023-01-01"),
+            op("transfer_out", "10", "110", "2024-01-01"),
+          ],
+        },
+        {
+          assetClass: classified({ equity: "1" }),
+          marketValueMinor: 120_000,
+          monthlyCloses: [],
+          operations: [op("transfer_in", "10", "110", "2024-01-01")],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    const equity = result.classes.find((c) => c.key === "equity")!;
+    expect(equity.simpleGain.totalInvestedMinor).toBe(100_000);
+    expect(equity.simpleGain.totalReturnRatio).toBeCloseTo(0.2, 10);
+  });
+
   test("per-class TWR chains the class-weighted monthly closes with no cashflows", () => {
     const monthlyCloses: MonthlyCloseValue[] = [
       { date: "2023-01-31", valueMinor: 100_000 },

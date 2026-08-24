@@ -3,6 +3,7 @@ import { managedPortfolioPublicIdIndex } from "@web/holding-route";
 import type { WorthlineStore } from "@web/store";
 import type {
   CurrencyCode,
+  InvestmentOperation,
   ManagedPortfolio,
   ManualAsset,
   MoneyMinor,
@@ -56,6 +57,12 @@ export interface CarterasReadModel {
   moneyByHoldingId: ReadonlyMap<string, MoneyMinor>;
   /** The live curve-valued holdings — what the member chips offer from. */
   assets: readonly ManualAsset[];
+  /**
+   * Every holding's own operation ledger (ADR 0006), from the projection context
+   * this loader already builds to value them. The ficha's return (#1552) reads it;
+   * the index never looks at it, and nobody pays a read for it either way.
+   */
+  operationsByHoldingId: ReadonlyMap<string, readonly InvestmentOperation[]>;
   /** Internal portfolio id → public `wl_prt_…` id (ficha links). */
   publicIdByPortfolio: Readonly<Record<string, string>>;
   /** Internal portfolio id → its member set (exclusivity-aware options). */
@@ -121,6 +128,7 @@ export async function loadCarteras(input: LoadCarterasInput): Promise<CarterasRe
       allPortfolios.map((portfolio) => [portfolio.id, new Set(portfolio.holdingIds)]),
     ),
     nameById: new Map(curveValued.assets.map((asset) => [asset.id, asset.name])),
+    operationsByHoldingId: projectionContext.operationsByAsset,
     portfolios: scoped,
     publicIdByPortfolio: Object.fromEntries(
       managedPortfolioPublicIdIndex(publicIds).publicByInternal,
