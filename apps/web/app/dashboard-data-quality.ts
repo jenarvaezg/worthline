@@ -89,6 +89,7 @@ export async function collectDashboardDataQualitySignals(
     manualValueHistoryByAssetId,
     assetCreatedAtById,
     trashedHoldings,
+    managedPortfolios,
   ] = await Promise.all([
     Promise.all(
       connectedSources.map(
@@ -118,6 +119,9 @@ export async function collectDashboardDataQualitySignals(
     agentView.readManualValueHistory(input.assets.map((asset) => asset.id)),
     agentView.readAssetCreatedAtById(),
     agentView.readTrashedHoldings(),
+    // Las carteras gestionadas con su saldo declarado (#1550). Una consulta a una
+    // tabla diminuta (una fila por cartera), en la misma tanda que las demás.
+    agentView.readManagedPortfolios(),
   ]);
 
   const priceFreshnessByAssetId = new Map<string, DataQualityPriceFreshness>(
@@ -155,10 +159,17 @@ export async function collectDashboardDataQualitySignals(
     connectedSources,
     debtModelByLiabilityId,
     fireConfigByScopeId: input.fireConfigByScopeId,
+    // Los valores de los miembros salen de los MISMOS holdings valorados por
+    // curva que pinta el tablero (#1422): el careo del testigo no puede citar
+    // una cifra que la ficha de la cartera contradiga.
+    holdingValueByHoldingId: new Map(
+      input.assets.map((asset) => [asset.id, asset.currentValue]),
+    ),
     // The same ledger, un-folded: the savings-coherence watch (#1449) needs the
     // operations themselves, not just the net units derived from them.
     investmentOperationsByAssetId: input.operationsByAsset,
     liabilities: input.liabilities,
+    managedPortfolios,
     manualValueHistoryByAssetId,
     netUnitsByAssetId: netUnitsByAsset(input.operationsByAsset),
     positionsBySourceId,

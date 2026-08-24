@@ -9,12 +9,20 @@ import {
   managedPortfoliosIndexHref,
 } from "@web/holding-route";
 import { appendParam, errorRedirectUrl, preserveFields } from "@web/intake";
-import { resolveOwnershipSplit } from "@web/intake-primitives";
+import {
+  parseIsoDateField,
+  parseMoneyMinor,
+  resolveOwnershipSplit,
+} from "@web/intake-primitives";
 import type { OwnershipShare, Workspace } from "@worthline/domain";
 import { assertManagedPortfolioInput } from "@worthline/domain";
 
 /**
  * Managed-portfolio intake (ADR 0085, #1547).
+ *
+ * The declared balance (#1550) is typed here too, and stays a WITNESS: this
+ * layer parses the figure and its date, the store keeps them on the entity, and
+ * nothing in the engine ever reads them. The careo can only disagree out loud.
  *
  * This layer only parses what was typed and lets the DOMAIN and the STORE say
  * whether it is valid (`assertManagedPortfolioInput` here; eligibility,
@@ -244,6 +252,101 @@ export async function deleteManagedPortfolioAction(
     run: async (store, { parsed }) => {
       // Dissolving the group leaves every holding alive — members included.
       await store.managedPortfolios.deleteManagedPortfolio(parsed);
+      return { ok: true };
+    },
+  })(formData, ..._testArgs);
+}
+
+/**
+ * Declare (or clear) the portfolio's last read balance (#1550).
+ *
+ * The amount asked for is the one the manager's app SHOWS — the market value of
+ * the funds, without the container's cash — so the owner never adds two figures
+ * by hand (the correction of 23-08 on #1550). A future date is refused: a balance
+ * can only have been read on a day that has happened.
+ */
+export async function declareManagedPortfolioBalanceAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction<{
+    id: string;
+    witness: { declaredValueMinor: number; declaredDate: string } | null;
+  }>({
+    datedFact: false,
+    guardUrl: (fd) => currentUrlOf(fd),
+    onError: ({ formData, error }) => {
+      const id = field(formData, "portfolioId");
+      return errorRedirectUrl(currentUrlOf(formData), {
+        anchor: `portfolioWitness-${id}`,
+        formId: `testigo-${id}`,
+        message: error,
+        values: preserveFields(formData, ["declaredValue", "declaredDate"]),
+      });
+    },
+    onSuccess: ({ formData, value: _value }) =>
+      appendParam(
+        currentUrlOf(formData),
+        "ok",
+        field(formData, "clear") ? "testigo_borrado" : "testigo_guardado",
+      ),
+    parse: ({ formData, today }) => {
+      const id = field(formData, "portfolioId");
+      const bounce = (message: string) => ({
+        ok: false as const,
+        redirect: errorRedirectUrl(currentUrlOf(formData), {
+          anchor: `portfolioWitness-${id}`,
+          formId: `testigo-${id}`,
+          message,
+          values: preserveFields(formData, ["declaredValue", "declaredDate"]),
+        }),
+      });
+
+      if (!id) return bounce("Identificador de cartera no encontrado.");
+      // Clearing is its own submit: an empty amount is a typo, not "forget the
+      // witness", so the two intents never share one blank field.
+      if (field(formData, "clear")) {
+        return { ok: true, value: { id, witness: null } };
+      }
+
+      const declaredValueMinor = parseMoneyMinor(field(formData, "declaredValue"));
+      if (declaredValueMinor === null || declaredValueMinor <= 0) {
+        return bounce("Escribe el saldo declarado como un importe positivo.");
+      }
+      const date = parseIsoDateField(field(formData, "declaredDate"), {
+        futureMessage: "La fecha del saldo declarado no puede ser futura.",
+        invalidMessage: "Indica la fecha en la que leíste ese saldo (AAAA-MM-DD).",
+        rejectFuture: true,
+        today,
+      });
+      if (!date.ok) return bounce(date.error);
+
+      return {
+        ok: true,
+        value: { id, witness: { declaredDate: date.date, declaredValueMinor } },
+      };
+    },
+    requireId: false,
+    run: async (store, { parsed }) => {
+      const workspace = await store.workspace.readWorkspace();
+      if (!workspace) {
+        return { ok: false, error: "El workspace aún no está inicializado." };
+      }
+
+      await store.managedPortfolios.declareManagedPortfolioBalance(
+        parsed.id,
+        parsed.witness === null
+          ? null
+          : {
+              declaredDate: parsed.witness.declaredDate,
+              // The witness is declared in the book's own currency: converting a
+              // foreign one here would invent a rate inside an intake (#1401).
+              declaredValue: {
+                amountMinor: parsed.witness.declaredValueMinor,
+                currency: workspace.baseCurrency,
+              },
+            },
+      );
       return { ok: true };
     },
   })(formData, ..._testArgs);

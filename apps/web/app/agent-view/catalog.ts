@@ -563,7 +563,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
     },
     get_data_quality: {
       description:
-        "Get a scope's data-quality signals (defaults to the household scope): domain warnings (blocking and overrideable), stale manual values for stored holdings, stale/failed prices, stale/failed connected-source syncs, missing configuration (e.g. no FIRE config), sparse/missing snapshot history, connected-source positions that could not be valued, and holdings trashed while their position still held units (their value left the patrimonio with no sale recorded). Each signal carries a category, a normalized severity (high/medium/low), the affected object, a human label, a machine code, an observed date when relevant, whether it is user-fixable, and the original domain warning type when one exists. Filter by category or severity; cursor-paginated. Reads are side-effect-free — surfacing a warning never writes an override.",
+        "Get a scope's data-quality signals (defaults to the household scope): domain warnings (blocking and overrideable), stale manual values for stored holdings, stale/failed prices, stale/failed connected-source syncs, missing configuration (e.g. no FIRE config), sparse/missing snapshot history, connected-source positions that could not be valued, managed portfolios whose derived value drifts from the balance declared in the manager's app (the careo excludes the container's cash), and holdings trashed while their position still held units (their value left the patrimonio with no sale recorded). Each signal carries a category, a normalized severity (high/medium/low), the affected object, a human label, a machine code, an observed date when relevant, whether it is user-fixable, and the original domain warning type when one exists. Filter by category or severity; cursor-paginated. Reads are side-effect-free — surfacing a warning never writes an override.",
       inputSchema: {
         additionalProperties: false,
         properties: {
@@ -576,6 +576,7 @@ export function createAgentViewCatalog(): AgentViewCatalog {
               "source_freshness",
               "missing_configuration",
               "savings_coherence",
+              "portfolio_reconciliation",
               "history_coverage",
               "projection_gap",
             ],

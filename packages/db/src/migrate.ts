@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 62;
+export const SCHEMA_VERSION = 63;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1903,6 +1903,33 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 62);
+  }
+
+  if (version < 63) {
+    // #1550 (ADR 0085): the managed portfolio's DECLARED BALANCE — the last
+    // figure the owner read in the manager's app, stored as a reconciliation
+    // witness. Three nullable columns that travel together (all null = no
+    // witness); no backfill exists to invent, because nobody has typed one yet.
+    //
+    // The derived value still rules: nothing in the engine reads these columns.
+    // They exist so a careo can DISAGREE out loud (drift beyond 2 % raises a
+    // data-health signal), never to plug or adjust a cent (#1422).
+    for (const column of [
+      "declared_value_minor INTEGER",
+      "declared_currency TEXT",
+      "declared_date TEXT",
+    ]) {
+      try {
+        await client.execute(`ALTER TABLE managed_portfolios ADD COLUMN ${column}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // `no such table` is tolerated exactly as the v62 step tolerates it: a
+        // migration test walks the ladder over a PARTIAL fixture that never
+        // created the table, and a real database always has it.
+        if (!/duplicate column name|no such table/i.test(message)) throw error;
+      }
+    }
+    await writeSchemaVersion(client, 63);
   }
 
   return { ranV18Backfill, ranV33Backfill };

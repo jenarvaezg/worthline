@@ -4328,6 +4328,21 @@ code {
   text-align: right;
 }
 
+/* El testigo (#1550): el gestor enseña el efectivo en su propia casilla, así que
+   la ficha reparte la cifra grande en dos lecturas — fondos y caja — antes de
+   carear. Dos columnas de texto, sin tarjetas ni tintes (canon §3). */
+.carterasHeroSplit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin: 4px 0 0;
+}
+
+.carterasHeroSplit strong {
+  font-variant-numeric: tabular-nums;
+  margin-left: 6px;
+}
+
 .createGoalSubmit {
   justify-self: end;
 }

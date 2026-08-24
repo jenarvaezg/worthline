@@ -37,7 +37,14 @@ export type AgentViewScopeType = "household" | "member" | "group";
 
 export interface AgentViewObjectReference {
   id: string;
-  object: "member" | "member_group" | "scope" | "holding" | "connected_source";
+  object:
+    | "member"
+    | "member_group"
+    | "scope"
+    | "holding"
+    | "connected_source"
+    /** A cartera gestionada, addressed by its public `wl_prt_…` id (ADR 0085). */
+    | "managed_portfolio";
   label: string;
 }
 
@@ -300,6 +307,36 @@ export interface AgentViewManagedPortfolioSummary {
   /** The manager behind the portfolio, when declared. */
   provider: string | null;
   members: AgentViewObjectReference[];
+  /** The declared balance and the careo against the derived value (#1550). */
+  reconciliation: AgentViewManagedPortfolioReconciliation;
+}
+
+/**
+ * A managed portfolio's declared balance faced against its derived value
+ * (#1550, ADR 0085). The derived figure always rules — the witness never plugs
+ * or adjusts anything — and the comparison deliberately EXCLUDES the container's
+ * cash, because the balance the owner reads in the manager's app is the market
+ * value of the funds and the cash box grows to `150 € + 0,5 %` of the portfolio
+ * before being invested.
+ */
+export interface AgentViewManagedPortfolioReconciliation {
+  /**
+   * `no_witness` (nothing declared), `not_comparable` (another currency, or a
+   * member with no honest value), `aligned` (within the threshold), `diverged`
+   * (past it — the state that also raises a data-quality signal).
+   */
+  state: "no_witness" | "not_comparable" | "aligned" | "diverged";
+  /** The investment members' value: the figure the witness is careed against. */
+  investmentValue: AgentViewMoney;
+  /** The container's cash, reported apart and never careed. */
+  cashValue: AgentViewMoney;
+  declaredValue: AgentViewMoney | null;
+  /** The day the declared balance was read, as `YYYY-MM-DD`. */
+  declaredDate: string | null;
+  /** `(derived − declared) / declared` in basis points; null without a careo. */
+  driftBps: number | null;
+  /** The drift beyond which the careo is declared diverged (200 bps = 2 %). */
+  thresholdBps: number;
 }
 
 /** Summarized holdings plus the cap facts (PRD #328 main-context caps). */
@@ -671,6 +708,7 @@ export type AgentViewDataQualityCategory =
   | "source_freshness"
   | "missing_configuration"
   | "savings_coherence"
+  | "portfolio_reconciliation"
   | "history_coverage"
   | "projection_gap";
 

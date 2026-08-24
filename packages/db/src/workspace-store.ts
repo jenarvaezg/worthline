@@ -1008,6 +1008,9 @@ async function importWorkspace(
         .insert(managedPortfolios)
         .values(
           doc.managedPortfolios.map((portfolio) => ({
+            declaredCurrency: portfolio.witness?.declaredValue.currency ?? null,
+            declaredDate: portfolio.witness?.declaredDate ?? null,
+            declaredValueMinor: portfolio.witness?.declaredValue.amountMinor ?? null,
             id: portfolio.id,
             name: portfolio.name,
             provider: portfolio.provider ?? null,
@@ -1645,6 +1648,20 @@ async function buildWorkspaceExport(
       name: row.name,
       provider: row.provider ?? null,
       scopeId: row.scopeId,
+      // The declared balance (#1550): typed data, so it travels. The three
+      // columns are all-or-nothing — a half witness reads as none.
+      witness:
+        row.declaredValueMinor != null &&
+        row.declaredCurrency != null &&
+        row.declaredDate != null
+          ? {
+              declaredDate: row.declaredDate,
+              declaredValue: {
+                amountMinor: row.declaredValueMinor,
+                currency: row.declaredCurrency,
+              },
+            }
+          : null,
     })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows

@@ -63,7 +63,7 @@ import { cellKey, crossOf, type MatrixCoord, parseMode } from "./dashboard-matri
 import { resolveFxAggregation } from "./fx-context";
 import { buildHeroBreakdownData, type HeroBreakdownData } from "./hero-breakdown-data";
 import { type HeroHealthView, selectHeroHealth } from "./hero-data-health";
-import { holdingPublicIdIndex } from "./holding-route";
+import { holdingPublicIdIndex, managedPortfolioPublicIdIndex } from "./holding-route";
 
 const SPANISH_CPI_SERIES_ID = "ipc-es";
 
@@ -504,6 +504,7 @@ export async function loadDashboard(
     dataQualitySignals,
     overrides,
     holdingPublicIdIndex(publicIds),
+    managedPortfolioPublicIdIndex(publicIds),
   );
 
   // ── 4f. FX context for non-EUR holdings (#1065) ───────────────────────────

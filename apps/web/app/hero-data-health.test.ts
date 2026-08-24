@@ -1,7 +1,7 @@
 import type { DataQualitySignal, WarningOverride } from "@worthline/domain";
 import { describe, expect, it } from "vitest";
 import { HERO_HEALTH_MAX_ALERTS, selectHeroHealth } from "./hero-data-health";
-import { holdingPublicIdIndex } from "./holding-route";
+import { holdingPublicIdIndex, managedPortfolioPublicIdIndex } from "./holding-route";
 
 /**
  * The public-id registry the fix links are built from (#1318). Every `h*` id the
@@ -15,6 +15,11 @@ const publicIds = holdingPublicIdIndex(
     publicId: `wl_hld_h${i}`,
   })),
 );
+
+/** The carteras gestionadas registry — `p1` is the only registered one (#1550). */
+const portfolioPublicIds = managedPortfolioPublicIdIndex([
+  { entityId: "p1", entityType: "managed_portfolio" as const, publicId: "wl_prt_p1" },
+]);
 
 /** Build a signal with sensible defaults; override per-case. */
 function signal(overrides: Partial<DataQualitySignal>): DataQualitySignal {
@@ -35,7 +40,7 @@ function signal(overrides: Partial<DataQualitySignal>): DataQualitySignal {
 
 describe("selectHeroHealth", () => {
   it("renders nothing when there are no signals (clean)", () => {
-    const view = selectHeroHealth([], [], publicIds);
+    const view = selectHeroHealth([], [], publicIds, portfolioPublicIds);
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
     expect(view.hiddenCount).toBe(0);
@@ -54,6 +59,7 @@ describe("selectHeroHealth", () => {
       ],
       [],
       publicIds,
+      portfolioPublicIds,
     );
     expect(view.impact).toBe("error");
     expect(view.alerts).toHaveLength(1);
@@ -71,6 +77,7 @@ describe("selectHeroHealth", () => {
       ],
       [],
       publicIds,
+      portfolioPublicIds,
     );
     expect(view.impact).toBe("warning");
     expect(view.alerts).toHaveLength(1);
@@ -89,7 +96,7 @@ describe("selectHeroHealth", () => {
       code: "STALE_MANUAL_VALUE",
       severity: "medium",
     });
-    const view = selectHeroHealth([medium, high], [], publicIds);
+    const view = selectHeroHealth([medium, high], [], publicIds, portfolioPublicIds);
     expect(view.impact).toBe("error");
     expect(view.alerts.map((a) => a.severity)).toEqual(["high"]);
   });
@@ -112,6 +119,7 @@ describe("selectHeroHealth", () => {
       ],
       [],
       publicIds,
+      portfolioPublicIds,
     );
 
     expect(view.impact).toBe("error");
@@ -134,7 +142,7 @@ describe("selectHeroHealth", () => {
       code: "MISSING_PROVIDER_SYMBOL",
       severity: "medium",
     });
-    const view = selectHeroHealth([stale, warn], [], publicIds);
+    const view = selectHeroHealth([stale, warn], [], publicIds, portfolioPublicIds);
     expect(view.alerts.map((a) => a.key)).toEqual([warn.naturalKey, stale.naturalKey]);
   });
 
@@ -151,6 +159,7 @@ describe("selectHeroHealth", () => {
       ],
       [overridden],
       publicIds,
+      portfolioPublicIds,
     );
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
@@ -170,6 +179,7 @@ describe("selectHeroHealth", () => {
       ],
       [{ code: "FAILED_PRICE", entityId: "h1" }],
       publicIds,
+      portfolioPublicIds,
     );
     expect(view.impact).toBe("error");
     expect(view.alerts).toHaveLength(1);
@@ -185,7 +195,7 @@ describe("selectHeroHealth", () => {
         severity: "high",
       }),
     );
-    const view = selectHeroHealth(many, [], publicIds);
+    const view = selectHeroHealth(many, [], publicIds, portfolioPublicIds);
     expect(view.alerts).toHaveLength(HERO_HEALTH_MAX_ALERTS);
     expect(view.hiddenCount).toBe(2);
   });
@@ -243,6 +253,29 @@ describe("selectHeroHealth", () => {
         "/ajustes/conexiones",
       ],
       [
+        // La ficha de la cartera (#1550): es donde viven la composición, el
+        // efectivo y el propio saldo declarado, o sea todo lo que el careo
+        // pone en duda.
+        {
+          category: "portfolio_reconciliation",
+          code: "PORTFOLIO_DECLARED_VS_DERIVED",
+          severity: "medium",
+          affected: { id: "p1", label: "Metal", object: "managed_portfolio" },
+        },
+        "/patrimonio/carteras/wl_prt_p1",
+      ],
+      [
+        // Una cartera sin fila en el registro no enlaza a un id que el router ya
+        // no acepta: el aviso se pinta como texto.
+        {
+          category: "portfolio_reconciliation",
+          code: "PORTFOLIO_DECLARED_VS_DERIVED",
+          severity: "medium",
+          affected: { id: "p2", label: "Otra", object: "managed_portfolio" },
+        },
+        undefined,
+      ],
+      [
         // Not the ficha (#1365): a trashed holding has none, and both repairs —
         // restore then record the sale, or confirm the borrado — live on the
         // Papelera at the foot of the board.
@@ -255,7 +288,7 @@ describe("selectHeroHealth", () => {
       ],
     ];
     for (const [partial, expectedHref] of cases) {
-      const view = selectHeroHealth([signal(partial)], [], publicIds);
+      const view = selectHeroHealth([signal(partial)], [], publicIds, portfolioPublicIds);
       expect(view.alerts[0]?.href, `${partial.code}`).toBe(expectedHref);
     }
   });
@@ -289,7 +322,7 @@ describe("selectHeroHealth", () => {
         affected: { id: "h1", label: "Fondo", object: "holding" },
       }),
     ];
-    const view = selectHeroHealth(nonFigure, [], publicIds);
+    const view = selectHeroHealth(nonFigure, [], publicIds, portfolioPublicIds);
     expect(view.impact).toBe("clean");
     expect(view.alerts).toHaveLength(0);
   });

@@ -22,6 +22,7 @@ import type {
 } from "@worthline/db";
 import {
   defaultsFor,
+  formatDateKeyEs,
   formatMoneyMinor,
   type Instrument,
   type MatchCandidateRow,
@@ -377,7 +378,7 @@ function detailOf(plan: HoldingCreationPlan): string {
     // not a detail to discover afterwards in a flat 22-year line.
     case "appreciating":
       return plan.acquisition
-        ? `${euros(plan.currentValueMinor)} · comprado el ${formatIsoDateEs(
+        ? `${euros(plan.currentValueMinor)} · comprado el ${formatDateKeyEs(
             plan.acquisition.date,
           )} por ${euros(plan.acquisition.valueMinor)}`
         : euros(plan.currentValueMinor);
@@ -471,16 +472,9 @@ async function liveUnitPrice(
  */
 function quoteProvenanceNote(quote: LiveUnitQuote): string {
   const when = quote.priceDate
-    ? `del ${formatIsoDateEs(quote.priceDate)}`
+    ? `del ${formatDateKeyEs(quote.priceDate)}`
     : "sin fecha del proveedor";
   return `Títulos derivados de la cotización de ${priceSourceLabel(quote.source)} ${when}.`;
-}
-
-/** YYYY-MM-DD → DD/MM/YYYY, leaving anything unexpected verbatim. */
-function formatIsoDateEs(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!match) return iso;
-  return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
 /**

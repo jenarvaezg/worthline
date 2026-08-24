@@ -1,8 +1,19 @@
 import { holdingDetailHref, managedPortfolioFichaHref } from "@web/holding-route";
-import type { ManagedPortfolio, ManualAsset } from "@worthline/domain";
+import type {
+  CurrencyCode,
+  ManagedPortfolio,
+  ManagedPortfolioMemberValue,
+  ManagedPortfolioReconciliation,
+  ManagedPortfolioReconciliationState,
+  ManualAsset,
+} from "@worthline/domain";
 import {
   computeManagedPortfolioFigures,
+  formatDateKeyEs,
+  formatDriftBps,
+  formatMoneyMinor,
   type ManagedPortfolioSlice,
+  reconcileManagedPortfolio,
 } from "@worthline/domain";
 
 /**
@@ -142,4 +153,147 @@ export function portfolioCompositionView(input: {
   }));
 
   return { rows, totalMinor: figures.totalMinor, unknownMemberIds };
+}
+
+/** Everything the ficha's witness block paints, decided here (#1550). */
+export interface PortfolioWitnessView {
+  /** The investment members' value — the figure the witness is careed against. */
+  investmentMinor: number;
+  /** The container's cash, shown apart exactly as the manager's app shows it. */
+  cashMinor: number;
+  /** Cash included: what the portfolio contributes to the patrimonio. */
+  totalMinor: number;
+  declaredMinor: number | null;
+  /** The declared date as `DD/MM/YYYY`, or null without a witness. */
+  declaredDateLabel: string | null;
+  /** The declared date as typed (`YYYY-MM-DD`) — the form's default value. */
+  declaredDate: string | null;
+  /** The signed drift ("−1,2 %"), or null when there was no careo. */
+  driftLabel: string | null;
+  state: ManagedPortfolioReconciliationState;
+  /** True only past the threshold: the block renders as a warning, not a figure. */
+  isDiverged: boolean;
+  /** The sentence under the figures — always explicit about what was compared. */
+  message: string;
+}
+
+/**
+ * The reconciliation witness as the ficha reads it (#1550, ADR 0085).
+ *
+ * The careo itself is the domain's (`reconcileManagedPortfolio`), including the
+ * rule that the container's cash stays out of it; this function only feeds it the
+ * ficha's own read model and turns the verdict into text. A member that is no
+ * longer live is skipped — it adds nothing to the derived total the ficha prints
+ * either — while a LIVE member with no honest value in the base currency makes
+ * the derived side incomplete and silences the careo instead of comparing a short
+ * sum against the manager's full one.
+ */
+export function portfolioWitnessView(input: {
+  portfolio: ManagedPortfolio;
+  valueMinorByHoldingId: ReadonlyMap<string, number>;
+  /** Live holdings' types, keyed by id — absent means "not live any more". */
+  typeByHoldingId: ReadonlyMap<string, string>;
+  baseCurrency: CurrencyCode;
+}): PortfolioWitnessView {
+  const { baseCurrency, portfolio, typeByHoldingId, valueMinorByHoldingId } = input;
+
+  const members: ManagedPortfolioMemberValue[] = portfolio.holdingIds.flatMap(
+    (holdingId) => {
+      const type = typeByHoldingId.get(holdingId);
+      if (type === undefined) return [];
+      const valueMinor = valueMinorByHoldingId.get(holdingId);
+      return [
+        {
+          holdingId,
+          isCash: type !== "investment",
+          value:
+            valueMinor === undefined
+              ? null
+              : { amountMinor: valueMinor, currency: baseCurrency },
+        },
+      ];
+    },
+  );
+
+  const reconciliation = reconcileManagedPortfolio({
+    baseCurrency,
+    members,
+    witness: portfolio.witness,
+  });
+
+  const amount = (amountMinor: number) =>
+    formatMoneyMinor({ amountMinor, currency: baseCurrency });
+  const driftLabel =
+    reconciliation.driftBps === null ? null : formatDriftBps(reconciliation.driftBps);
+  const declaredDate = reconciliation.declaredDate;
+
+  return {
+    cashMinor: reconciliation.cashValue.amountMinor,
+    declaredDate,
+    declaredDateLabel: declaredDate === null ? null : formatDateKeyEs(declaredDate),
+    declaredMinor: reconciliation.declaredValue?.amountMinor ?? null,
+    driftLabel,
+    investmentMinor: reconciliation.investmentValue.amountMinor,
+    isDiverged: reconciliation.state === "diverged",
+    message: witnessMessage(reconciliation, driftLabel, amount),
+    state: reconciliation.state,
+    totalMinor:
+      reconciliation.investmentValue.amountMinor + reconciliation.cashValue.amountMinor,
+  };
+}
+
+/**
+ * The sentence the block carries. Every branch says what was compared against
+ * what — a percentage with no stated operands is how a reader ends up trying to
+ * reconcile it against the total and finding the cash missing.
+ */
+function witnessMessage(
+  reconciliation: ManagedPortfolioReconciliation,
+  driftLabel: string | null,
+  amount: (amountMinor: number) => string,
+): string {
+  const threshold = `${(reconciliation.thresholdBps / 100).toFixed(0)} %`;
+
+  switch (reconciliation.state) {
+    case "no_witness":
+      return (
+        "Teclea el valor de mercado que lees en la app de tu gestor (el de los fondos, " +
+        "sin la caja) y worthline lo careará contra lo que calcula por su cuenta. " +
+        "Nunca sustituye a tus cifras: si se apartan, te avisa."
+      );
+    case "aligned":
+      return (
+        `Cuadra: el valor de tus fondos se aparta ${driftLabel} del saldo que ` +
+        `declaraste, por debajo del ${threshold} desde el que worthline avisa. ` +
+        `El efectivo de la cartera (${amount(reconciliation.cashValue.amountMinor)}) ` +
+        "queda fuera del careo, igual que en la app de tu gestor."
+      );
+    case "diverged":
+      return (
+        `El valor de tus fondos se aparta ${driftLabel} del saldo que declaraste, ` +
+        `más del ${threshold}. Manda lo que worthline calcula: revisa las ` +
+        "participaciones, los precios o el propio saldo declarado. El efectivo " +
+        `(${amount(reconciliation.cashValue.amountMinor)}) no entra en la comparación.`
+      );
+    case "not_comparable":
+      switch (reconciliation.reason) {
+        case "currency_mismatch":
+          return (
+            "El saldo declarado está en otra divisa que la de tu libro, así que no se " +
+            "puede carear sin inventar un cambio. Declara el saldo en la divisa de " +
+            "worthline."
+          );
+        case "incomplete_members":
+          return (
+            "Algún fondo de la cartera no tiene hoy un valor honesto en tu divisa, así " +
+            "que la suma que se carearía estaría incompleta. worthline no compara medio " +
+            "total contra el total de tu gestor."
+          );
+        default:
+          return (
+            "La cartera todavía no tiene fondos con valor: el saldo declarado se " +
+            "guarda, pero no hay nada contra lo que carearlo."
+          );
+      }
+  }
 }

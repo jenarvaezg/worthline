@@ -456,6 +456,18 @@ const managedPortfolioSchema = z.object({
   name: nonEmptyString,
   provider: z.string().nullable(),
   holdingIds: z.array(nonEmptyString),
+  /**
+   * The declared balance travels with the entity (#1550) — it is typed data, and
+   * an import that dropped it would silence a careo the owner had set up.
+   * Optional so documents exported before S4 still parse as "no witness".
+   */
+  witness: z
+    .object({
+      declaredValue: moneyMinorSchema,
+      declaredDate: nonEmptyString,
+    })
+    .nullish()
+    .transform((value) => value ?? null),
 });
 
 const contributionReconciliationSchema = z.object({

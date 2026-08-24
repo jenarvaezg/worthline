@@ -31,6 +31,7 @@ import {
   listScopeOptions,
   lookThroughExposure,
   projectPortfolio,
+  reconcileManagedPortfolio,
   resolveAssetClassBreakdown,
 } from "@worthline/domain";
 import { deriveSourcePublicId, toFreshnessSummary } from "./connected-source-positions";
@@ -221,7 +222,18 @@ export async function buildFinancialContext(
     ),
     links: buildLinks(scoped.scopeId),
     liquidityBreakdown: buildLiquidityBreakdown(figuresInput).map(toLiquidityRung),
-    managedPortfolios: await buildManagedPortfolios(store, holdingSummaries),
+    managedPortfolios: await buildManagedPortfolios(store, holdingSummaries, {
+      baseCurrency: workspace.baseCurrency,
+      // The SAME curve-valued figures every block above quotes (#1422): the
+      // careo the agent reads cannot cite a number the board contradicts. The
+      // cash sibling is flagged by what it IS, so the careo can leave it out.
+      memberFigures: new Map(
+        assets.map((asset) => [
+          asset.id,
+          { isCash: asset.type !== "investment", value: asset.currentValue },
+        ]),
+      ),
+    }),
     passiveIncome: await buildScopePassiveIncome({
       store,
       workspace,
@@ -453,10 +465,20 @@ async function buildConnectedSources(
  * the scope can see. A portfolio is listed only when at least one of its
  * members is visible here — same visibility rule as connected sources — and
  * membership rides the ONE read the caller already made for exclusivity.
+ *
+ * Each one carries its reconciliation (#1550): the declared balance, the derived
+ * value of its FUNDS (the cash reported apart, outside the careo) and the drift
+ * between them. The agent reads the same verdict the ficha prints and the same
+ * one the data-health signal fires on, so it can answer "does my cartera match
+ * my manager's app?" without being told which tool to call.
  */
 async function buildManagedPortfolios(
   store: AgentViewReadStore,
   holdingSummaries: AgentViewHoldingSummary[],
+  figures: {
+    baseCurrency: string;
+    memberFigures: ReadonlyMap<string, { value: MoneyMinor; isCash: boolean }>;
+  },
 ): Promise<AgentViewManagedPortfolioSummary[]> {
   const labelByPublicId = new Map(
     holdingSummaries.map((holding) => [holding.id, holding.label]),
@@ -486,12 +508,33 @@ async function buildManagedPortfolios(
 
     if (members.length === 0) continue;
 
+    const reconciliation = reconcileManagedPortfolio({
+      baseCurrency: figures.baseCurrency,
+      members: portfolio.holdingIds.flatMap((assetId) => {
+        const figure = figures.memberFigures.get(assetId);
+        // A member with no live row contributes nothing to the derived total the
+        // ficha prints either, so it is skipped rather than counted as missing.
+        if (figure === undefined) return [];
+        return [{ holdingId: assetId, isCash: figure.isCash, value: figure.value }];
+      }),
+      witness: portfolio.witness,
+    });
+
     summaries.push({
       id: publicId,
       label: portfolio.name,
       object: "managed_portfolio",
       provider: portfolio.provider,
       members,
+      reconciliation: {
+        cashValue: reconciliation.cashValue,
+        declaredDate: reconciliation.declaredDate,
+        declaredValue: reconciliation.declaredValue,
+        driftBps: reconciliation.driftBps,
+        investmentValue: reconciliation.investmentValue,
+        state: reconciliation.state,
+        thresholdBps: reconciliation.thresholdBps,
+      },
     });
   }
 

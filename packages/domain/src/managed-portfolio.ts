@@ -1,3 +1,5 @@
+import type { ManagedPortfolioWitness } from "./managed-portfolio-reconciliation";
+
 /**
  * Managed portfolio (cartera gestionada) — ADR 0085 / #1399, S1 (#1547).
  *
@@ -7,9 +9,11 @@
  * derived (members + the auto-created cash sibling), so nothing here stores a
  * figure of its own — a stored total would drift the moment a member moved.
  *
- * The declared balance read in the manager's app is a reconciliation witness,
- * which arrives in S4; until then the entity carries only what somebody typed:
- * the name and an optional provider label.
+ * Everything the entity stores is typed by somebody: the name, an optional
+ * provider label, and — since S4 (#1550) — the LAST declared balance read in the
+ * manager's app. That balance is a reconciliation witness, never a figure the
+ * book adopts: the careo itself lives in `managed-portfolio-reconciliation.ts`,
+ * where the rule that it excludes the container's cash is documented.
  */
 
 export interface ManagedPortfolio {
@@ -27,6 +31,12 @@ export interface ManagedPortfolio {
    * legitimate view.
    */
   holdingIds: string[];
+  /**
+   * The last balance the owner declared from the manager's app, or null while
+   * nobody has typed one. Only the latest: the historical series waits for a
+   * connector that can produce it honestly (ADR 0085).
+   */
+  witness: ManagedPortfolioWitness | null;
 }
 
 /** One member's contribution to the portfolio's derived value. */
@@ -56,6 +66,23 @@ export interface ManagedPortfolioFigures {
 export function assertManagedPortfolioInput(input: { name: string }): void {
   if (!input.name.trim()) {
     throw new Error("La cartera necesita un nombre.");
+  }
+}
+
+/**
+ * A declared balance is only worth storing if it can be careed: a non-positive
+ * one has no relative drift to measure against, and the way to say "I have no
+ * witness" is to remove it, not to declare zero.
+ */
+export function assertManagedPortfolioWitnessInput(input: {
+  declaredValueMinor: number;
+  declaredDate: string;
+}): void {
+  if (!Number.isInteger(input.declaredValueMinor) || input.declaredValueMinor <= 0) {
+    throw new Error("El saldo declarado tiene que ser un importe positivo.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.declaredDate)) {
+    throw new Error("El saldo declarado necesita la fecha en la que lo leíste.");
   }
 }
 

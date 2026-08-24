@@ -316,7 +316,13 @@ export {
   TRASHED_WITH_BALANCE_CODE,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
-export { asDateKey, asInstant, daysBetween, MS_PER_DAY } from "./dates";
+export {
+  asDateKey,
+  asInstant,
+  daysBetween,
+  formatDateKeyEs,
+  MS_PER_DAY,
+} from "./dates";
 export type { AccruedInterestAtDate } from "./debt-accrual";
 export { accruedInterestAtDate } from "./debt-accrual";
 export type {
@@ -768,8 +774,22 @@ export type {
 } from "./managed-portfolio";
 export {
   assertManagedPortfolioInput,
+  assertManagedPortfolioWitnessInput,
   computeManagedPortfolioFigures,
 } from "./managed-portfolio";
+export type {
+  ManagedPortfolioMemberValue,
+  ManagedPortfolioNotComparableReason,
+  ManagedPortfolioReconciliation,
+  ManagedPortfolioReconciliationState,
+  ManagedPortfolioWitness,
+} from "./managed-portfolio-reconciliation";
+export {
+  describeManagedPortfolioDrift,
+  formatDriftBps,
+  MANAGED_PORTFOLIO_DRIFT_THRESHOLD_BPS,
+  reconcileManagedPortfolio,
+} from "./managed-portfolio-reconciliation";
 export { isIsinShaped } from "./matching-keys";
 export type { CurrencyCode, MoneyMinor } from "./money";
 export {

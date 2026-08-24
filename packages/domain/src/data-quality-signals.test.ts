@@ -39,7 +39,9 @@ function baseInput(
     connectedSources: [],
     debtModelByLiabilityId: new Map(),
     fireConfigByScopeId: {},
+    holdingValueByHoldingId: new Map(),
     investmentOperationsByAssetId: new Map(),
+    managedPortfolios: [],
     liabilities: [],
     manualValueHistoryByAssetId: new Map(),
     netUnitsByAssetId: new Map(),
@@ -1342,5 +1344,114 @@ describe("collectDataQualitySignals — DEBT_MISSING_FROM_HISTORY (#1438)", () =
     ).filter((signal) => signal.code === "DEBT_MISSING_FROM_HISTORY");
 
     expect(signals).toHaveLength(0);
+  });
+});
+
+describe("portfolio reconciliation (#1550)", () => {
+  /** The real Metal: seven funds at 1.479,26 € and 7,34 € in the cash box. */
+  const FUNDS_MINOR = 147_926;
+  const DECLARED_MINOR = 149_737;
+
+  function collect(input: {
+    declaredValueMinor: number | null;
+    cashMinor?: number;
+    declaredCurrency?: string;
+    portfolioScopeId?: string;
+  }) {
+    const { asset, input: baseInputOf, scopeOption, workspace } = fixture();
+    const funds = asset({
+      currentValueMinor: FUNDS_MINOR,
+      id: "asset_fondos",
+      name: "Fondos de la Metal",
+      providerSymbol: "IWDA.AS",
+      type: "investment",
+    });
+    const cash = asset({
+      currentValueMinor: input.cashMinor ?? 734,
+      id: "asset_efectivo",
+      instrument: "current_account",
+      liquidityTier: "cash",
+      name: "Efectivo Cartera Indexada Metal",
+      type: "cash",
+    });
+
+    return collectDataQualitySignals(
+      baseInputOf({
+        assets: [funds, cash],
+        holdingValueByHoldingId: new Map([
+          [funds.id, funds.currentValue],
+          [cash.id, cash.currentValue],
+        ]),
+        managedPortfolios: [
+          {
+            holdingIds: [cash.id, funds.id],
+            id: "prt_metal",
+            name: "Cartera Indexada Metal",
+            provider: "MyInvestor",
+            scopeId: input.portfolioScopeId ?? scopeOption.id,
+            witness:
+              input.declaredValueMinor === null
+                ? null
+                : {
+                    declaredDate: "2026-08-21",
+                    declaredValue: {
+                      amountMinor: input.declaredValueMinor,
+                      currency: input.declaredCurrency ?? "EUR",
+                    },
+                  },
+          },
+        ],
+        netUnitsByAssetId: new Map([[funds.id, "1000"]]),
+        workspace,
+      }),
+    ).filter((signal) => signal.category === "portfolio_reconciliation");
+  }
+
+  test("stays silent without a declared balance", () => {
+    expect(collect({ declaredValueMinor: null })).toEqual([]);
+  });
+
+  test("stays silent at the real drift of the Metal (−1,21 %)", () => {
+    expect(collect({ declaredValueMinor: DECLARED_MINOR })).toEqual([]);
+  });
+
+  test("stays silent with the cash box FULL — the careo excludes it", () => {
+    // 150 € + 0,5 % × 1.497,37 = 157,49 € waiting to be invested. Careing the
+    // cash would raise a ~9 % drift before every single contribution.
+    expect(collect({ cashMinor: 15_749, declaredValueMinor: DECLARED_MINOR })).toEqual(
+      [],
+    );
+  });
+
+  test("names the cartera when the declared balance sits 5 % away", () => {
+    const signals = collect({ declaredValueMinor: Math.round(FUNDS_MINOR / 0.95) });
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      affected: {
+        id: "prt_metal",
+        label: "Cartera Indexada Metal",
+        object: "managed_portfolio",
+      },
+      category: "portfolio_reconciliation",
+      code: "PORTFOLIO_DECLARED_VS_DERIVED",
+      fixable: true,
+      observedDate: "2026-08-21",
+      severity: "medium",
+    });
+    expect(signals[0]?.label).toContain("Cartera Indexada Metal");
+    expect(signals[0]?.label).toContain(
+      formatMoneyMinor({ amountMinor: FUNDS_MINOR, currency: "EUR" }),
+    );
+  });
+
+  test("does not careo a witness declared in another currency", () => {
+    expect(collect({ declaredCurrency: "USD", declaredValueMinor: 200_000 })).toEqual([]);
+  });
+
+  test("ignores a cartera that belongs to another scope", () => {
+    expect(
+      collect({ declaredValueMinor: 200_000, portfolioScopeId: "scope_otro" }),
+    ).toEqual([]);
   });
 });

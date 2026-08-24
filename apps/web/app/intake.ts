@@ -512,6 +512,10 @@ export function okMessage(key: string | undefined): string | null {
     cartera_borrada: "Cartera gestionada eliminada. Sus holdings no se han tocado.",
     cartera_creada: "Cartera creada. Asigna sus fondos en «Miembros».",
     cartera_guardada: "Cartera guardada.",
+    // El saldo declarado (#1550): un testigo, nunca un ajuste del libro.
+    testigo_borrado: "Saldo declarado borrado. worthline sigue con su propio cálculo.",
+    testigo_guardado:
+      "Saldo declarado guardado. Manda el cálculo de worthline: el testigo solo avisa si se apartan.",
     member_deleted: "Miembro borrado definitivamente.",
     numista_connected: "Colección Numista conectada.",
     numista_credentials_updated:
