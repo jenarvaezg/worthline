@@ -61,3 +61,13 @@ export function openDrizzle(client: Client) {
   ) as typeof import("drizzle-orm/libsql");
   return adapter.drizzle(client);
 }
+
+/**
+ * Load `@libsql/client` and `drizzle-orm/libsql` into the isolate's require
+ * cache. Called from `instrumentation.ts` `register()` so the first request
+ * does not pay that native/JS tax (#1536).
+ */
+export function preheatLibsqlStack(): void {
+  loadCreateClient();
+  nativeRequire("drizzle-orm/libsql");
+}

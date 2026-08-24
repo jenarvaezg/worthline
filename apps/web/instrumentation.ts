@@ -23,4 +23,10 @@ export async function register(): Promise<void> {
   assertProductionConfigured(process.env);
   const { assertSecretEncryptionConfigured } = await import("@web/encryption-config");
   assertSecretEncryptionConfigured(process.env);
+  // First request of each isolate used to pay the require of the dashboard
+  // path (@libsql/client, drizzle-orm/libsql, big.js) — ~560 ms measured for
+  // big.js alone (#1235). Load them here, off the request (#1536).
+  const { preheatLibsqlStack } = await import("@worthline/db");
+  preheatLibsqlStack();
+  await import("big.js");
 }

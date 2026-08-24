@@ -55,6 +55,11 @@ const nextConfig: NextConfig = {
   // tracing doesn't try to bundle the native binary into the serverless function;
   // they're required at runtime from node_modules in the Node lambda (ADR 0030).
   serverExternalPackages: ["@libsql/client", "libsql"],
+  // sharp / libvips are 18 MB of a 41 MB page lambda for an image runtime
+  // Vercel already provides (#1536). Keep them out of every function trace.
+  outputFileTracingExcludes: {
+    "*": ["node_modules/@img/**", "node_modules/sharp/**"],
+  },
   // Type-checking is its own CI gate (.github/workflows/ci.yml runs typecheck +
   // lint + format + tests + build on every push). The deploy build (Vercel
   // installs production deps only) skips re-running it so it doesn't need the

@@ -1,13 +1,14 @@
 import authConfig from "@web/auth.config";
 import { shouldRedirectToLogin } from "@web/auth-gate";
 import { DEMO_PERSONA_COOKIE_NAME } from "@web/demo/demo-context";
+import { PROXY_MATCHER, shouldInvokeProxy } from "@web/proxy-match";
 import { buildLoginRedirectUrl } from "@web/return-to";
 import { NextResponse } from "next/server";
 import NextAuth from "next-auth";
 
 const { auth } = NextAuth(authConfig);
 
-export default auth((req) => {
+const gated = auth((req) => {
   const authConfigured = Boolean(
     process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
   );
@@ -31,6 +32,19 @@ export default auth((req) => {
   return undefined;
 });
 
+/**
+ * Skip Auth.js on public/static paths so they never decrypt a JWT (#1536).
+ * The matcher already keeps the lambda off those paths; this is the same
+ * decision if a request still arrives (or in tests).
+ */
+export default function proxy(...args: Parameters<typeof gated>) {
+  const req = args[0];
+  if (!shouldInvokeProxy(req.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+  return gated(...args);
+}
+
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.png$).*)"],
+  matcher: [PROXY_MATCHER],
 };
