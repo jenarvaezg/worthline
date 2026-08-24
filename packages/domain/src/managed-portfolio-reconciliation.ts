@@ -1,3 +1,4 @@
+import { formatDateKeyEs } from "./dates";
 import { type CurrencyCode, formatMoneyMinorPrivacy, type MoneyMinor } from "./money";
 
 /**
@@ -49,6 +50,42 @@ export interface ManagedPortfolioMemberValue {
   isCash: boolean;
 }
 
+/** A live member as the builder below reads it: what it is, and what it is worth. */
+export interface ManagedPortfolioLiveMember {
+  /** The holding's own type (`investment`, `cash`, `manual`, …). */
+  type: string;
+  /**
+   * Its value in the currency it is HELD in — never a converted one. The careo
+   * only adds what is natively in the base currency, so a member converted
+   * upstream would be careed on a rate the data-health signal cannot see, and
+   * the ficha and the signal would judge the same portfolio differently.
+   */
+  value: MoneyMinor | null;
+}
+
+/**
+ * Turn a portfolio's membership into the careo's input — the ONE home of two
+ * rules every surface would otherwise re-derive (ADR 0085):
+ *
+ * - **The cash box is the `cash` member**, and only it. A member with a stored
+ *   valuation that is not cash (the "(sin detallar)" aggregate of S5, #1551) is
+ *   invested money and belongs INSIDE the careo, so the test cannot be "not an
+ *   investment".
+ * - **A member that is no longer live is skipped**, not counted as missing: it
+ *   adds nothing to the derived total the ficha prints either, so the careo reads
+ *   exactly the composition the human sees.
+ */
+export function managedPortfolioMemberValues(
+  holdingIds: readonly string[],
+  liveMemberById: ReadonlyMap<string, ManagedPortfolioLiveMember>,
+): ManagedPortfolioMemberValue[] {
+  return holdingIds.flatMap((holdingId) => {
+    const member = liveMemberById.get(holdingId);
+    if (member === undefined) return [];
+    return [{ holdingId, isCash: member.type === "cash", value: member.value }];
+  });
+}
+
 export type ManagedPortfolioReconciliationState =
   /** Nothing typed yet: the ficha invites a witness, nothing is wrong. */
   | "no_witness"
@@ -65,7 +102,12 @@ export type ManagedPortfolioNotComparableReason =
   /** Some investment member has no honest value in the base currency. */
   | "incomplete_members"
   /** The witness was declared in another currency than the book's. */
-  | "currency_mismatch";
+  | "currency_mismatch"
+  /**
+   * The stored balance is not positive, so there is no relative drift to
+   * measure. The form refuses one, so this only arrives through an import.
+   */
+  | "declared_not_positive";
 
 export interface ManagedPortfolioReconciliation {
   state: ManagedPortfolioReconciliationState;
@@ -170,7 +212,16 @@ export function reconcileManagedPortfolio(input: {
       state: "not_comparable",
     };
   }
-  if (investmentMemberCount === 0 || witness.declaredValue.amountMinor <= 0) {
+  if (witness.declaredValue.amountMinor <= 0) {
+    return {
+      ...base,
+      ...declared,
+      driftBps: null,
+      reason: "declared_not_positive",
+      state: "not_comparable",
+    };
+  }
+  if (investmentMemberCount === 0) {
     return {
       ...base,
       ...declared,
@@ -228,7 +279,8 @@ export function describeManagedPortfolioDrift(input: {
   return (
     `"${portfolioName}": el valor de sus fondos (${amount(reconciliation.investmentValue)}) ` +
     `se aparta un ${formatDriftBps(drift)} del saldo que declaraste el ` +
-    `${reconciliation.declaredDate} (${amount(declared)}). Manda el derivado: ` +
+    `${formatDateKeyEs(reconciliation.declaredDate ?? "")} (${amount(declared)}). ` +
+    "Manda el derivado: " +
     `revisa participaciones, precios o el propio saldo declarado. El efectivo de la ` +
     `cartera (${amount(reconciliation.cashValue)}) queda fuera del careo.`
   );

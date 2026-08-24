@@ -21,7 +21,7 @@ import type { InvestmentOperation } from "./investment-types";
 import type { ManagedPortfolio } from "./managed-portfolio";
 import {
   describeManagedPortfolioDrift,
-  type ManagedPortfolioMemberValue,
+  managedPortfolioMemberValues,
   reconcileManagedPortfolio,
 } from "./managed-portfolio-reconciliation";
 import type { MoneyMinor } from "./money";
@@ -418,9 +418,9 @@ export function collectDataQualitySignals(
       input.asOfDateKey,
     ),
     ...portfolioReconciliationSignals(
-      input.scope,
       input.workspace,
       input.assets,
+      ownedAssetIds,
       input.managedPortfolios,
       input.holdingValueByHoldingId,
     ),
@@ -1164,33 +1164,32 @@ function savingsCoherenceSignals(
  * so the careo reads exactly the composition the human sees.
  */
 function portfolioReconciliationSignals(
-  scope: DataQualityScopeContext,
   workspace: Workspace,
   assets: readonly ManualAsset[],
+  ownedAssetIds: Set<string>,
   managedPortfolios: readonly ManagedPortfolio[],
   holdingValueByHoldingId: ReadonlyMap<string, MoneyMinor>,
 ): DataQualitySignal[] {
-  const liveAssetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const liveMemberById = new Map(
+    assets.map((asset) => [
+      asset.id,
+      { type: asset.type, value: holdingValueByHoldingId.get(asset.id) ?? null },
+    ]),
+  );
 
   return managedPortfolios.flatMap((portfolio) => {
-    // A portfolio belongs to ONE scope (its own row), exactly as the carteras
-    // list reads it — never "everybody's" from a member scope.
-    if (portfolio.scopeId !== scope.internalScopeId) return [];
     if (portfolio.witness === null) return [];
+    // Scope relevance is decided by OWNERSHIP of its members, exactly as every
+    // holding-level signal decides it — not by the portfolio's own `scopeId`.
+    // A cartera registered under one member is a real doubt about the household's
+    // figure too, because its members sum into it.
+    if (!portfolio.holdingIds.some((holdingId) => ownedAssetIds.has(holdingId))) {
+      return [];
+    }
 
-    const members: ManagedPortfolioMemberValue[] = portfolio.holdingIds.flatMap(
-      (holdingId) => {
-        const asset = liveAssetById.get(holdingId);
-        if (asset === undefined) return [];
-        return [
-          {
-            holdingId,
-            isCash: asset.type !== "investment",
-            value: holdingValueByHoldingId.get(holdingId) ?? null,
-          },
-        ];
-      },
-    );
+    // The careo reads the WHOLE container (the witness is the container's), and
+    // the cash rule lives in the domain builder — one home for both surfaces.
+    const members = managedPortfolioMemberValues(portfolio.holdingIds, liveMemberById);
 
     const reconciliation = reconcileManagedPortfolio({
       baseCurrency: workspace.baseCurrency,

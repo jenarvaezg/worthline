@@ -5,6 +5,7 @@ import {
   formatDriftBps,
   MANAGED_PORTFOLIO_DRIFT_THRESHOLD_BPS,
   type ManagedPortfolioMemberValue,
+  managedPortfolioMemberValues,
   reconcileManagedPortfolio,
 } from "./managed-portfolio-reconciliation";
 
@@ -208,7 +209,9 @@ describe("describeManagedPortfolioDrift", () => {
 
     expect(reconciliation.state).toBe("diverged");
     expect(label).toContain("Cartera Indexada Metal");
-    expect(label).toContain("2026-08-21");
+    // The date reads the way the app says it out loud, so the hero alert and the
+    // ficha cannot print the same day in two formats.
+    expect(label).toContain("21/08/2026");
     expect(label).toContain("−6,4 %");
     expect(label).toContain("efectivo");
   });
@@ -231,5 +234,43 @@ describe("describeManagedPortfolioDrift", () => {
 
     expect(label).not.toContain("1.479");
     expect(label).not.toContain("2.000");
+  });
+});
+
+describe("managedPortfolioMemberValues", () => {
+  const eur = (amountMinor: number) => ({ amountMinor, currency: "EUR" });
+
+  it("counts only the `cash` member as the container's cash box", () => {
+    // A stored-valuation member that is not cash — the "(sin detallar)" aggregate
+    // of S5 (#1551) — is invested money and belongs INSIDE the careo. Reading it
+    // as cash would silently shrink the figure the witness faces.
+    const members = managedPortfolioMemberValues(
+      ["fondo", "sin_detallar", "efectivo"],
+      new Map([
+        ["fondo", { type: "investment", value: eur(100_000) }],
+        ["sin_detallar", { type: "manual", value: eur(50_000) }],
+        ["efectivo", { type: "cash", value: eur(15_749) }],
+      ]),
+    );
+
+    expect(members.filter((member) => member.isCash).map((m) => m.holdingId)).toEqual([
+      "efectivo",
+    ]);
+    expect(
+      reconcileManagedPortfolio({
+        baseCurrency: "EUR",
+        members,
+        witness: { declaredDate: "2026-08-21", declaredValue: eur(150_000) },
+      }),
+    ).toMatchObject({ investmentValue: eur(150_000), state: "aligned" });
+  });
+
+  it("skips a member that is no longer live instead of blanking the careo", () => {
+    const members = managedPortfolioMemberValues(
+      ["fondo", "en_papelera"],
+      new Map([["fondo", { type: "investment", value: eur(100_000) }]]),
+    );
+
+    expect(members.map((member) => member.holdingId)).toEqual(["fondo"]);
   });
 });

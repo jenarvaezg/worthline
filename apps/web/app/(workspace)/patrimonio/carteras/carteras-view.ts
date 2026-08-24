@@ -2,10 +2,10 @@ import { holdingDetailHref, managedPortfolioFichaHref } from "@web/holding-route
 import type {
   CurrencyCode,
   ManagedPortfolio,
-  ManagedPortfolioMemberValue,
   ManagedPortfolioReconciliation,
   ManagedPortfolioReconciliationState,
   ManualAsset,
+  MoneyMinor,
 } from "@worthline/domain";
 import {
   computeManagedPortfolioFigures,
@@ -13,6 +13,7 @@ import {
   formatDriftBps,
   formatMoneyMinor,
   type ManagedPortfolioSlice,
+  managedPortfolioMemberValues,
   reconcileManagedPortfolio,
 } from "@worthline/domain";
 
@@ -190,29 +191,26 @@ export interface PortfolioWitnessView {
  */
 export function portfolioWitnessView(input: {
   portfolio: ManagedPortfolio;
-  valueMinorByHoldingId: ReadonlyMap<string, number>;
+  /** Live holdings' values in the currency they are HELD in (never converted). */
+  moneyByHoldingId: ReadonlyMap<string, MoneyMinor>;
   /** Live holdings' types, keyed by id — absent means "not live any more". */
   typeByHoldingId: ReadonlyMap<string, string>;
   baseCurrency: CurrencyCode;
 }): PortfolioWitnessView {
-  const { baseCurrency, portfolio, typeByHoldingId, valueMinorByHoldingId } = input;
+  const { baseCurrency, moneyByHoldingId, portfolio, typeByHoldingId } = input;
 
-  const members: ManagedPortfolioMemberValue[] = portfolio.holdingIds.flatMap(
-    (holdingId) => {
-      const type = typeByHoldingId.get(holdingId);
-      if (type === undefined) return [];
-      const valueMinor = valueMinorByHoldingId.get(holdingId);
-      return [
-        {
-          holdingId,
-          isCash: type !== "investment",
-          value:
-            valueMinor === undefined
-              ? null
-              : { amountMinor: valueMinor, currency: baseCurrency },
-        },
-      ];
-    },
+  // Unconverted money on purpose: the domain adds only what is natively in the
+  // base currency, which is the SAME rule the data-health signal applies (it has
+  // no FX layer). Feeding converted figures here would let this ficha claim a
+  // drift the signal cannot see.
+  const members = managedPortfolioMemberValues(
+    portfolio.holdingIds,
+    new Map(
+      [...typeByHoldingId].map(([holdingId, type]) => [
+        holdingId,
+        { type, value: moneyByHoldingId.get(holdingId) ?? null },
+      ]),
+    ),
   );
 
   const reconciliation = reconcileManagedPortfolio({
@@ -285,9 +283,14 @@ function witnessMessage(
           );
         case "incomplete_members":
           return (
-            "Algún fondo de la cartera no tiene hoy un valor honesto en tu divisa, así " +
-            "que la suma que se carearía estaría incompleta. worthline no compara medio " +
-            "total contra el total de tu gestor."
+            "Algún fondo de la cartera no está en tu divisa o no tiene hoy un valor " +
+            "honesto, así que la suma que se carearía estaría incompleta. worthline no " +
+            "compara medio total contra el total de tu gestor."
+          );
+        case "declared_not_positive":
+          return (
+            "El saldo declarado que hay guardado no es positivo, así que no hay deriva " +
+            "relativa que medir. Vuelve a declararlo con el valor que leas hoy."
           );
         default:
           return (

@@ -286,15 +286,19 @@ async function readManagedPortfolios(
     name: row.name,
     provider: row.provider ?? null,
     scopeId: row.scopeId,
-    witness: witnessOf(row),
+    witness: managedPortfolioWitnessOfRow(row),
   }));
 }
 
 /**
  * The three witness columns travel together: any one missing reads as "no
  * witness declared" rather than a half-witness the careo would have to guess at.
+ *
+ * Exported because the workspace export reads the same row shape (#1550): two
+ * copies of an all-or-nothing rule are two chances to disagree about what a half
+ * witness means.
  */
-function witnessOf(row: {
+export function managedPortfolioWitnessOfRow(row: {
   declaredValueMinor: number | null;
   declaredCurrency: string | null;
   declaredDate: string | null;
@@ -335,10 +339,7 @@ async function declareManagedPortfolioBalance(
   if (!existing) throw new Error(`Managed portfolio "${id}" not found.`);
 
   if (witness !== null) {
-    assertManagedPortfolioWitnessInput({
-      declaredDate: witness.declaredDate,
-      declaredValueMinor: witness.declaredValue.amountMinor,
-    });
+    assertManagedPortfolioWitnessInput(witness);
   }
 
   await ctx.db

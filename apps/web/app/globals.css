@@ -4324,6 +4324,7 @@ code {
 }
 
 .carterasWeight {
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -4338,7 +4339,10 @@ code {
   margin: 4px 0 0;
 }
 
-.carterasHeroSplit strong {
+/* Las dos cifras del reparto son cuerpo, no display: la del hero sigue siendo la
+   única cifra dominante (canon §3), así que aquí solo numérica tabular. */
+.carterasHeroSplitFigure {
+  font-family: var(--font-numeric);
   font-variant-numeric: tabular-nums;
   margin-left: 6px;
 }

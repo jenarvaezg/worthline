@@ -1307,6 +1307,43 @@ describe("data-quality — el saldo declarado de una cartera gestionada (#1550)"
     expect(await witnessSignals()).toEqual([]);
   });
 
+  test("se apaga sola al actualizar el testigo, sin reconocer nada", async () => {
+    await seedMetal({ cashMinor: 734, declaredMinor: Math.round(FUNDS_MINOR / 0.95) });
+    expect(await witnessSignals()).toHaveLength(1);
+
+    // Declaring the right balance is the whole repair: the signal is derived, so
+    // there is no override to write and nothing to acknowledge.
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios("household");
+    await store.managedPortfolios.declareManagedPortfolioBalance(portfolio!.id, {
+      declaredDate: "2026-08-23",
+      declaredValue: { amountMinor: DECLARED_MINOR, currency: "EUR" },
+    });
+    store.close();
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
+  test("se apaga sola al cambiar la composición de la cartera", async () => {
+    await seedMetal({ cashMinor: 734, declaredMinor: Math.round(FUNDS_MINOR / 0.95) });
+    expect(await witnessSignals()).toHaveLength(1);
+
+    // The other repair the issue names: the composition changes (here the fund
+    // leaves the cartera), so there is no investment value to careo any more.
+    const store = await createWorthlineStoreUnsafe({
+      databasePath: process.env.WORTHLINE_DB_PATH!,
+    });
+    const [portfolio] = await store.managedPortfolios.readManagedPortfolios("household");
+    await store.managedPortfolios.updateManagedPortfolio(portfolio!.id, {
+      memberHoldingIds: [],
+    });
+    store.close();
+
+    expect(await witnessSignals()).toEqual([]);
+  });
+
   test("the financial context carries the careo, cash apart", async () => {
     await seedMetal({ cashMinor: 15_749, declaredMinor: DECLARED_MINOR });
     const scopeId = await householdScopeId();

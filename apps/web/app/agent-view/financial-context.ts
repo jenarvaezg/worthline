@@ -14,6 +14,7 @@ import type {
   Liability,
   LiquidityTier,
   LiquidityTierBreakdown,
+  ManagedPortfolioLiveMember,
   ManualAsset,
   MoneyMinor,
   NetWorthSummary,
@@ -30,6 +31,7 @@ import {
   deriveMonthlyCloses,
   listScopeOptions,
   lookThroughExposure,
+  managedPortfolioMemberValues,
   projectPortfolio,
   reconcileManagedPortfolio,
   resolveAssetClassBreakdown,
@@ -225,12 +227,12 @@ export async function buildFinancialContext(
     managedPortfolios: await buildManagedPortfolios(store, holdingSummaries, {
       baseCurrency: workspace.baseCurrency,
       // The SAME curve-valued figures every block above quotes (#1422): the
-      // careo the agent reads cannot cite a number the board contradicts. The
-      // cash sibling is flagged by what it IS, so the careo can leave it out.
-      memberFigures: new Map(
+      // careo the agent reads cannot cite a number the board contradicts. What
+      // counts as the cash box is the domain's rule, not this file's.
+      liveMemberById: new Map(
         assets.map((asset) => [
           asset.id,
-          { isCash: asset.type !== "investment", value: asset.currentValue },
+          { type: asset.type, value: asset.currentValue },
         ]),
       ),
     }),
@@ -477,7 +479,7 @@ async function buildManagedPortfolios(
   holdingSummaries: AgentViewHoldingSummary[],
   figures: {
     baseCurrency: string;
-    memberFigures: ReadonlyMap<string, { value: MoneyMinor; isCash: boolean }>;
+    liveMemberById: ReadonlyMap<string, ManagedPortfolioLiveMember>;
   },
 ): Promise<AgentViewManagedPortfolioSummary[]> {
   const labelByPublicId = new Map(
@@ -510,13 +512,7 @@ async function buildManagedPortfolios(
 
     const reconciliation = reconcileManagedPortfolio({
       baseCurrency: figures.baseCurrency,
-      members: portfolio.holdingIds.flatMap((assetId) => {
-        const figure = figures.memberFigures.get(assetId);
-        // A member with no live row contributes nothing to the derived total the
-        // ficha prints either, so it is skipped rather than counted as missing.
-        if (figure === undefined) return [];
-        return [{ holdingId: assetId, isCash: figure.isCash, value: figure.value }];
-      }),
+      members: managedPortfolioMemberValues(portfolio.holdingIds, figures.liveMemberById),
       witness: portfolio.witness,
     });
 

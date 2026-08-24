@@ -105,9 +105,9 @@ async function FichaContent({
 
   const witness = portfolioWitnessView({
     baseCurrency: workspace.baseCurrency,
+    moneyByHoldingId: model.moneyByHoldingId,
     portfolio,
     typeByHoldingId: model.typeByHoldingId,
-    valueMinorByHoldingId: model.valueMinorByHoldingId,
   });
 
   const fmt = (amountMinor: number) =>
@@ -174,10 +174,14 @@ async function FichaContent({
         </div>
         <p className="carterasHeroSplit">
           <span>
-            Valor de mercado (tus fondos) <strong>{fmt(witness.investmentMinor)}</strong>
+            Valor de mercado (tus fondos){" "}
+            <span className="carterasHeroSplitFigure">
+              {fmt(witness.investmentMinor)}
+            </span>
           </span>
           <span>
-            Efectivo de la cartera <strong>{fmt(witness.cashMinor)}</strong>
+            Efectivo de la cartera{" "}
+            <span className="carterasHeroSplitFigure">{fmt(witness.cashMinor)}</span>
           </span>
         </p>
         <p className="muted">

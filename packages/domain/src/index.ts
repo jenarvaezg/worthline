@@ -321,6 +321,7 @@ export {
   asInstant,
   daysBetween,
   formatDateKeyEs,
+  isDateKeyShaped,
   MS_PER_DAY,
 } from "./dates";
 export type { AccruedInterestAtDate } from "./debt-accrual";
@@ -778,6 +779,7 @@ export {
   computeManagedPortfolioFigures,
 } from "./managed-portfolio";
 export type {
+  ManagedPortfolioLiveMember,
   ManagedPortfolioMemberValue,
   ManagedPortfolioNotComparableReason,
   ManagedPortfolioReconciliation,
@@ -788,6 +790,7 @@ export {
   describeManagedPortfolioDrift,
   formatDriftBps,
   MANAGED_PORTFOLIO_DRIFT_THRESHOLD_BPS,
+  managedPortfolioMemberValues,
   reconcileManagedPortfolio,
 } from "./managed-portfolio-reconciliation";
 export { isIsinShaped } from "./matching-keys";

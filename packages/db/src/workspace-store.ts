@@ -41,6 +41,7 @@ import {
   readAgentViewPublicIds,
 } from "./agent-view-public-ids";
 import { mapPositionRow, positionInsertValues } from "./connected-source-store";
+import { managedPortfolioWitnessOfRow } from "./managed-portfolio-store";
 import {
   agentViewPublicIds,
   amortizationPlans,
@@ -1648,20 +1649,9 @@ async function buildWorkspaceExport(
       name: row.name,
       provider: row.provider ?? null,
       scopeId: row.scopeId,
-      // The declared balance (#1550): typed data, so it travels. The three
-      // columns are all-or-nothing — a half witness reads as none.
-      witness:
-        row.declaredValueMinor != null &&
-        row.declaredCurrency != null &&
-        row.declaredDate != null
-          ? {
-              declaredDate: row.declaredDate,
-              declaredValue: {
-                amountMinor: row.declaredValueMinor,
-                currency: row.declaredCurrency,
-              },
-            }
-          : null,
+      // The declared balance (#1550): typed data, so it travels. The
+      // all-or-nothing rule is the store's, read through its own mapper.
+      witness: managedPortfolioWitnessOfRow(row),
     })),
     assets: assetRows.filter((row) => row.deletedAt === null).map(toExportedAsset),
     liabilities: liabilityRows

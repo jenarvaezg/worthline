@@ -1357,6 +1357,8 @@ describe("portfolio reconciliation (#1550)", () => {
     cashMinor?: number;
     declaredCurrency?: string;
     portfolioScopeId?: string;
+    /** Membership pointing at holdings the scope does not own. */
+    foreignMembers?: boolean;
   }) {
     const { asset, input: baseInputOf, scopeOption, workspace } = fixture();
     const funds = asset({
@@ -1384,7 +1386,7 @@ describe("portfolio reconciliation (#1550)", () => {
         ]),
         managedPortfolios: [
           {
-            holdingIds: [cash.id, funds.id],
+            holdingIds: input.foreignMembers ? ["ajeno_1"] : [cash.id, funds.id],
             id: "prt_metal",
             name: "Cartera Indexada Metal",
             provider: "MyInvestor",
@@ -1449,9 +1451,19 @@ describe("portfolio reconciliation (#1550)", () => {
     expect(collect({ declaredCurrency: "USD", declaredValueMinor: 200_000 })).toEqual([]);
   });
 
-  test("ignores a cartera that belongs to another scope", () => {
-    expect(
-      collect({ declaredValueMinor: 200_000, portfolioScopeId: "scope_otro" }),
-    ).toEqual([]);
+  test("ignores a cartera none of whose members the scope owns", () => {
+    // Scope relevance is decided by ownership of the members, like every other
+    // holding-level signal — not by the portfolio's own scopeId, which would hide
+    // a member's cartera from the household its funds sum into.
+    expect(collect({ declaredValueMinor: 200_000, foreignMembers: true })).toEqual([]);
+  });
+
+  test("a cartera registered under a member still reaches the scope that owns its funds", () => {
+    const signals = collect({
+      declaredValueMinor: 200_000,
+      portfolioScopeId: "member_jose",
+    });
+
+    expect(signals).toHaveLength(1);
   });
 });

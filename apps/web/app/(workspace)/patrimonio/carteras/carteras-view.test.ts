@@ -181,6 +181,8 @@ describe("portfolioWitnessView", () => {
     cashMinor?: number;
     declaredCurrency?: string;
     fundsValue?: number | null;
+    /** The currency the FUNDS member is held in — unconverted (#1550). */
+    fundsCurrency?: string;
   }) {
     const fundsValue = input.fundsValue === undefined ? FUNDS_MINOR : input.fundsValue;
     return portfolioWitnessView({
@@ -206,11 +208,19 @@ describe("portfolioWitnessView", () => {
         ["fondos", "investment"],
         ["efectivo", "cash"],
       ]),
-      valueMinorByHoldingId: new Map([
+      moneyByHoldingId: new Map([
         ...(fundsValue === null
           ? []
-          : ([["fondos", fundsValue]] as Array<[string, number]>)),
-        ["efectivo", input.cashMinor ?? 734],
+          : ([
+              [
+                "fondos",
+                {
+                  amountMinor: fundsValue,
+                  currency: input.fundsCurrency ?? "EUR",
+                },
+              ],
+            ] as Array<[string, { amountMinor: number; currency: string }]>)),
+        ["efectivo", { amountMinor: input.cashMinor ?? 734, currency: "EUR" }],
       ]),
     });
   }
@@ -261,6 +271,22 @@ describe("portfolioWitnessView", () => {
     expect(result.state).toBe("not_comparable");
     expect(result.isDiverged).toBe(false);
     expect(result.message).toContain("otra divisa");
+  });
+
+  it("refuses to careo when a member is held in another currency (same rule as the signal)", () => {
+    // The ficha converts for the TOTAL, but the careo reads unconverted money:
+    // otherwise it would claim a drift the data-health signal cannot see (#1422).
+    const result = view({ declaredMinor: DECLARED_MINOR, fundsCurrency: "USD" });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.message).toContain("no está en tu divisa");
+  });
+
+  it("says WHY a stored declared balance of zero cannot be careed", () => {
+    const result = view({ declaredMinor: 0 });
+
+    expect(result.state).toBe("not_comparable");
+    expect(result.message).toContain("no es positivo");
   });
 
   it("refuses to careo an incomplete derived side", () => {

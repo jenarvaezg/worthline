@@ -1,3 +1,4 @@
+import { isDateKeyShaped } from "./dates";
 import type { ManagedPortfolioWitness } from "./managed-portfolio-reconciliation";
 
 /**
@@ -74,14 +75,14 @@ export function assertManagedPortfolioInput(input: { name: string }): void {
  * one has no relative drift to measure against, and the way to say "I have no
  * witness" is to remove it, not to declare zero.
  */
-export function assertManagedPortfolioWitnessInput(input: {
-  declaredValueMinor: number;
-  declaredDate: string;
-}): void {
-  if (!Number.isInteger(input.declaredValueMinor) || input.declaredValueMinor <= 0) {
+export function assertManagedPortfolioWitnessInput(
+  witness: ManagedPortfolioWitness,
+): void {
+  const amountMinor = witness.declaredValue.amountMinor;
+  if (!Number.isInteger(amountMinor) || amountMinor <= 0) {
     throw new Error("El saldo declarado tiene que ser un importe positivo.");
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.declaredDate)) {
+  if (!isDateKeyShaped(witness.declaredDate)) {
     throw new Error("El saldo declarado necesita la fecha en la que lo leíste.");
   }
 }

@@ -137,7 +137,13 @@ it is measured on the funds, not on the cash.
 A member with no honest value in the base currency silences the careo instead of
 comparing a short sum against the manager's full one (#1401's shape), and a
 member that is no longer live is skipped — it contributes nothing to the derived
-total the ficha prints either.
+total the ficha prints either. The careo reads UNCONVERTED money for the same
+reason the two surfaces share one engine: the data-health signal has no FX layer,
+so a ficha careing converted figures would claim a drift the signal cannot see
+(#1422's shape). The cash box is the `cash` member and only it — a stored-valuation
+member that is not cash (the "(sin detallar)" aggregate above) is invested money
+and belongs inside the careo — and that rule lives in one domain builder so no
+surface re-derives it.
 
 ## Consequences
 
