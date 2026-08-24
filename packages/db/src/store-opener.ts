@@ -64,13 +64,19 @@ export async function createInMemoryStore(): Promise<WorthlineStore> {
 }
 
 /**
- * Injectable substrate a test can pin when building a store. Only the clock so
- * far: the observable `sync_run` stamps each ATTEMPT with wall time, which a test
- * asserting those stamps needs to control (same shape as the job queue's `clock`).
+ * Injectable substrate a test can pin when building a store. The clock so a
+ * spec can control `sync_run` attempt stamps, and the FIRE seed memo key so a
+ * spec can observe the warm-open skip (#1536).
  */
 export interface StoreBuildDeps {
   /** Wall clock (ISO) for attempt-level stamps. Defaults to the real clock. */
   clock?: () => string;
+  /**
+   * Per-process memo key for the v56 FIRE seed-marker read (#1536). URL
+   * targets pass the workspace URL; path/:memory: targets omit it so each
+   * distinct DB still seeds.
+   */
+  seedMemoKey?: string;
 }
 
 /**
@@ -154,7 +160,11 @@ export async function createWorthlineStoreUnsafe(
   const target = resolveDatabaseTarget(options);
   const client = openDatabaseTarget(target);
   const migrateResult = await migrateTarget(target, client);
-  return buildStore(client, migrateResult);
+  return buildStore(
+    client,
+    migrateResult,
+    target.kind === "url" ? { seedMemoKey: target.url } : {},
+  );
 }
 
 async function buildStore(
@@ -509,6 +519,7 @@ async function buildStore(
         unitPriceMajorByHoldingId(await operationsStore.readAllPriceCacheEntries()),
     },
     () => deps.clock?.() ?? new Date().toISOString(),
+    deps.seedMemoKey,
   );
 
   return store;

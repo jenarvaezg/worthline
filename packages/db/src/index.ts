@@ -214,7 +214,7 @@ export type {
   UpdateInterestRateRevisionInput,
   UpdateLiabilityInput,
 } from "./liability-store";
-export { openLibsqlClient } from "./libsql-client";
+export { openLibsqlClient, preheatLibsqlStack } from "./libsql-client";
 export { SCHEMA_VERSION } from "./migrate";
 export type {
   OperationsStore,

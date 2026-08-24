@@ -9,6 +9,20 @@ import type { StoreContext } from "./store-context";
 const SEED_MARKER_KEY = "fire.capacity_seed.v56";
 const SEED_PENDING = "pending";
 
+/**
+ * Per-process memo of workspaces whose v56 FIRE seed marker is known not to be
+ * `pending` (#1536). The SELECT is a network round-trip on every store open and
+ * its only possible result after the first warm open is "nothing to do" — retiring
+ * the marker avoids the *work*, not the *read*. URL targets key this set; path
+ * targets never enter it (a reused `:memory:`/`file:` string is a distinct DB).
+ */
+const settledSeedKeys = new Set<string>();
+
+/** Test-only: clear the seed-marker memo so a spec observes a cold first open. */
+export function __resetFireSeedMemoForTests(): void {
+  settledSeedKeys.clear();
+}
+
 /** One scope's seeded figure — returned so a caller (or a test) can assert it. */
 export interface SeededFireSavingsCapacity {
   scopeId: string;
@@ -71,13 +85,24 @@ export async function seedDeclaredFireSavingsCapacity(
    * tick here would shift the stamps of every unrelated store the suite builds.
    */
   now: () => string,
+  /**
+   * Per-process memo key (the workspace URL). When set and this isolate has
+   * already seen a non-pending marker for that key, the SELECT is skipped.
+   * Path/:memory: openers omit it.
+   */
+  memoKey?: string,
 ): Promise<SeededFireSavingsCapacity[]> {
+  if (memoKey !== undefined && settledSeedKeys.has(memoKey)) return [];
+
   const marker = await ctx.db
     .select({ value: appSettings.value })
     .from(appSettings)
     .where(eq(appSettings.key, SEED_MARKER_KEY))
     .get();
-  if (marker?.value !== SEED_PENDING) return [];
+  if (marker?.value !== SEED_PENDING) {
+    if (memoKey !== undefined) settledSeedKeys.add(memoKey);
+    return [];
+  }
 
   const nowISO = now();
   const todayISO = nowISO.slice(0, 10);
@@ -105,7 +130,7 @@ export async function seedDeclaredFireSavingsCapacity(
   // Re-read and write under one transaction: without it, a user who saves the FIRE
   // form in the window between the read and the write loses the figure he just
   // typed — and the band would then tell him the app put the plan's number there.
-  return ctx.transaction(async () => {
+  const seeded = await ctx.transaction(async () => {
     const current = await readStoredFireConfig(ctx);
     const seeded: SeededFireSavingsCapacity[] = [];
     const next: Record<string, FireScopeConfig> = { ...current };
@@ -140,6 +165,8 @@ export async function seedDeclaredFireSavingsCapacity(
     await writeAppSetting(ctx, SEED_MARKER_KEY, nowISO, nowISO);
     return seeded;
   });
+  if (memoKey !== undefined) settledSeedKeys.add(memoKey);
+  return seeded;
 }
 
 async function readStoredFireConfig(
