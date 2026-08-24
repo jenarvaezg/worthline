@@ -214,7 +214,7 @@ async function seedFullWorkspace(store: WorthlineStore): Promise<void> {
   // A managed portfolio (ADR 0085) grouping the live investment, with its
   // auto-created cash sibling as a member.
   await store.managedPortfolios.createManagedPortfolio({
-    cashOwnership: [{ memberId: "m1", shareBps: 10000 }],
+    containerOwnership: [{ memberId: "m1", shareBps: 10000 }],
     memberHoldingIds: ["a_inv"],
     name: "Cartera Metal",
     provider: "MyInvestor",

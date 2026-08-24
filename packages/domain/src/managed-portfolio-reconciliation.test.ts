@@ -13,11 +13,12 @@ import {
 function member(
   holdingId: string,
   amountMinor: number | null,
-  options: { isCash?: boolean; currency?: string } = {},
+  options: { isCash?: boolean; isUndetailed?: boolean; currency?: string } = {},
 ): ManagedPortfolioMemberValue {
   return {
     holdingId,
     isCash: options.isCash ?? false,
+    isUndetailed: options.isUndetailed ?? false,
     value:
       amountMinor === null ? null : { amountMinor, currency: options.currency ?? "EUR" },
   };
@@ -272,5 +273,68 @@ describe("managedPortfolioMemberValues", () => {
     );
 
     expect(members.map((member) => member.holdingId)).toEqual(["fondo"]);
+  });
+});
+
+describe("the «(sin detallar)» aggregate inside the careo (#1551)", () => {
+  it("it is reported apart while still counting as invested money", () => {
+    const result = reconcileManagedPortfolio({
+      baseCurrency: "EUR",
+      members: [
+        member("agg", 1_000_00, { isUndetailed: true }),
+        member("efectivo", 7_34, { isCash: true }),
+      ],
+      witness: {
+        declaredDate: "2026-08-24",
+        declaredValue: { amountMinor: 1_000_00, currency: "EUR" },
+      },
+    });
+
+    // A cartera born "solo saldo" cuadra from minute one: the aggregate IS the
+    // declared balance, and the cash box stays outside the comparison.
+    expect(result.state).toBe("aligned");
+    expect(result.investmentValue.amountMinor).toBe(1_000_00);
+    expect(result.undetailedValue.amountMinor).toBe(1_000_00);
+    expect(result.cashValue.amountMinor).toBe(7_34);
+  });
+
+  it("mid-substitution the drift is blamed on the aggregate, not on prices", () => {
+    // Detailed 400 € while the aggregate still stands for the whole 1.000 €: the
+    // book counts the same money twice, and the sentence has to say so.
+    const reconciliation = reconcileManagedPortfolio({
+      baseCurrency: "EUR",
+      members: [member("agg", 1_000_00, { isUndetailed: true }), member("fondo", 400_00)],
+      witness: {
+        declaredDate: "2026-08-24",
+        declaredValue: { amountMinor: 1_000_00, currency: "EUR" },
+      },
+    });
+
+    expect(reconciliation.state).toBe("diverged");
+    const label = describeManagedPortfolioDrift({
+      portfolioName: "Cartera Indexada Metal",
+      reconciliation,
+    });
+    expect(label).toContain("sin detallar");
+    expect(label).toContain("dos veces");
+    expect(label).not.toContain("revisa participaciones");
+  });
+
+  it("a drift with no aggregate still sends the owner to prices and participaciones", () => {
+    const reconciliation = reconcileManagedPortfolio({
+      baseCurrency: "EUR",
+      members: [member("fondo", 1_400_00)],
+      witness: {
+        declaredDate: "2026-08-24",
+        declaredValue: { amountMinor: 1_000_00, currency: "EUR" },
+      },
+    });
+
+    expect(
+      describeManagedPortfolioDrift({
+        portfolioName: "Metal",
+        reconciliation,
+      }),
+    ).toContain("revisa participaciones");
   });
 });

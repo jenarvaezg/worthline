@@ -59,7 +59,7 @@ async function freshStore(): Promise<{ coin: string; store: TestStore }> {
 
 async function createMetal(store: TestStore, memberHoldingIds?: string[]) {
   return store.managedPortfolios.createManagedPortfolio({
-    cashOwnership: M1_OWNERSHIP,
+    containerOwnership: M1_OWNERSHIP,
     ...(memberHoldingIds === undefined ? {} : { memberHoldingIds }),
     name: "Cartera Indexada Metal",
     provider: "MyInvestor",
@@ -112,7 +112,7 @@ describe("managed portfolio CRUD", () => {
     const { store } = await freshStore();
     await expect(
       store.managedPortfolios.createManagedPortfolio({
-        cashOwnership: M1_OWNERSHIP,
+        containerOwnership: M1_OWNERSHIP,
         name: "   ",
         scopeId: "household",
       }),
@@ -153,7 +153,7 @@ describe("managed portfolio CRUD", () => {
     await createMetal(store, ["f1"]);
     await expect(
       store.managedPortfolios.createManagedPortfolio({
-        cashOwnership: M1_OWNERSHIP,
+        containerOwnership: M1_OWNERSHIP,
         memberHoldingIds: ["f2"],
         name: "Otra cartera",
         scopeId: "household",
@@ -259,10 +259,102 @@ describe("managed portfolio CRUD", () => {
     ).rejects.toThrow(/not found/);
   });
 
+  it("is born with a '(sin detallar)' aggregate when only a balance was typed (#1551)", async () => {
+    const { store } = await freshStore();
+    const created = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: M1_OWNERSHIP,
+      name: "Cartera Indexada Metal",
+      scopeId: "household",
+      undetailedValueMinor: 1_000_00,
+    });
+
+    const assets = await store.assets.readAssets();
+    const members = created.holdingIds.map(
+      (id) => assets.find((asset) => asset.id === id)!,
+    );
+    const aggregate = members.find((asset) => asset.type === "manual");
+
+    // Cash at 0 € PLUS the aggregate: the patrimonio is honest from minute one.
+    expect(created.holdingIds).toHaveLength(2);
+    expect(aggregate?.name).toBe("Cartera Indexada Metal (sin detallar)");
+    expect(aggregate?.currentValue).toEqual({ amountMinor: 1_000_00, currency: "EUR" });
+    // Stored valuation (hand-set), and sellable money — not an illiquid oddity.
+    expect(aggregate?.instrument).toBe("other");
+    expect(aggregate?.liquidityTier).toBe("market");
+  });
+
+  it("refuses a non-positive aggregate — a 0 € placeholder stands for nothing", async () => {
+    const { store } = await freshStore();
+    await expect(
+      store.managedPortfolios.createManagedPortfolio({
+        containerOwnership: M1_OWNERSHIP,
+        name: "Cartera Indexada Metal",
+        scopeId: "household",
+        undetailedValueMinor: 0,
+      }),
+    ).rejects.toThrow(/importe positivo/);
+  });
+
+  it("refuses an alta that both enumerates funds and declares a balance", async () => {
+    const { store } = await freshStore();
+    await expect(
+      store.managedPortfolios.createManagedPortfolio({
+        containerOwnership: M1_OWNERSHIP,
+        memberHoldingIds: ["f1"],
+        name: "Cartera Indexada Metal",
+        scopeId: "household",
+        undetailedValueMinor: 1_000_00,
+      }),
+    ).rejects.toThrow(/no con las dos cosas/);
+  });
+
+  it("preserves the aggregate too when members are rewritten (#1551)", async () => {
+    const { store } = await freshStore();
+    const created = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: M1_OWNERSHIP,
+      name: "Cartera Indexada Metal",
+      scopeId: "household",
+      undetailedValueMinor: 1_000_00,
+    });
+
+    // Detailing a fund must not drop the aggregate: the owner reduces it on the
+    // ficha, and until he does the gross patrimonio stays where it was.
+    await store.managedPortfolios.updateManagedPortfolio(created.id, {
+      memberHoldingIds: ["f1"],
+    });
+
+    const [row] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(row?.holdingIds).toEqual([...created.holdingIds, "f1"].sort());
+  });
+
+  it("protects only the cash box from the Papelera, never the aggregate (#1551)", async () => {
+    const { store } = await freshStore();
+    const created = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: M1_OWNERSHIP,
+      name: "Cartera Indexada Metal",
+      scopeId: "household",
+      undetailedValueMinor: 1_000_00,
+    });
+    const assets = await store.assets.readAssets();
+    const cashId = created.holdingIds.find(
+      (id) => assets.find((asset) => asset.id === id)?.type === "cash",
+    )!;
+    const aggregateId = created.holdingIds.find((id) => id !== cashId)!;
+
+    expect(await store.managedPortfolios.readCashContainerName(cashId)).toBe(
+      "Cartera Indexada Metal",
+    );
+    // The aggregate is an ordinary stored holding: retiring it is ceremony-free.
+    expect(await store.managedPortfolios.readCashContainerName(aggregateId)).toBeNull();
+    await expect(
+      store.assets.softDeleteAsset(aggregateId, "2026-08-24T00:00:00.000Z"),
+    ).resolves.toEqual({ status: "deleted" });
+  });
+
   it("scopes reads — another scope's portfolio is invisible", async () => {
     const { store } = await freshStore();
     await store.managedPortfolios.createManagedPortfolio({
-      cashOwnership: M1_OWNERSHIP,
+      containerOwnership: M1_OWNERSHIP,
       name: "De Uno",
       scopeId: "m1",
     });

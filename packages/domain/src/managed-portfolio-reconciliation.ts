@@ -1,4 +1,5 @@
 import { formatDateKeyEs } from "./dates";
+import { managedPortfolioMemberRoles } from "./managed-portfolio-members";
 import { type CurrencyCode, formatMoneyMinorPrivacy, type MoneyMinor } from "./money";
 
 /**
@@ -48,6 +49,15 @@ export interface ManagedPortfolioMemberValue {
   value: MoneyMinor | null;
   /** True for the container's cash sibling — outside the careo by design. */
   isCash: boolean;
+  /**
+   * True for the "(sin detallar)" aggregate (#1551). It is INSIDE the careo (it
+   * is invested money), but reported apart because it is the one summand the
+   * owner is expected to shrink: while it still stands for a composition he has
+   * begun to detail, the book legitimately reads above the declared balance, and
+   * a drift blamed on prices instead of on the aggregate sends him looking in the
+   * wrong place.
+   */
+  isUndetailed: boolean;
 }
 
 /** A live member as the builder below reads it: what it is, and what it is worth. */
@@ -79,10 +89,25 @@ export function managedPortfolioMemberValues(
   holdingIds: readonly string[],
   liveMemberById: ReadonlyMap<string, ManagedPortfolioLiveMember>,
 ): ManagedPortfolioMemberValue[] {
+  // The classification is `managedPortfolioMemberRoles`', not a second reading of
+  // the same types here: one home, so the careo and the ficha cannot disagree
+  // about which member is the cash box and which is the aggregate.
+  const roles = managedPortfolioMemberRoles(
+    holdingIds,
+    new Map([...liveMemberById].map(([holdingId, member]) => [holdingId, member.type])),
+  );
+
   return holdingIds.flatMap((holdingId) => {
     const member = liveMemberById.get(holdingId);
     if (member === undefined) return [];
-    return [{ holdingId, isCash: member.type === "cash", value: member.value }];
+    return [
+      {
+        holdingId,
+        isCash: holdingId === roles.cashHoldingId,
+        isUndetailed: holdingId === roles.undetailedHoldingId,
+        value: member.value,
+      },
+    ];
   });
 }
 
@@ -115,6 +140,14 @@ export interface ManagedPortfolioReconciliation {
   reason?: ManagedPortfolioNotComparableReason;
   /** The investment members' value — the figure that faces the witness. */
   investmentValue: MoneyMinor;
+  /**
+   * The part of {@link investmentValue} still standing on the "(sin detallar)"
+   * aggregate (#1551), or zero when there is none. Inside the careo, reported
+   * apart: it is what explains a book reading above the declared balance
+   * mid-substitution, and naming it is the difference between "reduce the
+   * aggregate" and a fruitless hunt through prices.
+   */
+  undetailedValue: MoneyMinor;
   /** The container's cash, reported apart and never careed. */
   cashValue: MoneyMinor;
   /** The witness, echoed for the surfaces that print all three figures. */
@@ -148,11 +181,15 @@ export function reconcileManagedPortfolio(input: {
 
   let investmentMinor = 0;
   let cashMinor = 0;
+  let undetailedMinor = 0;
   let incompleteMembers = false;
   let investmentMemberCount = 0;
 
   for (const member of members) {
     const amountMinor = inBase(member.value);
+    if (member.isUndetailed) {
+      undetailedMinor += amountMinor ?? 0;
+    }
     if (member.isCash) {
       // The cash box is reported, not careed: an unconvertible cash sibling
       // leaves the reported figure short but never blocks the careo, because the
@@ -177,6 +214,7 @@ export function reconcileManagedPortfolio(input: {
     cashValue,
     investmentValue,
     thresholdBps: MANAGED_PORTFOLIO_DRIFT_THRESHOLD_BPS,
+    undetailedValue: { amountMinor: undetailedMinor, currency: baseCurrency },
   };
 
   if (witness === null) {
@@ -276,11 +314,30 @@ export function describeManagedPortfolioDrift(input: {
     return `"${portfolioName}": el saldo declarado y el valor de sus fondos no se pueden comparar.`;
   }
 
-  return (
+  const opening =
     `"${portfolioName}": el valor de sus fondos (${amount(reconciliation.investmentValue)}) ` +
     `se aparta un ${formatDriftBps(drift)} del saldo que declaraste el ` +
-    `${formatDateKeyEs(reconciliation.declaredDate ?? "")} (${amount(declared)}). ` +
-    "Manda el derivado: " +
+    `${formatDateKeyEs(reconciliation.declaredDate ?? "")} (${amount(declared)}). `;
+
+  // Mid-substitution the aggregate IS the explanation (#1551): it still stands
+  // for a composition the owner has begun to detail, so the book counts the same
+  // money twice until he shrinks it. Sending him to check prices instead would be
+  // sending him to look for a problem that is not there.
+  if (
+    drift > 0 &&
+    reconciliation.undetailedValue.amountMinor > 0 &&
+    reconciliation.investmentValue.amountMinor > declared.amountMinor
+  ) {
+    return (
+      `${opening}Tienes ${amount(reconciliation.undetailedValue)} sin detallar en su ` +
+      "agregado: mientras represente lo que ya has detallado aparte, el libro cuenta " +
+      "ese dinero dos veces. Reduce el agregado a lo que quede del saldo declarado. " +
+      `El efectivo de la cartera (${amount(reconciliation.cashValue)}) queda fuera del careo.`
+    );
+  }
+
+  return (
+    `${opening}Manda el derivado: ` +
     `revisa participaciones, precios o el propio saldo declarado. El efectivo de la ` +
     `cartera (${amount(reconciliation.cashValue)}) queda fuera del careo.`
   );

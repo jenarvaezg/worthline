@@ -1233,7 +1233,7 @@ describe("data-quality — el saldo declarado de una cartera gestionada (#1550)"
     });
 
     const portfolio = await store.managedPortfolios.createManagedPortfolio({
-      cashOwnership: owner,
+      containerOwnership: owner,
       memberHoldingIds: ["asset_fondos"],
       name: "Cartera Indexada Metal",
       provider: "MyInvestor",

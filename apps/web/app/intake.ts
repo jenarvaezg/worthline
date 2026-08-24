@@ -511,7 +511,16 @@ export function okMessage(key: string | undefined): string | null {
     // Carteras gestionadas (ADR 0085, #1547).
     cartera_borrada: "Cartera gestionada eliminada. Sus holdings no se han tocado.",
     cartera_creada: "Cartera creada. Asigna sus fondos en «Miembros».",
+    // Alta «solo saldo» (#1551): el bruto ya es honesto, el detalle puede esperar.
+    cartera_creada_sin_detallar:
+      "Cartera creada con su saldo, sin detallar la composición. Tu patrimonio ya la cuenta entera; detállala cuando quieras y worthline te dirá cuánto dejar en el agregado.",
     cartera_guardada: "Cartera guardada.",
+    cartera_guardada_con_agregado:
+      "Cartera guardada. Sigue teniendo una parte «(sin detallar)»: mientras represente lo que ya has detallado aparte, el mismo dinero cuenta dos veces. Ajústala en «Pendiente de detallar».",
+    agregado_ajustado:
+      "Agregado sin detallar ajustado. El resto de la cartera ya está detallado.",
+    agregado_retirado:
+      "Agregado sin detallar retirado. La cartera queda enteramente detallada; el agregado está en la Papelera si lo necesitas.",
     // El saldo declarado (#1550): un testigo, nunca un ajuste del libro.
     testigo_borrado: "Saldo declarado borrado. worthline sigue con su propio cálculo.",
     testigo_guardado:

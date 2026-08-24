@@ -778,6 +778,13 @@ export {
   assertManagedPortfolioWitnessInput,
   computeManagedPortfolioFigures,
 } from "./managed-portfolio";
+export type { ManagedPortfolioMemberRoles } from "./managed-portfolio-members";
+export {
+  assertUndetailedValueInput,
+  managedPortfolioMemberRoles,
+  undetailedMemberName,
+  undetailedRemainderMinor,
+} from "./managed-portfolio-members";
 export type {
   ManagedPortfolioLiveMember,
   ManagedPortfolioMemberValue,

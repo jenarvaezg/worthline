@@ -153,7 +153,7 @@ describe("deleteAssetAction — a cartera's cash box (ADR 0085, #1549)", () => {
   test("names the cartera and refuses, exit or no exit", async () => {
     const store = await seedFund();
     const portfolio = await store.managedPortfolios.createManagedPortfolio({
-      cashOwnership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+      containerOwnership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
       memberHoldingIds: [],
       name: "Cartera Indexada Metal",
       scopeId: MEMBER_ID,
