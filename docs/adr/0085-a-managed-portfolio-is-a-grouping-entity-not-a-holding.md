@@ -171,11 +171,28 @@ Two consequences follow, both already written into the code:
   just the cash sibling: neither the cash nor the aggregate is ever offered as a
   chip, so a save that does not mention them is not a save that removes them.
 
-The substitution suggestion (`declarado − Σ detallado`) subtracts INVESTMENT
+The substitution suggestion (`declarado − Σ detallado`) subtracts DETAILED
 members only. Subtracting the container's cash would leave the aggregate short by
 the balance waiting to be invested and drop the gross for no reason — the same
 cash-is-not-in-the-witness correction as the 23-08 amendment, applied to the
-other direction of the arithmetic.
+other direction of the arithmetic. The suggestion is read OFF THE CAREO
+(`investmentValue − undetailedValue`), never re-summed: two sums of the same
+members is how a surface ends up subtracting an FX-converted total from a raw
+declared balance and suggesting a figure the careo cannot see (#1422), so a member
+the careo cannot honestly add silences the suggestion too.
+
+Mid-substitution the book legitimately reads ABOVE the declared balance — the
+aggregate still stands for funds already detailed apart, so the same money is
+counted twice until it is shrunk. The careo says so rather than staying silent
+(the drift is real) and rather than blaming prices: it reports the aggregate as
+its own figure beside the investment total, and both the ficha and the
+`portfolio_reconciliation` signal name it as the thing to reduce. A verdict that
+pointed at participaciones and NAVs there would send the owner hunting a problem
+that is not his.
+
+The two altas are exclusive at the STORE door, not only in the form: the declared
+balance the aggregate is born at is the value of the whole composition, so an alta
+that also enumerated funds would count the same money twice from birth.
 
 ## Consequences
 

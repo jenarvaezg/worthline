@@ -12,7 +12,6 @@ import {
   formatDateKeyEs,
   formatDriftBps,
   formatMoneyMinor,
-  type ManagedPortfolioSlice,
   managedPortfolioMemberRoles,
   managedPortfolioMemberValues,
   reconcileManagedPortfolio,
@@ -100,6 +99,8 @@ export interface PortfolioCompositionRowView {
   weight: number | null;
   /** True for the auto-created efectivo sibling, so the ficha can mark it. */
   isCash: boolean;
+  /** True for the "(sin detallar)" aggregate (#1551) — marked, never hidden. */
+  isUndetailed: boolean;
   /** The holding's own ficha link, or null without a registry row. */
   href: string | null;
 }
@@ -136,17 +137,15 @@ export function portfolioCompositionView(input: {
     }),
   });
 
-  const sliceByHoldingId = new Map(
-    figures.slices.map((slice: ManagedPortfolioSlice) => [slice.holdingId, slice]),
-  );
-  const unknownMemberIds = portfolio.holdingIds.filter(
-    (holdingId) => !sliceByHoldingId.has(holdingId),
-  );
+  // Roles come from the domain's own classifier — the same one the careo and the
+  // store read, so no surface has its own idea of which member is the cash box.
+  const roles = managedPortfolioMemberRoles(portfolio.holdingIds, typeByHoldingId);
 
   // Composition reads by weight, largest first; the domain already ordered it.
   const rows: PortfolioCompositionRowView[] = figures.slices.map((slice) => ({
     holdingId: slice.holdingId,
-    isCash: typeByHoldingId.get(slice.holdingId) === "cash",
+    isCash: slice.holdingId === roles.cashHoldingId,
+    isUndetailed: slice.holdingId === roles.undetailedHoldingId,
     label: nameById.get(slice.holdingId) ?? slice.holdingId,
     valueMinor: slice.valueMinor,
     weight: slice.weight,
@@ -155,7 +154,11 @@ export function portfolioCompositionView(input: {
       : null,
   }));
 
-  return { rows, totalMinor: figures.totalMinor, unknownMemberIds };
+  return {
+    rows,
+    totalMinor: figures.totalMinor,
+    unknownMemberIds: roles.unknownHoldingIds,
+  };
 }
 
 /** Everything the ficha's witness block paints, decided here (#1550). */
@@ -305,20 +308,23 @@ function witnessMessage(
 
 /** Everything the ficha's «pendiente de detallar» block paints (#1551). */
 export interface PortfolioUndetailedView {
-  /** The aggregate member's holding id — the row the two forms write to. */
+  /** The aggregate member's holding id — what the ficha links and labels. */
   holdingId: string;
   label: string;
   /** What the aggregate is worth today. */
   valueMinor: number;
-  /** Σ of the INVESTMENT members: the composition already detailed. */
+  /** The composition already detailed: the careo's investment side minus the aggregate. */
   detailedMinor: number;
   declaredMinor: number | null;
-  /** `declared − detailed`, the value to leave the aggregate at; null without a witness. */
+  /**
+   * `declarado − Σ detallado`, the value to leave the aggregate at. Null when
+   * there is nothing honest to suggest: no witness, a witness in another
+   * currency, or a member with no honest value in the base currency — the same
+   * silences the careo keeps, for the same reason (#1401/#1422).
+   */
   remainderMinor: number | null;
   /** The suggestion is zero: what is detailed already covers the declared balance. */
   suggestsWithdrawal: boolean;
-  /** The aggregate already holds exactly the suggested figure — nothing to do. */
-  isSettled: boolean;
   message: string;
   /** The aggregate's own ficha link, or null without a registry row. */
   href: string | null;
@@ -328,19 +334,22 @@ export interface PortfolioUndetailedView {
  * The progressive-substitution block: how much of the cartera is still standing
  * on the "(sin detallar)" aggregate, and what to leave it at (#1551).
  *
- * The suggestion (`declarado − Σ detallado`) subtracts only the INVESTMENT
- * members — never the container's cash, which was never part of the declared
- * balance, and never the aggregate itself, which is the figure being replaced.
- * The arithmetic and the membership classification are the domain's
- * (`undetailedRemainderMinor`, `managedPortfolioMemberRoles`); this function
- * feeds them the ficha's read model and turns the result into a sentence.
+ * It reads the SAME careo the witness block reads — unconverted money, the
+ * aggregate reported apart — and takes the detailed side from it
+ * (`investmentValue − undetailedValue`) instead of re-summing the members. Two
+ * sums of the same thing is how the ficha would end up subtracting an
+ * FX-converted total from a raw declared balance and suggesting a figure the
+ * careo cannot see (#1422's shape), and it is why a member the careo cannot
+ * honestly add silences the suggestion here too.
  *
  * Null when the portfolio has no aggregate — registered with its composition, or
  * the aggregate already retired.
  */
 export function portfolioUndetailedView(input: {
   portfolio: ManagedPortfolio;
-  valueMinorByHoldingId: ReadonlyMap<string, number>;
+  /** Live holdings' values in the currency they are HELD in (never converted). */
+  moneyByHoldingId: ReadonlyMap<string, MoneyMinor>;
+  /** Live holdings' types, keyed by id — absent means "not live any more". */
   typeByHoldingId: ReadonlyMap<string, string>;
   nameById: ReadonlyMap<string, string>;
   baseCurrency: CurrencyCode;
@@ -348,26 +357,42 @@ export function portfolioUndetailedView(input: {
 }): PortfolioUndetailedView | null {
   const {
     baseCurrency,
+    moneyByHoldingId,
     nameById,
     portfolio,
     publicIdByHolding,
     typeByHoldingId,
-    valueMinorByHoldingId,
   } = input;
 
   const roles = managedPortfolioMemberRoles(portfolio.holdingIds, typeByHoldingId);
   const holdingId = roles.undetailedHoldingId;
   if (holdingId === null) return null;
 
-  const valueMinor = valueMinorByHoldingId.get(holdingId) ?? 0;
-  const detailedMinor = roles.investmentHoldingIds.reduce(
-    (sum, memberId) => sum + (valueMinorByHoldingId.get(memberId) ?? 0),
-    0,
-  );
-  const declaredMinor =
-    portfolio.witness?.declaredValue.currency === baseCurrency
-      ? portfolio.witness.declaredValue.amountMinor
-      : null;
+  const reconciliation = reconcileManagedPortfolio({
+    baseCurrency,
+    members: managedPortfolioMemberValues(
+      portfolio.holdingIds,
+      new Map(
+        [...typeByHoldingId].map(([memberId, type]) => [
+          memberId,
+          { type, value: moneyByHoldingId.get(memberId) ?? null },
+        ]),
+      ),
+    ),
+    witness: portfolio.witness,
+  });
+
+  const valueMinor = reconciliation.undetailedValue.amountMinor;
+  const detailedMinor =
+    reconciliation.investmentValue.amountMinor -
+    reconciliation.undetailedValue.amountMinor;
+  // Only a careo that actually happened can suggest: `aligned` and `diverged` are
+  // the two states where both sides were honestly comparable.
+  const comparable =
+    reconciliation.state === "aligned" || reconciliation.state === "diverged";
+  const declaredMinor = comparable
+    ? (reconciliation.declaredValue?.amountMinor ?? null)
+    : null;
   const remainderMinor = undetailedRemainderMinor({
     declaredMinor,
     detailedInvestmentMinor: detailedMinor,
@@ -383,7 +408,6 @@ export function portfolioUndetailedView(input: {
     href: publicIdByHolding?.[holdingId]
       ? holdingDetailHref(publicIdByHolding[holdingId]!)
       : null,
-    isSettled: remainderMinor !== null && remainderMinor === valueMinor,
     label: nameById.get(holdingId) ?? holdingId,
     message: undetailedMessage({ amount, detailedMinor, remainderMinor, valueMinor }),
     remainderMinor,
@@ -408,9 +432,9 @@ function undetailedMessage(input: {
   if (remainderMinor === null) {
     return (
       `Esta parte de la cartera (${amount(valueMinor)}) sigue sin detallar y suma a tu ` +
-      "patrimonio tal cual. Sin saldo declarado no hay nada de lo que restar lo ya " +
-      "detallado: teclea arriba el que lees en tu gestor y worthline te dirá cuánto " +
-      "conviene dejar aquí a medida que añadas los fondos reales."
+      "patrimonio tal cual. Sin un saldo declarado que se pueda carear no hay nada de " +
+      "lo que restar lo ya detallado: teclea arriba el que lees en tu gestor, en la " +
+      "divisa de tu libro, y worthline te dirá cuánto conviene dejar aquí."
     );
   }
   if (remainderMinor === 0) {

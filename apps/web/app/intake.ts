@@ -515,6 +515,8 @@ export function okMessage(key: string | undefined): string | null {
     cartera_creada_sin_detallar:
       "Cartera creada con su saldo, sin detallar la composición. Tu patrimonio ya la cuenta entera; detállala cuando quieras y worthline te dirá cuánto dejar en el agregado.",
     cartera_guardada: "Cartera guardada.",
+    cartera_guardada_con_agregado:
+      "Cartera guardada. Sigue teniendo una parte «(sin detallar)»: mientras represente lo que ya has detallado aparte, el mismo dinero cuenta dos veces. Ajústala en «Pendiente de detallar».",
     agregado_ajustado:
       "Agregado sin detallar ajustado. El resto de la cartera ya está detallado.",
     agregado_retirado:

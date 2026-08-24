@@ -122,13 +122,13 @@ async function FichaContent({
   // enumerating its composition (#1551). Absent for a detailed one.
   const undetailed = portfolioUndetailedView({
     baseCurrency: workspace.baseCurrency,
+    moneyByHoldingId: model.moneyByHoldingId,
     nameById: model.nameById,
     portfolio,
     publicIdByHolding: Object.fromEntries(
       holdingPublicIdIndex(publicIdRows).publicByInternal,
     ),
     typeByHoldingId: model.typeByHoldingId,
-    valueMinorByHoldingId: model.valueMinorByHoldingId,
   });
 
   const fmt = (amountMinor: number) =>
@@ -251,6 +251,7 @@ async function FichaContent({
                   <td>
                     {row.href ? <Link href={row.href}>{row.label}</Link> : row.label}
                     {row.isCash ? " · efectivo" : ""}
+                    {row.isUndetailed ? " · sin detallar" : ""}
                   </td>
                   <td className="carterasWeight">
                     {row.weight == null
@@ -401,39 +402,52 @@ async function FichaContent({
             </tbody>
           </table>
 
-          <p className="muted">{undetailed.message}</p>
-
-          <form action={setUndetailedRemainderAction} className="stackForm">
-            <input name="currentUrl" type="hidden" value={currentUrl} />
-            <input name="portfolioId" type="hidden" value={portfolio.id} />
-            {undetailedError ? (
-              <p className="formError" role="alert">
-                {undetailedError.message}
-              </p>
-            ) : null}
-            <label>
-              Dejar el agregado en ({workspace.baseCurrency})
-              <input
-                defaultValue={
-                  undetailedValues.remainderValue ??
-                  formatMoneyInput(undetailed.remainderMinor ?? undetailed.valueMinor)
-                }
-                inputMode="decimal"
-                name="remainderValue"
-              />
-            </label>
-            <p className="muted">
-              Un 0 retira el agregado: la cartera queda enteramente detallada. Ni el
-              efectivo de la cartera ni el propio agregado entran en la resta — el saldo
-              que declaras es el de los fondos.
+          {undetailed.suggestsWithdrawal ? (
+            <p className="warningBand" role="status">
+              {undetailed.message}
             </p>
-            <PendingSubmit pendingLabel="Guardando…">Guardar el agregado</PendingSubmit>
-          </form>
+          ) : (
+            <p className="muted">{undetailed.message}</p>
+          )}
+
+          {undetailed.suggestsWithdrawal ? null : (
+            <form action={setUndetailedRemainderAction} className="stackForm">
+              <input name="currentUrl" type="hidden" value={currentUrl} />
+              <input name="portfolioId" type="hidden" value={portfolio.id} />
+              {undetailedError ? (
+                <p className="formError" role="alert">
+                  {undetailedError.message}
+                </p>
+              ) : null}
+              <label>
+                Dejar el agregado en ({workspace.baseCurrency})
+                <input
+                  defaultValue={
+                    undetailedValues.remainderValue ??
+                    formatMoneyInput(undetailed.remainderMinor ?? undetailed.valueMinor)
+                  }
+                  inputMode="decimal"
+                  name="remainderValue"
+                />
+              </label>
+              <p className="muted">
+                Un 0 retira el agregado: la cartera queda enteramente detallada. Ni el
+                efectivo de la cartera ni el propio agregado entran en la resta — el saldo
+                que declaras es el de los fondos.
+              </p>
+              <PendingSubmit pendingLabel="Guardando…">Guardar el agregado</PendingSubmit>
+            </form>
+          )}
 
           <form action={setUndetailedRemainderAction}>
             <input name="currentUrl" type="hidden" value={currentUrl} />
             <input name="portfolioId" type="hidden" value={portfolio.id} />
             <input name="withdraw" type="hidden" value="1" />
+            {undetailed.suggestsWithdrawal && undetailedError ? (
+              <p className="formError" role="alert">
+                {undetailedError.message}
+              </p>
+            ) : null}
             <PendingSubmit pendingLabel="Retirando…">Retirar el agregado</PendingSubmit>
           </form>
         </section>
@@ -478,7 +492,7 @@ async function FichaContent({
             <ChipChoice
               name="holdingIds"
               options={options}
-              selectedIds={(preservedIds ?? roles.investmentHoldingIds).filter(
+              selectedIds={(preservedIds ?? roles.detailedHoldingIds).filter(
                 (holdingId) => selectableIds.has(holdingId),
               )}
             />

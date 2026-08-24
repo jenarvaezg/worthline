@@ -771,18 +771,20 @@ export type {
   ManagedPortfolio,
   ManagedPortfolioFigures,
   ManagedPortfolioMemberFigure,
-  ManagedPortfolioMemberRoles,
   ManagedPortfolioSlice,
 } from "./managed-portfolio";
 export {
   assertManagedPortfolioInput,
   assertManagedPortfolioWitnessInput,
   computeManagedPortfolioFigures,
+} from "./managed-portfolio";
+export type { ManagedPortfolioMemberRoles } from "./managed-portfolio-members";
+export {
+  assertUndetailedValueInput,
   managedPortfolioMemberRoles,
-  UNDETAILED_MEMBER_SUFFIX,
   undetailedMemberName,
   undetailedRemainderMinor,
-} from "./managed-portfolio";
+} from "./managed-portfolio-members";
 export type {
   ManagedPortfolioLiveMember,
   ManagedPortfolioMemberValue,

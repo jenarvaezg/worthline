@@ -8,7 +8,12 @@ import {
   managedPortfolioPublicIdIndex,
   managedPortfoliosIndexHref,
 } from "@web/holding-route";
-import { appendParam, errorRedirectUrl, preserveFields } from "@web/intake";
+import {
+  appendParam,
+  errorRedirectUrl,
+  mapDomainViolation,
+  preserveFields,
+} from "@web/intake";
 import {
   parseIsoDateField,
   parseMoneyMinor,
@@ -17,6 +22,7 @@ import {
 import type { OwnershipShare, Workspace } from "@worthline/domain";
 import {
   assertManagedPortfolioInput,
+  checkManualValuationViolation,
   managedPortfolioMemberRoles,
 } from "@worthline/domain";
 
@@ -216,15 +222,24 @@ export async function createManagedPortfolioAction(
       });
 
       if (parsed.declaredValueMinor !== null) {
-        await store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
-          declaredDate: parsed.today,
-          // Declared in the book's own currency: converting one here would invent
-          // a rate inside an intake (#1401).
-          declaredValue: {
-            amountMinor: parsed.declaredValueMinor,
-            currency: workspace.baseCurrency,
-          },
-        });
+        // The cartera is already written. A failure HERE must not bounce the alta
+        // as an error: the owner would retry and register a second cartera. The
+        // portfolio simply has no witness yet, and the ficha's own block asks for
+        // one in as many words.
+        try {
+          await store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
+            declaredDate: parsed.today,
+            // Declared in the book's own currency: converting one here would
+            // invent a rate inside an intake (#1401).
+            declaredValue: {
+              amountMinor: parsed.declaredValueMinor,
+              currency: workspace.baseCurrency,
+            },
+          });
+        } catch {
+          // Deliberately swallowed: the aggregate stands, the witness can be
+          // typed on the ficha.
+        }
       }
 
       // The alta lands on the ficha; a missing registry row would blank the
@@ -245,7 +260,10 @@ export async function updateManagedPortfolioAction(
   formData: FormData,
   ..._testArgs: unknown[]
 ): Promise<never> {
-  return formAction<{ id: string; form: ParsedPortfolioForm }>({
+  return formAction<
+    { id: string; form: ParsedPortfolioForm },
+    { hasUndetailed: boolean }
+  >({
     datedFact: false,
     guardUrl: (fd) => currentUrlOf(fd),
     onError: ({ formData, error }) => {
@@ -256,8 +274,12 @@ export async function updateManagedPortfolioAction(
         message: error,
       });
     },
-    onSuccess: ({ formData }) =>
-      appendParam(currentUrlOf(formData), "ok", "cartera_guardada"),
+    onSuccess: ({ formData, value }) =>
+      appendParam(
+        currentUrlOf(formData),
+        "ok",
+        value?.hasUndetailed ? "cartera_guardada_con_agregado" : "cartera_guardada",
+      ),
     parse: ({ formData }) => {
       const id = field(formData, "portfolioId");
       if (!id) {
@@ -287,12 +309,30 @@ export async function updateManagedPortfolioAction(
       await store.managedPortfolios.updateManagedPortfolio(parsed.id, {
         // Always sent: the form paints every eligible holding as a chip, so an
         // absent chip means "quit", never "leave the set as it was". The
-        // auto-created cash sibling is not a chip and survives regardless.
+        // auto-created cash sibling and the "(sin detallar)" aggregate are not
+        // chips and survive regardless.
         memberHoldingIds: parsed.form.holdingIds,
         name: parsed.form.name,
         provider: parsed.form.provider,
       });
-      return { ok: true };
+
+      // Adding a fund to a cartera that still carries the aggregate is the exact
+      // moment the same money is counted twice (#1551), so the confirmation says
+      // so instead of leaving the owner to notice the inflated total himself.
+      const portfolios = await store.managedPortfolios.readManagedPortfolios();
+      const portfolio = portfolios.find((candidate) => candidate.id === parsed.id);
+      const assets = await store.assets.readAssets();
+      const roles = portfolio
+        ? managedPortfolioMemberRoles(
+            portfolio.holdingIds,
+            new Map(assets.map((asset) => [asset.id, asset.type])),
+          )
+        : null;
+
+      return {
+        ok: true,
+        value: { hasUndetailed: roles?.undetailedHoldingId != null },
+      };
     },
   })(formData, ..._testArgs);
 }
@@ -431,12 +471,12 @@ export async function declareManagedPortfolioBalanceAction(
  * value update every stored holding uses, and the Papelera — so the ripple, the
  * snapshots and the audit trail are the ones every other value change gets.
  *
- * Retiring writes 0 € BEFORE archiving instead of archiving the value away: the
- * board then shows the drop as a value change on a live holding for the instant
- * it lasts, and the archived row carries no money out of the patrimonio. An
- * aggregate typed down to 0 € is the same gesture said differently, so it takes
- * the same path — a stored holding sitting at 0 € inside a live cartera is a
- * zombie nobody asked for.
+ * Retiring ARCHIVES the aggregate with its value untouched, and an aggregate
+ * typed down to 0 € takes the same path — a stored holding sitting at 0 € inside a
+ * live cartera is a zombie nobody asked for. Nothing is zeroed first: the row
+ * keeps no operations ledger, so the Papelera's gate has nothing to refuse
+ * (#1549) and no signal to silence, and restoring it brings back the figure it
+ * stood for instead of a 0 € stub.
  *
  * The aggregate is resolved from the DATABASE (`managedPortfolioMemberRoles`),
  * never from a holding id in the form: the id the client sends is exactly the
@@ -512,24 +552,28 @@ export async function setUndetailedRemainderAction(
           };
         }
 
-        const withdraw = parsed.remainderMinor === null || parsed.remainderMinor === 0;
-        await store.assets.updateAssetValuation(
-          holdingId,
-          withdraw ? 0 : parsed.remainderMinor!,
-        );
-
-        if (withdraw) {
+        if (parsed.remainderMinor === null || parsed.remainderMinor === 0) {
           const outcome = await store.assets.softDeleteAsset(holdingId, now);
           if (outcome.status !== "deleted") {
             return {
               ok: false,
-              error:
-                "El agregado se quedó a 0 € pero no se pudo archivar. Vuelve a intentarlo desde su ficha.",
+              error: "No se pudo archivar el agregado. Vuelve a intentarlo.",
             };
           }
+          return { ok: true, value: { withdrew: true } };
         }
 
-        return { ok: true, value: { withdrew: withdraw } };
+        // The same guard the ordinary value-update door runs (ADR 0006, #883): the
+        // aggregate is hand-valued by construction, and a role that ever resolved
+        // to something derived must be refused here rather than written.
+        const aggregate = assets.find((asset) => asset.id === holdingId);
+        const violation = aggregate ? checkManualValuationViolation(aggregate) : null;
+        if (violation) {
+          return { ok: false, error: mapDomainViolation(violation) };
+        }
+
+        await store.assets.updateAssetValuation(holdingId, parsed.remainderMinor);
+        return { ok: true, value: { withdrew: false } };
       },
     },
   )(formData, ..._testArgs);

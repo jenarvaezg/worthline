@@ -187,6 +187,7 @@ describe("setUndetailedRemainderAction — sustitución progresiva (#1551)", () 
 
     expect(url).toContain("agregado_ajustado");
     expect(await grossMinor(store)).toBe(1_000_00);
+    // Saving members while the aggregate still stands says so out loud (#1551).
     // The aggregate is still a member — the cartera is only half detailed.
     expect((await onlyPortfolio(store)).holdingIds).toHaveLength(3);
 
@@ -205,15 +206,16 @@ describe("setUndetailedRemainderAction — sustitución progresiva (#1551)", () 
     );
 
     expect(url).toContain("agregado_retirado");
-    // The value was written to 0 BEFORE the archive: nothing left the book inside
-    // an archived row.
+    // Nothing of the cartera is left summing: the cash box stays live at 0 €.
     expect(await grossMinor(store)).toBe(0);
     const trashed = (await store.readTrash()).assets;
     expect(trashed.map((asset) => asset.name)).toEqual([
       "Cartera Indexada Metal (sin detallar)",
     ]);
-    // The cash box stays: it is the container's casilla while the cartera lives.
-    expect(await grossMinor(store)).toBe(0);
+    // Archived with its figure intact: restoring brings back what it stood for,
+    // not a 0 € stub.
+    await store.assets.restoreAsset(trashed[0]!.id);
+    expect(await grossMinor(store)).toBe(1_000_00);
 
     store.close();
   });

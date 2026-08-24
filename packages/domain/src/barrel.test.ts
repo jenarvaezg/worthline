@@ -178,6 +178,7 @@ const KEY_EXPORTS = [
   "managedPortfolioMemberRoles",
   "undetailedMemberName",
   "undetailedRemainderMinor",
+  "assertUndetailedValueInput",
   // monthly-savings / savings-coherence / fire-achievement (#425, #1449)
   "suggestMonthlySavingsCapacity",
   "measureMonthlySavings",

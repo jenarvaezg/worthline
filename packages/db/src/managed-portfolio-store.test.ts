@@ -295,6 +295,19 @@ describe("managed portfolio CRUD", () => {
     ).rejects.toThrow(/importe positivo/);
   });
 
+  it("refuses an alta that both enumerates funds and declares a balance", async () => {
+    const { store } = await freshStore();
+    await expect(
+      store.managedPortfolios.createManagedPortfolio({
+        containerOwnership: M1_OWNERSHIP,
+        memberHoldingIds: ["f1"],
+        name: "Cartera Indexada Metal",
+        scopeId: "household",
+        undetailedValueMinor: 1_000_00,
+      }),
+    ).rejects.toThrow(/no con las dos cosas/);
+  });
+
   it("preserves the aggregate too when members are rewritten (#1551)", async () => {
     const { store } = await freshStore();
     const created = await store.managedPortfolios.createManagedPortfolio({

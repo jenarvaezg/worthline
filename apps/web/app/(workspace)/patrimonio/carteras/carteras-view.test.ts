@@ -139,6 +139,7 @@ describe("portfolioCompositionView", () => {
       holdingId: "f1",
       href: null,
       isCash: false,
+      isUndetailed: false,
       label: "Fondo A",
       valueMinor: 600_00,
       weight: 600_00 / 607_34,
@@ -152,7 +153,7 @@ describe("portfolioCompositionView", () => {
       nameById: new Map([["f1", "Fondo A"]]),
       portfolio,
       publicIdByHolding: { f1: "wl_hld_f1" },
-      typeByHoldingId: new Map(),
+      typeByHoldingId: new Map([["f1", "investment"]]),
       valueMinorByHoldingId: new Map([["f1", 100]]),
     });
 
@@ -163,12 +164,49 @@ describe("portfolioCompositionView", () => {
     const view = portfolioCompositionView({
       nameById: new Map([["f1", "Fondo A"]]),
       portfolio: { ...portfolio, holdingIds: ["f1", "gone"] },
-      typeByHoldingId: new Map(),
+      typeByHoldingId: new Map([["f1", "investment"]]),
       valueMinorByHoldingId: new Map([["f1", 100]]),
     });
 
     expect(view.unknownMemberIds).toEqual(["gone"]);
     expect(view.rows.map((row) => row.holdingId)).toEqual(["f1"]);
+  });
+
+  it("marks the «(sin detallar)» aggregate — a member, never a hidden row (#1551)", () => {
+    const view = portfolioCompositionView({
+      nameById: new Map([["agg", "Metal (sin detallar)"]]),
+      portfolio: { ...portfolio, holdingIds: ["agg", "cash"] },
+      typeByHoldingId: new Map([
+        ["agg", "manual"],
+        ["cash", "cash"],
+      ]),
+      valueMinorByHoldingId: new Map([
+        ["agg", 1_000_00],
+        ["cash", 0],
+      ]),
+    });
+
+    expect(view.rows[0]?.isUndetailed).toBe(true);
+    expect(view.rows[0]?.isCash).toBe(false);
+    expect(view.totalMinor).toBe(1_000_00);
+  });
+
+  it("a LIVE member with no honest value is not called dead — the hero counts it apart", () => {
+    // Live (it has a type) but absent from the converted values (#1065): it is
+    // reported by the hero's excluded-foreign count, and saving the ficha does NOT
+    // drop it as a member, so calling it "no longer live" would be a lie.
+    const view = portfolioCompositionView({
+      nameById: new Map(),
+      portfolio,
+      typeByHoldingId: new Map([
+        ["f1", "investment"],
+        ["cash", "cash"],
+      ]),
+      valueMinorByHoldingId: new Map([["cash", 100]]),
+    });
+
+    expect(view.unknownMemberIds).toEqual([]);
+    expect(view.rows.map((row) => row.holdingId)).toEqual(["cash"]);
   });
 });
 
@@ -307,6 +345,8 @@ describe("portfolioUndetailedView", () => {
     /** The aggregate's own value today, or null when there is no aggregate. */
     aggregateMinor: number | null;
     detailedMinor?: number;
+    /** The currency the detailed fund is HELD in — unconverted (#1550). */
+    detailedCurrency?: string;
   }) {
     const declaredMinor =
       input.declaredMinor === undefined ? DECLARED_MINOR : input.declaredMinor;
@@ -342,14 +382,24 @@ describe("portfolioUndetailedView", () => {
           ? []
           : ([["fondo", "investment"]] as Array<[string, string]>)),
       ]),
-      valueMinorByHoldingId: new Map([
-        ["efectivo", 0],
+      moneyByHoldingId: new Map([
+        ["efectivo", { amountMinor: 0, currency: "EUR" }],
         ...(input.aggregateMinor === null
           ? []
-          : ([["agregado", input.aggregateMinor]] as Array<[string, number]>)),
+          : ([
+              ["agregado", { amountMinor: input.aggregateMinor, currency: "EUR" }],
+            ] as Array<[string, { amountMinor: number; currency: string }]>)),
         ...(input.detailedMinor === undefined
           ? []
-          : ([["fondo", input.detailedMinor]] as Array<[string, number]>)),
+          : ([
+              [
+                "fondo",
+                {
+                  amountMinor: input.detailedMinor,
+                  currency: input.detailedCurrency ?? "EUR",
+                },
+              ],
+            ] as Array<[string, { amountMinor: number; currency: string }]>)),
       ]),
     });
   }
@@ -365,7 +415,6 @@ describe("portfolioUndetailedView", () => {
     expect(result.valueMinor).toBe(DECLARED_MINOR);
     expect(result.detailedMinor).toBe(0);
     expect(result.remainderMinor).toBe(DECLARED_MINOR);
-    expect(result.isSettled).toBe(true);
     expect(result.suggestsWithdrawal).toBe(false);
   });
 
@@ -374,7 +423,6 @@ describe("portfolioUndetailedView", () => {
 
     expect(result.detailedMinor).toBe(400_00);
     expect(result.remainderMinor).toBe(600_00);
-    expect(result.isSettled).toBe(false);
     expect(result.suggestsWithdrawal).toBe(false);
     expect(result.message).toContain("quedan 600");
   });
@@ -402,10 +450,10 @@ describe("portfolioUndetailedView", () => {
         ["agregado", "manual"],
         ["fondo", "investment"],
       ]),
-      valueMinorByHoldingId: new Map([
-        ["efectivo", 734],
-        ["agregado", DECLARED_MINOR],
-        ["fondo", 400_00],
+      moneyByHoldingId: new Map([
+        ["efectivo", { amountMinor: 734, currency: "EUR" }],
+        ["agregado", { amountMinor: DECLARED_MINOR, currency: "EUR" }],
+        ["fondo", { amountMinor: 400_00, currency: "EUR" }],
       ]),
     })!;
 
@@ -420,12 +468,25 @@ describe("portfolioUndetailedView", () => {
     expect(result.message).toContain("retira");
   });
 
+  it("a fund held in another currency silences the suggestion, never inflates it", () => {
+    // The careo cannot honestly add a dollar to a euro (#1401), so the detailed
+    // side would be short and the remainder too high — the ficha stays quiet
+    // instead, exactly as the witness block does.
+    const result = view({
+      aggregateMinor: DECLARED_MINOR,
+      detailedCurrency: "USD",
+      detailedMinor: 400_00,
+    })!;
+
+    expect(result.remainderMinor).toBeNull();
+    expect(result.suggestsWithdrawal).toBe(false);
+  });
+
   it("suggests nothing without a declared balance — it asks for one instead", () => {
     const result = view({ aggregateMinor: 1_000_00, declaredMinor: null })!;
 
     expect(result.remainderMinor).toBeNull();
     expect(result.suggestsWithdrawal).toBe(false);
-    expect(result.isSettled).toBe(false);
     expect(result.message).toContain("saldo declarado");
   });
 });

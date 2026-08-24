@@ -6,7 +6,9 @@ import type {
 import {
   assertManagedPortfolioInput,
   assertManagedPortfolioWitnessInput,
+  assertUndetailedValueInput,
   createManualAsset,
+  managedPortfolioMemberRoles,
   undetailedMemberName,
 } from "@worthline/domain";
 import { asc, eq, inArray, sql } from "drizzle-orm";
@@ -393,7 +395,7 @@ async function declareManagedPortfolioBalance(
  * the domain constructor validated them exactly as it validates a hand-typed
  * alta — so the only thing they share is who created them.
  */
-async function insertContainerHolding(
+async function insertPlumbingHolding(
   ctx: StoreContext,
   holding: ReturnType<typeof createManualAsset>,
 ): Promise<void> {
@@ -434,11 +436,16 @@ async function createManagedPortfolio(
   await assertMemberEligibility(ctx, members, undefined);
 
   const undetailedValueMinor = input.undetailedValueMinor;
-  if (
-    undetailedValueMinor !== undefined &&
-    (!Number.isInteger(undetailedValueMinor) || undetailedValueMinor <= 0)
-  ) {
-    throw new Error("La cartera sin detallar necesita un importe positivo.");
+  if (undetailedValueMinor !== undefined) {
+    assertUndetailedValueInput(undetailedValueMinor);
+    // The two altas are exclusive AT THE DOOR, not just in the form: the declared
+    // balance the aggregate is born at is the value of the WHOLE composition, so
+    // an alta that also enumerates funds would count the same money twice.
+    if (members.length > 0) {
+      throw new Error(
+        "Una cartera se da de alta con sus fondos o con su saldo sin detallar, no con las dos cosas: el saldo representa la composición entera.",
+      );
+    }
   }
 
   const workspace = await ctx.getWorkspace();
@@ -487,7 +494,7 @@ async function createManagedPortfolio(
         });
 
   const id = ctx.newId();
-  const containerHoldingIds = [cash.id, ...(aggregate ? [aggregate.id] : [])];
+  const plumbingHoldingIds = [cash.id, ...(aggregate ? [aggregate.id] : [])];
 
   await ctx.transaction(async () => {
     await ctx.db
@@ -495,23 +502,23 @@ async function createManagedPortfolio(
       .values({ id, name, provider, scopeId: input.scopeId })
       .run();
 
-    await insertContainerHolding(ctx, cash);
-    if (aggregate) await insertContainerHolding(ctx, aggregate);
+    await insertPlumbingHolding(ctx, cash);
+    if (aggregate) await insertPlumbingHolding(ctx, aggregate);
 
     // The portfolio and every holding the alta created get agent-view public ids
     // on creation (#335 discipline) — the ficha is addressed by the wl_prt_ one.
     await ensureAgentViewPublicIds(ctx, [
       ...publicIdTargetsForManagedPortfolio(id),
-      ...containerHoldingIds.flatMap((holdingId) => publicIdTargetsForHolding(holdingId)),
+      ...plumbingHoldingIds.flatMap((holdingId) => publicIdTargetsForHolding(holdingId)),
     ]);
 
-    await insertMembers(ctx, id, [...containerHoldingIds, ...members]);
+    await insertMembers(ctx, id, [...plumbingHoldingIds, ...members]);
   });
 
   await ctx.writeAuditEntry("create_managed_portfolio", "managed_portfolio", id);
 
   return {
-    holdingIds: [...containerHoldingIds, ...members].sort(),
+    holdingIds: [...plumbingHoldingIds, ...members].sort(),
     id,
     name,
     provider,
@@ -542,22 +549,24 @@ async function updateManagedPortfolio(
       ? (existing.provider ?? null)
       : normalizeProvider(patch.provider);
 
-  // The holdings the ALTA created are identified by what they ARE (their asset is
-  // not an investment: the cash box, or the "(sin detallar)" aggregate of #1551),
-  // not by a stored pointer — they are normal holdings and stay manageable
+  // The holdings the ALTA created are identified by what they ARE (the cash box,
+  // the "(sin detallar)" aggregate of #1551 — the domain's own classifier, so no
+  // second definition lives here), not by a stored pointer — they are normal holdings and stay manageable
   // through every normal seam. Neither is ever a chip, so a save that does not
   // mention them is not a save that removes them.
   const memberRows = await readMemberRowsWithTypes(ctx, id);
-  const containerAssetIds = memberRows
-    .filter((row) => row.assetType !== "investment")
-    .map((row) => row.assetId);
+  const roles = managedPortfolioMemberRoles(
+    memberRows.map((row) => row.assetId),
+    new Map(memberRows.map((row) => [row.assetId, row.assetType])),
+  );
+  const plumbingAssetIds = [roles.cashHoldingId, roles.undetailedHoldingId].filter(
+    (holdingId): holdingId is string => holdingId !== null,
+  );
 
   let finalMembers: string[] | undefined;
   if (patch.memberHoldingIds !== undefined) {
     const requested = normalizeHoldingIds(patch.memberHoldingIds);
-    finalMembers = requested.filter(
-      (holdingId) => !containerAssetIds.includes(holdingId),
-    );
+    finalMembers = requested.filter((holdingId) => !plumbingAssetIds.includes(holdingId));
     await assertMemberEligibility(ctx, finalMembers, id);
   }
 
@@ -573,7 +582,7 @@ async function updateManagedPortfolio(
         .delete(managedPortfolioHoldings)
         .where(eq(managedPortfolioHoldings.portfolioId, id))
         .run();
-      await insertMembers(ctx, id, [...containerAssetIds, ...finalMembers]);
+      await insertMembers(ctx, id, [...plumbingAssetIds, ...finalMembers]);
     }
   });
 
