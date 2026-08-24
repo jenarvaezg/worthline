@@ -1,4 +1,8 @@
-import { formatMeasurePct, twrUnavailableReason } from "@web/_components/returns-format";
+import {
+  formatMeasurePct,
+  signClass,
+  twrUnavailableTitle,
+} from "@web/_components/returns-format";
 import { ChipChoice } from "@web/chip-choice";
 import {
   holdingPublicIdIndex,
@@ -142,6 +146,7 @@ async function FichaContent({
     portfolio,
     store,
     today,
+    witness,
   });
 
   const fmt = (amountMinor: number) =>
@@ -270,27 +275,32 @@ async function FichaContent({
                 <tr>
                   <th scope="row">Rentabilidad</th>
                   <td
-                    className={`carterasWeight ${signClass(returns.view.totalReturnRatio)}`}
+                    className={`carterasWeight ${signClass(returns.measures.totalReturnRatio)}`}
                   >
-                    {formatMeasurePct(returns.view.totalReturnRatio)}
+                    {formatMeasurePct(returns.measures.totalReturnRatio)}
                   </td>
                 </tr>
                 <tr>
                   <th scope="row">TWR</th>
                   <td
                     className="carterasWeight"
-                    {...(returns.view.twr?.rate == null
-                      ? { title: twrWhy(returns.view.twr?.reason ?? null) }
+                    {...(returns.measures.twr?.rate == null
+                      ? {
+                          title: twrUnavailableTitle(
+                            returns.measures.twr?.reason ?? null,
+                            "esta cartera",
+                          ),
+                        }
                       : {})}
                   >
-                    {formatMeasurePct(returns.view.twr?.rate ?? null)}
+                    {formatMeasurePct(returns.measures.twr?.rate ?? null)}
                   </td>
                 </tr>
               </tbody>
             </table>
 
             <p className="muted">{returns.message}</p>
-            <p className="muted">{returns.view.caveats.join(" ")}</p>
+            <p className="muted">{returns.measures.caveats.join(" ")}</p>
           </>
         )}
       </section>
@@ -587,24 +597,6 @@ async function FichaContent({
       </section>
     </div>
   );
-}
-
-/**
- * The semantic sign of a figure (design-system.md): a gain and a loss read
- * differently, and neither reads as raw green/red.
- */
-function signClass(value: number | null): "pos" | "neg" | "" {
-  if (value === null || value === 0) {
-    return "";
-  }
-  return value > 0 ? "pos" : "neg";
-}
-
-/** Why a TWR is an em dash, on hover: an absent measure that says nothing reads
- *  as a bug, the reason turns it into a signal (#1457). */
-function twrWhy(reason: Parameters<typeof twrUnavailableReason>[0]): string {
-  const why = twrUnavailableReason(reason);
-  return why === null ? "Sin TWR para esta cartera." : `Sin TWR: ${why}.`;
 }
 
 function FichaSkeleton() {

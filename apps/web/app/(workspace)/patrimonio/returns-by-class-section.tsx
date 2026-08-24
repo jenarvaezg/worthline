@@ -1,4 +1,8 @@
-import { formatMeasurePct, twrUnavailableReason } from "@web/_components/returns-format";
+import {
+  formatMeasurePct,
+  signClass,
+  twrUnavailableTitle,
+} from "@web/_components/returns-format";
 import type { AssetClassReturnsViewResult, TwrReason } from "@worthline/domain";
 import { formatMoneyMinorPrivacy } from "@worthline/domain";
 
@@ -23,17 +27,9 @@ import { assetClassLabel, formatExposureWeight } from "./exposure-view";
  * weights, and a class with no value today takes no part in it. Folded, never
  * dropped: its episode was real and stays one click away.
  */
-function signClass(ratio: number | null): "pos" | "neg" | "" {
-  if (ratio === null || ratio === 0) {
-    return "";
-  }
-  return ratio > 0 ? "pos" : "neg";
-}
-
 /** The hover text behind a missing TWR: the reason, never just its absence. */
 function twrWhy(reason: TwrReason | null): string {
-  const why = twrUnavailableReason(reason);
-  return why === null ? "Sin TWR para esta clase." : `Sin TWR: ${why}.`;
+  return twrUnavailableTitle(reason, "esta clase");
 }
 
 /** One class's row: its label, attributed value and weight, plus the three measures. */

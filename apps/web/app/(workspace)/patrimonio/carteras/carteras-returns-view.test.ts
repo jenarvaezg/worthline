@@ -8,6 +8,7 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { portfolioReturnView } from "./carteras-returns-view";
+import { portfolioWitnessView } from "./carteras-view";
 
 const eur = (amountMinor: number): MoneyMinor => ({ amountMinor, currency: "EUR" });
 
@@ -17,6 +18,8 @@ function op(
   units: string,
   pricePerUnit: string,
   executedAt: string,
+  /** Las dos mitades de un traspaso lo comparten: es lo que las hace un par. */
+  transferId?: string,
 ): InvestmentOperation {
   return {
     assetId,
@@ -27,6 +30,7 @@ function op(
     kind,
     pricePerUnit,
     units,
+    ...(transferId === undefined ? {} : { transferId }),
   };
 }
 
@@ -46,14 +50,27 @@ function view(input: {
   operations?: Array<[string, InvestmentOperation[]]>;
   monthlyCloses?: Array<[string, MonthlyCloseValue[]]>;
 }) {
+  const moneyByHoldingId = new Map(input.moneyByHoldingId);
+  const typeByHoldingId = new Map(input.typeByHoldingId);
+  const subject = portfolio(input.holdingIds);
+  // El careo de la ficha, el de verdad: el bloque de rentabilidad lee su reparto
+  // en vez de volver a sumar los mismos miembros.
+  const witness = portfolioWitnessView({
+    baseCurrency: "EUR",
+    moneyByHoldingId,
+    portfolio: subject,
+    typeByHoldingId,
+  });
+
   return portfolioReturnView({
     baseCurrency: "EUR",
     monthlyClosesByHoldingId: new Map(input.monthlyCloses ?? []),
-    moneyByHoldingId: new Map(input.moneyByHoldingId),
+    moneyByHoldingId,
     operationsByHoldingId: new Map(input.operations ?? []),
-    portfolio: portfolio(input.holdingIds),
+    portfolio: subject,
     today: "2026-08-21",
-    typeByHoldingId: new Map(input.typeByHoldingId),
+    typeByHoldingId,
+    witness,
   });
 }
 
@@ -77,7 +94,7 @@ describe("portfolioReturnView", () => {
     expect(result).not.toBeNull();
     expect(result?.investedMinor).toBe(134_512);
     expect(result?.gainMinor).toBe(15_225);
-    expect(result?.view.totalReturnRatio).toBeCloseTo(0.1132, 4);
+    expect(result?.measures.totalReturnRatio).toBeCloseTo(0.1132, 4);
     expect(result?.coveredMinor).toBe(149_737);
     expect(result?.cashMinor).toBe(734);
     expect(result?.uncoveredMinor).toBe(0);
@@ -96,10 +113,10 @@ describe("portfolioReturnView", () => {
           "a",
           [
             op("a", "buy", "10", "100", "2024-01-01"),
-            op("a", "transfer_out", "10", "110", "2025-01-01"),
+            op("a", "transfer_out", "10", "110", "2025-01-01", "trf_1"),
           ],
         ],
-        ["b", [op("b", "transfer_in", "10", "110", "2025-01-01")]],
+        ["b", [op("b", "transfer_in", "10", "110", "2025-01-01", "trf_1")]],
       ],
       typeByHoldingId: [
         ["a", "investment"],
@@ -222,6 +239,6 @@ describe("portfolioReturnView", () => {
       ],
     });
 
-    expect(result?.view.twr?.rate).toBeCloseTo(0.1, 10);
+    expect(result?.measures.twr?.rate).toBeCloseTo(0.1, 10);
   });
 });

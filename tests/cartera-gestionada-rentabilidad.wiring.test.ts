@@ -79,15 +79,24 @@ async function returnsOf(portfolioId: string) {
   const portfolio = model.allPortfolios.find(
     (candidate) => candidate.id === portfolioId,
   )!;
+  // El careo que la ficha imprime: la medida lee su reparto en vez de sumar otra vez.
+  const witness = portfolioWitnessView({
+    baseCurrency: "EUR",
+    moneyByHoldingId: model.moneyByHoldingId,
+    portfolio,
+    typeByHoldingId: model.typeByHoldingId,
+  });
   return {
     model,
     portfolio,
+    witness,
     returns: await loadPortfolioReturns({
       baseCurrency: "EUR",
       model,
       portfolio,
       store,
       today: TODAY,
+      witness,
     }),
   };
 }
@@ -107,24 +116,18 @@ describe("la rentabilidad de una cartera gestionada", () => {
     const cashId = created.holdingIds.find((id) => id !== FUND_A)!;
     await store.assets.updateAssetValuation(cashId, 5_000);
 
-    const { model, portfolio, returns } = await returnsOf(created.id);
+    const { returns, witness } = await returnsOf(created.id);
 
     expect(returns).not.toBeNull();
     // 100 participaciones compradas a 10 € valen hoy 1.200 €: +200 sobre 1.000.
     expect(returns?.investedMinor).toBe(100_000);
     expect(returns?.gainMinor).toBe(20_000);
-    expect(returns?.view.totalReturnRatio).toBeCloseTo(0.2, 10);
+    expect(returns?.measures.totalReturnRatio).toBeCloseTo(0.2, 10);
     expect(returns?.cashMinor).toBe(5_000);
     expect(returns?.coveredMinor).toBe(120_000);
 
     // La base de la tasa es exactamente el valor de mercado que la ficha imprime
     // en su careo: una cifra, un motor (#1422).
-    const witness = portfolioWitnessView({
-      baseCurrency: "EUR",
-      moneyByHoldingId: model.moneyByHoldingId,
-      portfolio,
-      typeByHoldingId: model.typeByHoldingId,
-    });
     expect(witness.investmentMinor).toBe(returns?.coveredMinor);
     expect(witness.cashMinor).toBe(returns?.cashMinor);
   });
@@ -157,7 +160,7 @@ describe("la rentabilidad de una cartera gestionada", () => {
     const { returns } = await returnsOf(created.id);
 
     // Lo invertido sigue siendo el único dinero que entró de fuera: 1.000 €.
-    // Sin la cancelación en fecha leería 2.100 € y la tasa saldría a la mitad.
+    // Sin cancelar el par leería 2.100 € y la tasa saldría a la mitad.
     expect(returns?.investedMinor).toBe(100_000);
     expect(returns?.measuredCount).toBe(2);
   });

@@ -11,6 +11,7 @@ import {
 } from "@worthline/domain";
 import type { PortfolioReturnView } from "./carteras-returns-view";
 import { portfolioReturnView } from "./carteras-returns-view";
+import type { PortfolioWitnessView } from "./carteras-view";
 import type { CarterasReadModel } from "./load-carteras";
 
 /**
@@ -28,10 +29,12 @@ export async function loadPortfolioReturns(input: {
   store: WorthlineStore;
   model: CarterasReadModel;
   portfolio: ManagedPortfolio;
+  /** The careo the ficha already performed — the return reads its split (#1550). */
+  witness: PortfolioWitnessView;
   baseCurrency: CurrencyCode;
   today: string;
 }): Promise<PortfolioReturnView | null> {
-  const { baseCurrency, model, portfolio, store, today } = input;
+  const { baseCurrency, model, portfolio, store, today, witness } = input;
 
   const measurableIds = new Set(
     portfolio.holdingIds.filter(
@@ -101,5 +104,6 @@ export async function loadPortfolioReturns(input: {
     portfolio,
     today,
     typeByHoldingId: model.typeByHoldingId,
+    witness,
   });
 }

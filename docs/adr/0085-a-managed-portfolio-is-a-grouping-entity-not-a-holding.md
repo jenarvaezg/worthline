@@ -206,12 +206,22 @@ different subset, and a second implementation is how two surfaces end up
 disagreeing about the same money (#1422). The ficha feeds it the same member
 values its careo prints, so the rate's base is the figure right above it.
 
-**A same-day flow is netted before anything is measured.** A traspaso's two halves
-are equal and opposite on the same date (ADR 0082) and the subset holds both, so
-the day nets to whatever the fee took. Without netting the pair still cancels in
-the gain but INFLATES the denominator, and a cartera that never received a cent
-from outside would read as if it had been funded twice. The correction applies to
-the per-class figures too — it was the same defect there.
+**An internal traspaso is netted into one residual flow — paired by `transferId`,
+never by date.** The two halves share the id (ADR 0082) and are equal and opposite,
+so when BOTH are inside the subset they collapse into a single flow worth whatever
+the fee took. Without it the pair still cancels in the gain but INFLATES the
+denominator, and a cartera that never received a cent from outside would read as
+if it had been funded twice.
+
+Pairing by DATE was tried first and is wrong: two unrelated movements that happen
+to fall on one day — a contribution to one fund, a reembolso from another — are two
+real flows, and in a bucket with dozens of holdings that coincidence is ordinary.
+A half whose counterpart lives outside the subset does not net either: a fund
+traspasado OUT of the cartera is capital leaving, and cancelling it would erase the
+exit. The correction applies to the per-class figures too — it was the same defect
+there, and it is the only behaviour this slice changes outside the ficha. The
+per-holding simple gain and `portfolioSimpleGain` still read every half as a flow;
+that is a defect of those folds, not a reason to reproduce it here.
 
 **What the app measures is not what the manager prints, when there have been
 reembolsos.** Careed against the real Metal (24-08): worthline reads 1.472,52 €

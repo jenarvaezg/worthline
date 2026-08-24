@@ -38,12 +38,17 @@ import {
  *   its value and monthly closes arrive ALREADY on the caller's chosen basis, so
  *   only `shareBps` applies to them. Keeping the three inputs on one basis is what
  *   makes the resulting simple gain / IRR internally consistent.
- * - **Same-day flows are netted.** Money that only moved BETWEEN members of the
- *   subset is not capital the subset received: a traspaso's two halves are equal
- *   and opposite on the same date (ADR 0082), so netting per day cancels them and
- *   leaves only what a fee actually took. Without it the pair still cancels in the
- *   gain but INFLATES the denominator, and a portfolio that never received a cent
- *   from outside reads as if it had been funded twice.
+ * - **An internal traspaso is netted into one residual flow.** Money that only
+ *   moved BETWEEN members of the subset is not capital the subset received. The
+ *   two halves share a `transferId` (ADR 0082) and are equal and opposite, so when
+ *   BOTH are inside the subset they collapse into a single flow worth whatever the
+ *   fee took — dated at the earlier half, which is when the money actually left.
+ *   Without it the pair still cancels in the gain but INFLATES the denominator,
+ *   and a portfolio that never received a cent from outside reads as if it had
+ *   been funded twice. The pairing is by `transferId` and never by DATE: two
+ *   unrelated flows that happen to fall on one day are two real movements, and a
+ *   half whose counterpart lives outside the subset is real capital arriving or
+ *   leaving.
  * - **Monthly closes align by calendar month**, never by exact date — the
  *   sawtooth of #1457, documented at {@link alignMonthlyCloses}.
  */
@@ -92,6 +97,13 @@ export interface SubsetReturns {
   /** Whether any recorded payout was folded in (#657) — so no subset claims
    *  income it never received. */
   payoutsIncluded: boolean;
+  /**
+   * What SELLS returned to the pocket over the subset's life, after internal
+   * traspasos are netted away. Payouts are deliberately not in it: a surface that
+   * says "there have been reembolsos" must not say it because a dividend was
+   * recorded.
+   */
+  sellProceedsMinor: number;
 }
 
 /** One slice's scaled monthly closes, plus whether it is still held. */
@@ -106,11 +118,21 @@ export function subsetReturns(input: {
   currency: CurrencyCode;
   valuationDate: string;
 }): SubsetReturns {
+  // The traspasos whose BOTH halves live inside this subset: only those describe
+  // money moving internally. One half alone is real capital arriving from — or
+  // leaving to — somewhere else, and it stays a flow.
+  const internalTransferIds = internalTransfers(input.slices);
+
   const cashflows: DatedCashflow[] = [];
   const twrCashflows: TwrCashflow[] = [];
   const monthlySeries: HoldingCloseSeries[] = [];
+  // One residual per internal traspaso: its two halves add up to whatever the fee
+  // took (zero when there was none), dated at the earlier half.
+  const residuals = new Map<string, TransferResidual>();
+  const twrResiduals = new Map<string, TransferResidual>();
   let marketValueMinor = 0;
   let payoutsIncluded = false;
+  let sellProceedsMinor = 0;
 
   for (const slice of input.slices) {
     const ownershipBps = slice.ownershipBps ?? FULL_SHARE_BPS;
@@ -127,10 +149,33 @@ export function subsetReturns(input: {
       payoutsIncluded = true;
     }
 
-    for (const flow of [
-      ...operationCashflows(slice.operations),
-      ...payoutCashflows(slice.payouts),
-    ]) {
+    // The ledger is split BEFORE it is turned into flows, so the sign of every kind
+    // stays `operationCashflows`' business alone (`signedInvestedMinor`'s one home)
+    // and nothing here re-spells it. An internal half is folded through the very
+    // same function, one operation at a time, to keep its residual attributable.
+    const { external, internal } = splitInternalHalves(
+      slice.operations,
+      internalTransferIds,
+    );
+
+    for (const flow of operationCashflows(external)) {
+      const amountMinor = scaleFlow(flow.amountMinor);
+      if (amountMinor > 0) {
+        sellProceedsMinor += amountMinor;
+      }
+      cashflows.push({ amountMinor, date: flow.date });
+    }
+    for (const operation of internal) {
+      const flow = operationCashflows([operation])[0]!;
+      foldResidual(
+        residuals,
+        operation.transferId!,
+        scaleFlow(flow.amountMinor),
+        flow.date,
+      );
+    }
+
+    for (const flow of payoutCashflows(slice.payouts)) {
       cashflows.push({ amountMinor: scaleFlow(flow.amountMinor), date: flow.date });
     }
 
@@ -143,8 +188,17 @@ export function subsetReturns(input: {
     if (slice.monthlyCloses.length === 0) {
       continue;
     }
-    for (const flow of operationTwrCashflows(slice.operations)) {
+    for (const flow of operationTwrCashflows(external)) {
       twrCashflows.push({ amountMinor: scaleFlow(flow.amountMinor), date: flow.date });
+    }
+    for (const operation of internal) {
+      const flow = operationTwrCashflows([operation])[0]!;
+      foldResidual(
+        twrResiduals,
+        operation.transferId!,
+        scaleFlow(flow.amountMinor),
+        flow.date,
+      );
     }
     monthlySeries.push({
       closes: slice.monthlyCloses.map((close) => ({
@@ -155,54 +209,121 @@ export function subsetReturns(input: {
     });
   }
 
-  const netCashflows = netByDate(cashflows);
+  for (const residual of residuals.values()) {
+    if (residual.amountMinor > 0) {
+      sellProceedsMinor += residual.amountMinor;
+    }
+  }
+  const allCashflows = withResiduals(cashflows, residuals);
 
   return {
     irr: xirr([
-      ...netCashflows,
+      ...allCashflows,
       ...(marketValueMinor > 0
         ? [{ amountMinor: marketValueMinor, date: input.valuationDate }]
         : []),
     ]),
     marketValueMinor,
     payoutsIncluded,
+    sellProceedsMinor,
     simpleGain: simpleGainFromCashflows({
-      cashflows: netCashflows,
+      cashflows: allCashflows,
       currency: input.currency,
       marketValueMinor,
       valuationDate: input.valuationDate,
     }),
     twr: timeWeightedReturn({
-      cashflows: netByDate(twrCashflows),
+      cashflows: withResiduals(twrCashflows, twrResiduals),
       monthlyCloses: alignMonthlyCloses(monthlySeries),
     }),
   };
 }
 
+/** One internal traspaso collapsed into a single flow: what the fee took, and when. */
+interface TransferResidual {
+  amountMinor: number;
+  date: string;
+}
+
 /**
- * One net flow per day: what the subset actually received from — or returned to —
- * the outside world that day.
+ * The `transferId`s whose two halves are BOTH inside the subset — the only ones
+ * that describe money moving internally.
  *
- * A traspaso between two members is money leaving one and arriving at the other on
- * the same date (ADR 0082), and the subset holds both halves, so the day nets to
- * whatever the fee took and nothing else. The simple gain reads its denominator
- * from the NEGATIVE flows alone, so without this the pair would count as fresh
- * capital in and proceeds out — the gain unchanged, the return ratio halved.
- *
- * A day that nets to exactly zero keeps its (zero) entry rather than disappearing:
- * it is a real day of the subset's life, and dropping it would move the span the
- * simple gain and the IRR are measured over. A zero contributes nothing to either.
+ * Counted per half rather than assumed from the id: a cartera can perfectly well
+ * hold the ORIGIN of a traspaso whose destination lives outside it (a fund moved
+ * out of the managed portfolio), and that is capital leaving, not an internal
+ * move. Only a pair with both ends here nets.
  */
-function netByDate<T extends { date: string; amountMinor: number }>(
-  flows: readonly T[],
-): Array<{ date: string; amountMinor: number }> {
-  const byDate = new Map<string, number>();
-  for (const flow of flows) {
-    byDate.set(flow.date, (byDate.get(flow.date) ?? 0) + flow.amountMinor);
+function internalTransfers(slices: readonly SubsetReturnsSlice[]): Set<string> {
+  const halves = new Map<string, number>();
+  for (const slice of slices) {
+    for (const operation of slice.operations) {
+      const transferId = operation.transferId;
+      if (transferId === undefined) {
+        continue;
+      }
+      halves.set(transferId, (halves.get(transferId) ?? 0) + 1);
+    }
   }
-  return [...byDate.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, amountMinor]) => ({ amountMinor, date }));
+  return new Set(
+    [...halves.entries()].filter(([, count]) => count >= 2).map(([id]) => id),
+  );
+}
+
+/** A holding's ledger split into the halves of an INTERNAL traspaso and the rest. */
+function splitInternalHalves(
+  operations: readonly InvestmentOperation[],
+  internalTransferIds: ReadonlySet<string>,
+): { external: InvestmentOperation[]; internal: InvestmentOperation[] } {
+  const external: InvestmentOperation[] = [];
+  const internal: InvestmentOperation[] = [];
+  for (const operation of operations) {
+    const transferId = operation.transferId;
+    if (transferId !== undefined && internalTransferIds.has(transferId)) {
+      internal.push(operation);
+    } else {
+      external.push(operation);
+    }
+  }
+  return { external, internal };
+}
+
+/** Fold one half into its traspaso's residual, keeping the earlier of the two dates. */
+function foldResidual(
+  residuals: Map<string, TransferResidual>,
+  transferId: string,
+  amountMinor: number,
+  date: string,
+): void {
+  const existing = residuals.get(transferId);
+  if (existing === undefined) {
+    residuals.set(transferId, { amountMinor, date });
+    return;
+  }
+  existing.amountMinor += amountMinor;
+  if (date < existing.date) {
+    existing.date = date;
+  }
+}
+
+/**
+ * The flows plus every non-zero traspaso residual, oldest first.
+ *
+ * A residual worth nothing is dropped rather than carried as a 0 € flow: it moved
+ * no money, and keeping it would let the date of a traspaso be read as the start
+ * of the subset's measured life.
+ */
+function withResiduals(
+  flows: readonly DatedCashflow[],
+  residuals: ReadonlyMap<string, TransferResidual>,
+): DatedCashflow[] {
+  const merged = [...flows];
+  for (const residual of residuals.values()) {
+    if (residual.amountMinor !== 0) {
+      merged.push({ amountMinor: residual.amountMinor, date: residual.date });
+    }
+  }
+  return merged.sort((left, right) => left.date.localeCompare(right.date));
 }
 
 /** The "YYYY-MM" a close belongs to — the granularity a monthly close really has. */

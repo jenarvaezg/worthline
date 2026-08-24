@@ -26,10 +26,12 @@ function op(
 }
 
 const buy = (units: string, price: string, at: string) => op("buy", units, price, at);
-const transferOut = (units: string, price: string, at: string) =>
-  op("transfer_out", units, price, at);
-const transferIn = (units: string, price: string, at: string) =>
-  op("transfer_in", units, price, at);
+const sell = (units: string, price: string, at: string) => op("sell", units, price, at);
+/** Las dos mitades comparten `transferId`: es lo que las hace un par (ADR 0082). */
+const transferOut = (units: string, price: string, at: string, transferId = "trf_1") =>
+  op("transfer_out", units, price, at, { transferId });
+const transferIn = (units: string, price: string, at: string, transferId = "trf_1") =>
+  op("transfer_in", units, price, at, { transferId });
 
 describe("subsetReturns", () => {
   test("un subconjunto sin traspasos mide lo mismo que la agregación de cartera", () => {
@@ -94,7 +96,10 @@ describe("subsetReturns", () => {
           monthlyCloses: [],
           operations: [
             buy("10", "100", "2023-01-01"),
-            op("transfer_out", "10", "110", "2024-01-01", { feesMinor: 500 }),
+            op("transfer_out", "10", "110", "2024-01-01", {
+              feesMinor: 500,
+              transferId: "trf_1",
+            }),
           ],
         },
         {
@@ -109,6 +114,72 @@ describe("subsetReturns", () => {
     // Sale 1.095 (1.100 − 5 de comisión) y entra 1.095: nada que sumar al invertido.
     expect(result.simpleGain.totalInvestedMinor).toBe(100_000);
     expect(result.simpleGain.totalGain.amountMinor).toBe(10_000);
+  });
+
+  test("dos movimientos independientes del mismo día NO se cancelan", () => {
+    // Vender un fondo y comprar otro el mismo día no es un traspaso: son dos
+    // decisiones, y el subconjunto devolvió dinero y recibió dinero de verdad.
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01"), sell("10", "110", "2024-01-01")],
+        },
+        {
+          marketValueMinor: 115_000,
+          monthlyCloses: [],
+          operations: [buy("10", "110", "2024-01-01")],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    expect(result.simpleGain.totalInvestedMinor).toBe(210_000);
+    expect(result.sellProceedsMinor).toBe(110_000);
+  });
+
+  test("media mitad no cancela: la contraparte vive fuera del subconjunto", () => {
+    // Un fondo traspasado FUERA de la cartera es capital que se va, no un
+    // movimiento interno — y contarlo como interno le quitaría la salida.
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [
+            buy("10", "100", "2023-01-01"),
+            transferOut("10", "110", "2024-01-01"),
+          ],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    expect(result.simpleGain.totalInvestedMinor).toBe(100_000);
+    expect(result.simpleGain.totalGain.amountMinor).toBe(10_000);
+    expect(result.sellProceedsMinor).toBe(110_000);
+  });
+
+  test("los cobros no cuentan como reembolsos", () => {
+    // Un dividendo entra en la ganancia, pero no es una venta: una superficie que
+    // diga «ha habido reembolsos» no puede decirlo por un cobro registrado.
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 100_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01")],
+          payouts: [{ amountMinor: 3_000, date: "2023-07-01" }],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    expect(result.sellProceedsMinor).toBe(0);
   });
 
   test("el doble escalado: la titularidad escala los flujos, la participación todo", () => {

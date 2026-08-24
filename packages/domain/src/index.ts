@@ -1029,7 +1029,7 @@ export {
   returnsKindForInstrument,
 } from "./returns-display";
 export type { SubsetReturns, SubsetReturnsSlice } from "./returns-subset";
-export { FULL_SHARE_BPS, subsetReturns } from "./returns-subset";
+export { subsetReturns } from "./returns-subset";
 export type {
   AssessSavingsCoherenceInput,
   SavingsCoherence,

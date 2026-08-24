@@ -167,9 +167,11 @@ quote, so inside the rate it is drag that swings between 0 € and `150 € + 0,
 with every contribution — and the manager's own figure excludes it too. It comes
 from the shared subset engine every other return in the app rides (`subsetReturns`,
 the one the per-asset-class decomposition uses), fed the same member values the
-ficha's careo prints. **Traspasos between two members cancel on their own date**:
-moving money from one fund of the cartera to another is not capital the cartera
-received, and counting it as such would inflate what it took to earn the gain.
+ficha's careo prints. **A traspaso between two members collapses into one residual
+flow**, paired by its `transferId` and never by date: moving money from one fund
+of the cartera to another is not capital the cartera received, and counting it as
+such would inflate what it took to earn the gain. A half whose counterpart lives
+outside the subset stays a real flow — that is capital leaving.
 A member with no ledger — the **undetailed aggregate**, an alta with no operations
 — is named as unmeasured, never folded in silently, and stays in the portfolio's
 VALUE.

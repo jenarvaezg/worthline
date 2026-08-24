@@ -218,14 +218,16 @@ describe("returnsByAssetClass", () => {
           monthlyCloses: [],
           operations: [
             buy("10", "100", "2023-01-01"),
-            op("transfer_out", "10", "110", "2024-01-01"),
+            op("transfer_out", "10", "110", "2024-01-01", { transferId: "trf_1" }),
           ],
         },
         {
           assetClass: classified({ equity: "1" }),
           marketValueMinor: 120_000,
           monthlyCloses: [],
-          operations: [op("transfer_in", "10", "110", "2024-01-01")],
+          operations: [
+            op("transfer_in", "10", "110", "2024-01-01", { transferId: "trf_1" }),
+          ],
         },
       ],
       valuationDate: "2024-06-01",

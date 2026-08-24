@@ -12,10 +12,10 @@ import {
   buildPortfolioReturnsView,
   formatMoneyMinor,
   managedPortfolioMemberRoles,
-  managedPortfolioMemberValues,
-  reconcileManagedPortfolio,
   subsetReturns,
 } from "@worthline/domain";
+
+import type { PortfolioWitnessView } from "./carteras-view";
 
 /**
  * The return of a managed portfolio (#1552, ADR 0085) — the «+11,32 %» the owner
@@ -46,7 +46,7 @@ import {
 
 export interface PortfolioReturnView {
   /** The measures themselves: simple gain, IRR and TWR, with their caveats. */
-  view: HoldingReturnsView;
+  measures: HoldingReturnsView;
   /** What the measured members cost — the «invertido» the manager's app prints. */
   investedMinor: number;
   /** The gain in money — the «plusvalía» beside it. */
@@ -65,9 +65,9 @@ export interface PortfolioReturnView {
   /** Members left out because they hold no honest value in the base currency. */
   excludedForeignCount: number;
   /**
-   * What past sells returned to the pocket. Non-zero means the rate below and
-   * the one the manager's app prints are answering slightly different questions
-   * — see {@link returnMessage}.
+   * What past SELLS returned to the pocket (never a payout). Non-zero means the
+   * rate below and the one the manager's app prints are answering slightly
+   * different questions — see {@link returnMessage}.
    */
   proceedsMinor: number;
   /** The sentence under the figures: what was measured, and what was left out. */
@@ -83,6 +83,13 @@ export function portfolioReturnView(input: {
   operationsByHoldingId: ReadonlyMap<string, readonly InvestmentOperation[]>;
   monthlyClosesByHoldingId: ReadonlyMap<string, readonly MonthlyCloseValue[]>;
   payoutsByHoldingId?: ReadonlyMap<string, readonly DatedPayout[]> | undefined;
+  /**
+   * The careo the ficha ALREADY performed (#1550). The investment / cash split is
+   * read from it rather than reconciled a second time: the ficha prints those two
+   * figures right above this block, and a second fold over the same members is how
+   * a surface ends up quoting a coverage its own witness contradicts (#1422).
+   */
+  witness: PortfolioWitnessView;
   baseCurrency: CurrencyCode;
   /** "Today" as YYYY-MM-DD — the date the terminal value is dated at. */
   today: string;
@@ -96,27 +103,10 @@ export function portfolioReturnView(input: {
     portfolio,
     today,
     typeByHoldingId,
+    witness,
   } = input;
 
   const roles = managedPortfolioMemberRoles(portfolio.holdingIds, typeByHoldingId);
-
-  // The investment/cash split is READ FROM THE CAREO, not summed again here: the
-  // ficha already prints those two figures, and a second sum of the same money is
-  // how a surface ends up quoting a coverage its own witness block contradicts
-  // (#1422). Unconverted money for the same reason the careo uses it.
-  const reconciliation = reconcileManagedPortfolio({
-    baseCurrency,
-    members: managedPortfolioMemberValues(
-      portfolio.holdingIds,
-      new Map(
-        [...typeByHoldingId].map(([holdingId, type]) => [
-          holdingId,
-          { type, value: moneyByHoldingId.get(holdingId) ?? null },
-        ]),
-      ),
-    ),
-    witness: portfolio.witness,
-  });
 
   const slices: SubsetReturnsSlice[] = [];
   let coveredMinor = 0;
@@ -160,21 +150,12 @@ export function portfolioReturnView(input: {
     returns.payoutsIncluded,
   );
 
-  // What came back out along the way (sells): gain = proceeds + value − invested,
-  // so the stream's proceeds are recoverable from the three figures without a
-  // second fold over the flows.
-  const proceedsMinor = Math.max(
-    0,
-    returns.simpleGain.totalGain.amountMinor +
-      returns.simpleGain.totalInvestedMinor -
-      returns.marketValueMinor,
-  );
+  // Sells only: the engine keeps them apart from the payouts it also folds in, so
+  // a recorded dividend never gets announced as a reembolso.
+  const proceedsMinor = returns.sellProceedsMinor;
 
-  const cashMinor = reconciliation.cashValue.amountMinor;
-  const uncoveredMinor = Math.max(
-    0,
-    reconciliation.investmentValue.amountMinor - coveredMinor,
-  );
+  const cashMinor = witness.cashMinor;
+  const uncoveredMinor = Math.max(0, witness.investmentMinor - coveredMinor);
 
   return {
     cashMinor,
@@ -182,6 +163,7 @@ export function portfolioReturnView(input: {
     excludedForeignCount,
     gainMinor: returns.simpleGain.totalGain.amountMinor,
     investedMinor: returns.simpleGain.totalInvestedMinor,
+    measures: view,
     measuredCount: slices.length,
     message: returnMessage({
       baseCurrency,
@@ -194,7 +176,6 @@ export function portfolioReturnView(input: {
     }),
     proceedsMinor,
     uncoveredMinor,
-    view,
   };
 }
 
