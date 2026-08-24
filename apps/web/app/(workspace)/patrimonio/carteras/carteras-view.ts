@@ -13,8 +13,10 @@ import {
   formatDriftBps,
   formatMoneyMinor,
   type ManagedPortfolioSlice,
+  managedPortfolioMemberRoles,
   managedPortfolioMemberValues,
   reconcileManagedPortfolio,
+  undetailedRemainderMinor,
 } from "@worthline/domain";
 
 /**
@@ -299,4 +301,141 @@ function witnessMessage(
           );
       }
   }
+}
+
+/** Everything the ficha's «pendiente de detallar» block paints (#1551). */
+export interface PortfolioUndetailedView {
+  /** The aggregate member's holding id — the row the two forms write to. */
+  holdingId: string;
+  label: string;
+  /** What the aggregate is worth today. */
+  valueMinor: number;
+  /** Σ of the INVESTMENT members: the composition already detailed. */
+  detailedMinor: number;
+  declaredMinor: number | null;
+  /** `declared − detailed`, the value to leave the aggregate at; null without a witness. */
+  remainderMinor: number | null;
+  /** The suggestion is zero: what is detailed already covers the declared balance. */
+  suggestsWithdrawal: boolean;
+  /** The aggregate already holds exactly the suggested figure — nothing to do. */
+  isSettled: boolean;
+  message: string;
+  /** The aggregate's own ficha link, or null without a registry row. */
+  href: string | null;
+}
+
+/**
+ * The progressive-substitution block: how much of the cartera is still standing
+ * on the "(sin detallar)" aggregate, and what to leave it at (#1551).
+ *
+ * The suggestion (`declarado − Σ detallado`) subtracts only the INVESTMENT
+ * members — never the container's cash, which was never part of the declared
+ * balance, and never the aggregate itself, which is the figure being replaced.
+ * The arithmetic and the membership classification are the domain's
+ * (`undetailedRemainderMinor`, `managedPortfolioMemberRoles`); this function
+ * feeds them the ficha's read model and turns the result into a sentence.
+ *
+ * Null when the portfolio has no aggregate — registered with its composition, or
+ * the aggregate already retired.
+ */
+export function portfolioUndetailedView(input: {
+  portfolio: ManagedPortfolio;
+  valueMinorByHoldingId: ReadonlyMap<string, number>;
+  typeByHoldingId: ReadonlyMap<string, string>;
+  nameById: ReadonlyMap<string, string>;
+  baseCurrency: CurrencyCode;
+  publicIdByHolding?: Readonly<Record<string, string>> | undefined;
+}): PortfolioUndetailedView | null {
+  const {
+    baseCurrency,
+    nameById,
+    portfolio,
+    publicIdByHolding,
+    typeByHoldingId,
+    valueMinorByHoldingId,
+  } = input;
+
+  const roles = managedPortfolioMemberRoles(portfolio.holdingIds, typeByHoldingId);
+  const holdingId = roles.undetailedHoldingId;
+  if (holdingId === null) return null;
+
+  const valueMinor = valueMinorByHoldingId.get(holdingId) ?? 0;
+  const detailedMinor = roles.investmentHoldingIds.reduce(
+    (sum, memberId) => sum + (valueMinorByHoldingId.get(memberId) ?? 0),
+    0,
+  );
+  const declaredMinor =
+    portfolio.witness?.declaredValue.currency === baseCurrency
+      ? portfolio.witness.declaredValue.amountMinor
+      : null;
+  const remainderMinor = undetailedRemainderMinor({
+    declaredMinor,
+    detailedInvestmentMinor: detailedMinor,
+  });
+
+  const amount = (amountMinor: number) =>
+    formatMoneyMinor({ amountMinor, currency: baseCurrency });
+
+  return {
+    declaredMinor,
+    detailedMinor,
+    holdingId,
+    href: publicIdByHolding?.[holdingId]
+      ? holdingDetailHref(publicIdByHolding[holdingId]!)
+      : null,
+    isSettled: remainderMinor !== null && remainderMinor === valueMinor,
+    label: nameById.get(holdingId) ?? holdingId,
+    message: undetailedMessage({ amount, detailedMinor, remainderMinor, valueMinor }),
+    remainderMinor,
+    suggestsWithdrawal: remainderMinor === 0,
+    valueMinor,
+  };
+}
+
+/**
+ * The sentence the block carries. Every branch names both operands — the reader
+ * has to be able to check the suggestion by hand, and «600 €» with no stated
+ * arithmetic is a figure he has to trust instead of verify.
+ */
+function undetailedMessage(input: {
+  amount: (amountMinor: number) => string;
+  detailedMinor: number;
+  remainderMinor: number | null;
+  valueMinor: number;
+}): string {
+  const { amount, detailedMinor, remainderMinor, valueMinor } = input;
+
+  if (remainderMinor === null) {
+    return (
+      `Esta parte de la cartera (${amount(valueMinor)}) sigue sin detallar y suma a tu ` +
+      "patrimonio tal cual. Sin saldo declarado no hay nada de lo que restar lo ya " +
+      "detallado: teclea arriba el que lees en tu gestor y worthline te dirá cuánto " +
+      "conviene dejar aquí a medida que añadas los fondos reales."
+    );
+  }
+  if (remainderMinor === 0) {
+    return (
+      `Los fondos que ya has detallado (${amount(detailedMinor)}) cubren el saldo que ` +
+      "declaraste, así que no queda nada que este agregado represente: retira el " +
+      "agregado y la cartera queda enteramente detallada."
+    );
+  }
+  if (detailedMinor === 0) {
+    return (
+      `Toda la cartera está aquí, sin detallar (${amount(valueMinor)}). No pasa nada por ` +
+      "dejarla así: tu patrimonio ya es honesto. A medida que añadas los fondos reales " +
+      "como miembros, worthline te irá diciendo cuánto conviene dejar en este agregado."
+    );
+  }
+  if (remainderMinor === valueMinor) {
+    return (
+      `Ya has detallado ${amount(detailedMinor)} en fondos y el agregado está justo en ` +
+      `los ${amount(remainderMinor)} que quedan del saldo declarado. Nada que ajustar.`
+    );
+  }
+  return (
+    `Has detallado ${amount(detailedMinor)} en fondos, así que del saldo declarado ` +
+    `quedan ${amount(remainderMinor)} sin detallar. Deja el agregado en esa cifra y tu ` +
+    `patrimonio bruto no se mueve: hoy vale ${amount(valueMinor)}.`
+  );
 }

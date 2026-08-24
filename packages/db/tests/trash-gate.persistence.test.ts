@@ -197,7 +197,7 @@ describe("softDeleteAsset — a managed portfolio's cash box (ADR 0085)", () => 
   async function seedPortfolio(): Promise<string> {
     await seedFund();
     const portfolio = await store.managedPortfolios.createManagedPortfolio({
-      cashOwnership: [{ memberId: "m1", shareBps: 10_000 }],
+      containerOwnership: [{ memberId: "m1", shareBps: 10_000 }],
       memberHoldingIds: [],
       name: "Cartera Indexada Metal",
       scopeId: "m1",

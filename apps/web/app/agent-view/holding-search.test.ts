@@ -188,7 +188,7 @@ describe("buildHoldingSearch (uso real 2026-07-30)", () => {
     const store = await seed();
     await createEmptyFund(store, { id: "f1", name: "Fondo Metal Europa" });
     const created = await store.managedPortfolios.createManagedPortfolio({
-      cashOwnership: SOLO,
+      containerOwnership: SOLO,
       memberHoldingIds: ["f1"],
       name: "Cartera Indexada Metal",
       provider: "MyInvestor",

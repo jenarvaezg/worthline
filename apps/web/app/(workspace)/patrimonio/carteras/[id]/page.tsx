@@ -10,16 +10,22 @@ import { resolvePageShell } from "@web/page-shell";
 import {
   declareManagedPortfolioBalanceAction,
   deleteManagedPortfolioAction,
+  setUndetailedRemainderAction,
   updateManagedPortfolioAction,
 } from "@web/patrimonio/carteras/carteras-actions";
 import {
   managedPortfolioMemberOptions,
   portfolioCompositionView,
+  portfolioUndetailedView,
   portfolioWitnessView,
 } from "@web/patrimonio/carteras/carteras-view";
 import { loadCarteras } from "@web/patrimonio/carteras/load-carteras";
 import { PendingSubmit } from "@web/pending-submit";
-import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
+import {
+  formatMoneyInput,
+  formatMoneyMinorPrivacy,
+  managedPortfolioMemberRoles,
+} from "@worthline/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -32,8 +38,10 @@ import { Suspense } from "react";
  * (the same curve-valued figures the board prints), and the composition shows
  * each member's weight. The declared balance (#1550) is a WITNESS shown beside
  * the derived figures — never a value the book adopts — and the cash is shown
- * apart because the careo excludes it, exactly as the manager's app does.
- * Nothing here claims a return yet (S6).
+ * apart because the careo excludes it, exactly as the manager's app does. A
+ * cartera registered without enumerating its composition (#1551) also carries a
+ * "(sin detallar)" aggregate, with the block that walks its progressive
+ * substitution. Nothing here claims a return yet (S6).
  */
 
 export default function ManagedPortfolioFichaPage({
@@ -110,6 +118,19 @@ async function FichaContent({
     typeByHoldingId: model.typeByHoldingId,
   });
 
+  // The "(sin detallar)" aggregate, when the cartera was registered without
+  // enumerating its composition (#1551). Absent for a detailed one.
+  const undetailed = portfolioUndetailedView({
+    baseCurrency: workspace.baseCurrency,
+    nameById: model.nameById,
+    portfolio,
+    publicIdByHolding: Object.fromEntries(
+      holdingPublicIdIndex(publicIdRows).publicByInternal,
+    ),
+    typeByHoldingId: model.typeByHoldingId,
+    valueMinorByHoldingId: model.valueMinorByHoldingId,
+  });
+
   const fmt = (amountMinor: number) =>
     formatMoneyMinorPrivacy(
       { amountMinor, currency: workspace.baseCurrency },
@@ -125,9 +146,10 @@ async function FichaContent({
     portfolioId: portfolio.id,
   });
 
-  const investmentMembers = portfolio.holdingIds.filter(
-    (holdingId) => model.typeByHoldingId.get(holdingId) !== "cash",
-  );
+  // The chips' preselection is the INVESTMENT members and only them: the cash
+  // sibling and the "(sin detallar)" aggregate are the container's own plumbing,
+  // never offered and never removable from here (the store preserves both).
+  const roles = managedPortfolioMemberRoles(portfolio.holdingIds, model.typeByHoldingId);
   // Only chips that RENDER can be preselected: a member whose holding died has
   // no chip to uncheck, so preselecting its id would make every save submit a
   // trashed holding and bounce forever. It leaves on the next save instead —
@@ -136,7 +158,10 @@ async function FichaContent({
 
   const errorFor = formError?.formId === `cartera-${portfolio.id}` ? formError : null;
   const witnessError = formError?.formId === `testigo-${portfolio.id}` ? formError : null;
+  const undetailedError =
+    formError?.formId === `agregado-${portfolio.id}` ? formError : null;
   const witnessValues = witnessError?.values ?? {};
+  const undetailedValues = undetailedError?.values ?? {};
   const editValues = errorFor?.values ?? {};
   const preservedIds = editValues.holdingIds
     ? editValues.holdingIds.split(",").filter(Boolean)
@@ -338,6 +363,82 @@ async function FichaContent({
         )}
       </section>
 
+      {undetailed ? (
+        <section
+          aria-label="Pendiente de detallar"
+          className="section"
+          id={`portfolioUndetailed-${portfolio.id}`}
+        >
+          <div className="panelHeader">
+            <h3>Pendiente de detallar</h3>
+            <span>la parte de la cartera que aún no has enumerado</span>
+          </div>
+
+          <table>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  {undetailed.href ? (
+                    <Link href={undetailed.href}>{undetailed.label}</Link>
+                  ) : (
+                    undetailed.label
+                  )}
+                </th>
+                <td className="carterasWeight">{fmt(undetailed.valueMinor)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Fondos ya detallados</th>
+                <td className="carterasWeight">{fmt(undetailed.detailedMinor)}</td>
+              </tr>
+              <tr>
+                <th scope="row">Queda sin detallar (saldo declarado − detallado)</th>
+                <td className="carterasWeight">
+                  {undetailed.remainderMinor === null
+                    ? "—"
+                    : fmt(undetailed.remainderMinor)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <p className="muted">{undetailed.message}</p>
+
+          <form action={setUndetailedRemainderAction} className="stackForm">
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="portfolioId" type="hidden" value={portfolio.id} />
+            {undetailedError ? (
+              <p className="formError" role="alert">
+                {undetailedError.message}
+              </p>
+            ) : null}
+            <label>
+              Dejar el agregado en ({workspace.baseCurrency})
+              <input
+                defaultValue={
+                  undetailedValues.remainderValue ??
+                  formatMoneyInput(undetailed.remainderMinor ?? undetailed.valueMinor)
+                }
+                inputMode="decimal"
+                name="remainderValue"
+              />
+            </label>
+            <p className="muted">
+              Un 0 retira el agregado: la cartera queda enteramente detallada. Ni el
+              efectivo de la cartera ni el propio agregado entran en la resta — el saldo
+              que declaras es el de los fondos.
+            </p>
+            <PendingSubmit pendingLabel="Guardando…">Guardar el agregado</PendingSubmit>
+          </form>
+
+          <form action={setUndetailedRemainderAction}>
+            <input name="currentUrl" type="hidden" value={currentUrl} />
+            <input name="portfolioId" type="hidden" value={portfolio.id} />
+            <input name="withdraw" type="hidden" value="1" />
+            <PendingSubmit pendingLabel="Retirando…">Retirar el agregado</PendingSubmit>
+          </form>
+        </section>
+      ) : null}
+
       <section
         aria-label="Miembros"
         className="section"
@@ -377,8 +478,8 @@ async function FichaContent({
             <ChipChoice
               name="holdingIds"
               options={options}
-              selectedIds={(preservedIds ?? investmentMembers).filter((holdingId) =>
-                selectableIds.has(holdingId),
+              selectedIds={(preservedIds ?? roles.investmentHoldingIds).filter(
+                (holdingId) => selectableIds.has(holdingId),
               )}
             />
           )}

@@ -118,10 +118,28 @@ balance but whose composition a manager decides. A grouping entity over live
 worth** on its own, and membership is exclusive (a position lives inside one
 portfolio). It carries its own cash — a sibling current-account member where
 contributions wait for the investment threshold — and a **declared balance**
-(saldo declarado): the reconciliation witness below. An internal rebalance is a
-**traspaso** pair between members. UI label: "cartera gestionada".
+(saldo declarado): the reconciliation witness below. It can also be registered
+WITHOUT enumerating its composition, in which case it carries an **undetailed
+aggregate** below. An internal rebalance is a **traspaso** pair between members.
+UI label: "cartera gestionada".
 _Avoid_: nested holdings, container holding (its value would fight the sum),
 grouping tag (no cash, no witness, no figures).
+
+**Undetailed aggregate** (agregado «(sin detallar)») of a managed portfolio:
+The ONE member a "solo saldo" alta creates to stand for a whole composition
+nobody enumerated (#1551), worth exactly the **declared balance** typed at the
+alta — so gross **net worth** is honest from minute one instead of under-counted
+until the owner lists every fund. It is an ordinary stored-valuation holding (an
+`other` instrument on the `market` rung: invested, sellable money), NOT an
+**investment** — an investment's value is derived from **operations**, and the
+owner has no participaciones, price or trade date to give. Progressive
+substitution: as real members are added, the suggested value to leave it at is
+`declarado − Σ detallado` over the INVESTMENT members only (the container's cash
+was never part of the declared balance, and the aggregate itself is the figure
+being replaced). Left at 0 € it is archived, ceremony-free — it keeps no ledger,
+so the **trash exit** gate has nothing to refuse.
+_Avoid_: a plug row (it sums like every holding), an investment with a fabricated
+buy, treating it as the cash box (it is invested money, inside the careo).
 
 **Declared balance** (saldo declarado) of a managed portfolio:
 The last total the owner read in the manager's app, stored with its date as a

@@ -4,6 +4,7 @@ import {
   managedPortfolioMemberOptions,
   portfolioCompositionView,
   portfolioListRowView,
+  portfolioUndetailedView,
   portfolioWitnessView,
 } from "./carteras-view";
 
@@ -294,5 +295,137 @@ describe("portfolioWitnessView", () => {
 
     expect(result.state).toBe("not_comparable");
     expect(result.message).toContain("incompleta");
+  });
+});
+
+describe("portfolioUndetailedView", () => {
+  /** The acceptance case of #1551: a 1.000 € "solo saldo" cartera. */
+  const DECLARED_MINOR = 1_000_00;
+
+  function view(input: {
+    declaredMinor?: number | null;
+    /** The aggregate's own value today, or null when there is no aggregate. */
+    aggregateMinor: number | null;
+    detailedMinor?: number;
+  }) {
+    const declaredMinor =
+      input.declaredMinor === undefined ? DECLARED_MINOR : input.declaredMinor;
+    const holdingIds = [
+      "efectivo",
+      ...(input.aggregateMinor === null ? [] : ["agregado"]),
+      ...(input.detailedMinor === undefined ? [] : ["fondo"]),
+    ];
+
+    return portfolioUndetailedView({
+      baseCurrency: "EUR",
+      nameById: new Map([["agregado", "Cartera Indexada Metal (sin detallar)"]]),
+      portfolio: {
+        holdingIds,
+        id: "prt_metal",
+        name: "Cartera Indexada Metal",
+        provider: "MyInvestor",
+        scopeId: "household",
+        witness:
+          declaredMinor === null
+            ? null
+            : {
+                declaredDate: "2026-08-24",
+                declaredValue: { amountMinor: declaredMinor, currency: "EUR" },
+              },
+      },
+      typeByHoldingId: new Map([
+        ["efectivo", "cash"],
+        ...(input.aggregateMinor === null
+          ? []
+          : ([["agregado", "manual"]] as Array<[string, string]>)),
+        ...(input.detailedMinor === undefined
+          ? []
+          : ([["fondo", "investment"]] as Array<[string, string]>)),
+      ]),
+      valueMinorByHoldingId: new Map([
+        ["efectivo", 0],
+        ...(input.aggregateMinor === null
+          ? []
+          : ([["agregado", input.aggregateMinor]] as Array<[string, number]>)),
+        ...(input.detailedMinor === undefined
+          ? []
+          : ([["fondo", input.detailedMinor]] as Array<[string, number]>)),
+      ]),
+    });
+  }
+
+  it("is absent for a portfolio registered with its composition", () => {
+    expect(view({ aggregateMinor: null, detailedMinor: 400_00 })).toBeNull();
+  });
+
+  it("stands for the whole cartera while nothing is detailed", () => {
+    const result = view({ aggregateMinor: DECLARED_MINOR })!;
+
+    expect(result.holdingId).toBe("agregado");
+    expect(result.valueMinor).toBe(DECLARED_MINOR);
+    expect(result.detailedMinor).toBe(0);
+    expect(result.remainderMinor).toBe(DECLARED_MINOR);
+    expect(result.isSettled).toBe(true);
+    expect(result.suggestsWithdrawal).toBe(false);
+  });
+
+  it("suggests 600 € once a 400 € fund is detailed — the gross stays at 1.000 €", () => {
+    const result = view({ aggregateMinor: DECLARED_MINOR, detailedMinor: 400_00 })!;
+
+    expect(result.detailedMinor).toBe(400_00);
+    expect(result.remainderMinor).toBe(600_00);
+    expect(result.isSettled).toBe(false);
+    expect(result.suggestsWithdrawal).toBe(false);
+    expect(result.message).toContain("quedan 600");
+  });
+
+  it("the container's cash never enters the subtraction (23-08 note)", () => {
+    // Same case as above but with 7,34 € in the cash box: if the cash were
+    // subtracted the suggestion would come out 7,34 € short and the gross would
+    // drop for no reason.
+    const result = portfolioUndetailedView({
+      baseCurrency: "EUR",
+      nameById: new Map(),
+      portfolio: {
+        holdingIds: ["efectivo", "agregado", "fondo"],
+        id: "prt_metal",
+        name: "Metal",
+        provider: null,
+        scopeId: "household",
+        witness: {
+          declaredDate: "2026-08-24",
+          declaredValue: { amountMinor: DECLARED_MINOR, currency: "EUR" },
+        },
+      },
+      typeByHoldingId: new Map([
+        ["efectivo", "cash"],
+        ["agregado", "manual"],
+        ["fondo", "investment"],
+      ]),
+      valueMinorByHoldingId: new Map([
+        ["efectivo", 734],
+        ["agregado", DECLARED_MINOR],
+        ["fondo", 400_00],
+      ]),
+    })!;
+
+    expect(result.remainderMinor).toBe(600_00);
+  });
+
+  it("suggests retiring it once the detail covers the declared balance", () => {
+    const result = view({ aggregateMinor: 600_00, detailedMinor: 1_200_00 })!;
+
+    expect(result.remainderMinor).toBe(0);
+    expect(result.suggestsWithdrawal).toBe(true);
+    expect(result.message).toContain("retira");
+  });
+
+  it("suggests nothing without a declared balance — it asks for one instead", () => {
+    const result = view({ aggregateMinor: 1_000_00, declaredMinor: null })!;
+
+    expect(result.remainderMinor).toBeNull();
+    expect(result.suggestsWithdrawal).toBe(false);
+    expect(result.isSettled).toBe(false);
+    expect(result.message).toContain("saldo declarado");
   });
 });

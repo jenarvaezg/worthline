@@ -160,10 +160,27 @@ async function CarterasContent({
                 placeholder="MyInvestor, Indexa…"
               />
             </label>
+            <label>
+              Valor de mercado de la cartera, sin el efectivo (opcional,{" "}
+              {workspace.baseCurrency})
+              <input
+                defaultValue={createValues.declaredValue}
+                inputMode="decimal"
+                name="declaredValue"
+                placeholder="1.497,37"
+              />
+            </label>
             <p className="muted">
-              Al crearla se le añade su holding de efectivo (0 €), como el que ves en la
-              app del gestor mientras la aportación espera a invertirse. Los miembros se
-              asignan después, en su ficha. Tu patrimonio bruto no cambia por crearla.
+              Si no te apetece enumerar sus fondos ahora, teclea solo el valor de mercado
+              que lees en la app de tu gestor (el de los fondos, sin la caja): la cartera
+              nace con una fila «(sin detallar)» por ese importe, así que tu patrimonio la
+              cuenta entera desde el primer minuto. Cuando vayas añadiendo los fondos
+              reales, su ficha te dirá cuánto conviene dejar en esa fila. Si prefieres
+              detallarla ya, déjalo vacío y asigna los miembros en su ficha.
+            </p>
+            <p className="muted">
+              En ambos casos se le añade su holding de efectivo (0 €), como el que ves en
+              la app del gestor mientras la aportación espera a invertirse.
             </p>
             <PendingSubmit pendingLabel="Creando…">Crear cartera</PendingSubmit>
           </form>
