@@ -10,8 +10,8 @@
  * negative real return without a divide-by-zero.
  */
 
-/** Returns shifted from the base by ±1.5 % (PRD #421). */
-const RETURN_SHIFT = 0.015;
+/** Returns shifted from the base by ±1.5 % (PRD #421). Shared with the plan engine. */
+export const RETURN_SHIFT = 0.015;
 export const DEFAULT_MAX_YEARS = 60;
 
 export type FireScenarioLabel = "optimistic" | "base" | "pessimistic";
@@ -60,52 +60,6 @@ export interface FireProjection {
   scenarios: FireScenario[];
 }
 
-function projectScenario(
-  label: FireScenarioLabel,
-  annualReturn: number,
-  input: FireProjectionInput,
-): FireScenario {
-  const maxYears = input.maxYears ?? DEFAULT_MAX_YEARS;
-  const annualContributionMinor = input.monthlyContributionMinor * 12;
-  const target = input.fireNumberMinor;
-
-  const trajectory: FireTrajectoryPoint[] = [
-    { year: 0, eligibleMinor: input.startingEligibleMinor },
-  ];
-  let capital = input.startingEligibleMinor;
-  let yearsToFire: number | null = capital >= target ? 0 : null;
-
-  // Only grow forward while still short of the target; an already-funded scope
-  // has nothing to project, so its trajectory is just today.
-  if (yearsToFire === null) {
-    for (let year = 1; year <= maxYears; year += 1) {
-      capital = capital * (1 + annualReturn) + annualContributionMinor;
-      trajectory.push({ year, eligibleMinor: Math.round(capital) });
-
-      if (capital >= target) {
-        yearsToFire = year;
-        break;
-      }
-    }
-  }
-
-  const reachedYear = yearsToFire ?? maxYears;
-  const ageAtFire =
-    yearsToFire !== null && input.currentAge !== undefined
-      ? input.currentAge + yearsToFire
-      : null;
-
-  return {
-    label,
-    annualReturn,
-    yearsToFire,
-    ageAtFire,
-    finalEligibleMinor: trajectory.at(-1)!.eligibleMinor,
-    totalContributedMinor: annualContributionMinor * reachedYear,
-    trajectory,
-  };
-}
-
 /**
  * Linearly interpolates the fractional year at which `trajectory` crosses
  * `target`. Returns `null` when the trajectory never reaches the target.
@@ -136,17 +90,6 @@ export function fractionalFireYear(
 
   // Unreachable when yearsToFire is non-null (the loop always returns first).
   return null;
-}
-
-export function projectFire(input: FireProjectionInput): FireProjection {
-  return {
-    fireNumberMinor: input.fireNumberMinor,
-    scenarios: [
-      projectScenario("optimistic", input.expectedRealReturn + RETURN_SHIFT, input),
-      projectScenario("base", input.expectedRealReturn, input),
-      projectScenario("pessimistic", input.expectedRealReturn - RETURN_SHIFT, input),
-    ],
-  };
 }
 
 export interface FireProjectionFamilyInput extends FireProjectionInput {
@@ -187,6 +130,14 @@ export function projectFireFamily(
       scenarios: pairs.map((pair) => pair.rail),
     },
   };
+}
+
+/** Scalar FIRE projection: the family chart sliced to the regular FIRE number. */
+export function projectFire(input: FireProjectionInput): FireProjection {
+  return projectFireFamily({
+    ...input,
+    horizonTargetMinor: input.fireNumberMinor,
+  }).chart;
 }
 
 function projectScenarioPair(

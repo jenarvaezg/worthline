@@ -24,6 +24,8 @@ import {
   encodeCursor,
 } from "./cursor";
 import { derivePublicId } from "./derived-id";
+import { unknownScope } from "./http-errors";
+import { moneyOf } from "./money";
 import { publicIdMap } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -332,17 +334,5 @@ async function holdingPublicId(
 }
 
 function money(value: MoneyMinor, currency: string): AgentViewMoney {
-  return { amountMinor: value.amountMinor, currency: value.currency || currency };
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
-  });
+  return moneyOf(value.amountMinor, value.currency || currency);
 }

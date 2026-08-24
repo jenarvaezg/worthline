@@ -15,6 +15,8 @@ import {
   dropAfterCursor,
   encodeCursor,
 } from "./cursor";
+import { unknownScope } from "./http-errors";
+import { moneyOf } from "./money";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -132,21 +134,9 @@ function toTrashedHolding(
     status: { hardDeletable: true, restorable: true },
     ...(holding.valueMinor === null
       ? {}
-      : { value: money(holding.valueMinor, currency) }),
+      : { value: moneyOf(holding.valueMinor, currency) }),
     ...(holding.deletedAt === null
       ? {}
       : { deletedDate: holding.deletedAt.slice(0, 10) }),
   };
-}
-
-function money(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
-  });
 }

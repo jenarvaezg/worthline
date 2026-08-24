@@ -13,10 +13,10 @@ import type {
   AgentViewBalanceAnchorFacts,
   AgentViewBalanceInterpolation,
   AgentViewHoldingFactsState,
-  AgentViewMoney,
   AgentViewValuationAnchor,
 } from "./contract";
 import { derivePublicId } from "./derived-id";
+import { moneyOf } from "./money";
 
 /**
  * The calculation-fact blocks for one holding, plus the documented fact-state
@@ -161,7 +161,7 @@ function toValuationAnchor(
     id: derivePublicId("van", anchor.id),
     kind: anchor.adjustsPriorCurve ? "market_appraisal" : "improvement",
     object: "valuation_anchor",
-    value: money(anchor.valueMinor, currency),
+    value: moneyOf(anchor.valueMinor, currency),
   };
 }
 
@@ -171,7 +171,7 @@ function toAmortizationPlan(plan: AmortizationPlanRecord, currency: string) {
     disbursementDate: plan.disbursementDate,
     firstPaymentDate: plan.firstPaymentDate,
     id: derivePublicId("amp", plan.id),
-    initialCapital: money(plan.initialCapitalMinor, currency),
+    initialCapital: moneyOf(plan.initialCapitalMinor, currency),
     object: "amortization_plan" as const,
     termMonths: plan.termMonths,
   };
@@ -188,7 +188,7 @@ function toInterestRateRevision(revision: InterestRateRevisionRecord) {
 
 function toEarlyRepayment(repayment: EarlyRepaymentRecord, currency: string) {
   return {
-    amount: money(repayment.amountMinor, currency),
+    amount: moneyOf(repayment.amountMinor, currency),
     date: repayment.repaymentDate,
     id: derivePublicId("erp", repayment.id),
     mode: repayment.mode,
@@ -198,13 +198,9 @@ function toEarlyRepayment(repayment: EarlyRepaymentRecord, currency: string) {
 
 function toBalanceAnchor(anchor: BalanceAnchorRecord, currency: string) {
   return {
-    balance: money(anchor.balanceMinor, currency),
+    balance: moneyOf(anchor.balanceMinor, currency),
     date: anchor.anchorDate,
     id: derivePublicId("ban", anchor.id),
     object: "balance_anchor" as const,
   };
-}
-
-function money(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
 }

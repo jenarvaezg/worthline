@@ -4,7 +4,6 @@ import type {
   FireScopeConfig,
   GoalReservationInput,
   ManualAsset,
-  MoneyMinor,
   ScopeFireResult,
   Workspace,
 } from "@worthline/domain";
@@ -36,6 +35,8 @@ import {
   type AgentViewScope,
 } from "./contract";
 import { ratioStringFromBps } from "./financial-context";
+import { unknownScope } from "./http-errors";
+import { money, moneyOf, zero } from "./money";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
 import { listAgentViewScopes } from "./scopes";
@@ -269,7 +270,7 @@ function toConfig(
   };
 }
 
-function toAssumptions(
+export function toAssumptions(
   config: FireScopeConfig,
   result: ScopeFireResult,
   currency: string,
@@ -376,7 +377,7 @@ function gapOf(result: FireResult): AgentViewMoney {
  * (PRD #328). Integer-only basis-point math, so no float artefacts; `0` when the
  * FIRE number is zero (an unreachable config, but a divide-by-zero would leak).
  */
-function progressRatioOf(result: FireResult): string {
+export function progressRatioOf(result: FireResult): string {
   const fireNumberMinor = result.fireNumber.amountMinor;
 
   if (fireNumberMinor <= 0) {
@@ -394,24 +395,4 @@ function progressRatioOf(result: FireResult): string {
  */
 function rateString(rate: number): string {
   return rate.toString();
-}
-
-function money(value: MoneyMinor): AgentViewMoney {
-  return { amountMinor: value.amountMinor, currency: value.currency };
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function zero(currency: string): AgentViewMoney {
-  return { amountMinor: 0, currency };
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
-  });
 }

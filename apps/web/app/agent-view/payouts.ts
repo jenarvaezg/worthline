@@ -23,6 +23,7 @@ import type {
   AgentViewScopePassiveIncome,
 } from "./contract";
 import { derivePublicId } from "./derived-id";
+import { moneyOf } from "./money";
 
 /**
  * Payouts as the agent view sees them (PRD #652, #659, ADR 0054). Two read-only
@@ -166,8 +167,4 @@ function toWindow(
     windowEnd: window.windowEndISO,
     months: TRAILING_MONTHS,
   };
-}
-
-function moneyOf(amountMinor: number, currency: CurrencyCode): AgentViewMoney {
-  return { amountMinor, currency };
 }

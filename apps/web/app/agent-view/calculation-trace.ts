@@ -30,6 +30,8 @@ import {
   type AgentViewMoney,
 } from "./contract";
 import { derivePublicId } from "./derived-id";
+import { unknownHolding } from "./http-errors";
+import { moneyOf } from "./money";
 import { resolveInternalHoldingId } from "./scope-resolution";
 
 /** The internal household scope id (the unscoped, full-ownership view). */
@@ -150,7 +152,7 @@ export async function buildCalculationTrace(
 
   return {
     asOf,
-    currentValue: money(currentBalanceMinor, currency),
+    currentValue: moneyOf(currentBalanceMinor, currency),
     direction: "liability",
     fidelity: fidelityFrom(reconciliation),
     holding: publicHoldingId,
@@ -248,12 +250,13 @@ function toPoint(input: {
   const differenceMinor = hasPersisted ? liveMinor - input.persistedMinor! : null;
   return {
     date: input.date,
-    difference: differenceMinor === null ? null : money(differenceMinor, input.currency),
+    difference:
+      differenceMinor === null ? null : moneyOf(differenceMinor, input.currency),
     diverges:
       differenceMinor !== null && Math.abs(differenceMinor) > DIVERGENCE_EPSILON_MINOR,
     isSnapshot: input.isSnapshot,
-    live: money(liveMinor, input.currency),
-    persisted: hasPersisted ? money(input.persistedMinor!, input.currency) : null,
+    live: moneyOf(liveMinor, input.currency),
+    persisted: hasPersisted ? moneyOf(input.persistedMinor!, input.currency) : null,
   };
 }
 
@@ -355,24 +358,24 @@ async function buildSchedule(
     firstPaymentDate: effective.plan.firstPaymentDate,
     frontiers: trace.periods.map((period) => ({
       annualInterestRate: period.annualInterestRate,
-      closingBalance: money(period.closingBalanceMinor, currency),
+      closingBalance: moneyOf(period.closingBalanceMinor, currency),
       date: period.date,
       events: period.events.map((event) => toScheduleEvent(event, currency)),
       index: period.index,
-      interest: money(period.interestMinor, currency),
-      openingBalance: money(period.openingBalanceMinor, currency),
-      payment: money(period.paymentMinor, currency),
-      principal: money(period.principalMinor, currency),
+      interest: moneyOf(period.interestMinor, currency),
+      openingBalance: moneyOf(period.openingBalanceMinor, currency),
+      payment: moneyOf(period.paymentMinor, currency),
+      principal: moneyOf(period.principalMinor, currency),
     })),
-    initialCapital: money(effective.plan.initialCapitalMinor, currency),
+    initialCapital: moneyOf(effective.plan.initialCapitalMinor, currency),
     settlement: accrual
       ? {
-          accruedInterest: money(accrual.accruedInterestMinor, currency),
+          accruedInterest: moneyOf(accrual.accruedInterestMinor, currency),
           asOf,
           lastPaymentDate: accrual.cycleStartDate,
           nextPaymentDate: accrual.cycleEndDate,
-          principal: money(accrual.principalMinor, currency),
-          settlementEstimate: money(accrual.settlementEstimateMinor, currency),
+          principal: moneyOf(accrual.principalMinor, currency),
+          settlementEstimate: moneyOf(accrual.settlementEstimateMinor, currency),
         }
       : null,
     termMonths: effective.plan.termMonths,
@@ -397,7 +400,7 @@ function toScheduleEvent(
       : { annualInterestRate: event.annualInterestRate }),
     ...(event.amountMinor === undefined
       ? {}
-      : { amount: money(event.amountMinor, currency) }),
+      : { amount: moneyOf(event.amountMinor, currency) }),
     ...(event.mode === undefined ? {} : { mode: event.mode }),
   };
 }
@@ -412,7 +415,7 @@ async function buildBalanceAnchors(
   const anchors = await store.readBalanceAnchors(internalHoldingId);
   return {
     anchors: anchors.map((anchor) => ({
-      balance: money(anchor.balanceMinor, currency),
+      balance: moneyOf(anchor.balanceMinor, currency),
       date: anchor.anchorDate,
       id: derivePublicId("ban", anchor.id),
       object: "balance_anchor" as const,
@@ -442,8 +445,8 @@ async function buildTolerance(input: {
   liveAt: (date: string) => Promise<number | null>;
 }): Promise<AgentViewCalculationTraceTolerance> {
   const base: AgentViewCalculationTraceTolerance = {
-    band: money(toleranceBandMinor(input.currentBalanceMinor), input.currency),
-    referenceBalance: money(input.currentBalanceMinor, input.currency),
+    band: moneyOf(toleranceBandMinor(input.currentBalanceMinor), input.currency),
+    referenceBalance: moneyOf(input.currentBalanceMinor, input.currency),
     referenceDate: input.asOf,
   };
 
@@ -464,9 +467,9 @@ async function buildTolerance(input: {
   return {
     ...base,
     declared: {
-      balance: money(input.declaredBalanceMinor, input.currency),
+      balance: moneyOf(input.declaredBalanceMinor, input.currency),
       date: declaredDate,
-      residual: money(residualMinor, input.currency),
+      residual: moneyOf(residualMinor, input.currency),
       withinTolerance: Math.abs(residualMinor) <= bandMinor,
     },
   };
@@ -492,16 +495,4 @@ function householdScope(workspace: Workspace) {
     });
   }
   return scope;
-}
-
-function money(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function unknownHolding(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown holding.",
-    status: 404,
-  });
 }

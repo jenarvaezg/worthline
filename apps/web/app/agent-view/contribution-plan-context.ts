@@ -53,6 +53,7 @@ import {
 import { ratioStringFromBps } from "./financial-context";
 import { resolveFire } from "./fire-context";
 import { deriveOperationPublicId } from "./holding-operations";
+import { moneyOf } from "./money";
 import { buildHoldingReturns } from "./returns";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
@@ -563,10 +564,6 @@ function addDays(iso: string, days: number): string {
   const date = new Date(`${iso}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
 }
 
 const DEFAULT_EXPOSURE_DRIFT_HORIZON_YEARS = 20;

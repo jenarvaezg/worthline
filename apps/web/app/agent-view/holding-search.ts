@@ -33,6 +33,7 @@ import {
   AgentViewHttpError,
 } from "./contract";
 import { resolveHoldingIdentity } from "./holding-identity";
+import { unknownScope } from "./http-errors";
 import { managedPortfoliosByAssetId } from "./managed-portfolio-membership";
 import { publicIdMap, requirePublicId } from "./scope-resolution";
 import type { ScopedAgentView } from "./scoped-read";
@@ -287,12 +288,4 @@ function toHoldingMatch(input: {
     ...(input.connectedSource ? { connectedSource: input.connectedSource } : {}),
     ...(input.managedPortfolio ? { managedPortfolio: input.managedPortfolio } : {}),
   };
-}
-
-function unknownScope(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown scope.",
-    status: 404,
-  });
 }

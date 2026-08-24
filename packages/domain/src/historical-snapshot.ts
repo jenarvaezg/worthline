@@ -47,6 +47,7 @@ import { resolveScopeMemberIds } from "./scope";
 import { allocateScopedHolding } from "./scope-allocation";
 import type {
   InvestmentCaptureDetail,
+  SnapshotHoldingKind,
   SnapshotHoldingRow,
   SnapshotPositionInput,
   SnapshotPositionRow,
@@ -974,19 +975,40 @@ export interface RecalculateSnapshotInput {
  * capture predating holdings (ADR 0008) has nothing to recompute against and
  * must be left frozen.
  */
+function openRippleRows(
+  snapshot: Pick<NetWorthSnapshot, "dateKey" | "scopeId">,
+  workspace: Workspace,
+  frozenHoldings: readonly SnapshotHoldingRow[],
+  holdingId: string,
+  kind: SnapshotHoldingKind,
+): {
+  currency: string;
+  existingRow: SnapshotHoldingRow | undefined;
+  rows: SnapshotHoldingRow[];
+  scopeMemberIds: Set<string>;
+  targetDate: string;
+} {
+  return {
+    currency: workspace.baseCurrency,
+    existingRow: frozenHoldings.find(
+      (row) => row.holdingId === holdingId && row.kind === kind,
+    ),
+    rows: frozenHoldings.filter((row) => row.holdingId !== holdingId),
+    scopeMemberIds: new Set(resolveScopeMemberIds(workspace, snapshot.scopeId)),
+    targetDate: snapshot.dateKey,
+  };
+}
+
 export function recalculateSnapshotForAsset(
   input: RecalculateSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    input.asset.id,
+    "asset",
   );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
   // Recompute the operated asset's row at the snapshot's date via the same
   // dispatcher the fresh capture uses (#150 carry-over): `derived` folds the
@@ -1113,16 +1135,13 @@ export interface RecalculateHousingSnapshotInput {
 export function recalculateSnapshotForHousing(
   input: RecalculateHousingSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    input.asset.id,
+    "asset",
   );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
   // Value the housing asset on the target date via the same dispatcher (#148):
   // the appreciating method already encodes "curve when active, else the
@@ -1223,16 +1242,13 @@ export interface RecalculateLiabilitySnapshotInput {
 export function recalculateSnapshotForLiability(
   input: RecalculateLiabilitySnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const targetDate = input.snapshot.dateKey;
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    input.liability.id,
+    "liability",
   );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.liability.id && row.kind === "liability",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.liability.id);
 
   // Same question, same answer as generate (#1438, ADR 0013): a date the debt
   // does not belong to yet carries NO row — not a recomputed one, and not an
@@ -1386,20 +1402,18 @@ export interface RecalculateOwnershipSnapshotInput {
 export function recalculateSnapshotForOwnership(
   input: RecalculateOwnershipSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
-  );
-
   const { holding } = input;
   const holdingId = holding.kind === "asset" ? holding.asset.id : holding.liability.id;
   const ownership =
     holding.kind === "asset" ? holding.asset.ownership : holding.liability.ownership;
 
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === holdingId && row.kind === holding.kind,
+  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    holdingId,
+    holding.kind,
   );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== holdingId);
 
   // Re-weight the holding's global value into THIS scope by the new split.
   const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
@@ -1538,15 +1552,13 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
 export function recalculateSnapshotForCoinAcquisition(
   input: RecalculateCoinAcquisitionSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    input.asset.id,
+    "asset",
   );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
   const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalDeltaMinor, {
     ownership: input.asset.ownership,
@@ -1716,15 +1728,13 @@ export interface RecalculateConnectedValueSnapshotInput {
 export function recalculateSnapshotForConnectedValue(
   input: RecalculateConnectedValueSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const currency = input.workspace.baseCurrency;
-  const scopeMemberIds = new Set(
-    resolveScopeMemberIds(input.workspace, input.snapshot.scopeId),
+  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
+    input.snapshot,
+    input.workspace,
+    input.frozenHoldings,
+    input.asset.id,
+    "asset",
   );
-
-  const existingRow = input.frozenHoldings.find(
-    (row) => row.holdingId === input.asset.id && row.kind === "asset",
-  );
-  const rows = input.frozenHoldings.filter((row) => row.holdingId !== input.asset.id);
 
   const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
     ownership: input.asset.ownership,

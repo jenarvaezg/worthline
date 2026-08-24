@@ -11,6 +11,8 @@ import {
 } from "./contract";
 import { decodeCursor, encodeCursor } from "./cursor";
 import { derivePublicId } from "./derived-id";
+import { unknownHolding } from "./http-errors";
+import { moneyOf } from "./money";
 import { resolveInternalHoldingId } from "./scope-resolution";
 
 export const DEFAULT_OPERATION_LIMIT = 100;
@@ -167,16 +169,4 @@ function dateKey(operation: InvestmentOperation): string {
  */
 export function deriveOperationPublicId(internalOperationId: string): string {
   return derivePublicId("op", internalOperationId);
-}
-
-function moneyOf(amountMinor: number, currency: string): AgentViewMoney {
-  return { amountMinor, currency };
-}
-
-function unknownHolding(): AgentViewHttpError {
-  return new AgentViewHttpError({
-    code: "not_found",
-    message: "Unknown holding.",
-    status: 404,
-  });
 }

@@ -19,9 +19,9 @@ import {
   type FireGrowthAssumption,
 } from "./fire-plan-projection";
 import { DEFAULT_MAX_YEARS } from "./fire-projection";
-import type { Instrument } from "./instrument-catalog";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { projectPortfolio } from "./portfolio-projection";
+import { addHoldingContributions, growHoldingBuckets } from "./projection-buckets";
 import type { HoldingReturnsView } from "./returns-display";
 import { resolveHoldingAnnualReturnForProjection } from "./returns-display";
 import type { ScopeOption } from "./scope";
@@ -75,7 +75,7 @@ export function assembleExposureDriftHoldings(
       currency: input.baseCurrency,
       geography: null,
       id: row.id,
-      instrument: row.instrument as Instrument,
+      instrument: row.instrument,
       isin: metaByAssetId.get(row.id)?.isin ?? null,
       providerSymbol: metaByAssetId.get(row.id)?.providerSymbol ?? null,
       valueMinor: row.valueMinor,
@@ -169,28 +169,6 @@ function initialBuckets(
   return buckets;
 }
 
-function growBuckets(
-  buckets: Map<string, number>,
-  input: ExposureDriftProjectionInput,
-): void {
-  for (const [holdingId, amount] of [...buckets.entries()]) {
-    const rate = bucketGrowthRate(holdingId, input);
-    buckets.set(holdingId, amount * (1 + rate));
-  }
-}
-
-function addContributions(
-  buckets: Map<string, number>,
-  contributions: Map<string, number> | undefined,
-): void {
-  if (contributions === undefined) {
-    return;
-  }
-  for (const [holdingId, amountMinor] of contributions.entries()) {
-    buckets.set(holdingId, (buckets.get(holdingId) ?? 0) + amountMinor);
-  }
-}
-
 function lookthroughAtBuckets(
   buckets: Map<string, number>,
   metaById: Map<string, ExposureLookthroughHolding>,
@@ -268,8 +246,8 @@ export function projectExposureDrift(
   ];
 
   for (let year = 1; year <= maxYears; year += 1) {
-    growBuckets(buckets, input);
-    addContributions(buckets, contributionsByYear.get(year));
+    growHoldingBuckets(buckets, (holdingId) => bucketGrowthRate(holdingId, input));
+    addHoldingContributions(buckets, contributionsByYear.get(year));
     trajectory.push(
       toPoint(year, lookthroughAtBuckets(buckets, metaById, input), input.baseCurrency),
     );
