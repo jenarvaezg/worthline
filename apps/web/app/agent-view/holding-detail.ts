@@ -11,7 +11,7 @@ import {
   collectWarnings,
   defaultsFor,
   listScopeOptions,
-  monthlyCloseValuesFromSnapshotRows,
+  monthlyCloseValuesByHolding,
   netUnitsByAsset,
   projectPortfolio,
   systemClock,
@@ -226,13 +226,14 @@ async function buildVsBenchmark(input: {
     return unavailableVsBenchmark("catalog_unavailable");
   }
 
-  const monthlyCloses = monthlyCloseValuesFromSnapshotRows(
-    await input.store.readSnapshotHoldings({
-      holdingId: input.assetId,
-      kind: "asset",
-      scopeId: "household",
-    }),
-  );
+  const monthlyCloses =
+    monthlyCloseValuesByHolding(
+      await input.store.readSnapshotHoldings({
+        holdingId: input.assetId,
+        kind: "asset",
+        scopeId: "household",
+      }),
+    ).get(input.assetId) ?? [];
   const result = await buildHoldingBenchmarkComparison({
     distributing: input.distributing,
     monthlyCloses,

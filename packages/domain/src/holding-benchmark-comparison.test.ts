@@ -5,6 +5,7 @@ import {
   holdingTwrIndexSeries,
 } from "./holding-benchmark-comparison";
 import type { InvestmentOperation } from "./investment-types";
+import { holdingTwr } from "./returns";
 
 function op(
   kind: "buy" | "sell",
@@ -52,6 +53,60 @@ describe("holding TWR index series", () => {
         operations: [op("buy", "1", "6127", "2025-12-05")],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("las dos cadenas Dietz no pueden divergir (#1586)", () => {
+  test("el último punto del índice es 100 × (1 + TWR) sobre los mismos cierres y flujos", () => {
+    const monthlyCloses = [
+      { date: "2024-01-31", valueMinor: 100_000 },
+      { date: "2024-02-29", valueMinor: 130_000 },
+      { date: "2024-03-31", valueMinor: 220_000 },
+    ];
+    const operations = [
+      op("buy", "10", "100", "2024-01-31"),
+      op("buy", "10", "100", "2024-03-25"),
+    ];
+
+    const twr = holdingTwr({ monthlyCloses, operations });
+    const series = holdingTwrIndexSeries({ monthlyCloses, operations });
+
+    expect(twr.reason).toBeNull();
+    expect(twr.rate).not.toBeNull();
+    expect(series).toHaveLength(3);
+    expect(series[0]).toEqual({ dateKey: "2024-01-31", value: 100 });
+    expect(series[series.length - 1]!.value / 100 - 1).toBeCloseTo(
+      twr.rate as number,
+      12,
+    );
+  });
+
+  test("un tramo no medible deja ambas cadenas sin cifra, nunca una raya inventada", () => {
+    const monthlyCloses = [
+      { date: "2025-11-28", valueMinor: 1_010_700 },
+      { date: "2025-12-10", valueMinor: 99_900 },
+    ];
+    const operations = [op("buy", "1", "6127", "2025-12-05")];
+
+    expect(holdingTwr({ monthlyCloses, operations })).toMatchObject({
+      rate: null,
+      reason: "non_measurable_subperiod",
+    });
+    expect(holdingTwrIndexSeries({ monthlyCloses, operations })).toEqual([]);
+  });
+
+  test("un denominador cero deja ambas cadenas sin cifra", () => {
+    const monthlyCloses = [
+      { date: "2024-01-31", valueMinor: 0 },
+      { date: "2024-02-29", valueMinor: 10_000 },
+    ];
+    const operations: InvestmentOperation[] = [];
+
+    expect(holdingTwr({ monthlyCloses, operations })).toMatchObject({
+      rate: null,
+      reason: "zero_denominator",
+    });
+    expect(holdingTwrIndexSeries({ monthlyCloses, operations })).toEqual([]);
   });
 });
 

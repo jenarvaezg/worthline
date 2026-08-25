@@ -6,7 +6,6 @@ import type {
   ExposureCoverage,
   Instrument,
   InvestmentOperation,
-  MonthlyCloseSnapshotRow,
   MonthlyCloseValue,
   ReferenceDataUnavailableReason,
   TwrCashflow,
@@ -15,6 +14,7 @@ import {
   allocateByBps,
   daysBetween,
   derivePosition,
+  monthlyCloseValuesByHolding,
   monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
   operationTwrCashflows,
@@ -61,13 +61,14 @@ export async function buildHoldingReturns(input: {
     assetId: input.assetId,
     currency: input.currency,
   });
-  const monthlyCloses = monthlyCloseValuesFromSnapshotRows(
-    await input.store.readSnapshotHoldings({
-      holdingId: input.assetId,
-      kind: "asset",
-      scopeId: input.snapshotScopeId,
-    }),
-  );
+  const monthlyCloses =
+    monthlyCloseValuesByHolding(
+      await input.store.readSnapshotHoldings({
+        holdingId: input.assetId,
+        kind: "asset",
+        scopeId: input.snapshotScopeId,
+      }),
+    ).get(input.assetId) ?? [];
 
   return buildReturnsFromCashflows({
     cashflows: operationCashflows(input.operations),
@@ -206,8 +207,8 @@ function buildAssetClassReturnsBlock(input: {
     return null;
   }
 
-  const closesByHolding = monthlyClosesByHolding(
-    input.snapshotRows,
+  const closesByHolding = monthlyCloseValuesByHolding(
+    input.snapshotRows.filter((row) => row.kind === "asset"),
     new Set(input.holdings.map((holding) => holding.id)),
   );
 
@@ -269,31 +270,6 @@ function toExposureCoverage(
     unknown: moneyOf(coverage.unknown.amountMinor, coverage.unknown.currency),
     ...(catalogUnavailable === undefined ? {} : { catalogUnavailable }),
   };
-}
-
-function monthlyClosesByHolding(
-  rows: Awaited<ReturnType<AgentViewReadStore["readSnapshotHoldings"]>>,
-  holdingIds: Set<string>,
-): Map<string, MonthlyCloseValue[]> {
-  const byHolding = new Map<string, MonthlyCloseSnapshotRow[]>();
-  for (const row of rows) {
-    if (row.kind !== "asset" || !holdingIds.has(row.holdingId)) {
-      continue;
-    }
-    const list = byHolding.get(row.holdingId) ?? [];
-    list.push({
-      dateKey: row.dateKey,
-      snapshotId: row.snapshotId,
-      valueMinor: row.valueMinor,
-    });
-    byHolding.set(row.holdingId, list);
-  }
-
-  const closes = new Map<string, MonthlyCloseValue[]>();
-  for (const [holdingId, list] of byHolding) {
-    closes.set(holdingId, monthlyCloseValuesFromSnapshotRows(list));
-  }
-  return closes;
 }
 
 function buildReturnsFromCashflows(input: {

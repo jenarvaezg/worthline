@@ -4,6 +4,7 @@ import type { InvestmentOperation, OperationKind } from "./index";
 import {
   holdingIrr,
   holdingTwr,
+  monthlyCloseValuesByHolding,
   monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
   portfolioIrr,
@@ -256,6 +257,72 @@ describe("timeWeightedReturn", () => {
       { date: "2024-01-31", valueMinor: 100_000 },
       { date: "2024-02-20", valueMinor: 110_000 },
     ]);
+  });
+});
+
+describe("monthlyCloseValuesByHolding (#1586)", () => {
+  test("agrupa filas de snapshot en un cierre mensual por holding y mes", () => {
+    expect(
+      monthlyCloseValuesByHolding([
+        {
+          holdingId: "a",
+          snapshotId: "jan_a1",
+          dateKey: "2024-01-15",
+          valueMinor: 90_000,
+        },
+        {
+          holdingId: "b",
+          snapshotId: "jan_b",
+          dateKey: "2024-01-20",
+          valueMinor: 50_000,
+        },
+        {
+          holdingId: "a",
+          snapshotId: "jan_a2",
+          dateKey: "2024-01-31",
+          valueMinor: 100_000,
+        },
+        {
+          holdingId: "a",
+          snapshotId: "feb_a",
+          dateKey: "2024-02-29",
+          valueMinor: 110_000,
+        },
+      ]),
+    ).toEqual(
+      new Map([
+        [
+          "a",
+          [
+            { date: "2024-01-31", valueMinor: 100_000 },
+            { date: "2024-02-29", valueMinor: 110_000 },
+          ],
+        ],
+        ["b", [{ date: "2024-01-20", valueMinor: 50_000 }]],
+      ]),
+    );
+  });
+
+  test("omite holdings fuera del conjunto pedido", () => {
+    expect(
+      monthlyCloseValuesByHolding(
+        [
+          {
+            holdingId: "keep",
+            snapshotId: "s1",
+            dateKey: "2024-01-31",
+            valueMinor: 10_000,
+          },
+          {
+            holdingId: "drop",
+            snapshotId: "s1",
+            dateKey: "2024-01-31",
+            valueMinor: 99_000,
+          },
+        ],
+        new Set(["keep"]),
+      ),
+    ).toEqual(new Map([["keep", [{ date: "2024-01-31", valueMinor: 10_000 }]]]));
   });
 });
 

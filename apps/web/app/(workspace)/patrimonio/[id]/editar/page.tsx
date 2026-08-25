@@ -55,7 +55,7 @@ import {
   holdingTwr,
   instrumentOfAsset,
   lastCapturedCurrency,
-  monthlyCloseValuesFromSnapshotRows,
+  monthlyCloseValuesByHolding,
   netUnitsByAsset,
   simpleGain,
   storedBalanceGovernsDebtFigure,
@@ -273,7 +273,7 @@ export default async function EditarPage({
     investment !== null && !investment.providerSymbol
       ? detectValueOnlyOpening(operations)
       : null;
-  const twrMonthlyCloses = monthlyCloseValuesFromSnapshotRows(twrSnapshotRows);
+  const twrMonthlyCloses = monthlyCloseValuesByHolding(twrSnapshotRows).get(id) ?? [];
 
   // Exposure profile read for benchmark comparison (catalog #711 S3): keyed by
   // the security's identity (`isin ?? providerSymbol`) from the global catalog

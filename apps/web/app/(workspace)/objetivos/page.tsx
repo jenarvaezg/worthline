@@ -12,7 +12,7 @@ import {
   formatMoneyMinorPrivacy,
   instrumentOfAsset,
   investmentReturnsById,
-  monthlyCloseValuesFromSnapshotRows,
+  monthlyCloseValuesByHolding,
   prepareObjetivosState,
   projectContributionReconciliation,
   resolveScopeMemberIds,
@@ -400,23 +400,10 @@ export async function ObjetivosContent({
     const instrumentByAsset = new Map(
       assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
     );
-    const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
-    for (const row of returnSnapshotRows) {
-      if (!projectionContext.operationsByAsset.has(row.holdingId)) {
-        continue;
-      }
-      const rows = snapshotRowsByAsset.get(row.holdingId);
-      if (rows) {
-        rows.push(row);
-      } else {
-        snapshotRowsByAsset.set(row.holdingId, [row]);
-      }
-    }
-    const monthlyClosesByAsset = new Map(
-      [...snapshotRowsByAsset].map(([assetId, rows]) => [
-        assetId,
-        monthlyCloseValuesFromSnapshotRows(rows),
-      ]),
+    const monthlyClosesByAsset = monthlyCloseValuesByHolding(
+      returnSnapshotRows.filter((row) =>
+        projectionContext.operationsByAsset.has(row.holdingId),
+      ),
     );
     const payoutsByAsset = new Map(
       [...payoutsByHolding].map(([assetId, rows]) => [

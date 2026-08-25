@@ -124,6 +124,11 @@ export interface MonthlyCloseSnapshotRow {
   valueMinor: number;
 }
 
+/** A snapshot holding row that still knows which holding it belongs to. */
+export interface HoldingMonthlyCloseSnapshotRow extends MonthlyCloseSnapshotRow {
+  holdingId: string;
+}
+
 /**
  * A cashflow into the measured holding/portfolio. Positive = contribution/buy,
  * negative = withdrawal/sell. This is the opposite sign of XIRR cashflows.
@@ -220,6 +225,89 @@ export function monthlyCloseValuesFromSnapshotRows(
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
+/**
+ * Snapshot rows → each holding's monthly-close series. Every surface that
+ * builds TWR (or a Dietz index) from frozen holdings goes through this one
+ * aggregator, so two callers cannot derive two different close series from
+ * the same rows (#1586).
+ */
+export function monthlyCloseValuesByHolding(
+  rows: readonly HoldingMonthlyCloseSnapshotRow[],
+  holdingIds?: ReadonlySet<string>,
+): Map<string, MonthlyCloseValue[]> {
+  const byHolding = new Map<string, HoldingMonthlyCloseSnapshotRow[]>();
+  for (const row of rows) {
+    if (holdingIds && !holdingIds.has(row.holdingId)) {
+      continue;
+    }
+    const list = byHolding.get(row.holdingId);
+    if (list) {
+      list.push(row);
+    } else {
+      byHolding.set(row.holdingId, [row]);
+    }
+  }
+
+  return new Map(
+    [...byHolding].map(([holdingId, list]) => [
+      holdingId,
+      monthlyCloseValuesFromSnapshotRows(list),
+    ]),
+  );
+}
+
+/** Why a single Modified Dietz subperiod could not be measured. */
+export type ModifiedDietzPeriodReason = Extract<
+  TwrReason,
+  "zero_time_span" | "zero_denominator" | "non_measurable_subperiod"
+>;
+
+/** One month's Modified Dietz rate, or the reason that month is not measurable. */
+export type ModifiedDietzPeriodResult =
+  | { rate: number; reason: null }
+  | { rate: null; reason: ModifiedDietzPeriodReason };
+
+/**
+ * Modified Dietz over one monthly-close window (ADR 0040). Both chained Dietz
+ * consumers — the TWR and the per-holding benchmark index — call this, so a
+ * factor `1+R ≤ 0` is the same «not measurable» signal in both (#1457, #1586).
+ */
+export function modifiedDietzPeriodRate(
+  start: MonthlyCloseValue,
+  end: MonthlyCloseValue,
+  cashflows: readonly TwrCashflow[],
+): ModifiedDietzPeriodResult {
+  const periodDays = daysBetween(start.date, end.date);
+  if (periodDays <= 0) {
+    return { rate: null, reason: "zero_time_span" };
+  }
+
+  const periodCashflows = cashflows.filter(
+    (cashflow) => cashflow.date > start.date && cashflow.date <= end.date,
+  );
+  const totalCashflowMinor = periodCashflows.reduce(
+    (sum, cashflow) => sum + cashflow.amountMinor,
+    0,
+  );
+  const weightedCashflowMinor = periodCashflows.reduce(
+    (sum, cashflow) =>
+      sum + cashflow.amountMinor * (daysBetween(cashflow.date, end.date) / periodDays),
+    0,
+  );
+  const denominator = start.valueMinor + weightedCashflowMinor;
+
+  if (denominator === 0) {
+    return { rate: null, reason: "zero_denominator" };
+  }
+
+  const rate = (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
+  if (1 + rate <= 0) {
+    return { rate: null, reason: "non_measurable_subperiod" };
+  }
+
+  return { rate, reason: null };
+}
+
 /** The span a TWR was attempted over — what an unavailable result still reports. */
 interface TwrSpan {
   startDate: string | null;
@@ -264,47 +352,18 @@ export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
 
   let factor = 1;
   for (let index = 1; index < monthlyCloses.length; index += 1) {
-    const start = monthlyCloses[index - 1]!;
-    const end = monthlyCloses[index]!;
-    const periodDays = daysBetween(start.date, end.date);
-
-    if (periodDays <= 0) {
-      return twrUnavailable("zero_time_span", span);
+    // One shared period rate with the benchmark index (#1586). A factor
+    // `1+R ≤ 0` is «not measurable», never multiplied into the chain (#1457).
+    const period = modifiedDietzPeriodRate(
+      monthlyCloses[index - 1]!,
+      monthlyCloses[index]!,
+      input.cashflows,
+    );
+    if (period.reason !== null) {
+      return twrUnavailable(period.reason, span);
     }
 
-    const periodCashflows = input.cashflows.filter(
-      (cashflow) => cashflow.date > start.date && cashflow.date <= end.date,
-    );
-    const totalCashflowMinor = periodCashflows.reduce(
-      (sum, cashflow) => sum + cashflow.amountMinor,
-      0,
-    );
-    const weightedCashflowMinor = periodCashflows.reduce(
-      (sum, cashflow) =>
-        sum + cashflow.amountMinor * (daysBetween(cashflow.date, end.date) / periodDays),
-      0,
-    );
-    const denominator = start.valueMinor + weightedCashflowMinor;
-
-    if (denominator === 0) {
-      return twrUnavailable("zero_denominator", span);
-    }
-
-    const periodRate =
-      (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
-
-    // A TWR chains factors `(1 + R)`. Once a factor turns zero or negative the
-    // chain stops meaning anything — two negative factors multiply back to a
-    // positive, so the product no longer even preserves the sign of the loss, and
-    // the result can land below −100%, which no return ever is (#1457). `R ≤ −1`
-    // is the signal that Modified Dietz does not apply to this subperiod (the
-    // period flow dwarfs the opening value), so the whole measure is reported as
-    // unavailable with its reason rather than published as a percentage.
-    if (1 + periodRate <= 0) {
-      return twrUnavailable("non_measurable_subperiod", span);
-    }
-
-    factor *= 1 + periodRate;
+    factor *= 1 + period.rate;
   }
 
   const rate = factor - 1;
