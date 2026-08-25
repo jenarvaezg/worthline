@@ -105,15 +105,6 @@ const PADDLE_SCRIPT_HOSTS = [
   "https://sandbox-cdn.paddle.com",
 ] as const;
 
-/**
- * The SAME CDN, in `style-src`: Paddle.js pulls
- * `/paddle/v2/assets/css/paddle.css` as a `<link>` in OUR document, not inside
- * its iframe. Nothing in the docs says so — it showed up as a
- * `style-src-elem` report the first time the checkout was opened under this
- * policy, which is the only reason this entry exists.
- */
-const PADDLE_STYLE_HOSTS = PADDLE_SCRIPT_HOSTS;
-
 const PADDLE_FRAME_HOSTS = [
   "https://buy.paddle.com",
   "https://sandbox-buy.paddle.com",
@@ -123,14 +114,6 @@ const PADDLE_CONNECT_HOSTS = [
   "https://checkout-service.paddle.com",
   "https://sandbox-checkout-service.paddle.com",
 ] as const;
-
-/**
- * The wallet origins `Permissions-Policy: payment` must allow for Apple Pay and
- * Google Pay to appear INSIDE Paddle's iframe (#1221). The app-wide value is
- * `payment=()`, which disables the Payment Request API outright — correct
- * everywhere except here, where it would silently cost every wallet payment.
- */
-const PADDLE_PAYMENT_ORIGINS = PADDLE_FRAME_HOSTS;
 
 /** Blocks violations of {@link ENFORCED_CSP_DIRECTIVES}. */
 export const CSP_ENFORCED_HEADER_NAME = "Content-Security-Policy";
@@ -279,7 +262,11 @@ function contentSecurityPolicyDirectives({
     ["script-src", scriptSrc],
     // styled-jsx, inline style attributes and the View Transitions API all emit
     // inline styles (ADR 0036).
-    ["style-src", ["'self'", "'unsafe-inline'", ...(paddle ? PADDLE_STYLE_HOSTS : [])]],
+    // The CDN appears again here because Paddle.js pulls
+    // `/paddle/v2/assets/css/paddle.css` as a `<link>` in OUR document, not
+    // inside its iframe. No doc says so — it showed up as a `style-src-elem`
+    // report the first time a real checkout opened under this policy.
+    ["style-src", ["'self'", "'unsafe-inline'", ...(paddle ? PADDLE_SCRIPT_HOSTS : [])]],
     ["img-src", ["'self'", "data:", ...IMAGE_CDN_HOSTS]],
     ["font-src", ["'self'"]],
     // Chat streaming (`useChat`) and the auth session probe are same-origin.
@@ -360,8 +347,10 @@ export function securityHeaders({
         "geolocation=()",
         // Wallets live inside Paddle's iframe; everywhere else the Payment
         // Request API stays off entirely.
+        // Wallets render inside Paddle's iframe, so the frame hosts are also
+        // the origins the permission has to name.
         paddle
-          ? `payment=(self ${PADDLE_PAYMENT_ORIGINS.map((origin) => `"${origin}"`).join(" ")})`
+          ? `payment=(self ${PADDLE_FRAME_HOSTS.map((origin) => `"${origin}"`).join(" ")})`
           : "payment=()",
         "usb=()",
       ].join(", "),

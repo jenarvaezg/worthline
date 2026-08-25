@@ -34,6 +34,37 @@ export const CHECKOUT_PATH = "/premium/pagar";
 /** El nombre que Paddle da al id de transacción en la query (`?_ptxn=`). */
 export const CHECKOUT_TRANSACTION_PARAM = "_ptxn";
 
+/** El carril pulsado en `/premium`, para que quien lo escribe y quien lo lee no lo tecleen. */
+export const CHECKOUT_TIER_PARAM = "tier";
+
+/**
+ * La forma de un id de transacción de Paddle (`txn_` + base32 del ULID).
+ *
+ * Vive aquí, junto al nombre del parámetro que también impone Paddle, y no en
+ * la vista de la ruta: el módulo que decide qué pinta la página se anuncia como
+ * agnóstico, y el día que haya un segundo MoR nadie iría a buscar el formato de
+ * ids de uno concreto dentro de él.
+ */
+const CHECKOUT_TRANSACTION_ID = /^txn_[0-9a-z]{20,30}$/;
+
+/**
+ * El id de transacción que trae la query, o null si no tiene forma de tal. Se
+ * valida porque el valor llega de fuera —de un enlace nuestro, pero también de
+ * los correos de impago y de «actualiza tu método de pago» que manda Paddle— y
+ * de aquí va derecho al SDK del navegador.
+ */
+export function parseCheckoutTransactionId(raw: unknown): string | null {
+  return typeof raw === "string" && CHECKOUT_TRANSACTION_ID.test(raw) ? raw : null;
+}
+
+/** La URL de {@link CHECKOUT_PATH} que abre el checkout de una transacción ya creada. */
+export function checkoutPathForTransaction(transactionId: string): string {
+  const query = new URLSearchParams({
+    [CHECKOUT_TRANSACTION_PARAM]: transactionId,
+  });
+  return `${CHECKOUT_PATH}?${query}`;
+}
+
 export interface CheckoutInput {
   /** El workspace que compra — viaja en la custom data del checkout (#1135). */
   workspaceId: string;

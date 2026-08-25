@@ -1,6 +1,11 @@
-import { type BillingTier, CHECKOUT_PATH } from "@web/billing/adapter";
+import {
+  type BillingTier,
+  CHECKOUT_PATH,
+  CHECKOUT_TIER_PARAM,
+} from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { readBillingEntitlement } from "@web/billing/read-billing-entitlement";
+import { appendParam } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { Suspense } from "react";
@@ -81,7 +86,7 @@ export async function PremiumContent({
     view.showCheckout && adapter && workspaceId
       ? TIERS.filter((entry) => adapter.offersTier(entry.tier)).map((entry) => ({
           ...entry,
-          url: `${CHECKOUT_PATH}?tier=${entry.tier}`,
+          url: appendParam(CHECKOUT_PATH, CHECKOUT_TIER_PARAM, entry.tier),
         }))
       : [];
 

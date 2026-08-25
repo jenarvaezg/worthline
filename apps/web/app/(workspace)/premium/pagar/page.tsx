@@ -1,9 +1,11 @@
-import { CHECKOUT_TRANSACTION_PARAM } from "@web/billing/adapter";
+import { CHECKOUT_TIER_PARAM, CHECKOUT_TRANSACTION_PARAM } from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import PaddleCheckout from "./paddle-checkout";
+import PagarSkeleton from "./pagar-skeleton";
 import { buildPagarPlan } from "./pagar-view";
 
 /**
@@ -21,7 +23,19 @@ import { buildPagarPlan } from "./pagar-view";
  *    reparte en sus correos de impago y de «actualiza tu método de pago», así
  *    que esta rama tiene que funcionar para transacciones que no creamos.
  */
-export default async function PagarPage({
+export default function PagarPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  return (
+    <Suspense fallback={<PagarSkeleton />}>
+      <PagarContent searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function PagarContent({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -32,17 +46,18 @@ export default async function PagarPage({
   const adapter = getBillingAdapter();
   const plan = buildPagarPlan({
     transactionParam: resolvedSearchParams[CHECKOUT_TRANSACTION_PARAM],
-    tierParam: resolvedSearchParams["tier"],
+    tierParam: resolvedSearchParams[CHECKOUT_TIER_PARAM],
     offersTier: (tier) => adapter?.offersTier(tier) ?? false,
   });
 
-  if (plan.kind === "start") {
+  // El plan solo llega a `start` si el adapter ofertó el tier, así que aquí
+  // existe; lo que puede faltar es el workspace (una sesión de demo o local).
+  if (plan.kind === "start" && adapter) {
     const target = await readStoreTarget();
     const workspaceId = target.kind === "authenticated" ? target.workspaceId : null;
-    const url =
-      workspaceId && adapter
-        ? await adapter.checkoutUrl({ workspaceId, tier: plan.tier })
-        : null;
+    const url = workspaceId
+      ? await adapter.checkoutUrl({ workspaceId, tier: plan.tier })
+      : null;
     // `redirect` lanza, así que el null cae al mensaje honesto de abajo.
     if (url) redirect(url);
   }

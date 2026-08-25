@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
-
+import { CHECKOUT_PATH } from "./billing/adapter";
 import { readSourceFiles, stripComments } from "./guardian-walk";
 import {
   buildContentSecurityPolicy,
@@ -397,13 +397,21 @@ describe("next.config wiring", () => {
 
   test("applies the security headers to every route, and the widened one to the checkout route only (#1221)", () => {
     expect(nextConfigSource).toContain("securityHeaders(");
-    // Everything except the checkout route gets the closed policy...
-    expect(nextConfigSource).toContain('source: "/((?!premium/pagar).*)"');
-    // ...and the checkout route its own entry. The two sources must not
-    // overlap: a path matched by both gets two CSP headers, which the browser
-    // intersects — and that intersection blocks the checkout it just widened.
-    expect(nextConfigSource).toContain('source: "/premium/pagar"');
+    // Everything except the checkout route gets the closed policy, and the
+    // checkout route its own entry. The two sources must not overlap: a path
+    // matched by both gets two CSP headers, which the browser intersects — and
+    // that intersection blocks the checkout it just widened.
+    expect(nextConfigSource).toContain("source: `/((?!${CHECKOUT_PATH.slice(1)}).*)`");
+    expect(nextConfigSource).toContain("source: CHECKOUT_PATH");
     expect(nextConfigSource).toContain("paddle: true");
+  });
+
+  test("the checkout route is DERIVED from CHECKOUT_PATH, never retyped (#1221)", () => {
+    // Pinning the literal would keep this suite green through a rename while
+    // the two sources silently start overlapping in production.
+    expect(CHECKOUT_PATH.startsWith("/")).toBe(true);
+    expect(nextConfigSource).toContain("CHECKOUT_PATH");
+    expect(nextConfigSource).not.toContain(`"${CHECKOUT_PATH}"`);
   });
 });
 

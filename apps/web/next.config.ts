@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { CHECKOUT_PATH } from "./app/billing/adapter";
 import { securityHeaders } from "./app/security-headers";
 
 const nextConfig: NextConfig = {
@@ -21,13 +22,15 @@ const nextConfig: NextConfig = {
   // negative lookahead: everything EXCEPT the checkout route.
   async headers() {
     const dev = process.env.NODE_ENV !== "production";
+    // Both sources derive from CHECKOUT_PATH so renaming the route cannot leave
+    // the closed policy applying to the page that needs the widened one.
     return [
       {
-        source: "/((?!premium/pagar).*)",
+        source: `/((?!${CHECKOUT_PATH.slice(1)}).*)`,
         headers: securityHeaders({ dev }),
       },
       {
-        source: "/premium/pagar",
+        source: CHECKOUT_PATH,
         headers: securityHeaders({ dev, paddle: true }),
       },
     ];

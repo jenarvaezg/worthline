@@ -6,7 +6,11 @@
  * tres ramas se prueben sin navegador (ADR 0036).
  */
 
-import { type BillingTier, parseBillingTier } from "@web/billing/adapter";
+import {
+  type BillingTier,
+  parseBillingTier,
+  parseCheckoutTransactionId,
+} from "@web/billing/adapter";
 
 export type PagarPlan =
   /** Abrir el checkout del proveedor sobre una transacción que ya existe. */
@@ -15,14 +19,6 @@ export type PagarPlan =
   | { kind: "start"; tier: BillingTier }
   /** Ni transacción válida ni tier ofertable: no hay pago que abrir. */
   | { kind: "unavailable" };
-
-/**
- * Los ids de transacción de Paddle (`txn_` + base32 del ULID). Se valida la
- * FORMA porque este valor llega por la query —de un enlace nuestro, pero
- * también de los correos de impago y de «actualiza tu método de pago» que
- * manda Paddle— y de aquí va derecho a Paddle.js.
- */
-const TRANSACTION_ID = /^txn_[0-9a-z]{20,30}$/;
 
 function firstValue(raw: string | string[] | undefined): string | null {
   const value = Array.isArray(raw) ? raw[0] : raw;
@@ -43,11 +39,10 @@ export function buildPagarPlan({
 }): PagarPlan {
   // Una transacción ya creada manda sobre el tier: es el caso del enlace que
   // Paddle reparte, y repetirlo no debe abrir una compra nueva.
-  const transactionId = firstValue(transactionParam);
-  if (transactionId) {
-    return TRANSACTION_ID.test(transactionId)
-      ? { kind: "checkout", transactionId }
-      : { kind: "unavailable" };
+  const raw = firstValue(transactionParam);
+  if (raw) {
+    const transactionId = parseCheckoutTransactionId(raw);
+    return transactionId ? { kind: "checkout", transactionId } : { kind: "unavailable" };
   }
 
   const tier = parseBillingTier(firstValue(tierParam));

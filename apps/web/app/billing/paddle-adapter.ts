@@ -33,9 +33,8 @@ import type { BillingEvent, BillingSubscriptionState } from "@worthline/db";
 import {
   type BillingAdapter,
   type BillingTier,
-  CHECKOUT_PATH,
-  CHECKOUT_TRANSACTION_PARAM,
   type CheckoutInput,
+  checkoutPathForTransaction,
 } from "./adapter";
 
 /** Header de firma de Paddle sobre el cuerpo crudo del webhook. */
@@ -167,9 +166,7 @@ export function createPaddleBillingAdapter(
         });
         // La transacción sin id no es pagable; la `checkout.url` del proveedor
         // se ignora a propósito (ver la cabecera del fichero).
-        return transaction.id
-          ? `${CHECKOUT_PATH}?${CHECKOUT_TRANSACTION_PARAM}=${encodeURIComponent(transaction.id)}`
-          : null;
+        return transaction.id ? checkoutPathForTransaction(transaction.id) : null;
       } catch (error) {
         console.error(
           `billing(paddle): checkout ${tier} para ${workspaceId} falló`,
