@@ -10,10 +10,9 @@ import {
   compareGrowthToBenchmark,
   type GrowthSeriesPoint,
 } from "./benchmark-comparison";
-import { daysBetween } from "./dates";
 import type { InvestmentOperation } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
-import { operationTwrCashflows } from "./returns";
+import { modifiedDietzPeriodRate, operationTwrCashflows } from "./returns";
 
 export interface HoldingBenchmarkComparison extends BenchmarkComparison {
   seriesId: string;
@@ -54,41 +53,17 @@ export function holdingTwrIndexSeries(input: {
   const points: GrowthSeriesPoint[] = [{ dateKey: monthlyCloses[0]!.date, value: 100 }];
 
   for (let index = 1; index < monthlyCloses.length; index += 1) {
-    const start = monthlyCloses[index - 1]!;
     const end = monthlyCloses[index]!;
-    const periodDays = daysBetween(start.date, end.date);
-    if (periodDays <= 0) {
+    const period = modifiedDietzPeriodRate(monthlyCloses[index - 1]!, end, cashflows);
+    // Same chain, same rule as `timeWeightedReturn` (#1457): a factor at or
+    // below zero means Modified Dietz cannot measure this subperiod, and
+    // multiplying it in would make the rest of the curve meaningless — two
+    // negatives read as a gain. No series at all, so the card says the
+    // comparison is unavailable rather than drawing an impossible line.
+    if (period.reason !== null) {
       return [];
     }
-
-    const periodCashflows = cashflows.filter(
-      (cashflow) => cashflow.date > start.date && cashflow.date <= end.date,
-    );
-    const totalCashflowMinor = periodCashflows.reduce(
-      (sum, cashflow) => sum + cashflow.amountMinor,
-      0,
-    );
-    const weightedCashflowMinor = periodCashflows.reduce(
-      (sum, cashflow) =>
-        sum + cashflow.amountMinor * (daysBetween(cashflow.date, end.date) / periodDays),
-      0,
-    );
-    const denominator = start.valueMinor + weightedCashflowMinor;
-    if (denominator === 0) {
-      return [];
-    }
-
-    const periodRate =
-      (end.valueMinor - start.valueMinor - totalCashflowMinor) / denominator;
-    // Same chain, same rule as `timeWeightedReturn` (#1457): a factor at or below
-    // zero means Modified Dietz cannot measure this subperiod, and multiplying it
-    // in would make the rest of the curve meaningless — two negatives read as a
-    // gain. No series at all, so the card says the comparison is unavailable
-    // rather than drawing an impossible line.
-    if (1 + periodRate <= 0) {
-      return [];
-    }
-    factor *= 1 + periodRate;
+    factor *= 1 + period.rate;
     points.push({ dateKey: end.date, value: 100 * factor });
   }
 

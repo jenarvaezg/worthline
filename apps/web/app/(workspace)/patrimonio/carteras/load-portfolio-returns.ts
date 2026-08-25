@@ -1,14 +1,6 @@
 import type { WorthlineStore } from "@web/store";
-import type {
-  CurrencyCode,
-  DatedPayout,
-  ManagedPortfolio,
-  MonthlyCloseValue,
-} from "@worthline/domain";
-import {
-  collectHoldingPayouts,
-  monthlyCloseValuesFromSnapshotRows,
-} from "@worthline/domain";
+import type { CurrencyCode, DatedPayout, ManagedPortfolio } from "@worthline/domain";
+import { collectHoldingPayouts, monthlyCloseValuesByHolding } from "@worthline/domain";
 import type { PortfolioReturnView } from "./carteras-returns-view";
 import { portfolioReturnView } from "./carteras-returns-view";
 import type { PortfolioWitnessView } from "./carteras-view";
@@ -58,32 +50,9 @@ export async function loadPortfolioReturns(input: {
     store.payouts.readPayoutSchedules(),
   ]);
 
-  const rowsByHolding = new Map<
-    string,
-    Array<{ snapshotId: string; dateKey: string; valueMinor: number }>
-  >();
-  for (const row of snapshotRows) {
-    if (!measurableIds.has(row.holdingId)) {
-      continue;
-    }
-    const rows = rowsByHolding.get(row.holdingId);
-    const entry = {
-      dateKey: row.dateKey,
-      snapshotId: row.snapshotId,
-      valueMinor: row.valueMinor,
-    };
-    if (rows) {
-      rows.push(entry);
-    } else {
-      rowsByHolding.set(row.holdingId, [entry]);
-    }
-  }
-
-  const monthlyClosesByHoldingId = new Map<string, readonly MonthlyCloseValue[]>(
-    [...rowsByHolding].map(([holdingId, rows]) => [
-      holdingId,
-      monthlyCloseValuesFromSnapshotRows(rows),
-    ]),
+  const monthlyClosesByHoldingId = monthlyCloseValuesByHolding(
+    snapshotRows,
+    measurableIds,
   );
 
   const payoutsByHoldingId = new Map<string, readonly DatedPayout[]>(

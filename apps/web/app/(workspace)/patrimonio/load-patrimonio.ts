@@ -52,7 +52,7 @@ import {
   instrumentOfAsset,
   investmentReturnsById,
   lookThroughExposure,
-  monthlyCloseValuesFromSnapshotRows,
+  monthlyCloseValuesByHolding,
   netUnitsByAsset,
   projectPortfolio,
   resolveAssetClassBreakdown,
@@ -179,23 +179,10 @@ export async function loadPatrimonio(
   const instrumentByAsset = new Map<string, Instrument>(
     assets.map((asset) => [asset.id, instrumentOfAsset(asset)]),
   );
-  const snapshotRowsByAsset = new Map<string, typeof returnSnapshotRows>();
-  for (const row of returnSnapshotRows) {
-    if (!projectionContext.operationsByAsset.has(row.holdingId)) {
-      continue;
-    }
-    const rows = snapshotRowsByAsset.get(row.holdingId);
-    if (rows) {
-      rows.push(row);
-    } else {
-      snapshotRowsByAsset.set(row.holdingId, [row]);
-    }
-  }
-  const monthlyClosesByAsset = new Map(
-    [...snapshotRowsByAsset].map(([assetId, rows]) => [
-      assetId,
-      monthlyCloseValuesFromSnapshotRows(rows),
-    ]),
+  const monthlyClosesByAsset = monthlyCloseValuesByHolding(
+    returnSnapshotRows.filter((row) =>
+      projectionContext.operationsByAsset.has(row.holdingId),
+    ),
   );
   // Recorded payouts (one-offs + derived schedule occurrences up to today) fed
   // to the return engine so distributing holdings stop understating (#657, ADR

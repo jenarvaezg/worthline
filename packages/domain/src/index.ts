@@ -967,10 +967,13 @@ export type {
 export type {
   DatedCashflow,
   DatedPayout,
+  HoldingMonthlyCloseSnapshotRow,
   HoldingReturnsInput,
   HoldingTwrInput,
   IrrReason,
   IrrResult,
+  ModifiedDietzPeriodReason,
+  ModifiedDietzPeriodResult,
   MonthlyCloseSnapshotRow,
   MonthlyCloseValue,
   PortfolioHolding,
@@ -985,6 +988,8 @@ export type {
 export {
   holdingIrr,
   holdingTwr,
+  modifiedDietzPeriodRate,
+  monthlyCloseValuesByHolding,
   monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
   operationTwrCashflows,

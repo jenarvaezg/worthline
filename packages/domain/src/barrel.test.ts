@@ -70,6 +70,8 @@ const KEY_EXPORTS = [
   "simpleGain",
   "holdingIrr",
   "holdingTwr",
+  "modifiedDietzPeriodRate",
+  "monthlyCloseValuesByHolding",
   "monthlyCloseValuesFromSnapshotRows",
   "portfolioSimpleGain",
   "portfolioIrr",
