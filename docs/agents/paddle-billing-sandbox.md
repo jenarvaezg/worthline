@@ -21,18 +21,46 @@ la app está en `apps/web/.env.local` (ver `.env.example` para el catálogo).
    — mensual `pri_01ky59cg39ph64b1wc6xybj2hw` (4,99€), anual
    `pri_01ky59cg77t5hmj83peqq6zagz` (49€), lifetime
    `pri_01ky59cgbhv99yw0hbbqa0jf2t` (99€ one-time, cupo 50 gestionado en app).
-2. **Default Payment Link** (REQUERIDO, paso de dashboard): Paddle →
+2. **Default Payment Link** (REQUERIDO, paso de dashboard, SIN API): Paddle →
    Checkout → Checkout settings → Default payment link. Sin él,
    `transactions.create` falla con `transaction_default_checkout_url_not_set` y
-   `checkoutUrl` degrada a null (verificado 2026-07-23). En sandbox vale
-   `https://localhost/` o la URL del túnel; en prod, el dominio real de la app.
-3. **Destino de notificaciones**: Paddle → Developer tools → Notifications →
+   `checkoutUrl` degrada a null (verificado 2026-07-23, y de nuevo 2026-08-25).
+   **Es un requisito de cuenta para poder crear transacciones, no el destino de
+   nuestro enlace de compra** (ver la sección siguiente): en sandbox vale
+   `https://localhost/`.
+3. **Hosted Checkout** (paso de dashboard, #1221): Paddle → Checkout → Hosted
+   checkouts → crear uno para el producto. Da una URL
+   `https://pay.paddle.io/checkout/hsc_…` que va a
+   `WORTHLINE_PADDLE_HOSTED_CHECKOUT_URL`. **Ese** es el destino de los enlaces
+   de `/premium`.
+4. **Destino de notificaciones**: Paddle → Developer tools → Notifications →
    New destination (type Webhook) apuntando a `<túnel>/api/billing/webhook`.
    Eventos suscritos: `subscription.activated`, `subscription.updated`,
    `subscription.canceled`, `transaction.completed`. El secreto de ESE destino
    es `WORTHLINE_PADDLE_WEBHOOK_SECRET` (ya en `.local`, ntfset
-   `ntfset_01ky5hmdsgjvr5r4d4c5kvd6pr`).
-4. **Túnel**: `ngrok http 3000` (o `cloudflared`); usa la URL https como destino.
+   `ntfset_01ky5hmdsgjvr5r4d4c5kvd6pr`). Este paso **sí tiene API**:
+   `paddle.notificationSettings.create({...})` devuelve el destino con su
+   secreto, así que un túnel nuevo se cablea sin abrir el dashboard.
+5. **Túnel**: `ngrok http 3000` (o `cloudflared`); usa la URL https como destino.
+
+## Dónde vive el checkout (la trampa de Paddle, #1221)
+
+Paddle Billing **no tiene un checkout hospedado por defecto al que enlazar**. La
+`checkout.url` que devuelve `transactions.create` es el *default payment link*
+de la cuenta —una página **tuya** que carga Paddle.js— con `?_ptxn=<txn>`
+añadido. Con `https://localhost/` de default payment link, esa URL no abre nada.
+
+Hay dos salidas y worthline eligió la primera (2026-08-25):
+
+1. **Hosted Checkout de Paddle** (elegida): una página de pago que aloja Paddle,
+   creada en el dashboard, a la que se le pasa la transacción ya creada por
+   `?transaction_id=<txn>`. Preserva el «cero UI de facturación propia» del
+   contrato #1135 y no toca la CSP. El adapter la usa cuando
+   `WORTHLINE_PADDLE_HOSTED_CHECKOUT_URL` está configurada, y cae al
+   `checkout.url` de la API cuando no.
+2. **Página propia con Paddle.js** (descartada): meter un client token público
+   y un script de terceros, y reabrir la CSP (`script-src`/`frame-src`/
+   `connect-src` de Paddle) que #1256 acaba de cerrar.
 
 ## Mapeo de eventos (adapter → contrato)
 
@@ -79,32 +107,47 @@ Con la app en `<túnel>` y una [tarjeta de test](https://developer.paddle.com/sd
 Alternativa sin pagos reales: Paddle → Developer tools → Simulations dispara
 cada evento firmado contra el destino.
 
-## Verificado hasta ahora (2026-07-23)
+## Verificado hasta ahora (2026-08-25)
 
 - **Firma del webhook**: round-trip real con el SDK 3.8.0 y el secreto de
   sandbox — acepta la firma válida, rechaza cuerpo alterado y secreto incorrecto.
-- **Catálogo**: los tres price ids existen y están activos en sandbox.
-- **Checkout**: bloqueado hasta fijar el Default Payment Link (paso 2). El
+- **Catálogo**: los tres price ids existen y están activos en sandbox —
+  re-comprobado contra la API el 2026-08-25: mensual 4,99 €/mes, anual
+  49 €/año, lifetime 99 € one-time, los tres `active`.
+- **Checkout**: sigue bloqueado hasta fijar el Default Payment Link (paso 2);
+  `transactions.create` responde `transaction_default_checkout_url_not_set` y el
   adapter degrada a null correctamente mientras tanto.
-- **Unit**: `paddle-adapter.test.ts` (21) cubre checkout, portal, firma, mapeo de
-  los cuatro eventos + casos borde, y readSubscription. `billing.test.ts` cubre
-  el guard de ordenación monótono.
+- **Unit**: `paddle-adapter.test.ts` (26) cubre checkout —incluido el enlace al
+  Hosted Checkout, la query preservada, la URL no parseable y el fallback al
+  `checkout.url`—, portal, firma, mapeo de los cuatro eventos + casos borde, y
+  readSubscription. `billing.test.ts` cubre el guard de ordenación monótono.
 
-## Decisión de producto a confirmar (review S6)
+## Decisiones de producto (cerradas 2026-08-25, #1221)
 
-- **Cancelación inmediata con reembolso conserva premium hasta fin de periodo.**
-  Semántica heredada de S5: `subscription_canceled` fija `premiumUntil` al
+- **Cancelación inmediata con reembolso conserva premium hasta fin de periodo:
+  SE QUEDA ASÍ.** «Te quedas lo que pagaste». En la beta los reembolsos se
+  tocan a mano, y si hiciera falta cortar el acceso está la palanca de revoke de
+  /admin (S4, #1164). Revocar automáticamente al reembolsar exigiría manejar
+  eventos `adjustment.*` y es un slice aparte, no abierto hoy.
+  Detalle heredado de S5: `subscription_canceled` fija `premiumUntil` al
   `current_billing_period.ends_at` que informe Paddle, aunque haya reembolso. Es
   el comportamiento «te quedas lo que pagaste» para la cancelación normal a fin
   de periodo, pero con reembolsos reales significa dinero devuelto + acceso
-  retenido. Si se quiere revocar al reembolsar, hace falta manejar eventos
-  `adjustment.*`/refund (fuera del alcance de este slice).
+  retenido — asumido a conciencia.
 - **Downgrade inmediato con prorrateo** quedaría capado por el guard monótono
   (`premiumUntil` no se acorta en la activación). Paddle programa los downgrades
   a fin de periodo por defecto (`scheduled_change`), así que no se dispara hoy;
   documentado como asunción por si se habilita prorrateo inmediato.
 
-## Pendiente (requiere dashboard + túnel de Jose)
+## Pendiente (requiere dashboard de Jose)
 
-Pasos 2–4 de config y los cinco escenarios sobre la app corriendo. El adapter y
-el contrato están listos; falta el paseo end-to-end con pagos de test.
+Solo dos clics que no tienen API, y luego el paseo:
+
+1. **Default payment link** = `https://localhost/` (Checkout → Checkout
+   settings). Desbloquea `transactions.create`.
+2. **Hosted checkout** creado (Checkout → Hosted checkouts) y su URL en
+   `WORTHLINE_PADDLE_HOSTED_CHECKOUT_URL` de `apps/web/.env.local`.
+
+Con eso, el paseo (túnel + destino por API + los cinco escenarios, con el
+simulador para cancelación e impago y tarjeta de test para las altas) ya no
+necesita dashboard.

@@ -77,6 +77,60 @@ describe("paddle billing adapter — checkout (PRD #1160 S6, #1166)", () => {
     });
   });
 
+  it("enlaza al Hosted Checkout con la transacción creada cuando está configurado (#1221)", async () => {
+    transactionsCreate.mockResolvedValue({
+      id: "txn_01k",
+      // La API devuelve el default payment link con _ptxn; el hosted checkout manda.
+      checkout: { url: "https://localhost/?_ptxn=txn_01k" },
+    });
+
+    const url = await adapter({
+      hostedCheckoutUrl: "https://pay.paddle.io/checkout/hsc_01k",
+    }).checkoutUrl({ workspaceId: "ws-1", tier: "monthly" });
+
+    expect(url).toBe("https://pay.paddle.io/checkout/hsc_01k?transaction_id=txn_01k");
+  });
+
+  it("el Hosted Checkout preserva la query que ya trae la URL configurada", async () => {
+    transactionsCreate.mockResolvedValue({ id: "txn_01k", checkout: { url: null } });
+
+    const url = await adapter({
+      hostedCheckoutUrl: "https://pay.paddle.io/checkout/hsc_01k?theme=light",
+    }).checkoutUrl({ workspaceId: "ws-1", tier: "annual" });
+
+    expect(url).toBe(
+      "https://pay.paddle.io/checkout/hsc_01k?theme=light&transaction_id=txn_01k",
+    );
+  });
+
+  it("una URL de Hosted Checkout no parseable degrada a null, no a un enlace roto", async () => {
+    transactionsCreate.mockResolvedValue({
+      id: "txn_01k",
+      checkout: { url: "https://localhost/?_ptxn=txn_01k" },
+    });
+
+    const url = await adapter({ hostedCheckoutUrl: "no-es-una-url" }).checkoutUrl({
+      workspaceId: "ws-1",
+      tier: "monthly",
+    });
+
+    expect(url).toBeNull();
+  });
+
+  it("sin Hosted Checkout configurado se cae al checkout.url de la API", async () => {
+    transactionsCreate.mockResolvedValue({
+      id: "txn_01k",
+      checkout: { url: "https://mi-pagina.example/pagar?_ptxn=txn_01k" },
+    });
+
+    const url = await adapter({ hostedCheckoutUrl: null }).checkoutUrl({
+      workspaceId: "ws-1",
+      tier: "monthly",
+    });
+
+    expect(url).toBe("https://mi-pagina.example/pagar?_ptxn=txn_01k");
+  });
+
   it("un tier sin price id configurado no se ofrece (cupo lifetime agotado)", async () => {
     const url = await adapter({ priceIds: { monthly: "pri_monthly" } }).checkoutUrl({
       workspaceId: "ws-1",

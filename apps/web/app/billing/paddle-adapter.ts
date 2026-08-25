@@ -12,6 +12,15 @@
  * Paddle; `portalUrl` acuña una sesión del portal del cliente. Ambas degradan a
  * null ante un fallo de la API para que `/premium` no reviente (la página ya
  * promete fail-soft).
+ *
+ * El destino del enlace es el **Hosted Checkout** de Paddle (#1221): la página
+ * de pago que Paddle aloja, a la que se le pasa la transacción ya creada por
+ * `?transaction_id=`. Se eligió frente a montar Paddle.js en una página propia
+ * porque preserva el «cero UI de facturación propia» del contrato y no obliga a
+ * abrir la CSP a scripts/iframes de terceros (#1256). Ojo con la trampa: la
+ * `checkout.url` que devuelve la API NO es una página de Paddle, es el *default
+ * payment link* de la cuenta (una página TUYA con Paddle.js) con `_ptxn`
+ * añadido — sirve de fallback cuando esa página existe, nada más.
  */
 
 import { Environment, Paddle } from "@paddle/paddle-node-sdk";
@@ -33,11 +42,36 @@ export interface PaddleBillingAdapterOptions {
   /** Entorno de Paddle; sandbox durante la beta (#1133). */
   environment: Environment;
   /**
+   * URL del Hosted Checkout de Paddle (`https://pay.paddle.io/checkout/hsc_…`,
+   * se crea en Paddle → Checkout → Hosted checkouts). Cuando está configurada,
+   * el enlace de compra es esa URL con `?transaction_id=` de la transacción
+   * recién creada. Sin ella se cae al `checkout.url` de la API — que solo abre
+   * un checkout si la cuenta tiene un default payment link con Paddle.js.
+   */
+  hostedCheckoutUrl?: string | null;
+  /**
    * Price id por tier (#1126). Un tier sin price id configurado NO se ofrece
    * en el checkout: así se despublica el lifetime cuando se agota el cupo (#50)
    * sin tocar código — basta con vaciar su variable de entorno.
    */
   priceIds: Partial<Record<BillingTier, string | undefined>>;
+}
+
+/**
+ * El enlace al Hosted Checkout para una transacción ya creada: la URL
+ * configurada con `transaction_id` añadido (preservando su query existente,
+ * p. ej. `?theme=light`). Null si la URL configurada no es parseable — mejor
+ * «el pago no está disponible» que un enlace roto.
+ */
+function hostedCheckoutLink(base: string, transactionId: string): string | null {
+  try {
+    const url = new URL(base);
+    url.searchParams.set("transaction_id", transactionId);
+    return url.toString();
+  } catch {
+    console.error(`billing(paddle): hosted checkout url no parseable "${base}"`);
+    return null;
+  }
 }
 
 /** Los campos comunes a todo evento del contrato, ya extraídos del payload. */
@@ -142,6 +176,11 @@ export function createPaddleBillingAdapter(
           items: [{ priceId, quantity: 1 }],
           customData: { workspaceId },
         });
+        // El Hosted Checkout manda cuando está configurado; el `checkout.url`
+        // de la API es el fallback para cuentas con página propia de pago.
+        if (options.hostedCheckoutUrl && transaction.id) {
+          return hostedCheckoutLink(options.hostedCheckoutUrl, transaction.id);
+        }
         return transaction.checkout?.url ?? null;
       } catch (error) {
         console.error(
