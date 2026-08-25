@@ -62,73 +62,39 @@ beforeEach(() => {
   isSignatureValid.mockReset();
 });
 
-describe("paddle billing adapter — checkout (PRD #1160 S6, #1166)", () => {
-  it("crea una transacción con el workspace en la custom data y devuelve la URL hospedada", async () => {
+describe("paddle billing adapter — checkout (PRD #1160 S6, #1166; ruta #1221)", () => {
+  it("crea la transacción con el workspace en la custom data y manda a la ruta de pago", async () => {
     transactionsCreate.mockResolvedValue({
-      checkout: { url: "https://pay.paddle.com/abc" },
+      id: "txn_01ky59cg39ph64b1wc6xy",
+      // Paddle devuelve aquí el default payment link + `_ptxn`; se ignora a
+      // propósito: el destino lo construimos nosotros.
+      checkout: { url: "https://localhost/?_ptxn=txn_01ky59cg39ph64b1wc6xy" },
     });
 
     const url = await adapter().checkoutUrl({ workspaceId: "ws-1", tier: "annual" });
 
-    expect(url).toBe("https://pay.paddle.com/abc");
+    expect(url).toBe("/premium/pagar?_ptxn=txn_01ky59cg39ph64b1wc6xy");
     expect(transactionsCreate).toHaveBeenCalledWith({
       items: [{ priceId: "pri_annual", quantity: 1 }],
       customData: { workspaceId: "ws-1" },
     });
   });
 
-  it("enlaza al Hosted Checkout con la transacción creada cuando está configurado (#1221)", async () => {
-    transactionsCreate.mockResolvedValue({
-      id: "txn_01k",
-      // La API devuelve el default payment link con _ptxn; el hosted checkout manda.
-      checkout: { url: "https://localhost/?_ptxn=txn_01k" },
-    });
+  it("una transacción sin id no es pagable", async () => {
+    transactionsCreate.mockResolvedValue({ checkout: { url: "https://localhost/?x=1" } });
 
-    const url = await adapter({
-      hostedCheckoutUrl: "https://pay.paddle.io/checkout/hsc_01k",
-    }).checkoutUrl({ workspaceId: "ws-1", tier: "monthly" });
-
-    expect(url).toBe("https://pay.paddle.io/checkout/hsc_01k?transaction_id=txn_01k");
+    expect(
+      await adapter().checkoutUrl({ workspaceId: "ws-1", tier: "monthly" }),
+    ).toBeNull();
   });
 
-  it("el Hosted Checkout preserva la query que ya trae la URL configurada", async () => {
-    transactionsCreate.mockResolvedValue({ id: "txn_01k", checkout: { url: null } });
+  it("offersTier dice qué carriles hay sin llamar a la API (#1126)", async () => {
+    const partial = adapter({ priceIds: { monthly: "pri_monthly" } });
 
-    const url = await adapter({
-      hostedCheckoutUrl: "https://pay.paddle.io/checkout/hsc_01k?theme=light",
-    }).checkoutUrl({ workspaceId: "ws-1", tier: "annual" });
-
-    expect(url).toBe(
-      "https://pay.paddle.io/checkout/hsc_01k?theme=light&transaction_id=txn_01k",
-    );
-  });
-
-  it("una URL de Hosted Checkout no parseable degrada a null, no a un enlace roto", async () => {
-    transactionsCreate.mockResolvedValue({
-      id: "txn_01k",
-      checkout: { url: "https://localhost/?_ptxn=txn_01k" },
-    });
-
-    const url = await adapter({ hostedCheckoutUrl: "no-es-una-url" }).checkoutUrl({
-      workspaceId: "ws-1",
-      tier: "monthly",
-    });
-
-    expect(url).toBeNull();
-  });
-
-  it("sin Hosted Checkout configurado se cae al checkout.url de la API", async () => {
-    transactionsCreate.mockResolvedValue({
-      id: "txn_01k",
-      checkout: { url: "https://mi-pagina.example/pagar?_ptxn=txn_01k" },
-    });
-
-    const url = await adapter({ hostedCheckoutUrl: null }).checkoutUrl({
-      workspaceId: "ws-1",
-      tier: "monthly",
-    });
-
-    expect(url).toBe("https://mi-pagina.example/pagar?_ptxn=txn_01k");
+    expect(partial.offersTier("monthly")).toBe(true);
+    expect(partial.offersTier("annual")).toBe(false);
+    expect(partial.offersTier("lifetime")).toBe(false);
+    expect(transactionsCreate).not.toHaveBeenCalled();
   });
 
   it("un tier sin price id configurado no se ofrece (cupo lifetime agotado)", async () => {

@@ -39,9 +39,6 @@ export function getBillingAdapter(
         env.WORTHLINE_PADDLE_ENV === "production"
           ? Environment.production
           : Environment.sandbox,
-      // El Hosted Checkout de Paddle (#1221) es el destino del enlace de
-      // compra; sin él se cae al default payment link de la cuenta.
-      hostedCheckoutUrl: env.WORTHLINE_PADDLE_HOSTED_CHECKOUT_URL ?? null,
       // Cada price id es opcional: un tier sin configurar no se ofrece (así se
       // despublica el lifetime al agotarse el cupo, #1126).
       priceIds: {

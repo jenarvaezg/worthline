@@ -27,6 +27,7 @@
         "@ai-sdk/google": "^4.0.12",
         "@ai-sdk/react": "^4.0.15",
         "@modelcontextprotocol/sdk": "^1.26.0",
+        "@paddle/paddle-js": "^1.6.5",
         "@paddle/paddle-node-sdk": "^3.8.0",
         "@tursodatabase/api": "^2.0.4",
         "@worthline/db": "workspace:*",
@@ -335,6 +336,8 @@
     "@next/swc-win32-x64-msvc": ["@next/swc-win32-x64-msvc@16.3.0-preview.9", "", { "os": "win32", "cpu": "x64" }, "sha512-RG4rEpg3ynGwTP6mnsDZHLuFbKksXkQCd9A5MDkgPY9+wYawIrc23pJYHZxyBxisuV/t+dwCgbpZoclW8icE7A=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.139.0", "", {}, "sha512-r9gHphtCs+1M7J0pw6Sn/hh/Wpa/iQrOOkrNAlVLF/gHq+/CJmHIWKKUUhdWjcD6CIa8idarspCsASiXCXvFUw=="],
+
+    "@paddle/paddle-js": ["@paddle/paddle-js@1.6.5", "", {}, "sha512-uFRvptUzYRqRlqTU5XmfcZWC9BGVYpZNdANd3giJjZbJlHesnE4gn8PyjtYpesU1ar2ZGPuJxHvrrSIV9jjdVw=="],
 
     "@paddle/paddle-node-sdk": ["@paddle/paddle-node-sdk@3.8.0", "", {}, "sha512-4RS6AhZisloYaT2jiFgx9hwm22qwLRUx4EgIVb1gS3bS96lhDBQWq8BC1/Zow2i3CuxMkehXQUc3qKSBS77ozA=="],
 
