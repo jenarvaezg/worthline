@@ -106,6 +106,33 @@ un fin de periodo anterior nunca regresa el acceso. El acceso lo decide
 cosmético. El crash-window entre registrar-idempotencia y aplicar-transición lo
 cubre el re-sync manual de /admin (la red de seguridad del contrato).
 
+## El paseo, recorrido (2026-08-25)
+
+Los cinco escenarios se recorrieron contra la sandbox real, con el túnel y un
+**workspace de prueba** (`cfa6d4f2…`, alta nueva; el control plane es Turso y un
+paseo escribe entitlements de workspaces reales). Estado de la fila tras cada
+paso, leído del control plane:
+
+| Escenario | Cómo | Resultado en la fila |
+|---|---|---|
+| Mensual | checkout real, `4242…` | `premium`, `premiumUntil` = fin del primer periodo (+1 mes), `sub/active`, trial intacto |
+| Cancelación a fin de periodo | `subscriptions.cancel(next_billing_period)` | sigue `active` con `scheduled_change`; ventana sin tocar |
+| Cancelación inmediata | `subscriptions.cancel(immediately)` | `sub/canceled`, `premiumUntil` **conservado** — «te quedas lo que pagaste» |
+| Impago | simulación `subscription.updated` con `status: past_due` | `sub/past_due`, ventana sin acortar (la gracia nunca acorta) |
+| Anual | checkout real, `4242…` | `premiumUntil` = +1 año (y de paso, el guard monótono avanzando) |
+| Lifetime | checkout real one-time, `4242…` | `premiumUntil = null` (grant indefinido), `subscriptionStatus` limpiado |
+
+Los cuatro outcomes del contrato se observaron en respuestas reales de la ruta:
+`applied` (alta), `duplicate` (re-entrega del mismo `subscription.activated`),
+`ignored` (el `transaction.completed` del pago de una suscripción, que no debe
+duplicar el alta) y `unknown_workspace` está cubierto por el guard de la ruta.
+
+**Re-sync**: con el lifetime ya aplicado, `readSubscription` devuelve la
+suscripción anual `active` hasta 2027 y `billingStateFromSubscription` aun así
+escribe `premiumUntil: null` — el grant indefinido no se acorta. Verificado
+contra el MoR real por la misma costura que usa /admin (la pantalla en sí no se
+recorrió: exige sesión de admin).
+
 ## Los cinco escenarios del gate (#1133)
 
 Con la app en `<túnel>` y una [tarjeta de test](https://developer.paddle.com/sdks/sandbox#test-cards)
@@ -147,6 +174,24 @@ cada evento firmado contra el destino.
   cerrada (`connect-src 'self'`, `payment=()`); `/premium/pagar` lleva la
   ensanchada, con UNA sola cabecera enforced en cada ruta — el lookahead no
   solapa.
+- **La CSP, con un checkout de verdad abierto**: cero violaciones de nuestra
+  política. Dos cosas que solo se ven midiendo:
+  - Paddle.js enlaza `paddle.css` desde su CDN **en nuestro documento** —
+    apareció como `style-src-elem`. Por eso `style-src` está en la lista.
+  - `frameTarget` de Paddle.js es un **class name**, no un id: con un id lanza
+    «Cannot read properties of undefined (reading 'appendChild')».
+  Queda una violación que NO es nuestra: la CSP de Paddle reporta
+  `frame-ancestors` porque el dominio no está aprobado en su lado. En sandbox
+  es report-only; **antes de producción hay que aprobar el dominio real** en
+  Paddle → Checkout settings.
+- **El webhook estaba detrás del guard de sesión** (#1221): una entrega real
+  respondió `307 → /login` y Paddle marcó la notificación `failed` tras tres
+  intentos. Ningún unit test podía verlo — llaman al handler sin proxy delante.
+  Arreglado añadiendo la ruta a `isPublicPath` y al matcher del proxy, con el
+  mismo razonamiento que `/api/cron`: su autenticación es la firma.
+- **La custom data SÍ se propaga**: `subscription.created` y
+  `subscription.activated` traen `custom_data.workspaceId` fijado al crear la
+  transacción, como asumía el contrato #1135.
 - **Unit**: `paddle-adapter.test.ts` cubre checkout (ruta interna con el `_ptxn`,
   transacción sin id, `offersTier` sin llamar a la API, tier despublicado,
   fail-soft), portal, firma, mapeo de los cuatro eventos + casos borde y
@@ -172,15 +217,17 @@ cada evento firmado contra el destino.
   a fin de periodo por defecto (`scheduled_change`), así que no se dispara hoy;
   documentado como asunción por si se habilita prorrateo inmediato.
 
-## Pendiente (requiere dashboard de Jose)
+## Pendiente para el salto a producción
 
-**Un** clic, el único de todo esto que no tiene API:
+El gate de la beta (#1133, «billing vivo el día 1») está cubierto en sandbox.
+Lo que NO se prueba aquí y hay que hacer antes de cobrar de verdad (#1212):
 
-- **Default payment link** = `https://fixed-sina-submundane.ngrok-free.dev/premium/pagar`
-  en Paddle → Checkout → Checkout settings.
-
-Con eso queda el paseo: medir la CSP real en el navegador con un checkout
-abierto, y los cinco escenarios (tarjeta de test para las altas, simulador para
-cancelación e impago), verificando entitlements y la convergencia del re-sync
-de /admin. **Usar un workspace de prueba**: el control plane es Turso y un
-paseo escribe entitlements de workspaces reales.
+- **Aprobación del dominio real** en Paddle → Checkout settings, y el default
+  payment link apuntando a `https://<dominio>/premium/pagar` de producción. Sin
+  eso, `frame-ancestors` deja de ser un report y bloquea el checkout.
+- **Verificación fiscal y fee por escrito** — #1212.
+- **Client token y API key de producción**, y `WORTHLINE_PADDLE_ENV=production`
+  (la CSP ya nombra los hosts de producción, así que no hay que tocarla).
+- **Dunning (Retain)** no existe en sandbox: el camino real del impago —
+  reintentos, correos, y el `subscription.canceled` final— solo se observa en
+  vivo.

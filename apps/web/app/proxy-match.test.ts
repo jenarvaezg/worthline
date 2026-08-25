@@ -26,6 +26,8 @@ const SKIP = [
   "/api/auth/signin",
   "/api/auth/callback/google",
   "/api/cron/snapshot",
+  // The MoR's webhook: session-less by contract, authenticated by signature (#1221).
+  "/api/billing/webhook",
   "/api/mcp",
   "/api/mcp/tools",
   "/.well-known/oauth-protected-resource",

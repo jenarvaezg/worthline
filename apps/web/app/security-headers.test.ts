@@ -422,12 +422,20 @@ describe("the checkout route's widened policy (#1221)", () => {
     ).toContain("payment=()");
   });
 
-  test("widens exactly script-src, connect-src and frame-src, and nothing else", () => {
+  test("widens exactly the four directives the checkout needs, and nothing else", () => {
     const changed = [...widened.entries()]
       .filter(([name, values]) => closed.get(name) !== values)
       .map(([name]) => name);
 
-    expect(changed.sort()).toEqual(["connect-src", "frame-src", "script-src"]);
+    // `style-src` is in this list because Paddle.js links a stylesheet from its
+    // CDN into OUR document — undocumented, found as a `style-src-elem` report
+    // the first time a real checkout opened under this policy (#1221).
+    expect(changed.sort()).toEqual([
+      "connect-src",
+      "frame-src",
+      "script-src",
+      "style-src",
+    ]);
     // The payment form is an iframe, so a widened `frame-src` is the whole
     // point; the closed policy has no such directive at all.
     expect(closed.has("frame-src")).toBe(false);
@@ -442,12 +450,15 @@ describe("the checkout route's widened policy (#1221)", () => {
     expect(widened.get("connect-src")).toContain(
       "https://sandbox-checkout-service.paddle.com",
     );
+    expect(widened.get("style-src")).toContain("https://cdn.paddle.com");
+    expect(widened.get("style-src")).toContain("https://sandbox-cdn.paddle.com");
   });
 
   test("keeps `self` in every widened directive — Paddle is added, never substituted", () => {
-    for (const name of ["script-src", "connect-src"]) {
+    for (const name of ["script-src", "connect-src", "style-src"]) {
       expect(widened.get(name)).toContain("'self'");
     }
+    expect(widened.get("style-src")).toContain("'unsafe-inline'");
   });
 
   test("`connect-src` keeps BLOCKING on the checkout route (#1256)", () => {

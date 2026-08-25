@@ -28,9 +28,18 @@ export function isPublicPath(pathname: string): boolean {
   // endpoint: Vercel Cron calls it with `Authorization: Bearer CRON_SECRET` and
   // no Auth.js session, so the gate must let it reach its own bearer check
   // instead of 307-ing it to /login (which silently no-ops the job).
+  //
+  // The billing webhook (PRD #1160 S5) is the third machine endpoint, and the
+  // one whose absence here was MEASURED, not reasoned (#1221): a real Paddle
+  // delivery answered `307 → /login`, and after three attempts the notification
+  // went `failed`. No unit test could see it — they call the route handler
+  // directly, with no proxy in front — so billing would have shipped unable to
+  // receive a single event. Its authentication is the signature over the raw
+  // body, checked inside the route; a session was never part of the contract.
   if (
     pathname.startsWith("/api/mcp") ||
     pathname.startsWith("/api/cron") ||
+    pathname.startsWith("/api/billing/webhook") ||
     pathname.startsWith("/.well-known")
   ) {
     return true;

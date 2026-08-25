@@ -16,7 +16,11 @@
 import { initializePaddle } from "@paddle/paddle-js";
 import { useEffect, useState } from "react";
 
-/** El div que Paddle.js rellena con su iframe. */
+/**
+ * La CLASE del div que Paddle.js rellena con su iframe. Clase y no id: Paddle.js
+ * resuelve `frameTarget` por `className`, y con un id lanza «Cannot read
+ * properties of undefined (reading 'appendChild')» — medido, no leído.
+ */
 const FRAME_TARGET = "paddle-checkout-frame";
 
 export default function PaddleCheckout({ transactionId }: { transactionId: string }) {
@@ -68,5 +72,5 @@ export default function PaddleCheckout({ transactionId }: { transactionId: strin
     );
   }
 
-  return <div id={FRAME_TARGET} />;
+  return <div className={FRAME_TARGET} />;
 }

@@ -48,6 +48,6 @@ export default function proxy(...args: Parameters<typeof gated>) {
 // Literal string: Next parses `config.matcher` statically and rejects an import.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/cron|api/auth|api/mcp|\\.well-known|login(?:/|$)|demo(?:/|$)|.*\\.(?:ico|png|svg|jpe?g|gif|webp|json|js|txt|xml|map|webmanifest|woff2?)$).+)",
+    "/((?!_next/static|_next/image|favicon.ico|api/cron|api/auth|api/mcp|api/billing/webhook|\\.well-known|login(?:/|$)|demo(?:/|$)|.*\\.(?:ico|png|svg|jpe?g|gif|webp|json|js|txt|xml|map|webmanifest|woff2?)$).+)",
   ],
 };

@@ -94,9 +94,9 @@ const IMAGE_CDN_HOSTS = [
  * `paddle-billing-sandbox.md`; `security-headers.test.ts` pins the route so the
  * widened policy cannot spread to a second one by accident.
  *
- * Split by directive because the roles differ: the script comes from the CDN,
- * the payment form is an iframe from `buy`, and Paddle.js talks to its checkout
- * service by `fetch`. Sandbox and production hosts are BOTH named — one build
+ * Split by directive because the roles differ: the script AND a stylesheet come
+ * from the CDN, the payment form is an iframe from `buy`, and Paddle.js talks to
+ * its checkout service by `fetch`. Sandbox and production hosts are BOTH named — one build
  * serves both environments depending on `NEXT_PUBLIC_PADDLE_ENV`, and a policy
  * that only names one would pass in sandbox and block real money.
  */
@@ -104,6 +104,15 @@ const PADDLE_SCRIPT_HOSTS = [
   "https://cdn.paddle.com",
   "https://sandbox-cdn.paddle.com",
 ] as const;
+
+/**
+ * The SAME CDN, in `style-src`: Paddle.js pulls
+ * `/paddle/v2/assets/css/paddle.css` as a `<link>` in OUR document, not inside
+ * its iframe. Nothing in the docs says so — it showed up as a
+ * `style-src-elem` report the first time the checkout was opened under this
+ * policy, which is the only reason this entry exists.
+ */
+const PADDLE_STYLE_HOSTS = PADDLE_SCRIPT_HOSTS;
 
 const PADDLE_FRAME_HOSTS = [
   "https://buy.paddle.com",
@@ -270,7 +279,7 @@ function contentSecurityPolicyDirectives({
     ["script-src", scriptSrc],
     // styled-jsx, inline style attributes and the View Transitions API all emit
     // inline styles (ADR 0036).
-    ["style-src", ["'self'", "'unsafe-inline'"]],
+    ["style-src", ["'self'", "'unsafe-inline'", ...(paddle ? PADDLE_STYLE_HOSTS : [])]],
     ["img-src", ["'self'", "data:", ...IMAGE_CDN_HOSTS]],
     ["font-src", ["'self'"]],
     // Chat streaming (`useChat`) and the auth session probe are same-origin.

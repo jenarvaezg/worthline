@@ -88,6 +88,20 @@ describe("shouldRedirectToLogin", () => {
     ).toBe(false);
   });
 
+  // #1221: a real Paddle delivery got `307 → /login` and the notification went
+  // `failed` after three attempts. The route authenticates by signature over
+  // the raw body; a session was never part of the contract.
+  test("never redirects the billing webhook (a 307 makes every MoR event undeliverable)", () => {
+    expect(
+      shouldRedirectToLogin({
+        authConfigured: true,
+        hasSession: false,
+        hasPersonaCookie: false,
+        pathname: "/api/billing/webhook",
+      }),
+    ).toBe(false);
+  });
+
   test("never redirects the MCP OAuth discovery paths (the Auth.js redirect would swallow the handshake)", () => {
     for (const pathname of ["/api/mcp", "/.well-known/oauth-protected-resource"]) {
       expect(
