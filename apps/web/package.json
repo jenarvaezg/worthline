@@ -11,6 +11,7 @@
     "@ai-sdk/google": "^4.0.12",
     "@ai-sdk/react": "^4.0.15",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@paddle/paddle-js": "^1.6.5",
     "@paddle/paddle-node-sdk": "^3.8.0",
     "@tursodatabase/api": "^2.0.4",
     "@worthline/db": "workspace:*",

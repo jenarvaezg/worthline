@@ -12,12 +12,30 @@
  * Paddle; `portalUrl` acuña una sesión del portal del cliente. Ambas degradan a
  * null ante un fallo de la API para que `/premium` no reviente (la página ya
  * promete fail-soft).
+ *
+ * Dónde se paga (#1221): Paddle Billing NO tiene una página de pago propia a la
+ * que enlazar. La `checkout.url` que devuelve `transactions.create` es el
+ * *default payment link* de la cuenta —una página TUYA que carga Paddle.js— con
+ * `?_ptxn=` añadido. Así que `checkoutUrl` devuelve la ruta interna
+ * {@link CHECKOUT_PATH} con el id de la transacción recién creada, y es esa
+ * ruta la que abre el checkout de Paddle. Se construye aquí en vez de reenviar
+ * la `checkout.url` del proveedor a propósito: el destino es nuestro, no queda
+ * a merced de lo que alguien teclee en el dashboard.
+ *
+ * El Hosted Checkout de Paddle (`pay.paddle.io`) habría evitado la página, pero
+ * está restringido a cuentas con embudo app-to-web o de escritorio y hay que
+ * pedirlo a soporte (verificado 2026-08-25); worthline no encaja.
  */
 
 import { Environment, Paddle } from "@paddle/paddle-node-sdk";
 import type { BillingEvent, BillingSubscriptionState } from "@worthline/db";
 
-import type { BillingAdapter, BillingTier, CheckoutInput } from "./adapter";
+import {
+  type BillingAdapter,
+  type BillingTier,
+  type CheckoutInput,
+  checkoutPathForTransaction,
+} from "./adapter";
 
 /** Header de firma de Paddle sobre el cuerpo crudo del webhook. */
 export const PADDLE_SIGNATURE_HEADER = "paddle-signature";
@@ -132,6 +150,10 @@ export function createPaddleBillingAdapter(
   return {
     provider: PADDLE_BILLING_PROVIDER,
 
+    offersTier(tier: BillingTier) {
+      return Boolean(options.priceIds[tier]);
+    },
+
     async checkoutUrl({ workspaceId, tier }: CheckoutInput) {
       const priceId = options.priceIds[tier];
       if (!priceId) return null;
@@ -142,7 +164,9 @@ export function createPaddleBillingAdapter(
           items: [{ priceId, quantity: 1 }],
           customData: { workspaceId },
         });
-        return transaction.checkout?.url ?? null;
+        // La transacción sin id no es pagable; la `checkout.url` del proveedor
+        // se ignora a propósito (ver la cabecera del fichero).
+        return transaction.id ? checkoutPathForTransaction(transaction.id) : null;
       } catch (error) {
         console.error(
           `billing(paddle): checkout ${tier} para ${workspaceId} falló`,

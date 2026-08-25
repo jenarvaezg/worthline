@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { CHECKOUT_PATH } from "./app/billing/adapter";
 import { securityHeaders } from "./app/security-headers";
 
 const nextConfig: NextConfig = {
@@ -12,13 +13,25 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Security headers on every route (#1179). Vercel doesn't inject these; the
   // CSP ships report-only first so we can observe breakage before enforcing.
+  //
+  // TWO entries, not one (#1221): the checkout route runs Paddle.js and needs
+  // script/frame/connect to Paddle plus the wallet permission, and that widening
+  // must not reach any other page. They must not OVERLAP — a path matched by
+  // both would get two `Content-Security-Policy` headers, which the browser
+  // intersects, and the intersection of these two blocks the checkout. Hence the
+  // negative lookahead: everything EXCEPT the checkout route.
   async headers() {
+    const dev = process.env.NODE_ENV !== "production";
+    // Both sources derive from CHECKOUT_PATH so renaming the route cannot leave
+    // the closed policy applying to the page that needs the widened one.
     return [
       {
-        source: "/:path*",
-        headers: securityHeaders({
-          dev: process.env.NODE_ENV !== "production",
-        }),
+        source: `/((?!${CHECKOUT_PATH.slice(1)}).*)`,
+        headers: securityHeaders({ dev }),
+      },
+      {
+        source: CHECKOUT_PATH,
+        headers: securityHeaders({ dev, paddle: true }),
       },
     ];
   },

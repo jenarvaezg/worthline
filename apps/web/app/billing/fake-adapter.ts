@@ -11,7 +11,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { BillingEvent, BillingSubscriptionState } from "@worthline/db";
 
-import type { BillingAdapter, CheckoutInput } from "./adapter";
+import type { BillingAdapter, BillingTier, CheckoutInput } from "./adapter";
 
 /** Header de firma del proveedor fake — HMAC-SHA256 hex del cuerpo crudo. */
 export const FAKE_SIGNATURE_HEADER = "fake-signature";
@@ -97,6 +97,11 @@ export function createFakeBillingAdapter(
 ): BillingAdapter {
   return {
     provider: FAKE_BILLING_PROVIDER,
+    offersTier(_tier: BillingTier) {
+      // El fake ofrece los tres carriles en cuanto tiene base de checkout: el
+      // despublicado por tier es cosa de la config real (#1126).
+      return Boolean(options.checkoutBaseUrl);
+    },
     async checkoutUrl({ workspaceId, tier }: CheckoutInput) {
       if (!options.checkoutBaseUrl) return null;
       // Una base malformada (config del operador) degrada a "sin checkout" en

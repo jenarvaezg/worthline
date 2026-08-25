@@ -12,6 +12,28 @@
 const PUBLIC_PATHS = new Set(["/login", "/manifest.json", "/mcp-icon.svg", "/sw.js"]);
 
 /**
+ * The machine endpoints: routes a MACHINE calls with no session and its own
+ * proof — a bearer secret, an OAuth handshake, a webhook signature. Naming the
+ * set (instead of listing prefixes inline) is what makes the next one a line of
+ * data rather than a copied pattern; the billing webhook became the third
+ * because nothing here said the concept existed (#1221).
+ *
+ * `proxy-match.ts` repeats these inside `PROXY_MATCHER` because Next parses
+ * `config.matcher` as a static string; `proxy-match.test.ts` walks this array
+ * against that regex so the copy cannot drift.
+ */
+export const MACHINE_ENDPOINT_PREFIXES = [
+  // The agent-view MCP endpoint (ADR 0034).
+  "/api/mcp",
+  // The daily-snapshot cron, called with `Authorization: Bearer` (ADR 0037).
+  "/api/cron",
+  // The merchant-of-record's webhook, authenticated by signature (PRD #1160).
+  "/api/billing/webhook",
+  // OAuth protected-resource metadata, read before any session exists.
+  "/.well-known",
+] as const;
+
+/**
  * Session-less paths. Checked BEFORE JWT/session so a public request never
  * pays Auth.js (#1536). The proxy matcher also uses this so those requests
  * never invoke the Node lambda at all.
@@ -28,11 +50,15 @@ export function isPublicPath(pathname: string): boolean {
   // endpoint: Vercel Cron calls it with `Authorization: Bearer CRON_SECRET` and
   // no Auth.js session, so the gate must let it reach its own bearer check
   // instead of 307-ing it to /login (which silently no-ops the job).
-  if (
-    pathname.startsWith("/api/mcp") ||
-    pathname.startsWith("/api/cron") ||
-    pathname.startsWith("/.well-known")
-  ) {
+  //
+  // The billing webhook (PRD #1160 S5) is the one whose absence here was
+  // MEASURED, not reasoned (#1221): a real Paddle delivery answered
+  // `307 → /login`, and after three attempts the notification went `failed`. No
+  // unit test could see it — they call the route handler directly, with no
+  // proxy in front — so billing would have shipped unable to receive a single
+  // event. Its authentication is the signature over the raw body, checked
+  // inside the route; a session was never part of the contract.
+  if (MACHINE_ENDPOINT_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return true;
   }
   // The public landing (`/`, estreno #954), sign-in route, public demo entry,

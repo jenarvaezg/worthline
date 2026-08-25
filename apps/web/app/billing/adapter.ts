@@ -21,6 +21,50 @@ export function parseBillingTier(raw: unknown): BillingTier | null {
   return BILLING_TIERS.includes(raw as BillingTier) ? (raw as BillingTier) : null;
 }
 
+/**
+ * La ruta de la app donde se paga (#1221). Es a la vez el destino de los
+ * enlaces de `/premium` y el **default payment link** que hay que declarar en el
+ * dashboard de Paddle: la página que carga Paddle.js y abre el checkout para la
+ * transacción que trae `?_ptxn=`. Paddle también manda aquí a un cliente que
+ * actualiza su método de pago o responde a un aviso de impago, así que la ruta
+ * tiene que saber abrir un `_ptxn` que ella no creó.
+ */
+export const CHECKOUT_PATH = "/premium/pagar";
+
+/** El nombre que Paddle da al id de transacción en la query (`?_ptxn=`). */
+export const CHECKOUT_TRANSACTION_PARAM = "_ptxn";
+
+/** El carril pulsado en `/premium`, para que quien lo escribe y quien lo lee no lo tecleen. */
+export const CHECKOUT_TIER_PARAM = "tier";
+
+/**
+ * La forma de un id de transacción de Paddle (`txn_` + base32 del ULID).
+ *
+ * Vive aquí, junto al nombre del parámetro que también impone Paddle, y no en
+ * la vista de la ruta: el módulo que decide qué pinta la página se anuncia como
+ * agnóstico, y el día que haya un segundo MoR nadie iría a buscar el formato de
+ * ids de uno concreto dentro de él.
+ */
+const CHECKOUT_TRANSACTION_ID = /^txn_[0-9a-z]{20,30}$/;
+
+/**
+ * El id de transacción que trae la query, o null si no tiene forma de tal. Se
+ * valida porque el valor llega de fuera —de un enlace nuestro, pero también de
+ * los correos de impago y de «actualiza tu método de pago» que manda Paddle— y
+ * de aquí va derecho al SDK del navegador.
+ */
+export function parseCheckoutTransactionId(raw: unknown): string | null {
+  return typeof raw === "string" && CHECKOUT_TRANSACTION_ID.test(raw) ? raw : null;
+}
+
+/** La URL de {@link CHECKOUT_PATH} que abre el checkout de una transacción ya creada. */
+export function checkoutPathForTransaction(transactionId: string): string {
+  const query = new URLSearchParams({
+    [CHECKOUT_TRANSACTION_PARAM]: transactionId,
+  });
+  return `${CHECKOUT_PATH}?${query}`;
+}
+
 export interface CheckoutInput {
   /** El workspace que compra — viaja en la custom data del checkout (#1135). */
   workspaceId: string;
@@ -31,8 +75,16 @@ export interface BillingAdapter {
   /** El identificador estable del proveedor — lo que la fila guarda en `billing_provider`. */
   readonly provider: string;
   /**
-   * URL del checkout hospedado para un tier, o null cuando ese tier no está
-   * configurado (p. ej. el cupo del lifetime agotado se despublica por config).
+   * Si el proveedor ofrece este tier HOY, sin llamar a su API — para que
+   * `/premium` pueda pintar solo los carriles vivos sin abrir una transacción
+   * por render (#1126: el cupo del lifetime se despublica vaciando su env var).
+   */
+  offersTier(tier: BillingTier): boolean;
+  /**
+   * A dónde mandar al usuario para pagar ese tier, o null si el proveedor no
+   * puede abrirlo ahora mismo. Puede ser una URL del proveedor (el fake) o una
+   * ruta interna que abre el checkout del proveedor sobre una transacción ya
+   * creada ({@link CHECKOUT_PATH}, el caso de Paddle).
    */
   checkoutUrl(input: CheckoutInput): Promise<string | null>;
   /**

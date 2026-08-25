@@ -62,19 +62,39 @@ beforeEach(() => {
   isSignatureValid.mockReset();
 });
 
-describe("paddle billing adapter — checkout (PRD #1160 S6, #1166)", () => {
-  it("crea una transacción con el workspace en la custom data y devuelve la URL hospedada", async () => {
+describe("paddle billing adapter — checkout (PRD #1160 S6, #1166; ruta #1221)", () => {
+  it("crea la transacción con el workspace en la custom data y manda a la ruta de pago", async () => {
     transactionsCreate.mockResolvedValue({
-      checkout: { url: "https://pay.paddle.com/abc" },
+      id: "txn_01ky59cg39ph64b1wc6xy",
+      // Paddle devuelve aquí el default payment link + `_ptxn`; se ignora a
+      // propósito: el destino lo construimos nosotros.
+      checkout: { url: "https://localhost/?_ptxn=txn_01ky59cg39ph64b1wc6xy" },
     });
 
     const url = await adapter().checkoutUrl({ workspaceId: "ws-1", tier: "annual" });
 
-    expect(url).toBe("https://pay.paddle.com/abc");
+    expect(url).toBe("/premium/pagar?_ptxn=txn_01ky59cg39ph64b1wc6xy");
     expect(transactionsCreate).toHaveBeenCalledWith({
       items: [{ priceId: "pri_annual", quantity: 1 }],
       customData: { workspaceId: "ws-1" },
     });
+  });
+
+  it("una transacción sin id no es pagable", async () => {
+    transactionsCreate.mockResolvedValue({ checkout: { url: "https://localhost/?x=1" } });
+
+    expect(
+      await adapter().checkoutUrl({ workspaceId: "ws-1", tier: "monthly" }),
+    ).toBeNull();
+  });
+
+  it("offersTier dice qué carriles hay sin llamar a la API (#1126)", async () => {
+    const partial = adapter({ priceIds: { monthly: "pri_monthly" } });
+
+    expect(partial.offersTier("monthly")).toBe(true);
+    expect(partial.offersTier("annual")).toBe(false);
+    expect(partial.offersTier("lifetime")).toBe(false);
+    expect(transactionsCreate).not.toHaveBeenCalled();
   });
 
   it("un tier sin price id configurado no se ofrece (cupo lifetime agotado)", async () => {

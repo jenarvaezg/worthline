@@ -5,7 +5,8 @@
  * that coverage vanishes under a custom domain, and there is never a CSP nor an
  * anti-clickjacking header unless the app sets one. This module is the single
  * source of truth for that header set; `next.config.ts` returns it from
- * `headers()` over `/:path*`.
+ * `headers()` — the closed policy over every path but the checkout route, and a
+ * policy widened for Paddle.js over that one (#1221).
  *
  * Kept dependency-free (pure string building) so `next.config.ts` can import it
  * from the plain Node context in which the config is evaluated, and so the
@@ -84,6 +85,36 @@ const IMAGE_CDN_HOSTS = [
   "https://coin-images.coingecko.com",
 ] as const;
 
+/**
+ * The Paddle origins the checkout route needs (#1221) — the ONE route that runs
+ * third-party script, `/premium/pagar` (`CHECKOUT_PATH`).
+ *
+ * Paddle publishes no CSP list, so these are MEASURED in a browser against a
+ * real sandbox checkout, not read off a doc page. See the measurement note in
+ * `paddle-billing-sandbox.md`; `security-headers.test.ts` pins the route so the
+ * widened policy cannot spread to a second one by accident.
+ *
+ * Split by directive because the roles differ: the script AND a stylesheet come
+ * from the CDN, the payment form is an iframe from `buy`, and Paddle.js talks to
+ * its checkout service by `fetch`. Sandbox and production hosts are BOTH named — one build
+ * serves both environments depending on `NEXT_PUBLIC_PADDLE_ENV`, and a policy
+ * that only names one would pass in sandbox and block real money.
+ */
+const PADDLE_SCRIPT_HOSTS = [
+  "https://cdn.paddle.com",
+  "https://sandbox-cdn.paddle.com",
+] as const;
+
+const PADDLE_FRAME_HOSTS = [
+  "https://buy.paddle.com",
+  "https://sandbox-buy.paddle.com",
+] as const;
+
+const PADDLE_CONNECT_HOSTS = [
+  "https://checkout-service.paddle.com",
+  "https://sandbox-checkout-service.paddle.com",
+] as const;
+
 /** Blocks violations of {@link ENFORCED_CSP_DIRECTIVES}. */
 export const CSP_ENFORCED_HEADER_NAME = "Content-Security-Policy";
 
@@ -117,8 +148,10 @@ const GOOGLE_ACCOUNTS_ORIGIN = "https://accounts.google.com";
  *    the user's data in the URL and no click required (the exfiltration channel
  *    #1246 closed at the render seam — this is the net under any later sink).
  *  - `connect-src` — no client-side dependency reaches a third party: no analytics,
- *    no Speed Insights, no browser-side Paddle (`@paddle/paddle-node-sdk` is
- *    server-only), no hardcoded cross-origin `fetch` in the app tree.
+ *    no Speed Insights, no hardcoded cross-origin `fetch` in the app tree. The
+ *    ONE exception is the checkout route (#1221), where Paddle.js talks to
+ *    {@link PADDLE_CONNECT_HOSTS} — and it is an exception in the literal sense:
+ *    a different header, served to that path only.
  *  - `font-src` — every face is local: `layout.tsx` is the only `next/font` caller
  *    and every `path:` it passes sits in `app/fonts/` (a self-hosted subset,
  *    `scripts/subset-web-fonts.sh`), so the browser fetches them from
@@ -211,18 +244,37 @@ type CspDirective = [name: string, values: string[]];
  *   Both headers are built from this same table, so a dev-only relaxation can
  *   never leak into what the deployed policy enforces.
  */
-function contentSecurityPolicyDirectives({ dev }: { dev: boolean }): CspDirective[] {
-  const scriptSrc = ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])];
+function contentSecurityPolicyDirectives({
+  dev,
+  paddle = false,
+}: {
+  dev: boolean;
+  paddle?: boolean;
+}): CspDirective[] {
+  const scriptSrc = [
+    "'self'",
+    "'unsafe-inline'",
+    ...(dev ? ["'unsafe-eval'"] : []),
+    ...(paddle ? PADDLE_SCRIPT_HOSTS : []),
+  ];
   return [
     ["default-src", ["'self'"]],
     ["script-src", scriptSrc],
     // styled-jsx, inline style attributes and the View Transitions API all emit
     // inline styles (ADR 0036).
-    ["style-src", ["'self'", "'unsafe-inline'"]],
+    // The CDN appears again here because Paddle.js pulls
+    // `/paddle/v2/assets/css/paddle.css` as a `<link>` in OUR document, not
+    // inside its iframe. No doc says so — it showed up as a `style-src-elem`
+    // report the first time a real checkout opened under this policy.
+    ["style-src", ["'self'", "'unsafe-inline'", ...(paddle ? PADDLE_SCRIPT_HOSTS : [])]],
     ["img-src", ["'self'", "data:", ...IMAGE_CDN_HOSTS]],
     ["font-src", ["'self'"]],
     // Chat streaming (`useChat`) and the auth session probe are same-origin.
-    ["connect-src", ["'self'"]],
+    ["connect-src", ["'self'", ...(paddle ? PADDLE_CONNECT_HOSTS : [])]],
+    // Only the checkout route frames anything, and only Paddle's payment form
+    // (#1221). Everywhere else this stays absent, so `default-src 'self'` is
+    // what a stray iframe would answer to.
+    ...(paddle ? ([["frame-src", [...PADDLE_FRAME_HOSTS]]] as CspDirective[]) : []),
     ["object-src", ["'none'"]],
     ["base-uri", ["'self'"]],
     // All form posts are same-origin server actions (PRD #1112) — except the
@@ -238,14 +290,26 @@ function serializeDirectives(directives: CspDirective[]): string {
 }
 
 /** The full target policy, for the report-only header. */
-export function buildContentSecurityPolicy({ dev }: { dev: boolean }): string {
-  return serializeDirectives(contentSecurityPolicyDirectives({ dev }));
+export function buildContentSecurityPolicy({
+  dev,
+  paddle = false,
+}: {
+  dev: boolean;
+  paddle?: boolean;
+}): string {
+  return serializeDirectives(contentSecurityPolicyDirectives({ dev, paddle }));
 }
 
 /** The blocking subset: {@link ENFORCED_CSP_DIRECTIVES}, verbatim from the table. */
-export function buildEnforcedContentSecurityPolicy({ dev }: { dev: boolean }): string {
+export function buildEnforcedContentSecurityPolicy({
+  dev,
+  paddle = false,
+}: {
+  dev: boolean;
+  paddle?: boolean;
+}): string {
   return serializeDirectives(
-    contentSecurityPolicyDirectives({ dev }).filter(([name]) =>
+    contentSecurityPolicyDirectives({ dev, paddle }).filter(([name]) =>
       ENFORCED_CSP_DIRECTIVE_SET.has(name),
     ),
   );
@@ -256,8 +320,16 @@ export function buildEnforcedContentSecurityPolicy({ dev }: { dev: boolean }): s
  */
 export function securityHeaders({
   dev,
+  paddle = false,
 }: {
   dev: boolean;
+  /**
+   * Widen the policy for the ONE route that runs Paddle.js (#1221). Off
+   * everywhere else: `next.config.ts` serves the closed policy to every path
+   * but `CHECKOUT_PATH`, so this flag's blast radius is a single page with no
+   * financial data on it.
+   */
+  paddle?: boolean;
 }): Array<{ key: string; value: string }> {
   return [
     {
@@ -269,12 +341,27 @@ export function securityHeaders({
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     {
       key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+      value: [
+        "camera=()",
+        "microphone=()",
+        "geolocation=()",
+        // Wallets live inside Paddle's iframe; everywhere else the Payment
+        // Request API stays off entirely.
+        // Wallets render inside Paddle's iframe, so the frame hosts are also
+        // the origins the permission has to name.
+        paddle
+          ? `payment=(self ${PADDLE_FRAME_HOSTS.map((origin) => `"${origin}"`).join(" ")})`
+          : "payment=()",
+        "usb=()",
+      ].join(", "),
     },
     {
       key: CSP_ENFORCED_HEADER_NAME,
-      value: buildEnforcedContentSecurityPolicy({ dev }),
+      value: buildEnforcedContentSecurityPolicy({ dev, paddle }),
     },
-    { key: CSP_REPORT_ONLY_HEADER_NAME, value: buildContentSecurityPolicy({ dev }) },
+    {
+      key: CSP_REPORT_ONLY_HEADER_NAME,
+      value: buildContentSecurityPolicy({ dev, paddle }),
+    },
   ];
 }

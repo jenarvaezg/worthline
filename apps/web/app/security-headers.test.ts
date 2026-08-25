@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, test } from "vitest";
-
+import { CHECKOUT_PATH } from "./billing/adapter";
 import { readSourceFiles, stripComments } from "./guardian-walk";
 import {
   buildContentSecurityPolicy,
@@ -395,8 +395,104 @@ describe("next.config wiring", () => {
     expect(nextConfigSource).toContain("poweredByHeader: false");
   });
 
-  test("applies the security headers to every route", () => {
+  test("applies the security headers to every route, and the widened one to the checkout route only (#1221)", () => {
     expect(nextConfigSource).toContain("securityHeaders(");
-    expect(nextConfigSource).toContain('source: "/:path*"');
+    // Everything except the checkout route gets the closed policy, and the
+    // checkout route its own entry. The two sources must not overlap: a path
+    // matched by both gets two CSP headers, which the browser intersects — and
+    // that intersection blocks the checkout it just widened.
+    expect(nextConfigSource).toContain("source: `/((?!${CHECKOUT_PATH.slice(1)}).*)`");
+    expect(nextConfigSource).toContain("source: CHECKOUT_PATH");
+    expect(nextConfigSource).toContain("paddle: true");
+  });
+
+  test("the checkout route is DERIVED from CHECKOUT_PATH, never retyped (#1221)", () => {
+    // Pinning the literal would keep this suite green through a rename while
+    // the two sources silently start overlapping in production.
+    expect(CHECKOUT_PATH.startsWith("/")).toBe(true);
+    expect(nextConfigSource).toContain("CHECKOUT_PATH");
+    expect(nextConfigSource).not.toContain(`"${CHECKOUT_PATH}"`);
+  });
+});
+
+describe("the checkout route's widened policy (#1221)", () => {
+  const closed = directivesOf(buildContentSecurityPolicy({ dev: false }));
+  const widened = directivesOf(buildContentSecurityPolicy({ dev: false, paddle: true }));
+
+  test("only the checkout route reaches Paddle — the default policy names it nowhere", () => {
+    for (const [, values] of closed) {
+      expect(values).not.toContain("paddle.com");
+    }
+    expect(
+      new Map(securityHeaders({ dev: false }).map((h) => [h.key, h.value])).get(
+        "Permissions-Policy",
+      ),
+    ).toContain("payment=()");
+  });
+
+  test("widens exactly the four directives the checkout needs, and nothing else", () => {
+    const changed = [...widened.entries()]
+      .filter(([name, values]) => closed.get(name) !== values)
+      .map(([name]) => name);
+
+    // `style-src` is in this list because Paddle.js links a stylesheet from its
+    // CDN into OUR document — undocumented, found as a `style-src-elem` report
+    // the first time a real checkout opened under this policy (#1221).
+    expect(changed.sort()).toEqual([
+      "connect-src",
+      "frame-src",
+      "script-src",
+      "style-src",
+    ]);
+    // The payment form is an iframe, so a widened `frame-src` is the whole
+    // point; the closed policy has no such directive at all.
+    expect(closed.has("frame-src")).toBe(false);
+  });
+
+  test("names both the sandbox and the production hosts (one build serves both)", () => {
+    expect(widened.get("script-src")).toContain("https://cdn.paddle.com");
+    expect(widened.get("script-src")).toContain("https://sandbox-cdn.paddle.com");
+    expect(widened.get("frame-src")).toContain("https://buy.paddle.com");
+    expect(widened.get("frame-src")).toContain("https://sandbox-buy.paddle.com");
+    expect(widened.get("connect-src")).toContain("https://checkout-service.paddle.com");
+    expect(widened.get("connect-src")).toContain(
+      "https://sandbox-checkout-service.paddle.com",
+    );
+    expect(widened.get("style-src")).toContain("https://cdn.paddle.com");
+    expect(widened.get("style-src")).toContain("https://sandbox-cdn.paddle.com");
+  });
+
+  test("keeps `self` in every widened directive — Paddle is added, never substituted", () => {
+    for (const name of ["script-src", "connect-src", "style-src"]) {
+      expect(widened.get(name)).toContain("'self'");
+    }
+    expect(widened.get("style-src")).toContain("'unsafe-inline'");
+  });
+
+  test("`connect-src` keeps BLOCKING on the checkout route (#1256)", () => {
+    // The widening must not quietly demote the directive that stops data
+    // leaving the page: it is still in the enforced header, just with Paddle in
+    // its allowlist.
+    const enforced = directivesOf(
+      buildEnforcedContentSecurityPolicy({ dev: false, paddle: true }),
+    );
+    expect(enforced.get("connect-src")).toContain(
+      "https://sandbox-checkout-service.paddle.com",
+    );
+    expect(enforced.get("connect-src")).toContain("'self'");
+    expect(enforced.get("img-src")).toBeDefined();
+  });
+
+  test("wallets are allowed inside Paddle's frame, and only there", () => {
+    const permissions = new Map(
+      securityHeaders({ dev: false, paddle: true }).map((h) => [h.key, h.value]),
+    ).get("Permissions-Policy");
+
+    expect(permissions).toContain('payment=(self "https://buy.paddle.com"');
+    expect(permissions).toContain('"https://sandbox-buy.paddle.com"');
+    // The rest of the hardening is untouched.
+    for (const feature of ["camera", "microphone", "geolocation", "usb"]) {
+      expect(permissions).toContain(`${feature}=()`);
+    }
   });
 });

@@ -1,6 +1,11 @@
-import type { BillingTier } from "@web/billing/adapter";
+import {
+  type BillingTier,
+  CHECKOUT_PATH,
+  CHECKOUT_TIER_PARAM,
+} from "@web/billing/adapter";
 import { getBillingAdapter } from "@web/billing/get-billing-adapter";
 import { readBillingEntitlement } from "@web/billing/read-billing-entitlement";
+import { appendParam } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { readStoreTarget } from "@web/read-store-target";
 import { Suspense } from "react";
@@ -32,10 +37,14 @@ const TIERS: { tier: BillingTier; label: string; detail: string }[] = [
 /**
  * La página de upgrade (PRD #1160 S5, #1165): el destino del CTA «Gestionar
  * premium» de todo paywall. Cero UI de facturación propia (#1135): los botones
- * son ENLACES al checkout hospedado del MoR (el workspace viaja en la custom
- * data de la URL) y al portal del cliente para cancelar/facturas. Enlaces y no
- * form actions a propósito: la CSP `form-action 'self'` bloquearía el salto al
- * dominio del MoR tras un POST nativo.
+ * son ENLACES —a {@link CHECKOUT_PATH}, que abre el checkout del MoR sobre una
+ * transacción creada al pulsar (#1221)— y al portal del cliente para
+ * cancelar/facturas. Enlaces y no form actions a propósito: la CSP
+ * `form-action 'self'` bloquearía el salto al dominio del MoR tras un POST
+ * nativo.
+ *
+ * Esta página NO habla con el MoR al renderizarse: solo pregunta al adapter qué
+ * carriles ofrece hoy. Antes abría una transacción por tier en cada visita.
  *
  * Sin proveedor de billing configurado (el estado hasta S6) la página lo dice
  * honestamente en vez de fingir un checkout.
@@ -75,14 +84,10 @@ export async function PremiumContent({
 
   const checkoutLinks =
     view.showCheckout && adapter && workspaceId
-      ? (
-          await Promise.all(
-            TIERS.map(async (entry) => ({
-              ...entry,
-              url: await adapter.checkoutUrl({ workspaceId, tier: entry.tier }),
-            })),
-          )
-        ).filter((entry): entry is typeof entry & { url: string } => entry.url !== null)
+      ? TIERS.filter((entry) => adapter.offersTier(entry.tier)).map((entry) => ({
+          ...entry,
+          url: appendParam(CHECKOUT_PATH, CHECKOUT_TIER_PARAM, entry.tier),
+        }))
       : [];
 
   const portalUrl =
