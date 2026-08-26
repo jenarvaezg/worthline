@@ -343,6 +343,20 @@ export function unvalidatedEvidenceCapReached(): UnvalidatedEvidenceError {
 }
 
 /**
+ * Whether what a debt-series lane resolved is one of the refusals above rather
+ * than rows to build from.
+ *
+ * Beside the envelopes and not beside the turn: it reads nothing but its argument,
+ * and a lane asking «did the frontier say no?» should read the answer from the
+ * module that decides it.
+ */
+export function isSeriesRefusal(
+  resolved: { rows?: unknown } | UnvalidatedEvidenceError,
+): resolved is UnvalidatedEvidenceError {
+  return "error" in resolved;
+}
+
+/**
  * Whether a tool result is a prepared proposal — the only outcome that spends
  * the per-turn cap. Deliberately a POSITIVE contract: every proposal shape
  * carries `proposalType` (it is what the client parses to render the preview), so

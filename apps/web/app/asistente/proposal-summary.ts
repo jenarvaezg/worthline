@@ -16,7 +16,7 @@
  * Its own tiny module because the bound belongs to the FIELD, not to any one
  * proposal: correction and reconstruction consume it today, and the next builder that
  * accepts a model-written summary should reach for this instead of re-deciding.
- * `chat-tools.ts` also declares the cap in the tool JSON schema, but that is a hint
+ * The tool schemas under `chat-tools/schemas/` also declare the cap, but that is a hint
  * to the model — `jsonSchema()` is created without a `validate`, so nothing enforces
  * it at the tool boundary. This is where it is enforced.
  */
