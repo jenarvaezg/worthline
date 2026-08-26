@@ -98,7 +98,8 @@ it. All of them now state the verdict and let the user decide.
   triple in both the balance-history and the correction (reconstruct) contracts.
   `matches` survives as `status !== "mismatch"` and is no longer a gate.
 - The confirm can now write `current_balance_minor`, so the reconstruct branch of
-  `applyAssistantCorrectionProposal` takes an optional `redeclaredBalanceMinor`
+  the `correction` apply (`applyAssistantProposal({ kind: "correction", … })`
+  since #1591) takes an optional `redeclaredBalanceMinor`
   and the command host gains `updateLiabilityBalance` as a seam. The persisted
   correction fact keeps the **declared** before-value for undo/audit. The write
   goes **before** the import, so the ripple the import fires values the dates

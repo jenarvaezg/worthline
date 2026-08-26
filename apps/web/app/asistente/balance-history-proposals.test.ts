@@ -157,7 +157,8 @@ describe("balance-history assistant proposal (#768)", () => {
     );
     expect(built.ok && projected.ok).toBe(true);
     if (!built.ok || !projected.ok) return;
-    await store.command.applyAssistantBalanceHistoryProposal({
+    await store.command.applyAssistantProposal({
+      kind: "balance_history_import",
       liabilityId: "mortgage",
       proposalId: built.proposal.draft.proposalId,
       rebaselines: projected.plan.composed.map((row) => ({

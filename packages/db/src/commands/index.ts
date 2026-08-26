@@ -1,7 +1,13 @@
 export type {
+  ApplyAssistantProposal,
+  AssistantProposalApplyKind,
+} from "./assistant-proposal-apply";
+export { ASSISTANT_PROPOSAL_APPLY_KINDS } from "./assistant-proposal-apply";
+export type {
   CreateDebtHoldingCommand,
   CreateInvestmentHoldingCommand,
   InvestmentHoldingEntry,
+  StatementImportCommand,
 } from "./command-implementation-types";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";

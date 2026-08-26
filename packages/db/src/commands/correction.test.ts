@@ -115,7 +115,11 @@ describe("correction proposal apply (#1051)", () => {
     const store = await seedDriftedMortgage();
     const proposalId = await createRebaselineCorrection(store, rebaselinePlan());
 
-    await store.command.applyAssistantCorrectionProposal({ proposalId, today: TODAY });
+    await store.command.applyAssistantProposal({
+      kind: "correction",
+      proposalId,
+      today: TODAY,
+    });
 
     expect((await store.assistantProposals.read(proposalId))?.status).toBe("applied");
     expect(await store.liabilities.readBalanceRebaselines("loan")).toHaveLength(1);
@@ -139,7 +143,11 @@ describe("correction proposal apply (#1051)", () => {
     );
 
     await expect(
-      store.command.applyAssistantCorrectionProposal({ proposalId, today: TODAY }),
+      store.command.applyAssistantProposal({
+        kind: "correction",
+        proposalId,
+        today: TODAY,
+      }),
     ).rejects.toThrow(/cambió|stale/i);
 
     expect((await store.assistantProposals.read(proposalId))?.status).toBe("draft");
@@ -152,7 +160,11 @@ describe("correction proposal apply (#1051)", () => {
     const before0608 = await debtsAt(store, "2026-06-08");
     const proposalId = await createRebaselineCorrection(store, rebaselinePlan());
 
-    await store.command.applyAssistantCorrectionProposal({ proposalId, today: TODAY });
+    await store.command.applyAssistantProposal({
+      kind: "correction",
+      proposalId,
+      today: TODAY,
+    });
 
     // A snapshot before the baseline date keeps the original curve; only the
     // present and forward move.
@@ -207,7 +219,8 @@ describe("correction proposal apply · reconstruct depth (#1053)", () => {
     const store = await seedDriftedMortgage();
     const proposalId = await createRebaselineCorrection(store, reconstructPlan());
 
-    await store.command.applyAssistantCorrectionProposal({
+    await store.command.applyAssistantProposal({
+      kind: "correction",
       proposalId,
       reconstruct: { liabilityId: "loan", rebaselines: reconstructRebaselines() },
       today: TODAY,
@@ -228,7 +241,8 @@ describe("correction proposal apply · reconstruct depth (#1053)", () => {
     const store = await seedDriftedMortgage();
     const proposalId = await createRebaselineCorrection(store, reconstructPlan());
 
-    await store.command.applyAssistantCorrectionProposal({
+    await store.command.applyAssistantProposal({
+      kind: "correction",
       proposalId,
       reconstruct: { liabilityId: "loan", rebaselines: reconstructRebaselines() },
       today: TODAY,

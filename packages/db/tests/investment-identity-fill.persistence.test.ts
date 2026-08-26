@@ -164,7 +164,8 @@ describe("patchInvestmentIdentity (#1349)", () => {
         ],
       });
 
-      await store.command.applyAssistantCorrectionProposal({
+      await store.command.applyAssistantProposal({
+        kind: "correction",
         proposalId: proposal.id,
         today: TODAY,
       });

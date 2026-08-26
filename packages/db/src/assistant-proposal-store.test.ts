@@ -218,7 +218,8 @@ describe("assistant proposal store", () => {
       facts: [row],
     });
 
-    await store.command.applyAssistantStatementProposal({
+    await store.command.applyAssistantProposal({
+      kind: "statement_import",
       funds: [
         {
           asset: {

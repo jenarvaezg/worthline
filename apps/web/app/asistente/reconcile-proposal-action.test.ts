@@ -366,7 +366,8 @@ describe("confirmReconcileProposalAction (#1108) · atomicity (todo o nada)", ()
     });
 
     await expect(
-      store.command.applyAssistantReconcileProposal({
+      store.command.applyAssistantProposal({
+        kind: "reconcile",
         funds: [
           {
             asset: {
