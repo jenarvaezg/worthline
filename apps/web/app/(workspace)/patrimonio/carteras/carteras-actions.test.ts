@@ -154,6 +154,13 @@ describe("createManagedPortfolioAction — alta «solo saldo» (#1551)", () => {
     expect(url).toContain("importe positivo");
     expect(await store.managedPortfolios.readManagedPortfolios("household")).toEqual([]);
 
+    // Retrying registers exactly ONE cartera, with the witness on it (#1600):
+    // the alta no longer needs a swallowed second write to stay idempotent.
+    await createSoloSaldo(store);
+    const rows = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.witness?.declaredValue.amountMinor).toBe(1_000_00);
+
     store.close();
   });
 });

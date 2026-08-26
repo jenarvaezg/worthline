@@ -242,6 +242,30 @@ invested and 126,42 € of gain where MyInvestor showed 1.345,12 € and 152,25 
 Neither figure is wrong; the ficha says which one it is showing, and says it only
 when there have been reembolsos — a cartera that never sold has nothing to explain.
 
+## Amendment (2026-08-26, #1600): the alta writes the group, the aggregate and the witness as one
+
+The «solo saldo» alta used to be two writes: the create, then
+`declareManagedPortfolioBalance` in a `try/catch` that swallowed its failure so a
+retry would not register a second cartera. The swallow bought idempotency with the
+one thing the owner cared about: he typed the balance he reads in the manager's
+app and could land on a ficha asking him for it again, with the aggregate already
+created and the gross already right — a figure that looked declared and was not.
+
+Therefore: **the declared balance is an input of the create**, and its three
+columns are set in the very INSERT that registers the cartera. The domain assert
+runs before anything is written — the rule ADR 0020's #1599 amendment already
+states for every alta (an alta is one unit of work; a pure refusal fails BEFORE
+the book is touched) — so a refused balance leaves no group, no cash sibling and
+no aggregate, and the owner retries the form and registers exactly one cartera. The store keeps the single definition of what a declared balance is: the
+same assert, the same `declare_managed_portfolio_balance` audit row (the only
+durable trace of the succession of balances) whether the alta declared it or the
+ficha did later.
+
+This does not make the create a second declaration door. The ficha's door still
+owns re-declaring and clearing; the alta only gets to state the balance a cartera
+is BORN with, and the columns and the audit payload have one definition shared by
+both.
+
 ## Consequences
 
 - The entity travels in workspace export/import and is exposed through

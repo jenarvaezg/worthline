@@ -24,7 +24,7 @@ import {
   managedPortfolioHoldings,
   managedPortfolios,
 } from "./schema";
-import type { StoreContext } from "./store-context";
+import type { AuditEntry, StoreContext } from "./store-context";
 
 /**
  * Managed portfolio persistence (ADR 0085, #1547) — the "cartera gestionada"
@@ -64,6 +64,22 @@ export interface CreateManagedPortfolioInput {
    * funds; a non-positive figure is refused — a 0 € aggregate stands for nothing.
    */
   undetailedValueMinor?: number;
+  /**
+   * The balance read in the manager's app, declared BY THE ALTA ITSELF (#1600).
+   * It travels with the create instead of following it as a second write: the
+   * columns are set in the very INSERT that registers the cartera, so there is
+   * no window where a live group is missing the figure its owner just typed, and
+   * a refused balance leaves nothing to retry over. Still a WITNESS — validated
+   * by the same domain assert and audited with the same row as a declaration
+   * typed later on the ficha, and read by nothing in the engine.
+   *
+   * Independent of `undetailedValueMinor` on purpose, even though the "solo
+   * saldo" alta feeds both the same figure: the aggregate is what the book
+   * COUNTS and the witness is what the manager SHOWED, and the careo lives on
+   * their difference (`declarado − Σ detallado`). Tying them here would be a
+   * plug.
+   */
+  declaredBalance?: ManagedPortfolioWitness;
   /**
    * The ownership split of the holdings the ALTA creates (the cash sibling and,
    * when asked for, the "(sin detallar)" aggregate) — the container's own
@@ -341,6 +357,48 @@ export function managedPortfolioWitnessOfRow(row: {
 }
 
 /**
+ * The three witness columns, from a witness or its absence. ONE definition, for
+ * the two doors that write them — the alta that declares at birth (#1600) and
+ * the ficha's own declaration — so neither can drift into a half-witness the
+ * reader would have to guess at.
+ */
+function witnessColumns(witness: ManagedPortfolioWitness | null): {
+  declaredCurrency: string | null;
+  declaredDate: string | null;
+  declaredValueMinor: number | null;
+} {
+  return {
+    declaredCurrency: witness?.declaredValue.currency ?? null,
+    declaredDate: witness?.declaredDate ?? null,
+    declaredValueMinor: witness?.declaredValue.amountMinor ?? null,
+  };
+}
+
+/**
+ * The audit trail is the only durable trace of the SUCCESSION of declared
+ * balances (the entity keeps just the latest), so the row carries the figures —
+ * whichever door declared them.
+ */
+function witnessAuditEntry(
+  id: string,
+  witness: ManagedPortfolioWitness | null,
+): AuditEntry {
+  return {
+    action: "declare_managed_portfolio_balance",
+    details:
+      witness === null
+        ? { cleared: true }
+        : {
+            declaredCurrency: witness.declaredValue.currency,
+            declaredDate: witness.declaredDate,
+            declaredValueMinor: witness.declaredValue.amountMinor,
+          },
+    entityId: id,
+    entityType: "managed_portfolio",
+  };
+}
+
+/**
  * Store or clear the declared balance. The value is validated by the domain
  * (positive, dated) and written as-is: the book keeps deriving its own total, so
  * a witness that turns out to be wrong is corrected by declaring another one —
@@ -364,29 +422,11 @@ async function declareManagedPortfolioBalance(
 
   await ctx.db
     .update(managedPortfolios)
-    .set({
-      declaredCurrency: witness?.declaredValue.currency ?? null,
-      declaredDate: witness?.declaredDate ?? null,
-      declaredValueMinor: witness?.declaredValue.amountMinor ?? null,
-      updatedAt: sql`CURRENT_TIMESTAMP`,
-    })
+    .set({ ...witnessColumns(witness), updatedAt: sql`CURRENT_TIMESTAMP` })
     .where(eq(managedPortfolios.id, id))
     .run();
 
-  // The audit row is the only durable trace of the SUCCESSION of declared
-  // balances (the entity keeps just the latest), so it carries the figures.
-  await ctx.writeAuditEntry(
-    "declare_managed_portfolio_balance",
-    "managed_portfolio",
-    id,
-    witness === null
-      ? { cleared: true }
-      : {
-          declaredCurrency: witness.declaredValue.currency,
-          declaredDate: witness.declaredDate,
-          declaredValueMinor: witness.declaredValue.amountMinor,
-        },
-  );
+  await ctx.writeAuditEntries([witnessAuditEntry(id, witness)]);
 }
 
 /**
@@ -434,6 +474,11 @@ async function createManagedPortfolio(
   const provider = normalizeProvider(input.provider);
   const members = normalizeHoldingIds(input.memberHoldingIds ?? []);
   await assertMemberEligibility(ctx, members, undefined);
+
+  // Validated BEFORE anything is written: a balance the domain refuses bounces
+  // the whole alta with no cartera to retry over (#1600).
+  const declaredBalance = input.declaredBalance ?? null;
+  if (declaredBalance !== null) assertManagedPortfolioWitnessInput(declaredBalance);
 
   const undetailedValueMinor = input.undetailedValueMinor;
   if (undetailedValueMinor !== undefined) {
@@ -497,9 +542,17 @@ async function createManagedPortfolio(
   const plumbingHoldingIds = [cash.id, ...(aggregate ? [aggregate.id] : [])];
 
   await ctx.transaction(async () => {
+    // The witness columns ride in the SAME insert as the row they describe: the
+    // group and the balance land together or not at all (#1600).
     await ctx.db
       .insert(managedPortfolios)
-      .values({ id, name, provider, scopeId: input.scopeId })
+      .values({
+        id,
+        name,
+        provider,
+        scopeId: input.scopeId,
+        ...witnessColumns(declaredBalance),
+      })
       .run();
 
     await insertPlumbingHolding(ctx, cash);
@@ -515,7 +568,13 @@ async function createManagedPortfolio(
     await insertMembers(ctx, id, [...plumbingHoldingIds, ...members]);
   });
 
-  await ctx.writeAuditEntry("create_managed_portfolio", "managed_portfolio", id);
+  // Two rows for one gesture: the registration, and — when the alta declared a
+  // balance — the same declaration row a ficha-typed one would write, so the
+  // succession of declared balances starts where the cartera does.
+  await ctx.writeAuditEntries([
+    { action: "create_managed_portfolio", entityId: id, entityType: "managed_portfolio" },
+    ...(declaredBalance === null ? [] : [witnessAuditEntry(id, declaredBalance)]),
+  ]);
 
   return {
     holdingIds: [...plumbingHoldingIds, ...members].sort(),
@@ -523,10 +582,9 @@ async function createManagedPortfolio(
     name,
     provider,
     scopeId: input.scopeId,
-    // An alta declares no balance: the witness is typed on the ficha afterwards,
-    // or by the alta itself right after this write (#1551) — through the same
-    // single door every declaration goes through.
-    witness: null,
+    // Already declared when the alta typed a balance (#1600); otherwise the
+    // witness is typed on the ficha afterwards.
+    witness: declaredBalance,
   };
 }
 
