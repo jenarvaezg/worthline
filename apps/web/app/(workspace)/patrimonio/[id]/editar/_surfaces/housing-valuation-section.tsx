@@ -1,10 +1,14 @@
 /**
  * Housing valuation editor — the `appreciating` surface (PRD #108, #152).
  *
- * Only rendered for an appreciating holding (a property). Three stacked forms,
- * all server-action driven (no client JS, ADR 0009): the appreciation rate, a
- * new anchor, and a date-desc list of anchors with inline edit (<details>) and
+ * Only rendered for an appreciating holding (a property). Stacked forms, all
+ * server-action driven (no client JS, ADR 0009): the appreciation rate, a new
+ * anchor, and a date-desc list of anchors with inline edit (<details>) and
  * two-step delete per row. Extracted from the monolithic editar page.
+ *
+ * The ONE exception is the named acquisition editor (#1437), an island since
+ * #1562: editing the oldest point of the curve rewrites decades of history, so
+ * it asks before it does it (preview → confirm).
  */
 
 import type { FormErrorContext } from "@web/intake";
@@ -18,6 +22,7 @@ import {
 import type { ValuationAnchorRecord } from "@worthline/db";
 import type { ValuationCadence } from "@worthline/domain";
 import { formatMoneyInput, formatMoneyMinorPrivacy } from "@worthline/domain";
+import { AcquisitionEditForm } from "./acquisition-edit-form";
 
 /** Render a stored decimal rate ("0.03") back as the percent the user typed ("3"). */
 function rateToPercentInput(rate: string | null): string {
@@ -116,47 +121,17 @@ export function HousingValuationSection({
       </details>
 
       {acquisition ? (
-        <form
-          action={updateValuationAnchorAction}
-          aria-label="Editar adquisición"
-          className="stackForm"
-        >
-          <input name="currentUrl" type="hidden" value={currentUrl} />
-          <input name="id" type="hidden" value={assetId} />
-          <input name="anchorId" type="hidden" value={acquisition.id} />
-          <label>
-            Fecha de adquisición
-            <input
-              aria-label="Fecha de adquisición"
-              defaultValue={
-                acquisitionValues["valuationDate"] ?? acquisition.valuationDate
-              }
-              max={today}
-              name="valuationDate"
-              required
-              type="date"
-            />
-          </label>
-          <label>
-            Precio de adquisición (EUR)
-            <input
-              aria-label="Precio de adquisición en EUR"
-              defaultValue={
-                acquisitionValues["anchorValue"] ??
-                formatMoneyInput(acquisition.valueMinor)
-              }
-              inputMode="decimal"
-              min="0"
-              name="anchorValue"
-              required
-            />
-          </label>
-          <p className="infoNote">
-            La fecha de adquisición marca desde cuándo el inmueble existe en el histórico;
-            cambiarla reescribe su curva de valor desde entonces.
-          </p>
-          <button type="submit">Guardar adquisición</button>
-        </form>
+        <AcquisitionEditForm
+          anchorId={acquisition.id}
+          assetId={assetId}
+          currentUrl={currentUrl}
+          defaultDate={acquisitionValues["valuationDate"] ?? acquisition.valuationDate}
+          defaultPrice={
+            acquisitionValues["anchorValue"] ?? formatMoneyInput(acquisition.valueMinor)
+          }
+          privacyMode={privacyMode}
+          today={today}
+        />
       ) : null}
 
       <form

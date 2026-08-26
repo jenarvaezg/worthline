@@ -56,6 +56,7 @@ const DATED_FACT_ALIASES = {
   deleteInvestmentOperation: "deleteOperationAndRipple",
   deleteInvestmentOperations: "deleteOperationsAndRipple",
   addValuationAnchor: "addValuationAnchorAndRipple",
+  countValuationRippleSnapshots: "countValuationRippleSnapshots",
   updateValuationAnchor: "updateValuationAnchorAndRipple",
   deleteValuationAnchor: "deleteValuationAnchorAndRipple",
   setAnnualAppreciationRate: "setAnnualAppreciationRateAndRipple",

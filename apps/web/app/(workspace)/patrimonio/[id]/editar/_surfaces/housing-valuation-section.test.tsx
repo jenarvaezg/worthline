@@ -84,6 +84,15 @@ describe("HousingValuationSection — adquisición por su nombre (#1437)", () =>
     expect(markup).toContain('value="150253,03"');
   });
 
+  test("the acquisition edit asks before it rewrites — no one-click save (#1562)", () => {
+    const markup = renderFor(null, [acquisitionAnchor]);
+    // The first submit only previews; the save button appears with the preview,
+    // so a 22-year rewrite is never one unlabelled click away.
+    expect(markup).toContain("Ver cambios");
+    expect(markup).not.toContain("Guardar adquisición");
+    expect(markup).toContain("Mira los cambios antes de guardar");
+  });
+
   test("the acquisition row offers no delete", () => {
     const markup = renderFor(null, [acquisitionAnchor, appraisalAnchor]);
     // Two rows render; only the plain appraisal keeps its two-step delete.

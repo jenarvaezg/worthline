@@ -31,12 +31,14 @@ import type {
   DebtModel,
   DecimalString,
   DomainResult,
+  HousingValuationAnchor,
   ValuationCadence,
 } from "@worthline/domain";
 import type {
   RecordExternalTransferInCommand,
   RecordTransferCommand,
 } from "./investment-transfer";
+import type { RippleBandCounts } from "./ripple-band";
 import type { FactBatchTrigger } from "./types";
 
 /**
@@ -163,6 +165,24 @@ export interface DatedFactCommandImplementations {
     anchorId: string,
     opts?: { today?: string },
   ) => Promise<number>;
+  /**
+   * Dry run of the housing valuation ripple (#1562): how much history a curve
+   * change from `fromDateKey` would rewrite, counted by the SAME band that does
+   * the writing and persisting nothing. The preview of an acquisition edit asks
+   * this instead of counting snapshots itself — a preview computed by a second
+   * engine is a preview that can disagree with the write (#1438).
+   */
+  countValuationRippleSnapshots: (params: {
+    assetId: string;
+    fromDateKey: string;
+    today?: string;
+    /**
+     * Count what the curve would do with THESE anchors — the edit is not stored
+     * yet, and whether a fresh snapshot appears at the new from-date depends on
+     * them (a property has no history before its first appraisal).
+     */
+    anchors?: readonly HousingValuationAnchor[];
+  }) => Promise<RippleBandCounts>;
   setAnnualAppreciationRateAndRipple: (
     assetId: string,
     rate: DecimalString | null,

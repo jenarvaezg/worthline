@@ -5,6 +5,7 @@ import type {
   DatedFactCommandImplementations,
   DatedFactStores,
 } from "./command-implementation-types";
+import { EMPTY_RIPPLE_BAND_COUNTS } from "./ripple-band";
 import {
   rippleHistoricalSnapshotsForValuation,
   rippleHousingAfterEdit,
@@ -50,6 +51,7 @@ export function createValuationCommands(
   | "addValuationAnchorAndRipple"
   | "updateValuationAnchorAndRipple"
   | "deleteValuationAnchorAndRipple"
+  | "countValuationRippleSnapshots"
   | "setAnnualAppreciationRateAndRipple"
   | "setHousingValuationCadenceAndRipple"
   | "recordHousingValuationAndRipple"
@@ -132,6 +134,31 @@ export function createValuationCommands(
         }
         return changes;
       });
+    },
+    countValuationRippleSnapshots: async ({
+      anchors,
+      assetId,
+      fromDateKey,
+      today: todayOpt,
+    }) => {
+      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+      // The write's own band, told to persist nothing (#1562): same scopes, same
+      // generation rule, same rewrites — so the number the preview shows is the
+      // number of snapshots the confirm will rewrite, not an estimate of it.
+      const workspace = await ctx.getWorkspace();
+      if (!workspace) return EMPTY_RIPPLE_BAND_COUNTS;
+      return rippleHistoricalSnapshotsForValuation(
+        ctx,
+        workspace,
+        stores.snapshots.saveSnapshot,
+        {
+          assetId,
+          dryRun: true,
+          fromDateKey,
+          today,
+          ...(anchors !== undefined ? { anchors } : {}),
+        },
+      );
     },
     setAnnualAppreciationRateAndRipple: async (assetId, rate, opts) => {
       const today = opts?.today ?? new Date().toISOString().slice(0, 10);

@@ -16,6 +16,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addValuationAnchorAction,
   deleteValuationAnchorAction,
+  previewAcquisitionEditAction,
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
   updateValuationAnchorAction,
@@ -620,6 +621,185 @@ describe("deleteValuationAnchorAction", () => {
     expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(DEMO_DISABLED_MESSAGE);
     expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
 
+    store.close();
+  });
+});
+
+describe("previewAcquisitionEditAction (#1562)", () => {
+  /** A property born through the real door: acquisition anchor + one appraisal. */
+  async function seedAcquisition(): Promise<WorthlineStore> {
+    const store = await initStore();
+    await store.command.createHousingHolding(
+      {
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "piso",
+          id: "anchor_acq",
+          kind: "acquisition",
+          valuationDate: "2024-01-01",
+          valueMinor: 100_000_00,
+        },
+        annualAppreciationRate: null,
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 130_000_00,
+          id: "piso",
+          liquidityTier: "illiquid",
+          name: "Piso",
+          ownership: [{ memberId: MEMBER_ID, shareBps: 10_000 }],
+          type: "real_estate",
+        },
+      },
+      { today: TODAY },
+    );
+    await runAction(
+      addValuationAnchorAction,
+      form({
+        id: "piso",
+        valuationDate: "2026-06-01",
+        anchorValue: "130.000,00",
+        adjustsPriorCurve: "on",
+      }),
+      store,
+      CLOCK,
+    );
+    return store;
+  }
+
+  test("reports the two curves and the size of the rewrite without writing", async () => {
+    const store = await seedAcquisition();
+    const snapshotsBefore = (await store.snapshots.readSnapshots()).length;
+
+    const state = await previewAcquisitionEditAction(
+      { status: "idle" },
+      form({
+        id: "piso",
+        anchorId: "anchor_acq",
+        valuationDate: "2022-06-01",
+        anchorValue: "90.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(state.status).toBe("summary");
+    if (state.status !== "summary") throw new Error("no summary");
+    expect(state.preview.fromDateKey).toBe("2022-06-01");
+    expect(state.preview.dateChanged).toBe(true);
+    expect(state.preview.valueChanged).toBe(true);
+    expect(state.preview.snapshotsRecalculated).toBeGreaterThan(0);
+    // The appraisal after the acquisition is the truth at its date: it holds.
+    expect(state.preview.points.find((p) => p.dateKey === "2026-06-01")!.deltaMinor).toBe(
+      0,
+    );
+
+    // A preview writes nothing: same snapshots, same anchor.
+    expect((await store.snapshots.readSnapshots()).length).toBe(snapshotsBefore);
+    expect(
+      (await store.assets.readValuationAnchorById("anchor_acq"))!.valuationDate,
+    ).toBe("2024-01-01");
+    store.close();
+  });
+
+  test("refuses a future acquisition date with the write's own message", async () => {
+    const store = await seedAcquisition();
+
+    const state = await previewAcquisitionEditAction(
+      { status: "idle" },
+      form({
+        id: "piso",
+        anchorId: "anchor_acq",
+        valuationDate: "2030-01-01",
+        anchorValue: "90.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(state).toEqual({
+      message: "La fecha no puede ser futura.",
+      status: "error",
+    });
+    store.close();
+  });
+
+  test("refuses an anchor that is not the acquisition", async () => {
+    const store = await seedAcquisition();
+    const appraisal = (await store.assets.readValuationAnchors("piso")).find(
+      (a) => a.kind === null,
+    )!;
+
+    const state = await previewAcquisitionEditAction(
+      { status: "idle" },
+      form({
+        id: "piso",
+        anchorId: appraisal.id,
+        valuationDate: "2026-06-01",
+        anchorValue: "140.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+
+    expect(state.status).toBe("error");
+    store.close();
+  });
+
+  test("a missing anchor id is an error, not a crash", async () => {
+    const store = await seedAcquisition();
+
+    const state = await previewAcquisitionEditAction(
+      { status: "idle" },
+      form({ id: "piso", valuationDate: "2024-01-01", anchorValue: "100.000,00" }),
+      store,
+      CLOCK,
+    );
+
+    expect(state.status).toBe("error");
+    store.close();
+  });
+
+  test("demo mode never previews a write it would refuse", async () => {
+    const store = await seedAcquisition();
+    mockPersonaCookie = "familia";
+
+    await expect(
+      previewAcquisitionEditAction(
+        { status: "idle" },
+        form({
+          currentUrl: "/patrimonio/wl_hld_piso/editar",
+          id: "piso",
+          anchorId: "anchor_acq",
+          valuationDate: "2022-06-01",
+          anchorValue: "90.000,00",
+        }),
+        store,
+        CLOCK,
+      ),
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    store.close();
+  });
+
+  test("saving the acquisition keeps it a market appraisal (the form posts no checkbox)", async () => {
+    const store = await seedAcquisition();
+
+    const url = await runAction(
+      updateValuationAnchorAction,
+      form({
+        id: "piso",
+        anchorId: "anchor_acq",
+        valuationDate: "2024-01-01",
+        anchorValue: "110.000,00",
+      }),
+      store,
+      CLOCK,
+    );
+    expect(url).toContain("anchor_saved");
+
+    const anchor = (await store.assets.readValuationAnchorById("anchor_acq"))!;
+    expect(anchor.valueMinor).toBe(110_000_00);
+    expect(anchor.adjustsPriorCurve).toBe(true);
     store.close();
   });
 });
