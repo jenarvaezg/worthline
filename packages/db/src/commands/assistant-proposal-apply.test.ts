@@ -10,6 +10,9 @@ import type { AssistantProposalApplyKind, WorthlineStore } from "@worthline/db";
 import { ASSISTANT_PROPOSAL_APPLY_KINDS, createInMemoryStore } from "@worthline/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
+import type { AssistantProposalApplySeams } from "./assistant-proposal-apply";
+import { createApplyAssistantProposal } from "./assistant-proposal-apply";
+
 const TODAY = "2026-08-26";
 
 /**
@@ -96,6 +99,45 @@ describe("applyAssistantProposal", () => {
         today: TODAY,
       }),
     ).rejects.toThrow(/already resolved as discarded/);
+  });
+
+  /**
+   * The id and the kind are the GATE's, not the write's. A row that spreads its
+   * params into a dated-fact seam (the three document-shaped kinds do) would carry
+   * them into the engine if the dispatcher handed them over.
+   */
+  test("the write never receives the gate's own kind and proposalId", async () => {
+    const written: unknown[] = [];
+    // Only the three seams this lane touches are real; the gate is what is under
+    // test here, not the engine underneath it.
+    const seams = {
+      assistantProposals: {
+        markApplied: async () => {},
+        read: async () => ({
+          createdAt: TODAY,
+          documents: [],
+          id: "wl_prop_1",
+          kind: "statement_import",
+          status: "draft",
+          updatedAt: TODAY,
+        }),
+      },
+      ctx: { transaction: async (work: () => unknown) => work() },
+      datedFacts: {
+        applyStatementImportAndRipple: async (params: unknown) => {
+          written.push(params);
+        },
+      },
+    } as unknown as AssistantProposalApplySeams;
+
+    await createApplyAssistantProposal(seams)({
+      funds: [],
+      kind: "statement_import",
+      proposalId: "wl_prop_1",
+      today: TODAY,
+    });
+
+    expect(written).toEqual([{ funds: [], today: TODAY, trigger: "assistant" }]);
   });
 
   // Adding a kind is adding a ROW: every kind the gate knows gets the same

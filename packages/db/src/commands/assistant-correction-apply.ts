@@ -8,7 +8,7 @@
 
 import type { AssetStore } from "@db/asset-store";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
-import type { LiabilityStore } from "@db/liability-store";
+import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { OperationsStore } from "@db/operations-store";
 import type { StoreContext } from "@db/store-context";
 import {
@@ -18,6 +18,11 @@ import {
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./command-implementation-types";
+import type {
+  ImportBalanceHistoryCommand,
+  ImportBalanceHistoryResult,
+} from "./import-balance-history";
+import type { DebtRippleCounts, FactBatchInput } from "./types";
 
 /**
  * Read + write seams for the identity fill a correction can carry (#1349). The
@@ -224,4 +229,62 @@ async function applyCorrectionEdit(
       });
       return;
   }
+}
+
+/**
+ * What the "reconstruct" depth of a correction (#1053) carries: the freshly
+ * re-projected re-baseline chain the confirm composed from the (possibly
+ * point-edited) series. The persisted plan keeps the raw series + before-values.
+ */
+export interface CorrectionReconstruction {
+  liabilityId: string;
+  rebaselines: AddBalanceRebaselineInput[];
+  /**
+   * The endpoint of the accepted curve today (#1422). Present only when it
+   * differs from the stored `current_balance_minor`: applying a document the user
+   * confirmed must not leave the hand-typed anchor contradicting it.
+   */
+  redeclaredBalanceMinor?: number;
+}
+
+/** The two seams the reconstruct depth writes through. */
+export interface CorrectionReconstructionSeams {
+  factPersistence: Pick<LiabilityStore, "updateLiabilityBalance">;
+  importBalanceHistory: (
+    params: ImportBalanceHistoryCommand,
+    batch: FactBatchInput,
+  ) => Promise<ImportBalanceHistoryResult>;
+}
+
+/**
+ * Apply the re-projected series as ONE atomic batch with ONE ripple from the
+ * oldest date, instead of the anchor-only edit loop above. The confirm already
+ * re-projected the series against live data, and (#1422) may have re-derived the
+ * declared balance from that curve — same transaction, so the anchor and the
+ * re-baselines that justify it never diverge.
+ */
+export async function applyCorrectionReconstruction(
+  seams: CorrectionReconstructionSeams,
+  reconstruct: CorrectionReconstruction,
+  today: string,
+): Promise<DebtRippleCounts> {
+  // El saldo va PRIMERO, y el import después: el import ripplea desde la fecha
+  // más antigua, y las fechas anteriores al primer re-baseline se valoran con el
+  // saldo guardado. Al revés, ese ripple congelaría en los snapshots el ancla
+  // vieja que esta misma llamada viene a corregir.
+  if (reconstruct.redeclaredBalanceMinor !== undefined) {
+    await seams.factPersistence.updateLiabilityBalance(
+      reconstruct.liabilityId,
+      reconstruct.redeclaredBalanceMinor,
+    );
+  }
+  const outcome = await seams.importBalanceHistory(
+    {
+      liabilityId: reconstruct.liabilityId,
+      rebaselines: reconstruct.rebaselines,
+      today,
+    },
+    { trigger: "assistant" },
+  );
+  return outcome.snapshots;
 }

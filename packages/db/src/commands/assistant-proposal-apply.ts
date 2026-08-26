@@ -15,6 +15,7 @@
 
 import type {
   AssistantProposal,
+  AssistantProposalFact,
   AssistantProposalStore,
 } from "@db/assistant-proposal-store";
 import type { CorrectionPlan } from "@db/correction-plan";
@@ -24,10 +25,14 @@ import type { InvestmentTransferPlan } from "@db/investment-transfer-plan";
 import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
 import type { AssistantProposalKind } from "@db/schema";
 import type { StoreContext } from "@db/store-context";
+import type {
+  CorrectionReconstruction,
+  InvestmentIdentitySeams,
+} from "./assistant-correction-apply";
 import {
   applyCorrectionPlan,
+  applyCorrectionReconstruction,
   assertLiveBalanceUnchanged,
-  type InvestmentIdentitySeams,
 } from "./assistant-correction-apply";
 import type {
   DatedFactCommandImplementations,
@@ -73,12 +78,23 @@ type AssistantProposalApplier<Params, Result> = (
   proposal: AssistantProposal,
 ) => Promise<Result>;
 
+/** The walk from a proposal to the facts of ONE kind it carries. */
+function factsOf<Kind extends AssistantProposalFact["kind"]>(
+  proposal: AssistantProposal,
+  kind: Kind,
+): Extract<AssistantProposalFact, { kind: Kind }>[] {
+  return proposal.documents
+    .flatMap((document) => document.facts)
+    .filter(
+      (fact): fact is Extract<AssistantProposalFact, { kind: Kind }> =>
+        fact.kind === kind,
+    );
+}
+
 /** Extract the single correction plan a `correction` proposal carries. */
 function correctionPlanOf(proposal: AssistantProposal): CorrectionPlan {
-  const fact = proposal.documents
-    .flatMap((document) => document.facts)
-    .find((item) => item.kind === "holding_correction");
-  if (!fact || fact.kind !== "holding_correction") {
+  const [fact] = factsOf(proposal, "holding_correction");
+  if (!fact) {
     throw new Error(`Correction proposal "${proposal.id}" carries no correction plan.`);
   }
   return fact.row;
@@ -86,10 +102,8 @@ function correctionPlanOf(proposal: AssistantProposal): CorrectionPlan {
 
 /** Extract the single early-repayment plan an `early_repayment` proposal carries. */
 function earlyRepaymentPlanOf(proposal: AssistantProposal): EarlyRepaymentPlan {
-  const fact = proposal.documents
-    .flatMap((document) => document.facts)
-    .find((item) => item.kind === "debt_early_repayment");
-  if (!fact || fact.kind !== "debt_early_repayment") {
+  const [fact] = factsOf(proposal, "debt_early_repayment");
+  if (!fact) {
     throw new Error(
       `Early-repayment proposal "${proposal.id}" carries no repayment plan.`,
     );
@@ -99,14 +113,12 @@ function earlyRepaymentPlanOf(proposal: AssistantProposal): EarlyRepaymentPlan {
 
 /** Extract the single operation plan an `investment_operation` proposal carries. */
 function investmentOperationPlanOf(proposal: AssistantProposal): InvestmentOperationPlan {
-  const facts = proposal.documents
-    .flatMap((document) => document.facts)
-    .filter((item) => item.kind === "investment_operation");
+  const facts = factsOf(proposal, "investment_operation");
   const [fact] = facts;
   // Exactly one, not «the first one»: this lane exists because a single dated fact
   // was being pushed through a batch tool (#1374), so a draft that somehow carries
   // two operations is a bug to surface, never half a write to apply.
-  if (facts.length !== 1 || !fact || fact.kind !== "investment_operation") {
+  if (facts.length !== 1 || !fact) {
     throw new Error(
       `Investment-operation proposal "${proposal.id}" carries no single operation plan.`,
     );
@@ -116,19 +128,33 @@ function investmentOperationPlanOf(proposal: AssistantProposal): InvestmentOpera
 
 /** Extract the single traspaso plan an `investment_transfer` proposal carries. */
 function investmentTransferPlanOf(proposal: AssistantProposal): InvestmentTransferPlan {
-  const facts = proposal.documents
-    .flatMap((document) => document.facts)
-    .filter((item) => item.kind === "investment_transfer");
+  const facts = factsOf(proposal, "investment_transfer");
   const [fact] = facts;
   // Exactly one, for the same reason as the operation above: a draft carrying two
   // traspasos is a bug to surface, never half a pair to write.
-  if (facts.length !== 1 || !fact || fact.kind !== "investment_transfer") {
+  if (facts.length !== 1 || !fact) {
     throw new Error(
       `Investment-transfer proposal "${proposal.id}" carries no single transfer plan.`,
     );
   }
   return fact.row;
 }
+
+/**
+ * The write the three document-shaped kinds share: the curated batch the card
+ * resolved, through the proven atomic statement-import ripple, stamped
+ * `trigger: "assistant"`. Named once and referenced by three rows, because they
+ * are the same lane and not three coincidences.
+ */
+const applyThroughStatementImport: AssistantProposalApplier<
+  StatementImportCommand,
+  void
+> = async (seams, params) => {
+  await seams.datedFacts.applyStatementImportAndRipple({
+    ...params,
+    trigger: "assistant",
+  });
+};
 
 /**
  * kind → the write that applies it. The three document-shaped kinds share the
@@ -157,56 +183,20 @@ const ASSISTANT_PROPOSAL_APPLIERS = {
     return outcome.snapshots;
   },
 
+  /**
+   * Two depths behind one confirmed intent (#1051, #1053): the anchor-only plan is
+   * a per-edit loop over the #997 write commands; the reconstruct is the atomic
+   * balance-history import. Both live in `assistant-correction-apply.ts`; the row
+   * only routes.
+   */
   correction: async (
     seams,
-    params: {
-      today: string;
-      /**
-       * Present only for the "reconstruct" depth (#1053): the freshly re-projected
-       * re-baseline chain the confirm composed from the (possibly point-edited)
-       * series. When set, the apply routes through the atomic balance-history
-       * import (ONE fact_batch, ONE ripple from the oldest date) instead of the
-       * anchor-only edit loop. The persisted plan keeps the raw series + before-values.
-       */
-      reconstruct?: {
-        liabilityId: string;
-        rebaselines: AddBalanceRebaselineInput[];
-        /**
-         * The endpoint of the accepted curve today (#1422). Present only when it
-         * differs from the stored `current_balance_minor`: applying a document the
-         * user confirmed must not leave the hand-typed anchor contradicting it.
-         */
-        redeclaredBalanceMinor?: number;
-      };
-    },
+    params: { today: string; reconstruct?: CorrectionReconstruction },
     proposal,
   ): Promise<DebtRippleCounts> => {
     const { reconstruct, today } = params;
-    // Reconstruct depth (#1053): apply the re-projected series as ONE atomic
-    // batch with ONE ripple from the oldest date. The confirm already
-    // re-projected the series against live data, and (#1422) may have
-    // re-derived the declared balance from that curve — same transaction, so
-    // the anchor and the re-baselines that justify it never diverge.
     if (reconstruct) {
-      // El saldo va PRIMERO, y el import después: el import ripplea desde la
-      // fecha más antigua, y las fechas anteriores al primer re-baseline se
-      // valoran con el saldo guardado. Al revés, ese ripple congelaría en los
-      // snapshots el ancla vieja que esta misma llamada viene a corregir.
-      if (reconstruct.redeclaredBalanceMinor !== undefined) {
-        await seams.factPersistence.updateLiabilityBalance(
-          reconstruct.liabilityId,
-          reconstruct.redeclaredBalanceMinor,
-        );
-      }
-      const outcome = await seams.importBalanceHistory(
-        {
-          liabilityId: reconstruct.liabilityId,
-          rebaselines: reconstruct.rebaselines,
-          today,
-        },
-        { trigger: "assistant" },
-      );
-      return outcome.snapshots;
+      return applyCorrectionReconstruction(seams, reconstruct, today);
     }
     await applyCorrectionPlan(
       seams.ctx,
@@ -341,12 +331,7 @@ const ASSISTANT_PROPOSAL_APPLIERS = {
    * The multi-domain document (#1104): investments, debt histories and property
    * valuations in ONE batched statement-import ripple.
    */
-  mixed_document_import: async (seams, params: StatementImportCommand): Promise<void> => {
-    await seams.datedFacts.applyStatementImportAndRipple({
-      ...params,
-      trigger: "assistant",
-    });
-  },
+  mixed_document_import: applyThroughStatementImport,
 
   /**
    * Its sibling `property_valuation_anchor` ADDS an anchor; this one MOVES the
@@ -405,19 +390,9 @@ const ASSISTANT_PROPOSAL_APPLIERS = {
    * through the proven atomic statement-import ripple, so a write that fails midway
    * rolls the whole batch back and the draft survives for a retry.
    */
-  reconcile: async (seams, params: StatementImportCommand): Promise<void> => {
-    await seams.datedFacts.applyStatementImportAndRipple({
-      ...params,
-      trigger: "assistant",
-    });
-  },
+  reconcile: applyThroughStatementImport,
 
-  statement_import: async (seams, params: StatementImportCommand): Promise<void> => {
-    await seams.datedFacts.applyStatementImportAndRipple({
-      ...params,
-      trigger: "assistant",
-    });
-  },
+  statement_import: applyThroughStatementImport,
 } satisfies Partial<
   Record<AssistantProposalKind, AssistantProposalApplier<never, unknown>>
 >;
@@ -467,12 +442,16 @@ const APPLY_BY_KIND: Record<
 export function createApplyAssistantProposal(
   seams: AssistantProposalApplySeams,
 ): ApplyAssistantProposal {
-  const applyProposal = async (params: {
-    kind: AssistantProposalApplyKind;
-    proposalId: string;
-  }): Promise<unknown> =>
+  const applyProposal = async (
+    input: {
+      kind: AssistantProposalApplyKind;
+      proposalId: string;
+    } & Record<string, unknown>,
+  ): Promise<unknown> =>
     seams.ctx.transaction(async () => {
-      const { kind, proposalId } = params;
+      // The two identity fields are the GATE's, not the row's: a row that spreads
+      // its params into a write seam must not carry them along.
+      const { kind, proposalId, ...params } = input;
       const proposal = await seams.assistantProposals.read(proposalId);
       if (!proposal) {
         throw new Error(`Assistant proposal "${proposalId}" was not found.`);
