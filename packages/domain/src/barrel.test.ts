@@ -158,6 +158,8 @@ const KEY_EXPORTS = [
   "buildLiquidDrilldown",
   // housing-valuation
   "valueHousingAtDate",
+  // housing-acquisition-preview
+  "buildAcquisitionEditPreview",
   // amortization
   "amortizableBalanceAtDate",
   // amortization-schedule import (#1406)

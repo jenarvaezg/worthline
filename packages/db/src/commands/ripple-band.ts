@@ -58,6 +58,13 @@ export interface RippleBandCounts {
   pruned: number;
 }
 
+/** A band that never ran: nothing generated, nothing recalculated, nothing pruned. */
+export const EMPTY_RIPPLE_BAND_COUNTS: RippleBandCounts = Object.freeze({
+  generated: 0,
+  pruned: 0,
+  recalculated: 0,
+});
+
 /**
  * The two dates a change moves, which one word can never say at once: the dates
  * its facts MINT (a past one with no snapshot gets a fresh `histsnap_`, ADR 0012)
@@ -116,6 +123,16 @@ export interface RippleBandSpec {
    */
   pruneDates?: ReadonlySet<string>;
   rewrite: RippleRewrite;
+  /**
+   * Count what the band WOULD do and persist nothing (#1562). The whole walk
+   * still runs — same scopes, same generation, same rewrites — so a preview built
+   * on these counts is the same engine that does the writing, never a second one
+   * that can disagree with it (#1438).
+   *
+   * Incompatible with `pruneDates` (throws): the prune decides by deleting, so it
+   * cannot be counted without writing. No dry-run caller prunes.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -152,6 +169,24 @@ export async function rippleBand(
   // Built at most once for the whole band, across every scope (lesson from #114),
   // and never at all when no date needs generating.
   const generate = spec.generate;
+  const dryRun = spec.dryRun === true;
+  // A dry run cannot answer for a band that prunes: deciding whether a fossil is
+  // an orphan IS the delete (`pruneOrphanedBackfillSnapshot`), so a counted run
+  // would report the pruned snapshot as recalculated and disagree with the write
+  // it claims to measure (#1438). Refused rather than silently approximated.
+  if (dryRun && spec.pruneDates !== undefined) {
+    throw new Error("rippleBand: a dry run cannot count a band that prunes.");
+  }
+  // ONE place decides what this run is allowed to write, so a future write added
+  // to the walk cannot forget the dry-run guard.
+  const writes = dryRun
+    ? { drop: async () => {}, save: async () => {} }
+    : {
+        drop: async (snapshotId: string) => {
+          await db.delete(snapshots).where(eq(snapshots.id, snapshotId)).run();
+        },
+        save: saveSnapshot,
+      };
   let deps: HistoricalSnapshotDeps | null = null;
 
   await ctx.transaction(async () => {
@@ -170,7 +205,7 @@ export async function rippleBand(
             dateKey,
             deps: (deps ??= await generate.deps()),
             existingDates,
-            saveSnapshot,
+            saveSnapshot: writes.save,
             scopeId: scope.id,
             scopeLabel: scope.label,
             today: generate.today,
@@ -209,11 +244,11 @@ export async function rippleBand(
         // The family does not touch this date — leave the frozen rows alone.
         if (rewritten === undefined) continue;
         if (rewritten === null) {
-          await db.delete(snapshots).where(eq(snapshots.id, snapshot.id)).run();
+          await writes.drop(snapshot.id);
           continue;
         }
 
-        await saveSnapshot({
+        await writes.save({
           holdings: rewritten.holdings,
           replace: true,
           snapshot: rewritten.snapshot,

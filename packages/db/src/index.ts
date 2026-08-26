@@ -50,6 +50,7 @@ export {
   captureDailySnapshotForWorkspace,
 } from "./capture-daily-snapshot";
 export type {
+  AcquisitionAnchorEditPreview,
   AddValuationAnchorCommand,
   CommandExecutor,
   CommandHost,
@@ -63,6 +64,7 @@ export type {
   InvestmentHoldingEntry,
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
+  PreviewAcquisitionAnchorEditCommand,
   RecordHousingValuationCommand,
   RipplePlan,
   SetAnnualAppreciationRateCommand,
@@ -75,6 +77,7 @@ export {
   EMPTY_DEBT_RIPPLE_COUNTS,
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
+  executePreviewAcquisitionAnchorEditCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,

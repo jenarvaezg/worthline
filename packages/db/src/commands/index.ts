@@ -7,8 +7,10 @@ export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";
 export type {
+  AcquisitionAnchorEditPreview,
   AddValuationAnchorCommand,
   DeleteValuationAnchorCommand,
+  PreviewAcquisitionAnchorEditCommand,
   RecordHousingValuationCommand,
   SetAnnualAppreciationRateCommand,
   SetHousingValuationCadenceCommand,
@@ -17,6 +19,7 @@ export type {
 export {
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
+  executePreviewAcquisitionAnchorEditCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,

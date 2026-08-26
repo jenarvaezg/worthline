@@ -1,5 +1,12 @@
 "use server";
 
+import {
+  isClock,
+  runActionWithStore,
+  testArgFromActionArgs,
+  testStoreFromActionArgs,
+} from "@web/action-store";
+import { guardDemoWrite } from "@web/demo/write-guard";
 import { formAction } from "@web/form-action";
 import {
   appendParam,
@@ -13,9 +20,11 @@ import {
   preserveFields,
   successRedirectUrl,
 } from "@web/intake";
+import type { AcquisitionAnchorEditPreview } from "@worthline/db";
 import {
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
+  executePreviewAcquisitionAnchorEditCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
   executeSetHousingValuationCadenceCommand,
@@ -25,6 +34,7 @@ import {
   checkManualValuationViolation,
   isHousingAsset,
   isValueUpdateEligible,
+  systemClock,
 } from "@worthline/domain";
 import {
   baseUrl,
@@ -334,6 +344,68 @@ export async function addValuationAnchorAction(
       errorRedirectUrl(baseUrl(formData), { formId: "anchor", message: error }),
     onSuccess: () => successRedirectUrl(baseUrl(formData), "anchor_added"),
   })(formData, ..._testArgs);
+}
+
+/**
+ * What the acquisition editor shows between «Ver cambios» and «Guardar» (#1562).
+ * `summary` carries the two curves and the size of the rewrite; the confirm
+ * re-reads the form, never this state.
+ */
+export type AcquisitionEditPreviewState =
+  | { status: "idle" }
+  | { status: "error"; message: string }
+  | { status: "summary"; preview: AcquisitionAnchorEditPreview };
+
+/**
+ * Dry run of the acquisition edit (#1562), for the preview→confirm island.
+ *
+ * Moving the acquisition date or price is a reconstruction: it redraws the whole
+ * interpolated stretch up to the next appraisal — 22 years of curve in the
+ * measured case — and re-ripples every snapshot since. This action answers what
+ * that would do WITHOUT writing, through the same command the confirm uses, so
+ * the two cannot disagree (#1438). Validation is the write's own parser, so a
+ * date or a price the confirm would refuse is refused here too.
+ */
+export async function previewAcquisitionEditAction(
+  _prev: AcquisitionEditPreviewState,
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<AcquisitionEditPreviewState> {
+  const _store = testStoreFromActionArgs(_testArgs);
+  const _clock = testArgFromActionArgs(_testArgs, isClock) ?? systemClock();
+  await guardDemoWrite(baseUrl(formData));
+
+  const id = String(formData.get("id") ?? "").trim();
+  const anchorId = String(formData.get("anchorId") ?? "").trim();
+  if (id === "" || anchorId === "") {
+    return { message: "Identificador de adquisición no encontrado.", status: "error" };
+  }
+
+  const today = _clock.today();
+  // Seed 0: the parser derives an id for a NEW anchor and this dry run patches an
+  // existing one, so the id is discarded — no reason to read a clock for it.
+  const parsed = parseValuationAnchorStrict(formData, id, 0, today);
+  if (!parsed.ok) {
+    return { message: parsed.error, status: "error" };
+  }
+
+  const result = await runActionWithStore(
+    (store) =>
+      executePreviewAcquisitionAnchorEditCommand(store, {
+        anchorId,
+        input: {
+          valuationDate: parsed.command.valuationDate,
+          valueMinor: parsed.command.valueMinor,
+        },
+        today,
+      }),
+    _store,
+  );
+
+  if (!result.ok) {
+    return { message: result.error, status: "error" };
+  }
+  return { preview: result.value, status: "summary" };
 }
 
 export async function updateValuationAnchorAction(

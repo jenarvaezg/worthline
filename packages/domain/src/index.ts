@@ -720,6 +720,14 @@ export {
   valueAt,
 } from "./holding-valuation";
 export type {
+  AcquisitionAnchorFields,
+  AcquisitionEditPreview,
+  AcquisitionEditPreviewInput,
+  HousingCurveComparisonPoint,
+  HousingCurveDateRole,
+} from "./housing-acquisition-preview";
+export { buildAcquisitionEditPreview } from "./housing-acquisition-preview";
+export type {
   HousingValuationAnchor,
   ValueHousingAtDateInput,
 } from "./housing-valuation";

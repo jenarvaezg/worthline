@@ -503,6 +503,11 @@ a control point on the appreciation curve) and **improvement** (discrete value i
 as a renovation, does not alter the underlying appreciation rate). One market appraisal
 may additionally carry `kind = 'acquisition'` (#1437): the **acquisition anchor**, the
 purchase that starts the property's history — editable by name in the UI, never deletable.
+Its edit is a **reconstruction**, not a field change: moving its date or price redraws
+every day up to the next **market appraisal** and re-ripples every **snapshot** since, so
+it goes through a preview→confirm that says how much history the save rewrites, and the
+confirm's verb says it (#1562, ADR 0070 §4). Editing it always keeps it a market
+appraisal — an acquisition price is a total, never an **improvement** increment.
 _Avoid_: price point, historical value (too vague).
 
 **Market appraisal**:

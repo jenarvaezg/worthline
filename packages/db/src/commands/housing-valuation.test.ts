@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 import {
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,
+  executePreviewAcquisitionAnchorEditCommand,
   executeSetAnnualAppreciationRateCommand,
   executeUpdateValuationAnchorCommand,
   runCommand,
@@ -106,6 +107,131 @@ describe("acquisition anchor (#1437)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("adquisición");
     expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
+    store.close();
+  });
+});
+
+describe("acquisition edit preview (#1562)", () => {
+  /** The Plasencia shape: a 2004 acquisition and a much later appraisal. */
+  async function seedAcquisition() {
+    const store = await seedHousing();
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_acq",
+        kind: "acquisition",
+        valuationDate: "2024-01-01",
+        valueMinor: 100_000_00,
+      },
+    });
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_appraisal",
+        valuationDate: "2026-01-01",
+        valueMinor: 130_000_00,
+      },
+    });
+    return store;
+  }
+
+  test("counts the snapshots the rewrite would touch and writes nothing", async () => {
+    const store = await seedAcquisition();
+    const before = await store.snapshots.readSnapshots();
+    const grossBefore = await grossAt(store, "2024-01-01");
+
+    const result = await executePreviewAcquisitionAnchorEditCommand(store, {
+      anchorId: "a_acq",
+      input: { valuationDate: "2022-06-01", valueMinor: 90_000_00 },
+      today: TODAY,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("preview failed");
+    expect(result.value.fromDateKey).toBe("2022-06-01");
+    expect(result.value.dateChanged).toBe(true);
+    expect(result.value.valueChanged).toBe(true);
+    // The two existing snapshots (acquisition + appraisal dates) get re-derived,
+    // and the new from-date mints one more.
+    expect(result.value.snapshotsRecalculated).toBe(before.length);
+    expect(result.value.snapshotsGenerated).toBe(1);
+
+    // Nothing moved: no new snapshot, no rewritten figure, no patched anchor.
+    expect(await store.snapshots.readSnapshots()).toHaveLength(before.length);
+    expect(await grossAt(store, "2024-01-01")).toBe(grossBefore);
+    expect((await store.assets.readValuationAnchorById("a_acq"))!.valuationDate).toBe(
+      "2024-01-01",
+    );
+    store.close();
+  });
+
+  test("compares the curve before and after on the dates that matter", async () => {
+    const store = await seedAcquisition();
+
+    const result = await executePreviewAcquisitionAnchorEditCommand(store, {
+      anchorId: "a_acq",
+      input: { valuationDate: "2024-01-01", valueMinor: 90_000_00 },
+      today: TODAY,
+    });
+
+    if (!result.ok) throw new Error("preview failed");
+    const acquisition = result.value.points.find((p) => p.dateKey === "2024-01-01")!;
+    expect(acquisition.beforeMinor).toBe(100_000_00);
+    expect(acquisition.afterMinor).toBe(90_000_00);
+    const appraisal = result.value.points.find((p) => p.dateKey === "2026-01-01")!;
+    expect(appraisal.deltaMinor).toBe(0);
+    store.close();
+  });
+
+  test("refuses an anchor that is not the acquisition", async () => {
+    const store = await seedAcquisition();
+
+    const result = await executePreviewAcquisitionAnchorEditCommand(store, {
+      anchorId: "a_appraisal",
+      input: { valuationDate: "2026-01-01", valueMinor: 140_000_00 },
+      today: TODAY,
+    });
+
+    expect(result.ok).toBe(false);
+    store.close();
+  });
+
+  test("refuses an anchor that no longer exists", async () => {
+    const store = await seedAcquisition();
+
+    const result = await executePreviewAcquisitionAnchorEditCommand(store, {
+      anchorId: "ghost",
+      input: { valuationDate: "2024-01-01", valueMinor: 1_000_00 },
+      today: TODAY,
+    });
+
+    expect(result.ok).toBe(false);
+    store.close();
+  });
+
+  test("editing the acquisition keeps it a market appraisal, whatever the form says", async () => {
+    const store = await seedAcquisition();
+
+    await executeUpdateValuationAnchorCommand(store, {
+      anchorId: "a_acq",
+      input: {
+        // What the named acquisition editor posts: it has no "es una tasación de
+        // mercado" checkbox, so a naive patch would demote the acquisition to an
+        // improvement and add 100.000 € on top of the curve instead of anchoring it.
+        adjustsPriorCurve: false,
+        valuationDate: "2024-01-01",
+        valueMinor: 110_000_00,
+      },
+      today: TODAY,
+    });
+
+    const anchor = (await store.assets.readValuationAnchorById("a_acq"))!;
+    expect(anchor.adjustsPriorCurve).toBe(true);
+    expect(anchor.valueMinor).toBe(110_000_00);
     store.close();
   });
 });

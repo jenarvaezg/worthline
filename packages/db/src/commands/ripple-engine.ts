@@ -17,6 +17,7 @@ import {
 import { readAllOperations, type StoreContext } from "@db/store-context";
 import type {
   FrozenIdentityCapture,
+  HousingValuationAnchor,
   InvestmentOperation,
   Liability,
   ManualAsset,
@@ -38,7 +39,11 @@ import {
 } from "@worthline/domain";
 import { eq } from "drizzle-orm";
 
-import { rippleBand } from "./ripple-band";
+import {
+  EMPTY_RIPPLE_BAND_COUNTS,
+  type RippleBandCounts,
+  rippleBand,
+} from "./ripple-band";
 
 // ── Historical snapshots ripple engine (ADR 0012, PRD #107) ──────────────────
 //
@@ -354,6 +359,14 @@ export async function rippleHistoricalSnapshotsForMixedImport(
  *
  * Only the housing asset's row in each snapshot is recomputed; every other
  * frozen row is preserved, and legacy captures with no holding rows are skipped.
+ *
+ * With `dryRun`, the same walk runs and NOTHING is persisted — the counts come
+ * back so a preview can say how much history a curve edit rewrites before it is
+ * written (#1562), measured by the engine that writes it (#1438). A dry run of an
+ * edit that is not stored yet passes `anchors`: the band then values the curve
+ * with the anchors the edit WOULD write, which is what decides whether a fresh
+ * snapshot appears at the new from-date (a property does not exist in history
+ * before its first appraisal).
  */
 export async function rippleHistoricalSnapshotsForValuation(
   ctx: StoreContext,
@@ -363,29 +376,54 @@ export async function rippleHistoricalSnapshotsForValuation(
     assetId: string;
     fromDateKey: string;
     today: string;
+    /** Count only — never persist (the preview's dry run, #1562). */
+    dryRun?: boolean;
+    /**
+     * Value the asset's curve with THESE anchors instead of the stored ones — how
+     * a dry run asks "what would this edit do" before the edit exists (#1562).
+     */
+    anchors?: readonly HousingValuationAnchor[];
   },
-): Promise<void> {
+): Promise<RippleBandCounts> {
   const { db } = ctx;
-  const { assetId, fromDateKey, today } = params;
+  const { assetId, dryRun = false, fromDateKey, today } = params;
 
   // The housing asset's identity — read including trashed, since it existed on
   // the snapshot dates even if it was trashed afterwards.
   const asset = await readInvestmentIdentity(db, assetId);
-  if (!asset || !isHousingAsset(asset)) return;
+  if (!asset || !isHousingAsset(asset)) return EMPTY_RIPPLE_BAND_COUNTS;
 
   // Build deps once — they are the same for every scope (lesson from #114).
   const deps = await buildHistoricalSnapshotDeps(db, workspace);
-  const curve = deps.housingValuationByAsset.get(assetId);
+  const stored = deps.housingValuationByAsset.get(assetId);
   // No map entry means the asset is not housing or has been trashed with no
   // remaining live record — nothing to ripple.
-  if (!curve) return;
+  if (!stored) return EMPTY_RIPPLE_BAND_COUNTS;
+
+  // The anchors the caller asks about, in BOTH halves of the band: the generation
+  // of a missing date reads them off `deps`, the rewrite off `curve`. Overriding
+  // one and not the other is how a preview starts disagreeing with its write.
+  // A new map, not a write into the one `buildHistoricalSnapshotDeps` returned.
+  const curve =
+    params.anchors !== undefined ? { ...stored, anchors: params.anchors } : stored;
+  const effectiveDeps =
+    curve === stored
+      ? deps
+      : {
+          ...deps,
+          housingValuationByAsset: new Map(deps.housingValuationByAsset).set(
+            assetId,
+            curve,
+          ),
+        };
 
   // The asset's frozen classification captures across every snapshot (#242), read
   // ONCE before any recalc mutates rows.
   const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
-  await rippleBand(ctx, workspace, saveSnapshot, {
-    generate: { dates: [fromDateKey], deps: async () => deps, today },
+  return rippleBand(ctx, workspace, saveSnapshot, {
+    dryRun,
+    generate: { dates: [fromDateKey], deps: async () => effectiveDeps, today },
     recalcFrom: fromDateKey,
     // Re-evaluate only the housing asset's row from the curve (or its
     // last-known value when the curve is now empty).
@@ -395,7 +433,7 @@ export async function rippleHistoricalSnapshotsForValuation(
         curve,
         frozenHoldings,
         frozenIdentity,
-        manualValueHistory: deps.manualValueHistory,
+        manualValueHistory: effectiveDeps.manualValueHistory,
         snapshot,
         today,
         workspace,
