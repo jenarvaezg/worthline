@@ -240,7 +240,7 @@ export interface DatedFactCommandImplementations {
    * Current-state debt dated-fact seam (ADR 0056, #677): create the derived
    * amortization plan row AND the `startsAtBaseline` balance re-baseline AND
    * sync the liability's `currentBalanceMinor`, atomically, with ONE ripple
-   * (the `amortizable-rebaseline` kind, which governs the curve from the
+   * (the re-baseline chain band, which governs the curve from the
    * baseline forward). The #676 review's requirement that a current-state
    * debt never exists with one fact but not the other — a mid-failure leaves
    * NEITHER persisted. Wraps `liabilities.createAmortizationPlan` +

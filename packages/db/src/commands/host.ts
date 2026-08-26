@@ -20,15 +20,13 @@ import {
   valueOnlySymbolGuardMessage,
 } from "@worthline/domain";
 import type { DatedFactCommandImplementations } from "./command-implementation-types";
+import { debtRebaselineChainBand, rippleHistoricalSnapshotsForDebt } from "./debt-band";
 import type {
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
 } from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
-import {
-  rippleHistoricalSnapshotsForDebt,
-  throwCommandResultError,
-} from "./ripple-engine";
+import { throwCommandResultError } from "./ripple-engine";
 import type { DebtRippleCounts, FactBatchInput } from "./types";
 import { EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 import { createUnitOfWork } from "./unit-of-work";
@@ -550,8 +548,7 @@ export function createCommandHost(
     const workspace = await ctx.getWorkspace();
     if (!workspace) return EMPTY_DEBT_RIPPLE_COUNTS;
     return rippleHistoricalSnapshotsForDebt(ctx, workspace, snapshots.saveSnapshot, {
-      fromDateKey,
-      kind: "amortizable-rebaseline",
+      band: debtRebaselineChainBand(fromDateKey),
       liabilityId,
       today,
     });

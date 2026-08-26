@@ -142,3 +142,21 @@ better-sqlite3 transaction, so the read and write never straddle another commit.
 - No new domain noun. "Dated fact," "ripple recalculation," and "from-date" already
   name the concepts (CONTEXT.md, ADR 0012, ADR 0020); this decision only relocates
   the old-date read to the side of the seam that always owned it.
+
+## Amendment (#1590): the seam ripples with a band, not a kind
+
+The decision above says the seam "ripples with the `kind` each fact already uses
+(`anchor`, `amortizable-revision`, `amortizable-repayment`)". Those kinds no
+longer exist. [ADR 0089](0089-a-historical-ripple-is-one-band-and-a-rewrite-per-family.md)
+replaced the union with `{ eventDates, recalcFrom }`, stated by the call site:
+the dates the fact mints, and the floor the recalculation starts from — the two
+questions the one word was conflating.
+
+Nothing else in this decision moves. The seam still reads the OLD date and the
+owning liability from the row by id inside the transaction, still derives the
+from-date as `min(old, new)` on edit and the row's date on delete, and still
+never lets a caller pass a date instead of the truth in the row. What was
+`kind: "anchor"` is now `{ eventDates: [date], recalcFrom: date }`; what was
+`kind: "amortizable-revision"` is `{ eventDates: [], recalcFrom: date }` — a
+deleted fact mints no date; what was `kind: "amortizable-repayment"` states the
+two dates it always meant (#1291/#1042) without a union member to carry them.

@@ -22,7 +22,14 @@ import { asc, eq } from "drizzle-orm";
 import { mapPositionRow } from "./connected-source-store";
 import { readDebtBalanceInputs, readHousingCurveInputs } from "./curve-valued-holdings";
 import { readManualValueHistory } from "./manual-value-history";
-import { assetOwnerships, assets, connectedSources, positions } from "./schema";
+import {
+  assetOwnerships,
+  assets,
+  connectedSources,
+  liabilities,
+  liabilityOwnerships,
+  positions,
+} from "./schema";
 import {
   readSnapshotHoldings,
   type SaveSnapshotInput,
@@ -335,5 +342,50 @@ export async function readInvestmentIdentity(
     ownership,
     type: row.type,
     ...(row.instrument ? { instrument: row.instrument } : {}),
+  };
+}
+
+/**
+ * Read one liability's identity (ownership, currency, type, name, associated
+ * asset), including trashed liabilities — historical reconstruction needs the
+ * identity of debts that existed on past dates even if they were trashed since.
+ * The liability twin of {@link readInvestmentIdentity}.
+ */
+export async function readLiabilityIdentity(
+  db: StoreDb,
+  liabilityId: string,
+): Promise<Liability | null> {
+  const row = await db
+    .select({
+      id: liabilities.id,
+      name: liabilities.name,
+      type: liabilities.type,
+      currency: liabilities.currency,
+      currentBalanceMinor: liabilities.currentBalanceMinor,
+      associatedAssetId: liabilities.associatedAssetId,
+    })
+    .from(liabilities)
+    .where(eq(liabilities.id, liabilityId))
+    .get();
+
+  if (!row) return null;
+
+  const ownership = await db
+    .select({
+      memberId: liabilityOwnerships.memberId,
+      shareBps: liabilityOwnerships.shareBps,
+    })
+    .from(liabilityOwnerships)
+    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
+    .all();
+
+  return {
+    currency: row.currency,
+    currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
+    id: row.id,
+    name: row.name,
+    ownership,
+    type: row.type,
+    ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
   };
 }

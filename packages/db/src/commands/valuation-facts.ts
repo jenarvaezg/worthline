@@ -172,7 +172,8 @@ export function createValuationCommands(
       // edit (ADR 0012), so the whole appreciation curve is recut. The from-date is
       // derived behind the seam (first past anchor / earliest snapshot) by the
       // shared housing-edit ripple — guarded against an empty range or a future
-      // from-date inside it. Mirrors setAnnualAppreciationRateAndRipple.
+      // from-date inside it. A rate change takes the EARLIER of the two instead,
+      // since it compounds backwards too (#184), so it derives its own from-date.
       await ctx.transaction(async () => {
         await stores.assets.setValuationCadence(assetId, cadence);
         await rippleHousingAfterEdit(

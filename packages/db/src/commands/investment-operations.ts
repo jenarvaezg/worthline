@@ -5,7 +5,6 @@ import type {
   DatedFactStores,
 } from "./command-implementation-types";
 import {
-  rippleHistoricalSnapshots,
   rippleHistoricalSnapshotsForOperations,
   throwCommandResultError,
 } from "./ripple-engine";
@@ -37,12 +36,20 @@ export function createInvestmentOperationCommands(
         await stores.operations.recordOperation(params.operation, { batchId });
         const workspace = await ctx.getWorkspace();
         if (workspace) {
-          await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
-            assetId: params.operation.assetId,
-            mode: "record",
-            operationDateKey: params.operation.executedAt.slice(0, 10),
-            today,
-          });
+          await rippleHistoricalSnapshotsForOperations(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              assets: [
+                {
+                  assetId: params.operation.assetId,
+                  operationDateKeys: [params.operation.executedAt.slice(0, 10)],
+                },
+              ],
+              today,
+            },
+          );
         }
         await stores.contributionPlan.linkOperation({
           contributionId: params.contributionId,
@@ -75,12 +82,15 @@ export function createInvestmentOperationCommands(
         ripple: async (operationDateKey) => {
           const workspace = await ctx.getWorkspace();
           if (!workspace) return;
-          await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
-            assetId: input.assetId,
-            mode: "record",
-            operationDateKey,
-            today,
-          });
+          await rippleHistoricalSnapshotsForOperations(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              assets: [{ assetId: input.assetId, operationDateKeys: [operationDateKey] }],
+              today,
+            },
+          );
         },
         steps: [
           {
@@ -140,12 +150,21 @@ export function createInvestmentOperationCommands(
         if (!result) return null;
         const workspace = await ctx.getWorkspace();
         if (workspace) {
-          await rippleHistoricalSnapshots(ctx, workspace, stores.snapshots.saveSnapshot, {
-            assetId: result.assetId,
-            mode: "delete",
-            operationDateKey: result.executedAt.slice(0, 10),
-            today,
-          });
+          await rippleHistoricalSnapshotsForOperations(
+            ctx,
+            workspace,
+            stores.snapshots.saveSnapshot,
+            {
+              assets: [
+                {
+                  assetId: result.assetId,
+                  operationDateKeys: [result.executedAt.slice(0, 10)],
+                },
+              ],
+              mode: "delete",
+              today,
+            },
+          );
         }
         return result;
       });
