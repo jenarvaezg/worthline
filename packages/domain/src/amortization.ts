@@ -483,11 +483,12 @@ function cycleLumpTotals(
  * is a projection of these rows — there is no second French simulator that could
  * disagree with the boundaries about what a cuota did.
  *
- * `openingMinor` is the balance this cycle's interest accrues on: the start of the
- * month with every lump of the cycle already applied, including one paid
- * mid-cycle (#1291), which is why it can sit below the previous cycle's closing.
- * The cycle's closing is `boundaries[monthIndex + 1]` — the very value the balance
- * locator reads on that date, not a recomputation of it.
+ * These ARE the row's fields, by type: `openingBalanceMinor` is the balance this
+ * cycle's interest accrues on — the start of the month with every lump of the
+ * cycle already applied, including one paid mid-cycle (#1291), which is why it can
+ * sit below the previous cycle's closing. The cycle's closing is not here because
+ * it is not the cycle's to state: it is `boundaries[monthIndex + 1]`, the very
+ * value the balance locator reads on that date.
  *
  * Rounded to the cent HERE rather than kept at full precision, because this rides
  * the memoised curve (#158) and precision is not free: the balance gains ~20
@@ -496,14 +497,14 @@ function cycleLumpTotals(
  * figures the schedule rounds at the edge anyway. The rounding is the same
  * {@link toMinorInt} the reader applied, so the rows are byte-identical.
  */
-interface CycleSplit {
-  openingMinor: number;
-  interestMinor: number;
-  principalMinor: number;
-  paymentMinor: number;
-  /** The annual rate governing this cycle, decimal string. */
-  rate: DecimalString;
-}
+type CycleSplit = Pick<
+  AmortizationSchedulePeriod,
+  | "annualInterestRate"
+  | "interestMinor"
+  | "openingBalanceMinor"
+  | "paymentMinor"
+  | "principalMinor"
+>;
 
 /** The date-independent curve of a loan: month boundaries + intra-cycle lumps. */
 interface BoundaryCurve {
@@ -751,11 +752,11 @@ function computeBoundaries(input: AmortizableBalanceAtDateInput): BoundaryCurve 
     // The same arithmetic, kept instead of thrown away: this is the row the
     // cuadro shows for this cuota (#1596).
     cycles.push({
+      annualInterestRate: activeRate,
       interestMinor: toMinorInt(interest),
-      openingMinor: toMinorInt(opening),
+      openingBalanceMinor: toMinorInt(opening),
       paymentMinor: toMinorInt(payment),
       principalMinor: toMinorInt(principal),
-      rate: activeRate,
     });
   }
 
@@ -1051,7 +1052,7 @@ function eventsByPeriodFor(
  * Still a diagnostic READ, and a cheaper one than before: it goes through the
  * boundary memo (#158) instead of replaying the schedule, so the ficha's
  * settlement estimate (#1292) no longer rebuilds an O(termMonths) big.js curve
- * per call. It adds nothing to the hot ripple path.
+ * per call. It adds nothing to the hot ripple path — ADR 0090 carries the numbers.
  */
 export function amortizationScheduleTrace(
   input: AmortizableBalanceAtDateInput,
@@ -1068,15 +1069,11 @@ export function amortizationScheduleTrace(
     // NEXT month, which is exactly what the balance locator reads on this date.
     const closing = boundaries[index]!.balance;
     periods.push({
-      annualInterestRate: cycle.rate,
+      ...cycle,
       closingBalanceMinor: toMinorInt(closing),
       date: boundaryDate(plan, index),
       events: eventsByPeriod.get(index) ?? [],
       index,
-      interestMinor: cycle.interestMinor,
-      openingBalanceMinor: cycle.openingMinor,
-      paymentMinor: cycle.paymentMinor,
-      principalMinor: cycle.principalMinor,
     });
     // Trailing fully-repaid periods are omitted: the loan is closed, and the
     // curve keeps walking zeroed months to the contractual last boundary.

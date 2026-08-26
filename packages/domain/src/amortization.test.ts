@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type {
+  AmortizableBalanceAtDateInput,
   AmortizationPlanInput,
   EarlyRepayment,
   InterestRateRevision,
@@ -1380,39 +1381,35 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
     initialCapitalMinor: 120_000_00,
     termMonths: 240,
   };
+  /** A 2,5-month stub (firma 15-ene, primera cuota 1-abr), ADR 0019. */
+  const STUB_PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    disbursementDate: "2020-01-15",
+    firstPaymentDate: "2020-04-01",
+    initialCapitalMinor: 120_000_00,
+    termMonths: 240,
+  };
   /** 2021-02-01 is boundary 13: the closing of period 13, opening of period 14. */
   const BOUNDARY_13 = "2021-02-01";
   const BOUNDARY_14 = "2021-03-01";
 
-  const traceOf = (input: {
+  /** The loan, without a date: what the cuadro and the curve are both asked about. */
+  type Loan = Omit<AmortizableBalanceAtDateInput, "plan" | "targetDate"> & {
     plan?: AmortizationPlanInput;
-    revisions?: readonly InterestRateRevision[];
-    earlyRepayments?: readonly EarlyRepayment[];
-  }) =>
-    amortizationScheduleTrace({
-      plan: input.plan ?? PLAN,
-      targetDate: "2020-02-01",
-      ...(input.revisions ? { revisions: input.revisions } : {}),
-      ...(input.earlyRepayments ? { earlyRepayments: input.earlyRepayments } : {}),
-    });
+  };
+  const loanOf = (loan: Loan) => ({ ...loan, plan: loan.plan ?? PLAN });
+
+  const traceOf = (loan: Loan) =>
+    amortizationScheduleTrace({ ...loanOf(loan), targetDate: "2020-02-01" });
 
   /** Every row closes where the curve says on its own date — the load-bearing check. */
   const expectRowsToCloseOnTheCurve = (
     periods: readonly { date: string; closingBalanceMinor: number }[],
-    input: {
-      plan?: AmortizationPlanInput;
-      revisions?: readonly InterestRateRevision[];
-      earlyRepayments?: readonly EarlyRepayment[];
-    },
+    loan: Loan,
   ): void => {
     for (const period of periods) {
       expect(period.closingBalanceMinor).toBe(
-        amortizableBalanceAtDate({
-          plan: input.plan ?? PLAN,
-          targetDate: period.date,
-          ...(input.revisions ? { revisions: input.revisions } : {}),
-          ...(input.earlyRepayments ? { earlyRepayments: input.earlyRepayments } : {}),
-        }),
+        amortizableBalanceAtDate({ ...loanOf(loan), targetDate: period.date }),
       );
     }
   };
@@ -1477,22 +1474,15 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
   });
 
   test("a long disbursement→first-payment stub is one flat row, and the curve agrees", () => {
-    // A 2,5-month stub (firma 15-ene, primera cuota 1-abr): the balance is FLAT at
-    // the initial capital across it (ADR 0019) and period 1 is the first cuota.
-    const stubPlan: AmortizationPlanInput = {
-      annualInterestRate: "0.03",
-      disbursementDate: "2020-01-15",
-      firstPaymentDate: "2020-04-01",
-      initialCapitalMinor: 120_000_00,
-      termMonths: 240,
-    };
-    const trace = traceOf({ plan: stubPlan });
+    // The balance is FLAT at the initial capital across the stub (ADR 0019) and
+    // period 1 is the first cuota.
+    const trace = traceOf({ plan: STUB_PLAN });
     const first = trace.periods[0]!;
 
     expect(first.date).toBe("2020-04-01");
     expect(first.openingBalanceMinor).toBe(120_000_00);
     for (const inStub of ["2020-01-15", "2020-02-29", "2020-03-31"]) {
-      expect(amortizableBalanceAtDate({ plan: stubPlan, targetDate: inStub })).toBe(
+      expect(amortizableBalanceAtDate({ plan: STUB_PLAN, targetDate: inStub })).toBe(
         120_000_00,
       );
     }
@@ -1501,26 +1491,19 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
     // stub's extra day-count interest only enlarges the first payment the owner is
     // charged (`firstCuota`, ADR 0019) and never moves the curve — which is why
     // the two figures differ, on purpose, and by exactly the stub interest.
-    const cuota = firstCuota(stubPlan);
+    const cuota = firstCuota(STUB_PLAN);
     expect(first.paymentMinor).toBe(cuota.regularCuotaMinor);
     expect(first.principalMinor).toBe(cuota.firstPrincipalMinor);
     expect(cuota.amountMinor - first.paymentMinor).toBeGreaterThan(0);
 
-    expectRowsToCloseOnTheCurve(trace.periods, { plan: stubPlan });
+    expectRowsToCloseOnTheCurve(trace.periods, { plan: STUB_PLAN });
   });
 
   test("a lump paid inside the stub lands on period 1, which still closes on the curve", () => {
-    const stubPlan: AmortizationPlanInput = {
-      annualInterestRate: "0.03",
-      disbursementDate: "2020-01-15",
-      firstPaymentDate: "2020-04-01",
-      initialCapitalMinor: 120_000_00,
-      termMonths: 240,
-    };
     const earlyRepayments: EarlyRepayment[] = [
       { amountMinor: 10_000_00, mode: "reduce-payment", repaymentDate: "2020-02-10" },
     ];
-    const trace = traceOf({ earlyRepayments, plan: stubPlan });
+    const trace = traceOf({ earlyRepayments, plan: STUB_PLAN });
     const first = trace.periods[0]!;
 
     // A boundary-0 event has no row of its own: it rides period 1, the cuota that
@@ -1531,29 +1514,22 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
     expect(
       amortizableBalanceAtDate({
         earlyRepayments,
-        plan: stubPlan,
+        plan: STUB_PLAN,
         targetDate: "2020-02-09",
       }),
     ).toBe(120_000_00);
     expect(
       amortizableBalanceAtDate({
         earlyRepayments,
-        plan: stubPlan,
+        plan: STUB_PLAN,
         targetDate: "2020-02-10",
       }),
     ).toBe(120_000_00 - 10_000_00);
 
-    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments, plan: stubPlan });
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments, plan: STUB_PLAN });
   });
 
   test("the whole shape at once: stub, revision and lump on one loan, one engine", () => {
-    const stubPlan: AmortizationPlanInput = {
-      annualInterestRate: "0.03",
-      disbursementDate: "2020-01-15",
-      firstPaymentDate: "2020-04-01",
-      initialCapitalMinor: 120_000_00,
-      termMonths: 240,
-    };
     const revisions: InterestRateRevision[] = [
       { newAnnualInterestRate: "0.05", revisionDate: "2021-04-01" },
     ];
@@ -1561,7 +1537,7 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
       { amountMinor: 15_000_00, mode: "reduce-payment", repaymentDate: "2022-06-20" },
       { amountMinor: 5_000_00, mode: "reduce-term", repaymentDate: "2023-01-01" },
     ];
-    const input = { earlyRepayments, plan: stubPlan, revisions };
+    const input = { earlyRepayments, plan: STUB_PLAN, revisions };
     const trace = traceOf(input);
 
     // Every row is addable ON ITS OWN — opening − principal − whatever lump is

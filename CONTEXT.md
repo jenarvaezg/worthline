@@ -598,13 +598,21 @@ verdict is shown before anything is saved. A stretch already covered by a
 **balance re-baseline** stays governed by it (ADR 0056) — the schedule
 reconstructs only the years the re-baselines do not cover, and retires none of
 them. Enters by "Importar extracto", tab "Cuadro de amortización" (ADR 0071).
-Worthline computes a cuadro of its own as well — the rows the ficha and the
-calculation trace show — and it is a READING of the balance curve, never a second
-model of it: each row's closing balance IS the frontier the curve reports on that
-date (#1596). The owner sees one number for the debt, so the cuadro and the ficha
-cannot be two opinions.
 _Avoid_: extracto (the movements lane of the same door), cuadro alone when the
-**amortization plan** is meant.
+**amortization plan** is meant, or for the **computed schedule** below (the
+bank's document is an input; worthline's is an output).
+
+**Computed schedule** (the calculation trace's rows):
+Worthline's own cuadro for an **amortizable** debt: one row per cuota with its
+interest/principal split, the rate that governed it, the dated events that moved
+it, and the balance it closed at. It is a READING of the balance curve, never a
+second model of it — each row's closing balance IS the frontier the curve reports
+on that date, so it cannot drift from the ficha (ADR 0090, #1596). The owner sees
+one number for a debt; a cuadro that could disagree with it would be a second
+opinion, not a second view. Read by the ficha, by the calculation trace an agent
+consumes, and by the early-repayment simulation.
+_Avoid_: **amortization schedule** (the bank's document, which is read IN), and
+"the schedule" unqualified when which of the two is meant matters.
 
 **Interest rate revision**:
 A declared change to the annual interest rate of an **amortization plan** at a
