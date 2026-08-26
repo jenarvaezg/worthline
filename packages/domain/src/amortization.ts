@@ -1049,10 +1049,19 @@ function eventsByPeriodFor(
  * lands once and the cuadro and the ficha move together (the class of bug fought
  * in #1291 / #1049 when the two engines had to be kept in step by hand).
  *
- * Still a diagnostic READ, and a cheaper one than before: it goes through the
- * boundary memo (#158) instead of replaying the schedule, so the ficha's
- * settlement estimate (#1292) no longer rebuilds an O(termMonths) big.js curve
- * per call. It adds nothing to the hot ripple path — ADR 0090 carries the numbers.
+ * Still a diagnostic READ, and a far cheaper one: it goes through the boundary
+ * memo (#158) instead of replaying the schedule, so the ficha's settlement
+ * estimate (#1292) no longer rebuilds an O(termMonths) big.js curve per call —
+ * ~65× cheaper on a 480-cuota loan. What it costs the hot path is the four
+ * roundings per month the curve now records: ~5 % of a cold curve build, paid once
+ * per loan and then amortised over every date the ripple asks for. ADR 0090
+ * carries the numbers.
+ *
+ * It POPULATES the memo as well as reading it. The key is the loan's, identical to
+ * the curve's, so a diagnostic read of the loan the ripple is already walking adds
+ * no entry — but a read of a cold loan can evict a curve the ripple was reusing.
+ * With 64 entries and one cuadro read per surface, that is a cheap rebuild, not a
+ * cliff.
  */
 export function amortizationScheduleTrace(
   input: AmortizableBalanceAtDateInput,
@@ -1075,8 +1084,11 @@ export function amortizationScheduleTrace(
       events: eventsByPeriod.get(index) ?? [],
       index,
     });
-    // Trailing fully-repaid periods are omitted: the loan is closed, and the
-    // curve keeps walking zeroed months to the contractual last boundary.
+    // The table ends on the cuota that closes the loan. The test is this row's own
+    // closing, not the next boundary's: the replay checked the latter and emitted
+    // one extra row — a full cuota on a balance already at zero — whenever a lump
+    // cancelled the loan ON a boundary (#1596). The curve, for its part, keeps
+    // walking zeroed months to the contractual last boundary; those are not rows.
     if (closing.eq(0)) break;
   }
 

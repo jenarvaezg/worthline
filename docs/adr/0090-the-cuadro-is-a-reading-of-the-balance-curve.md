@@ -56,19 +56,30 @@ keeps the interest/principal split of each payment cycle it already computes, an
   per month, so a 480-cuota loan's tail Bigs run to ~9.600 digits. Retaining four
   more of those per month would multiply what a cached curve holds by five, for
   figures the cuadro rounds at the edge anyway. The rounding is the reader's own,
-  so the rows are byte-identical to the replay's.
-- **The cuadro remains a diagnostic READ.** It adds nothing to the ripple's hot
-  path — measured on a 480-cuota loan at 5 % with a revision and a lump: 8.000
-  balance queries 223–227 ms against 222–240 ms before, 60 cold curve builds
-  13,3 s against 13,9–14,2 s. It also stops being expensive itself: 50 cuadro
-  reads went from 7,2–7,7 s to 47 ms, because it now goes through the memo
-  instead of rebuilding the curve — which is what the ficha's settlement
-  estimate (#1292) was paying on every call.
+  so every row is byte-identical to the replay's — differing only in where the
+  table ends, which the replay had wrong (see Consequences).
+- **The cuadro remains a diagnostic READ, and the trade is measured.** Both
+  engines in one process on a 480-cuota loan (differential A/B, three alternating
+  rounds): the ripple's warm path is unchanged (8.000 balance queries, 155–182 ms
+  before against 89–165 ms after), a cold curve build costs ~5 % more (the four
+  roundings per month, paid once per loan and then amortised over every date the
+  ripple asks for), and the cuadro itself goes from 7,9–10,3 s to 92–128 ms per
+  50 reads — ~65× — because it now goes through the memo instead of rebuilding
+  the curve. That last one is what the ficha's settlement estimate (#1292) was
+  paying on every call.
 
 ## Consequences
 
 - A fix to a lump, a rate revision or a stub lands once. The cuadro cannot fail
   to reflect it, because it has nothing of its own to fix.
+- One figure moved, and it was the replay that was wrong. It decided where the
+  table ended by looking at the NEXT boundary's balance rather than the row's own
+  closing, so a lump that cancelled the loan ON a boundary produced one extra
+  row: a full cuota charged on a balance already at zero, dated a month after the
+  debt was gone. Reading the curve ends the table on the cuota that closes the
+  loan, which is what the code already documented and what the early-repayment
+  simulation's end date and the settlement estimate (which returns "no running
+  cycle" instead of a zeroed one) both wanted.
 - A comment saying a function "mirrors the boundary curve" is a defect report: it
   means the second simulator came back.
 - `firstCuota` stays separate and stays a display figure. The real first payment
@@ -76,10 +87,11 @@ keeps the interest/principal split of each payment cycle it already computes, an
   carries the ordinary month's; the stub never moves the curve, so the cuadro
   reports the curve's arithmetic and the surface names the charged cuota beside
   it. Two figures, one engine, and the difference is exactly the stub interest.
-- The payoff row of a `reduce-term` loan shows the full cuota while retiring only
-  the principal that was left. That was true of both engines and is untouched
-  here; it is now pinned by a test that says so rather than an accident nobody
-  had looked at.
+- The last row of a `reduce-term` loan still shows the full cuota while retiring
+  only the principal that was left, so it does not add up on its own. That is a
+  separate reading problem — the row exists and its cuota is real, it is just
+  partial — and it is untouched here, now pinned by a test that says so rather
+  than left as an accident nobody had looked at.
 - The quadratic precision growth of the balance (~222 ms to build a 40-year curve
   cold) is unchanged and still there. Capping it would move every figure in every
   historical snapshot, so it is a decision of its own, not a side effect of this

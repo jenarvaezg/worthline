@@ -1529,6 +1529,40 @@ describe("the cuadro is a reading of the balance curve (#1596)", () => {
     expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments, plan: STUB_PLAN });
   });
 
+  test("the cuadro stops at the cuota that closes the loan, with no cuota after it", () => {
+    // A total repayment on boundary 13 cancels the loan there. The old replay
+    // checked the NEXT boundary's balance instead of the row's own closing, so it
+    // emitted a 14th row dated 2021-03-01: a full 665,52 € cuota charged on a loan
+    // already at zero, and an end date one month late for anything reading the
+    // last row (the early-repayment simulation does). Reading the curve fixes it:
+    // the table ends on the row whose closing is zero.
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 200_000_00, mode: "reduce-term", repaymentDate: BOUNDARY_13 },
+    ];
+    const trace = traceOf({ earlyRepayments });
+    const last = trace.periods.at(-1)!;
+
+    expect(last.date).toBe(BOUNDARY_13);
+    expect(last.index).toBe(13);
+    expect(last.closingBalanceMinor).toBe(0);
+    // The last row is a real cuota on a live balance, not a phantom one.
+    expect(last.openingBalanceMinor).toBeGreaterThan(0);
+    expect(last.paymentMinor).toBeGreaterThan(0);
+    expect(last.events).toEqual([
+      {
+        amountMinor: 200_000_00,
+        date: BOUNDARY_13,
+        kind: "early_repayment",
+        mode: "reduce-term",
+      },
+    ]);
+    // And the curve agrees the loan is gone from that date on.
+    expect(
+      amortizableBalanceAtDate({ earlyRepayments, plan: PLAN, targetDate: BOUNDARY_13 }),
+    ).toBe(0);
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments });
+  });
+
   test("the whole shape at once: stub, revision and lump on one loan, one engine", () => {
     const revisions: InterestRateRevision[] = [
       { newAnnualInterestRate: "0.05", revisionDate: "2021-04-01" },
