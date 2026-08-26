@@ -1435,6 +1435,54 @@ describe("buildSnapshotAtDate with debtBalanceByLiability", () => {
     expect(recalculated.snapshot.housingEquity.amountMinor).toBe(-minted.valueMinor);
   });
 
+  test("a debt ripple preserves the three frozen classification fields of an existing row (#1601)", () => {
+    // Since #1601 the debt lane resolves its row through the SAME frozen-identity
+    // seam as its siblings instead of its own copied ternaries. Precedence 1 is
+    // the existing row, so all three fields come off it verbatim — including
+    // `countsAsHousing`, which the copied branch used to overwrite with a
+    // hard-coded false. It cannot move a figure either way: `deriveRowAxes` reads
+    // `countsAsHousing` on ASSET rows only, and a debt's housing effect is
+    // `securesHousing`.
+    const workspace = makeWorkspace();
+    const piso = housing(workspace, "asset_piso", 200_000_00);
+    const hipoteca = mortgage(workspace, "liab_h", 100_000_00);
+    const base = captureValuedNetWorthSnapshot({
+      ...BASE,
+      assets: [piso],
+      capturedAt: "2010-01-01T12:00:00.000Z",
+      liabilities: [hipoteca],
+      workspace,
+    });
+    // The debt row as history froze it — plus the impossible `countsAsHousing` a
+    // corrupt capture could carry. It moves no axis, so the base still reconciles.
+    const frozenHoldings = base.holdings.map((row) =>
+      row.holdingId === "liab_h" ? { ...row, countsAsHousing: true } : row,
+    );
+
+    const recalculated = recalculateSnapshotForLiability({
+      curve: {
+        anchors: [{ anchorDate: "2009-01-01", balanceMinor: 100_000_00 }],
+        currentBalanceMinor: 100_000_00,
+        debtModel: "revolving",
+      },
+      frozenHoldings,
+      // Live: the home no longer classifies as housing. The frozen row wins anyway.
+      housingAssetIds: new Set(),
+      liability: hipoteca,
+      snapshot: base.snapshot,
+      workspace,
+    })!;
+
+    const row = recalculated.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(row.countsAsHousing).toBe(true);
+    expect(row.liquidityTier).toBe("housing");
+    expect(row.securesHousing).toBe(true);
+    // The frozen countsAsHousing on a LIABILITY row moves nothing: the housing
+    // axis reads it on asset rows only, and the debt lands there via securesHousing.
+    expect(recalculated.snapshot.housingEquity.amountMinor).toBe(100_000_00);
+    expect(recalculated.snapshot.liquidNetWorth.amountMinor).toBe(0);
+  });
+
   test("an unassociated debt born in a recalculation still freezes a null rung (#181)", () => {
     const workspace = makeWorkspace();
     const prestamo = createLiability(workspace, {
@@ -2800,6 +2848,63 @@ describe("recalculateSnapshotForOwnership (#172)", () => {
     expect(result.snapshot.liquidNetWorth.amountMinor).toBe(4_000_00);
     expect(result.snapshot.totalNetWorth.amountMinor).toBe(4_000_00);
     expect(result.snapshot.housingEquity.amountMinor).toBe(0);
+  });
+
+  test("a mortgage born in an ownership ripple freezes the housing rung, not cash (#1436, #1601)", () => {
+    // The member who GAINS a stake gets a brand-new debt row. Which rung it
+    // freezes is the SAME question the debt ripple answers (#1436) — the rung
+    // follows the home's identity, not its presence — so a scope whose snapshot
+    // carries no home row must still freeze `housing`, never `cash`. Before
+    // #1601 this branch was a copy of the debt ripple's that had never been
+    // taught the rule.
+    const workspace = household();
+    const hipoteca = mortgage(workspace, [
+      { memberId: "mJ", shareBps: 5_000 },
+      { memberId: "mA", shareBps: 5_000 },
+    ]);
+    // Ana's scope froze only a cash account: no home row, no debt row.
+    const anaCash: SnapshotHoldingRow = {
+      countsAsHousing: false,
+      holdingId: "asset_cash",
+      kind: "asset",
+      label: "Cuenta",
+      liquidityTier: "cash",
+      securesHousing: false,
+      valueMinor: 5_000_00,
+    };
+    const result = recalculateSnapshotForOwnership({
+      frozenHoldings: [anaCash],
+      globalValueMinor: 100_000_00,
+      holding: {
+        housingAssetIds: new Set(["asset_piso"]),
+        kind: "liability",
+        liability: hipoteca,
+      },
+      snapshot: {
+        capturedAt: "2022-01-01T12:00:00.000Z",
+        dateKey: "2022-01-01",
+        debts: eur(0),
+        grossAssets: eur(5_000_00),
+        housingEquity: eur(0),
+        id: "snap_mA",
+        isMonthlyClose: false,
+        liquidNetWorth: eur(5_000_00),
+        monthKey: "2022-01",
+        scopeId: "mA",
+        scopeLabel: "Ana",
+        totalNetWorth: eur(5_000_00),
+        warnings: [],
+      },
+      workspace,
+    })!;
+
+    const minted = result.holdings.find((h) => h.holdingId === "liab_h")!;
+    expect(minted.securesHousing).toBe(true);
+    expect(minted.liquidityTier).toBe("housing");
+    // Rung and securesHousing agree on one row: the debt lands on the housing
+    // axis, never on the liquid one.
+    expect(result.snapshot.liquidNetWorth.amountMinor).toBe(5_000_00);
+    expect(result.snapshot.housingEquity.amountMinor).toBe(-50_000_00);
   });
 });
 
