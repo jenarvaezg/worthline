@@ -24,6 +24,15 @@ an operation or a snapshot. A `propose_*` call persists a **proposal**; applying
 is a separate Server Action a human confirms in the UI, which goes through the
 command frontier (ADR 0062). The model drafts; the person commits.
 
+**Twelve proposal cards, one module each.** What a person confirms is a card, and
+each kind paints itself in its own module under
+[`proposal-cards/`](apps/web/app/asistente/proposal-cards), assembled by the registry
+in [`proposal-cards.tsx`](apps/web/app/asistente/proposal-cards.tsx) (ADR 0088). A card
+gets the demo write-gate and its own parsed proposal — never the conversation or the
+transport. The layer around them
+([`assistant-layer.tsx`](apps/web/app/asistente/assistant-layer.tsx)) is the shell:
+composer, turns, transport, and no card markup at all.
+
 **Three evals, scored apart.**
 [`eval/`](apps/web/app/asistente/eval/) is a live admission gate: it runs one
 explicit provider/model pair against the production system prompt, tools and a

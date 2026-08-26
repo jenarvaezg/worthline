@@ -519,6 +519,14 @@ describe("Libro mayor design-system guardian (#906)", () => {
   });
 
   test("the assistant surface consumes the paper register in markup (#911)", () => {
+    // The markup lives in the cards, one module per proposal kind (#1589, ADR
+    // 0088), so the register is counted over the whole card directory — and the
+    // shell is asserted to hold none of it below.
+    const cardsDirectory = join(appDirectory, "asistente/proposal-cards");
+    const cards = readdirSync(cardsDirectory)
+      .filter((name) => name.endsWith(".tsx"))
+      .map((name) => readFileSync(join(cardsDirectory, name), "utf8"))
+      .join("\n");
     const layer = readFileSync(
       join(appDirectory, "asistente/assistant-layer.tsx"),
       "utf8",
@@ -530,8 +538,13 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // baja/restauración card (#1106, one card, two folios), reconcile (#1108),
     // early repayment (#1245), the dated investment operation (#1374) and the
     // dictated traspaso (#1482).
-    const kindTitles = layer.match(/className="assistantProposalKind"/g) ?? [];
+    const kindTitles = cards.match(/className="assistantProposalKind"/g) ?? [];
     expect(kindTitles.length).toBe(12);
+
+    // The shell is the composer, the conversation and the transport — nothing
+    // else (#1589). A card's markup appearing here is how the split unravels:
+    // the twelfth card was added by editing the file every card already edited.
+    expect(layer).not.toMatch(/className="assistantProposal(Kind|Folio|Actions)?"/);
 
     // The ledger FOOTER is a different line from the folio label above (canon §3):
     // the atomic-batch statement («1 propuesta · 1 holding · 1 lote atómico»), which
@@ -542,7 +555,7 @@ describe("Libro mayor design-system guardian (#906)", () => {
     // neither). The alta, baja and reconcile cards used to print their own kind
     // string there instead, so the reader met the same words twice in one card
     // (#1317). A footer that merely repeats the header is the mistake this pins.
-    const footers = layer.match(/className="assistantProposalFolio"/g) ?? [];
+    const footers = cards.match(/className="assistantProposalFolio"/g) ?? [];
     expect(footers.length).toBe(5);
   });
 
