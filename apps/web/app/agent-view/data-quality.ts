@@ -1,5 +1,6 @@
 import { readAmortizableStartByLiabilityId } from "@web/data-quality-amortizable-start";
 import type { AgentViewReadStore } from "@worthline/db";
+import type { InvestmentOperation } from "@worthline/domain";
 import {
   collectDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
@@ -111,8 +112,10 @@ export async function buildDataQuality(
  */
 export async function buildDataQualitySummary(
   scoped: ScopedAgentView,
+  /** The ledger the caller already read, so the context reads it once (#1593). */
+  input?: SharedLedgerInput,
 ): Promise<AgentViewDataQualitySummary> {
-  const { signals } = await collectScopeSignals(scoped);
+  const { signals } = await collectScopeSignals(scoped, input);
 
   const countsBySeverity = emptySeverityCounts();
   const countsByCategory = emptyCategoryCounts();
@@ -130,8 +133,14 @@ export async function buildDataQualitySummary(
   return { countsByCategory, countsBySeverity, topSignals };
 }
 
+/** What a caller that already read the workspace's ledgers can hand this fold. */
+interface SharedLedgerInput {
+  operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>;
+}
+
 async function collectScopeSignals(
   scoped: ScopedAgentView,
+  input?: SharedLedgerInput,
 ): Promise<{ scope: AgentViewScope; signals: AgentViewDataQualitySignal[] }> {
   const { store } = scoped;
   const workspace = await store.readWorkspace();
@@ -261,25 +270,27 @@ async function collectScopeSignals(
   // The fold itself, including "an empty ledger is unstarted, not closed", is the
   // domain's. Trashed ASSETS join the fold for the same reason: their units are
   // what decides whether the delete took value out of the patrimonio (#1365).
+  // The ledger arrives from ONE read — the caller's when it already has it (the
+  // financial context reads it for its returns and holdings blocks, #1593),
+  // otherwise this fold's own bulk read. Never one query per holding: the id set
+  // below runs into the dozens, and the fold is a fold.
+  const ledger = input?.operationsByAssetId ?? (await store.readAllOperations());
+  const ledgerHoldingIds = new Set([
+    ...assets
+      .filter((asset) => valuationMethodOfAsset(asset) === "derived")
+      .map((asset) => asset.id),
+    // Investment holdings whose instrument is not `derived` still keep an
+    // operations ledger, and the savings-coherence watch (#1449) measures
+    // over ALL of it: a window the home reads in full and the agent view
+    // reads in part would put the two at odds about the same scope.
+    ...assets.filter((asset) => asset.type === "investment").map((a) => a.id),
+    ...trashedHoldings
+      .filter((holding) => holding.kind === "asset")
+      .map((holding) => holding.id),
+  ]);
   const operationsByAssetId = new Map(
-    await Promise.all(
-      [
-        ...new Set([
-          ...assets
-            .filter((asset) => valuationMethodOfAsset(asset) === "derived")
-            .map((asset) => asset.id),
-          // Investment holdings whose instrument is not `derived` still keep an
-          // operations ledger, and the savings-coherence watch (#1449) measures
-          // over ALL of it: a window the home reads in full and the agent view
-          // reads in part would put the two at odds about the same scope.
-          ...assets.filter((asset) => asset.type === "investment").map((a) => a.id),
-          ...trashedHoldings
-            .filter((holding) => holding.kind === "asset")
-            .map((holding) => holding.id),
-        ]),
-      ].map(
-        async (holdingId) => [holdingId, await store.readOperations(holdingId)] as const,
-      ),
+    [...ledgerHoldingIds].map(
+      (holdingId) => [holdingId, [...(ledger.get(holdingId) ?? [])]] as const,
     ),
   );
   const netUnitsByAssetId = netUnitsByAsset(operationsByAssetId);

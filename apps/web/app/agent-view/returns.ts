@@ -128,8 +128,12 @@ export async function buildPortfolioReturns(input: {
    * can fold a different ledger.
    */
   operationsByHoldingId: ReadonlyMap<string, readonly InvestmentOperation[]>;
-  /** Recorded payouts up to the valuation date, keyed by holding id (#657). */
-  payoutsByHoldingId: ReadonlyMap<string, readonly DatedPayout[]>;
+  /**
+   * Recorded payouts up to the valuation date as dated FLOWS, keyed by holding —
+   * the shape the return engine folds (#657), converted once by the caller from
+   * the collector's records.
+   */
+  payoutFlowsByHolding: ReadonlyMap<string, readonly DatedPayout[]>;
   scopeId: string;
   valuationDate: string;
   /** Set when the global exposure catalog could not be read (PRD #711 S3). */
@@ -147,7 +151,7 @@ export async function buildPortfolioReturns(input: {
       continue;
     }
     firstDate = earliest(firstDate, firstOperationDate(operations));
-    const payouts = input.payoutsByHoldingId.get(holding.id);
+    const payouts = input.payoutFlowsByHolding.get(holding.id);
     measured.push({
       id: holding.id,
       marketValueMinor: holding.currentValueMinor,
@@ -199,11 +203,11 @@ export async function buildPortfolioReturns(input: {
 
   const base: AgentViewReturns = {
     moneyWeighted: toMoneyWeighted(returns.irr),
-    qualitySignals: qualitySignals(
-      firstDate,
-      returns.twr.startDate,
-      returns.payoutsIncluded,
-    ),
+    qualitySignals: qualitySignals({
+      firstOperationDate: firstDate,
+      payoutsIncluded: returns.payoutsIncluded,
+      twrStartDate: returns.twr.startDate,
+    }),
     simple: simpleGainToReturn(returns.simpleGain, input.currency),
     timeWeighted: toTimeWeighted(returns.twr),
   };
@@ -334,7 +338,11 @@ function buildReturnsFromCashflows(input: {
           : []),
       ]),
     ),
-    qualitySignals: qualitySignals(input.firstOperationDate, twr.startDate),
+    qualitySignals: qualitySignals({
+      firstOperationDate: input.firstOperationDate,
+      payoutsIncluded: false,
+      twrStartDate: twr.startDate,
+    }),
     simple: simpleReturn(input),
     timeWeighted: toTimeWeighted(twr),
   };
@@ -421,11 +429,13 @@ function toTimeWeighted(result: {
  * IRR, and only the TWR still tracks price alone (#657). Same split the board's
  * caveat declares (`MARKET_PAYOUTS_CAVEAT`), so the agent reads what the owner reads.
  */
-function qualitySignals(
-  firstOperationDate: string | null,
-  twrStartDate: string | null,
-  payoutsIncluded = false,
-): AgentViewReturnQualitySignal[] {
+function qualitySignals(input: {
+  firstOperationDate: string | null;
+  twrStartDate: string | null;
+  /** Whether recorded payouts fed the measures, switching the honest signal (#657). */
+  payoutsIncluded: boolean;
+}): AgentViewReturnQualitySignal[] {
+  const { firstOperationDate, payoutsIncluded, twrStartDate } = input;
   return [
     payoutsIncluded
       ? {

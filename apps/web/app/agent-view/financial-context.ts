@@ -186,7 +186,9 @@ export async function buildFinancialContext(
   // Payouts through the single canonical collector, capped at the context's own
   // `asOf`, so no consumer re-derives a schedule occurrence.
   const payoutsByHolding = collectHoldingPayouts(payouts, schedules, options.asOf);
-  const payoutsByHoldingId = new Map<string, readonly DatedPayout[]>(
+  // The same payouts as dated FLOWS — the shape the return engine folds. Converted
+  // once here rather than in each consumer, so the lens and the returns agree.
+  const payoutFlowsByHolding = new Map<string, readonly DatedPayout[]>(
     [...payoutsByHolding].map(([holdingId, rows]) => [
       holdingId,
       rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
@@ -240,7 +242,9 @@ export async function buildFinancialContext(
       connectedSources,
       holdingSummaries,
     ),
-    dataQuality: await buildDataQualitySummary(scoped),
+    dataQuality: await buildDataQualitySummary(scoped, {
+      operationsByAssetId: operationsByHoldingId,
+    }),
     exposure: buildExposure(holdingSummaries, summary.grossAssets, lookthrough),
     fire: await buildFireSummary(scoped),
     holdings: toHoldingsBlock(
@@ -280,7 +284,7 @@ export async function buildFinancialContext(
         totalShareBps: row.ownership.totalShareBps,
       })),
       operationsByHoldingId,
-      payoutsByHoldingId,
+      payoutFlowsByHolding,
       scopeId: internalScopeId,
       store,
       valuationDate: options.asOf,

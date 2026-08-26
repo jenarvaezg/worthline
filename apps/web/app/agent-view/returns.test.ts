@@ -113,7 +113,7 @@ function portfolioReturns(input: {
       ...(holding.assetClass ? { assetClass: holding.assetClass } : {}),
     })),
     operationsByHoldingId: new Map(Object.entries(input.operations)),
-    payoutsByHoldingId: new Map(Object.entries(input.payouts ?? {})),
+    payoutFlowsByHolding: new Map(Object.entries(input.payouts ?? {})),
     scopeId: "household",
     store: fakeStore(input.snapshotRows),
     valuationDate: input.valuationDate ?? "2024-06-01",
@@ -369,6 +369,10 @@ describe("buildPortfolioReturns mide con subsetReturns (#1593)", () => {
     expect(returns!.simple.totalReturnRatio).toBe(
       expected.simpleGain.totalReturnRatio?.toString() ?? null,
     );
+    // El tramo (y con él el CAGR) sale del propio motor: arranca en el primer FLUJO,
+    // así que el residual nulo de un traspaso interno no lo adelanta.
+    expect(returns!.simple.annualized).toBe(expected.simpleGain.annualized);
+    expect(returns!.simple.cagr).toBe(expected.simpleGain.cagr?.toString() ?? null);
     expect(returns!.moneyWeighted.rate).toBe(expected.irr.rate?.toString() ?? null);
     expect(returns!.timeWeighted.rate).toBe(expected.twr.rate?.toString() ?? null);
     expect(returns!.timeWeighted.startDate).toBe(expected.twr.startDate);
