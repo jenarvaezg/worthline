@@ -38,6 +38,7 @@ import {
   preserveFields,
   pricesRefreshedRedirectUrl,
   resolveOkMessage,
+  resolveOkNotice,
   resolveOwnershipSplit,
   successRedirectUrl,
 } from "./intake";
@@ -837,6 +838,44 @@ describe("okMessage — specific catalog keys for intake v2", () => {
     expect(okMessage("current_state_debt_saved")).toBe(
       "Deuda dada de alta por estado actual.",
     );
+  });
+});
+
+describe("resolveOkNotice — the alta's non-blocking question (#1561)", () => {
+  test("asset_added_acquisition_today still confirms the alta in the success band", () => {
+    expect(okMessage("asset_added_acquisition_today")).toBe("Activo añadido.");
+  });
+
+  test("names the prior debt's start date, in es-ES, and asks about the date", () => {
+    const notice = resolveOkNotice({
+      ok: "asset_added_acquisition_today",
+      deudaDesde: "2004-05-19",
+    });
+    expect(notice).toContain("19/05/2004");
+    expect(notice).toContain("hoy");
+    expect(notice).toContain("histórico");
+  });
+
+  test("still says something useful if the date param is missing", () => {
+    const notice = resolveOkNotice({ ok: "asset_added_acquisition_today" });
+    expect(notice).not.toBeNull();
+    expect(notice).toContain("hoy");
+  });
+
+  test("a hand-crafted date param never reaches the band verbatim", () => {
+    const notice = resolveOkNotice({
+      deudaDesde: "<b>ayer</b>",
+      ok: "asset_added_acquisition_today",
+    });
+    expect(notice).not.toBeNull();
+    expect(notice).not.toContain("ayer");
+    expect(notice).toContain("una deuda anterior");
+  });
+
+  test("no notice for a plain alta, and none for an unrelated ok key", () => {
+    expect(resolveOkNotice({ ok: "asset_added" })).toBeNull();
+    expect(resolveOkNotice({ ok: "saved" })).toBeNull();
+    expect(resolveOkNotice(undefined)).toBeNull();
   });
 });
 

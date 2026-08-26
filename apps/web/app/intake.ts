@@ -7,7 +7,12 @@ import type {
   PortfolioGroupKey,
   PriceFreshnessState,
 } from "@worthline/domain";
-import { formatUnits, PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
+import {
+  formatDateKeyEs,
+  formatUnits,
+  isDateKeyShaped,
+  PORTFOLIO_GROUP_KEYS,
+} from "@worthline/domain";
 
 import { PRESERVED_VALUE_PREFIX } from "./current-url";
 
@@ -48,6 +53,12 @@ export {
   type ValuationCadenceResult,
 } from "./intake/debt";
 export { parseFireConfigFormStrict } from "./intake/fire";
+export {
+  type AcquisitionTodayNotice,
+  acquisitionDatedToday,
+  acquisitionTodayNotice,
+  type DebtHistoryFloor,
+} from "./intake/housing-acquisition-notice";
 export {
   type CreateInvestmentAssetInput,
   parseInvestmentAssetCommandStrict,
@@ -471,6 +482,36 @@ export function resolveOkMessage(
   return `Precios actualizados: ${updated}.${failedPart}`;
 }
 
+/**
+ * The non-blocking notice a success redirect can carry BESIDE its confirmation
+ * (#1561). It is rendered in its own aviso band — never inside the success band
+ * — because it is not a confirmation: it is a question about the data that just
+ * went in, and the answer may be «no, corrígela».
+ *
+ * Today there is exactly one: an inmueble whose acquisition landed on the day it
+ * was typed while a debt's own history already started earlier. The alta's
+ * simple drawer stamps that date without asking, so the user has no other moment
+ * to notice that the histórico will not reach back to the mortgage (#1436).
+ */
+export function resolveOkNotice(
+  searchParams?: Record<string, string | string[] | undefined>,
+): string | null {
+  if (normalizeParam(searchParams?.["ok"]) !== "asset_added_acquisition_today") {
+    return null;
+  }
+
+  // The date rides in the URL, so it is only ever read as a date key: anything
+  // else is a hand-crafted link, and the notice falls back to its generic half
+  // rather than printing whatever the query string carried.
+  const raw = normalizeParam(searchParams?.["deudaDesde"]);
+  const debtStart = raw !== undefined && isDateKeyShaped(raw) ? raw : undefined;
+  const debtPart = debtStart
+    ? `, pero ya tienes una deuda que arranca el ${formatDateKeyEs(debtStart)}`
+    : ", pero ya tienes una deuda anterior";
+
+  return `La fecha de adquisición consta como hoy${debtPart}. Si compraste el inmueble antes, su histórico no llegará hacia atrás y esa deuda quedará fuera de las gráficas de entonces. ¿Es correcta la fecha? Puedes cambiarla en «Fecha de adquisición», dentro de la ficha del inmueble.`;
+}
+
 /** Map a success-redirect key to a localized confirmation message (null = no banner). */
 export function okMessage(key: string | undefined): string | null {
   if (!key) {
@@ -484,6 +525,10 @@ export function okMessage(key: string | undefined): string | null {
     anchor_deleted: "Tasación eliminada.",
     anchor_saved: "Tasación actualizada.",
     asset_added: "Activo añadido.",
+    // #1561: the alta went in exactly as any other — the acquisition-date
+    // question rides beside it as its own aviso (see `resolveOkNotice`), never
+    // dressed up as a confirmation.
+    asset_added_acquisition_today: "Activo añadido.",
     balance_anchor_added: "Saldo registrado.",
     balance_anchor_deleted: "Saldo eliminado.",
     balance_anchor_saved: "Saldo actualizado.",

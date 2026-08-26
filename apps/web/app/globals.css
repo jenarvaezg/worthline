@@ -9194,6 +9194,13 @@ td.rowActions > * {
   outline: 2px solid var(--green);
   outline-offset: 4px;
 }
+/* The alta's acquisition question inside the success panel (#1561): the panel is
+   a grid with `justify-items: start`, so the band has to claim the full width or
+   it hugs its own text and reads as an afterthought. */
+.addSuccessNotice {
+  justify-self: stretch;
+}
+
 .addSuccessTotal {
   margin: 0;
   color: var(--muted);

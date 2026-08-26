@@ -6,6 +6,7 @@ import {
   parseFormError,
   parseGroupParam,
   resolveOkMessage,
+  resolveOkNotice,
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/actions";
 import { resolvePageShell } from "@web/page-shell";
@@ -56,6 +57,8 @@ export async function PatrimonioContent({
   const isDemo = await isDemoMode();
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
+  // A write can confirm AND ask (#1561): the question rides its own aviso band.
+  const formNotice = resolveOkNotice(resolvedSearchParams);
   const currentUrl = buildCurrentUrlFor("/patrimonio", resolvedSearchParams);
   const selectedGroup = parseGroupParam(resolvedSearchParams?.group);
   // Which managed portfolios come unfolded (#1548). Read on the server so a
@@ -121,6 +124,11 @@ export async function PatrimonioContent({
       {formOk ? (
         <p className="successBand" role="status">
           {formOk}
+        </p>
+      ) : null}
+      {formNotice ? (
+        <p className="warningBand" role="note">
+          {formNotice}
         </p>
       ) : null}
 
