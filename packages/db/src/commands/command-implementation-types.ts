@@ -413,3 +413,16 @@ export interface DatedFactCommandImplementations {
     opts?: { today?: string },
   ) => Promise<void>;
 }
+
+/**
+ * One statement-import application as the intent layer states it: the
+ * persistence seam's params minus `trigger`, which the command host stamps from
+ * the lane the write arrives through (`"statement"` for the screen,
+ * `"assistant"` for a confirmed proposal). Declared here, next to the seam it
+ * derives from, because both the command host and the assistant-proposal gate
+ * speak it.
+ */
+export type StatementImportCommand = Omit<
+  Parameters<DatedFactCommandImplementations["applyStatementImportAndRipple"]>[0],
+  "trigger"
+>;

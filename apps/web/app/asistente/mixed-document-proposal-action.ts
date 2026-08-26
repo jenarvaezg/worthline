@@ -7,6 +7,7 @@ import {
   readPortfolioInvestments,
   statementImportPreviewReadPort,
 } from "@web/patrimonio/importar-extracto/statement-import-preview";
+import type { StatementImportCommand } from "@worthline/db";
 import {
   buildStatementImportPlan,
   findStatementTypeConflict,
@@ -50,9 +51,7 @@ export async function confirmMixedDocumentProposalAction(
     apply: async ({ store, proposal, today }) => {
       const seed = Date.now();
       const statement = statementFromAssistantProposal(proposal);
-      const funds = [] as Parameters<
-        typeof store.command.applyAssistantMixedProposal
-      >[0]["funds"];
+      const funds = [] as StatementImportCommand["funds"];
       if (statement && statement.rows.length > 0) {
         const readPort = statementImportPreviewReadPort(store);
         const preview = await buildStatementImportPreview(
@@ -149,9 +148,7 @@ export async function confirmMixedDocumentProposalAction(
       }
 
       const balanceHistories = [] as NonNullable<
-        Parameters<
-          typeof store.command.applyAssistantMixedProposal
-        >[0]["balanceHistories"]
+        StatementImportCommand["balanceHistories"]
       >;
       const debtFacts = proposal.documents
         .flatMap((document) => document.facts)
@@ -188,9 +185,7 @@ export async function confirmMixedDocumentProposalAction(
       }
 
       const propertyValuations = [] as NonNullable<
-        Parameters<
-          typeof store.command.applyAssistantMixedProposal
-        >[0]["propertyValuations"]
+        StatementImportCommand["propertyValuations"]
       >;
       const propertyFacts = proposal.documents
         .flatMap((document) => document.facts)
@@ -218,7 +213,8 @@ export async function confirmMixedDocumentProposalAction(
         });
       }
 
-      await store.command.applyAssistantMixedProposal({
+      await store.command.applyAssistantProposal({
+        kind: "mixed_document_import",
         balanceHistories,
         funds,
         propertyValuations,

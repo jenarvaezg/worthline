@@ -58,7 +58,7 @@ describe("mixed document proposal router", () => {
 
   /**
    * #1422, la versión más cara del botón muerto: un descuadre de extremo en UNA
-   * deuda abortaba `applyAssistantMixedProposal` entero, así que los fondos y las
+   * deuda abortaba el apply del mixto entero, así que los fondos y las
    * valoraciones de inmueble del mismo documento morían con ella.
    */
   test("un descuadre de una deuda ya no tira el documento mixto entero (#1422)", async () => {
@@ -354,7 +354,8 @@ describe("mixed document proposal router", () => {
       today: "2026-07-12",
     };
     await expect(
-      store.command.applyAssistantMixedProposal({
+      store.command.applyAssistantProposal({
+        kind: "mixed_document_import",
         ...apply,
         propertyValuations: [
           {
@@ -373,7 +374,8 @@ describe("mixed document proposal router", () => {
       status: "draft",
     });
 
-    await store.command.applyAssistantMixedProposal({
+    await store.command.applyAssistantProposal({
+      kind: "mixed_document_import",
       ...apply,
       propertyValuations: [
         {

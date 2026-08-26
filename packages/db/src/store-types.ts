@@ -331,27 +331,6 @@ interface LegacyWorthlineStore {
    * then ripple the affected history once across the confirmed selection.
    */
   applyStatementImportAndRipple: (params: ApplyStatementImportParams) => Promise<void>;
-  /** Apply one durable statement proposal and resolve it in the same transaction. */
-  applyAssistantStatementProposalAndRipple: (
-    params: ApplyStatementImportParams & { proposalId: string },
-  ) => Promise<void>;
-  /** Apply one durable debt-balance proposal and resolve it atomically. */
-  applyAssistantBalanceHistoryProposalAndRipple: (params: {
-    proposalId: string;
-    liabilityId: string;
-    rebaselines: AddBalanceRebaselineInput[];
-    today: string;
-  }) => Promise<void>;
-  /** Apply one durable property valuation proposal and resolve it atomically. */
-  applyAssistantPropertyValuationProposalAndRipple: (params: {
-    proposalId: string;
-    anchor: AddValuationAnchorInput;
-    today: string;
-  }) => Promise<void>;
-  /** Apply one durable mixed proposal through the multi-domain batched seam. */
-  applyAssistantMixedProposalAndRipple: (
-    params: ApplyStatementImportParams & { proposalId: string },
-  ) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in

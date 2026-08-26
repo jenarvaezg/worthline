@@ -53,6 +53,8 @@ export {
 export type {
   AcquisitionAnchorEditPreview,
   AddValuationAnchorCommand,
+  ApplyAssistantProposal,
+  AssistantProposalApplyKind,
   CommandExecutor,
   CommandHost,
   CommandResult,
@@ -70,11 +72,13 @@ export type {
   RipplePlan,
   SetAnnualAppreciationRateCommand,
   SetHousingValuationCadenceCommand,
+  StatementImportCommand,
   UpdateAssetOwnershipSplitCommand,
   UpdateLiabilityOwnershipSplitCommand,
   UpdateValuationAnchorCommand,
 } from "./commands";
 export {
+  ASSISTANT_PROPOSAL_APPLY_KINDS,
   EMPTY_DEBT_RIPPLE_COUNTS,
   executeAddValuationAnchorCommand,
   executeDeleteValuationAnchorCommand,

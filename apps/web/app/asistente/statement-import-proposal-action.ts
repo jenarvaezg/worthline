@@ -160,7 +160,8 @@ export async function confirmStatementImportProposalAction(
         };
       });
 
-      await store.command.applyAssistantStatementProposal({
+      await store.command.applyAssistantProposal({
+        kind: "statement_import",
         funds,
         proposalId: proposal.id,
         today,

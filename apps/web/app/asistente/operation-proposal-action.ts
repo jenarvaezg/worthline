@@ -49,7 +49,8 @@ export async function confirmOperationProposalAction(
       );
       if (!projected.ok) return { status: "error", message: projected.error };
       try {
-        await store.command.applyAssistantOperationProposal({
+        await store.command.applyAssistantProposal({
+          kind: "investment_operation",
           proposalId: proposal.id,
           today,
         });

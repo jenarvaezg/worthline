@@ -41,7 +41,8 @@ export async function confirmPropertyValuationProposalAction(
         today,
       );
       if (!projected.ok) return { status: "error", message: projected.error };
-      await store.command.applyAssistantPropertyValuationProposal({
+      await store.command.applyAssistantProposal({
+        kind: "property_valuation_anchor",
         proposalId: proposal.id,
         today,
         anchor: {

@@ -46,7 +46,8 @@ export async function confirmTransferProposalAction(
       const projected = await projectTransferWrite(store, transferWriteFromPlan(plan));
       if (!projected.ok) return { status: "error", message: projected.error };
       try {
-        await store.command.applyAssistantTransferProposal({
+        await store.command.applyAssistantProposal({
+          kind: "investment_transfer",
           proposalId: proposal.id,
           today,
         });

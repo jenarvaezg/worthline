@@ -234,7 +234,8 @@ describe("dated-fact command provenance (#889)", () => {
     const store = await createStoreFromSqlite(client);
     const proposal = await store.assistantProposals.create({ kind: "statement_import" });
 
-    await store.command.applyAssistantStatementProposal({
+    await store.command.applyAssistantProposal({
+      kind: "statement_import",
       funds: [],
       proposalId: proposal.id,
       today: TODAY,

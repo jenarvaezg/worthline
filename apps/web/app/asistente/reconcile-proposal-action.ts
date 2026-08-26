@@ -1,8 +1,11 @@
 "use server";
 
 import { createStableId, resolveOwnershipSplit } from "@web/intake";
-import type { WorthlineStore } from "@web/store";
-import type { AssistantProposal, ReconcileDocument } from "@worthline/db";
+import type {
+  AssistantProposal,
+  ReconcileDocument,
+  StatementImportCommand,
+} from "@worthline/db";
 import type { CreateInvestmentOperationInput, OwnershipShare } from "@worthline/domain";
 import { defaultsFor } from "@worthline/domain";
 
@@ -25,9 +28,7 @@ import {
   projectReconcilePortfolio,
 } from "./reconcile-proposals";
 
-type ReconcileFunds = Parameters<
-  WorthlineStore["command"]["applyAssistantReconcileProposal"]
->[0]["funds"];
+type ReconcileFunds = StatementImportCommand["funds"];
 
 const INVESTMENT_INSTRUMENTS = new Set([
   "fund",
@@ -257,7 +258,8 @@ export async function confirmReconcileProposalAction(
         };
       }
 
-      await store.command.applyAssistantReconcileProposal({
+      await store.command.applyAssistantProposal({
+        kind: "reconcile",
         funds,
         proposalId: proposal.id,
         today,

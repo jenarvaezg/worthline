@@ -49,7 +49,8 @@ export async function confirmEarlyRepaymentProposalAction(
       );
       if (!projected.ok) return { status: "error", message: projected.error };
       try {
-        await store.command.applyAssistantEarlyRepaymentProposal({
+        await store.command.applyAssistantProposal({
+          kind: "early_repayment",
           proposalId: proposal.id,
           today,
         });

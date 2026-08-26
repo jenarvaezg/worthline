@@ -42,7 +42,8 @@ export async function confirmBalanceHistoryProposalAction(
       // El descuadre NO bloquea (#1422). Es la misma puerta que dejaba muerta la
       // tarjeta de reconstrucción, en la lane hermana: la tarjeta enseña el
       // veredicto y sus testigos antes de pulsar, y quien pulsa manda.
-      const snapshots = await store.command.applyAssistantBalanceHistoryProposal({
+      const snapshots = await store.command.applyAssistantProposal({
+        kind: "balance_history_import",
         liabilityId: observations.liabilityId,
         proposalId: proposal.id,
         rebaselines: projected.plan.composed.map((row) => ({

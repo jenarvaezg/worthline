@@ -72,7 +72,8 @@ export async function confirmCorrectionProposalAction(
         if (plan?.mode === "reconstruct") {
           return await applyReconstruction(store, proposal.id, plan, editedRows, today);
         }
-        const snapshots = await store.command.applyAssistantCorrectionProposal({
+        const snapshots = await store.command.applyAssistantProposal({
+          kind: "correction",
           proposalId: proposal.id,
           today,
         });
@@ -132,7 +133,8 @@ async function applyReconstruction(
   );
   if (!projected.ok) return { message: projected.error, status: "error" };
   const { anchor, resultingMinor } = projected.reconciliation;
-  const snapshots = await store.command.applyAssistantCorrectionProposal({
+  const snapshots = await store.command.applyAssistantProposal({
+    kind: "correction",
     proposalId,
     reconstruct: {
       liabilityId: plan.liabilityId,
