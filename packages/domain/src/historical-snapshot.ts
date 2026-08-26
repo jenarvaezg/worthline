@@ -44,6 +44,7 @@ import type { HousingValuationAnchor } from "./housing-valuation";
 import type { InvestmentOperation } from "./investment-types";
 import { money } from "./money";
 import { resolveScopeMemberIds } from "./scope";
+import type { ScopedHolding } from "./scope-allocation";
 import { allocateScopedHolding } from "./scope-allocation";
 import type {
   InvestmentCaptureDetail,
@@ -57,7 +58,13 @@ import type { NetWorthSnapshot, ValuedNetWorthSnapshot } from "./snapshot-types"
 import { captureValuedNetWorthSnapshot, createNetWorthSnapshot } from "./snapshot-types";
 import type { ValuationCadence } from "./valuation-cadence";
 import type { ManualValuePoint } from "./value-history";
-import type { DebtModel, Liability, ManualAsset, Workspace } from "./workspace-types";
+import type {
+  DebtModel,
+  Liability,
+  ManualAsset,
+  OwnershipShare,
+  Workspace,
+} from "./workspace-types";
 
 /**
  * The curve inputs of one real-estate asset (PRD #108): its valuation anchors,
@@ -957,17 +964,192 @@ export interface RecalculateSnapshotInput {
   overrideUnitPrice?: DecimalString;
 }
 
+// ── The ripple row primitive (#1601) ─────────────────────────────────────────
+
+/**
+ * Everything a lane needs to decide what ONE holding's row is on this snapshot's
+ * date. The primitive has already opened the frozen rows: the holding's own row
+ * is set aside as `existingRow`, every other row waits verbatim in `otherRows`.
+ */
+interface RippleRowContext {
+  /** The holding's frozen row on THIS snapshot, if it carried one. */
+  existingRow: SnapshotHoldingRow | undefined;
+  /**
+   * Every OTHER frozen row of the snapshot, preserved verbatim (ADR 0008). Read
+   * by a lane that resolves its row against its siblings (an associated debt's
+   * rung) — the holding's own new row is appended only after `revalue` returns.
+   */
+  otherRows: readonly SnapshotHoldingRow[];
+  /** The snapshot's date, YYYY-MM-DD. */
+  targetDate: string;
+  /** Re-weight a GLOBAL (100%) value into this snapshot's scope — the same
+   *  allocation the headline figures use, so ADR 0008 holds by construction. */
+  allocate: (globalValueMinor: number) => ScopedHolding;
+}
+
+/**
+ * What a lane decides the holding's row IS on this date. Null means NO row: the
+ * holding was not held then, or this scope holds no stake in it.
+ */
+interface RippleRowValuation {
+  /** The SCOPE-WEIGHTED value the row freezes, integer minor units. */
+  valueMinor: number;
+  /**
+   * The LIVE classification — the last resort of `resolveFrozenIdentity`, used
+   * only for a row NO snapshot has ever frozen (precedence 3, #242).
+   */
+  liveIdentity: ResolvedFrozenIdentity;
+  /** The fields only some lanes carry: units/unitPrice for an investment, the
+   *  per-position breakdown for a connected collection (ADR 0035). */
+  detail?: {
+    units?: DecimalString | undefined;
+    unitPrice?: DecimalString | undefined;
+    positions?: SnapshotPositionRow[] | undefined;
+  };
+}
+
+/**
+ * The ripple row primitive (#1601). Every `recalculateSnapshotFor*` below is
+ * THIS skeleton — open the frozen rows, re-value the holding, allocate it to the
+ * scope, freeze its identity through `resolveFrozenIdentity` (#242), reassemble
+ * and reconcile the snapshot (#181) — with exactly one lane-specific step:
+ * `revalue`, how that holding is worth something on that date. Adding a trigger
+ * is writing a `revalue`, not cloning the skeleton; changing "does this frozen
+ * row exist?" is one edit, not six.
+ *
+ * Returns null when no holdings remain (the caller drops the snapshot), and
+ * preserves every untouched frozen row verbatim: a ripple swaps ONE row and
+ * re-derives the five headline figures from the new row set (ADR 0012).
+ */
+function rippleHoldingRow(
+  input: {
+    /** The existing snapshot (its id, scope, date, capturedAt are preserved). */
+    snapshot: NetWorthSnapshot;
+    /** The snapshot's currently frozen holding rows. */
+    frozenHoldings: SnapshotHoldingRow[];
+    workspace: Workspace;
+    holding: {
+      id: string;
+      kind: SnapshotHoldingKind;
+      /** The holding's live name — the label a brand-new row freezes. */
+      name: string;
+      ownership: OwnershipShare[];
+    };
+    /** The holding's frozen classification captures across every snapshot
+     *  (#242) — the recovery basis for a row this snapshot never carried. */
+    frozenIdentity?: readonly FrozenIdentityCapture[] | undefined;
+  },
+  revalue: (ctx: RippleRowContext) => RippleRowValuation | null,
+): ValuedNetWorthSnapshot | null {
+  const { holding, snapshot, workspace } = input;
+  const scopeMemberIds = new Set(resolveScopeMemberIds(workspace, snapshot.scopeId));
+  const rows = input.frozenHoldings.filter((row) => row.holdingId !== holding.id);
+  const existingRow = input.frozenHoldings.find(
+    (row) => row.holdingId === holding.id && row.kind === holding.kind,
+  );
+
+  const valuation = revalue({
+    allocate: (globalValueMinor) =>
+      allocateScopedHolding(globalValueMinor, {
+        ownership: holding.ownership,
+        scopeMemberIds,
+      }),
+    existingRow,
+    otherRows: rows,
+    targetDate: snapshot.dateKey,
+  });
+
+  if (valuation !== null) {
+    // The FROZEN classification through the one seam (#242): this snapshot's own
+    // row, else the contemporaneous capture from another snapshot, else live.
+    const identity = resolveFrozenIdentity({
+      existingRow,
+      frozenIdentity: input.frozenIdentity ?? [],
+      live: valuation.liveIdentity,
+      targetDate: snapshot.dateKey,
+    });
+    const detail = valuation.detail;
+    rows.push({
+      countsAsHousing: identity.countsAsHousing,
+      holdingId: holding.id,
+      kind: holding.kind,
+      label: existingRow?.label ?? holding.name,
+      liquidityTier: identity.liquidityTier,
+      securesHousing: identity.securesHousing,
+      valueMinor: valuation.valueMinor,
+      ...(detail?.units !== undefined ? { units: detail.units } : {}),
+      ...(detail?.unitPrice !== undefined ? { unitPrice: detail.unitPrice } : {}),
+      ...(detail?.positions !== undefined ? { positions: detail.positions } : {}),
+    });
+  }
+
+  return assembleRippleSnapshot({
+    currency: workspace.baseCurrency,
+    frozenHoldings: input.frozenHoldings,
+    rows,
+    snapshot,
+  });
+}
+
+/**
+ * The LIVE classification of a LIABILITY's rippled row — the ONE place the rung /
+ * securesHousing rule for a debt lives (#1601). Both the debt-curve ripple and
+ * the ownership ripple mint debt rows, and they used to answer this with copied
+ * branches that had drifted apart.
+ *
+ * A debt that secures HOUSING freezes the `housing` rung even when its home has
+ * no frozen row on that date (#1436): the rung follows the asset's IDENTITY, not
+ * its presence, exactly as the capture path resolves it against the live asset
+ * set. Without it a mortgage born in a recalculation froze `cash` and stayed
+ * there forever, since an existing row's rung is preserved by every later ripple
+ * (ADR 0008) — it never moved a figure (`securesHousing` wins in `deriveRowAxes`)
+ * but it drew a mortgage on the cash rung of the liquidity ladder.
+ *
+ * Otherwise an associated debt inherits its asset's frozen rung from the
+ * surviving rows, else `cash` (`rungForLiability`); an unassociated debt freezes
+ * null. A liability never counts as a housing ASSET.
+ *
+ * This lands on the SAME answer as the capture path (`buildSnapshotHoldingRows`)
+ * by a different route, which is why the two read differently: the capture
+ * resolves the rung against the LIVE asset set, where a securing home is always
+ * present; a ripple has only the snapshot's frozen rows, where it may not be. The
+ * `housing` short-circuit is what closes that gap, so every ripple and the capture
+ * still produce the same row set for a date (#181).
+ */
+function liveLiabilityIdentity(
+  liability: Liability,
+  input: {
+    housingAssetIds: ReadonlySet<string>;
+    /** The snapshot's other frozen rows — where an associated debt reads its
+     *  asset's frozen rung from. */
+    otherRows: readonly SnapshotHoldingRow[];
+  },
+): ResolvedFrozenIdentity {
+  const assetRungById = new Map(
+    input.otherRows
+      .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
+      .map((row) => [row.holdingId, row.liquidityTier!] as const),
+  );
+  return {
+    countsAsHousing: false,
+    liquidityTier: liability.associatedAssetId
+      ? (housingSecuringRung(liability, input.housingAssetIds) ??
+        rungForLiability(liability, assetRungById))
+      : null,
+    securesHousing: securesHousingAsset(liability, input.housingAssetIds),
+  };
+}
+
 /**
  * Recalculate an existing snapshot after one investment's operations changed
  * (ADR 0012 ripple). Only that asset's row is recomputed; every other frozen
  * row — manual holdings, liabilities (including ones frozen with a null tier),
  * other investments, and holdings later renamed, re-valued, or trashed — is
- * preserved verbatim. The five headline figures are adjusted by the operated
- * asset's value delta against the snapshot's own frozen figures, NOT re-derived
- * from rows, so the tier classification of every untouched holding survives
- * exactly as captured (rows alone cannot reproduce it — a null-tier debt could
- * be a mortgage or a loan). The asset keeps the unit price the snapshot already
- * captured; a newly-appearing asset uses the last operation price ≤ the date.
+ * preserved verbatim. The five headline figures are re-derived from the new row
+ * set, so the tier classification of every untouched holding survives exactly as
+ * captured (rows alone cannot reproduce it — a null-tier debt could be a mortgage
+ * or a loan). The asset keeps the unit price the snapshot already captured; a
+ * newly-appearing asset uses the last operation price ≤ the date.
  *
  * Returns null when no holdings remain (the caller deletes the snapshot rather
  * than leaving it showing values derived from a now-deleted operation). Callers
@@ -975,111 +1157,69 @@ export interface RecalculateSnapshotInput {
  * capture predating holdings (ADR 0008) has nothing to recompute against and
  * must be left frozen.
  */
-function openRippleRows(
-  snapshot: Pick<NetWorthSnapshot, "dateKey" | "scopeId">,
-  workspace: Workspace,
-  frozenHoldings: readonly SnapshotHoldingRow[],
-  holdingId: string,
-  kind: SnapshotHoldingKind,
-): {
-  currency: string;
-  existingRow: SnapshotHoldingRow | undefined;
-  rows: SnapshotHoldingRow[];
-  scopeMemberIds: Set<string>;
-  targetDate: string;
-} {
-  return {
-    currency: workspace.baseCurrency,
-    existingRow: frozenHoldings.find(
-      (row) => row.holdingId === holdingId && row.kind === kind,
-    ),
-    rows: frozenHoldings.filter((row) => row.holdingId !== holdingId),
-    scopeMemberIds: new Set(resolveScopeMemberIds(workspace, snapshot.scopeId)),
-    targetDate: snapshot.dateKey,
-  };
-}
-
 export function recalculateSnapshotForAsset(
   input: RecalculateSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    input.asset.id,
-    "asset",
-  );
-
-  // Recompute the operated asset's row at the snapshot's date via the same
-  // dispatcher the fresh capture uses (#150 carry-over): `derived` folds the
-  // ledger to the date, keeping the unit price the snapshot already captured
-  // (else the last operation price ≤ the date), and yields null when the asset
-  // was not held then — byte-identical to the positions math this used to inline.
-  //
-  // A derived row frozen with units but NO unitPrice was captured at cost basis
-  // (ADR 0006 fallback — no provider/manual price that day). Flag it so the
-  // ripple preserves cost basis instead of falling back to the latest operation
-  // price, which would shift a figure whose portfolio state never changed (#183).
-  // The price-backfill override (#380, ADR 0033) wins over both the captured
-  // price and the cost-basis fallback: the explicit action is freezing a real
-  // historical price onto a row that had none. Absent it, behaviour is unchanged.
-  const capturedUnitPrice = input.overrideUnitPrice ?? existingRow?.unitPrice;
-  const wasCapturedAtCostBasis =
-    capturedUnitPrice === undefined &&
-    existingRow?.units !== undefined &&
-    existingRow.unitPrice === undefined;
-  const valuation = valueAt(
+  return rippleHoldingRow(
     {
-      assetId: input.asset.id,
-      currency: input.asset.currency,
-      method: "derived",
-      operations: input.operations,
-      ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
-      ...(wasCapturedAtCostBasis ? { atCostBasis: true } : {}),
+      frozenHoldings: input.frozenHoldings,
+      frozenIdentity: input.frozenIdentity,
+      holding: {
+        id: input.asset.id,
+        kind: "asset",
+        name: input.asset.name,
+        ownership: input.asset.ownership,
+      },
+      snapshot: input.snapshot,
+      workspace: input.workspace,
     },
-    targetDate,
-  );
+    ({ allocate, existingRow, targetDate }) => {
+      // Recompute the operated asset's row at the snapshot's date via the same
+      // dispatcher the fresh capture uses (#150 carry-over): `derived` folds the
+      // ledger to the date, keeping the unit price the snapshot already captured
+      // (else the last operation price ≤ the date), and yields null when the asset
+      // was not held then — byte-identical to the positions math this used to inline.
+      //
+      // A derived row frozen with units but NO unitPrice was captured at cost basis
+      // (ADR 0006 fallback — no provider/manual price that day). Flag it so the
+      // ripple preserves cost basis instead of falling back to the latest operation
+      // price, which would shift a figure whose portfolio state never changed (#183).
+      // The price-backfill override (#380, ADR 0033) wins over both the captured
+      // price and the cost-basis fallback: the explicit action is freezing a real
+      // historical price onto a row that had none. Absent it, behaviour is unchanged.
+      const capturedUnitPrice = input.overrideUnitPrice ?? existingRow?.unitPrice;
+      const wasCapturedAtCostBasis =
+        capturedUnitPrice === undefined &&
+        existingRow?.units !== undefined &&
+        existingRow.unitPrice === undefined;
+      const valuation = valueAt(
+        {
+          assetId: input.asset.id,
+          currency: input.asset.currency,
+          method: "derived",
+          operations: input.operations,
+          ...(capturedUnitPrice !== undefined ? { capturedUnitPrice } : {}),
+          ...(wasCapturedAtCostBasis ? { atCostBasis: true } : {}),
+        },
+        targetDate,
+      );
+      // Not held on that date, or this scope holds no stake: no row.
+      if (valuation.valueMinor === null) return null;
+      const { ownedMinor, totalShareBps } = allocate(valuation.valueMinor);
+      if (totalShareBps <= 0) return null;
 
-  if (valuation.valueMinor !== null) {
-    const { ownedMinor, totalShareBps } = allocateScopedHolding(valuation.valueMinor, {
-      ownership: input.asset.ownership,
-      scopeMemberIds,
-    });
-
-    if (totalShareBps > 0) {
-      // Resolve the FROZEN classification through the one seam (#242): existing
-      // row, else the contemporaneous frozen capture from other snapshots, else
-      // live. An investment is never housing / never secures housing.
-      const identity = resolveFrozenIdentity({
-        existingRow,
-        frozenIdentity: input.frozenIdentity ?? [],
-        live: {
+      return {
+        detail: { units: valuation.units, unitPrice: valuation.unitPrice },
+        // An investment is never housing / never secures housing.
+        liveIdentity: {
           countsAsHousing: false,
           liquidityTier: tierOfAsset(input.asset),
           securesHousing: false,
         },
-        targetDate,
-      });
-      rows.push({
-        countsAsHousing: identity.countsAsHousing,
-        holdingId: input.asset.id,
-        kind: "asset",
-        label: existingRow?.label ?? input.asset.name,
-        liquidityTier: identity.liquidityTier,
-        securesHousing: identity.securesHousing,
         valueMinor: ownedMinor,
-        ...(valuation.units !== undefined ? { units: valuation.units } : {}),
-        ...(valuation.unitPrice !== undefined ? { unitPrice: valuation.unitPrice } : {}),
-      });
-    }
-  }
-
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
+      };
+    },
+  );
 }
 
 // ── Curve-anchor trigger (PRD #108/#109) ─────────────────────────────────────
@@ -1135,73 +1275,56 @@ export interface RecalculateHousingSnapshotInput {
 export function recalculateSnapshotForHousing(
   input: RecalculateHousingSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    input.asset.id,
-    "asset",
+  return rippleHoldingRow(
+    {
+      frozenHoldings: input.frozenHoldings,
+      frozenIdentity: input.frozenIdentity,
+      holding: {
+        id: input.asset.id,
+        kind: "asset",
+        name: input.asset.name,
+        ownership: input.asset.ownership,
+      },
+      snapshot: input.snapshot,
+      workspace: input.workspace,
+    },
+    ({ allocate, targetDate }) => {
+      // Value the housing asset on the target date via the same dispatcher (#148):
+      // the appreciating method already encodes "curve when active, else the
+      // last-known-value / currentValue basis" — keeping this ripple consistent with
+      // buildSnapshotAtDate (fix 1, PRD #108).
+      const points = input.manualValueHistory?.get(input.asset.id);
+      const rate = input.curve.annualAppreciationRate;
+      const fullValueMinor =
+        valueAt(
+          {
+            anchors: input.curve.anchors,
+            currentValueMinor: input.curve.currentValueMinor,
+            method: "appreciating",
+            today: input.today,
+            ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
+            ...(input.curve.cadence != null ? { cadence: input.curve.cadence } : {}),
+            ...(points !== undefined ? { valueHistory: points } : {}),
+          },
+          targetDate,
+        ).valueMinor ?? input.curve.currentValueMinor;
+
+      const { ownedMinor, totalShareBps } = allocate(fullValueMinor);
+      if (totalShareBps <= 0) return null;
+
+      return {
+        // This ripple is called only for housing assets, so live is
+        // countsAsHousing=true / illiquid tier, matching the capture path; an
+        // asset never secures housing (#180).
+        liveIdentity: {
+          countsAsHousing: true,
+          liquidityTier: tierOfAsset(input.asset),
+          securesHousing: false,
+        },
+        valueMinor: ownedMinor,
+      };
+    },
   );
-
-  // Value the housing asset on the target date via the same dispatcher (#148):
-  // the appreciating method already encodes "curve when active, else the
-  // last-known-value / currentValue basis" — keeping this ripple consistent with
-  // buildSnapshotAtDate (fix 1, PRD #108).
-  const points = input.manualValueHistory?.get(input.asset.id);
-  const rate = input.curve.annualAppreciationRate;
-  const fullValueMinor =
-    valueAt(
-      {
-        anchors: input.curve.anchors,
-        currentValueMinor: input.curve.currentValueMinor,
-        method: "appreciating",
-        today: input.today,
-        ...(rate != null && rate !== "" ? { annualAppreciationRate: rate } : {}),
-        ...(input.curve.cadence != null ? { cadence: input.curve.cadence } : {}),
-        ...(points !== undefined ? { valueHistory: points } : {}),
-      },
-      targetDate,
-    ).valueMinor ?? input.curve.currentValueMinor;
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullValueMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  if (totalShareBps > 0) {
-    // Resolve the FROZEN classification through the one seam (#242): existing row,
-    // else the contemporaneous frozen capture, else live. This ripple is called
-    // only for housing assets, so live is countsAsHousing=true / illiquid tier,
-    // matching the capture path; an asset never secures housing (#180).
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: true,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
-      },
-      targetDate,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: ownedMinor,
-    });
-  }
-
-  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
-  // on asset rows (#181 completion) — the helper needs no delta parameter.
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
 }
 
 export interface RecalculateLiabilitySnapshotInput {
@@ -1242,103 +1365,62 @@ export interface RecalculateLiabilitySnapshotInput {
 export function recalculateSnapshotForLiability(
   input: RecalculateLiabilitySnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const { currency, existingRow, rows, scopeMemberIds, targetDate } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    input.liability.id,
-    "liability",
-  );
-
-  // Same question, same answer as generate (#1438, ADR 0013): a date the debt
-  // does not belong to yet carries NO row — not a recomputed one, and not an
-  // existing frozen one either, which would preserve a membership the write
-  // path (`buildSnapshotAtDate`) never would have produced.
-  if (
-    !liabilityExistsAtHistoricalDate({
-      curve: input.curve,
-      liability: input.liability,
-      targetDate,
-    })
-  ) {
-    return assembleRippleSnapshot({
-      currency,
+  return rippleHoldingRow(
+    {
       frozenHoldings: input.frozenHoldings,
-      rows,
+      // The one lane that supplies NO frozen captures: a debt's tier and
+      // securesHousing were always resolved from this snapshot's own row or from
+      // live, never recovered from another snapshot. Passing them is a parameter
+      // away the day a debt needs contemporaneous recovery (#242).
+      holding: {
+        id: input.liability.id,
+        kind: "liability",
+        name: input.liability.name,
+        ownership: input.liability.ownership,
+      },
       snapshot: input.snapshot,
-    });
-  }
+      workspace: input.workspace,
+    },
+    ({ allocate, otherRows, targetDate }) => {
+      // Same question, same answer as generate (#1438, ADR 0013): a date the debt
+      // does not belong to yet carries NO row — not a recomputed one, and not an
+      // existing frozen one either, which would preserve a membership the write
+      // path (`buildSnapshotAtDate`) never would have produced.
+      if (
+        !liabilityExistsAtHistoricalDate({
+          curve: input.curve,
+          liability: input.liability,
+          targetDate,
+        })
+      ) {
+        return null;
+      }
 
-  // Value the liability on the target date via the unified dispatcher (#150
-  // carry-over): the curve's model picks amortized / anchored, and a null model
-  // falls back to the curve's current balance — byte-identical to the engines
-  // this used to inline, but now threading early repayments in one place.
-  const curveInput = debtCurveValuationInput(input.curve);
-  const fullBalanceMinor =
-    (curveInput ? valueAt(curveInput, targetDate).valueMinor : null) ??
-    input.curve.currentBalanceMinor;
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(fullBalanceMinor, {
-    ownership: input.liability.ownership,
-    scopeMemberIds,
-  });
+      // Value the liability on the target date via the unified dispatcher (#150
+      // carry-over): the curve's model picks amortized / anchored, and a null model
+      // falls back to the curve's current balance — byte-identical to the engines
+      // this used to inline, but now threading early repayments in one place.
+      const curveInput = debtCurveValuationInput(input.curve);
+      const fullBalanceMinor =
+        (curveInput ? valueAt(curveInput, targetDate).valueMinor : null) ??
+        input.curve.currentBalanceMinor;
+      const { ownedMinor, totalShareBps } = allocate(fullBalanceMinor);
+      // The row keeps the SAME existence rule the capture path applies (a row for
+      // any scope stake, even a zero balance) so every ripple and the capture
+      // produce the same row set for a date (#181).
+      if (totalShareBps <= 0) return null;
 
-  // The new row keeps the SAME existence rule the capture path applies (a row for
-  // any scope stake, even a zero balance) so every ripple and the capture produce
-  // the same row set for a date (#181). Its rung is resolved consistently with the
-  // live calculateNetWorth path: an associated debt inherits its asset's frozen
-  // rung from the surviving asset rows, else `cash` (rungForLiability) — never
-  // null, so a non-housing associated debt lands on the right liquid axis.
-  if (totalShareBps > 0) {
-    const assetRungById = new Map(
-      rows
-        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-        .map((row) => [row.holdingId, row.liquidityTier!] as const),
-    );
-    rows.push({
-      // Liabilities never count as housing assets (#181).
-      countsAsHousing: false,
-      holdingId: input.liability.id,
-      kind: "liability",
-      label: existingRow?.label ?? input.liability.name,
-      // Preserve the frozen rung for an existing row; for a newly-appearing row
-      // mirror the capture path EXACTLY (buildSnapshotHoldingRows): an associated
-      // debt freezes its asset's rung, an unassociated debt freezes null — so every
-      // ripple and the capture produce the same row set for a date (#181).
-      //
-      // A debt that secures HOUSING freezes `housing` even when its home has no
-      // frozen row on that date (#1436): the rung follows the asset's identity, not
-      // its presence, exactly as the capture path now resolves it against the live
-      // asset set (`classificationAssets`). Without this a mortgage born in a
-      // recalculation — the healing path for a date whose snapshot predates the
-      // home — froze `cash` and stayed there forever, since an existing row's rung
-      // is preserved by every later ripple (ADR 0008). It never moved a figure
-      // (`securesHousing` wins in `deriveRowAxes`), but it drew a mortgage on the
-      // cash rung of the liquidity ladder for those dates.
-      liquidityTier: existingRow
-        ? existingRow.liquidityTier
-        : input.liability.associatedAssetId
-          ? (housingSecuringRung(input.liability, input.housingAssetIds) ??
-            rungForLiability(input.liability, assetRungById))
-          : null,
-      // Preserve the frozen signal for an existing row; for a newly-appearing
-      // row freeze it from the same classification the figures use (#180).
-      securesHousing: existingRow
-        ? existingRow.securesHousing
-        : securesHousingAsset(input.liability, input.housingAssetIds),
-      valueMinor: ownedMinor,
-    });
-  }
-
-  // A liability never moves the housing-ASSET axis; its housing/liquid effect is
-  // re-derived from the frozen rows (frozen securesHousing + frozen rung) inside
-  // the shared helper — never from a live securesHousingAsset / housingAssetIds
-  // lookup, so a later reclassification can't drift historical figures (#181).
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
+      return {
+        // The debt's rung / securesHousing rule lives ONCE (#1601); an existing
+        // row's frozen values still win inside the primitive's identity seam.
+        liveIdentity: liveLiabilityIdentity(input.liability, {
+          housingAssetIds: input.housingAssetIds,
+          otherRows,
+        }),
+        valueMinor: ownedMinor,
+      };
+    },
+  );
 }
 
 // ── Ownership-split trigger (#172, ADR 0020) ─────────────────────────────────
@@ -1403,90 +1485,57 @@ export function recalculateSnapshotForOwnership(
   input: RecalculateOwnershipSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
   const { holding } = input;
-  const holdingId = holding.kind === "asset" ? holding.asset.id : holding.liability.id;
-  const ownership =
-    holding.kind === "asset" ? holding.asset.ownership : holding.liability.ownership;
 
-  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    holdingId,
-    holding.kind,
+  return rippleHoldingRow(
+    {
+      frozenHoldings: input.frozenHoldings,
+      frozenIdentity: input.frozenIdentity,
+      holding:
+        holding.kind === "asset"
+          ? {
+              id: holding.asset.id,
+              kind: "asset",
+              name: holding.asset.name,
+              ownership: holding.asset.ownership,
+            }
+          : {
+              id: holding.liability.id,
+              kind: "liability",
+              name: holding.liability.name,
+              ownership: holding.liability.ownership,
+            },
+      snapshot: input.snapshot,
+      workspace: input.workspace,
+    },
+    ({ allocate, existingRow, otherRows }) => {
+      // Re-weight the holding's (unchanged) global value into THIS scope by the
+      // new split. Keep the SAME existence rule the capture path applies (a row
+      // for any scope stake) so every ripple and the capture produce the same row
+      // set for a date (#181) — a re-weight to a zero value still keeps the row.
+      const { ownedMinor, totalShareBps } = allocate(input.globalValueMinor);
+      if (totalShareBps <= 0) return null;
+
+      return {
+        // A re-weight never re-derives units or price: it carries the frozen ones.
+        detail: { units: existingRow?.units, unitPrice: existingRow?.unitPrice },
+        // The LIVE classification (precedence 3): an asset's housing-ness / tier
+        // from its live identity; a debt's rung and securesHousing from the ONE
+        // shared rule (#1601), the same one the debt-curve ripple applies.
+        liveIdentity:
+          holding.kind === "asset"
+            ? {
+                countsAsHousing: isHousingAsset(holding.asset),
+                liquidityTier: tierOfAsset(holding.asset),
+                securesHousing: false,
+              }
+            : liveLiabilityIdentity(holding.liability, {
+                housingAssetIds: holding.housingAssetIds,
+                otherRows,
+              }),
+        valueMinor: ownedMinor,
+      };
+    },
   );
-
-  // Re-weight the holding's global value into THIS scope by the new split.
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
-    ownership,
-    scopeMemberIds,
-  });
-
-  // Keep the SAME existence rule the capture path applies (a row for any scope
-  // stake) so every ripple and the capture produce the same row set for a date
-  // (#181) — a re-weight to a zero value still keeps the row.
-  if (totalShareBps > 0) {
-    const assetRungById = new Map(
-      rows
-        .filter((row) => row.kind === "asset" && row.liquidityTier !== null)
-        .map((row) => [row.holdingId, row.liquidityTier!] as const),
-    );
-    // The LIVE classification (the precedence-3 fallback): mirrors the capture
-    // path — an asset's housing-ness/tier from its live identity, an associated
-    // debt's rung from its asset's frozen rung (unassociated → null), a debt's
-    // securesHousing from the live housing-asset set; assets never secure housing.
-    const live: ResolvedFrozenIdentity =
-      holding.kind === "asset"
-        ? {
-            countsAsHousing: isHousingAsset(holding.asset),
-            liquidityTier: tierOfAsset(holding.asset),
-            securesHousing: false,
-          }
-        : {
-            countsAsHousing: false,
-            liquidityTier: holding.liability.associatedAssetId
-              ? rungForLiability(holding.liability, assetRungById)
-              : null,
-            securesHousing: securesHousingAsset(
-              holding.liability,
-              holding.housingAssetIds,
-            ),
-          };
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture from other snapshots (a member gaining a
-    // stake recovers the holding's frozen housing-ness/tier), else live.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live,
-      targetDate: input.snapshot.dateKey,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId,
-      kind: holding.kind,
-      label:
-        existingRow?.label ??
-        (holding.kind === "asset" ? holding.asset.name : holding.liability.name),
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: ownedMinor,
-      ...(existingRow?.units !== undefined ? { units: existingRow.units } : {}),
-      ...(existingRow?.unitPrice !== undefined
-        ? { unitPrice: existingRow.unitPrice }
-        : {}),
-    });
-  }
-
-  // housingEquity is now fully row-derived from the frozen countsAsHousing flags
-  // on asset rows (#181 completion) — no live isHousingAsset call, no delta
-  // parameter. A housing asset's re-weight carries its frozen flag onto the new
-  // row; the helper reads it from there.
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
 }
 
 // ── Position-revalue trigger (ADR 0017/0021) ─────────────────────────────────
@@ -1552,133 +1601,114 @@ export interface RecalculateCoinAcquisitionSnapshotInput {
 export function recalculateSnapshotForCoinAcquisition(
   input: RecalculateCoinAcquisitionSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    input.asset.id,
-    "asset",
-  );
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalDeltaMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  // Append the coin-collection row with its frozen value INCREMENTED by this
-  // scope's share of the new coin. Keep an existing row even when this scope gains
-  // no stake (totalShareBps 0), so a re-weight to zero never silently drops it.
-  if (existingRow !== undefined || totalShareBps > 0) {
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture, else live. A coin collection is constant
-    // illiquid, never a housing asset, never secures housing.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: false,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
-      },
-      targetDate: input.snapshot.dateKey,
-    });
-    // Does this row CARRY a frozen breakdown (ADR 0035)? `undefined` means it does
-    // not: either a legacy capture predating ADR 0035 — which froze the per-position
-    // children going-forward only, so an older snapshot has the collection's row
-    // with a value and no children — or a row an earlier ripple added before the
-    // children existed. The distinction drives everything below, because the
-    // per-position invariant (#181) applies ONLY to a row that carries children.
-    const frozenPositions = existingRow?.positions;
-    const seenPositionKeys = new Set(
-      (frozenPositions ?? []).map((row) => row.positionKey),
-    );
-    const newPositionRows: SnapshotPositionRow[] = [];
-    // Σ of the per-trade scope allocations of the children ACTUALLY appended — the
-    // one figure the row's value grows by when the row carries a breakdown.
-    let appendedPositionsMinor = 0;
-    for (const trade of input.newTrades ?? []) {
-      if (
-        trade.purchaseDate > input.snapshot.dateKey ||
-        trade.position.valueMinor <= 0 ||
-        seenPositionKeys.has(trade.position.positionKey)
-      ) {
-        continue;
-      }
-      // A trade this scope owns nothing of contributes no child row — and no value
-      // either: ownership is a property of the COLLECTION, not of the trade, so
-      // `totalShareBps === 0` here means the aggregate's share is 0 too and its
-      // allocation is 0. The skip is therefore not an asymmetry in value; it only
-      // avoids writing 0-valued children into a scope with no stake at all.
-      const scoped = allocateScopedHolding(trade.position.valueMinor, {
+  return rippleHoldingRow(
+    {
+      frozenHoldings: input.frozenHoldings,
+      frozenIdentity: input.frozenIdentity,
+      holding: {
+        id: input.asset.id,
+        kind: "asset",
+        name: input.asset.name,
         ownership: input.asset.ownership,
-        scopeMemberIds,
-      });
-      if (scoped.totalShareBps === 0) {
-        continue;
+      },
+      snapshot: input.snapshot,
+      workspace: input.workspace,
+    },
+    ({ allocate, existingRow, targetDate }) => {
+      const { ownedMinor, totalShareBps } = allocate(input.globalDeltaMinor);
+      // Keep an existing row even when this scope gains no stake (totalShareBps 0),
+      // so a re-weight to zero never silently drops it.
+      if (existingRow === undefined && totalShareBps <= 0) return null;
+
+      // Does this row CARRY a frozen breakdown (ADR 0035)? `undefined` means it does
+      // not: either a legacy capture predating ADR 0035 — which froze the per-position
+      // children going-forward only, so an older snapshot has the collection's row
+      // with a value and no children — or a row an earlier ripple added before the
+      // children existed. The distinction drives everything below, because the
+      // per-position invariant (#181) applies ONLY to a row that carries children.
+      const frozenPositions = existingRow?.positions;
+      const seenPositionKeys = new Set(
+        (frozenPositions ?? []).map((row) => row.positionKey),
+      );
+      const newPositionRows: SnapshotPositionRow[] = [];
+      // Σ of the per-trade scope allocations of the children ACTUALLY appended — the
+      // one figure the row's value grows by when the row carries a breakdown.
+      let appendedPositionsMinor = 0;
+      for (const trade of input.newTrades ?? []) {
+        if (
+          trade.purchaseDate > targetDate ||
+          trade.position.valueMinor <= 0 ||
+          seenPositionKeys.has(trade.position.positionKey)
+        ) {
+          continue;
+        }
+        // A trade this scope owns nothing of contributes no child row — and no value
+        // either: ownership is a property of the COLLECTION, not of the trade, so
+        // `totalShareBps === 0` here means the aggregate's share is 0 too and its
+        // allocation is 0. The skip is therefore not an asymmetry in value; it only
+        // avoids writing 0-valued children into a scope with no stake at all.
+        const scoped = allocate(trade.position.valueMinor);
+        if (scoped.totalShareBps === 0) {
+          continue;
+        }
+        newPositionRows.push({
+          positionKey: trade.position.positionKey,
+          label: trade.position.label,
+          valueMinor: scoped.ownedMinor,
+          metal: trade.position.metal,
+          imageUrl: trade.position.imageUrl,
+        });
+        appendedPositionsMinor += scoped.ownedMinor;
+        seenPositionKeys.add(trade.position.positionKey);
       }
-      newPositionRows.push({
-        positionKey: trade.position.positionKey,
-        label: trade.position.label,
-        valueMinor: scoped.ownedMinor,
-        metal: trade.position.metal,
-        imageUrl: trade.position.imageUrl,
-      });
-      appendedPositionsMinor += scoped.ownedMinor;
-      seenPositionKeys.add(trade.position.positionKey);
-    }
 
-    // A row with NO frozen breakdown never grows a PARTIAL one: appending only the
-    // new coins would make the row "carry positions" while the older coins baked
-    // into its value have no children, and the per-position invariant — which
-    // exempts a childless row explicitly — would then demand the new coins alone
-    // sum to the whole row and fail the ripple (the sync that rolled back on every
-    // retry: `sum to 7960 but the holding value is 331162`). Reconstructing the
-    // missing children is impossible here: a coin's frozen historical value is not
-    // recoverable (worthline never fetches a coin's past price, ADR 0017), so the
-    // row stays childless and only its value grows, exactly as before ADR 0035.
-    const positions =
-      existingRow !== undefined && frozenPositions === undefined
-        ? []
-        : [...(frozenPositions ?? []), ...newPositionRows];
-    const carriesBreakdown = positions.length > 0;
+      // A row with NO frozen breakdown never grows a PARTIAL one: appending only the
+      // new coins would make the row "carry positions" while the older coins baked
+      // into its value have no children, and the per-position invariant — which
+      // exempts a childless row explicitly — would then demand the new coins alone
+      // sum to the whole row and fail the ripple (the sync that rolled back on every
+      // retry: `sum to 7960 but the holding value is 331162`). Reconstructing the
+      // missing children is impossible here: a coin's frozen historical value is not
+      // recoverable (worthline never fetches a coin's past price, ADR 0017), so the
+      // row stays childless and only its value grows, exactly as before ADR 0035.
+      const positions =
+        existingRow !== undefined && frozenPositions === undefined
+          ? []
+          : [...(frozenPositions ?? []), ...newPositionRows];
+      const carriesBreakdown = positions.length > 0;
 
-    // DECISION (#181 invariant vs ADR 0017 allocation): when the row carries a
-    // breakdown, its value grows by Σ of the children appended above — never by
-    // `allocateScopedHolding(globalDeltaMinor)`, this scope's share of the
-    // AGGREGATE delta. Rounding the aggregate once and rounding each trade
-    // separately can differ by a cent per trade under a fractional split (3333 /
-    // 6667 bps), and the two figures also disagree whenever a trade is skipped
-    // (already frozen by `positionKey` on a re-delivery, or non-positive), so
-    // deriving the increment from the children is the only way sum and value
-    // cannot desynchronize. The cost is that a scope's frozen coin value is the
-    // sum of per-coin roundings rather than one rounding of the total — cents
-    // apart at most, and the breakdown is what the drilldown renders, so the
-    // children are the truth. A childless row keeps the aggregate allocation: it
-    // has no children to derive an increment from, and no invariant to satisfy.
-    const incrementMinor = carriesBreakdown
-      ? appendedPositionsMinor
-      : totalShareBps > 0
-        ? ownedMinor
-        : 0;
+      // DECISION (#181 invariant vs ADR 0017 allocation): when the row carries a
+      // breakdown, its value grows by Σ of the children appended above — never by
+      // this scope's share of the AGGREGATE delta. Rounding the aggregate once and
+      // rounding each trade separately can differ by a cent per trade under a
+      // fractional split (3333 / 6667 bps), and the two figures also disagree
+      // whenever a trade is skipped (already frozen by `positionKey` on a
+      // re-delivery, or non-positive), so deriving the increment from the children
+      // is the only way sum and value cannot desynchronize. The cost is that a
+      // scope's frozen coin value is the sum of per-coin roundings rather than one
+      // rounding of the total — cents apart at most, and the breakdown is what the
+      // drilldown renders, so the children are the truth. A childless row keeps the
+      // aggregate allocation: it has no children to derive an increment from, and no
+      // invariant to satisfy.
+      const incrementMinor = carriesBreakdown
+        ? appendedPositionsMinor
+        : totalShareBps > 0
+          ? ownedMinor
+          : 0;
 
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: (existingRow?.valueMinor ?? 0) + incrementMinor,
-      ...(carriesBreakdown ? { positions } : {}),
-    });
-  }
-
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
+      return {
+        ...(carriesBreakdown ? { detail: { positions } } : {}),
+        // A coin collection is constant illiquid, never a housing asset, never
+        // secures housing.
+        liveIdentity: {
+          countsAsHousing: false,
+          liquidityTier: tierOfAsset(input.asset),
+          securesHousing: false,
+        },
+        valueMinor: (existingRow?.valueMinor ?? 0) + incrementMinor,
+      };
+    },
+  );
 }
 
 export interface RecalculateConnectedValueSnapshotInput {
@@ -1728,54 +1758,39 @@ export interface RecalculateConnectedValueSnapshotInput {
 export function recalculateSnapshotForConnectedValue(
   input: RecalculateConnectedValueSnapshotInput,
 ): ValuedNetWorthSnapshot | null {
-  const { currency, existingRow, rows, scopeMemberIds } = openRippleRows(
-    input.snapshot,
-    input.workspace,
-    input.frozenHoldings,
-    input.asset.id,
-    "asset",
-  );
-
-  const { ownedMinor, totalShareBps } = allocateScopedHolding(input.globalValueMinor, {
-    ownership: input.asset.ownership,
-    scopeMemberIds,
-  });
-
-  // SET (replace) the market holding's row to this scope's share of the date's
-  // reconstructed value — never added onto the existing value (that is the
-  // coin-acquisition path's contract, not this one). Keep an existing row even
-  // when this scope gains no stake (totalShareBps 0), so a re-weight to zero never
-  // silently drops it; a zero value with a stake still records the row (the holding
-  // existed at 0 — unpriceable, ADR 0021).
-  if (existingRow !== undefined || totalShareBps > 0) {
-    // Resolve through the one frozen-vs-live seam (#242): existing row, else the
-    // contemporaneous frozen capture, else live. A connected crypto holding is
-    // constant market rung, never a housing asset, never secures housing.
-    const identity = resolveFrozenIdentity({
-      existingRow,
-      frozenIdentity: input.frozenIdentity ?? [],
-      live: {
-        countsAsHousing: false,
-        liquidityTier: tierOfAsset(input.asset),
-        securesHousing: false,
+  return rippleHoldingRow(
+    {
+      frozenHoldings: input.frozenHoldings,
+      frozenIdentity: input.frozenIdentity,
+      holding: {
+        id: input.asset.id,
+        kind: "asset",
+        name: input.asset.name,
+        ownership: input.asset.ownership,
       },
-      targetDate: input.snapshot.dateKey,
-    });
-    rows.push({
-      countsAsHousing: identity.countsAsHousing,
-      holdingId: input.asset.id,
-      kind: "asset",
-      label: existingRow?.label ?? input.asset.name,
-      liquidityTier: identity.liquidityTier,
-      securesHousing: identity.securesHousing,
-      valueMinor: totalShareBps > 0 ? ownedMinor : (existingRow?.valueMinor ?? 0),
-    });
-  }
+      snapshot: input.snapshot,
+      workspace: input.workspace,
+    },
+    ({ allocate, existingRow }) => {
+      const { ownedMinor, totalShareBps } = allocate(input.globalValueMinor);
+      // SET (replace) the market holding's row to this scope's share of the date's
+      // reconstructed value — never added onto the existing value (that is the
+      // coin-acquisition path's contract, not this one). Keep an existing row even
+      // when this scope gains no stake (totalShareBps 0), so a re-weight to zero never
+      // silently drops it; a zero value with a stake still records the row (the holding
+      // existed at 0 — unpriceable, ADR 0021).
+      if (existingRow === undefined && totalShareBps <= 0) return null;
 
-  return assembleRippleSnapshot({
-    currency,
-    frozenHoldings: input.frozenHoldings,
-    rows,
-    snapshot: input.snapshot,
-  });
+      return {
+        // A connected crypto holding is constant market rung, never a housing
+        // asset, never secures housing.
+        liveIdentity: {
+          countsAsHousing: false,
+          liquidityTier: tierOfAsset(input.asset),
+          securesHousing: false,
+        },
+        valueMinor: totalShareBps > 0 ? ownedMinor : (existingRow?.valueMinor ?? 0),
+      };
+    },
+  );
 }
