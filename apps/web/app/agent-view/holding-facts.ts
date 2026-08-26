@@ -157,6 +157,8 @@ function toValuationAnchor(
   currency: string,
 ): AgentViewValuationAnchor {
   return {
+    // #1563: the acquisition is named, not left to be inferred from the ordering.
+    ...(anchor.kind === "acquisition" ? { acquisition: true as const } : {}),
     date: anchor.valuationDate,
     id: derivePublicId("van", anchor.id),
     kind: anchor.adjustsPriorCurve ? "market_appraisal" : "improvement",

@@ -173,6 +173,26 @@ export interface CommandHost extends DatedFactAliases {
     anchor: Parameters<DatedFactCommands["addValuationAnchorAndRipple"]>[0];
     today: string;
   }) => Promise<void>;
+  /**
+   * Apply one property-acquisition proposal (#1563) and resolve it in the SAME
+   * transaction. Its sibling above ADDS an anchor; this one MOVES the anchor that
+   * starts the housing's history, so it rides `updateValuationAnchorAndRipple` —
+   * the very seam the ficha's «Adquisición» form uses (#1437) — and the ripple runs
+   * from the earlier of the two dates, which is what puts a 2004 mortgage back in
+   * the snapshots.
+   *
+   * The anchor is resolved by the caller, from a LIVE read of the property's
+   * `kind = 'acquisition'` row rather than from an id frozen in the draft: what the
+   * user confirmed is «the acquisition of this flat», and that is a thing the store
+   * identifies at apply time. A write that touches no row throws, so the draft is
+   * never left marked applied over a property whose anchor vanished meanwhile.
+   */
+  applyAssistantPropertyAcquisitionProposal: (params: {
+    proposalId: string;
+    /** The live acquisition anchor and the pair to patch onto it. */
+    anchor: { id: string; valuationDate: string; valueMinor: number };
+    today: string;
+  }) => Promise<void>;
   applyAssistantCorrectionProposal: (params: {
     proposalId: string;
     today: string;
@@ -748,6 +768,32 @@ export function createCommandHost(
           return proposal;
         },
         () => datedFacts.addValuationAnchorAndRipple(anchor, { today }),
+      ),
+    applyAssistantPropertyAcquisitionProposal: async ({ anchor, proposalId, today }) =>
+      applyDraftAssistantProposal(
+        ctx,
+        assistantProposals,
+        proposalId,
+        (proposal) => {
+          if (!proposal || proposal.kind !== "property_acquisition") {
+            throw new Error(
+              `Assistant proposal "${proposalId}" is not a property acquisition.`,
+            );
+          }
+          return proposal;
+        },
+        async () => {
+          const changes = await datedFacts.updateValuationAnchorAndRipple(
+            anchor.id,
+            { valuationDate: anchor.valuationDate, valueMinor: anchor.valueMinor },
+            { today },
+          );
+          if (changes === 0) {
+            throw new Error(
+              "El ancla de adquisición ya no existe: la propuesta no se ha aplicado.",
+            );
+          }
+        },
       ),
     applyAssistantEarlyRepaymentProposal: async ({ proposalId, today }) =>
       applyDraftAssistantProposal(

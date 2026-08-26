@@ -239,6 +239,38 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  * gave: their length is measured incident repair, and cutting it blind from an unrelated
  * lane trades a floor for a behaviour nobody re-measured. Fifth PR in a row to say so,
  * and the first where the head GREW while saying it.
+ *
+ * **Raised to 45.200 on 2026-08-26 by #1563**, the #1482 kind again: a new lane arriving,
+ * in the PR that says so. `propose_property_acquisition` moves the anchor that decides
+ * from WHEN a property exists in the history, and without it the assistant's only way to
+ * act on «lo compré en 2004 por 150.253 €» is `propose_property_valuation_anchor`, which
+ * adds one more tasación and leaves the acquisition where it was — the failure of #1437,
+ * where a flat bought in 2004 read as bought the day it was typed and 266 snapshots lost
+ * the mortgage it secures. So the raise buys the write that is CORRECT, not an extra one.
+ *
+ * The arithmetic: the widest real floor is 44.643, of which 809 is this lane (desc 548 ·
+ * schema 233), leaving the floor this PR started from at 43.834 — SIXTEEN characters of
+ * headroom under the old ceiling, so a lane of any size at all had to come here. The new
+ * ceiling keeps ~1,2% of headroom, the same order as every raise since #1374.
+ *
+ * It paid inside its own lane first, 438 characters, and each cut is the #1342 trade:
+ *  - the provenance of the figures («te los dice, o los lees de una escritura, una nota o
+ *    su propio Excel») came out: WHERE evidence may come from is the frontier's job and
+ *    it is code (`unvalidated-evidence-gate.ts`), not a sentence in a description.
+ *  - what the preview shows — the antes → después of the two figures, and which tramo of
+ *    the history the rewrite reaches — came out because the CARD prints it, exactly as
+ *    #1482's neutrality note did. The floor is paid every turn; card copy only when
+ *    there is a card.
+ *  - the three refusals (no acquisition anchor, a proposal that changes nothing, a date
+ *    another valoración occupies) came out: the model reads each one as a message when it
+ *    happens, and a description listing them pays for them on every turn instead.
+ *  - `summary` is not in the schema at all: the card's headline is built from the
+ *    property's own name, date and price, so the one field a prompt injection would want
+ *    (`proposal-summary.ts`) does not exist here — and the schema is 233 characters, the
+ *    slimmest of the fifteen `propose_*`.
+ *
+ * `propose_holding` (2.893) and `propose_correction` (2.127) are still the ranking's head
+ * and still untouched, for the reason #1423 gave. Sixth PR in a row to say so.
  */
 
 describe("measureTurnFloor", () => {

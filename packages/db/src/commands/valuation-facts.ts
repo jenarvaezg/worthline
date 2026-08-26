@@ -1,3 +1,4 @@
+import type { UpdateValuationAnchorInput } from "@db/asset-store";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
 import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
@@ -92,7 +93,19 @@ export function createValuationCommands(
       // recomputed. The previous row is read behind the seam before the patch.
       return ctx.transaction(async () => {
         const previous = await stores.assets.readValuationAnchorById(anchorId);
-        const changes = await stores.assets.updateValuationAnchor(anchorId, input);
+        // #1437/#1562/#1563: the acquisition is the price paid on a date — the
+        // TOTAL truth that anchors the curve, never an increment layered on top.
+        // The invariant lives HERE, at the seam every route crosses, and not one
+        // level up in `executeUpdateValuationAnchorCommand`: #1562 closed it there
+        // for the named editor, the MCP and the chat's own anchor writes, and then
+        // #1563's proposal confirm arrived through `applyAssistant…Proposal`, which
+        // reaches this seam directly. A guard the next lane can walk around is the
+        // prompt paragraph of ADR 0067, one layer down.
+        const guarded: UpdateValuationAnchorInput =
+          previous?.kind === "acquisition"
+            ? { ...input, adjustsPriorCurve: true }
+            : input;
+        const changes = await stores.assets.updateValuationAnchor(anchorId, guarded);
         if (changes === 0 || !previous) return changes;
         const assetId = previous.assetId;
         const newDate = input.valuationDate ?? previous.valuationDate;

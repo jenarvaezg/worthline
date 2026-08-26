@@ -36,6 +36,14 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
   // eye validates it exactly as it validates a corrected balance.
   propose_early_repayment: "accepts",
   propose_holding: "accepts",
+  /**
+   * The date and the price of an acquisition (#1563), and this one the PRD's own
+   * frontier names: a single fact verified at a glance — a deed, a note, the user's
+   * Excel — never a figure that needs research. It moves ONE anchor over two
+   * figures the preview shows back with what they replace, so the human eye
+   * validates it exactly as it validates a corrected balance.
+   */
+  propose_property_acquisition: "accepts",
   propose_property_valuation_anchor: "accepts",
   /**
    * `accepts`, no `rejects` como su hermana (#1423): una enmienda no puede meter

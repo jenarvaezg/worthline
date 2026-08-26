@@ -30,6 +30,7 @@ import {
   parseHoldingTrashProposal,
   parseMixedDocumentProposal,
   parseOperationProposal,
+  parsePropertyAcquisitionProposal,
   parsePropertyValuationProposal,
   parseReconcileProposal,
   parseStatementImportProposal,
@@ -42,6 +43,7 @@ import type { HoldingCreationProposal } from "./holding-creation-proposal-contra
 import type { HoldingTrashProposal } from "./holding-trash-proposal-contract";
 import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import type { OperationProposal } from "./operation-proposal-contract";
+import type { PropertyAcquisitionProposal } from "./property-acquisition-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import type { ReconcileProposal } from "./reconcile-proposal-contract";
 import type { StatementImportProposal } from "./statement-import-proposals";
@@ -66,6 +68,7 @@ export type ProposalCard =
   | { kind: "holding_trash"; proposal: HoldingTrashProposal }
   | { kind: "mixed_document"; proposal: MixedDocumentProposal }
   | { kind: "operation"; proposal: OperationProposal }
+  | { kind: "property_acquisition"; proposal: PropertyAcquisitionProposal }
   | { kind: "property_valuation"; proposal: PropertyValuationProposal }
   | { kind: "reconcile"; proposal: ReconcileProposal }
   | { kind: "statement_import"; proposal: StatementImportProposal }
@@ -103,6 +106,8 @@ export const PROPOSAL_CARD_PARSERS: Record<
     card("mixed_document", parseMixedDocumentProposal(output)),
   propose_operation: (output: unknown) =>
     card("operation", parseOperationProposal(output)),
+  propose_property_acquisition: (output: unknown) =>
+    card("property_acquisition", parsePropertyAcquisitionProposal(output)),
   propose_property_valuation_anchor: (output: unknown) =>
     card("property_valuation", parsePropertyValuationProposal(output)),
   propose_reconcile: (output: unknown) =>

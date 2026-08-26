@@ -1046,6 +1046,8 @@ export type AssistantProposalKind =
   | "statement_import"
   | "balance_history_import"
   | "property_valuation_anchor"
+  /** ONE property's acquisition date and price, moved by name (#1563). */
+  | "property_acquisition"
   | "mixed_document_import"
   | "correction"
   | "holding_creation"

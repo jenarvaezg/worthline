@@ -121,6 +121,7 @@ interface ValuationAnchorFact {
   kind: string;
   date: string;
   value: { amountMinor: number; currency: string };
+  acquisition?: true;
 }
 
 interface HoldingDetailFacts {
@@ -218,6 +219,62 @@ describe("get_holding_detail — appreciating valuation anchors (#338)", () => {
       value: eur(20_000_00),
     });
     expect(reform!.id).toMatch(/^wl_van_[a-f0-9]{32}$/);
+    // Neither of them is the acquisition, so neither carries the flag (#1563).
+    expect(appraisal!.acquisition).toBeUndefined();
+    expect(reform!.acquisition).toBeUndefined();
+  });
+
+  /**
+   * #1563: the acquisition anchor is NAMED in the read, not left to be inferred
+   * from the ordering. #1437's disease was an anonymous row — the acquisition
+   * looked like any other tasación — and a read that repeats that anonymity
+   * leaves the assistant guessing which fact `propose_property_acquisition`
+   * would move.
+   */
+  test("names the acquisition anchor among the appraisals", async () => {
+    const store = await freshStore();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 300_000_00,
+      id: "asset_piso",
+      isPrimaryResidence: true,
+      liquidityTier: "illiquid",
+      name: "Piso de Plasencia",
+      ownership: owner,
+      type: "real_estate",
+    });
+    await store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "asset_piso",
+      id: "van_acquisition",
+      kind: "acquisition",
+      valuationDate: "2004-05-19",
+      valueMinor: 150_253_03,
+    });
+    await store.assets.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "asset_piso",
+      id: "van_2026",
+      valuationDate: "2026-07-09",
+      valueMinor: 233_000_00,
+    });
+    store.close();
+
+    const scopeId = await householdScopeId();
+    const homeId = await holdingIdByLabel(scopeId, "Piso de Plasencia");
+    const { body } = await holding(homeId);
+    const detail = body.data as HoldingDetailFacts;
+
+    const anchors = detail.valuationAnchors ?? [];
+    expect(anchors).toHaveLength(2);
+    // Both are market appraisals — the acquisition IS one — and exactly one of
+    // them says so.
+    expect(anchors.every((anchor) => anchor.kind === "market_appraisal")).toBe(true);
+    expect(anchors.filter((anchor) => anchor.acquisition === true)).toHaveLength(1);
+    expect(anchors.find((anchor) => anchor.acquisition === true)).toMatchObject({
+      date: "2004-05-19",
+      value: eur(150_253_03),
+    });
   });
 
   test("appreciating asset with no anchors → missing_configuration quality note, no fabricated facts", async () => {

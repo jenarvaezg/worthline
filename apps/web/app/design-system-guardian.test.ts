@@ -533,13 +533,13 @@ describe("Libro mayor design-system guardian (#906)", () => {
     );
     // Each proposal states its kind through the shared folio label (the first
     // real child is the srOnly mutation status, so the title carries its class).
-    // Twelve cards: statement, correction (#1051), reconstruction (#1053),
+    // Thirteen cards: statement, correction (#1051), reconstruction (#1053),
     // balance-history, valuation, mixed, holding-creation (#1105), the shared
     // baja/restauración card (#1106, one card, two folios), reconcile (#1108),
-    // early repayment (#1245), the dated investment operation (#1374) and the
-    // dictated traspaso (#1482).
+    // early repayment (#1245), the dated investment operation (#1374), the
+    // dictated traspaso (#1482) and the property acquisition (#1563).
     const kindTitles = cards.match(/className="assistantProposalKind"/g) ?? [];
-    expect(kindTitles.length).toBe(12);
+    expect(kindTitles.length).toBe(13);
 
     // The shell is the composer, the conversation and the transport — nothing
     // else (#1589). A card's markup appearing here is how the split unravels:
@@ -548,15 +548,17 @@ describe("Libro mayor design-system guardian (#906)", () => {
 
     // The ledger FOOTER is a different line from the folio label above (canon §3):
     // the atomic-batch statement («1 propuesta · 1 holding · 1 lote atómico»), which
-    // only the five atomic cards print — correction, reconstruction, early repayment,
+    // only the six atomic cards print — correction, reconstruction, early repayment,
     // the dated operation (#1374, «1 propuesta · 1 posición · 1 operación
-    // fechada») and the traspaso (#1482, «1 propuesta · 1 traspaso · 2 apuntes
+    // fechada»), the traspaso (#1482, «1 propuesta · 1 traspaso · 2 apuntes
     // atados» — atomic in the strongest sense there is here: both halves or
-    // neither). The alta, baja and reconcile cards used to print their own kind
+    // neither) and the acquisition (#1563, «1 propuesta · 1 inmueble · 1 fecha de
+    // adquisición»: one anchor moved and its ripple, in one transaction). The
+    // alta, baja and reconcile cards used to print their own kind
     // string there instead, so the reader met the same words twice in one card
     // (#1317). A footer that merely repeats the header is the mistake this pins.
     const footers = cards.match(/className="assistantProposalFolio"/g) ?? [];
-    expect(footers.length).toBe(5);
+    expect(footers.length).toBe(6);
   });
 
   test("a marked chip carries a binary mark, not only a tint (#1483)", () => {

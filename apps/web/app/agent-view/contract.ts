@@ -1041,6 +1041,19 @@ export interface AgentViewValuationAnchor {
   date: string;
   /** Total value for an appraisal, increment for an improvement. */
   value: AgentViewMoney;
+  /**
+   * Present, and always `true`, on the ONE appraisal that is the acquisition
+   * (#1563). Absent on every other anchor — a flag beside `kind` and not a third
+   * `kind`, because the acquisition IS a market appraisal: its value is the total
+   * truth on its date and the curve reads it as such.
+   *
+   * It is here because #1437's disease was an anonymous row: the acquisition
+   * looked like any other tasación, so nobody could tell which one it was. A read
+   * that repeats that anonymity leaves the assistant unable to name the fact
+   * `propose_property_acquisition` moves — or to answer «¿desde cuándo consta que
+   * lo compré?» without guessing that the oldest one is it.
+   */
+  acquisition?: true;
 }
 
 /**

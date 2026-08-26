@@ -7,9 +7,9 @@ import { correctionProposalTools } from "./chat-tools/proposals/correction";
 import { debtSeriesProposalTools } from "./chat-tools/proposals/debt-series";
 import { earlyRepaymentProposalTools } from "./chat-tools/proposals/early-repayment";
 import { holdingCreationProposalTools } from "./chat-tools/proposals/holdings";
+import { housingAnchorProposalTools } from "./chat-tools/proposals/housing-anchors";
 import { mixedDocumentProposalTools } from "./chat-tools/proposals/mixed-document";
 import { operationProposalTools } from "./chat-tools/proposals/operation";
-import { propertyValuationProposalTools } from "./chat-tools/proposals/property-valuation";
 import { reconcileProposalTools } from "./chat-tools/proposals/reconcile";
 import { statementProposalTools } from "./chat-tools/proposals/statement";
 import { transferProposalTools } from "./chat-tools/proposals/transfer";
@@ -82,7 +82,7 @@ export function createChatTools(input: ChatToolsInput): ToolSet {
     ...statementProposalTools(turn),
     ...mixedDocumentProposalTools(turn),
     ...reconcileProposalTools(turn),
-    ...propertyValuationProposalTools(turn),
+    ...housingAnchorProposalTools(turn),
     ...debtSeriesProposalTools(turn),
     ...earlyRepaymentProposalTools(turn),
     ...correctionProposalTools(turn),
