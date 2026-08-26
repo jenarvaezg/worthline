@@ -58,6 +58,7 @@ export type {
   DeleteValuationAnchorCommand,
   ImportBalanceHistoryCommand,
   ImportBalanceHistoryResult,
+  InvestmentHoldingEntry,
   OwnershipSplitCommandResult,
   OwnershipSplitViolation,
   RecordHousingValuationCommand,

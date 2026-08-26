@@ -29,8 +29,13 @@ import {
   parseOpeningCostMode,
   resolveOpeningCapture,
 } from "@web/patrimonio/anadir/investment-units";
-import { type WorthlineStore } from "@web/store";
-import type { DebtModel, Instrument, LiabilityType } from "@worthline/domain";
+import type { InvestmentHoldingEntry } from "@worthline/db";
+import type {
+  DebtModel,
+  Instrument,
+  InvestmentOperation,
+  LiabilityType,
+} from "@worthline/domain";
 import {
   checkOwnershipSplit,
   createInvestmentOperationSafe,
@@ -44,7 +49,7 @@ import {
   deriveCurrentStateDebt,
 } from "./current-state-debt";
 import { readDebtHistoryStarts } from "./debt-history-starts";
-import { persistCurrentStateAmortization } from "./persist-current-state-debt";
+import { buildCurrentStateAmortization } from "./persist-current-state-debt";
 import { persistManualAssetCreation } from "./persist-holding";
 
 /**
@@ -192,23 +197,26 @@ function parseInvMode(
 }
 
 /**
- * Record the opening BUY for a freshly-created derived investment from the "saldo
- * de hoy" path (#597): the already-derived units × price, dated at the resolved
- * «Fecha del saldo» (today unless the user said otherwise, #1395), persisted with
- * its history ripple via the same seam the operations editor uses. Returns a
- * Spanish error message on a domain violation, or null on success.
+ * Resolve the opening BUY for a derived investment coming in through the "saldo de
+ * hoy" path (#597): the already-derived units × price, dated at the resolved
+ * «Fecha del saldo» (today unless the user said otherwise, #1395). Returns the
+ * operation the alta will write, or a Spanish message on a domain violation.
+ *
+ * It RESOLVES and does not write. The alta is one unit of work (#1599), so this
+ * runs before the holding exists — a refused opening must never be answered with
+ * an error beside a fondo already sitting in the tablero at 0 €. The asset id it
+ * stamps is the one the submission has just derived, minted before either row.
  *
  * `today` stays the ripple's anchor — the frontier between history and the daily
  * capture — while the capture's own `executedAt` is the date the saldo was read at;
  * a backdated one makes the ripple rebuild the snapshots from that day (ADR 0012 /
  * 0020).
  */
-async function recordOpeningOperation(
-  store: WorthlineStore,
+function resolveOpeningOperation(
   assetId: string,
   opening: { units: string; price: string; executedAt: string },
   today: string,
-): Promise<string | null> {
+): { ok: true; operation: InvestmentOperation } | { ok: false; error: string } {
   const opForm = new FormData();
   opForm.set("units", opening.units);
   opForm.set("pricePerUnit", opening.price);
@@ -218,23 +226,23 @@ async function recordOpeningOperation(
   const parsedOp = parseRouteOperationCommand(opForm, assetId, Date.now(), today);
 
   if (!parsedOp.ok) {
-    return parsedOp.error;
+    return { ok: false, error: parsedOp.error };
   }
 
   const safe = createInvestmentOperationSafe({ ...parsedOp.command, source: "opening" });
 
   if (!safe.ok) {
-    return mapDomainViolation(safe.violations[0]);
+    return { ok: false, error: mapDomainViolation(safe.violations[0]) };
   }
 
-  await store.command.recordInvestmentOperation(safe.value, { today });
-  return null;
+  return { ok: true, operation: safe.value };
 }
 
 /**
- * Record the «alta por traspaso externo» for a freshly-created investment (#1541):
+ * The «alta por traspaso externo» entry for a freshly-created investment (#1541):
  * ONE `transfer_in` with no pair, because its outgoing half lives in another
- * institution's ledger. Returns a Spanish message on a domain violation, or null.
+ * institution's ledger. Shaped here and written by the alta seam, in the same unit
+ * of work as the holding it values (#1599).
  *
  * The ids are minted here off the holding's own id, which the alta has just derived
  * for this submission — one alta, one entry, so a `transferId` of its own is all the
@@ -245,30 +253,27 @@ async function recordOpeningOperation(
  * drop; this row is a fact the user declared, with its own date and its own inherited
  * cost, and a statement import must not be able to sweep it away.
  */
-async function recordExternalTransferEntry(
-  store: WorthlineStore,
+function externalTransferEntry(
   assetId: string,
   entry: Extract<ExternalTransferCapture, { ok: true }>,
-  today: string,
-): Promise<string | null> {
+): Extract<InvestmentHoldingEntry, { kind: "external_transfer_in" }> {
   // ONE clock reading for both ids, as everywhere else in this action. The wizard
   // does not post the submission key of #1394, so a double submit already mints two
   // holdings here and this entry rides whichever one it belongs to; giving the two
   // ids of ONE entry two different milliseconds would be gratuitous on top.
   const seed = Date.now();
 
-  const result = await store.command.recordExternalTransferIn({
-    amountMinor: entry.amountMinor,
-    destinationAssetId: assetId,
-    destinationPricePerUnit: entry.pricePerUnit,
-    executedAt: entry.executedAt,
-    inheritedCostMinor: entry.inheritedCostMinor,
-    inOperationId: createStableId("op", `${assetId}_transfer_in`, seed),
-    today,
-    transferId: createStableId("trf", assetId, seed),
-  });
-
-  return result.ok ? null : mapDomainViolation(result.violations[0]);
+  return {
+    kind: "external_transfer_in",
+    transfer: {
+      amountMinor: entry.amountMinor,
+      destinationPricePerUnit: entry.pricePerUnit,
+      executedAt: entry.executedAt,
+      inheritedCostMinor: entry.inheritedCostMinor,
+      inOperationId: createStableId("op", `${assetId}_transfer_in`, seed),
+      transferId: createStableId("trf", assetId, seed),
+    },
+  };
 }
 
 /**
@@ -700,8 +705,6 @@ export async function createHoldingAction(
           return { ok: false, error: errorUrl(mapDomainViolation(splitViolation)) };
         }
 
-        await store.assets.createInvestmentAsset({ ...parsed.command, instrument });
-
         // The catalog identity to register once the write commits (#1097). Threaded
         // out on the run payload so the best-effort stub call runs in afterCommit —
         // after, and never inside, the workspace transaction.
@@ -713,45 +716,52 @@ export async function createHoldingAction(
           providerSymbol: parsed.command.providerSymbol ?? null,
         };
 
-        // Record the opening BUY at the saldo's date, so the holding lands valued —
-        // not the 0 € container the alta used to create. Dated today unless the user
-        // said the saldo is older (#1395), in which case the ripple reconstructs the
-        // history from there: dating a weeks-old traspaso today left the net worth with
-        // a hole between the exit and the re-entry. Never combined with (b) import: a
+        // The opening BUY at the saldo's date, so the holding lands valued — not the
+        // 0 € container the alta used to create. Dated today unless the user said the
+        // saldo is older (#1395), in which case the ripple reconstructs the history
+        // from there: dating a weeks-old traspaso today left the net worth with a hole
+        // between the exit and the re-entry. Never combined with (b) import: a
         // synthetic apertura would not match the CSV's historical orders (merge keys
         // on date) → a duplicate position; the mode exclusion prevents it (#597).
-        if (opening?.ok) {
-          const opError = await recordOpeningOperation(
-            store,
-            parsed.command.id,
-            opening,
-            today,
-          );
+        //
+        // Resolved BEFORE the holding exists: a refused opening is a message with no
+        // fantasma behind it (#1599). The traspaso entry keeps its OWN kind — never
+        // the opening BUY. A purchase would eat a year of contribution allowance
+        // (ADR 0080) for capital that merely changed manager, which is exactly the
+        // miscount that printed «te has pasado 2.127 €» in Jorge's cupo, and it would
+        // claim a plusvalía the ledger never earned. The seam writes ONE `transfer_in`
+        // carrying its own `transferId`, so the readers that pair by that id find a
+        // single row and name it «desde otra entidad» (#1481) instead of reporting a
+        // broken pair (ADR 0083, decisión 7).
+        const resolvedOpening = opening?.ok
+          ? resolveOpeningOperation(parsed.command.id, opening, today)
+          : null;
 
-          if (opError) {
-            return { ok: false, error: errorUrl(opError) };
-          }
+        if (resolvedOpening && !resolvedOpening.ok) {
+          return { ok: false, error: errorUrl(resolvedOpening.error) };
         }
 
-        // The traspaso entry goes through its OWN gate — never through the opening
-        // BUY above. A purchase would eat a year of contribution allowance (ADR 0080)
-        // for capital that merely changed manager, which is exactly the miscount that
-        // printed «te has pasado 2.127 €» in Jorge's cupo, and it would claim a
-        // plusvalía the ledger never earned. `recordExternalTransferIn` writes ONE
-        // `transfer_in` carrying its own `transferId`, so the readers that pair by
-        // that id find a single row and name it «desde otra entidad» (#1481) instead
-        // of reporting a broken pair (ADR 0083, decisión 7).
-        if (external?.ok) {
-          const entryError = await recordExternalTransferEntry(
-            store,
-            parsed.command.id,
-            external,
-            today,
-          );
+        const entry: InvestmentHoldingEntry | null = resolvedOpening
+          ? { kind: "opening", operation: resolvedOpening.operation }
+          : external?.ok
+            ? externalTransferEntry(parsed.command.id, external)
+            : null;
 
-          if (entryError) {
-            return { ok: false, error: errorUrl(entryError) };
-          }
+        // ONE unit of work: the holding and the entry that values it commit or roll
+        // back together (#1599). Before this seam the two were separate calls, so a
+        // refused entry answered with an error and left the fondo in the tablero at
+        // 0 €, with no operations.
+        const created = await store.command.createInvestmentHolding({
+          asset: { ...parsed.command, instrument },
+          ...(entry ? { entry } : {}),
+          today,
+        });
+
+        if (!created.ok) {
+          return {
+            ok: false,
+            error: errorUrl(mapDomainViolation(created.violations[0])),
+          };
         }
 
         // (b) "Importar extracto": no synthetic opening — route to «Cargar movimientos»
@@ -919,25 +929,32 @@ export async function createHoldingAction(
           };
         }
 
-        await store.liabilities.createLiability(resolved);
-        await store.liabilities.setDebtModel(resolved.id, debtModel);
-
-        if (currentStateDerived && currentStateDerived.ok) {
-          await persistCurrentStateAmortization(
-            store,
-            resolved.id,
-            currentStateDerived,
-            {
-              baselineDate: today,
-              endDate: csEndDate,
-              inputMode: currentStateInputMode,
-              nextPaymentDate: currentStateNextPaymentDate,
-              originalSigningDate: currentStateOriginalSigningDate || null,
-            },
-            Date.now(),
-            today,
-          );
-        }
+        // ONE unit of work: the deuda, the model that decides how its balance is
+        // valued (ADR 0031) and — on the «alta por estado actual» path — its plan and
+        // re-baseline commit or roll back together (#1599). Before this seam they were
+        // three calls, so a failure after the first left a deuda nobody could draw a
+        // curve for.
+        await store.command.createDebtHolding({
+          debtModel,
+          liability: resolved,
+          today,
+          ...(currentStateDerived?.ok
+            ? {
+                currentState: buildCurrentStateAmortization(
+                  resolved.id,
+                  currentStateDerived,
+                  {
+                    baselineDate: today,
+                    endDate: csEndDate,
+                    inputMode: currentStateInputMode,
+                    nextPaymentDate: currentStateNextPaymentDate,
+                    originalSigningDate: currentStateOriginalSigningDate || null,
+                  },
+                  Date.now(),
+                ),
+              }
+            : {}),
+        });
 
         return {
           ok: true,

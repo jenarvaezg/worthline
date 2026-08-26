@@ -97,3 +97,30 @@ place that owns "a declared fact re-derives snapshots," whichever axis it moves.
 - No new domain noun: "dated fact about the past" and "ripple recalculation"
   already name the concepts (CONTEXT.md, ADR 0012). The seam is an
   implementation home for them, not a new term.
+
+## Amendment (#1599): an alta is one unit of work too
+
+Creating a **holding** is not one write either. An investment is a row PLUS the
+fact that gives it a value — an opening BUY, or the `transfer_in` that arrived
+from another institution; a **debt** is a row PLUS its **debt model** PLUS, on the
+"alta por estado actual" path (ADR 0056), its plan and its re-baseline. Those were
+separate calls, so a second write that failed left the first one committed and the
+owner kept a **holding** nobody asked for — a fondo at 0 € with no operations, a
+deuda whose curve nobody can draw — beside an error message.
+
+The same rule therefore covers the alta: `createInvestmentHolding` and
+`createDebtHolding` are seams that persist the row AND its defining fact AND its
+ripple, atomically, alongside the `createHousingHolding` seam that already did it
+for a home.
+
+These are the one family that **composes** the others: the facts an alta writes
+already have owners (the operation family, the traspaso gate, the current-state
+debt seam), so the composition root passes them in explicitly and nested
+transactions flatten into the alta's own. Families still never import one another.
+
+What stays outside: every **pure** refusal. The figures a caller can check before
+touching the book — the parsed amounts, the domain guard on the operation, the
+ownership split — must fail BEFORE the alta is attempted, so a refused entry is a
+message with no half-written holding behind it. Only what needs the row to exist
+(the traspaso gate reads the destination's own currency) is answered from inside,
+as a `DomainResult` that rolls the whole alta back.

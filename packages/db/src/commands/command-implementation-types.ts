@@ -28,6 +28,7 @@ import type { SnapshotStore } from "@db/snapshot-store";
 import type { CreateHousingHoldingCommand } from "@db/store-types";
 import type {
   CreateInvestmentOperationInput,
+  CreateLiabilityInput,
   DebtModel,
   DecimalString,
   DomainResult,
@@ -52,6 +53,20 @@ export interface DatedFactStores {
   operations: OperationsStore;
   contributionPlan: ContributionPlanStore;
 }
+
+/**
+ * How a freshly-created investment holding gets its value (#1599): the opening BUY
+ * the alta derived from the declared saldo, or the ONE `transfer_in` that records
+ * capital arriving from another institution (#1541). Exclusive by construction —
+ * a synthetic apertura beside a real traspaso would eat a year of contribution
+ * allowance for capital that merely changed manager (ADR 0080/0083).
+ */
+export type InvestmentHoldingEntry =
+  | { kind: "opening"; operation: CreateInvestmentOperationInput }
+  | {
+      kind: "external_transfer_in";
+      transfer: Omit<RecordExternalTransferInCommand, "destinationAssetId" | "today">;
+    };
 
 /**
  * Private dated-fact command implementations (issues #489/#972): the operations that
@@ -192,6 +207,42 @@ export interface DatedFactCommandImplementations {
     command: CreateHousingHoldingCommand,
     opts?: { today?: string },
   ) => Promise<void>;
+  /**
+   * Investment-alta seam (#1599, ADR 0020): create ONE investment holding AND the
+   * entry that gives it a value — an opening BUY, or the `transfer_in` that
+   * arrived from another institution — atomically, with the entry's own ripple.
+   * A holding created without its entry is the fantasma the alta used to leave
+   * behind: a fondo at 0 € with no operations, beside an error message.
+   *
+   * `entry` is a discriminated union, not two optional fields, because the two
+   * are mutually exclusive by construction: a synthetic apertura beside a real
+   * traspaso would claim a purchase the book never made (ADR 0083). Omitting it
+   * creates the empty container the avanzado flow asks for.
+   *
+   * Returns a `DomainResult` because the traspaso gate can only refuse once the
+   * destination exists — its currency is a fact of the row this command is
+   * creating. Every pure refusal belongs to the caller, BEFORE the alta.
+   */
+  createInvestmentHoldingAndRipple: (command: {
+    asset: CreateInvestmentAssetInput;
+    entry?: InvestmentHoldingEntry;
+    today?: string;
+  }) => Promise<DomainResult<void>>;
+  /**
+   * Debt-alta seam (#1599, ADR 0020): create ONE liability AND its debt model AND
+   * — on the «alta por estado actual» path (ADR 0056) — its derived plan and
+   * re-baseline, atomically, with ONE ripple. The model is never a second call:
+   * a deuda that lands without it has no curve anyone can draw (ADR 0031).
+   */
+  createDebtHoldingAndRipple: (command: {
+    liability: CreateLiabilityInput;
+    debtModel: DebtModel;
+    currentState?: {
+      plan: CreateAmortizationPlanInput;
+      rebaseline: AddBalanceRebaselineInput;
+    };
+    today?: string;
+  }) => Promise<void>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts?: { today?: string },
