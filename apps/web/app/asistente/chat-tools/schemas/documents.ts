@@ -3,11 +3,15 @@ import { jsonSchema } from "ai";
 
 /**
  * Input schemas for the document-ingestion families: the broker statement, the
- * mixed document, the portfolio reconcile and the property-valuation anchor.
+ * mixed document and the portfolio reconcile.
  *
  * What they share is that the FIGURES are not theirs. Each one either points at a
  * document worthline already extracted and validated, or hands over raw text the
  * app parses itself — so the fields here name rows, they do not carry them.
+ *
+ * The housing family's two schemas are NOT here, including the valuation anchor
+ * that used to be (#1563): ADR 0086 splits proposal schemas per FAMILY, and the
+ * housing family owns two lanes whose schemas belong together in `housing.ts`.
  */
 
 export const STATEMENT_IMPORT_PROPOSAL_SCHEMA = jsonSchema<{
@@ -169,24 +173,5 @@ export const RECONCILE_PROPOSAL_SCHEMA = jsonSchema<{
     },
   },
   required: ["holdings"],
-  additionalProperties: false,
-});
-
-export const PROPERTY_VALUATION_PROPOSAL_SCHEMA = jsonSchema<{
-  assetId?: string;
-  documentName?: string;
-  documentSha256?: string;
-  valuationDate?: string;
-  valueMinor?: number;
-}>({
-  type: "object",
-  properties: {
-    assetId: { type: "string" },
-    documentName: { type: "string" },
-    documentSha256: { type: "string" },
-    valuationDate: { type: "string" },
-    valueMinor: { type: "integer" },
-  },
-  required: ["assetId", "documentName", "documentSha256", "valuationDate", "valueMinor"],
   additionalProperties: false,
 });

@@ -88,18 +88,20 @@ export async function executeUpdateValuationAnchorCommand(
   const today = defaultToday(command.today);
   // #1437/#1562: the acquisition is the price paid on a date — the TOTAL truth
   // that anchors the curve, never an increment layered on top of it. The named
-  // editor has no "es una tasación de mercado" checkbox to post, and the chat
-  // writes through this same seam (never through the web form), so the invariant
-  // is enforced HERE: demoting it to an improvement would add the purchase price
-  // on top of the curve instead of anchoring it.
-  const anchor = await store.assets.readValuationAnchorById(command.anchorId);
-  const input: UpdateValuationAnchorInput =
-    anchor?.kind === "acquisition"
-      ? { ...command.input, adjustsPriorCurve: true }
-      : command.input;
-  const changes = await store.command.updateValuationAnchor(command.anchorId, input, {
-    today,
-  });
+  // editor has no "es una tasación de mercado" checkbox to post, so saving it
+  // would otherwise demote the anchor and add the purchase price on top of the
+  // curve instead of anchoring it.
+  //
+  // The guard itself moved one level DOWN in #1563, into
+  // `updateValuationAnchorAndRipple`: the assistant's proposal confirm reaches
+  // that seam directly, without passing through this command, so this was the
+  // wrong floor for an invariant. It is enforced for every route there — this
+  // command included — and stating it twice would be two places to drift.
+  const changes = await store.command.updateValuationAnchor(
+    command.anchorId,
+    command.input,
+    { today },
+  );
   return { ok: true, value: { changes } };
 }
 

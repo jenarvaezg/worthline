@@ -26,6 +26,8 @@ import {
   type OperationProposal,
   parseOperationProposalDraft,
 } from "./operation-proposal-contract";
+import type { PropertyAcquisitionProposal } from "./property-acquisition-proposal-contract";
+import { parsePropertyAcquisitionProposalDraft } from "./property-acquisition-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
 import { parsePropertyValuationProposalDraft } from "./property-valuation-proposal-contract";
 import { internalProseLinkHref } from "./prose-link";
@@ -690,6 +692,48 @@ export function parsePropertyValuationProposal(
   )
     return null;
   return raw as unknown as PropertyValuationProposal;
+}
+
+/**
+ * The acquisition proposal a tool answer unfolds into (#1563), or null.
+ *
+ * Every field the card renders is checked — `rows` and `notes` element by element:
+ * this shape crosses to the client through a stream, so the card must never be the
+ * first thing to find out a figure is missing.
+ */
+export function parsePropertyAcquisitionProposal(
+  raw: unknown,
+): PropertyAcquisitionProposal | null {
+  if (!isRecord(raw) || raw.proposalType !== "property_acquisition") return null;
+  const draft = parsePropertyAcquisitionProposalDraft(raw.draft);
+  if (!draft.ok || !isRecord(raw.property)) return null;
+  if (
+    typeof raw.property.id !== "string" ||
+    typeof raw.property.name !== "string" ||
+    typeof raw.summary !== "string" ||
+    typeof raw.folio !== "string" ||
+    !Array.isArray(raw.points) ||
+    !raw.points.every(
+      (point) =>
+        isRecord(point) &&
+        typeof point.dateKey === "string" &&
+        typeof point.afterMinor === "number" &&
+        typeof point.beforeMinor === "number",
+    ) ||
+    !Array.isArray(raw.notes) ||
+    !raw.notes.every((note) => typeof note === "string") ||
+    !Array.isArray(raw.rows) ||
+    !raw.rows.every(
+      (row) =>
+        isRecord(row) &&
+        typeof row.label === "string" &&
+        typeof row.before === "string" &&
+        typeof row.after === "string",
+    )
+  ) {
+    return null;
+  }
+  return raw as unknown as PropertyAcquisitionProposal;
 }
 
 export function parseMixedDocumentProposal(raw: unknown): MixedDocumentProposal | null {

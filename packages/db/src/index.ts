@@ -29,6 +29,7 @@ export type {
   HoldingReconcileFact,
   InvestmentOperationFact,
   InvestmentTransferFact,
+  PropertyAcquisitionFact,
   PropertyValuationAnchorFact,
   ReconcileDocument,
   ReconcileDocumentHolding,

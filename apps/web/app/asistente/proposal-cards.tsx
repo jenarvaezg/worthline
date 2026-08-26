@@ -10,6 +10,7 @@ import { HoldingCreationProposalCard } from "./proposal-cards/holding-creation";
 import { HoldingTrashProposalCard } from "./proposal-cards/holding-trash";
 import { MixedDocumentProposalCard } from "./proposal-cards/mixed-document";
 import { OperationProposalCard } from "./proposal-cards/operation";
+import { PropertyAcquisitionProposalCard } from "./proposal-cards/property-acquisition";
 import { PropertyValuationProposalCard } from "./proposal-cards/property-valuation";
 import { ReconcileProposalCard } from "./proposal-cards/reconcile";
 import { ReconstructionProposalCard } from "./proposal-cards/reconstruction";
@@ -81,6 +82,8 @@ export function proposalCardFor({
       return <MixedDocumentProposalCard {...gate} proposal={card.proposal} />;
     case "operation":
       return <OperationProposalCard {...gate} proposal={card.proposal} />;
+    case "property_acquisition":
+      return <PropertyAcquisitionProposalCard {...gate} proposal={card.proposal} />;
     case "property_valuation":
       return (
         <PropertyValuationProposalCard

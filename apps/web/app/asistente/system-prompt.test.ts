@@ -220,6 +220,15 @@ describe("buildChatSystemPrompt", () => {
     // one string in `capability-destinations.ts`, read by this prompt and by the
     // maintainer alert's refusal message. Before #1524 that list lived only inside
     // the refusal, which is exactly why the rent entry was never added to it.
+    //
+    // #1563 did NOT raise it, and left it tight on purpose: the acquisition lane
+    // needed one clause in the correction protocol, because that protocol still
+    // routed «vivienda/apreciable» to the valuation anchor — the instruction that
+    // produced #1437's failure (add one more tasación, leave the acquisition where
+    // it was). It cost 70 of the 80 characters that were free, so the prompt now
+    // sits at 9.290 with TEN to spare. The next rule that needs room raises the
+    // number and writes down why, the way every raise above did; nothing here is
+    // a reason to trim an existing instruction to make space.
     expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_300);
   });
 

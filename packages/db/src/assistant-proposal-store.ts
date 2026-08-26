@@ -38,6 +38,19 @@ export interface PropertyValuationAnchorFact {
 }
 
 /**
+ * The acquisition anchor's new date and price (#1563). The row shape is its
+ * sibling's, and the KIND is what tells them apart: a valuation anchor fact adds
+ * one more tasación, this one MOVES the single anchor that starts the housing's
+ * history. Reading the facts table has to be enough to know which of the two a
+ * confirmation performed, so the distinction is persisted rather than inferred
+ * from the proposal it hangs on.
+ */
+export interface PropertyAcquisitionFact {
+  kind: "property_acquisition";
+  row: { assetId: string; valuationDate: string; valueMinor: number };
+}
+
+/**
  * A whole correction plan (#1051) stored as one self-contained fact: the target
  * holding, mode, ordered edits and their before-values. Unlike the import facts,
  * it is not extracted from a document — it is a chat-declared, previewable diff.
@@ -154,6 +167,7 @@ export type AssistantProposalFact =
   | StatementOperationFact
   | DebtBalanceObservationFact
   | PropertyValuationAnchorFact
+  | PropertyAcquisitionFact
   | HoldingCorrectionFact
   | HoldingCreationFact
   | HoldingTrashActionFact
@@ -212,6 +226,7 @@ async function createProposal(
     input.kind !== "statement_import" &&
     input.kind !== "balance_history_import" &&
     input.kind !== "property_valuation_anchor" &&
+    input.kind !== "property_acquisition" &&
     input.kind !== "mixed_document_import" &&
     input.kind !== "correction" &&
     input.kind !== "holding_creation" &&
@@ -268,7 +283,10 @@ function normalizeFact(
   if (fact.kind === "investment_transfer" && "row" in fact) {
     return { kind: fact.kind, row: fact.row };
   }
-  if (fact.kind === "property_valuation_anchor" && "row" in fact) {
+  if (
+    (fact.kind === "property_valuation_anchor" || fact.kind === "property_acquisition") &&
+    "row" in fact
+  ) {
     return {
       kind: fact.kind,
       row: {
@@ -407,6 +425,7 @@ async function readProposal(
           fact.kind !== "statement_operation" &&
           fact.kind !== "debt_balance_observation" &&
           fact.kind !== "property_valuation_anchor" &&
+          fact.kind !== "property_acquisition" &&
           fact.kind !== "holding_correction" &&
           fact.kind !== "holding_creation" &&
           fact.kind !== "holding_trash_action" &&
@@ -465,7 +484,10 @@ async function readProposal(
             row: JSON.parse(fact.payloadJson) as DebtBalanceObservationFact["row"],
           };
         }
-        if (fact.kind === "property_valuation_anchor") {
+        if (
+          fact.kind === "property_valuation_anchor" ||
+          fact.kind === "property_acquisition"
+        ) {
           return {
             kind: fact.kind,
             row: JSON.parse(fact.payloadJson) as PropertyValuationAnchorFact["row"],

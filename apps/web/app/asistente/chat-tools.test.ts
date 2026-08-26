@@ -1791,6 +1791,11 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       repaymentDate: "2026-05-20",
     }),
     propose_holding: () => ({ ...CUENTA }),
+    propose_property_acquisition: (ids) => ({
+      acquisitionDate: "2004-05-19",
+      acquisitionValueMinor: 150_253_03,
+      assetId: ids["casa"],
+    }),
     propose_property_valuation_anchor: (ids) => ({
       assetId: ids["casa"],
       documentName: "tasacion.pdf",
@@ -1846,6 +1851,17 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
       name: "Casa",
       ownership: [{ memberId: "mJ", shareBps: 10_000 }],
       type: "real_estate",
+    });
+    // #1563: the acquisition anchor the chat lane MOVES. `createManualAsset` seeds
+    // none, and a housing without one is the refusal path — not the success the
+    // whitelist assertions below are about.
+    await store.command.addValuationAnchor({
+      adjustsPriorCurve: true,
+      assetId: "casa",
+      id: "anchor_casa_acquisition",
+      kind: "acquisition",
+      valuationDate: "2019-03-10",
+      valueMinor: 250_000_00,
     });
     // An amortizable debt with a live plan, so `propose_early_repayment` has a real
     // schedule to project against (#1245).

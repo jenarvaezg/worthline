@@ -507,7 +507,10 @@ Its edit is a **reconstruction**, not a field change: moving its date or price r
 every day up to the next **market appraisal** and re-ripples every **snapshot** since, so
 it goes through a preview→confirm that says how much history the save rewrites, and the
 confirm's verb says it (#1562, ADR 0070 §4). Editing it always keeps it a market
-appraisal — an acquisition price is a total, never an **improvement** increment.
+appraisal — an acquisition price is a total, never an **improvement** increment. Since
+#1563 the assistant can also PROPOSE that edit (`propose_property_acquisition`): it is the
+allowed side of the unvalidated-evidence frontier — a date and a price the card shows back
+with the pair they replace — and confirming it goes through the same seam as the form.
 _Avoid_: price point, historical value (too vague).
 
 **Market appraisal**:
