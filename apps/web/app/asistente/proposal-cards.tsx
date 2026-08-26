@@ -26,21 +26,22 @@ import { TransferProposalCard } from "./proposal-cards/transfer";
  * `case` below; adding a card used to be an edit to the file every card already edited,
  * which is how twelve cards and 2.577 lines ended up in one place.
  *
- * The kinds are NOT enumerated here twice: they come from `proposal-card-presence`,
- * the table the fabricated-ceremony guard reads too (#1468), and the switch below is
- * exhaustive over its union — a new kind fails the typecheck until it has a card.
- *
- * What a card is entitled to is the whole of `ProposalCardGate` (`proposal-cards/gate.ts`)
- * and its own parsed proposal. It never sees the conversation, the transport or the
- * panel's state, so a card cannot grow a second opinion about the turn it was born in.
+ * What a card is entitled to is `ProposalCardGate` (`proposal-cards/gate.ts`) and its
+ * own parsed proposal. It never sees the conversation, the transport or the panel's
+ * state, so a card cannot grow a second opinion about the turn it was born in. The
+ * valuation card is the one that takes LESS: it has never had a message to print for
+ * the demo gate, and giving it one here would put a sentence on screen that no card
+ * prints today.
  */
 
 /**
  * The proposal card a tool answer unfolds into, or `null` when the answer is not a
  * proposal (every read tool runs silently) or does not parse as one.
  *
- * The parsing is NOT here: it comes from `proposal-card-presence`, the table the
- * fabricated-ceremony guard reads too (#1468). Before that, this function held the
+ * The parsing is NOT here, and neither is the census of kinds: both come from
+ * `proposal-card-presence`, the table the fabricated-ceremony guard reads too (#1468),
+ * and the switch below is exhaustive over its union — a new kind fails the typecheck
+ * until it has a card. Before that, this function held the
  * only copy of «did this answer become a card», and the guard asked a different
  * question — whether a `propose_*` tool had been called — so a rejected call silenced
  * the warning exactly like a real card. What is left here is the half that is genuinely

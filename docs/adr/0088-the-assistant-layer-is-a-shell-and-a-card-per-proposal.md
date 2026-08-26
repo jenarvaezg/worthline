@@ -53,7 +53,10 @@ own module.
   (`proposal-cards/gate.ts`) is the demo write-gate and its message; a card takes
   that and its own parsed proposal. It cannot reach the conversation, the
   transport or the panel's state, because they are not in its module scope any
-  more.
+  more. One card takes LESS: the valuation card has never had a demo-gate message
+  to print, so the registry hands it `mutationsDisabled` alone. Widening it here
+  would put a sentence on screen that the card does not print today — the
+  asymmetry is preexisting, and the registry is where it is finally visible.
 - **The kinds are enumerated once.** `proposal-card-presence.ts` remains the
   single table of «did this tool answer become a card» — the one the
   fabricated-ceremony guard reads too (#1468) — and the registry's switch is
