@@ -370,6 +370,12 @@ function HoldingCreationProposalCard({
       {proposal.priceTrackingWarning ? (
         <p className="assistantWarning">{proposal.priceTrackingWarning}</p>
       ) : null}
+      {/* La fecha de adquisición amputaría el histórico de una deuda anterior
+          (#1561): se pregunta ANTES de confirmar, que es cuando aún no hay nada
+          escrito. Aviso, nunca bloqueo. */}
+      {proposal.acquisitionTodayWarning ? (
+        <p className="assistantWarning">{proposal.acquisitionTodayWarning}</p>
+      ) : null}
       {proposal.duplicate ? (
         <p className="assistantError">
           Ya tienes «{proposal.duplicate.name}»

@@ -66,6 +66,13 @@ export interface HoldingCreationProposal {
    */
   priceTrackingWarning?: string;
   /**
+   * Informative acquisition-date warning (never blocks, #1561): set when a
+   * property alta would be dated TODAY — declared or defaulted — while a debt's
+   * own history already starts earlier. The chat is the surface where nobody ever
+   * sees a date field, so the question has to be on the card BEFORE confirming.
+   */
+  acquisitionTodayWarning?: string;
+  /**
    * Informative opening-coherence warning (never blocks, #1315): set when the
    * declared cash amount and `títulos × precio + comisión` disagree by more than a
    * cent of rounding. The alta still applies with the declared terms — the figures

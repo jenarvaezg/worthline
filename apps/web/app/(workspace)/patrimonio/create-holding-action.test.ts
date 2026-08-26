@@ -412,6 +412,35 @@ describe("createHoldingAction — adquisición de hoy con una deuda anterior (#1
     expect(await store.assets.readAssets()).toHaveLength(1);
   });
 
+  test("the advanced flow lands at the band, not scrolled past it", async () => {
+    const advancedForm = (name: string): FormData =>
+      form({
+        instrument: "property",
+        name_property: name,
+        acqDate_property: CLOCK.today(),
+        acqValue_property: "210.000,00",
+        returnTo: "/patrimonio/anadir/avanzado",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      });
+
+    // Control: with nothing to ask, the redirect DOES jump to the new row.
+    const quiet = await seedStore();
+    const quietUrl = await runAction(advancedForm("Piso sin deuda"), quiet);
+    expect(quietUrl).toContain("ok=asset_added");
+    expect(quietUrl).toMatch(/#wl_hld_/);
+
+    const store = await seedStore();
+    await seedOldMortgage(store);
+    const url = await runAction(advancedForm("Piso Plasencia"), store);
+
+    expect(url).toContain("/patrimonio?");
+    expect(url).toContain("ok=asset_added_acquisition_today");
+    expect(url).toContain("deudaDesde=2004-05-19");
+    // No `#anchor`: jumping to the new row would leave the question off-screen.
+    expect(url).not.toContain("#");
+  });
+
   test("no question when the acquisition date is historical", async () => {
     const store = await seedStore();
     await seedOldMortgage(store);

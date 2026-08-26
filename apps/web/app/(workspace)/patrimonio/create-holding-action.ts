@@ -43,7 +43,7 @@ import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
 } from "./current-state-debt";
-import { readDebtHistoryFloors } from "./debt-history-floors";
+import { readDebtHistoryStarts } from "./debt-history-starts";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 import { persistManualAssetCreation } from "./persist-holding";
 
@@ -498,17 +498,30 @@ export async function createHoldingAction(
       // `params` carries the extra query params an ok-key's message reads (the
       // acquisition question's `deudaDesde`, #1561). They ride through
       // `appendParam`, which inserts before the `#anchor` instead of after it.
+      //
+      // `jumpToHolding: false` drops that `#anchor` on the /patrimonio landing:
+      // when the redirect carries a QUESTION, scrolling straight to the new row
+      // leaves the band that asks it off-screen above (#1561). The wizard's
+      // `&added=` is untouched — it feeds the success panel's ficha link, not a
+      // scroll position, and that panel IS the whole screen.
       const successUrl = async (
         okKey: string,
         id: string,
-        params: Record<string, string> = {},
+        options: {
+          params?: Record<string, string>;
+          jumpToHolding?: boolean;
+        } = {},
       ): Promise<string> => {
         const publicId = await holdingBoardAnchor(store, id);
         const base =
           returnUrl === ADD_URL
             ? `${successRedirectUrl(ADD_URL, okKey)}${publicId ? `&added=${publicId}` : ""}`
-            : successRedirectUrl("/patrimonio", okKey, publicId);
-        return Object.entries(params).reduce(
+            : successRedirectUrl(
+                "/patrimonio",
+                okKey,
+                options.jumpToHolding === false ? undefined : publicId,
+              );
+        return Object.entries(options.params ?? {}).reduce(
           (url, [key, value]) => appendParam(url, key, value),
           base,
         );
@@ -559,7 +572,7 @@ export async function createHoldingAction(
         })
           ? acquisitionTodayNotice({
               acquisitionDate: parsed.command.acquisitionDate,
-              debtFloors: await readDebtHistoryFloors(store),
+              debtStarts: await readDebtHistoryStarts(store),
               today,
             })
           : null;
@@ -581,7 +594,8 @@ export async function createHoldingAction(
           value: {
             redirectUrl: notice
               ? await successUrl("asset_added_acquisition_today", result.id, {
-                  deudaDesde: notice.earliestDebtStart,
+                  jumpToHolding: false,
+                  params: { deudaDesde: notice.earliestDebtStart },
                 })
               : await successUrl("asset_added", result.id),
           },

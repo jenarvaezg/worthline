@@ -1,13 +1,13 @@
 /**
- * The debt-history floors the alta's acquisition question reads (#1561): which
- * debts declare a start date at all, and which date that is.
+ * The debt start dates the alta's acquisition question reads (#1561): which
+ * debts declare one at all, and which date that is.
  */
 
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { readDebtHistoryFloors } from "./debt-history-floors";
+import { readDebtHistoryStarts } from "./debt-history-starts";
 
 const TODAY = "2026-08-26";
 const MEMBER_ID = "mJ";
@@ -34,8 +34,8 @@ async function seedDebt(id: string, name: string): Promise<void> {
   await store.liabilities.setDebtModel(id, "amortizable");
 }
 
-describe("readDebtHistoryFloors", () => {
-  test("an amortizable debt floors at its disbursement date, not its first payment", async () => {
+describe("readDebtHistoryStarts", () => {
+  test("an amortizable debt starts at its disbursement date, not its first payment", async () => {
     await seedDebt("hipoteca", "Hipoteca Plasencia");
     await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.04",
@@ -47,12 +47,10 @@ describe("readDebtHistoryFloors", () => {
       termMonths: 300,
     });
 
-    expect(await readDebtHistoryFloors(store)).toEqual([
-      { liabilityId: "hipoteca", startDate: "2004-05-19" },
-    ]);
+    expect(await readDebtHistoryStarts(store)).toEqual(["2004-05-19"]);
   });
 
-  test("an «estado actual» debt floors at the declared firma, older than its re-baseline", async () => {
+  test("an «estado actual» debt starts at the declared firma, older than its re-baseline", async () => {
     await seedDebt("hipoteca", "Hipoteca");
     await store.liabilities.createAmortizationPlan({
       annualInterestRate: "0.02",
@@ -65,18 +63,16 @@ describe("readDebtHistoryFloors", () => {
       termMonths: 120,
     });
 
-    expect(await readDebtHistoryFloors(store)).toEqual([
-      { liabilityId: "hipoteca", startDate: "2004-05-19" },
-    ]);
+    expect(await readDebtHistoryStarts(store)).toEqual(["2004-05-19"]);
   });
 
   test("a debt with no plan declares no start date and is left out", async () => {
     await seedDebt("tarjeta", "Tarjeta");
 
-    expect(await readDebtHistoryFloors(store)).toEqual([]);
+    expect(await readDebtHistoryStarts(store)).toEqual([]);
   });
 
-  test("no debts at all → no floors", async () => {
-    expect(await readDebtHistoryFloors(store)).toEqual([]);
+  test("no debts at all → no start dates", async () => {
+    expect(await readDebtHistoryStarts(store)).toEqual([]);
   });
 });

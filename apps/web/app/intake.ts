@@ -7,14 +7,10 @@ import type {
   PortfolioGroupKey,
   PriceFreshnessState,
 } from "@worthline/domain";
-import {
-  formatDateKeyEs,
-  formatUnits,
-  isDateKeyShaped,
-  PORTFOLIO_GROUP_KEYS,
-} from "@worthline/domain";
+import { formatUnits, PORTFOLIO_GROUP_KEYS } from "@worthline/domain";
 
 import { PRESERVED_VALUE_PREFIX } from "./current-url";
+import { acquisitionTodayQuestion } from "./intake/housing-acquisition-notice";
 
 export { buildCurrentUrl, buildCurrentUrlFor } from "./current-url";
 
@@ -57,7 +53,7 @@ export {
   type AcquisitionTodayNotice,
   acquisitionDatedToday,
   acquisitionTodayNotice,
-  type DebtHistoryFloor,
+  acquisitionTodayQuestion,
 } from "./intake/housing-acquisition-notice";
 export {
   type CreateInvestmentAssetInput,
@@ -500,16 +496,9 @@ export function resolveOkNotice(
     return null;
   }
 
-  // The date rides in the URL, so it is only ever read as a date key: anything
-  // else is a hand-crafted link, and the notice falls back to its generic half
-  // rather than printing whatever the query string carried.
-  const raw = normalizeParam(searchParams?.["deudaDesde"]);
-  const debtStart = raw !== undefined && isDateKeyShaped(raw) ? raw : undefined;
-  const debtPart = debtStart
-    ? `, pero ya tienes una deuda que arranca el ${formatDateKeyEs(debtStart)}`
-    : ", pero ya tienes una deuda anterior";
-
-  return `La fecha de adquisición consta como hoy${debtPart}. Si compraste el inmueble antes, su histórico no llegará hacia atrás y esa deuda quedará fuera de las gráficas de entonces. ¿Es correcta la fecha? Puedes cambiarla en «Fecha de adquisición», dentro de la ficha del inmueble.`;
+  // The way out is this surface's own: the alta already happened, so the answer
+  // «no, es de antes» is given in the ficha's acquisition editor (#1560).
+  return `${acquisitionTodayQuestion(normalizeParam(searchParams?.["deudaDesde"]))} Puedes cambiarla en «Fecha de adquisición», dentro de la ficha del inmueble.`;
 }
 
 /** Map a success-redirect key to a localized confirmation message (null = no banner). */

@@ -613,6 +613,95 @@ describe("holding-creation server actions (#1105)", () => {
     store.close();
   });
 
+  /**
+   * #1561: the chat never shows a date field, so an undeclared purchase silently
+   * becomes "bought today". If a debt's history already starts earlier, the card
+   * has to ask BEFORE confirming — that is the only moment nothing is written yet.
+   */
+  async function seedOldMortgage(store: WorthlineStore): Promise<void> {
+    await store.liabilities.createLiability({
+      balanceMinor: 60_000_00,
+      currency: "EUR",
+      id: "hipoteca",
+      name: "Hipoteca Plasencia",
+      ownership: [{ memberId: "m", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("hipoteca", "amortizable");
+    await store.command.createAmortizationPlan(
+      {
+        annualInterestRate: "0.04",
+        disbursementDate: "2004-05-19",
+        firstPaymentDate: "2004-06-19",
+        id: "plan-hipoteca",
+        initialCapitalMinor: 150_253_03,
+        liabilityId: "hipoteca",
+        termMonths: 300,
+      },
+      { today: TODAY },
+    );
+  }
+
+  test("an undeclared purchase next to a 2004 mortgage asks about the date (#1561)", async () => {
+    const store = await seedWorkspace();
+    await seedOldMortgage(store);
+    const built = await build(store, {
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso Plasencia",
+    });
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.acquisitionTodayWarning).toContain("19/05/2004");
+    expect(built.proposal.acquisitionTodayWarning).toContain("descarta");
+    // A question, not a gate: confirming still creates the property.
+    expect(
+      await confirmHoldingCreationProposalAction(built.proposal.draft, store, clock),
+    ).toEqual({ status: "applied" });
+    store.close();
+  });
+
+  test("a declared historical purchase asks nothing (#1561)", async () => {
+    const store = await seedWorkspace();
+    await seedOldMortgage(store);
+    const built = await build(store, {
+      acquisitionDate: "2004-05-19",
+      acquisitionValueMinor: 150_253_03,
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso Plasencia",
+    });
+    if (!built.ok) throw new Error(built.error);
+
+    expect(built.proposal.acquisitionTodayWarning).toBeUndefined();
+    store.close();
+  });
+
+  test("no prior debt, no question — and a debt alta never asks (#1561)", async () => {
+    const store = await seedWorkspace();
+    const property = await build(store, {
+      currentValueMinor: 320_000_00,
+      family: "appreciating",
+      instrument: "property",
+      name: "Piso sin deuda",
+    });
+    if (!property.ok) throw new Error(property.error);
+    expect(property.proposal.acquisitionTodayWarning).toBeUndefined();
+
+    await seedOldMortgage(store);
+    const debt = await build(store, {
+      balanceMinor: 6_000_00,
+      family: "debt",
+      instrument: "credit_card",
+      name: "Tarjeta",
+    });
+    if (!debt.ok) throw new Error(debt.error);
+    expect(debt.proposal.acquisitionTodayWarning).toBeUndefined();
+    store.close();
+  });
+
   test("a half-declared purchase is refused, never guessed (#1436)", async () => {
     const store = await seedWorkspace();
     const priceOnly = await build(store, {

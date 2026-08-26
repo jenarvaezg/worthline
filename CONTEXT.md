@@ -515,9 +515,11 @@ The acquisition (marked `kind = 'acquisition'` since #1437; before that, inferre
 the earliest market appraisal) is when the property starts existing for historical
 reconstruction, which is why an alta records the purchase where it happened when the user
 knows it (ADR 0056) instead of stamping the day it was typed. The simple alta drawer does
-stamp today (it never asks), so when the acquisition lands on the day it was typed AND a
-**liability** already declares an earlier start, the alta answers with a non-blocking
-question rather than a silent amputation of the history (#1561).
+stamp today (it never asks), and so does an alta dictated to the **assistant** with no
+purchase declared. So when the acquisition lands on the day it was typed AND a
+**liability** already declares an earlier start, the alta asks a non-blocking question
+instead of silently amputating that history (#1561) — on the proposal card before
+writing, or in the confirmation band right after.
 UI label: "Tasación de mercado".
 
 **Improvement**:
