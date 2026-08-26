@@ -47,3 +47,47 @@ Three rules follow:
 The `1 + R ≤ 0` rule applies to **every** chained Dietz in the codebase, the per-holding benchmark index series (ADR 0060) included: a factor at or below zero yields no series, so the card reports the comparison unavailable instead of drawing an impossible line. And an unavailable TWR says WHY on the surface — the reason in plain words beside the em dash, so an absent measure reads as a signal, not a glitch.
 
 The alignment fixes the cause; the `1 + R ≤ 0` guard is the safety net that keeps an impossible figure from ever being published again — for holdings and the portfolio too, not only classes.
+
+## Amendment (#1592, #1593): the return of a SET of holdings has one engine, and a merged flow stream is not it
+
+The Decision above describes the set-level figure as a merge: "portfolio IRR merges
+all holdings' cashflows into one dated stream; portfolio simple gain sums; portfolio
+TWR is Modified Dietz over the whole portfolio's monthly value series". That
+description is void. Three things are wrong with the merge as stated, and each of
+them was reproduced independently on every surface that implemented it:
+
+- **A merge treats each half of an internal traspaso as a flow.** The two halves
+  share a `transferId` (ADR 0082) and are equal and opposite, so they cancel in the
+  gain — but they INFLATE the denominator, and a book that never received a cent
+  from outside reads as if it had been funded twice. Inside a set, a pair with both
+  ends present collapses into a single residual flow worth whatever the fee took,
+  paired by `transferId` and never by date. A half whose counterpart lives outside
+  the measured set stays a real flow: that is capital arriving or leaving.
+- **Recorded payouts belong in the set figure too**, on the same terms as the
+  per-holding one: into the simple gain and the IRR, never into the monthly-close
+  series. A surface that folds them must therefore switch its honest limit the way
+  the per-holding caveat already does — which is why the agent view's
+  `DISTRIBUTIONS_NOT_CAPTURED` signal grew a sibling that says the TWR is price-only
+  instead of claiming distributions are unmodelled.
+- **"The whole portfolio's monthly value series" is not a sum by snapshot id.** It
+  is the per-holding series aligned by calendar MONTH — the #1457 rule above,
+  which was written for asset classes and applies unchanged one level up. Summing
+  each snapshot's rows makes every capture day a partial sum of the portfolio, and
+  a holding whose close landed on a different day of the same month vanishes from
+  the series entirely.
+
+So the decision is: **one engine measures the return of an arbitrary subset of
+holdings** — `subsetReturns` (`packages/domain/src/returns-subset.ts`), extracted
+in #1552 (ADR 0085's 2026-08-24 amendment) and generalized in #1586. A managed
+portfolio, an asset class, the whole patrimonio and the agent view's portfolio
+block are the same question about a different subset; a second implementation is
+how two surfaces end up disagreeing about the same money (#1422). What a caller
+owns is WHICH holdings it measures and on what basis (gross or ownership-scoped,
+with value and closes on the same basis as the flows) — never a rate.
+
+Migrated in #1593 (the agent view) and #1592 (the /patrimonio hero); the old public
+folds (`portfolioSimpleGain`, `portfolioIrr`, `portfolioTwr`) come out in #1594, so
+no caller can re-attach to the merge. The per-holding measures are unchanged: one
+holding is a subset of one slice, so the pairing rule has nothing to pair and the
+existing fold stays honest — but the agent view's per-holding block still does not
+fold payouts, which is a gap of that surface and not of this decision.

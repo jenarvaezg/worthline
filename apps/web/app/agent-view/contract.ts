@@ -467,7 +467,11 @@ export interface AgentViewExposureProfile {
 }
 
 export interface AgentViewReturnQualitySignal {
-  code: "DISTRIBUTIONS_NOT_CAPTURED" | "TWR_STARTS_AFTER_FIRST_OPERATION";
+  code:
+    | "DISTRIBUTIONS_NOT_CAPTURED"
+    /** Recorded payouts ARE in the simple gain and the IRR; the TWR is price-only (#657). */
+    | "DISTRIBUTIONS_NOT_IN_TWR"
+    | "TWR_STARTS_AFTER_FIRST_OPERATION";
   severity: AgentViewDataQualitySeverity;
   label: string;
   firstOperationDate?: string;
