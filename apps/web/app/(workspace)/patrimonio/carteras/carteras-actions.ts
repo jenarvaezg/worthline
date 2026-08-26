@@ -114,14 +114,16 @@ function containerOwnershipFor(workspace: Workspace, scopeId: string): Ownership
  *   aggregate "(sin detallar)" member worth exactly what was typed, so the gross
  *   patrimonio is right from minute one instead of under-counted until the owner
  *   lists seven funds he may not have to hand. The same figure is ALSO declared
- *   as the reconciliation witness, through the same single door every declaration
- *   goes through (`declareManagedPortfolioBalance`): it is literally the balance
- *   read in the manager's app, and it is what the substitution suggestion
+ *   as the reconciliation witness: it is literally the balance read in the
+ *   manager's app, and it is what the substitution suggestion
  *   (`declarado − Σ detallado`) is a share of.
  *
- * The declaration is a second write on purpose. Folding the witness into the
- * create would be a second place that validates and audits a declared balance,
- * and if it fails the portfolio simply has no witness yet — nothing is corrupted.
+ * Group, aggregate and witness are ONE write (#1600). The alta hands the store
+ * the balance it parsed and the store lands it in the same insert as the row it
+ * describes, so a failure leaves no cartera at all — the owner retries the form
+ * and registers one, never a second group missing the figure he just typed. The
+ * store still owns the single definition of what a declared balance is: it runs
+ * the same domain assert and writes the same audit row as a ficha-typed one.
  */
 export async function createManagedPortfolioAction(
   formData: FormData,
@@ -218,29 +220,20 @@ export async function createManagedPortfolioAction(
         scopeId: parsed.scopeId,
         ...(parsed.declaredValueMinor === null
           ? {}
-          : { undetailedValueMinor: parsed.declaredValueMinor }),
+          : {
+              declaredBalance: {
+                // Read today, the day it is being typed.
+                declaredDate: parsed.today,
+                // Declared in the book's own currency: converting one here would
+                // invent a rate inside an intake (#1401).
+                declaredValue: {
+                  amountMinor: parsed.declaredValueMinor,
+                  currency: workspace.baseCurrency,
+                },
+              },
+              undetailedValueMinor: parsed.declaredValueMinor,
+            }),
       });
-
-      if (parsed.declaredValueMinor !== null) {
-        // The cartera is already written. A failure HERE must not bounce the alta
-        // as an error: the owner would retry and register a second cartera. The
-        // portfolio simply has no witness yet, and the ficha's own block asks for
-        // one in as many words.
-        try {
-          await store.managedPortfolios.declareManagedPortfolioBalance(created.id, {
-            declaredDate: parsed.today,
-            // Declared in the book's own currency: converting one here would
-            // invent a rate inside an intake (#1401).
-            declaredValue: {
-              amountMinor: parsed.declaredValueMinor,
-              currency: workspace.baseCurrency,
-            },
-          });
-        } catch {
-          // Deliberately swallowed: the aggregate stands, the witness can be
-          // typed on the ficha.
-        }
-      }
 
       // The alta lands on the ficha; a missing registry row would blank the
       // redirect, so degrade to staying on the list instead of throwing.

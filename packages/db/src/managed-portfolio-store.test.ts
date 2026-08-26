@@ -283,6 +283,51 @@ describe("managed portfolio CRUD", () => {
     expect(aggregate?.liquidityTier).toBe("market");
   });
 
+  it("is born with the declared balance already on it — one write, not two (#1600)", async () => {
+    const { store } = await freshStore();
+    const created = await store.managedPortfolios.createManagedPortfolio({
+      containerOwnership: M1_OWNERSHIP,
+      declaredBalance: {
+        declaredDate: "2026-08-24",
+        declaredValue: { amountMinor: 1_000_00, currency: "EUR" },
+      },
+      name: "Cartera Indexada Metal",
+      scopeId: "household",
+      undetailedValueMinor: 1_000_00,
+    });
+
+    // The returned entity already carries it: there is no window in which the
+    // cartera exists without the balance that was just typed.
+    expect(created.witness).toEqual({
+      declaredDate: "2026-08-24",
+      declaredValue: { amountMinor: 1_000_00, currency: "EUR" },
+    });
+    const [row] = await store.managedPortfolios.readManagedPortfolios("household");
+    expect(row?.witness).toEqual(created.witness);
+  });
+
+  it("a refused balance leaves NO cartera and no holdings behind (#1600)", async () => {
+    const { store } = await freshStore();
+    const before = (await store.assets.readAssets()).length;
+
+    await expect(
+      store.managedPortfolios.createManagedPortfolio({
+        containerOwnership: M1_OWNERSHIP,
+        declaredBalance: {
+          declaredDate: "2026-08-24",
+          declaredValue: { amountMinor: 0, currency: "EUR" },
+        },
+        name: "Cartera Indexada Metal",
+        scopeId: "household",
+        undetailedValueMinor: 1_000_00,
+      }),
+    ).rejects.toThrow(/saldo declarado.*importe positivo/);
+
+    // Neither the group nor its plumbing: a retry registers ONE cartera, not a second.
+    expect(await store.managedPortfolios.readManagedPortfolios("household")).toEqual([]);
+    expect((await store.assets.readAssets()).length).toBe(before);
+  });
+
   it("refuses a non-positive aggregate — a 0 € placeholder stands for nothing", async () => {
     const { store } = await freshStore();
     await expect(
