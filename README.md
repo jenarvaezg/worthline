@@ -16,9 +16,10 @@ mistake it makes is a mistake about someone's money. The architecture is shaped
 around that.
 
 **39 tools, and none of them writes.**
-[`chat-tools.ts`](apps/web/app/asistente/chat-tools.ts) exposes 23 read tools
+[`chat-tools/`](apps/web/app/asistente/chat-tools) declares 23 read tools
 (`get_financial_context`, `get_calculation_trace`, `get_snapshot_history`…),
-14 `propose_*` tools, and 2 others. No tool the model can call mutates a holding,
+14 `propose_*` tools, and 2 others — one module per family, assembled by the
+registry in [`chat-tools.ts`](apps/web/app/asistente/chat-tools.ts) (ADR 0086). No tool the model can call mutates a holding,
 an operation or a snapshot. A `propose_*` call persists a **proposal**; applying it
 is a separate Server Action a human confirms in the UI, which goes through the
 command frontier (ADR 0062). The model drafts; the person commits.
