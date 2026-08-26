@@ -1,6 +1,5 @@
+import { createInMemoryControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam: the attachment extraction meter (#1258)
 // counts vision READINGS — model calls, not tokens — per scope per UTC day. It is

@@ -30,7 +30,8 @@ const FORBIDDEN_PATTERNS = [
 /** Paths allowed to reference admin CRUD or import validation (not workspace writes). */
 const ALLOWLIST = new Set([
   "packages/db/src/control-plane.ts",
-  "packages/db/src/control-plane-migrate.ts",
+  "packages/db/src/control-plane/migrate.ts",
+  "packages/db/src/control-plane/exposure-profile-catalog.ts",
   "packages/db/tests/control-plane-global-exposure-profile.persistence.test.ts",
   "packages/domain/src/global-exposure-profile.ts",
   "packages/domain/src/global-exposure-profile.test.ts",

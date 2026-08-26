@@ -9,7 +9,7 @@ import {
   CP_SCHEMA_VERSION,
   migrateControlPlane,
   readControlPlaneSchemaVersion,
-} from "@db/control-plane-migrate";
+} from "@db/control-plane/migrate";
 import { openLibsqlClient } from "@db/libsql-client";
 import { afterAll, describe, expect, test } from "vitest";
 

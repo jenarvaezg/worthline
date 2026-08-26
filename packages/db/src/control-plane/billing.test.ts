@@ -1,21 +1,20 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
-
 import {
   createInMemoryControlPlaneStore,
   type EntitlementDirectory,
   type TenancyDirectory,
-} from "./control-plane";
+} from "@db/control-plane";
+import { deriveEffectivePlan } from "@db/entitlements";
+import { openLibsqlClient } from "@db/libsql-client";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   CP_SCHEMA_VERSION,
   migrateControlPlane,
   readControlPlaneSchemaVersion,
   writeControlPlaneSchemaVersion,
-} from "./control-plane-migrate";
-import { deriveEffectivePlan } from "./entitlements";
-import { openLibsqlClient } from "./libsql-client";
+} from "./migrate";
 
 type BillingStore = EntitlementDirectory & TenancyDirectory & { close(): void };
 

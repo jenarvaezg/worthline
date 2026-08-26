@@ -1,6 +1,5 @@
+import { createInMemoryControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam: the in-memory store implements the whole
 // control plane, but this test depends only on the usage-limits concern.
