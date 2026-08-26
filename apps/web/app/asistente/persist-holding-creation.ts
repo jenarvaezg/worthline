@@ -1,9 +1,12 @@
 /**
  * Persist a holding-creation plan (#1105, PRD #1103 S2) through the SAME seams the
  * «Añadir holding» wizard uses — no new persistence. It dispatches by family:
- * stored/appreciating → the manual-asset seam, debt → the liability seam, investment
- * → the investment seam (+ an opening BUY dated today when declared). Kept reusable
- * so the S5 reconcile "create new" branch can call the exact same dispatch.
+ * stored/appreciating → the manual-asset seam, debt → the debt-alta seam (the
+ * liability AND its model), investment → the investment-alta seam (the holding AND
+ * its opening BUY dated today, when declared). Each of those is ONE unit of work
+ * (#1599): a chat-confirmed alta that fails halfway leaves nothing behind, so the
+ * proposal can be confirmed again. Kept reusable so the S5 reconcile "create new"
+ * branch can call the exact same dispatch.
  *
  * Returns `{ ok, id }` or a Spanish `{ ok: false, error }` mapped from the domain
  * guards these seams already run — never throws on a domain violation.
@@ -19,7 +22,7 @@ import { createStableId, mapDomainViolation } from "@web/intake";
 import type { ManualAssetCreation } from "@web/patrimonio/persist-holding";
 import { persistManualAssetCreation } from "@web/patrimonio/persist-holding";
 import type { WorthlineStore } from "@web/store";
-import type { HoldingCreationPlan } from "@worthline/db";
+import type { HoldingCreationPlan, InvestmentHoldingEntry } from "@worthline/db";
 import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,
@@ -119,8 +122,13 @@ export async function persistHoldingCreation(
     if (!domainResult.ok) {
       return { error: mapDomainViolation(domainResult.violations[0]!), ok: false };
     }
-    await store.liabilities.createLiability(command);
-    await store.liabilities.setDebtModel(id, plan.debtModel);
+    // ONE unit of work (#1599): the deuda and the model that decides how its
+    // balance is valued land together, or neither does.
+    await store.command.createDebtHolding({
+      debtModel: plan.debtModel,
+      liability: command,
+      today,
+    });
     return { id, ok: true };
   }
 
@@ -130,23 +138,12 @@ export async function persistHoldingCreation(
   if (splitViolation) {
     return { error: mapDomainViolation(splitViolation), ok: false };
   }
-  await store.assets.createInvestmentAsset({
-    currency: "EUR",
-    id,
-    instrument: plan.instrument,
-    liquidityTier: defaults.rung,
-    name: plan.name,
-    ownership: plan.ownership,
-    ...(plan.isin ? { isin: plan.isin } : {}),
-    ...(defaults.priceProvider ? { priceProvider: defaults.priceProvider } : {}),
-    ...(plan.providerSymbol ? { providerSymbol: plan.providerSymbol } : {}),
-  });
-
+  // The opening BUY dated today, so the holding lands valued — the commission rides
+  // on the operation (#1315): the domain folds it into the cost basis (units × price
+  // + fees), which is what keeps the return honest. Checked BEFORE anything is
+  // written, so a refused opening is a message and not a 0 € fantasma (#1599).
+  let entry: InvestmentHoldingEntry | undefined;
   if (plan.opening) {
-    // The opening BUY dated today, so the holding lands valued — same seam the
-    // operations editor and the wizard's "saldo de hoy" path use. The commission
-    // rides on the operation (#1315): the domain folds it into the cost basis
-    // (units × price + fees), which is what keeps the return honest.
     const op: CreateInvestmentOperationInput = {
       assetId: id,
       currency: "EUR",
@@ -162,7 +159,31 @@ export async function persistHoldingCreation(
     };
     const safe = createInvestmentOperationSafe(op);
     if (!safe.ok) return { error: mapDomainViolation(safe.violations[0]!), ok: false };
-    await store.command.recordInvestmentOperation(safe.value, { today });
+    entry = { kind: "opening", operation: safe.value };
+  }
+
+  // ONE unit of work (#1599): the holding and its opening commit or roll back
+  // together — the same seam the «Añadir holding» wizard writes through. Its
+  // refusal is data, and this module promises a Spanish message rather than a
+  // throw, so it is read and mapped like every other guard here.
+  const created = await store.command.createInvestmentHolding({
+    asset: {
+      currency: "EUR",
+      id,
+      instrument: plan.instrument,
+      liquidityTier: defaults.rung,
+      name: plan.name,
+      ownership: plan.ownership,
+      ...(plan.isin ? { isin: plan.isin } : {}),
+      ...(defaults.priceProvider ? { priceProvider: defaults.priceProvider } : {}),
+      ...(plan.providerSymbol ? { providerSymbol: plan.providerSymbol } : {}),
+    },
+    today,
+    ...(entry ? { entry } : {}),
+  });
+
+  if (!created.ok) {
+    return { error: mapDomainViolation(created.violations[0]!), ok: false };
   }
 
   // An alta with a provider symbol lands with no cached quote, so it renders at

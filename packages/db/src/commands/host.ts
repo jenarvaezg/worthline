@@ -64,6 +64,8 @@ const DATED_FACT_ALIASES = {
   updateAssetOwnership: "updateAssetAndRippleOwnership",
   updateLiabilityOwnership: "updateLiabilityAndRippleOwnership",
   createHousingHolding: "createHousingHoldingAndRipple",
+  createInvestmentHolding: "createInvestmentHoldingAndRipple",
+  createDebtHolding: "createDebtHoldingAndRipple",
   createAmortizationPlan: "createAmortizationPlanAndRipple",
   updateAmortizationPlan: "updateAmortizationPlanAndRipple",
   deleteAmortizationPlan: "deleteAmortizationPlanAndRipple",

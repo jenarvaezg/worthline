@@ -9,6 +9,7 @@
  * write that fails halfway.
  */
 
+import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type { PersistenceTestStore as WorthlineStore } from "@worthline/db/testing";
 import { createInMemoryStore } from "@worthline/db/testing";
 import { derivePosition } from "@worthline/domain";
@@ -18,6 +19,7 @@ const TODAY = "2026-08-19";
 const DATE = "2026-07-31";
 
 interface TransferOverrides {
+  destinationAsset?: CreateInvestmentAssetInput;
   destinationAssetId?: string;
   destinationPricePerUnit?: string | undefined;
   destinationUnits?: string | undefined;
@@ -206,6 +208,61 @@ describe("recordInvestmentTransfer — one submit, one pair", () => {
     const held = new Map(holdings.map((row) => [row.holdingId, row.units]));
     expect(held.get("origen")).toBe("0.000019");
     expect(held.get("destino")).toBe("3.187428");
+  });
+});
+
+describe("recordInvestmentTransfer — a destination born with the pair", () => {
+  test("the new destination and the pair land in the same unit of work", async () => {
+    const store = await seed();
+
+    const result = await store.command.recordInvestmentTransfer(
+      transferCommand({
+        destinationAsset: {
+          currency: "EUR",
+          id: "plan_nuevo",
+          instrument: "pension_plan",
+          liquidityTier: "term-locked",
+          name: "Plan de pensiones MyInvestor",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+        },
+        destinationAssetId: "plan_nuevo",
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect((await store.assets.readAssets()).map((asset) => asset.id)).toContain(
+      "plan_nuevo",
+    );
+    expect(
+      (await store.operations.readOperations("plan_nuevo")).map((op) => op.kind),
+    ).toEqual(["transfer_in"]);
+  });
+
+  test("a refused traspaso leaves NO destination behind", async () => {
+    const store = await seed();
+
+    // More than the origin holds: the gate refuses with data, and the destination
+    // it was going to fill must go back with it (#1599).
+    const result = await store.command.recordInvestmentTransfer(
+      transferCommand({
+        destinationAsset: {
+          currency: "EUR",
+          id: "plan_nuevo",
+          instrument: "pension_plan",
+          liquidityTier: "term-locked",
+          name: "Plan de pensiones MyInvestor",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+        },
+        destinationAssetId: "plan_nuevo",
+        portion: { amountMinor: 200_000, kind: "amount" },
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    expect((await store.assets.readAssets()).map((asset) => asset.id)).not.toContain(
+      "plan_nuevo",
+    );
+    expect((await store.operations.readOperations("origen")).length).toBe(1);
   });
 });
 

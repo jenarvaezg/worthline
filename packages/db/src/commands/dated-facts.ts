@@ -11,6 +11,7 @@ import type {
 import { createDebtBalanceCommands } from "./debt-balance-facts";
 import { debtPlanBand, rippleHistoricalSnapshotsForDebt } from "./debt-band";
 import { createDebtPlanCommands } from "./debt-plan-facts";
+import { createHoldingCreationCommands } from "./holding-creation";
 import { createInvestmentOperationCommands } from "./investment-operations";
 import { createInvestmentTransferCommands } from "./investment-transfer";
 import { createOwnershipCommands } from "./ownership-facts";
@@ -35,7 +36,7 @@ export function createDatedFactCommandImplementations(
   stores: DatedFactStores,
 ): DatedFactCommandImplementations {
   const uow = createUnitOfWork(ctx);
-  return {
+  const families = {
     ...createInvestmentOperationCommands(ctx, stores, uow),
     ...createInvestmentTransferCommands(ctx, stores, uow),
     ...createStatementImportCommands(ctx, stores, uow),
@@ -43,6 +44,15 @@ export function createDatedFactCommandImplementations(
     ...createOwnershipCommands(ctx, stores),
     ...createDebtBalanceCommands(ctx, stores, uow),
     ...createDebtPlanCommands(ctx, stores),
+  };
+  return {
+    ...families,
+    // The alta (#1599) is the one family that COMPOSES the others: creating a
+    // holding is its row plus the fact that gives it a value, and each of those
+    // facts already has an owner here. It receives them explicitly rather than
+    // importing across families, so the dependency is visible at the root and the
+    // families stay unaware of one another.
+    ...createHoldingCreationCommands(ctx, stores, families),
   };
 }
 

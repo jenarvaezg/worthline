@@ -1,8 +1,10 @@
+import type { CreateInvestmentAssetInput } from "@db/asset-store";
 import { assets } from "@db/schema";
 import type { StoreContext } from "@db/store-context";
 import { assertAssetAllowsOperationWrite } from "@db/valuation-guard";
 import type {
   CurrencyCode,
+  DomainViolation,
   ExternalTransferInIntent,
   TransferIntent,
   TransferOrigin,
@@ -32,6 +34,17 @@ import type { UnitOfWork } from "./types";
 export type RecordTransferCommand = Omit<TransferIntent, "currency"> & {
   /** The day the ripple's cut-off is measured against. Defaults to the current date. */
   today?: string;
+  /**
+   * The destination holding to CREATE in this same unit of work (#1599), when the
+   * traspaso opens a product the book does not hold yet — the ordinary case for a
+   * plan just opened at another manager. Its id must be `destinationAssetId`.
+   *
+   * It belongs to the gate and not to the caller because a destination created
+   * outside it survives a refusal: the screen would answer «no cabe ese importe»
+   * with an empty fondo already sitting in the tablero. Omitted when the
+   * destination is one the user picked from the holdings they already have.
+   */
+  destinationAsset?: CreateInvestmentAssetInput;
 };
 
 /**
@@ -96,46 +109,61 @@ export function createInvestmentTransferCommands(
         return { ok: false, violations: [{ code: "transfer_same_holding" }] };
       }
 
-      const originCurrency = await readTransferSideCurrency(ctx, command.originAssetId);
-      const destinationCurrency = await readTransferSideCurrency(
-        ctx,
-        command.destinationAssetId,
-      );
+      // Everything — the destination the traspaso may be opening, the two currency
+      // reads, the plan, both halves and the ripple — rides ONE transaction, so a
+      // refusal takes back the holding it was going to fill (#1599). A refusal is
+      // still answered with data; the sentinel exists only to reach the rollback.
+      try {
+        return await ctx.transaction(async () => {
+          if (command.destinationAsset) {
+            await stores.assets.createInvestmentAsset(command.destinationAsset);
+          }
 
-      if (originCurrency !== destinationCurrency) {
-        return {
-          ok: false,
-          violations: [
-            {
-              code: "transfer_currency_mismatch",
-              destination: destinationCurrency,
-              origin: originCurrency,
-            },
-          ],
-        };
-      }
+          const originCurrency = await readTransferSideCurrency(
+            ctx,
+            command.originAssetId,
+          );
+          const destinationCurrency = await readTransferSideCurrency(
+            ctx,
+            command.destinationAssetId,
+          );
 
-      const plan = planTransfer(
-        { ...command, currency: originCurrency },
-        await originStateAt(stores, command, originCurrency),
-      );
-      if (!plan.ok) return plan;
+          if (originCurrency !== destinationCurrency) {
+            throw new TransferRefused([
+              {
+                code: "transfer_currency_mismatch",
+                destination: destinationCurrency,
+                origin: originCurrency,
+              },
+            ]);
+          }
 
-      const dateKeys = [command.executedAt.slice(0, 10)];
-      await ctx.transaction(async () => {
-        const batchId = await uow.createFactBatch({ trigger: "manual" });
-        await stores.operations.recordOperation(plan.value.out, { batchId });
-        await stores.operations.recordOperation(plan.value.incoming, { batchId });
-        await ripplePair(ctx, stores, {
-          sides: [
-            { assetId: command.originAssetId, operationDateKeys: dateKeys },
-            { assetId: command.destinationAssetId, operationDateKeys: dateKeys },
-          ],
-          today,
+          const plan = planTransfer(
+            { ...command, currency: originCurrency },
+            await originStateAt(stores, command, originCurrency),
+          );
+          if (!plan.ok) throw new TransferRefused(plan.violations);
+
+          const dateKeys = [command.executedAt.slice(0, 10)];
+          const batchId = await uow.createFactBatch({ trigger: "manual" });
+          await stores.operations.recordOperation(plan.value.out, { batchId });
+          await stores.operations.recordOperation(plan.value.incoming, { batchId });
+          await ripplePair(ctx, stores, {
+            sides: [
+              { assetId: command.originAssetId, operationDateKeys: dateKeys },
+              { assetId: command.destinationAssetId, operationDateKeys: dateKeys },
+            ],
+            today,
+          });
+
+          return { ok: true, value: undefined };
         });
-      });
-
-      return { ok: true, value: undefined };
+      } catch (error) {
+        if (error instanceof TransferRefused) {
+          return { ok: false, violations: error.violations };
+        }
+        throw error;
+      }
     },
 
     recordExternalTransferInAndRipple: async (command) => {
@@ -185,6 +213,18 @@ export function createInvestmentTransferCommands(
       });
     },
   };
+}
+
+/**
+ * A refusal raised from inside the traspaso's transaction, so the rollback runs.
+ * Caught at the gate's boundary and turned back into the `DomainResult` the callers
+ * already read — it never leaves this module.
+ */
+class TransferRefused extends Error {
+  constructor(readonly violations: [DomainViolation, ...DomainViolation[]]) {
+    super("transfer refused");
+    this.name = "TransferRefused";
+  }
 }
 
 /**

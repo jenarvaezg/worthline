@@ -1559,3 +1559,113 @@ describe("createHoldingAction — investment drawer, «viene traspasada de otra 
     expect(decoded).toContain("v_invMode_pension_plan=traspaso");
   });
 });
+
+/**
+ * The alta is ONE unit of work (#1599). These are wiring tests, not transaction
+ * tests: the rollback itself is proved at the seam
+ * (`packages/db/src/commands/holding-creation.test.ts`), against a real book. What
+ * belongs here is that the action goes THROUGH that seam — that it no longer
+ * writes the holding first and its opening / its model second, which is the shape
+ * that left a fondo at 0 € beside an error message.
+ */
+describe("the alta rides ONE seam", () => {
+  /** The same store with one command seam replaced — the second write failing. */
+  function withFailingSeam(
+    store: WorthlineStore,
+    seam: "createInvestmentHolding" | "createDebtHolding",
+  ): WorthlineStore {
+    return {
+      ...store,
+      command: {
+        ...store.command,
+        [seam]: async () => {
+          throw new Error("la segunda escritura falló");
+        },
+      },
+    } as WorthlineStore;
+  }
+
+  test("an investment alta that fails leaves NO holding and NO operation", async () => {
+    const store = await seedStore();
+
+    await expect(
+      createHoldingAction(
+        form({
+          simpleDrawer: "inversion",
+          instrument: "fund",
+          name_fund: "Fondo Vanguard",
+          symbol_fund: "VANGTLI",
+          price_fund: "319,59",
+          invMode_fund: "saldo",
+          saldo_fund: "1.089,79",
+          ownershipPreset: "scope",
+          scopeMemberId: "mJ",
+        }),
+        withFailingSeam(store, "createInvestmentHolding"),
+        CLOCK,
+      ),
+    ).rejects.toThrow("la segunda escritura falló");
+
+    expect(await store.assets.readAssets()).toHaveLength(0);
+  });
+
+  test("the opening rides the SAME call as the holding it values", async () => {
+    const store = await seedStore();
+    const seen: unknown[] = [];
+    const spied = {
+      ...store,
+      command: {
+        ...store.command,
+        createInvestmentHolding: async (command: unknown) => {
+          seen.push(command);
+          return store.command.createInvestmentHolding(
+            command as Parameters<typeof store.command.createInvestmentHolding>[0],
+          );
+        },
+      },
+    } as WorthlineStore;
+
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "Fondo Vanguard",
+        symbol_fund: "VANGTLI",
+        price_fund: "319,59",
+        invMode_fund: "saldo",
+        saldo_fund: "1.089,79",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      spied,
+    );
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ entry: { kind: "opening" } });
+  });
+
+  test("a debt alta that fails leaves NO deuda", async () => {
+    const store = await seedStore();
+
+    await expect(
+      createHoldingAction(
+        form({
+          simpleDrawer: "deuda",
+          simpleDebtKind: "mortgage",
+          simpleName_deuda: "Hipoteca Santander",
+          csAnnualRate: "2,35",
+          csEndDate: "2032-06-30",
+          csInputMode: "rate",
+          csNextPaymentDate: "2026-08-01",
+          csOutstandingBalance: "118.000,00",
+          ownershipPreset: "scope",
+          scopeMemberId: "mJ",
+        }),
+        withFailingSeam(store, "createDebtHolding"),
+        CLOCK,
+      ),
+    ).rejects.toThrow("la segunda escritura falló");
+
+    expect(await store.liabilities.readLiabilities()).toHaveLength(0);
+  });
+});
