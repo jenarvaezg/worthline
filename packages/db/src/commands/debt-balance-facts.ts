@@ -8,6 +8,8 @@ import type {
   DatedFactStores,
 } from "./command-implementation-types";
 import {
+  debtPlanBand,
+  debtRebaselineChainBand,
   rippleHistoricalSnapshotsForDebt,
   throwCommandResultError,
 } from "./ripple-engine";
@@ -33,7 +35,7 @@ async function rippleWholeDebtCurveByModel(
     const plan = await stores.liabilities.readAmortizationPlan(liabilityId);
     if (plan) {
       await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
-        kind: "amortizable-plan",
+        band: debtPlanBand,
         liabilityId,
         today,
       });
@@ -43,8 +45,7 @@ async function rippleWholeDebtCurveByModel(
     const earliestBaseline = rebaselines.map((r) => r.baselineDate).sort()[0];
     if (earliestBaseline !== undefined) {
       await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
-        fromDateKey: earliestBaseline,
-        kind: "amortizable-rebaseline",
+        band: debtRebaselineChainBand(earliestBaseline),
         liabilityId,
         today,
       });
@@ -55,8 +56,7 @@ async function rippleWholeDebtCurveByModel(
   const earliestAnchor = anchors.map((a) => a.anchorDate).sort()[0];
   if (earliestAnchor !== undefined && earliestAnchor <= today) {
     await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
-      fromDateKey: earliestAnchor,
-      kind: "anchor",
+      band: { eventDates: [earliestAnchor], recalcFrom: earliestAnchor },
       liabilityId,
       today,
     });
@@ -104,7 +104,7 @@ export function createDebtBalanceCommands(
             ctx,
             workspace,
             stores.snapshots.saveSnapshot,
-            { kind: "amortizable-plan", liabilityId, today },
+            { band: debtPlanBand, liabilityId, today },
           );
         } else if (debtModel === "revolving") {
           const anchors = await stores.liabilities.readBalanceAnchors(liabilityId);
@@ -114,7 +114,14 @@ export function createDebtBalanceCommands(
               ctx,
               workspace,
               stores.snapshots.saveSnapshot,
-              { fromDateKey: earliestAnchorDate, kind: "anchor", liabilityId, today },
+              {
+                band: {
+                  eventDates: [earliestAnchorDate],
+                  recalcFrom: earliestAnchorDate,
+                },
+                liabilityId,
+                today,
+              },
             );
           }
         }
@@ -159,8 +166,7 @@ export function createDebtBalanceCommands(
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            fromDateKey: rebaseline.baselineDate,
-            kind: "amortizable-rebaseline",
+            band: debtRebaselineChainBand(rebaseline.baselineDate),
             liabilityId: rebaseline.liabilityId,
             today,
           },
@@ -191,8 +197,7 @@ export function createDebtBalanceCommands(
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            fromDateKey,
-            kind: "amortizable-rebaseline",
+            band: debtRebaselineChainBand(fromDateKey),
             liabilityId,
             today,
           },
@@ -212,8 +217,7 @@ export function createDebtBalanceCommands(
             workspace,
             stores.snapshots.saveSnapshot,
             {
-              fromDateKey,
-              kind: "amortizable-rebaseline",
+              band: debtRebaselineChainBand(fromDateKey),
               liabilityId: input.liabilityId,
               today,
             },
@@ -256,8 +260,7 @@ export function createDebtBalanceCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey,
-                kind: "amortizable-rebaseline",
+                band: debtRebaselineChainBand(fromDateKey),
                 liabilityId,
                 today,
               },
@@ -308,16 +311,15 @@ export function createDebtBalanceCommands(
         if (previousBaselineDate <= today) {
           const workspace = await ctx.getWorkspace();
           if (workspace) {
-            // "amortizable-revision": generate nothing, only recalculate the
-            // existing snapshots forward from fromDateKey — a lost rebaseline
-            // never mints new payment-boundary dates.
             await rippleHistoricalSnapshotsForDebt(
               ctx,
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey: previousBaselineDate,
-                kind: "amortizable-revision",
+                // Generate nothing, only recalculate the existing snapshots
+                // forward from the lost baseline — a deleted re-baseline never
+                // mints new payment-boundary dates.
+                band: { eventDates: [], recalcFrom: previousBaselineDate },
                 liabilityId,
                 today,
               },
@@ -339,8 +341,7 @@ export function createDebtBalanceCommands(
             workspace,
             stores.snapshots.saveSnapshot,
             {
-              fromDateKey,
-              kind: "anchor",
+              band: { eventDates: [fromDateKey], recalcFrom: fromDateKey },
               liabilityId: input.liabilityId,
               today,
             },
@@ -385,8 +386,7 @@ export function createDebtBalanceCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey,
-                kind: "anchor",
+                band: { eventDates: [fromDateKey], recalcFrom: fromDateKey },
                 liabilityId,
                 today,
               },
@@ -421,8 +421,10 @@ export function createDebtBalanceCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                fromDateKey: previousAnchorDate,
-                kind: "anchor",
+                band: {
+                  eventDates: [previousAnchorDate],
+                  recalcFrom: previousAnchorDate,
+                },
                 liabilityId,
                 today,
               },

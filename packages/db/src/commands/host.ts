@@ -26,6 +26,7 @@ import type {
 } from "./import-balance-history";
 import { executeImportBalanceHistoryCommand } from "./import-balance-history";
 import {
+  debtRebaselineChainBand,
   rippleHistoricalSnapshotsForDebt,
   throwCommandResultError,
 } from "./ripple-engine";
@@ -550,8 +551,7 @@ export function createCommandHost(
     const workspace = await ctx.getWorkspace();
     if (!workspace) return EMPTY_DEBT_RIPPLE_COUNTS;
     return rippleHistoricalSnapshotsForDebt(ctx, workspace, snapshots.saveSnapshot, {
-      fromDateKey,
-      kind: "amortizable-rebaseline",
+      band: debtRebaselineChainBand(fromDateKey),
       liabilityId,
       today,
     });

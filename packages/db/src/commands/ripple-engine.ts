@@ -1,27 +1,12 @@
 import type { AssetStore } from "@db/asset-store";
 import {
-  BACKFILL_SNAPSHOT_ID_PREFIX,
   buildHistoricalSnapshotDeps,
-  generateHistoricalBackfillIfMissing,
   groupFrozenHoldingsByDate,
   type HistoricalSnapshotDeps,
   readFrozenIdentityCaptures,
   readInvestmentIdentity,
 } from "@db/historical-snapshot-deps";
-import {
-  amortizationPlans,
-  assetOperations,
-  assetValuations,
-  connectedSources,
-  earlyRepayments,
-  interestRateRevisions,
-  liabilities,
-  liabilityBalanceAnchors,
-  liabilityBalanceRebaselines,
-  liabilityOwnerships,
-  positions,
-  snapshots,
-} from "@db/schema";
+import { liabilities, liabilityOwnerships } from "@db/schema";
 import {
   readSnapshotHoldings,
   readSnapshots,
@@ -31,6 +16,9 @@ import {
 } from "@db/snapshot-store";
 import { readAllOperations, type StoreContext, type StoreDb } from "@db/store-context";
 import type {
+  DebtBalanceCurveInputs,
+  FrozenIdentityCapture,
+  InvestmentOperation,
   Liability,
   ManualAsset,
   NetWorthSnapshot,
@@ -40,12 +28,10 @@ import type {
 } from "@worthline/domain";
 import {
   amortizationPaymentDatesUpTo,
-  amortizationPlanFromBalanceRebaseline,
   debtMissingFromAllGeneratedMessage,
   globalHoldingValueAtDate,
   housingAssetIdsOf,
   isHousingAsset,
-  listScopeOptions,
   rebaselineChainPaymentDatesUpTo,
   recalculateSnapshotForAsset,
   recalculateSnapshotForHousing,
@@ -53,362 +39,96 @@ import {
   recalculateSnapshotForOwnership,
   resolveScopeMemberIds,
 } from "@worthline/domain";
-import { and, eq, like } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
+import { rippleBand } from "./ripple-band";
 import { type DebtRippleCounts, EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 
 // ── Historical snapshots ripple engine (ADR 0012, PRD #107) ──────────────────
 //
-// The shared snapshot-reconstruction machinery every dated-fact command family
-// depends on. The per-family command factories (`investment-operations`,
+// One band, five families. `rippleBand` (./ripple-band) owns the walk every
+// dated-fact family shares — generate at the event dates, recalculate forward
+// from a floor, prune the orphans; each function here is the thin command that
+// tells it WHICH identities, WHICH dates, and HOW one snapshot's rows are
+// rewritten. The per-family command factories (`investment-operations`,
 // `valuation-facts`, `ownership-facts`, `debt-balance-facts`, `debt-plan-facts`,
-// `statement-import`) import the ripple functions from here; they never depend on
-// one another. The reader primitives and the `buildHistoricalSnapshotDeps`
-// aggregator live in `./historical-snapshot-deps` (the neutral shared substrate
-// the ripple/seam modules import, keeping the dependency graph acyclic).
+// `statement-import`) import from here; they never depend on one another. The
+// reader primitives and the `buildHistoricalSnapshotDeps` aggregator live in
+// `./historical-snapshot-deps` (the neutral shared substrate the ripple/seam
+// modules import, keeping the dependency graph acyclic).
 
-/**
- * Is `dateKey` still an event date for ANY dated fact that mints a `histsnap_`
- * snapshot — not just an investment operation (#305, PR #326 review)? A backfilled
- * snapshot exists on a date only because SOME dated fact fell on it (ADR 0012);
- * the prune may drop it only when NONE remains. The fix is comprehensive: every
- * `histsnap_`-minting ripple in this file is covered, mapped to its date source —
- *
- *  - Investment operations (rippleHistoricalSnapshots, gap-fill):
- *    `asset_operations.executed_at` (ISO date or timestamp) LIKE `${dateKey}%` —
- *    the same `slice(0, 10)` basis every ripple keys on.
- *  - Housing valuation anchors (rippleHistoricalSnapshotsForValuation):
- *    `asset_valuations.valuation_date = dateKey`.
- *  - Balance anchors — revolving/informal debt (rippleHistoricalSnapshotsForDebt
- *    "anchor"): `liability_balance_anchors.anchor_date = dateKey`.
- *  - Interest-rate revisions (debt "amortizable-revision" — recalc only, but the
- *    revision date stays an event date): `interest_rate_revisions.revision_date`.
- *  - Early repayments (debt "amortizable-repayment"):
- *    `early_repayments.repayment_date = dateKey`.
- *  - Connected-source coin acquisitions — Numista (rippleHistoricalSnapshotsFor-
- *    CoinAcquisition): `positions.purchase_date = dateKey` for a coin row.
- *  - Amortization payment boundaries — amortized debt (debt "amortizable-plan"):
- *    the date is COMPUTED, not stored (disbursement, or `firstPaymentDate
- *    + (m−1) months`). Reuse the domain helper `amortizationPaymentDatesUpTo` to
- *    rebuild each live plan's boundary set and test membership of `dateKey`.
- *  - Binance / connected-value history (backfillBinanceHistoricalSnapshots): its
- *    dates are month-ends of a curve RECONSTRUCTED LIVE at sync from the Binance +
- *    CoinGecko APIs — they are NOT persisted in any table, so they cannot be
- *    recomputed here. Conservative fallback (data loss is the failure mode to
- *    avoid): if ANY `binance` connected source exists, treat the date as justified
- *    and KEEP the snapshot. The prune then never deletes a snapshot a Binance
- *    history might justify.
- *
- * Conservative by construction: any uncertainty resolves to "justified" (keep).
- */
-async function dateHasJustifyingFact(db: StoreDb, dateKey: string): Promise<boolean> {
-  // Investment operations: executed_at as a date or timestamp → match the prefix.
-  const storedFact = await db
-    .select({ marker: assetOperations.id })
-    .from(assetOperations)
-    .where(like(assetOperations.executedAt, `${dateKey}%`))
-    .limit(1)
-    .get();
-  if (storedFact !== undefined) return true;
-
-  const valuationAnchor = await db
-    .select({ marker: assetValuations.id })
-    .from(assetValuations)
-    .where(eq(assetValuations.valuationDate, dateKey))
-    .limit(1)
-    .get();
-  if (valuationAnchor !== undefined) return true;
-
-  const balanceAnchor = await db
-    .select({ marker: liabilityBalanceAnchors.id })
-    .from(liabilityBalanceAnchors)
-    .where(eq(liabilityBalanceAnchors.anchorDate, dateKey))
-    .limit(1)
-    .get();
-  if (balanceAnchor !== undefined) return true;
-
-  const balanceRebaseline = await db
-    .select({ marker: liabilityBalanceRebaselines.id })
-    .from(liabilityBalanceRebaselines)
-    .where(eq(liabilityBalanceRebaselines.baselineDate, dateKey))
-    .limit(1)
-    .get();
-  if (balanceRebaseline !== undefined) return true;
-
-  const revision = await db
-    .select({ marker: interestRateRevisions.id })
-    .from(interestRateRevisions)
-    .where(eq(interestRateRevisions.revisionDate, dateKey))
-    .limit(1)
-    .get();
-  if (revision !== undefined) return true;
-
-  const repayment = await db
-    .select({ marker: earlyRepayments.id })
-    .from(earlyRepayments)
-    .where(eq(earlyRepayments.repaymentDate, dateKey))
-    .limit(1)
-    .get();
-  if (repayment !== undefined) return true;
-
-  const coinAcquisition = await db
-    .select({ marker: positions.id })
-    .from(positions)
-    .where(and(eq(positions.kind, "coin"), eq(positions.purchaseDate, dateKey)))
-    .limit(1)
-    .get();
-  if (coinAcquisition !== undefined) return true;
-
-  // Computed amortization payment boundaries: rebuild each live plan's boundary
-  // set up to the day AFTER `dateKey` (the helper excludes dates ≥ its target),
-  // so a boundary EQUAL to `dateKey` is included, and test membership.
-  const targetAfterDate = dayAfter(dateKey);
-  for (const plan of await db.select().from(amortizationPlans).all()) {
-    const boundaries = amortizationPaymentDatesUpTo(
-      {
-        annualInterestRate: plan.annualInterestRate,
-        disbursementDate: plan.disbursementDate,
-        firstPaymentDate: plan.firstPaymentDate,
-        initialCapitalMinor: plan.initialCapitalMinor,
-        termMonths: plan.termMonths,
-      },
-      targetAfterDate,
-    );
-    if (boundaries.includes(dateKey)) return true;
-  }
-
-  for (const fact of await db.select().from(liabilityBalanceRebaselines).all()) {
-    const boundaries = amortizationPaymentDatesUpTo(
-      amortizationPlanFromBalanceRebaseline({
-        annualInterestRate: fact.annualInterestRate,
-        baselineDate: fact.baselineDate,
-        endDate: fact.endDate,
-        nextPaymentDate: fact.nextPaymentDate,
-        outstandingBalanceMinor: fact.outstandingBalanceMinor,
-        startsAtBaseline: fact.startsAtBaseline,
-      }),
-      targetAfterDate,
-    );
-    if (boundaries.includes(dateKey)) return true;
-  }
-
-  // Binance history: month-ends of a live-reconstructed curve, not stored. Cannot
-  // recompute → keep when any binance source exists (conservative, #326).
-  const binanceSource = await db
-    .select({ marker: connectedSources.id })
-    .from(connectedSources)
-    .where(eq(connectedSources.adapter, "binance"))
-    .limit(1)
-    .get();
-  if (binanceSource !== undefined) return true;
-
-  return false;
-}
-
-/** The YYYY-MM-DD calendar day immediately after `dateKey` (handles month/year
- *  rollover; used only to make `amortizationPaymentDatesUpTo` include a boundary
- *  EQUAL to `dateKey`, since the helper excludes dates ≥ its target). */
-function dayAfter(dateKey: string): string {
-  const next = new Date(`${dateKey}T00:00:00.000Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
+/** One investment asset a band re-folds, with everything its rewrite needs read
+ *  up front: identity (including trashed — it existed on the snapshot dates),
+ *  full ledger, and frozen classification captures (#242). */
+interface OperatedAsset {
+  asset: ManualAsset;
+  frozenIdentity: FrozenIdentityCapture[];
+  operations: InvestmentOperation[];
 }
 
 /**
- * Prune a now-orphaned backfilled snapshot (#305): when deleting an operation
- * leaves a `histsnap_` snapshot on a date no operation justifies any more — and
- * it is not a real daily capture — drop the snapshot. Its frozen holding rows go
- * with it via the `snapshot_holdings.snapshot_id` ON DELETE cascade (ADR 0008),
- * for whichever scope's snapshot this is; the caller iterates every scope. Runs
- * in the caller's transaction so the prune commits or rolls back with the ripple.
- * Conservative by construction: returns true (pruned) ONLY for a backfilled id on
- * a date NO remaining dated fact justifies (`dateHasJustifyingFact` covers every
- * `histsnap_`-minting source, #326); in every other case it leaves the snapshot
- * untouched.
+ * Re-fold every operated asset's row through one snapshot, in memory. Each asset
+ * recalculates against the previous fold's snapshot + rows — the state a
+ * per-asset ripple would have re-read from the DB — so the band persists the
+ * snapshot ONCE at the end instead of once per asset. Null as soon as an asset's
+ * recalculation leaves no holdings: the snapshot is dropped.
  */
-async function pruneOrphanedBackfillSnapshot(
-  db: StoreDb,
-  snapshot: NetWorthSnapshot,
-): Promise<boolean> {
-  if (!snapshot.id.startsWith(BACKFILL_SNAPSHOT_ID_PREFIX)) return false;
-  if (await dateHasJustifyingFact(db, snapshot.dateKey)) return false;
-  await db.delete(snapshots).where(eq(snapshots.id, snapshot.id)).run();
-  return true;
-}
-
-/**
- * Persist a ripple recalculation, or drop the snapshot when no holdings remain
- * (e.g. the deleted operation was the only basis). Returns whether a snapshot
- * was saved.
- */
-async function persistRecalculatedSnapshot(
-  db: StoreDb,
-  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
-  snap: Pick<NetWorthSnapshot, "id">,
-  recalculated: ValuedNetWorthSnapshot | null,
-): Promise<boolean> {
-  if (recalculated) {
-    await saveSnapshot({
-      holdings: recalculated.holdings,
-      replace: true,
-      snapshot: recalculated.snapshot,
+function foldOperatedAssets(
+  affected: ReadonlyArray<OperatedAsset>,
+  workspace: Workspace,
+  input: { snapshot: NetWorthSnapshot; frozenHoldings: SnapshotHoldingRecord[] },
+): ValuedNetWorthSnapshot | null {
+  let current: ValuedNetWorthSnapshot = {
+    holdings: input.frozenHoldings,
+    snapshot: input.snapshot,
+  };
+  for (const { asset, frozenIdentity, operations } of affected) {
+    const recalculated = recalculateSnapshotForAsset({
+      asset,
+      frozenHoldings: current.holdings,
+      frozenIdentity,
+      operations,
+      snapshot: current.snapshot,
+      workspace,
     });
-    return true;
+    if (recalculated === null) return null;
+    current = recalculated;
   }
-  await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
-  return false;
+  return current;
 }
 
 /**
- * Ripple effect (ADR 0012): a backdated operation change regenerates the
- * snapshot at its date and recalculates the existing snapshots it affects.
+ * Batched ripple for operation loads/deletes (ADR 0018, #174, #753). Record mode
+ * generates a fresh whole-portfolio snapshot at each affected past operation date
+ * that has none yet; both modes then run ONE forward recalculation of every
+ * existing snapshot dated ≥ the earliest affected date, re-evaluating only the
+ * operated assets' rows.
  *
- * - record(D), D in the past: generate the snapshot at D if none exists, or
- *   overwrite it in place if one does (the new operation supplies its own best
- *   price), and recalculate every existing snapshot dated ≥ D. The affected
- *   range is ≥ D, not > D: an existing snapshot at D is overwritten in place,
- *   not skipped.
+ * One band per load, never one per operation (which would re-derive history N
+ * times — the #158 O(N×snapshots) cliff): deps are built once, the frozen rows
+ * are read in one batched query per scope, and a single forward pass folds every
+ * affected asset across the band regardless of how many operation dates the load
+ * carried. Multi-asset for the same reason: a multi-ISIN statement import (ADR
+ * 0055) rippling once per fund re-wrote every snapshot in the band once per fund
+ * — thousands of saveSnapshots that, at hosted network latency (one libsql round
+ * trip per statement), blew past the serverless 300s ceiling. Folding all funds
+ * in memory persists each snapshot exactly once.
+ *
+ * - record(D), D in the past: generate the snapshot at D if none exists (the new
+ *   operation supplies its own best price), and recalculate every existing
+ *   snapshot dated ≥ D. The affected range is ≥ D, not > D: an existing snapshot
+ *   at D is overwritten in place, not skipped.
  * - delete(D): recalculate existing snapshots dated ≥ D (the snapshot at D was
  *   itself derived from the operation that just disappeared). A backfilled
- *   snapshot whose date no operation justifies any more is pruned outright,
+ *   snapshot whose date no dated fact justifies any more is pruned outright,
  *   frozen rows and all, for every scope (#305) — a daily capture never is.
  *
- * Operations dated today or in the future never generate history — the daily
- * capture covers today and the future is not history. Recalculations honor the
- * unit price each snapshot already captured for an asset; only an asset absent
- * from a snapshot falls back to the last known operation price ≤ its date.
- */
-export async function rippleHistoricalSnapshots(
-  ctx: StoreContext,
-  workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
-  params: {
-    assetId: string;
-    mode: "record" | "delete";
-    operationDateKey: string;
-    today: string;
-  },
-): Promise<void> {
-  const { db } = ctx;
-  const { assetId, mode, operationDateKey, today } = params;
-
-  // The operated asset's identity — read including trashed, since it existed on
-  // the snapshot dates even if it was trashed afterwards (ADR 0012).
-  const asset = await readInvestmentIdentity(db, assetId);
-  if (!asset) return;
-  const operations = (await readAllOperations(db)).get(assetId) ?? [];
-
-  // The asset's frozen classification captures across every snapshot (#242),
-  // read ONCE before any recalc mutates rows — the basis the domain seam recovers
-  // a newly-appearing row's CONTEMPORANEOUS frozen tier from instead of the live.
-  const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
-
-  await ctx.transaction(async () => {
-    for (const scope of listScopeOptions(workspace)) {
-      const existing = await readSnapshots(db, scope.id);
-      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
-
-      // Generate a fresh whole-portfolio snapshot at the operation date when
-      // recording into the past and none exists yet there.
-      if (
-        mode === "record" &&
-        operationDateKey < today &&
-        !existingByDate.has(operationDateKey)
-      ) {
-        const deps = await buildHistoricalSnapshotDeps(db, workspace);
-        await generateHistoricalBackfillIfMissing({
-          dateKey: operationDateKey,
-          deps,
-          existingDates: existingByDate,
-          saveSnapshot,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          today,
-          workspace,
-        });
-      }
-
-      // Read the affected scope's frozen rows in ONE batched query for the whole
-      // ≥ operation-date range (#205), then group them by snapshot date in memory
-      // — instead of one query per snapshot date. The batched read uses the same
-      // ordering as the single-date read it replaces (dateKey, scopeId, kind,
-      // label, holdingId), so each snapshot's grouped rows arrive in the byte-
-      // identical order recalculateSnapshotForAsset saw before, preserving ADR
-      // 0012 behavior exactly. A date absent from the map had no frozen rows (a
-      // legacy capture predating holdings, ADR 0008) and is left untouched.
-      const frozenByDate = groupFrozenHoldingsByDate(
-        await readSnapshotHoldings(db, { scopeId: scope.id, from: operationDateKey }),
-      );
-
-      // Recalculate every affected existing snapshot — only the operated
-      // asset's row changes; all other frozen rows are preserved. (Both modes
-      // recalculate ≥ D: record relies on the generate branch above for a
-      // brand-new D, and recalculates an existing D in place here.)
-      for (const snap of existing) {
-        if (snap.dateKey < operationDateKey) continue;
-
-        // Prune an orphaned backfill snapshot (#305, PR #326): deleting ONE
-        // operation at date D can only newly-orphan date D ITSELF — every other
-        // date keeps its own independent justification — so only the snapshot
-        // dated exactly D is a prune candidate (Part A: was over-reaching to every
-        // date ≥ D). Deleting the last fact that made D an event date leaves a
-        // `histsnap_` fossil frozen with stale holdings, which the /historico
-        // per-day bridge misreads as a phantom dip. Drop it (rows cascade) BEFORE
-        // recalculating, so a still-present unrelated holding does not keep the
-        // orphan alive. A daily capture, or a date ANY remaining dated fact still
-        // justifies — an operation, balance/valuation anchor, amortization cuota,
-        // rate revision, early repayment, coin acquisition, or a Binance history
-        // (conservatively) — is never pruned (guarded inside the helper).
-        if (
-          mode === "delete" &&
-          snap.dateKey === operationDateKey &&
-          (await pruneOrphanedBackfillSnapshot(db, snap))
-        ) {
-          continue;
-        }
-
-        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-
-        // A legacy capture predating holdings (ADR 0008) has no rows to
-        // recompute against — leave its frozen figures untouched.
-        if (frozenHoldings.length === 0) continue;
-
-        const recalculated = recalculateSnapshotForAsset({
-          asset,
-          frozenHoldings,
-          frozenIdentity,
-          operations,
-          snapshot: snap,
-          workspace,
-        });
-
-        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
-      }
-    }
-  });
-}
-
-/**
- * Batched ripple for operation loads/deletes (ADR 0018, #174, #753). Mirrors
- * the amortization-plan exception in `rippleHistoricalSnapshotsForDebt`: record
- * mode generates a fresh whole-portfolio snapshot at each affected past
- * operation date that has none yet, then both modes run ONE forward
- * recalculation of every existing snapshot dated ≥ the earliest affected date —
- * re-evaluating only the operated assets' rows.
- *
- * This replaces calling the per-operation ripple once per created operation
- * (which would re-derive history N times — the #158 O(N×snapshots) cliff): deps
- * are built once, the frozen rows are read in one batched query per scope, and a
- * single forward pass folds every affected asset across the band regardless of
- * how many operation dates the load carried. Multi-asset for the same reason: a
- * multi-ISIN statement import (ADR 0055) rippling once per fund re-wrote every
- * snapshot in the band once per fund — thousands of saveSnapshots that, at
- * hosted network latency (one libsql round trip per statement), blew past the
- * serverless 300s ceiling. Folding all funds in memory persists each snapshot
- * exactly once. Dates today or in the future generate no history (the daily
- * capture owns today). Legacy captures with no holding rows are skipped (ADR
- * 0008). Unknown assets and empty date lists are skipped; a no-op when nothing
- * remains.
+ * Dates today or in the future generate no history (the daily capture owns today
+ * and the future is not history). Recalculations honor the unit price each
+ * snapshot already captured for an asset; only an asset absent from a snapshot
+ * falls back to the last known operation price ≤ its date. Legacy captures with
+ * no holding rows are skipped (ADR 0008). Unknown assets and empty date lists are
+ * skipped; a no-op when nothing remains.
  */
 export async function rippleHistoricalSnapshotsForOperations(
   ctx: StoreContext,
@@ -425,10 +145,8 @@ export async function rippleHistoricalSnapshotsForOperations(
   const requested = params.assets.filter((a) => a.operationDateKeys.length > 0);
   if (requested.length === 0) return;
 
-  // Every affected asset's identity (read including trashed, since it existed on
-  // the snapshot dates even if it was trashed afterwards, ADR 0012), full ledger,
-  // and frozen classification captures (#242) — all read ONCE before any recalc
-  // mutates rows (see rippleHistoricalSnapshots).
+  // Every affected asset's identity, ledger and frozen captures — all read ONCE
+  // before any recalc mutates rows.
   const operationsByAsset = await readAllOperations(db);
   const affected = (
     await Promise.all(
@@ -448,104 +166,24 @@ export async function rippleHistoricalSnapshotsForOperations(
 
   // Unique affected dates across every asset, and the earliest from which
   // existing snapshots recalc.
-  const generateDates = [...new Set(affected.flatMap((a) => a.operationDateKeys))];
-  const recalcFrom = generateDates.reduce(
+  const eventDates = [...new Set(affected.flatMap((a) => a.operationDateKeys))];
+  const recalcFrom = eventDates.reduce(
     (min, date) => (date < min ? date : min),
-    generateDates[0]!,
+    eventDates[0]!,
   );
 
   // Build deps once — the same for every scope (lesson from #114). Deletes never
   // generate fresh snapshots, so they do not need whole-portfolio deps.
   const deps =
     mode === "record" ? await buildHistoricalSnapshotDeps(db, workspace) : null;
-  const affectedDateKeys = new Set(generateDates);
 
-  await ctx.transaction(async () => {
-    for (const scope of listScopeOptions(workspace)) {
-      const existing = await readSnapshots(db, scope.id);
-      // Dates that already have a snapshot — and it GROWS as this loop saves, so a
-      // date reaching the loop twice is built once (#1435).
-      const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
-
-      // Generate a fresh whole-portfolio snapshot at each affected past date that
-      // has none yet (ADR 0012). The single forward recalc below then folds the
-      // operated asset across every existing snapshot ≥ the earliest date.
-      for (const dateKey of generateDates) {
-        if (mode === "delete" || deps === null) continue;
-        const built = await generateHistoricalBackfillIfMissing({
-          dateKey,
-          deps,
-          existingDates,
-          saveSnapshot,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          today,
-          workspace,
-        });
-        if (built) existingDates.add(dateKey);
-      }
-
-      // Read the affected scope's frozen rows in ONE batched query for the whole
-      // ≥ recalc-from range (#205), then group them by snapshot date in memory —
-      // one read per scope, not one per rippled snapshot nor one per operation.
-      const frozenByDate = groupFrozenHoldingsByDate(
-        await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
-      );
-
-      // Recalculate every existing snapshot ≥ the earliest affected date by
-      // re-folding only the operated assets' rows from their operations. The
-      // fold chains in memory — each asset recalculates against the previous
-      // fold's snapshot + rows, the state a per-asset ripple would have re-read
-      // from the DB — and persists ONCE per snapshot at the end.
-      for (const snap of existing) {
-        if (snap.dateKey < recalcFrom) continue;
-
-        if (
-          mode === "delete" &&
-          affectedDateKeys.has(snap.dateKey) &&
-          (await pruneOrphanedBackfillSnapshot(db, snap))
-        ) {
-          continue;
-        }
-
-        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-
-        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
-        if (frozenHoldings.length === 0) continue;
-
-        let current: ValuedNetWorthSnapshot = {
-          holdings: frozenHoldings,
-          snapshot: snap,
-        };
-        let dropped = false;
-        for (const { asset, frozenIdentity, operations } of affected) {
-          const recalculated = recalculateSnapshotForAsset({
-            asset,
-            frozenHoldings: current.holdings,
-            frozenIdentity,
-            operations,
-            snapshot: current.snapshot,
-            workspace,
-          });
-          // No holdings remain — stop folding; the snapshot is dropped below.
-          if (recalculated === null) {
-            dropped = true;
-            break;
-          }
-          current = recalculated;
-        }
-
-        if (dropped) {
-          await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
-        } else {
-          await saveSnapshot({
-            holdings: current.holdings,
-            replace: true,
-            snapshot: current.snapshot,
-          });
-        }
-      }
-    }
+  await rippleBand(ctx, workspace, saveSnapshot, {
+    ...(deps !== null ? { generate: { dates: eventDates, deps, today } } : {}),
+    // Deleting ONE operation at date D can only newly-orphan date D ITSELF —
+    // every other date keeps its own independent justification (#305, PR #326).
+    ...(mode === "delete" ? { pruneDates: new Set(eventDates) } : {}),
+    recalcFrom,
+    rewrite: (input) => foldOperatedAssets(affected, workspace, input),
   });
 }
 
@@ -583,6 +221,11 @@ export async function rippleHistoricalSnapshotsForMixedImport(
           asset,
           dateKeys,
           frozenIdentity: await readFrozenIdentityCaptures(db, assetId, "asset"),
+          // The asset appears in the band from its earliest imported order on.
+          fromDateKey: dateKeys.reduce(
+            (min, date) => (date < min ? date : min),
+            dateKeys[0]!,
+          ),
           operations: deps.operationsByAsset.get(assetId) ?? [],
         };
       }),
@@ -614,62 +257,39 @@ export async function rippleHistoricalSnapshotsForMixedImport(
     )
   ).filter((entry) => entry !== null);
 
-  const generateDates = new Set<string>();
+  const eventDates = new Set<string>();
   for (const { dateKeys } of investments) {
-    for (const dateKey of dateKeys) generateDates.add(dateKey);
+    for (const dateKey of dateKeys) eventDates.add(dateKey);
   }
-  for (const { fromDateKey } of housing) generateDates.add(fromDateKey);
+  for (const { fromDateKey } of housing) eventDates.add(fromDateKey);
   for (const { curve, fromDateKey } of debts) {
     for (const dateKey of rebaselineChainPaymentDatesUpTo(
       curve.balanceRebaselines ?? [],
       fromDateKey,
       params.today,
     )) {
-      generateDates.add(dateKey);
+      eventDates.add(dateKey);
     }
   }
-  const recalcFrom = [...generateDates, ...requestedDates].reduce((min, date) =>
+  const recalcFrom = [...eventDates, ...requestedDates].reduce((min, date) =>
     date < min ? date : min,
   );
   const housingAssetIds = housingAssetIdsOf(deps.assets);
 
-  for (const scope of listScopeOptions(workspace)) {
-    const existing = await readSnapshots(db, scope.id);
-    // Grows as the loop saves, so a repeated date is built once (#1435).
-    const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
-
-    for (const dateKey of generateDates) {
-      const built = await generateHistoricalBackfillIfMissing({
-        dateKey,
-        deps,
-        existingDates,
-        saveSnapshot,
-        scopeId: scope.id,
-        scopeLabel: scope.label,
-        today: params.today,
-        workspace,
-      });
-      if (built) existingDates.add(dateKey);
-    }
-
-    const frozenByDate = groupFrozenHoldingsByDate(
-      await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
-    );
-    for (const snap of existing) {
-      if (snap.dateKey < recalcFrom) continue;
-      const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-      if (frozenHoldings.length === 0) continue;
-
+  await rippleBand(ctx, workspace, saveSnapshot, {
+    generate: { dates: [...eventDates], deps, today: params.today },
+    recalcFrom,
+    rewrite: ({ frozenHoldings, snapshot }) => {
+      // Each domain enters the fold only from its own affected date on; the row
+      // it rewrites lands back on the previous domain's output, so the band
+      // persists the snapshot once for the whole import.
       let current: ValuedNetWorthSnapshot | null = {
         holdings: frozenHoldings,
-        snapshot: snap,
+        snapshot,
       };
       for (const investment of investments) {
-        const fromDateKey = investment.dateKeys.reduce(
-          (min, date) => (date < min ? date : min),
-          investment.dateKeys[0]!,
-        );
-        if (snap.dateKey < fromDateKey) continue;
+        if (current === null) break;
+        if (snapshot.dateKey < investment.fromDateKey) continue;
         current = recalculateSnapshotForAsset({
           asset: investment.asset,
           frozenHoldings: current.holdings,
@@ -678,50 +298,36 @@ export async function rippleHistoricalSnapshotsForMixedImport(
           snapshot: current.snapshot,
           workspace,
         });
-        if (!current) break;
       }
-      if (current) {
-        for (const item of housing) {
-          if (snap.dateKey < item.fromDateKey) continue;
-          current = recalculateSnapshotForHousing({
-            asset: item.asset,
-            curve: item.curve,
-            frozenHoldings: current.holdings,
-            frozenIdentity: item.frozenIdentity,
-            manualValueHistory: deps.manualValueHistory,
-            snapshot: current.snapshot,
-            today: params.today,
-            workspace,
-          });
-          if (!current) break;
-        }
-      }
-      if (current) {
-        for (const item of debts) {
-          if (snap.dateKey < item.fromDateKey) continue;
-          current = recalculateSnapshotForLiability({
-            curve: item.curve,
-            frozenHoldings: current.holdings,
-            housingAssetIds,
-            liability: item.liability,
-            snapshot: current.snapshot,
-            workspace,
-          });
-          if (!current) break;
-        }
-      }
-
-      if (current) {
-        await saveSnapshot({
-          holdings: current.holdings,
-          replace: true,
+      for (const item of housing) {
+        if (current === null) break;
+        if (snapshot.dateKey < item.fromDateKey) continue;
+        current = recalculateSnapshotForHousing({
+          asset: item.asset,
+          curve: item.curve,
+          frozenHoldings: current.holdings,
+          frozenIdentity: item.frozenIdentity,
+          manualValueHistory: deps.manualValueHistory,
           snapshot: current.snapshot,
+          today: params.today,
+          workspace,
         });
-      } else {
-        await db.delete(snapshots).where(eq(snapshots.id, snap.id)).run();
       }
-    }
-  }
+      for (const item of debts) {
+        if (current === null) break;
+        if (snapshot.dateKey < item.fromDateKey) continue;
+        current = recalculateSnapshotForLiability({
+          curve: item.curve,
+          frozenHoldings: current.holdings,
+          housingAssetIds,
+          liability: item.liability,
+          snapshot: current.snapshot,
+          workspace,
+        });
+      }
+      return current;
+    },
+  });
 }
 
 /**
@@ -730,10 +336,10 @@ export async function rippleHistoricalSnapshotsForMixedImport(
  * the snapshot at the change date and recalculates the existing snapshots it
  * affects.
  *
- * - `fromDateKey` in the past: generate/overwrite the snapshot at that date
- *   (valuing the housing asset from its now-current curve), then recalculate
- *   every existing snapshot dated > fromDateKey by re-evaluating only the
- *   housing asset's row from the curve.
+ * - `fromDateKey` in the past: generate the snapshot at that date (valuing the
+ *   housing asset from its now-current curve), then recalculate every existing
+ *   snapshot dated ≥ fromDateKey by re-evaluating only the housing asset's row
+ *   from the curve.
  * - For a rate change, pass the first anchor's date as `fromDateKey` so every
  *   snapshot after it is recalculated (the rate only affects extrapolation
  *   before the first / after the last appraisal).
@@ -762,7 +368,7 @@ export async function rippleHistoricalSnapshotsForValuation(
   const asset = await readInvestmentIdentity(db, assetId);
   if (!asset || !isHousingAsset(asset)) return;
 
-  // Build deps once — they are the same for every scope (Fix 2: was per-scope).
+  // Build deps once — they are the same for every scope (lesson from #114).
   const deps = await buildHistoricalSnapshotDeps(db, workspace);
   const curve = deps.housingValuationByAsset.get(assetId);
   // No map entry means the asset is not housing or has been trashed with no
@@ -770,124 +376,104 @@ export async function rippleHistoricalSnapshotsForValuation(
   if (!curve) return;
 
   // The asset's frozen classification captures across every snapshot (#242), read
-  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  // ONCE before any recalc mutates rows.
   const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
-  await ctx.transaction(async () => {
-    for (const scope of listScopeOptions(workspace)) {
-      const existing = await readSnapshots(db, scope.id);
-      const existingByDate = new Map(existing.map((snap) => [snap.dateKey, snap]));
-
-      // Generate a fresh whole-portfolio snapshot at the change date when it is
-      // in the past and none exists there yet.
-      await generateHistoricalBackfillIfMissing({
-        dateKey: fromDateKey,
-        deps,
-        existingDates: existingByDate,
-        saveSnapshot,
-        scopeId: scope.id,
-        scopeLabel: scope.label,
+  await rippleBand(ctx, workspace, saveSnapshot, {
+    generate: { dates: [fromDateKey], deps, today },
+    recalcFrom: fromDateKey,
+    // Re-evaluate only the housing asset's row from the curve (or its
+    // last-known value when the curve is now empty).
+    rewrite: ({ frozenHoldings, snapshot }) =>
+      recalculateSnapshotForHousing({
+        asset,
+        curve,
+        frozenHoldings,
+        frozenIdentity,
+        manualValueHistory: deps.manualValueHistory,
+        snapshot,
         today,
         workspace,
-      });
-
-      // Read the affected scope's frozen rows in ONE batched query for the whole
-      // ≥ change-date range (#1533), then group them by snapshot date in memory —
-      // instead of one query per recalculated snapshot. The batched read uses the
-      // same ordering as the single-date read it replaces (dateKey, scopeId,
-      // kind, label, holdingId), so each snapshot's grouped rows arrive in the
-      // byte-identical order recalculateSnapshotForHousing saw before,
-      // preserving ADR 0012 behavior exactly. A date absent from the map had no
-      // frozen rows (a legacy capture predating holdings, ADR 0008) and is left
-      // untouched.
-      const frozenByDate = groupFrozenHoldingsByDate(
-        await readSnapshotHoldings(db, { scopeId: scope.id, from: fromDateKey }),
-      );
-
-      // Recalculate every existing snapshot on or after the change date by
-      // re-evaluating only the housing asset's row from the curve (or
-      // last-known-value when the curve is now empty — Fix 1).
-      for (const snap of existing) {
-        if (snap.dateKey < fromDateKey) continue;
-
-        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-
-        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
-        if (frozenHoldings.length === 0) continue;
-
-        const recalculated = recalculateSnapshotForHousing({
-          asset,
-          curve,
-          frozenHoldings,
-          frozenIdentity,
-          manualValueHistory: deps.manualValueHistory,
-          snapshot: snap,
-          today,
-          workspace,
-        });
-
-        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
-      }
-    }
+      }),
   });
 }
 
 /**
- * Ripple effect for debt-balance curves (PRD #109, slice 9): declaring,
- * editing, or deleting an amortization plan, a balance anchor, or a rate
- * revision regenerates / recalculates the snapshots the change affects. The
- * liability is valued from its debt curve (`debtBalanceAtDate`) on each date.
+ * The band a debt change moves: the dates it mints a snapshot at, and the
+ * earliest existing snapshot it recalculates from. Two dates, not one — an early
+ * repayment steps the curve on its OWN date (#1291, so the history needs a point
+ * there) while the recalculation starts at the cuota boundary the lump lands in,
+ * the earliest date the cycle's redraw can move (#1042).
  *
- * Affected-date selection by `kind`:
- * - "amortizable-plan": generate at every past payment-boundary date (start +
- *   m months, m∈[0..term], strictly before today) that has no snapshot yet —
- *   the "one snapshot per past cuota" density (the deliberate ADR-0012
- *   exception of PRD #109) — then recalculate every existing snapshot dated ≥
- *   the loan start.
- * - "amortizable-revision": recalculate every existing snapshot dated ≥
- *   `fromDateKey` (the revision date). No generation: the revision only changes
- *   balances on existing dates after it.
- * - "anchor": generate at `fromDateKey` when in the past and none exists, then
- *   recalculate every existing snapshot dated ≥ it.
+ * A call site that knows both dates states them outright; the two shapes that
+ * fall out of the live curve (the whole cuota series, a re-baseline chain) pass a
+ * resolver instead, since only the ripple holds the curve. There is no growing
+ * vocabulary of "kinds" in between (#1590).
+ */
+export type DebtBandSpec =
+  | { eventDates: readonly string[]; recalcFrom: string }
+  | ((
+      curve: DebtBalanceCurveInputs,
+      today: string,
+    ) => { eventDates: readonly string[]; recalcFrom: string } | null);
+
+/**
+ * The whole amortization schedule: one snapshot per past cuota boundary (the
+ * deliberate ADR-0012 density exception of PRD #109), recalculating from the
+ * disbursement date — the date the debt appears (ADR 0019). Null for an
+ * amortizable debt with no plan row: there is no schedule to lay down.
+ */
+export const debtPlanBand: DebtBandSpec = (curve, today) =>
+  curve.plan
+    ? {
+        eventDates: amortizationPaymentDatesUpTo(curve.plan, today),
+        recalcFrom: curve.plan.disbursementDate,
+      }
+    : null;
+
+/**
+ * A re-baseline chain from `fromDateKey` on. UNIQUE dates across the whole chain
+ * (#1435): each checkpoint's schedule runs to the contract end, so a long chain's
+ * schedules overlap almost entirely and an un-deduplicated fan-out rebuilds the
+ * same portfolio dozens of times.
+ */
+export function debtRebaselineChainBand(fromDateKey: string): DebtBandSpec {
+  return (curve, today) => ({
+    eventDates: rebaselineChainPaymentDatesUpTo(
+      curve.balanceRebaselines ?? [],
+      fromDateKey,
+      today,
+    ),
+    recalcFrom: fromDateKey,
+  });
+}
+
+/**
+ * Ripple effect for debt-balance curves (PRD #109, slice 9): declaring, editing,
+ * or deleting an amortization plan, a balance anchor, a re-baseline, a rate
+ * revision or an early repayment regenerates / recalculates the snapshots the
+ * change affects. The liability is valued from its debt curve (`debtBalanceAtDate`)
+ * on each date, and the call site states the band with `{ eventDates, recalcFrom }`.
  *
  * Deps are built ONCE outside the scope loop (lesson from #114). Only the
  * liability's row in each snapshot is recomputed; every other frozen row is
  * preserved, and legacy captures with no holding rows are skipped. A no-op when
- * the liability has no debt model / curve.
+ * the liability has no debt model / curve, or when the band resolves to nothing.
+ *
+ * El silencio es lo que costó dos días (#1438): también las salidas sin trabajo
+ * dejan su línea en el log, igual que las que sí ripplean.
  */
 export async function rippleHistoricalSnapshotsForDebt(
   ctx: StoreContext,
   workspace: Workspace,
   saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
-  params:
-    | { liabilityId: string; kind: "amortizable-plan"; today: string }
-    | {
-        liabilityId: string;
-        kind: "amortizable-revision" | "anchor" | "amortizable-rebaseline";
-        fromDateKey: string;
-        today: string;
-      }
-    | {
-        liabilityId: string;
-        kind: "amortizable-repayment";
-        /** The cuota boundary the lump lands in: where the RECALCULATION starts (#1042). */
-        fromDateKey: string;
-        /**
-         * The repayment's own date: where the curve steps down (#1291), so where the
-         * dated fact GENERATES its snapshot (ADR 0012). The two differ for any lump
-         * paid mid-cycle, which is why the kind carries both.
-         */
-        eventDateKey: string;
-        today: string;
-      },
+  params: { liabilityId: string; band: DebtBandSpec; today: string },
 ): Promise<DebtRippleCounts> {
   const { db } = ctx;
   const { liabilityId, today } = params;
 
   // The liability's identity — including trashed, since it existed on the
   // snapshot dates even if it was trashed afterwards.
-  // El silencio es lo que costó dos días (#1438): también las salidas sin
-  // trabajo dejan su línea en el log, igual que las que sí ripplean.
   const liability = await readLiabilityIdentity(db, liabilityId);
   if (!liability) {
     console.info({ liabilityId }, "debt ripple: no identity, nothing to ripple");
@@ -902,138 +488,62 @@ export async function rippleHistoricalSnapshotsForDebt(
     return EMPTY_DEBT_RIPPLE_COUNTS;
   }
 
+  const band =
+    typeof params.band === "function" ? params.band(curve, today) : params.band;
+  if (band === null) {
+    console.info({ liabilityId }, "debt ripple: no band to lay down, nothing to ripple");
+    return EMPTY_DEBT_RIPPLE_COUNTS;
+  }
+
   // Housing assets — a debt securing one nets historical housing equity (ADR 0013).
   const housingAssetIds = housingAssetIdsOf(deps.assets);
 
-  // The set of dates to generate fresh snapshots at, and the earliest date from
-  // which existing snapshots are recalculated.
-  let generateDates: string[];
-  let recalcFrom: string;
-  if (params.kind === "amortizable-plan") {
-    if (!curve.plan) {
-      console.info(
-        { liabilityId },
-        "debt ripple: amortizable without plan, nothing to generate",
-      );
-      return EMPTY_DEBT_RIPPLE_COUNTS;
-    }
-    generateDates = amortizationPaymentDatesUpTo(curve.plan, today);
-    // The debt appears at the disbursement date (ADR 0019), the earliest boundary.
-    recalcFrom = curve.plan.disbursementDate;
-  } else if (params.kind === "amortizable-rebaseline") {
-    const { fromDateKey } = params;
-    // UNIQUE dates across the whole chain (#1435): each checkpoint's schedule runs
-    // to the contract end, so a long chain's schedules overlap almost entirely and
-    // an un-deduplicated fan-out rebuilds the same portfolio dozens of times.
-    generateDates = rebaselineChainPaymentDatesUpTo(
-      curve.balanceRebaselines ?? [],
-      fromDateKey,
-      today,
-    );
-    recalcFrom = fromDateKey;
-  } else {
-    const { fromDateKey } = params;
-    // A revision never generates new dates; an anchor and an early repayment are
-    // dated facts that generate the snapshot at their OWN date when in the past
-    // (ADR 0012), then recalculate from `recalcFrom` forward. For a repayment those
-    // are two different dates: the curve steps on the repayment date (#1291) — so
-    // the history needs a point THERE — while the recalculation still starts at the
-    // cuota boundary, the earliest date the cycle's redraw can move (#1042).
-    const generateAt =
-      params.kind === "anchor"
-        ? fromDateKey
-        : params.kind === "amortizable-repayment"
-          ? params.eventDateKey
-          : null;
-    generateDates = generateAt !== null && generateAt < today ? [generateAt] : [];
-    recalcFrom = fromDateKey;
-  }
-
-  const counts: DebtRippleCounts = {
-    generated: 0,
-    generatedWithLiability: 0,
-    recalculated: 0,
-  };
-
-  await ctx.transaction(async () => {
-    for (const scope of listScopeOptions(workspace)) {
-      const existing = await readSnapshots(db, scope.id);
-      // Dates that already have a snapshot — and it GROWS as this loop saves, so a
-      // date reaching the loop twice is built once (#1435).
-      const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
-
-      // Generate a fresh whole-portfolio snapshot at each affected past date
-      // that has none yet.
-      for (const dateKey of generateDates) {
-        const built = await generateHistoricalBackfillIfMissing({
-          dateKey,
-          deps,
-          existingDates,
-          saveSnapshot,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          today,
-          workspace,
-        });
-        if (!built) continue;
-        counts.generated += 1;
+  let generatedWithLiability = 0;
+  const counts = await rippleBand(ctx, workspace, saveSnapshot, {
+    generate: {
+      dates: band.eventDates,
+      deps,
+      onGenerated: (built) => {
         if (
           built.holdings.some(
             (row) => row.holdingId === liabilityId && row.kind === "liability",
           )
         ) {
-          counts.generatedWithLiability += 1;
+          generatedWithLiability += 1;
         }
-        existingDates.add(dateKey);
-      }
-
-      // Read the affected scope's frozen rows in ONE batched query for the whole
-      // ≥ recalc-from range (#206), then group them by snapshot date in memory —
-      // instead of one query per recalculated snapshot. The batched read uses the
-      // same ordering as the single-date read it replaces (dateKey, scopeId,
-      // kind, label, holdingId), so each snapshot's grouped rows arrive in the
-      // byte-identical order recalculateSnapshotForLiability saw before,
-      // preserving ADR 0012 / ADR 0019 behavior exactly. A date absent from the
-      // map had no frozen rows (a legacy capture predating holdings, ADR 0008)
-      // and is left untouched.
-      const frozenByDate = groupFrozenHoldingsByDate(
-        await readSnapshotHoldings(db, { scopeId: scope.id, from: recalcFrom }),
-      );
-
-      // Recalculate every existing snapshot on or after the change date by
-      // re-valuing only this liability's row from the curve.
-      for (const snap of existing) {
-        if (snap.dateKey < recalcFrom) continue;
-
-        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-
-        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
-        if (frozenHoldings.length === 0) continue;
-
-        const recalculated = recalculateSnapshotForLiability({
-          curve,
-          frozenHoldings,
-          housingAssetIds,
-          liability,
-          snapshot: snap,
-          workspace,
-        });
-
-        if (await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated)) {
-          counts.recalculated += 1;
-        }
-      }
-    }
-
-    if (counts.generated > 0 && counts.generatedWithLiability === 0) {
-      // Log before throw so the abort is not silent (#1438); the nested
-      // transaction then rolls back every snapshot this loop saved.
+      },
+      today,
+    },
+    recalcFrom: band.recalcFrom,
+    rewrite: ({ frozenHoldings, snapshot }) =>
+      recalculateSnapshotForLiability({
+        curve,
+        frozenHoldings,
+        housingAssetIds,
+        liability,
+        snapshot,
+        workspace,
+      }),
+    verify: ({ generated, recalculated }) => {
+      const counts: DebtRippleCounts = {
+        generated,
+        generatedWithLiability,
+        recalculated,
+      };
+      // Log before throw so the abort is not silent (#1438); the band's
+      // transaction then rolls back every snapshot it saved.
       logDebtRipple(liabilityId, counts);
-      throw new Error(debtMissingFromAllGeneratedMessage(counts.generated));
-    }
-    logDebtRipple(liabilityId, counts);
+      if (generated > 0 && generatedWithLiability === 0) {
+        throw new Error(debtMissingFromAllGeneratedMessage(generated));
+      }
+    },
   });
-  return counts;
+
+  return {
+    generated: counts.generated,
+    generatedWithLiability,
+    recalculated: counts.recalculated,
+  };
 }
 
 function logDebtRipple(liabilityId: string, counts: DebtRippleCounts): void {
@@ -1098,21 +608,23 @@ function globalLiabilityValue(
 /**
  * Ripple effect for an ownership-split edit (#172): re-weight the edited
  * holding's row in every existing scope snapshot using its new split. Unlike the
- * value ripples this generates NO snapshot dates — an ownership split has no date
- * dimension. The whole-holding (global, 100%) value at each date is RE-DERIVED
- * losslessly from the holding's curve / operations / stored basis — the same
- * source `buildSnapshotAtDate` values it from (#187) — never recovered by
- * dividing the rounded household snapshot row, which cannot invert allocation
- * rounding and drifts ±1–2 minor units for a holding co-owned with a non-member
- * (the household combined share < 100%). The set of dates re-weighted is exactly
- * the household snapshots that carry the holding (an ownership edit moves no other
- * dates). Every scope — including the household — is then re-weighted from that
- * global value, so a holding fully owned within the household leaves the household
- * figure unchanged while a co-owned holding's household figure moves with the
- * members' combined share. Only the edited holding's row moves; every other
- * frozen row is preserved, the reconciliation invariant holds (ADR 0008), and
- * legacy captures with no holding rows are skipped. A no-op when the household
- * held no stake before, or no household snapshot carries the holding.
+ * value bands this generates NO snapshot dates — an ownership split has no date
+ * dimension, which is why it hands the band no `generate` and a null floor: the
+ * dates it touches are decided row by row. The whole-holding (global, 100%) value
+ * at each date is RE-DERIVED losslessly from the holding's curve / operations /
+ * stored basis — the same source `buildSnapshotAtDate` values it from (#187) —
+ * never recovered by dividing the rounded household snapshot row, which cannot
+ * invert allocation rounding and drifts ±1–2 minor units for a holding co-owned
+ * with a non-member (the household combined share < 100%). The set of dates
+ * re-weighted is exactly the household snapshots that carry the holding (an
+ * ownership edit moves no other dates). Every scope — including the household —
+ * is then re-weighted from that global value, so a holding fully owned within the
+ * household leaves the household figure unchanged while a co-owned holding's
+ * household figure moves with the members' combined share. Only the edited
+ * holding's row moves; every other frozen row is preserved, the reconciliation
+ * invariant holds (ADR 0008), and legacy captures with no holding rows are
+ * skipped. A no-op when the household held no stake before, or no household
+ * snapshot carries the holding.
  */
 export async function rippleHistoricalSnapshotsForOwnership(
   ctx: StoreContext,
@@ -1156,77 +668,58 @@ export async function rippleHistoricalSnapshotsForOwnership(
   // captures (e.g. the household scope's), not from the live identity.
   const frozenIdentity = await readFrozenIdentityCaptures(db, holdingId, kind);
 
-  await ctx.transaction(async () => {
-    // The dates to re-weight: exactly the household snapshots carrying the holding
-    // (an ownership edit moves no other dates), each mapped to the LOSSLESS global
-    // value re-derived from the holding's curve / operations / stored basis. The
-    // household row's frozen unit price / cost-basis flag is honored so an
-    // investment's re-valued global matches the price the snapshot captured.
-    const globalByDate = new Map<string, number>();
-    // One batched household read of THIS holding (#1533), not one query per
-    // snapshot. Passing holdingId skips the second positions read (those serve
-    // the connected-coin drilldown, never this re-weight). Grouped by date, the
-    // per-snapshot `.find` is an in-memory lookup.
-    const householdFrozenByDate = groupFrozenHoldingsByDate(
-      await readSnapshotHoldings(db, {
-        holdingId,
-        kind,
-        scopeId: "household",
-      }),
+  // The dates to re-weight: exactly the household snapshots carrying the holding,
+  // each mapped to the LOSSLESS global value re-derived from the holding's curve /
+  // operations / stored basis. The household row's frozen unit price /
+  // cost-basis flag is honored so an investment's re-valued global matches the
+  // price the snapshot captured. One batched household read of THIS holding
+  // (#1533), not one query per snapshot; passing holdingId skips the second
+  // positions read (those serve the connected-coin drilldown, never this
+  // re-weight).
+  const globalByDate = new Map<string, number>();
+  const householdFrozenByDate = groupFrozenHoldingsByDate(
+    await readSnapshotHoldings(db, { holdingId, kind, scopeId: "household" }),
+  );
+  for (const snap of await readSnapshots(db, "household")) {
+    const row = (householdFrozenByDate.get(snap.dateKey) ?? []).find(
+      (r) => r.holdingId === holdingId && r.kind === kind,
     );
-    for (const snap of await readSnapshots(db, "household")) {
-      const row = (householdFrozenByDate.get(snap.dateKey) ?? []).find(
-        (r) => r.holdingId === holdingId && r.kind === kind,
-      );
-      if (!row) continue;
+    if (!row) continue;
 
-      const globalValueMinor = asset
-        ? globalAssetValue(asset, deps, row, snap.dateKey)
-        : globalLiabilityValue(liability!, deps, snap.dateKey);
-      // A household row exists for this date, so the holding WAS captured then.
-      // Re-valuation returns null only when the live ledger no longer holds it on
-      // that date (e.g. operations deleted since the freeze) — a data mismatch the
-      // frozen row alone records faithfully. SKIP re-weighting that date: dividing
-      // the already-allocated household row back to a global would re-introduce the
-      // lossy-magnitude error #187 removed (#212). Leaving the date out of
-      // globalByDate makes the downstream loop skip it, so the frozen row is left
-      // untouched as the only faithful record of that date.
-      if (globalValueMinor !== null) {
-        globalByDate.set(snap.dateKey, globalValueMinor);
-      }
+    const globalValueMinor = asset
+      ? globalAssetValue(asset, deps, row, snap.dateKey)
+      : globalLiabilityValue(liability!, deps, snap.dateKey);
+    // A household row exists for this date, so the holding WAS captured then.
+    // Re-valuation returns null only when the live ledger no longer holds it on
+    // that date (e.g. operations deleted since the freeze) — a data mismatch the
+    // frozen row alone records faithfully. SKIP re-weighting that date: dividing
+    // the already-allocated household row back to a global would re-introduce the
+    // lossy-magnitude error #187 removed (#212). Leaving the date out of
+    // globalByDate makes the rewrite leave the frozen row untouched as the only
+    // faithful record of that date.
+    if (globalValueMinor !== null) {
+      globalByDate.set(snap.dateKey, globalValueMinor);
     }
-    if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
+  }
+  if (globalByDate.size === 0) return; // no household basis → nothing to re-weight
 
-    for (const scope of listScopeOptions(workspace)) {
-      // One batched read of this scope's frozen rows (#1533), grouped by date —
-      // instead of one query per re-weighted snapshot. Same ordering as the
-      // single-date read it replaces, so recalculateSnapshotForOwnership sees
-      // byte-identical rows and ADR 0012 / ADR 0020 behavior is preserved.
-      const frozenByDate = groupFrozenHoldingsByDate(
-        await readSnapshotHoldings(db, { scopeId: scope.id }),
-      );
-      for (const snap of await readSnapshots(db, scope.id)) {
-        const globalValueMinor = globalByDate.get(snap.dateKey);
-        if (globalValueMinor === undefined) continue;
-
-        const frozenHoldings = frozenByDate.get(snap.dateKey) ?? [];
-        // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
-        if (frozenHoldings.length === 0) continue;
-
-        const recalculated = recalculateSnapshotForOwnership({
-          frozenHoldings,
-          frozenIdentity,
-          globalValueMinor,
-          holding: asset
-            ? { asset, kind: "asset" }
-            : { housingAssetIds, kind: "liability", liability: liability! },
-          snapshot: snap,
-          workspace,
-        });
-
-        await persistRecalculatedSnapshot(db, saveSnapshot, snap, recalculated);
-      }
-    }
+  await rippleBand(ctx, workspace, saveSnapshot, {
+    recalcFrom: null,
+    rewrite: ({ frozenHoldings, snapshot }) => {
+      const globalValueMinor = globalByDate.get(snapshot.dateKey);
+      // Not a date this edit reaches — leave the frozen row exactly as it is.
+      if (globalValueMinor === undefined) return undefined;
+      return recalculateSnapshotForOwnership({
+        frozenHoldings,
+        frozenIdentity,
+        globalValueMinor,
+        holding: asset
+          ? { asset, kind: "asset" }
+          : { housingAssetIds, kind: "liability", liability: liability! },
+        snapshot,
+        workspace,
+      });
+    },
   });
 }
 
