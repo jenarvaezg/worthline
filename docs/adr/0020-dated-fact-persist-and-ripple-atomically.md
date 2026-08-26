@@ -113,6 +113,12 @@ The same rule therefore covers the alta: `createInvestmentHolding` and
 ripple, atomically, alongside the `createHousingHolding` seam that already did it
 for a home.
 
+The traspaso gate (ADR 0083) falls under the same rule for the destination a
+traspaso *opens*: it is created by the gate, inside the transaction that mints the
+pair, instead of by the screen beforehand. Ordering the two calls was never a
+guarantee — a refusal at the gate, or anything throwing between them, left an
+empty **holding** in the tablero for a traspaso that never happened.
+
 These are the one family that **composes** the others: the facts an alta writes
 already have owners (the operation family, the traspaso gate, the current-state
 debt seam), so the composition root passes them in explicitly and nested

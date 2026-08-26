@@ -1,5 +1,5 @@
 import { createStableId } from "@web/intake";
-import type { WorthlineStore } from "@worthline/db";
+import type { CreateDebtHoldingCommand, WorthlineStore } from "@worthline/db";
 
 import type {
   CurrentStateDebtDerived,
@@ -31,7 +31,7 @@ export function buildCurrentStateAmortization(
   derived: CurrentStateDebtDerived,
   raw: CurrentStateDates,
   seed: number,
-) {
+): NonNullable<CreateDebtHoldingCommand["currentState"]> {
   const rebaselineBase = {
     baselineDate: raw.baselineDate,
     endDate: raw.endDate,

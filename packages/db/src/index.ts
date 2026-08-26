@@ -54,6 +54,8 @@ export type {
   CommandExecutor,
   CommandHost,
   CommandResult,
+  CreateDebtHoldingCommand,
+  CreateInvestmentHoldingCommand,
   DebtRippleCounts,
   DeleteValuationAnchorCommand,
   ImportBalanceHistoryCommand,

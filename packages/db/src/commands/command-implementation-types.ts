@@ -68,6 +68,30 @@ export type InvestmentHoldingEntry =
       transfer: Omit<RecordExternalTransferInCommand, "destinationAssetId" | "today">;
     };
 
+/** The full investment-alta command for `store.command.createInvestmentHolding`. */
+export interface CreateInvestmentHoldingCommand {
+  /** The investment row to create; its id is the one the entry is stamped with. */
+  asset: CreateInvestmentAssetInput;
+  /** What gives the holding its value. Omitted for the empty container. */
+  entry?: InvestmentHoldingEntry;
+  /** The ripple's anchor — the frontier between history and the daily capture. */
+  today?: string;
+}
+
+/** The full debt-alta command for `store.command.createDebtHolding`. */
+export interface CreateDebtHoldingCommand {
+  /** The liability row to create. */
+  liability: CreateLiabilityInput;
+  /** How its balance is valued (ADR 0031) — never a second call. */
+  debtModel: DebtModel;
+  /** The «alta por estado actual» declaration (ADR 0056), when there is one. */
+  currentState?: {
+    plan: CreateAmortizationPlanInput;
+    rebaseline: AddBalanceRebaselineInput;
+  };
+  today?: string;
+}
+
 /**
  * Private dated-fact command implementations (issues #489/#972): the operations that
  * persist ONE dated fact (an operation, a valuation/balance anchor, an
@@ -223,26 +247,16 @@ export interface DatedFactCommandImplementations {
    * destination exists — its currency is a fact of the row this command is
    * creating. Every pure refusal belongs to the caller, BEFORE the alta.
    */
-  createInvestmentHoldingAndRipple: (command: {
-    asset: CreateInvestmentAssetInput;
-    entry?: InvestmentHoldingEntry;
-    today?: string;
-  }) => Promise<DomainResult<void>>;
+  createInvestmentHoldingAndRipple: (
+    command: CreateInvestmentHoldingCommand,
+  ) => Promise<DomainResult<void>>;
   /**
    * Debt-alta seam (#1599, ADR 0020): create ONE liability AND its debt model AND
    * — on the «alta por estado actual» path (ADR 0056) — its derived plan and
    * re-baseline, atomically, with ONE ripple. The model is never a second call:
    * a deuda that lands without it has no curve anyone can draw (ADR 0031).
    */
-  createDebtHoldingAndRipple: (command: {
-    liability: CreateLiabilityInput;
-    debtModel: DebtModel;
-    currentState?: {
-      plan: CreateAmortizationPlanInput;
-      rebaseline: AddBalanceRebaselineInput;
-    };
-    today?: string;
-  }) => Promise<void>;
+  createDebtHoldingAndRipple: (command: CreateDebtHoldingCommand) => Promise<void>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
     opts?: { today?: string },

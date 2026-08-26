@@ -163,8 +163,10 @@ export async function persistHoldingCreation(
   }
 
   // ONE unit of work (#1599): the holding and its opening commit or roll back
-  // together — the same seam the «Añadir holding» wizard writes through.
-  await store.command.createInvestmentHolding({
+  // together — the same seam the «Añadir holding» wizard writes through. Its
+  // refusal is data, and this module promises a Spanish message rather than a
+  // throw, so it is read and mapped like every other guard here.
+  const created = await store.command.createInvestmentHolding({
     asset: {
       currency: "EUR",
       id,
@@ -179,6 +181,10 @@ export async function persistHoldingCreation(
     today,
     ...(entry ? { entry } : {}),
   });
+
+  if (!created.ok) {
+    return { error: mapDomainViolation(created.violations[0]!), ok: false };
+  }
 
   // An alta with a provider symbol lands with no cached quote, so it renders at
   // cost and its returns have nothing to work with. Ask for the first quote here

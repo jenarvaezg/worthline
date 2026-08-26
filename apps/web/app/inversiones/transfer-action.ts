@@ -19,6 +19,7 @@ import {
   type TransferDraft,
 } from "@web/patrimonio/[id]/editar/_surfaces/transfer-form";
 import type { WorthlineStore } from "@web/store";
+import type { CreateInvestmentAssetInput } from "@worthline/db";
 import type { DecimalString, Instrument, ManualAsset } from "@worthline/domain";
 import {
   defaultsFor,
@@ -41,10 +42,12 @@ interface CreatedDestination {
  * - **The destination may not exist yet.** A traspaso to a plan the user has just
  *   opened is the ordinary case — Jorge did it three times in 2026 — and sending
  *   them to «Añadir holding» first would lose the form they had half filled in. So
- *   the holding is created HERE, from the two things the flow already knows (the
+ *   the holding is shaped HERE, from the two things the flow already knows (the
  *   origin's instrument and its owners: the capital only moved) plus a name and an
- *   optional ISIN. It is created only after the figures have been checked, so a
- *   refused traspaso never leaves an empty holding behind.
+ *   optional ISIN — and WRITTEN by the gate, inside the same transaction as the pair
+ *   (#1599), so a traspaso that is refused or fails halfway never leaves an empty
+ *   holding behind. The pre-check below still runs first, so the ordinary refusal
+ *   never reaches the gate at all.
  * - **Idempotency (#1394).** The three ids — the pair's `transferId`, both operation
  *   ids and, for a new destination, the holding's own id — are seeded off the
  *   client's submission key, so a double click resolves to the same ids, finds its
@@ -167,6 +170,7 @@ export async function recordTransferAction(
         portion: parsed.portion,
         today,
         transferId: createStableId("trf", originAssetId, seed),
+        ...(destination.asset ? { destinationAsset: destination.asset } : {}),
         ...(parsed.destinationAmountMinor === undefined
           ? {}
           : { destinationAmountMinor: parsed.destinationAmountMinor }),
@@ -260,34 +264,39 @@ async function resolveDestination(
     pricePerUnit: DecimalString;
     seed: number | string;
   },
-): Promise<{ assetId: string; created: CreatedDestination | null }> {
+): Promise<{
+  assetId: string;
+  asset: CreateInvestmentAssetInput | null;
+  created: CreatedDestination | null;
+}> {
   if (params.destination.kind === "existing") {
-    return { assetId: params.destination.assetId, created: null };
+    return { asset: null, assetId: params.destination.assetId, created: null };
   }
 
   const id = createStableId("asset", params.destination.name, params.seed);
 
   // A replayed submit mints the same id, so the holding it already created is found
-  // here rather than duplicated under a second one.
+  // here rather than asked for a second time.
   const existing = (await store.assets.readAssets()).some((asset) => asset.id === id);
   if (existing) {
-    return { assetId: id, created: null };
+    return { asset: null, assetId: id, created: null };
   }
 
   const instrument: Instrument = params.origin.instrument ?? "fund";
 
-  await store.assets.createInvestmentAsset({
-    currency: params.origin.currency,
-    id,
-    instrument,
-    liquidityTier: defaultsFor(instrument).rung,
-    manualPricePerUnit: params.pricePerUnit,
-    name: params.destination.name,
-    ownership: params.origin.ownership,
-    ...(params.destination.isin ? { isin: params.destination.isin } : {}),
-  });
-
   return {
+    // Shaped here, WRITTEN by the gate (#1599): the row and the pair it exists for
+    // ride one transaction, so a refusal leaves no empty holding behind.
+    asset: {
+      currency: params.origin.currency,
+      id,
+      instrument,
+      liquidityTier: defaultsFor(instrument).rung,
+      manualPricePerUnit: params.pricePerUnit,
+      name: params.destination.name,
+      ownership: params.origin.ownership,
+      ...(params.destination.isin ? { isin: params.destination.isin } : {}),
+    },
     assetId: id,
     created: {
       instrument,

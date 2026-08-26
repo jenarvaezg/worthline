@@ -1,4 +1,8 @@
-export type { InvestmentHoldingEntry } from "./command-implementation-types";
+export type {
+  CreateDebtHoldingCommand,
+  CreateInvestmentHoldingCommand,
+  InvestmentHoldingEntry,
+} from "./command-implementation-types";
 export type { CommandExecutor } from "./harness";
 export { runCommand } from "./harness";
 export type { CommandHost } from "./host";
