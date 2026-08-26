@@ -5,6 +5,7 @@ import type {
   PayoutSchedule,
   Workspace,
 } from "@worthline/domain";
+import { collectHoldingPayouts } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 import { derivePublicId } from "./derived-id";
@@ -171,15 +172,20 @@ describe("buildHoldingPayouts", () => {
 // `payouts-wiring.test.ts`. These tests fix the weighting / coverage math.
 
 function scopeStore(over: {
-  payouts: Payout[];
-  schedules: PayoutSchedule[];
   fireConfig: Record<string, FireScopeConfig>;
 }): AgentViewReadStore {
   return {
-    readPayouts: async () => over.payouts,
-    readPayoutSchedules: async () => over.schedules,
     readFireConfig: async () => over.fireConfig,
   } as unknown as AgentViewReadStore;
+}
+
+/**
+ * The collected payouts the caller hands the lens (#1593): `buildFinancialContext`
+ * reads and collects them once for the whole context, so the test collects them
+ * through the same canonical collector rather than faking the read.
+ */
+function collected(payouts: Payout[], schedules: PayoutSchedule[] = []) {
+  return collectHoldingPayouts(payouts, schedules, TODAY);
 }
 
 const workspace = {
@@ -203,19 +209,18 @@ describe("buildScopePassiveIncome", () => {
   test("weights a co-owned holding by the scope's ownership share and reports coverage", async () => {
     const result = await buildScopePassiveIncome({
       store: scopeStore({
-        payouts: [
-          payout({
-            id: "rent",
-            holdingId: "home",
-            dateISO: "2026-03-01",
-            amountMinor: 3_000_000,
-          }),
-        ],
-        schedules: [],
         fireConfig: {
           member_jose: { monthlySpendingMinor: 125_000 } as unknown as FireScopeConfig,
         },
       }),
+      payoutsByHolding: collected([
+        payout({
+          id: "rent",
+          holdingId: "home",
+          dateISO: "2026-03-01",
+          amountMinor: 3_000_000,
+        }),
+      ]),
       workspace,
       internalScopeId: "member_jose",
       holdings: [
@@ -239,11 +244,10 @@ describe("buildScopePassiveIncome", () => {
 
   test("omits coverage when the scope has no declared spending", async () => {
     const result = await buildScopePassiveIncome({
-      store: scopeStore({
-        payouts: [payout({ id: "rent", holdingId: "home", amountMinor: 100_000 })],
-        schedules: [],
-        fireConfig: {},
-      }),
+      store: scopeStore({ fireConfig: {} }),
+      payoutsByHolding: collected([
+        payout({ id: "rent", holdingId: "home", amountMinor: 100_000 }),
+      ]),
       workspace,
       internalScopeId: "member_jose",
       holdings: [ownedAsset("home", [{ memberId: "member_jose", shareBps: 10_000 }])],
@@ -257,11 +261,10 @@ describe("buildScopePassiveIncome", () => {
 
   test("excludes payouts of a holding the scope does not own", async () => {
     const result = await buildScopePassiveIncome({
-      store: scopeStore({
-        payouts: [payout({ id: "rent", holdingId: "anas", amountMinor: 500_000 })],
-        schedules: [],
-        fireConfig: {},
-      }),
+      store: scopeStore({ fireConfig: {} }),
+      payoutsByHolding: collected([
+        payout({ id: "rent", holdingId: "anas", amountMinor: 500_000 }),
+      ]),
       workspace,
       internalScopeId: "member_jose",
       holdings: [ownedAsset("anas", [{ memberId: "member_ana", shareBps: 10_000 }])],
@@ -343,8 +346,13 @@ describe("net passive income (#1463)", () => {
   test("the scope lens weights expenses by ownership and runs coverage on net", async () => {
     const result = await buildScopePassiveIncome({
       store: scopeStore({
-        payouts: [],
-        schedules: [
+        fireConfig: {
+          member_jose: { monthlySpendingMinor: 125_000 } as unknown as FireScopeConfig,
+        },
+      }),
+      payoutsByHolding: collected(
+        [],
+        [
           schedule({
             id: "s_rent",
             holdingId: "home",
@@ -353,10 +361,7 @@ describe("net passive income (#1463)", () => {
             startISO: TODAY, // exactly one occurrence
           }),
         ],
-        fireConfig: {
-          member_jose: { monthlySpendingMinor: 125_000 } as unknown as FireScopeConfig,
-        },
-      }),
+      ),
       workspace,
       internalScopeId: "member_jose",
       holdings: [

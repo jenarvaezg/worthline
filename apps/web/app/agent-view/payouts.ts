@@ -1,6 +1,7 @@
 import type { AgentViewReadStore } from "@worthline/db";
 import type {
   CurrencyCode,
+  DatedAmount,
   OwnershipShare,
   PassiveIncomeWindow,
   Payout,
@@ -79,24 +80,26 @@ export async function buildHoldingPayouts(input: {
  * (null when unknown). Mirrors the /objetivos "renta pasiva" lens — the
  * weighting/coverage math is the shared domain `scopePassiveIncome`, so the two
  * surfaces agree. Caller-resolved like `buildPortfolioReturns`: the workspace,
- * internal scope id, and holdings come from `buildFinancialContext` (which already
- * loaded them), so this reads only what's new — payouts, schedules, FIRE config.
+ * internal scope id, holdings AND the collected payouts come from
+ * `buildFinancialContext` (which already loaded them), so this reads only what's
+ * new — the FIRE config. The payouts arrive collected rather than read here
+ * because the returns block folds the very same series (#1593): one read, one
+ * collection, so the two blocks of a context cannot disagree about what was
+ * received.
  */
 export async function buildScopePassiveIncome(input: {
   store: AgentViewReadStore;
   workspace: Workspace;
   internalScopeId: string;
   holdings: readonly { id: string; ownership: OwnershipShare[] }[];
+  /** Recorded payouts up to `todayISO`, keyed by holding (`collectHoldingPayouts`). */
+  payoutsByHolding: ReadonlyMap<string, readonly DatedAmount[]>;
   todayISO: string;
 }): Promise<AgentViewScopePassiveIncome> {
-  const [recorded, schedules, fireConfig] = await Promise.all([
-    input.store.readPayouts(),
-    input.store.readPayoutSchedules(),
-    input.store.readFireConfig(input.todayISO),
-  ]);
+  const fireConfig = await input.store.readFireConfig(input.todayISO);
 
   const lens = scopePassiveIncome({
-    payoutsByHolding: collectHoldingPayouts(recorded, schedules, input.todayISO),
+    payoutsByHolding: input.payoutsByHolding,
     holdings: input.holdings,
     scopeMemberIds: new Set(
       resolveScopeMemberIds(input.workspace, input.internalScopeId),

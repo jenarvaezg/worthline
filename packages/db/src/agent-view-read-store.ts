@@ -39,7 +39,12 @@ import type {
 import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";
-import { groupOwnershipByOwner, type StoreContext, type StoreDb } from "./store-context";
+import {
+  groupOwnershipByOwner,
+  readAllOperations as readAllAssetOperations,
+  type StoreContext,
+  type StoreDb,
+} from "./store-context";
 import { type SyncRun, syncRunInstant } from "./sync-run-store";
 
 /**
@@ -151,6 +156,15 @@ export interface AgentViewReadStore {
     dateKey: string,
   ) => Promise<{ assets: ManualAsset[]; liabilities: Liability[] }>;
   readOperations: (assetId: string) => Promise<InvestmentOperation[]>;
+  /**
+   * EVERY investment ledger in the workspace, keyed by asset id — one read for a
+   * caller that folds many holdings at once (#1593). The portfolio-wide returns
+   * block used to call {@link AgentViewReadStore.readOperations} once per holding
+   * inside its fold; a single-holding read stays for the surfaces that measure one
+   * holding. An asset with no operation is ABSENT from the map, never an empty
+   * array, so «no ledger» reads the same as it does from the per-holding read.
+   */
+  readAllOperations: () => Promise<ReadonlyMap<string, readonly InvestmentOperation[]>>;
   readConnectedSources: () => Promise<AgentViewConnectedSource[]>;
   /**
    * A connected source's mirrored positions (PRD #328, #339). Pure read — never
@@ -320,6 +334,7 @@ export function createAgentViewReadStore(
     readLiabilities: () => deps.readLiabilities(),
     readCurveValuedHoldings: (dateKey) => deps.readCurveValuedHoldings(dateKey),
     readOperations: (assetId) => deps.readOperations(assetId),
+    readAllOperations: () => readAllAssetOperations(ctx.db),
     readGoals: (scopeId) => deps.readGoals(scopeId),
     readManagedPortfolios: (scopeId) => deps.readManagedPortfolios(scopeId),
     readConnectedSources: async () => {

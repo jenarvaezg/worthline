@@ -17,7 +17,7 @@ import { moneyOf } from "./money";
  * summary cannot drift between them.
  */
 export function summarizeOperations(
-  operations: InvestmentOperation[],
+  operations: readonly InvestmentOperation[],
   currency: string,
 ): AgentViewOperationSummary | undefined {
   if (operations.length === 0) {
