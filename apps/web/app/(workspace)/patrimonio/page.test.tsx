@@ -95,9 +95,9 @@ vi.mock("next/navigation", () => ({
 
 import { PatrimonioContent } from "./page";
 
-async function renderedHtml(): Promise<string> {
+async function renderedHtml(searchParams: Record<string, string> = {}): Promise<string> {
   const element = (await PatrimonioContent({
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
 }
@@ -130,5 +130,26 @@ describe('"Repasar con el asistente" re-run entry point (S3, #1170)', () => {
     expect(html).not.toContain("Repasar con el asistente");
     expect(html).not.toContain("repasar=1");
     expect(html).toContain("Importar extracto");
+  });
+});
+
+describe("a write can confirm AND ask (#1561)", () => {
+  test("the acquisition question lands in its own aviso band, beside the confirmation", async () => {
+    const html = await renderedHtml({
+      deudaDesde: "2004-05-19",
+      ok: "asset_added_acquisition_today",
+    });
+
+    expect(html).toContain('class="successBand"');
+    expect(html).toContain("Activo añadido.");
+    expect(html).toContain('class="warningBand"');
+    expect(html).toContain("19/05/2004");
+  });
+
+  test("a plain alta confirms with no aviso band", async () => {
+    const html = await renderedHtml({ ok: "asset_added" });
+
+    expect(html).toContain('class="successBand"');
+    expect(html).not.toContain('class="warningBand"');
   });
 });

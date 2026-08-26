@@ -9,6 +9,9 @@ import { fetchFirstQuoteBestEffort } from "@web/first-quote";
 import { formAction } from "@web/form-action";
 import { holdingDetailHref } from "@web/holding-route";
 import {
+  acquisitionDatedToday,
+  acquisitionTodayNotice,
+  appendParam,
   createStableId,
   errorRedirectUrl,
   mapDomainViolation,
@@ -40,6 +43,7 @@ import {
   CURRENT_STATE_DEBT_FIELD_NAMES,
   deriveCurrentStateDebt,
 } from "./current-state-debt";
+import { readDebtHistoryStarts } from "./debt-history-starts";
 import { persistCurrentStateAmortization } from "./persist-current-state-debt";
 import { persistManualAssetCreation } from "./persist-holding";
 
@@ -490,11 +494,37 @@ export async function createHoldingAction(
       // if it ever happens the alta still succeeded, so the screen drops the
       // ficha link (the panel already renders without one) rather than 500 over
       // a holding that is safely on disk.
-      const successUrl = async (okKey: string, id: string): Promise<string> => {
+      //
+      // `params` carries the extra query params an ok-key's message reads (the
+      // acquisition question's `deudaDesde`, #1561). They ride through
+      // `appendParam`, which inserts before the `#anchor` instead of after it.
+      //
+      // `jumpToHolding: false` drops that `#anchor` on the /patrimonio landing:
+      // when the redirect carries a QUESTION, scrolling straight to the new row
+      // leaves the band that asks it off-screen above (#1561). The wizard's
+      // `&added=` is untouched — it feeds the success panel's ficha link, not a
+      // scroll position, and that panel IS the whole screen.
+      const successUrl = async (
+        okKey: string,
+        id: string,
+        options: {
+          params?: Record<string, string>;
+          jumpToHolding?: boolean;
+        } = {},
+      ): Promise<string> => {
         const publicId = await holdingBoardAnchor(store, id);
-        return returnUrl === ADD_URL
-          ? `${successRedirectUrl(ADD_URL, okKey)}${publicId ? `&added=${publicId}` : ""}`
-          : successRedirectUrl("/patrimonio", okKey, publicId);
+        const base =
+          returnUrl === ADD_URL
+            ? `${successRedirectUrl(ADD_URL, okKey)}${publicId ? `&added=${publicId}` : ""}`
+            : successRedirectUrl(
+                "/patrimonio",
+                okKey,
+                options.jumpToHolding === false ? undefined : publicId,
+              );
+        return Object.entries(options.params ?? {}).reduce(
+          (url, [key, value]) => appendParam(url, key, value),
+          base,
+        );
       };
 
       // The catalog owns every per-instrument storage decision: the rung, valuation
@@ -530,6 +560,23 @@ export async function createHoldingAction(
           return { ok: false, error: errorUrl(parsed.error) };
         }
 
+        // #1561: the acquisition date decides from WHEN the inmueble exists in the
+        // histórico — and the simple drawer stamps TODAY without ever asking. If a
+        // debt's own curve already starts earlier, that debt drops out of every
+        // graph dated before today (#1436, the Plasencia case). Ask about it.
+        // Read BEFORE the write (the fresh asset carries no debt of its own) and
+        // only when the date is today's, so a historical alta pays nothing.
+        const notice = acquisitionDatedToday({
+          acquisitionDate: parsed.command.acquisitionDate,
+          today,
+        })
+          ? acquisitionTodayNotice({
+              acquisitionDate: parsed.command.acquisitionDate,
+              debtStarts: await readDebtHistoryStarts(store),
+              today,
+            })
+          : null;
+
         const result = await persistManualAssetCreation(
           store,
           workspace,
@@ -544,7 +591,14 @@ export async function createHoldingAction(
 
         return {
           ok: true,
-          value: { redirectUrl: await successUrl("asset_added", result.id) },
+          value: {
+            redirectUrl: notice
+              ? await successUrl("asset_added_acquisition_today", result.id, {
+                  jumpToHolding: false,
+                  params: { deudaDesde: notice.earliestDebtStart },
+                })
+              : await successUrl("asset_added", result.id),
+          },
         };
       }
 

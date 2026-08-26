@@ -10,9 +10,15 @@
  */
 
 import { createHash } from "node:crypto";
-import { resolveOwnershipSplit } from "@web/intake";
+import {
+  acquisitionDatedToday,
+  acquisitionTodayNotice,
+  acquisitionTodayQuestion,
+  resolveOwnershipSplit,
+} from "@web/intake";
 import { parseOptionalIsin } from "@web/intake/investment";
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
+import { readDebtHistoryStarts } from "@web/patrimonio/debt-history-starts";
 import { priceSourceLabel } from "@web/price-source-label";
 import type {
   AgentViewReadStore,
@@ -581,6 +587,20 @@ export async function buildHoldingCreationProposal(
   const netWorthBeforeMinor = await readScopeNetWorthBeforeMinor(store.agentView, today);
   const impact = holdingCreationImpact(netWorthBeforeMinor, plan);
 
+  // #1561: a property alta dated TODAY next to a debt whose own history already
+  // starts earlier amputates that debt from every earlier graph (#1436). The chat
+  // never shows a date field — the plan defaults to today when the user declared
+  // no purchase — so the question belongs on the card, before confirming.
+  const acquisitionDate =
+    plan.family === "appreciating" ? (plan.acquisition?.date ?? today) : undefined;
+  const acquisitionNotice = acquisitionDatedToday({ acquisitionDate, today })
+    ? acquisitionTodayNotice({
+        acquisitionDate,
+        debtStarts: await readDebtHistoryStarts(store),
+        today,
+      })
+    : null;
+
   const providerSymbol = providerSymbolOf(plan);
   const priceTrackingWarning = priceTrackingWarningOf(
     plan,
@@ -619,6 +639,16 @@ export async function buildHoldingCreationProposal(
         : { openingMismatchWarning: built.openingMismatchWarning }),
       ...(quoteNote ? { openingQuoteNote: quoteNote } : {}),
       ...(priceTrackingWarning ? { priceTrackingWarning } : {}),
+      ...(acquisitionNotice
+        ? {
+            // The way out here is the proposal's own: nothing is written yet, so
+            // the answer «no, es de antes» is «descarta y dime la fecha» — a new
+            // proposal supersedes this one (#1423), never an in-place edit.
+            acquisitionTodayWarning: `${acquisitionTodayQuestion(
+              acquisitionNotice.earliestDebtStart,
+            )} Si no lo es, descarta esta propuesta y dime la fecha de compra.`,
+          }
+        : {}),
     },
   };
 }

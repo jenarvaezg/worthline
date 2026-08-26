@@ -87,9 +87,9 @@ vi.mock("@web/patrimonio/anadir/symbol-search", () => ({
 
 import { AnadirHoldingContent } from "./page";
 
-async function renderedHtml(): Promise<string> {
+async function renderedHtml(searchParams: Record<string, string> = {}): Promise<string> {
   const element = (await AnadirHoldingContent({
-    searchParams: Promise.resolve({}),
+    searchParams: Promise.resolve(searchParams),
   })) as ReactElement;
   return renderToStaticMarkup(element);
 }
@@ -179,5 +179,27 @@ describe("vivienda-habitual default — single primary residence", () => {
 
   test("defaults CHECKED for the first property", async () => {
     expect(inmuebleCheckbox(await renderedHtml())).toContain("checked");
+  });
+});
+
+describe("the alta's acquisition-date question on the success loop (#1561)", () => {
+  test("the aviso rides its own band, not the green heading", async () => {
+    const html = await renderedHtml({
+      deudaDesde: "2004-05-19",
+      ok: "asset_added_acquisition_today",
+    });
+
+    // The alta is still confirmed as an alta…
+    expect(html).toContain("Activo añadido.");
+    // …and the question sits in an aviso band that names the debt's start date.
+    expect(html).toContain("warningBand addSuccessNotice");
+    expect(html).toContain("19/05/2004");
+  });
+
+  test("a plain alta shows no aviso band", async () => {
+    const html = await renderedHtml({ ok: "asset_added" });
+
+    expect(html).toContain("Activo añadido.");
+    expect(html).not.toContain("addSuccessNotice");
   });
 });

@@ -1,5 +1,5 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
-import { parseFormError, resolveOkMessage } from "@web/intake";
+import { parseFormError, resolveOkMessage, resolveOkNotice } from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { ExternalTransferCapture } from "@web/patrimonio/anadir/external-transfer-capture";
 import { InvestmentCapture } from "@web/patrimonio/anadir/investment-capture";
@@ -159,6 +159,8 @@ export async function AnadirHoldingContent({
   const resolvedSearchParams = await searchParams;
   const formError = parseFormError(resolvedSearchParams);
   const formOk = resolveOkMessage(resolvedSearchParams);
+  // The alta's non-blocking question, when the redirect carries one (#1561).
+  const formNotice = resolveOkNotice(resolvedSearchParams);
 
   const { privacyMode, scopes, selectedScope, store, workspace } = await resolvePageShell(
     { searchParams: resolvedSearchParams },
@@ -263,6 +265,7 @@ export async function AnadirHoldingContent({
             }
             message={formOk!}
             netWorthLabel={netWorthLabel}
+            notice={formNotice}
           />
         ) : (
           <>

@@ -358,6 +358,148 @@ describe("createHoldingAction — simple drawer form (#596)", () => {
   });
 });
 
+/**
+ * The alta's acquisition-date question (#1561). The simple drawer stamps TODAY as
+ * the acquisition date without asking, so a piso bought in 2004 enters the book
+ * as if bought this morning and the mortgage that financed it drops out of every
+ * earlier graph (#1436, Plasencia). When worthline can see that contradiction it
+ * asks — and the alta goes through either way.
+ */
+describe("createHoldingAction — adquisición de hoy con una deuda anterior (#1561)", () => {
+  /** A mortgage whose own curve starts in 2004, long before the alta. */
+  async function seedOldMortgage(store: WorthlineStore, plan = true): Promise<void> {
+    await store.liabilities.createLiability({
+      balanceMinor: 60_000_00,
+      currency: "EUR",
+      id: "hipoteca",
+      name: "Hipoteca Plasencia",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "mortgage",
+    });
+    await store.liabilities.setDebtModel("hipoteca", "amortizable");
+    if (!plan) return;
+    await store.liabilities.createAmortizationPlan({
+      annualInterestRate: "0.04",
+      disbursementDate: "2004-05-19",
+      firstPaymentDate: "2004-06-19",
+      id: "plan-hipoteca",
+      initialCapitalMinor: 150_253_03,
+      liabilityId: "hipoteca",
+      termMonths: 300,
+    });
+  }
+
+  const housingForm = (extra: Record<string, string> = {}): FormData =>
+    form({
+      simpleDrawer: "inmueble",
+      simpleName_inmueble: "Piso Plasencia",
+      simpleValue_inmueble: "210.000,00",
+      primaryResidence_inmueble: "off",
+      ownershipPreset: "scope",
+      scopeMemberId: "mJ",
+      ...extra,
+    });
+
+  test("asks about the date, and the alta still goes through", async () => {
+    const store = await seedStore();
+    await seedOldMortgage(store);
+
+    const url = await runAction(housingForm(), store);
+
+    expect(url).toContain("ok=asset_added_acquisition_today");
+    expect(url).toContain("deudaDesde=2004-05-19");
+    // A warning, never a rejection: the inmueble is on disk.
+    expect(await store.assets.readAssets()).toHaveLength(1);
+  });
+
+  test("the advanced flow lands at the band, not scrolled past it", async () => {
+    const advancedForm = (name: string): FormData =>
+      form({
+        instrument: "property",
+        name_property: name,
+        acqDate_property: CLOCK.today(),
+        acqValue_property: "210.000,00",
+        returnTo: "/patrimonio/anadir/avanzado",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      });
+
+    // Control: with nothing to ask, the redirect DOES jump to the new row.
+    const quiet = await seedStore();
+    const quietUrl = await runAction(advancedForm("Piso sin deuda"), quiet);
+    expect(quietUrl).toContain("ok=asset_added");
+    expect(quietUrl).toMatch(/#wl_hld_/);
+
+    const store = await seedStore();
+    await seedOldMortgage(store);
+    const url = await runAction(advancedForm("Piso Plasencia"), store);
+
+    expect(url).toContain("/patrimonio?");
+    expect(url).toContain("ok=asset_added_acquisition_today");
+    expect(url).toContain("deudaDesde=2004-05-19");
+    // No `#anchor`: jumping to the new row would leave the question off-screen.
+    expect(url).not.toContain("#");
+  });
+
+  test("no question when the acquisition date is historical", async () => {
+    const store = await seedStore();
+    await seedOldMortgage(store);
+
+    const url = await runAction(
+      form({
+        instrument: "property",
+        name_property: "Piso Plasencia",
+        acqDate_property: "2004-05-19",
+        acqValue_property: "150.253,03",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=asset_added");
+    expect(url).not.toContain("acquisition_today");
+  });
+
+  test("no question with no debt at all", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(housingForm(), store);
+
+    expect(url).toContain("ok=asset_added");
+    expect(url).not.toContain("acquisition_today");
+  });
+
+  test("no question from a debt that declares no start date (no plan)", async () => {
+    const store = await seedStore();
+    await seedOldMortgage(store, false);
+
+    const url = await runAction(housingForm(), store);
+
+    expect(url).toContain("ok=asset_added");
+    expect(url).not.toContain("acquisition_today");
+  });
+
+  test("no question on a non-housing alta — nothing there is dated by acquisition", async () => {
+    const store = await seedStore();
+    await seedOldMortgage(store);
+
+    const url = await runAction(
+      form({
+        instrument: "current_account",
+        name_current_account: "Cuenta BBVA",
+        value_current_account: "2.500,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=asset_added");
+    expect(url).not.toContain("acquisition_today");
+  });
+});
+
 describe("createHoldingAction — inmueble partial split with a non-member (#598)", () => {
   test("housing drawer keeps a custom split below 100% (rest is a non-member's)", async () => {
     const store = await seedHousehold();
