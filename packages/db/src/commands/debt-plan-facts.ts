@@ -5,7 +5,8 @@ import type {
   DatedFactCommandImplementations,
   DatedFactStores,
 } from "./command-implementation-types";
-import { debtPlanBand, rippleHistoricalSnapshotsForDebt } from "./ripple-engine";
+import { debtPlanBand, rippleHistoricalSnapshotsForDebt } from "./debt-band";
+import { recalcOnlyBand } from "./ripple-band";
 
 /**
  * The from-date a ripple for an amortization-plan event (early repayment or rate
@@ -156,9 +157,8 @@ export function createDebtPlanCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                // A lost plan mints no new payment-boundary dates: recalculate
-                // forward from the disbursement date, generate nothing.
-                band: { eventDates: [], recalcFrom: startDate },
+                // A lost plan mints no new payment-boundary date.
+                band: recalcOnlyBand(startDate),
                 liabilityId: opts.liabilityId,
                 today,
               },
@@ -182,16 +182,15 @@ export function createDebtPlanCommands(
           workspace,
           stores.snapshots.saveSnapshot,
           {
-            band: {
-              // A revision mints no date of its own; it redraws the cycle it
-              // lands in, from that cuota boundary forward.
-              eventDates: [],
-              recalcFrom: await amortizationEventRippleFromDate(
+            // A revision mints no date of its own; it redraws the cycle it
+            // lands in, from that cuota boundary forward.
+            band: recalcOnlyBand(
+              await amortizationEventRippleFromDate(
                 stores.liabilities,
                 opts.liabilityId,
                 input.revisionDate,
               ),
-            },
+            ),
             liabilityId: opts.liabilityId,
             today,
           },
@@ -231,14 +230,13 @@ export function createDebtPlanCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                band: {
-                  eventDates: [],
-                  recalcFrom: await amortizationEventRippleFromDate(
+                band: recalcOnlyBand(
+                  await amortizationEventRippleFromDate(
                     stores.liabilities,
                     liabilityId,
                     rawFromDateKey,
                   ),
-                },
+                ),
                 liabilityId,
                 today,
               },
@@ -274,14 +272,13 @@ export function createDebtPlanCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                band: {
-                  eventDates: [],
-                  recalcFrom: await amortizationEventRippleFromDate(
+                band: recalcOnlyBand(
+                  await amortizationEventRippleFromDate(
                     stores.liabilities,
                     liabilityId,
                     previousRevisionDate,
                   ),
-                },
+                ),
                 liabilityId,
                 today,
               },
@@ -405,16 +402,15 @@ export function createDebtPlanCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                band: {
-                  // The curve no longer carries the repayment: nothing to mint,
-                  // recalculate from the boundary it used to reshape.
-                  eventDates: [],
-                  recalcFrom: await amortizationEventRippleFromDate(
+                // The curve no longer carries the repayment: nothing to mint,
+                // recalculate from the boundary it used to reshape.
+                band: recalcOnlyBand(
+                  await amortizationEventRippleFromDate(
                     stores.liabilities,
                     liabilityId,
                     previousRepaymentDate,
                   ),
-                },
+                ),
                 liabilityId,
                 today,
               },

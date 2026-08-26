@@ -58,16 +58,43 @@ export interface RippleBandCounts {
   pruned: number;
 }
 
+/**
+ * The two dates a change moves, which one word can never say at once: the dates
+ * its facts MINT (a past one with no snapshot gets a fresh `histsnap_`, ADR 0012)
+ * and the floor its recalculation starts FROM. They differ whenever a fact lands
+ * inside a window it redraws — an early repayment steps the curve on its own date
+ * (#1291) but reshapes the whole cuota cycle it falls in (#1042).
+ */
+export interface RippleDates {
+  eventDates: readonly string[];
+  recalcFrom: string;
+}
+
+/** A fact that mints its own date and recalculates from it — an anchor, an
+ *  appraisal, a backdated order: the ordinary shape. */
+export function eventBand(dateKey: string): RippleDates {
+  return { eventDates: [dateKey], recalcFrom: dateKey };
+}
+
+/** A change that mints nothing and only redraws what is already there — every
+ *  deletion (the curve no longer carries the fact), and a rate revision, which
+ *  moves balances on existing dates without adding one. */
+export function recalcOnlyBand(fromDateKey: string): RippleDates {
+  return { eventDates: [], recalcFrom: fromDateKey };
+}
+
 export interface RippleBandSpec {
   /**
-   * The dated facts' own dates: a past one with no snapshot yet gets a fresh
-   * whole-portfolio `histsnap_` (ADR 0012). Omitted entirely by a change with no
-   * date axis — an ownership split moves no dates, it only re-weights (#172).
-   * `deps` travel with the dates because generation is the only thing that reads
-   * them, and a date without deps could not be built.
+   * The dates this change's facts mint. Omitted entirely by a change with no date
+   * axis — an ownership split moves no dates, it only re-weights (#172).
+   *
+   * `deps` is a THUNK, awaited at most once and only when a date actually needs
+   * building: the common path — recording an operation dated today — mints
+   * nothing, and must not pay for a whole-portfolio read it will not use. A
+   * family that already holds deps for its own rewrite passes `async () => deps`.
    */
   generate?: {
-    deps: HistoricalSnapshotDeps;
+    deps: () => Promise<HistoricalSnapshotDeps>;
     dates: readonly string[];
     today: string;
     /** Called per generated snapshot, so a family can inspect what got built. */
@@ -89,13 +116,6 @@ export interface RippleBandSpec {
    */
   pruneDates?: ReadonlySet<string>;
   rewrite: RippleRewrite;
-  /**
-   * Runs inside the band's transaction once every scope is done. Throwing here
-   * rolls the whole band back — the seam a family uses to refuse a ripple whose
-   * result it can prove wrong (the debt band's "generated, but not one snapshot
-   * carries the debt", #1438).
-   */
-  verify?: (counts: Readonly<RippleBandCounts>) => void;
 }
 
 /**
@@ -115,8 +135,11 @@ export interface RippleBandSpec {
  * rows. A date with no frozen rows is a legacy capture predating holdings (ADR
  * 0008): there is nothing to recompute, so its figures are left untouched.
  *
- * The whole band — generation, prune, rewrites and `verify` — commits or rolls
- * back as one (`ctx.transaction` flattens into an enclosing one).
+ * The whole band — generation, prune and rewrites — commits or rolls back as one.
+ * `ctx.transaction` flattens into an enclosing one, so a family that must refuse
+ * its own result wraps the call and throws there: the rollback still covers every
+ * snapshot the band saved (the debt band's "generated, but not one snapshot
+ * carries the debt", #1438).
  */
 export async function rippleBand(
   ctx: StoreContext,
@@ -126,6 +149,10 @@ export async function rippleBand(
 ): Promise<RippleBandCounts> {
   const { db } = ctx;
   const counts: RippleBandCounts = { generated: 0, pruned: 0, recalculated: 0 };
+  // Built at most once for the whole band, across every scope (lesson from #114),
+  // and never at all when no date needs generating.
+  const generate = spec.generate;
+  let deps: HistoricalSnapshotDeps | null = null;
 
   await ctx.transaction(async () => {
     for (const scope of listScopeOptions(workspace)) {
@@ -134,23 +161,26 @@ export async function rippleBand(
       // a date reaching the loop twice is built once (#1435).
       const existingDates = new Set(existing.map(({ dateKey }) => dateKey));
 
-      const generate = spec.generate;
-      for (const dateKey of generate?.dates ?? []) {
-        if (!generate) break;
-        const built = await generateHistoricalBackfillIfMissing({
-          dateKey,
-          deps: generate.deps,
-          existingDates,
-          saveSnapshot,
-          scopeId: scope.id,
-          scopeLabel: scope.label,
-          today: generate.today,
-          workspace,
-        });
-        if (!built) continue;
-        existingDates.add(dateKey);
-        counts.generated += 1;
-        generate.onGenerated?.(built);
+      if (generate) {
+        for (const dateKey of generate.dates) {
+          // The generate seam re-checks both; asking here is what keeps the deps
+          // thunk unawaited on a band that mints nothing.
+          if (dateKey >= generate.today || existingDates.has(dateKey)) continue;
+          const built = await generateHistoricalBackfillIfMissing({
+            dateKey,
+            deps: (deps ??= await generate.deps()),
+            existingDates,
+            saveSnapshot,
+            scopeId: scope.id,
+            scopeLabel: scope.label,
+            today: generate.today,
+            workspace,
+          });
+          if (!built) continue;
+          existingDates.add(dateKey);
+          counts.generated += 1;
+          generate.onGenerated?.(built);
+        }
       }
 
       const frozenByDate = groupFrozenHoldingsByDate(
@@ -191,8 +221,6 @@ export async function rippleBand(
         counts.recalculated += 1;
       }
     }
-
-    spec.verify?.(counts);
   });
 
   return counts;

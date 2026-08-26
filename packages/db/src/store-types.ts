@@ -540,7 +540,7 @@ interface LegacyWorthlineStore {
   /**
    * Debt dated-fact seam (ADR 0020): create ONE amortization plan AND ripple the
    * per-cuota history it implies, atomically. The affected dates are derived
-   * behind the seam from the plan's own schedule (the `amortizable-plan` kind);
+   * behind the seam from the plan's own schedule (the whole-plan band, ADR 0089);
    * `today` defaults to the current date. Wraps `liabilities.createAmortizationPlan`.
    */
   createAmortizationPlanAndRipple: (
@@ -549,7 +549,7 @@ interface LegacyWorthlineStore {
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020): patch ONE amortization plan AND re-ripple the
-   * per-cuota history, atomically (the `amortizable-plan` kind). Returns 1 if
+   * per-cuota history, atomically (the whole-plan band). Returns 1 if
    * updated, 0 if not found. Wraps `liabilities.updateAmortizationPlan`.
    */
   updateAmortizationPlanAndRipple: (
@@ -560,9 +560,9 @@ interface LegacyWorthlineStore {
   /**
    * Debt dated-fact seam (ADR 0020): delete ONE amortization plan AND ripple the
    * now-planless curve, atomically. The plan's disbursement date is captured behind
-   * the seam before the delete and used as the recalc floor (the `amortizable-revision`
-   * kind, which recalculates without generating — the curve falls back to
-   * currentBalance, ADR 0019). Returns 1 if removed, 0 if not found. Wraps
+   * the seam before the delete and used as the band's `recalcFrom`, with no event
+   * dates — it recalculates without generating, so the curve falls back to
+   * currentBalance (ADR 0019). Returns 1 if removed, 0 if not found. Wraps
    * `liabilities.deleteAmortizationPlan`.
    */
   deleteAmortizationPlanAndRipple: (opts: {
@@ -571,8 +571,8 @@ interface LegacyWorthlineStore {
   }) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE interest-rate revision AND recalculate
-   * the snapshots from its date forward, atomically (the `amortizable-revision`
-   * kind — a revision generates no new snapshot). The future guard rides the seam.
+   * the snapshots from its date forward, atomically (a band with no event dates —
+   * a revision generates no new snapshot). The future guard rides the seam.
    * Wraps `liabilities.addInterestRateRevision`.
    */
   addInterestRateRevisionAndRipple: (
@@ -584,8 +584,8 @@ interface LegacyWorthlineStore {
    * liability's valuation cadence AND re-ripple that ONE debt's history,
    * atomically. A cadence change is a parameter edit (ADR 0012), so the whole
    * curve is recut: an amortizable debt re-ripples from its plan (every cuota
-   * boundary, the `amortizable-plan` kind), a revolving debt with anchors from its
-   * earliest anchor (the `anchor` kind). Informal debts (always a step) and a
+   * boundary, the whole-plan band), a revolving debt with anchors from its
+   * earliest anchor. Informal debts (always a step) and a
    * model with no anchors need no ripple. `today` defaults to the current date.
    * Wraps `liabilities.setValuationCadence`.
    */
@@ -609,8 +609,8 @@ interface LegacyWorthlineStore {
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE interest-rate revision AND
-   * recalculate snapshots from its date forward, atomically (the
-   * `amortizable-revision` kind). The seam reads the removed date + owning liability
+   * recalculate snapshots from its date forward, atomically (a band with no event
+   * dates). The seam reads the removed date + owning liability
    * from the row it selects by id inside the transaction; the future guard rides the
    * seam. Returns 1 if removed, 0 if not found. Wraps
    * `liabilities.deleteInterestRateRevision`.
@@ -621,8 +621,8 @@ interface LegacyWorthlineStore {
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE early repayment AND generate/recalculate
-   * snapshots from its date, atomically (the `amortizable-repayment` kind — a past
-   * repayment is a dated fact that generates its own snapshot). The future guard
+   * snapshots from its date, atomically — a past repayment is a dated fact whose
+   * band mints its own date and recalculates from its cuota boundary (#1291/#1042). The future guard
    * rides the seam. Wraps `liabilities.addEarlyRepayment`.
    */
   addEarlyRepaymentAndRipple: (
@@ -631,8 +631,7 @@ interface LegacyWorthlineStore {
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE early repayment AND ripple
-   * from the earlier of the old/new date, atomically (the `amortizable-repayment`
-   * kind). The seam reads the OLD date + owning liability from the row it selects by
+   * from the earlier of the old/new date, atomically. The seam reads the OLD date + owning liability from the row it selects by
    * id inside the transaction, picks the earlier date, applies the future guard, and
    * ripples. Returns 1 if updated, 0 if not found. Wraps
    * `liabilities.updateEarlyRepayment`.
@@ -645,8 +644,8 @@ interface LegacyWorthlineStore {
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE early repayment AND
    * recalculate snapshots from its date forward, atomically. Deleting a dated fact
-   * recalculates without generating, so it uses the `amortizable-revision` kind (the
-   * curve no longer carries the repayment). The seam reads the removed date + owning
+   * recalculates without generating, so its band carries no event dates (the curve
+   * no longer carries the repayment). The seam reads the removed date + owning
    * liability from the row it selects by id inside the transaction; the future guard
    * rides the seam. Returns 1 if removed, 0 if not found. Wraps
    * `liabilities.deleteEarlyRepayment`.
@@ -706,8 +705,8 @@ interface LegacyWorthlineStore {
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE balance anchor AND generate/recalculate
-   * snapshots from its date, atomically (the `anchor` kind). The from-date is the
-   * anchor's own date; a future anchor generates no history. Wraps
+   * snapshots from its date, atomically. The band's event date and floor are both
+   * the anchor's own date; a future anchor generates no history. Wraps
    * `liabilities.addBalanceAnchor`.
    */
   addBalanceAnchorAndRipple: (
@@ -716,8 +715,7 @@ interface LegacyWorthlineStore {
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE balance anchor AND ripple
-   * from the earlier of the old/new date, atomically (the `anchor` kind). The seam
-   * reads the OLD date + owning liability from the row it selects by id inside the
+   * from the earlier of the old/new date, atomically. The seam reads the OLD date + owning liability from the row it selects by id inside the
    * transaction, picks the earlier date, applies the future guard, and ripples.
    * Returns 1 if updated, 0 if not found. Wraps `liabilities.updateBalanceAnchor`.
    */
@@ -728,8 +726,8 @@ interface LegacyWorthlineStore {
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE balance anchor AND
-   * recalculate snapshots from its date forward, atomically (the `anchor` kind).
-   * The seam reads the removed date + owning liability from the row it selects by
+   * recalculate snapshots from its date forward, atomically. The seam reads the
+   * removed date + owning liability from the row it selects by
    * id inside the transaction; the future guard rides the seam. Returns 1 if
    * removed, 0 if not found. Wraps `liabilities.deleteBalanceAnchor`.
    */

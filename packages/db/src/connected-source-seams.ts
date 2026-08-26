@@ -12,7 +12,7 @@ import {
   recalculateSnapshotForCoinAcquisition,
   recalculateSnapshotForConnectedValue,
 } from "@worthline/domain";
-
+import { rippleBand } from "./commands/ripple-band";
 import {
   type ConnectedSourceStore,
   type SourcePositionInput,
@@ -43,20 +43,19 @@ import { type SyncRunStore, type SyncTrigger } from "./sync-run-store";
 
 /**
  * Ripple newly-mirrored coin purchase dates into snapshot history (ADR 0017, S6
- * / #167). Unlike the operation/curve ripples — which RE-DERIVE one holding's
- * whole value from its ledger on each affected date — a coin acquisition is
- * ADDITIVE and ONE-SHOT: each new trade's value is captured at this sync and
- * added to the coin-collection row of every existing snapshot dated on/after its
- * purchase date. A trade already mirrored on a prior sync is never passed here
- * again, so a later price move never rewrites a past snapshot (frozen), and a
- * sold trade is never subtracted, so it stays in the snapshots it was rippled
- * into while leaving the live holding. No new snapshot dates are generated — only
- * existing snapshots are touched (the literal S6 scope).
+ * / #167). Unlike the operation/curve bands — which RE-DERIVE one holding's whole
+ * value from its ledger on each affected date — a coin acquisition is ADDITIVE
+ * and ONE-SHOT: each new trade's value is captured at this sync and added to the
+ * coin-collection row of every existing snapshot dated on/after its purchase
+ * date. A trade already mirrored on a prior sync is never passed here again, so a
+ * later price move never rewrites a past snapshot (frozen), and a sold trade is
+ * never subtracted, so it stays in the snapshots it was rippled into while
+ * leaving the live holding. No new snapshot dates are generated — only existing
+ * snapshots are touched (the literal S6 scope), so the band gets no `generate`.
  *
- * For each scope/snapshot the per-snapshot delta is the SUM of every new trade
- * acquired on/before that date, applied in a single recalculation so the row and
- * the five figures reconcile in one pass (ADR 0008). Legacy captures with no
- * holding rows are skipped, like the sibling ripples.
+ * For each snapshot the delta is the SUM of every new trade acquired on/before
+ * that date, applied in a single recalculation so the row and the five figures
+ * reconcile in one pass (ADR 0008).
  */
 async function rippleHistoricalSnapshotsForCoinAcquisition(
   ctx: StoreContext,
@@ -72,7 +71,7 @@ async function rippleHistoricalSnapshotsForCoinAcquisition(
   if (!asset) return;
 
   // The collection's frozen classification captures across every snapshot (#242),
-  // read ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  // read ONCE before any recalc mutates rows.
   const frozenIdentity = await readFrozenIdentityCaptures(db, params.assetId, "asset");
 
   // Each new trade reduced to its frozen GLOBAL value + the date it enters the
@@ -87,44 +86,41 @@ async function rippleHistoricalSnapshotsForCoinAcquisition(
     .filter((trade) => trade.valueMinor > 0);
   if (trades.length === 0) return;
 
-  for (const scope of listScopeOptions(workspace)) {
-    for (const snap of await readSnapshots(db, scope.id)) {
+  // Nothing before the earliest new purchase can gain a coin, so that is the
+  // floor — and the bound on the batched frozen read.
+  const recalcFrom = trades.reduce(
+    (min, trade) => (trade.purchaseDate < min ? trade.purchaseDate : min),
+    trades[0]!.purchaseDate,
+  );
+
+  await rippleBand(ctx, workspace, saveSnapshot, {
+    recalcFrom,
+    rewrite: ({ frozenHoldings, snapshot }) => {
       // The combined value of every new coin acquired on/before this snapshot —
       // each trade ripples only from its OWN purchase date forward.
-      const qualifying = trades.filter((trade) => trade.purchaseDate <= snap.dateKey);
+      const qualifying = trades.filter((trade) => trade.purchaseDate <= snapshot.dateKey);
       const globalDeltaMinor = qualifying.reduce(
         (sum, trade) => sum + trade.valueMinor,
         0,
       );
-      if (globalDeltaMinor === 0) continue;
+      if (globalDeltaMinor === 0) return undefined;
 
-      const frozenHoldings = await readSnapshotHoldings(db, {
-        from: snap.dateKey,
-        scopeId: scope.id,
-        to: snap.dateKey,
-      });
-      // A legacy capture predating holdings (ADR 0008) has nothing to recompute.
-      if (frozenHoldings.length === 0) continue;
-
-      const recalculated = recalculateSnapshotForCoinAcquisition({
-        asset,
-        frozenHoldings,
-        frozenIdentity,
-        globalDeltaMinor,
-        newTrades: qualifying,
-        snapshot: snap,
-        workspace,
-      });
-
-      if (recalculated) {
-        await saveSnapshot({
-          holdings: recalculated.holdings,
-          replace: true,
-          snapshot: recalculated.snapshot,
-        });
-      }
-    }
-  }
+      // An additive ripple can never EMPTY a snapshot, so a null here means
+      // "nothing to add to this one", not "no holdings remain": leave the capture
+      // exactly as it is rather than letting the band drop it.
+      return (
+        recalculateSnapshotForCoinAcquisition({
+          asset,
+          frozenHoldings,
+          frozenIdentity,
+          globalDeltaMinor,
+          newTrades: qualifying,
+          snapshot,
+          workspace,
+        }) ?? undefined
+      );
+    },
+  });
 }
 
 /**
@@ -158,7 +154,7 @@ async function backfillBinanceHistoricalSnapshots(
   if (start === null) return;
 
   // The asset's frozen classification captures across every snapshot (#242), read
-  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshots).
+  // ONCE before any recalc mutates rows (see rippleHistoricalSnapshotsForOperations).
   const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
   // Every completed month-end (never the current partial month) — the same anchors

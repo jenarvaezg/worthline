@@ -5,8 +5,8 @@ import {
   type HistoricalSnapshotDeps,
   readFrozenIdentityCaptures,
   readInvestmentIdentity,
+  readLiabilityIdentity,
 } from "@db/historical-snapshot-deps";
-import { liabilities, liabilityOwnerships } from "@db/schema";
 import {
   readSnapshotHoldings,
   readSnapshots,
@@ -14,9 +14,8 @@ import {
   type SnapshotHoldingRecord,
   type SnapshotStore,
 } from "@db/snapshot-store";
-import { readAllOperations, type StoreContext, type StoreDb } from "@db/store-context";
+import { readAllOperations, type StoreContext } from "@db/store-context";
 import type {
-  DebtBalanceCurveInputs,
   FrozenIdentityCapture,
   InvestmentOperation,
   Liability,
@@ -27,8 +26,6 @@ import type {
   Workspace,
 } from "@worthline/domain";
 import {
-  amortizationPaymentDatesUpTo,
-  debtMissingFromAllGeneratedMessage,
   globalHoldingValueAtDate,
   housingAssetIdsOf,
   isHousingAsset,
@@ -42,15 +39,16 @@ import {
 import { eq } from "drizzle-orm";
 
 import { rippleBand } from "./ripple-band";
-import { type DebtRippleCounts, EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 
 // ── Historical snapshots ripple engine (ADR 0012, PRD #107) ──────────────────
 //
-// One band, five families. `rippleBand` (./ripple-band) owns the walk every
-// dated-fact family shares — generate at the event dates, recalculate forward
-// from a floor, prune the orphans; each function here is the thin command that
-// tells it WHICH identities, WHICH dates, and HOW one snapshot's rows are
-// rewritten. The per-family command factories (`investment-operations`,
+// One band, one command per family. `rippleBand` (./ripple-band) owns the walk
+// every dated-fact family shares — generate at the event dates, recalculate
+// forward from a floor, prune the orphans; each function here is the thin command
+// that tells it WHICH identities, WHICH dates, and HOW one snapshot's rows are
+// rewritten (ADR 0089). Investments, the mixed import, housing and ownership live
+// here; the debt family, whose dates come off the live curve, lives in
+// `./debt-band`. The per-family command factories (`investment-operations`,
 // `valuation-facts`, `ownership-facts`, `debt-balance-facts`, `debt-plan-facts`,
 // `statement-import`) import from here; they never depend on one another. The
 // reader primitives and the `buildHistoricalSnapshotDeps` aggregator live in
@@ -172,13 +170,20 @@ export async function rippleHistoricalSnapshotsForOperations(
     eventDates[0]!,
   );
 
-  // Build deps once — the same for every scope (lesson from #114). Deletes never
-  // generate fresh snapshots, so they do not need whole-portfolio deps.
-  const deps =
-    mode === "record" ? await buildHistoricalSnapshotDeps(db, workspace) : null;
-
   await rippleBand(ctx, workspace, saveSnapshot, {
-    ...(deps !== null ? { generate: { dates: eventDates, deps, today } } : {}),
+    // Deletes never generate, so they need no whole-portfolio deps at all — and
+    // neither does the commonest record: an operation dated today mints nothing
+    // (the daily capture owns today), so the band never awaits this thunk. When
+    // it does, it awaits it once for every scope (lesson from #114).
+    ...(mode === "record"
+      ? {
+          generate: {
+            dates: eventDates,
+            deps: () => buildHistoricalSnapshotDeps(db, workspace),
+            today,
+          },
+        }
+      : {}),
     // Deleting ONE operation at date D can only newly-orphan date D ITSELF —
     // every other date keeps its own independent justification (#305, PR #326).
     ...(mode === "delete" ? { pruneDates: new Set(eventDates) } : {}),
@@ -277,7 +282,7 @@ export async function rippleHistoricalSnapshotsForMixedImport(
   const housingAssetIds = housingAssetIdsOf(deps.assets);
 
   await rippleBand(ctx, workspace, saveSnapshot, {
-    generate: { dates: [...eventDates], deps, today: params.today },
+    generate: { dates: [...eventDates], deps: async () => deps, today: params.today },
     recalcFrom,
     rewrite: ({ frozenHoldings, snapshot }) => {
       // Each domain enters the fold only from its own affected date on; the row
@@ -380,7 +385,7 @@ export async function rippleHistoricalSnapshotsForValuation(
   const frozenIdentity = await readFrozenIdentityCaptures(db, assetId, "asset");
 
   await rippleBand(ctx, workspace, saveSnapshot, {
-    generate: { dates: [fromDateKey], deps, today },
+    generate: { dates: [fromDateKey], deps: async () => deps, today },
     recalcFrom: fromDateKey,
     // Re-evaluate only the housing asset's row from the curve (or its
     // last-known value when the curve is now empty).
@@ -396,166 +401,6 @@ export async function rippleHistoricalSnapshotsForValuation(
         workspace,
       }),
   });
-}
-
-/**
- * The band a debt change moves: the dates it mints a snapshot at, and the
- * earliest existing snapshot it recalculates from. Two dates, not one — an early
- * repayment steps the curve on its OWN date (#1291, so the history needs a point
- * there) while the recalculation starts at the cuota boundary the lump lands in,
- * the earliest date the cycle's redraw can move (#1042).
- *
- * A call site that knows both dates states them outright; the two shapes that
- * fall out of the live curve (the whole cuota series, a re-baseline chain) pass a
- * resolver instead, since only the ripple holds the curve. There is no growing
- * vocabulary of "kinds" in between (#1590).
- */
-export type DebtBandSpec =
-  | { eventDates: readonly string[]; recalcFrom: string }
-  | ((
-      curve: DebtBalanceCurveInputs,
-      today: string,
-    ) => { eventDates: readonly string[]; recalcFrom: string } | null);
-
-/**
- * The whole amortization schedule: one snapshot per past cuota boundary (the
- * deliberate ADR-0012 density exception of PRD #109), recalculating from the
- * disbursement date — the date the debt appears (ADR 0019). Null for an
- * amortizable debt with no plan row: there is no schedule to lay down.
- */
-export const debtPlanBand: DebtBandSpec = (curve, today) =>
-  curve.plan
-    ? {
-        eventDates: amortizationPaymentDatesUpTo(curve.plan, today),
-        recalcFrom: curve.plan.disbursementDate,
-      }
-    : null;
-
-/**
- * A re-baseline chain from `fromDateKey` on. UNIQUE dates across the whole chain
- * (#1435): each checkpoint's schedule runs to the contract end, so a long chain's
- * schedules overlap almost entirely and an un-deduplicated fan-out rebuilds the
- * same portfolio dozens of times.
- */
-export function debtRebaselineChainBand(fromDateKey: string): DebtBandSpec {
-  return (curve, today) => ({
-    eventDates: rebaselineChainPaymentDatesUpTo(
-      curve.balanceRebaselines ?? [],
-      fromDateKey,
-      today,
-    ),
-    recalcFrom: fromDateKey,
-  });
-}
-
-/**
- * Ripple effect for debt-balance curves (PRD #109, slice 9): declaring, editing,
- * or deleting an amortization plan, a balance anchor, a re-baseline, a rate
- * revision or an early repayment regenerates / recalculates the snapshots the
- * change affects. The liability is valued from its debt curve (`debtBalanceAtDate`)
- * on each date, and the call site states the band with `{ eventDates, recalcFrom }`.
- *
- * Deps are built ONCE outside the scope loop (lesson from #114). Only the
- * liability's row in each snapshot is recomputed; every other frozen row is
- * preserved, and legacy captures with no holding rows are skipped. A no-op when
- * the liability has no debt model / curve, or when the band resolves to nothing.
- *
- * El silencio es lo que costó dos días (#1438): también las salidas sin trabajo
- * dejan su línea en el log, igual que las que sí ripplean.
- */
-export async function rippleHistoricalSnapshotsForDebt(
-  ctx: StoreContext,
-  workspace: Workspace,
-  saveSnapshot: (input: SaveSnapshotInput) => Promise<void>,
-  params: { liabilityId: string; band: DebtBandSpec; today: string },
-): Promise<DebtRippleCounts> {
-  const { db } = ctx;
-  const { liabilityId, today } = params;
-
-  // The liability's identity — including trashed, since it existed on the
-  // snapshot dates even if it was trashed afterwards.
-  const liability = await readLiabilityIdentity(db, liabilityId);
-  if (!liability) {
-    console.info({ liabilityId }, "debt ripple: no identity, nothing to ripple");
-    return EMPTY_DEBT_RIPPLE_COUNTS;
-  }
-
-  // Build deps once — the same for every scope (lesson from #114).
-  const deps = await buildHistoricalSnapshotDeps(db, workspace);
-  const curve = deps.debtBalanceByLiability.get(liabilityId);
-  if (!curve || curve.debtModel === null) {
-    console.info({ liabilityId }, "debt ripple: no debt model, nothing to ripple");
-    return EMPTY_DEBT_RIPPLE_COUNTS;
-  }
-
-  const band =
-    typeof params.band === "function" ? params.band(curve, today) : params.band;
-  if (band === null) {
-    console.info({ liabilityId }, "debt ripple: no band to lay down, nothing to ripple");
-    return EMPTY_DEBT_RIPPLE_COUNTS;
-  }
-
-  // Housing assets — a debt securing one nets historical housing equity (ADR 0013).
-  const housingAssetIds = housingAssetIdsOf(deps.assets);
-
-  let generatedWithLiability = 0;
-  const counts = await rippleBand(ctx, workspace, saveSnapshot, {
-    generate: {
-      dates: band.eventDates,
-      deps,
-      onGenerated: (built) => {
-        if (
-          built.holdings.some(
-            (row) => row.holdingId === liabilityId && row.kind === "liability",
-          )
-        ) {
-          generatedWithLiability += 1;
-        }
-      },
-      today,
-    },
-    recalcFrom: band.recalcFrom,
-    rewrite: ({ frozenHoldings, snapshot }) =>
-      recalculateSnapshotForLiability({
-        curve,
-        frozenHoldings,
-        housingAssetIds,
-        liability,
-        snapshot,
-        workspace,
-      }),
-    verify: ({ generated, recalculated }) => {
-      const counts: DebtRippleCounts = {
-        generated,
-        generatedWithLiability,
-        recalculated,
-      };
-      // Log before throw so the abort is not silent (#1438); the band's
-      // transaction then rolls back every snapshot it saved.
-      logDebtRipple(liabilityId, counts);
-      if (generated > 0 && generatedWithLiability === 0) {
-        throw new Error(debtMissingFromAllGeneratedMessage(generated));
-      }
-    },
-  });
-
-  return {
-    generated: counts.generated,
-    generatedWithLiability,
-    recalculated: counts.recalculated,
-  };
-}
-
-function logDebtRipple(liabilityId: string, counts: DebtRippleCounts): void {
-  const payload = { liabilityId, ...counts };
-  if (counts.generated > 0 && counts.generatedWithLiability < counts.generated) {
-    console.warn(
-      "debt ripple omitted the liability from some generated snapshots",
-      payload,
-    );
-    return;
-  }
-  console.info("debt ripple", payload);
 }
 
 /**
@@ -721,50 +566,6 @@ export async function rippleHistoricalSnapshotsForOwnership(
       });
     },
   });
-}
-
-/**
- * Read one liability's identity (ownership, currency, type, name, associated
- * asset), including trashed liabilities — historical reconstruction needs the
- * identity of debts that existed on past dates even if they were trashed since.
- */
-async function readLiabilityIdentity(
-  db: StoreDb,
-  liabilityId: string,
-): Promise<Liability | null> {
-  const row = await db
-    .select({
-      id: liabilities.id,
-      name: liabilities.name,
-      type: liabilities.type,
-      currency: liabilities.currency,
-      currentBalanceMinor: liabilities.currentBalanceMinor,
-      associatedAssetId: liabilities.associatedAssetId,
-    })
-    .from(liabilities)
-    .where(eq(liabilities.id, liabilityId))
-    .get();
-
-  if (!row) return null;
-
-  const ownership = await db
-    .select({
-      memberId: liabilityOwnerships.memberId,
-      shareBps: liabilityOwnerships.shareBps,
-    })
-    .from(liabilityOwnerships)
-    .where(eq(liabilityOwnerships.liabilityId, liabilityId))
-    .all();
-
-  return {
-    currency: row.currency,
-    currentBalance: { amountMinor: row.currentBalanceMinor, currency: row.currency },
-    id: row.id,
-    name: row.name,
-    ownership,
-    type: row.type,
-    ...(row.associatedAssetId ? { associatedAssetId: row.associatedAssetId } : {}),
-  };
 }
 
 /**

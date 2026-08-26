@@ -11,8 +11,9 @@ import {
   debtPlanBand,
   debtRebaselineChainBand,
   rippleHistoricalSnapshotsForDebt,
-  throwCommandResultError,
-} from "./ripple-engine";
+} from "./debt-band";
+import { eventBand, recalcOnlyBand } from "./ripple-band";
+import { throwCommandResultError } from "./ripple-engine";
 import type { UnitOfWork } from "./types";
 
 /**
@@ -56,7 +57,7 @@ async function rippleWholeDebtCurveByModel(
   const earliestAnchor = anchors.map((a) => a.anchorDate).sort()[0];
   if (earliestAnchor !== undefined && earliestAnchor <= today) {
     await rippleHistoricalSnapshotsForDebt(ctx, workspace, save, {
-      band: { eventDates: [earliestAnchor], recalcFrom: earliestAnchor },
+      band: eventBand(earliestAnchor),
       liabilityId,
       today,
     });
@@ -114,14 +115,7 @@ export function createDebtBalanceCommands(
               ctx,
               workspace,
               stores.snapshots.saveSnapshot,
-              {
-                band: {
-                  eventDates: [earliestAnchorDate],
-                  recalcFrom: earliestAnchorDate,
-                },
-                liabilityId,
-                today,
-              },
+              { band: eventBand(earliestAnchorDate), liabilityId, today },
             );
           }
         }
@@ -316,10 +310,8 @@ export function createDebtBalanceCommands(
               workspace,
               stores.snapshots.saveSnapshot,
               {
-                // Generate nothing, only recalculate the existing snapshots
-                // forward from the lost baseline — a deleted re-baseline never
-                // mints new payment-boundary dates.
-                band: { eventDates: [], recalcFrom: previousBaselineDate },
+                // A deleted re-baseline mints no payment-boundary date.
+                band: recalcOnlyBand(previousBaselineDate),
                 liabilityId,
                 today,
               },
@@ -340,11 +332,7 @@ export function createDebtBalanceCommands(
             ctx,
             workspace,
             stores.snapshots.saveSnapshot,
-            {
-              band: { eventDates: [fromDateKey], recalcFrom: fromDateKey },
-              liabilityId: input.liabilityId,
-              today,
-            },
+            { band: eventBand(fromDateKey), liabilityId: input.liabilityId, today },
           );
         },
         steps: [
@@ -385,11 +373,7 @@ export function createDebtBalanceCommands(
               ctx,
               workspace,
               stores.snapshots.saveSnapshot,
-              {
-                band: { eventDates: [fromDateKey], recalcFrom: fromDateKey },
-                liabilityId,
-                today,
-              },
+              { band: eventBand(fromDateKey), liabilityId, today },
             );
           }
         }
@@ -420,14 +404,7 @@ export function createDebtBalanceCommands(
               ctx,
               workspace,
               stores.snapshots.saveSnapshot,
-              {
-                band: {
-                  eventDates: [previousAnchorDate],
-                  recalcFrom: previousAnchorDate,
-                },
-                liabilityId,
-                today,
-              },
+              { band: eventBand(previousAnchorDate), liabilityId, today },
             );
           }
         }
