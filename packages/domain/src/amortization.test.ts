@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type {
+  AmortizableBalanceAtDateInput,
   AmortizationPlanInput,
   EarlyRepayment,
   InterestRateRevision,
@@ -1359,5 +1360,258 @@ describe("amortizationScheduleTrace — the calculation cuadro (#1049)", () => {
         }),
       );
     }
+  });
+});
+
+/**
+ * One engine for the cuadro and the curve (#1596).
+ *
+ * `amortizationScheduleTrace` no longer replays the French schedule: it reads the
+ * cycles and boundaries `computeBoundaries` already produced. So the invariant
+ * «every period closes where `amortizableBalanceAtDate` says» holds by
+ * construction, and the three shapes that used to have to be fixed twice — a
+ * `reduce-payment` lump, a rate revision and a long disbursement→first-payment
+ * stub — are pinned here against the single engine.
+ */
+describe("the cuadro is a reading of the balance curve (#1596)", () => {
+  const PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    disbursementDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
+    initialCapitalMinor: 120_000_00,
+    termMonths: 240,
+  };
+  /** A 2,5-month stub (firma 15-ene, primera cuota 1-abr), ADR 0019. */
+  const STUB_PLAN: AmortizationPlanInput = {
+    annualInterestRate: "0.03",
+    disbursementDate: "2020-01-15",
+    firstPaymentDate: "2020-04-01",
+    initialCapitalMinor: 120_000_00,
+    termMonths: 240,
+  };
+  /** 2021-02-01 is boundary 13: the closing of period 13, opening of period 14. */
+  const BOUNDARY_13 = "2021-02-01";
+  const BOUNDARY_14 = "2021-03-01";
+
+  /** The loan, without a date: what the cuadro and the curve are both asked about. */
+  type Loan = Omit<AmortizableBalanceAtDateInput, "plan" | "targetDate"> & {
+    plan?: AmortizationPlanInput;
+  };
+  const loanOf = (loan: Loan) => ({ ...loan, plan: loan.plan ?? PLAN });
+
+  const traceOf = (loan: Loan) =>
+    amortizationScheduleTrace({ ...loanOf(loan), targetDate: "2020-02-01" });
+
+  /** Every row closes where the curve says on its own date — the load-bearing check. */
+  const expectRowsToCloseOnTheCurve = (
+    periods: readonly { date: string; closingBalanceMinor: number }[],
+    loan: Loan,
+  ): void => {
+    for (const period of periods) {
+      expect(period.closingBalanceMinor).toBe(
+        amortizableBalanceAtDate({ ...loanOf(loan), targetDate: period.date }),
+      );
+    }
+  };
+
+  test("a reduce-payment lump on a boundary drops that row's closing and lowers the cuota from the next", () => {
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: BOUNDARY_13 },
+    ];
+    const trace = traceOf({ earlyRepayments });
+    const plain = traceOf({});
+
+    const lumpRow = trace.periods.find((p) => p.date === BOUNDARY_13)!;
+    const nextRow = trace.periods.find((p) => p.date === BOUNDARY_14)!;
+
+    // The event rides the row whose figures it moves: this row's closing.
+    expect(lumpRow.events).toEqual([
+      {
+        amountMinor: 20_000_00,
+        date: BOUNDARY_13,
+        kind: "early_repayment",
+        mode: "reduce-payment",
+      },
+    ]);
+    expect(lumpRow.closingBalanceMinor).toBe(
+      plain.periods.find((p) => p.date === BOUNDARY_13)!.closingBalanceMinor - 20_000_00,
+    );
+
+    // reduce-payment: the cuota is re-based over the REMAINING term from the next
+    // period on, and the term itself is kept — the loan still runs its 240 cuotas.
+    expect(lumpRow.paymentMinor).toBe(plain.periods[0]!.paymentMinor);
+    expect(nextRow.paymentMinor).toBeLessThan(lumpRow.paymentMinor);
+    expect(nextRow.openingBalanceMinor).toBe(lumpRow.closingBalanceMinor);
+    expect(nextRow.interestMinor + nextRow.principalMinor).toBe(nextRow.paymentMinor);
+    expect(trace.periods).toHaveLength(240);
+    expect(trace.periods.at(-1)!.closingBalanceMinor).toBe(0);
+
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments });
+  });
+
+  test("a reduce-payment lump paid mid-cycle opens the next row below the previous closing", () => {
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 20_000_00, mode: "reduce-payment", repaymentDate: "2021-02-15" },
+    ];
+    const trace = traceOf({ earlyRepayments });
+    const plain = traceOf({});
+
+    const beforeRow = trace.periods.find((p) => p.date === BOUNDARY_13)!;
+    const lumpRow = trace.periods.find((p) => p.date === BOUNDARY_14)!;
+
+    // Nothing is backdated to the previous cuota (#1291): that row closes exactly
+    // where it closed without the lump, and the event is listed on the row that
+    // opens on the reduced balance.
+    expect(beforeRow.events).toEqual([]);
+    expect(beforeRow.closingBalanceMinor).toBe(
+      plain.periods.find((p) => p.date === BOUNDARY_13)!.closingBalanceMinor,
+    );
+    expect(lumpRow.events.map((e) => e.date)).toEqual(["2021-02-15"]);
+    expect(lumpRow.openingBalanceMinor).toBe(beforeRow.closingBalanceMinor - 20_000_00);
+    expect(lumpRow.interestMinor + lumpRow.principalMinor).toBe(lumpRow.paymentMinor);
+
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments });
+  });
+
+  test("a long disbursement→first-payment stub is one flat row, and the curve agrees", () => {
+    // The balance is FLAT at the initial capital across the stub (ADR 0019) and
+    // period 1 is the first cuota.
+    const trace = traceOf({ plan: STUB_PLAN });
+    const first = trace.periods[0]!;
+
+    expect(first.date).toBe("2020-04-01");
+    expect(first.openingBalanceMinor).toBe(120_000_00);
+    for (const inStub of ["2020-01-15", "2020-02-29", "2020-03-31"]) {
+      expect(amortizableBalanceAtDate({ plan: STUB_PLAN, targetDate: inStub })).toBe(
+        120_000_00,
+      );
+    }
+
+    // The row carries the ORDINARY month's interest and the regular cuota: the
+    // stub's extra day-count interest only enlarges the first payment the owner is
+    // charged (`firstCuota`, ADR 0019) and never moves the curve — which is why
+    // the two figures differ, on purpose, and by exactly the stub interest.
+    const cuota = firstCuota(STUB_PLAN);
+    expect(first.paymentMinor).toBe(cuota.regularCuotaMinor);
+    expect(first.principalMinor).toBe(cuota.firstPrincipalMinor);
+    expect(cuota.amountMinor - first.paymentMinor).toBeGreaterThan(0);
+
+    expectRowsToCloseOnTheCurve(trace.periods, { plan: STUB_PLAN });
+  });
+
+  test("a lump paid inside the stub lands on period 1, which still closes on the curve", () => {
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 10_000_00, mode: "reduce-payment", repaymentDate: "2020-02-10" },
+    ];
+    const trace = traceOf({ earlyRepayments, plan: STUB_PLAN });
+    const first = trace.periods[0]!;
+
+    // A boundary-0 event has no row of its own: it rides period 1, the cuota that
+    // opens on the reduced capital.
+    expect(first.events.map((e) => e.date)).toEqual(["2020-02-10"]);
+    expect(first.openingBalanceMinor).toBe(120_000_00 - 10_000_00);
+    // And the money shows from ITS day inside the stub, not from the first cuota.
+    expect(
+      amortizableBalanceAtDate({
+        earlyRepayments,
+        plan: STUB_PLAN,
+        targetDate: "2020-02-09",
+      }),
+    ).toBe(120_000_00);
+    expect(
+      amortizableBalanceAtDate({
+        earlyRepayments,
+        plan: STUB_PLAN,
+        targetDate: "2020-02-10",
+      }),
+    ).toBe(120_000_00 - 10_000_00);
+
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments, plan: STUB_PLAN });
+  });
+
+  test("the cuadro stops at the cuota that closes the loan, with no cuota after it", () => {
+    // A total repayment on boundary 13 cancels the loan there. The old replay
+    // checked the NEXT boundary's balance instead of the row's own closing, so it
+    // emitted a 14th row dated 2021-03-01: a full 665,52 € cuota charged on a loan
+    // already at zero, and an end date one month late for anything reading the
+    // last row (the early-repayment simulation does). Reading the curve fixes it:
+    // the table ends on the row whose closing is zero.
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 200_000_00, mode: "reduce-term", repaymentDate: BOUNDARY_13 },
+    ];
+    const trace = traceOf({ earlyRepayments });
+    const last = trace.periods.at(-1)!;
+
+    expect(last.date).toBe(BOUNDARY_13);
+    expect(last.index).toBe(13);
+    expect(last.closingBalanceMinor).toBe(0);
+    // The last row is a real cuota on a live balance, not a phantom one.
+    expect(last.openingBalanceMinor).toBeGreaterThan(0);
+    expect(last.paymentMinor).toBeGreaterThan(0);
+    expect(last.events).toEqual([
+      {
+        amountMinor: 200_000_00,
+        date: BOUNDARY_13,
+        kind: "early_repayment",
+        mode: "reduce-term",
+      },
+    ]);
+    // And the curve agrees the loan is gone from that date on.
+    expect(
+      amortizableBalanceAtDate({ earlyRepayments, plan: PLAN, targetDate: BOUNDARY_13 }),
+    ).toBe(0);
+    expectRowsToCloseOnTheCurve(trace.periods, { earlyRepayments });
+  });
+
+  test("the whole shape at once: stub, revision and lump on one loan, one engine", () => {
+    const revisions: InterestRateRevision[] = [
+      { newAnnualInterestRate: "0.05", revisionDate: "2021-04-01" },
+    ];
+    const earlyRepayments: EarlyRepayment[] = [
+      { amountMinor: 15_000_00, mode: "reduce-payment", repaymentDate: "2022-06-20" },
+      { amountMinor: 5_000_00, mode: "reduce-term", repaymentDate: "2023-01-01" },
+    ];
+    const input = { earlyRepayments, plan: STUB_PLAN, revisions };
+    const trace = traceOf(input);
+
+    // Every row is addable ON ITS OWN — opening − principal − whatever lump is
+    // dated on the row's own cuota date = closing — and closes where the curve
+    // says. Components are each rounded at the edge from full big.js precision, so
+    // a row can be a cent off itself: the documented rounding rule, not drift.
+    // The payoff row is the one exception and it is not this refactor's: a
+    // `reduce-term` loan reaches zero mid-cuota, so the last row shows the full
+    // cuota while only the remaining principal is actually retired.
+    const payoff = trace.periods.at(-1)!;
+    expect(payoff.closingBalanceMinor).toBe(0);
+    expect(payoff.principalMinor).toBeGreaterThan(payoff.openingBalanceMinor);
+
+    for (const period of trace.periods.slice(0, -1)) {
+      const lumpOnThisDate = period.events
+        .filter((e) => e.kind === "early_repayment" && e.date === period.date)
+        .reduce((sum, e) => sum + (e.amountMinor ?? 0), 0);
+      expect(
+        Math.abs(period.interestMinor + period.principalMinor - period.paymentMinor),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(
+          period.closingBalanceMinor -
+            (period.openingBalanceMinor - period.principalMinor - lumpOnThisDate),
+        ),
+      ).toBeLessThanOrEqual(1);
+    }
+    expectRowsToCloseOnTheCurve(trace.periods, input);
+
+    // Reading the schedule and reading the curve populate the SAME memo (#158), so
+    // the order of the two queries cannot change either answer.
+    const closings = trace.periods.map((p) => p.closingBalanceMinor);
+    const curveFirst = trace.periods.map((p) =>
+      amortizableBalanceAtDate({ ...input, targetDate: p.date }),
+    );
+    expect(
+      amortizationScheduleTrace({ ...input, targetDate: "2020-04-01" }).periods.map(
+        (p) => p.closingBalanceMinor,
+      ),
+    ).toEqual(closings);
+    expect(curveFirst).toEqual(closings);
   });
 });
