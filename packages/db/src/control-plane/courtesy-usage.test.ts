@@ -1,6 +1,5 @@
+import { createInMemoryControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam: the monthly courtesy counter (PRD #1160
 // S2, #1162) lives in its own table so it cannot interfere with the hourly chat

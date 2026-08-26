@@ -18,7 +18,7 @@ import {
   migrateControlPlane,
   readControlPlaneSchemaVersion,
   writeControlPlaneSchemaVersion,
-} from "@db/control-plane-migrate";
+} from "@db/control-plane/migrate";
 import { openLibsqlClient } from "@db/libsql-client";
 import type { Client } from "@libsql/client";
 import { afterAll, describe, expect, test } from "vitest";

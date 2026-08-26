@@ -1,11 +1,10 @@
-import { describe, expect, it } from "vitest";
-
 import {
   createInMemoryControlPlaneStore,
   type EntitlementDirectory,
   type TenancyDirectory,
-} from "./control-plane";
-import { deriveEffectivePlan, trialEndsAtFrom } from "./entitlements";
+} from "@db/control-plane";
+import { deriveEffectivePlan, trialEndsAtFrom } from "@db/entitlements";
+import { describe, expect, it } from "vitest";
 
 // Cross the real port seams: the in-memory store implements the whole control
 // plane, but these tests depend only on tenancy (to seed real rows — the

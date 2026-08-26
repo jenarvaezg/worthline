@@ -1,6 +1,5 @@
+import { createInMemoryControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam (sync rate-limit lives in its own table).
 type UsageLimitsStore = UsageLimits & { close(): void };

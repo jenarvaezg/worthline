@@ -1,6 +1,5 @@
+import { createInMemoryControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { describe, expect, it } from "vitest";
-
-import { createInMemoryControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam: the AI token meter (PRD #1160 S3, #1163)
 // counts aggregate tokens per scope per UTC day. Each recorded turn feeds BOTH

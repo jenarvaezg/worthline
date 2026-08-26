@@ -1,9 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createControlPlaneStore, type UsageLimits } from "@db/control-plane";
 import { afterEach, describe, expect, it } from "vitest";
-
-import { createControlPlaneStore, type UsageLimits } from "./control-plane";
 
 // Cross the real UsageLimits port seam across two separate connections.
 type UsageLimitsStore = UsageLimits & { close(): void };
