@@ -46,6 +46,32 @@ plans are the deliberate exception: a plan declares a monthly schedule, so it
 generates one snapshot per past payment date. There is no backfill beyond
 declared or schedule-derived event dates.
 
+**The monthly floor of reconstructed history.** Event dates alone make the
+resolution of pre-signup history a measure of how often the user *operated*,
+not of how much time passed: a month with four trades gets four points, a quiet
+month none, and the chart draws a straight line across it — beside a housing
+curve that is monthly by construction. So the historical **gap-fill / backfill**
+(`gapFillHistoricalSnapshots`, and the one-shot `backfillHistoricalSnapshots`)
+also guarantees the **1st of every month in which some investment held a
+position**, on the same monthly grid as the price backfill (ADR 0033).
+
+This is a floor, not a replacement: the generated dates are the **union** of the
+event dates and those month-starts, so an operated month keeps its density. It
+is still not "backfill every date between events" — nothing fills the days
+*between* the 1st and an operation, no extra month-end snapshot is invented
+(`is_monthly_close` stays derived, ADR 0005), and the per-fact ripple and the
+daily capture are unchanged. A month whose 1st has no position (before the first
+purchase, or after everything was sold) yields nothing. No price is fetched: an
+unpriced month is generated at cost basis and ADR 0033's backfill remains the
+single writer of historical `unit_price`.
+
+The accepted consequence: a month that previously held no snapshot at all now
+has one, and therefore acquires a **monthly close** where it had none (still
+derived, ADR 0005 — the last snapshot of the month). Anything reading closes —
+the delta breakdown, the monthly returns of ADR 0040 — gains those months as
+subperiods. That is the point rather than a side effect: those months existed,
+and the reason they had no close was that nothing had been traded in them.
+
 ## Import
 
 An export carries the frozen snapshot history (ADR 0010). Import restores
@@ -66,4 +92,8 @@ operations once, in one pass, with a single ripple at the end.
 - **Recalculate imported snapshots on import** — rejected: degrades real
   captured history into approximations (see Import above).
 - **Backfill every date between events** — rejected: volume without
-  information; the evolution chart already interpolates between points.
+  information; the evolution chart already interpolates between points. The
+  monthly floor above is the bounded amendment: one guaranteed point per month
+  with a position, not one per day.
+- **A weekly floor** — rejected: four times the volume for a resolution no
+  other curve in the app has.

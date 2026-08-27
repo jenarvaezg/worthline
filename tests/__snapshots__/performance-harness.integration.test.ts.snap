@@ -10,12 +10,12 @@ exports[`performance harness (integration, #200) > guards the set of measured ho
   {
     "ceilingMs": 250,
     "name": "fullHistoryRead",
-    "touched": 1126,
+    "touched": 1398,
   },
   {
     "ceilingMs": 500,
     "name": "windowedHistoryRead",
-    "touched": 854,
+    "touched": 867,
   },
   {
     "ceilingMs": 250,
@@ -25,17 +25,17 @@ exports[`performance harness (integration, #200) > guards the set of measured ho
   {
     "ceilingMs": 4000,
     "name": "operationRipple",
-    "touched": 83,
+    "touched": 105,
   },
   {
     "ceilingMs": 4000,
     "name": "valuationRipple",
-    "touched": 83,
+    "touched": 105,
   },
   {
     "ceilingMs": 2500,
     "name": "debtRipple",
-    "touched": 83,
+    "touched": 105,
   },
 ]
 `;

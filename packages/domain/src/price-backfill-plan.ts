@@ -28,9 +28,10 @@
  */
 
 import type { DecimalString } from "./decimal";
-import { compareUnits, multiplyToMinor } from "./decimal";
+import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
-import { derivePosition, operationsUpTo } from "./positions";
+import { monthlyDateKeys } from "./monthly-calendar";
+import { earliestOperationDate, positionHeldAt } from "./positions";
 
 /** Whether a planned point creates a new snapshot or updates an existing one. */
 export type PriceBackfillAction = "create" | "update";
@@ -69,31 +70,6 @@ export interface PriceBackfillPlan {
   gaps: string[];
   /** The source that produced the prices (carried through for the UI/metadata). */
   source: string;
-}
-
-/** The YYYY-MM-01 of the month containing `dateKey`. */
-function monthStart(dateKey: string): string {
-  return `${dateKey.slice(0, 7)}-01`;
-}
-
-/** The first day of the month after `monthStartKey` (a YYYY-MM-01). */
-function nextMonthStart(monthStartKey: string): string {
-  const year = Number(monthStartKey.slice(0, 4));
-  const month = Number(monthStartKey.slice(5, 7)); // 1-based
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-}
-
-/** Every month-start (the 1st) from the first-op month through today, inclusive. */
-function monthlyDateKeys(firstOperationDate: string, today: string): string[] {
-  const dates: string[] = [];
-  let cursor = monthStart(firstOperationDate);
-  while (cursor <= today) {
-    dates.push(cursor);
-    cursor = nextMonthStart(cursor);
-  }
-  return dates;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -140,21 +116,14 @@ export function planPriceBackfill(input: PlanPriceBackfillInput): PriceBackfillP
     return { gaps, points, source: input.source };
   }
 
-  const firstOperationDate = input.operations
-    .map((op) => op.executedAt.slice(0, 10))
-    .reduce((min, date) => (date < min ? date : min));
-
-  const assetId = input.operations[0]!.assetId;
-  const currency = input.operations[0]!.currency;
+  const firstOperationDate = earliestOperationDate(input.operations)!;
 
   for (const dateKey of monthlyDateKeys(firstOperationDate, input.today)) {
     // Fold the ledger to this date; skip a month with no position (before the
-    // first op, or fully sold by then) — it is neither a point nor a gap.
-    const opsUpTo = operationsUpTo(input.operations, dateKey);
-    if (opsUpTo.length === 0) continue;
-
-    const position = derivePosition(opsUpTo, { assetId, currency });
-    if (compareUnits(position.currentUnits, "0") === 0) continue;
+    // first op, or fully sold by then) — it is neither a point nor a gap. The
+    // monthly floor of #1444 rides this SAME test, so the grids cannot diverge.
+    const position = positionHeldAt(input.operations, dateKey);
+    if (position === undefined) continue;
 
     const unitPriceDecimal = monthStartPrice(input.pricesByDate, dateKey, input.today);
     if (unitPriceDecimal === undefined) {

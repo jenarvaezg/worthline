@@ -35,6 +35,25 @@ async function seedIndividual(store: WorthlineStore): Promise<void> {
   });
 }
 
+/** A backdated sell recorded WITHOUT rippling (pure ledger persistence). */
+async function recordSellNoRipple(
+  store: WorthlineStore,
+  executedAt: string,
+  units: string,
+  price: string,
+): Promise<void> {
+  await store.operations.recordOperation({
+    assetId: "btc",
+    currency: "EUR",
+    executedAt,
+    feesMinor: 0,
+    id: `op_sell_${executedAt}_${units}`,
+    kind: "sell",
+    pricePerUnit: price,
+    units,
+  });
+}
+
 /** A backdated buy that ALSO ripples — lands a snapshot on its own date. */
 async function recordBuy(
   store: WorthlineStore,
@@ -110,8 +129,17 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     await store.command.backfillHistoricalSnapshots(TODAY);
 
     // Both past operation dates now carry a generated (individual) snapshot, valued
-    // at cost basis (no price was cached on those days).
-    expect(await snapshotDates(store)).toEqual(["2026-01-10", "2026-02-10"]);
+    // at cost basis (no price was cached on those days) — alongside the monthly
+    // floor (#1444) of every month the position existed.
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-02-10",
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
     expect((await rowAt(store, "btc", "2026-01-10"))?.valueMinor).toBe(0.5 * 30000 * 100);
     store.close();
   });
@@ -124,7 +152,7 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
 
     await store.command.backfillHistoricalSnapshots(TODAY);
     const afterFirst = await snapshotDates(store);
-    expect(afterFirst).toEqual(["2026-01-10", "2026-02-10"]);
+    expect(afterFirst).toHaveLength(7); // 2 operation dates + 5 monthly-floor points
 
     await store.command.backfillHistoricalSnapshots(TODAY);
     expect(await snapshotDates(store)).toEqual(afterFirst);
@@ -147,8 +175,96 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     await store.command.backfillHistoricalSnapshots(TODAY);
 
     // The February gap got filled; the pre-existing January snapshot is untouched.
-    expect(await snapshotDates(store)).toEqual(["2026-01-10", "2026-02-10"]);
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-02-10",
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
     expect(await rowAt(store, "btc", "2026-01-10")).toEqual(janBefore);
+    store.close();
+  });
+});
+
+describe("backfillHistoricalSnapshots — the monthly floor (#1444)", () => {
+  it("adds the 1st of every month with a position, on top of the operation dates", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
+
+    // A busy March and four quiet months — the shape of the real workspace this
+    // came from: the density measured trading, not time.
+    await recordBuyNoRipple(store, "2026-01-10", "0.5", "30000");
+    for (const day of ["03", "07", "11", "19"]) {
+      await recordBuyNoRipple(store, `2026-03-${day}`, "0.1", "31000");
+    }
+
+    await store.command.backfillHistoricalSnapshots(TODAY);
+
+    // Union: the five operation dates AND a 1st per month the position existed.
+    // January's 1st predates the first buy, so it does not appear.
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-03-01",
+      "2026-03-03",
+      "2026-03-07",
+      "2026-03-11",
+      "2026-03-19",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
+    store.close();
+  });
+
+  it("never overwrites a 1st that already has a snapshot", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
+
+    // A rippled buy ON 2026-03-01 lands a real snapshot there before any backfill.
+    await recordBuy(store, "2026-01-10", "0.5", "30000");
+    await recordBuy(store, "2026-03-01", "0.25", "45000");
+    const marchBefore = await rowAt(store, "btc", "2026-03-01");
+    expect(marchBefore).toBeDefined();
+
+    await store.command.backfillHistoricalSnapshots(TODAY);
+
+    expect(await rowAt(store, "btc", "2026-03-01")).toEqual(marchBefore);
+    store.close();
+  });
+
+  it("invents no 1st for a month with nothing held, nor for today", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
+
+    // Bought in January, sold out in February → March onwards holds nothing.
+    await recordBuyNoRipple(store, "2026-01-10", "0.5", "30000");
+    await recordSellNoRipple(store, "2026-02-20", "0.5", "34000");
+
+    await store.command.backfillHistoricalSnapshots(TODAY);
+
+    // Only February's 1st (the position was alive then) plus the buy date. March
+    // onwards gets no floor, and the sell date holds nothing left to snapshot.
+    expect(await snapshotDates(store)).toEqual(["2026-01-10", "2026-02-01"]);
+    store.close();
+  });
+
+  it("stops before today — the daily capture owns it", async () => {
+    const store = await createInMemoryStore();
+    await seedIndividual(store);
+    await recordBuyNoRipple(store, "2026-01-10", "0.5", "30000");
+
+    // A today that IS a month-start: it must stay out of the floor.
+    await store.command.backfillHistoricalSnapshots("2026-04-01");
+
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-03-01",
+    ]);
     store.close();
   });
 });

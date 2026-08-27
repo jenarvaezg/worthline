@@ -27,10 +27,15 @@ silently drift off their stated scale.
 | `liabilities`          |        3 | Mortgage + revolving credit + plain debt curves      |
 | `scopes`               |        3 | Capture-loop iterations (household + one per member) |
 | `positions`            |        3 | Investment positions projected from operations       |
-| `householdSnapshots`   |       83 | Net-worth snapshots stored for the household scope   |
-| `totalSnapshots`       |      249 | Net-worth snapshots across every scope               |
-| `householdHoldingRows` |    1,162 | Frozen holding rows for the household scope          |
-| `totalHoldingRows`     |    2,656 | Frozen holding rows across every scope               |
+| `householdSnapshots`   |      105 | Net-worth snapshots stored for the household scope   |
+| `totalSnapshots`       |      315 | Net-worth snapshots across every scope               |
+| `householdHoldingRows` |    1,398 | Frozen holding rows for the household scope          |
+| `totalHoldingRows`     |    3,200 | Frozen holding rows across every scope               |
+
+The snapshot counts grew with the monthly floor of #1444 (the historical backfill
+now also guarantees the 1st of every month with a position): the same ledger
+reconstructs a denser history, and the budgets below were re-checked against it
+without raising a single ceiling.
 
 These are the dimensions as `seedPerformanceWorkspace` returns, **before** the
 harness runs any capture or ripple of its own. The "large" property the audit

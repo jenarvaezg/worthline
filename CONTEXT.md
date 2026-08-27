@@ -842,7 +842,8 @@ or deleting recalculates from D inclusive. A dated fact generates a snapshot at
 its own date; the lone exception that generates _many_ is an **amortization
 plan**, which generates one at every monthly payment from its start to today (a
 backdated loan's stepped paydown — PRD #109). No other intermediate dates are
-backfilled. A snapshot generated for a past date is an ordinary **snapshot**,
+backfilled by a ripple — the one thing that adds dates beyond declared facts is
+the **monthly floor** of the historical backfill, which is not a ripple. A snapshot generated for a past date is an ordinary **snapshot**,
 not a special kind. An **ownership split** edit ripples along the **scope** axis
 rather than time: it has no date, creates no new snapshot dates, and only
 re-weights each existing per-member **scope** snapshot's row for that holding by
@@ -855,6 +856,22 @@ See ADR 0012.
 _Avoid_: treating it as an exception to frozen snapshots (it incorporates new
 information — a dated fact or a changed parameter; a purely cosmetic edit like a
 rename still never touches history).
+
+**Monthly floor**:
+The guarantee that reconstructed pre-signup history carries a **snapshot** on the
+1st of every month some investment held units — the same monthly grid the
+historical-price backfill uses (ADR 0033). Only the historical gap-fill / backfill
+applies it, never a **ripple** and never the daily capture; it is a _union_ with
+the dated facts' own dates, so an actively traded month keeps its finer detail.
+Without it the resolution of that history measured how often the user **operated**
+rather than how much time passed — four points in a busy March, a straight line
+across a quiet one, next to a **housing** curve that is monthly by construction.
+A month with no position (before the first purchase, after everything was sold)
+gets nothing, and no price is fetched to build one: an unpriced month is valued at
+cost basis. See ADR 0012.
+_Avoid_: reading it as "every day is backfilled" — nothing fills the days between
+the 1st and an **operation**; and note a floor point does become that month's
+**monthly close** where no later snapshot exists.
 
 **Monthly close**:
 The last **snapshot** of a calendar month. Derived, never declared by the user. Per
