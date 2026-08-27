@@ -51,25 +51,26 @@ test("investment: create with manual price → buy operation → derived value v
   const operationForm = page.getByRole("form", { name: "Registrar operación" });
 
   // 6. Trigger a validation error: submit with units left empty. The server
-  //    rejects the empty units field and redirects back to the ficha with
-  //    `error=` + the preserved typed values (intake.errorRedirectUrl).
+  //    rejects the empty units field and the refusal comes BACK to the form as
+  //    state — it does not navigate (#1311).
   await operationForm.getByLabel("Precio por unidad en EUR").fill("105,50");
   await operationForm.getByLabel("Unidades").clear();
   await operationForm.getByRole("button", { name: "Registrar operación" }).click();
 
-  // 7. Wait for the error navigation to FULLY settle before touching the form
-  //    again: assert the URL carries the error param (the server-action redirect
-  //    landed) and the error banner is shown. Without this wait the next fill can
-  //    land on the pre-navigation form node and be discarded by the RSC swap —
-  //    the root cause of this journey's historical flakiness. Scope to the page's
-  //    own error band: Next.js mounts a `role="alert"` route announcer during
-  //    client navigation, so a bare getByRole("alert") is ambiguous in strict mode.
-  await expect(page).toHaveURL(/error=/);
-  await openAdvancedSettings(page);
+  // 7. The refusal lands IN PLACE. Since #1311 the record terminal is split —
+  //    success redirects, a rejection is returned — so there is no navigation to
+  //    wait out here, and none of this journey's historical flakiness (a fill
+  //    landing on the pre-navigation form node, discarded by the RSC swap) has a
+  //    mechanism left. The band is the deterministic signal.
   const errorBand = page.locator("#operation-error");
   await expect(errorBand).toBeVisible();
   await expect(errorBand).toHaveText("Las unidades son obligatorias.");
-  // The typed price survives the round-trip (units was empty, so it does not).
+  // What the absence of a navigation buys, asserted rather than assumed: the URL
+  // is untouched (the typed amounts never ride the address bar), the advanced
+  // block the user opened is still open (nothing remounted it shut), and the
+  // typed price is still in the field it was typed into.
+  await expect(page).not.toHaveURL(/error=/);
+  await expect(page.locator("details.editAdvanced")).toHaveJSProperty("open", true);
   await expect(operationForm.getByLabel("Precio por unidad en EUR")).toHaveValue(
     "105,50",
   );

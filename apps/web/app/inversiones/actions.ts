@@ -13,7 +13,7 @@ import {
   type ExposureCatalogStubCandidate,
   ensureExposureCatalogStubs,
 } from "@web/ensure-exposure-catalog-stubs";
-import { formAction } from "@web/form-action";
+import { formAction, formActionInlineError } from "@web/form-action";
 import type { FormErrorContext } from "@web/intake";
 import {
   createStableId,
@@ -175,10 +175,20 @@ export async function recordOperationAction(
       values: preserveFields(formData, OPERATION_FORM_FIELDS),
     });
 
-  return formAction({
+  // The refused submit's own fields, so the form refills itself without the
+  // values ever riding a URL. Read AFTER `run` may have stamped a marker on the
+  // body (`oversellPending`), exactly as `operationErrorUrl` did.
+  const operationErrorValues = () => preserveFields(formData, OPERATION_FORM_FIELDS);
+
+  // Split terminal (#1311): the rejection comes back as state when the submit
+  // asked for it, so the reason can never be lost with the navigation that used
+  // to carry it. Success still redirects; a form posted with JS off still gets
+  // `operationErrorUrl`.
+  return formActionInlineError({
     datedFact: false,
     guardUrl: () => returnUrl,
-    onError: ({ error }) => operationErrorUrl(error),
+    onError: ({ error }) => ({ error, values: operationErrorValues() }),
+    onErrorUrl: ({ error }) => operationErrorUrl(error),
     onSuccess: () => successRedirectUrl(returnUrl, "saved"),
     parse: ({ today }) => {
       const parsed = parseRouteOperationCommand(
@@ -190,14 +200,11 @@ export async function recordOperationAction(
         submissionId ? `k${submissionId}` : Date.now(),
         today,
       );
-      if (!parsed.ok) return { ok: false, redirect: operationErrorUrl(parsed.error) };
+      if (!parsed.ok) return { ok: false, error: parsed.error };
 
       const domainResult = createInvestmentOperationSafe(parsed.command);
       if (!domainResult.ok) {
-        return {
-          ok: false,
-          redirect: operationErrorUrl(mapDomainViolation(domainResult.violations[0])),
-        };
+        return { ok: false, error: mapDomainViolation(domainResult.violations[0]) };
       }
       return { ok: true, value: domainResult.value };
     },

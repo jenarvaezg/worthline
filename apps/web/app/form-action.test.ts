@@ -1,6 +1,6 @@
 /**
- * Choreography tests for the `formAction` / `formActionState` combinator
- * (PRD #1112 S1). These exercise the SHELL the combinator owns — test-seam
+ * Choreography tests for the `formAction` / `formActionState` /
+ * `formActionInlineError` combinator (PRD #1112 S1). These exercise the SHELL the combinator owns — test-seam
  * injection, the demo/impersonation write guard, the missing-id short-circuit,
  * parse-failure surfacing (with preserved fields), the duplicate-date
  * translation, and the success/error terminals — through a trivial config
@@ -13,7 +13,7 @@ import { errorRedirectUrl, successRedirectUrl } from "@web/intake";
 import type { WorthlineStore } from "@web/store";
 import { type Clock, fixedClock } from "@worthline/domain";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { formAction, formActionState } from "./form-action";
+import { formAction, formActionInlineError, formActionState } from "./form-action";
 
 // Drive demo-ness through the persona cookie the store seam reads (mirrors the
 // dated-fact action tests).
@@ -466,5 +466,109 @@ describe("formAction — generalized capabilities (#1114)", () => {
       action(form({ currentUrl: "/patrimonio/x/editar" }), fakeStore, CLOCK),
     );
     expect(url).toContain("/patrimonio/x/editar");
+  });
+});
+
+describe("formActionInlineError — split terminal: success redirects, rejection returns (#1311)", () => {
+  test("a rejection asked for inline comes BACK as state — nothing redirects, nothing navigates", async () => {
+    const action = formActionInlineError({
+      onError: ({ error }) => ({ error, values: { units: "" } }),
+      onErrorUrl: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => successRedirectUrl("/x", "saved"),
+      run: async () => ({ ok: false, error: "Las unidades son obligatorias." }),
+    });
+
+    // No `runRedirect`: the whole point is that this resolves instead of throwing
+    // NEXT_REDIRECT. A redirect terminal is the losable one (see the combinator's
+    // doc), so the test that matters is that this path has none.
+    const state = await action(form({ id: "e1", inlineError: "1" }), fakeStore, CLOCK);
+    expect(state).toEqual({
+      ok: false,
+      error: "Las unidades son obligatorias.",
+      values: { units: "" },
+    });
+    // Nothing was mutated, so nothing is invalidated (#1191).
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  test("the SAME rejection redirects when the submit did not ask for it (the no-JS path)", async () => {
+    const action = formActionInlineError({
+      onError: ({ error }) => ({ error }),
+      onErrorUrl: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => successRedirectUrl("/x", "saved"),
+      run: async () => ({ ok: false, error: "Las unidades son obligatorias." }),
+    });
+
+    // A form posted with JavaScript off cannot stamp `inlineError`, and it has no
+    // way to render returned state — so it keeps the terminal it can read.
+    const url = await runRedirect(
+      () => action(form({ id: "e1" }), fakeStore, CLOCK) as Promise<never>,
+    );
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(
+      "Las unidades son obligatorias.",
+    );
+  });
+
+  test("a parse failure returns its own refill values, inline", async () => {
+    const action = formActionInlineError({
+      onError: ({ error }) => ({ error, values: { fromOnError: "1" } }),
+      onErrorUrl: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => successRedirectUrl("/x", "saved"),
+      parse: () => ({ ok: false, error: "Campo inválido.", values: { units: "abc" } }),
+      run: async () => ({ ok: true }),
+    });
+
+    const state = await action(form({ id: "e1", inlineError: "1" }), fakeStore, CLOCK);
+    // The parse step named the fields, so they win over `onError`'s shaping.
+    expect(state).toEqual({
+      ok: false,
+      error: "Campo inválido.",
+      values: { units: "abc" },
+    });
+  });
+
+  test("success still redirects, and still invalidates the Router Cache", async () => {
+    const action = formActionInlineError({
+      onError: ({ error }) => ({ error }),
+      onErrorUrl: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => successRedirectUrl("/x", "saved"),
+      run: async () => ({ ok: true }),
+    });
+
+    const url = await runRedirect(
+      () =>
+        action(form({ id: "e1", inlineError: "1" }), fakeStore, CLOCK) as Promise<never>,
+    );
+    expect(url).toContain("ok=saved");
+    // Success revalidates, which is also what gives its redirect the recovery net
+    // a rejection's never had (#1311).
+    expect(revalidatePathMock).toHaveBeenCalledWith("/", "layout");
+  });
+
+  test("a blocked demo write redirects even when the submit asked for inline errors", async () => {
+    mockPersonaCookie = "familia";
+    let ran = false;
+    const action = formActionInlineError({
+      onError: ({ error }) => ({ error }),
+      onErrorUrl: ({ error }) => errorRedirectUrl("/x", { message: error }),
+      onSuccess: () => successRedirectUrl("/x", "saved"),
+      run: async () => {
+        ran = true;
+        return { ok: true };
+      },
+    });
+
+    // The guard is not a rejected input: a write the app refuses must never fall
+    // through to a rendered state that looks like a form error.
+    const url = await runRedirect(
+      () =>
+        action(
+          form({ id: "e1", currentUrl: "/x/e1", inlineError: "1" }),
+          fakeStore,
+          CLOCK,
+        ) as Promise<never>,
+    );
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(DEMO_DISABLED_MESSAGE);
+    expect(ran).toBe(false);
   });
 });

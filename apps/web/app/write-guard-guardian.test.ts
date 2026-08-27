@@ -14,9 +14,9 @@
  * module reaches neither a combinator nor a guard.
  *
  * Accepted coverage, all of them real gates rather than conventions:
- *   - `formAction` / `formActionState` — the combinator runs `guardDemoWrite` in
- *     its shared front matter, so every action built from it is covered by
- *     construction.
+ *   - `formAction` / `formActionState` / `formActionInlineError` — every form of
+ *     the combinator runs `guardDemoWrite` in its shared front matter, so any
+ *     action built from one is covered by construction.
  *   - `runProposalConfirm` / `runProposalDiscard` — the proposal combinators run
  *     `guardProposalWrite` before touching a store.
  *   - `guardDemoWrite` / `guardProposalWrite` / `isWriteBlocked` — called by hand.
@@ -56,6 +56,7 @@ const webRoot = join(import.meta.dirname, "..");
 const WRITE_GUARDS = [
   "formAction",
   "formActionState",
+  "formActionInlineError",
   "runProposalConfirm",
   "runProposalDiscard",
   "guardDemoWrite",

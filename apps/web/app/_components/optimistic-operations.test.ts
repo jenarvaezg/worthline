@@ -6,6 +6,8 @@ import {
   type OperationMutation,
   parseOperationDraft,
   planOperationSubmit,
+  type RecordActionResult,
+  rejectionOf,
   type SubmissionKeyRef,
   submitOperationRecord,
 } from "./optimistic-operations";
@@ -272,7 +274,10 @@ describe("submitOperationRecord · the wiring the guard rests on (#1394)", () =>
   };
 
   /** Collect what the island hands React and the action. */
-  function harness(recordAction: (fd: FormData) => Promise<void>) {
+  function harness(
+    recordAction: (fd: FormData) => Promise<RecordActionResult>,
+    onSettled?: (result: RecordActionResult) => void,
+  ) {
     const keyRef: SubmissionKeyRef = { current: null };
     const added: OperationMutation[] = [];
     let scope: (() => Promise<void>) | null = null;
@@ -281,7 +286,9 @@ describe("submitOperationRecord · the wiring the guard rests on (#1394)", () =>
       keyRef,
       run: (formData: FormData) => {
         submitOperationRecord({
-          addPending: (mutation) => added.push(mutation),
+          addPending: (mutation) => {
+            added.push(mutation);
+          },
           formData,
           keyRef,
           plan,
@@ -289,6 +296,7 @@ describe("submitOperationRecord · the wiring the guard rests on (#1394)", () =>
           startTransition: (fn) => {
             scope = fn;
           },
+          ...(onSettled ? { onSettled } : {}),
         });
         return scope as unknown as () => Promise<void>;
       },
@@ -338,5 +346,87 @@ describe("submitOperationRecord · the wiring the guard rests on (#1394)", () =>
     expect(h.added).toHaveLength(0);
     await scope();
     expect(h.added).toEqual([{ kind: "add", operation: plan.draft }]);
+  });
+});
+
+describe("rejectionOf · the refusal the action hands back (#1311)", () => {
+  test("a refusal becomes the band's message and the fields as the server saw them", () => {
+    expect(
+      rejectionOf({
+        ok: false,
+        error: "Las unidades son obligatorias.",
+        values: { pricePerUnit: "105,50" },
+      }),
+    ).toEqual({
+      message: "Las unidades son obligatorias.",
+      values: { pricePerUnit: "105,50" },
+    });
+  });
+
+  test("a refusal with no values still carries its message", () => {
+    // `values` is what the oversell marker rides on, so an absent one must read
+    // as "no marker", never as a missing key the caller has to guard.
+    expect(rejectionOf({ ok: false, error: "No se pudo guardar." })).toEqual({
+      message: "No se pudo guardar.",
+      values: {},
+    });
+  });
+
+  test("the oversell marker survives the trip, so the confirm path stays reachable", () => {
+    // The marker is what turns the red band into the gold one WITH the confirm
+    // checkbox. Lose it and a legitimate sell (the broker's rounding) reads as a
+    // flat refusal with nothing to click — the person cannot get past it.
+    expect(
+      rejectionOf({
+        ok: false,
+        error: "Tienes 31,999; vas a vender 32.",
+        values: { oversellPending: "1", units: "32" },
+      })?.values["oversellPending"],
+    ).toBe("1");
+  });
+
+  test("success is not a refusal", () => {
+    expect(rejectionOf({ ok: true })).toBeNull();
+  });
+
+  test("a success that redirected — resolving to nothing — is not a refusal either", () => {
+    // The ordinary success path: `redirect()` means the action resolves with no
+    // value at all, and that must never render an empty error band.
+    expect(rejectionOf(undefined)).toBeNull();
+  });
+});
+
+describe("submitOperationRecord · handing the refusal back (#1311)", () => {
+  const plan = {
+    draft: op("optimistic-9", "2026-07-31"),
+    kind: "optimistic" as const,
+    submissionId: "key-9",
+  };
+
+  test("onSettled receives what the action resolved to, and the key still rotates", async () => {
+    const keyRef: SubmissionKeyRef = { current: null };
+    const settled: RecordActionResult[] = [];
+    let scope: (() => Promise<void>) | null = null;
+
+    submitOperationRecord({
+      addPending: () => {},
+      formData: new FormData(),
+      keyRef,
+      onSettled: (result) => settled.push(result),
+      plan,
+      recordAction: async () => ({
+        ok: false as const,
+        error: "Las unidades son obligatorias.",
+      }),
+      startTransition: (fn) => {
+        scope = fn;
+      },
+    });
+    await (scope as unknown as () => Promise<void>)();
+
+    expect(settled).toEqual([{ ok: false, error: "Las unidades son obligatorias." }]);
+    // The #1394 guard is untouched by the new seam: a refused submit still
+    // rotates the key, or the retry would read as a replay that wrote nothing.
+    expect(keyRef.current).toBeNull();
   });
 });
