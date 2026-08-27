@@ -276,6 +276,15 @@ export async function loadDashboard(
   // folds every operation-bearing holding through the return engine, reusing the
   // shared context (no extra operation read). Whole-portfolio, not scope-weighted
   // — a fund's return is the same figure whoever owns which share.
+  // Since #1592 the engine is `subsetReturns`, the one the cartera card and the
+  // per-class decomposition ride: the two halves of an internal traspaso net into
+  // one residual instead of each counting as capital received, so the hero cannot
+  // read as if the book had been funded twice (ADR 0040's amendment, #1422).
+  // No monthly closes are passed: the series would have to be the WHOLE book's,
+  // full history and gross, and the rows this page reads are the selected scope's
+  // and bounded to the offered range. So the hero states no TWR rather than one
+  // measured on a different basis than its flows; wiring that read is its own
+  // call on the home GET's budget (#1640).
   // ponytail: unscoped portfolio return; per-member-scope weighting is deferred
   // until a scoped consumer needs it (household member scopes are the edge case).
   // Recorded payouts (one-offs + derived occurrences up to today) enter the

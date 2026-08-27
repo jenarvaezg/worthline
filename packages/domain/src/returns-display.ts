@@ -8,20 +8,14 @@ import type {
   DatedPayout,
   IrrResult,
   MonthlyCloseValue,
-  PortfolioHolding,
   SimpleGain,
   TwrResult,
 } from "./returns";
-import {
-  holdingIrr,
-  holdingTwr,
-  portfolioIrr,
-  portfolioSimpleGain,
-  portfolioTwr,
-  simpleGain,
-} from "./returns";
+import { holdingIrr, holdingTwr, simpleGain } from "./returns";
 import type { AssetClassReturnsHolding } from "./returns-by-class";
 import { returnsByAssetClass } from "./returns-by-class";
+import type { SubsetReturnsSlice } from "./returns-subset";
+import { subsetReturns } from "./returns-subset";
 
 /**
  * Presentation-selection layer for investment returns (#551, ADR 0040). Turns the
@@ -221,7 +215,6 @@ export interface InvestmentReturnsContext {
   cachedPriceByAsset: ReadonlyMap<string, DecimalString | undefined>;
   manualPriceByAsset: ReadonlyMap<string, DecimalString | undefined>;
   monthlyClosesByAsset?: ReadonlyMap<string, readonly MonthlyCloseValue[]>;
-  portfolioMonthlyCloses?: readonly MonthlyCloseValue[];
   /** Recorded payouts (one-offs + derived occurrences) per asset id (#657). */
   payoutsByAsset?: ReadonlyMap<string, readonly DatedPayout[]>;
   currency: CurrencyCode;
@@ -247,6 +240,26 @@ function holdingMarketValueMinor(
     manualPrice: ctx.manualPriceByAsset.get(assetId),
     operations: [...operations],
   }).valueMinor;
+}
+
+/**
+ * One holding's contribution to a subset, read off the shared context: its value
+ * through the net-worth authority, its monthly-close series and its payouts. Both
+ * subset callers below — the whole book and the per-class decomposition — take
+ * their slices from here, so neither can drift on WHICH of the three inputs it
+ * remembers to pass.
+ */
+function subsetSliceOf(
+  ctx: InvestmentReturnsContext,
+  assetId: string,
+  operations: readonly InvestmentOperation[],
+): SubsetReturnsSlice {
+  return {
+    marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
+    monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
+    operations,
+    payouts: ctx.payoutsByAsset?.get(assetId) ?? [],
+  };
 }
 
 /**
@@ -296,49 +309,51 @@ export function investmentReturnsById(
 }
 
 /**
- * The portfolio returns view over every operation-bearing investment: merges the
- * holdings' cashflows into one dated stream (portfolio IRR) and sums the simple
- * gains. Null when there are no operation-bearing holdings.
+ * The returns view over every operation-bearing investment — the /patrimonio
+ * hero's «Rentabilidad … · IRR …» line. Null when there are no operation-bearing
+ * holdings: a book that never bought anything has no return to report.
+ *
+ * The whole book is just another SUBSET of holdings, so it rides the same engine
+ * the managed portfolio (#1552) and the per-class decomposition (#552) do
+ * (`subsetReturns`, ADR 0040's #1592/#1593 amendment). What died with the merge it
+ * replaces: each half of an internal traspaso counted as a flow, so a book that
+ * received nothing from outside read as if it had been funded twice, and the hero
+ * could disagree with the cartera card about the very same money (#1422).
+ *
+ * This function owns only WHICH holdings are measured and on what basis — every
+ * one it can see, whole (never ownership-scoped): a fund's return is the same
+ * figure whoever owns which share. Value and monthly closes are gross to match.
+ *
+ * The TWR stays null when the caller passes no per-holding series at all, exactly
+ * as `investmentReturnsById` does: "this surface did not ask for a TWR" is not the
+ * same statement as "there are not enough closes to measure one", and only the
+ * second deserves a reason on screen.
  */
 export function portfolioReturnsView(
   ctx: InvestmentReturnsContext,
 ): HoldingReturnsView | null {
-  const holdings: PortfolioHolding[] = [];
-  let payoutsIncluded = false;
+  const slices: SubsetReturnsSlice[] = [];
   for (const [assetId, operations] of ctx.operationsByAsset) {
     if (operations.length === 0) {
       continue;
     }
-    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
-    if (payouts.length > 0) {
-      payoutsIncluded = true;
-    }
-    holdings.push({
-      marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
-      operations,
-      payouts,
-    });
+    slices.push(subsetSliceOf(ctx, assetId, operations));
   }
 
-  if (holdings.length === 0) {
+  if (slices.length === 0) {
     return null;
   }
 
-  const input = {
+  const returns = subsetReturns({
     currency: ctx.currency,
-    holdings,
+    slices,
     valuationDate: ctx.valuationDate,
-  };
+  });
   return buildPortfolioReturnsView(
-    portfolioSimpleGain(input),
-    portfolioIrr(input),
-    ctx.portfolioMonthlyCloses
-      ? portfolioTwr({
-          holdings,
-          monthlyCloses: ctx.portfolioMonthlyCloses,
-        })
-      : null,
-    payoutsIncluded,
+    returns.simpleGain,
+    returns.irr,
+    ctx.monthlyClosesByAsset === undefined ? null : returns.twr,
+    returns.payoutsIncluded,
   );
 }
 
@@ -390,13 +405,9 @@ export function returnsByAssetClassView(
     if (instrument === undefined || returnsKindForInstrument(instrument) !== "market") {
       continue;
     }
-    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
     holdings.push({
+      ...subsetSliceOf(ctx, assetId, operations),
       assetClass: ctx.assetClassByAsset.get(assetId) ?? { kind: "unknown" },
-      marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
-      monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
-      operations,
-      payouts,
     });
   }
 
