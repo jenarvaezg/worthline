@@ -10,7 +10,13 @@
  * itself and the one explicit override path (`withRate`).
  */
 import { describe, expect, it } from "vitest";
-import { calculateFireForScope, projectFireFromContext, withRate } from "./fire";
+import {
+  calculateFireForScope,
+  projectFireFamilyFromContext,
+  projectFireFromContext,
+  projectFirePlanFromContext,
+  withRate,
+} from "./fire";
 import { projectFireWithContributionPlan } from "./fire-plan-projection";
 import { projectFire } from "./fire-projection";
 import { TIER_REAL_RETURN_DEFAULTS } from "./fire-return";
@@ -127,7 +133,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" } },
     );
 
     expect(result.rentReturns.applied).toHaveLength(1);
@@ -158,7 +164,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000)], todayISO: "2026-08-18" } },
     );
 
     expect(result.context.effectiveRealReturn).toBeCloseTo(0.0362, 4);
@@ -182,7 +188,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" } },
     );
 
     const total = 37_000_000 + 16_800_000 + 10_000_000;
@@ -207,7 +213,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" } },
     );
 
     // (1.550 − 250) × 12 = 15.600 €/año.
@@ -229,7 +235,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" } },
     );
 
     expect(result.rentReturns.netRentAnnualMinor).toBe(780_000);
@@ -243,7 +249,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000)], todayISO: "2026-08-18" } },
     );
 
     expect(result.rentReturns.netRentAnnualMinor).toBe(0);
@@ -251,8 +257,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
 
   it("declarar el inmovilizado fuera del capital FIRE no borra su alquiler", () => {
     const options = {
-      payoutSchedules: [rent("piso", 155_000, 25_000)],
-      todayISO: "2026-08-18",
+      rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
     };
     const declaredOut = calculateFireForScope(
       { ...BASE_CONFIG, immobilizedCountsAsFireCapital: false },
@@ -278,7 +283,7 @@ describe("a declared net rent resolves the rate for its own property", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" },
+      { rents: { schedules: [rent("piso", 155_000, 25_000)], todayISO: "2026-08-18" } },
     );
 
     expect(context.realReturnUsed).toBeCloseTo(0.07, 10);
@@ -393,6 +398,62 @@ describe("projectFireFromContext is the single door with no numeric drift", () =
     );
   });
 
+  it("la familia es escalar por construcción: su tipo no admite un plan", () => {
+    const family = projectFireFamilyFromContext(context, {
+      monthlyContributionMinor: 50_000,
+      horizonTargetMinor: context.fireNumberMinor * 2,
+    });
+
+    // El gráfico de la familia ES el escalar, sin desvíos.
+    expect(family.chart).toEqual(
+      projectFireFromContext(context, { monthlyContributionMinor: 50_000 }),
+    );
+    expect(family.rail.fireNumberMinor).toBe(context.fireNumberMinor * 2);
+
+    // Y el what-if de aportaciones no entra por aquí (#1597). Antes estos campos se
+    // aceptaban y se tiraban en silencio: un llamador creía medir el plan y medía el
+    // escalar. Ahora es un error de tipos.
+    projectFireFamilyFromContext(context, {
+      horizonTargetMinor: context.fireNumberMinor,
+      // @ts-expect-error La familia no carga `plan`.
+      plan: { scopeId: "scope-1", contributions: [] },
+    });
+    projectFireFamilyFromContext(context, {
+      horizonTargetMinor: context.fireNumberMinor,
+      // @ts-expect-error La familia no carga `growthAssumption`.
+      growthAssumption: "flat",
+    });
+    projectFireFromContext(context, {
+      // @ts-expect-error El escalar tampoco: el plan tiene su propia puerta.
+      plan: { scopeId: "scope-1", contributions: [] },
+    });
+
+    // Y no solo el literal: extender un objeto más ancho tampoco cuela, que es como
+    // se colaba antes sin que nadie lo viera.
+    const wider = {
+      monthlyContributionMinor: 50_000,
+      plan: { scopeId: "scope-1", contributions: [] },
+    };
+    // @ts-expect-error `plan` sigue sobrando aunque venga de una variable.
+    projectFireFromContext(context, wider);
+    projectFireFamilyFromContext(
+      context,
+      // @ts-expect-error Igual para la familia.
+      { horizonTargetMinor: context.fireNumberMinor, ...wider },
+    );
+  });
+
+  it("la puerta del plan EXIGE el día: no lo adivina", () => {
+    // ADR 0024: el dominio no lee el reloj. El plan reparte por año de calendario, así
+    // que sin `todayISO` no hay proyección — y eso se ve en el tipo, no en tiempo de
+    // ejecución (#1597).
+    projectFirePlanFromContext(
+      context,
+      // @ts-expect-error Falta `todayISO`, que es obligatorio.
+      { plan: { scopeId: "scope-1", contributions: [] }, growthAssumption: "flat" },
+    );
+  });
+
   it("plan mode equals the internal contribution-plan engine (the what-if)", () => {
     const plan: ContributionPlan = {
       scopeId: "scope-1",
@@ -408,7 +469,7 @@ describe("projectFireFromContext is the single door with no numeric drift", () =
     };
     const holdingAnnualReturnById = { h1: 0.06 };
 
-    const viaDoor = projectFireFromContext(context, {
+    const viaDoor = projectFirePlanFromContext(context, {
       plan,
       growthAssumption: "historical",
       assumedAnnualReturn: context.realReturnUsed,

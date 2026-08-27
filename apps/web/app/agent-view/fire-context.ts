@@ -122,7 +122,7 @@ export async function resolveFire(
       workspace,
       internalScopeId,
       reservedForGoalsMinor,
-      { payoutSchedules, todayISO: today },
+      { rents: { schedules: payoutSchedules, todayISO: today } },
     );
   }
 

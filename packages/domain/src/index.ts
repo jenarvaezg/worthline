@@ -489,6 +489,7 @@ export type {
   FireResult,
   FireScopeConfig,
   ProjectFireFromContextInput,
+  ProjectFirePlanFromContextInput,
   ScopeFireResult,
 } from "./fire";
 export {
@@ -499,6 +500,7 @@ export {
   isFireEligibleAsset,
   isManualFireReturn,
   projectFireFromContext,
+  projectFirePlanFromContext,
   withRate,
 } from "./fire";
 export type {
@@ -530,9 +532,9 @@ export { assembleFireEligiblePool } from "./fire-eligible-pool";
 export type { FireLevel, FireLevelKey, FireLevelsInput } from "./fire-levels";
 export { fireLevels } from "./fire-levels";
 export type { FireGrowthAssumption } from "./fire-plan-projection";
-// `projectFireWithContributionPlan` (the contribution-plan engine) is an internal
-// dispatch target of `projectFireFromContext` (#1122); only the shared
-// contribution-stream seam is public.
+// `projectFireWithContributionPlan` (the contribution-plan engine) is internal
+// (#1122): el what-if entra por `projectFirePlanFromContext`. Solo la costura del
+// flujo de aportaciones es pública.
 export { contributionMoneyByProjectionYear } from "./fire-plan-projection";
 export type {
   FireProjection,
@@ -541,7 +543,9 @@ export type {
   FireTrajectoryPoint,
 } from "./fire-projection";
 // `projectFire` (the scalar engine) is intentionally internal (#1122): callers
-// project through `projectFireFromContext`, the single door.
+// project through `projectFireFromContext`. `runFireGrowth` (el único paso de
+// crecimiento, #1597) y `projectFireFamilyFromContext` (que solo consume el propio
+// paquete) tampoco salen: se llega a ellos por las puertas.
 export { DEFAULT_MAX_YEARS, fractionalFireYear } from "./fire-projection";
 export type {
   AppliedRentReturn,

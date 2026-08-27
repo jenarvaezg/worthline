@@ -1,8 +1,14 @@
 /**
- * FIRE what-if projection (PRD #553 S4, ADR 0041): extends `projectFire` with a
- * contribution plan's time-varying occurrence stream and a growth-assumption
- * toggle — flat (no appreciation) vs historical (per-holding return from #547,
- * falling back to an assumed rate).
+ * FIRE what-if projection (PRD #553 S4, ADR 0041): el MISMO paso de crecimiento que
+ * el escalar (`stepFireGrowth`, #1597), alimentado con el flujo de aportaciones del
+ * plan repartido por año y con la tasa de cada holding — plana (sin revalorización)
+ * o histórica (retorno por holding de #547, con la tasa asumida de reserva).
+ *
+ * Aquí ya no hay bucle propio: un cubo por holding en vez de uno solo, y una diana
+ * en vez de dos. Todo lo demás — el orden crecer/aportar, el recorte de la
+ * trayectoria y el aportado acumulado — sale del stepper compartido, así que la
+ * equivalencia con el escalar es estructural y no una coincidencia que haya que
+ * volver a clavar con cada cambio.
  */
 
 import {
@@ -16,17 +22,11 @@ import {
   type FireProjection,
   type FireScenario,
   type FireScenarioLabel,
-  type FireTrajectoryPoint,
   projectFire,
   RETURN_SHIFT,
+  scenarioFromRun,
 } from "./fire-projection";
-import { addHoldingContributions, growHoldingBuckets } from "./projection-buckets";
-
-/**
- * Synthetic bucket for aggregate starting eligible when no per-holding split is
- * supplied. Namespaced to avoid colliding with real holding ids.
- */
-const STARTING_BUCKET_ID = "@worthline/starting-eligible";
+import { AGGREGATE_BUCKET_ID, runFireGrowth } from "./fire-stepper";
 
 export type FireGrowthAssumption = "flat" | "historical";
 
@@ -80,7 +80,7 @@ function bucketGrowthRate(holdingId: string, input: FirePlanProjectionInput): nu
   if (input.growthAssumption === "flat") {
     return 0;
   }
-  if (holdingId === STARTING_BUCKET_ID) {
+  if (holdingId === AGGREGATE_BUCKET_ID) {
     return input.assumedAnnualReturn;
   }
   return input.holdingAnnualReturnById?.[holdingId] ?? input.assumedAnnualReturn;
@@ -98,7 +98,7 @@ function initialBuckets(input: FirePlanProjectionInput): Map<string, number> {
     return buckets;
   }
   if (input.startingEligibleMinor > 0) {
-    buckets.set(STARTING_BUCKET_ID, input.startingEligibleMinor);
+    buckets.set(AGGREGATE_BUCKET_ID, input.startingEligibleMinor);
   }
   return buckets;
 }
@@ -164,14 +164,6 @@ export function contributionMoneyByProjectionYear(
   );
 }
 
-function totalBucketMinor(buckets: Map<string, number>): number {
-  let total = 0;
-  for (const amount of buckets.values()) {
-    total += amount;
-  }
-  return total;
-}
-
 function projectPlanScenario(
   label: FireScenarioLabel,
   scenarioShift: number,
@@ -179,54 +171,31 @@ function projectPlanScenario(
   contributionsByYear: Map<number, Map<string, number>>,
 ): FireScenario {
   const maxYears = input.maxYears ?? DEFAULT_MAX_YEARS;
-  const target = input.fireNumberMinor;
-  const buckets = initialBuckets(input);
-
-  const trajectory: FireTrajectoryPoint[] = [
-    { year: 0, eligibleMinor: Math.round(totalBucketMinor(buckets)) },
-  ];
-  let capital = totalBucketMinor(buckets);
-  let yearsToFire: number | null = capital >= target ? 0 : null;
-  let totalContributedMinor = 0;
   const effectiveShift = input.growthAssumption === "flat" ? 0 : scenarioShift;
 
-  if (yearsToFire === null) {
-    for (let year = 1; year <= maxYears; year += 1) {
-      growHoldingBuckets(
-        buckets,
-        (holdingId) => bucketGrowthRate(holdingId, input) + effectiveShift,
-      );
-      totalContributedMinor += addHoldingContributions(
-        buckets,
-        contributionsByYear.get(year),
-      );
-      capital = totalBucketMinor(buckets);
-      trajectory.push({ year, eligibleMinor: Math.round(capital) });
+  const run = runFireGrowth({
+    annualRateFor: (holdingId) => bucketGrowthRate(holdingId, input) + effectiveShift,
+    contributionsForYear: (year) => contributionsByYear.get(year),
+    maxYears,
+    startingBucketsMinor: initialBuckets(input),
+    // Una sola diana: el what-if no dibuja el rail de niveles.
+    targetsMinor: { fire: input.fireNumberMinor },
+  });
 
-      if (capital >= target) {
-        yearsToFire = year;
-        break;
-      }
-    }
-  }
-
-  const baseReturn = input.growthAssumption === "flat" ? 0 : input.expectedRealReturn;
+  // La tasa que se REPORTA no es la de ningún cubo: es la del escenario sobre el
+  // retorno esperado del ámbito, porque es lo que el usuario eligió mirar. Los cubos
+  // crecen cada uno a la suya (#547) y el plano los deja a cero.
   const reportedReturn =
-    input.growthAssumption === "flat" ? 0 : baseReturn + scenarioShift;
-  const ageAtFire =
-    yearsToFire !== null && input.currentAge !== undefined
-      ? input.currentAge + yearsToFire
-      : null;
+    input.growthAssumption === "flat" ? 0 : input.expectedRealReturn + scenarioShift;
 
-  return {
-    label,
+  return scenarioFromRun({
     annualReturn: reportedReturn,
-    yearsToFire,
-    ageAtFire,
-    finalEligibleMinor: trajectory.at(-1)!.eligibleMinor,
-    totalContributedMinor,
-    trajectory,
-  };
+    label,
+    maxYears,
+    run,
+    target: "fire",
+    ...(input.currentAge === undefined ? {} : { currentAge: input.currentAge }),
+  });
 }
 
 function projectPlanScenarios(

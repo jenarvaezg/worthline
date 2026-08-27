@@ -106,6 +106,100 @@ describe("projectFireWithContributionPlan", () => {
     expect(planBase.trajectory).toEqual(scalarBase.trajectory);
   });
 
+  it("una aportación anual equivale a la mensual que suma lo mismo en el año", () => {
+    // El stepper reparte por AÑO de proyección (#1597): la cadencia dentro del año no
+    // mueve la trayectoria, solo el total que cae en él.
+    const monthly = projectFireWithContributionPlan({
+      ...BASE,
+      growthAssumption: "historical",
+      assumedAnnualReturn: BASE.expectedRealReturn,
+      holdingAnnualReturnById: { h1: BASE.expectedRealReturn },
+      plan: plan([contribution()]),
+    });
+    const yearly = projectFireWithContributionPlan({
+      ...BASE,
+      growthAssumption: "historical",
+      assumedAnnualReturn: BASE.expectedRealReturn,
+      holdingAnnualReturnById: { h1: BASE.expectedRealReturn },
+      plan: plan([
+        contribution({
+          amount: { mode: "money", value: 1_200_000 },
+          cadence: { kind: "annual" },
+        }),
+      ]),
+    });
+
+    const monthlyBase = monthly.scenarios.find((s) => s.label === "base")!;
+    const yearlyBase = yearly.scenarios.find((s) => s.label === "base")!;
+    expect(yearlyBase.trajectory).toEqual(monthlyBase.trajectory);
+    expect(yearlyBase.totalContributedMinor).toBe(monthlyBase.totalContributedMinor);
+  });
+
+  it("un plan que cambia de aportación sigue el mismo paso que el escalar hasta que cambia", () => {
+    // La equivalencia que faltaba (#1597): antes solo estaba clavado el caso «mensual
+    // constante + tasa uniforme», que es justo el caso en el que los dos bucles no
+    // podían discrepar. Aquí la aportación DOBLA en el año 4.
+    const STEP_UP_YEAR = 4;
+    const MAX_YEARS = 6;
+    const START = 1_000_000;
+    const RATE = 0.05;
+    const commonArgs = {
+      ...BASE,
+      startingEligibleMinor: START,
+      expectedRealReturn: RATE,
+      // Inalcanzable dentro del horizonte: así la trayectoria llega entera.
+      fireNumberMinor: 999_000_000,
+      maxYears: MAX_YEARS,
+      growthAssumption: "historical" as const,
+      assumedAnnualReturn: RATE,
+      holdingAnnualReturnById: { h1: RATE },
+    };
+
+    const varying = projectFireWithContributionPlan({
+      ...commonArgs,
+      plan: plan([
+        contribution({ id: "c1", endDate: "2028-12-31" }),
+        contribution({
+          id: "c2",
+          amount: { mode: "money", value: 200_000 },
+          startDate: "2029-01-01",
+        }),
+      ]),
+    });
+    const varyingBase = varying.scenarios.find((s) => s.label === "base")!;
+
+    // 1. Mientras el plan es la aportación de siempre, el motor de plan y el escalar
+    //    pisan exactamente los mismos puntos.
+    const scalarBase = projectFire({
+      startingEligibleMinor: START,
+      monthlyContributionMinor: 100_000,
+      expectedRealReturn: RATE,
+      fireNumberMinor: 999_000_000,
+      currentAge: BASE.currentAge,
+      maxYears: MAX_YEARS,
+    }).scenarios.find((s) => s.label === "base")!;
+    expect(varyingBase.trajectory.slice(0, STEP_UP_YEAR)).toEqual(
+      scalarBase.trajectory.slice(0, STEP_UP_YEAR),
+    );
+
+    // 2. …y a partir del salto sigue el mismo paso, con la aportación nueva. La
+    //    referencia se escribe aquí a mano: crecer, luego aportar.
+    let capital = START;
+    const expected = [{ year: 0, eligibleMinor: START }];
+    let contributed = 0;
+    for (let year = 1; year <= MAX_YEARS; year += 1) {
+      capital = capital * (1 + RATE) + (year < STEP_UP_YEAR ? 1_200_000 : 2_400_000);
+      contributed += year < STEP_UP_YEAR ? 1_200_000 : 2_400_000;
+      expected.push({ year, eligibleMinor: Math.round(capital) });
+    }
+    expect(varyingBase.trajectory).toEqual(expected);
+    expect(varyingBase.totalContributedMinor).toBe(contributed);
+    // El salto es real: el escalar se queda corto desde el año 4.
+    expect(varyingBase.trajectory.at(-1)!.eligibleMinor).toBeGreaterThan(
+      scalarBase.trajectory.at(-1)!.eligibleMinor,
+    );
+  });
+
   it("projects differently when a contribution ends before retirement", () => {
     const forever = projectFireWithContributionPlan({
       ...BASE,

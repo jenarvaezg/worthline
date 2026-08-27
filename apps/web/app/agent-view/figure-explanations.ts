@@ -1259,7 +1259,7 @@ async function resolveFire(
     facts.workspace,
     facts.internalScopeId,
     reservedForGoalsMinor,
-    { payoutSchedules, todayISO: systemClock().today() },
+    { rents: { schedules: payoutSchedules, todayISO: systemClock().today() } },
   );
 
   return { config, result };

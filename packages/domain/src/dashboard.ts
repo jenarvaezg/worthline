@@ -208,8 +208,13 @@ export function prepareDashboardState(input: {
   selectedView: NetWorthFraming;
   /** Goals for the selected scope (PRD #421, #426); reserve capital against FIRE. */
   goals?: Goal[];
-  /** Today (YYYY-MM-DD), for the goal-reservation horizon; defaults to the system date. */
-  today?: string;
+  /**
+   * Hoy (YYYY-MM-DD): el horizonte de reserva de metas y la validez de las rentas se
+   * miden contra este día. **Obligatorio** (#1597, ADR 0024) — el dominio no lee el
+   * reloj, y un defecto de sistema aquí ponía una segunda fecha delante de la misma
+   * pantalla.
+   */
+  today: string;
   /**
    * FX context for non-base-currency holdings (#1065). Present only when the
    * portfolio actually holds a foreign currency (the caller resolves ECB rates
@@ -252,7 +257,7 @@ export function prepareDashboardState(input: {
   includeNetWorthSurfaces?: boolean;
 }): DashboardState {
   const { workspace, assets, liabilities, selectedScope, persistence } = input;
-  const today = input.today ?? new Date().toISOString().slice(0, 10);
+  const today = input.today;
   const includeFireProjection = input.includeFireProjection !== false;
   const includeNetWorthSurfaces = input.includeNetWorthSurfaces !== false;
 
@@ -276,7 +281,6 @@ export function prepareDashboardState(input: {
   const fireReservedMinor =
     fireScopeConfig && workspace && selectedScope
       ? (() => {
-          const now = input.today ?? new Date().toISOString().slice(0, 10);
           const memberIds = new Set(resolveScopeMemberIds(workspace, selectedScope.id));
           const assetById = new Map(assets.map((asset) => [asset.id, asset]));
           return totalGoalReservationMinor(
@@ -290,8 +294,8 @@ export function prepareDashboardState(input: {
                 (asset) => isFireEligibleAsset(asset, fireScopeConfig),
               ),
             })),
-            now,
-            fireReservationHorizon(fireScopeConfig, now),
+            today,
+            fireReservationHorizon(fireScopeConfig, today),
           );
         })()
       : 0;
@@ -309,12 +313,11 @@ export function prepareDashboardState(input: {
           workspace,
           selectedScope.id,
           fireReservedMinor,
-          {
-            // Same "today" as the reservation horizon above: a schedule's validity
-            // must not be measured on a second clock (#1448).
-            todayISO: today,
-            ...(input.payoutSchedules ? { payoutSchedules: input.payoutSchedules } : {}),
-          },
+          // Same "today" as the reservation horizon above: a schedule's validity
+          // must not be measured on a second clock (#1448).
+          input.payoutSchedules
+            ? { rents: { schedules: input.payoutSchedules, todayISO: today } }
+            : {},
         )
       : null;
 
@@ -557,7 +560,7 @@ export function prepareObjetivosState(
       ? new Set(resolveScopeMemberIds(workspace, selectedScope.id))
       : new Set();
 
-  const now = input.today ?? new Date().toISOString().slice(0, 10);
+  const now = input.today;
   const fireHorizon = dash.fireScopeConfig
     ? fireReservationHorizon(dash.fireScopeConfig, now)
     : undefined;

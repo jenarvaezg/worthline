@@ -22,7 +22,7 @@ import {
   listScopeOptions,
   projectContributionReconciliation,
   projectExposureDrift,
-  projectFireFromContext,
+  projectFirePlanFromContext,
   resolveHoldingAnnualReturnForProjection,
   systemClock,
   unitPriceMajorByHoldingId,
@@ -411,10 +411,11 @@ async function buildWhatIf(input: {
     assumedAnnualReturn,
   });
 
-  // #1122: the what-if projects through the single door (plan + growth-assumption
-  // mode), so its rate, FIRE number and starting balance all come from the same
-  // context as coast + levels + the main projection chart.
-  const projection = projectFireFromContext(context, {
+  // #1122: the what-if projects through its own door — la del plan (#1597) — así que
+  // su tasa, su número FIRE y su capital de partida salen del mismo contexto que
+  // coast + niveles + el gráfico principal, y ningún campo del escalar viaja para
+  // ser ignorado.
+  const projection = projectFirePlanFromContext(context, {
     plan: input.plan,
     growthAssumption: input.growthAssumption,
     assumedAnnualReturn,

@@ -194,7 +194,7 @@ describe("what leaves the calculation is still on the page", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: schedules, todayISO: "2026-08-18" },
+      { rents: { schedules, todayISO: "2026-08-18" } },
     );
     const declaredOut = calculateFireForScope(
       { ...BASE_CONFIG, immobilizedCountsAsFireCapital: false },
@@ -203,7 +203,7 @@ describe("what leaves the calculation is still on the page", () => {
       workspace,
       "alice",
       0,
-      { payoutSchedules: schedules, todayISO: "2026-08-18" },
+      { rents: { schedules, todayISO: "2026-08-18" } },
     );
 
     expect(counting.rentReturns.applied).toHaveLength(1);

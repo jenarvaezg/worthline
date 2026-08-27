@@ -209,7 +209,7 @@ export async function loadDashboard(
 
   if (!workspace) {
     // Return a minimal result that signals the page to redirect.
-    return buildEmptyResult(persistence, pricingErrors);
+    return buildEmptyResult(persistence, pricingErrors, input.today);
   }
 
   // Build the projection context ONCE (dedup #566): the only writes to the four
@@ -586,6 +586,7 @@ export async function loadDashboard(
 function buildEmptyResult(
   persistence: LocalPersistenceStatus,
   pricingErrors: string[],
+  today: string,
 ): LoadDashboardResult {
   // Use prepareDashboardState with null workspace so DashboardState types are
   // satisfied and all optional fields carry their natural empty values.
@@ -600,6 +601,7 @@ function buildEmptyResult(
     selectedScope: undefined,
     selectedView: "total",
     snapshots: [],
+    today,
     workspace: null,
   });
 

@@ -3,16 +3,22 @@
  * answers "when do I reach FIRE?" under optimistic, base and pessimistic
  * scenarios. Deterministic and DB-free — easy to unit-test and fast to call.
  *
- * The model steps once per year: capital grows by the scenario's real return
- * and the annual contribution (12 × monthly capacity) is added at year end.
- * Stepping year-by-year (rather than a closed-form solve) is what produces the
- * year-by-year trajectory the dashboard renders, and it handles a zero or
- * negative real return without a divide-by-zero.
+ * El escalar es **un cubo** del stepper compartido (`stepFireGrowth`, #1597): el
+ * capital crece por el retorno real del escenario y la aportación anual
+ * (12 × capacidad mensual) entra a final de año. El modo plan y la familia son ese
+ * mismo paso con otros insumos, así que ya no hay dos bucles que mantener a la par.
+ * Se avanza año a año en vez de resolver en cerrado porque la trayectoria ES lo que
+ * pinta el gráfico, y así un retorno real cero o negativo no divide por cero.
  */
+
+import type { FireGrowthRun, FireTrajectoryPoint } from "./fire-stepper";
+import { AGGREGATE_BUCKET_ID, runFireGrowth } from "./fire-stepper";
 
 /** Returns shifted from the base by ±1.5 % (PRD #421). Shared with the plan engine. */
 export const RETURN_SHIFT = 0.015;
 export const DEFAULT_MAX_YEARS = 60;
+
+export type { FireTrajectoryPoint } from "./fire-stepper";
 
 export type FireScenarioLabel = "optimistic" | "base" | "pessimistic";
 
@@ -32,11 +38,6 @@ export interface FireProjectionInput {
   currentAge?: number;
   /** Cap on the projection horizon in years (default 60). */
   maxYears?: number;
-}
-
-export interface FireTrajectoryPoint {
-  year: number;
-  eligibleMinor: number;
 }
 
 export interface FireScenario {
@@ -140,89 +141,78 @@ export function projectFire(input: FireProjectionInput): FireProjection {
   }).chart;
 }
 
+/**
+ * El escalar como un cubo del stepper (#1597), con las dos dianas de la familia
+ * cronometradas sobre la MISMA corrida: el gráfico se corta en el número FIRE y el
+ * rail sigue hasta el horizonte, pero la trayectoria es una sola.
+ */
 function projectScenarioPair(
   label: FireScenarioLabel,
   annualReturn: number,
   input: FireProjectionFamilyInput,
 ): { chart: FireScenario; rail: FireScenario } {
   const maxYears = input.maxYears ?? DEFAULT_MAX_YEARS;
-  const annualContributionMinor = input.monthlyContributionMinor * 12;
-  const fireTarget = input.fireNumberMinor;
-  const horizonTarget = input.horizonTargetMinor;
-  const stopTarget = Math.max(fireTarget, horizonTarget);
+  const annualContribution = new Map([
+    [AGGREGATE_BUCKET_ID, input.monthlyContributionMinor * 12],
+  ]);
 
-  const trajectory: FireTrajectoryPoint[] = [
-    { year: 0, eligibleMinor: input.startingEligibleMinor },
-  ];
-  let capital = input.startingEligibleMinor;
-  let yearsToFire: number | null = capital >= fireTarget ? 0 : null;
-  let yearsToHorizon: number | null = capital >= horizonTarget ? 0 : null;
+  const run = runFireGrowth({
+    annualRateFor: () => annualReturn,
+    contributionsForYear: () => annualContribution,
+    maxYears,
+    startingBucketsMinor: new Map([[AGGREGATE_BUCKET_ID, input.startingEligibleMinor]]),
+    targetsMinor: { fire: input.fireNumberMinor, horizon: input.horizonTargetMinor },
+  });
 
-  if (capital < stopTarget) {
-    for (let year = 1; year <= maxYears; year += 1) {
-      capital = capital * (1 + annualReturn) + annualContributionMinor;
-      trajectory.push({ year, eligibleMinor: Math.round(capital) });
-      if (yearsToFire === null && capital >= fireTarget) {
-        yearsToFire = year;
-      }
-      if (yearsToHorizon === null && capital >= horizonTarget) {
-        yearsToHorizon = year;
-      }
-      if (capital >= stopTarget) {
-        break;
-      }
-    }
-  }
-
-  return {
-    chart: scenarioFromTrajectory(
-      label,
+  const scenario = (target: "fire" | "horizon") =>
+    scenarioFromRun({
       annualReturn,
-      input,
-      trajectory,
-      yearsToFire,
-      maxYears,
-      annualContributionMinor,
-    ),
-    rail: scenarioFromTrajectory(
       label,
-      annualReturn,
-      input,
-      trajectory,
-      yearsToHorizon,
       maxYears,
-      annualContributionMinor,
-    ),
-  };
+      run,
+      target,
+      ...(input.currentAge === undefined ? {} : { currentAge: input.currentAge }),
+    });
+
+  return { chart: scenario("fire"), rail: scenario("horizon") };
 }
 
-function scenarioFromTrajectory(
-  label: FireScenarioLabel,
-  annualReturn: number,
-  input: FireProjectionInput,
-  trajectory: FireTrajectoryPoint[],
-  yearsToTarget: number | null,
-  maxYears: number,
-  annualContributionMinor: number,
-): FireScenario {
+/**
+ * Una diana de una corrida del stepper, leída como escenario. Compartida por el
+ * escalar/familia y por el motor de plan (#1597): el recorte de la trayectoria, el
+ * aportado acumulado y la edad de llegada se calculan una vez, así que dos modos no
+ * pueden discrepar sobre qué significa «llegar».
+ */
+export function scenarioFromRun<TargetKey extends string>(input: {
+  label: FireScenarioLabel;
+  annualReturn: number;
+  run: FireGrowthRun<TargetKey>;
+  /** Cuál de las dianas de la corrida lee este escenario. */
+  target: TargetKey;
+  maxYears: number;
+  currentAge?: number;
+}): FireScenario {
+  const { annualReturn, label, maxYears, run } = input;
+  const yearsToTarget = run.yearsToTarget[input.target];
   const sliced =
     yearsToTarget === 0
-      ? trajectory.slice(0, 1)
+      ? run.trajectory.slice(0, 1)
       : yearsToTarget === null
-        ? trajectory
-        : trajectory.slice(0, yearsToTarget + 1);
+        ? run.trajectory
+        : run.trajectory.slice(0, yearsToTarget + 1);
   const reachedYear = yearsToTarget ?? maxYears;
-  const ageAtFire =
-    yearsToTarget !== null && input.currentAge !== undefined
-      ? input.currentAge + yearsToTarget
-      : null;
 
   return {
-    ageAtFire,
+    ageAtFire:
+      yearsToTarget !== null && input.currentAge !== undefined
+        ? input.currentAge + yearsToTarget
+        : null,
     annualReturn,
     finalEligibleMinor: sliced.at(-1)!.eligibleMinor,
     label,
-    totalContributedMinor: annualContributionMinor * reachedYear,
+    totalContributedMinor:
+      run.contributedThroughYearMinor[reachedYear] ??
+      run.contributedThroughYearMinor.at(-1)!,
     trajectory: sliced,
     yearsToFire: yearsToTarget,
   };

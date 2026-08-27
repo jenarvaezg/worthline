@@ -17,7 +17,7 @@ export function growHoldingBuckets(
 
 export function addHoldingContributions(
   buckets: Map<string, number>,
-  contributions: Map<string, number> | undefined,
+  contributions: ReadonlyMap<string, number> | undefined,
 ): number {
   if (contributions === undefined) {
     return 0;
