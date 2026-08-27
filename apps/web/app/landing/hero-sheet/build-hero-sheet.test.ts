@@ -41,6 +41,24 @@ describe("hero sheet SSG data (#952)", () => {
     expect(heroSheetData.composition.some((seg) => seg.housing)).toBe(true);
   });
 
+  test("the sheet anchors on a CLOSED month, never an in-progress one", () => {
+    // Regression (#1444 fallout): the monthly floor gave the history a snapshot
+    // on the 1st of every month with a position, so the RAW close of the
+    // in-progress month became day 1 and the sheet read "cerrado a 1 de junio"
+    // over a month that had not closed — dragging the hero figure with it. The
+    // sheet must only ever anchor on a confirmed close (#270): a month already
+    // elapsed at `asOf`, or a snapshot literally on the last calendar day.
+    const [year, month, day] = heroSheetData.closeDateKey.split("-").map(Number);
+    const closeMonthKey = heroSheetData.closeDateKey.slice(0, 7);
+    const asOfMonthKey = heroSheetData.asOf.slice(0, 7);
+    const isMonthEnd = day === new Date(year!, month!, 0).getDate();
+
+    expect(
+      closeMonthKey < asOfMonthKey || isMonthEnd,
+      `close ${heroSheetData.closeDateKey} is an in-progress capture, not a close (asOf ${heroSheetData.asOf})`,
+    ).toBe(true);
+  });
+
   test("the debt row carries the debe line, negative-signed", () => {
     const debit = heroSheetData.rows.find((row) => row.debit);
     expect(debit, "no debit row").toBeDefined();

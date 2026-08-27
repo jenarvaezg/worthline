@@ -20,6 +20,7 @@
 
 import { seedDemoStore } from "@web/demo/store-provider";
 import {
+  deriveConfirmedMonthlyCloseIds,
   deriveMonthlyCloses,
   formatMoneyMinor,
   LIQUIDITY_LADDER,
@@ -113,6 +114,8 @@ export interface HeroSheetData {
   folioLabel: string;
   /** "06/2026", the frozen close's month — for the MCP source line. */
   closeMonthLabel: string;
+  /** "2026-05-31", the confirmed close's date key — lets CI assert it is a month-end. */
+  closeDateKey: string;
   /** "cerrado a 30 de junio", derived from the latest frozen close. */
   closedLabel: string;
   /** "jul 25 → jun 26". */
@@ -193,16 +196,28 @@ async function buildHeroSheetData(): Promise<HeroSheetData> {
 
     const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
 
-    // The monthly close of each calendar month, ascending; keep the last 12.
+    // The CONFIRMED monthly close of each calendar month, ascending; keep the
+    // last 12. Confirmed, not raw (#270): a month's trailing snapshot is a
+    // close only once the month has elapsed or it literally falls on the last
+    // calendar day. The raw closes would let an intra-month capture pose as a
+    // close — since #1444 the history carries a snapshot on the 1st of every
+    // month a position was held, so the raw close of the in-progress month is
+    // day 1, and the sheet would read "cerrado a 1 de junio" over a month that
+    // is not closed at all.
+    const confirmed = deriveConfirmedMonthlyCloseIds(snapshots, AS_OF);
     const closeIds = [...deriveMonthlyCloses(snapshots).entries()]
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, id]) => id);
+      .map(([, id]) => id)
+      .filter((id) => confirmed.has(id));
     const recentCloseIds = closeIds.slice(-SPARK_CLOSES);
     const recentCloses = recentCloseIds
       .map((id) => snapshotById.get(id))
       .filter(
         (snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== undefined,
       );
+
+    if (recentCloses.length === 0)
+      throw new Error("hero sheet: no confirmed monthly close in the demo history");
 
     const latest = recentCloses[recentCloses.length - 1]!;
     const previous = recentCloses[recentCloses.length - 2];
@@ -267,9 +282,11 @@ async function buildHeroSheetData(): Promise<HeroSheetData> {
     const closes = recentCloses.map((snapshot) => snapshot.totalNetWorth.amountMinor);
     const deltaMinor = previous ? netMinor - previous.totalNetWorth.amountMinor : 0;
 
-    // Copy tracks the latest FROZEN close, not the seed clock: the demo never
-    // persists a snapshot for "today" (point-hoy is live, not frozen), so the
-    // last close is the prior month-end — the honest anchor for a closed ledger.
+    // Copy tracks the latest CONFIRMED close, not the seed clock: the demo never
+    // persists a snapshot for "today" (point-hoy is live, not frozen), and the
+    // confirmation filter above drops any month whose trailing snapshot is not a
+    // month-end — so the last close is a real month-end, the honest anchor for a
+    // closed ledger.
     const [closeYear, closeMonth, closeDay] = latest.dateKey.split("-");
     const monthIndex = Number(closeMonth) - 1;
 
@@ -288,6 +305,7 @@ async function buildHeroSheetData(): Promise<HeroSheetData> {
       liquidLabel: formatMoneyMinor(latest.liquidNetWorth),
       folioLabel: `Folio ${closeMonth} / ${closeYear}`,
       closeMonthLabel: `${closeMonth}/${closeYear}`,
+      closeDateKey: latest.dateKey,
       closedLabel: `cerrado a ${Number(closeDay)} de ${FULL_MONTHS_ES[monthIndex]}`,
       sparkCaption: `${shortMonthLabel(recentCloses[0]!.monthKey)} → ${shortMonthLabel(latest.monthKey)}`,
       closes,
