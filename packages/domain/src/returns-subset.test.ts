@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
-import { portfolioSimpleGain } from "./returns";
+import { xirr } from "./returns";
 import { subsetReturns } from "./returns-subset";
 
 function op(
@@ -34,26 +34,128 @@ const transferIn = (units: string, price: string, at: string, transferId = "trf_
   op("transfer_in", units, price, at, { transferId });
 
 describe("subsetReturns", () => {
-  test("un subconjunto sin traspasos mide lo mismo que la agregación de cartera", () => {
-    const holdings = [
-      { marketValueMinor: 130_000, operations: [buy("10", "100", "2023-01-01")] },
-      { marketValueMinor: 55_000, operations: [buy("5", "100", "2023-06-01")] },
-    ];
+  test("suma lo invertido y la ganancia de todos los miembros", () => {
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 130_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2023-01-01")],
+        },
+        {
+          marketValueMinor: 55_000,
+          monthlyCloses: [],
+          operations: [buy("5", "100", "2023-06-01")],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    // Invertidos 1.000 + 500; valor 1.300 + 550 → 350 de ganancia sobre 1.500.
+    expect(result.marketValueMinor).toBe(185_000);
+    expect(result.simpleGain.totalInvestedMinor).toBe(150_000);
+    expect(result.simpleGain.totalGain).toEqual({
+      amountMinor: 35_000,
+      currency: "EUR",
+    });
+    expect(result.simpleGain.totalReturnRatio).toBeCloseTo(35_000 / 150_000, 10);
+  });
+
+  test("el IRR es el de la corriente de flujos de todos los miembros unida", () => {
+    const reference = xirr([
+      { amountMinor: -10_000, date: "2021-01-01" },
+      { amountMinor: -20_000, date: "2022-01-01" },
+      { amountMinor: 13_310, date: "2024-01-01" },
+      { amountMinor: 22_000, date: "2024-01-01" },
+    ]);
 
     const result = subsetReturns({
       currency: "EUR",
-      slices: holdings.map((holding) => ({ ...holding, monthlyCloses: [] })),
-      valuationDate: "2024-06-01",
-    });
-    const expected = portfolioSimpleGain({
-      currency: "EUR",
-      holdings,
-      valuationDate: "2024-06-01",
+      slices: [
+        {
+          marketValueMinor: 13_310,
+          monthlyCloses: [],
+          operations: [buy("100", "1", "2021-01-01")],
+        },
+        {
+          marketValueMinor: 22_000,
+          monthlyCloses: [],
+          operations: [buy("100", "2", "2022-01-01")],
+        },
+      ],
+      valuationDate: "2024-01-01",
     });
 
-    expect(result.marketValueMinor).toBe(185_000);
-    expect(result.simpleGain.totalInvestedMinor).toBe(expected.totalInvestedMinor);
-    expect(result.simpleGain.totalGain.amountMinor).toBe(expected.totalGain.amountMinor);
+    expect(result.irr.reason).toBeNull();
+    expect(reference.rate).not.toBeNull();
+    expect(result.irr.rate).toBeCloseTo(reference.rate as number, 8);
+  });
+
+  test("el CAGR arranca en el flujo más antiguo del subconjunto, no en el del último miembro", () => {
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 13_310,
+          monthlyCloses: [],
+          operations: [buy("100", "1", "2021-01-01")],
+        },
+        {
+          marketValueMinor: 22_000,
+          monthlyCloses: [],
+          operations: [buy("100", "2", "2022-01-01")],
+        },
+      ],
+      valuationDate: "2024-01-01",
+    });
+
+    // 2021-01-01 → 2024-01-01: 1.095 días, tres años de vida medida.
+    expect(result.simpleGain.spanDays).toBe(1_095);
+    expect(result.simpleGain.annualized).toBe(true);
+    expect(result.simpleGain.cagr).toBeCloseTo(
+      (1 + 5_310 / 30_000) ** (365 / 1_095) - 1,
+      10,
+    );
+  });
+
+  test("traspasar dentro del subconjunto no cambia su rentabilidad", () => {
+    // La misma vida medida, contada de dos formas: un fondo comprado en 2025 que
+    // sigue ahí, y ese mismo fondo traspasado a otro miembro a mitad de camino.
+    const paired = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [
+            buy("10", "100", "2025-01-01"),
+            transferOut("10", "110", "2026-01-01"),
+          ],
+        },
+        {
+          marketValueMinor: 121_000,
+          monthlyCloses: [],
+          operations: [transferIn("10", "110", "2026-01-01")],
+        },
+      ],
+      valuationDate: "2027-01-01",
+    });
+    const untouched = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 121_000,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2025-01-01")],
+        },
+      ],
+      valuationDate: "2027-01-01",
+    });
+
+    expect(paired.simpleGain).toEqual(untouched.simpleGain);
+    expect(paired.irr.reason).toBeNull();
+    expect(paired.irr.rate).toBeCloseTo(untouched.irr.rate as number, 10);
   });
 
   test("un traspaso entre dos miembros se cancela en su fecha: no infla lo invertido", () => {
@@ -271,6 +373,9 @@ describe("subsetReturns", () => {
 
     expect(result.payoutsIncluded).toBe(true);
     expect(result.simpleGain.totalGain.amountMinor).toBe(3_000);
+    // Un miembro plano no gana nada por sí solo: el cobro es toda su rentabilidad.
+    expect(result.irr.reason).toBeNull();
+    expect(result.irr.rate as number).toBeGreaterThan(0);
   });
 
   test("sin miembros no hay medida que fabricar", () => {

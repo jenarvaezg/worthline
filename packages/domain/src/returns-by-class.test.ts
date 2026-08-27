@@ -3,8 +3,8 @@ import { describe, expect, test } from "vitest";
 import type { AssetClassResolution } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
-import { portfolioIrr, portfolioSimpleGain } from "./returns";
 import { returnsByAssetClass, UNCLASSIFIED_ASSET_CLASS_KEY } from "./returns-by-class";
+import { subsetReturns } from "./returns-subset";
 
 function op(
   kind: OperationKind,
@@ -46,7 +46,7 @@ const classified = (breakdown: Record<string, string>): AssetClassResolution => 
 const unknown: AssetClassResolution = { kind: "unknown" };
 
 describe("returnsByAssetClass", () => {
-  test("a single holding fully in one class reports that class alone, matching the portfolio measures", () => {
+  test("a single holding fully in one class reports that class alone, matching the whole-subset measures", () => {
     const operations = [buy("10", "100", "2023-01-01")];
     const result = returnsByAssetClass({
       currency: "EUR",
@@ -66,21 +66,19 @@ describe("returnsByAssetClass", () => {
     expect(equity.key).toBe("equity");
     expect(equity.value).toEqual({ amountMinor: 130_000, currency: "EUR" });
 
-    // Reconciles with the portfolio engine over the same holding.
-    const portfolio = { currency: "EUR" as const, valuationDate: "2024-01-01" };
-    expect(equity.simpleGain.totalGain).toEqual(
-      portfolioSimpleGain({
-        ...portfolio,
-        holdings: [{ marketValueMinor: 130_000, operations }],
-      }).totalGain,
-    );
-    expect(equity.irr.rate).toBeCloseTo(
-      portfolioIrr({
-        ...portfolio,
-        holdings: [{ marketValueMinor: 130_000, operations }],
-      }).rate!,
-      6,
-    );
+    // A 100% class weight scales nothing away: the class measures what the subset
+    // taken whole measures, over the same holding.
+    const whole = subsetReturns({
+      currency: "EUR",
+      slices: [{ marketValueMinor: 130_000, monthlyCloses: [], operations }],
+      valuationDate: "2024-01-01",
+    });
+    expect(equity.simpleGain.totalGain).toEqual({
+      amountMinor: 30_000,
+      currency: "EUR",
+    });
+    expect(equity.simpleGain.totalGain).toEqual(whole.simpleGain.totalGain);
+    expect(equity.irr.rate).toBeCloseTo(whole.irr.rate!, 6);
     expect(result.coverage.unknown.amountMinor).toBe(0);
     expect(result.coverage.classified.amountMinor).toBe(130_000);
   });
@@ -264,7 +262,7 @@ describe("returnsByAssetClass", () => {
     expect(equity.twr.rate).toBeCloseTo(0.1, 6);
   });
 
-  test("a payout folds into the class simple gain, reconciling with the portfolio", () => {
+  test("a payout folds into the class simple gain, reconciling with the whole subset", () => {
     const operations = [buy("10", "100", "2023-01-01")]; // invested 100_000
     const payouts = [{ amountMinor: 50_000, date: "2023-06-01" }];
     const result = returnsByAssetClass({
@@ -285,11 +283,11 @@ describe("returnsByAssetClass", () => {
     // Flat holding: the whole gain is the recorded distribution.
     expect(equity.simpleGain.totalGain.amountMinor).toBe(50_000);
     expect(equity.simpleGain).toEqual(
-      portfolioSimpleGain({
+      subsetReturns({
         currency: "EUR",
-        holdings: [{ marketValueMinor: 100_000, operations, payouts }],
+        slices: [{ marketValueMinor: 100_000, monthlyCloses: [], operations, payouts }],
         valuationDate: "2024-01-01",
-      }),
+      }).simpleGain,
     );
   });
 

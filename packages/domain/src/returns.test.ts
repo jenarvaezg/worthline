@@ -7,9 +7,7 @@ import {
   monthlyCloseValuesByHolding,
   monthlyCloseValuesFromSnapshotRows,
   operationCashflows,
-  portfolioIrr,
-  portfolioSimpleGain,
-  portfolioTwr,
+  operationTwrCashflows,
   simpleGain,
   timeWeightedReturn,
   xirr,
@@ -229,18 +227,19 @@ describe("timeWeightedReturn", () => {
     expect(result.annualizedRate).toBeCloseTo(0.1, 10);
   });
 
-  test("portfolio TWR merges holding cashflows against the portfolio monthly closes", () => {
-    const result = portfolioTwr({
-      holdings: [
-        { operations: [buy("10", "100", "2024-01-31", { assetId: "asset_a" })] },
-        { operations: [buy("5", "100", "2024-02-15", { assetId: "asset_b" })] },
-      ],
+  test("the flows of several holdings weigh against one aggregated close series", () => {
+    const result = timeWeightedReturn({
+      cashflows: operationTwrCashflows([
+        buy("10", "100", "2024-01-31", { assetId: "asset_a" }),
+        buy("5", "100", "2024-02-15", { assetId: "asset_b" }),
+      ]),
       monthlyCloses: [
         { date: "2024-01-31", valueMinor: 100_000 },
         { date: "2024-02-29", valueMinor: 170_000 },
       ],
     });
 
+    // Modified Dietz weighs February's 500.00 contribution by its 14 days in the month.
     const expected = 20_000 / (100_000 + 50_000 * (14 / 29));
     expect(result.reason).toBeNull();
     expect(result.rate).toBeCloseTo(expected, 10);
@@ -417,49 +416,6 @@ describe("simpleGain", () => {
   });
 });
 
-describe("portfolio aggregation", () => {
-  const holdingA = {
-    marketValueMinor: 13_310,
-    operations: [buy("100", "1", "2021-01-01")],
-  };
-  const holdingB = {
-    marketValueMinor: 22_000,
-    operations: [buy("100", "2", "2022-01-01")], // 20_000 invested
-  };
-
-  test("portfolio simple gain sums invested and gain across holdings", () => {
-    const gain = portfolioSimpleGain({
-      currency: "EUR",
-      holdings: [holdingA, holdingB],
-      valuationDate: "2024-01-01",
-    });
-
-    // invested 10_000 + 20_000 = 30_000; value 13_310 + 22_000 = 35_310 → 5_310 gain
-    expect(gain.totalInvestedMinor).toBe(30_000);
-    expect(gain.totalGain).toEqual({ amountMinor: 5_310, currency: "EUR" });
-    expect(gain.totalReturnRatio).toBeCloseTo(5_310 / 30_000, 10);
-  });
-
-  test("portfolio IRR matches the reference from the merged cashflow stream", () => {
-    const merged = xirr([
-      { amountMinor: -10_000, date: "2021-01-01" },
-      { amountMinor: -20_000, date: "2022-01-01" },
-      { amountMinor: 13_310, date: "2024-01-01" },
-      { amountMinor: 22_000, date: "2024-01-01" },
-    ]);
-
-    const result = portfolioIrr({
-      currency: "EUR",
-      holdings: [holdingA, holdingB],
-      valuationDate: "2024-01-01",
-    });
-
-    expect(result.reason).toBeNull();
-    expect(merged.rate).not.toBeNull();
-    expect(result.rate).toBeCloseTo(merged.rate as number, 8);
-  });
-});
-
 describe("payouts in returns (#657)", () => {
   const flatBuy = buy("100", "100", "2021-01-01"); // −10 000.00, terminal flat
 
@@ -533,26 +489,6 @@ describe("payouts in returns (#657)", () => {
       8,
     );
   });
-
-  test("portfolio measures fold each holding's payouts", () => {
-    const input = {
-      currency: "EUR" as const,
-      holdings: [
-        {
-          marketValueMinor: 1_000_000,
-          operations: [flatBuy],
-          payouts: [{ amountMinor: 50_000, date: "2022-01-01" }],
-        },
-      ],
-      valuationDate: "2024-01-01",
-    };
-    const gain = portfolioSimpleGain(input);
-    const irr = portfolioIrr(input);
-
-    expect(gain.totalGain.amountMinor).toBe(50_000);
-    expect(irr.reason).toBeNull();
-    expect(irr.rate as number).toBeGreaterThan(0);
-  });
 });
 
 describe("el traspaso en los retornos (#1393)", () => {
@@ -600,36 +536,5 @@ describe("el traspaso en los retornos (#1393)", () => {
 
     expect(result.reason).toBeNull();
     expect(result.rate as number).toBeCloseTo(0.1, 4);
-  });
-
-  test("en la cartera el par se anula en su fecha: no hay escalón", () => {
-    const origin = { marketValueMinor: 0, operations: [] as InvestmentOperation[] };
-    const paired = portfolioIrr({
-      currency: "EUR",
-      holdings: [
-        {
-          ...origin,
-          operations: [
-            buy("10", "100", "2025-01-01"),
-            transferOut("10", "110", "2026-01-01"),
-          ],
-        },
-        {
-          marketValueMinor: 121_000,
-          operations: [transferIn("10", "110", "2026-01-01", 100_000)],
-        },
-      ],
-      valuationDate: "2027-01-01",
-    });
-    const untouched = portfolioIrr({
-      currency: "EUR",
-      holdings: [
-        { marketValueMinor: 121_000, operations: [buy("10", "100", "2025-01-01")] },
-      ],
-      valuationDate: "2027-01-01",
-    });
-
-    expect(paired.reason).toBeNull();
-    expect(paired.rate as number).toBeCloseTo(untouched.rate as number, 6);
   });
 });
