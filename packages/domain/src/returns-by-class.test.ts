@@ -46,7 +46,7 @@ const classified = (breakdown: Record<string, string>): AssetClassResolution => 
 const unknown: AssetClassResolution = { kind: "unknown" };
 
 describe("returnsByAssetClass", () => {
-  test("a single holding fully in one class reports that class alone, matching the whole-subset measures", () => {
+  test("a single holding fully in one class reports that class alone, matching the subset taken whole", () => {
     const operations = [buy("10", "100", "2023-01-01")];
     const result = returnsByAssetClass({
       currency: "EUR",
@@ -262,7 +262,7 @@ describe("returnsByAssetClass", () => {
     expect(equity.twr.rate).toBeCloseTo(0.1, 6);
   });
 
-  test("a payout folds into the class simple gain, reconciling with the whole subset", () => {
+  test("a payout folds into the class simple gain, reconciling with the subset taken whole", () => {
     const operations = [buy("10", "100", "2023-01-01")]; // invested 100_000
     const payouts = [{ amountMinor: 50_000, date: "2023-06-01" }];
     const result = returnsByAssetClass({

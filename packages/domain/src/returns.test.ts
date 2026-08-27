@@ -227,7 +227,7 @@ describe("timeWeightedReturn", () => {
     expect(result.annualizedRate).toBeCloseTo(0.1, 10);
   });
 
-  test("the flows of several holdings weigh against one aggregated close series", () => {
+  test("a mid-month contribution is weighed by its days in the month", () => {
     const result = timeWeightedReturn({
       cashflows: operationTwrCashflows([
         buy("10", "100", "2024-01-31", { assetId: "asset_a" }),
@@ -240,6 +240,8 @@ describe("timeWeightedReturn", () => {
     });
 
     // Modified Dietz weighs February's 500.00 contribution by its 14 days in the month.
+    // This is the primitive alone: the same guarantee for a SET of holdings — flows
+    // scaled, traspaso halves paired — is `subsetReturns`' in `returns-subset.test.ts`.
     const expected = 20_000 / (100_000 + 50_000 * (14 / 29));
     expect(result.reason).toBeNull();
     expect(result.rate).toBeCloseTo(expected, 10);
