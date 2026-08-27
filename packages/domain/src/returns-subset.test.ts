@@ -323,6 +323,79 @@ describe("subsetReturns", () => {
     expect(result.twr.rate).toBeCloseTo(0.1, 10);
   });
 
+  test("los flujos del TWR se escalan como el resto: un aporte a medias pesa la mitad", () => {
+    // El único escenario que el fold viejo de cartera medía y que aquí faltaba: un
+    // miembro con cierres Y operaciones. Sin el escalado, Modified Dietz leería un
+    // aporte bruto de 1.000 € contra una serie que solo refleja la mitad poseída, y
+    // el tramo se hundiría.
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 170_000,
+          // Ya en base titularidad, como exige el contrato de la slice.
+          monthlyCloses: [
+            { date: "2024-01-31", valueMinor: 100_000 },
+            { date: "2024-02-29", valueMinor: 170_000 },
+          ],
+          operations: [buy("10", "100", "2024-02-15")], // 1.000 € brutos
+          ownershipBps: 5_000, // la mitad: el flujo del TWR vale 500 €
+        },
+      ],
+      valuationDate: "2024-02-29",
+    });
+
+    // Modified Dietz pondera los 500 € por sus 14 días de los 29 de febrero.
+    expect(result.twr.reason).toBeNull();
+    expect(result.twr.rate).toBeCloseTo(20_000 / (100_000 + 50_000 * (14 / 29)), 10);
+  });
+
+  test("un traspaso interno tampoco deja escalón en el TWR, aunque las mitades liquiden en días distintos", () => {
+    // El par se anula en la rama del TWR igual que en la del IRR, y por `transferId`
+    // (ADR 0082), no por fecha: las dos mitades pueden liquidar días aparte. Si
+    // entrasen sueltas, Modified Dietz las ponderaría por días DISTINTOS y no se
+    // anularían en el denominador — leería como movimiento de capital lo que no
+    // movió un céntimo fuera del subconjunto.
+    const closes = (january: number, february: number) => [
+      { date: "2024-01-31", valueMinor: january },
+      { date: "2024-02-29", valueMinor: february },
+    ];
+
+    const paired = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 60_000,
+          monthlyCloses: closes(100_000, 60_000),
+          operations: [transferOut("5", "110", "2024-02-05")],
+        },
+        {
+          marketValueMinor: 75_000,
+          monthlyCloses: closes(20_000, 75_000),
+          // Quince días después: el dinero tarda en aterrizar en el destino.
+          operations: [transferIn("5", "110", "2024-02-20")],
+        },
+      ],
+      valuationDate: "2024-02-29",
+    });
+    const untouched = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 135_000,
+          monthlyCloses: closes(120_000, 135_000),
+          operations: [],
+        },
+      ],
+      valuationDate: "2024-02-29",
+    });
+
+    // 1.200 € → 1.350 € de puro precio: el mismo tramo, con traspaso y sin él.
+    expect(paired.twr.reason).toBeNull();
+    expect(paired.twr.rate).toBeCloseTo(0.125, 10);
+    expect(paired.twr.rate).toBeCloseTo(untouched.twr.rate as number, 10);
+  });
+
   test("los cierres se alinean por mes, no por fecha exacta", () => {
     // Dos miembros que cierran el mismo mes en días distintos: sumar por fecha
     // exacta alternaría entre «toda la cartera» y «un miembro» (#1457).

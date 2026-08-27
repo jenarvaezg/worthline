@@ -266,6 +266,18 @@ owns re-declaring and clearing; the alta only gets to state the balance a carter
 is BORN with, and the columns and the audit payload have one definition shared by
 both.
 
+## Amendment (2026-08-27, #1594): the fold this decision called defective is gone
+
+The 2026-08-24 amendment above notes that «the per-holding simple gain and
+`portfolioSimpleGain` still read every half as a flow; that is a defect of those
+folds». That fold — with `portfolioIrr` and `portfolioTwr` — no longer exists: once
+#1592 and #1593 moved their last callers, #1594 deleted all three and took them out
+of the public barrel, so no surface can re-attach to a measure that inflates the
+capital a subset ever received. The sentence stands as the record of what was true
+that day; the defect it describes has no code left to live in. The per-holding
+measures are unchanged and still honest: one holding is a subset of one slice, so
+the pairing rule has nothing to pair.
+
 ## Consequences
 
 - The entity travels in workspace export/import and is exposed through
