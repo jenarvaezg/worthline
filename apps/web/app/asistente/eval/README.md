@@ -328,7 +328,17 @@ that duplicated the traceability rule — so its net prompt cost is 225 characte
 | Rule | Was | Is |
 |---|---|---|
 | an alert needs a real discrepancy | nothing (a hope) | `raise_maintainer_alert` + `maintainer-alert-evidence.ts` |
-| never promise a review by «el equipo» | nothing (a hope) | prompt |
+| never promise a review by «el equipo» | nothing (a hope) | prompt + `fabricated-maintainer-alert.ts` (#1525) |
+| never claim an incident that was not filed | nothing (a hope) | `fabricated-maintainer-alert.ts` |
+
+The two rows about the alert moved out of prose for the same reason twice. #1347 wrote
+the refusal message that says, in as many words, «no le prometas al usuario gestión
+alguna» — and a real turn (2026-08-21) read it, was refused, and answered «he registrado
+la incidencia» anyway, promising management two paragraphs above the sentence where it
+admitted it could not. An instruction already measured as insufficient is not repaired
+by rewriting it, so #1525 gave the lane the guard the proposal ceremony has had since
+#1262, and this set gained the question that grades it
+(`write-refuses-to-invent-an-incident`).
 
 ## Committed evidence
 
