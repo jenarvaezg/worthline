@@ -131,9 +131,15 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     // Both past operation dates now carry a generated (individual) snapshot, valued
     // at cost basis (no price was cached on those days) — alongside the monthly
     // floor (#1444) of every month the position existed.
-    const dates = await snapshotDates(store);
-    expect(dates).toContain("2026-01-10");
-    expect(dates).toContain("2026-02-10");
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-02-10",
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
     expect((await rowAt(store, "btc", "2026-01-10"))?.valueMinor).toBe(0.5 * 30000 * 100);
     store.close();
   });
@@ -146,7 +152,7 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
 
     await store.command.backfillHistoricalSnapshots(TODAY);
     const afterFirst = await snapshotDates(store);
-    expect(afterFirst).toContain("2026-02-10");
+    expect(afterFirst).toHaveLength(7); // 2 operation dates + 5 monthly-floor points
 
     await store.command.backfillHistoricalSnapshots(TODAY);
     expect(await snapshotDates(store)).toEqual(afterFirst);
@@ -169,7 +175,15 @@ describe("backfillHistoricalSnapshots — one-shot gap-fill (ADR 0012, PRD #107)
     await store.command.backfillHistoricalSnapshots(TODAY);
 
     // The February gap got filled; the pre-existing January snapshot is untouched.
-    expect(await snapshotDates(store)).toContain("2026-02-10");
+    expect(await snapshotDates(store)).toEqual([
+      "2026-01-10",
+      "2026-02-01",
+      "2026-02-10",
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
     expect(await rowAt(store, "btc", "2026-01-10")).toEqual(janBefore);
     store.close();
   });

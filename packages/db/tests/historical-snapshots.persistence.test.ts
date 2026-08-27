@@ -226,13 +226,17 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     target.close();
   });
 
-  test("the gap-fill also lands the 1st of every month with a position (#1444)", async () => {
+  test("the gap-fill lands month-starts too, without touching the file's own (#1444)", async () => {
     const source = await createInMemoryStore();
     await seed(source);
     await recordBuy(source, "2024-01-10", "10", "100");
+    await recordBuy(source, "2024-03-01", "5", "200");
 
     const doc = await source.workspace.exportWorkspace();
-    doc.snapshots = [];
+    // The file keeps its 2024-03-01 snapshot — a MONTH-START the floor would also
+    // want. It must survive exactly as exported, never regenerated underneath.
+    const marchSnapshot = doc.snapshots.find((s) => s.dateKey === "2024-03-01")!;
+    doc.snapshots = [marchSnapshot];
     source.close();
 
     const target = await createInMemoryStore();
@@ -244,9 +248,13 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     // The operation date, plus a floor point in months where nothing happened.
     expect(dates.has("2024-01-10")).toBe(true);
     expect(dates.has("2024-02-01")).toBe(true);
-    expect(dates.has("2024-03-01")).toBe(true);
     // January's 1st predates the buy — no position, no point.
     expect(dates.has("2024-01-01")).toBe(false);
+    // The imported month-start is intact: cost basis as captured, not recomputed.
+    expect(await grossAt(target, "2024-03-01")).toBe(
+      marchSnapshot.grossAssets.amountMinor,
+    );
+    expect(await grossAt(target, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     target.close();
   });
 });

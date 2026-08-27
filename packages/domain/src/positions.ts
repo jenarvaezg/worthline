@@ -407,3 +407,39 @@ export function hasOversellPositionWarning(
     (warning) => warning.code === "OVERSELL" || warning.code === "OVER_TRANSFER",
   );
 }
+
+/**
+ * The position an investment held ON a date, or `undefined` when it held none —
+ * either the ledger had not started yet or everything was sold by then.
+ *
+ * THE single test for "did this asset exist on that date". Both monthly grids ride
+ * it — the price backfill's plan (ADR 0033) and the historical backfill's monthly
+ * floor (#1444) — so the two can never disagree about which months exist. A
+ * clamped oversell leaves non-zero units and still counts as held; zero does not.
+ */
+export function positionHeldAt(
+  operations: readonly InvestmentOperation[],
+  dateKey: string,
+): PositionSummary | undefined {
+  const opsUpTo = operationsUpTo(operations, dateKey);
+  if (opsUpTo.length === 0) return undefined;
+
+  const first = operations[0]!;
+  const position = derivePosition(opsUpTo, {
+    assetId: first.assetId,
+    currency: first.currency,
+  });
+  return compareUnits(position.currentUnits, "0") === 0 ? undefined : position;
+}
+
+/** The earliest date the ledger touches (YYYY-MM-DD), or undefined when empty. */
+export function earliestOperationDate(
+  operations: readonly InvestmentOperation[],
+): string | undefined {
+  let earliest: string | undefined;
+  for (const operation of operations) {
+    const dateKey = operation.executedAt.slice(0, 10);
+    if (earliest === undefined || dateKey < earliest) earliest = dateKey;
+  }
+  return earliest;
+}

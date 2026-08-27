@@ -28,10 +28,10 @@
  */
 
 import type { DecimalString } from "./decimal";
-import { compareUnits, multiplyToMinor } from "./decimal";
+import { multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import { monthlyDateKeys } from "./monthly-calendar";
-import { derivePosition, operationsUpTo } from "./positions";
+import { earliestOperationDate, positionHeldAt } from "./positions";
 
 /** Whether a planned point creates a new snapshot or updates an existing one. */
 export type PriceBackfillAction = "create" | "update";
@@ -116,21 +116,14 @@ export function planPriceBackfill(input: PlanPriceBackfillInput): PriceBackfillP
     return { gaps, points, source: input.source };
   }
 
-  const firstOperationDate = input.operations
-    .map((op) => op.executedAt.slice(0, 10))
-    .reduce((min, date) => (date < min ? date : min));
-
-  const assetId = input.operations[0]!.assetId;
-  const currency = input.operations[0]!.currency;
+  const firstOperationDate = earliestOperationDate(input.operations)!;
 
   for (const dateKey of monthlyDateKeys(firstOperationDate, input.today)) {
     // Fold the ledger to this date; skip a month with no position (before the
-    // first op, or fully sold by then) — it is neither a point nor a gap.
-    const opsUpTo = operationsUpTo(input.operations, dateKey);
-    if (opsUpTo.length === 0) continue;
-
-    const position = derivePosition(opsUpTo, { assetId, currency });
-    if (compareUnits(position.currentUnits, "0") === 0) continue;
+    // first op, or fully sold by then) — it is neither a point nor a gap. The
+    // monthly floor of #1444 rides this SAME test, so the grids cannot diverge.
+    const position = positionHeldAt(input.operations, dateKey);
+    if (position === undefined) continue;
 
     const unitPriceDecimal = monthStartPrice(input.pricesByDate, dateKey, input.today);
     if (unitPriceDecimal === undefined) {

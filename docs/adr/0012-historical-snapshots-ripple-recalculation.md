@@ -65,6 +65,13 @@ purchase, or after everything was sold) yields nothing. No price is fetched: an
 unpriced month is generated at cost basis and ADR 0033's backfill remains the
 single writer of historical `unit_price`.
 
+The accepted consequence: a month that previously held no snapshot at all now
+has one, and therefore acquires a **monthly close** where it had none (still
+derived, ADR 0005 — the last snapshot of the month). Anything reading closes —
+the delta breakdown, the monthly returns of ADR 0040 — gains those months as
+subperiods. That is the point rather than a side effect: those months existed,
+and the reason they had no close was that nothing had been traded in them.
+
 ## Import
 
 An export carries the frozen snapshot history (ADR 0010). Import restores

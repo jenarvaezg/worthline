@@ -14,38 +14,21 @@
  * which ADR 0012 rejected and still rejects.
  *
  * A month before the first purchase, or after everything was sold, yields nothing:
- * the same `derivePosition` test the price plan applies, so the two grids can never
- * disagree about which months exist.
+ * `positionHeldAt` is the ONE test both grids share, so they can never disagree
+ * about which months exist.
  *
  * Pure: no clock (the caller passes `today`), no reads, no writes.
  */
 
-import { compareUnits } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import { monthlyDateKeys } from "./monthly-calendar";
-import { derivePosition, operationsUpTo } from "./positions";
+import { earliestOperationDate, positionHeldAt } from "./positions";
 
 export interface MonthlyFloorInput {
   /** Every investment's operation ledger, keyed by asset id (any order). */
   operationsByAsset: ReadonlyMap<string, readonly InvestmentOperation[]>;
   /** "Today" as YYYY-MM-DD — the EXCLUSIVE upper bound (today is the daily capture's). */
   today: string;
-}
-
-/** Whether the ledger still holds units on `dateKey` (the price plan's test). */
-function holdsUnitsAt(
-  operations: readonly InvestmentOperation[],
-  dateKey: string,
-): boolean {
-  const opsUpTo = operationsUpTo(operations, dateKey);
-  if (opsUpTo.length === 0) return false;
-
-  const first = operations[0]!;
-  const position = derivePosition(opsUpTo, {
-    assetId: first.assetId,
-    currency: first.currency,
-  });
-  return compareUnits(position.currentUnits, "0") !== 0;
 }
 
 /**
@@ -57,24 +40,25 @@ export function monthlyFloorDateKeys(input: MonthlyFloorInput): string[] {
   const ledgers = [...input.operationsByAsset.values()].filter((ops) => ops.length > 0);
   if (ledgers.length === 0) return [];
 
+  // The range opens at the earliest PAST operation: a ledger that only reaches
+  // into the future is not history yet (ADR 0012), and opens no range at all.
   let firstOperationDate: string | undefined;
   for (const operations of ledgers) {
-    for (const operation of operations) {
-      const dateKey = operation.executedAt.slice(0, 10);
-      if (dateKey >= input.today) continue; // the future is not history (ADR 0012)
-      if (firstOperationDate === undefined || dateKey < firstOperationDate) {
-        firstOperationDate = dateKey;
-      }
+    const earliest = earliestOperationDate(
+      operations.filter((operation) => operation.executedAt.slice(0, 10) < input.today),
+    );
+    if (earliest === undefined) continue;
+    if (firstOperationDate === undefined || earliest < firstOperationDate) {
+      firstOperationDate = earliest;
     }
   }
   if (firstOperationDate === undefined) return [];
 
-  const dates: string[] = [];
-  for (const dateKey of monthlyDateKeys(firstOperationDate, input.today)) {
-    if (dateKey >= input.today) continue;
-    if (ledgers.some((operations) => holdsUnitsAt(operations, dateKey))) {
-      dates.push(dateKey);
-    }
-  }
-  return dates;
+  // `monthlyDateKeys` runs THROUGH its bound; today belongs to the daily capture,
+  // so the last month-start it yields is dropped when it IS today.
+  return monthlyDateKeys(firstOperationDate, input.today)
+    .filter((dateKey) => dateKey < input.today)
+    .filter((dateKey) =>
+      ledgers.some((operations) => positionHeldAt(operations, dateKey) !== undefined),
+    );
 }
