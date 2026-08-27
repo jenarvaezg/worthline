@@ -6235,7 +6235,11 @@ td.rowActions > * {
 }
 
 /* Housing valuation editor (PRD #108): rate + anchors on /patrimonio/[id]/editar. */
-.housingValuation {
+/* The property's two surfaces share one recipe: the valuation curve (PRD #108)
+   and, beside it, the acquisition COST (#1441) — a second figure the engine never
+   reads. Same separator and heading treatment, consumed not duplicated. */
+.housingValuation,
+.housingCost {
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
@@ -6243,7 +6247,8 @@ td.rowActions > * {
   gap: 16px;
 }
 
-.housingValuation h3 {
+.housingValuation h3,
+.housingCost h3 {
   font-size: 0.78rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -6554,6 +6559,26 @@ td.rowActions > * {
 .returnsClassClosed {
   border-top: 1px solid var(--hairline);
   margin-top: 14px;
+}
+
+/* Valor actual − coste, the one line #1441 shows when a cost exists. Sign rides
+   the text (+ / −) as well as the .pos/.neg hue, so colour is never the only
+   signal (design-system §6). */
+.acquisitionCostResult {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.acquisitionCostResult output {
+  font-family: var(--font-numeric);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
 }
 
 .housingValuation .anchorEdit {

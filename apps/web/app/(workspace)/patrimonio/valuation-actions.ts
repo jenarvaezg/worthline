@@ -13,6 +13,7 @@ import {
   errorRedirectUrl,
   mapDomainViolation,
   parseAppreciationRateStrict,
+  parseHousingAcquisitionCostStrict,
   parseMoneyMinorField,
   parseValuationAnchorStrict,
   parseValuationCadenceStrict,
@@ -27,6 +28,7 @@ import {
   executePreviewAcquisitionAnchorEditCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
+  executeSetHousingAcquisitionCostCommand,
   executeSetHousingValuationCadenceCommand,
   executeUpdateValuationAnchorCommand,
 } from "@worthline/db";
@@ -302,6 +304,69 @@ export async function setAppreciationRateAction(
     onError: ({ error }) =>
       errorRedirectUrl(baseUrl(formData), { formId: "rate", message: error }),
     onSuccess: () => successRedirectUrl(baseUrl(formData), "rate_saved"),
+  })(formData, ..._testArgs);
+}
+
+/**
+ * Hand-set (or clear) a property's acquisition cost (#1441) — what was DISBURSED
+ * to acquire it, the twin of an investment's cost basis.
+ *
+ * Nothing here re-derives history, and that is the point: the curve, housing equity
+ * and every frozen snapshot come from the VALUE anchors, so saving a cost leaves the
+ * past byte-identical — the exact opposite of `setAppreciationRateAction` right
+ * above, whose seam has to recut the curve. The no-ripple property lives in the
+ * store seam (`setAcquisitionCostMinor`), not in the `datedFact: false` flag: that
+ * flag only skips the duplicate-date UNIQUE translation, and it is off here because
+ * a cost is not dated at all.
+ *
+ * A blank clears the figure back to «todavía no lo sé», which is an honest state:
+ * no cost, no return line, no invented 0 %.
+ */
+export async function setHousingAcquisitionCostAction(
+  formData: FormData,
+  ..._testArgs: unknown[]
+): Promise<never> {
+  return formAction({
+    datedFact: false,
+    missingId: "Identificador de activo no encontrado.",
+    parse: ({ formData }) => {
+      const parsed = parseHousingAcquisitionCostStrict(formData);
+      if (!parsed.ok) {
+        return {
+          ok: false,
+          redirect: errorRedirectUrl(baseUrl(formData), {
+            formId: "acquisitionCost",
+            message: parsed.error,
+            values: preserveFields(formData, ["acquisitionCost"]),
+          }),
+        };
+      }
+      return { ok: true, value: { costMinor: parsed.costMinor } };
+    },
+    run: async (store, { id, parsed }) => {
+      const asset = await findAsset(store, id);
+      if (!asset) {
+        return { ok: false, error: "No se encontró el activo." };
+      }
+      if (!isHousingAsset(asset)) {
+        return {
+          ok: false,
+          error: "Solo los inmuebles pueden tener un coste de adquisición.",
+        };
+      }
+      await executeSetHousingAcquisitionCostCommand(store, {
+        assetId: id,
+        costMinor: parsed.costMinor,
+      });
+      return { ok: true, value: { cleared: parsed.costMinor === null } };
+    },
+    onError: ({ error }) =>
+      errorRedirectUrl(baseUrl(formData), { formId: "acquisitionCost", message: error }),
+    onSuccess: ({ value }) =>
+      successRedirectUrl(
+        baseUrl(formData),
+        value?.cleared ? "acquisition_cost_cleared" : "acquisition_cost_saved",
+      ),
   })(formData, ..._testArgs);
 }
 

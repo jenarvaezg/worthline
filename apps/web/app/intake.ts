@@ -32,9 +32,12 @@ export { buildCurrentUrl, buildCurrentUrlFor } from "./current-url";
 
 export {
   type AppreciationRateResult,
+  HOUSING_ACQUISITION_COST_HELP,
+  type HousingAcquisitionCostResult,
   type HousingCreationData,
   parseAppreciationRateStrict,
   parseAssetCommandStrict,
+  parseHousingAcquisitionCostStrict,
   parseValuationAnchorStrict,
 } from "./intake/asset";
 export {
@@ -513,6 +516,10 @@ export function okMessage(key: string | undefined): string | null {
     anchor_added: "Tasación registrada.",
     anchor_deleted: "Tasación eliminada.",
     anchor_saved: "Tasación actualizada.",
+    // #1441: guardado, no «recalculado». Editar el coste no reescribe la curva de
+    // valor ni un solo snapshot — es la otra cifra, en paralelo.
+    acquisition_cost_cleared: "Coste de adquisición borrado.",
+    acquisition_cost_saved: "Coste de adquisición guardado.",
     asset_added: "Activo añadido.",
     // #1561: the alta went in exactly as any other — the acquisition-date
     // question rides beside it as its own aviso (see `resolveOkNotice`), never

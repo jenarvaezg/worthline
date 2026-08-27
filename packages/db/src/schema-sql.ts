@@ -33,6 +33,7 @@ CREATE TABLE \`assets\` (
 	\`valuation_cadence\` text,
 	\`instrument\` text,
 	\`annual_appreciation_rate\` text,
+	\`acquisition_cost_minor\` integer,
 	\`connected_source_id\` text,
 	\`deleted_at\` text,
 	\`trash_exit\` text,

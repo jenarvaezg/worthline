@@ -110,3 +110,77 @@ describe("createHousingHoldingAndRipple (housing creation seam, ADR 0020)", () =
     store.close();
   });
 });
+
+describe("createHousingHoldingAndRipple — the acquisition cost rides along (#1441)", () => {
+  test("one call persists the VALUE anchor and the DISBURSED cost, and they differ", async () => {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
+
+    // Yeles: 48.000 € on the escritura, 53.354,55 € actually paid that day.
+    await store.command.createHousingHolding(
+      {
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 48_000_00,
+          id: "yeles",
+          liquidityTier: "illiquid",
+          name: "Yeles",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "yeles",
+          id: "anchor_acq",
+          kind: "acquisition",
+          valuationDate: "2024-01-01",
+          valueMinor: 48_000_00,
+        },
+        acquisitionCostMinor: 53_354_55,
+        annualAppreciationRate: null,
+      },
+      { today: TODAY },
+    );
+
+    expect(await store.assets.readAcquisitionCostMinor("yeles")).toBe(53_354_55);
+    expect((await store.assets.readValuationAnchors("yeles"))[0]!.valueMinor).toBe(
+      48_000_00,
+    );
+    // The curve is still cut from the VALUE — the 11,2 % that vanishes at instant
+    // zero must not show up in the snapshot.
+    expect(await grossAt(store, "2024-01-01")).toBe(48_000_00);
+    store.close();
+  });
+
+  test("without a cost the anchor is still born, and the cost reads null", async () => {
+    const store = await createInMemoryStore();
+    await seedWorkspace(store);
+
+    await store.command.createHousingHolding(
+      {
+        asset: {
+          currency: "EUR",
+          currentValueMinor: 100_000_00,
+          id: "piso",
+          liquidityTier: "illiquid",
+          name: "Piso",
+          ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+          type: "real_estate",
+        },
+        acquisitionAnchor: {
+          adjustsPriorCurve: true,
+          assetId: "piso",
+          id: "anchor_acq",
+          valuationDate: "2024-01-01",
+          valueMinor: 100_000_00,
+        },
+        annualAppreciationRate: null,
+      },
+      { today: TODAY },
+    );
+
+    expect(await store.assets.readValuationAnchors("piso")).toHaveLength(1);
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
+    store.close();
+  });
+});

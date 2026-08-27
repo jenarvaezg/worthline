@@ -65,6 +65,7 @@ import {
 } from "@worthline/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AcquisitionCostSection } from "./_surfaces/acquisition-cost-section";
 import { BinanceHoldingSection } from "./_surfaces/binance-holding-section";
 import { tokenPositionsOnRung } from "./_surfaces/binance-holding-view";
 import { CobrosSection } from "./_surfaces/cobros-section";
@@ -134,15 +135,19 @@ export default async function EditarPage({
 
   // appreciating (property): appreciation rate + market appraisals (PRD #108).
   const isAppreciating = assetMethod === "appreciating";
-  // The three housing reads are independent — fetch them in one wave (#446).
-  // (cadence: ADR 0031, #394; null → `step`.)
-  const [anchors, appreciationRate, housingValuationCadence] = isAppreciating
-    ? await Promise.all([
-        store.assets.readValuationAnchors(id),
-        store.assets.readAnnualAppreciationRate(id),
-        store.assets.readValuationCadence(id),
-      ])
-    : [[], null, null];
+  // The four housing reads are independent — fetch them in one wave (#446).
+  // (cadence: ADR 0031, #394; null → `step`. The acquisition cost, #1441, rides the
+  // same wave: one more read of the same holding, and never a figure the curve
+  // consults — it is the property's OTHER number, not a point on its curve.)
+  const [anchors, appreciationRate, housingValuationCadence, acquisitionCostMinor] =
+    isAppreciating
+      ? await Promise.all([
+          store.assets.readValuationAnchors(id),
+          store.assets.readAnnualAppreciationRate(id),
+          store.assets.readValuationCadence(id),
+          store.assets.readAcquisitionCostMinor(id),
+        ])
+      : [[], null, null, null];
 
   // A connected-source coin collection (Numista) is `derived` too, but its
   // sub-detail is its mirrored positions, not investment operations (ADR 0016).
@@ -884,6 +889,20 @@ export default async function EditarPage({
                 privacyMode={privacyMode}
                 today={today}
                 valuationCadence={housingValuationCadence}
+              />
+            ) : null}
+
+            {/* appreciating: what the property COST to acquire — the other figure of
+                the same day, and the only housing write that ripples nothing (#1441) */}
+            {asset && method === "appreciating" ? (
+              <AcquisitionCostSection
+                acquisitionCostMinor={acquisitionCostMinor}
+                assetId={asset.id}
+                currency={asset.currency}
+                currentUrl={currentUrl}
+                currentValueMinor={asset.currentValue.amountMinor}
+                formError={formError}
+                privacyMode={privacyMode}
               />
             ) : null}
 

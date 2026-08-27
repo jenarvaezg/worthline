@@ -1,5 +1,9 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
-import { parseFormError, resolveOkMessage } from "@web/intake";
+import {
+  HOUSING_ACQUISITION_COST_HELP,
+  parseFormError,
+  resolveOkMessage,
+} from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
@@ -94,6 +98,7 @@ interface Placeholders {
   symbol?: string;
   price?: string;
   acqValue?: string;
+  acqCost?: string;
   rate?: string;
   balance?: string;
 }
@@ -107,7 +112,12 @@ const PLACEHOLDERS: Record<Instrument, Placeholders> = {
   index: { name: "S&P 500", symbol: "^GSPC", price: "5.200,00" },
   pension_plan: { name: "Indexa Más Rentabilidad", symbol: "N5394", price: "12,80" },
   crypto: { name: "Bitcoin", symbol: "bitcoin", price: "58.000,00" },
-  property: { name: "Piso en Malasaña", acqValue: "180.000,00", rate: "3" },
+  property: {
+    name: "Piso en Malasaña",
+    acqValue: "180.000,00",
+    acqCost: "194.400,00",
+    rate: "3",
+  },
   vehicle: { name: "Renault Clio 2019", value: "8.500,00" },
   precious_metal: { name: "Lingote de oro 100 g", value: "6.200,00" },
   other: { name: "Colección de relojes", value: "3.000,00" },
@@ -445,14 +455,29 @@ function MethodFields({
               max={new Date().toISOString().slice(0, 10)}
             />
           </label>
+          {/* #1441: this anchors the CURVE, so it is the market value that day —
+              not what the purchase cost. Naming it «precio» is what let a cost and
+              a valuation fight over one column; the cost has its own field below. */}
           <label>
-            Precio de adquisición (EUR)
+            Valor en la fecha de compra (EUR)
             <input
               name={`acqValue_${id}`}
               defaultValue={v("acqValue")}
               inputMode="decimal"
               placeholder={ph.acqValue}
             />
+          </label>
+          <label className="addHoldingFull">
+            Coste de adquisición (EUR) <small>(opcional)</small>
+            <input
+              name={`acqCost_${id}`}
+              defaultValue={v("acqCost")}
+              inputMode="decimal"
+              placeholder={ph.acqCost}
+            />
+            {/* Same sentence as the ficha, from the one place it is written
+                (#1441) — a `<small>` inside the label is this form's hint idiom. */}
+            <small>{HOUSING_ACQUISITION_COST_HELP}</small>
           </label>
           <label>
             Tasa de revalorización anual (%) <small>(opcional)</small>

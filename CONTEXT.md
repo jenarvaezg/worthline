@@ -331,6 +331,22 @@ history. Its absence on a `transfer_in` is a bug upstream, not a shape the ledge
 supports.
 _Avoid_: carried cost, transferred basis.
 
+**Acquisition cost** (coste de adquisición):
+What the owner DISBURSED to acquire a property, stored once on the holding — the
+escritura price plus ITP/AJD, notaría, registro and gestoría. The housing twin of an
+**investment**'s cost basis, and the counterpart of the **acquisition anchor**, which
+records the market **value** that same day. The two genuinely differ: 48.000 € appraised
+against 53.354,55 € paid is an 11,2 % that is spent at instant zero, so measuring a
+property's result against the value would inflate it exactly where the entry costs are
+largest (#1441). It is NOT part of any curve: **housing equity**, `valueHousingAtDate`,
+the implied LTV and every **snapshot** read the anchors alone, so setting or clearing a
+cost never triggers a **ripple recalculation** (ADR 0093). Absent by default and never backfilled
+from an anchor — a property whose owner has not read the escritura shows no result at
+all, rather than a fabricated 0 %. Financing (comisión de apertura, the bank's insurance)
+is cost of the LOAN, not of the asset, and stays out (art. 35 LIRPF).
+_Avoid_: purchase price, precio de adquisición (that is the anchor's **value**), cost
+basis (reserved for **investment** units).
+
 **Payout**:
 Money a **holding** paid its owner on a date — a dividend, deposit or account
 interest, or rent. A dated attribution record, not a figure: it never touches
@@ -503,6 +519,9 @@ a control point on the appreciation curve) and **improvement** (discrete value i
 as a renovation, does not alter the underlying appreciation rate). One market appraisal
 may additionally carry `kind = 'acquisition'` (#1437): the **acquisition anchor**, the
 purchase that starts the property's history — editable by name in the UI, never deletable.
+It is the property's market **value** on that day, never what acquiring it cost: what was
+disbursed is the separate **acquisition cost** (#1441), and the alta names the anchor
+«valor en la fecha de compra» for exactly that reason.
 Its edit is a **reconstruction**, not a field change: moving its date or price redraws
 every day up to the next **market appraisal** and re-ripples every **snapshot** since, so
 it goes through a preview→confirm that says how much history the save rewrites, and the

@@ -26,6 +26,7 @@ export async function persistManualAssetCreation(
   today: string,
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const {
+    acquisitionCostMinor,
     acquisitionDate,
     acquisitionValueMinor,
     annualAppreciationRate,
@@ -69,6 +70,10 @@ export async function persistManualAssetCreation(
           valueMinor: acquisitionValueMinor,
         },
         annualAppreciationRate: annualAppreciationRate ?? null,
+        // The cost of acquiring it (#1441), when the alta collected one. It rides
+        // the same transaction as the value anchor and adds nothing to the ripple:
+        // the curve is cut from the VALUE, never from what was disbursed.
+        ...(acquisitionCostMinor !== undefined ? { acquisitionCostMinor } : {}),
         ...(initialValuation
           ? {
               initialValuation: {

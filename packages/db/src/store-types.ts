@@ -171,6 +171,17 @@ export interface CreateHousingHoldingCommand {
   annualAppreciationRate: DecimalString | null;
   /** An optional initial valuation anchor (carries its own resolved id). */
   initialValuation?: AddValuationAnchorInput;
+  /**
+   * What was DISBURSED to acquire the property, in minor units (#1441) — the
+   * escritura price plus ITP/AJD, notaría, registro and gestoría. Optional and
+   * null-able: the alta asks for it, and a blank means «no lo sé todavía», which
+   * is an honest state and never an implicit copy of the value anchor.
+   *
+   * Written inside the SAME transaction as the anchor (ADR 0020), but it adds
+   * NOTHING to the ripple: the from-date is still the acquisition date and the
+   * curve is still cut from the value anchors.
+   */
+  acquisitionCostMinor?: number | null;
 }
 
 export interface ApplyStatementImportParams {

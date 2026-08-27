@@ -203,6 +203,57 @@ describe("createHoldingAction — appreciating (property)", () => {
     const anchors = await store.assets.readValuationAnchors(asset.id);
     expect(anchors.length).toBeGreaterThanOrEqual(1);
     expect(anchors.some((a) => a.valuationDate === "2020-01-15")).toBe(true);
+
+    // No cost was typed, so none is invented from the anchor (#1441).
+    expect(await store.assets.readAcquisitionCostMinor(asset.id)).toBeNull();
+  });
+
+  test("the alta persists the VALUE anchor and the DISBURSED cost as two figures (#1441)", async () => {
+    const store = await seedStore();
+
+    // Yeles: 48.000 € appraised the day it was bought for 53.354,55 €.
+    const url = await runAction(
+      form({
+        instrument: "property",
+        name_property: "Yeles",
+        acqDate_property: "1998-03-12",
+        acqValue_property: "48.000,00",
+        acqCost_property: "53.354,55",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    expect(url).toContain("ok=");
+
+    const asset = (await store.assets.readAssets())[0]!;
+    // The holding is worth its VALUE — the 11,2 % of entry costs never inflates it.
+    expect(asset.currentValue.amountMinor).toBe(48_000_00);
+    expect((await store.assets.readValuationAnchors(asset.id))[0]!.valueMinor).toBe(
+      48_000_00,
+    );
+    expect(await store.assets.readAcquisitionCostMinor(asset.id)).toBe(53_354_55);
+  });
+
+  test("a rejected alta says «valor en la fecha de compra», never «precio» (#1441)", async () => {
+    const store = await seedStore();
+
+    const url = await runAction(
+      form({
+        instrument: "property",
+        name_property: "Piso sin fecha",
+        acqValue_property: "180.000,00",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const message = decodeURIComponent(url.replace(/\+/g, " "));
+    expect(message).toContain("valor en la fecha de compra");
+    expect(message).not.toContain("precio de adquisición");
+    expect(await store.assets.readAssets()).toHaveLength(0);
   });
 });
 
@@ -306,6 +357,10 @@ describe("createHoldingAction — simple drawer form (#596)", () => {
 
     const anchors = await store.assets.readValuationAnchors(asset.id);
     expect(anchors.some((a) => a.valuationDate === "2026-06-15")).toBe(true);
+
+    // The simple drawer never asks for a cost (#1441): «Valor actual» anchors today
+    // and the cost is filled in later from the ficha, so it must go through with none.
+    expect(await store.assets.readAcquisitionCostMinor(asset.id)).toBeNull();
   });
 
   test("housing drawer preserves the primary-residence opt-out sentinel", async () => {

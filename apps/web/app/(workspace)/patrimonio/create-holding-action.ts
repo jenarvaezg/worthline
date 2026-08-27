@@ -297,6 +297,10 @@ const FIELD_KEYS = [
   "price",
   "acqDate",
   "acqValue",
+  // What was disbursed to acquire the property (#1441). Refilled after a rejected
+  // alta for the same reason the investment cost is: it comes off the escritura,
+  // and re-typing it means going back to the paperwork.
+  "acqCost",
   "rate",
   "balance",
   "assoc",
@@ -385,6 +389,7 @@ function scopedAssetForm(
   carry(formData, scoped, `value_${instrument}`, "currentValue");
   carry(formData, scoped, `acqDate_${instrument}`, "acquisitionDate");
   carry(formData, scoped, `acqValue_${instrument}`, "acquisitionValue");
+  carry(formData, scoped, `acqCost_${instrument}`, "acquisitionCost");
   carry(formData, scoped, `rate_${instrument}`, "rate");
   carry(formData, scoped, `isPrimaryResidence_${instrument}`, "isPrimaryResidence");
   carryOwnership(formData, scoped);

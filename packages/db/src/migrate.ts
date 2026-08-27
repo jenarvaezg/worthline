@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 63;
+export const SCHEMA_VERSION = 64;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1930,6 +1930,28 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       }
     }
     await writeSchemaVersion(client, 63);
+  }
+
+  if (version < 64) {
+    // #1441: `assets.acquisition_cost_minor` — what the owner DISBURSED to acquire
+    // a property (escritura + ITP/AJD + notaría + registro + gestoría), the twin of
+    // an investment's cost basis. Nullable with NO backfill, and that is the whole
+    // point: the acquisition anchor of every property already on the book holds a
+    // figure that mixes value and cost (Yeles: 48.000 € appraised, 53.354,55 € paid),
+    // so copying it into this column would seal the confusion as data. It stays null
+    // until the owner types the total off the escritura.
+    try {
+      await client.execute(
+        "ALTER TABLE assets ADD COLUMN acquisition_cost_minor INTEGER",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // `no such table` is tolerated for the same reason the v62/v63 steps tolerate
+      // it: a migration test walks the ladder over a PARTIAL fixture that never
+      // created `assets`, and a real database always has it.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 64);
   }
 
   return { ranV18Backfill, ranV33Backfill };

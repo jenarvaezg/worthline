@@ -292,6 +292,17 @@ export function createValuationCommands(
         if (command.initialValuation) {
           await stores.assets.addValuationAnchor(command.initialValuation, { batchId });
         }
+        // The acquisition COST (#1441) rides the same transaction as the anchor —
+        // the alta collects both at once, so half-written is not a state worth
+        // having — but it is not a dated fact and widens the ripple by nothing:
+        // the from-date below is still the acquisition date, and the curve the
+        // ripple cuts still comes from the VALUE anchors alone.
+        if (command.acquisitionCostMinor != null) {
+          await stores.assets.setAcquisitionCostMinor(
+            command.asset.id,
+            command.acquisitionCostMinor,
+          );
+        }
         const workspace = await ctx.getWorkspace();
         if (!workspace) return;
         await rippleHistoricalSnapshotsForValuation(
