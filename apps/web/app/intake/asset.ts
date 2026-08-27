@@ -194,6 +194,15 @@ function parseHousingCreationData(
   };
 }
 
+/**
+ * Where the acquisition COST's fiscal boundary is said, once (#1441). Both surfaces
+ * that ask for the figure — the alta avanzada and the ficha — render this exact
+ * sentence, and it lives beside the parser that owns the rule so the two cannot
+ * drift into telling the user two different things about the mortgage.
+ */
+export const HOUSING_ACQUISITION_COST_HELP =
+  "ITP, notaría, registro y gestoría. No la hipoteca ni sus comisiones.";
+
 /** Result of parsing the acquisition-cost field: ok with the amount, or null = clear. */
 export type HousingAcquisitionCostResult =
   | { ok: true; costMinor: number | null }

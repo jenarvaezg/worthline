@@ -32,6 +32,7 @@ export { buildCurrentUrl, buildCurrentUrlFor } from "./current-url";
 
 export {
   type AppreciationRateResult,
+  HOUSING_ACQUISITION_COST_HELP,
   type HousingAcquisitionCostResult,
   type HousingCreationData,
   parseAppreciationRateStrict,

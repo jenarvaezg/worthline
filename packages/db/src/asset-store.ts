@@ -562,9 +562,14 @@ async function setAcquisitionCostMinor(
   assetId: string,
   costMinor: number | null,
 ): Promise<void> {
-  if (costMinor !== null && (!Number.isInteger(costMinor) || costMinor < 0)) {
+  // Positive, not merely non-negative: `null` is how «todavía no lo sé» is said, so a
+  // stored 0 would be a THIRD state — one that renders «Resultado frente al coste
+  // +⟨el valor íntegro⟩», the invented figure this whole ticket exists to prevent
+  // («sin coste, no se finge un 0 %»). The web parser already refuses it; the seam is
+  // exported, so it refuses it too rather than trusting its callers.
+  if (costMinor !== null && (!Number.isInteger(costMinor) || costMinor <= 0)) {
     throw new Error(
-      `Acquisition cost must be a non-negative integer of minor units, got "${costMinor}".`,
+      `Acquisition cost must be a positive integer of minor units (null to clear), got "${costMinor}".`,
     );
   }
 

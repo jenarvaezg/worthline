@@ -340,7 +340,7 @@ against 53.354,55 € paid is an 11,2 % that is spent at instant zero, so measur
 property's result against the value would inflate it exactly where the entry costs are
 largest (#1441). It is NOT part of any curve: **housing equity**, `valueHousingAtDate`,
 the implied LTV and every **snapshot** read the anchors alone, so setting or clearing a
-cost never triggers a **ripple recalculation**. Absent by default and never backfilled
+cost never triggers a **ripple recalculation** (ADR 0093). Absent by default and never backfilled
 from an anchor — a property whose owner has not read the escritura shows no result at
 all, rather than a fabricated 0 %. Financing (comisión de apertura, the bank's insurance)
 is cost of the LOAN, not of the asset, and stays out (art. 35 LIRPF).

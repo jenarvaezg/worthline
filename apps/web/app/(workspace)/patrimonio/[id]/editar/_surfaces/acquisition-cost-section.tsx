@@ -19,7 +19,7 @@
  * category — mixing it in breaks both comparability and the art. 35 LIRPF base.
  */
 
-import type { FormErrorContext } from "@web/intake";
+import { type FormErrorContext, HOUSING_ACQUISITION_COST_HELP } from "@web/intake";
 import { setHousingAcquisitionCostAction } from "@web/patrimonio/actions";
 import type { CurrencyCode } from "@worthline/domain";
 import { formatMoneyInput, formatMoneyMinorPrivacy, moneySign } from "@worthline/domain";
@@ -46,12 +46,14 @@ export function AcquisitionCostSection({
   privacyMode?: boolean;
 }) {
   const values = formError?.formId === "acquisitionCost" ? formError.values : {};
-  // Without a cost there is no return to show, and a 0 % would be an invention:
-  // the four properties on the book start here on purpose (no backfill from the
-  // mixed anchor), and the line simply stays away until someone reads the
-  // escritura.
+  // The line needs BOTH halves. Without a cost there is no return to show and a
+  // 0 % would be an invention — the four properties on the book start here on
+  // purpose (no backfill from the mixed anchor), and the line stays away until
+  // someone reads the escritura. Without a current value it would read as a total
+  // loss of everything disbursed, which is a valuation that has not happened yet,
+  // not a result.
   const result =
-    acquisitionCostMinor === null
+    acquisitionCostMinor === null || currentValueMinor <= 0
       ? null
       : { amountMinor: currentValueMinor - acquisitionCostMinor, currency };
 
@@ -78,9 +80,7 @@ export function AcquisitionCostSection({
             placeholder="194.400,00"
           />
         </label>
-        <p className="infoNote">
-          ITP, notaría, registro y gestoría. No la hipoteca ni sus comisiones.
-        </p>
+        <p className="infoNote">{HOUSING_ACQUISITION_COST_HELP}</p>
         <button type="submit">Guardar coste</button>
       </form>
 

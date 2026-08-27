@@ -1,5 +1,9 @@
 import FormRouteSkeleton from "@web/form-route-skeleton";
-import { parseFormError, resolveOkMessage } from "@web/intake";
+import {
+  HOUSING_ACQUISITION_COST_HELP,
+  parseFormError,
+  resolveOkMessage,
+} from "@web/intake";
 import { resolvePageShell } from "@web/page-shell";
 import { IsinField } from "@web/patrimonio/anadir/isin-field";
 import {
@@ -471,9 +475,9 @@ function MethodFields({
               inputMode="decimal"
               placeholder={ph.acqCost}
             />
-            <small>
-              ITP, notaría, registro y gestoría. No la hipoteca ni sus comisiones.
-            </small>
+            {/* Same sentence as the ficha, from the one place it is written
+                (#1441) — a `<small>` inside the label is this form's hint idiom. */}
+            <small>{HOUSING_ACQUISITION_COST_HELP}</small>
           </label>
           <label>
             Tasa de revalorización anual (%) <small>(opcional)</small>

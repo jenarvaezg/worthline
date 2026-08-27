@@ -470,21 +470,16 @@ describe("acquisition cost (#1441)", () => {
     store.close();
   });
 
-  test("refuses a negative or fractional amount of minor units", async () => {
+  test("refuses zero, a negative, or a fractional amount of minor units", async () => {
     const store = await seedHousing();
 
-    await expect(
-      executeSetHousingAcquisitionCostCommand(store, {
-        assetId: "piso",
-        costMinor: -1,
-      }),
-    ).rejects.toThrow(/non-negative integer/i);
-    await expect(
-      executeSetHousingAcquisitionCostCommand(store, {
-        assetId: "piso",
-        costMinor: 1_000.5,
-      }),
-    ).rejects.toThrow(/non-negative integer/i);
+    // Zero is refused as hard as a negative: «no lo sé» is said with `null`, and a
+    // stored 0 would render «+⟨el valor íntegro⟩» as if the property had been free.
+    for (const costMinor of [0, -1, 1_000.5]) {
+      await expect(
+        executeSetHousingAcquisitionCostCommand(store, { assetId: "piso", costMinor }),
+      ).rejects.toThrow(/positive integer/i);
+    }
     expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
     store.close();
   });

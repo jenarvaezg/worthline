@@ -77,6 +77,15 @@ describe("AcquisitionCostSection — resultado frente al coste (#1441)", () => {
     expect(markup).not.toContain('class="neg"');
   });
 
+  test("without a current value there is no result line either", () => {
+    // «solo si hay coste y hay valor actual»: a property with no value yet would
+    // otherwise read as a total loss of everything disbursed.
+    const markup = renderFor(53_354_55, 0);
+
+    expect(markup).not.toContain("Resultado frente al coste");
+    expect(markup).not.toContain('class="neg"');
+  });
+
   test("no three-measure returns panel here — one line, by decision", () => {
     const markup = renderFor(53_354_55, 48_000_00);
 

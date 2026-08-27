@@ -130,3 +130,10 @@ ownership split — must fail BEFORE the alta is attempted, so a refused entry i
 message with no half-written holding behind it. Only what needs the row to exist
 (the traspaso gate reads the destination's own currency) is answered from inside,
 as a `DomainResult` that rolls the whole alta back.
+
+## Amendment (2026-08-27, #1441)
+
+The rule above binds a **dated fact** — something that moves a figure on a date.
+A holding-level figure that no engine reads is not one, and does not belong on
+this surface: see ADR 0093, which decides that such a figure writes through the
+plain store with no ripple, and states the test that has to prove it.

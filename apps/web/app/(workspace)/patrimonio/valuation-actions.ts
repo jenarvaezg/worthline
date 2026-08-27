@@ -311,12 +311,16 @@ export async function setAppreciationRateAction(
  * Hand-set (or clear) a property's acquisition cost (#1441) — what was DISBURSED
  * to acquire it, the twin of an investment's cost basis.
  *
- * `datedFact: false` is the whole point of the action: this writes no dated fact
- * and re-derives no history. The curve, housing equity and every frozen snapshot
- * come from the VALUE anchors, so saving a cost must leave the past byte-identical
- * — the exact opposite of `setAppreciationRateAction` right above, whose seam has
- * to recut the curve. A blank clears the figure back to «todavía no lo sé», which
- * is an honest state: no cost, no return line, no invented 0 %.
+ * Nothing here re-derives history, and that is the point: the curve, housing equity
+ * and every frozen snapshot come from the VALUE anchors, so saving a cost leaves the
+ * past byte-identical — the exact opposite of `setAppreciationRateAction` right
+ * above, whose seam has to recut the curve. The no-ripple property lives in the
+ * store seam (`setAcquisitionCostMinor`), not in the `datedFact: false` flag: that
+ * flag only skips the duplicate-date UNIQUE translation, and it is off here because
+ * a cost is not dated at all.
+ *
+ * A blank clears the figure back to «todavía no lo sé», which is an honest state:
+ * no cost, no return line, no invented 0 %.
  */
 export async function setHousingAcquisitionCostAction(
   formData: FormData,
