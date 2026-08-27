@@ -95,6 +95,47 @@ de que la acción resuelva:
   cambia de modelo, este es el primer sitio donde mirar: el síntoma es una
   mutación que persiste y una pantalla que no se entera.
 
+### 4.1 El motivo de un rechazo NO viaja en una navegación (#1311)
+
+**Regla dura: éxito redirige, rechazo vuelve.** Un terminal por `redirect()` se
+puede perder entero, y el del rechazo se pierde **sin red**. Leído en el runtime
+cliente de Next 16.3:
+
+- El reducer de server actions rechaza la promesa con un error de redirect
+  marcado `handled`, y `RedirectErrorBoundary`, al verlo, **remonta el subárbol
+  sin navegar**. Así que quien navega no es el boundary: es el estado que el
+  reducer devuelve.
+- `dispatchAction` marca la acción pendiente `discarded` en cuanto llega un
+  `ACTION_NAVIGATE` o `ACTION_RESTORE`, y entonces `handleResult` **nunca aplica
+  ese estado**. El redirect muere ahí: ni navegación, ni petición, ni cambio de
+  URL — un formulario vaciado por el remonte y ningún motivo en pantalla.
+- La única recuperación, `actionQueue.needsRefresh`, está condicionada a
+  `didRevalidate`. Un éxito revalida (`invalidateRouterCache`) y tiene esa red;
+  un rechazo no mutó nada, no revalida, y es **irrecuperable por diseño**.
+
+Ojo a la trampa: Next parchea `pushState`/`replaceState` para despachar
+`ACTION_RESTORE`, así que **cualquier isla que espeje su estado en la URL (§3)
+disparando durante un envío basta para tirar el terminal**.
+
+El estado devuelto no tiene nada de esa maquinaria en su camino: el reducer llama
+`resolve(actionResult)` desde DENTRO del reducer, antes e independientemente del
+chequeo de `discarded`, y sin redirect ni revalidación sale por el bail-out sin
+tocar el router. No hay navegación que perder.
+
+La puerta es `formActionInlineError` (`app/form-action.ts`): el rechazo vuelve
+como estado cuando el envío lo pide con `inlineError=1` —estampado en el handler,
+nunca en el HTML, para que un formulario sin JS no lo lleve y conserve el único
+terminal que sabe leer— y el éxito sigue redirigiendo. Con JS, **todo** envío sale
+del handler: React no hace un POST de documento, manda la misma acción, así que
+delegar en él devuelve el rechazo al terminal perdible.
+
+Lo que además se gana al no navegar, y que la jornada 52 fija: los importes
+tecleados dejan de viajar en la barra de direcciones, el pliegue que la persona
+abrió sigue abierto, y lo escrito sigue en su campo sin round-trip.
+
+Primer llamante: el formulario de operación. Los demás caminos de error siguen
+redirigiendo; migrarlos es trabajo pendiente, y el patrón ya está probado.
+
 ## 5. Navegación sin flash: shell prefetchado + scroll estable
 
 Moverse entre dashboard ↔ histórico ↔ drilldowns **no parpadea en blanco ni

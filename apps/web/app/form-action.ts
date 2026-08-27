@@ -370,3 +370,147 @@ export function formActionState<P = undefined, S extends object = Record<never, 
     return result;
   };
 }
+
+/**
+ * Whether this submit asked for its rejection **inline**, as returned state,
+ * instead of as a redirect. The client stamps `inlineError=1` in its submit
+ * handler (never in the rendered HTML), so a form posted with JavaScript off
+ * cannot carry it and keeps the redirect terminal it has always had.
+ *
+ * The distinction is not cosmetic — it is the whole point of
+ * {@link formActionInlineError}. See that doc for why a redirect terminal is
+ * losable and a returned one is not.
+ */
+export function wantsInlineError(formData: FormData): boolean {
+  return formData.get("inlineError") === "1";
+}
+
+/** Configuration for the **split-terminal** form: success redirects, error returns state. */
+export type FormActionInlineErrorConfig<P, R> = Omit<
+  FormActionConfig<P, R>,
+  "onError" | "parse"
+> & {
+  /** Parse + validate the body; on failure carries the message + the fields to refill. */
+  parse?: (input: {
+    formData: FormData;
+    id: string;
+    extra: FormActionExtraIds;
+    today: string;
+    now: string;
+  }) => FormActionStateParse<P>;
+  /**
+   * The rejection, as the state the form renders. Receives the same input the
+   * redirect form's `onError` gets, so a caller keeps one place to shape the
+   * message and the fields to refill.
+   */
+  onError: (input: Omit<RedirectInput<R>, "value"> & { error: string }) => {
+    error: string;
+    values?: Record<string, string>;
+  };
+  /** Where a rejection redirects when the submit did NOT ask for an inline error (no-JS). */
+  onErrorUrl: (input: Omit<RedirectInput<R>, "value"> & { error: string }) => string;
+};
+
+/**
+ * The **split-terminal** form: success redirects (as {@link formAction}), but a
+ * rejection comes back as returned state (as {@link formActionState}) whenever
+ * the submit asked for it via {@link wantsInlineError}.
+ *
+ * ## Why the two terminals are not interchangeable (#1311)
+ *
+ * A redirect terminal is **losable, and a rejection's is losable without a net.**
+ * Read in Next 16.3's client runtime:
+ *
+ * - `redirect()` inside an action makes the server answer 303 + `x-action-redirect`.
+ *   The client's `server-action-reducer` rejects the action promise with a redirect
+ *   error marked `handled`, and `RedirectErrorBoundary` — seeing `handled` — REMOUNTS
+ *   the subtree without navigating. So the form is cleared by the boundary, and the
+ *   navigation itself rides only on the state the reducer returns.
+ * - `dispatchAction` (`app-router-instance.js`) marks the pending action
+ *   `discarded` the moment an `ACTION_NAVIGATE` or `ACTION_RESTORE` arrives, and
+ *   `handleResult` then NEVER applies the state it returned. The redirect dies
+ *   there: no navigation, no request, no URL change — an emptied form and no
+ *   reason, which is exactly what #1311 recorded in CI.
+ * - The one recovery, `actionQueue.needsRefresh`, is gated on
+ *   `action.payload.didRevalidate`. A **successful** mutation revalidates
+ *   ({@link invalidateRouterCache}) and so has that net; a rejection mutated
+ *   nothing, revalidates nothing, and is therefore **irrecoverable by design**.
+ *
+ * Returned state has none of that machinery in its path: the reducer calls
+ * `resolve(actionResult)` from INSIDE the reducer, before and independently of the
+ * `discarded` check, and with no redirect and no revalidation it leaves through
+ * the bail-out (`return state`) without touching the router at all. There is no
+ * navigation to lose, so the reason for a refusal cannot be lost.
+ *
+ * Success keeps its redirect: it revalidates, so it both needs the fresh
+ * destination and carries the recovery net.
+ */
+export function formActionInlineError<P = undefined, R = void>(
+  config: FormActionInlineErrorConfig<P, R>,
+): (formData: FormData, ..._testArgs: unknown[]) => Promise<FormActionState> {
+  const requireId = config.requireId ?? true;
+  const datedFact = config.datedFact ?? true;
+  const missingIdUrl = config.missingIdUrl ?? (() => DEFAULT_GUARD_URL);
+  const guardUrl = config.guardUrl ?? currentUrlOrDefault;
+
+  return async (formData, ..._testArgs) => {
+    const inline = wantsInlineError(formData);
+    // One place shapes a rejection, so the two terminals can never drift into
+    // saying different things about the same refusal.
+    const reject = (
+      input: Omit<RedirectInput<R>, "value"> & { error: string },
+      /** Fields the parse step already named; otherwise `onError` shapes them. */
+      parsedValues?: Record<string, string>,
+    ): FormActionState => {
+      if (!inline) redirect(config.onErrorUrl(input));
+      const { error, values: shaped } = config.onError(input);
+      const values = parsedValues ?? shaped;
+      return values ? { ok: false, error, values } : { ok: false, error };
+    };
+
+    const {
+      store,
+      today,
+      now,
+      id: primaryId,
+      extra,
+      missingExtra,
+    } = await resolveFrontMatter(formData, _testArgs, config.extraIds, guardUrl);
+
+    if ((requireId && !primaryId) || missingExtra) {
+      // A missing id is a broken form, not a rejected input: it has no field to
+      // refill and no message the caller shaped, so it keeps the redirect
+      // terminal of the redirect form on both paths.
+      redirect(
+        errorRedirectUrl(missingIdUrl(formData), {
+          message: config.missingId ?? "Falta un identificador.",
+        }),
+      );
+    }
+    const id = primaryId ?? "";
+
+    const parsed = config.parse
+      ? config.parse({ formData, id, extra, today, now })
+      : ({ ok: true, value: undefined as P } as const);
+    if (!parsed.ok) {
+      return reject({ id, extra, formData, error: parsed.error }, parsed.values);
+    }
+
+    const result = await runStoreCycle(
+      datedFact,
+      (s) => config.run(s, { formData, id, extra, today, now, parsed: parsed.value }),
+      store,
+    );
+
+    if (!result.ok) {
+      return reject({ id, extra, formData, error: result.error });
+    }
+
+    invalidateRouterCache();
+    const committed = { id, extra, formData, value: result.value };
+    if (config.afterCommit) {
+      await config.afterCommit(committed);
+    }
+    redirect(config.onSuccess(committed));
+  };
+}

@@ -466,9 +466,12 @@ export default async function EditarPage({
   // back to this detail page (#153 collapsed the /inversiones management routes;
   // the shared investment actions now live on under app/inversiones/actions.ts
   // and the ficha is the single place operations are recorded).
+  // Returns the rejection instead of swallowing it (#1311): success still
+  // redirects, so the only thing that comes back through here is a refusal the
+  // editor renders in its own error band.
   async function boundRecordOperationAction(formData: FormData) {
     "use server";
-    await recordOperationAction(id, formData);
+    return recordOperationAction(id, formData);
   }
 
   async function boundDeleteOperationAction(formData: FormData) {

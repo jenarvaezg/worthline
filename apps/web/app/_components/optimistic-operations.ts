@@ -160,6 +160,28 @@ export interface SubmissionKeyRef {
 }
 
 /**
+ * A refusal the record action HANDED BACK instead of redirecting with it (#1311):
+ * the message to show, and the fields as the server saw them (it stamps markers
+ * of its own there, e.g. `oversellPending`).
+ */
+export interface OperationRejection {
+  message: string;
+  values: Record<string, string>;
+}
+
+/** What the record action resolves to: nothing on success (it redirects), a refusal otherwise. */
+export type RecordActionResult =
+  | void
+  | { ok: true }
+  | { ok: false; error: string; values?: Record<string, string> };
+
+/** The refusal in an action result, or null when it did not refuse. */
+export function rejectionOf(result: RecordActionResult): OperationRejection | null {
+  if (!result || result.ok) return null;
+  return { message: result.error, values: result.values ?? {} };
+}
+
+/**
  * Run a planned record submit (#1394): stamp the key onto the body, publish it as
  * the in-flight one, then add the optimistic row and call the action inside the
  * caller's transition.
@@ -170,11 +192,17 @@ export interface SubmissionKeyRef {
  * exactly the window `isPending` cannot cover. Clearing happens in a `finally`,
  * so even a rejected action rotates the key — otherwise the retry would be read
  * as a replay of a submission that never wrote anything.
+ *
+ * `onSettled` receives what the action resolved to. A success never gets here as
+ * a value — it redirects — so in practice this is how the refusal reaches the
+ * form (#1311). It runs INSIDE the transition, before the key rotates, so the
+ * band and the re-enabled button land in the same commit.
  */
 export function submitOperationRecord({
   addPending,
   formData,
   keyRef,
+  onSettled,
   plan,
   recordAction,
   startTransition,
@@ -182,8 +210,9 @@ export function submitOperationRecord({
   addPending: (mutation: OperationMutation) => void;
   formData: FormData;
   keyRef: SubmissionKeyRef;
+  onSettled?: (result: RecordActionResult) => void;
   plan: Extract<OperationSubmitPlan, { kind: "optimistic" }>;
-  recordAction: (formData: FormData) => void | Promise<void>;
+  recordAction: (formData: FormData) => RecordActionResult | Promise<RecordActionResult>;
   startTransition: (scope: () => Promise<void>) => void;
 }): void {
   formData.set("submissionId", plan.submissionId);
@@ -191,7 +220,8 @@ export function submitOperationRecord({
   startTransition(async () => {
     addPending({ kind: "add", operation: plan.draft });
     try {
-      await recordAction(formData);
+      const result = await recordAction(formData);
+      onSettled?.(result);
     } finally {
       // Settled: the next submit is a NEW operation, not a replay of this one —
       // a split periodic buy must stay registrable.

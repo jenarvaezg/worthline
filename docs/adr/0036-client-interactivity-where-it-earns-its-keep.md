@@ -125,3 +125,60 @@ was "a transition that never closes", and there was no transition.
 cross-fade** — a shared `view-transition-name` on a position card growing into its
 drilldown, which CSS cannot imitate. That is a new proposal with its own measurement,
 not a revival of this one.
+
+## Amendment (#1311): a refusal's terminal is returned state, never a navigation
+
+§4 of `interaction-patterns.md` says a failed mutation "shows the error". It did not
+say **how the error travels**, and the how turned out to decide whether it arrives at
+all. A validation error's reason reached the server, was refused in 64 ms with a
+message, and never made it to the screen: an emptied form, no band, no URL change,
+and not one further request. It ran as a ~2,7 %-per-run CI flake for months (#1311)
+and never reproduced on a developer machine.
+
+The cause is structural, in Next 16.3's client runtime, and it is worth writing down
+because it applies to **every** mutation terminal we deliver with `redirect()`:
+
+1. The server answers 303 + `x-action-redirect`. The client's `server-action-reducer`
+   rejects the action promise with a redirect error marked `handled`, and
+   `RedirectErrorBoundary` — seeing `handled` — remounts the subtree **without
+   navigating**. So the emptied form is the boundary's doing, and the navigation rides
+   only on the state the reducer returns.
+2. `dispatchAction` (`app-router-instance.js`) marks the pending action `discarded`
+   the instant an `ACTION_NAVIGATE` or `ACTION_RESTORE` arrives, and `handleResult`
+   then never applies that state. The redirect dies with it.
+3. The one recovery, `actionQueue.needsRefresh`, is gated on `didRevalidate`. A
+   **success** revalidates (`invalidateRouterCache`, #1191) and therefore has a net;
+   a **refusal** mutated nothing, revalidates nothing, and is irrecoverable **by
+   design**.
+
+Next also patches `pushState`/`replaceState` to dispatch `ACTION_RESTORE`, so any of
+our own URL-mirroring islands (§3) firing during a submit is enough to trigger it.
+
+**Decision: the mutation terminal is split.** Success keeps its redirect — it
+revalidates, so it both needs the fresh destination and carries the net. A refusal
+comes back as **returned state**, rendered in place. The reducer calls
+`resolve(actionResult)` from inside itself, before and independently of the
+`discarded` check, and with no redirect and no revalidation it leaves through the
+bail-out without touching the router: there is no navigation to lose.
+
+The door is `formActionInlineError` (`app/form-action.ts`), a third form of the
+`formAction` combinator. A submit opts in with `inlineError=1`, stamped in the submit
+handler and never in the rendered HTML — a form posted with JavaScript off cannot
+carry it and keeps the redirect terminal, the only one it can render. With JS on,
+**every** submit must leave from our handler: React does not do a document post, it
+sends the same server action, so delegating to it hands the refusal back to the
+losable terminal.
+
+Rejected: **revalidating on the error path too**, to buy the `needsRefresh` net. It
+was the candidate the issue carried, and it does not work — `ACTION_REFRESH`
+re-renders the CURRENT route, so it would never deliver a destination carrying the
+reason. It would also invalidate caches for a write that changed nothing.
+
+What this also buys, and what journey 52 pins: typed amounts stop riding the address
+bar, the fold the person opened stays open, and what they typed stays in its field.
+The same journey holds the deterministic reproduction — it pushes a history entry
+while the action is held — so the next change here is measured in seconds instead of
+100+ CI runs.
+
+Scope: the operations form is the first caller. The remaining error paths still
+redirect; migrating them is pending work with the pattern already proven.
