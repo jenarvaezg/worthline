@@ -716,7 +716,7 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
     });
   });
 
-  test("requires acquisition date and price for real estate", () => {
+  test("requires the acquisition date and the value on that date for real estate", () => {
     const result = parseAssetCommandStrict(
       form({ name: "Casa", type: "real_estate" }),
       members,
@@ -724,10 +724,99 @@ describe("parseAssetCommandStrict — required name, no ghost defaults", () => {
       "2026-01-01",
     );
 
+    // #1441: the copy no longer says «precio» — the anchor it seeds is a market
+    // VALUE, and the cost of acquiring the property is a separate, optional field.
     expect(result).toEqual({
       ok: false,
-      error: "La fecha y el precio de adquisición son obligatorios para un inmueble.",
+      error:
+        "La fecha y el valor en la fecha de compra son obligatorios para un inmueble.",
     });
+  });
+
+  test("rejects a non-positive value on the purchase date, by that name", () => {
+    const result = parseAssetCommandStrict(
+      form({
+        name: "Casa",
+        type: "real_estate",
+        acquisitionDate: "2020-05-10",
+        acquisitionValue: "0",
+      }),
+      members,
+      1,
+      "2026-01-01",
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: "El valor en la fecha de compra debe ser un número positivo.",
+    });
+  });
+
+  test("carries the optional acquisition COST beside the value anchor (#1441)", () => {
+    // Yeles: appraised at 48.000 €, disbursed 53.354,55 € the same day.
+    const result = parseAssetCommandStrict(
+      form({
+        name: "Yeles",
+        type: "real_estate",
+        acquisitionDate: "1998-03-12",
+        acquisitionValue: "48.000,00",
+        acquisitionCost: "53.354,55",
+      }),
+      members,
+      1,
+      "2026-01-01",
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      command: expect.objectContaining({
+        acquisitionCostMinor: 53_354_55,
+        acquisitionDate: "1998-03-12",
+        acquisitionValueMinor: 48_000_00,
+        // The value — never the cost — is what the holding is worth.
+        currentValueMinor: 48_000_00,
+      }),
+    });
+  });
+
+  test("a blank cost is an honest state, not a zero", () => {
+    const result = parseAssetCommandStrict(
+      form({
+        name: "Yeles",
+        type: "real_estate",
+        acquisitionDate: "1998-03-12",
+        acquisitionValue: "48.000,00",
+        acquisitionCost: "   ",
+      }),
+      members,
+      1,
+      "2026-01-01",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && "acquisitionCostMinor" in result.command).toBe(false);
+  });
+
+  test("rejects a non-positive cost rather than storing «me salió gratis»", () => {
+    for (const acquisitionCost of ["0", "-1.000,00", "no-es-un-numero"]) {
+      const result = parseAssetCommandStrict(
+        form({
+          name: "Yeles",
+          type: "real_estate",
+          acquisitionDate: "1998-03-12",
+          acquisitionValue: "48.000,00",
+          acquisitionCost,
+        }),
+        members,
+        1,
+        "2026-01-01",
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        error: "El coste de adquisición debe ser un número positivo.",
+      });
+    }
   });
 
   test("returns an error when name is blank", () => {

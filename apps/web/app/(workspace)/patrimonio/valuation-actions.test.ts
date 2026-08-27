@@ -17,6 +17,7 @@ import {
   addValuationAnchorAction,
   deleteValuationAnchorAction,
   previewAcquisitionEditAction,
+  setHousingAcquisitionCostAction,
   updateAssetValuationAction,
   updateLiabilityBalanceAction,
   updateValuationAnchorAction,
@@ -800,6 +801,143 @@ describe("previewAcquisitionEditAction (#1562)", () => {
     const anchor = (await store.assets.readValuationAnchorById("anchor_acq"))!;
     expect(anchor.valueMinor).toBe(110_000_00);
     expect(anchor.adjustsPriorCurve).toBe(true);
+    store.close();
+  });
+});
+
+describe("setHousingAcquisitionCostAction (#1441)", () => {
+  test("persists the disbursed cost without touching the value anchor", async () => {
+    const store = await seedHousing();
+    await store.command.addValuationAnchor(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_acq",
+        kind: "acquisition",
+        valuationDate: "2024-01-01",
+        valueMinor: 48_000_00,
+      },
+      { today: TODAY },
+    );
+
+    const url = await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "53.354,55" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url).toContain("ok=acquisition_cost_saved");
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBe(53_354_55);
+    expect((await store.assets.readValuationAnchors("piso"))[0]!.valueMinor).toBe(
+      48_000_00,
+    );
+
+    store.close();
+  });
+
+  test("saving a cost re-derives NO snapshot — the past stays byte-identical", async () => {
+    const store = await seedHousing();
+    await store.command.addValuationAnchor(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_acq",
+        kind: "acquisition",
+        valuationDate: "2024-01-01",
+        valueMinor: 48_000_00,
+      },
+      { today: TODAY },
+    );
+    const before = await grossAt(store, "2024-01-01");
+    expect(before).toBe(48_000_00);
+
+    await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "53.354,55" }),
+      store,
+      CLOCK,
+    );
+
+    expect(await grossAt(store, "2024-01-01")).toBe(before);
+
+    store.close();
+  });
+
+  test("a blank clears it back to «todavía no lo sé»", async () => {
+    const store = await seedHousing();
+    await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "53.354,55" }),
+      store,
+      CLOCK,
+    );
+
+    const url = await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url).toContain("ok=acquisition_cost_cleared");
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
+
+    store.close();
+  });
+
+  test("rejects a non-positive amount without changing the stored cost", async () => {
+    const store = await seedHousing();
+    await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "53.354,55" }),
+      store,
+      CLOCK,
+    );
+
+    const url = await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "0" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url).toContain("error=");
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBe(53_354_55);
+
+    store.close();
+  });
+
+  test("only a property has an acquisition cost", async () => {
+    const store = await seedManualAsset();
+
+    const url = await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "cuadro", acquisitionCost: "1.000,00" }),
+      store,
+      CLOCK,
+    );
+
+    expect(url).toContain("error=");
+    expect(url).toContain("inmuebles");
+
+    store.close();
+  });
+
+  test("is gated in demo mode like every other write", async () => {
+    mockPersonaCookie = "jorge";
+    const store = await seedHousing();
+
+    const url = await runAction(
+      setHousingAcquisitionCostAction,
+      form({ id: "piso", acquisitionCost: "53.354,55" }),
+      store,
+      CLOCK,
+    );
+
+    expect(decodeURIComponent(url.replace(/\+/g, " "))).toContain(DEMO_DISABLED_MESSAGE);
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
+
     store.close();
   });
 });

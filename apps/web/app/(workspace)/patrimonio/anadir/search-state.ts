@@ -28,6 +28,9 @@ const ADD_HOLDING_FIELD_KEYS = [
   "price",
   "acqDate",
   "acqValue",
+  // The property's acquisition cost (#1441) — off the escritura, so it survives a
+  // symbol-pick navigation like the investment capture figures below.
+  "acqCost",
   "rate",
   "balance",
   "assoc",

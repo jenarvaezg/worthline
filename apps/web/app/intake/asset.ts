@@ -67,6 +67,9 @@ export function parseAssetCommandStrict(
       ...(housingData.data.acquisitionValueMinor !== undefined
         ? { acquisitionValueMinor: housingData.data.acquisitionValueMinor }
         : {}),
+      ...(housingData.data.acquisitionCostMinor !== undefined
+        ? { acquisitionCostMinor: housingData.data.acquisitionCostMinor }
+        : {}),
       ...(housingData.data.annualAppreciationRate !== undefined
         ? { annualAppreciationRate: housingData.data.annualAppreciationRate }
         : {}),
@@ -80,7 +83,20 @@ export function parseAssetCommandStrict(
 /** Creation-only housing fields that are persisted after the asset exists. */
 export interface HousingCreationData {
   acquisitionDate?: string;
+  /**
+   * The property's market VALUE on the day it was bought (#1441) — the figure
+   * that anchors the curve (`adjustsPriorCurve: true`). Named after what it is:
+   * asking for a «precio» and storing it as a valuation is what let a cost and a
+   * value fight over one column.
+   */
   acquisitionValueMinor?: number;
+  /**
+   * What was DISBURSED to acquire it (#1441): escritura price + ITP/AJD, notaría,
+   * registro and gestoría — never the mortgage or its fees, which are cost of the
+   * FINANCING (art. 35 LIRPF). Optional: absent means «no lo sé todavía», an
+   * honest state that shows no return rather than a fabricated 0 %.
+   */
+  acquisitionCostMinor?: number;
   annualAppreciationRate?: DecimalString | null;
   initialValuation?: {
     adjustsPriorCurve: boolean;
@@ -104,21 +120,24 @@ function parseHousingCreationData(
   if (!date && !valueRaw) {
     return {
       ok: false,
-      error: "La fecha y el precio de adquisición son obligatorios para un inmueble.",
+      error:
+        "La fecha y el valor en la fecha de compra son obligatorios para un inmueble.",
     };
   }
 
   if (date && !valueRaw) {
     return {
       ok: false,
-      error: "Si indicas la fecha de adquisición, también debes indicar el precio.",
+      error:
+        "Si indicas la fecha de adquisición, también debes indicar el valor en la fecha de compra.",
     };
   }
 
   if (!date && valueRaw) {
     return {
       ok: false,
-      error: "Si indicas el precio de adquisición, también debes indicar la fecha.",
+      error:
+        "Si indicas el valor en la fecha de compra, también debes indicar la fecha de adquisición.",
     };
   }
 
@@ -135,7 +154,10 @@ function parseHousingCreationData(
 
   const valueMinor = parseMoneyMinorField(formData, "acquisitionValue");
   if (valueMinor === null || valueMinor <= 0) {
-    return { ok: false, error: "El precio de adquisición debe ser un número positivo." };
+    return {
+      ok: false,
+      error: "El valor en la fecha de compra debe ser un número positivo.",
+    };
   }
 
   const rate = parseAppreciationRateStrict(formData);
@@ -150,17 +172,63 @@ function parseHousingCreationData(
     return { ok: false, error: initialValuation.error };
   }
 
+  // The acquisition COST (#1441) — optional, and blank on purpose for the four
+  // properties whose anchor already mixes the two figures.
+  const cost = parseHousingAcquisitionCostStrict(formData);
+
+  if (!cost.ok) {
+    return { ok: false, error: cost.error };
+  }
+
   return {
     ok: true,
     data: {
       acquisitionDate: date,
       acquisitionValueMinor: valueMinor,
       annualAppreciationRate: rate.rate,
+      ...(cost.costMinor !== null ? { acquisitionCostMinor: cost.costMinor } : {}),
       ...(initialValuation.valuation
         ? { initialValuation: initialValuation.valuation }
         : {}),
     },
   };
+}
+
+/** Result of parsing the acquisition-cost field: ok with the amount, or null = clear. */
+export type HousingAcquisitionCostResult =
+  | { ok: true; costMinor: number | null }
+  | { ok: false; error: string };
+
+/**
+ * Strict acquisition-cost parser (#1441). One field, `acquisitionCost`, read the
+ * same way by the alta and by the ficha's own form so the two can never disagree
+ * about what a blank means: `null` — «nobody has typed it yet» — which clears the
+ * stored cost rather than writing a zero that would read as «me salió gratis».
+ *
+ * The fiscal boundary (in: ITP/AJD, notaría, registro, gestoría; out: the loan
+ * and its fees) is said in the form's help text, not encoded as more inputs: a
+ * breakdown is another ticket, and a third «coste de financiación» figure would
+ * break both comparability and the art. 35 LIRPF base.
+ */
+export function parseHousingAcquisitionCostStrict(
+  formData: FormData,
+): HousingAcquisitionCostResult {
+  const raw = String(formData.get("acquisitionCost") ?? "").trim();
+
+  if (!raw) {
+    return { ok: true, costMinor: null };
+  }
+
+  const costMinor = parseMoneyMinorField(formData, "acquisitionCost");
+
+  if (costMinor === null || costMinor <= 0) {
+    return {
+      ok: false,
+      error: "El coste de adquisición debe ser un número positivo.",
+    };
+  }
+
+  return { ok: true, costMinor };
 }
 
 function parseInitialValuation(

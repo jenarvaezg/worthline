@@ -19,6 +19,7 @@ export type {
   PreviewAcquisitionAnchorEditCommand,
   RecordHousingValuationCommand,
   SetAnnualAppreciationRateCommand,
+  SetHousingAcquisitionCostCommand,
   SetHousingValuationCadenceCommand,
   UpdateValuationAnchorCommand,
 } from "./housing-valuation";
@@ -28,6 +29,7 @@ export {
   executePreviewAcquisitionAnchorEditCommand,
   executeRecordHousingValuationCommand,
   executeSetAnnualAppreciationRateCommand,
+  executeSetHousingAcquisitionCostCommand,
   executeSetHousingValuationCadenceCommand,
   executeUpdateValuationAnchorCommand,
 } from "./housing-valuation";

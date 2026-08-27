@@ -165,6 +165,21 @@ export const assets = sqliteTable(
      */
     annualAppreciationRate: text("annual_appreciation_rate"),
     /**
+     * What the owner DISBURSED to acquire a real-estate holding, in minor units
+     * (#1441): the escritura price plus ITP/AJD, notaría, registro and gestoría —
+     * the same semantics `costBasis` has for an investment. Never the loan's own
+     * cost (apertura, seguros del banco), which is cost of the FINANCING, not of
+     * the asset (art. 35 LIRPF).
+     *
+     * Null means «nobody has typed it yet», and stays null: the four properties
+     * on the book carry a mixed figure in their acquisition anchor, and copying it
+     * here would seal that confusion as data. Nothing in the engine reads this
+     * column — the curve, equity and every snapshot come from the VALUE anchors —
+     * so writing it never ripples history. Only meaningful for real_estate; the
+     * guard is in the domain/caller, like `annual_appreciation_rate` above.
+     */
+    acquisitionCostMinor: integer("acquisition_cost_minor"),
+    /**
      * The connected source this asset materializes a rung of (ADR 0016/0021, #248);
      * null for a hand-maintained holding. A source now materializes ONE asset per
      * occupied liquidity rung (Binance market + term-locked), so the back-link lives

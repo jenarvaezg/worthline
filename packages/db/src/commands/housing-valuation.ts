@@ -66,6 +66,12 @@ export interface RecordHousingValuationCommand {
   today?: string;
 }
 
+export interface SetHousingAcquisitionCostCommand {
+  assetId: string;
+  /** What was disbursed to acquire the property, in minor units; null clears it. */
+  costMinor: number | null;
+}
+
 // ── Executors ───────────────────────────────────────────────────────────────
 
 function defaultToday(today?: string): string {
@@ -225,6 +231,26 @@ export async function executeSetHousingValuationCadenceCommand(
   await store.command.setHousingValuationCadence(command.assetId, command.cadence, {
     today,
   });
+  return { ok: true, value: undefined };
+}
+
+/**
+ * Persist a property's acquisition cost (#1441) — what the owner DISBURSED to
+ * acquire it: escritura price + ITP/AJD + notaría + registro + gestoría.
+ *
+ * Deliberately NOT a dated-fact command, and the only housing write on this
+ * module that does not ripple. The curve, housing equity and every frozen
+ * snapshot are derived from the VALUE anchors; the cost is a second, parallel
+ * figure the engine never reads, so a cost edit must leave history byte-identical.
+ * Routing it through `store.command.*` would put it behind the persist+ripple
+ * seam and invite exactly the re-derivation this ticket exists to prevent, so it
+ * goes straight to the asset store (which enforces the real_estate rule).
+ */
+export async function executeSetHousingAcquisitionCostCommand(
+  store: WorthlineStore,
+  command: SetHousingAcquisitionCostCommand,
+): Promise<CommandResult<void>> {
+  await store.assets.setAcquisitionCostMinor(command.assetId, command.costMinor);
   return { ok: true, value: undefined };
 }
 

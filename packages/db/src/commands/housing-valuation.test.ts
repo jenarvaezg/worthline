@@ -10,6 +10,7 @@ import {
   executeDeleteValuationAnchorCommand,
   executePreviewAcquisitionAnchorEditCommand,
   executeSetAnnualAppreciationRateCommand,
+  executeSetHousingAcquisitionCostCommand,
   executeUpdateValuationAnchorCommand,
   runCommand,
 } from "./index";
@@ -369,6 +370,122 @@ describe("housing valuation commands", () => {
 
     expect(result).toEqual({ ok: true, value: undefined });
     expect(await grossAt(store, "2024-01-01")).toBe(100_000_00);
+    store.close();
+  });
+});
+
+describe("acquisition cost (#1441)", () => {
+  test("persists what was disbursed, separately from the value anchor", async () => {
+    const store = await seedHousing();
+
+    // Yeles: appraised at 48.000 € the day it was bought for 53.354,55 €.
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_acq",
+        kind: "acquisition",
+        valuationDate: "2024-01-01",
+        valueMinor: 48_000_00,
+      },
+    });
+
+    const result = await executeSetHousingAcquisitionCostCommand(store, {
+      assetId: "piso",
+      costMinor: 53_354_55,
+    });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBe(53_354_55);
+    // The anchor keeps saying VALUE — the cost did not overwrite it.
+    expect((await store.assets.readValuationAnchors("piso"))[0]!.valueMinor).toBe(
+      48_000_00,
+    );
+    store.close();
+  });
+
+  test("a cost edit ripples NOTHING — an earlier snapshot stays identical", async () => {
+    const store = await seedHousing();
+    await executeAddValuationAnchorCommand(store, {
+      today: TODAY,
+      input: {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "a_acq",
+        kind: "acquisition",
+        valuationDate: "2024-01-01",
+        valueMinor: 48_000_00,
+      },
+    });
+
+    const before = await grossAt(store, "2024-01-01");
+    expect(before).toBe(48_000_00);
+
+    await executeSetHousingAcquisitionCostCommand(store, {
+      assetId: "piso",
+      costMinor: 53_354_55,
+    });
+
+    // The contrast with the rate test above is the point: a rate change recuts the
+    // curve, a cost change is not on the curve at all (#1441).
+    expect(await grossAt(store, "2024-01-01")).toBe(before);
+    store.close();
+  });
+
+  test("a blank clears it back to «nobody has typed it yet»", async () => {
+    const store = await seedHousing();
+
+    await executeSetHousingAcquisitionCostCommand(store, {
+      assetId: "piso",
+      costMinor: 53_354_55,
+    });
+    await executeSetHousingAcquisitionCostCommand(store, {
+      assetId: "piso",
+      costMinor: null,
+    });
+
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
+    store.close();
+  });
+
+  test("only a property can carry one", async () => {
+    const store = await seedHousing();
+    await store.assets.createManualAsset({
+      currency: "EUR",
+      currentValueMinor: 5_000_00,
+      id: "cuadro",
+      liquidityTier: "illiquid",
+      name: "Cuadro",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+      type: "manual",
+    });
+
+    await expect(
+      executeSetHousingAcquisitionCostCommand(store, {
+        assetId: "cuadro",
+        costMinor: 1_000_00,
+      }),
+    ).rejects.toThrow(/real-estate/i);
+    store.close();
+  });
+
+  test("refuses a negative or fractional amount of minor units", async () => {
+    const store = await seedHousing();
+
+    await expect(
+      executeSetHousingAcquisitionCostCommand(store, {
+        assetId: "piso",
+        costMinor: -1,
+      }),
+    ).rejects.toThrow(/non-negative integer/i);
+    await expect(
+      executeSetHousingAcquisitionCostCommand(store, {
+        assetId: "piso",
+        costMinor: 1_000.5,
+      }),
+    ).rejects.toThrow(/non-negative integer/i);
+    expect(await store.assets.readAcquisitionCostMinor("piso")).toBeNull();
     store.close();
   });
 });

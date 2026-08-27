@@ -242,6 +242,18 @@ export interface AssetStore {
   ) => Promise<void>;
   /** Read an asset's annual appreciation rate, or null if unset. */
   readAnnualAppreciationRate: (assetId: string) => Promise<DecimalString | null>;
+  /**
+   * Set (or clear, with null) a property's acquisition cost in minor units
+   * (#1441) — what was DISBURSED to acquire it, the twin of an investment's cost
+   * basis. Refuses any holding that is not `real_estate`.
+   *
+   * Writes no dated fact and ripples NOTHING: the housing curve, equity and every
+   * snapshot are derived from the VALUE anchors, and the cost is not one of them.
+   * That is the whole reason it is a plain column on `assets` and not an anchor.
+   */
+  setAcquisitionCostMinor: (assetId: string, costMinor: number | null) => Promise<void>;
+  /** Read a property's acquisition cost in minor units, or null if unset (#1441). */
+  readAcquisitionCostMinor: (assetId: string) => Promise<number | null>;
   /** Set (or clear, with null) an asset's valuation cadence (ADR 0031). */
   setValuationCadence: (
     assetId: string,
@@ -290,6 +302,9 @@ export function createAssetStore(ctx: StoreContext): AssetStore {
     setAnnualAppreciationRate: (assetId, rate) =>
       setAnnualAppreciationRate(ctx, assetId, rate),
     readAnnualAppreciationRate: (assetId) => readAnnualAppreciationRate(ctx, assetId),
+    setAcquisitionCostMinor: (assetId, costMinor) =>
+      setAcquisitionCostMinor(ctx, assetId, costMinor),
+    readAcquisitionCostMinor: (assetId) => readAcquisitionCostMinor(ctx, assetId),
     setValuationCadence: (assetId, cadence) => setValuationCadence(ctx, assetId, cadence),
     readValuationCadence: (assetId) => readValuationCadence(ctx, assetId),
     valueHousingAtDate: (assetId, targetDate, today) =>
@@ -528,6 +543,68 @@ async function readAnnualAppreciationRate(
     .get();
 
   return row?.annualAppreciationRate ?? null;
+}
+
+/**
+ * Persist what the owner DISBURSED to acquire a property (#1441): the escritura
+ * price plus ITP/AJD, notaría, registro and gestoría. `null` clears it back to
+ * «nobody has typed it yet» — the state every property on the book starts in,
+ * because its acquisition anchor mixes value and cost and copying that figure
+ * here would seal the confusion as data.
+ *
+ * No ripple, by construction. The curve, housing equity, the implied LTV and
+ * every historical snapshot read the VALUE anchors; nothing in the engine reads
+ * this column, so a cost edit cannot move a figure that was already captured.
+ * Compare `setAnnualAppreciationRate` above, whose seam MUST re-derive history.
+ */
+async function setAcquisitionCostMinor(
+  ctx: StoreContext,
+  assetId: string,
+  costMinor: number | null,
+): Promise<void> {
+  if (costMinor !== null && (!Number.isInteger(costMinor) || costMinor < 0)) {
+    throw new Error(
+      `Acquisition cost must be a non-negative integer of minor units, got "${costMinor}".`,
+    );
+  }
+
+  // Only a property has an acquisition cost (the column is nullable for every
+  // other type). The rule is enforced here rather than as a SQL CHECK, the same
+  // choice `annual_appreciation_rate` makes (PRD #108, pattern R9).
+  const row = await ctx.db
+    .select({ type: assets.type })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  if (!row) {
+    throw new Error(`Asset "${assetId}" not found.`);
+  }
+
+  if (row.type !== "real_estate") {
+    throw new Error("Only a real-estate holding can carry an acquisition cost.");
+  }
+
+  await ctx.db
+    .update(assets)
+    .set({ acquisitionCostMinor: costMinor, updatedAt: sql`CURRENT_TIMESTAMP` })
+    .where(eq(assets.id, assetId))
+    .run();
+
+  await ctx.writeAuditEntry("set_acquisition_cost", "asset", assetId, { costMinor });
+}
+
+async function readAcquisitionCostMinor(
+  ctx: StoreContext,
+  assetId: string,
+): Promise<number | null> {
+  const row = await ctx.db
+    .select({ acquisitionCostMinor: assets.acquisitionCostMinor })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .get();
+
+  return row?.acquisitionCostMinor ?? null;
 }
 
 async function setValuationCadence(
