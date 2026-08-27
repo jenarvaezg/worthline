@@ -827,6 +827,11 @@ export {
   parseDecimalToMinorStrict,
   subtractMoney,
 } from "./money";
+export {
+  monthlyDateKeys,
+  monthStart,
+  nextMonthStart,
+} from "./monthly-calendar";
 export type {
   MeasureMonthlySavingsOptions,
   MonthlySavingsMeasurement,
@@ -1078,6 +1083,8 @@ export {
   deriveHoldingDeltas,
   derivePositionDeltas,
 } from "./snapshot-holdings";
+export type { MonthlyFloorInput } from "./snapshot-monthly-floor";
+export { monthlyFloorDateKeys } from "./snapshot-monthly-floor";
 export type { SnapshotPolicyEntry } from "./snapshot-policy";
 export {
   deriveConfirmedMonthlyCloseIds,

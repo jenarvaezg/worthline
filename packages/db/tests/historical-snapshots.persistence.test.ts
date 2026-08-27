@@ -5,7 +5,8 @@
  * operation generates the snapshot for that date and ripples later ones;
  * deleting it ripples snapshots on or after its date; importing a workspace
  * gap-fills operation dates that have no snapshot in the file without ever
- * recalculating the snapshots the file carried.
+ * recalculating the snapshots the file carried; and the monthly floor (#1444)
+ * that keeps a quiet month from becoming a straight line.
  */
 
 import type { WorthlineStore } from "@db/index";
@@ -223,6 +224,76 @@ describe("historical snapshots from imported operations (gap-fill)", () => {
     );
     expect(await grossAt(target, "2024-03-01")).toBe(10 * 100_00 + 5 * 200_00);
     target.close();
+  });
+
+  test("the gap-fill also lands the 1st of every month with a position (#1444)", async () => {
+    const source = await createInMemoryStore();
+    await seed(source);
+    await recordBuy(source, "2024-01-10", "10", "100");
+
+    const doc = await source.workspace.exportWorkspace();
+    doc.snapshots = [];
+    source.close();
+
+    const target = await createInMemoryStore();
+    await target.workspace.importWorkspace(doc);
+
+    const dates = new Set(
+      (await target.snapshots.readSnapshots()).map((snap) => snap.dateKey),
+    );
+    // The operation date, plus a floor point in months where nothing happened.
+    expect(dates.has("2024-01-10")).toBe(true);
+    expect(dates.has("2024-02-01")).toBe(true);
+    expect(dates.has("2024-03-01")).toBe(true);
+    // January's 1st predates the buy — no position, no point.
+    expect(dates.has("2024-01-01")).toBe(false);
+    target.close();
+  });
+});
+
+describe("the monthly floor of reconstructed history (#1444)", () => {
+  test("a sparse ledger ends with at least one snapshot per month with a position", async () => {
+    const store = await createInMemoryStore();
+    await seed(store);
+
+    // Jorge's real shape: an old position, a busy March, and a long quiet stretch.
+    // The ripple gives each operation its date and NOTHING else — the months in
+    // between are the backfill's job.
+    await recordBuy(store, "2026-01-10", "10", "100");
+    for (const executedAt of ["2026-03-03", "2026-03-07", "2026-03-11", "2026-03-19"]) {
+      await recordBuy(store, executedAt, "10", "100");
+    }
+    expect((await store.snapshots.readSnapshots()).map((snap) => snap.dateKey)).toEqual([
+      "2026-01-10",
+      "2026-03-03",
+      "2026-03-07",
+      "2026-03-11",
+      "2026-03-19",
+    ]);
+
+    await store.command.backfillHistoricalSnapshots(TODAY);
+
+    const dates = (await store.snapshots.readSnapshots()).map((snap) => snap.dateKey);
+    // Every month from the first operation through the day before TODAY carries
+    // at least one point — no more straight lines across the quiet months.
+    for (const month of [
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+    ]) {
+      expect(dates.some((dateKey) => dateKey.startsWith(month))).toBe(true);
+    }
+    // The four March operation dates survive alongside the floor (a union), and
+    // March's own 1st — no operation landed on it — is now there too.
+    expect(dates).toContain("2026-03-19");
+    expect(dates).toContain("2026-03-01");
+    expect(dates).toContain("2026-04-01");
+    // TODAY itself belongs to the daily capture, not the backfill.
+    expect(dates).not.toContain(TODAY);
+    store.close();
   });
 });
 

@@ -4,8 +4,11 @@
  *
  * For every past investment-operation date that has no snapshot yet, it
  * generates one — folding the position to that date and valuing it at the last
- * known operation price. Existing snapshots are never recalculated; the script
- * is idempotent, so running it twice changes nothing the second time.
+ * known operation price. It also guarantees the 1st of every month in which some
+ * investment held a position (#1444), so a workspace whose pre-signup history was
+ * as sparse as its trading gets a monthly floor. Existing snapshots are never
+ * recalculated; the script is idempotent, so running it twice changes nothing the
+ * second time.
  *
  * Manual holdings (cash, housing, debts) use their last known value from the
  * audit log, falling back to the current value when no history reaches that far
@@ -51,7 +54,7 @@ withStoreUnsafe((store) => {
     }
   } else {
     console.log(
-      "\nNothing to backfill — every past operation date already has a snapshot.",
+      "\nNothing to backfill — every operation date and month-start already has one.",
     );
   }
 });

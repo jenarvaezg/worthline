@@ -30,6 +30,7 @@
 import type { DecimalString } from "./decimal";
 import { compareUnits, multiplyToMinor } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
+import { monthlyDateKeys } from "./monthly-calendar";
 import { derivePosition, operationsUpTo } from "./positions";
 
 /** Whether a planned point creates a new snapshot or updates an existing one. */
@@ -69,31 +70,6 @@ export interface PriceBackfillPlan {
   gaps: string[];
   /** The source that produced the prices (carried through for the UI/metadata). */
   source: string;
-}
-
-/** The YYYY-MM-01 of the month containing `dateKey`. */
-function monthStart(dateKey: string): string {
-  return `${dateKey.slice(0, 7)}-01`;
-}
-
-/** The first day of the month after `monthStartKey` (a YYYY-MM-01). */
-function nextMonthStart(monthStartKey: string): string {
-  const year = Number(monthStartKey.slice(0, 4));
-  const month = Number(monthStartKey.slice(5, 7)); // 1-based
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  return `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-}
-
-/** Every month-start (the 1st) from the first-op month through today, inclusive. */
-function monthlyDateKeys(firstOperationDate: string, today: string): string[] {
-  const dates: string[] = [];
-  let cursor = monthStart(firstOperationDate);
-  while (cursor <= today) {
-    dates.push(cursor);
-    cursor = nextMonthStart(cursor);
-  }
-  return dates;
 }
 
 const MS_PER_DAY = 86_400_000;

@@ -383,16 +383,20 @@ export interface SeedDimensions {
  * this record, so the budgets can never silently drift off their stated scale: a
  * seed change is a deliberate edit here (and a budget review), not an accident.
  */
+// Re-baselined for the monthly floor (#1444): the historical backfill now also
+// guarantees the 1st of every month with a position, so the same seeded ledger
+// reconstructs a denser history (249 → 315 snapshots). A deliberate workload
+// growth, not a regression — the ms ceilings in the harness are unchanged.
 export const SEED_DIMENSIONS: SeedDimensions = {
   assets: 11,
-  householdHoldingRows: 1_126,
-  householdSnapshots: 83,
+  householdHoldingRows: 1_398,
+  householdSnapshots: 105,
   liabilities: 3,
   members: 2,
   positions: 3,
   scopes: 3,
-  totalHoldingRows: 2_576,
-  totalSnapshots: 249,
+  totalHoldingRows: 3_200,
+  totalSnapshots: 315,
 };
 
 /**

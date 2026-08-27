@@ -1,6 +1,7 @@
 import type { DecimalString, Workspace } from "@worthline/domain";
 import {
   listScopeOptions,
+  monthlyFloorDateKeys,
   planPriceBackfill,
   recalculateSnapshotForAsset,
 } from "@worthline/domain";
@@ -161,8 +162,22 @@ interface GapFillOptions {
 /**
  * Fill historical-snapshot gaps after an import (ADR 0012, Slice 3 / #112):
  * generate a snapshot for each past operation date that has no snapshot in the
- * imported file. Imported snapshots are never touched. One pass, no per-
- * operation ripple — each date is reconstructed once from all operations ≤ it.
+ * imported file, PLUS the 1st of every month the portfolio held a position
+ * (#1444). Imported snapshots are never touched. One pass, no per-operation
+ * ripple — each date is reconstructed once from all operations ≤ it.
+ *
+ * The two date sources are a UNION, not a replacement: dated facts keep generating
+ * their own dates (ADR 0012), and the monthly floor only adds the months they left
+ * empty. Without it the resolution of pre-signup history measured how often the
+ * user OPERATED rather than how much time passed — four points in a busy March, a
+ * straight 18-day line through a quiet one, next to a housing curve that is monthly
+ * by construction. The floor rides the SAME grid as the price backfill (ADR 0033),
+ * so investments and housing finally share one cadence. It is still not "backfill
+ * every date between events", which ADR 0012 rejected.
+ *
+ * No price is fetched here: a month with no cached price is generated at cost basis
+ * (ADR 0006 / #183) and `backfillInvestmentPricesAndRipple` remains the single
+ * writer of historical `unit_price` (ADR 0033), overwriting it later if asked.
  *
  * The standalone backfill passes `atomic` so the whole run rolls back on any
  * failure (#185); the post-import path runs best-effort and lets its caller
@@ -184,6 +199,16 @@ export async function gapFillHistoricalSnapshots(
       if (dateKey < today) eventDates.add(dateKey);
     }
   }
+  // The monthly floor (#1444): the 1st of every month with a position, so a quiet
+  // month is a point rather than a straight line. Union — an operated month keeps
+  // its own dates too.
+  for (const dateKey of monthlyFloorDateKeys({
+    operationsByAsset: deps.operationsByAsset,
+    today,
+  })) {
+    eventDates.add(dateKey);
+  }
+
   const sortedDates = [...eventDates].sort();
 
   const fill = async (): Promise<void> => {
@@ -231,9 +256,12 @@ export async function gapFillHistoricalSnapshots(
 export interface SnapshotOrchestrator {
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
-   * every past operation date that has no snapshot yet, across all scopes.
-   * Existing snapshots are never recalculated — only gaps are filled. Idempotent.
-   * `today` defaults to the current date; pass it to control the cut-off in tests.
+   * every past operation date that has no snapshot yet, and for the 1st of every
+   * month the portfolio held a position (#1444), across all scopes. Existing
+   * snapshots are never recalculated — only gaps are filled. Idempotent, and the
+   * retroactive cure for a workspace whose pre-signup history is only as dense as
+   * its trading was. `today` defaults to the current date; pass it to control the
+   * cut-off in tests.
    */
   backfillHistoricalSnapshots: (today?: string) => Promise<void>;
   /**
