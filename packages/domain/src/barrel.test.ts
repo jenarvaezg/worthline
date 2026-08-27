@@ -73,9 +73,6 @@ const KEY_EXPORTS = [
   "modifiedDietzPeriodRate",
   "monthlyCloseValuesByHolding",
   "monthlyCloseValuesFromSnapshotRows",
-  "portfolioSimpleGain",
-  "portfolioIrr",
-  "portfolioTwr",
   "timeWeightedReturn",
   "simpleGainFromCashflows",
   // returns-by-class (#552)

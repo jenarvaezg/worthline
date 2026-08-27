@@ -19,6 +19,14 @@ import { deriveMonthlyCloses } from "./snapshot-policy";
  *
  * The module is pure: it reads operations and an injected valuation date, so tests
  * are deterministic without touching the wall clock.
+ *
+ * Everything here measures ONE holding, plus the primitives the aggregations ride
+ * (`xirr`, `timeWeightedReturn`, `simpleGainFromCashflows`). The return of a SET of
+ * holdings — a cartera, an asset class, the whole patrimonio — has a single engine,
+ * `subsetReturns` in `returns-subset` (#1594): a second fold summing per-holding
+ * figures is how two surfaces end up disagreeing about the same money (#1422), and
+ * one that merges the flows without pairing traspasos by `transferId` inflates the
+ * capital the set ever received (ADR 0082).
  */
 
 /** Days per year used to convert a calendar span to the fractional exponent XIRR needs. */
@@ -97,21 +105,6 @@ export interface HoldingReturnsInput {
   payouts?: readonly DatedPayout[];
 }
 
-/** A holding in a portfolio-level aggregation. */
-export interface PortfolioHolding {
-  operations: readonly InvestmentOperation[];
-  marketValueMinor: number;
-  /** Recorded distributions folded into the merged portfolio cashflows (#657). */
-  payouts?: readonly DatedPayout[];
-}
-
-/** The holdings whose returns are aggregated into one portfolio figure. */
-export interface PortfolioReturnsInput {
-  holdings: readonly PortfolioHolding[];
-  currency: CurrencyCode;
-  valuationDate: string;
-}
-
 /** One monthly-close value in the series TWR can honestly compute from. */
 export interface MonthlyCloseValue {
   date: string;
@@ -166,11 +159,6 @@ export interface HoldingTwrInput {
   monthlyCloses: readonly MonthlyCloseValue[];
 }
 
-export interface PortfolioTwrInput {
-  holdings: readonly { operations: readonly InvestmentOperation[] }[];
-  monthlyCloses: readonly MonthlyCloseValue[];
-}
-
 /**
  * The operation ledger as signed, dated cashflows, oldest first: a buy is
  * −(units × price + fees), a sell is +(units × price − fees).
@@ -179,8 +167,10 @@ export interface PortfolioTwrInput {
  * real flow — capital left this product on that day at that day's market value, and
  * capital arrived at the other one. The IRR of a position must see it, or a fund
  * transferred away a year in would show a return computed over a life it never had.
- * At portfolio level the two halves are equal and opposite on the same date, so the
- * merged stream cancels them and the portfolio figure never gets a step.
+ * Netting the two halves away is NOT this function's business: whether a pair is
+ * internal depends on the SET being measured, and `subsetReturns` decides it by
+ * `transferId` — never by date, since two unrelated flows landing on one day are two
+ * real movements.
  *
  * What a traspaso does NOT do is realize P/L — that lives in `derivePosition`, not
  * here. Cashflow yes, gain no: today `sell` conflates the two in one kind.
@@ -385,15 +375,6 @@ export function timeWeightedReturn(input: TimeWeightedReturnInput): TwrResult {
 export function holdingTwr(input: HoldingTwrInput): TwrResult {
   return timeWeightedReturn({
     cashflows: operationTwrCashflows(input.operations),
-    monthlyCloses: input.monthlyCloses,
-  });
-}
-
-export function portfolioTwr(input: PortfolioTwrInput): TwrResult {
-  return timeWeightedReturn({
-    cashflows: input.holdings.flatMap((holding) =>
-      operationTwrCashflows(holding.operations),
-    ),
     monthlyCloses: input.monthlyCloses,
   });
 }
@@ -606,7 +587,7 @@ export function simpleGainFromCashflows(input: {
 
 /** Build a holding's full cashflow stream: operations plus the terminal market value. */
 function holdingCashflows(
-  input: HoldingReturnsInput | PortfolioHolding,
+  input: HoldingReturnsInput,
   valuationDate: string,
 ): DatedCashflow[] {
   const flows = operationCashflows(input.operations);
@@ -623,59 +604,4 @@ function holdingCashflows(
  */
 export function holdingIrr(input: HoldingReturnsInput): IrrResult {
   return xirr(holdingCashflows(input, input.valuationDate));
-}
-
-/** Portfolio simple gain: sum invested and gain across holdings; CAGR over the whole span. */
-export function portfolioSimpleGain(input: PortfolioReturnsInput): SimpleGain {
-  let totalInvestedMinor = 0;
-  let totalGainMinor = 0;
-  let earliestDate: string | null = null;
-
-  for (const holding of input.holdings) {
-    const operationFlows = operationCashflows(holding.operations);
-    const flows = [...operationFlows, ...payoutCashflows(holding.payouts)];
-    const gain = simpleGainFromFlows(
-      flows,
-      holding.marketValueMinor,
-      input.currency,
-      operationFlows[0]?.date ?? flows[0]?.date ?? null,
-      input.valuationDate,
-    );
-    totalInvestedMinor += gain.totalInvestedMinor;
-    totalGainMinor += gain.totalGain.amountMinor;
-    const first = operationFlows[0]?.date;
-    if (first && (earliestDate === null || first < earliestDate)) {
-      earliestDate = first;
-    }
-  }
-
-  const totalReturnRatio =
-    totalInvestedMinor > 0 ? totalGainMinor / totalInvestedMinor : null;
-  const spanDays = earliestDate ? daysBetween(earliestDate, input.valuationDate) : 0;
-  const annualized = spanDays >= YEAR_DAYS;
-  const cagr =
-    annualized && totalReturnRatio !== null
-      ? (1 + totalReturnRatio) ** (YEAR_DAYS / spanDays) - 1
-      : null;
-
-  return {
-    annualized,
-    cagr,
-    spanDays,
-    totalGain: money(totalGainMinor, input.currency),
-    totalInvestedMinor,
-    totalReturnRatio,
-  };
-}
-
-/**
- * Portfolio money-weighted return: every holding's cashflows (operations plus its
- * terminal market value) merged into one dated stream, then XIRR.
- */
-export function portfolioIrr(input: PortfolioReturnsInput): IrrResult {
-  const merged: DatedCashflow[] = [];
-  for (const holding of input.holdings) {
-    merged.push(...holdingCashflows(holding, input.valuationDate));
-  }
-  return xirr(merged);
 }
