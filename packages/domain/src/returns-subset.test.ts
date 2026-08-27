@@ -33,6 +33,24 @@ const transferOut = (units: string, price: string, at: string, transferId = "trf
 const transferIn = (units: string, price: string, at: string, transferId = "trf_1") =>
   op("transfer_in", units, price, at, { transferId });
 
+/**
+ * Dos miembros de vida desigual: 100,00 € invertidos en 2021 que valen 133,10 €, y
+ * 200,00 € invertidos un año después que valen 220,00 €. Invertido 300,00 €, valor
+ * 353,10 €, y una vida medida que arranca en el flujo más antiguo de los dos.
+ */
+const MEMBERS_BOUGHT_A_YEAR_APART = [
+  {
+    marketValueMinor: 13_310,
+    monthlyCloses: [],
+    operations: [buy("100", "1", "2021-01-01")],
+  },
+  {
+    marketValueMinor: 22_000,
+    monthlyCloses: [],
+    operations: [buy("100", "2", "2022-01-01")],
+  },
+];
+
 describe("subsetReturns", () => {
   test("suma lo invertido y la ganancia de todos los miembros", () => {
     const result = subsetReturns({
@@ -72,18 +90,7 @@ describe("subsetReturns", () => {
 
     const result = subsetReturns({
       currency: "EUR",
-      slices: [
-        {
-          marketValueMinor: 13_310,
-          monthlyCloses: [],
-          operations: [buy("100", "1", "2021-01-01")],
-        },
-        {
-          marketValueMinor: 22_000,
-          monthlyCloses: [],
-          operations: [buy("100", "2", "2022-01-01")],
-        },
-      ],
+      slices: MEMBERS_BOUGHT_A_YEAR_APART,
       valuationDate: "2024-01-01",
     });
 
@@ -95,18 +102,7 @@ describe("subsetReturns", () => {
   test("el CAGR arranca en el flujo más antiguo del subconjunto, no en el del último miembro", () => {
     const result = subsetReturns({
       currency: "EUR",
-      slices: [
-        {
-          marketValueMinor: 13_310,
-          monthlyCloses: [],
-          operations: [buy("100", "1", "2021-01-01")],
-        },
-        {
-          marketValueMinor: 22_000,
-          monthlyCloses: [],
-          operations: [buy("100", "2", "2022-01-01")],
-        },
-      ],
+      slices: MEMBERS_BOUGHT_A_YEAR_APART,
       valuationDate: "2024-01-01",
     });
 

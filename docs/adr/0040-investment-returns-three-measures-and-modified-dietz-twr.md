@@ -86,8 +86,8 @@ owns is WHICH holdings it measures and on what basis (gross or ownership-scoped,
 with value and closes on the same basis as the flows) — never a rate.
 
 Migrated in #1593 (the agent view) and #1592 (the /patrimonio hero); the old public
-folds (`portfolioSimpleGain`, `portfolioIrr`, `portfolioTwr`) come out in #1594, so
-no caller can re-attach to the merge. The per-holding measures are unchanged: one
+folds (`portfolioSimpleGain`, `portfolioIrr`, `portfolioTwr`) came out in #1594 —
+barrel included — so no caller can re-attach to the merge. The per-holding measures are unchanged: one
 holding is a subset of one slice, so the pairing rule has nothing to pair and the
 existing fold stays honest — but the agent view's per-holding block still does not
 fold payouts, which is a gap of that surface and not of this decision.
