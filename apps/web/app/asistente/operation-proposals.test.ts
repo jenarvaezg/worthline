@@ -118,7 +118,15 @@ describe("buildOperationProposal (#1374) · the card", () => {
     expect(proposal.impactCaption).toContain("estimado");
     expect(proposal.notes).toEqual([]);
     // Nowhere in the card is the position's current value: nobody had to fill it.
-    expect(JSON.stringify(proposal)).not.toContain("5387");
+    //
+    // El id del borrador queda FUERA de la comprobación: es un uuid, y uno de cada
+    // ~4.300 uuids contiene «5387» por puro azar, así que dejarlo dentro convertía
+    // esta línea en una lotería que fallaba sola de vez en cuando. Lo que la frase
+    // quiere decir es «en la TARJETA no está el valor de la posición», y el id opaco
+    // del borrador no es tarjeta: se comprueba aparte, que exista.
+    const { draft: draftRef, ...card } = proposal;
+    expect(draftRef.proposalId).toBeTruthy();
+    expect(JSON.stringify(card)).not.toContain("5387");
     store.close();
   });
 

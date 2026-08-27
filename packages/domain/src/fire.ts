@@ -230,23 +230,49 @@ export function withRate(context: FireContext, realReturnUsed: number): FireCont
 }
 
 /**
- * The single projection door (#1122). Every FIRE trajectory — the dashboard
- * chart, the level rail, the goal-delay probes and the contribution what-if —
- * runs through here, so the rate, FIRE number and reference age always come from
- * the `FireContext` (#1026) and can never diverge from coast/levels. The scalar
- * engine (`projectFire`) and the contribution-plan engine
- * (`projectFireWithContributionPlan`) are internal dispatch targets, not caller
- * choices.
+ * The projection doors (#1122): every FIRE trajectory — the dashboard chart, the
+ * level rail, the goal-delay probes and the contribution what-if — runs through
+ * one of these, so the rate, FIRE number and reference age always come from the
+ * `FireContext` (#1026) and can never diverge from coast/levels.
+ *
+ * Son TRES puertas y no un despachador con banderas (#1597, ADR 0094). Antes había una sola
+ * firma que aceptaba a la vez los campos del escalar y los del plan y descartaba en
+ * silencio la mitad que no tocaba: `monthlyContributionMinor` no se leía en modo
+ * plan, y la familia aceptaba `plan` / `growthAssumption` para ignorarlos enteros.
+ * Un llamador podía creer que medía el what-if de aportaciones y estar midiendo el
+ * escalar. Ahora cada modo tiene su tipo y no hay parámetro que sobre. Debajo, el
+ * motor es el MISMO paso de crecimiento (`stepFireGrowth`) en los tres casos.
  *
  * Defaults come from the context: `startingEligibleMinor` → its net-eligible
  * total, `fireNumberMinor` → its FIRE number, age → its config. Override
  * `startingEligibleMinor` for a what-if starting balance, or `fireNumberMinor`
- * to project a trajectory tall enough to cross a higher target (the level rail
- * projects to Fat). Passing `plan` + `growthAssumption` switches to the
- * contribution-plan what-if (ADR 0041); otherwise it is the scalar projection.
+ * to project a trajectory tall enough to cross a higher target.
  */
+/**
+ * Lo que las tres puertas resuelven igual: el capital de partida, la tasa, el número
+ * FIRE y la edad salen del contexto salvo que el llamador diga otra cosa. Escrito una
+ * vez para que una puerta no pueda estrenar un defecto distinto de las otras.
+ */
+function contextDefaults(
+  context: FireContext,
+  input: Pick<
+    ProjectFireFromContextInput,
+    "startingEligibleMinor" | "fireNumberMinor" | "maxYears"
+  >,
+) {
+  const currentAge = context.config.currentAge;
+
+  return {
+    startingEligibleMinor: input.startingEligibleMinor ?? context.eligibleMinor,
+    expectedRealReturn: context.realReturnUsed,
+    fireNumberMinor: input.fireNumberMinor ?? context.fireNumberMinor,
+    ...(currentAge === undefined ? {} : { currentAge }),
+    ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+  };
+}
+
 export interface ProjectFireFromContextInput {
-  /** Monthly contribution (minor units) for the scalar projection; ignored in plan mode. */
+  /** Monthly contribution (minor units) for the scalar projection. */
   monthlyContributionMinor?: number;
   /** Override the starting eligible balance; defaults to the context's net-eligible total. */
   startingEligibleMinor?: number;
@@ -254,86 +280,98 @@ export interface ProjectFireFromContextInput {
   fireNumberMinor?: number;
   maxYears?: number;
   /**
-   * Contribution-plan what-if (ADR 0041). When set together with
-   * `growthAssumption`, the door dispatches to `projectFireWithContributionPlan`;
-   * `monthlyContributionMinor` is then unused (the plan stream drives contributions).
+   * El what-if de aportaciones NO entra por aquí: tiene su propia puerta
+   * (`projectFirePlanFromContext`). Declarados como `never` y no simplemente omitidos
+   * porque omitirlos solo protege contra un literal — un llamador que extienda un
+   * objeto más ancho seguiría compilando y sus campos se seguirían tirando en
+   * silencio, que es exactamente el fallo de #1597.
    */
-  plan?: ContributionPlan;
-  growthAssumption?: FireGrowthAssumption;
-  /** Plan mode: per-bucket fallback annual return; defaults to the context rate. */
-  assumedAnnualReturn?: number;
-  /** Plan mode: pre-resolved annual returns per holding id (#547). */
-  holdingAnnualReturnById?: Record<string, number>;
-  /** Plan mode: optional split of today's eligible assets across holdings. */
-  startingEligibleByHoldingId?: Record<string, number>;
-  /** Plan mode: unit prices for pricing units-denominated contributions. */
-  unitPriceMajorByHoldingId?: Record<string, string>;
-  /** Plan mode: today (ISO YYYY-MM-DD). Required when `plan` is set. */
-  todayISO?: string;
+  plan?: never;
+  growthAssumption?: never;
 }
 
 export function projectFireFromContext(
   context: FireContext,
   input: ProjectFireFromContextInput,
 ): FireProjection {
-  const startingEligibleMinor = input.startingEligibleMinor ?? context.eligibleMinor;
-  const fireNumberMinor = input.fireNumberMinor ?? context.fireNumberMinor;
-  const currentAge = context.config.currentAge;
-
-  if (input.plan !== undefined && input.growthAssumption !== undefined) {
-    return projectFireWithContributionPlan({
-      startingEligibleMinor,
-      expectedRealReturn: context.realReturnUsed,
-      fireNumberMinor,
-      todayISO: input.todayISO ?? new Date().toISOString().slice(0, 10),
-      plan: input.plan,
-      growthAssumption: input.growthAssumption,
-      assumedAnnualReturn: input.assumedAnnualReturn ?? context.realReturnUsed,
-      ...(input.holdingAnnualReturnById === undefined
-        ? {}
-        : { holdingAnnualReturnById: input.holdingAnnualReturnById }),
-      ...(input.startingEligibleByHoldingId === undefined
-        ? {}
-        : { startingEligibleByHoldingId: input.startingEligibleByHoldingId }),
-      ...(input.unitPriceMajorByHoldingId === undefined
-        ? {}
-        : { unitPriceMajorByHoldingId: input.unitPriceMajorByHoldingId }),
-      ...(currentAge === undefined ? {} : { currentAge }),
-      ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
-    });
-  }
-
   return projectFire({
-    startingEligibleMinor,
+    ...contextDefaults(context, input),
     monthlyContributionMinor: input.monthlyContributionMinor ?? 0,
-    expectedRealReturn: context.realReturnUsed,
-    fireNumberMinor,
-    ...(currentAge === undefined ? {} : { currentAge }),
-    ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
   });
 }
 
 /**
  * One growth loop, two views (#1537): the chart sliced to the regular FIRE
- * number and the rail grown to `horizonTargetMinor` (Fat). Scalar only — plan
- * mode is the contribution what-if, not the /objetivos family.
+ * number and the rail grown to `horizonTargetMinor` (Fat).
+ *
+ * Escalar por construcción (#1597): el tipo NO carga `plan` ni `growthAssumption`,
+ * porque el what-if de aportaciones no dibuja el rail de niveles y aceptar esos
+ * campos para tirarlos era prometer una medida que nunca se hacía.
  */
+export interface ProjectFireFamilyFromContextInput extends ProjectFireFromContextInput {
+  /** Keep growing until this target (Fat) even after crossing the FIRE number. */
+  horizonTargetMinor: number;
+}
+
 export function projectFireFamilyFromContext(
   context: FireContext,
-  input: ProjectFireFromContextInput & { horizonTargetMinor: number },
+  input: ProjectFireFamilyFromContextInput,
 ): FireProjectionFamily {
-  const startingEligibleMinor = input.startingEligibleMinor ?? context.eligibleMinor;
-  const fireNumberMinor = input.fireNumberMinor ?? context.fireNumberMinor;
-  const currentAge = context.config.currentAge;
-
   return projectFireFamily({
-    expectedRealReturn: context.realReturnUsed,
-    fireNumberMinor,
+    ...contextDefaults(context, input),
     horizonTargetMinor: input.horizonTargetMinor,
     monthlyContributionMinor: input.monthlyContributionMinor ?? 0,
-    startingEligibleMinor,
-    ...(currentAge === undefined ? {} : { currentAge }),
-    ...(input.maxYears === undefined ? {} : { maxYears: input.maxYears }),
+  });
+}
+
+/**
+ * El what-if de aportaciones (ADR 0041): la trayectoria que dibuja el plan de
+ * aportaciones del ámbito en vez de un escalar mensual. Mismo `FireContext`, misma
+ * tasa, mismo número FIRE — y el mismo paso de crecimiento, con un cubo por holding.
+ */
+export interface ProjectFirePlanFromContextInput {
+  plan: ContributionPlan;
+  growthAssumption: FireGrowthAssumption;
+  /**
+   * Hoy (ISO YYYY-MM-DD). **Obligatorio**: el plan reparte sus aportaciones por año
+   * de calendario, así que sin este día no hay proyección — solo una adivinada. El
+   * dominio no lee el reloj (ADR 0024); lo lee la capa de acciones y lo pasa.
+   */
+  todayISO: string;
+  /** Per-bucket fallback annual return; defaults to the context rate. */
+  assumedAnnualReturn?: number;
+  /** Pre-resolved annual returns per holding id (#547). */
+  holdingAnnualReturnById?: Record<string, number>;
+  /** Optional split of today's eligible assets across holdings. */
+  startingEligibleByHoldingId?: Record<string, number>;
+  /** Unit prices for pricing units-denominated contributions. */
+  unitPriceMajorByHoldingId?: Record<string, string>;
+  /** Override the starting eligible balance; defaults to the context's net-eligible total. */
+  startingEligibleMinor?: number;
+  /** Override the FIRE target; defaults to the context's FIRE number. */
+  fireNumberMinor?: number;
+  maxYears?: number;
+}
+
+export function projectFirePlanFromContext(
+  context: FireContext,
+  input: ProjectFirePlanFromContextInput,
+): FireProjection {
+  return projectFireWithContributionPlan({
+    ...contextDefaults(context, input),
+    todayISO: input.todayISO,
+    plan: input.plan,
+    growthAssumption: input.growthAssumption,
+    assumedAnnualReturn: input.assumedAnnualReturn ?? context.realReturnUsed,
+    ...(input.holdingAnnualReturnById === undefined
+      ? {}
+      : { holdingAnnualReturnById: input.holdingAnnualReturnById }),
+    ...(input.startingEligibleByHoldingId === undefined
+      ? {}
+      : { startingEligibleByHoldingId: input.startingEligibleByHoldingId }),
+    ...(input.unitPriceMajorByHoldingId === undefined
+      ? {}
+      : { unitPriceMajorByHoldingId: input.unitPriceMajorByHoldingId }),
   });
 }
 
@@ -466,16 +504,21 @@ export function calculateFire(
  */
 export interface CalculateFireForScopeOptions {
   /**
-   * Every declared payout schedule (all holdings). When omitted, no rate is derived
-   * and the tier defaults stand exactly as before.
+   * Las rentas declaradas y el día contra el que se mide su ventana de validez,
+   * juntos e inseparables (#1597). Cuando falta, no se deriva ninguna tasa y los
+   * defectos por escalón quedan exactamente como estaban.
+   *
+   * Van en el mismo objeto a propósito: antes eran dos campos sueltos y el día caía
+   * a `new Date()` si el llamador se lo dejaba, poniendo un segundo reloj delante de
+   * la misma pantalla. El dominio no lee el reloj (ADR 0024) — quien trae las rentas
+   * trae el día en el que las está midiendo.
    */
-  payoutSchedules?: readonly PayoutSchedule[];
-  /**
-   * Today (YYYY-MM-DD) — what a schedule's validity window is measured against.
-   * Defaults to the system date; pass the page's own "today" so the rate is
-   * measured on the same clock as everything else on screen.
-   */
-  todayISO?: string;
+  rents?: {
+    /** Every declared payout schedule (all holdings). */
+    schedules: readonly PayoutSchedule[];
+    /** Today (YYYY-MM-DD) — the page's own "today", not the system's. */
+    todayISO: string;
+  };
 }
 
 export function calculateFireForScope(
@@ -495,18 +538,18 @@ export function calculateFireForScope(
   // over ALL assets: the pool below is what filters this to the ones the scope
   // owns and FIRE counts, so eligibility is decided in exactly one place.
   //
-  // No schedules, no derivation and no clock: the system-date fallback exists only
-  // for a caller that hands in schedules without a date, and it must not put a
-  // second, disagreeing clock in front of a computation that has nothing to date.
-  const payoutSchedules = options.payoutSchedules ?? [];
+  // Sin rentas no hay derivación y no hace falta reloj: el día viaja DENTRO de
+  // `rents`, así que no existe la forma de traer horarios sin decir contra qué día
+  // se miden (#1597).
+  const rents = options.rents;
   const rentRealReturns =
-    payoutSchedules.length === 0
+    rents === undefined || rents.schedules.length === 0
       ? { byAssetId: new Map(), notices: [] }
       : deriveRentRealReturns({
           assets,
           baseCurrency: workspace.baseCurrency,
-          schedules: payoutSchedules,
-          todayISO: options.todayISO ?? new Date().toISOString().slice(0, 10),
+          schedules: rents.schedules,
+          todayISO: rents.todayISO,
         });
 
   // The risk-bearing pool assembly lives in its own tested module (#1122).
