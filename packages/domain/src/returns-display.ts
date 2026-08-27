@@ -243,6 +243,26 @@ function holdingMarketValueMinor(
 }
 
 /**
+ * One holding's contribution to a subset, read off the shared context: its value
+ * through the net-worth authority, its monthly-close series and its payouts. Both
+ * subset callers below — the whole book and the per-class decomposition — take
+ * their slices from here, so neither can drift on WHICH of the three inputs it
+ * remembers to pass.
+ */
+function subsetSliceOf(
+  ctx: InvestmentReturnsContext,
+  assetId: string,
+  operations: readonly InvestmentOperation[],
+): SubsetReturnsSlice {
+  return {
+    marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
+    monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
+    operations,
+    payouts: ctx.payoutsByAsset?.get(assetId) ?? [],
+  };
+}
+
+/**
  * Per-holding returns for every operation-bearing investment, keyed by asset id.
  * Folds each holding's operations + current market value through the engine, then
  * frames the result by instrument. Holdings with no operations are skipped (a
@@ -317,13 +337,7 @@ export function portfolioReturnsView(
     if (operations.length === 0) {
       continue;
     }
-    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
-    slices.push({
-      marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
-      monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
-      operations,
-      payouts,
-    });
+    slices.push(subsetSliceOf(ctx, assetId, operations));
   }
 
   if (slices.length === 0) {
@@ -338,7 +352,7 @@ export function portfolioReturnsView(
   return buildPortfolioReturnsView(
     returns.simpleGain,
     returns.irr,
-    ctx.monthlyClosesByAsset ? returns.twr : null,
+    ctx.monthlyClosesByAsset === undefined ? null : returns.twr,
     returns.payoutsIncluded,
   );
 }
@@ -391,13 +405,9 @@ export function returnsByAssetClassView(
     if (instrument === undefined || returnsKindForInstrument(instrument) !== "market") {
       continue;
     }
-    const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
     holdings.push({
+      ...subsetSliceOf(ctx, assetId, operations),
       assetClass: ctx.assetClassByAsset.get(assetId) ?? { kind: "unknown" },
-      marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
-      monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
-      operations,
-      payouts,
     });
   }
 

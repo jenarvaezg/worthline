@@ -284,7 +284,7 @@ export async function loadDashboard(
   // full history and gross, and the rows this page reads are the selected scope's
   // and bounded to the offered range. So the hero states no TWR rather than one
   // measured on a different basis than its flows; wiring that read is its own
-  // call on the home GET's budget.
+  // call on the home GET's budget (#1640).
   // ponytail: unscoped portfolio return; per-member-scope weighting is deferred
   // until a scoped consumer needs it (household member scopes are the edge case).
   // Recorded payouts (one-offs + derived occurrences up to today) enter the

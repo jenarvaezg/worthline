@@ -270,29 +270,29 @@ describe("investmentReturnsById", () => {
 });
 
 describe("portfolioReturnsView", () => {
-  const buy = (assetId: string, units: string, price: string, at: string) =>
+  const buy = (units: string, price: string, at: string, assetId: string) =>
     op("buy", units, price, at, assetId);
   /** Las dos mitades de un par comparten `transferId` (ADR 0082). */
   const transferOut = (
-    assetId: string,
     units: string,
     price: string,
     at: string,
+    assetId: string,
     transferId = "trf_1",
   ) => op("transfer_out", units, price, at, assetId, { transferId });
   const transferIn = (
-    assetId: string,
     units: string,
     price: string,
     at: string,
+    assetId: string,
     transferId = "trf_1",
   ) => op("transfer_in", units, price, at, assetId, { transferId });
 
   test("suma las carteras de todo el libro en una sola vista de mercado", () => {
     const view = portfolioReturnsView({
       operationsByAsset: new Map([
-        ["a1", [buy("a1", "10", "100", "2024-01-01")]],
-        ["a2", [buy("a2", "5", "200", "2024-01-01")]],
+        ["a1", [buy("10", "100", "2024-01-01", "a1")]],
+        ["a2", [buy("5", "200", "2024-01-01", "a2")]],
       ]),
       cachedPriceByAsset: new Map([
         ["a1", "150"],
@@ -334,11 +334,27 @@ describe("portfolioReturnsView", () => {
       [
         "a1",
         [
-          buy("a1", "10", "100", "2024-01-01"),
-          transferOut("a1", "10", "110", "2025-01-01"),
+          buy("10", "100", "2024-01-01", "a1"),
+          transferOut("10", "110", "2025-01-01", "a1"),
         ],
       ],
-      ["a2", [transferIn("a2", "10", "110", "2025-01-01")]],
+      ["a2", [transferIn("10", "110", "2025-01-01", "a2")]],
+    ]);
+    const closesByAsset = new Map([
+      [
+        "a1",
+        [
+          { date: "2024-12-31", valueMinor: 110_000 },
+          { date: "2025-01-31", valueMinor: 0 },
+        ],
+      ],
+      [
+        "a2",
+        [
+          { date: "2025-01-31", valueMinor: 110_000 },
+          { date: "2025-12-31", valueMinor: 120_000 },
+        ],
+      ],
     ]);
     const view = portfolioReturnsView({
       operationsByAsset,
@@ -348,6 +364,7 @@ describe("portfolioReturnsView", () => {
         ["a2", "120"],
       ]),
       manualPriceByAsset: new Map(),
+      monthlyClosesByAsset: closesByAsset,
       currency: "EUR",
       valuationDate: "2026-01-01",
     });
@@ -358,12 +375,12 @@ describe("portfolioReturnsView", () => {
       slices: [
         {
           marketValueMinor: 0,
-          monthlyCloses: [],
+          monthlyCloses: closesByAsset.get("a1")!,
           operations: operationsByAsset.get("a1")!,
         },
         {
           marketValueMinor: 120_000,
-          monthlyCloses: [],
+          monthlyCloses: closesByAsset.get("a2")!,
           operations: operationsByAsset.get("a2")!,
         },
       ],
@@ -375,6 +392,37 @@ describe("portfolioReturnsView", () => {
     expect(view!.totalReturnRatio).toBe(engine.simpleGain.totalReturnRatio);
     expect(view!.totalGain).toEqual(engine.simpleGain.totalGain);
     expect(view!.irr).toEqual(engine.irr);
+    expect(view!.twr).toEqual(engine.twr);
+  });
+
+  test("del par con comisión solo sobrevive como flujo lo que la comisión se llevó", () => {
+    // Salen 1.100 € menos 5 € de comisión y entran los 1.095 €: lo que el libro
+    // recibió de fuera sigue siendo la compra original, nunca el traspaso entero.
+    const view = portfolioReturnsView({
+      operationsByAsset: new Map([
+        [
+          "a1",
+          [
+            buy("10", "100", "2024-01-01", "a1"),
+            op("transfer_out", "10", "110", "2025-01-01", "a1", {
+              feesMinor: 500,
+              transferId: "trf_1",
+            }),
+          ],
+        ],
+        ["a2", [transferIn("10", "109.5", "2025-01-01", "a2")]],
+      ]),
+      cachedPriceByAsset: new Map([
+        ["a1", "0"],
+        ["a2", "110"],
+      ]),
+      manualPriceByAsset: new Map(),
+      currency: "EUR",
+      valuationDate: "2026-01-01",
+    });
+
+    expect(view!.totalGain).toEqual(money(10_000, "EUR"));
+    expect(view!.totalReturnRatio).toBeCloseTo(0.1, 10);
   });
 
   test("una mitad cuya contraparte vive fuera del libro medido sigue siendo capital que entra", () => {
@@ -382,7 +430,7 @@ describe("portfolioReturnsView", () => {
     // cartera mirror, un alta sin ledger): no hay par que anular, así que los
     // 1.100 € que entran son capital de verdad.
     const view = portfolioReturnsView({
-      operationsByAsset: new Map([["a2", [transferIn("a2", "10", "110", "2025-01-01")]]]),
+      operationsByAsset: new Map([["a2", [transferIn("10", "110", "2025-01-01", "a2")]]]),
       cachedPriceByAsset: new Map([["a2", "120"]]),
       manualPriceByAsset: new Map(),
       currency: "EUR",
@@ -402,11 +450,11 @@ describe("portfolioReturnsView", () => {
         [
           "a1",
           [
-            buy("a1", "10", "100", "2024-01-01"),
+            buy("10", "100", "2024-01-01", "a1"),
             op("sell", "10", "110", "2025-01-01", "a1"),
           ],
         ],
-        ["a2", [buy("a2", "10", "110", "2025-01-01")]],
+        ["a2", [buy("10", "110", "2025-01-01", "a2")]],
       ]),
       cachedPriceByAsset: new Map([
         ["a1", "0"],
@@ -424,11 +472,11 @@ describe("portfolioReturnsView", () => {
     expect(view!.totalReturnRatio).toBeCloseTo(20_000 / 210_000, 10);
   });
 
-  test("una tenencia sin precio entra por su coste, nunca arrastrando el libro (#1314)", () => {
+  test("an unpriced holding enters at cost, never dragging the portfolio down (#1314)", () => {
     const view = portfolioReturnsView({
       operationsByAsset: new Map([
-        ["a1", [buy("a1", "10", "100", "2024-01-01")]],
-        ["a2", [buy("a2", "10", "100", "2024-01-01")]],
+        ["a1", [buy("10", "100", "2024-01-01", "a1")]],
+        ["a2", [buy("10", "100", "2024-01-01", "a2")]],
       ]),
       // a2 es el alta cuya primera cotización no ha aterrizado: aporta su coste,
       // no cero — el libro entero leería −50 %.
@@ -442,7 +490,7 @@ describe("portfolioReturnsView", () => {
     expect(view!.totalGain).toEqual(money(0, "EUR"));
   });
 
-  test("es null cuando no hay ninguna tenencia con operaciones", () => {
+  test("is null when there are no operation-bearing holdings", () => {
     expect(
       portfolioReturnsView({
         operationsByAsset: new Map(),
@@ -454,9 +502,9 @@ describe("portfolioReturnsView", () => {
     ).toBeNull();
   });
 
-  test("pliega los cobros registrados en la ganancia simple y en el IRR (#657)", () => {
+  test("folds recorded payouts into the simple gain and the IRR (#657)", () => {
     const view = portfolioReturnsView({
-      operationsByAsset: new Map([["a1", [buy("a1", "10", "100", "2024-01-01")]]]),
+      operationsByAsset: new Map([["a1", [buy("10", "100", "2024-01-01", "a1")]]]),
       cachedPriceByAsset: new Map([["a1", "100"]]), // plano: valor == coste
       manualPriceByAsset: new Map(),
       payoutsByAsset: new Map([["a1", [{ amountMinor: 50_000, date: "2025-01-01" }]]]),
@@ -476,8 +524,8 @@ describe("portfolioReturnsView", () => {
     // — el diente de sierra. Alineados por mes son dos puntos: 2.000 → 2.200.
     const view = portfolioReturnsView({
       operationsByAsset: new Map([
-        ["a1", [buy("a1", "10", "100", "2023-06-01")]],
-        ["a2", [buy("a2", "10", "100", "2023-06-01")]],
+        ["a1", [buy("10", "100", "2023-06-01", "a1")]],
+        ["a2", [buy("10", "100", "2023-06-01", "a2")]],
       ]),
       cachedPriceByAsset: new Map([
         ["a1", "110"],
@@ -510,7 +558,7 @@ describe("portfolioReturnsView", () => {
 
   test("sin cierres mensuales el hero no publica un TWR", () => {
     const view = portfolioReturnsView({
-      operationsByAsset: new Map([["a1", [buy("a1", "10", "100", "2024-01-01")]]]),
+      operationsByAsset: new Map([["a1", [buy("10", "100", "2024-01-01", "a1")]]]),
       cachedPriceByAsset: new Map([["a1", "110"]]),
       manualPriceByAsset: new Map(),
       currency: "EUR",
