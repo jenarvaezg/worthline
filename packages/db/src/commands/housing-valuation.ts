@@ -16,19 +16,19 @@ import type { CommandResult } from "./types";
 
 export interface AddValuationAnchorCommand {
   input: AddValuationAnchorInput;
-  today?: string;
+  today: string;
 }
 
 export interface UpdateValuationAnchorCommand {
   anchorId: string;
   input: UpdateValuationAnchorInput;
-  today?: string;
+  today: string;
 }
 
 export interface PreviewAcquisitionAnchorEditCommand {
   anchorId: string;
   input: AcquisitionAnchorFields;
-  today?: string;
+  today: string;
 }
 
 /**
@@ -45,25 +45,25 @@ export interface AcquisitionAnchorEditPreview extends AcquisitionEditPreview {
 
 export interface DeleteValuationAnchorCommand {
   anchorId: string;
-  today?: string;
+  today: string;
 }
 
 export interface SetAnnualAppreciationRateCommand {
   assetId: string;
   rate: DecimalString | null;
-  today?: string;
+  today: string;
 }
 
 export interface SetHousingValuationCadenceCommand {
   assetId: string;
   cadence: ValuationCadence | null;
-  today?: string;
+  today: string;
 }
 
 export interface RecordHousingValuationCommand {
   assetId: string;
   currentValueMinor: number;
-  today?: string;
+  today: string;
 }
 
 export interface SetHousingAcquisitionCostCommand {
@@ -74,15 +74,11 @@ export interface SetHousingAcquisitionCostCommand {
 
 // ── Executors ───────────────────────────────────────────────────────────────
 
-function defaultToday(today?: string): string {
-  return today ?? new Date().toISOString().slice(0, 10);
-}
-
 export async function executeAddValuationAnchorCommand(
   store: WorthlineStore,
   command: AddValuationAnchorCommand,
 ): Promise<CommandResult<void>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   await store.command.addValuationAnchor(command.input, { today });
   return { ok: true, value: undefined };
 }
@@ -91,7 +87,7 @@ export async function executeUpdateValuationAnchorCommand(
   store: WorthlineStore,
   command: UpdateValuationAnchorCommand,
 ): Promise<CommandResult<{ changes: number }>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   // #1437/#1562: the acquisition is the price paid on a date — the TOTAL truth
   // that anchors the curve, never an increment layered on top of it. The named
   // editor has no "es una tasación de mercado" checkbox to post, so saving it
@@ -126,7 +122,7 @@ export async function executePreviewAcquisitionAnchorEditCommand(
   store: WorthlineStore,
   command: PreviewAcquisitionAnchorEditCommand,
 ): Promise<CommandResult<AcquisitionAnchorEditPreview>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   const anchor = await store.assets.readValuationAnchorById(command.anchorId);
   if (!anchor) {
     return {
@@ -195,7 +191,7 @@ export async function executeDeleteValuationAnchorCommand(
   store: WorthlineStore,
   command: DeleteValuationAnchorCommand,
 ): Promise<CommandResult<{ changes: number }>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   // #1437: the acquisition anchor starts the housing's history — deleting it
   // would silently amputate every snapshot before the next appraisal. It may be
   // edited (date/value), never removed.
@@ -216,7 +212,7 @@ export async function executeSetAnnualAppreciationRateCommand(
   store: WorthlineStore,
   command: SetAnnualAppreciationRateCommand,
 ): Promise<CommandResult<void>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   await store.command.setAnnualAppreciationRate(command.assetId, command.rate, {
     today,
   });
@@ -227,7 +223,7 @@ export async function executeSetHousingValuationCadenceCommand(
   store: WorthlineStore,
   command: SetHousingValuationCadenceCommand,
 ): Promise<CommandResult<void>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   await store.command.setHousingValuationCadence(command.assetId, command.cadence, {
     today,
   });
@@ -258,7 +254,7 @@ export async function executeRecordHousingValuationCommand(
   store: WorthlineStore,
   command: RecordHousingValuationCommand,
 ): Promise<CommandResult<void>> {
-  const today = defaultToday(command.today);
+  const today = command.today;
   await store.command.recordHousingValuation(command.assetId, command.currentValueMinor, {
     today,
   });

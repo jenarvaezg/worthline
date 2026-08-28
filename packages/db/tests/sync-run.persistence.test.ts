@@ -17,6 +17,8 @@ import {
   type WorthlineStore,
 } from "@db/index";
 import type { Client } from "@libsql/client";
+import type { Clock } from "@worthline/domain";
+import { asDateKey, asInstant } from "@worthline/domain";
 import { afterEach, describe, expect, test } from "vitest";
 
 const MEMBER_ID = "mJ";
@@ -29,9 +31,12 @@ const MEMBER_ID = "mJ";
  */
 const CLOCK_BASE = Date.parse("2026-08-01T00:00:00.000Z");
 const tick = (nth: number): string => new Date(CLOCK_BASE + nth * 1_000).toISOString();
-function attemptClock(): () => string {
+function attemptClock(): Clock {
   let reads = 0;
-  return () => tick(reads++);
+  return {
+    now: () => asInstant(tick(reads++)),
+    today: () => asDateKey(tick(0).slice(0, 10)),
+  };
 }
 
 interface SyncRunRow {

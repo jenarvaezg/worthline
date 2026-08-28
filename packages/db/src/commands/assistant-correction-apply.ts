@@ -206,9 +206,7 @@ async function applyCorrectionEdit(
       return;
     case "liability_config":
       await assertOwnershipSplit(ctx, edit.patch);
-      await datedFacts.updateLiabilityAndRippleOwnership(edit.liabilityId, edit.patch, {
-        today,
-      });
+      await datedFacts.updateLiabilityAndRippleOwnership(edit.liabilityId, edit.patch);
       return;
     case "asset_config":
       await assertOwnershipSplit(ctx, edit.patch);

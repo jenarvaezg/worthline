@@ -10,7 +10,8 @@ export interface UpdateAssetOwnershipSplitCommand {
   patch: UpdateAssetInput;
   /** Real-estate holdings accept a known partial split (e.g. 75% mine). */
   allowKnownPartial?: boolean;
-  today?: string;
+  /** The day the housing ripple's cut-off is measured against (ADR 0024). */
+  today: string;
 }
 
 export interface UpdateLiabilityOwnershipSplitCommand {
@@ -18,7 +19,6 @@ export interface UpdateLiabilityOwnershipSplitCommand {
   patch: UpdateLiabilityInput;
   /** Debts on a co-owned home mirror the asset's partial split. */
   allowKnownPartial?: boolean;
-  today?: string;
 }
 
 export type OwnershipSplitViolation = Extract<
@@ -32,10 +32,6 @@ export type OwnershipSplitCommandResult =
   | { ok: false; error: string };
 
 // ── Executors ───────────────────────────────────────────────────────────────
-
-function defaultToday(today?: string): string {
-  return today ?? new Date().toISOString().slice(0, 10);
-}
 
 async function validateOwnershipInPatch(
   store: WorthlineStore,
@@ -74,8 +70,9 @@ export async function executeUpdateAssetOwnershipSplitCommand(
     return validation;
   }
 
-  const today = defaultToday(command.today);
-  await store.command.updateAssetOwnership(command.assetId, command.patch, { today });
+  await store.command.updateAssetOwnership(command.assetId, command.patch, {
+    today: command.today,
+  });
   return { ok: true, value: undefined };
 }
 

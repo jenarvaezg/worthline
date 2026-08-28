@@ -20,11 +20,12 @@ import { openLibsqlClient } from "@db/index";
 import { createStoreFromSqlite } from "@db/testing";
 import type { Client } from "@libsql/client";
 import type { FireScopeConfig } from "@worthline/domain";
+import { fixedClock } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
 
 /** The seed's clock, pinned: an active row and an expired one are relative to it. */
 const NOW = "2026-08-18T09:00:00.000Z";
-const clock = () => NOW;
+const clock = fixedClock(NOW);
 const FUTURE = "2026-12-31";
 const PAST = "2026-07-31";
 

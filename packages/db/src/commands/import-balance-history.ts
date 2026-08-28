@@ -15,7 +15,7 @@ import { EMPTY_DEBT_RIPPLE_COUNTS } from "./types";
 export interface ImportBalanceHistoryCommand {
   liabilityId: string;
   rebaselines: AddBalanceRebaselineInput[];
-  today?: string;
+  today: string;
   /** User-facing ingestion origin; assistant execution overrides this internally. */
   trigger?: Extract<FactBatchTrigger, "manual" | "csv">;
 }
@@ -40,10 +40,6 @@ export interface ImportBalanceHistoryDependencies {
   uow: UnitOfWork;
 }
 
-function defaultToday(today?: string): string {
-  return today ?? new Date().toISOString().slice(0, 10);
-}
-
 /**
  * Import a balance-history series as a chain of re-baselines (ADR 0056, #696,
  * architecture review #969). One mutation = one transaction + one ripple from
@@ -54,7 +50,7 @@ export async function executeImportBalanceHistoryCommand(
   command: ImportBalanceHistoryCommand,
   batch: FactBatchInput = { trigger: command.trigger ?? "manual" },
 ): Promise<CommandResult<ImportBalanceHistoryResult>> {
-  const today = defaultToday(command.today);
+  const { today } = command;
   let snapshots: DebtRippleCounts = EMPTY_DEBT_RIPPLE_COUNTS;
 
   const result = await applyDatedFactsBatch(dependencies.uow, {

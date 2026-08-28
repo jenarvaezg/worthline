@@ -362,7 +362,7 @@ export async function editAssetAction(
       }
       return { ok: true, value: { name, isLiability } };
     },
-    run: async (store, { id, formData, parsed: { name, isLiability } }) => {
+    run: async (store, { id, formData, today, parsed: { name, isLiability } }) => {
       const workspace = await store.workspace.readWorkspace();
       if (!workspace) {
         return { ok: false, error: "Workspace no inicializado." };
@@ -418,6 +418,7 @@ export async function editAssetAction(
         assetId: id,
         allowKnownPartial: type === "real_estate",
         patch: { name, type, liquidityTier, isPrimaryResidence, ownership },
+        today,
       });
       return withBoardAnchor(store, id, mapOwnershipSplitCommandResult(commandResult));
     },

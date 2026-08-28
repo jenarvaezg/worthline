@@ -30,7 +30,7 @@ export function createInvestmentOperationCommands(
 > {
   return {
     createAndLinkContributionOperation: async (params) => {
-      const today = params.today ?? new Date().toISOString().slice(0, 10);
+      const today = params.today;
       await ctx.transaction(async () => {
         const batchId = await uow.createFactBatch({ trigger: "manual" });
         await stores.operations.recordOperation(params.operation, { batchId });
@@ -76,7 +76,7 @@ export function createInvestmentOperationCommands(
       });
     },
     recordOperationAndRipple: async (input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       const result = await applyDatedFactsBatch(uow, {
         batch: { trigger: "manual" },
         ripple: async (operationDateKey) => {
@@ -109,9 +109,8 @@ export function createInvestmentOperationCommands(
       creates,
       deletes = [],
       overwrites,
-      today: todayOpt,
+      today,
     }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       // One transaction so every create/overwrite + the single batched ripple
       // commit or roll back together (ADR 0020 / 0018). The affected from-date
       // window is derived here from the persisted operations, never by the caller.
@@ -140,8 +139,7 @@ export function createInvestmentOperationCommands(
         );
       });
     },
-    deleteOperationAndRipple: ({ operationId, today: todayOpt }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    deleteOperationAndRipple: ({ operationId, today }) => {
       // One transaction so the delete + ripple commit or roll back together
       // (ADR 0020). The asset id and from-date come from the deleted row itself;
       // a not-found delete ripples nothing.
@@ -169,8 +167,7 @@ export function createInvestmentOperationCommands(
         return result;
       });
     },
-    deleteOperationsAndRipple: ({ operationIds, today: todayOpt }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    deleteOperationsAndRipple: ({ operationIds, today }) => {
       return ctx.transaction(async () => {
         const deleted: Array<{ assetId: string; executedAt: string }> = [];
         const operationDateKeysByAsset = new Map<string, string[]>();

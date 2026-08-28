@@ -329,12 +329,12 @@ export interface ConnectedSourceSeams {
    * result into the market holding's row (SET, not additive). Append-only: a date
    * whose snapshot already carries the binance row is skipped (a re-sync only adds
    * newly-completed months, never rewrites a past value). A null curve start is a
-   * no-op. `today` defaults to the current date; pass it to control the cut-off.
+   * no-op. `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
   applyBinanceHistoryAndRipple: (params: {
     sourceId: string;
     curve: BinanceHistoryCurve;
-    today?: string;
+    today: string;
   }) => Promise<void>;
   /**
    * Run ONE sync job through the S2 executor (PRD #999 S2, #1062) and report its
@@ -359,14 +359,15 @@ export function createConnectedSourceSeams(
   },
   deps: {
     /**
-     * Wall clock (ISO) for the observable run's own timestamps — injectable so
-     * tests are deterministic (same shape as the job queue's `clock`). Defaults to
-     * the real clock; never `Date.now()` inline, so a test can pin every attempt.
+     * Wall clock (ISO) for the observable run's own timestamps. REQUIRED (#1598):
+     * it is the store's one injected clock, handed down at construction, so a test
+     * that pins the store's calendar pins every attempt with it. A default here
+     * would be a second clock nobody chose.
      */
-    clock?: () => string;
-  } = {},
+    clock: () => string;
+  },
 ): ConnectedSourceSeams {
-  const clock = deps.clock ?? (() => new Date().toISOString());
+  const { clock } = deps;
 
   // The persist + ripple half of the sync, in one transaction so the wholesale
   // replace and every coin ripple commit or roll back together. Extracted so the
@@ -523,7 +524,7 @@ export function createConnectedSourceSeams(
         {
           assetId: source.assetId,
           curve: params.curve,
-          today: params.today ?? new Date().toISOString().slice(0, 10),
+          today: params.today,
         },
       );
     },

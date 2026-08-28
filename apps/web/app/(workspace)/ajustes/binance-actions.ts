@@ -288,6 +288,9 @@ export async function syncBinanceAction(
   const now = new Date();
   const nowMs = now.getTime();
   const nowIso = now.toISOString();
+  // The history backfill's cut-off comes off the SAME instant the sync stamps its
+  // positions with (#1598) — never a second `new Date()` a midnight could split.
+  const today = nowIso.slice(0, 10);
 
   await enforceConnectedSourceSyncThrottle(returnUrl);
 
@@ -349,7 +352,7 @@ export async function syncBinanceAction(
         ).then((r) => r.pricesByDate),
     });
     await runActionWithStore(
-      (store) => store.command.applyBinanceHistory({ sourceId, curve }),
+      (store) => store.command.applyBinanceHistory({ sourceId, curve, today }),
       _store,
     );
   } catch {

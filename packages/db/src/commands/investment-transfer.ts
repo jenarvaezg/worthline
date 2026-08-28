@@ -32,8 +32,8 @@ import type { UnitOfWork } from "./types";
  * currency the book does not hold.
  */
 export type RecordTransferCommand = Omit<TransferIntent, "currency"> & {
-  /** The day the ripple's cut-off is measured against. Defaults to the current date. */
-  today?: string;
+  /** The day the ripple's cut-off is measured against (ADR 0024). */
+  today: string;
   /**
    * The destination holding to CREATE in this same unit of work (#1599), when the
    * traspaso opens a product the book does not hold yet — the ordinary case for a
@@ -56,7 +56,8 @@ export type RecordExternalTransferInCommand = Omit<
   ExternalTransferInIntent,
   "currency"
 > & {
-  today?: string;
+  /** The day the ripple's cut-off is measured against (ADR 0024). */
+  today: string;
 };
 
 /**
@@ -101,7 +102,7 @@ export function createInvestmentTransferCommands(
 > {
   return {
     recordTransferAndRipple: async (command) => {
-      const today = command.today ?? new Date().toISOString().slice(0, 10);
+      const today = command.today;
 
       if (command.originAssetId === command.destinationAssetId) {
         // Answered before the reads: with one id there is no pair of holdings to load,
@@ -167,7 +168,7 @@ export function createInvestmentTransferCommands(
     },
 
     recordExternalTransferInAndRipple: async (command) => {
-      const today = command.today ?? new Date().toISOString().slice(0, 10);
+      const today = command.today;
       const currency = await readTransferSideCurrency(ctx, command.destinationAssetId);
 
       const plan = planExternalTransferIn({ ...command, currency });
@@ -192,8 +193,7 @@ export function createInvestmentTransferCommands(
       return { ok: true, value: undefined };
     },
 
-    deleteTransferAndRipple: ({ transferId, today: todayOpt }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    deleteTransferAndRipple: ({ transferId, today }) => {
       // One transaction so both deletions and the single ripple commit or roll back
       // together (ADR 0020) — the mirror of the write. The asset ids and dates come
       // from the deleted rows themselves; an unknown transferId ripples nothing.

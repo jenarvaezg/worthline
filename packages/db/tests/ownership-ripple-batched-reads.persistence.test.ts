@@ -136,12 +136,16 @@ describe("ownership ripple batches frozen reads (#1533)", () => {
     // runs no `snapshot_holdings` SELECT, so resetting just before the seam call
     // still counts only the ripple's reads.
     reset();
-    await store.command.updateAssetOwnership("seedFund", {
-      ownership: [
-        { memberId: "mJ", shareBps: 7_000 },
-        { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "seedFund",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     const reads = holdingReads();
     expect(reads).toBeLessThanOrEqual(scopeCount * 4);
@@ -156,12 +160,16 @@ describe("ownership ripple batches frozen reads (#1533)", () => {
 
     const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
-    await store.command.updateAssetOwnership("seedFund", {
-      ownership: [
-        { memberId: "mJ", shareBps: 7_000 },
-        { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "seedFund",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     for (let i = 0; i < snapshotCount; i += 1) {
       const dateKey = addDays(startDate, i);

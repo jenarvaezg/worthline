@@ -68,7 +68,7 @@ export async function updateAssetValuationAction(
       }
       return { ok: true, value: currentValue };
     },
-    run: async (store, { id, parsed: currentValue }) => {
+    run: async (store, { id, today, parsed: currentValue }) => {
       const asset = (await store.assets.readAssets()).find((a) => a.id === id) ?? null;
 
       // Domain guard (ADR 0006, #883/#945): derived and connected holdings must
@@ -84,6 +84,7 @@ export async function updateAssetValuationAction(
         await executeRecordHousingValuationCommand(store, {
           assetId: id,
           currentValueMinor: currentValue,
+          today,
         });
       } else {
         await store.assets.updateAssetValuation(id, currentValue);
@@ -283,7 +284,7 @@ export async function setAppreciationRateAction(
       }
       return { ok: true, value: { rate: parsed.rate } };
     },
-    run: async (store, { id, parsed }) => {
+    run: async (store, { id, today, parsed }) => {
       const asset = await findAsset(store, id);
       if (!asset) {
         return { ok: false, error: "No se encontró el activo." };
@@ -298,6 +299,7 @@ export async function setAppreciationRateAction(
       await executeSetAnnualAppreciationRateCommand(store, {
         assetId: id,
         rate: parsed.rate,
+        today,
       });
       return { ok: true };
     },

@@ -1855,14 +1855,17 @@ describe("createChatTools \u00b7 unvalidated-evidence boundary (#1248)", () => {
     // #1563: the acquisition anchor the chat lane MOVES. `createManualAsset` seeds
     // none, and a housing without one is the refusal path — not the success the
     // whitelist assertions below are about.
-    await store.command.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "casa",
-      id: "anchor_casa_acquisition",
-      kind: "acquisition",
-      valuationDate: "2019-03-10",
-      valueMinor: 250_000_00,
-    });
+    await store.command.addValuationAnchor(
+      {
+        adjustsPriorCurve: true,
+        assetId: "casa",
+        id: "anchor_casa_acquisition",
+        kind: "acquisition",
+        valuationDate: "2019-03-10",
+        valueMinor: 250_000_00,
+      },
+      { today: AS_OF },
+    );
     // An amortizable debt with a live plan, so `propose_early_repayment` has a real
     // schedule to project against (#1245).
     await store.liabilities.createLiability({

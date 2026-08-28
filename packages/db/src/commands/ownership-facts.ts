@@ -36,7 +36,7 @@ export function createOwnershipCommands(
 > {
   return {
     updateAssetAndRippleOwnership: async (assetId, patch, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // One transaction so the patch + the scope-axis ripple commit or roll back
       // together (ADR 0020). The previous ownership and the did-it-change
       // comparison are read behind the seam, not at the call site.
@@ -82,9 +82,9 @@ export function createOwnershipCommands(
       });
     },
     updateLiabilityAndRippleOwnership: (liabilityId, patch) => {
-      // An ownership edit has no time axis, so the liability seam takes no `today`
-      // (the uniform `opts` is accepted at the type level for symmetry with the
-      // asset seam, but unused here).
+      // An ownership edit has no time axis, so this seam takes no `today` at all
+      // (#1598) — the asset seam needs one only because a home re-weights through
+      // the housing curve, which does have a cut-off.
       // One transaction so the patch + the scope-axis ripple commit or roll back
       // together (ADR 0020). The previous ownership and the did-it-change
       // comparison are read behind the seam.

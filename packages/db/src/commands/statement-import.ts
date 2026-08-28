@@ -23,10 +23,9 @@ export function createStatementImportCommands(
       balanceHistories = [],
       funds,
       propertyValuations = [],
-      today: todayOpt,
+      today,
       trigger,
     }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       const operationDateKeysByAsset = new Map<string, string[]>();
 
       const noteOperationDate = (assetId: string, dateKey: string) => {

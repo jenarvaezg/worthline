@@ -67,9 +67,8 @@ export function createDebtPlanCommands(
       liabilityId,
       revisions,
       earlyRepayments,
-      today: todayOpt,
+      today,
     }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       const written = revisions.length + earlyRepayments.length;
       // One transaction, ONE ripple (ADR 0020). Twenty-three events applied one
       // at a time would be twenty-three ripples over the same thirty years, and
@@ -95,7 +94,7 @@ export function createDebtPlanCommands(
       });
     },
     createAmortizationPlanAndRipple: async (input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Atomic persist + ripple (ADR 0020). The plan ripple derives its per-cuota
       // date series internally from the plan's own schedule.
       await ctx.transaction(async () => {
@@ -115,7 +114,7 @@ export function createDebtPlanCommands(
       });
     },
     updateAmortizationPlanAndRipple: (planId, input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         const changes = await stores.liabilities.updateAmortizationPlan(planId, input);
         if (changes === 0) return 0;
@@ -136,7 +135,7 @@ export function createDebtPlanCommands(
       });
     },
     deleteAmortizationPlanAndRipple: (opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Capture the disbursement date BEFORE deleting — the earliest date the debt
       // existed (ADR 0019), the recalc floor for the now-planless curve. An empty
       // `eventDates` recalculates without generating, so the curve falls back to
@@ -169,7 +168,7 @@ export function createDebtPlanCommands(
       });
     },
     addInterestRateRevisionAndRipple: async (input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       await ctx.transaction(async () => {
         await stores.liabilities.addInterestRateRevision(input);
         // Guard (ADR 0012) stays on the raw date; the from-date moves to the
@@ -198,7 +197,7 @@ export function createDebtPlanCommands(
       });
     },
     updateInterestRateRevisionAndRipple: (revisionId, input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Ripple from the earlier of the old/new date so every affected snapshot
       // recomputes. The seam reads the OLD date itself (ADR 0025).
       return ctx.transaction(async () => {
@@ -247,7 +246,7 @@ export function createDebtPlanCommands(
       });
     },
     deleteInterestRateRevisionAndRipple: (revisionId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         // The seam reads the removed date + owning liability from the row by id
         // inside the transaction (ADR 0025): the caller no longer pre-reads them.
@@ -289,7 +288,7 @@ export function createDebtPlanCommands(
       });
     },
     addEarlyRepaymentAndRipple: async (input, opts) => {
-      const today = opts.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // A past repayment is a dated fact: generate the snapshot at its own date —
       // where the curve steps (#1291) — and recalculate from its cuota boundary
       // forward. The band carries both dates.
@@ -323,7 +322,7 @@ export function createDebtPlanCommands(
       });
     },
     updateEarlyRepaymentAndRipple: (repaymentId, input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         // The seam reads the OLD date + owning liability from the row by id inside
         // the transaction (ADR 0025): the caller no longer pre-reads them.
@@ -375,7 +374,7 @@ export function createDebtPlanCommands(
       });
     },
     deleteEarlyRepaymentAndRipple: (repaymentId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Deleting a dated fact recalculates from its date forward without
       // generating: the curve no longer carries it, so it mints no date.
       return ctx.transaction(async () => {

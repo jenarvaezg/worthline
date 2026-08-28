@@ -44,9 +44,7 @@ export function createHoldingCreationCommands(
   "createInvestmentHoldingAndRipple" | "createDebtHoldingAndRipple"
 > {
   return {
-    createInvestmentHoldingAndRipple: async ({ asset, entry, today: todayOpt }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
-
+    createInvestmentHoldingAndRipple: async ({ asset, entry, today }) => {
       try {
         await ctx.transaction(async () => {
           await stores.assets.createInvestmentAsset(asset);
@@ -79,14 +77,7 @@ export function createHoldingCreationCommands(
       return { ok: true, value: undefined };
     },
 
-    createDebtHoldingAndRipple: async ({
-      currentState,
-      debtModel,
-      liability,
-      today: todayOpt,
-    }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
-
+    createDebtHoldingAndRipple: async ({ currentState, debtModel, liability, today }) => {
       await ctx.transaction(async () => {
         await stores.liabilities.createLiability(liability);
         // The model is what decides how the balance is valued (ADR 0031), so a
