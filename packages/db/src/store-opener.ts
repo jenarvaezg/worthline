@@ -47,11 +47,13 @@ import type {
   BatchTrashFailureReason,
   BatchTrashResult,
   HoldingTrashTarget,
+  WorkspaceStore,
   WorthlineStore,
   WorthlineStoreOptions,
 } from "./store-types";
 import { createSyncRunStore } from "./sync-run-store";
-import { createWorkspaceStore, readWorkspace } from "./workspace-store";
+import { createWorkspaceDocumentStore } from "./workspace-document-store";
+import { createWorkspaceLifecycleStore, readWorkspace } from "./workspace-store";
 
 /**
  * Create a throwaway WorthlineStore backed by an in-memory SQLite database.
@@ -258,15 +260,20 @@ async function buildStore(
     readValuationAnchors: assetStore.readValuationAnchors,
     readWarningOverrides: () => store.readWarningOverrides(),
   });
+  // The workspace store is assembled here from its two halves (see WorkspaceStore).
+  //
   // importWorkspace's post-import gap-fill spans every domain and the snapshot
-  // save path, so it stays in the monolith and is injected into the workspace
-  // store as a dependency. The arrow defers reading store.snapshots.saveSnapshot until
+  // save path, so it stays in the monolith and is injected into the document
+  // half as a dependency. The arrow defers reading store.snapshots.saveSnapshot until
   // call-time, by which point store is fully constructed (same forward-
   // reference pattern as rippleHistoricalSnapshotsForOperation).
-  const workspaceStore = createWorkspaceStore(ctx, {
-    gapFillHistoricalSnapshots: (workspace, today) =>
-      gapFillHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, today),
-  });
+  const workspaceStore: WorkspaceStore = {
+    ...createWorkspaceLifecycleStore(ctx),
+    ...createWorkspaceDocumentStore(ctx, {
+      gapFillHistoricalSnapshots: (workspace, today) =>
+        gapFillHistoricalSnapshots(ctx, workspace, store.snapshots.saveSnapshot, today),
+    }),
+  };
 
   const datedFactCommands = createDatedFactCommandImplementations(ctx, {
     assets: assetStore,

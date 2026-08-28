@@ -71,9 +71,10 @@ export interface BeforeCommitHook {
  * Drizzle for everything — reads and writes alike, through the one shared
  * `db` instance. If a query genuinely cannot be expressed in Drizzle, drop to
  * raw SQL on `client` and document why inline. The only standing exceptions are
- * `resetWorkspace` / `importWorkspace`'s table wipe (a DELETE over a runtime
- * list of table names, which Drizzle's typed builder cannot express) and the
- * schema setup in `migrate` (out of scope — not store reads/writes).
+ * `wipeWorkspaceTables` (a DELETE over a runtime list of table names, which
+ * Drizzle's typed builder cannot express — the one wipe `resetWorkspace` and
+ * `importWorkspace` share) and the schema setup in `migrate` (out of scope —
+ * not store reads/writes).
  */
 export interface StoreContext {
   /** The raw libSQL client — for raw SQL (table wipes, pragmas) and as the
