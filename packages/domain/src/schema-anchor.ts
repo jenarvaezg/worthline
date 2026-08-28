@@ -23,8 +23,9 @@ type OptionalKeyOf<T> = {
 /**
  * `T` with `undefined` admitted on its optional properties — the shape zod
  * produces for a `.optional()` field, which `exactOptionalPropertyTypes`
- * otherwise refuses to match against a domain interface's `field?: X`. This is
- * the ONLY gap between a schema's output and the domain type it reproduces.
+ * otherwise refuses to match against a domain interface's `field?: X`. It is the
+ * gap {@link reproduces} has to assert past; see there for what the anchor does
+ * and does not promise beyond it.
  */
 type ZodOptionality<T> = T extends unknown
   ? Omit<T, OptionalKeyOf<T>> & { [K in OptionalKeyOf<T>]?: T[K] | undefined }
@@ -56,6 +57,9 @@ type UndeclaredKeyOf<T, S extends z.ZodType> = Exclude<keyof T, keyof z.output<S
  *   only `z.string().min(1)`; the type says what travels, not what is checked.
  * - nothing about EXTRA fields. A schema may declare a key the domain type no
  *   longer has, and the dead field goes on travelling until someone notices.
+ * - little about a UNION. `keyof` on a union is the INTERSECTION of its members'
+ *   keys, so anchoring a union as a whole checks only what its members share.
+ *   Anchor each member instead, and wrap the union with {@link coversUnion}.
  *
  * Narrowing the output past {@link ZodOptionality} is the one assertion here, and
  * it is confined to that single gap. It also erases `S`, so `.shape` / `.extend`
@@ -85,3 +89,20 @@ export const vocabularyOf =
   <T extends string>() =>
   <const V extends readonly T[]>(values: [T] extends [V[number]] ? V : never) =>
     z.enum(values as unknown as readonly [T, ...T[]]);
+
+/**
+ * Declares that a union schema has a branch for EVERY member of the domain union
+ * `T` — the half {@link reproduces} cannot check, since anchoring a union as a
+ * whole only sees the keys its members share.
+ *
+ * Use the two together: `reproduces` on each member, so each branch is complete,
+ * then this on the union, so no member is missing a branch. Without it a domain
+ * union that grows a member — a new source adapter's position kind, say (ADR
+ * 0021) — leaves the document silently unable to carry it.
+ */
+export const coversUnion =
+  <T>() =>
+  <S extends z.ZodType>(
+    schema: [T] extends [z.output<S>] ? S : never,
+  ): z.ZodType<T, unknown> =>
+    schema as unknown as z.ZodType<T, unknown>;

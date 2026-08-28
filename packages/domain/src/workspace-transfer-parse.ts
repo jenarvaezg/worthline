@@ -122,17 +122,17 @@ function describeExpectedType(expected: string): string {
   }
 }
 
-/** The `se esperaba uno de …` tail, when a nested issue names the admitted values. */
-function describeAdmittedValues(issues: ReadonlyArray<{ code?: string }>): string {
+/** The `se esperaba una de …` tail, when a nested issue names the admitted values. */
+function describeAdmittedValues(issues: ReadonlyArray<z.core.$ZodIssue>): string {
   const [first] = issues;
 
-  if (!first || first.code !== "invalid_value") {
+  if (first?.code !== "invalid_value") {
     return "";
   }
 
-  const { values } = first as unknown as { values: ReadonlyArray<unknown> };
-
-  return `; se esperaba una de ${values.map((value) => JSON.stringify(value)).join(", ")}`;
+  return `; se esperaba una de ${first.values
+    .map((value) => JSON.stringify(value))
+    .join(", ")}`;
 }
 
 function describeIssue(issue: z.core.$ZodIssue): string {

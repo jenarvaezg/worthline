@@ -32,7 +32,13 @@
 
 import { z } from "zod";
 import type { EarlyRepaymentMode } from "./amortization";
-import type { DistributiveOmit, SourceAdapter, SourcePosition } from "./connected-source";
+import type {
+  CoinPosition,
+  DistributiveOmit,
+  SourceAdapter,
+  SourcePosition,
+  TokenPosition,
+} from "./connected-source";
 import type { ContributionAllowance } from "./contribution-allowance";
 import type {
   ContributionOccurrenceState,
@@ -64,7 +70,7 @@ import type {
   PriceSource,
 } from "./prices";
 import { INVESTMENT_PRICE_PROVIDERS } from "./prices";
-import { reproduces, vocabularyOf } from "./schema-anchor";
+import { coversUnion, reproduces, vocabularyOf } from "./schema-anchor";
 import type {
   SnapshotHoldingKind,
   SnapshotHoldingRow,
@@ -107,7 +113,13 @@ export const EXPORT_VERSION = 3;
 
 const nonEmptyString = z.string().min(1);
 
-/** Always EUR in the MVP — anything else is rejected by the import invariants. */
+/**
+ * Always EUR in the MVP — anything else is rejected by the import invariants.
+ *
+ * Anchored by annotation rather than `reproduces`: the anchor's key check is
+ * meaningless for a type that is not an object, so the annotation says the same
+ * thing with less ceremony. Same for `isoWeekdaySchema` below.
+ */
 const currencySchema: z.ZodType<CurrencyCode, unknown> = nonEmptyString;
 
 const moneyMinorSchema = reproduces<MoneyMinor>()(
@@ -565,6 +577,9 @@ const domainWarningSchema = reproduces<DomainWarning>()(
 const priceSchema = reproduces<AssetPrice>()(
   z.object({
     assetId: nonEmptyString,
+    // A plain string, NOT `currencySchema`: `AssetPrice.currency` is `string` in
+    // the domain, and typing it tighter here than the type it reproduces would be
+    // the anchor's own promise pointing the wrong way.
     currency: nonEmptyString,
     price: nonEmptyString,
     source: priceSourceSchema,
@@ -649,49 +664,53 @@ export type ExportedSnapshot = z.output<typeof snapshotSchema>;
 
 // A coin position (Numista). `kind` defaults to "coin" so a file written before
 // the polymorphism existed (ADR 0021) — which has no `kind` — still imports.
-const coinPositionSchema = z.object({
-  kind: z.literal("coin").default("coin"),
-  id: nonEmptyString,
-  externalId: nonEmptyString,
-  catalogueId: nonEmptyString,
-  issueId: z.number().int().nullable(),
-  name: nonEmptyString,
-  grade: z.string(),
-  quantity: z.number().int(),
-  year: z.number().int().nullable(),
-  liquidityTier: liquidityTierSchema,
-  metal: nonEmptyString.nullable(),
-  finenessMillis: z.number().nullable(),
-  weightGrams: z.number().nullable(),
-  purchaseDate: nonEmptyString.nullable(),
-  metalValueMinor: z.number().int().nullable(),
-  numismaticValueMinor: z.number().int().nullable(),
-  numismaticFetchedAt: nonEmptyString.nullable(),
-  purchasePriceMinor: z.number().int().nullable(),
-  // The obverse photo URL (#272). Defaults to null so a file written before the
-  // gallery existed still imports; re-fetched on the next sync.
-  obverseThumbUrl: nonEmptyString.nullable().default(null),
-  currency: currencySchema,
-});
+const coinPositionSchema = reproduces<Omit<CoinPosition, "sourceId">>()(
+  z.object({
+    kind: z.literal("coin").default("coin"),
+    id: nonEmptyString,
+    externalId: nonEmptyString,
+    catalogueId: nonEmptyString,
+    issueId: z.number().int().nullable(),
+    name: nonEmptyString,
+    grade: z.string(),
+    quantity: z.number().int(),
+    year: z.number().int().nullable(),
+    liquidityTier: liquidityTierSchema,
+    metal: nonEmptyString.nullable(),
+    finenessMillis: z.number().nullable(),
+    weightGrams: z.number().nullable(),
+    purchaseDate: nonEmptyString.nullable(),
+    metalValueMinor: z.number().int().nullable(),
+    numismaticValueMinor: z.number().int().nullable(),
+    numismaticFetchedAt: nonEmptyString.nullable(),
+    purchasePriceMinor: z.number().int().nullable(),
+    // The obverse photo URL (#272). Defaults to null so a file written before the
+    // gallery existed still imports; re-fetched on the next sync.
+    obverseThumbUrl: nonEmptyString.nullable().default(null),
+    currency: currencySchema,
+  }),
+);
 
 // A token balance (Binance, ADR 0021): symbol/balance/wallet + the last live
 // unit price; carried by export/import like any other position (credentials
 // never are — they live on `connected_sources`, not here).
-const tokenPositionSchema = z.object({
-  kind: z.literal("token"),
-  id: nonEmptyString,
-  externalId: nonEmptyString,
-  name: nonEmptyString,
-  liquidityTier: liquidityTierSchema,
-  currency: currencySchema,
-  symbol: nonEmptyString,
-  balance: nonEmptyString,
-  wallet: z.string(),
-  unitPrice: nonEmptyString.nullable(),
-  // The token's CoinGecko logo URL (#482). Defaults to null so a file written
-  // before logos existed still imports; re-fetched on the next sync.
-  imageUrl: nonEmptyString.nullable().default(null),
-});
+const tokenPositionSchema = reproduces<Omit<TokenPosition, "sourceId">>()(
+  z.object({
+    kind: z.literal("token"),
+    id: nonEmptyString,
+    externalId: nonEmptyString,
+    name: nonEmptyString,
+    liquidityTier: liquidityTierSchema,
+    currency: currencySchema,
+    symbol: nonEmptyString,
+    balance: nonEmptyString,
+    wallet: z.string(),
+    unitPrice: nonEmptyString.nullable(),
+    // The token's CoinGecko logo URL (#482). Defaults to null so a file written
+    // before logos existed still imports; re-fetched on the next sync.
+    imageUrl: nonEmptyString.nullable().default(null),
+  }),
+);
 
 /**
  * One position a connected source mirrors, carried in the file (ADR 0016): the
@@ -703,7 +722,7 @@ const tokenPositionSchema = z.object({
  * and parses as a token; a coin position (with or without an explicit `kind`)
  * parses as a coin.
  */
-const positionSchema = reproduces<DistributiveOmit<SourcePosition, "sourceId">>()(
+const positionSchema = coversUnion<DistributiveOmit<SourcePosition, "sourceId">>()(
   z.union([coinPositionSchema, tokenPositionSchema]),
 );
 
