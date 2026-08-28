@@ -43,7 +43,16 @@ import type { OperationsStore, UpdateInvestmentOperationInput } from "./operatio
 import type { PayoutStore } from "./payout-store";
 import type { SnapshotStore } from "./snapshot-store";
 import type { SyncRunReadStore, SyncTrigger } from "./sync-run-store";
-import type { WorkspaceStore } from "./workspace-store";
+import type { WorkspaceDocumentStore } from "./workspace-document-store";
+import type { WorkspaceLifecycleStore } from "./workspace-store";
+
+/**
+ * The whole workspace store as callers consume it: the lifecycle half (members,
+ * init, reset) joined with the whole-workspace document half (export/import).
+ * Two modules, one face — see #1603. The store opener builds it from the two
+ * halves; nothing else needs to know it has any.
+ */
+export type WorkspaceStore = WorkspaceLifecycleStore & WorkspaceDocumentStore;
 
 type PublicAssetStore = Omit<
   AssetStore,
@@ -237,7 +246,7 @@ interface LegacyWorthlineStore {
   liabilities: PublicLiabilityStore;
   /** Focused operations & price-cache store (Slice R4). */
   operations: PublicOperationsStore;
-  /** Focused workspace lifecycle & member store (Slice R5). */
+  /** Workspace lifecycle & members, joined with the export/import document paths. */
   workspace: WorkspaceStore;
   /** Connected-source persistence (PRD #160 / #163, ADR 0016/0017). */
   connectedSources: PublicConnectedSourceStore;

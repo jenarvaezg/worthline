@@ -283,6 +283,7 @@ export type {
   DatabaseTarget,
   HoldingTrashTarget,
   TrashView,
+  WorkspaceStore,
   WorthlineStore,
   WorthlineStoreOptions,
 } from "./store-types";
@@ -324,9 +325,5 @@ export {
   type SyncTrigger,
   syncRunInstant,
 } from "./sync-run-store";
-export type {
-  ImportWorkspaceResult,
-  InitializeWorkspaceInput,
-  MemberOwnerships,
-  WorkspaceStore,
-} from "./workspace-store";
+export type { ImportWorkspaceResult } from "./workspace-document-store";
+export type { InitializeWorkspaceInput, MemberOwnerships } from "./workspace-store";
