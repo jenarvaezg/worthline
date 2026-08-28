@@ -8,9 +8,10 @@
 
 import type { AssetStore } from "@db/asset-store";
 import type { CorrectionEdit, CorrectionPlan } from "@db/correction-plan";
-import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
+import type { AddBalanceRebaselineInput } from "@db/liability-balance-rebaseline-store";
 import type { OperationsStore } from "@db/operations-store";
 import type { StoreContext } from "@db/store-context";
+import type { LiabilityStore } from "@db/store-types";
 import {
   checkOwnershipSplit,
   detectValueOnlyOpening,

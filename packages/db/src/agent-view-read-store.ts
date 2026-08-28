@@ -29,13 +29,11 @@ import { isNotNull } from "drizzle-orm";
 import { readAgentViewPublicIds } from "./agent-view-public-ids";
 import type { InvestmentAssetMeta, ValuationAnchorRecord } from "./asset-store";
 import type { ConnectedSourceRow } from "./connected-source-store";
-import type {
-  AmortizationPlanRecord,
-  BalanceAnchorRecord,
-  BalanceRebaselineRecord,
-  EarlyRepaymentRecord,
-  InterestRateRevisionRecord,
-} from "./liability-store";
+import type { AmortizationPlanRecord } from "./liability-amortization-plan-store";
+import type { BalanceAnchorRecord } from "./liability-balance-anchor-store";
+import type { BalanceRebaselineRecord } from "./liability-balance-rebaseline-store";
+import type { EarlyRepaymentRecord } from "./liability-early-repayment-store";
+import type { InterestRateRevisionRecord } from "./liability-rate-revision-store";
 import { readManualValueHistory } from "./manual-value-history";
 import { assetOwnerships, assets, liabilities, liabilityOwnerships } from "./schema";
 import type { SnapshotHoldingQuery, SnapshotHoldingRecord } from "./snapshot-store";

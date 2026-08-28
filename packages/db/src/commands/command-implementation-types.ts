@@ -7,25 +7,32 @@ import type {
 } from "@db/asset-store";
 import type { ContributionPlanStore } from "@db/contribution-plan-store";
 import type {
-  AddBalanceAnchorInput,
-  AddBalanceRebaselineInput,
-  AddEarlyRepaymentInput,
-  AddInterestRateRevisionInput,
   CreateAmortizationPlanInput,
-  LiabilityStore,
   UpdateAmortizationPlanInput,
+} from "@db/liability-amortization-plan-store";
+import type {
+  AddBalanceAnchorInput,
   UpdateBalanceAnchorInput,
+} from "@db/liability-balance-anchor-store";
+import type {
+  AddBalanceRebaselineInput,
   UpdateBalanceRebaselineInput,
+} from "@db/liability-balance-rebaseline-store";
+import type {
+  AddEarlyRepaymentInput,
   UpdateEarlyRepaymentInput,
+} from "@db/liability-early-repayment-store";
+import type {
+  AddInterestRateRevisionInput,
   UpdateInterestRateRevisionInput,
-  UpdateLiabilityInput,
-} from "@db/liability-store";
+} from "@db/liability-rate-revision-store";
+import type { UpdateLiabilityInput } from "@db/liability-store";
 import type {
   OperationsStore,
   UpdateInvestmentOperationInput,
 } from "@db/operations-store";
 import type { SnapshotStore } from "@db/snapshot-store";
-import type { CreateHousingHoldingCommand } from "@db/store-types";
+import type { CreateHousingHoldingCommand, LiabilityStore } from "@db/store-types";
 import type {
   CreateInvestmentOperationInput,
   CreateLiabilityInput,

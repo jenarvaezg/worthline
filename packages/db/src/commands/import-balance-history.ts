@@ -1,5 +1,5 @@
 import type { FactPersistenceProvenance } from "@db/fact-provenance";
-import type { AddBalanceRebaselineInput } from "@db/liability-store";
+import type { AddBalanceRebaselineInput } from "@db/liability-balance-rebaseline-store";
 
 import { applyDatedFactsBatch } from "./apply-dated-facts-batch";
 import type {

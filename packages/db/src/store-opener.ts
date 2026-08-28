@@ -25,7 +25,13 @@ import {
 } from "./database-target";
 import { seedDeclaredFireSavingsCapacity } from "./fire-savings-capacity-seed";
 import { createGoalStore } from "./goal-store";
-import { createLiabilityStore } from "./liability-store";
+import { createAmortizationPlanStore } from "./liability-amortization-plan-store";
+import { createBalanceAnchorStore } from "./liability-balance-anchor-store";
+import { createLiabilityBalanceReadStore } from "./liability-balance-reads";
+import { createBalanceRebaselineStore } from "./liability-balance-rebaseline-store";
+import { createEarlyRepaymentStore } from "./liability-early-repayment-store";
+import { createInterestRateRevisionStore } from "./liability-rate-revision-store";
+import { createLiabilityRecordStore } from "./liability-store";
 import { openLibsqlClient } from "./libsql-client";
 import { createManagedPortfolioStore } from "./managed-portfolio-store";
 import { type MigrateResult, migrate } from "./migrate";
@@ -47,6 +53,7 @@ import type {
   BatchTrashFailureReason,
   BatchTrashResult,
   HoldingTrashTarget,
+  LiabilityStore,
   WorkspaceStore,
   WorthlineStore,
   WorthlineStoreOptions,
@@ -195,7 +202,17 @@ async function buildStore(
   const { writeAuditEntry } = ctx;
   const snapshotStore = createSnapshotStore(ctx);
   const assetStore = createAssetStore(ctx);
-  const liabilityStore = createLiabilityStore(ctx);
+  // The liability store is assembled here from the thin row plus one module per
+  // family of dated debt fact, and the reads that compose them (see LiabilityStore).
+  const liabilityStore: LiabilityStore = {
+    ...createLiabilityRecordStore(ctx),
+    ...createAmortizationPlanStore(ctx),
+    ...createInterestRateRevisionStore(ctx),
+    ...createEarlyRepaymentStore(ctx),
+    ...createBalanceRebaselineStore(ctx),
+    ...createBalanceAnchorStore(ctx),
+    ...createLiabilityBalanceReadStore(ctx),
+  };
   const operationsStore = createOperationsStore(ctx);
   const connectedSourceStore = createConnectedSourceStore(ctx);
   const syncRunStore = createSyncRunStore(ctx);

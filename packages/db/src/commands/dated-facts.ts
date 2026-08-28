@@ -1,9 +1,9 @@
 import type { AssetStore } from "@db/asset-store";
 import { buildHistoricalSnapshotDeps } from "@db/historical-snapshot-deps";
-import type { LiabilityStore } from "@db/liability-store";
 import type { MigrateResult } from "@db/migrate";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
+import type { LiabilityStore } from "@db/store-types";
 import type { Clock } from "@worthline/domain";
 import type {
   DatedFactCommandImplementations,

@@ -1,5 +1,5 @@
-import type { LiabilityStore } from "@db/liability-store";
 import type { StoreContext } from "@db/store-context";
+import type { LiabilityStore } from "@db/store-types";
 import { eventBoundaryDate } from "@worthline/domain";
 import type {
   DatedFactCommandImplementations,

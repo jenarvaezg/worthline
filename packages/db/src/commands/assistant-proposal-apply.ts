@@ -22,9 +22,10 @@ import type { CorrectionPlan } from "@db/correction-plan";
 import type { EarlyRepaymentPlan } from "@db/early-repayment-plan";
 import type { InvestmentOperationPlan } from "@db/investment-operation-plan";
 import type { InvestmentTransferPlan } from "@db/investment-transfer-plan";
-import type { AddBalanceRebaselineInput, LiabilityStore } from "@db/liability-store";
+import type { AddBalanceRebaselineInput } from "@db/liability-balance-rebaseline-store";
 import type { AssistantProposalKind } from "@db/schema";
 import type { StoreContext } from "@db/store-context";
+import type { LiabilityStore } from "@db/store-types";
 import type {
   CorrectionReconstruction,
   InvestmentIdentitySeams,
