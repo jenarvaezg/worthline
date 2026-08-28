@@ -1555,3 +1555,116 @@ describe("parseWorkspaceExport — el traspaso y el apunte capturado viajan (#13
     expect(result.value.operations[0]?.source).toBe("agent");
   });
 });
+
+describe("parseWorkspaceExport — el contrato no puede quedarse atrás del dominio (#1602)", () => {
+  test("las declaraciones FIRE de #1428/#1460 sobreviven el round-trip", () => {
+    const document = makeDocument((doc) => {
+      doc.fireConfig["household"] = {
+        monthlySpendingMinor: 200_000,
+        safeWithdrawalRate: 0.04,
+        immobilizedCountsAsFireCapital: false,
+        retirementPlan: "ordinary",
+        ordinaryRetirementAge: 67,
+        capitalLastsUntilAge: 95,
+      };
+    });
+
+    const result = parseWorkspaceExport(document);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const cfg = result.value.fireConfig["household"]!;
+    expect(cfg.immobilizedCountsAsFireCapital).toBe(false);
+    expect(cfg.retirementPlan).toBe("ordinary");
+    expect(cfg.ordinaryRetirementAge).toBe(67);
+    expect(cfg.capitalLastsUntilAge).toBe(95);
+  });
+
+  test("tierRealReturns solo admite peldaños de la escalera, y lo dice en español", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.fireConfig["household"] = {
+          monthlySpendingMinor: 200_000,
+          safeWithdrawalRate: 0.04,
+          tierRealReturns: { inventado: 0.09 } as never,
+        };
+      }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    // Named path + Spanish text + the admitted rungs: zod's own wording for an
+    // invalid record key is English, and every message this gate emits surfaces
+    // in the UI (ADR 0010).
+    expect(result.errors).toEqual([
+      'fireConfig.household.tierRealReturns.inventado: clave no admitida; se esperaba una de "cash", "market", "term-locked", "illiquid", "housing".',
+    ]);
+  });
+
+  test("acepta un proveedor de precios que el dominio admite (coingecko)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.assets[1] = {
+          ...doc.assets[1]!,
+          investment: { providerSymbol: "bitcoin", priceProvider: "coingecko" },
+        };
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.assets[1]?.investment?.priceProvider).toBe("coingecko");
+  });
+
+  test("el día de una aportación semanal tiene que ser un día ISO", () => {
+    expectRejection(
+      makeDocument((doc) => {
+        doc.contributionPlans = [
+          {
+            scopeId: "household",
+            contributions: [
+              {
+                id: "c1",
+                destinationHoldingId: "a2",
+                amount: { mode: "money", value: 10_000 },
+                cadence: { kind: "weekly", weekday: 9 as never },
+                startDate: "2026-01-01",
+              },
+            ],
+          },
+        ];
+      }),
+      /weekday/i,
+    );
+  });
+  test("un peldaño «housing» de la escalera no tumba el documento (ADR 0022)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        const snapshot = doc.snapshots[0]!;
+        snapshot.holdings = snapshot.holdings.map((holding) =>
+          holding.kind === "asset"
+            ? { ...holding, countsAsHousing: true, liquidityTier: "housing" as const }
+            : { ...holding, liquidityTier: "housing" as const },
+        );
+        snapshot.housingEquity = { amountMinor: 130000, currency: "EUR" };
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.snapshots[0]?.holdings[0]?.liquidityTier).toBe("housing");
+  });
+
+  test("acepta un precio en caché de una fuente que el dominio admite (binance)", () => {
+    const result = parseWorkspaceExport(
+      makeDocument((doc) => {
+        doc.priceCache = [{ ...doc.priceCache[0]!, source: "binance" }];
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.priceCache[0]?.source).toBe("binance");
+  });
+});

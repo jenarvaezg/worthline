@@ -2,15 +2,15 @@
  * Validation of an untrusted workspace export document (ADR 0010).
  *
  * `parseWorkspaceExport` is the single gate between a user-supplied JSON file
- * and `importWorkspace`: it checks the version stamp, the structure (via zod),
- * and the domain invariants (ownership splits, ADR 0006 investment valuation,
+ * and `importWorkspace`: it checks the version stamp, the structure (against
+ * `workspaceExportSchema` — the contract's ONE source, #1602), and the domain
+ * invariants (ownership splits, ADR 0006 investment valuation,
  * ADR 0008 snapshot reconciliation, referential integrity, id uniqueness) and
  * normalizes absent sections to empty so callers always receive a COMPLETE
  * `WorkspaceExport`. Error messages are Spanish — they surface in the UI.
  */
 
-import { z } from "zod";
-import { asInstant } from "./dates";
+import type { z } from "zod";
 import { compareUnits } from "./decimal";
 import { assertSnapshotHoldingsReconcile } from "./snapshot-holdings";
 import type {
@@ -19,498 +19,13 @@ import type {
   ExportedPublicIdEntityType,
   WorkspaceExport,
 } from "./workspace-transfer";
-import { EXPORT_VERSION } from "./workspace-transfer";
+import { EXPORT_VERSION, workspaceExportSchema } from "./workspace-transfer";
 import type { OwnershipShare, Workspace } from "./workspace-types";
 import { checkOwnershipSplit } from "./workspace-types";
 
 export type ParseWorkspaceExportResult =
   | { ok: true; value: WorkspaceExport }
   | { ok: false; errors: [string, ...string[]] };
-
-// ── Structure schema (mirrors the workspace-transfer contract) ──────────────
-
-const nonEmptyString = z.string().min(1);
-
-const moneyMinorSchema = z.object({
-  // Integer minor units — the assertMinorInteger invariant at the file boundary.
-  amountMinor: z.number().int(),
-  currency: nonEmptyString,
-});
-
-const ownershipShareSchema = z.object({
-  memberId: nonEmptyString,
-  shareBps: z.number().int().positive(),
-});
-
-const memberSchema = z.object({
-  id: nonEmptyString,
-  name: nonEmptyString,
-  disabledAt: nonEmptyString.optional(),
-  // Member profile (PRD #421, #423) — optional so pre-profile exports still parse.
-  // `birthMonth` (1-12, #1415) sharpens the derived FIRE age; absent = year only.
-  birthYear: z.number().int().optional(),
-  birthMonth: z.number().int().min(1).max(12).optional(),
-  fiscalCountry: nonEmptyString.optional(),
-  riskTolerance: z.enum(["conservative", "moderate", "aggressive"]).optional(),
-});
-
-const groupSchema = z.object({
-  id: nonEmptyString,
-  name: nonEmptyString,
-  memberIds: z.array(nonEmptyString),
-});
-
-const liquidityTierSchema = z.enum(["cash", "market", "term-locked", "illiquid"]);
-
-const instrumentSchema = z.enum([
-  "current_account",
-  "term_deposit",
-  "fund",
-  "etf",
-  "stock",
-  "index",
-  "pension_plan",
-  "crypto",
-  "precious_metal",
-  "vehicle",
-  "property",
-  "mortgage",
-  "loan",
-  "credit_card",
-  "coin_collection",
-  "other",
-]);
-
-const investmentMetaSchema = z.object({
-  unitSymbol: nonEmptyString.optional(),
-  isin: nonEmptyString.optional(),
-  priceProvider: z.enum(["yahoo", "stooq", "finect"]).optional(),
-  providerSymbol: nonEmptyString.optional(),
-  manualPricePerUnit: nonEmptyString.optional(),
-  manualPricedAt: nonEmptyString.optional(),
-});
-
-const valuationMethodSchema = z.enum([
-  "stored",
-  "derived",
-  "appreciating",
-  "amortized",
-  "anchored",
-]);
-
-const debtModelSchema = z.enum(["amortizable", "revolving", "informal"]);
-
-const valuationCadenceSchema = z.enum(["step", "interpolated"]);
-
-// ── Structural facts (ADR 0015, #155): the full holding model ───────────────
-
-const valuationAnchorSchema = z.object({
-  id: nonEmptyString,
-  valueMinor: z.number().int(),
-  valuationDate: nonEmptyString,
-  adjustsPriorCurve: z.boolean(),
-});
-
-const interestRateRevisionSchema = z.object({
-  id: nonEmptyString,
-  revisionDate: nonEmptyString,
-  newAnnualInterestRate: nonEmptyString,
-});
-
-const earlyRepaymentSchema = z.object({
-  id: nonEmptyString,
-  repaymentDate: nonEmptyString,
-  amountMinor: z.number().int(),
-  mode: z.enum(["reduce-payment", "reduce-term"]),
-});
-
-const balanceRebaselineSchema = z.object({
-  id: nonEmptyString,
-  baselineDate: nonEmptyString,
-  outstandingBalanceMinor: z.number().int(),
-  endDate: nonEmptyString,
-  nextPaymentDate: nonEmptyString,
-  annualInterestRate: nonEmptyString,
-  monthlyPaymentMinor: z.number().int(),
-  inputMode: z.enum(["annual-rate", "monthly-payment"]),
-  startsAtBaseline: z.boolean(),
-});
-
-const amortizationPlanSchema = z.object({
-  id: nonEmptyString,
-  initialCapitalMinor: z.number().int(),
-  annualInterestRate: nonEmptyString,
-  termMonths: z.number().int().positive(),
-  disbursementDate: nonEmptyString,
-  firstPaymentDate: nonEmptyString,
-  originalSigningDate: nonEmptyString.optional(),
-  interestRateRevisions: z.array(interestRateRevisionSchema).default([]),
-  earlyRepayments: z.array(earlyRepaymentSchema).default([]),
-});
-
-const balanceAnchorSchema = z.object({
-  id: nonEmptyString,
-  balanceMinor: z.number().int(),
-  anchorDate: nonEmptyString,
-});
-
-const assetSchema = z.object({
-  id: nonEmptyString,
-  name: nonEmptyString,
-  type: z.enum(["cash", "manual", "real_estate", "investment"]),
-  currency: nonEmptyString,
-  currentValue: moneyMinorSchema.optional(),
-  liquidityTier: liquidityTierSchema,
-  isPrimaryResidence: z.boolean().optional(),
-  instrument: instrumentSchema.optional(),
-  valuationMethod: valuationMethodSchema.optional(),
-  valuationCadence: valuationCadenceSchema.optional(),
-  annualAppreciationRate: nonEmptyString.optional(),
-  valuationAnchors: z.array(valuationAnchorSchema).optional(),
-  connectedSourceId: nonEmptyString.optional(),
-  ownership: z.array(ownershipShareSchema),
-  investment: investmentMetaSchema.optional(),
-  deletedAt: nonEmptyString.optional(),
-  /** How it left the book, when the Papelera's door recorded it (#1549). */
-  trashExit: z.enum(["sold", "transferred", "mis_entry"]).optional(),
-});
-
-const liabilitySchema = z.object({
-  id: nonEmptyString,
-  name: nonEmptyString,
-  type: z.enum(["mortgage", "debt"]),
-  currency: nonEmptyString,
-  currentBalance: moneyMinorSchema,
-  instrument: instrumentSchema.optional(),
-  valuationMethod: valuationMethodSchema.optional(),
-  valuationCadence: valuationCadenceSchema.optional(),
-  debtModel: debtModelSchema.optional(),
-  amortizationPlan: amortizationPlanSchema.optional(),
-  balanceRebaselines: z.array(balanceRebaselineSchema).optional(),
-  balanceAnchors: z.array(balanceAnchorSchema).optional(),
-  ownership: z.array(ownershipShareSchema),
-  associatedAssetId: nonEmptyString.optional(),
-  deletedAt: nonEmptyString.optional(),
-});
-
-/**
- * The pre-conversion apunte (#1401). Absent on a euro operation; when present all
- * four fields come together, which is what makes the conversion auditable after an
- * export → import round-trip instead of silently re-derived.
- */
-const operationCaptureSchema = z.object({
-  currency: nonEmptyString,
-  pricePerUnit: nonEmptyString,
-  feesMinor: z.number().int(),
-  eurPerUnit: z.number().positive(),
-});
-
-const operationSchema = z.object({
-  id: nonEmptyString,
-  assetId: nonEmptyString,
-  /** The four kinds of the ledger, traspaso halves included (#1393). */
-  kind: z.enum(["buy", "sell", "transfer_out", "transfer_in"]),
-  executedAt: nonEmptyString,
-  occurredAt: nonEmptyString
-    .refine(
-      (value) =>
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
-        Number.isFinite(Date.parse(value)),
-      "occurredAt debe ser un instante UTC",
-    )
-    .transform(asInstant)
-    .optional(),
-  units: nonEmptyString,
-  pricePerUnit: nonEmptyString,
-  currency: nonEmptyString,
-  feesMinor: z.number().int(),
-  source: z
-    .enum(["manual", "opening", "statement", "connected", "agent"])
-    .default("manual"),
-  capture: operationCaptureSchema.optional(),
-  /** Both halves of a traspaso carry it; nothing else does (#1393). */
-  transferId: nonEmptyString.optional(),
-  /** The inherited acquisition cost, on the `transfer_in` half only (#1393). */
-  transferCostMinor: z.number().int().nonnegative().optional(),
-});
-
-const warningOverrideSchema = z.object({
-  code: nonEmptyString,
-  entityId: nonEmptyString,
-});
-
-const fireScopeConfigSchema = z.object({
-  monthlySpendingMinor: z.number().int(),
-  safeWithdrawalRate: z.number(),
-  expectedRealReturn: z.number().optional(),
-  /** Legacy typed age (#1415): still parsed so pre-#1415 exports import intact. */
-  currentAge: z.number().optional(),
-  targetRetirementAge: z.number().optional(),
-  excludedAssetIds: z.array(nonEmptyString).optional(),
-  monthlySavingsCapacityMinor: z.number().int().optional(),
-  /** #1416 seed marker: survives a transfer so the "check it" note is not lost. */
-  monthlySavingsCapacitySeededFromPlan: z.boolean().optional(),
-  leanMultiplier: z.number().optional(),
-  fatMultiplier: z.number().optional(),
-  baristaMonthlyIncomeMinor: z.number().int().optional(),
-  tierRealReturns: z.record(z.string(), z.number()).optional(),
-});
-
-const domainWarningSchema = z.object({
-  code: nonEmptyString,
-  severity: z.enum(["blocking", "overrideable"]),
-  entityType: z.enum(["asset", "liability"]),
-  entityId: nonEmptyString,
-  message: z.string(),
-});
-
-// One frozen per-position child row beneath a connected-source holding (ADR
-// 0035, PRD #459 S3): values + labels only, never secrets. A coin's metal and a
-// position's thumbnail are nullable; a token freezes both null.
-const snapshotPositionSchema = z.object({
-  positionKey: nonEmptyString,
-  label: nonEmptyString,
-  valueMinor: z.number().int(),
-  metal: nonEmptyString.nullable(),
-  imageUrl: nonEmptyString.nullable(),
-});
-
-const snapshotHoldingSchema = z.object({
-  // Frozen housing-membership signal for ASSET rows (#181). Defaults false for
-  // exports written before the field existed — the same additive basis the v17
-  // migration backfill uses, so an old export never claims an asset was a housing
-  // asset it cannot prove. Always false for liability rows.
-  countsAsHousing: z.boolean().default(false),
-  holdingId: nonEmptyString,
-  kind: z.enum(["asset", "liability"]),
-  label: nonEmptyString,
-  liquidityTier: liquidityTierSchema.nullable(),
-  // Frozen housing-securing signal (#180). Defaults false for exports written
-  // before the field existed — the same additive basis the migration backfill
-  // uses, so an old export never claims a debt secures housing it cannot prove.
-  securesHousing: z.boolean().default(false),
-  valueMinor: z.number().int(),
-  units: nonEmptyString.optional(),
-  unitPrice: nonEmptyString.optional(),
-  // Per-position breakdown of a connected-source holding (ADR 0035, PRD #459 S3).
-  // OPTIONAL with NO default: absent must stay `undefined`, never `[]` — the
-  // reconciliation skips a holding with no positions, but an empty array would
-  // fail the sub-sum (Σ == holding) against the holding's nonzero value. A legacy
-  // export omits it entirely and imports unchanged.
-  positions: z.array(snapshotPositionSchema).optional(),
-});
-
-const snapshotSchema = z.object({
-  id: nonEmptyString,
-  scopeId: nonEmptyString,
-  scopeLabel: nonEmptyString,
-  capturedAt: nonEmptyString,
-  dateKey: nonEmptyString,
-  monthKey: nonEmptyString,
-  isMonthlyClose: z.boolean(),
-  totalNetWorth: moneyMinorSchema,
-  liquidNetWorth: moneyMinorSchema,
-  housingEquity: moneyMinorSchema,
-  grossAssets: moneyMinorSchema,
-  debts: moneyMinorSchema,
-  warnings: z.array(domainWarningSchema).default([]),
-  holdings: z.array(snapshotHoldingSchema).default([]),
-});
-
-const priceSchema = z.object({
-  assetId: nonEmptyString,
-  currency: nonEmptyString,
-  price: nonEmptyString,
-  source: z.enum(["manual", "ecb", "coingecko", "stooq", "yahoo", "finect", "numista"]),
-  priceDate: nonEmptyString.optional(),
-  fetchedAt: nonEmptyString,
-  freshnessState: z.enum(["fresh", "stale", "failed", "manual"]),
-  staleReason: nonEmptyString.optional(),
-});
-
-// ── Connected sources (ADR 0016): the source + its positions, never secrets ──
-
-// A coin position (Numista). `kind` defaults to "coin" so a file written before
-// the polymorphism existed (ADR 0021) — which has no `kind` — still imports.
-const coinPositionSchema = z.object({
-  kind: z.literal("coin").default("coin"),
-  id: nonEmptyString,
-  externalId: nonEmptyString,
-  catalogueId: nonEmptyString,
-  issueId: z.number().int().nullable(),
-  name: nonEmptyString,
-  grade: z.string(),
-  quantity: z.number().int(),
-  year: z.number().int().nullable(),
-  liquidityTier: liquidityTierSchema,
-  metal: nonEmptyString.nullable(),
-  finenessMillis: z.number().nullable(),
-  weightGrams: z.number().nullable(),
-  purchaseDate: nonEmptyString.nullable(),
-  metalValueMinor: z.number().int().nullable(),
-  numismaticValueMinor: z.number().int().nullable(),
-  numismaticFetchedAt: nonEmptyString.nullable(),
-  purchasePriceMinor: z.number().int().nullable(),
-  // The obverse photo URL (#272). Defaults to null so a file written before the
-  // gallery existed still imports; re-fetched on the next sync.
-  obverseThumbUrl: nonEmptyString.nullable().default(null),
-  currency: nonEmptyString,
-});
-
-// A token balance (Binance, ADR 0021): symbol/balance/wallet + the last live
-// unit price; carried by export/import like any other position (credentials
-// never are — they live on `connected_sources`, not here).
-const tokenPositionSchema = z.object({
-  kind: z.literal("token"),
-  id: nonEmptyString,
-  externalId: nonEmptyString,
-  name: nonEmptyString,
-  liquidityTier: liquidityTierSchema,
-  currency: nonEmptyString,
-  symbol: nonEmptyString,
-  balance: nonEmptyString,
-  wallet: z.string(),
-  unitPrice: nonEmptyString.nullable(),
-  // The token's CoinGecko logo URL (#482). Defaults to null so a file written
-  // before logos existed still imports; re-fetched on the next sync.
-  imageUrl: nonEmptyString.nullable().default(null),
-});
-
-// First match wins: a token position fails the coin schema (no catalogue/quantity)
-// and parses as a token; a coin position (with or without an explicit `kind`)
-// parses as a coin.
-const positionSchema = z.union([coinPositionSchema, tokenPositionSchema]);
-
-const connectedSourceSchema = z.object({
-  id: nonEmptyString,
-  adapter: z.enum(["numista", "binance"]),
-  label: nonEmptyString,
-  assetId: nonEmptyString,
-  lastSyncAt: nonEmptyString.optional(),
-  positions: z.array(positionSchema).default([]),
-});
-
-const publicIdSchema = z.object({
-  entityType: z.enum(["scope", "member", "member_group", "holding", "managed_portfolio"]),
-  entityId: nonEmptyString,
-  publicId: nonEmptyString,
-});
-
-// Payouts (PRD #652, ADR 0054): attribution records attached to a holding.
-// Schedule occurrences are derived on read, never exported — only the declaration.
-const payoutSchema = z.object({
-  id: nonEmptyString,
-  holdingId: nonEmptyString,
-  dateISO: nonEmptyString,
-  amountMinor: z.number().int(),
-  note: nonEmptyString.optional(),
-});
-
-const payoutScheduleSchema = z.object({
-  id: nonEmptyString,
-  holdingId: nonEmptyString,
-  label: nonEmptyString,
-  amountMinor: z.number().int(),
-  // Declared cost per occurrence (#1448). Null / absent = not declared, which is
-  // not the same statement as a declared 0, so it defaults to null and never 0.
-  expensesMinor: z.number().int().nullable().default(null),
-  cadence: z.enum(["weekly", "monthly", "quarterly", "annual"]),
-  startISO: nonEmptyString,
-  endISO: nonEmptyString.nullable().default(null),
-  exclusions: z.array(nonEmptyString).default([]),
-});
-
-const plannedContributionSchema = z.object({
-  id: nonEmptyString,
-  destinationHoldingId: nonEmptyString,
-  amount: z.discriminatedUnion("mode", [
-    z.object({ mode: z.literal("money"), value: z.number().int().positive() }),
-    z.object({ mode: z.literal("units"), value: nonEmptyString }),
-  ]),
-  cadence: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("weekly"), weekday: z.number().int().min(1).max(7) }),
-    z.object({ kind: z.literal("monthly"), dayOfMonth: z.number().int().min(1).max(31) }),
-    z.object({ kind: z.literal("quarterly") }),
-    z.object({ kind: z.literal("annual") }),
-  ]),
-  startDate: nonEmptyString,
-  endDate: nonEmptyString.optional(),
-});
-
-const contributionPlanSchema = z.object({
-  scopeId: nonEmptyString,
-  contributions: z.array(plannedContributionSchema),
-});
-
-const contributionAllowanceSchema = z.object({
-  id: nonEmptyString,
-  scopeId: nonEmptyString,
-  label: nonEmptyString,
-  annualCapMinor: z.number().int().positive(),
-  holdingIds: z.array(nonEmptyString),
-});
-
-const managedPortfolioSchema = z.object({
-  id: nonEmptyString,
-  scopeId: nonEmptyString,
-  name: nonEmptyString,
-  provider: z.string().nullable(),
-  holdingIds: z.array(nonEmptyString),
-  /**
-   * The declared balance travels with the entity (#1550) — it is typed data, and
-   * an import that dropped it would silence a careo the owner had set up.
-   * Optional so documents exported before S4 still parse as "no witness".
-   */
-  witness: z
-    .object({
-      declaredValue: moneyMinorSchema,
-      declaredDate: nonEmptyString,
-    })
-    .nullish()
-    .transform((value) => value ?? null),
-});
-
-const contributionReconciliationSchema = z.object({
-  contributionId: nonEmptyString,
-  occurrenceId: nonEmptyString,
-  state: z.enum(["open", "fulfilled", "skipped"]),
-  operationIds: z.array(nonEmptyString),
-  storedExecutionMinor: z.number().int().nonnegative().optional(),
-});
-
-const documentSchema = z.object({
-  version: z.literal(EXPORT_VERSION),
-  workspace: z.object({
-    mode: z.enum(["individual", "household"]),
-    baseCurrency: nonEmptyString,
-  }),
-  members: z.array(memberSchema).min(1),
-  groups: z.array(groupSchema).default([]),
-  assets: z.array(assetSchema).default([]),
-  liabilities: z.array(liabilitySchema).default([]),
-  operations: z.array(operationSchema).default([]),
-  warningOverrides: z.array(warningOverrideSchema).default([]),
-  fireConfig: z.record(z.string(), fireScopeConfigSchema).default({}),
-  snapshots: z.array(snapshotSchema).default([]),
-  trash: z
-    .object({
-      assets: z.array(assetSchema).default([]),
-      liabilities: z.array(liabilitySchema).default([]),
-    })
-    .default({ assets: [], liabilities: [] }),
-  priceCache: z.array(priceSchema).default([]),
-  connectedSources: z.array(connectedSourceSchema).default([]),
-  publicIds: z.array(publicIdSchema).default([]),
-  payouts: z.array(payoutSchema).default([]),
-  payoutSchedules: z.array(payoutScheduleSchema).default([]),
-  contributionPlans: z.array(contributionPlanSchema).default([]),
-  contributionReconciliations: z.array(contributionReconciliationSchema).default([]),
-  // Only the declared ceiling travels; what has been consumed is derived from the
-  // operations that travel with it (ADR 0080), so it has nothing to export.
-  contributionAllowances: z.array(contributionAllowanceSchema).default([]),
-  // ADR 0085: the grouping travels; its members travel as ordinary assets.
-  managedPortfolios: z.array(managedPortfolioSchema).default([]),
-});
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
@@ -539,16 +54,16 @@ export function parseWorkspaceExport(input: unknown): ParseWorkspaceExportResult
     ]);
   }
 
-  const parsed = documentSchema.safeParse(input);
+  const parsed = workspaceExportSchema.safeParse(input);
 
   if (!parsed.success) {
     return fail(parsed.error.issues.map(describeIssue));
   }
 
-  // zod has stripped unknown keys and filled the section defaults, so at
-  // runtime `parsed.data` IS a complete WorkspaceExport. The cast only bridges
-  // exactOptionalPropertyTypes (zod types optional fields as `T | undefined`).
-  const value = parsed.data as WorkspaceExport;
+  // The schema IS the contract (#1602), so `parsed.data` is a complete
+  // `WorkspaceExport` by construction — unknown keys stripped, section defaults
+  // filled — with no cast to bridge. What remains is the domain layer.
+  const value = parsed.data;
   const errors = collectDomainErrors(value);
 
   if (errors.length > 0) {
@@ -607,6 +122,19 @@ function describeExpectedType(expected: string): string {
   }
 }
 
+/** The `se esperaba una de …` tail, when a nested issue names the admitted values. */
+function describeAdmittedValues(issues: ReadonlyArray<z.core.$ZodIssue>): string {
+  const [first] = issues;
+
+  if (first?.code !== "invalid_value") {
+    return "";
+  }
+
+  return `; se esperaba una de ${first.values
+    .map((value) => JSON.stringify(value))
+    .join(", ")}`;
+}
+
 function describeIssue(issue: z.core.$ZodIssue): string {
   const at = describePath(issue.path);
 
@@ -627,6 +155,19 @@ function describeIssue(issue: z.core.$ZodIssue): string {
       }
 
       return `${at}: el valor es demasiado pequeño (mínimo ${String(issue.minimum)}).`;
+    case "too_big":
+      if (issue.origin === "array") {
+        return `${at}: no puede contener más de ${String(issue.maximum)} elemento(s).`;
+      }
+
+      return `${at}: el valor es demasiado grande (máximo ${String(issue.maximum)}).`;
+    // A record key outside its vocabulary (a rung that is not on the ladder, say).
+    // The admitted values live on the nested issue, so they are lifted out here —
+    // zod's own text for this one is English, and the whole gate is Spanish.
+    case "invalid_key":
+      return `${at}: clave no admitida${describeAdmittedValues(issue.issues)}.`;
+    case "invalid_union":
+      return `${at}: no encaja con ninguna de las formas admitidas.`;
     default:
       return `${at}: ${issue.message}`;
   }
