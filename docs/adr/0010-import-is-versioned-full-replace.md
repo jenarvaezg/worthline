@@ -45,3 +45,48 @@ workspace's history starts with "imported on X" rather than empty.
   in settings, since it requires a workspace to exist.
 - A future second format version forces a decision then: bump-and-reject, or introduce a converter.
   Until then there is nothing to migrate.
+
+## Amendment (2026-08-28, #1602): the schema IS the contract
+
+The ADR above says the file is validated "schema shape via zod, plus the existing domain
+invariants". It did not say **where the shape is declared**, and the implementation answered
+that question twice: a tree of hand-written `Exported*` interfaces in `workspace-transfer.ts`
+and a mirror tree of zod schemas in `workspace-transfer-parse.ts`, bridged by a bare
+`parsed.data as WorkspaceExport`. Adding a field meant editing both, and nothing checked that
+they still agreed.
+
+We decided the **zod schemas are the single source**: every `Exported*` type is derived from
+its schema with `z.output`, and the parse gate validates against that same schema with no cast.
+A field is declared once.
+
+A section that carries a type the domain already owns (`Member`, `Payout`, `NetWorthSnapshot`,
+`ManagedPortfolio`, …) keeps its own module as the source of that type — the export contract is
+not the right home for `Member`. Instead the schema is **anchored** to it (`reproduces<T>()` in
+`schema-anchor.ts`), which makes the compiler require that the schema satisfy the type AND
+declare every one of its keys, optional ones included. Vocabularies are anchored the same way
+(`vocabularyOf<T>()`), exact in both directions. Anchoring is type machinery only: it is the
+identity at runtime and validates nothing the schema does not validate itself.
+
+The direction was chosen over types→zod because the file is untrusted input: the runtime
+validator has to exist either way, so deriving the types from it costs nothing, whereas
+generating schemas from types needs a build step this repo does not have.
+
+### What the two declarations had already cost
+
+Every one of these was live when the amendment was written, and each is now a regression test:
+
+- the `housing` rung (ADR 0022) was missing from the tier vocabulary, so **no backup of a
+  workspace with a home could be re-imported** — the v28 recut freezes that rung onto
+  `snapshot_holdings`, so this was real data, not a hypothetical;
+- `coingecko` (price provider) and `binance` (price source) were missing, and either one
+  brought down the whole document;
+- four FIRE declarations (ADR 0078/0081 — `immobilizedCountsAsFireCapital`, `retirementPlan`,
+  `ordinaryRetirementAge`, `capitalLastsUntilAge`) were absent from the schema, so zod stripped
+  them on **every** round-trip and they came back as the neutral default, silently moving the
+  FIRE figures of anyone who had declared otherwise;
+- `tierRealReturns` accepted any string key rather than a rung of the ladder.
+
+None of them bumped `EXPORT_VERSION`. The fix widened the validator towards documents this ADR
+already promised to accept, and stopped discarding data the file was already carrying; no v3
+file changed meaning, so a bump would only have refused the backups already on users' disks.
+The version gate itself is unchanged and still runs FIRST, before any structural check.

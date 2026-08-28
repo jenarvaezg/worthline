@@ -21,12 +21,10 @@
  * on every round-trip.
  *
  * Sections that carry a type the domain already owns (`Member`, `Payout`,
- * `NetWorthSnapshot`, …) are anchored to it with {@link sectionOf}: the domain
- * module stays the source of that type, and a field it requires which the schema
- * forgot is a compile error here. Vocabularies are anchored with
- * {@link vocabularyOf}, which is exact in both directions — a member added to a
- * domain union and forgotten here breaks the build instead of quietly making
- * every document that uses it unimportable.
+ * `NetWorthSnapshot`, …) are anchored to it with `reproduces` and their
+ * vocabularies with `vocabularyOf`, both from `schema-anchor` — which documents
+ * exactly what each anchor does and does not promise. The domain module stays the
+ * source of those types; this module is the source of the document's own shapes.
  *
  * `parseWorkspaceExport` (in `workspace-transfer-parse`) validates.
  * `serializeWorkspaceExport` seals the version. Nobody writes the shape twice.
@@ -66,6 +64,7 @@ import type {
   PriceSource,
 } from "./prices";
 import { INVESTMENT_PRICE_PROVIDERS } from "./prices";
+import { reproduces, vocabularyOf } from "./schema-anchor";
 import type {
   SnapshotHoldingKind,
   SnapshotHoldingRow,
@@ -104,66 +103,6 @@ import type {
  */
 export const EXPORT_VERSION = 3;
 
-// ── Anchoring the schemas to the domain ─────────────────────────────────────
-
-/** The keys of `T` that may be absent. */
-type OptionalKeyOf<T> = {
-  [K in keyof T]-?: object extends Pick<T, K> ? K : never;
-}[keyof T];
-
-/**
- * `T` with `undefined` admitted on its optional properties — the shape zod
- * produces for a `.optional()` field, which `exactOptionalPropertyTypes`
- * otherwise refuses to match against a domain interface's `field?: X`. This is
- * the ONLY gap between a schema's output and the domain type it reproduces.
- */
-type ZodOptionality<T> = T extends unknown
-  ? Omit<T, OptionalKeyOf<T>> & { [K in OptionalKeyOf<T>]?: T[K] | undefined }
-  : never;
-
-/** The keys of `T` that the schema `S` does not declare at all. */
-type UndeclaredKeyOf<T, S extends z.ZodType> = Exclude<keyof T, keyof z.output<S>>;
-
-/**
- * Anchors a section schema to the domain type it must reproduce, and hands back
- * a schema whose output IS that type.
- *
- * Two constraints do the work, and they catch different mistakes:
- *
- * - the output must SATISFY the domain type, so a field whose type the schema got
- *   wrong fails to compile;
- * - every key of the domain type must be DECLARED, so a field the schema simply
- *   forgot fails too — including an optional one. That second check is the one that
- *   matters most here: satisfaction alone is blind to a forgotten optional field,
- *   and the four FIRE declarations #1602 found being dropped on every round-trip
- *   (#1428, #1460) were all optional.
- *
- * Declared-but-narrower is deliberately still allowed, because the document
- * NORMALIZES: `source` carries `.default("manual")`, so its output is tighter than
- * the domain's optional field rather than equal to it.
- *
- * Narrowing the output past {@link ZodOptionality} is the one assertion in the
- * module, and it is confined to that single gap — unlike the whole-document
- * `as WorkspaceExport` it replaces, which asserted everything.
- */
-const sectionOf =
-  <T>() =>
-  <S extends z.ZodType<ZodOptionality<T>>>(
-    schema: [UndeclaredKeyOf<T, S>] extends [never] ? S : never,
-  ): z.ZodType<T, unknown> =>
-    schema as unknown as z.ZodType<T, unknown>;
-
-/**
- * A vocabulary that must match a domain union EXACTLY: the values must cover it
- * (nothing missing) and stay inside it (no stranger). Both directions matter —
- * a missing member makes every document that uses it unimportable, which is how
- * `housing`, `coingecko` and `binance` were being refused before #1602.
- */
-const vocabularyOf =
-  <T extends string>() =>
-  <const V extends readonly T[]>(values: [T] extends [V[number]] ? V : never) =>
-    z.enum(values as unknown as readonly [T, ...T[]]);
-
 // ── Primitives ──────────────────────────────────────────────────────────────
 
 const nonEmptyString = z.string().min(1);
@@ -171,7 +110,7 @@ const nonEmptyString = z.string().min(1);
 /** Always EUR in the MVP — anything else is rejected by the import invariants. */
 const currencySchema: z.ZodType<CurrencyCode, unknown> = nonEmptyString;
 
-const moneyMinorSchema = sectionOf<MoneyMinor>()(
+const moneyMinorSchema = reproduces<MoneyMinor>()(
   z.object({
     // Integer minor units — the assertMinorInteger invariant at the file boundary.
     amountMinor: z.number().int(),
@@ -179,7 +118,7 @@ const moneyMinorSchema = sectionOf<MoneyMinor>()(
   }),
 );
 
-const ownershipShareSchema = sectionOf<OwnershipShare>()(
+const ownershipShareSchema = reproduces<OwnershipShare>()(
   z.object({
     memberId: nonEmptyString,
     shareBps: z.number().int().positive(),
@@ -312,7 +251,7 @@ const workspaceConfigSchema = z.object({
 /** Workspace-level configuration carried by the file. */
 export type ExportedWorkspaceConfig = z.output<typeof workspaceConfigSchema>;
 
-const memberSchema = sectionOf<Member>()(
+const memberSchema = reproduces<Member>()(
   z.object({
     id: nonEmptyString,
     name: nonEmptyString,
@@ -326,7 +265,7 @@ const memberSchema = sectionOf<Member>()(
   }),
 );
 
-const groupSchema = sectionOf<MemberGroup>()(
+const groupSchema = reproduces<MemberGroup>()(
   z.object({
     id: nonEmptyString,
     name: nonEmptyString,
@@ -546,7 +485,7 @@ const operationCaptureSchema = z.object({
   eurPerUnit: z.number().positive(),
 });
 
-const operationSchema = sectionOf<InvestmentOperation>()(
+const operationSchema = reproduces<InvestmentOperation>()(
   z.object({
     id: nonEmptyString,
     assetId: nonEmptyString,
@@ -577,14 +516,14 @@ const operationSchema = sectionOf<InvestmentOperation>()(
 
 // ── Warnings, FIRE configuration and the price cache ────────────────────────
 
-const warningOverrideSchema = sectionOf<WarningOverride>()(
+const warningOverrideSchema = reproduces<WarningOverride>()(
   z.object({
     code: nonEmptyString,
     entityId: nonEmptyString,
   }),
 );
 
-const fireScopeConfigSchema = sectionOf<FireScopeConfig>()(
+const fireScopeConfigSchema = reproduces<FireScopeConfig>()(
   z.object({
     monthlySpendingMinor: z.number().int(),
     safeWithdrawalRate: z.number(),
@@ -613,7 +552,7 @@ const fireScopeConfigSchema = sectionOf<FireScopeConfig>()(
   }),
 );
 
-const domainWarningSchema = sectionOf<DomainWarning>()(
+const domainWarningSchema = reproduces<DomainWarning>()(
   z.object({
     code: nonEmptyString,
     severity: warningSeveritySchema,
@@ -623,7 +562,7 @@ const domainWarningSchema = sectionOf<DomainWarning>()(
   }),
 );
 
-const priceSchema = sectionOf<AssetPrice>()(
+const priceSchema = reproduces<AssetPrice>()(
   z.object({
     assetId: nonEmptyString,
     currency: nonEmptyString,
@@ -641,7 +580,7 @@ const priceSchema = sectionOf<AssetPrice>()(
 // One frozen per-position child row beneath a connected-source holding (ADR
 // 0035, PRD #459 S3): values + labels only, never secrets. A coin's metal and a
 // position's thumbnail are nullable; a token freezes both null.
-const snapshotPositionSchema = sectionOf<SnapshotPositionRow>()(
+const snapshotPositionSchema = reproduces<SnapshotPositionRow>()(
   z.object({
     positionKey: nonEmptyString,
     label: nonEmptyString,
@@ -651,7 +590,7 @@ const snapshotPositionSchema = sectionOf<SnapshotPositionRow>()(
   }),
 );
 
-const snapshotHoldingSchema = sectionOf<SnapshotHoldingRow>()(
+const snapshotHoldingSchema = reproduces<SnapshotHoldingRow>()(
   z.object({
     // Frozen housing-membership signal for ASSET rows (#181). Defaults false for
     // exports written before the field existed — the same additive basis the v17
@@ -678,7 +617,9 @@ const snapshotHoldingSchema = sectionOf<SnapshotHoldingRow>()(
   }),
 );
 
-const snapshotSchema = sectionOf<NetWorthSnapshot & { holdings: SnapshotHoldingRow[] }>()(
+const snapshotSchema = reproduces<
+  NetWorthSnapshot & { holdings: SnapshotHoldingRow[] }
+>()(
   z.object({
     id: nonEmptyString,
     scopeId: nonEmptyString,
@@ -762,7 +703,7 @@ const tokenPositionSchema = z.object({
  * and parses as a token; a coin position (with or without an explicit `kind`)
  * parses as a coin.
  */
-const positionSchema = sectionOf<DistributiveOmit<SourcePosition, "sourceId">>()(
+const positionSchema = reproduces<DistributiveOmit<SourcePosition, "sourceId">>()(
   z.union([coinPositionSchema, tokenPositionSchema]),
 );
 
@@ -811,7 +752,7 @@ export type ExportedPublicId = z.output<typeof publicIdSchema>;
 
 // Payouts (PRD #652, ADR 0054): attribution records attached to a holding.
 // Schedule occurrences are derived on read, never exported — only the declaration.
-const payoutSchema = sectionOf<Payout>()(
+const payoutSchema = reproduces<Payout>()(
   z.object({
     id: nonEmptyString,
     holdingId: nonEmptyString,
@@ -821,7 +762,7 @@ const payoutSchema = sectionOf<Payout>()(
   }),
 );
 
-const payoutScheduleSchema = sectionOf<PayoutSchedule>()(
+const payoutScheduleSchema = reproduces<PayoutSchedule>()(
   z.object({
     id: nonEmptyString,
     holdingId: nonEmptyString,
@@ -839,7 +780,7 @@ const payoutScheduleSchema = sectionOf<PayoutSchedule>()(
 
 const isoWeekdaySchema: z.ZodType<IsoWeekday, unknown> = z.literal([1, 2, 3, 4, 5, 6, 7]);
 
-const plannedContributionSchema = sectionOf<PlannedContribution>()(
+const plannedContributionSchema = reproduces<PlannedContribution>()(
   z.object({
     id: nonEmptyString,
     destinationHoldingId: nonEmptyString,
@@ -861,7 +802,7 @@ const plannedContributionSchema = sectionOf<PlannedContribution>()(
   }),
 );
 
-const contributionPlanSchema = sectionOf<ContributionPlan>()(
+const contributionPlanSchema = reproduces<ContributionPlan>()(
   z.object({
     scopeId: nonEmptyString,
     contributions: z.array(plannedContributionSchema),
@@ -880,7 +821,7 @@ export type ExportedContributionReconciliation = z.output<
   typeof contributionReconciliationSchema
 >;
 
-const contributionAllowanceSchema = sectionOf<ContributionAllowance>()(
+const contributionAllowanceSchema = reproduces<ContributionAllowance>()(
   z.object({
     id: nonEmptyString,
     scopeId: nonEmptyString,
@@ -890,7 +831,7 @@ const contributionAllowanceSchema = sectionOf<ContributionAllowance>()(
   }),
 );
 
-const managedPortfolioSchema = sectionOf<ManagedPortfolio>()(
+const managedPortfolioSchema = reproduces<ManagedPortfolio>()(
   z.object({
     id: nonEmptyString,
     scopeId: nonEmptyString,
@@ -902,7 +843,7 @@ const managedPortfolioSchema = sectionOf<ManagedPortfolio>()(
      * an import that dropped it would silence a careo the owner had set up.
      * Optional so documents exported before S4 still parse as "no witness".
      */
-    witness: sectionOf<ManagedPortfolioWitness>()(
+    witness: reproduces<ManagedPortfolioWitness>()(
       z.object({ declaredValue: moneyMinorSchema, declaredDate: nonEmptyString }),
     )
       .nullish()
@@ -965,6 +906,13 @@ export type WorkspaceExport = z.output<typeof workspaceExportSchema>;
 /**
  * The sections a producer may omit; `serializeWorkspaceExport` fills each with an
  * empty value, so a sealed document always carries every section.
+ *
+ * `serializeWorkspaceExport` names them a second time, one `?? []` each. That
+ * repetition is deliberate rather than collapsed into a spread over a defaults
+ * object: the compiler already forces it, because `WorkspaceExport` requires
+ * every section, so forgetting one here fails to compile. Collapsing it would
+ * need an assertion to re-attach the widened `Object.entries` result — trading a
+ * repetition the compiler checks for a cast it cannot.
  */
 type OmittableSection =
   | "publicIds"
