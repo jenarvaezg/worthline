@@ -121,19 +121,36 @@ type ZodOptionality<T> = T extends unknown
   ? Omit<T, OptionalKeyOf<T>> & { [K in OptionalKeyOf<T>]?: T[K] | undefined }
   : never;
 
+/** The keys of `T` that the schema `S` does not declare at all. */
+type UndeclaredKeyOf<T, S extends z.ZodType> = Exclude<keyof T, keyof z.output<S>>;
+
 /**
  * Anchors a section schema to the domain type it must reproduce, and hands back
  * a schema whose output IS that type.
  *
- * The generic constraint does the work: the schema's output must satisfy the
- * domain type, so a required field the domain added and the schema forgot fails
- * to compile right here. Narrowing the output past {@link ZodOptionality} is the
- * one assertion in the module, and it is confined to that single gap — unlike the
- * whole-document `as WorkspaceExport` it replaces, which asserted everything.
+ * Two constraints do the work, and they catch different mistakes:
+ *
+ * - the output must SATISFY the domain type, so a field whose type the schema got
+ *   wrong fails to compile;
+ * - every key of the domain type must be DECLARED, so a field the schema simply
+ *   forgot fails too — including an optional one. That second check is the one that
+ *   matters most here: satisfaction alone is blind to a forgotten optional field,
+ *   and the four FIRE declarations #1602 found being dropped on every round-trip
+ *   (#1428, #1460) were all optional.
+ *
+ * Declared-but-narrower is deliberately still allowed, because the document
+ * NORMALIZES: `source` carries `.default("manual")`, so its output is tighter than
+ * the domain's optional field rather than equal to it.
+ *
+ * Narrowing the output past {@link ZodOptionality} is the one assertion in the
+ * module, and it is confined to that single gap — unlike the whole-document
+ * `as WorkspaceExport` it replaces, which asserted everything.
  */
 const sectionOf =
   <T>() =>
-  <S extends z.ZodType<ZodOptionality<T>>>(schema: S): z.ZodType<T, unknown> =>
+  <S extends z.ZodType<ZodOptionality<T>>>(
+    schema: [UndeclaredKeyOf<T, S>] extends [never] ? S : never,
+  ): z.ZodType<T, unknown> =>
     schema as unknown as z.ZodType<T, unknown>;
 
 /**
