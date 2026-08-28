@@ -16,6 +16,7 @@
 import { type Check, check } from "./golden-question";
 import {
   type AssistantAnswer,
+  admitsItCannot,
   claimsAnInventedMechanism,
   claimsDistinctInstrumentWithoutResolving,
   commentsOnTheInterface,
@@ -72,6 +73,15 @@ export const noFakeAlert = (a: AssistantAnswer): Check =>
  */
 export const noSupportPromise = (a: AssistantAnswer): Check =>
   check("no promete que alguien lo vaya a tramitar", !promisesSupportHandling(a.text));
+
+/**
+ * The half of #1525's honest answer that is NOT abstention: «la respuesta dice que no
+ * puede». Without it the question grades a mute turn as a pass on everything but the
+ * language — the trap `golden.test.ts` documents, on a question that is otherwise all
+ * abstention.
+ */
+export const saysItCannot = (a: AssistantAnswer): Check =>
+  check("dice con claridad que no puede hacerlo", admitsItCannot(a.text));
 
 /**
  * No identifier reached a proposal without a read behind it (#1263). The accused ids

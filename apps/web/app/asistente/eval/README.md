@@ -328,8 +328,14 @@ that duplicated the traceability rule — so its net prompt cost is 225 characte
 | Rule | Was | Is |
 |---|---|---|
 | an alert needs a real discrepancy | nothing (a hope) | `raise_maintainer_alert` + `maintainer-alert-evidence.ts` |
-| never promise a review by «el equipo» | nothing (a hope) | prompt + `fabricated-maintainer-alert.ts` (#1525) |
+| never promise a review by «el equipo» | nothing (a hope) | prompt (measured here by `promisesSupportHandling`) |
 | never claim an incident that was not filed | nothing (a hope) | `fabricated-maintainer-alert.ts` |
+
+Only the second row has a boundary behind it, and the difference is worth stating: the
+guard asks whether an alert came back, so it catches the claim and NOT the promise —
+«nuestro equipo lo revisará», with no incident named, walks past it. That sentence is
+still held by the prompt alone; what #1525 added for it is a measurement
+(`promisesSupportHandling`), not a frontier.
 
 The two rows about the alert moved out of prose for the same reason twice. #1347 wrote
 the refusal message that says, in as many words, «no le prometas al usuario gestión

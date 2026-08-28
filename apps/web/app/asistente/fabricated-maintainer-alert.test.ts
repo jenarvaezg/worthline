@@ -71,6 +71,22 @@ describe("claimsRaisedMaintainerAlert", () => {
     }
   });
 
+  test("leaves the honest turn that registers something ELSE alone", () => {
+    // Review's case: one sentence to the splitter (a semicolon does not end one), the
+    // claim verb and the ceremony's noun both inside it, and entirely honest. What
+    // keeps it out is the noun riding next to the verb rather than anywhere in reach.
+    expect(
+      claimsRaisedMaintainerAlert(
+        "He registrado tu operación; sobre la alerta, no puedo levantarla.",
+      ),
+    ).toBe(false);
+    expect(
+      claimsRaisedMaintainerAlert(
+        "He registrado la amortización de abril; una incidencia no puedo abrirla.",
+      ),
+    ).toBe(false);
+  });
+
   test("leaves ordinary sentences alone", () => {
     // «Aviso» on its own is an everyday word, and the claim verbs are everyday verbs.
     for (const text of [

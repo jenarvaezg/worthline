@@ -25,7 +25,7 @@
 
 import {
   claimsRaisedMaintainerAlert,
-  outputRaisedAnAlert,
+  isRaisedAlertOutput,
 } from "@web/asistente/fabricated-maintainer-alert";
 import { claimsPreparedProposal } from "@web/asistente/fabricated-proposal";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
@@ -78,7 +78,7 @@ export function fakesMaintainerAlertCeremony(answer: AssistantAnswer): boolean {
     claimsRaisedMaintainerAlert(answer.text) &&
     !answer.toolResults.some(
       (result) =>
-        result.name === "raise_maintainer_alert" && outputRaisedAnAlert(result.output),
+        result.name === "raise_maintainer_alert" && isRaisedAlertOutput(result.output),
     )
   );
 }

@@ -94,6 +94,26 @@ export function pruneOrphanToolCalls(messages: UIMessage[]): {
 }
 
 /**
+ * Appends a note to the turns named by `ids`, leaving every other message untouched.
+ *
+ * Shared by the two ceremony repairs below because the mechanics are the whole of what
+ * they have in common: the claimed prose STAYS — it is what the user read, and rewriting
+ * the model's previous words would make the history disagree with the screen — and the
+ * fact is added after it. What differs is only which turns and which sentence.
+ */
+function appendModelNote(
+  messages: UIMessage[],
+  ids: ReadonlySet<string>,
+  note: string,
+): UIMessage[] {
+  return messages.map((message) =>
+    ids.has(message.id)
+      ? { ...message, parts: [...message.parts, { text: note, type: "text" as const }] }
+      : message,
+  );
+}
+
+/**
  * Contradicts, in the model's own history, a turn that CLAIMED to have prepared a
  * proposal without calling any proposal tool (#1262).
  *
@@ -123,17 +143,7 @@ export function correctFabricatedProposalClaims(messages: UIMessage[]): {
   if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
 
   return {
-    messages: messages.map((message) =>
-      corrected.has(message.id)
-        ? {
-            ...message,
-            parts: [
-              ...message.parts,
-              { text: FABRICATED_PROPOSAL_MODEL_NOTE, type: "text" as const },
-            ],
-          }
-        : message,
-    ),
+    messages: appendModelNote(messages, corrected, FABRICATED_PROPOSAL_MODEL_NOTE),
     correctedMessageIds,
   };
 }
@@ -152,9 +162,6 @@ export function correctFabricatedProposalClaims(messages: UIMessage[]): {
  * pruneOrphanToolCalls}. The guard deliberately exempts a call still in flight — the
  * tool persists before it returns, so that alert may really exist — and the prune
  * removes exactly that part, leaving nothing to tell it apart from an invented one.
- *
- * The claimed prose stays. It is what the user read, and rewriting the model's previous
- * words would make the history disagree with the screen.
  */
 export function correctFabricatedMaintainerAlertClaims(messages: UIMessage[]): {
   messages: UIMessage[];
@@ -166,17 +173,7 @@ export function correctFabricatedMaintainerAlertClaims(messages: UIMessage[]): {
   if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
 
   return {
-    messages: messages.map((message) =>
-      corrected.has(message.id)
-        ? {
-            ...message,
-            parts: [
-              ...message.parts,
-              { text: FABRICATED_ALERT_MODEL_NOTE, type: "text" as const },
-            ],
-          }
-        : message,
-    ),
+    messages: appendModelNote(messages, corrected, FABRICATED_ALERT_MODEL_NOTE),
     correctedMessageIds,
   };
 }

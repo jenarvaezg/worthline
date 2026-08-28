@@ -39,7 +39,12 @@
 
 import type { UIMessage } from "ai";
 
-import { assertsAny, sentences } from "./claim-sentences";
+import {
+  assertsAny,
+  assistantProse,
+  PAYMENT_CARD_READING,
+  sentences,
+} from "./claim-sentences";
 import { rendersProposalCard } from "./proposal-card-presence";
 import { isProposalToolPart, toolCallAnswered } from "./tool-parts";
 
@@ -164,7 +169,7 @@ const PROPOSAL_WORD = /\b(propuestas?|tarjetas?)\b/i;
  * those are what teach a user to ignore notes.
  */
 export function claimsPreparedProposal(text: string): boolean {
-  return sentences(text).some((sentence) =>
+  return sentences(text.replace(PAYMENT_CARD_READING, "medio de pago")).some((sentence) =>
     assertsAny(
       sentence,
       PROPOSAL_WORD.test(sentence)
@@ -205,12 +210,7 @@ export type FabricatedProposalKind = "no-call" | "rejected" | "interrupted";
 export function fabricatedProposalIn(message: UIMessage): FabricatedProposalKind | null {
   if (message.role !== "assistant") return null;
   if (message.parts.some(rendersProposalCard)) return null;
-  const claimed = claimsPreparedProposal(
-    message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { text: string }).text)
-      .join("\n"),
-  );
+  const claimed = claimsPreparedProposal(assistantProse(message));
   if (!claimed) return null;
   const asked = message.parts.filter(isProposalToolPart);
   if (asked.length === 0) return "no-call";

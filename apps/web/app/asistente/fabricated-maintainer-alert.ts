@@ -34,7 +34,7 @@
 
 import { isToolUIPart, type UIMessage } from "ai";
 
-import { assertsAny, sentences } from "./claim-sentences";
+import { assertsAny, assistantProse, sentences } from "./claim-sentences";
 import { toolCallAnswered, toolPartName } from "./tool-parts";
 
 /**
@@ -79,43 +79,70 @@ const MAINTAINER_ALERT_TOOL = "raise_maintainer_alert";
  * flagging it would put an alarming note on an honest turn, which is how a user learns
  * to ignore notes.
  */
-const ALERT_WORD =
-  /\b(incidencias?|alertas?|tickets?|avisos?\s+al\s+(mantenedor|desarrollador|equipo))\b/i;
+const ALERT_NOUN =
+  "(?:incidencias?|alertas?|tickets?|avisos?\\s+al\\s+(?:mantenedor|desarrollador|equipo))";
+
+/**
+ * The gap a claim verb may leave before its noun. Deliberately tight — «la », « una »,
+ * « el » is all a true claim needs — and it is what keeps the noun in the SAME clause as
+ * the verb. Review built the turn that made this necessary: «He registrado tu operación;
+ * sobre la alerta, no puedo levantarla» is honest, is one sentence to the splitter (a
+ * semicolon does not end one), and would otherwise be accused. `;` is excluded from the
+ * gap for the same reason.
+ */
+const NOUN_GAP = "[^.!?;]{0,15}";
 
 /**
  * Assertions that the incident ALREADY exists. Perfect and preterite forms only, the
  * same line `fabricated-proposal.ts` draws: Spanish uses the present to OFFER
  * («¿quieres que registre una incidencia?», «puedo levantar una alerta»), which is the
  * honest turn and the one the refusal message is trying to produce.
+ *
+ * The noun rides INSIDE each pattern rather than being tested over the whole sentence.
+ * The proposal guard can afford the looser reading because its verbs are the ceremony's
+ * own («preparar una propuesta»); these are everyday verbs — «he registrado la
+ * amortización» — so what has to be pinned is that the thing registered IS the incident.
  */
 const CLAIM_PATTERNS = [
   // «he registrado la incidencia» — the sentence from the transcript itself — plus the
   // rest of the family the same auxiliary opens: «hemos abierto», «te he levantado».
-  /\b(he|hemos)\b[^.!?]{0,30}\b(registrado|levantado|abierto|creado|generado|reportado|notificado|trasladado|elevado|comunicado)\b/i,
-  // The impersonal voice for the same claim. No trailing \b on the preterites: JS word
-  // boundaries do not see «é» as a word character, so «registré» would never close one.
-  /\bse (ha|han)\b[^.!?]{0,30}\b(registrado|levantado|abierto|creado|reportado|notificado|trasladado|comunicado)\b/i,
-  /\b(registré|levanté|abrí|creé|reporté|notifiqué|trasladé|elevé|comuniqué)/i,
-  // «la incidencia queda registrada», «la alerta está abierta».
-  /\b(incidencias?|alertas?|tickets?|avisos?)\b[^.!?]{0,40}\b(est[áa]|queda|quedan)\s+(registrad|levantad|abiert|cread|curs)/i,
+  new RegExp(
+    `\\b(?:he|hemos)\\b[^.!?;]{0,30}\\b(?:registrado|levantado|abierto|creado|generado|reportado|notificado|trasladado|elevado|comunicado)\\b${NOUN_GAP}\\b${ALERT_NOUN}\\b`,
+    "i",
+  ),
+  // The impersonal voice for the same claim: «se ha registrado la incidencia».
+  new RegExp(
+    `\\bse (?:ha|han)\\b[^.!?;]{0,30}\\b(?:registrado|levantado|abierto|creado|reportado|notificado|trasladado|comunicado)\\b${NOUN_GAP}\\b${ALERT_NOUN}\\b`,
+    "i",
+  ),
+  // No trailing \b on the preterites: JS word boundaries do not see «é» as a word
+  // character, so «registré» would never close one.
+  new RegExp(
+    `\\b(?:registré|levanté|abrí|creé|reporté|notifiqué|trasladé|elevé|comuniqué)${NOUN_GAP}\\b${ALERT_NOUN}\\b`,
+    "i",
+  ),
+  // «la incidencia queda registrada», «el ticket está abierto» — the same assertion
+  // without the first person, so the noun leads.
+  new RegExp(
+    `\\b${ALERT_NOUN}\\b[^.!?;]{0,40}\\b(?:est[áa]|queda|quedan)\\s+(?:registrad|levantad|abiert|cread|curs)`,
+    "i",
+  ),
 ];
 
 /**
  * Does this text assert that a maintainer alert has been raised?
  *
- * Scope, stated plainly: it reads the ceremony's own vocabulary crossed with the
- * perfect forms, in the SAME sentence. Widening it stays a decision to take with
- * measured cases, never by guessing at synonyms — the cost of guessing is notes on
- * honest turns.
+ * Scope, stated plainly: the ceremony's own noun, next to a perfect form of the claim,
+ * inside one clause. Widening it stays a decision to take with measured cases, never by
+ * guessing at synonyms — the cost of guessing is notes on honest turns, and those are
+ * what teach a user to ignore notes.
  */
 export function claimsRaisedMaintainerAlert(text: string): boolean {
-  return sentences(text).some(
-    (sentence) => ALERT_WORD.test(sentence) && assertsAny(sentence, CLAIM_PATTERNS),
-  );
+  return sentences(text).some((sentence) => assertsAny(sentence, CLAIM_PATTERNS));
 }
 
 /** The one tool output shape that means an alert really reached the control plane. */
-export function outputRaisedAnAlert(output: unknown): boolean {
+export function isRaisedAlertOutput(output: unknown): boolean {
   return (
     typeof output === "object" &&
     output !== null &&
@@ -143,15 +170,10 @@ export function fabricatesMaintainerAlert(message: UIMessage): boolean {
     (part) => isToolUIPart(part) && toolPartName(part) === MAINTAINER_ALERT_TOOL,
   );
   if (calls.some((part) => !toolCallAnswered(part))) return false;
-  if (calls.some((part) => "output" in part && outputRaisedAnAlert(part.output))) {
+  if (calls.some((part) => "output" in part && isRaisedAlertOutput(part.output))) {
     return false;
   }
-  return claimsRaisedMaintainerAlert(
-    message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { text: string }).text)
-      .join("\n"),
-  );
+  return claimsRaisedMaintainerAlert(assistantProse(message));
 }
 
 /**
