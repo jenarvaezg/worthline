@@ -7,9 +7,8 @@ import {
   createStoreFromSqlite as createPublicStoreFromSqlite,
   type StoreBuildDeps,
 } from "./index";
-import type { LiabilityStore } from "./liability-store";
 import type { OperationsStore } from "./operations-store";
-import type { WorthlineStore } from "./store-types";
+import type { LiabilityStore, WorthlineStore } from "./store-types";
 
 /**
  * Explicit escape hatch for persistence-contract tests only. Application code

@@ -25,12 +25,10 @@ import type {
   ValuationCadence,
 } from "@worthline/domain";
 import type { AddValuationAnchorInput, UpdateAssetInput } from "./asset-store";
-import type {
-  AddBalanceAnchorInput,
-  AddBalanceRebaselineInput,
-  UpdateAmortizationPlanInput,
-  UpdateLiabilityInput,
-} from "./liability-store";
+import type { UpdateAmortizationPlanInput } from "./liability-amortization-plan-store";
+import type { AddBalanceAnchorInput } from "./liability-balance-anchor-store";
+import type { AddBalanceRebaselineInput } from "./liability-balance-rebaseline-store";
+import type { UpdateLiabilityInput } from "./liability-store";
 import type { UpdateInvestmentOperationInput } from "./operations-store";
 
 export type CorrectionMode = "anchor-only" | "reconstruct";

@@ -1,9 +1,9 @@
 import type { AssistantProposalStore } from "@db/assistant-proposal-store";
 import type { ConnectedSourceSeams } from "@db/connected-source-seams";
-import type { LiabilityStore } from "@db/liability-store";
 import type { SnapshotOrchestrator } from "@db/snapshot-orchestrator";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
+import type { LiabilityStore } from "@db/store-types";
 import type { InvestmentIdentitySeams } from "./assistant-correction-apply";
 import type { ApplyAssistantProposal } from "./assistant-proposal-apply";
 import { createApplyAssistantProposal } from "./assistant-proposal-apply";

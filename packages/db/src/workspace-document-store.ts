@@ -1399,7 +1399,7 @@ async function readBalanceRebaselinesByLiability(
 
 /**
  * Balance anchors grouped by liability (ADR 0015, #155), ordered by date then id
- * — the same order liability-store's readBalanceAnchors returns.
+ * — the same order liability-balance-anchor-store's readBalanceAnchors returns.
  */
 async function readBalanceAnchorsByLiability(
   db: StoreDb,

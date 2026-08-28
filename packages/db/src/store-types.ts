@@ -25,19 +25,32 @@ import type { ContributionAllowanceStore } from "./contribution-allowance-store"
 import type { ContributionPlanStore } from "./contribution-plan-store";
 import type { GoalStore } from "./goal-store";
 import type {
-  AddBalanceAnchorInput,
-  AddBalanceRebaselineInput,
-  AddEarlyRepaymentInput,
-  AddInterestRateRevisionInput,
+  AmortizationPlanStore,
   CreateAmortizationPlanInput,
-  LiabilityStore,
   UpdateAmortizationPlanInput,
+} from "./liability-amortization-plan-store";
+import type {
+  AddBalanceAnchorInput,
+  BalanceAnchorStore,
   UpdateBalanceAnchorInput,
+} from "./liability-balance-anchor-store";
+import type { LiabilityBalanceReadStore } from "./liability-balance-reads";
+import type {
+  AddBalanceRebaselineInput,
+  BalanceRebaselineStore,
   UpdateBalanceRebaselineInput,
+} from "./liability-balance-rebaseline-store";
+import type {
+  AddEarlyRepaymentInput,
+  EarlyRepaymentStore,
   UpdateEarlyRepaymentInput,
+} from "./liability-early-repayment-store";
+import type {
+  AddInterestRateRevisionInput,
+  InterestRateRevisionStore,
   UpdateInterestRateRevisionInput,
-  UpdateLiabilityInput,
-} from "./liability-store";
+} from "./liability-rate-revision-store";
+import type { LiabilityRecordStore, UpdateLiabilityInput } from "./liability-store";
 import type { ManagedPortfolioStore } from "./managed-portfolio-store";
 import type { OperationsStore, UpdateInvestmentOperationInput } from "./operations-store";
 import type { PayoutStore } from "./payout-store";
@@ -53,6 +66,22 @@ import type { WorkspaceLifecycleStore } from "./workspace-store";
  * halves; nothing else needs to know it has any.
  */
 export type WorkspaceStore = WorkspaceLifecycleStore & WorkspaceDocumentStore;
+
+/**
+ * The whole liability store as callers consume it: the thin liability row joined
+ * with one module per family of dated debt fact — the amortization plan, its rate
+ * revisions and early repayments, the balance re-baselines, the anchors — plus
+ * the reads that compose them into a figure on a date. Six modules, one face
+ * (#1604). The store opener builds it from the parts; nothing else needs to know
+ * it has any.
+ */
+export type LiabilityStore = LiabilityRecordStore &
+  AmortizationPlanStore &
+  InterestRateRevisionStore &
+  EarlyRepaymentStore &
+  BalanceRebaselineStore &
+  BalanceAnchorStore &
+  LiabilityBalanceReadStore;
 
 type PublicAssetStore = Omit<
   AssetStore,

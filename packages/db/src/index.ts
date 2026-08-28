@@ -209,24 +209,31 @@ export {
   type VercelQueueProducer,
 } from "./job-queue";
 export type {
-  AddBalanceAnchorInput,
-  AddBalanceRebaselineInput,
-  AddEarlyRepaymentInput,
-  AddInterestRateRevisionInput,
   AmortizationPlanRecord,
-  BalanceAnchorRecord,
-  BalanceRebaselineRecord,
   CreateAmortizationPlanInput,
-  EarlyRepaymentRecord,
-  InterestRateRevisionRecord,
-  LiabilityStore,
   UpdateAmortizationPlanInput,
+} from "./liability-amortization-plan-store";
+export type {
+  AddBalanceAnchorInput,
+  BalanceAnchorRecord,
   UpdateBalanceAnchorInput,
+} from "./liability-balance-anchor-store";
+export type {
+  AddBalanceRebaselineInput,
+  BalanceRebaselineRecord,
   UpdateBalanceRebaselineInput,
+} from "./liability-balance-rebaseline-store";
+export type {
+  AddEarlyRepaymentInput,
+  EarlyRepaymentRecord,
   UpdateEarlyRepaymentInput,
+} from "./liability-early-repayment-store";
+export type {
+  AddInterestRateRevisionInput,
+  InterestRateRevisionRecord,
   UpdateInterestRateRevisionInput,
-  UpdateLiabilityInput,
-} from "./liability-store";
+} from "./liability-rate-revision-store";
+export type { UpdateLiabilityInput } from "./liability-store";
 export { openLibsqlClient, preheatLibsqlStack } from "./libsql-client";
 export { SCHEMA_VERSION } from "./migrate";
 export type {
@@ -282,6 +289,7 @@ export type {
   CreateHousingHoldingCommand,
   DatabaseTarget,
   HoldingTrashTarget,
+  LiabilityStore,
   TrashView,
   WorkspaceStore,
   WorthlineStore,
