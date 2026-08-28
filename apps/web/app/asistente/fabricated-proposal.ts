@@ -39,6 +39,12 @@
 
 import type { UIMessage } from "ai";
 
+import {
+  assertsAny,
+  assistantProse,
+  PAYMENT_CARD_READING,
+  sentences,
+} from "./claim-sentences";
 import { rendersProposalCard } from "./proposal-card-presence";
 import { isProposalToolPart, toolCallAnswered } from "./tool-parts";
 
@@ -143,15 +149,6 @@ const SELF_CONTAINED_CLAIM_PATTERNS = [
 ];
 
 /**
- * A claim the model NEGATES is not a claim. Review found the case that matters:
- * «Tienes razón: no he preparado la propuesta» is precisely the turn the model
- * produces after reading {@link FABRICATED_PROPOSAL_MODEL_NOTE}, so without this
- * the two seams feed each other — the history note provokes the sentence that
- * trips the screen note, on every turn, for the rest of the conversation.
- */
-const NEGATION = /\b(no|nunca|tampoco)\b/i;
-
-/**
  * The ceremony's own nouns. «tarjeta» joined «propuesta» from a measured case (#1468):
  * Jorge's turn used it as the noun of delivery — «A continuación tienes las tarjetas
  * para confirmar cada uno de estos movimientos» — which is the app's own word for the
@@ -160,32 +157,6 @@ const NEGATION = /\b(no|nunca|tampoco)\b/i;
  * guessing at synonyms.
  */
 const PROPOSAL_WORD = /\b(propuestas?|tarjetas?)\b/i;
-
-/**
- * The OTHER «tarjeta» — a means of payment a workspace really holds, `credit_card` in
- * the book. «He actualizado el saldo de tu tarjeta de crédito» is a sentence about the
- * user's money, not about the ceremony, and since #1468 put «tarjeta» in the vocabulary
- * it would otherwise read as a fabricated proposal on one of the most ordinary turns
- * there is. Shared with the eval grader that had to make the same distinction for the
- * same word (`commentsOnTheInterface`), so the two readings cannot drift.
- */
-export const PAYMENT_CARD_READING = /tarjetas?\s+de\s+(cr[ée]dito|d[ée]bito)/giu;
-
-/**
- * Splits into sentences so a claim and the word «propuesta» must occur TOGETHER.
- * Without that, «He creado el holding» in one sentence plus «¿quieres que prepare
- * una propuesta?» in the next would read as a fabrication.
- *
- * Two maskings first. Decimals, because a figure like «5.511,96» would otherwise cut
- * the very sentence this exists to read. And the payment card, because it is the one
- * innocent meaning the ceremony's vocabulary has (#1468).
- */
-function sentences(text: string): string[] {
-  return text
-    .replace(/(\d)\.(\d)/g, "$1·$2")
-    .replace(PAYMENT_CARD_READING, "medio de pago")
-    .split(/[.!?\n]+/);
-}
 
 /**
  * Does this text assert that a proposal has been prepared?
@@ -198,15 +169,14 @@ function sentences(text: string): string[] {
  * those are what teach a user to ignore notes.
  */
 export function claimsPreparedProposal(text: string): boolean {
-  return sentences(text).some((sentence) => {
-    const claims = PROPOSAL_WORD.test(sentence)
-      ? [...CLAIM_PATTERNS, ...SELF_CONTAINED_CLAIM_PATTERNS]
-      : SELF_CONTAINED_CLAIM_PATTERNS;
-    return claims.some((pattern) => {
-      const match = pattern.exec(sentence);
-      return match !== null && !NEGATION.test(sentence.slice(0, match.index));
-    });
-  });
+  return sentences(text.replace(PAYMENT_CARD_READING, "medio de pago")).some((sentence) =>
+    assertsAny(
+      sentence,
+      PROPOSAL_WORD.test(sentence)
+        ? [...CLAIM_PATTERNS, ...SELF_CONTAINED_CLAIM_PATTERNS]
+        : SELF_CONTAINED_CLAIM_PATTERNS,
+    ),
+  );
 }
 
 /**
@@ -240,12 +210,7 @@ export type FabricatedProposalKind = "no-call" | "rejected" | "interrupted";
 export function fabricatedProposalIn(message: UIMessage): FabricatedProposalKind | null {
   if (message.role !== "assistant") return null;
   if (message.parts.some(rendersProposalCard)) return null;
-  const claimed = claimsPreparedProposal(
-    message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { text: string }).text)
-      .join("\n"),
-  );
+  const claimed = claimsPreparedProposal(assistantProse(message));
   if (!claimed) return null;
   const asked = message.parts.filter(isProposalToolPart);
   if (asked.length === 0) return "no-call";

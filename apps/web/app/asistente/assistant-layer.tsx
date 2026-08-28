@@ -24,6 +24,10 @@ import { parseAttachmentPreviewCard } from "./attachment-chat";
 import AttachmentExtractionPreview from "./attachment-extraction-preview";
 import { userTurnText } from "./attachment-notice";
 import {
+  FABRICATED_ALERT_NOTE,
+  messagesWithFabricatedMaintainerAlert,
+} from "./fabricated-maintainer-alert";
+import {
   fabricatedProposalNote,
   messagesWithFabricatedProposal,
 } from "./fabricated-proposal";
@@ -239,6 +243,14 @@ function ConversationParts({
     () => messagesWithFabricatedProposal(messages, busy),
     [messages, busy],
   );
+  // The turns that said they filed an incident and did not (#1525). Painted here and
+  // not only fed back into history because this lie has NO empty card to give it away:
+  // an alert renders nothing ever, so without this the user finds out by asking for a
+  // ticket number, which is exactly how the incident was discovered.
+  const fabricatedAlerts = useMemo(
+    () => messagesWithFabricatedMaintainerAlert(messages, busy),
+    [messages, busy],
+  );
   // The holding names this conversation read, so the assistant's prose can name a
   // holding where it wrote its id (#1263). Memoised for the same reason: the panel
   // re-renders on every keystroke and this walks every tool output of every turn.
@@ -320,6 +332,9 @@ function ConversationParts({
                 text={fabricatedProposalNote(fabrication)}
               />
             )}
+            {fabricatedAlerts.has(message.id) ? (
+              <AppNote className="assistantFakeAlert" text={FABRICATED_ALERT_NOTE} />
+            ) : null}
             {gateNotices.gateClosed === message.id ? (
               <AppNote className="assistantGateNotice" text={UNVALIDATED_EVIDENCE_NOTE} />
             ) : null}

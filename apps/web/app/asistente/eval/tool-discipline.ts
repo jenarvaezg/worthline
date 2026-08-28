@@ -23,6 +23,10 @@
  * measurement and the thing being measured drift apart in silence.
  */
 
+import {
+  claimsRaisedMaintainerAlert,
+  isRaisedAlertOutput,
+} from "@web/asistente/fabricated-maintainer-alert";
 import { claimsPreparedProposal } from "@web/asistente/fabricated-proposal";
 import { proposalCardFrom } from "@web/asistente/proposal-card-presence";
 import { isProposalToolName } from "@web/asistente/tool-parts";
@@ -58,6 +62,24 @@ export function claimsCeremonyOverRejectedProposal(answer: AssistantAnswer): boo
     answered.length > 0 &&
     !answered.some((result) => proposalCardFrom(result.name, result.output) !== null) &&
     claimsPreparedProposal(answer.text)
+  );
+}
+
+/**
+ * The turn SAYS an incident is filed and none was (#1525).
+ *
+ * The alert's success shape is a single branch of the tool — `status: "raised"` — so
+ * this asks the same question the production guard asks, through the same reader: a
+ * refusal, an `unpersisted`, an unavailable control plane and no call at all are the
+ * same fact for the user, who has no ticket number either way.
+ */
+export function fakesMaintainerAlertCeremony(answer: AssistantAnswer): boolean {
+  return (
+    claimsRaisedMaintainerAlert(answer.text) &&
+    !answer.toolResults.some(
+      (result) =>
+        result.name === "raise_maintainer_alert" && isRaisedAlertOutput(result.output),
+    )
   );
 }
 

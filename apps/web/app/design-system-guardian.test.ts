@@ -494,6 +494,9 @@ describe("Libro mayor design-system guardian (#906)", () => {
       // The app contradicting a faked proposal ceremony (#1262) is set apart the
       // same way, so it cannot drift into a card either.
       ".assistantFakeProposal",
+      // And the app denying an incident nobody filed (#1525), the same kind of
+      // sentence in the lane that paints no card at all.
+      ".assistantFakeAlert",
       // And so is the evidence gate speaking for itself (#1418), in both its moments:
       // the door shutting, and a series worthline could not read.
       ".assistantGateNotice",

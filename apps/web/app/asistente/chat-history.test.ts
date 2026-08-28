@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 
 import {
+  correctFabricatedMaintainerAlertClaims,
   correctFabricatedProposalClaims,
   DROPPED_TOOL_PAYLOAD_NOTE,
   dropStaleToolPayloads,
@@ -9,8 +10,14 @@ import {
   pruneOrphanToolCalls,
   withoutToolParts,
 } from "./chat-history";
+import { FABRICATED_ALERT_MODEL_NOTE } from "./fabricated-maintainer-alert";
 import { FABRICATED_PROPOSAL_MODEL_NOTE } from "./fabricated-proposal";
-import { correctionProposalOutput } from "./proposal-part-fixtures";
+import {
+  correctionProposalOutput,
+  inFlightAlertPart,
+  raisedAlertPart,
+  refusedAlertPart,
+} from "./proposal-part-fixtures";
 
 function assistant(id: string, ...parts: unknown[]): UIMessage {
   return { id, role: "assistant", parts } as unknown as UIMessage;
@@ -515,5 +522,80 @@ describe("correctFabricatedProposalClaims (#1262)", () => {
     ];
 
     expect(correctFabricatedProposalClaims(messages).messages).toBe(messages);
+  });
+});
+
+describe("correctFabricatedMaintainerAlertClaims (#1525)", () => {
+  /** The turn from the transcript: the gate refused, the prose announced success. */
+  const claim = "Te confirmo que he registrado la incidencia como una limitación.";
+
+  function turnWith(...parts: unknown[]): UIMessage[] {
+    return [
+      user("u1", "levanta una incidencia sobre esto"),
+      assistant("a1", { text: claim, type: "text" }, ...parts),
+      user("u2", "¿me das el número de ticket?"),
+    ];
+  }
+
+  it("tells the model no incident exists when the gate refused the call", () => {
+    // Without this the fabricated sentence IS the model's context next turn, and the
+    // measured failure mode is doubling down — the user had to ask for a ticket
+    // number before the assistant admitted there was none.
+    const { messages, correctedMessageIds } = correctFabricatedMaintainerAlertClaims(
+      turnWith(refusedAlertPart()),
+    );
+
+    expect(correctedMessageIds).toEqual(["a1"]);
+    expect(messages[1]!.parts.at(-1)).toEqual({
+      text: FABRICATED_ALERT_MODEL_NOTE,
+      type: "text",
+    });
+    // The original prose is kept: it is what the user read on screen.
+    expect(messages[1]!.parts[0]).toEqual({ text: claim, type: "text" });
+  });
+
+  it("corrects the turn that claimed one without calling the tool at all", () => {
+    expect(
+      correctFabricatedMaintainerAlertClaims(turnWith()).correctedMessageIds,
+    ).toEqual(["a1"]);
+  });
+
+  it("leaves the turn alone when the alert really was raised", () => {
+    const history = turnWith(raisedAlertPart());
+    const { messages, correctedMessageIds } =
+      correctFabricatedMaintainerAlertClaims(history);
+
+    expect(correctedMessageIds).toEqual([]);
+    expect(messages).toBe(history);
+  });
+
+  it("leaves the interrupted call alone, and does so BEFORE the prune", () => {
+    // The tool writes through the control plane before it returns, so that alert may
+    // really exist. Running after `pruneOrphanToolCalls` would remove the part and
+    // leave nothing to tell it apart from an invented ceremony — which is why the
+    // route chains this repair first.
+    const history = turnWith(inFlightAlertPart());
+    expect(correctFabricatedMaintainerAlertClaims(history).correctedMessageIds).toEqual(
+      [],
+    );
+    expect(
+      correctFabricatedMaintainerAlertClaims(pruneOrphanToolCalls(history).messages)
+        .correctedMessageIds,
+    ).toEqual(["a1"]);
+  });
+
+  it("leaves an honest turn untouched", () => {
+    const history = [
+      user("u1", "levanta una incidencia sobre esto"),
+      assistant("a1", {
+        text: "No puedo levantar una incidencia por esto: no hay ningún descuadre de cifras.",
+        type: "text",
+      }),
+    ];
+
+    expect(correctFabricatedMaintainerAlertClaims(history).correctedMessageIds).toEqual(
+      [],
+    );
+    expect(correctFabricatedMaintainerAlertClaims(history).messages).toBe(history);
   });
 });

@@ -12,6 +12,10 @@
 import { isToolUIPart, type UIMessage } from "ai";
 
 import {
+  FABRICATED_ALERT_MODEL_NOTE,
+  messagesWithFabricatedMaintainerAlert,
+} from "./fabricated-maintainer-alert";
+import {
   FABRICATED_PROPOSAL_MODEL_NOTE,
   messagesWithFabricatedProposal,
 } from "./fabricated-proposal";
@@ -90,6 +94,26 @@ export function pruneOrphanToolCalls(messages: UIMessage[]): {
 }
 
 /**
+ * Appends a note to the turns named by `ids`, leaving every other message untouched.
+ *
+ * Shared by the two ceremony repairs below because the mechanics are the whole of what
+ * they have in common: the claimed prose STAYS — it is what the user read, and rewriting
+ * the model's previous words would make the history disagree with the screen — and the
+ * fact is added after it. What differs is only which turns and which sentence.
+ */
+function appendModelNote(
+  messages: UIMessage[],
+  ids: ReadonlySet<string>,
+  note: string,
+): UIMessage[] {
+  return messages.map((message) =>
+    ids.has(message.id)
+      ? { ...message, parts: [...message.parts, { text: note, type: "text" as const }] }
+      : message,
+  );
+}
+
+/**
  * Contradicts, in the model's own history, a turn that CLAIMED to have prepared a
  * proposal without calling any proposal tool (#1262).
  *
@@ -119,17 +143,37 @@ export function correctFabricatedProposalClaims(messages: UIMessage[]): {
   if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
 
   return {
-    messages: messages.map((message) =>
-      corrected.has(message.id)
-        ? {
-            ...message,
-            parts: [
-              ...message.parts,
-              { text: FABRICATED_PROPOSAL_MODEL_NOTE, type: "text" as const },
-            ],
-          }
-        : message,
-    ),
+    messages: appendModelNote(messages, corrected, FABRICATED_PROPOSAL_MODEL_NOTE),
+    correctedMessageIds,
+  };
+}
+
+/**
+ * Contradicts, in the model's own history, a turn that claimed to have FILED AN
+ * INCIDENT when no `raise_maintainer_alert` call in it came back with one (#1525).
+ *
+ * The sibling of {@link correctFabricatedProposalClaims}, and needed for the same
+ * reason: without it the fabricated sentence is the model's own context next turn, and
+ * the measured failure mode is doubling down — Jorge had to ask for a ticket number
+ * before the assistant admitted there was none. It matters MORE here, because a
+ * fabricated alert paints nothing on screen for the user to notice is missing.
+ *
+ * ORDER MATTERS, as with its sibling: this must run BEFORE {@link
+ * pruneOrphanToolCalls}. The guard deliberately exempts a call still in flight — the
+ * tool persists before it returns, so that alert may really exist — and the prune
+ * removes exactly that part, leaving nothing to tell it apart from an invented one.
+ */
+export function correctFabricatedMaintainerAlertClaims(messages: UIMessage[]): {
+  messages: UIMessage[];
+  correctedMessageIds: string[];
+} {
+  // The history is never in flight, so no message is exempt here.
+  const corrected = messagesWithFabricatedMaintainerAlert(messages, false);
+  const correctedMessageIds = [...corrected];
+  if (correctedMessageIds.length === 0) return { messages, correctedMessageIds };
+
+  return {
+    messages: appendModelNote(messages, corrected, FABRICATED_ALERT_MODEL_NOTE),
     correctedMessageIds,
   };
 }

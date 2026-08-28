@@ -9600,6 +9600,14 @@ td.rowActions > * {
   padding-top: 12px;
 }
 
+/* El desmentido de una incidencia que nadie levantó (#1525) abre su entrada igual:
+   es la app afirmando un hecho que el modelo acaba de negar en la misma pantalla.
+   Regla propia y no agrupada, por lo mismo que las de arriba. */
+.assistantFakeAlert {
+  border-top: var(--rule-heavy);
+  padding-top: 12px;
+}
+
 .assistantGateNotice {
   border-top: var(--rule-heavy);
   padding-top: 12px;
