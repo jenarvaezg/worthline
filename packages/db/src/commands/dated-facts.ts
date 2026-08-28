@@ -4,6 +4,7 @@ import type { LiabilityStore } from "@db/liability-store";
 import type { MigrateResult } from "@db/migrate";
 import type { SnapshotStore } from "@db/snapshot-store";
 import type { StoreContext } from "@db/store-context";
+import type { Clock } from "@worthline/domain";
 import type {
   DatedFactCommandImplementations,
   DatedFactStores,
@@ -69,10 +70,10 @@ async function rerippleModeledCurves(
   ctx: StoreContext,
   stores: { assets: AssetStore; snapshots: SnapshotStore },
   scope: "amortizable" | "everyCadenceHolding",
+  today: string,
 ): Promise<void> {
   const workspace = await ctx.getWorkspace();
   if (!workspace) return;
-  const today = new Date().toISOString().slice(0, 10);
   const deps = await buildHistoricalSnapshotDeps(ctx.db, workspace);
   const save = stores.snapshots.saveSnapshot;
 
@@ -117,7 +118,11 @@ export async function applyPostMigrateReripples(
   ctx: StoreContext,
   migrateResult: MigrateResult,
   stores: { assets: AssetStore; liabilities: LiabilityStore; snapshots: SnapshotStore },
+  clock: Clock,
 ): Promise<void> {
+  // The one write on this module with no caller to state its day, so it asks the
+  // store's injected clock — the seam, never the wall clock inline (#1598).
+  const today = clock.today();
   // ADR 0019 (#188): after the v18 backfill, re-ripple every amortizable debt
   // so historical snapshots are rewritten from the new two-date curve. For
   // day<=28 plans the new curve is byte-identical to the old single-date curve,
@@ -126,7 +131,7 @@ export async function applyPostMigrateReripples(
   // addMonths(start,m)), so frozen snapshots must be corrected now — atomically
   // at migration time — rather than drifting silently on the next curve touch.
   if (migrateResult.ranV18Backfill) {
-    await rerippleModeledCurves(ctx, stores, "amortizable");
+    await rerippleModeledCurves(ctx, stores, "amortizable", today);
   }
 
   // v33 (ADR 0031, #393): the cadence column was just added to an existing DB, so
@@ -135,6 +140,6 @@ export async function applyPostMigrateReripples(
   // are rewritten as steps. This fires ONLY on a genuine upgrade (ranV33Backfill),
   // so fresh-DB tests are unaffected.
   if (migrateResult.ranV33Backfill) {
-    await rerippleModeledCurves(ctx, stores, "everyCadenceHolding");
+    await rerippleModeledCurves(ctx, stores, "everyCadenceHolding", today);
   }
 }

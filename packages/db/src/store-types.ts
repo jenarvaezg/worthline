@@ -204,7 +204,7 @@ export interface ApplyStatementImportParams {
     rebaselines: AddBalanceRebaselineInput[];
   }>;
   propertyValuations?: AddValuationAnchorInput[];
-  today?: string;
+  today: string;
 }
 
 /**
@@ -220,7 +220,7 @@ interface LegacyWorthlineStore {
     contributionId: string;
     occurrenceId: string;
     operation: CreateInvestmentOperationInput;
-    today?: string;
+    today: string;
   }) => Promise<void>;
   applyStoredContributionValue: (params: {
     contributionId: string;
@@ -312,29 +312,29 @@ interface LegacyWorthlineStore {
   /**
    * Operation dated-fact seam (ADR 0020): persist ONE investment operation AND
    * ripple the snapshots it affects, atomically in a single transaction. The
-   * caller no longer derives `today` nor makes a separate ripple call — both ride
-   * this one method. `today` defaults to the current date; pass it to control the
-   * cut-off in tests. Wraps `recordOperation` + the per-operation record ripple.
+   * caller no longer makes a separate ripple call — it rides this one method.
+   * `today` is the cut-off, stated by the caller (ADR 0024, #1598). Wraps
+   * `recordOperation` + the per-operation record ripple.
    */
   recordOperationAndRipple: (
     input: CreateInvestmentOperationInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Batched operation dated-fact seam for a statement load (ADR 0020 / 0018):
    * persist every created and overwritten operation AND run ONE batched ripple
    * over all the dates they touch, atomically in a single transaction. The
    * affected from-date window is derived behind the seam from the persisted
-   * operations themselves, never by the caller. `today` defaults to the current
-   * date; pass it to control the cut-off in tests. Wraps `recordOperation` /
-   * `updateOperation` + the batched operations ripple.
+   * operations themselves, never by the caller. `today` is the cut-off, stated by
+   * the caller (ADR 0024, #1598). Wraps `recordOperation` / `updateOperation` +
+   * the batched operations ripple.
    */
   recordOperationsAndRipple: (params: {
     assetId: string;
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
     deletes?: string[];
-    today?: string;
+    today: string;
   }) => Promise<void>;
   /**
    * Multi-domain historical import seam (ADR 0055 / 0059): create any included
@@ -352,7 +352,7 @@ interface LegacyWorthlineStore {
    * asset's row (units × price) and preserves every OTHER frozen row verbatim
    * (ADR 0008/0012). A missing snapshot is generated; an existing one is updated in
    * place. Months without a price stay GAPS — never invented. Returns the counts,
-   * the gaps, and the source used. `today` defaults to the current date.
+   * the gaps, and the source used. `today` is the cut-off, stated by the caller.
    *
    * Pass `dryRun: true` to compute the SAME per-scope create/update counts the
    * apply would produce WITHOUT writing anything — the preview's single source of
@@ -363,7 +363,7 @@ interface LegacyWorthlineStore {
     assetId: string;
     pricesByDate: ReadonlyMap<string, DecimalString>;
     source: string;
-    today?: string;
+    today: string;
     dryRun?: boolean;
   }) => Promise<{ created: number; updated: number; gaps: string[]; source: string }>;
   /**
@@ -383,13 +383,12 @@ interface LegacyWorthlineStore {
    * The asset id and from-date are derived behind the seam from the deleted row
    * itself — the caller passes only the operation id. Returns the deleted
    * operation's asset id and date, or null if not found (a not-found delete
-   * ripples nothing). `today` defaults to the current date; pass it to control
-   * the cut-off in tests. Wraps `deleteOperation` + the per-operation delete
-   * ripple.
+   * ripples nothing). `today` is the cut-off, stated by the caller (ADR 0024,
+   * #1598). Wraps `deleteOperation` + the per-operation delete ripple.
    */
   deleteOperationAndRipple: (params: {
     operationId: string;
-    today?: string;
+    today: string;
   }) => Promise<{ assetId: string; executedAt: string } | null>;
   /**
    * Batched operation delete seam (ADR 0020): delete many investment operations
@@ -398,18 +397,18 @@ interface LegacyWorthlineStore {
    */
   deleteOperationsAndRipple: (params: {
     operationIds: string[];
-    today?: string;
+    today: string;
   }) => Promise<Array<{ assetId: string; executedAt: string }>>;
   /**
    * Valuation dated-fact seam (ADR 0020): persist ONE housing valuation anchor
    * AND ripple the snapshots from its date, atomically in one transaction. The
-   * from-date is the anchor's own date, derived behind the seam; `today` defaults
-   * to the current date (pass it to control the cut-off in tests). A future anchor
+   * from-date is the anchor's own date, derived behind the seam; `today` is the
+   * cut-off, stated by the caller (ADR 0024, #1598). A future anchor
    * generates no history. Wraps `assets.addValuationAnchor` + the valuation ripple.
    */
   addValuationAnchorAndRipple: (
     input: AddValuationAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): patch ONE valuation anchor AND ripple
@@ -421,7 +420,7 @@ interface LegacyWorthlineStore {
   updateValuationAnchorAndRipple: (
     anchorId: string,
     input: UpdateValuationAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Valuation dated-fact seam (ADR 0020): delete ONE valuation anchor AND ripple
@@ -432,7 +431,7 @@ interface LegacyWorthlineStore {
    */
   deleteValuationAnchorAndRipple: (
     anchorId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Valuation dated-fact seam (ADR 0020): set (or clear) the appreciation rate AND
@@ -440,13 +439,13 @@ interface LegacyWorthlineStore {
    * is derived behind the seam as min(first anchor date, earliest existing snapshot
    * carrying this asset) — covering the backward-compounding case (#184). The ripple
    * is skipped when there is nothing to ripple or the from-date is in the future.
-   * `today` defaults to the current date. Wraps `assets.setAnnualAppreciationRate`
-   * + the valuation ripple.
+   * `today` is the cut-off, stated by the caller. Wraps
+   * `assets.setAnnualAppreciationRate` + the valuation ripple.
    */
   setAnnualAppreciationRateAndRipple: (
     assetId: string,
     rate: DecimalString | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Valuation-cadence parameter-edit seam (ADR 0020 / 0031, #394): persist a
@@ -460,7 +459,7 @@ interface LegacyWorthlineStore {
   setHousingValuationCadenceAndRipple: (
     assetId: string,
     cadence: ValuationCadence | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): persist the current housing value
@@ -473,18 +472,18 @@ interface LegacyWorthlineStore {
   recordHousingValuationAndRipple: (
     assetId: string,
     currentValue: number,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Valuation dated-fact seam (ADR 0020): re-derive the housing snapshots after a
    * non-dated-fact metadata edit (editAsset). No dated fact is persisted here; the
    * from-date is derived behind the seam as the first anchor/snapshot date
    * (`firstHousingEventDate` rule). Skips when nothing exists to ripple.
-   * `today` defaults to the current date.
+   * `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
   rippleHousingAfterAssetEdit: (
     assetId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Ownership scope-axis seam (ADR 0020): patch ONE asset AND, if its ownership
@@ -499,19 +498,19 @@ interface LegacyWorthlineStore {
   updateAssetAndRippleOwnership: (
     assetId: string,
     patch: UpdateAssetInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Ownership scope-axis seam (ADR 0020): patch ONE liability AND, if its ownership
    * split actually changed, re-derive history along the SCOPE axis, atomically. The
    * previous ownership and the did-it-change comparison are derived behind the seam.
-   * `today` defaults to the current date. Wraps `liabilities.updateLiability` + the
-   * ownership ripple.
+   * Takes no `today` at all (#1598): re-weighting a debt moves the scope axis of
+   * existing snapshots, never the frontier between history and the daily capture.
+   * Wraps `liabilities.updateLiability` + the ownership ripple.
    */
   updateLiabilityAndRippleOwnership: (
     liabilityId: string,
     patch: UpdateLiabilityInput,
-    opts?: { today?: string },
   ) => Promise<void>;
   /**
    * Housing-creation dated-fact seam (ADR 0020): create ONE real_estate holding —
@@ -525,17 +524,18 @@ interface LegacyWorthlineStore {
    */
   createHousingHoldingAndRipple: (
     command: CreateHousingHoldingCommand,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020): create ONE amortization plan AND ripple the
    * per-cuota history it implies, atomically. The affected dates are derived
    * behind the seam from the plan's own schedule (the whole-plan band, ADR 0089);
-   * `today` defaults to the current date. Wraps `liabilities.createAmortizationPlan`.
+   * `today` is the cut-off, stated by the caller (ADR 0024, #1598). Wraps
+   * `liabilities.createAmortizationPlan`.
    */
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020): patch ONE amortization plan AND re-ripple the
@@ -545,7 +545,7 @@ interface LegacyWorthlineStore {
   updateAmortizationPlanAndRipple: (
     planId: string,
     input: UpdateAmortizationPlanInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): delete ONE amortization plan AND ripple the
@@ -557,7 +557,7 @@ interface LegacyWorthlineStore {
    */
   deleteAmortizationPlanAndRipple: (opts: {
     liabilityId: string;
-    today?: string;
+    today: string;
   }) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE interest-rate revision AND recalculate
@@ -567,7 +567,7 @@ interface LegacyWorthlineStore {
    */
   addInterestRateRevisionAndRipple: (
     input: AddInterestRateRevisionInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<void>;
   /**
    * Valuation-cadence parameter-edit seam (ADR 0020 / 0031, #393): persist a
@@ -576,13 +576,13 @@ interface LegacyWorthlineStore {
    * curve is recut: an amortizable debt re-ripples from its plan (every cuota
    * boundary, the whole-plan band), a revolving debt with anchors from its
    * earliest anchor. Informal debts (always a step) and a
-   * model with no anchors need no ripple. `today` defaults to the current date.
-   * Wraps `liabilities.setValuationCadence`.
+   * model with no anchors need no ripple. `today` is the cut-off, stated by the
+   * caller (ADR 0024, #1598). Wraps `liabilities.setValuationCadence`.
    */
   setValuationCadenceAndRipple: (
     liabilityId: string,
     cadence: ValuationCadence | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE interest-rate revision AND
@@ -595,7 +595,7 @@ interface LegacyWorthlineStore {
   updateInterestRateRevisionAndRipple: (
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE interest-rate revision AND
@@ -607,7 +607,7 @@ interface LegacyWorthlineStore {
    */
   deleteInterestRateRevisionAndRipple: (
     revisionId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE early repayment AND generate/recalculate
@@ -617,7 +617,7 @@ interface LegacyWorthlineStore {
    */
   addEarlyRepaymentAndRipple: (
     input: AddEarlyRepaymentInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE early repayment AND ripple
@@ -629,7 +629,7 @@ interface LegacyWorthlineStore {
   updateEarlyRepaymentAndRipple: (
     repaymentId: string,
     input: UpdateEarlyRepaymentInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE early repayment AND
@@ -642,7 +642,7 @@ interface LegacyWorthlineStore {
    */
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Current-state debt dated-fact seam (ADR 0056, #677): create the derived
@@ -655,7 +655,7 @@ interface LegacyWorthlineStore {
   createCurrentStateDebtAndRipple: (params: {
     plan: CreateAmortizationPlanInput;
     rebaseline: AddBalanceRebaselineInput;
-    today?: string;
+    today: string;
   }) => Promise<void>;
   /**
    * Amortization-schedule import seam (#1406): persist a whole cuadro's worth of
@@ -667,7 +667,7 @@ interface LegacyWorthlineStore {
     liabilityId: string;
     revisions: AddInterestRateRevisionInput[];
     earlyRepayments: AddEarlyRepaymentInput[];
-    today?: string;
+    today: string;
   }) => Promise<number>;
   /**
    * Balance-history import seam (ADR 0056, #696): persist a chain of balance
@@ -678,20 +678,20 @@ interface LegacyWorthlineStore {
   importBalanceHistoryAndRipple: (params: {
     liabilityId: string;
     rebaselines: AddBalanceRebaselineInput[];
-    today?: string;
+    today: string;
   }) => Promise<number>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateBalanceRebaselineAndRipple: (
     rebaselineId: string,
     input: UpdateBalanceRebaselineInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteBalanceRebaselineAndRipple: (
     rebaselineId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020): add ONE balance anchor AND generate/recalculate
@@ -701,7 +701,7 @@ interface LegacyWorthlineStore {
    */
   addBalanceAnchorAndRipple: (
     input: AddBalanceAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): patch ONE balance anchor AND ripple
@@ -712,7 +712,7 @@ interface LegacyWorthlineStore {
   updateBalanceAnchorAndRipple: (
     anchorId: string,
     input: UpdateBalanceAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Debt dated-fact seam (ADR 0020 / 0025): delete ONE balance anchor AND
@@ -723,15 +723,15 @@ interface LegacyWorthlineStore {
    */
   deleteBalanceAnchorAndRipple: (
     anchorId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * One-shot backfill (ADR 0012, PRD #107): generate a historical snapshot for
    * every past operation date that has no snapshot yet, across all scopes.
    * Existing snapshots are never recalculated — only gaps are filled. Idempotent.
-   * `today` defaults to the current date; pass it to control the cut-off in tests.
+   * `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
-  backfillHistoricalSnapshots: (today?: string) => Promise<void>;
+  backfillHistoricalSnapshots: (today: string) => Promise<void>;
   /**
    * Sync a connected source's positions AND ripple coin purchase dates into
    * history (ADR 0017, S6 / #167). Replaces the source's positions wholesale and
@@ -762,12 +762,12 @@ interface LegacyWorthlineStore {
    * result into the market holding's row (SET, not additive). Append-only: a date
    * whose snapshot already carries the binance row is skipped (a re-sync only adds
    * newly-completed months, never rewrites a past value). A null curve start is a
-   * no-op. `today` defaults to the current date; pass it to control the cut-off.
+   * no-op. `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
   applyBinanceHistoryAndRipple: (params: {
     sourceId: string;
     curve: BinanceHistoryCurve;
-    today?: string;
+    today: string;
   }) => Promise<void>;
 }
 

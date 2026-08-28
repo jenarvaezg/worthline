@@ -107,7 +107,7 @@ export async function createAndLinkContributionOperationAction(
     requireId: false,
     datedFact: false,
     guardUrl: (fd) => destination(fd),
-    run: async (store) => {
+    run: async (store, { today }) => {
       const scopeId = field(formData, "scopeId");
       const contributionId = field(formData, "contributionId");
       const occurrenceId = field(formData, "occurrenceId");
@@ -136,6 +136,7 @@ export async function createAndLinkContributionOperationAction(
           currency: workspace.baseCurrency,
           feesMinor,
         },
+        today,
       });
       return { ok: true };
     },

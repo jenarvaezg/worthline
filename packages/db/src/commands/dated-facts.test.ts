@@ -219,16 +219,12 @@ describe("updateLiabilityAndRippleOwnership — ownership scope-axis seam (ADR 0
     const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // One atomic call: persist the 50/50 → 70/30 split and ripple the scope axis.
-    await store.command.updateLiabilityOwnership(
-      "card",
-      {
-        ownership: [
-          { memberId: "mJ", shareBps: 7_000 },
-          { memberId: "mA", shareBps: 3_000 },
-        ],
-      },
-      { today: TODAY },
-    );
+    await store.command.updateLiabilityOwnership("card", {
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+    });
 
     // The household figure is unchanged; the members are re-weighted to 70/30.
     expect(await debtsAt(store, "2025-01-01", "household")).toBe(10_000_00);

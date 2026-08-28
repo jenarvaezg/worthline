@@ -179,6 +179,7 @@ describe("ownership-split commands", () => {
           { memberId: "mA", shareBps: 6_000 },
         ],
       },
+      today: TODAY,
     });
 
     expect(result).toEqual({

@@ -77,7 +77,7 @@ export interface CreateInvestmentHoldingCommand {
   /** What gives the holding its value. Omitted for the empty container. */
   entry?: InvestmentHoldingEntry;
   /** The ripple's anchor — the frontier between history and the daily capture. */
-  today?: string;
+  today: string;
 }
 
 /** The full debt-alta command for `store.command.createDebtHolding`. */
@@ -91,7 +91,7 @@ export interface CreateDebtHoldingCommand {
     plan: CreateAmortizationPlanInput;
     rebaseline: AddBalanceRebaselineInput;
   };
-  today?: string;
+  today: string;
 }
 
 /**
@@ -108,7 +108,7 @@ export interface DatedFactCommandImplementations {
     contributionId: string;
     occurrenceId: string;
     operation: CreateInvestmentOperationInput;
-    today?: string;
+    today: string;
   }) => Promise<void>;
   applyStoredContributionValue: (params: {
     contributionId: string;
@@ -119,14 +119,14 @@ export interface DatedFactCommandImplementations {
   }) => Promise<void>;
   recordOperationAndRipple: (
     input: CreateInvestmentOperationInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   recordOperationsAndRipple: (params: {
     assetId: string;
     creates: CreateInvestmentOperationInput[];
     overwrites: UpdateInvestmentOperationInput[];
     deletes?: string[];
-    today?: string;
+    today: string;
   }) => Promise<void>;
   applyStatementImportAndRipple: (params: {
     funds: Array<
@@ -148,7 +148,7 @@ export interface DatedFactCommandImplementations {
       rebaselines: AddBalanceRebaselineInput[];
     }>;
     propertyValuations?: AddValuationAnchorInput[];
-    today?: string;
+    today: string;
     trigger: Extract<FactBatchTrigger, "assistant" | "statement">;
   }) => Promise<void>;
   /**
@@ -181,28 +181,28 @@ export interface DatedFactCommandImplementations {
    */
   deleteTransferAndRipple: (params: {
     transferId: string;
-    today?: string;
+    today: string;
   }) => Promise<Array<{ assetId: string; executedAt: string }>>;
   deleteOperationAndRipple: (params: {
     operationId: string;
-    today?: string;
+    today: string;
   }) => Promise<{ assetId: string; executedAt: string } | null>;
   deleteOperationsAndRipple: (params: {
     operationIds: string[];
-    today?: string;
+    today: string;
   }) => Promise<Array<{ assetId: string; executedAt: string }>>;
   addValuationAnchorAndRipple: (
     input: AddValuationAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateValuationAnchorAndRipple: (
     anchorId: string,
     input: UpdateValuationAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteValuationAnchorAndRipple: (
     anchorId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Dry run of the housing valuation ripple (#1562): how much history a curve
@@ -214,7 +214,7 @@ export interface DatedFactCommandImplementations {
   countValuationRippleSnapshots: (params: {
     assetId: string;
     fromDateKey: string;
-    today?: string;
+    today: string;
     /**
      * Count what the curve would do with THESE anchors — the edit is not stored
      * yet, and whether a fresh snapshot appears at the new from-date depends on
@@ -225,31 +225,37 @@ export interface DatedFactCommandImplementations {
   setAnnualAppreciationRateAndRipple: (
     assetId: string,
     rate: DecimalString | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   setHousingValuationCadenceAndRipple: (
     assetId: string,
     cadence: ValuationCadence | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   recordHousingValuationAndRipple: (
     assetId: string,
     currentValue: number,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateAssetAndRippleOwnership: (
     assetId: string,
     patch: UpdateAssetInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
+  /**
+   * The liability half of the ownership edit — and the ONE dated-fact command
+   * that takes no `today` (#1598): re-weighting a debt's split moves the scope
+   * axis of the snapshots that already exist, never the frontier between history
+   * and the daily capture. Asking for a day it would ignore is how a caller ends
+   * up believing the cut-off matters here.
+   */
   updateLiabilityAndRippleOwnership: (
     liabilityId: string,
     patch: UpdateLiabilityInput,
-    opts?: { today?: string },
   ) => Promise<void>;
   createHousingHoldingAndRipple: (
     command: CreateHousingHoldingCommand,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Investment-alta seam (#1599, ADR 0020): create ONE investment holding AND the
@@ -279,47 +285,47 @@ export interface DatedFactCommandImplementations {
   createDebtHoldingAndRipple: (command: CreateDebtHoldingCommand) => Promise<void>;
   createAmortizationPlanAndRipple: (
     input: CreateAmortizationPlanInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateAmortizationPlanAndRipple: (
     planId: string,
     input: UpdateAmortizationPlanInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<number>;
   deleteAmortizationPlanAndRipple: (opts: {
     liabilityId: string;
-    today?: string;
+    today: string;
   }) => Promise<number>;
   addInterestRateRevisionAndRipple: (
     input: AddInterestRateRevisionInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<void>;
   setValuationCadenceAndRipple: (
     liabilityId: string,
     cadence: ValuationCadence | null,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateInterestRateRevisionAndRipple: (
     revisionId: string,
     input: UpdateInterestRateRevisionInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteInterestRateRevisionAndRipple: (
     revisionId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   addEarlyRepaymentAndRipple: (
     input: AddEarlyRepaymentInput,
-    opts: { liabilityId: string; today?: string },
+    opts: { liabilityId: string; today: string },
   ) => Promise<void>;
   updateEarlyRepaymentAndRipple: (
     repaymentId: string,
     input: UpdateEarlyRepaymentInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteEarlyRepaymentAndRipple: (
     repaymentId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Current-state debt dated-fact seam (ADR 0056, #677): create the derived
@@ -334,7 +340,7 @@ export interface DatedFactCommandImplementations {
   createCurrentStateDebtAndRipple: (params: {
     plan: CreateAmortizationPlanInput;
     rebaseline: AddBalanceRebaselineInput;
-    today?: string;
+    today: string;
   }) => Promise<void>;
   /**
    * Amortization-schedule import seam (#1406): persist a whole cuadro's worth of
@@ -346,7 +352,7 @@ export interface DatedFactCommandImplementations {
     liabilityId: string;
     revisions: AddInterestRateRevisionInput[];
     earlyRepayments: AddEarlyRepaymentInput[];
-    today?: string;
+    today: string;
   }) => Promise<number>;
   /**
    * Balance-history import seam (ADR 0056, #696): persist a chain of balance
@@ -357,44 +363,44 @@ export interface DatedFactCommandImplementations {
   importBalanceHistoryAndRipple: (params: {
     liabilityId: string;
     rebaselines: AddBalanceRebaselineInput[];
-    today?: string;
+    today: string;
   }) => Promise<number>;
   addBalanceRebaselineAndRipple: (
     input: AddBalanceRebaselineInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateBalanceRebaselineAndRipple: (
     rebaselineId: string,
     input: UpdateBalanceRebaselineInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteBalanceRebaselineAndRipple: (
     rebaselineId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   addBalanceAnchorAndRipple: (
     input: AddBalanceAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   updateBalanceAnchorAndRipple: (
     anchorId: string,
     input: UpdateBalanceAnchorInput,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   deleteBalanceAnchorAndRipple: (
     anchorId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<number>;
   /**
    * Valuation dated-fact seam (ADR 0020): re-derive the housing snapshots after a
    * non-dated-fact metadata edit (editAsset). No dated fact is persisted here; the
    * from-date is derived behind the seam as the first anchor/snapshot date
    * (`firstHousingEventDate` rule). Skips when nothing exists to ripple.
-   * `today` defaults to the current date.
+   * `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
   rippleHousingAfterAssetEdit: (
     assetId: string,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
   /**
    * Debt-model change seam (#1051, the one write #997 left open). Flip a
@@ -405,12 +411,12 @@ export interface DatedFactCommandImplementations {
    * reads by the active model, so the other model's dated facts are re-interpreted
    * (never deleted — their audit trail survives a switch back). The pre-change
    * past that the new model cannot reach stays frozen (ADR 0012/0056). A no-op
-   * (same model) ripples nothing. `today` defaults to the current date.
+   * (same model) ripples nothing. `today` is the cut-off, stated by the caller.
    */
   changeDebtModelAndRipple: (
     liabilityId: string,
     debtModel: DebtModel,
-    opts?: { today?: string },
+    opts: { today: string },
   ) => Promise<void>;
 }
 

@@ -260,10 +260,9 @@ export interface SnapshotOrchestrator {
    * month the portfolio held a position (#1444), across all scopes. Existing
    * snapshots are never recalculated — only gaps are filled. Idempotent, and the
    * retroactive cure for a workspace whose pre-signup history is only as dense as
-   * its trading was. `today` defaults to the current date; pass it to control the
-   * cut-off in tests.
+   * its trading was. `today` is the cut-off, stated by the caller (ADR 0024, #1598).
    */
-  backfillHistoricalSnapshots: (today?: string) => Promise<void>;
+  backfillHistoricalSnapshots: (today: string) => Promise<void>;
   /**
    * Historical-price backfill seam (#380, ADR 0033): freeze a provider's
    * historical unit prices onto ONE investment's monthly snapshots, atomically in
@@ -274,7 +273,7 @@ export interface SnapshotOrchestrator {
    * asset's row (units × price) and preserves every OTHER frozen row verbatim
    * (ADR 0008/0012). A missing snapshot is generated; an existing one is updated in
    * place. Months without a price stay GAPS — never invented. Returns the counts,
-   * the gaps, and the source used. `today` defaults to the current date.
+   * the gaps, and the source used. `today` is the cut-off, stated by the caller.
    *
    * Pass `dryRun: true` to compute the SAME per-scope create/update counts the
    * apply would produce WITHOUT writing anything — the preview's single source of
@@ -285,7 +284,7 @@ export interface SnapshotOrchestrator {
     assetId: string;
     pricesByDate: ReadonlyMap<string, DecimalString>;
     source: string;
-    today?: string;
+    today: string;
     dryRun?: boolean;
   }) => Promise<{ created: number; updated: number; gaps: string[]; source: string }>;
   /**
@@ -317,7 +316,7 @@ export function createSnapshotOrchestrator(
         ctx,
         workspace,
         stores.snapshots.saveSnapshot,
-        today ?? new Date().toISOString().slice(0, 10),
+        today,
         { atomic: true },
       );
     },
@@ -325,10 +324,9 @@ export function createSnapshotOrchestrator(
       assetId,
       pricesByDate,
       source,
-      today: todayOpt,
+      today,
       dryRun = false,
     }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
       // One transaction so the whole backfill (every create/update) commits or
       // rolls back together — the dated-fact contract (ADR 0020). The plan is
       // pure (planPriceBackfill); only the apply touches the db. A dry run runs

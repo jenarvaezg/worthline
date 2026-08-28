@@ -16,7 +16,11 @@ import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
 import { batchValueUpdateAction } from "./actions";
+
 import { createHoldingAction } from "./create-holding-action";
+
+/** The day every seeded dated fact measures its ripple cut-off against (#1598). */
+const TODAY = "2026-08-01";
 
 /** Build a FormData with the given key/value pairs. */
 function form(entries: Record<string, string>): FormData {
@@ -194,12 +198,15 @@ describe("batchValueUpdateAction — debts with a curve (#1334)", () => {
     const { storedId } = await seedHoldings(store);
     const debtId = await seedBareDebt(store, "Tarjeta Revolut");
     await store.liabilities.setDebtModel(debtId, "revolving");
-    await store.command.addBalanceAnchor({
-      anchorDate: "2026-07-01",
-      balanceMinor: 1_200_00,
-      id: "anchor_card",
-      liabilityId: debtId,
-    });
+    await store.command.addBalanceAnchor(
+      {
+        anchorDate: "2026-07-01",
+        balanceMinor: 1_200_00,
+        id: "anchor_card",
+        liabilityId: debtId,
+      },
+      { today: TODAY },
+    );
 
     const url = await runAction(
       batchValueUpdateAction,

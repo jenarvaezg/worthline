@@ -115,16 +115,12 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     const datesBefore = (await store.snapshots.readSnapshots("mJ")).length;
 
     // One atomic call: persist the 50/50 → 70/30 split and ripple the scope axis.
-    await store.command.updateLiabilityOwnership(
-      "mortgage",
-      {
-        ownership: [
-          { memberId: "mJ", shareBps: 7_000 },
-          { memberId: "mA", shareBps: 3_000 },
-        ],
-      },
-      { today: TODAY },
-    );
+    await store.command.updateLiabilityOwnership("mortgage", {
+      ownership: [
+        { memberId: "mJ", shareBps: 7_000 },
+        { memberId: "mA", shareBps: 3_000 },
+      ],
+    });
 
     for (const dateKey of PAST_DATES) {
       const globalBalance = (await store.liabilities.debtBalanceAtDate(
@@ -151,17 +147,13 @@ describe("updateLiabilityAndRippleOwnership (ownership seam, ADR 0020)", () => {
     const before = await Promise.all(PAST_DATES.map((d) => debtsAt(store, d, "mJ")));
 
     // Rename only — the split is unchanged, so the seam must NOT ripple.
-    await store.command.updateLiabilityOwnership(
-      "mortgage",
-      {
-        name: "Hipoteca renombrada",
-        ownership: [
-          { memberId: "mJ", shareBps: 5_000 },
-          { memberId: "mA", shareBps: 5_000 },
-        ],
-      },
-      { today: TODAY },
-    );
+    await store.command.updateLiabilityOwnership("mortgage", {
+      name: "Hipoteca renombrada",
+      ownership: [
+        { memberId: "mJ", shareBps: 5_000 },
+        { memberId: "mA", shareBps: 5_000 },
+      ],
+    });
 
     expect(
       (await store.liabilities.readLiabilities()).find((l) => l.id === "mortgage")?.name,

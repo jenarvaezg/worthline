@@ -1,6 +1,10 @@
 import type { Client } from "@libsql/client";
-import type { FireScopeConfig } from "@worthline/domain";
-import { unitPriceMajorByHoldingId, withDerivedCurrentAges } from "@worthline/domain";
+import type { Clock, FireScopeConfig } from "@worthline/domain";
+import {
+  systemClock,
+  unitPriceMajorByHoldingId,
+  withDerivedCurrentAges,
+} from "@worthline/domain";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { createAgentViewReadStore } from "./agent-view-read-store";
 import { createAssetStore } from "./asset-store";
@@ -69,8 +73,14 @@ export async function createInMemoryStore(): Promise<WorthlineStore> {
  * spec can observe the warm-open skip (#1536).
  */
 export interface StoreBuildDeps {
-  /** Wall clock (ISO) for attempt-level stamps. Defaults to the real clock. */
-  clock?: () => string;
+  /**
+   * The store's ONE clock (ADR 0024, #1598): `now()` stamps sync attempts and
+   * the FIRE seed, `today()` is the day the command host's own writes — the
+   * post-migrate re-ripples — measure their cut-off against. Defaults to
+   * {@link systemClock}. Every dated-fact command takes its day as an argument
+   * instead, so this is never a second, disagreeing calendar for a caller's write.
+   */
+  clock?: Clock;
   /**
    * Per-process memo key for the v56 FIRE seed-marker read (#1536). URL
    * targets pass the workspace URL; path/:memory: targets omit it so each
@@ -172,6 +182,10 @@ async function buildStore(
   migrateResult: MigrateResult,
   deps: StoreBuildDeps = {},
 ): Promise<WorthlineStore> {
+  // The clock enters HERE and only here (ADR 0024, #1598): the seams that write
+  // without a caller — the post-migrate re-ripples, the sync attempt stamps, the
+  // FIRE seed — read this one, so no seam under it re-derives a second calendar.
+  const clock = deps.clock ?? systemClock();
   // Shared substrate for the extracted *-Store slices (R1–R5, PRD #120): the
   // connection, id generation, transaction wrapping, audit logging, and the
   // per-unit-of-work workspace cache all live in one place.
@@ -268,7 +282,7 @@ async function buildStore(
       snapshots: snapshotStore,
       syncRuns: syncRunStore,
     },
-    { ...(deps.clock ? { clock: deps.clock } : {}) },
+    { clock: clock.now },
   );
   const snapshotOrchestrator = createSnapshotOrchestrator(ctx, {
     snapshots: snapshotStore,
@@ -499,11 +513,12 @@ async function buildStore(
   // Post-migrate snapshot reconstruction (issue #491): the v18 / v33 backfills
   // re-ripple frozen historical snapshots at migration time. The logic lives
   // behind the dated-fact seam module; the factory only invokes it.
-  await applyPostMigrateReripples(ctx, migrateResult, {
-    assets: assetStore,
-    liabilities: liabilityStore,
-    snapshots: snapshotStore,
-  });
+  await applyPostMigrateReripples(
+    ctx,
+    migrateResult,
+    { assets: assetStore, liabilities: liabilityStore, snapshots: snapshotStore },
+    clock,
+  );
 
   // v56 (#1416, ADR 0074): the plan→FIRE savings derivation is gone, so a scope
   // that lived off it with no declared scalar keeps the figure it projects today —
@@ -518,7 +533,7 @@ async function buildStore(
       readUnitPrices: async () =>
         unitPriceMajorByHoldingId(await operationsStore.readAllPriceCacheEntries()),
     },
-    () => deps.clock?.() ?? new Date().toISOString(),
+    clock.now,
     deps.seedMemoKey,
   );
 

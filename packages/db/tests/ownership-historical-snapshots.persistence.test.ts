@@ -289,12 +289,16 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
     // ownership edit rides the seam, which dispatches a real_estate asset to the
     // housing curve ripple — losslessly re-deriving the home from its flat curve
     // value (HOME_GLOBAL_MINOR), never by dividing the rounded household row (#187).
-    await store.command.updateAssetOwnership("piso", {
-      ownership: [
-        { memberId: "mJ", shareBps: 3_000 },
-        { memberId: "mA", shareBps: 3_500 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "piso",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 3_000 },
+          { memberId: "mA", shareBps: 3_500 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     for (const dateKey of dates) {
       // The lossless source of truth: the home's global value, never recovered by
@@ -341,12 +345,16 @@ describe("ownership-split ripple recovers the global value losslessly for a co-o
       dates.flatMap((d) => [cashRow(d, "household"), cashRow(d, "mJ"), cashRow(d, "mA")]),
     );
 
-    await store.command.updateAssetOwnership("piso", {
-      ownership: [
-        { memberId: "mJ", shareBps: 3_000 },
-        { memberId: "mA", shareBps: 3_500 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "piso",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 3_000 },
+          { memberId: "mA", shareBps: 3_500 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     const after = await Promise.all(
       dates.flatMap((d) => [cashRow(d, "household"), cashRow(d, "mJ"), cashRow(d, "mA")]),
@@ -486,12 +494,16 @@ describe("ownership-split ripple leaves the frozen row untouched when the global
     // re-weighting the already-allocated row would reconstruct the frozen member
     // rows from a value the live ledger can no longer justify (#187 lossiness) —
     // the ripple must SKIP these dates and leave every frozen row untouched.
-    await store.command.updateAssetOwnership("fondo", {
-      ownership: [
-        { memberId: "mJ", shareBps: 7_000 },
-        { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "fondo",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     const fundAfter = await Promise.all(
       dates.flatMap((d) => scopes.map((s) => fundRow(d, s))),

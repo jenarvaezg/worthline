@@ -169,14 +169,14 @@ const ASSISTANT_PROPOSAL_APPLIERS = {
     params: {
       liabilityId: string;
       rebaselines: AddBalanceRebaselineInput[];
-      today?: string;
+      today: string;
     },
   ): Promise<DebtRippleCounts> => {
     const outcome = await seams.importBalanceHistory(
       {
         liabilityId: params.liabilityId,
         rebaselines: params.rebaselines,
-        ...(params.today === undefined ? {} : { today: params.today }),
+        today: params.today,
       },
       { trigger: "assistant" },
     );

@@ -108,12 +108,16 @@ describe("ripple band — a date the rewrite does not reach (#1590)", () => {
     expect(idBefore).toBeDefined();
     expect(memberBefore).toBeDefined();
 
-    await store.command.updateAssetOwnership("edited", {
-      ownership: [
-        { memberId: "mJ", shareBps: 7_000 },
-        { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "edited",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     // Still there — not dropped as if the rewrite had returned "no holdings".
     expect(await snapshotIdAt(store, BEFORE_THE_EDITED_FUND, "mJ")).toBe(idBefore);
@@ -136,12 +140,16 @@ describe("ripple band — a date the rewrite does not reach (#1590)", () => {
     const householdBefore = await grossAt(store, AFTER_THE_EDITED_FUND, "household");
     const memberBefore = await grossAt(store, AFTER_THE_EDITED_FUND, "mJ");
 
-    await store.command.updateAssetOwnership("edited", {
-      ownership: [
-        { memberId: "mJ", shareBps: 7_000 },
-        { memberId: "mA", shareBps: 3_000 },
-      ],
-    });
+    await store.command.updateAssetOwnership(
+      "edited",
+      {
+        ownership: [
+          { memberId: "mJ", shareBps: 7_000 },
+          { memberId: "mA", shareBps: 3_000 },
+        ],
+      },
+      { today: TODAY },
+    );
 
     // The member's share of the edited fund grows; the household total, which
     // still owns 100% of both funds, does not move.

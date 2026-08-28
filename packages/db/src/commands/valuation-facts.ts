@@ -61,7 +61,7 @@ export function createValuationCommands(
 > {
   return {
     addValuationAnchorAndRipple: async (input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       const result = await applyDatedFactsBatch(uow, {
         batch: { trigger: "manual" },
         ripple: async (fromDateKey) => {
@@ -87,7 +87,7 @@ export function createValuationCommands(
       if (!result.ok) throwCommandResultError(result);
     },
     updateValuationAnchorAndRipple: (anchorId, input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Atomic persist + ripple (ADR 0020). The new date may differ from the old
       // one; ripple from the earlier of the two so every affected snapshot is
       // recomputed. The previous row is read behind the seam before the patch.
@@ -126,7 +126,7 @@ export function createValuationCommands(
       });
     },
     deleteValuationAnchorAndRipple: (anchorId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Atomic delete + ripple (ADR 0020). The asset id and from-date come from the
       // deleted row itself, captured before the delete; a future date generates no
       // history and a not-found delete ripples nothing.
@@ -148,13 +148,7 @@ export function createValuationCommands(
         return changes;
       });
     },
-    countValuationRippleSnapshots: async ({
-      anchors,
-      assetId,
-      fromDateKey,
-      today: todayOpt,
-    }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    countValuationRippleSnapshots: async ({ anchors, assetId, fromDateKey, today }) => {
       // The write's own band, told to persist nothing (#1562): same scopes, same
       // generation rule, same rewrites — so the number the preview shows is the
       // number of snapshots the confirm will rewrite, not an estimate of it.
@@ -174,7 +168,7 @@ export function createValuationCommands(
       );
     },
     setAnnualAppreciationRateAndRipple: async (assetId, rate, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Atomic persist + ripple (ADR 0020). The earliest affected snapshot date is
       // derived behind the seam: min(first anchor date, earliest existing snapshot
       // carrying this asset) — covers the backward-compounding case (#184).
@@ -207,7 +201,7 @@ export function createValuationCommands(
       });
     },
     setHousingValuationCadenceAndRipple: async (assetId, cadence, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Atomic persist + ripple (ADR 0020 / 0031): a cadence change is a parameter
       // edit (ADR 0012), so the whole appreciation curve is recut. The from-date is
       // derived behind the seam (first past anchor / earliest snapshot) by the
@@ -225,7 +219,7 @@ export function createValuationCommands(
       });
     },
     recordHousingValuationAndRipple: async (assetId, currentValue, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Full persist + upsert-today-anchor + ripple, all atomic (ADR 0020).
       // The from-date is min(first past anchor, earliest snapshot) — same rule as
       // firstHousingCurrentValueRippleDate in the old action layer.
@@ -277,7 +271,7 @@ export function createValuationCommands(
       });
     },
     createHousingHoldingAndRipple: async (command, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // One transaction so the create + anchor/rate seeding + ripple commit or
       // roll back together (ADR 0020). The from-date is the acquisition date,
       // derived behind the seam from the command's own acquisition anchor.
@@ -318,7 +312,7 @@ export function createValuationCommands(
       });
     },
     rippleHousingAfterAssetEdit: async (assetId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       // Ripple-only seam for editAsset (ADR 0020): no dated fact persisted here.
       await ctx.transaction(async () => {
         await rippleHousingAfterEdit(

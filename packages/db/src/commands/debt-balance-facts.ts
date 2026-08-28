@@ -89,7 +89,7 @@ export function createDebtBalanceCommands(
 > {
   return {
     setValuationCadenceAndRipple: async (liabilityId, cadence, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       await ctx.transaction(async () => {
         await stores.liabilities.setValuationCadence(liabilityId, cadence);
         const workspace = await ctx.getWorkspace();
@@ -122,7 +122,7 @@ export function createDebtBalanceCommands(
       });
     },
     changeDebtModelAndRipple: async (liabilityId, debtModel, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       await ctx.transaction(async () => {
         const previous = await stores.liabilities.readDebtModel(liabilityId);
         if (previous === debtModel) return; // a no-op flip ripples nothing
@@ -139,8 +139,7 @@ export function createDebtBalanceCommands(
         });
       });
     },
-    createCurrentStateDebtAndRipple: async ({ plan, rebaseline, today: todayOpt }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    createCurrentStateDebtAndRipple: async ({ plan, rebaseline, today }) => {
       // One transaction: the plan row, the rebaseline fact, the balance sync,
       // and the single ripple commit or roll back together (ADR 0020 / 0056).
       await ctx.transaction(async () => {
@@ -167,12 +166,7 @@ export function createDebtBalanceCommands(
         );
       });
     },
-    importBalanceHistoryAndRipple: async ({
-      liabilityId,
-      rebaselines,
-      today: todayOpt,
-    }) => {
-      const today = todayOpt ?? new Date().toISOString().slice(0, 10);
+    importBalanceHistoryAndRipple: async ({ liabilityId, rebaselines, today }) => {
       await ctx.transaction(async () => {
         const batchId = await uow.createFactBatch({ trigger: "manual" });
         // The chain goes in batched — one round-trip per checkpoint is dozens of
@@ -200,7 +194,7 @@ export function createDebtBalanceCommands(
       return rebaselines.length;
     },
     addBalanceRebaselineAndRipple: async (input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       const result = await applyDatedFactsBatch(uow, {
         batch: { trigger: "manual" },
         ripple: async (fromDateKey) => {
@@ -230,7 +224,7 @@ export function createDebtBalanceCommands(
       if (!result.ok) throwCommandResultError(result);
     },
     updateBalanceRebaselineAndRipple: (rebaselineId, input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         const {
           baselineDate: previousBaselineDate,
@@ -265,7 +259,7 @@ export function createDebtBalanceCommands(
       });
     },
     deleteBalanceRebaselineAndRipple: (rebaselineId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         // Guard the degenerate case (#676 review): a re-baseline is sometimes the
         // ONLY dated fact defining an amortizable debt's curve (ADR 0056
@@ -322,7 +316,7 @@ export function createDebtBalanceCommands(
       });
     },
     addBalanceAnchorAndRipple: async (input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       const result = await applyDatedFactsBatch(uow, {
         batch: { trigger: "manual" },
         ripple: async (fromDateKey) => {
@@ -348,7 +342,7 @@ export function createDebtBalanceCommands(
       if (!result.ok) throwCommandResultError(result);
     },
     updateBalanceAnchorAndRipple: (anchorId, input, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         // The seam reads the OLD date + owning liability from the row by id inside
         // the transaction (ADR 0025): the caller no longer pre-reads them.
@@ -381,7 +375,7 @@ export function createDebtBalanceCommands(
       });
     },
     deleteBalanceAnchorAndRipple: (anchorId, opts) => {
-      const today = opts?.today ?? new Date().toISOString().slice(0, 10);
+      const today = opts.today;
       return ctx.transaction(async () => {
         // The seam reads the removed date + owning liability from the row by id
         // inside the transaction (ADR 0025): the caller no longer pre-reads them.

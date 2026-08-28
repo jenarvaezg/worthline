@@ -40,14 +40,17 @@ async function propertyStore(): Promise<WorthlineStore> {
     ownership: [{ memberId: "m", shareBps: 10_000 }],
     type: "real_estate",
   });
-  await store.command.addValuationAnchor({
-    adjustsPriorCurve: true,
-    assetId: "piso",
-    id: "anchor_piso_acquisition",
-    kind: "acquisition",
-    valuationDate: "2026-07-02",
-    valueMinor: 210_000_00,
-  });
+  await store.command.addValuationAnchor(
+    {
+      adjustsPriorCurve: true,
+      assetId: "piso",
+      id: "anchor_piso_acquisition",
+      kind: "acquisition",
+      valuationDate: "2026-07-02",
+      valueMinor: 210_000_00,
+    },
+    { today: TODAY },
+  );
   return store;
 }
 
@@ -223,13 +226,16 @@ describe("property acquisition assistant proposal (#1563)", () => {
 
   test("refuses a date another tasación already occupies", async () => {
     const store = await propertyStore();
-    await store.command.addValuationAnchor({
-      adjustsPriorCurve: true,
-      assetId: "piso",
-      id: "anchor_piso_2026",
-      valuationDate: "2026-07-09",
-      valueMinor: 233_000_00,
-    });
+    await store.command.addValuationAnchor(
+      {
+        adjustsPriorCurve: true,
+        assetId: "piso",
+        id: "anchor_piso_2026",
+        valuationDate: "2026-07-09",
+        valueMinor: 233_000_00,
+      },
+      { today: TODAY },
+    );
 
     const built = await buildPropertyAcquisitionProposal(
       store,
