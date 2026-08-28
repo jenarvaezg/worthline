@@ -967,3 +967,99 @@ describe("countsAsHousing round-trips through export/import (#181)", () => {
     restored.close();
   });
 });
+
+describe("el contrato no puede quedarse atrás del dominio (#1602)", () => {
+  test("un peldaño «housing» sobrevive BD → export → puerta → import (ADR 0022)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Alice" }],
+      mode: "individual",
+    });
+
+    // The v28 recut freezes a housing asset on the `housing` rung, so real snapshot
+    // rows carry it — and the export gate refused the whole document for it, which
+    // made every backup of a workspace with a home unimportable.
+    const snapshot: NetWorthSnapshot = {
+      capturedAt: "2026-02-01T10:00:00.000Z",
+      dateKey: "2026-02-01",
+      debts: { amountMinor: 0, currency: "EUR" },
+      grossAssets: { amountMinor: 30000000, currency: "EUR" },
+      housingEquity: { amountMinor: 30000000, currency: "EUR" },
+      id: "snapHousingRung",
+      isMonthlyClose: true,
+      liquidNetWorth: { amountMinor: 0, currency: "EUR" },
+      monthKey: "2026-02",
+      scopeId: "m1",
+      scopeLabel: "Alice",
+      totalNetWorth: { amountMinor: 30000000, currency: "EUR" },
+      warnings: [],
+    };
+    await store.snapshots.saveSnapshot({
+      holdings: [
+        {
+          countsAsHousing: true,
+          holdingId: "a_home",
+          kind: "asset",
+          label: "Piso Madrid",
+          liquidityTier: "housing",
+          securesHousing: false,
+          valueMinor: 30000000,
+        },
+      ],
+      snapshot,
+    });
+
+    const doc = await store.workspace.exportWorkspace();
+    expect(doc.snapshots[0]?.holdings[0]?.liquidityTier).toBe("housing");
+
+    // Through the REAL gate, as the settings page does it.
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(parsed.value);
+    const reDoc = await restored.workspace.exportWorkspace();
+    expect(reDoc.snapshots[0]?.holdings[0]?.liquidityTier).toBe("housing");
+
+    store.close();
+    restored.close();
+  });
+
+  test("las declaraciones FIRE del usuario sobreviven la puerta (#1428, #1460)", async () => {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "m1", name: "Alice" }],
+      mode: "individual",
+    });
+    await store.saveFireConfig("m1", {
+      capitalLastsUntilAge: 95,
+      immobilizedCountsAsFireCapital: false,
+      monthlySpendingMinor: 200000,
+      ordinaryRetirementAge: 67,
+      retirementPlan: "ordinary",
+      safeWithdrawalRate: 0.04,
+    });
+
+    const doc = await store.workspace.exportWorkspace();
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const restored = await createInMemoryStore();
+    await restored.workspace.importWorkspace(parsed.value);
+    const reDoc = await restored.workspace.exportWorkspace();
+
+    // Derived on restore these would come back as the neutral default and quietly
+    // move the FIRE figures of anyone who had declared otherwise.
+    expect(reDoc.fireConfig["m1"]).toMatchObject({
+      capitalLastsUntilAge: 95,
+      immobilizedCountsAsFireCapital: false,
+      ordinaryRetirementAge: 67,
+      retirementPlan: "ordinary",
+    });
+
+    store.close();
+    restored.close();
+  });
+});
