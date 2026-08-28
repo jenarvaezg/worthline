@@ -969,6 +969,40 @@ describe("countsAsHousing round-trips through export/import (#181)", () => {
 });
 
 describe("el contrato no puede quedarse atrás del dominio (#1602)", () => {
+  test("un workspace completo (cartera gestionada, deuda, snapshots) atraviesa la puerta", async () => {
+    const source = await createInMemoryStore();
+    await seedFullWorkspace(source);
+
+    const doc = await source.workspace.exportWorkspace();
+    // The seed is the rich one: a managed portfolio with its cash sibling, a
+    // liability, snapshots with frozen holdings, operations and a price cache.
+    expect(doc.managedPortfolios).toHaveLength(1);
+    expect(doc.liabilities.length).toBeGreaterThan(0);
+    expect(doc.snapshots.length).toBeGreaterThan(0);
+
+    // Through the REAL gate. Every other full-workspace round-trip in this file
+    // calls importWorkspace directly, so before #1602 no test ever put a managed
+    // portfolio through parseWorkspaceExport.
+    const parsed = parseWorkspaceExport(JSON.parse(JSON.stringify(doc)));
+    if (!parsed.ok) throw new Error(parsed.errors.join("; "));
+
+    const target = await createInMemoryStore();
+    await target.workspace.importWorkspace(parsed.value);
+    const reDoc = await target.workspace.exportWorkspace();
+
+    expect(reDoc.managedPortfolios).toEqual(doc.managedPortfolios);
+    expect(reDoc.liabilities).toEqual(doc.liabilities);
+    expect(reDoc.operations).toEqual(doc.operations);
+    expect(reDoc.fireConfig).toEqual(doc.fireConfig);
+    // Not an equality: the import re-derives history, so the restored book holds
+    // MORE snapshots than the file. What must hold is that the captured ones
+    // arrive verbatim — nothing dropped, nothing rewritten.
+    expect(reDoc.snapshots).toEqual(expect.arrayContaining(doc.snapshots));
+
+    source.close();
+    target.close();
+  });
+
   test("un peldaño «housing» sobrevive BD → export → puerta → import (ADR 0022)", async () => {
     const store = await createInMemoryStore();
     await store.workspace.initializeWorkspace({

@@ -1580,8 +1580,8 @@ describe("parseWorkspaceExport — el contrato no puede quedarse atrás del domi
     expect(cfg.capitalLastsUntilAge).toBe(95);
   });
 
-  test("tierRealReturns solo admite peldaños de la escalera de liquidez", () => {
-    expectRejection(
+  test("tierRealReturns solo admite peldaños de la escalera, y lo dice en español", () => {
+    const result = parseWorkspaceExport(
       makeDocument((doc) => {
         doc.fireConfig["household"] = {
           monthlySpendingMinor: 200_000,
@@ -1589,8 +1589,17 @@ describe("parseWorkspaceExport — el contrato no puede quedarse atrás del domi
           tierRealReturns: { inventado: 0.09 } as never,
         };
       }),
-      /tierRealReturns/i,
     );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    // Named path + Spanish text + the admitted rungs: zod's own wording for an
+    // invalid record key is English, and every message this gate emits surfaces
+    // in the UI (ADR 0010).
+    expect(result.errors).toEqual([
+      'fireConfig.household.tierRealReturns.inventado: clave no admitida; se esperaba una de "cash", "market", "term-locked", "illiquid", "housing".',
+    ]);
   });
 
   test("acepta un proveedor de precios que el dominio admite (coingecko)", () => {

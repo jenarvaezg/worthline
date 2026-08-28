@@ -122,6 +122,19 @@ function describeExpectedType(expected: string): string {
   }
 }
 
+/** The `se esperaba uno de …` tail, when a nested issue names the admitted values. */
+function describeAdmittedValues(issues: ReadonlyArray<{ code?: string }>): string {
+  const [first] = issues;
+
+  if (!first || first.code !== "invalid_value") {
+    return "";
+  }
+
+  const { values } = first as unknown as { values: ReadonlyArray<unknown> };
+
+  return `; se esperaba una de ${values.map((value) => JSON.stringify(value)).join(", ")}`;
+}
+
 function describeIssue(issue: z.core.$ZodIssue): string {
   const at = describePath(issue.path);
 
@@ -142,6 +155,19 @@ function describeIssue(issue: z.core.$ZodIssue): string {
       }
 
       return `${at}: el valor es demasiado pequeño (mínimo ${String(issue.minimum)}).`;
+    case "too_big":
+      if (issue.origin === "array") {
+        return `${at}: no puede contener más de ${String(issue.maximum)} elemento(s).`;
+      }
+
+      return `${at}: el valor es demasiado grande (máximo ${String(issue.maximum)}).`;
+    // A record key outside its vocabulary (a rung that is not on the ladder, say).
+    // The admitted values live on the nested issue, so they are lifted out here —
+    // zod's own text for this one is English, and the whole gate is Spanish.
+    case "invalid_key":
+      return `${at}: clave no admitida${describeAdmittedValues(issue.issues)}.`;
+    case "invalid_union":
+      return `${at}: no encaja con ninguna de las formas admitidas.`;
     default:
       return `${at}: ${issue.message}`;
   }
