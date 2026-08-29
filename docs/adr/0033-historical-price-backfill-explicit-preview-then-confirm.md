@@ -29,7 +29,7 @@ The action is built from five deep, pure-where-possible modules:
 
 - **Apply seam** (`packages/db`, atomic). `backfillInvestmentPricesAndRipple({ assetId, pricesByDate, source, today })` runs the plan, then in **one transaction** (ADR 0020) either generates a missing monthly snapshot (`buildSnapshotAtDate` with this asset's `capturedUnitPrices`) or recalculates an existing one (`recalculateSnapshotForAsset` with a new **`overrideUnitPrice`**). The override is the only override of the "keep the price the snapshot already captured" rule (ADR 0012) — it wins over both the captured price and the cost-basis fallback, so a cost-basis row becomes `units × historical price`. Only the backfilled asset's row changes; **every other frozen row is preserved verbatim**, never recomputed from a live identity (ADR 0008), and the per-snapshot reconciliation invariant (asset rows sum to gross assets) holds.
 
-- **Web action** (`apps/web/app/inversiones/actions.ts`). `previewPriceBackfillAction` (dry-run: counts + source + gaps, writes nothing) and `confirmPriceBackfillAction` (applies via the seam, redirects). The detail page renders the `PriceBackfillSection` ONLY when the asset is a candidate, mirroring the statement-upload preview/confirm.
+- **Web action** (`apps/web/app/inversiones/price-backfill-actions.ts`). `previewPriceBackfillAction` (dry-run: counts + source + gaps, writes nothing) and `confirmPriceBackfillAction` (applies via the seam, redirects). The detail page renders the `PriceBackfillSection` ONLY when the asset is a candidate, mirroring the statement-upload preview/confirm.
 
 ## Considered options
 

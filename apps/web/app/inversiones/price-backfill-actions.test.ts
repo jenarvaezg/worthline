@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   confirmPriceBackfillAction,
   previewPriceBackfillAction,
-} from "./price-backfill-action";
+} from "./price-backfill-actions";
 import { refreshPricesAction } from "./refresh-prices-action";
 
 const NOW = "2026-03-15T10:00:00.000Z";

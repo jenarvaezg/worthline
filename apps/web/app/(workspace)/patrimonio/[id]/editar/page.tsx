@@ -25,13 +25,13 @@ import {
   confirmPriceBackfillAction,
   type PriceBackfillPreviewState,
   previewPriceBackfillAction,
-} from "@web/inversiones/price-backfill-action";
+} from "@web/inversiones/price-backfill-actions";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import {
   confirmSnapshotPriceCorrectionAction,
   previewSnapshotPriceCorrectionAction,
   type SnapshotPriceCorrectionPreviewState,
-} from "@web/inversiones/snapshot-price-correction-action";
+} from "@web/inversiones/snapshot-price-correction-actions";
 import {
   confirmStatementAction,
   previewStatementAction,
