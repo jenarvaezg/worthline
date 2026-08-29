@@ -12,7 +12,6 @@
  * reads below never happen on a debt ficha.
  */
 
-import type { FormErrorContext } from "@web/intake";
 import {
   createPayoutAction,
   createPayoutScheduleAction,
@@ -20,25 +19,22 @@ import {
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
 } from "@web/inversiones/cobros-actions";
+import type { FichaContext } from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { CobrosSection } from "@web/patrimonio/[id]/editar/_surfaces/cobros-section";
-import type { WorthlineStore } from "@web/store";
 import type { CurrencyCode } from "@worthline/domain";
 import type { ReactNode } from "react";
 
-export async function loadPayoutsPanel(input: {
-  store: WorthlineStore;
-  /** Internal storage id of the asset the payouts hang off. */
-  id: string;
-  currency: CurrencyCode;
-  currentUrl: string;
-  privacyMode: boolean;
-  today: string;
-  formError: FormErrorContext | null;
-  /** The scope whose declared spending frames the renta-pasiva coverage. */
-  scopeId: string | undefined;
-}): Promise<ReactNode> {
-  const { currency, currentUrl, formError, id, privacyMode, scopeId, store, today } =
-    input;
+export async function loadPayoutsPanel(
+  ficha: FichaContext,
+  input: {
+    /** The asset's currency — every payout on it is denominated in it. */
+    currency: CurrencyCode;
+    /** The scope whose declared spending frames the renta-pasiva coverage. */
+    scopeId: string | undefined;
+  },
+): Promise<ReactNode> {
+  const { currentUrl, formError, id, privacyMode, store, today } = ficha;
+  const { currency, scopeId } = input;
 
   const [payouts, schedules, fireConfig] = await Promise.all([
     store.payouts.readPayoutsForHolding(id),

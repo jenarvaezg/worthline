@@ -16,15 +16,11 @@ import {
   debtBalanceAtDate,
   storedBalanceGovernsDebtFigure,
 } from "@worthline/domain";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { DebtFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
-export async function loadDebtSurface(ctx: FamilyContext): Promise<HoldingSurface> {
+export async function loadDebtSurface(ctx: DebtFamilyContext): Promise<HoldingSurface> {
   const { currentUrl, formError, id, liability, privacyMode, store, today } = ctx;
-
-  if (!liability) {
-    return holdingSurface("debt", { body: null });
-  }
 
   const debtModel = await store.liabilities.readDebtModel(id);
 
@@ -110,13 +106,15 @@ export async function loadDebtSurface(ctx: FamilyContext): Promise<HoldingSurfac
         valuationCadence={valuationCadence}
       />
     ),
-    // Which door repairs this debt's balance (#1290): the raw
-    // `current_balance_minor` form only when the engine still reads that field.
-    showRawBalanceForm: storedBalanceGovernsDebtFigure({
-      debtModel,
-      hasAmortizationPlan: amortizationPlan !== null,
-      hasBalanceAnchors: balanceAnchors.length > 0,
-      hasBalanceRebaselines: balanceRebaselines.length > 0,
-    }),
+    basics: {
+      // Which door repairs this debt's balance (#1290): the raw
+      // `current_balance_minor` form only when the engine still reads that field.
+      showRawBalanceForm: storedBalanceGovernsDebtFigure({
+        debtModel,
+        hasAmortizationPlan: amortizationPlan !== null,
+        hasBalanceAnchors: balanceAnchors.length > 0,
+        hasBalanceRebaselines: balanceRebaselines.length > 0,
+      }),
+    },
   });
 }

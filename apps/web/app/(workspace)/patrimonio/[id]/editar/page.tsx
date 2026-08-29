@@ -25,12 +25,12 @@ import {
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
-import { valuationMethodOfAsset } from "@worthline/domain";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadDangerPanel } from "./_chrome/danger-panel";
 import { loadPayoutsPanel } from "./_chrome/payouts-panel";
 import { WarningsBand } from "./_chrome/warnings-band";
+import type { FichaContext } from "./_families/family-contract";
 import { loadHoldingSurface } from "./_families/holding-surface";
 import { AssetEditForm, LiabilityEditForm } from "./_surfaces/holding-forms";
 
@@ -83,50 +83,45 @@ export default async function EditarPage({
   const asset = allAssets.find((a) => a.id === id) ?? null;
   const liability = liabilities.find((l) => l.id === id) ?? null;
 
-  if (!asset && !liability) {
-    notFound();
-  }
-
   const currentUrl = holdingDetailHref(publicId);
   const boardHref = holdingBoardHref(publicId);
   const today = new Date().toISOString().slice(0, 10);
   // Demo skips optimistic mutations — the write-guard rejects them (§10).
   const isDemo = await isDemoMode();
 
-  // Cobros rides on every asset ficha whatever its family, so it is loaded here
-  // and PLACED by the family — only the family knows where in its own order the
-  // panel belongs. A liability pays nobody and loads nothing.
-  const payoutsPanel = asset
-    ? await loadPayoutsPanel({
-        currency: asset.currency,
-        currentUrl,
-        formError,
-        id,
-        privacyMode,
-        scopeId: selectedScope?.id,
-        store,
-        today,
-      })
-    : null;
-
-  // The one dispatch: which family this holding belongs to, and everything that
-  // family needs — its rows, its sections, its bound actions (#1607).
-  const surface = await loadHoldingSurface({
+  // Everything resolved before the ficha knows which family it is looking at.
+  const ficha = {
     allAssets,
     // `?archivar=1`: the Papelera's «Lo traspasé a…» exit came back here (#1549).
     archiveOriginAfterTransfer: resolvedSearchParams?.archivar === "1",
-    asset,
     checkedAt: persistence.checkedAt,
     currentUrl,
     formError,
     id,
     isDemo,
-    liability,
-    payoutsPanel,
     privacyMode,
     store,
     today,
-  });
+  } satisfies FichaContext;
+
+  // Cobros rides on every asset ficha whatever its family, so it is loaded here
+  // and PLACED by the family — only the family knows where in its own order the
+  // panel belongs. A liability pays nobody and loads nothing.
+  const payoutsPanel = asset
+    ? await loadPayoutsPanel(ficha, {
+        currency: asset.currency,
+        scopeId: selectedScope?.id,
+      })
+    : null;
+
+  // The one dispatch: which family this holding belongs to, and everything that
+  // family needs — its rows, its sections, its bound actions (#1607). Null when
+  // the resolved id names neither an asset nor a liability.
+  const surface = await loadHoldingSurface({ ...ficha, asset, liability, payoutsPanel });
+
+  if (surface === null) {
+    notFound();
+  }
 
   const activeMembers = workspace.members.filter((m) => !m.disabledAt);
   const ownershipScopeMemberId =
@@ -145,15 +140,9 @@ export default async function EditarPage({
     await updateInvestmentAction(id, formData);
   }
 
-  const dangerPanel = await loadDangerPanel({
+  const dangerPanel = await loadDangerPanel(ficha, {
     asset,
-    currentUrl,
-    formError,
-    id,
     manualLedger: surface.manualLedger,
-    privacyMode,
-    store,
-    today,
     trashImpact: surface.trashImpact,
   });
 
@@ -195,15 +184,15 @@ export default async function EditarPage({
               asset={asset}
               boardHref={boardHref}
               currentUrl={currentUrl}
-              investment={surface.investment}
-              isBinanceHolding={surface.family === "binance"}
-              isCoinCollection={surface.family === "coin-collection"}
+              investment={surface.basics.investment}
+              isBinanceHolding={surface.basics.isBinanceHolding}
+              isCoinCollection={surface.basics.isCoinCollection}
               members={activeMembers}
-              method={valuationMethodOfAsset(asset)}
+              method={surface.basics.method}
               privacyMode={privacyMode}
               scopeMemberId={ownershipScopeMemberId}
               updateInvestmentAction={boundUpdateInvestmentAction}
-              valueOnlyOpening={surface.valueOnlyOpening}
+              valueOnlyOpening={surface.basics.valueOnlyOpening}
               values={formError?.formId === "edit" ? formError.values : {}}
             />
           ) : liability ? (
@@ -214,7 +203,7 @@ export default async function EditarPage({
               liability={liability}
               members={activeMembers}
               scopeMemberId={ownershipScopeMemberId}
-              showRawBalanceForm={surface.showRawBalanceForm}
+              showRawBalanceForm={surface.basics.showRawBalanceForm}
               values={formError?.formId === "edit" ? formError.values : {}}
             />
           ) : null}

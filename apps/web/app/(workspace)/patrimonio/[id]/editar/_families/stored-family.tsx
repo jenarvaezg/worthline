@@ -9,9 +9,9 @@
  * than the gap left by every other branch failing to match.
  */
 
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
-export function loadStoredSurface(ctx: FamilyContext): HoldingSurface {
+export function loadStoredSurface(ctx: AssetFamilyContext): HoldingSurface {
   return holdingSurface("stored", { body: ctx.payoutsPanel });
 }

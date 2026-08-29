@@ -13,38 +13,27 @@
  * the ledger. This panel never re-derives them.
  */
 
-import type { FormErrorContext } from "@web/intake";
+import type {
+  FichaContext,
+  ManualLedgerExit,
+} from "@web/patrimonio/[id]/editar/_families/family-contract";
 import { DangerZoneSection } from "@web/patrimonio/[id]/editar/_surfaces/danger-zone-section";
-import type { WorthlineStore } from "@web/store";
 import type { HoldingTrashImpact, ManualAsset } from "@worthline/domain";
 import type { ReactNode } from "react";
 
-export async function loadDangerPanel(input: {
-  store: WorthlineStore;
-  /** The asset being edited, or null when the ficha is a liability's. */
-  asset: ManualAsset | null;
-  /** Internal storage id — hidden form plumbing, never a URL (#1318). */
-  id: string;
-  currentUrl: string;
-  privacyMode: boolean;
-  today: string;
-  formError: FormErrorContext | null;
-  /** What the Papelera would withdraw, as the family derived it (#1365). */
-  trashImpact: HoldingTrashImpact | null;
-  /** The traspaso exit, offered only on a hand-written ledger (#1549). */
-  manualLedger: { transferHref: string } | null;
-}): Promise<ReactNode> {
-  const {
-    asset,
-    currentUrl,
-    formError,
-    id,
-    manualLedger,
-    privacyMode,
-    store,
-    today,
-    trashImpact,
-  } = input;
+export async function loadDangerPanel(
+  ficha: FichaContext,
+  input: {
+    /** The asset being edited, or null when the ficha is a liability's. */
+    asset: ManualAsset | null;
+    /** What the Papelera would withdraw, as the family derived it (#1365). */
+    trashImpact: HoldingTrashImpact | null;
+    /** The traspaso exit, offered only on a hand-written ledger (#1549). */
+    manualLedger: ManualLedgerExit | null;
+  },
+): Promise<ReactNode> {
+  const { currentUrl, formError, id, privacyMode, store, today } = ficha;
+  const { asset, manualLedger, trashImpact } = input;
 
   if (!asset) {
     return (

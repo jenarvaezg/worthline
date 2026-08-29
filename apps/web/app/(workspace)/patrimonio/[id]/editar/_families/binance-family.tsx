@@ -17,7 +17,7 @@ import { BinanceHoldingSection } from "@web/patrimonio/[id]/editar/_surfaces/bin
 import { tokenPositionsOnRung } from "@web/patrimonio/[id]/editar/_surfaces/binance-holding-view";
 import type { WorthlineStore } from "@web/store";
 import type { Instrument } from "@worthline/domain";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
 type ConnectedSource = Awaited<
@@ -51,14 +51,10 @@ export async function readBinanceSource(
 }
 
 export async function loadBinanceSurface(
-  ctx: FamilyContext,
-  source: ConnectedSource | null,
+  ctx: AssetFamilyContext,
+  source: ConnectedSource,
 ): Promise<HoldingSurface> {
   const { asset, currentUrl, id, payoutsPanel, privacyMode, store } = ctx;
-
-  if (!asset || !source) {
-    return holdingSurface("binance", { body: null });
-  }
 
   const [sourcePositions, snapshotRows] = await Promise.all([
     store.connectedSources.readPositions(source.id),
@@ -74,6 +70,8 @@ export async function loadBinanceSurface(
   );
 
   return holdingSurface("binance", {
+    // «Lo básico» locks the identity fields: this rung is the source's (ADR 0021).
+    basics: { isBinanceHolding: true },
     body: (
       <>
         <BinanceHoldingSection

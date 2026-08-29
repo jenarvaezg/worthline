@@ -16,27 +16,7 @@ import OperationsEditor from "@web/_components/operations-editor";
 import { transferCounterpartByOperationId } from "@web/_components/transfer-counterparts";
 import { buildHoldingBenchmarkComparison } from "@web/build-holding-benchmark";
 import HoldingBenchmarkComparisonCard from "@web/holding-benchmark-comparison-card";
-import {
-  deleteOperationAction,
-  recordOperationAction,
-} from "@web/inversiones/operation-actions";
-import {
-  confirmPriceBackfillAction,
-  type PriceBackfillPreviewState,
-  previewPriceBackfillAction,
-} from "@web/inversiones/price-backfill-actions";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
-import {
-  confirmSnapshotPriceCorrectionAction,
-  previewSnapshotPriceCorrectionAction,
-  type SnapshotPriceCorrectionPreviewState,
-} from "@web/inversiones/snapshot-price-correction-actions";
-import {
-  confirmStatementAction,
-  previewStatementAction,
-  type StatementPreviewState,
-} from "@web/inversiones/statement-actions";
-import { recordTransferAction } from "@web/inversiones/transfer-action";
 import { PriceBackfillSection } from "@web/patrimonio/[id]/editar/_surfaces/price-backfill-section";
 import { ReturnsPanel } from "@web/patrimonio/[id]/editar/_surfaces/returns-panel";
 import { SnapshotPriceCorrectionSection } from "@web/patrimonio/[id]/editar/_surfaces/snapshot-price-correction-section";
@@ -61,10 +41,13 @@ import {
   simpleGain,
   usableCachedPrice,
 } from "@worthline/domain";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
+import { bindInvestmentActions } from "./investment-actions";
 
-export async function loadInvestmentSurface(ctx: FamilyContext): Promise<HoldingSurface> {
+export async function loadInvestmentSurface(
+  ctx: AssetFamilyContext,
+): Promise<HoldingSurface> {
   const {
     allAssets,
     archiveOriginAfterTransfer,
@@ -79,10 +62,6 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
     store,
     today,
   } = ctx;
-
-  if (!asset) {
-    return holdingSurface("investment", { body: null });
-  }
 
   // Six independent reads, one wave instead of serial round-trips (#446). The
   // whole positions list is kept, not just this holding's: the traspaso picker
@@ -187,62 +166,7 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
   // and the one that emptied the holding is exactly the row still missing.
   const hasManualLedger = operations.length > 0;
 
-  async function boundRecordOperationAction(formData: FormData) {
-    "use server";
-    // Returns the rejection instead of swallowing it (#1311): success still
-    // redirects, so the only thing that comes back here is a refusal the editor
-    // renders in its own error band.
-    return recordOperationAction(id, formData);
-  }
-
-  async function boundDeleteOperationAction(formData: FormData) {
-    "use server";
-    await deleteOperationAction(id, formData);
-  }
-
-  async function boundRecordTransferAction(formData: FormData) {
-    "use server";
-    await recordTransferAction(id, formData);
-  }
-
-  async function boundPreviewStatementAction(
-    prev: StatementPreviewState,
-    formData: FormData,
-  ) {
-    "use server";
-    return previewStatementAction(id, prev, formData);
-  }
-
-  async function boundConfirmStatementAction(formData: FormData) {
-    "use server";
-    await confirmStatementAction(id, formData);
-  }
-
-  async function boundPreviewPriceBackfillAction(
-    prev: PriceBackfillPreviewState,
-    formData: FormData,
-  ) {
-    "use server";
-    return previewPriceBackfillAction(id, prev, formData);
-  }
-
-  async function boundConfirmPriceBackfillAction(formData: FormData) {
-    "use server";
-    await confirmPriceBackfillAction(id, formData);
-  }
-
-  async function boundPreviewSnapshotPriceCorrectionAction(
-    prev: SnapshotPriceCorrectionPreviewState,
-    formData: FormData,
-  ) {
-    "use server";
-    return previewSnapshotPriceCorrectionAction(id, prev, formData);
-  }
-
-  async function boundConfirmSnapshotPriceCorrectionAction(formData: FormData) {
-    "use server";
-    await confirmSnapshotPriceCorrectionAction(id, formData);
-  }
+  const action = bindInvestmentActions(id);
 
   return holdingSurface("investment", {
     body: (
@@ -305,12 +229,12 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
           // The currency this ledger last captured an apunte in (#1401), so a
           // dollar fund does not ask for it again on every purchase.
           defaultCurrency={lastCapturedCurrency(operations)}
-          deleteAction={boundDeleteOperationAction}
+          deleteAction={action.deleteOperation}
           formError={formError}
           operations={operations}
           privacyMode={privacyMode}
           readOnly={isDemo}
-          recordAction={boundRecordOperationAction}
+          recordAction={action.recordOperation}
           today={today}
           // The traspaso rows' counterpart names (#1481): join this ledger's
           // halves with the store's counterpart map and the live holdings' names.
@@ -350,33 +274,33 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
             originName={asset.name}
             privacyMode={privacyMode}
             readOnly={isDemo}
-            recordAction={boundRecordTransferAction}
+            recordAction={action.recordTransfer}
             today={today}
           />
         ) : null}
 
         {/* Load operations from a broker statement (ADR 0018, #174/#176). */}
         <StatementUploadSection
-          confirmAction={boundConfirmStatementAction}
+          confirmAction={action.confirmStatement}
           currentUrl={currentUrl}
-          previewAction={boundPreviewStatementAction}
+          previewAction={action.previewStatement}
         />
 
         {/* The explicit historical-price backfill (#380, ADR 0033). */}
         {isBackfillCandidate ? (
           <PriceBackfillSection
-            confirmAction={boundConfirmPriceBackfillAction}
+            confirmAction={action.confirmPriceBackfill}
             currentUrl={currentUrl}
-            previewAction={boundPreviewPriceBackfillAction}
+            previewAction={action.previewPriceBackfill}
           />
         ) : null}
 
         {/* Correct one daily snapshot's unit price (#926). */}
         {investment !== null && operations.length > 0 ? (
           <SnapshotPriceCorrectionSection
-            confirmAction={boundConfirmSnapshotPriceCorrectionAction}
+            confirmAction={action.confirmSnapshotPriceCorrection}
             currentUrl={currentUrl}
-            previewAction={boundPreviewSnapshotPriceCorrectionAction}
+            previewAction={action.previewSnapshotPriceCorrection}
             today={today}
             {...(usablePrice !== null ? { defaultUnitPrice: usablePrice } : {})}
           />
@@ -385,7 +309,16 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
         {payoutsPanel}
       </>
     ),
-    investment,
+    basics: {
+      investment,
+      // #1329: the «alta por valor total» state — 1 participación holding the
+      // whole declared value — but only while it has no symbol. With one, the
+      // quote already governs the valuation and the warning would be an obituary.
+      valueOnlyOpening:
+        investment !== null && !investment.providerSymbol
+          ? detectValueOnlyOpening(operations)
+          : null,
+    },
     // The Papelera's «Lo traspasé a…» exit returns HERE with the advanced block
     // unfolded and the archive intent in the URL (#1549).
     manualLedger: hasManualLedger
@@ -396,12 +329,5 @@ export async function loadInvestmentSurface(ctx: FamilyContext): Promise<Holding
     // family already derived — no extra I/O — so the figure in the confirmation
     // is the same one the ficha shows above it.
     trashImpact: holdingTrashImpact(position),
-    // #1329: the «alta por valor total» state — 1 participación holding the whole
-    // declared value — but only while it has no symbol. With one, the quote
-    // already governs the valuation and the warning would be an obituary.
-    valueOnlyOpening:
-      investment !== null && !investment.providerSymbol
-        ? detectValueOnlyOpening(operations)
-        : null,
   });
 }

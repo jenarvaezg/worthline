@@ -10,10 +10,12 @@
 
 import { AcquisitionCostSection } from "@web/patrimonio/[id]/editar/_surfaces/acquisition-cost-section";
 import { HousingValuationSection } from "@web/patrimonio/[id]/editar/_surfaces/housing-valuation-section";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
-export async function loadHousingSurface(ctx: FamilyContext): Promise<HoldingSurface> {
+export async function loadHousingSurface(
+  ctx: AssetFamilyContext,
+): Promise<HoldingSurface> {
   const { asset, currentUrl, formError, id, payoutsPanel, privacyMode, store, today } =
     ctx;
 
@@ -26,8 +28,11 @@ export async function loadHousingSurface(ctx: FamilyContext): Promise<HoldingSur
     ]);
 
   return holdingSurface("housing", {
-    body: asset ? (
+    body: (
       <>
+        {/* Cobros goes FIRST here, above the valuation sections: a rented flat's
+            payouts are what the user comes to this ficha for, and the curve below
+            is the slower conversation. */}
         {payoutsPanel}
         <HousingValuationSection
           anchors={anchors}
@@ -49,6 +54,6 @@ export async function loadHousingSurface(ctx: FamilyContext): Promise<HoldingSur
           privacyMode={privacyMode}
         />
       </>
-    ) : null,
+    ),
   });
 }

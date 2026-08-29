@@ -15,40 +15,71 @@
  * The single read this module makes of its own is the Binance back-link, because
  * it is not a fact about the holding — it is the routing question itself, and
  * only a `crypto` asset pays for it (see {@link readBinanceSource}).
+ *
+ * Null is the answer for an id that resolved to neither an asset nor a liability
+ * — a holding archived between the route table and this read. The page turns it
+ * into the 404 it is, and no loader below has to carry a guard for it.
  */
 
+import type { Liability, ManualAsset } from "@worthline/domain";
 import { instrumentOfAsset, valuationMethodOfAsset } from "@worthline/domain";
+import type { ReactNode } from "react";
 import { loadBinanceSurface, readBinanceSource } from "./binance-family";
 import { loadCoinCollectionSurface } from "./coin-collection-family";
 import { loadDebtSurface } from "./debt-family";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, FichaContext, HoldingSurface } from "./family-contract";
+import type { HoldingFamily } from "./holding-family";
 import { holdingFamily } from "./holding-family";
 import { loadHousingSurface } from "./housing-family";
 import { loadInvestmentSurface } from "./investment-family";
 import { loadStoredSurface } from "./stored-family";
 
-export async function loadHoldingSurface(ctx: FamilyContext): Promise<HoldingSurface> {
-  const { asset, id, store } = ctx;
+export async function loadHoldingSurface(
+  input: FichaContext & {
+    asset: ManualAsset | null;
+    liability: Liability | null;
+    /** The shared Cobros panel; null when the holding is a liability's. */
+    payoutsPanel: ReactNode;
+  },
+): Promise<HoldingSurface | null> {
+  const { asset, liability, payoutsPanel, ...ficha } = input;
 
-  if (!asset) {
-    return loadDebtSurface(ctx);
+  if (asset) {
+    const ctx = { ...ficha, asset, payoutsPanel };
+    const binanceSource = await readBinanceSource(ficha.store, {
+      assetId: ficha.id,
+      instrument: instrumentOfAsset(asset),
+    });
+    const method = valuationMethodOfAsset(asset);
+    const family = holdingFamily({
+      hasBinanceSource: binanceSource !== null,
+      instrument: instrumentOfAsset(asset),
+      kind: "asset",
+      method,
+    });
+
+    // The routing decision and the row that justifies it travel together, so the
+    // Binance loader takes a source it cannot be missing — `holdingFamily` says
+    // "binance" for exactly the assets this read resolved one for.
+    const surface =
+      family === "binance" && binanceSource !== null
+        ? await loadBinanceSurface(ctx, binanceSource)
+        : await loadAssetFamilySurface(family, ctx);
+
+    // The method was derived here to route; «Lo básico» reads the same value
+    // rather than deriving it a second time in the page (#152, ADR 0014).
+    return { ...surface, basics: { ...surface.basics, method } };
   }
 
-  const binanceSource = await readBinanceSource(store, {
-    assetId: id,
-    instrument: instrumentOfAsset(asset),
-  });
+  return liability ? loadDebtSurface({ ...ficha, liability }) : null;
+}
 
-  const family = holdingFamily({
-    hasBinanceSource: binanceSource !== null,
-    instrument: instrumentOfAsset(asset),
-    kind: "asset",
-    method: valuationMethodOfAsset(asset),
-  });
-
+/** The families that need nothing but the asset context. */
+function loadAssetFamilySurface(
+  family: HoldingFamily,
+  ctx: AssetFamilyContext,
+): Promise<HoldingSurface> | HoldingSurface {
   switch (family) {
-    case "binance":
-      return loadBinanceSurface(ctx, binanceSource);
     case "coin-collection":
       return loadCoinCollectionSurface(ctx);
     case "housing":

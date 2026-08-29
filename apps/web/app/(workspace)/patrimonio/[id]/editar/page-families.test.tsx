@@ -28,6 +28,42 @@ const FUND = {
   type: "investment",
 };
 
+const FLAT = {
+  currency: "EUR",
+  currentValue: { amountMinor: 240_000_00, currency: "EUR" },
+  id: ASSET_ID,
+  instrument: "property",
+  isPrimaryResidence: false,
+  liquidityTier: "housing",
+  name: "Piso de Chamberí",
+  ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+  type: "property",
+};
+
+const COINS = {
+  currency: "EUR",
+  currentValue: { amountMinor: 4_100_00, currency: "EUR" },
+  id: ASSET_ID,
+  instrument: "coin_collection",
+  isPrimaryResidence: false,
+  liquidityTier: "invested",
+  name: "Colección de plata",
+  ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+  type: "investment",
+};
+
+const CRYPTO = {
+  currency: "EUR",
+  currentValue: { amountMinor: 2_800_00, currency: "EUR" },
+  id: ASSET_ID,
+  instrument: "crypto",
+  isPrimaryResidence: false,
+  liquidityTier: "invested",
+  name: "Binance · mercado",
+  ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+  type: "investment",
+};
+
 const CASH = {
   currency: "EUR",
   currentValue: { amountMinor: 3_500_00, currency: "EUR" },
@@ -293,5 +329,113 @@ describe("EditarPage — the stored family (#1607)", () => {
     expect(calls.readInvestmentAssetById).not.toHaveBeenCalled();
     expect(calls.readValuationAnchors).not.toHaveBeenCalled();
     expect(calls.readDebtModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditarPage — the housing family (#1607)", () => {
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([FLAT]);
+  });
+
+  test("the valuation curve and the acquisition cost sit BELOW cobros", async () => {
+    const html = await renderedHtml();
+
+    // The order the ficha has always had: what the flat PAYS comes before the
+    // slower conversation about what it is worth. The family owns that order now,
+    // so it is the thing a re-split could silently invert.
+    const cobros = html.indexOf("<h3>Cobros</h3>");
+    expect(cobros).toBeGreaterThan(-1);
+    expect(html.indexOf("<h3>Valoración del inmueble</h3>")).toBeGreaterThan(cobros);
+    expect(html.indexOf("<h3>Coste de adquisición</h3>")).toBeGreaterThan(
+      html.indexOf("<h3>Valoración del inmueble</h3>"),
+    );
+    expect(html).not.toContain("<h3>Operaciones</h3>");
+  });
+
+  test("it reads the four housing rows and no ledger", async () => {
+    await renderedHtml();
+
+    expect(calls.readValuationAnchors).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readAnnualAppreciationRate).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readAcquisitionCostMinor).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readDebtModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditarPage — the coin-collection family (#1607)", () => {
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([COINS]);
+    calls.listSources.mockResolvedValue([
+      {
+        adapter: "numista",
+        assetId: ASSET_ID,
+        id: "source_numista",
+        lastSyncAt: "2026-08-20T10:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("it mirrors its source and places cobros after it", async () => {
+    const html = await renderedHtml();
+
+    const coins = html.indexOf("Sincronizar Numista");
+    expect(coins).toBeGreaterThan(-1);
+    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(coins);
+    // A collection mirrors positions, not operations (ADR 0016): no ledger.
+    expect(html).not.toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain("<h3>Traspasar</h3>");
+  });
+
+  test("it reads its source's positions, not an operations ledger", async () => {
+    await renderedHtml();
+
+    expect(calls.readSourcePositions).toHaveBeenCalledWith("source_numista");
+    expect(calls.readOperations).not.toHaveBeenCalled();
+    expect(calls.readPositions).not.toHaveBeenCalled();
+    // Not crypto, so the Binance back-link is never asked for.
+    expect(calls.readSourceIdForAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe("EditarPage — the binance family (#1607)", () => {
+  beforeEach(() => {
+    calls.readAssets.mockResolvedValue([CRYPTO]);
+    calls.readSourceIdForAsset.mockResolvedValue("source_binance");
+    calls.listSources.mockResolvedValue([
+      {
+        adapter: "binance",
+        assetId: "asset_otro_rung",
+        id: "source_binance",
+        lastSyncAt: "2026-08-28T09:00:00.000Z",
+      },
+    ]);
+  });
+
+  test("a crypto holding WITH a source mirrors tokens instead of a ledger", async () => {
+    const html = await renderedHtml();
+
+    const tokens = html.indexOf("Sincronizar Binance");
+    expect(tokens).toBeGreaterThan(-1);
+    expect(html.indexOf("<h3>Cobros</h3>")).toBeGreaterThan(tokens);
+    expect(html).not.toContain("<h3>Operaciones</h3>");
+    // The back-link is the asset's OWN `connected_source_id`, not the source's
+    // `asset_id` — a source materializes one asset per rung (#248), and this
+    // asset is not the one the source row names.
+    expect(calls.readSourceIdForAsset).toHaveBeenCalledWith(ASSET_ID);
+    expect(calls.readSourcePositions).toHaveBeenCalledWith("source_binance");
+  });
+
+  test("the SAME instrument with no source keeps its hand-written ledger", async () => {
+    // The one bit that separates a mirrored holding from a manual crypto
+    // position, and the reason the routing question is a read (#248).
+    calls.readSourceIdForAsset.mockResolvedValue(null);
+    calls.readOperations.mockResolvedValue([OPERATION]);
+    calls.readPositions.mockResolvedValue([POSITION]);
+
+    const html = await renderedHtml();
+
+    expect(html).toContain("<h3>Operaciones</h3>");
+    expect(html).not.toContain("Sincronizar Binance");
   });
 });

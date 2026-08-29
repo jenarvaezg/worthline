@@ -10,11 +10,11 @@
 
 import { CoinCollectionSection } from "@web/patrimonio/[id]/editar/_surfaces/coin-collection-section";
 import type { CoinPosition } from "@worthline/domain";
-import type { FamilyContext, HoldingSurface } from "./family-contract";
+import type { AssetFamilyContext, HoldingSurface } from "./family-contract";
 import { holdingSurface } from "./family-contract";
 
 export async function loadCoinCollectionSurface(
-  ctx: FamilyContext,
+  ctx: AssetFamilyContext,
 ): Promise<HoldingSurface> {
   const { currentUrl, id, payoutsPanel, privacyMode, store } = ctx;
 
@@ -31,6 +31,9 @@ export async function loadCoinCollectionSurface(
   ]);
 
   return holdingSurface("coin-collection", {
+    // «Lo básico» locks the identity fields: name, type and value are the
+    // source's, not the user's (ADR 0016).
+    basics: { isCoinCollection: true },
     body: (
       <>
         <CoinCollectionSection
