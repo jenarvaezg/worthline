@@ -10,6 +10,10 @@ import type { ProposalCardResult, ProposalMutation } from "./proposal-mutation";
  * asks its guarantee to be verified, the reconcile asks the batch not to be empty,
  * the reconstruction its gate. It is added to the shared one (pending, demo gate,
  * already settled), never replaces it.
+ *
+ * It paints the PAIR, and the type says so: a mutation with no discard does not fit,
+ * so a proposal that cannot be thrown away keeps its own lone button rather than
+ * getting a row with a hole in it (the debt balance history, #1617).
  */
 export function ProposalActions<Result extends ProposalCardResult>({
   confirmDisabled = false,
@@ -18,7 +22,7 @@ export function ProposalActions<Result extends ProposalCardResult>({
 }: {
   confirmDisabled?: boolean;
   discardLabel?: string;
-  mutation: ProposalMutation<Result>;
+  mutation: ProposalMutation<Result> & { discard: () => void };
 }) {
   const { actionsDisabled, confirm, discard, pending } = mutation;
   return (
@@ -30,16 +34,14 @@ export function ProposalActions<Result extends ProposalCardResult>({
       >
         {pending ? "Guardando…" : "Confirmar"}
       </button>
-      {discard === null ? null : (
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={discard}
-          type="button"
-        >
-          {discardLabel}
-        </button>
-      )}
+      <button
+        className="secondary"
+        disabled={actionsDisabled}
+        onClick={discard}
+        type="button"
+      >
+        {discardLabel}
+      </button>
     </div>
   );
 }

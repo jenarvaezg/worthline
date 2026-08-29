@@ -33,15 +33,34 @@ export type ProposalMutation<Result extends ProposalCardResult> = {
   confirm: () => void;
   /** Null for a card whose proposal has no discard (the debt balance history). */
   discard: (() => void) | null;
+  // The gate rides along deliberately: the outcome paragraph prints its sentence
+  // when nothing has happened yet, so passing `mutation` alone is enough for it.
   mutationsDisabled: boolean;
   mutationsDisabledMessage: string;
   pending: boolean;
   result: Result | null;
 };
 
+/**
+ * A proposal with no discard is a different thing from one whose discard happens to
+ * be missing, and the two overloads say so: only the pair-shaped call yields a
+ * `discard` a `<ProposalActions>` will take, so a card without one cannot reach for
+ * the button row and get a half-painted pair.
+ */
+export function useProposalMutation<Confirm extends ProposalCardResult>(
+  gate: ProposalCardGate,
+  actions: { confirm: () => Promise<Confirm> },
+): ProposalMutation<Confirm> & { discard: null };
 export function useProposalMutation<
   Confirm extends ProposalCardResult,
-  Discard extends ProposalCardResult = never,
+  Discard extends ProposalCardResult,
+>(
+  gate: ProposalCardGate,
+  actions: { confirm: () => Promise<Confirm>; discard: () => Promise<Discard> },
+): ProposalMutation<Confirm | Discard> & { discard: () => void };
+export function useProposalMutation<
+  Confirm extends ProposalCardResult,
+  Discard extends ProposalCardResult,
 >(
   gate: ProposalCardGate,
   actions: { confirm: () => Promise<Confirm>; discard?: () => Promise<Discard> },

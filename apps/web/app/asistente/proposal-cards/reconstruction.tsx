@@ -83,7 +83,6 @@ export function ReconstructionProposalCard({
   const redeclaration = dirty
     ? "Al confirmar, tu saldo declarado pasará a ser el extremo de la serie que apliques."
     : redeclarationSentence(proposal.reconciliation, formatPositionMoney);
-  const actionsDisabled = mutation.actionsDisabled;
 
   return (
     <div className="assistantProposal">
@@ -135,7 +134,7 @@ export function ReconstructionProposalCard({
               <span>{point.date}</span>{" "}
               <input
                 aria-label={`Saldo de ${point.date} en euros`}
-                disabled={actionsDisabled || point.excluded}
+                disabled={mutation.actionsDisabled || point.excluded}
                 min={0}
                 onChange={(event) => {
                   const euros = Number.parseFloat(event.target.value);
@@ -150,7 +149,7 @@ export function ReconstructionProposalCard({
               <label>
                 <input
                   checked={point.excluded ?? false}
-                  disabled={actionsDisabled}
+                  disabled={mutation.actionsDisabled}
                   onChange={(event) =>
                     applyEdit(index, { excluded: event.target.checked })
                   }

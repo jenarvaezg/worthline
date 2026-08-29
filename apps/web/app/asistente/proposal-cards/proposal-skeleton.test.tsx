@@ -7,17 +7,18 @@ import type { ProposalCardResult, ProposalMutation } from "./proposal-mutation";
 import { ProposalOutcome } from "./proposal-outcome";
 
 /**
- * The skeleton eleven proposal cards used to repeat verbatim (#1617), pinned where
- * the user meets it: the markup. Everything asserted here was copied identically in
- * every card before the collapse, so a change to any of it is a change to all of
- * them at once — which is the whole point, and the reason it needs a test of its own.
+ * The skeleton ten of the thirteen proposal cards used to repeat verbatim (#1617),
+ * pinned where the user meets it: the markup. Everything asserted here was copied
+ * identically in every card before the collapse, so a change to any of it is a change
+ * to all of them at once — which is the whole point, and the reason it needs its own
+ * test.
  *
  * The guardian below states which cards are OUT of the pattern and why. It is not a
  * style rule: each exception is a card whose confirm/discard is genuinely a different
  * ceremony, and folding it in would have moved nodes on screen.
  */
 
-type Mutation = ProposalMutation<ProposalCardResult>;
+type Mutation = ProposalMutation<ProposalCardResult> & { discard: () => void };
 
 function mutation(overrides: Partial<Mutation> = {}): Mutation {
   return {
@@ -173,16 +174,6 @@ describe("ProposalActions (#1617)", () => {
         <ProposalActions discardLabel="Descartar la propuesta" mutation={mutation()} />,
       ),
     ).toContain("Descartar la propuesta");
-  });
-
-  test("a proposal with no discard paints one button, not a dead second one", () => {
-    expect(
-      renderToStaticMarkup(<ProposalActions mutation={mutation({ discard: null })} />),
-    ).toBe(
-      '<div class="assistantProposalActions">' +
-        '<button type="button">Confirmar</button>' +
-        "</div>",
-    );
   });
 });
 

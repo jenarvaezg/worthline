@@ -11,11 +11,20 @@ import type { ProposalCardResult, ProposalMutation } from "./proposal-mutation";
  * «Guardando…» while it runs, this says what happened.
  *
  * `applied` is what THIS card calls a success. A plain string when the sentence is
- * fixed; a function when it reads the payload back (the reconcile batch counts what
- * it created) or when it also picks the tone (a reconstructed debt history is a
- * warning, not an ok, when some captures went without the debt).
+ * fixed — which also means the shared `assistantOk`, so eight cards do not each
+ * repeat the class — a function when it reads the payload back (the reconcile batch
+ * counts what it created), and an object when it picks the tone too (a reconstructed
+ * debt history is a warning when captures went without the debt, #1438).
  */
 type AppliedCopy = string | { className: string; text: string };
+
+type Copy = { className: string; text: string };
+
+function copyOf(applied: AppliedCopy): Copy {
+  return typeof applied === "string"
+    ? { className: "assistantOk", text: applied }
+    : applied;
+}
 
 export function ProposalOutcome<Result extends ProposalCardResult>({
   applied,
@@ -34,22 +43,20 @@ export function ProposalOutcome<Result extends ProposalCardResult>({
       <p className="assistantError">{mutationsDisabledMessage}</p>
     ) : null;
   }
-  const copy: AppliedCopy =
+  const copy: Copy =
     result.status === "applied"
-      ? typeof applied === "function"
-        ? applied(result as Extract<Result, { status: "applied" }>)
-        : applied
+      ? copyOf(
+          typeof applied === "function"
+            ? applied(result as Extract<Result, { status: "applied" }>)
+            : applied,
+        )
       : {
           className: "assistantError",
           text: result.status === "discarded" ? "Propuesta descartada." : result.message,
         };
   return (
-    <p
-      aria-live="polite"
-      className={typeof copy === "string" ? "assistantOk" : copy.className}
-      role="status"
-    >
-      {typeof copy === "string" ? copy : copy.text}
+    <p aria-live="polite" className={copy.className} role="status">
+      {copy.text}
     </p>
   );
 }

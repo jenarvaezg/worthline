@@ -135,7 +135,6 @@ export function ReconcileProposalCard({
     confirm: () => confirmReconcileProposalAction(proposal.draft, curation),
     discard: () => discardReconcileProposalAction(proposal.draft),
   });
-  const actionsDisabled = mutation.actionsDisabled;
 
   const summary = reconcileSummary(rows);
   const impact = reconcileImpact(rows, proposal.netWorthBeforeMinor);
@@ -177,7 +176,7 @@ export function ReconcileProposalCard({
               </span>
             ))}
             <ReconcileRowChoices
-              disabled={actionsDisabled || row.excluded}
+              disabled={mutation.actionsDisabled || row.excluded}
               groupName={`reconcile-${proposal.draft.proposalId}-${row.rowId}`}
               onCreate={() => setRows(reassignRowToNew(rows, row.rowId))}
               onUpdate={(holdingId) =>
@@ -187,7 +186,7 @@ export function ReconcileProposalCard({
             />
             <span className="assistantRowAside">
               <button
-                disabled={actionsDisabled}
+                disabled={mutation.actionsDisabled}
                 onClick={() =>
                   setRows(
                     row.excluded

@@ -122,7 +122,21 @@ now hold what ten cards were each writing out:
 - **`proposal-cards/proposal-actions.tsx`** — the Confirmar / Descartar pair.
   `confirmDisabled` is the card's OWN extra condition, added to the shared one and
   never replacing it: the correction's `verified`, the reconcile's non-empty batch,
-  the reconstruction's `canConfirm`.
+  the reconstruction's `canConfirm`. It paints the PAIR and nothing else: rather
+  than learn to render one button, its prop type demands a mutation that has a
+  discard, and `useProposalMutation` overloads so only the pair-shaped call produces
+  one. The card with no discard is kept out by the compiler, not by a branch nobody
+  takes.
+
+The census, said once: the directory holds **thirteen** cards, not the twelve the
+decision above counted — the property acquisition (#1563) landed after it. Ten take
+the pattern; three are the exceptions below.
+
+`ProposalMutationStatus` stays as it was, taking `pending` and `result` loose rather
+than a `ProposalMutation`. It is the one piece ALL thirteen render, and the three
+exceptions have no mutation object to hand it — a narrower prop would be the single
+thing that shuts them out of the shared status line, and with it the onboarding stamp
+of #1169 that hangs off it.
 
 **What stays out, and why.** The three cards whose ceremony genuinely differs keep
 their own: the statement card (its discard is a reducer that REPLACES the card with
