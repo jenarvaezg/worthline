@@ -20,10 +20,13 @@ import {
   snapshotMembershipAllowsConfirm,
   snapshotMembershipNotice,
 } from "@web/asistente/debt-history-copy";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * Superficie C «Ancla primero», reconstruct depth (#1053): the guarantee leads,
@@ -33,18 +36,11 @@ import { ProposalMutationStatus } from "./mutation-status";
  * confirm re-sends the kept series so the server re-projects it against live data.
  */
 export function ReconstructionProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: ReconstructionCorrectionProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmCorrectionProposalAction>>
-    | Awaited<ReturnType<typeof discardCorrectionProposalAction>>
-    | null
-  >(null);
   const [series, setSeries] = useState(proposal.series);
   const [dirty, setDirty] = useState(false);
-  const [pending, startTransition] = useTransition();
 
   const applyEdit = (
     index: number,
@@ -56,20 +52,27 @@ export function ReconstructionProposalCard({
   const editedRows = series
     .filter((point) => !point.excluded && point.balanceMinor !== null)
     .map((point) => ({ balanceMinor: point.balanceMinor as number, date: point.date }));
+  // The confirm re-sends the series the user kept, so the thunk closes over THIS
+  // render's edits and the server re-projects exactly what is on screen.
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmCorrectionProposalAction(proposal.draft, editedRows),
+    discard: () => discardCorrectionProposalAction(proposal.draft),
+  });
 
   // La reconciliación es un VEREDICTO, no una cerradura (#1422). Confirmar pide
   // solo que quede un punto que aplicar: si el extremo no cuadra, la frase lo
   // dice y el servidor re-proyecta la serie de todos modos. Al revés —lo que
   // había— un documento correcto del banco no tenía ninguna forma de entrar, y
   // «edita un punto» solo movía la misma negativa un clic más tarde.
-  const gate = computeCorrectionGate({
+  const correctionGate = computeCorrectionGate({
     anchorMinor: proposal.anchorMinor,
     mode: "reconstruir",
     series,
   });
   const verified = !dirty && proposal.guarantee.state === "reconciled";
   const canConfirm =
-    gate.canConfirm && snapshotMembershipAllowsConfirm(proposal.snapshotMembership);
+    correctionGate.canConfirm &&
+    snapshotMembershipAllowsConfirm(proposal.snapshotMembership);
   const membershipNotice = snapshotMembershipNotice(proposal.snapshotMembership);
   const drift = dirty
     ? null
@@ -80,12 +83,11 @@ export function ReconstructionProposalCard({
   const redeclaration = dirty
     ? "Al confirmar, tu saldo declarado pasará a ser el extremo de la serie que apliques."
     : redeclarationSentence(proposal.reconciliation, formatPositionMoney);
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const actionsDisabled = mutation.actionsDisabled;
 
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Corrección · Reconstruir historia</p>
       <strong>{proposal.summary}</strong>
       {/* Superficie C: the guarantee leads, the point-by-point detail folds below. */}
@@ -173,52 +175,8 @@ export function ReconstructionProposalCard({
       {membershipNotice === null ? null : (
         <p className={membershipNotice.className}>{membershipNotice.text}</p>
       )}
-      {result ? (
-        <p
-          aria-live="polite"
-          className={
-            result.status === "applied"
-              ? historyReconstructedCopy(result).className
-              : "assistantError"
-          }
-          role="status"
-        >
-          {result.status === "applied"
-            ? historyReconstructedCopy(result).text
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled || !canConfirm}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(
-                await confirmCorrectionProposalAction(proposal.draft, editedRows),
-              ),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardCorrectionProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied={historyReconstructedCopy} mutation={mutation} />
+      <ProposalActions confirmDisabled={!canConfirm} mutation={mutation} />
     </div>
   );
 }

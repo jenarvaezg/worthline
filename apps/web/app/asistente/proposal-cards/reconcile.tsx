@@ -30,10 +30,13 @@ import {
   reconcileImpactCaption,
   reconcileMovementLine,
 } from "@web/asistente/reconcile-row-copy";
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * The row's editable decision (#1373). It used to be a rank of look-alike buttons —
@@ -115,19 +118,24 @@ function ReconcileRowChoices({
  * the document appeared, were summarized as a fidelity tier.
  */
 export function ReconcileProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: ReconcileProposal }) {
   const [rows, setRows] = useState<ReconcileRow[]>(proposal.rows);
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmReconcileProposalAction>>
-    | Awaited<ReturnType<typeof discardReconcileProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+
+  // Confirmar sends the CURATED decisions, so the thunk is built over this render's
+  // rows: what the user sees is what the atomic apply receives.
+  const curation: ReconcileCuration[] = rows.map((row) => {
+    const decision = effectiveDecision(row);
+    return decision === "update" && row.match.target
+      ? { decision, rowId: row.rowId, target: row.match.target }
+      : { decision, rowId: row.rowId };
+  });
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmReconcileProposalAction(proposal.draft, curation),
+    discard: () => discardReconcileProposalAction(proposal.draft),
+  });
+  const actionsDisabled = mutation.actionsDisabled;
 
   const summary = reconcileSummary(rows);
   const impact = reconcileImpact(rows, proposal.netWorthBeforeMinor);
@@ -137,16 +145,9 @@ export function ReconcileProposalCard({
   });
   const folio = reconcileFolio(summary.active);
 
-  const curation: ReconcileCuration[] = rows.map((row) => {
-    const decision = effectiveDecision(row);
-    return decision === "update" && row.match.target
-      ? { decision, rowId: row.rowId, target: row.match.target }
-      : { decision, rowId: row.rowId };
-  });
-
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">{folio}</p>
       <strong>{header.headline}</strong>
       <p className={header.increases ? "assistantOk" : "assistantError"}>
@@ -205,46 +206,18 @@ export function ReconcileProposalCard({
           </li>
         ))}
       </ul>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? `Cartera cuadrada: ${result.created} creados, ${result.updated} actualizados.`
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled || summary.active === 0}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmReconcileProposalAction(proposal.draft, curation)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardReconcileProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar la propuesta
-        </button>
-      </div>
+      <ProposalOutcome
+        applied={(result) =>
+          `Cartera cuadrada: ${result.created} creados, ${result.updated} actualizados.`
+        }
+        mutation={mutation}
+      />
+      {/* Never «Descartar» alone: that word belongs to the row control above. */}
+      <ProposalActions
+        confirmDisabled={summary.active === 0}
+        discardLabel="Descartar la propuesta"
+        mutation={mutation}
+      />
     </div>
   );
 }

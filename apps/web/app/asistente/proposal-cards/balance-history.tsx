@@ -12,27 +12,30 @@ import {
   snapshotMembershipAllowsConfirm,
   snapshotMembershipNotice,
 } from "@web/asistente/debt-history-copy";
-import { useState, useTransition } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
+/**
+ * The one card of the shared skeleton (#1617) that keeps its own button: this
+ * proposal has NO discard, so there is no pair to wrap in `.assistantProposalActions`
+ * and `<ProposalActions>` would add a node the card has never painted. It takes the
+ * hook and the outcome paragraph; the lone Confirmar stays here.
+ */
 export function BalanceHistoryProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: BalanceHistoryProposal }) {
-  const [result, setResult] = useState<Awaited<
-    ReturnType<typeof confirmBalanceHistoryProposalAction>
-  > | null>(null);
-  const [pending, startTransition] = useTransition();
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmBalanceHistoryProposalAction(proposal.draft),
+  });
   // La misma puerta de #1422, en la otra lane del mismo documento: exigir que el
   // extremo cuadre para dejar confirmar dejaba el botón muerto sin salida ninguna.
   // El veredicto se dice; aplicar es decisión del usuario.
   const confirmDisabled =
-    pending ||
-    mutationsDisabled ||
-    result?.status === "applied" ||
+    mutation.actionsDisabled ||
     !snapshotMembershipAllowsConfirm(proposal.snapshotMembership);
   const membershipNotice = snapshotMembershipNotice(proposal.snapshotMembership);
   const balanceHistoryDrift = anchorDriftSentence(
@@ -41,7 +44,7 @@ export function BalanceHistoryProposalCard({
   );
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Propuesta de historial de deuda</p>
       <strong>{proposal.liability.name}</strong>
       <svg
@@ -88,33 +91,9 @@ export function BalanceHistoryProposalCard({
       {membershipNotice === null ? null : (
         <p className={membershipNotice.className}>{membershipNotice.text}</p>
       )}
-      {result ? (
-        <p
-          aria-live="polite"
-          className={
-            result.status === "applied"
-              ? historyReconstructedCopy(result).className
-              : "assistantError"
-          }
-          role="status"
-        >
-          {result.status === "applied"
-            ? historyReconstructedCopy(result).text
-            : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <button
-        disabled={confirmDisabled}
-        onClick={() =>
-          startTransition(async () =>
-            setResult(await confirmBalanceHistoryProposalAction(proposal.draft)),
-          )
-        }
-        type="button"
-      >
-        {pending ? "Guardando…" : "Confirmar"}
+      <ProposalOutcome applied={historyReconstructedCopy} mutation={mutation} />
+      <button disabled={confirmDisabled} onClick={mutation.confirm} type="button">
+        {mutation.pending ? "Guardando…" : "Confirmar"}
       </button>
     </div>
   );

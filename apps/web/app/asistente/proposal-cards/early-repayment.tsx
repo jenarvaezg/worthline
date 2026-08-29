@@ -5,9 +5,11 @@ import {
   discardEarlyRepaymentProposalAction,
 } from "@web/asistente/early-repayment-proposal-action";
 import type { EarlyRepaymentProposal } from "@web/asistente/early-repayment-proposal-contract";
-import { useState, useTransition } from "react";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * The early-repayment card (#1245). Reuses the correction card's shape — kind,
@@ -20,21 +22,16 @@ import { ProposalMutationStatus } from "./mutation-status";
  * and never recomputes money.
  */
 export function EarlyRepaymentProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: EarlyRepaymentProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmEarlyRepaymentProposalAction>>
-    | Awaited<ReturnType<typeof discardEarlyRepaymentProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmEarlyRepaymentProposalAction(proposal.draft),
+    discard: () => discardEarlyRepaymentProposalAction(proposal.draft),
+  });
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Amortización anticipada · Hecho fechado</p>
       <strong>{proposal.summary}</strong>
       <p>
@@ -66,46 +63,11 @@ export function EarlyRepaymentProposalCard({
         </p>
       ))}
       <p className="assistantProposalFolio">{proposal.folio}</p>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Amortización anticipada registrada."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmEarlyRepaymentProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardEarlyRepaymentProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome
+        applied="Amortización anticipada registrada."
+        mutation={mutation}
+      />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }

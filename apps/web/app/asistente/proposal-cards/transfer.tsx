@@ -6,10 +6,12 @@ import {
   discardTransferProposalAction,
 } from "@web/asistente/transfer-proposal-action";
 import type { TransferProposal } from "@web/asistente/transfer-proposal-contract";
-import { useState, useTransition } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * The traspaso card (#1482) — ONE movement with two halves, dictated to the chat.
@@ -29,24 +31,19 @@ import { ProposalMutationStatus } from "./mutation-status";
  * Every figure arrives pre-formatted from the server; the client renders strings.
  */
 export function TransferProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: TransferProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmTransferProposalAction>>
-    | Awaited<ReturnType<typeof discardTransferProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmTransferProposalAction(proposal.draft),
+    discard: () => discardTransferProposalAction(proposal.draft),
+  });
   const header = proposalImpactHeader(proposal.impact, formatPositionMoney, {
     caption: proposal.impactCaption,
   });
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Traspaso · Hecho fechado</p>
       <strong>{proposal.summary}</strong>
       <p className={header.increases ? "assistantOk" : "assistantError"}>
@@ -74,46 +71,8 @@ export function TransferProposalCard({
         </p>
       ))}
       <p className="assistantProposalFolio">{proposal.folio}</p>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Traspaso anotado."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmTransferProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardTransferProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied="Traspaso anotado." mutation={mutation} />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }
