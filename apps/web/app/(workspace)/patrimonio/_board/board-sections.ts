@@ -7,7 +7,7 @@
  * `board-fold` already make for the merge and the fold.
  */
 
-import { magnitude } from "@web/patrimonio/_board/board-format";
+import { barColor, magnitude } from "@web/patrimonio/_board/board-format";
 import type { BoardUnit, PortfolioGroup, UnifiedHolding } from "@worthline/domain";
 
 /** One labelled subsection of a pane: the grouping axis (#154) made visible. */
@@ -93,3 +93,29 @@ export function sectionsFor(
 
 export const sectionTotal = (units: BoardUnit[]) =>
   units.reduce((acc, unit) => acc + unitMagnitude(unit), 0);
+
+/**
+ * One pane's composition bar, as value-weighted segments: by SUBSECTION when the
+ * grouping axis subdivided the pane, else by holding — a single-section pane's
+ * bar would otherwise be one flat block saying nothing. `denom` never reaches 0,
+ * so an empty pane divides by 1 instead of painting `NaN%`.
+ */
+export function paneSegments(sections: Section[], isAsset: boolean) {
+  const denom = sections.reduce((acc, s) => acc + sectionTotal(s.units), 0) || 1;
+  const color = (tier: UnifiedHolding["tier"]) => barColor(tier, isAsset);
+  const segments =
+    sections.length > 1
+      ? sections.map((s) => ({
+          key: s.key,
+          value: sectionTotal(s.units),
+          color: color(s.tier),
+          label: s.label,
+        }))
+      : (sections[0]?.units ?? []).map((unit) => ({
+          key: unit.key,
+          value: unitMagnitude(unit),
+          color: color(unitTier(unit)),
+          label: unitName(unit),
+        }));
+  return { denom, segments };
+}

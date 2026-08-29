@@ -26,7 +26,7 @@ import {
   applyBoardMutations,
   type BoardModel,
   type BoardMutation,
-} from "@web/patrimonio/optimistic-board";
+} from "@web/patrimonio/_board/optimistic-board";
 import type { TrashView } from "@worthline/db";
 import type { PortfolioGroup } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useTransition } from "react";

@@ -17,7 +17,7 @@ import {
   magnitude,
   money,
   ownershipLabel,
-  type PublicIdByHolding,
+  type PublicIdByInternalId,
 } from "@web/patrimonio/_board/board-format";
 import type { OptimisticSubmit } from "@web/patrimonio/_board/use-optimistic-board";
 import {
@@ -104,7 +104,7 @@ export function HoldingRow({
   isHousehold: boolean;
   warnings: DomainWarning[];
   currentUrl: string;
-  publicIdByHolding: PublicIdByHolding;
+  publicIdByHolding: PublicIdByInternalId;
   sectionDenom: number;
   showTierLabel: boolean;
   nowIso: string;

@@ -1,9 +1,14 @@
 "use client";
 
 import {
+  readOpenPortfoliosFromUrl,
+  toggleOpenPortfolio,
+  urlWithOpenPortfolios,
+} from "@web/patrimonio/_board/board-fold";
+import {
   type Currency,
   money,
-  type PublicIdByHolding,
+  type PublicIdByInternalId,
   type ReturnsById,
 } from "@web/patrimonio/_board/board-format";
 import { Pane } from "@web/patrimonio/_board/board-pane";
@@ -14,11 +19,6 @@ import {
 } from "@web/patrimonio/_board/board-sections";
 import { BoardTrash } from "@web/patrimonio/_board/board-trash";
 import { useOptimisticBoard } from "@web/patrimonio/_board/use-optimistic-board";
-import {
-  readOpenPortfoliosFromUrl,
-  toggleOpenPortfolio,
-  urlWithOpenPortfolios,
-} from "@web/patrimonio/board-fold";
 import { pushMirroredUrl, useViewStateSync } from "@web/url-view-state";
 import type { TrashView } from "@worthline/db";
 import type { DomainWarning, PortfolioGroup } from "@worthline/domain";
@@ -35,7 +35,7 @@ import { useCallback, useState } from "react";
  * A footer reconciles Activos − Pasivos = Patrimonio neto, and the Papelera is part
  * of that footer rather than a stray panel.
  *
- * This module is the ASSEMBLY (#1608): it splits the model into the two panes,
+ * This module is the ASSEMBLY (#1608, ADR 0096): it splits the model into the two panes,
  * reconciles the footer and hands each part to the module that owns it — the row
  * (`holding-row`), the managed portfolio (`portfolio-block`), the pane
  * (`board-pane`), the Papelera (`board-trash`) — over the optimistic shell
@@ -60,12 +60,12 @@ export interface BalanceBoardProps {
    * Public `wl_hld_…` id per internal holding id (#1318) — the board is where a
    * holding becomes a link, so this is where the two id spaces meet.
    */
-  publicIdByHolding: PublicIdByHolding;
+  publicIdByHolding: PublicIdByInternalId;
   /**
    * Public `wl_prt_…` id per internal portfolio id (#1548) — the group header
    * is a link to the ficha and the fold param names portfolios in the URL.
    */
-  publicIdByPortfolio?: PublicIdByHolding;
+  publicIdByPortfolio?: PublicIdByInternalId;
   /**
    * Portfolios rendered unfolded on the FIRST paint, read from the URL by the
    * server (#1548). Server-rendering the fold is what keeps a shared link from

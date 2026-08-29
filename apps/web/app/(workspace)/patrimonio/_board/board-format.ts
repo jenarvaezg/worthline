@@ -22,7 +22,7 @@ export type Currency = PortfolioGroup["totalMinor"]["currency"];
  * Public `wl_hld_…` / `wl_prt_…` id per internal id (#1318) — the board is where
  * a holding becomes a link, so this is where the two id spaces meet.
  */
-export type PublicIdByHolding = Readonly<Record<string, string>>;
+export type PublicIdByInternalId = Readonly<Record<string, string>>;
 
 /** Per-holding returns keyed by asset id (#551) — market investments only. */
 export type ReturnsById = ReadonlyMap<string, HoldingReturnsView>;

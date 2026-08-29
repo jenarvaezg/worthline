@@ -16,41 +16,18 @@ import {
   barColor,
   type Currency,
   money,
-  type PublicIdByHolding,
+  type PublicIdByInternalId,
   type ReturnsById,
 } from "@web/patrimonio/_board/board-format";
 import {
+  paneSegments,
   type Section,
   sectionTotal,
-  unitMagnitude,
-  unitName,
-  unitTier,
 } from "@web/patrimonio/_board/board-sections";
 import { HoldingRow } from "@web/patrimonio/_board/holding-row";
 import { PortfolioBlock } from "@web/patrimonio/_board/portfolio-block";
 import type { OptimisticSubmit } from "@web/patrimonio/_board/use-optimistic-board";
 import type { DomainWarning, UnifiedHolding } from "@worthline/domain";
-
-/** Composition segments for a pane: by subsection when subdivided, else by holding. */
-function paneSegments(sections: Section[], isAsset: boolean) {
-  const denom = sections.reduce((acc, s) => acc + sectionTotal(s.units), 0) || 1;
-  const color = (tier: UnifiedHolding["tier"]) => barColor(tier, isAsset);
-  const segments =
-    sections.length > 1
-      ? sections.map((s) => ({
-          key: s.key,
-          value: sectionTotal(s.units),
-          color: color(s.tier),
-          label: s.label,
-        }))
-      : (sections[0]?.units ?? []).map((unit) => ({
-          key: unit.key,
-          value: unitMagnitude(unit),
-          color: color(unitTier(unit)),
-          label: unitName(unit),
-        }));
-  return { denom, segments };
-}
 
 export function Pane({
   title,
@@ -82,7 +59,7 @@ export function Pane({
   isHousehold: boolean;
   warnings: DomainWarning[];
   currentUrl: string;
-  publicIdByHolding: PublicIdByHolding;
+  publicIdByHolding: PublicIdByInternalId;
   nowIso: string;
   privacyMode: boolean;
   optimisticSubmit: OptimisticSubmit;
@@ -91,7 +68,7 @@ export function Pane({
   /** Public ids of the portfolios rendered unfolded (#1548). */
   openPortfolios: ReadonlySet<string>;
   onTogglePortfolio: (publicId: string) => void;
-  publicIdByPortfolio: PublicIdByHolding;
+  publicIdByPortfolio: PublicIdByInternalId;
 }) {
   const { denom, segments } = paneSegments(sections, isAsset);
   const showSubs = sections.length > 1;

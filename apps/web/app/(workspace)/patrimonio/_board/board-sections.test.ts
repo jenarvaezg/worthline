@@ -1,5 +1,6 @@
 import {
   isClosedPosition,
+  paneSegments,
   sectionsFor,
   sectionTotal,
   unitMagnitude,
@@ -146,5 +147,61 @@ describe("isClosedPosition (#1608)", () => {
 
   test("a debt never folds away", () => {
     expect(isClosedPosition(liability("sold", 0), operated)).toBe(false);
+  });
+});
+
+describe("paneSegments (#1608)", () => {
+  test("a subdivided pane reads by subsection, in each rung's colour", () => {
+    const sections = sectionsFor(
+      [
+        group("market", [holdingUnit(asset("a", 3_00))]),
+        group("housing", [holdingUnit(asset("h", 1_00, { tier: "housing" }))]),
+      ],
+      "asset",
+    );
+
+    expect(paneSegments(sections, true)).toEqual({
+      denom: 4_00,
+      segments: [
+        { color: "var(--tier-market)", key: "market", label: "market", value: 3_00 },
+        { color: "var(--tier-housing)", key: "housing", label: "housing", value: 1_00 },
+      ],
+    });
+  });
+
+  test("a single-section pane reads by holding — one flat block says nothing", () => {
+    const sections = sectionsFor(
+      [
+        group("market", [
+          holdingUnit(asset("big", 9_00)),
+          holdingUnit(asset("small", 1_00)),
+        ]),
+      ],
+      "asset",
+    );
+
+    expect(paneSegments(sections, true).segments.map((s) => s.key)).toEqual([
+      "big",
+      "small",
+    ]);
+  });
+
+  test("a debt segment speaks the debit hue, never a rung colour (canon §6)", () => {
+    const sections = sectionsFor(
+      [
+        group("housing", [holdingUnit(liability("m", 5_00))]),
+        group("consumo", [holdingUnit(liability("c", 1_00))]),
+      ],
+      "liability",
+    );
+
+    expect(paneSegments(sections, false).segments.map((s) => s.color)).toEqual([
+      "var(--debit-rule)",
+      "var(--debit-rule)",
+    ]);
+  });
+
+  test("an empty pane divides by 1 instead of painting NaN%", () => {
+    expect(paneSegments([], true)).toEqual({ denom: 1, segments: [] });
   });
 });

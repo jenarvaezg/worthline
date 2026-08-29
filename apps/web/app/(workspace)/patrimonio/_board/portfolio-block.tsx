@@ -18,7 +18,7 @@ import {
   magnitude,
   money,
   ownershipLabel,
-  type PublicIdByHolding,
+  type PublicIdByInternalId,
   tierVar,
 } from "@web/patrimonio/_board/board-format";
 import type { BoardUnit, UnifiedHolding } from "@worthline/domain";
@@ -35,7 +35,10 @@ import Link from "next/link";
  * every cut is there. Each member keeps ITS OWN rung colour (design-system §5);
  * the cuts are hairlines of the paper, never a decorative ramp.
  */
-function memberGradient(members: readonly UnifiedHolding[], totalMinor: number): string {
+export function memberGradient(
+  members: readonly UnifiedHolding[],
+  totalMinor: number,
+): string {
   if (totalMinor <= 0 || members.length === 0) {
     return "var(--tier-market)";
   }
@@ -75,7 +78,7 @@ export function PortfolioBlock({
   onToggle: (publicId: string) => void;
   /** The portfolio's public `wl_prt_…` id, or null when it has no registry row. */
   publicId: string | null;
-  publicIdByHolding: PublicIdByHolding;
+  publicIdByHolding: PublicIdByInternalId;
   sectionDenom: number;
   privacyMode: boolean;
   banded: boolean;
