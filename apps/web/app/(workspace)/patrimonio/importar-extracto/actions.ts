@@ -7,7 +7,7 @@
  * S1 domain engine (`packages/domain/src/statement-import-plan.ts`) and the
  * `applyStatementImportAndRipple` seam.
  *
- * Mirrors the per-holding statement upload (#176, `inversiones/actions.ts`):
+ * Mirrors the per-holding statement upload (#176, `inversiones/statement-actions.ts`):
  * preview and confirm both re-read the uploaded file from FormData (the file
  * input stays mounted client-side across both submits — never trust the
  * preview); confirm re-derives the buckets from the store instead of the

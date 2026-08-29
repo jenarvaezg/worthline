@@ -47,7 +47,7 @@ import {
   parseViewParam,
   parseViviendaParam,
 } from "./intake";
-import { refreshPricesAction } from "./inversiones/actions";
+import { refreshPricesAction } from "./inversiones/refresh-prices-action";
 import { loadDashboard } from "./load-dashboard";
 import {
   buildMoversDataByPeriod,

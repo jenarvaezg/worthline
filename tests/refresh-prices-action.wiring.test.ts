@@ -4,7 +4,7 @@ vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
 import { readFileSync } from "node:fs";
 
-import { refreshPricesAction } from "@web/inversiones/actions";
+import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import type { PriceProvider } from "@worthline/pricing";
 import { catchRedirect, fd } from "./helpers";

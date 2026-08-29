@@ -8,7 +8,7 @@ import {
   resolveOkMessage,
   resolveOkNotice,
 } from "@web/intake";
-import { refreshPricesAction } from "@web/inversiones/actions";
+import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { resolvePageShell } from "@web/page-shell";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import {

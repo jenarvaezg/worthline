@@ -13,7 +13,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
-import { updateInvestmentAction } from "@web/inversiones/actions";
+import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { catchRedirect, fd } from "./helpers";
 

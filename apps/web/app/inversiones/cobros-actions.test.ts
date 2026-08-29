@@ -17,7 +17,7 @@ import {
   deletePayoutAction,
   deletePayoutScheduleAction,
   updatePayoutScheduleAction,
-} from "./actions";
+} from "./cobros-actions";
 
 const HOLDING = "h1";
 
