@@ -124,12 +124,18 @@ describe("capability destinations (#1524)", () => {
     // inside that `<details>`. Nothing in the type system ties this prose to the page,
     // so a rename there would leave the assistant confidently sending users to a
     // control that no longer exists — the drift this module was born to prevent,
-    // pointing at the UI instead of at a sibling module. Anchored by reading the page.
+    // pointing at the UI instead of at a sibling module. Anchored by reading the UI.
+    //
+    // Since #1607 those are two files: the ficha owns the accordion, and the shared
+    // Cobros panel mounts the section its families place inside it. That the panel
+    // really lands in the accordion is pinned by rendering, in the ficha's own
+    // `page-families.test.tsx` — here it is the WORDS that must still match.
     const page = source("(workspace)/patrimonio/[id]/editar/page.tsx");
+    const panel = source("(workspace)/patrimonio/[id]/editar/_chrome/payouts-panel.tsx");
     const rent = CAPABILITY_DESTINATIONS.find((entry) => entry.id === "rent-expenses");
 
     expect(page).toContain("<summary>Configuración avanzada</summary>");
-    expect(page).toContain("<CobrosSection");
+    expect(panel).toContain("<CobrosSection");
     expect(rent?.where).toContain("Configuración avanzada");
   });
 });
