@@ -8,7 +8,7 @@
  * guard on the action's first line, not by the UI hiding the button — a direct
  * POST must be refused. Today the `formAction`/proposal combinators own that
  * choreography for most actions (PRD #1112) and a handful call the guard by hand
- * (`inversiones/actions.ts`, `importar-extracto/actions.ts`, the admin actions).
+ * (`inversiones/*-action(s).ts`, `importar-extracto/actions.ts`, the admin actions).
  * Nothing stopped the NEXT hand-rolled action from forgetting it — the hole this
  * closes. The build goes red here the moment an exported action in a `"use server"`
  * module reaches neither a combinator nor a guard.
@@ -190,7 +190,9 @@ describe('write-guard guardian · every "use server" action passes a guard (#118
     expect(actionModules.length).toBeGreaterThanOrEqual(20);
     for (const module of [
       "apps/web/app/(workspace)/patrimonio/holdings-actions.ts", // combinator-built
-      "apps/web/app/inversiones/actions.ts", // guard called by hand
+      "apps/web/app/inversiones/update-investment-action.ts", // guard called by hand
+      "apps/web/app/inversiones/operation-actions.ts", // combinator-built
+      "apps/web/app/inversiones/cobros-actions.ts", // ditto
       "apps/web/app/(workspace)/patrimonio/importar-extracto/actions.ts", // ditto
       "apps/web/app/asistente/holding-trash-proposal-action.ts", // transitive coverage
       "apps/web/app/admin/actions.ts", // guardAdmin

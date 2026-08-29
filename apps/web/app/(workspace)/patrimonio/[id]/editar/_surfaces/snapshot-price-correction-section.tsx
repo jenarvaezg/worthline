@@ -8,7 +8,7 @@
  * the chosen daily snapshot across scopes.
  */
 
-import type { SnapshotPriceCorrectionPreviewState } from "@web/inversiones/actions";
+import type { SnapshotPriceCorrectionPreviewState } from "@web/inversiones/snapshot-price-correction-action";
 import { formatMoneyMinor } from "@worthline/domain";
 import { startTransition, useActionState } from "react";
 

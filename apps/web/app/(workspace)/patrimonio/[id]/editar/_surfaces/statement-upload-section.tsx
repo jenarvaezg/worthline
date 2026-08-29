@@ -19,7 +19,7 @@
  * harmless because a successful load redirects away. Mirrors ImportWorkspaceForm.
  */
 
-import type { StatementPreviewState } from "@web/inversiones/actions";
+import type { StatementPreviewState } from "@web/inversiones/statement-actions";
 import { startTransition, useActionState, useState } from "react";
 
 const IDLE: StatementPreviewState = { status: "idle" };

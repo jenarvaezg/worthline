@@ -17,7 +17,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 
-import { recordOperationAction } from "@web/inversiones/actions";
+import { recordOperationAction } from "@web/inversiones/operation-actions";
 import { createInMemoryStore, type WorthlineStore } from "@worthline/db";
 import { createInvestmentOperationSafe } from "@worthline/domain";
 import { catchRedirect, errorMessageOf } from "./helpers";

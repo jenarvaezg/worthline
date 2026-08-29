@@ -17,7 +17,7 @@ import type { WorthlineStore } from "@worthline/db";
 import { createInMemoryStore } from "@worthline/db";
 import { describe, expect, test } from "vitest";
 
-import { recordOperationAction } from "./actions";
+import { recordOperationAction } from "./operation-actions";
 
 const HOLDING = "h1";
 

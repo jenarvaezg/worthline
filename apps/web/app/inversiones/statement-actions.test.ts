@@ -14,7 +14,7 @@ import {
   confirmStatementAction,
   previewStatementAction,
   type StatementPreviewState,
-} from "./actions";
+} from "./statement-actions";
 
 const IDLE: StatementPreviewState = { status: "idle" };
 

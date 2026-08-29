@@ -11,26 +11,34 @@ import {
 } from "@web/holding-route";
 import { parseFormError, resolveOkMessage } from "@web/intake";
 import {
-  confirmPriceBackfillAction,
-  confirmSnapshotPriceCorrectionAction,
-  confirmStatementAction,
   createPayoutAction,
   createPayoutScheduleAction,
-  deleteOperationAction,
   deletePayoutAction,
   deletePayoutScheduleAction,
+  updatePayoutScheduleAction,
+} from "@web/inversiones/cobros-actions";
+import {
+  deleteOperationAction,
+  recordOperationAction,
+} from "@web/inversiones/operation-actions";
+import {
+  confirmPriceBackfillAction,
   type PriceBackfillPreviewState,
   previewPriceBackfillAction,
+} from "@web/inversiones/price-backfill-action";
+import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
+import {
+  confirmSnapshotPriceCorrectionAction,
   previewSnapshotPriceCorrectionAction,
-  previewStatementAction,
-  recordOperationAction,
-  refreshPricesAction,
   type SnapshotPriceCorrectionPreviewState,
+} from "@web/inversiones/snapshot-price-correction-action";
+import {
+  confirmStatementAction,
+  previewStatementAction,
   type StatementPreviewState,
-  updateInvestmentAction,
-  updatePayoutScheduleAction,
-} from "@web/inversiones/actions";
+} from "@web/inversiones/statement-actions";
 import { recordTransferAction } from "@web/inversiones/transfer-action";
+import { updateInvestmentAction } from "@web/inversiones/update-investment-action";
 import { resolvePageShell } from "@web/page-shell";
 import { acknowledgeWarningAction } from "@web/patrimonio/actions";
 import { PriceRefreshControl } from "@web/patrimonio/price-refresh-control";
@@ -464,8 +472,9 @@ export default async function EditarPage({
 
   // Bind the holding id to the operations actions so the `derived` surface posts
   // back to this detail page (#153 collapsed the /inversiones management routes;
-  // the shared investment actions now live on under app/inversiones/actions.ts
-  // and the ficha is the single place operations are recorded).
+  // the shared investment actions now live on under app/inversiones/, one module
+  // per surface since #1606, and the ficha is the single place operations are
+  // recorded).
   // Returns the rejection instead of swallowing it (#1311): success still
   // redirects, so the only thing that comes back through here is a refusal the
   // editor renders in its own error band.

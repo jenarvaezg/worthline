@@ -17,7 +17,7 @@
  * exactly like StatementUploadSection.
  */
 
-import type { PriceBackfillPreviewState } from "@web/inversiones/actions";
+import type { PriceBackfillPreviewState } from "@web/inversiones/price-backfill-action";
 import { startTransition, useActionState } from "react";
 
 const IDLE: PriceBackfillPreviewState = { status: "idle" };

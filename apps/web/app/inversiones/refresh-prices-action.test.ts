@@ -18,7 +18,7 @@ import { createInMemoryStore } from "@worthline/db";
 import { fixedClock } from "@worthline/domain";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { refreshPricesAction } from "./actions";
+import { refreshPricesAction } from "./refresh-prices-action";
 
 const NOW = "2026-06-18T10:00:00.000Z";
 

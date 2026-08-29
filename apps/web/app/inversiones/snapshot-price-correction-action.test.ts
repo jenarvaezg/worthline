@@ -11,7 +11,7 @@ import { describe, expect, test } from "vitest";
 import {
   confirmSnapshotPriceCorrectionAction,
   previewSnapshotPriceCorrectionAction,
-} from "./actions";
+} from "./snapshot-price-correction-action";
 
 async function seed(store: WorthlineStore): Promise<void> {
   await store.workspace.initializeWorkspace({
