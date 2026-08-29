@@ -391,6 +391,22 @@ name the ficha and the Gastos field, and does `spending-missing` still decline? 
 two are the pair this slice bet on: the same words are the right answer for one
 subject and a lie for the other.
 
+#1514 fires it on the prompt count alone: the hard rules gained the structured-data
+counterweight (a turn carrying «DATOS ESTRUCTURADOS DE ADJUNTOS» is answered in the
+chat, never bounced to the web door) and made the unstructured rule's trigger the
+BLOCK rather than the file's extension. The question set did not change, so the
+denominator is the same 96 — but **the marks above are stale on this count too and
+neither was edited**, for the reason the rule states: a run is what replaces a run.
+
+And this one cannot take its own number yet. The behaviour it repairs is a turn
+carrying a validated `broker_transactions` document, and **no question in this
+harness puts one in front of a model** — which is why the set stayed green on
+2026-08-21 while the whole lane failed in front of a real user. That case is #1516's
+job (`broker_transactions` validado → `propose_statement_import`, with the real
+DEGIRO file as fixture); until it exists, the only evidence for this slice is the
+unit tests in CI. Whoever lands #1516 takes the before/after, and takes it the way
+«Reading a score change» says: a same-day `main` baseline, compared check by check.
+
 ### Reading a score change (#1342)
 
 A slice that touches the prompt or the tools should take a baseline the SAME day,
