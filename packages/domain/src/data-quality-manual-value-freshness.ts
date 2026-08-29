@@ -7,7 +7,7 @@ import {
   type DataQualitySignal,
   signalLabelWithOverride,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import { daysBetween } from "./dates";
 import { valuationMethodOfAsset } from "./holding-method";
 import { lastManualValueUpdateDateKey, type ManualValuePoint } from "./value-history";

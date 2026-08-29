@@ -12,7 +12,15 @@
  * warning never writes an override (ADR 0023).
  */
 
-import type { DataQualityConnectedSourceInput } from "./data-quality-connected-source";
+import {
+  type DataQualityCollector,
+  type DataQualityOverrideInput,
+  type DataQualityScopeContext,
+  type DataQualityScopeFacts,
+  type DataQualitySignal,
+  overriddenSignalKeys,
+} from "./data-quality-collector";
+import type { DataQualitySourceHealthInput } from "./data-quality-connected-source";
 import {
   collectHistoryCoverageSignals,
   type DataQualityHistoryCoverageInput,
@@ -51,14 +59,6 @@ import {
   collectSavingsCoherenceSignals,
   type DataQualitySavingsCoherenceInput,
 } from "./data-quality-savings-coherence";
-import {
-  type DataQualityCollector,
-  type DataQualityOverrideInput,
-  type DataQualityScopeContext,
-  type DataQualityScopeFacts,
-  type DataQualitySignal,
-  overriddenSignalKeys,
-} from "./data-quality-signal";
 import { collectSourceFreshnessSignals } from "./data-quality-source-freshness";
 import {
   collectTrashedBalanceSignals,
@@ -72,6 +72,19 @@ import { resolveScopeMemberIds, type ScopeOption } from "./scope";
 import { scopeOwnedHoldingIds } from "./scope-holdings";
 import type { Liability, ManualAsset, Workspace } from "./workspace-types";
 
+export type {
+  DataQualityAffectedObject,
+  DataQualityAffectedRef,
+  DataQualityCategory,
+  DataQualityScopeContext,
+  DataQualitySeverity,
+  DataQualitySignal,
+} from "./data-quality-collector";
+export {
+  compareDataQualitySignals,
+  DATA_QUALITY_CATEGORY_ORDER,
+  dataQualitySignalSortKey,
+} from "./data-quality-collector";
 export type {
   DataQualityConnectedSource,
   DataQualitySourceFreshness,
@@ -95,21 +108,6 @@ export {
 export { PORTFOLIO_DECLARED_VS_DERIVED_CODE } from "./data-quality-portfolio-reconciliation";
 export type { DataQualityPriceFreshness } from "./data-quality-price-freshness";
 export { SAVINGS_DECLARED_VS_MEASURED_CODE } from "./data-quality-savings-coherence";
-export type {
-  DataQualityAffectedObject,
-  DataQualityAffectedRef,
-  DataQualityCategory,
-  DataQualityCollector,
-  DataQualityScopeContext,
-  DataQualityScopeFacts,
-  DataQualitySeverity,
-  DataQualitySignal,
-} from "./data-quality-signal";
-export {
-  compareDataQualitySignals,
-  DATA_QUALITY_CATEGORY_ORDER,
-  dataQualitySignalSortKey,
-} from "./data-quality-signal";
 export type { DataQualityTrashedHolding } from "./data-quality-trashed-balance";
 export { TRASHED_WITH_BALANCE_CODE } from "./data-quality-trashed-balance";
 
@@ -123,8 +121,6 @@ interface DataQualityScopeInput {
   scopeOption: ScopeOption;
   assets: readonly ManualAsset[];
   liabilities: readonly Liability[];
-  /** Calendar day the collection runs against (`YYYY-MM-DD`). */
-  asOfDateKey: string;
 }
 
 /**
@@ -138,7 +134,7 @@ interface DataQualityScopeInput {
 export interface CollectDataQualitySignalsInput
   extends DataQualityScopeInput,
     DataQualityOverrideInput,
-    DataQualityConnectedSourceInput,
+    DataQualitySourceHealthInput,
     DataQualityWarningInput,
     DataQualityTrashedBalanceInput,
     DataQualityManualValueFreshnessInput,
@@ -194,6 +190,11 @@ export function isOverrideableSignalCode(code: string): boolean {
  * Collect every data-quality signal relevant to a scope, in a deterministic order.
  * Asset/liability-level signals are filtered to holdings the scope owns; scope-
  * level signals (FIRE config, history coverage) use the internal scope id.
+ *
+ * It concatenates in registry order and does NOT sort: presentation order is the
+ * consumer's call (`compareDataQualitySignals`), because the home hero and the
+ * agent view paginate and truncate differently. Sorting here would silently
+ * reorder what a caller that does not sort already shows.
  */
 export function collectDataQualitySignals(
   input: CollectDataQualitySignalsInput,

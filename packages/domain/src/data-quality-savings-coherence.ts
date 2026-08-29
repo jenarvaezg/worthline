@@ -10,7 +10,7 @@ import {
   type DataQualityCollector,
   type DataQualityScopeContext,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { FireScopeConfig } from "./fire";
 import type { InvestmentOperation } from "./investment-types";
 import { describeSavingsDivergence, scopeSavingsCoherence } from "./savings-coherence";

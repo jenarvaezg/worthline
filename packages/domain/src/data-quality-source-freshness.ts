@@ -4,17 +4,17 @@
  */
 
 import {
+  type DataQualityCollector,
+  type DataQualitySignal,
+  dateOnly,
+  signalNaturalKey,
+} from "./data-quality-collector";
+import {
   type DataQualityConnectedSource,
   type DataQualitySourceHealthInput,
   sourceFreshnessStatus,
   sourceIsInScope,
 } from "./data-quality-connected-source";
-import {
-  type DataQualityCollector,
-  type DataQualitySignal,
-  dateOnly,
-  signalNaturalKey,
-} from "./data-quality-signal";
 
 export const collectSourceFreshnessSignals: DataQualityCollector<
   DataQualitySourceHealthInput

@@ -7,7 +7,7 @@ import {
   type DataQualitySignal,
   dateOnly,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { DecimalString } from "./decimal";
 import type { PriceFreshnessState } from "./prices";
 import { isClosedPosition } from "./warnings";

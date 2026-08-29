@@ -6,7 +6,7 @@ import {
   type DataQualityCollector,
   type DataQualitySignal,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import { type DecimalString, formatUnits } from "./decimal";
 import type { TrashExit } from "./holding-trash-exit";
 import { unitsReadAsClosed } from "./warnings";

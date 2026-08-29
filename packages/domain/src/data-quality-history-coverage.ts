@@ -8,7 +8,7 @@ import {
   type DataQualityScopeContext,
   type DataQualitySignal,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { NetWorthSnapshot } from "./snapshot-types";
 import type { DebtModel, Liability } from "./workspace-types";
 

@@ -6,7 +6,7 @@
  * decides which portfolios are asked and dresses the answer as a signal.
  */
 
-import { type DataQualityCollector, signalNaturalKey } from "./data-quality-signal";
+import { type DataQualityCollector, signalNaturalKey } from "./data-quality-collector";
 import type { ManagedPortfolio } from "./managed-portfolio";
 import {
   describeManagedPortfolioDrift,

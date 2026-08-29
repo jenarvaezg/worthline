@@ -11,7 +11,7 @@ import {
   type DataQualitySignal,
   signalLabelWithOverride,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { DecimalString } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import { collectWarnings, type DomainWarning, type WarningSeverity } from "./warnings";

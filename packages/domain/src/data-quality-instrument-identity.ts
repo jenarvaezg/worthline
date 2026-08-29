@@ -8,7 +8,7 @@ import {
   type DataQualitySignal,
   signalLabelWithOverride,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { DecimalString } from "./decimal";
 import { INVESTMENT_PROFILE_INSTRUMENTS } from "./exposure-identity";
 import { valuationMethodOfAsset } from "./holding-method";

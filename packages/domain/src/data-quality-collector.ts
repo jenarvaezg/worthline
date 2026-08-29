@@ -1,10 +1,11 @@
 /**
- * The vocabulary every data-quality family speaks (PRD #654 S1, #328).
+ * The collector contract, and the vocabulary every data-quality family speaks
+ * (PRD #654 S1, #328).
  *
  * What a signal IS — its shape, its categories, its identity and its order — plus
- * the collector contract the facade registers families against. It holds no rule
- * of its own: each family owns its rule and its input, and this module owns only
- * what they must agree on so their signals can sit in one list.
+ * the contract the facade registers families against. It holds no rule of its
+ * own: each family owns its rule and its input, and this module owns only what
+ * they must agree on so their signals can sit in one list.
  */
 
 import type { WarningOverride } from "./warnings";

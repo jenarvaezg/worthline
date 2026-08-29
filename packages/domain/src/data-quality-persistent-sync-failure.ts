@@ -9,16 +9,16 @@
  */
 
 import {
-  type DataQualitySourceHealthInput,
-  sourceFreshnessStatus,
-  sourceIsInScope,
-} from "./data-quality-connected-source";
-import {
   type DataQualityCollector,
   type DataQualitySignal,
   dateOnly,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
+import {
+  type DataQualitySourceHealthInput,
+  sourceFreshnessStatus,
+  sourceIsInScope,
+} from "./data-quality-connected-source";
 
 /** Machine code for a connection whose sync keeps failing attempt after attempt (#1226). */
 export const PERSISTENT_SYNC_FAILURE_CODE = "PERSISTENT_SYNC_FAILURE";

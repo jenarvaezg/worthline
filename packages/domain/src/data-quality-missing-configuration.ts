@@ -8,7 +8,7 @@ import {
   type DataQualityScopeContext,
   type DataQualitySignal,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
 import type { FireScopeConfig } from "./fire";
 import type { DebtModel, Liability } from "./workspace-types";
 

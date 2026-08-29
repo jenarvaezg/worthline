@@ -5,14 +5,14 @@
 import { summarizeCoinValueGaps } from "./coin-value-gap";
 import { coinValue, positionValue, type SourcePosition } from "./connected-source";
 import {
-  type DataQualityConnectedSourceInput,
-  sourceIsInScope,
-} from "./data-quality-connected-source";
-import {
   type DataQualityCollector,
   type DataQualitySignal,
   signalNaturalKey,
-} from "./data-quality-signal";
+} from "./data-quality-collector";
+import {
+  type DataQualityConnectedSourceInput,
+  sourceIsInScope,
+} from "./data-quality-connected-source";
 
 export interface DataQualityProjectionGapInput extends DataQualityConnectedSourceInput {
   positionsBySourceId: ReadonlyMap<string, readonly SourcePosition[]>;
