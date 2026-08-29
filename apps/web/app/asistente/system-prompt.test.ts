@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ATTACHMENT_BLOCK_NAMES } from "./attachment-types";
 import { buildChatSystemPrompt } from "./system-prompt";
 
 describe("buildChatSystemPrompt", () => {
@@ -41,6 +42,23 @@ describe("buildChatSystemPrompt", () => {
     // #865: a readable-but-unvalidated attachment is analysed, not dead-ended.
     expect(prompt).toMatch(/adjunto no estructurado/i);
     expect(prompt).toMatch(/analiza rápido lo que ves/i);
+    // #1514: the positive counterweight. Before it, «hoja de cálculo» appeared
+    // exactly once in the whole prompt and it was inside the sentence that says
+    // «no», so a VALIDATED .xlsx triggered the surface association
+    // xlsx → hoja de cálculo → «eso va por la web» and a real user was sent to
+    // upload the file the assistant had just read. Hence the words the rule must
+    // carry: the same «hoja de cálculo», this time on the side that says «sí».
+    expect(prompt).toMatch(/validado ese documento —también si es una hoja de cálculo/);
+    expect(prompt).toMatch(/propón en ESTE turno/);
+    expect(prompt).toMatch(
+      /nunca mandes a subir en otra pantalla lo que acabas de leer/i,
+    );
+    // It says what to do when the document is short of a datum, because the honest
+    // answer is a question and never a bounce to the web door.
+    expect(prompt).toMatch(/lo que falte, pregúntalo aquí/i);
+    // And the #865/#1248 frontier keeps its content untouched — only its trigger
+    // is now spelled out as the block, which is what the code actually emits.
+    expect(prompt).toMatch(/el bloque «ADJUNTO NO ESTRUCTURADO»/);
     // #1242: an attachment that could not be read keeps the turn alive — honest
     // about what happened, asking what it contains, never faking a reading.
     expect(prompt).toMatch(/adjunto no procesado/i);
@@ -229,7 +247,48 @@ describe("buildChatSystemPrompt", () => {
     // sits at 9.290 with TEN to spare. The next rule that needs room raises the
     // number and writes down why, the way every raise above did; nothing here is
     // a reason to trim an existing instruction to make space.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_300);
+    //
+    // #1514 raises it to 9.680 for the structured-data counterweight, and the
+    // justification is that the prompt was measurably ONE-SIDED: «hoja de cálculo»
+    // appeared exactly once in these 9.290 characters and it was inside the
+    // sentence that says «no». There was no positive rule at all for a turn that
+    // DOES carry a document worthline validated — that half lived only in the tool
+    // descriptions, which is #1342's seam and stays right — so a model reading the
+    // whole prompt found one instruction about spreadsheets and it pointed at the
+    // web door. On 2026-08-21 that is exactly what happened: the same DEGIRO
+    // statement, `.xlsx` and `.pdf`, read identically by the deterministic route
+    // (11 operations, 3 ISINs, `directionResolved: true`, the same `contextBlock`),
+    // and only the `.xlsx` turn told a real user that «worthline no puede procesar
+    // importaciones directas… a partir de un archivo Excel» and sent him to
+    // /patrimonio > Importar extracto — to upload the file it had just read.
+    //
+    // No code boundary can close this one, and the shape is #1347's and #1418's:
+    // every lane already worked, so the whole failure was prose. What the raise
+    // buys is 337 characters of one bullet saying WHEN the chat lane applies (the
+    // block is there, so the answer is here, «también si es una hoja de cálculo»)
+    // plus 42 making the negative rule's trigger explicit — it fires on the BLOCK
+    // «ADJUNTO NO ESTRUCTURADO», never on the file's extension, which is the
+    // association the model actually made. Deliberately NOT bought: which tool to
+    // reach for, which stays in the descriptions the model reads in the same
+    // request. The prompt now sits at 9.669, with ELEVEN to spare.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_680);
+  });
+
+  /**
+   * #1514: every attachment rule here is triggered by the NAME of the block the turn
+   * carries, never by the file's extension — which only means anything while the two
+   * sides say the same words. `attachment-chat.ts` builds each block out of these very
+   * constants, so a rename that never reached the prompt fails HERE instead of leaving
+   * the model reading a rule about a marker no turn carries. That silent state is the
+   * same failure this ticket comes from: told about spreadsheets only in the sentence
+   * that says «no», the model read the extension and bounced a validated document.
+   */
+  it("writes one rule per attachment block, named as the code emits it (#1514)", () => {
+    const prompt = buildChatSystemPrompt(null);
+
+    for (const blockName of Object.values(ATTACHMENT_BLOCK_NAMES)) {
+      expect(prompt).toContain(`«${blockName}»`);
+    }
   });
 
   it("pins the core read-only contract", () => {

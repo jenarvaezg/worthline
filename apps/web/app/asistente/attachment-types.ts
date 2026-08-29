@@ -1,6 +1,28 @@
 export const MAX_ATTACHMENT_FILE_NAME_CHARS = 255;
 
 /**
+ * How each attachment block announces itself to the model, opening and closing.
+ * They live in this client-safe leaf, next to the other markers, because they are
+ * read from three sides at once: `attachment-chat.ts` builds the blocks with them,
+ * the system prompt writes a rule per block, and CI checks that both sides say the
+ * same words.
+ *
+ * That check is the point (#1514). Every attachment rule in the prompt fires on the
+ * BLOCK the turn carries and never on the file's extension — a `.xlsx` worthline
+ * validated arrives as `validated`, the same as a PDF — and a model told the rule in
+ * terms of a marker no turn actually carries would fall back to reading the
+ * extension, which is precisely the failure of 2026-08-21.
+ */
+export const ATTACHMENT_BLOCK_NAMES = {
+  /** worthline read this document and validated it: the lane is the chat. */
+  validated: "DATOS ESTRUCTURADOS DE ADJUNTOS",
+  /** Readable, never validated: analyse it, one puntual fact at most (#865/#1248). */
+  unstructured: "ADJUNTO NO ESTRUCTURADO",
+  /** Only a verdict reached the model; the document did not (#1242). */
+  unprocessed: "ADJUNTO NO PROCESADO",
+} as const;
+
+/**
  * Card message when a readable spreadsheet is handed to the model to discuss.
  * It lives in this client-safe leaf because it is also the marker the
  * unvalidated-evidence boundary reads back out of history (#1248): keeping it
