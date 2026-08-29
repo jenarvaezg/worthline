@@ -6,10 +6,12 @@ import {
 } from "@web/asistente/holding-creation-proposal-action";
 import type { HoldingCreationProposal } from "@web/asistente/holding-creation-proposal-contract";
 import { proposalImpactHeader } from "@web/asistente/proposal-impact-header";
-import { useState, useTransition } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * Alta «por estado actual» (#1105, PRD #1103 S2): the impact header leads
@@ -17,22 +19,17 @@ import { ProposalMutationStatus } from "./mutation-status";
  * duplicate warning (never blocks), then Confirmar / Descartar.
  */
 export function HoldingCreationProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: HoldingCreationProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmHoldingCreationProposalAction>>
-    | Awaited<ReturnType<typeof discardHoldingCreationProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmHoldingCreationProposalAction(proposal.draft),
+    discard: () => discardHoldingCreationProposalAction(proposal.draft),
+  });
   const header = proposalImpactHeader(proposal.impact, formatPositionMoney);
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">{proposal.folio}</p>
       {/* Impact first: what confirming does to the household net worth. */}
       <strong>{header.headline}</strong>
@@ -90,46 +87,8 @@ export function HoldingCreationProposalCard({
           . Puedes crearlo igualmente si es otro distinto.
         </p>
       ) : null}
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Holding creado."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmHoldingCreationProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardHoldingCreationProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied="Holding creado." mutation={mutation} />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }

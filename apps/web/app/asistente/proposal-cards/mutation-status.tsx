@@ -2,6 +2,12 @@
 
 import { useNotifyProposalApplied } from "@web/asistente/onboarding-completion";
 
+/**
+ * Takes the two fields loose rather than a `ProposalMutation` (#1617): ALL thirteen
+ * cards render this, including the three that keep their own confirm/discard and so
+ * have no mutation object to hand it. A narrower prop would be the one thing that
+ * shuts the exceptions out of the shared status line.
+ */
 export function ProposalMutationStatus({
   pending,
   result,

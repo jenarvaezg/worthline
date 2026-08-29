@@ -6,9 +6,11 @@ import {
   discardPropertyAcquisitionProposalAction,
 } from "@web/asistente/property-acquisition-proposal-action";
 import type { PropertyAcquisitionProposal } from "@web/asistente/property-acquisition-proposal-contract";
-import { useState, useTransition } from "react";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * The property-acquisition card (#1563).
@@ -28,21 +30,16 @@ import { ProposalMutationStatus } from "./mutation-status";
  * Every figure arrives pre-formatted from the server; the client renders strings.
  */
 export function PropertyAcquisitionProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: PropertyAcquisitionProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmPropertyAcquisitionProposalAction>>
-    | Awaited<ReturnType<typeof discardPropertyAcquisitionProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmPropertyAcquisitionProposalAction(proposal.draft),
+    discard: () => discardPropertyAcquisitionProposalAction(proposal.draft),
+  });
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Adquisición del inmueble · Hecho fechado</p>
       {/*
         The summary already names the property, the date and the price, so there is
@@ -85,46 +82,8 @@ export function PropertyAcquisitionProposalCard({
         </p>
       ))}
       <p className="assistantProposalFolio">{proposal.folio}</p>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Fecha de adquisición actualizada."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmPropertyAcquisitionProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardPropertyAcquisitionProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied="Fecha de adquisición actualizada." mutation={mutation} />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }

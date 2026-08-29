@@ -8,9 +8,11 @@ import type {
   AnchorOnlyCorrectionProposal,
   CorrectionProposal,
 } from "@web/asistente/correction-proposal-contract";
-import { useState, useTransition } from "react";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /** The guarantee sentence of superficie C «Ancla primero», by gate state. */
 function guaranteeMessage(state: CorrectionProposal["guarantee"]["state"]): string {
@@ -27,23 +29,18 @@ function guaranteeMessage(state: CorrectionProposal["guarantee"]["state"]): stri
 }
 
 export function CorrectionProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: AnchorOnlyCorrectionProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmCorrectionProposalAction>>
-    | Awaited<ReturnType<typeof discardCorrectionProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmCorrectionProposalAction(proposal.draft),
+    discard: () => discardCorrectionProposalAction(proposal.draft),
+  });
   const verified =
     proposal.guarantee.state === "declared" || proposal.guarantee.state === "reconciled";
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Corrección · Solo desde hoy</p>
       <strong>{proposal.summary}</strong>
       {/* Superficie C: the guarantee leads; the point-by-point diff follows. */}
@@ -64,46 +61,8 @@ export function CorrectionProposalCard({
         ))}
       </ul>
       <p className="assistantProposalFolio">{proposal.folio}</p>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Corrección aplicada."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled || !verified}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmCorrectionProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardCorrectionProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied="Corrección aplicada." mutation={mutation} />
+      <ProposalActions confirmDisabled={!verified} mutation={mutation} />
     </div>
   );
 }

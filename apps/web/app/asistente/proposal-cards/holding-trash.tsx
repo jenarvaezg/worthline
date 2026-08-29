@@ -11,10 +11,12 @@ import {
   discardHoldingRestorationProposalAction,
 } from "@web/asistente/holding-trash-proposal-action";
 import type { HoldingTrashProposal } from "@web/asistente/holding-trash-proposal-contract";
-import { useState, useTransition } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * Baja / restauración (#1106, PRD #1103 S3, superficie B): the same anatomy as
@@ -25,9 +27,8 @@ import { ProposalMutationStatus } from "./mutation-status";
  * the wording. Display logic lives in the pure `holding-trash-card-model`.
  */
 export function HoldingTrashProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: HoldingTrashProposal }) {
   const isRemoval = proposal.proposalType === "holding_removal";
   const confirmAction = isRemoval
@@ -36,19 +37,15 @@ export function HoldingTrashProposalCard({
   const discardAction = isRemoval
     ? discardHoldingRemovalProposalAction
     : discardHoldingRestorationProposalAction;
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmHoldingRemovalProposalAction>>
-    | Awaited<ReturnType<typeof discardHoldingRemovalProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmAction(proposal.draft),
+    discard: () => discardAction(proposal.draft),
+  });
   const header = holdingTrashImpactHeader(proposal.impact, formatPositionMoney);
   const warnings = holdingTrashWarnings(proposal);
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">{proposal.folio}</p>
       {/* Impact first: what confirming does to the household net worth. */}
       <strong>{header.headline}</strong>
@@ -70,44 +67,11 @@ export function HoldingTrashProposalCard({
           {warning}
         </p>
       ))}
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? isRemoval
-              ? "Holdings enviados a la papelera."
-              : "Holdings restaurados."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () => setResult(await confirmAction(proposal.draft)))
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () => setResult(await discardAction(proposal.draft)))
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome
+        applied={isRemoval ? "Holdings enviados a la papelera." : "Holdings restaurados."}
+        mutation={mutation}
+      />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }

@@ -6,10 +6,12 @@ import {
 } from "@web/asistente/operation-proposal-action";
 import type { OperationProposal } from "@web/asistente/operation-proposal-contract";
 import { proposalImpactHeader } from "@web/asistente/proposal-impact-header";
-import { useState, useTransition } from "react";
 import { formatPositionMoney } from "./card-copy";
 import type { ProposalCardGate } from "./gate";
 import { ProposalMutationStatus } from "./mutation-status";
+import { ProposalActions } from "./proposal-actions";
+import { useProposalMutation } from "./proposal-mutation";
+import { ProposalOutcome } from "./proposal-outcome";
 
 /**
  * The operation card (#1374) — one dated buy/sell/aportación on a position that
@@ -26,24 +28,19 @@ import { ProposalMutationStatus } from "./mutation-status";
  * never recomputes money, a quantity or a date.
  */
 export function OperationProposalCard({
-  mutationsDisabled,
-  mutationsDisabledMessage,
   proposal,
+  ...gate
 }: ProposalCardGate & { proposal: OperationProposal }) {
-  const [result, setResult] = useState<
-    | Awaited<ReturnType<typeof confirmOperationProposalAction>>
-    | Awaited<ReturnType<typeof discardOperationProposalAction>>
-    | null
-  >(null);
-  const [pending, startTransition] = useTransition();
-  const settled = result?.status === "applied" || result?.status === "discarded";
-  const actionsDisabled = pending || mutationsDisabled || settled;
+  const mutation = useProposalMutation(gate, {
+    confirm: () => confirmOperationProposalAction(proposal.draft),
+    discard: () => discardOperationProposalAction(proposal.draft),
+  });
   const header = proposalImpactHeader(proposal.impact, formatPositionMoney, {
     caption: proposal.impactCaption,
   });
   return (
     <div className="assistantProposal">
-      <ProposalMutationStatus pending={pending} result={result} />
+      <ProposalMutationStatus pending={mutation.pending} result={mutation.result} />
       <p className="assistantProposalKind">Operación · Hecho fechado</p>
       <strong>{proposal.summary}</strong>
       <p className={header.increases ? "assistantOk" : "assistantError"}>
@@ -70,46 +67,8 @@ export function OperationProposalCard({
         </p>
       ))}
       <p className="assistantProposalFolio">{proposal.folio}</p>
-      {result ? (
-        <p
-          aria-live="polite"
-          className={result.status === "applied" ? "assistantOk" : "assistantError"}
-          role="status"
-        >
-          {result.status === "applied"
-            ? "Operación anotada."
-            : result.status === "discarded"
-              ? "Propuesta descartada."
-              : result.message}
-        </p>
-      ) : mutationsDisabled ? (
-        <p className="assistantError">{mutationsDisabledMessage}</p>
-      ) : null}
-      <div className="assistantProposalActions">
-        <button
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await confirmOperationProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          {pending ? "Guardando…" : "Confirmar"}
-        </button>
-        <button
-          className="secondary"
-          disabled={actionsDisabled}
-          onClick={() =>
-            startTransition(async () =>
-              setResult(await discardOperationProposalAction(proposal.draft)),
-            )
-          }
-          type="button"
-        >
-          Descartar
-        </button>
-      </div>
+      <ProposalOutcome applied="Operación anotada." mutation={mutation} />
+      <ProposalActions mutation={mutation} />
     </div>
   );
 }
