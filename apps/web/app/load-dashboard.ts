@@ -287,13 +287,14 @@ export async function loadDashboard(
   // hero's money-weighted return and realized gain so distributing holdings stop
   // understating (#657, ADR 0054). Keyed by holding id, as operationsByAsset is.
   //
-  // The holdings the hero actually measures: the ones carrying a ledger. A
-  // stored/mirrored holding (precious metal, connected source) has no flows to
-  // weight, so it is neither measured nor read closes for.
-  const measuredHoldingIds = new Set(
-    [...projectionContext.operationsByAsset]
-      .filter(([, operations]) => operations.length > 0)
-      .map(([assetId]) => assetId),
+  // Whether this book holds anything the hero can measure at all. A yes/no, not
+  // a set: WHICH holdings are measured is `portfolioReturnsView`'s business and
+  // must stay its business alone — a second copy of that rule here could go on
+  // to read closes for one set while the engine measures another, and series and
+  // flows describing different holdings is the very thing ADR 0040 forbids. All
+  // this module decides is whether to spend the query.
+  const hasMeasurableLedger = [...projectionContext.operationsByAsset.values()].some(
+    (operations) => operations.length > 0,
   );
   const [payoutRecords, payoutSchedules, closeRows] = await Promise.all([
     store.payouts.readPayouts(),
@@ -311,7 +312,7 @@ export async function loadDashboard(
     // GET pays its latency only if it is the slowest read in the wave — and a
     // book with no ledger to measure pays nothing at all (#783), the same
     // short-circuit the cartera's return block makes.
-    measuredHoldingIds.size > 0
+    hasMeasurableLedger
       ? store.snapshots.readSnapshotHoldings({
           includePositions: false,
           kind: "asset",
@@ -328,14 +329,17 @@ export async function loadDashboard(
       rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
     ]),
   );
-  // Each measured holding's monthly-close series, through the one aggregator
-  // every TWR surface shares (#1586).
+  // Every holding's monthly-close series, through the one aggregator every TWR
+  // surface shares (#1586). Deliberately unfiltered: the engine looks up only
+  // the holdings it measures, so a series it never asks for costs it nothing —
+  // whereas narrowing the map here would mean spelling out its selection rule a
+  // second time, and a copy that drifts narrow silently shortens the TWR.
   //
   // Today's synthesized rows (§3) are deliberately left out: they are the
   // SELECTED scope's, so unioning them would splice a scope-weighted value onto
   // a gross series. The hero's TWR therefore ends at the last persisted close,
   // exactly as the board's and the cartera's do.
-  const monthlyClosesByAsset = monthlyCloseValuesByHolding(closeRows, measuredHoldingIds);
+  const monthlyClosesByAsset = monthlyCloseValuesByHolding(closeRows);
   const portfolioReturns = portfolioReturnsView({
     cachedPriceByAsset: projectionContext.cachedPriceByAsset,
     currency: workspace.baseCurrency,

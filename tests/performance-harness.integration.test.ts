@@ -34,7 +34,11 @@
  * to silence a regression without understanding why it slowed down.
  */
 
-import { captureSnapshotForScope, listScopeOptions } from "@worthline/domain";
+import {
+  captureSnapshotForScope,
+  listScopeOptions,
+  monthlyCloseValuesByHolding,
+} from "@worthline/domain";
 
 import Database from "libsql";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -143,15 +147,20 @@ async function runCacheOnlyLoad(
   });
 
   // The hero's whole-book monthly closes (#1640): household, gross, full
-  // history, parent rows only. Production rides an existing parallel wave, so
-  // the GET pays this only when it is the wave's slowest read — here it is
-  // awaited SERIALLY on purpose, so the budget sees the read's full cost rather
-  // than whatever the wave hides.
-  await store.snapshots.readSnapshotHoldings({
-    includePositions: false,
-    kind: "asset",
-    scopeId: "household",
-  });
+  // history, parent rows only, then folded into one series per holding.
+  // Production rides an existing parallel wave, so the GET pays the READ only
+  // when it is the wave's slowest — here it is awaited SERIALLY on purpose, so
+  // the budget sees the full cost rather than whatever the wave hides. The fold
+  // is measured too, and over EVERY holding as production does: the engine picks
+  // the series it needs, so narrowing the map would only mean re-spelling its
+  // selection rule out here.
+  monthlyCloseValuesByHolding(
+    await store.snapshots.readSnapshotHoldings({
+      includePositions: false,
+      kind: "asset",
+      scopeId: "household",
+    }),
+  );
   await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id });
   return scopes.length;
 }
