@@ -17,19 +17,21 @@ import {
   isOptionalString,
   isRecord,
   parseNetWorthImpact,
+  parseOptional,
+  vocabulary,
 } from "./shapes";
 
-const FAMILIES: readonly HoldingCreationFamily[] = [
-  "appreciating",
-  "debt",
-  "investment",
-  "stored",
-];
+const FAMILIES = vocabulary<HoldingCreationFamily>({
+  appreciating: true,
+  debt: true,
+  investment: true,
+  stored: true,
+});
 
-const DUPLICATE_CONFIDENCES: readonly HoldingCreationDuplicate["confidence"][] = [
-  "strong",
-  "weak",
-];
+const DUPLICATE_CONFIDENCES = vocabulary<HoldingCreationDuplicate["confidence"]>({
+  strong: true,
+  weak: true,
+});
 
 /** The opening BUY the card breaks down so a derived 3,018148 is visible (#1315). */
 function parseOpening(raw: unknown): OpeningCardBreakdown | null {
@@ -59,7 +61,7 @@ function parseHolding(raw: unknown): HoldingCreationProposal["holding"] | null {
   const { detail, instrumentLabel, name, opening, providerSymbol } = raw;
   if (typeof name !== "string" || typeof instrumentLabel !== "string") return null;
   if (typeof detail !== "string" || !isOptionalString(providerSymbol)) return null;
-  const breakdown = opening === undefined ? undefined : parseOpening(opening);
+  const breakdown = parseOptional(opening, parseOpening);
   if (breakdown === null) return null;
   return {
     detail,
@@ -96,7 +98,7 @@ export function parseHoldingCreationProposal(
   ) {
     return null;
   }
-  const parsedDuplicate = duplicate === undefined ? undefined : parseDuplicate(duplicate);
+  const parsedDuplicate = parseOptional(duplicate, parseDuplicate);
   if (parsedDuplicate === null) return null;
   return {
     draft,

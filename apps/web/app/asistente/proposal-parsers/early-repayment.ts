@@ -17,9 +17,13 @@ import {
   parseBeforeAfterRow,
   parseNamedRef,
   parseStrings,
+  vocabulary,
 } from "./shapes";
 
-const MODES: readonly EarlyRepaymentMode[] = ["reduce-payment", "reduce-term"];
+const MODES = vocabulary<EarlyRepaymentMode>({
+  "reduce-payment": true,
+  "reduce-term": true,
+});
 
 function parseRepayment(raw: unknown): EarlyRepaymentProposal["repayment"] | null {
   if (!isRecord(raw)) return null;

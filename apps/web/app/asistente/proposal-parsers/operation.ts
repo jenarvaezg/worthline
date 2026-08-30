@@ -7,9 +7,19 @@
 import type { OperationKindClaim } from "@web/asistente/operation-document-frontier";
 import type { OperationProposal } from "@web/asistente/operation-proposal-contract";
 import { parseOperationProposalDraft } from "@web/asistente/operation-proposal-contract";
-import { isOneOf, isRecord, parseNetWorthImpact, parseStrings } from "./shapes";
+import {
+  isOneOf,
+  isRecord,
+  parseNetWorthImpact,
+  parseStrings,
+  vocabulary,
+} from "./shapes";
 
-const KINDS: readonly OperationKindClaim[] = ["buy", "sell", "contribution"];
+const KINDS = vocabulary<OperationKindClaim>({
+  buy: true,
+  contribution: true,
+  sell: true,
+});
 
 /** What the document literally says — printed apart from the destination. */
 function parseDocument(raw: unknown): OperationProposal["document"] | null {

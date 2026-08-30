@@ -34,13 +34,22 @@ import {
   isOptionalString,
   isRecord,
   parseAll,
+  parseOptional,
+  vocabulary,
 } from "./shapes";
 
-const KEYS: readonly MatchKey[] = ["isin", "provider_symbol", "name", "none"];
-const DECISIONS: readonly MatchDecision[] = ["create", "update", "leave"];
-const CONFIDENCES: readonly MatchConfidence[] = ["strong", "weak", "none"];
-const FIDELITIES: readonly HoldingFidelity[] = HOLDING_FIDELITY_TIERS;
-const INSTRUMENT_VALUES: readonly Instrument[] = INSTRUMENTS;
+const KEYS = vocabulary<MatchKey>({
+  isin: true,
+  name: true,
+  none: true,
+  provider_symbol: true,
+});
+const DECISIONS = vocabulary<MatchDecision>({ create: true, leave: true, update: true });
+const CONFIDENCES = vocabulary<MatchConfidence>({
+  none: true,
+  strong: true,
+  weak: true,
+});
 
 function parseCandidate(raw: unknown): MatchCandidate | null {
   if (!isRecord(raw)) return null;
@@ -59,10 +68,7 @@ function parseMatch(raw: unknown): RowMatch | null {
   if (!isOptionalString(target) || !isOptionalBoolean(ambiguous)) return null;
   const parsedCandidates = parseAll(candidates, parseCandidate);
   if (parsedCandidates === null) return null;
-  const duplicate =
-    raw.possibleDuplicate === undefined
-      ? undefined
-      : parseCandidate(raw.possibleDuplicate);
+  const duplicate = parseOptional(raw.possibleDuplicate, parseCandidate);
   if (duplicate === null) return null;
   return {
     candidates: parsedCandidates,
@@ -99,8 +105,8 @@ function parseRow(raw: unknown): ReconcileRow | null {
   const { isin, movementsDeltaMinor, name, rowId, uncertain, valueMinor } = raw;
   if (typeof rowId !== "string" || typeof name !== "string") return null;
   if (!isOptionalString(isin) || !isOptionalNumber(declaredCostMinor)) return null;
-  if (instrument !== null && !isOneOf(instrument, INSTRUMENT_VALUES)) return null;
-  if (!isOneOf(fidelity, FIDELITIES)) return null;
+  if (instrument !== null && !isOneOf(instrument, INSTRUMENTS)) return null;
+  if (!isOneOf(fidelity, HOLDING_FIDELITY_TIERS)) return null;
   if (typeof valueMinor !== "number" || typeof currency !== "string") return null;
   if (typeof movementsDeltaMinor !== "number") return null;
   if (typeof excluded !== "boolean" || typeof uncertain !== "boolean") return null;

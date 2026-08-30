@@ -221,8 +221,8 @@ describe("buildReconstructionProposal (#1053)", () => {
     const store = await seedMortgage();
     const built = await buildReconstructionProposal(store, args(SERIES), TODAY);
     if (!built.ok) throw new Error(built.error);
-    expect(built.proposal.snapshotMembership?.missing).toBe(0);
-    expect(built.proposal.snapshotMembership?.total).toBeGreaterThan(0);
+    expect(built.proposal.snapshotMembership.missing).toBe(0);
+    expect(built.proposal.snapshotMembership.total).toBeGreaterThan(0);
     store.close();
   });
 

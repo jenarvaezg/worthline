@@ -11,10 +11,13 @@ import type {
   HoldingTrashProposal,
 } from "@web/asistente/holding-trash-proposal-contract";
 import { parseHoldingTrashProposalDraft } from "@web/asistente/holding-trash-proposal-contract";
-import { isOneOf, isRecord, parseAll, parseNetWorthImpact } from "./shapes";
+import { isOneOf, isRecord, parseAll, parseNetWorthImpact, vocabulary } from "./shapes";
 
-const LINE_KINDS: readonly HoldingTrashLine["kind"][] = ["asset", "liability"];
-const CONFIDENCES: readonly HoldingTrashDuplicate["confidence"][] = ["strong", "weak"];
+const LINE_KINDS = vocabulary<HoldingTrashLine["kind"]>({ asset: true, liability: true });
+const CONFIDENCES = vocabulary<HoldingTrashDuplicate["confidence"]>({
+  strong: true,
+  weak: true,
+});
 
 function parseLine(raw: unknown): HoldingTrashLine | null {
   if (!isRecord(raw)) return null;

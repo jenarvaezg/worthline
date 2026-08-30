@@ -23,13 +23,9 @@ export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposa
   const points = parseAll(raw.points, parseDebtHistoryPoint);
   const curve = parseAll(raw.curve, parseBalanceCurvePoint);
   const reconciliation = parseBalanceReconciliation(raw.reconciliation);
+  const membership = parseSnapshotMembership(raw.snapshotMembership);
   if (!draft.ok || liability === null || points === null) return null;
-  if (curve === null || reconciliation === null) return null;
-  const membership =
-    raw.snapshotMembership === undefined
-      ? undefined
-      : parseSnapshotMembership(raw.snapshotMembership);
-  if (membership === null) return null;
+  if (curve === null || reconciliation === null || membership === null) return null;
   return {
     curve,
     draft: draft.draft,
@@ -37,6 +33,6 @@ export function parseBalanceHistoryProposal(raw: unknown): BalanceHistoryProposa
     points,
     proposalType: "balance_history_import",
     reconciliation,
-    ...(membership === undefined ? {} : { snapshotMembership: membership }),
+    snapshotMembership: membership,
   };
 }

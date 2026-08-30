@@ -182,6 +182,24 @@ export function holdingRemovalOutput(overrides: Payload = {}): Payload {
   );
 }
 
+export function holdingRestorationOutput(overrides: Payload = {}): Payload {
+  return build(
+    holdingRemovalOutput({
+      duplicates: [
+        {
+          confidence: "strong",
+          liveName: "Vanguard Global Stock",
+          name: "Vanguard Global Stock",
+        },
+      ],
+      folio: "Propuesta de restauración · Desde la papelera",
+      operation: "restore",
+      proposalType: "holding_restoration",
+    }),
+    overrides,
+  );
+}
+
 export function operationOutput(overrides: Payload = {}): Payload {
   return build(
     {

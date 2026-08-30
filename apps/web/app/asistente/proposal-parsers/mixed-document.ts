@@ -19,9 +19,14 @@ import {
   parseNamedRef,
   parsePositionImpact,
   parseValueCurvePoint,
+  vocabulary,
 } from "./shapes";
 
-const TIERS: readonly MixedTrust["tier"][] = ["reconciled", "unverified", "mismatch"];
+const TIERS = vocabulary<MixedTrust["tier"]>({
+  mismatch: true,
+  reconciled: true,
+  unverified: true,
+});
 
 function parseTrust(raw: unknown): MixedTrust | null {
   if (!isRecord(raw)) return null;

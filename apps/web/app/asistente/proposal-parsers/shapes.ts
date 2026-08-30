@@ -59,6 +59,18 @@ export function isOptionalBoolean(value: unknown): value is boolean | undefined 
   return value === undefined || typeof value === "boolean";
 }
 
+/**
+ * The full vocabulary of a string union, exhaustive BY CONSTRUCTION: the argument is
+ * a `Record` over the union, so a member added tomorrow fails to compile here instead
+ * of leaving a hand-written list one value short — which, at a trust boundary, is a
+ * card that silently stops being painted. Same guard the price providers already use
+ * (#1329); prefer a vocabulary a module already exports over declaring one.
+ */
+export function vocabulary<T extends string>(members: Record<T, true>): readonly T[] {
+  const keys: readonly string[] = Object.keys(members);
+  return keys.filter((key): key is T => Object.hasOwn(members, key));
+}
+
 /** Narrows a string to one of a closed vocabulary — how every union field is read. */
 export function isOneOf<T extends string>(
   value: unknown,
@@ -83,6 +95,18 @@ export function parseAll<T>(
     items.push(item);
   }
   return items;
+}
+
+/**
+ * An absent optional field is not a malformed one: `undefined` passes through, and
+ * only a value that is present and does not parse rejects. Every optional sub-shape
+ * in these parsers reads this way.
+ */
+export function parseOptional<T>(
+  raw: unknown,
+  parseValue: (value: unknown) => T | null,
+): T | null | undefined {
+  return raw === undefined ? undefined : parseValue(raw);
 }
 
 export function parseStrings(raw: unknown): string[] | null {
@@ -154,11 +178,11 @@ export interface DebtHistoryPoint {
   reason?: string;
 }
 
-const HISTORY_POINT_STATUSES: readonly DebtHistoryPoint["status"][] = [
-  "accepted",
-  "excluded",
-  "skipped",
-];
+const HISTORY_POINT_STATUSES = vocabulary<DebtHistoryPoint["status"]>({
+  accepted: true,
+  excluded: true,
+  skipped: true,
+});
 
 export function parseDebtHistoryPoint(raw: unknown): DebtHistoryPoint | null {
   if (!isRecord(raw)) return null;
@@ -177,13 +201,13 @@ export function parseDebtHistoryPoint(raw: unknown): DebtHistoryPoint | null {
   };
 }
 
-const RECONCILIATION_STATUSES: readonly BalanceReconciliationStatus[] = [
-  "exact",
-  "within-tolerance",
-  "mismatch",
-];
+const RECONCILIATION_STATUSES = vocabulary<BalanceReconciliationStatus>({
+  exact: true,
+  mismatch: true,
+  "within-tolerance": true,
+});
 
-const WITNESSES: readonly BalanceWitness[] = ["declared", "model"];
+const WITNESSES = vocabulary<BalanceWitness>({ declared: true, model: true });
 
 /**
  * The three-witness verdict (#1422). Every field is checked, `anchor` included,
@@ -237,10 +261,9 @@ export function parseBalanceReconciliation(raw: unknown): BalanceReconciliation 
 }
 
 /**
- * The ripple-membership preflight (#1438). Absent in a payload built before it
- * existed, and the cards already read it as optional — a missing membership warns
- * about nothing and blocks nothing, which is why losing the whole card over it
- * would be the harsher answer.
+ * The ripple-membership preflight (#1438), which decides whether Confirmar is even
+ * on. An absent membership reads as «allowed» with nothing measured, so a payload
+ * that carries none is refused here rather than opening the gate in silence.
  */
 export function parseSnapshotMembership(raw: unknown): DebtSnapshotMembership | null {
   if (!isRecord(raw)) return null;
@@ -250,11 +273,11 @@ export function parseSnapshotMembership(raw: unknown): DebtSnapshotMembership | 
   return { missing, total, ...(startDate === undefined ? {} : { startDate }) };
 }
 
-const IMPACT_FLAGS: readonly PositionImpactFlag[] = [
-  "nearly_doubles",
-  "oversell",
-  "near_zero",
-];
+const IMPACT_FLAGS = vocabulary<PositionImpactFlag>({
+  near_zero: true,
+  nearly_doubles: true,
+  oversell: true,
+});
 
 export function parsePositionImpact(raw: unknown): FundPositionImpact | null {
   if (!isRecord(raw)) return null;
@@ -310,10 +333,7 @@ function parseFundMatchChoice(raw: unknown): FundMatchChoice | null {
   }
   const impact = parsePositionImpact(positionImpact);
   if (impact === null) return null;
-  const keptImpact =
-    openingKeptPositionImpact === undefined
-      ? undefined
-      : parsePositionImpact(openingKeptPositionImpact);
+  const keptImpact = parseOptional(openingKeptPositionImpact, parsePositionImpact);
   if (keptImpact === null) return null;
   return {
     assetId,
@@ -375,10 +395,7 @@ export function parseFundPreviewRow(raw: unknown): FundPreviewRow | null {
     }
     const parsedChoices = parseAll(choices, parseFundMatchChoice);
     if (parsedChoices === null) return null;
-    const keptImpact =
-      openingKeptPositionImpact === undefined
-        ? undefined
-        : parsePositionImpact(openingKeptPositionImpact);
+    const keptImpact = parseOptional(openingKeptPositionImpact, parsePositionImpact);
     if (keptImpact === null) return null;
     return {
       ...common,

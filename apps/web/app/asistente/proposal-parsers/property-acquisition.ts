@@ -19,16 +19,17 @@ import {
   parseBeforeAfterRow,
   parseNamedRef,
   parseStrings,
+  vocabulary,
 } from "./shapes";
 
-const DATE_ROLES: readonly HousingCurveDateRole[] = [
-  "acquisition_current",
-  "acquisition_new",
-  "appraisal",
-  "improvement",
-  "curve",
-  "today",
-];
+const DATE_ROLES = vocabulary<HousingCurveDateRole>({
+  acquisition_current: true,
+  acquisition_new: true,
+  appraisal: true,
+  curve: true,
+  improvement: true,
+  today: true,
+});
 
 /** One date valued on both curves — the stretch that moves, not just its endpoints. */
 function parseComparisonPoint(raw: unknown): HousingCurveComparisonPoint | null {

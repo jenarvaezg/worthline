@@ -19,6 +19,7 @@ import {
   fundPreviewRow,
   holdingCreationOutput,
   holdingRemovalOutput,
+  holdingRestorationOutput,
   mixedDocumentOutput,
   operationOutput,
   propertyAcquisitionOutput,
@@ -96,6 +97,13 @@ const LANES: Array<{
     tool: "propose_holding_removal",
   },
   {
+    lane: "holding restoration",
+    output: holdingRestorationOutput,
+    parse: (raw) => parseHoldingTrashProposal(raw, "holding_restoration"),
+    stale: "duplicates",
+    tool: "propose_holding_restoration",
+  },
+  {
     lane: "operation",
     output: operationOutput,
     parse: parseOperationProposal,
@@ -159,6 +167,12 @@ describe.each(LANES)("$lane", ({ output, parse, stale, tool }) => {
     expect(parse(output({ [stale]: undefined }))).toBeNull();
   });
 
+  it("returns exactly the contract — no field of the payload lost, none invented", () => {
+    // Ties the fixture to the contract in both directions: a fixture that drifts
+    // from what a builder emits, or a parser that drops a field, fails here.
+    expect(parse(output())).toEqual(output());
+  });
+
   it("keeps parsing when the payload carries a field nobody declared", () => {
     const parsed = parse(output({ inventado: "de más" }));
     expect(parsed).not.toBeNull();
@@ -205,14 +219,12 @@ describe("parseCorrectionProposal (#1051/#1053)", () => {
     expect(parseCorrectionProposal(correctionOutput({ mode: "otra-cosa" }))).toBeNull();
   });
 
-  it("keeps the card when a payload predates the membership preflight (#1438)", () => {
-    // The card degrades to «no warning» on its own; losing the whole card would be
-    // the harsher answer, and the confirm gate reads the same absent value.
-    const parsed = parseCorrectionProposal(
-      reconstructionOutput({ snapshotMembership: undefined }),
-    );
-    expect(parsed).not.toBeNull();
-    expect(parsed).not.toHaveProperty("snapshotMembership");
+  it("loses the card when a payload predates the membership preflight (#1438)", () => {
+    // An absent membership reads as «Confirmar allowed» with nothing measured, so
+    // the boundary refuses it rather than open the gate on a figure it never got.
+    expect(
+      parseCorrectionProposal(reconstructionOutput({ snapshotMembership: undefined })),
+    ).toBeNull();
   });
 
   it("refuses a membership that states neither total nor missing", () => {

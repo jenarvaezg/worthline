@@ -30,9 +30,10 @@ import {
   parseBalanceReconciliation,
   parseNamedRef,
   parseSnapshotMembership,
+  vocabulary,
 } from "./shapes";
 
-const ORIGINS: readonly CorrectionPointOrigin[] = ["assistant", "user"];
+const ORIGINS = vocabulary<CorrectionPointOrigin>({ assistant: true, user: true });
 
 /**
  * The guarantee block the card renders (superficie C). Both reconciled and mismatch
@@ -105,14 +106,10 @@ export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null
   const series = parseAll(raw.series, parseSeriesPoint);
   const curve = parseAll(raw.curve, parseBalanceCurvePoint);
   const reconciliation = parseBalanceReconciliation(raw.reconciliation);
-  const { anchorMinor, snapshotMembership } = raw;
+  const membership = parseSnapshotMembership(raw.snapshotMembership);
+  const { anchorMinor } = raw;
   if (series === null || curve === null || reconciliation === null) return null;
-  if (typeof anchorMinor !== "number") return null;
-  const membership =
-    snapshotMembership === undefined
-      ? undefined
-      : parseSnapshotMembership(snapshotMembership);
-  if (membership === null) return null;
+  if (membership === null || typeof anchorMinor !== "number") return null;
   return {
     ...base,
     anchorMinor,
@@ -120,6 +117,6 @@ export function parseCorrectionProposal(raw: unknown): CorrectionProposal | null
     mode: "reconstruir",
     reconciliation,
     series,
-    ...(membership === undefined ? {} : { snapshotMembership: membership }),
+    snapshotMembership: membership,
   };
 }
