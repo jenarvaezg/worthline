@@ -1,3 +1,5 @@
+import type { DecimalString } from "./decimal";
+import { scaleMinorByWeight } from "./decimal";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode } from "./money";
 import { allocateByBps } from "./money";
@@ -34,10 +36,14 @@ import {
  * Three rules it exists to hold in one place:
  *
  * - **The double scaling.** A slice's cashflows are scaled by the owner's share
- *   (`ownershipBps`) and then by the slice's share of the subset (`shareBps`);
- *   its value and monthly closes arrive ALREADY on the caller's chosen basis, so
- *   only `shareBps` applies to them. Keeping the three inputs on one basis is what
- *   makes the resulting simple gain / IRR internally consistent.
+ *   (`ownershipBps`) and then by the slice's share of the subset ({@link
+ *   SubsetReturnsSlice.share}); its monthly closes arrive on the caller's chosen
+ *   basis and take only the subset share. Its market VALUE arrives already
+ *   attributed: a value is the one figure two surfaces reconcile to the céntimo,
+ *   and the split that gets it there spans every bucket of the holding at once
+ *   (`splitMinorByWeights`, #1610) — something no single slice can see from in
+ *   here. Keeping the three inputs on one basis is what makes the resulting
+ *   simple gain / IRR internally consistent.
  * - **An internal traspaso is netted into one residual flow.** Money that only
  *   moved BETWEEN members of the subset is not capital the subset received. The
  *   two halves share a `transferId` (ADR 0082) and are equal and opposite, so when
@@ -53,32 +59,44 @@ import {
  *   sawtooth of #1457, documented at {@link alignMonthlyCloses}.
  */
 
-/** A whole share: the default for both scalings. */
+/** A whole ownership share: the default when a caller declares none. */
 export const FULL_SHARE_BPS = 10_000;
 
 /** One holding's contribution to a subset: its ledger, its value, its weights. */
 export interface SubsetReturnsSlice {
   operations: readonly InvestmentOperation[];
-  /** Current market value in minor units (0 when fully sold or unpriced). */
+  /**
+   * The market value ATTRIBUTED to this slice, in minor units (0 when fully sold,
+   * unpriced, or when the slice's share of the holding rounds to nothing). It is
+   * taken as given: a subset that holds its members whole passes the holding's
+   * value, and one that takes a fraction of them passes the céntimos its
+   * canonical split awarded this bucket — {@link share} never re-derives it.
+   */
   marketValueMinor: number;
   /**
    * This holding's monthly-close value series (for TWR); empty when unavailable.
-   * Must be on the SAME basis as `marketValueMinor` (both gross, or both scoped).
+   * Must be on the SAME basis as `marketValueMinor` before {@link share} applies
+   * (both gross, or both scoped).
    */
   monthlyCloses: readonly MonthlyCloseValue[];
   /**
    * The owner's share in basis points (default whole), applied to the operation
-   * cashflows BEFORE {@link shareBps}. `marketValueMinor` / `monthlyCloses` must
-   * ALREADY be on the caller's chosen basis.
+   * cashflows BEFORE {@link share}. `monthlyCloses` must ALREADY be on the
+   * caller's chosen basis.
    */
   ownershipBps?: number;
   /**
-   * This slice's share of the subset in basis points (default whole), applied to
-   * the cashflows, the value AND the monthly closes. The per-class decomposition
-   * passes the class weight here; a subset that takes its members whole (a
-   * managed portfolio) leaves it out.
+   * This slice's share of the subset as an exact decimal weight (default whole),
+   * applied to the cashflows and the monthly closes — never to the value, which
+   * the caller has already attributed. The per-class decomposition passes the
+   * class weight here; a subset that takes its members whole (a managed
+   * portfolio) leaves it out.
+   *
+   * A decimal and not basis points: the weight has ONE spelling (#1610), the same
+   * one the céntimo split reads, so the ledger a class measures and the value it
+   * reports cannot drift apart at the fourth decimal.
    */
-  shareBps?: number;
+  share?: DecimalString;
   /**
    * Recorded distributions (dividends/coupons/rent, #657), scaled exactly like
    * the operation cashflows so the subset's simple gain / IRR stays coherent
@@ -136,14 +154,20 @@ export function subsetReturns(input: {
 
   for (const slice of input.slices) {
     const ownershipBps = slice.ownershipBps ?? FULL_SHARE_BPS;
-    const shareBps = slice.shareBps ?? FULL_SHARE_BPS;
+    const share = slice.share;
+    // A whole slice short-circuits the decimal seam: the subsets that take their
+    // members whole (a cartera, the book) are the hot path, and `× 1` is work.
+    const scaleShare =
+      share === undefined
+        ? (amountMinor: number): number => amountMinor
+        : (amountMinor: number): number => scaleMinorByWeight(amountMinor, share);
     // Ownership scales the operation cashflows to the owned slice (mirroring the
-    // portfolio block's per-flow scaling); the value and the closes arrive already
-    // on the caller's basis, so only the subset share applies to them below.
+    // portfolio block's per-flow scaling); the closes arrive already on the
+    // caller's basis, so only the subset share applies to them below.
     // Operations and recorded payouts share one signed stream (a payout is a
     // positive inflow); TWR excludes payouts (#657 scope) and stays on operations.
     const scaleFlow = (amountMinor: number): number =>
-      allocateByBps(allocateByBps(amountMinor, ownershipBps), shareBps);
+      scaleShare(allocateByBps(amountMinor, ownershipBps));
 
     if ((slice.payouts?.length ?? 0) > 0) {
       payoutsIncluded = true;
@@ -179,7 +203,7 @@ export function subsetReturns(input: {
       cashflows.push({ amountMinor: scaleFlow(flow.amountMinor), date: flow.date });
     }
 
-    marketValueMinor += allocateByBps(slice.marketValueMinor, shareBps);
+    marketValueMinor += slice.marketValueMinor;
 
     // TWR measures a value series, so series AND flows must describe the same set
     // of holdings: one with no monthly closes — an alta from today, absent from
@@ -203,7 +227,7 @@ export function subsetReturns(input: {
     monthlySeries.push({
       closes: slice.monthlyCloses.map((close) => ({
         date: close.date,
-        valueMinor: allocateByBps(close.valueMinor, shareBps),
+        valueMinor: scaleShare(close.valueMinor),
       })),
       stillHeld: slice.marketValueMinor > 0,
     });

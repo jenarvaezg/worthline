@@ -280,24 +280,49 @@ describe("subsetReturns", () => {
     expect(result.sellProceedsMinor).toBe(0);
   });
 
-  test("el doble escalado: la titularidad escala los flujos, la participación todo", () => {
+  test("el doble escalado: la titularidad escala los flujos, la participación los escala otra vez", () => {
     const result = subsetReturns({
       currency: "EUR",
       slices: [
         {
-          marketValueMinor: 25_000, // ya escalado por el llamante (50% de 50k)
+          // El valor llega YA atribuido: 50% de titularidad × 50% de
+          // participación sobre un holding de 50k (#1610 — el reparto en
+          // céntimos es del llamante, que ve todos los cubos a la vez).
+          marketValueMinor: 12_500,
           monthlyCloses: [],
           operations: [buy("10", "100", "2024-01-01")], // 100k brutos
           ownershipBps: 5_000,
-          shareBps: 5_000,
+          share: "0.5",
         },
       ],
       valuationDate: "2024-06-01",
     });
 
-    // 100k × 50% titularidad × 50% participación = 25k invertidos, contra 25k de valor.
+    // 100k × 50% titularidad × 50% participación = 25k invertidos... contra los
+    // 12.500 que el llamante atribuyó: el motor no re-deriva el valor.
     expect(result.simpleGain.totalInvestedMinor).toBe(25_000);
     expect(result.marketValueMinor).toBe(12_500);
+  });
+
+  test("la participación decimal escala como su equivalente en puntos básicos", () => {
+    // `share` sustituyó a `shareBps` (#1610): donde los dos saben expresar la
+    // misma fracción, redondean igual — medio céntimo hacia +∞, nunca alejándose
+    // del cero, para que la compra (flujo negativo) no se aleje al escalarla.
+    const result = subsetReturns({
+      currency: "EUR",
+      slices: [
+        {
+          marketValueMinor: 0,
+          monthlyCloses: [],
+          operations: [buy("1", "0.03", "2024-01-01")], // −3 céntimos
+          share: "0.5",
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    // −3 × 0,5 = −1,5 → −1 (allocateByBps(-3, 5_000) da lo mismo).
+    expect(result.simpleGain.totalInvestedMinor).toBe(1);
   });
 
   test("una posición sin cierres mensuales no aporta ni serie ni flujo al TWR", () => {

@@ -8,8 +8,11 @@ import {
   formatUnits,
   multiplyToMinor,
   proportionMinor,
+  scaleMinorByWeight,
+  splitMinorByWeights,
   subtractUnits,
 } from "./decimal";
+import { allocateByBps } from "./money";
 
 describe("decimal units arithmetic", () => {
   test("adds and subtracts fractional units without float drift", () => {
@@ -82,5 +85,80 @@ describe("exact .5 rounding boundary", () => {
     expect(proportionMinor(15, "1", "2")).toBe(8);
     // 1 * 1 / 2 = 0.5 → round half-up → 1
     expect(proportionMinor(1, "1", "2")).toBe(1);
+  });
+});
+
+describe("splitMinorByWeights (#1610)", () => {
+  test("reparte el total exacto: ni inventa un céntimo ni lo pierde", () => {
+    // 60/40 sucio sobre un importe que no cae en céntimos exactos: cada parte
+    // trunca y el céntimo sobrante va al resto mayor (0,60005 > 0,39995).
+    const parts = splitMinorByWeights(100_001, [
+      { key: "bond", weight: "0.39995" },
+      { key: "equity", weight: "0.60005" },
+    ]);
+
+    expect(Object.fromEntries(parts)).toEqual({ bond: 39_995, equity: 60_006 });
+    expect(parts.reduce((sum, [, amountMinor]) => sum + amountMinor, 0)).toBe(100_001);
+  });
+
+  test("un empate de restos lo rompe la clave, no el orden de entrada", () => {
+    const ordered = splitMinorByWeights(101, [
+      { key: "alfa", weight: "0.5" },
+      { key: "beta", weight: "0.5" },
+    ]);
+    const reversed = splitMinorByWeights(101, [
+      { key: "beta", weight: "0.5" },
+      { key: "alfa", weight: "0.5" },
+    ]);
+
+    expect(Object.fromEntries(ordered)).toEqual({ alfa: 51, beta: 50 });
+    expect(Object.fromEntries(reversed)).toEqual(Object.fromEntries(ordered));
+  });
+
+  test("devuelve todos los destinos, también los que se quedan a cero", () => {
+    // Un cubo que redondea a nada sigue siendo un cubo por el que preguntaron:
+    // la clase que hoy no vale nada se emite MARCADA, nunca se omite.
+    const parts = splitMinorByWeights(0, [
+      { key: "bond", weight: "0.4" },
+      { key: "equity", weight: "0.6" },
+    ]);
+
+    expect(parts).toEqual([
+      ["bond", 0],
+      ["equity", 0],
+    ]);
+  });
+});
+
+describe("scaleMinorByWeight (#1610)", () => {
+  test("redondea como allocateByBps allí donde ambos saben decir la misma fracción", () => {
+    const cases: Array<[number, string, number]> = [
+      [1, "0.5", 5_000],
+      [1, "0.4999", 4_999],
+      [1, "0.5001", 5_001],
+      [-1, "0.5", 5_000],
+      [-3, "0.5", 5_000],
+      [-1, "0.5001", 5_001],
+      [123_456, "1", 10_000],
+      [-123_456, "1", 10_000],
+      [123_456, "0", 0],
+    ];
+
+    for (const [amountMinor, weight, bps] of cases) {
+      expect(scaleMinorByWeight(amountMinor, weight)).toBe(
+        allocateByBps(amountMinor, bps),
+      );
+    }
+  });
+
+  test("el medio céntimo sube hacia +∞, nunca alejándose del cero", () => {
+    // Escalar la compra (flujo negativo) no puede empujarla más lejos del cero.
+    expect(scaleMinorByWeight(-3, "0.5")).toBe(-1);
+    expect(scaleMinorByWeight(3, "0.5")).toBe(2);
+  });
+
+  test("lee pesos más finos que un punto básico, que es lo que bps no puede", () => {
+    expect(scaleMinorByWeight(100_000, "0.60005")).toBe(60_005);
+    expect(allocateByBps(100_000, 6_001)).toBe(60_010);
   });
 });
