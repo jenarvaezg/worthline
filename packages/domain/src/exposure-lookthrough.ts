@@ -1,6 +1,7 @@
 import Big from "big.js";
 
-import type { DecimalString } from "./decimal";
+import type { DecimalString, WeightedDestination } from "./decimal";
+import { splitMinorByWeights } from "./decimal";
 import {
   exposureLookthroughKey,
   INVESTMENT_PROFILE_INSTRUMENTS,
@@ -427,11 +428,10 @@ function addWholeFundPartition(input: {
   valueMinor: number;
 }): void {
   let declared = new Big(0);
-  const destinations: Array<{ key: string; weight: Big }> = [];
+  const destinations: WeightedDestination[] = [];
   for (const [bucket, weight] of Object.entries(input.breakdown)) {
-    const parsed = new Big(weight);
-    declared = declared.plus(parsed);
-    destinations.push({ key: bucket, weight: parsed });
+    declared = declared.plus(new Big(weight));
+    destinations.push({ key: bucket, weight });
   }
   if (declared.gt(1)) {
     throw new Error("Exposure profile breakdown cannot exceed 100%.");
@@ -439,7 +439,7 @@ function addWholeFundPartition(input: {
 
   destinations.push({
     key: WHOLE_FUND_UNKNOWN_KEY,
-    weight: new Big(1).minus(declared),
+    weight: new Big(1).minus(declared).toString(),
   });
 
   for (const [key, amountMinor] of allocateWeightedMinor(
@@ -526,11 +526,11 @@ function addSectorDimension(input: {
   const sectorVector = (input.profile?.breakdowns.sector as Breakdown | undefined) ?? {};
 
   let declared = new Big(0);
-  const destinations: Array<{ key: string; weight: Big }> = [];
+  const destinations: WeightedDestination[] = [];
   for (const [bucket, weight] of Object.entries(sectorVector)) {
     const parsed = new Big(weight);
     declared = declared.plus(parsed);
-    destinations.push({ key: bucket, weight: equityWeight.times(parsed) });
+    destinations.push({ key: bucket, weight: equityWeight.times(parsed).toString() });
   }
   if (declared.gt(1)) {
     throw new Error("Exposure profile sector breakdown cannot exceed 100%.");
@@ -538,11 +538,11 @@ function addSectorDimension(input: {
 
   destinations.push({
     key: SECTOR_UNKNOWN_KEY,
-    weight: equityWeight.times(new Big(1).minus(declared)),
+    weight: equityWeight.times(new Big(1).minus(declared)).toString(),
   });
   destinations.push({
     key: SECTOR_NOT_APPLICABLE_KEY,
-    weight: new Big(1).minus(equityWeight),
+    weight: new Big(1).minus(equityWeight).toString(),
   });
 
   for (const [key, amountMinor] of allocateWeightedMinor(value, destinations)) {
@@ -568,6 +568,16 @@ function sectorStyleFromSlices(
   return sectorStyleSplit(vector);
 }
 
+/**
+ * The sleeve of a holding a class filter leaves standing — the drill-down's
+ * «de esto, ¿cuánto es renta variable?».
+ *
+ * It is the SAME question the unfiltered `assetClass` slice answers, so it takes
+ * the same céntimo: the holding's whole value goes once through the canonical
+ * split and this bucket's part comes back (#1610). Multiplying the weight on its
+ * own was the third spelling of one answer, and it could hand the drill-down a
+ * céntimo the slice above it does not show.
+ */
 function filteredValueMinor(
   holding: ExposureLookthroughHolding,
   profile: ExposureProfile | null,
@@ -582,7 +592,12 @@ function filteredValueMinor(
     return 0;
   }
 
-  return multiplyMinorByWeight(holding.valueMinor, resolution.breakdown[filter] ?? "0");
+  const share = splitMinorByWeights(
+    holding.valueMinor,
+    breakdownDestinations(resolution.breakdown),
+  ).find(([key]) => key === filter);
+
+  return share?.[1] ?? 0;
 }
 
 function resolveDimension(
@@ -690,70 +705,78 @@ function assertBreakdownTotal(
   }
 }
 
+/** The bucket a breakdown's undeclared remainder falls into. */
+export const OTHER_BUCKET_KEY = "other";
+
+/**
+ * The destinations a stored breakdown splits a holding across: its declared
+ * buckets, plus whatever it leaves undeclared, in `other`.
+ *
+ * Exported because the per-asset-class rentabilidad (#1610, ADR 0096) reads a
+ * holding's class vector through this very function. «¿Cuánto de este holding es
+ * renta variable?» is one question, so the two surfaces must agree on WHICH buckets
+ * exist and what each weighs before {@link splitMinorByWeights} even turns the
+ * weights into céntimos — a look-through that invents an `other` its sibling
+ * does not is a disagreement no rounding rule can repair.
+ *
+ * One destination per bucket: a breakdown that already declares `other` takes
+ * the undeclared remainder INTO it rather than growing a second `other`, so the
+ * key is unique and a caller may index the split by it. A bucket weighing
+ * nothing is not a destination at all — a declared `0` (and, on malformed stored
+ * data, a negative) is dropped rather than carried as a part that could only
+ * ever take 0 €.
+ */
+export function breakdownDestinations(
+  breakdown: Readonly<Record<string, DecimalString>>,
+): WeightedDestination[] {
+  const weights = new Map<string, Big>();
+  let declared = new Big(0);
+
+  for (const [key, weight] of Object.entries(breakdown)) {
+    const parsed = new Big(weight);
+    declared = declared.plus(parsed);
+    weights.set(key, (weights.get(key) ?? new Big(0)).plus(parsed));
+  }
+
+  if (declared.gt(1)) {
+    throw new Error("Exposure profile breakdown cannot exceed 100%.");
+  }
+
+  const remainder = new Big(1).minus(declared);
+  if (remainder.gt(0)) {
+    weights.set(
+      OTHER_BUCKET_KEY,
+      (weights.get(OTHER_BUCKET_KEY) ?? new Big(0)).plus(remainder),
+    );
+  }
+
+  return [...weights.entries()]
+    .filter(([, weight]) => weight.gt(0))
+    .map(([key, weight]) => ({ key, weight: weight.toString() }));
+}
+
 function allocateBreakdown(
   valueMinor: number,
   breakdown: Breakdown,
 ): Array<[string, number]> {
-  const weights = new Map<string, Big>();
-  let total = new Big(0);
-
-  for (const [key, weight] of Object.entries(breakdown)) {
-    const parsed = new Big(weight);
-    total = total.plus(parsed);
-    weights.set(key, (weights.get(key) ?? new Big(0)).plus(parsed));
-  }
-
-  if (total.gt(1)) {
-    throw new Error("Exposure profile breakdown cannot exceed 100%.");
-  }
-
-  if (total.lt(1)) {
-    weights.set(
-      "other",
-      (weights.get("other") ?? new Big(0)).plus(new Big(1).minus(total)),
-    );
-  }
-
-  return allocateWeightedMinor(
-    valueMinor,
-    [...weights.entries()].map(([key, weight]) => ({ key, weight })),
-  );
+  return allocateWeightedMinor(valueMinor, breakdownDestinations(breakdown));
 }
 
 /**
- * Split `valueMinor` across destinations whose `weight`s sum to exactly 1, using
- * largest-remainder rounding so the integer minors reconcile to `valueMinor`
- * with no leftover. The caller supplies every destination explicitly: the
- * asset-class path (`allocateBreakdown`) injects an `other` bucket for the
- * remainder; geography/currency and sector route theirs to coverage instead.
+ * The canonical largest-remainder split ({@link splitMinorByWeights}), keeping
+ * only the destinations that took money. The caller supplies every destination
+ * explicitly: the breakdown path (`allocateBreakdown`) injects an `other` bucket
+ * for the remainder; geography/currency and sector route theirs to coverage
+ * instead. A destination that rounds to 0 € is dropped here rather than inside
+ * the split, so no surface grows an empty slice.
  */
 function allocateWeightedMinor(
   valueMinor: number,
-  destinations: ReadonlyArray<{ key: string; weight: Big }>,
+  destinations: readonly WeightedDestination[],
 ): Array<[string, number]> {
-  const parts = destinations.map(({ key, weight }) => {
-    const raw = new Big(valueMinor).times(weight);
-    const floor = raw.round(0, Big.roundDown);
-    return { amountMinor: Number(floor.toString()), key, remainder: raw.minus(floor) };
-  });
-  let remainingMinor =
-    valueMinor - parts.reduce((sum, part) => sum + part.amountMinor, 0);
-
-  for (const part of [...parts].sort(
-    (a, b) => b.remainder.cmp(a.remainder) || a.key.localeCompare(b.key),
-  )) {
-    if (remainingMinor <= 0) break;
-    part.amountMinor += 1;
-    remainingMinor -= 1;
-  }
-
-  return parts
-    .filter((part) => part.amountMinor !== 0)
-    .map((part) => [part.key, part.amountMinor]);
-}
-
-function multiplyMinorByWeight(valueMinor: number, weight: DecimalString): number {
-  return Number(new Big(valueMinor).times(weight).round(0, Big.roundHalfUp).toString());
+  return splitMinorByWeights(valueMinor, destinations).filter(
+    ([, amountMinor]) => amountMinor !== 0,
+  );
 }
 
 function slicesFromTotals(

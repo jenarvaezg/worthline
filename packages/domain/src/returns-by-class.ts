@@ -1,4 +1,7 @@
+import type { WeightedDestination } from "./decimal";
+import { splitMinorByWeights } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
+import { breakdownDestinations, OTHER_BUCKET_KEY } from "./exposure-lookthrough";
 import type { InvestmentOperation } from "./investment-types";
 import type { CurrencyCode, MoneyMinor } from "./money";
 import { money } from "./money";
@@ -10,7 +13,7 @@ import type {
   TwrResult,
 } from "./returns";
 import type { SubsetReturnsSlice } from "./returns-subset";
-import { FULL_SHARE_BPS, subsetReturns } from "./returns-subset";
+import { subsetReturns } from "./returns-subset";
 
 /**
  * Per-asset-class investment returns (#552, ADR 0040 fast-follow, gated on #539
@@ -32,18 +35,34 @@ import { FULL_SHARE_BPS, subsetReturns } from "./returns-subset";
  * Pure: it takes pre-resolved class weights and an injected valuation date, so it
  * is deterministic and delegates every figure to the proven pure engines.
  *
- * Value allocation rounds each class weight to basis points (`allocateByBps`),
- * where the exposure look-through uses an exact largest-remainder split. For a
- * non-clean weight the two can differ by a minor unit or two, so a class `value`
- * reconciles with the matching `exposure.byAssetClass` slice at display (€)
- * granularity, not necessarily to the cent — acceptable for a derived, non-figure
- * lens (returns never feed the net-worth math).
+ * Value allocation is the look-through's OWN split, not a parallel one: the class
+ * destinations come from `breakdownDestinations` and the céntimos from
+ * `splitMinorByWeights`, the same two functions `lookThroughExposure` calls
+ * (#1610, ADR 0096). Over the SAME holding value, a class `value` therefore
+ * equals the matching `exposure.assetClass` slice to the céntimo, not merely at
+ * display granularity — «¿cuánto de este holding es renta variable?» has one
+ * answer, and the surface that asks it does not change it.
+ *
+ * Over the same holding value: the two surfaces still choose their own INPUT.
+ * The patrimonio page feeds the look-through every asset row at its scope-weighted
+ * value, and feeds this engine the market instruments gross (`returnsByAssetClassView`
+ * — appreciating assets are excluded, an IRR would be forced there). So their
+ * totals differ by design, and by euros, not by a rounding. What #1610 removed is
+ * the divergence that had nothing to do with that choice: the same weight over the
+ * same value giving two answers.
+ *
+ * What the weight still cannot do is travel back in time: it is a present-time
+ * lens applied uniformly across the history, declared above.
  */
 
 /** The bucket that collects holdings whose asset class cannot be resolved. */
 export const UNCLASSIFIED_ASSET_CLASS_KEY = "unclassified";
-/** The bucket that collects the declared-under-100% remainder of a breakdown. */
-export const OTHER_ASSET_CLASS_KEY = "other";
+/**
+ * The bucket that collects the declared-under-100% remainder of a breakdown —
+ * the look-through's own remainder key, aliased rather than respelled so the two
+ * surfaces cannot drift into naming the same money differently.
+ */
+export const OTHER_ASSET_CLASS_KEY = OTHER_BUCKET_KEY;
 
 /** One holding's return inputs plus its resolved asset-class breakdown. */
 export interface AssetClassReturnsHolding {
@@ -115,36 +134,24 @@ export interface ReturnsByAssetClass {
   coverage: ExposureCoverage;
 }
 
+/** A whole holding: the weight `unclassified` takes when no class resolves. */
+const WHOLE_WEIGHT = "1";
+
 /**
- * A holding's asset-class weights as `[bucketKey, shareBps]` pairs. Classified
- * breakdowns map each bucket to its weight in basis points; a declared-under-100%
- * remainder goes to `other`. An unknown class sends the whole holding to
- * `unclassified`.
+ * The buckets a holding's value and ledger are split across, with the exact
+ * weight of each.
+ *
+ * A classified breakdown reads through `breakdownDestinations` — the
+ * look-through's own reading, `other` remainder included — so neither surface can
+ * invent a bucket the other does not have, nor weigh a shared one differently. An
+ * unresolvable class sends the whole holding to `unclassified`, the honest
+ * coverage gap the look-through routes to `coverage.unknown` rather than to a
+ * slice.
  */
-function classShares(resolution: AssetClassResolution): Array<[string, number]> {
-  if (resolution.kind === "unknown") {
-    return [[UNCLASSIFIED_ASSET_CLASS_KEY, FULL_SHARE_BPS]];
-  }
-
-  const shares: Array<[string, number]> = [];
-  let assignedBps = 0;
-  for (const [bucket, weight] of Object.entries(resolution.breakdown)) {
-    const bps = Math.round(Number(weight) * FULL_SHARE_BPS);
-    if (bps <= 0) {
-      continue;
-    }
-    assignedBps += bps;
-    shares.push([bucket, bps]);
-  }
-
-  // Upstream validation rejects a breakdown over 100%, so a negative
-  // remainder cannot occur here; the guard is defensive (no `other` when full).
-  const remainderBps = FULL_SHARE_BPS - assignedBps;
-  if (remainderBps > 0) {
-    shares.push([OTHER_ASSET_CLASS_KEY, remainderBps]);
-  }
-
-  return shares;
+function classDestinations(resolution: AssetClassResolution): WeightedDestination[] {
+  return resolution.kind === "unknown"
+    ? [{ key: UNCLASSIFIED_ASSET_CLASS_KEY, weight: WHOLE_WEIGHT }]
+    : breakdownDestinations(resolution.breakdown);
 }
 
 export function returnsByAssetClass(
@@ -157,13 +164,23 @@ export function returnsByAssetClass(
   const buckets = new Map<string, SubsetReturnsSlice[]>();
 
   for (const holding of input.holdings) {
-    for (const [bucket, bps] of classShares(holding.assetClass)) {
-      const slices = buckets.get(bucket);
+    const destinations = classDestinations(holding.assetClass);
+    // ONE pass over the holding's whole value, not one rounding per bucket: the
+    // céntimos the largest remainder awards each class here are the céntimos the
+    // look-through awards the same class over the same value (#1610). Rounding
+    // bucket by bucket is how the two surfaces used to land a céntimo apart on a
+    // weight that does not fall on exact céntimos.
+    const attributed = new Map(
+      splitMinorByWeights(holding.marketValueMinor, destinations),
+    );
+
+    for (const { key, weight } of destinations) {
+      const slices = buckets.get(key);
       const slice: SubsetReturnsSlice = {
-        marketValueMinor: holding.marketValueMinor,
+        marketValueMinor: attributed.get(key) ?? 0,
         monthlyCloses: holding.monthlyCloses,
         operations: holding.operations,
-        shareBps: bps,
+        share: weight,
         ...(holding.ownershipBps === undefined
           ? {}
           : { ownershipBps: holding.ownershipBps }),
@@ -172,7 +189,7 @@ export function returnsByAssetClass(
       if (slices) {
         slices.push(slice);
       } else {
-        buckets.set(bucket, [slice]);
+        buckets.set(key, [slice]);
       }
     }
   }

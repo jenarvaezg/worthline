@@ -338,7 +338,7 @@ export {
   effectiveAmortizationPlan,
   storedBalanceGovernsDebtFigure,
 } from "./debt-balance";
-export type { DecimalString } from "./decimal";
+export type { DecimalString, WeightedDestination } from "./decimal";
 export {
   addUnits,
   averageUnitCost,
@@ -353,6 +353,8 @@ export {
   PRICE_READBACK_DECIMALS,
   proportionMinor,
   scaleDecimal,
+  scaleMinorByWeight,
+  splitMinorByWeights,
   subtractUnits,
   UNITS_READBACK_DECIMALS,
 } from "./decimal";
@@ -456,8 +458,10 @@ export type {
   ExposureSectorStyle,
 } from "./exposure-lookthrough";
 export {
+  breakdownDestinations,
   isGeoCurrencyNotApplicableAssetClass,
   lookThroughExposure,
+  OTHER_BUCKET_KEY,
   resolveAssetClassBreakdown,
   validateImportedExposureProfile,
 } from "./exposure-lookthrough";

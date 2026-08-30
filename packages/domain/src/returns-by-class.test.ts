@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import type { AssetClassResolution } from "./exposure-lookthrough";
+import type { AssetClassResolution, ExposureProfile } from "./exposure-lookthrough";
+import { lookThroughExposure } from "./exposure-lookthrough";
 import type { InvestmentOperation, OperationKind } from "./investment-types";
 import type { MonthlyCloseValue } from "./returns";
 import { returnsByAssetClass, UNCLASSIFIED_ASSET_CLASS_KEY } from "./returns-by-class";
@@ -642,5 +643,153 @@ describe("una clase sin valor hoy se declara cerrada (#1456)", () => {
     expect(
       result.classes.find((c) => c.key === UNCLASSIFIED_ASSET_CLASS_KEY)!.closed,
     ).toBe(true);
+  });
+});
+
+describe("un solo reparto de céntimos para exposición y clase (#1610)", () => {
+  // Un 60/40 SUCIO: el peso no cae en puntos básicos exactos (0,60005 → 6000,5
+  // bps) y el importe no cae en céntimos exactos sobre él. Es el par que hacía
+  // diferir a las dos superficies: la exposición repartía por resto mayor sobre
+  // el peso exacto y la clase multiplicaba por un peso redondeado a bps.
+  const DIRTY_BREAKDOWN = { bond: "0.39995", equity: "0.60005" };
+  const HOLDING_VALUE_MINOR = 100_001;
+  const CATALOG_KEY = "MIXTO6040";
+
+  function exposureByAssetClass(): Record<string, number> {
+    const profile: ExposureProfile = {
+      breakdowns: { assetClass: DIRTY_BREAKDOWN },
+      declaredAt: null,
+      key: CATALOG_KEY,
+      source: "user",
+    };
+    const result = lookThroughExposure({
+      baseCurrency: "EUR",
+      dimensions: ["assetClass"],
+      grossAssets: { amountMinor: HOLDING_VALUE_MINOR, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_mixto",
+          instrument: "fund",
+          providerSymbol: CATALOG_KEY,
+          valueMinor: HOLDING_VALUE_MINOR,
+        },
+      ],
+      profiles: new Map([[CATALOG_KEY, profile]]),
+    });
+
+    return Object.fromEntries(
+      result.assetClass.slices.map((slice) => [slice.key, slice.value.amountMinor]),
+    );
+  }
+
+  function returnsValueByClass(): Record<string, number> {
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified(DIRTY_BREAKDOWN),
+          marketValueMinor: HOLDING_VALUE_MINOR,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2024-01-01")],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    return Object.fromEntries(
+      result.classes.map((entry) => [entry.key, entry.value.amountMinor]),
+    );
+  }
+
+  test("las dos superficies reparten el mismo holding en los mismos céntimos", () => {
+    expect(returnsValueByClass()).toEqual(exposureByAssetClass());
+  });
+
+  test("y ese reparto es el exacto: suma el holding entero, sin sobras", () => {
+    const byClass = returnsValueByClass();
+
+    // 100.001 × 0,60005 = 60.005,60005 y × 0,39995 = 39.995,39995: los dos
+    // truncan y el céntimo suelto va al resto mayor (renta variable).
+    expect(byClass).toEqual({ bond: 39_995, equity: 60_006 });
+    // El redondeo a bps daba 60.010 + 40.000 = 100.010: un céntimo de diferencia
+    // por clase Y nueve céntimos inventados sobre el holding.
+    expect(byClass.equity! + byClass.bond!).toBe(HOLDING_VALUE_MINOR);
+  });
+
+  test("un remanente no declarado cuadra en `other` a céntimo en las dos", () => {
+    // El mismo careo con el cubo que la exposición inyecta: si una superficie
+    // inventase su propio `other`, ningún redondeo lo arreglaría.
+    const breakdown = { equity: "0.33335" };
+    const valueMinor = 99_999;
+    const profile: ExposureProfile = {
+      breakdowns: { assetClass: breakdown },
+      declaredAt: null,
+      key: CATALOG_KEY,
+      source: "user",
+    };
+    const exposure = lookThroughExposure({
+      baseCurrency: "EUR",
+      dimensions: ["assetClass"],
+      grossAssets: { amountMinor: valueMinor, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_mixto",
+          instrument: "fund",
+          providerSymbol: CATALOG_KEY,
+          valueMinor,
+        },
+      ],
+      profiles: new Map([[CATALOG_KEY, profile]]),
+    });
+    const classes = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified(breakdown),
+          marketValueMinor: valueMinor,
+          monthlyCloses: [],
+          operations: [buy("10", "100", "2024-01-01")],
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    const expected = Object.fromEntries(
+      exposure.assetClass.slices.map((slice) => [slice.key, slice.value.amountMinor]),
+    );
+    expect(
+      Object.fromEntries(
+        classes.classes.map((entry) => [entry.key, entry.value.amountMinor]),
+      ),
+    ).toEqual(expected);
+    expect(expected.equity! + expected.other!).toBe(valueMinor);
+  });
+
+  test("el peso sucio escala también el libro, sin volver a puntos básicos", () => {
+    // AC: `subsetReturns` corre sobre esas mismas rebanadas. Lo invertido de la
+    // clase sale del peso EXACTO, no de su versión redondeada a bps.
+    const result = returnsByAssetClass({
+      currency: "EUR",
+      holdings: [
+        {
+          assetClass: classified(DIRTY_BREAKDOWN),
+          marketValueMinor: HOLDING_VALUE_MINOR,
+          monthlyCloses: [],
+          operations: [buy("1", "1000", "2024-01-01")], // 100.000 invertidos
+        },
+      ],
+      valuationDate: "2024-06-01",
+    });
+
+    // 100.000 × 0,60005 = 60.005 (con 6.001 bps habrían sido 60.010).
+    expect(
+      result.classes.find((entry) => entry.key === "equity")!.simpleGain
+        .totalInvestedMinor,
+    ).toBe(60_005);
+    expect(
+      result.classes.find((entry) => entry.key === "bond")!.simpleGain.totalInvestedMinor,
+    ).toBe(39_995);
   });
 });
