@@ -1,5 +1,5 @@
 /**
- * The document-only frontier of `propose_operation` (#1374) — the sibling of
+ * The evidence frontier of `propose_operation` (#1374, widened in #1466) — the sibling of
  * `reconcile-document-frontier.ts`, built the same way and for the same reason.
  *
  * The lane exists because «añádeme esta compra» had none. Handed a MyInvestor
@@ -15,6 +15,13 @@
  * the user's the paper belongs to (that is the ungrounded-id and the ISIN check in
  * the builder), and whether the paper is a purchase or a sale. The card prints the
  * document's own words next to both, so a wrong reading is visible before confirming.
+ *
+ * Since #1466 the door is no longer document-ONLY, and the amendment is narrow: what
+ * this frontier was raised against is the MODEL inventing figures, not the user typing
+ * them. A fact the user dictated enters through its own parser
+ * ({@link ../typed-holding-event}) and is checked here the same way — the model's
+ * arguments are a claim about it, never its source. Everything else is unchanged: with
+ * a validated document on the table, the document still wins.
  *
  * Pure and I/O-free: documents and a claim in, an observed event or a routing error
  * out.
@@ -66,7 +73,11 @@ export interface OperationFrontierError {
   error:
     | "operation_document_required"
     | "operation_fact_not_in_document"
-    | "operation_kind_contradicts_document";
+    | "operation_kind_contradicts_document"
+    /** #1466's three: the typed lane's mirror of the two above, plus its own gaps. */
+    | "operation_fact_incomplete_in_message"
+    | "operation_fact_not_in_message"
+    | "operation_kind_contradicts_message";
   message: string;
 }
 
@@ -78,12 +89,13 @@ export interface OperationFrontierError {
  * deterministic import.
  */
 export const OPERATION_DOCUMENT_REQUIRED_MESSAGE =
-  "Para anotar una operación necesito el justificante leído y validado por mí, y en esta " +
-  "conversación no hay ninguno: no puedo escribir en el libro una fecha, un importe y unas " +
-  "participaciones dictados por mí. Súbeme la confirmación de la compra, la venta o la " +
-  "aportación (PDF o imagen) y la preparo; si lo que traes es la cartera entera, eso es un " +
-  "reconcile o /patrimonio/importar-extracto; y si prefieres teclearla, se anota en las " +
-  "operaciones de la posición, dentro de Patrimonio.";
+  "Para anotar una operación necesito el hecho, y en este turno no tengo ninguno: ni un " +
+  "justificante leído y validado por mí, ni una operación escrita por el usuario en su " +
+  "mensaje. Lo que no puedo es dictármela yo. Hay dos vías: que me la ESCRIBA en el chat " +
+  "—instrumento, participaciones, importe y fecha, por ejemplo «hoy he comprado 6 " +
+  "participaciones de IE00B43VDT70 por 312,55 €»—, que yo la leo de su mensaje tal cual; o " +
+  "que me suba la confirmación (PDF o imagen). Si lo que trae es la cartera entera, eso es " +
+  "un reconcile o /patrimonio/importar-extracto.";
 
 /**
  * A figure relayed by the model contradicts the document. The message says WHAT the
@@ -165,35 +177,54 @@ const DIRECTION_BY_EVENT_KIND: Partial<
   Record<ExtractedHoldingEvent["kind"], "in" | "out">
 > = { deposit: "in", withdrawal: "out" };
 
+/**
+ * Where the fact came from, in the two words the sentences below need. The lane has two
+ * sources since #1466 and only one set of comparisons: parameterising the voice is what
+ * keeps a typed operation from being refused with «el documento dice…» about a document
+ * that does not exist.
+ */
+export interface OperationFactVoice {
+  /** «del documento» / «de tu mensaje». */
+  of: string;
+  /** «el documento» / «tu mensaje». */
+  subject: string;
+}
+
+const DOCUMENT_VOICE: OperationFactVoice = {
+  of: "del documento",
+  subject: "el documento",
+};
+
 /** Every way a claim can disagree with the event, as sentences for the model. */
-function claimMismatches(
+export function operationClaimMismatches(
   claim: OperationFactClaim,
   event: ExtractedHoldingEvent,
+  voice: OperationFactVoice = DOCUMENT_VOICE,
 ): string[] {
   const mismatches: string[] = [];
   if (claim.date !== undefined && isoDay(claim.date) !== event.date) {
-    mismatches.push(`la fecha del documento es ${event.date}, no ${isoDay(claim.date)}`);
+    mismatches.push(`la fecha ${voice.of} es ${event.date}, no ${isoDay(claim.date)}`);
   }
   if (
     claim.amount !== undefined &&
     Math.abs(Math.abs(claim.amount) - Math.abs(event.amount)) > AMOUNT_TOLERANCE
   ) {
     mismatches.push(
-      `el importe del documento es ${money(event.amount, event.currency)}, no ${money(claim.amount, event.currency)}`,
+      `el importe ${voice.of} es ${money(event.amount, event.currency)}, no ${money(claim.amount, event.currency)}`,
     );
   }
   if (
     claim.currency !== undefined &&
     claim.currency.trim().toUpperCase() !== event.currency.toUpperCase()
   ) {
-    mismatches.push(`la divisa del documento es ${event.currency}`);
+    mismatches.push(`la divisa ${voice.of} es ${event.currency}`);
   }
   if (claim.isin !== undefined) {
     const claimed = claim.isin.trim().toUpperCase();
     if (event.isin === undefined) {
-      mismatches.push(`el documento no trae ningún ISIN, y tú pasas ${claimed}`);
+      mismatches.push(`${voice.subject} no trae ningún ISIN, y tú pasas ${claimed}`);
     } else if (event.isin.toUpperCase() !== claimed) {
-      mismatches.push(`el ISIN del documento es ${event.isin}, no ${claimed}`);
+      mismatches.push(`el ISIN ${voice.of} es ${event.isin}, no ${claimed}`);
     }
   }
   if (claim.units !== undefined) {
@@ -201,11 +232,11 @@ function claimMismatches(
       // The invention this lane most has to fear: a quantity nobody printed becomes
       // units in the ledger forever, and every later sale inherits the error (#1315).
       mismatches.push(
-        `el documento no dice las participaciones, y tú pasas ${formatDocumentUnits(claim.units)}`,
+        `${voice.subject} no dice las participaciones, y tú pasas ${formatDocumentUnits(claim.units)}`,
       );
     } else if (Math.abs(claim.units - event.units) > UNITS_TOLERANCE) {
       mismatches.push(
-        `las participaciones del documento son ${formatDocumentUnits(event.units)}, no ${formatDocumentUnits(claim.units)}`,
+        `las participaciones ${voice.of} son ${formatDocumentUnits(event.units)}, no ${formatDocumentUnits(claim.units)}`,
       );
     }
   }
@@ -215,7 +246,7 @@ function claimMismatches(
   // that prints none is invention with nothing behind it.
   if (claim.pricePerUnit !== undefined && event.pricePerUnit === undefined) {
     mismatches.push(
-      `el documento no imprime precio por título, y tú pasas ${money(claim.pricePerUnit, event.currency)}`,
+      `${voice.subject} no dice el precio por participación, y tú pasas ${money(claim.pricePerUnit, event.currency)}`,
     );
   }
   if (claim.fees !== undefined) {
@@ -223,8 +254,8 @@ function claimMismatches(
     if (Math.abs(claim.fees - printed) > FEES_TOLERANCE) {
       mismatches.push(
         event.fees === undefined
-          ? `el documento no imprime comisión, y tú pasas ${money(claim.fees, event.currency)}`
-          : `la comisión del documento es ${money(event.fees.amount, event.currency)}, no ${money(claim.fees, event.currency)}`,
+          ? `${voice.subject} no dice ninguna comisión, y tú pasas ${money(claim.fees, event.currency)}`
+          : `la comisión ${voice.of} es ${money(event.fees.amount, event.currency)}, no ${money(claim.fees, event.currency)}`,
       );
     }
   }
@@ -252,7 +283,7 @@ export function resolveOperationEvent(
     };
   }
   const { event } = validated;
-  const mismatches = claimMismatches(claim, event);
+  const mismatches = operationClaimMismatches(claim, event);
   if (mismatches.length > 0) {
     return {
       ok: false,

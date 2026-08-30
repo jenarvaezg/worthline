@@ -24,6 +24,7 @@ import type { MaintainerAlertPayload } from "@web/asistente/maintainer-alert";
 import { hasUnvalidatedProvenance } from "@web/asistente/proposal-provenance";
 import { isPublicHoldingId } from "@web/asistente/public-holding-id";
 import { buildReconstructionProposal } from "@web/asistente/reconstruction-proposals";
+import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
 import { UNVALIDATED_EVIDENCE_CLASSES } from "@web/asistente/unvalidated-evidence-gate";
 import { seedPersona } from "@web/demo/seed-persona";
 import { FAMILIA_SPEC } from "@web/demo/specs/familia";
@@ -984,6 +985,262 @@ describe("createChatTools · propose_operation (#1374)", () => {
     expect(description).toContain("propose_statement_import");
     expect(description).toContain("propose_holding");
     expect(description).toContain("propose_correction");
+  });
+});
+
+describe("createChatTools · propose_operation dictada (#1466)", () => {
+  /**
+   * The second door of the lane, and the case that opened the issue: Jorge writes the
+   * whole operation in the chat — instrument, quantity, amount and day — and used to be
+   * told to upload a receipt. What this block drives is the WIRING the parser's own
+   * suite cannot see: that the figures written are the figures built from, that the
+   * model's arguments are checked against them and then discarded, and that the witness
+   * («sumando esas 6, tengo 21») is measured against the book.
+   */
+  const JORGE =
+    "He comprado ahora 6 participaciones de IE00B43VDT70 por un total de 312,55€. " +
+    "En total, sumando esas 6, tengo 21 participaciones";
+
+  async function dictatedStore() {
+    const store = await createInMemoryStore();
+    await store.workspace.initializeWorkspace({
+      members: [{ id: "mJ", name: "Jorge" }],
+      mode: "individual",
+    });
+    await store.assets.createInvestmentAsset({
+      currency: "EUR",
+      id: "asset-etc",
+      instrument: "etf",
+      isin: "IE00B43VDT70",
+      manualPricePerUnit: "52",
+      name: "Invesco Physical Silver ETC",
+      ownership: [{ memberId: "mJ", shareBps: 10_000 }],
+    });
+    await store.command.recordInvestmentOperation(
+      {
+        assetId: "asset-etc",
+        currency: "EUR",
+        executedAt: "2025-11-04",
+        id: "op-seed",
+        kind: "buy",
+        pricePerUnit: "40",
+        units: "15",
+      },
+      { today: "2026-08-30" },
+    );
+    return store;
+  }
+
+  async function dictatedTools(store: WorthlineStore, message: string) {
+    const publicId =
+      (await store.agentView.readPublicIds()).find((row) => row.entityId === "asset-etc")
+        ?.publicId ?? "";
+    return {
+      publicId,
+      tools: createChatTools({
+        asOf: "2026-08-30",
+        groundedHoldingIds: [publicId],
+        runWithStore: (run) =>
+          run({
+            agentView: store.agentView,
+            assets: store.assets,
+            assistantProposals: store.assistantProposals,
+            operations: store.operations,
+          }),
+        typedHoldingEvent: typedHoldingEventInTurn(
+          [{ id: "m1", parts: [{ text: message, type: "text" }], role: "user" }],
+          "2026-08-30",
+        ),
+      }),
+    };
+  }
+
+  it("turns Jorge's own message into ONE buy proposal, witness and all", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(store, JORGE);
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    );
+
+    expect(result).toMatchObject({
+      draft: { proposalId: expect.any(String) },
+      proposalType: "investment_operation",
+    });
+    // The ceremony of #1418: what worthline READ, before anything derived from it.
+    expect(result.document.caption).toBe("Lo que he leído en tu mensaje");
+    expect(result.document.line).toContain("6 part.");
+    expect(result.document.line).toContain("312,55");
+    expect(result.document.line).toContain("IE00B43VDT70");
+    // The price is derived from the two figures he wrote (312,55 ÷ 6), never supplied
+    // by the app; the card prints it at the four decimals it reads back at.
+    expect(result.document.fact).toContain("52,0917");
+    expect(result.position).toEqual({ unitsAfter: "21", unitsBefore: "15" });
+    store.close();
+  });
+
+  it("refuses a kind the message contradicts, without opening the store", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(
+      store,
+      "Hoy he vendido 6 participaciones de IE00B43VDT70 por 312,55 €",
+    );
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_kind_contradicts_message");
+    expect(result.message).toContain("una venta");
+    store.close();
+  });
+
+  it("refuses a figure the model did not read in the message", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(store, JORGE);
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      // The invention this frontier exists to stop, in its typed-lane form.
+      { holdingId: publicId, kind: "buy", units: 12 },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_fact_not_in_message");
+    expect(result.message).toContain("6");
+    store.close();
+  });
+
+  it("refuses a declared total that does not hold, naming both figures", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(
+      store,
+      "He comprado hoy 6 participaciones de IE00B43VDT70 por 312,55€. En total tengo 30 participaciones",
+    );
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    )) as { error?: string };
+
+    expect(result.error).toContain("30");
+    expect(result.error).toContain("21");
+    store.close();
+  });
+
+  it("says which figure is missing instead of asking for a receipt", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(
+      store,
+      "He comprado 6 participaciones de IE00B43VDT70 por 312,55 €",
+    );
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_fact_incomplete_in_message");
+    expect(result.message).toContain("fecha");
+    store.close();
+  });
+
+  it("reads an unmarked importe in the holding's currency, and says so", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(
+      store,
+      "Hoy he comprado 6 participaciones de IE00B43VDT70 por 312,55",
+    );
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    );
+
+    expect(result.notes.join(" ")).toContain("EUR");
+    expect(result.notes.join(" ")).toContain("divisa");
+    store.close();
+  });
+
+  it("still refuses an ISIN the message names and the holding does not have", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(
+      store,
+      "Hoy he comprado 6 participaciones de ES0173516115 por 312,55 €",
+    );
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    )) as { error?: string };
+
+    // The guard is the one #1374 already had: the typed door reuses it whole.
+    expect(result.error).toContain("ES0173516115");
+    expect(result.error).toContain("IE00B43VDT70");
+    store.close();
+  });
+
+  /** #1374's behaviour is untouched: with a receipt on the table, the receipt wins. */
+  it("prefers the validated document when the turn carries one", async () => {
+    const store = await dictatedStore();
+    const publicId =
+      (await store.agentView.readPublicIds()).find((row) => row.entityId === "asset-etc")
+        ?.publicId ?? "";
+    const tools = createChatTools({
+      asOf: "2026-08-30",
+      groundedHoldingIds: [publicId],
+      runWithStore: (run) =>
+        run({
+          agentView: store.agentView,
+          assets: store.assets,
+          assistantProposals: store.assistantProposals,
+          operations: store.operations,
+        }),
+      typedHoldingEvent: typedHoldingEventInTurn(
+        [{ id: "m1", parts: [{ text: JORGE, type: "text" }], role: "user" }],
+        "2026-08-30",
+      ),
+      validatedDocuments: [
+        extractedDocumentSchema.parse({
+          documentType: "holding_event",
+          event: {
+            amount: 104,
+            currency: "EUR",
+            date: "2026-08-28",
+            isin: "IE00B43VDT70",
+            kind: "other",
+            label: "COMPRA INVESCO PHYSICAL SILVER ETC",
+            units: 2,
+          },
+          warnings: [],
+        }),
+      ],
+    });
+
+    const result = await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    );
+
+    expect(result.document.caption).toBe("En el documento");
+    expect(result.position).toEqual({ unitsAfter: "17", unitsBefore: "15" });
+    store.close();
+  });
+
+  it("routes to both doors when the turn carries neither", async () => {
+    const store = await dictatedStore();
+    const { publicId, tools } = await dictatedTools(store, "¿Cómo va mi cartera?");
+
+    const result = (await tools["propose_operation"]?.execute?.(
+      { holdingId: publicId, kind: "buy" },
+      toolCallContext(),
+    )) as { error?: string; message?: string };
+
+    expect(result.error).toBe("operation_document_required");
+    expect(result.message).toContain("ESCRIBA");
+    expect(result.message).toContain("justificante");
+    store.close();
   });
 });
 

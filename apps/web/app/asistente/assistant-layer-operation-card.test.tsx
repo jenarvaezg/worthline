@@ -64,6 +64,7 @@ function aportacionProposal(
 ): OperationProposal {
   return {
     document: {
+      caption: "En el documento",
       fact: "05/08/2026 · aportación · 5,92 part. × 21,1149 € · comisión 0 € · 125 €",
       line: "APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP · ES0173516115",
     },
@@ -92,6 +93,30 @@ describe("the operation card (#1374)", () => {
     expect(markup).toContain("APORTACION P.P. MYINVESTOR INDEXADO SP 500 PP");
     expect(markup).toContain("En el documento");
     expect(markup).toContain("Anotar en «MyInvestor Indexado SP500»");
+  });
+
+  /**
+   * The second door (#1466): the same card, and the caption is what tells the two
+   * apart. A dictated operation presented as «En el documento» would be the lane
+   * lying about its own provenance — and the line above it is the echo the person
+   * checks their own message against.
+   */
+  test("says the fact was read in the message when that is where it came from", () => {
+    const markup = plain(
+      markupFor(
+        aportacionProposal({
+          document: {
+            caption: "Lo que he leído en tu mensaje",
+            fact: "30/08/2026 · compra · 6 part. × 52,0917 € · 312,55 €",
+            line: "30/08/2026 · 6 part. · 312,55 € · IE00B43VDT70",
+          },
+        }),
+      ),
+    );
+
+    expect(markup).toContain("Lo que he leído en tu mensaje");
+    expect(markup).toContain("30/08/2026 · 6 part. · 312,55 €");
+    expect(markup).not.toContain("En el documento");
   });
 
   test("prints the fact term by term, exactly as it will be written", () => {

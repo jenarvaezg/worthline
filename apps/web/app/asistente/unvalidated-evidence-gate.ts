@@ -65,15 +65,19 @@ export const UNVALIDATED_EVIDENCE_CLASSES = {
   propose_holding_removal: "neutral",
   propose_holding_restoration: "neutral",
   /**
-   * `neutral` because its OWN frontier is strictly stronger than this gate (#1374):
-   * the date, the amount, the participaciones and the commission are read off a
-   * validated `holding_event`, checked before the store is even opened, so evidence
-   * worthline could not validate can never become an operation — there is nothing for
-   * the gate to protect. Classifying it `rejects` would also lie: the routing copy
-   * offers «un dato puntual sí puedo prepararlo como propuesta», and this IS that
-   * single dated fact. And it would block the legitimate turn where an unreadable
-   * spreadsheet arrived earlier in the conversation while the confirmation the user is
-   * asking about was validated in a previous message.
+   * `neutral` because its OWN frontier is strictly stronger than this gate (#1374,
+   * #1466): the date, the amount, the participaciones and the commission are read off a
+   * validated `holding_event` or — when there is none — off the USER's own message, by
+   * worthline itself and with no model in the loop. Either way the figures the model
+   * relays are checked against the source and the call is refused when they disagree,
+   * so evidence worthline could not validate can never become an operation: there is
+   * nothing here for the gate to protect. That is the same reasoning as its traspaso
+   * sibling below, and #1466 is what makes the two identical rather than merely
+   * similar. Classifying it `rejects` would also lie: the routing copy offers «un dato
+   * puntual sí puedo prepararlo como propuesta», and this IS that single dated fact.
+   * And it would block the legitimate turn where an unreadable spreadsheet arrived
+   * earlier in the conversation while the confirmation the user is asking about was
+   * validated in a previous message.
    */
   propose_operation: "neutral",
   /**

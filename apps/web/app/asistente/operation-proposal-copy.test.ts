@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  operationCurrencyAssumedNote,
+  operationDeclaredTotalMismatch,
+  operationDerivedAmountNote,
   operationDestinationLine,
+  operationDictatedLine,
   operationDocumentLine,
   operationFactLine,
   operationKindLabel,
@@ -111,5 +115,84 @@ describe("operationDocumentLine / operationDestinationLine", () => {
     expect(operationDestinationLine({ name: "Cartera Metal" })).toBe(
       "Anotar en «Cartera Metal»",
     );
+  });
+});
+
+describe("the dictated lane's own lines (#1466)", () => {
+  /**
+   * The ceremony of #1418 on this card: what worthline READ, verbatim, before anything
+   * derived from it. If the parser read 312,55 € where the person wrote 312,05 €, this
+   * is the line where it is caught — so it carries the figures he typed and not the
+   * price the ledger will record.
+   */
+  it("echoes the figures the person typed, and nothing derived from them", () => {
+    expect(
+      plain(
+        operationDictatedLine(
+          {
+            amount: 312.55,
+            currency: "EUR",
+            declaredTotalUnits: "21",
+            direction: "in",
+            executedAt: "2026-08-30",
+            isin: "IE00B43VDT70",
+            units: "6",
+          },
+          "EUR",
+        ),
+      ),
+    ).toBe("30/08/2026 · 6 part. · 312,55 € · total que dices tener 21 · IE00B43VDT70");
+  });
+
+  it("prints the unit price when that is what was written instead of a total", () => {
+    expect(
+      plain(
+        operationDictatedLine(
+          {
+            currency: "EUR",
+            direction: "in",
+            executedAt: "2026-08-30",
+            pricePerUnit: 52.09,
+            units: "10",
+          },
+          "EUR",
+        ),
+      ),
+    ).toBe("30/08/2026 · 10 part. · a 52,09 € por participación");
+  });
+
+  /** #1401's rule: an unmarked currency is read, never assumed in silence. */
+  it("says which currency it read into an unmarked importe", () => {
+    const note = operationCurrencyAssumedNote("EUR", "Invesco Physical Silver ETC");
+
+    expect(note).toContain("EUR");
+    expect(note).toContain("Invesco Physical Silver ETC");
+  });
+
+  it("shows the multiplication behind an importe nobody typed", () => {
+    expect(
+      plain(
+        operationDerivedAmountNote({
+          amountMinor: 52090,
+          currency: "EUR",
+          pricePerUnit: 52.09,
+          units: "10",
+        }),
+      ),
+    ).toContain("10 × 52,09 € = 520,90 €");
+  });
+
+  /** #1422: a witness that does not hold is refused naming BOTH figures. */
+  it("names the declared total and the resulting one when they disagree", () => {
+    const refusal = operationDeclaredTotalMismatch({
+      declaredTotalUnits: "30",
+      holdingName: "Invesco Physical Silver ETC",
+      unitsAfter: "21",
+      unitsBefore: "15",
+    });
+
+    expect(refusal).toContain("30");
+    expect(refusal).toContain("21");
+    expect(refusal).toContain("15");
   });
 });

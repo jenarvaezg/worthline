@@ -271,6 +271,31 @@ import { measureTurnFloor, TURN_FLOOR_CHAR_CEILING, turnFloorTools } from "./tur
  *
  * `propose_holding` (2.893) and `propose_correction` (2.127) are still the ranking's head
  * and still untouched, for the reason #1423 gave. Sixth PR in a row to say so.
+ *
+ * **Raised to 46.200 on 2026-08-30 by #1466**, and this one is NOT a new lane: it is a
+ * second DOOR on a lane that already existed, which is a cheaper thing and has to look
+ * like it. `propose_operation` used to accept only a validated justificante, so a user
+ * who dictated the whole operation in the chat — instrument, participaciones, importe and
+ * day, plus a witness the book could check — was told to upload a receipt, and the model,
+ * which never called the tool, explained the refusal with a rule that does not exist.
+ *
+ * The arithmetic: 520 characters, 360 of them the tool's description (1.139 → 1.499) and
+ * 160 the system prompt's widened #1418 exception. The schema does not move at all —
+ * every figure the typed door needs is read by the app, so there is no new field for the
+ * model to fill, which is the same shape `propose_transfer` has. The floor this PR
+ * started from was 45.113, EIGHTY-SEVEN characters under the old ceiling, so this had to
+ * come here; the new ceiling keeps ~1,2% of headroom, the same order as every raise since
+ * #1374.
+ *
+ * What the 360 buy, and nothing else: WHEN the second door applies (there is no validated
+ * holding_event), WHAT the app reads off the message, and the one refusal a model cannot
+ * discover by trying — «he comprado» vetoes a `sell`. Deliberately NOT bought, the #1342
+ * trade again: the gap messages (each one is relayed as a message when it fires), the
+ * witness check, and the currency the card explains. Those are messages and card copy,
+ * paid when they happen; the floor is paid on every turn.
+ *
+ * `propose_holding` (2.893) and `propose_correction` (2.127) remain the ranking's head,
+ * untouched. Seventh PR in a row to say so.
  */
 
 describe("measureTurnFloor", () => {

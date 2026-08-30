@@ -2,6 +2,7 @@ import type { ValidatedAttachment } from "@web/asistente/attachment-chat";
 import type { ExtractedDocument } from "@web/asistente/attachment-extraction-contract";
 import type { MaintainerAlertRefusal } from "@web/asistente/maintainer-alert-evidence";
 import type { TypedBalanceSeriesReading } from "@web/asistente/typed-balance-series";
+import type { TypedHoldingEventReading } from "@web/asistente/typed-holding-event";
 import type { TypedTransferReading } from "@web/asistente/typed-transfer";
 import type { MaintainerAlertCategory, RaisedMaintainerAlert } from "@worthline/db";
 import type { ChatReadStore } from "./stores";
@@ -89,6 +90,18 @@ export interface ChatToolsInput {
    * which is the honest behaviour for a caller that does not read the message.
    */
   typedTransfer?: TypedTransferReading;
+  /**
+   * The dated operation this turn's own message states, read by worthline itself
+   * (#1466).
+   *
+   * The second door of `propose_operation`, and it opens only when the turn carries no
+   * validated `holding_event`: with a document on the table the document still wins.
+   * What comes through it are the figures the PARSER read, never the model's arguments —
+   * those are checked against the reading and then discarded, exactly as they are on the
+   * document lane. Absent by default, so a caller that does not read the message keeps
+   * the document-only behaviour of #1374 exactly.
+   */
+  typedHoldingEvent?: TypedHoldingEventReading;
   /**
    * Raise a maintainer alert to the control plane (#1050, ADR 0064). Bound by
    * the route to the caller's resolved workspace id, so the tool never needs to

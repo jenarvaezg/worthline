@@ -271,7 +271,21 @@ describe("buildChatSystemPrompt", () => {
     // association the model actually made. Deliberately NOT bought: which tool to
     // reach for, which stays in the descriptions the model reads in the same
     // request. The prompt now sits at 9.669, with ELEVEN to spare.
-    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_680);
+    //
+    // #1466 raises it to 9.840 for 160 characters, and the justification is that the
+    // sentence being extended would otherwise become FALSE. The #1418 exception named
+    // exactly one thing a user may type instead of upload — «el histórico de saldos de
+    // una deuda» — and with the operation lane's second door open that closed list is
+    // an instruction to refuse a dictated compra: the model reads one exception, sees
+    // that a purchase is not in it, and asks for the justificante. That is the failure
+    // of the issue, verbatim («worthline requiere este documento para validar y sellar
+    // la transacción»), and it happened WITHOUT the tool ever being called — so it is
+    // not reachable from the tool's description alone, which is #1342's seam and is
+    // where the rest of this slice's characters went. What the raise buys is one
+    // widened exception listing the two typed sources and the four terms an operation
+    // needs; deliberately NOT bought: anything about how the parser reads them, which
+    // is code. The prompt now sits at 9.829, with ELEVEN to spare.
+    expect(buildChatSystemPrompt(null).length).toBeLessThanOrEqual(9_840);
   });
 
   /**

@@ -21,12 +21,18 @@ const KINDS = vocabulary<OperationKindClaim>({
   sell: true,
 });
 
-/** What the document literally says — printed apart from the destination. */
+/**
+ * The source of the fact — the document's own words, or what worthline read in the
+ * user's message (#1466) — printed apart from the destination. The caption travels with
+ * it and is required: a card that fell back to «En el documento» for a dictated
+ * operation would misstate its provenance.
+ */
 function parseDocument(raw: unknown): OperationProposal["document"] | null {
   if (!isRecord(raw)) return null;
-  const { fact, line } = raw;
+  const { caption, fact, line } = raw;
   if (typeof line !== "string" || typeof fact !== "string") return null;
-  return { fact, line };
+  if (typeof caption !== "string") return null;
+  return { caption, fact, line };
 }
 
 /** Where the operation lands, by NAME (an id is machinery, #1263). */

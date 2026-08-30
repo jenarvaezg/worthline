@@ -1,12 +1,19 @@
 import { resolveInternalHoldingId } from "@web/agent-view/scope-resolution";
+import type { ChatToolsInput } from "@web/asistente/chat-tools/input";
 import { OPERATION_PROPOSAL_SCHEMA } from "@web/asistente/chat-tools/schemas/operations";
 import type { ChatToolTurn } from "@web/asistente/chat-tools/turn";
 import {
   holdingEventInContext,
   OPERATION_KIND_CLAIMS,
+  type OperationFactClaim,
+  type OperationFrontierError,
   resolveOperationEvent,
 } from "@web/asistente/operation-document-frontier";
-import { buildOperationProposal } from "@web/asistente/operation-proposals";
+import {
+  buildOperationProposal,
+  type OperationFactSource,
+} from "@web/asistente/operation-proposals";
+import { resolveTypedOperationEvent } from "@web/asistente/typed-holding-event";
 import {
   PAYWALL_OPERATION_MESSAGE,
   premiumRequired,
@@ -14,19 +21,45 @@ import {
 import { type ToolSet, tool } from "ai";
 
 /**
- * One dated operation against its justificante (#1374): the app checks every
- * observed figure against the validated extraction and writes the document's, not
- * the model's. The direction is the one judgement the paper cannot make.
+ * One dated operation, through either of its two doors (#1374, #1466): the validated
+ * justificante, or the operation worthline itself read in the user's message. Whichever
+ * it is, the app checks every observed figure against the SOURCE and writes the
+ * source's, not the model's. The direction is the one judgement neither can make — the
+ * message can only veto it.
  */
+
+/**
+ * Which fact this call may build from. The document wins whenever there is one, so
+ * #1374's behaviour is untouched; the typed door opens only when there is none, and it
+ * refuses with the gap it fell into rather than with «súbeme el justificante» for a
+ * message that already said everything.
+ */
+function operationSource(
+  claim: OperationFactClaim,
+  input: ChatToolsInput,
+):
+  | { ok: true; source: OperationFactSource }
+  | { ok: false; error: OperationFrontierError } {
+  const validated = holdingEventInContext(input.validatedDocuments ?? []);
+  if (validated !== null) {
+    const resolved = resolveOperationEvent(claim, validated);
+    return resolved.ok
+      ? { ok: true, source: { event: resolved.event, from: "document" } }
+      : resolved;
+  }
+  const typed = resolveTypedOperationEvent(claim, input.typedHoldingEvent);
+  return typed.ok ? { ok: true, source: { from: "message", typed: typed.event } } : typed;
+}
 export function operationProposalTools(turn: ChatToolTurn): ToolSet {
   const { ingestionGated, input } = turn;
 
   return {
     propose_operation: tool({
       description:
-        "Anota UNA operación fechada (compra, venta o aportación) en una inversión que YA EXISTE, a partir de su JUSTIFICANTE: el apunte que worthline ya haya extraído y validado (documentType holding_event en los DATOS ESTRUCTURADOS). Es el caso «añádeme esta compra» con el recibo delante. " +
+        "Anota UNA operación fechada (compra, venta o aportación) en una inversión que YA EXISTE, desde su JUSTIFICANTE —el apunte que worthline ya haya extraído y validado (documentType holding_event en los DATOS ESTRUCTURADOS)— o, si no lo hay, desde lo que el USUARIO te ESCRIBA en el chat («he comprado hoy 6 participaciones de IE00B43VDT70 por 312,55 €»), que lo lee la app, no tú. Es el caso «añádeme esta compra», con recibo o sin él. " +
         "Tú decides `holdingId` (la posición destino) y `kind`: 'buy', 'sell', o 'contribution' para una aportación a un plan (se anota como compra y la tarjeta dice «aportación»). " +
-        "El resto son los hechos OBSERVADOS del documento tal cual —date, amount y currency en unidades del documento (125.00 EUR, NO céntimos), y si los imprime isin, units, pricePerUnit y fees—: la app los COMPRUEBA contra él, escribe los del documento y RECHAZA la llamada si alguno no cuadra. No calcules ninguno; el valor actual de la posición no es un campo porque nadie tiene que rellenarlo. " +
+        "El resto son los hechos OBSERVADOS de la fuente tal cual —date, amount y currency en unidades del documento (125.00 EUR, NO céntimos), y si los trae isin, units, pricePerUnit y fees—: la app los COMPRUEBA contra ella, escribe los suyos y RECHAZA la llamada si alguno no cuadra. No calcules ninguno; el valor actual de la posición no es un campo porque nadie tiene que rellenarlo. " +
+        "Sin justificante lee del mensaje participaciones, importe (o precio por participación), comisión, ISIN y fecha, y te dice qué falta si algo no está o es ambiguo; la fecha nunca se supone, y «he comprado» veta un 'sell'. " +
         // The app's OTHER refusals (fuente conectada, divisa, ISIN contradictorio,
         // duplicado, sobreventa, fecha futura) are deliberately NOT listed here: the
         // floor is paid on every turn and a rejection only when it fires, and each one
@@ -53,8 +86,9 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
           return Promise.resolve({
             error: "operation_kind_required",
             message:
-              "Falta decir si el justificante es una compra, una venta o una aportación " +
-              "('buy', 'sell' o 'contribution'). No lo elijo yo: lo dice el papel.",
+              "Falta decir si la operación es una compra, una venta o una aportación " +
+              "('buy', 'sell' o 'contribution'). No lo elijo yo: lo dice el papel, o el " +
+              "mensaje del usuario.",
           });
         }
         const publicHoldingId = args.holdingId?.trim();
@@ -66,12 +100,14 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
               "identificador que te devuelva.",
           });
         }
-        // The document-only frontier (#1374): the fact comes from the extraction, the
-        // model only points at it and says which way it runs. Checked BEFORE the store
-        // is opened — a call with nothing to stand on is refused, not half-resolved
-        // against live data. No unvalidated-evidence gate is needed on top: without a
-        // validated document there is no fact at all (see UNVALIDATED_EVIDENCE_CLASSES).
-        const resolved = resolveOperationEvent(
+        // The evidence frontier (#1374, #1466): the fact comes from the extraction or
+        // from the user's own message, and the model only points at it and says which
+        // way it runs. Checked BEFORE the store is opened — a call with nothing to
+        // stand on is refused, not half-resolved against live data. No
+        // unvalidated-evidence gate is needed on top: an unreadable attachment leaves
+        // the model holding no document at all, so what is left is the manual path this
+        // lane now has (see UNVALIDATED_EVIDENCE_CLASSES).
+        const resolved = operationSource(
           {
             kind,
             ...(typeof args.date === "string" ? { date: args.date } : {}),
@@ -84,7 +120,7 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
               : {}),
             ...(typeof args.fees === "number" ? { fees: args.fees } : {}),
           },
-          holdingEventInContext(input.validatedDocuments ?? []),
+          input,
         );
         if (!resolved.ok) return Promise.resolve(resolved.error);
         return input.runWithStore(async (store) => {
@@ -104,8 +140,8 @@ export function operationProposalTools(turn: ChatToolTurn): ToolSet {
             },
             {
               assetId,
-              event: resolved.event,
               kind,
+              source: resolved.source,
               publicHoldingId,
               ...(args.summary === undefined ? {} : { summary: args.summary }),
             },

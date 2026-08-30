@@ -85,7 +85,12 @@ async function draft(
 ) {
   const built = await buildOperationProposal(
     storeFor(store),
-    { assetId: "plan-sp500", event, kind, publicHoldingId: "wl_hld_plan" },
+    {
+      assetId: "plan-sp500",
+      kind,
+      publicHoldingId: "wl_hld_plan",
+      source: { event, from: "document" },
+    },
     TODAY,
   );
   if (!built.ok) throw new Error(`build failed: ${built.error}`);
@@ -297,7 +302,7 @@ describe("confirmOperationProposalAction (#1374) · the write", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: APORTACION,
+        source: { event: APORTACION, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
       },
@@ -332,7 +337,7 @@ describe("confirmOperationProposalAction (#1374) · the write", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: APORTACION,
+        source: { event: APORTACION, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
       },
@@ -366,7 +371,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       },
       {
         assetId: "plan-sp500",
-        event: APORTACION,
+        source: { event: APORTACION, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
       },
@@ -391,7 +396,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       storeFor(store),
       {
         assetId: "no-existe",
-        event: APORTACION,
+        source: { event: APORTACION, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_fantasma",
       },
@@ -418,7 +423,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: APORTACION,
+        source: { event: APORTACION, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
       },
@@ -448,7 +453,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: { ...APORTACION, kind: "withdrawal" },
+        source: { event: { ...APORTACION, kind: "withdrawal" }, from: "document" },
         kind: "sell",
         publicHoldingId: "wl_hld_plan",
       },
@@ -468,11 +473,14 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: {
-          ...APORTACION,
-          currency: "USD",
-          fees: { amount: 0, currency: "USD" },
-          pricePerUnit: { amount: 21.12, currency: "USD" },
+        source: {
+          event: {
+            ...APORTACION,
+            currency: "USD",
+            fees: { amount: 0, currency: "USD" },
+            pricePerUnit: { amount: 21.12, currency: "USD" },
+          },
+          from: "document",
         },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
@@ -493,7 +501,7 @@ describe("buildOperationProposal (#1374) · the frontiers", () => {
       storeFor(store),
       {
         assetId: "plan-sp500",
-        event: { ...APORTACION, date: "2026-09-01" },
+        source: { event: { ...APORTACION, date: "2026-09-01" }, from: "document" },
         kind: "contribution",
         publicHoldingId: "wl_hld_plan",
       },
