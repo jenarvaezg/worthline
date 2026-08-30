@@ -69,8 +69,12 @@ export interface ReconstructionCorrectionProposal extends CorrectionProposalBase
   /**
    * How many of the dates the ripple will materialize would omit this debt
    * (#1438). `missing === total` turns Confirmar off; a partial miss warns.
+   *
+   * Optional because a payload built before the preflight existed simply has no
+   * membership to state, and the card already reads it that way: no membership
+   * warns about nothing and blocks nothing. Every builder sets it.
    */
-  snapshotMembership: DebtSnapshotMembership;
+  snapshotMembership?: DebtSnapshotMembership;
 }
 
 export type CorrectionProposal =

@@ -22,20 +22,6 @@
 
 import { isToolUIPart, type UIMessage } from "ai";
 
-import {
-  parseBalanceHistoryProposal,
-  parseCorrectionProposal,
-  parseEarlyRepaymentProposal,
-  parseHoldingCreationProposal,
-  parseHoldingTrashProposal,
-  parseMixedDocumentProposal,
-  parseOperationProposal,
-  parsePropertyAcquisitionProposal,
-  parsePropertyValuationProposal,
-  parseReconcileProposal,
-  parseStatementImportProposal,
-  parseTransferProposal,
-} from "./assistant-actions";
 import type { BalanceHistoryProposal } from "./balance-history-proposal-contract";
 import type { CorrectionProposal } from "./correction-proposal-contract";
 import type { EarlyRepaymentProposal } from "./early-repayment-proposal-contract";
@@ -45,6 +31,18 @@ import type { MixedDocumentProposal } from "./mixed-document-proposals";
 import type { OperationProposal } from "./operation-proposal-contract";
 import type { PropertyAcquisitionProposal } from "./property-acquisition-proposal-contract";
 import type { PropertyValuationProposal } from "./property-valuation-proposal-contract";
+import { parseBalanceHistoryProposal } from "./proposal-parsers/balance-history";
+import { parseCorrectionProposal } from "./proposal-parsers/correction";
+import { parseEarlyRepaymentProposal } from "./proposal-parsers/early-repayment";
+import { parseHoldingCreationProposal } from "./proposal-parsers/holding-creation";
+import { parseHoldingTrashProposal } from "./proposal-parsers/holding-trash";
+import { parseMixedDocumentProposal } from "./proposal-parsers/mixed-document";
+import { parseOperationProposal } from "./proposal-parsers/operation";
+import { parsePropertyAcquisitionProposal } from "./proposal-parsers/property-acquisition";
+import { parsePropertyValuationProposal } from "./proposal-parsers/property-valuation";
+import { parseReconcileProposal } from "./proposal-parsers/reconcile";
+import { parseStatementImportProposal } from "./proposal-parsers/statement-import";
+import { parseTransferProposal } from "./proposal-parsers/transfer";
 import type { ReconcileProposal } from "./reconcile-proposal-contract";
 import type { StatementImportProposal } from "./statement-import-proposals";
 import { toolPartName } from "./tool-parts";

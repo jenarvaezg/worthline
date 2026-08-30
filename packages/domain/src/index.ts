@@ -746,6 +746,7 @@ export {
   defaultInstrumentForAssetType,
   defaultInstrumentForLiability,
   defaultsFor,
+  INSTRUMENTS,
 } from "./instrument-catalog";
 export type {
   InstrumentIdentityDeclaration,

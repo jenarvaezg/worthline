@@ -22,8 +22,11 @@ export interface BalanceHistoryProposal {
   /**
    * How many of the dates the ripple will materialize would omit this debt
    * (#1438). Same preflight as the reconstruction card: total miss ⇒ no confirm.
+   *
+   * Optional for the same reason as its sibling: a payload from before the
+   * preflight carries none, and the card degrades to "no warning". Builders set it.
    */
-  snapshotMembership: DebtSnapshotMembership;
+  snapshotMembership?: DebtSnapshotMembership;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
