@@ -16,7 +16,7 @@ import {
 } from "@web/intake";
 import type { AltaCreated } from "@web/patrimonio/anadir/_families/alta-contract";
 import { altaCommandFor } from "@web/patrimonio/anadir/_families/alta-dispatch";
-import { altaRoute } from "@web/patrimonio/anadir/_families/alta-family";
+import { altaRoute } from "@web/patrimonio/anadir/_families/alta-route";
 import {
   normalizeSimpleDrawerForm,
   SIMPLE_FIELD_KEYS,
@@ -153,6 +153,9 @@ export async function createHoldingAction(
           ),
         });
 
+      // No instrument, or one no family knows how to create. Neither has a pane
+      // in the form, so there is nothing instrument-scoped to refill: what the
+      // user typed lives in the wizard's own fields, which are always preserved.
       if (!instrument || !route) {
         return {
           ok: false,

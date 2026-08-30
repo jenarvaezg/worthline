@@ -10,7 +10,7 @@
 
 import type { Instrument } from "@worthline/domain";
 import { describe, expect, test } from "vitest";
-import { type AltaFamily, altaRoute } from "./alta-family";
+import { type AltaFamily, altaRoute } from "./alta-route";
 
 /** Every instrument, and the family its alta belongs to. `null` = not hand-created. */
 const FAMILY_BY_INSTRUMENT: Record<Instrument, AltaFamily | null> = {

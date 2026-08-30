@@ -28,7 +28,12 @@ import { readDebtHistoryStarts } from "@web/patrimonio/debt-history-starts";
 import { persistManualAssetCreation } from "@web/patrimonio/persist-holding";
 import type { LiquidityTier } from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
-import { carry, carryOwnership, SHARED_REFILL_FIELDS } from "./alta-form";
+import {
+  carry,
+  carryOwnership,
+  requireWorkspace,
+  SHARED_REFILL_FIELDS,
+} from "./alta-form";
 
 /** What the vivienda pane posts and gets back after a rejected alta. */
 export const HOUSING_REFILL_FIELDS: readonly string[] = [
@@ -79,12 +84,13 @@ export async function runHousingAlta(
   spec: HousingAltaSpec,
 ): Promise<AltaResult> {
   const scoped = scopedHousingForm(ctx, spec);
-  const workspace = await ctx.store.workspace.readWorkspace();
+  const found = await requireWorkspace(ctx);
 
-  if (!workspace) {
-    return { ok: false, message: "Workspace no inicializado." };
+  if (!found.ok) {
+    return found;
   }
 
+  const { workspace } = found;
   const parsed = parseAssetCommandStrict(scoped, workspace.members, ctx.seed, ctx.today);
 
   if (!parsed.ok) {

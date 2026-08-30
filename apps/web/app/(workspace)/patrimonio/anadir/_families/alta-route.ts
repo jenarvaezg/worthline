@@ -1,5 +1,5 @@
 /**
- * Which family an alta belongs to (#1611).
+ * Which family an alta belongs to, and what the catalog said on the way (#1611).
  *
  * `createHoldingAction` used to answer this question inline, as three sequential
  * `if`s over the instrument catalog's defaults, each one followed by the whole

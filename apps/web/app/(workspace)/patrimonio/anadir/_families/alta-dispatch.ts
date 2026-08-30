@@ -20,7 +20,7 @@
  */
 
 import type { AltaCommand } from "./alta-contract";
-import type { AltaRoute } from "./alta-family";
+import type { AltaRoute } from "./alta-route";
 import { DEBT_REFILL_FIELDS, runDebtAlta } from "./debt-alta";
 import { HOUSING_REFILL_FIELDS, runHousingAlta } from "./housing-alta";
 import { INVESTMENT_REFILL_FIELDS, runInvestmentAlta } from "./investment-alta";

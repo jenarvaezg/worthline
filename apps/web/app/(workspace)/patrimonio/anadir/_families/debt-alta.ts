@@ -27,7 +27,12 @@ import { buildCurrentStateAmortization } from "@web/patrimonio/persist-current-s
 import type { DebtModel, LiabilityDefaults, LiabilityType } from "@worthline/domain";
 import { createLiabilitySafe } from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
-import { carry, carryOwnership, SHARED_REFILL_FIELDS } from "./alta-form";
+import {
+  carry,
+  carryOwnership,
+  requireWorkspace,
+  SHARED_REFILL_FIELDS,
+} from "./alta-form";
 
 /** What the deuda pane posts and gets back after a rejected alta. */
 export const DEBT_REFILL_FIELDS: readonly string[] = [
@@ -131,12 +136,13 @@ export async function runDebtAlta(
     return { ok: false, message: derived.error };
   }
 
-  const workspace = await ctx.store.workspace.readWorkspace();
+  const found = await requireWorkspace(ctx);
 
-  if (!workspace) {
-    return { ok: false, message: "Workspace no inicializado." };
+  if (!found.ok) {
+    return found;
   }
 
+  const { workspace } = found;
   const command = parseLiabilityCommand(scoped, workspace.members, ctx.seed);
 
   // #171: a debt associated to an asset inherits that asset's ownership split by

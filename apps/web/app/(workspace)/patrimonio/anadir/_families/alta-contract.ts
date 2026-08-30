@@ -34,6 +34,12 @@ export interface AltaContext {
    * The submission, already normalized: the simple wizard's drawer fields have
    * been rewritten as the chosen instrument's suffixed ones, so a family reads
    * `<field>_<instrument>` and never has to know which surface posted it.
+   *
+   * A command MAY write back into it, and exactly one does: the debt family
+   * copies the wizard's visible `csOutstandingBalance` onto the hidden
+   * `balance_<instrument>` (ADR 0056). That is deliberate, not a leak — the
+   * action refills a rejected alta from this same object, so a value a command
+   * resolved for the user has to be here to come back typed.
    */
   formData: FormData;
   /** The instrument the submission chose. The family's own routing is done. */

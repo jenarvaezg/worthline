@@ -44,7 +44,12 @@ import type {
 } from "@worthline/domain";
 import { checkOwnershipSplit, createInvestmentOperationSafe } from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
-import { carry, carryOwnership, SHARED_REFILL_FIELDS } from "./alta-form";
+import {
+  carry,
+  carryOwnership,
+  requireWorkspace,
+  SHARED_REFILL_FIELDS,
+} from "./alta-form";
 
 /** What the inversión pane posts and gets back after a rejected alta. */
 export const INVESTMENT_REFILL_FIELDS: readonly string[] = [
@@ -235,12 +240,13 @@ export async function runInvestmentAlta(
     scoped.set("manualPricePerUnit", external.pricePerUnit);
   }
 
-  const workspace = await ctx.store.workspace.readWorkspace();
+  const found = await requireWorkspace(ctx);
 
-  if (!workspace) {
-    return { ok: false, message: "Workspace no inicializado." };
+  if (!found.ok) {
+    return found;
   }
 
+  const { workspace } = found;
   const parsed = parseInvestmentAssetCommandStrict(scoped, workspace.members, ctx.seed);
 
   if (!parsed.ok) {

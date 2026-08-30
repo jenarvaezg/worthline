@@ -12,7 +12,12 @@ import { parseAssetCommandStrict } from "@web/intake";
 import { persistManualAssetCreation } from "@web/patrimonio/persist-holding";
 import type { LiquidityTier } from "@worthline/domain";
 import type { AltaContext, AltaResult } from "./alta-contract";
-import { carry, carryOwnership, SHARED_REFILL_FIELDS } from "./alta-form";
+import {
+  carry,
+  carryOwnership,
+  requireWorkspace,
+  SHARED_REFILL_FIELDS,
+} from "./alta-form";
 
 /** What the stored pane posts and gets back after a rejected alta. */
 export const STORED_REFILL_FIELDS: readonly string[] = [...SHARED_REFILL_FIELDS, "value"];
@@ -43,12 +48,13 @@ export async function runStoredAlta(
   spec: StoredAltaSpec,
 ): Promise<AltaResult> {
   const scoped = scopedStoredForm(ctx, spec);
-  const workspace = await ctx.store.workspace.readWorkspace();
+  const found = await requireWorkspace(ctx);
 
-  if (!workspace) {
-    return { ok: false, message: "Workspace no inicializado." };
+  if (!found.ok) {
+    return found;
   }
 
+  const { workspace } = found;
   const parsed = parseAssetCommandStrict(scoped, workspace.members, ctx.seed, ctx.today);
 
   if (!parsed.ok) {
