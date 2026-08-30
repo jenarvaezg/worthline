@@ -14,11 +14,11 @@ import type { InvestmentOperation } from "./investment-types";
 import {
   auditTransferPairs,
   describeBrokenTransferPairs,
-  TRANSFER_PAIR_BROKEN_CODE,
 } from "./transfer-pair-integrity";
 import type { Workspace } from "./workspace-types";
 
-export { TRANSFER_PAIR_BROKEN_CODE };
+/** Machine code for a traspaso the book can no longer read as a whole pair (#1519). */
+export const TRANSFER_PAIR_BROKEN_CODE = "TRANSFER_PAIR_BROKEN";
 
 export interface DataQualityTransferIntegrityInput {
   scope: DataQualityScopeContext;
@@ -71,6 +71,11 @@ export const collectTransferIntegritySignals: DataQualityCollector<
       // There is no form that repairs a half-written pair: the fix is a write to
       // the ledger, so the signal reports and does not pretend to link anywhere.
       fixable: false,
+      // The base currency, never the operation's own: the ledger is STORED in the
+      // base currency and a non-euro apunte keeps its statement figures in
+      // `capture` (#1401), so an inherited cost — a fold-derived figure — only
+      // ever exists in euros. Same rule, and the same reason, as the ficha's
+      // `transferRowNote`.
       label: describeBrokenTransferPairs(broken, input.workspace.baseCurrency),
       naturalKey: signalNaturalKey(
         "transfer_integrity",

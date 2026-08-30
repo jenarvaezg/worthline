@@ -27,9 +27,6 @@ import type { InvestmentOperation } from "./investment-types";
 import { type CurrencyCode, formatMoneyMinorExact, money } from "./money";
 import { compareInvestmentOperations, derivePosition } from "./positions";
 
-/** Machine code for a traspaso the book can no longer read as a whole pair (#1519). */
-export const TRANSFER_PAIR_BROKEN_CODE = "TRANSFER_PAIR_BROKEN";
-
 /**
  * Why a pair is broken. The two faults are exclusive and in this order: without
  * exactly one leg on each side there is no origin to fold and no declared cost to
@@ -43,6 +40,14 @@ export type TransferPairFault =
       outCount: number;
       /** `transfer_in` rows sharing the id — the invariant says exactly one. */
       inCount: number;
+      /**
+       * Rows sharing the id that are neither half — a `buy` or `sell` carrying a
+       * `transferId`, which is the fail-open shape the separate kinds exist to
+       * prevent (#1393). Counted apart from `outCount` so the line says what is
+       * actually there to go and fix, instead of calling a contaminated buy a
+       * second outgoing leg.
+       */
+      strayCount: number;
     }
   | {
       kind: "cost_drift";
@@ -193,7 +198,8 @@ function faultOf(
     return {
       inCount: legs.incoming.length,
       kind: "cardinality",
-      outCount: legs.out.length + legs.strays.length,
+      outCount: legs.out.length,
+      strayCount: legs.strays.length,
     };
   }
 
@@ -219,16 +225,20 @@ function faultOf(
  * "what a division of the stated units would have removed" — and a row that
  * inherited the un-clamped proportion is then reported, instead of agreeing with a
  * figure the book never held.
+ *
+ * "Up to the operation before" is decided by the fold's OWN comparator, not by the
+ * row's index in the array: the same question is then answered the same way whether
+ * or not the outgoing row itself is present under that key, so a ledger keyed in a
+ * way this module did not expect cannot quietly fold the traspaso (and everything
+ * after it) into the origin it is being careado against.
  */
 function costLeavingOrigin(
   out: InvestmentOperation,
   operationsByAssetId: ReadonlyMap<string, readonly InvestmentOperation[]>,
 ): number {
-  const originLedger = [...(operationsByAssetId.get(out.assetId) ?? [])].sort(
-    compareInvestmentOperations,
+  const before = (operationsByAssetId.get(out.assetId) ?? []).filter(
+    (operation) => compareInvestmentOperations(operation, out) < 0,
   );
-  const outIndex = originLedger.findIndex((operation) => operation.id === out.id);
-  const before = outIndex < 0 ? originLedger : originLedger.slice(0, outIndex);
 
   const position = derivePosition(before, {
     assetId: out.assetId,
@@ -241,9 +251,6 @@ function costLeavingOrigin(
   return proportionMinor(position.costBasis.amountMinor, outgoingUnits, unitsHeld);
 }
 
-/** How many broken pairs the signal names one by one before it summarises. */
-const NAMED_PAIRS_LIMIT = 5;
-
 /**
  * The es-ES line the health signal shows: how many pairs are broken and which, in
  * the aggregation shape of #654 — one line for the whole book, never one per pair.
@@ -251,6 +258,12 @@ const NAMED_PAIRS_LIMIT = 5;
  * It names the `transferId` rather than a holding on purpose: the id is what a
  * maintainer greps the ledger with, and half the faults are precisely a pair whose
  * second holding cannot be named because its row is missing.
+ *
+ * EVERY broken pair is named, with no cap. The ids ARE the deliverable — this line
+ * is the only channel that carries them, so a "y 3 más" would drop exactly what the
+ * reader came for. What bounds the length is the corruption itself: the ordinary
+ * reading is zero, and a book with dozens of broken pairs has a problem the length
+ * of a label is not the worst part of.
  */
 export function describeBrokenTransferPairs(
   pairs: readonly BrokenTransferPair[],
@@ -262,22 +275,22 @@ export function describeBrokenTransferPairs(
       ? "1 traspaso del libro no cuadra consigo mismo"
       : `${count} traspasos del libro no cuadran consigo mismos`;
 
-  const named = pairs.slice(0, NAMED_PAIRS_LIMIT);
-  const detail = named
+  const detail = pairs
     .map((pair) => `${pair.transferId} (${describeFault(pair.fault, currency)})`)
     .join("; ");
-  const rest = count - named.length;
-  const tail = rest > 0 ? `; y ${rest} más` : "";
 
-  return `${opening}: ${detail}${tail}. Ninguna cifra de la pantalla lo dice, pero el coste de adquisición que viajó ya no se puede reconstruir desde el origen.`;
+  return `${opening}: ${detail}. Ninguna cifra de la pantalla lo dice, pero el coste de adquisición que viajó ya no se puede reconstruir desde el origen.`;
 }
 
 function describeFault(fault: TransferPairFault, currency: CurrencyCode): string {
   if (fault.kind === "cardinality") {
-    if (fault.outCount === 1 && fault.inCount === 0) {
+    if (fault.outCount === 1 && fault.inCount === 0 && fault.strayCount === 0) {
       return "sin su mitad de entrada";
     }
-    return `${fault.outCount} ${legWord(fault.outCount, "salida", "salidas")} y ${fault.inCount} ${legWord(fault.inCount, "entrada", "entradas")}`;
+    const legs = `${fault.outCount} ${legWord(fault.outCount, "salida", "salidas")} y ${fault.inCount} ${legWord(fault.inCount, "entrada", "entradas")}`;
+    return fault.strayCount === 0
+      ? legs
+      : `${legs}, más ${fault.strayCount} ${legWord(fault.strayCount, "operación que no es ninguna de las dos mitades", "operaciones que no son ninguna de las dos mitades")}`;
   }
 
   const declared = formatMoneyMinorExact(money(fault.declaredCostMinor, currency));

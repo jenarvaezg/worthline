@@ -125,7 +125,7 @@ describe("auditTransferPairs — an orphan leg", () => {
 
     expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([
       {
-        fault: { inCount: 0, kind: "cardinality", outCount: 1 },
+        fault: { inCount: 0, kind: "cardinality", outCount: 1, strayCount: 0 },
         holdingIds: ["inv_origin"],
         transferId: "trf_1",
       },
@@ -151,7 +151,7 @@ describe("auditTransferPairs — an orphan leg", () => {
 
     expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([
       {
-        fault: { inCount: 2, kind: "cardinality", outCount: 0 },
+        fault: { inCount: 2, kind: "cardinality", outCount: 0, strayCount: 0 },
         holdingIds: ["inv_dest", "inv_other"],
         transferId: "trf_1",
       },
@@ -167,7 +167,8 @@ describe("auditTransferPairs — an orphan leg", () => {
     expect(auditTransferPairs({ operationsByAssetId: operations })[0]?.fault).toEqual({
       inCount: 1,
       kind: "cardinality",
-      outCount: 1,
+      outCount: 0,
+      strayCount: 1,
     });
   });
 
@@ -181,7 +182,7 @@ describe("auditTransferPairs — an orphan leg", () => {
 
     expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([
       {
-        fault: { inCount: 2, kind: "cardinality", outCount: 1 },
+        fault: { inCount: 2, kind: "cardinality", outCount: 1, strayCount: 0 },
         holdingIds: ["inv_dest", "inv_origin", "inv_other"],
         transferId: "trf_1",
       },
@@ -279,6 +280,26 @@ describe("auditTransferPairs — the cost careo", () => {
     });
   });
 
+  test("an outgoing row missing from its own key does not fold itself into the origin", () => {
+    // A ledger keyed in a way this module did not expect. Folding everything under
+    // the key — the traspaso included — would remove the cost twice and fabricate a
+    // `high` drift out of nothing. The cut is by the fold's comparator, so the
+    // operations before the traspaso are the same ones either way.
+    const operations = new Map([
+      ["inv_origin", [buy("inv_origin", "op_buy", "2026-01-10", "100", "10")]],
+      [
+        "otra_clave",
+        [transferOut("inv_origin", "op_out", "2026-03-01", "50", "12", "trf_1")],
+      ],
+      [
+        "inv_dest",
+        [transferIn("inv_dest", "op_in", "2026-03-01", "25", "24", "trf_1", 500_00)],
+      ],
+    ]);
+
+    expect(auditTransferPairs({ operationsByAssetId: operations })).toEqual([]);
+  });
+
   test("an origin with no ledger of its own careas against a cost of zero", () => {
     const operations = ledger(
       transferOut("inv_origin", "op_out", "2026-03-01", "50", "12", "trf_1"),
@@ -353,7 +374,7 @@ describe("describeBrokenTransferPairs", () => {
     const line = describeBrokenTransferPairs(
       [
         {
-          fault: { inCount: 0, kind: "cardinality", outCount: 1 },
+          fault: { inCount: 0, kind: "cardinality", outCount: 1, strayCount: 0 },
           holdingIds: ["inv_origin"],
           transferId: "trf_1",
         },
@@ -387,9 +408,9 @@ describe("describeBrokenTransferPairs", () => {
     expect(line).toContain("500,00");
   });
 
-  test("more broken pairs than it names are counted, never dropped", () => {
+  test("every transferId is named — the ids are what the line exists to carry", () => {
     const pairs = Array.from({ length: 8 }, (_, index) => ({
-      fault: { inCount: 0, kind: "cardinality" as const, outCount: 1 },
+      fault: { inCount: 0, kind: "cardinality" as const, outCount: 1, strayCount: 0 },
       holdingIds: ["inv_origin"],
       transferId: `trf_${index}`,
     }));
@@ -397,7 +418,24 @@ describe("describeBrokenTransferPairs", () => {
     const line = describeBrokenTransferPairs(pairs, "EUR");
 
     expect(line).toContain("8 traspasos");
-    expect(line).toContain("y 3 más");
-    expect(line).not.toContain("trf_5");
+    for (const pair of pairs) {
+      expect(line).toContain(pair.transferId);
+    }
+  });
+
+  test("a stray row is named as such, never counted as a second outgoing leg", () => {
+    const line = describeBrokenTransferPairs(
+      [
+        {
+          fault: { inCount: 1, kind: "cardinality", outCount: 0, strayCount: 1 },
+          holdingIds: ["inv_dest", "inv_origin"],
+          transferId: "trf_1",
+        },
+      ],
+      "EUR",
+    );
+
+    expect(line).toContain("0 salidas y 1 entrada");
+    expect(line).toContain("1 operación que no es ninguna de las dos mitades");
   });
 });

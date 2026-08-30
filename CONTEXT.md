@@ -313,7 +313,9 @@ can never be written here. It is an alta — the third way the add wizard answer
 tengo» (#1541) — it carries a `transfer_id` of its own so a reader finds one row and
 names it «desde otra entidad» instead of reporting a broken pair, and its **inherited
 cost** is declared by the user, defaulting to the importe that arrived. It is not a
-purchase, so it consumes no **contribution allowance**.
+purchase, so it consumes no **contribution allowance**, and the `transfer_integrity`
+data-health signal reads it the same way — an incoming row standing alone is never
+reported as a broken pair.
 UI label: "Traspaso".
 In prose and on screen it is always "traspaso": "transfer" on its own collides with
 the **workspace transfer** document. In code the two never meet — the transfer
@@ -328,7 +330,10 @@ the incoming half's row. The origin computes it once, at write time, as the
 proportional slice of its own cost basis; from then on it is a fact of the
 destination's ledger, so the position fold never has to read another holding's
 history. Its absence on a `transfer_in` is a bug upstream, not a shape the ledger
-supports.
+supports. Because it is stored and never recomputed, what is written can drift from
+what the origin sheds: a `transfer_integrity` data-health signal re-derives it from
+the origin's own fold at ZERO tolerance, and reports the pairs that disagree along
+with any `transfer_id` missing its outgoing half.
 _Avoid_: carried cost, transferred basis.
 
 **Acquisition cost** (coste de adquisición):

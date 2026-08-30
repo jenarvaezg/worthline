@@ -313,6 +313,7 @@ export {
   STALE_MANUAL_VALUE_CODE,
   STALE_MANUAL_VALUE_THRESHOLD_DAYS,
   sourceFreshnessStatus,
+  TRANSFER_PAIR_BROKEN_CODE,
   TRASHED_WITH_BALANCE_CODE,
 } from "./data-quality-signals";
 export type { DateKey, Instant } from "./dates";
@@ -1169,7 +1170,6 @@ export type {
 export {
   auditTransferPairs,
   describeBrokenTransferPairs,
-  TRANSFER_PAIR_BROKEN_CODE,
 } from "./transfer-pair-integrity";
 export type {
   ExternalTransferInIntent,
