@@ -118,6 +118,14 @@ async function measure(
  * (#1640), and synthesizes today's chart point IN MEMORY without saving it
  * (histórico = persisted snapshots ∪ today's live point). Returns the scope
  * count so the touched-count assertion stays anchored to the seed scale.
+ *
+ * A PESSIMISTIC CEILING, NOT A MIRROR (#1640). It stopped being a faithful
+ * mirror the day the hero's closes went in: production rides them in an existing
+ * parallel wave and skips the read entirely for a book with no ledger, while
+ * this awaits them serially and unconditionally. That is the point — the budget
+ * should watch the read's naked cost, not whatever a wave happens to hide — but
+ * it means `dashboardLoad` reads HIGH by roughly that read, and a figure from
+ * here is an upper bound on the GET, never an estimate of it.
  */
 async function runCacheOnlyLoad(
   store: Awaited<ReturnType<typeof createFileBackedStore>>,

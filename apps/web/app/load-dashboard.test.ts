@@ -1608,14 +1608,34 @@ describe("loadDashboard — a declared net rent is the rate the home projects wi
 
 describe("loadDashboard — the hero's TWR rides the whole book's closes (#1640)", () => {
   /** An investment bought once, then revalued month after month from 2025-01. */
-  async function seedFund(store: WorthlineStore, months: number): Promise<void> {
-    await makeWorkspace(store);
+  async function seedFund(
+    store: WorthlineStore,
+    months: number,
+    /** Split the fund between two members — then the household is not the only scope. */
+    shared = false,
+  ): Promise<void> {
+    if (shared) {
+      await store.workspace.initializeWorkspace({
+        members: [
+          { id: "member_jose", name: "Jose" },
+          { id: "member_ana", name: "Ana" },
+        ],
+        mode: "household",
+      });
+    } else {
+      await makeWorkspace(store);
+    }
     await makeAsset(store);
     await store.assets.createInvestmentAsset({
       currency: "EUR",
       id: "asset_fondo",
       name: "Fondo indexado",
-      ownership: [{ memberId: "member_jose", shareBps: 10_000 }],
+      ownership: shared
+        ? [
+            { memberId: "member_jose", shareBps: 5_000 },
+            { memberId: "member_ana", shareBps: 5_000 },
+          ]
+        : [{ memberId: "member_jose", shareBps: 10_000 }],
     });
     await store.operations.recordOperation({
       assetId: "asset_fondo",
@@ -1626,12 +1646,28 @@ describe("loadDashboard — the hero's TWR rides the whole book's closes (#1640)
       pricePerUnit: "100",
       units: "100",
     });
-
     for (let index = 0; index < months; index += 1) {
       const total = 2025 * 12 + index;
       const year = Math.floor(total / 12);
       const month = (total % 12) + 1;
       const dateKey = `${year}-${String(month).padStart(2, "0")}-28`;
+      // A second buy INSIDE the close window, recorded in its own month so the
+      // earlier captures never see it. It is what gives the test its teeth:
+      // with no flow between two closes, Modified Dietz reduces to
+      // V_end / V_start and is invariant to scale — a series read on the wrong,
+      // scope-weighted basis would still land on the right number. A GROSS flow
+      // landing between two closes is what makes the basis matter.
+      if (index === 8) {
+        await store.operations.recordOperation({
+          assetId: "asset_fondo",
+          currency: "EUR",
+          executedAt: `${year}-${String(month).padStart(2, "0")}-10`,
+          id: "op_buy_mid",
+          kind: "buy",
+          pricePerUnit: String(100 + index),
+          units: "50",
+        });
+      }
       await store.operations.upsertPrice({
         assetId: "asset_fondo",
         currency: "EUR",
@@ -1681,6 +1717,35 @@ describe("loadDashboard — the hero's TWR rides the whole book's closes (#1640)
     // Measured from the FIRST close of the book, 100 → 117 over the seeded span.
     expect(twr.startDate).toBe("2025-01-28");
     expect(twr.rate).toBeCloseTo(0.17, 2);
+
+    store.close();
+  });
+
+  test("the same figure whoever owns which share: the scope does not move it", async () => {
+    const store = await createInMemoryStore();
+    // Jose and Ana hold the fund half each. Selecting one member must not bend
+    // the measure — «la rentabilidad de un fondo es la misma la posea quien la
+    // posea» — because the closes are read household-gross, never scope-weighted.
+    await seedFund(store, 18, true);
+
+    const load = (scopeId: string | undefined) =>
+      loadDashboard({
+        store,
+        persistence: makePersistence(),
+        scopeId,
+        selectedView: "total",
+        today: "2026-06-30",
+        now: "2026-06-30T10:00:00.000Z",
+      });
+
+    const household = await load("household");
+    const jose = await load("member_jose");
+
+    expect(household.selectedScope!.id).toBe("household");
+    expect(jose.selectedScope!.id).toBe("member_jose");
+    // Same rate, same span, whichever scope is on screen.
+    expect(jose.portfolioReturns!.twr).toEqual(household.portfolioReturns!.twr);
+    expect(jose.portfolioReturns!.twr!.rate).not.toBeNull();
 
     store.close();
   });

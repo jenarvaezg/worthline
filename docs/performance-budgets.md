@@ -62,6 +62,28 @@ A structural baseline snapshot (a vitest snapshot of names + ceilings + touched
 counts, never raw timings) freezes _what_ is measured and at what scale, so the
 set of measured operations cannot drift without a deliberate snapshot update.
 
+### `dashboardLoad` is an upper bound, not the GET
+
+Since #1640 the harness's dashboard path awaits the hero's whole-book monthly
+closes **serially and unconditionally**, while production rides them in an
+existing parallel wave and skips the read outright for a book with no ledger to
+measure. That is deliberate — the budget should watch the read's naked cost, not
+whatever a wave happens to hide — but it means the number reads high. Treat
+`dashboardLoad` as a ceiling on the GET, never as an estimate of it.
+
+## Recorded measurements
+
+Deltas measured on purpose, so a later reader can find the "before" without
+re-deriving it. Local medians over three passes on the seeded workspace; only
+changes worth a paper trail are listed.
+
+| Change | Path | Before | After | Delta |
+| ------ | ---- | -----: | ----: | ----: |
+| #1640 — the hero's whole-book monthly closes (read + fold) | `dashboardLoad` | 12,8 ms | 20,4 ms | +7,6 ms |
+
+#1640 is 0,5 % of the 1.500 ms ceiling, measured in the serial worst case above;
+no ceiling moved.
+
 ## How to change a budget on purpose
 
 1. **Locking in an optimization.** After an intentional speedup (#201 added the
