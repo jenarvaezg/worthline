@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client";
 
 import { schemaSql } from "./schema-sql";
 
-export const SCHEMA_VERSION = 64;
+export const SCHEMA_VERSION = 65;
 
 /** Last calendar day of the given year/month (1-based month). */
 function lastDayOfMonth(year: number, month: number): number {
@@ -1952,6 +1952,35 @@ export async function migrate(client: Client): Promise<MigrateResult> {
       if (!/duplicate column name|no such table/i.test(message)) throw error;
     }
     await writeSchemaVersion(client, 64);
+  }
+
+  if (version < 65) {
+    // #1505 (ADR 0097): `asset_operations.cost_basis_grade` — whether this row's
+    // price is a real COST or today's value standing in for one. Nullable, and
+    // NOTHING is backfilled, for the same reason v64 backfills no property cost:
+    // the mark has to be true or it is worse than absent.
+    //
+    // A pre-#1505 apertura is genuinely indistinguishable from a purchase made
+    // that day — the alta wrote the day's price into both — and the heuristic that
+    // could tell them apart (opening price == that day's cached price) has exactly
+    // the failure mode that matters: a user who really did buy at the closing price
+    // would have his declared cost overwritten with «sin coste real», and a user
+    // whose alta ran on a day with no cached price would keep his silent 0 €. The
+    // app cannot answer this question — only the owner can, and asking him is its
+    // own piece of work. Until then a legacy row stays NULL, which reads as «nadie
+    // lo ha dicho»: the honest state, and the one it has always been in.
+    try {
+      await client.execute(
+        "ALTER TABLE asset_operations ADD COLUMN cost_basis_grade TEXT",
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Tolerated exactly as in v59/v62/v64: a fresh DB already has the column from
+      // schema-sql, and a migration test walks the ladder over a PARTIAL fixture
+      // that may never have created the table.
+      if (!/duplicate column name|no such table/i.test(message)) throw error;
+    }
+    await writeSchemaVersion(client, 65);
   }
 
   return { ranV18Backfill, ranV33Backfill };

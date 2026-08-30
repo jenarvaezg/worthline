@@ -1,6 +1,6 @@
 import { formatMeasurePct, formatRatioPct } from "@web/_components/returns-format";
 import type { HoldingReturnsView } from "@worthline/domain";
-import { formatMoneyMinorPrivacy } from "@worthline/domain";
+import { costBasisGradeMark, formatMoneyMinorPrivacy } from "@worthline/domain";
 
 /**
  * The holding ficha's returns surface (#551, ADR 0040): the three present-time
@@ -35,6 +35,7 @@ export function ReturnsPanel({
   view: HoldingReturnsView;
   privacyMode: boolean;
 }) {
+  const valueOnlyCost = view.costBasisGrade === "value_only";
   return (
     <section className="returnsPanel" aria-label="Rentabilidad">
       <h3>Rentabilidad</h3>
@@ -80,7 +81,7 @@ export function ReturnsPanel({
         ) : null}
       </dl>
 
-      {view.realizedPnl || view.unrealizedPnl ? (
+      {view.realizedPnl || view.unrealizedPnl || valueOnlyCost ? (
         <dl className="returnsSplit">
           {view.realizedPnl ? (
             <div className="returnsMeasure">
@@ -90,7 +91,15 @@ export function ReturnsPanel({
               </dd>
             </div>
           ) : null}
-          {view.unrealizedPnl ? (
+          {/* The mark takes the figure's own slot (#1505). Leaving the row out
+              would read as «this holding has no latent P/L»; the point is that
+              nobody knows, and the row is where the reader looks for it. */}
+          {valueOnlyCost ? (
+            <div className="returnsMeasure">
+              <dt>P/L latente</dt>
+              <dd className="contextUnknown">{costBasisGradeMark("value_only")}</dd>
+            </div>
+          ) : view.unrealizedPnl ? (
             <div className="returnsMeasure">
               <dt>P/L latente</dt>
               <dd className={signClass(view.unrealizedPnl.amountMinor)}>

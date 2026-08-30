@@ -239,7 +239,13 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
         saldoRaw: "1.089,79",
         today: TODAY,
       }),
-    ).toEqual({ ok: true, executedAt: "2026-07-31", price: "319.59", units: "3.409963" });
+    ).toEqual({
+      costBasisGrade: "value_only",
+      executedAt: "2026-07-31",
+      ok: true,
+      price: "319.59",
+      units: "3.409963",
+    });
   });
 
   test("el coste declarado es el precio con el que se escribe la apertura (#1490)", () => {
@@ -255,7 +261,14 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
         saldoRaw: "5.865,75",
         today: TODAY,
       }),
-    ).toEqual({ ok: true, executedAt: "2025-12-15", price: "185.18", units: "27" });
+    ).toEqual({
+      // The answer survives the submit (#1505): «me lo dijo» rides the operation.
+      costBasisGrade: "declared_cost",
+      executedAt: "2025-12-15",
+      ok: true,
+      price: "185.18",
+      units: "27",
+    });
   });
 
   test("sin coste, la apertura sigue naciendo al precio de hoy (statu quo, elegido)", () => {
@@ -268,7 +281,15 @@ describe("resolveOpeningCapture — one answer for the whole capture (#1395)", (
         saldoRaw: "5.865,75",
         today: TODAY,
       }),
-    ).toEqual({ ok: true, executedAt: TODAY, price: "217.25", units: "27" });
+    ).toEqual({
+      // Statu quo in the FIGURES, and no longer in the record (#1505): the price
+      // is still today's, but the row now says that nobody declared a cost.
+      costBasisGrade: "value_only",
+      executedAt: TODAY,
+      ok: true,
+      price: "217.25",
+      units: "27",
+    });
   });
 
   test("un coste ilegible refusa la captura entera, antes de escribir nada", () => {

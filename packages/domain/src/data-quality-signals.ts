@@ -22,6 +22,11 @@ import {
 } from "./data-quality-collector";
 import type { DataQualitySourceHealthInput } from "./data-quality-connected-source";
 import {
+  COST_BASIS_VALUE_ONLY_CODE,
+  collectCostBasisSignals,
+  type DataQualityCostBasisInput,
+} from "./data-quality-cost-basis";
+import {
   collectHistoryCoverageSignals,
   type DataQualityHistoryCoverageInput,
 } from "./data-quality-history-coverage";
@@ -94,6 +99,7 @@ export type {
   DataQualitySourceFreshness,
 } from "./data-quality-connected-source";
 export { sourceFreshnessStatus } from "./data-quality-connected-source";
+export { COST_BASIS_VALUE_ONLY_CODE } from "./data-quality-cost-basis";
 export type { DataQualitySnapshotHolding } from "./data-quality-history-coverage";
 export {
   DEBT_MISSING_FROM_HISTORY_CODE,
@@ -147,6 +153,7 @@ export interface CollectDataQualitySignalsInput
     DataQualityPersistentSyncFailureInput,
     DataQualityMissingConfigurationInput,
     DataQualityInstrumentIdentityInput,
+    DataQualityCostBasisInput,
     DataQualitySavingsCoherenceInput,
     DataQualityPortfolioReconciliationInput,
     DataQualityTransferIntegrityInput,
@@ -169,6 +176,7 @@ const DATA_QUALITY_COLLECTORS: readonly DataQualityCollector<CollectDataQualityS
     collectPersistentSyncFailureSignals,
     collectMissingConfigurationSignals,
     collectInstrumentIdentitySignals,
+    collectCostBasisSignals,
     collectSavingsCoherenceSignals,
     collectPortfolioReconciliationSignals,
     collectTransferIntegritySignals,
@@ -187,6 +195,9 @@ export const OVERRIDEABLE_SIGNAL_CODES = new Set<string>([
   "OVER_TRANSFER",
   STALE_MANUAL_VALUE_CODE,
   MISSING_INVESTMENT_ISIN_CODE,
+  // «No sé lo que costó» is a permanent answer for a plan opened in 2014 (#1505):
+  // the user says so once instead of being asked on every pass.
+  COST_BASIS_VALUE_ONLY_CODE,
 ]);
 
 export function isOverrideableSignalCode(code: string): boolean {

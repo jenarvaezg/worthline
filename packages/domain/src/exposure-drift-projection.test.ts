@@ -406,6 +406,7 @@ describe("holdingAnnualReturnByIdForProjection", () => {
           realizedPnl: null,
           unrealizedPnl: null,
           caveats: [],
+          costBasisGrade: null,
         },
       ],
       ["h2", null],

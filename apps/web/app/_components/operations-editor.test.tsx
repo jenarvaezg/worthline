@@ -374,3 +374,40 @@ describe("el par de traspaso se lee como un movimiento, no como compraventa (#14
     expect(html).not.toContain("coste heredado");
   });
 });
+
+describe("un coste que nadie declaró (#1505)", () => {
+  const priced = {
+    currentUnits: "27",
+    marketValue: { amountMinor: 586_575, currency: "EUR" },
+    unitPrice: "217.25",
+    unrealizedPnl: { amountMinor: 0, currency: "EUR" },
+  };
+
+  test("la marca ocupa el hueco de la cifra: nunca «P/L latente 0,00 €»", () => {
+    const html = render({ ...priced, costBasisGrade: "value_only" });
+
+    expect(html).toContain("P/L latente");
+    expect(html).toContain("sin coste real");
+    // La cifra en sí desaparece — es la afirmación que no se puede hacer. La
+    // clase de signo solo la lleva esa celda, así que su ausencia es la prueba.
+    expect(html).not.toContain("amountPositive");
+  });
+
+  test("y la explicación vive junto a las operaciones, que es donde se repara", () => {
+    const html = render({ ...priced, costBasisGrade: "value_only" });
+
+    expect(html).toContain('class="warningBand"');
+    expect(html).toContain("Sin coste real");
+  });
+
+  test("un coste declarado no cambia nada: la cifra se sigue afirmando", () => {
+    const html = render({
+      ...priced,
+      costBasisGrade: "declared_cost",
+      unrealizedPnl: { amountMinor: 86_589, currency: "EUR" },
+    });
+
+    expect(html).toContain('class="amountPositive">+866');
+    expect(html).not.toContain("sin coste real");
+  });
+});

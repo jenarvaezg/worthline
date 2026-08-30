@@ -1,3 +1,5 @@
+import type { CostBasisGrade } from "./cost-basis-grade";
+import { VALUE_ONLY_PNL_NOTICE } from "./cost-basis-grade";
 import type { DecimalString } from "./decimal";
 import type { AssetClassResolution, ExposureCoverage } from "./exposure-lookthrough";
 import type { Instrument } from "./instrument-catalog";
@@ -91,10 +93,20 @@ export interface HoldingReturnsView {
   twr: TwrResult | null;
   /** realized P/L split (market only; null otherwise). */
   realizedPnl: MoneyMinor | null;
-  /** unrealized P/L split (market only; null otherwise). */
+  /**
+   * unrealized P/L split (market only; null otherwise) — and null as well when
+   * the cost it would be measured against was never declared (#1505): a
+   * «P/L latente 0,00 €» is not a limit to caveat, it is a claim that the
+   * position has neither gained nor lost, which is exactly what nobody knows.
+   */
   unrealizedPnl: MoneyMinor | null;
   /** honest limits surfaced, never buried (ADR 0040). */
   caveats: string[];
+  /**
+   * How honest the cost these measures are built on is (#1505), straight off
+   * `PositionSummary`. Null when every contribution is a real movement.
+   */
+  costBasisGrade: CostBasisGrade | null;
 }
 
 function fromSimpleGain(
@@ -112,17 +124,30 @@ function marketView(
   gain: SimpleGain,
   irr: IrrResult,
   twr: TwrResult | null,
-  split: { realizedPnl?: MoneyMinor; unrealizedPnl?: MoneyMinor },
+  split: {
+    realizedPnl?: MoneyMinor;
+    unrealizedPnl?: MoneyMinor;
+    costBasisGrade?: CostBasisGrade;
+  },
   payoutsIncluded = false,
 ): HoldingReturnsView {
+  // A cost nobody declared withholds the latent figure and says so out loud
+  // (#1505). The realized split stays: it is proceeds against that same cost, but
+  // it only exists once units have actually been SOLD, and a sale is a real
+  // movement whose euros are not in dispute — the caveat covers what it inherits.
+  const valueOnly = split.costBasisGrade === "value_only";
   return {
     kind: "market",
     ...fromSimpleGain(gain),
-    caveats: [payoutsIncluded ? MARKET_PAYOUTS_CAVEAT : MARKET_CAVEAT],
+    caveats: [
+      payoutsIncluded ? MARKET_PAYOUTS_CAVEAT : MARKET_CAVEAT,
+      ...(valueOnly ? [VALUE_ONLY_PNL_NOTICE] : []),
+    ],
+    costBasisGrade: split.costBasisGrade ?? null,
     irr,
     realizedPnl: split.realizedPnl ?? null,
     twr,
-    unrealizedPnl: split.unrealizedPnl ?? null,
+    unrealizedPnl: valueOnly ? null : (split.unrealizedPnl ?? null),
   };
 }
 
@@ -157,6 +182,8 @@ export interface HoldingReturnsViewInput {
   twr?: TwrResult | null;
   realizedPnl?: MoneyMinor;
   unrealizedPnl?: MoneyMinor;
+  /** The grade of the cost the measures rest on (#1505) — see `PositionSummary`. */
+  costBasisGrade?: CostBasisGrade;
   /** Whether recorded payouts fed the measures, switching the honest caveat (#657). */
   payoutsIncluded?: boolean;
 }
@@ -178,6 +205,9 @@ export function buildHoldingReturnsView(
       kind,
       ...fromSimpleGain(input.simpleGain),
       caveats: [APPRECIATING_CAVEAT],
+      // An appreciating asset holds no operation ledger to grade: its cost is the
+      // acquisition anchor, and #1441 is where THAT question lives.
+      costBasisGrade: null,
       irr: null,
       realizedPnl: null,
       twr: null,
@@ -189,6 +219,9 @@ export function buildHoldingReturnsView(
     input.irr,
     input.twr ?? null,
     {
+      ...(input.costBasisGrade === undefined
+        ? {}
+        : { costBasisGrade: input.costBasisGrade }),
       ...(input.realizedPnl ? { realizedPnl: input.realizedPnl } : {}),
       ...(input.unrealizedPnl ? { unrealizedPnl: input.unrealizedPnl } : {}),
     },
@@ -222,24 +255,28 @@ export interface InvestmentReturnsContext {
 }
 
 /**
- * A holding's current value, through the SAME authority the net-worth math uses
+ * A holding's valuation, through the SAME authority the net-worth math uses
  * (`deriveInvestmentValuation`, ADR 0006): units × price when a price is known,
  * the cost basis when none is. Valuing an unpriced holding at 0 fabricated a
  * −100% simple gain on any alta whose first quote had not landed yet, right
  * beside the row the valuation was already showing at cost (#1314).
+ *
+ * The whole valuation, not just its `valueMinor`: it also carries how honest the
+ * cost that value is measured against is (#1505), and the two must come from one
+ * call so a caveat can never be about a different fold than the figure (#1422).
  */
-function holdingMarketValueMinor(
+function holdingValuation(
   assetId: string,
   operations: readonly InvestmentOperation[],
   ctx: InvestmentReturnsContext,
-): number {
+) {
   return deriveInvestmentValuation({
     assetId,
     cachedPrice: ctx.cachedPriceByAsset.get(assetId),
     currency: ctx.currency,
     manualPrice: ctx.manualPriceByAsset.get(assetId),
     operations: [...operations],
-  }).valueMinor;
+  });
 }
 
 /**
@@ -255,7 +292,7 @@ function subsetSliceOf(
   operations: readonly InvestmentOperation[],
 ): SubsetReturnsSlice {
   return {
-    marketValueMinor: holdingMarketValueMinor(assetId, operations, ctx),
+    marketValueMinor: holdingValuation(assetId, operations, ctx).valueMinor,
     monthlyCloses: ctx.monthlyClosesByAsset?.get(assetId) ?? [],
     operations,
     payouts: ctx.payoutsByAsset?.get(assetId) ?? [],
@@ -283,12 +320,12 @@ export function investmentReturnsById(
     if (instrument === undefined) {
       continue;
     }
-    const marketValueMinor = holdingMarketValueMinor(assetId, operations, ctx);
+    const valuation = holdingValuation(assetId, operations, ctx);
     const monthlyCloses = ctx.monthlyClosesByAsset?.get(assetId);
     const payouts = ctx.payoutsByAsset?.get(assetId) ?? [];
     const returnsInput = {
       currency: ctx.currency,
-      marketValueMinor,
+      marketValueMinor: valuation.valueMinor,
       operations,
       payouts,
       valuationDate: ctx.valuationDate,
@@ -299,6 +336,11 @@ export function investmentReturnsById(
       payoutsIncluded: payouts.length > 0,
       simpleGain: simpleGain(returnsInput),
       twr: monthlyCloses ? holdingTwr({ monthlyCloses, operations }) : null,
+      // The grade comes from the SAME valuation the market value came from
+      // (#1505, #1422): the caveat must be about the figure on screen.
+      ...(valuation.costBasisGrade === undefined
+        ? {}
+        : { costBasisGrade: valuation.costBasisGrade }),
     });
     if (view !== null) {
       views.set(assetId, view);

@@ -184,7 +184,14 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
 
     expect(resolved).toEqual({
       ok: true,
-      opening: { pricePerUnit: "574.48", units: "1", valueMinor: 574_48 },
+      opening: {
+        // A declared BALANCE states no cost, and since #1505 the row says so
+        // instead of passing for a purchase made at today's price.
+        costBasisGrade: "value_only",
+        pricePerUnit: "574.48",
+        units: "1",
+        valueMinor: 574_48,
+      },
       // The marker the card's tracking warning keys on: assigning a symbol
       // over the fake unit would revalue the holding to one share's NAV.
       valueOnly: true,
@@ -203,6 +210,7 @@ describe("resolveHoldingCreationOpening (#1325) · value-only", () => {
     expect(resolved).toEqual({
       ok: true,
       opening: {
+        costBasisGrade: "value_only",
         feesMinor: 1_00,
         pricePerUnit: "574.48",
         units: "1",

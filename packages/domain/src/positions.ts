@@ -1,3 +1,5 @@
+import type { CostBasisGrade } from "./cost-basis-grade";
+import { worseCostBasisGrade } from "./cost-basis-grade";
 import { asInstant } from "./dates";
 import type { DecimalString } from "./decimal";
 import {
@@ -93,10 +95,14 @@ export function createInvestmentOperation(
   }
 
   assertTransferColumns(input);
+  assertCostBasisGrade(input);
 
   return {
     assetId: input.assetId,
     ...(input.capture === undefined ? {} : { capture: input.capture }),
+    ...(input.costBasisGrade === undefined
+      ? {}
+      : { costBasisGrade: input.costBasisGrade }),
     currency: input.currency,
     executedAt: input.executedAt,
     feesMinor,
@@ -163,6 +169,23 @@ function assertTransferColumns(input: CreateInvestmentOperationInput): void {
     throw new Error(
       "A transfer_out carries no fees; charge the transfer commission to the transfer_in.",
     );
+  }
+}
+
+/**
+ * Who may state a cost grade (#1505): only the synthetic apertura, the one row
+ * whose price is not its own fact. A programmer error, not a user-facing
+ * violation — no form posts this column; the alta door fills it — so throwing is
+ * what keeps a mislabelled row out of the ledger, exactly as for the traspaso
+ * columns.
+ *
+ * A real buy or a statement order needs no grade: its price IS what was paid, and
+ * marking it `declared_cost` would quietly downgrade an observed movement to a
+ * declaration.
+ */
+function assertCostBasisGrade(input: CreateInvestmentOperationInput): void {
+  if (input.costBasisGrade !== undefined && input.source !== "opening") {
+    throw new Error("Only an opening operation may carry a costBasisGrade.");
   }
 }
 
@@ -242,6 +265,12 @@ export function derivePosition(
   let costMinor = 0;
   let realizedMinor = 0;
   const warnings: PositionWarning[] = [];
+  // How honest the cost accumulated so far is (#1505). It is folded ALONGSIDE
+  // `costMinor` rather than scanned off the ledger, because a moving average has
+  // no memory of which row a euro came from: once an un-declared cost enters the
+  // pot every unit's average is tainted, and it stops being tainted only when the
+  // pot itself empties — which is exactly what the units-to-zero reset below says.
+  let costGrade: CostBasisGrade | undefined;
 
   // The invariant this fold rests on, checked instead of assumed (#1401): ONE
   // accumulator summed and labelled `options.currency` is only honest while every
@@ -260,6 +289,7 @@ export function derivePosition(
       case "buy": {
         costMinor +=
           multiplyToMinor(operation.units, operation.pricePerUnit) + operation.feesMinor;
+        costGrade = worseCostBasisGrade(costGrade, operation.costBasisGrade);
         units = addUnits(units, operation.units);
         break;
       }
@@ -275,6 +305,14 @@ export function derivePosition(
         // Fees are capitalized exactly as on a buy, which is where a transfer
         // commission belongs: the outgoing half has no realized P/L to charge it
         // against.
+        //
+        // No cost grade is read here, because no `transfer_in` may carry one:
+        // `assertCostBasisGrade` restricts the column to the synthetic apertura.
+        // That is a SCOPE line, not an oversight — the alta por traspaso externo
+        // (#1541) defaults its inherited cost to the importe that arrived when the
+        // user does not declare one, which is the same «coste que nadie declaró»
+        // by the sibling door, and marking it means going through the pair's own
+        // atomic gate (#1479). See ADR 0097 for why #1505 stopped at the apertura.
         costMinor += (operation.transferCostMinor ?? 0) + operation.feesMinor;
         units = addUnits(units, operation.units);
         break;
@@ -314,6 +352,13 @@ export function derivePosition(
 
         costMinor -= costOfUnitsOut;
         units = subtractUnits(units, outgoingUnits);
+        if (compareUnits(units, "0") === 0) {
+          // Nothing is held any more, so nothing is measured against the old cost:
+          // the position that comes back from here is whatever is bought next. A
+          // grade that survived this would mark a brand-new purchase «sin coste
+          // real» forever.
+          costGrade = undefined;
+        }
         break;
       }
 
@@ -328,6 +373,7 @@ export function derivePosition(
     assetId: options.assetId,
     averageUnitCost: averageUnitCost(costMinor, units),
     costBasis: money(costMinor, options.currency),
+    ...(costGrade === undefined ? {} : { costBasisGrade: costGrade }),
     ...(currencyWarning === null ? {} : { currencyWarning }),
     currency: options.currency,
     currentUnits: units,

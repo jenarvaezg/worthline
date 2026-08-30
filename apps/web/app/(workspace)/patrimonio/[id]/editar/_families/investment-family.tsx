@@ -132,6 +132,9 @@ export async function loadInvestmentSurface(
         : null,
     ...(position?.realizedPnl ? { realizedPnl: position.realizedPnl } : {}),
     ...(position?.unrealizedPnl ? { unrealizedPnl: position.unrealizedPnl } : {}),
+    // The grade the ledger folded to (#1505): without it the panel would print a
+    // «P/L latente 0,00 €» that only means «the alta wrote today's price twice».
+    ...(position?.costBasisGrade ? { costBasisGrade: position.costBasisGrade } : {}),
   });
 
   const benchmarkResult = exposureProfile?.trackedIndex
@@ -224,6 +227,11 @@ export async function loadInvestmentSurface(
               : {}),
             ...(position?.marketValue ? { marketValue: position.marketValue } : {}),
             ...(position?.unrealizedPnl ? { unrealizedPnl: position.unrealizedPnl } : {}),
+            // Same fold, same news (#1505): the editor is where those operations
+            // are, so it is where an un-declared cost can actually be repaired.
+            ...(position?.costBasisGrade
+              ? { costBasisGrade: position.costBasisGrade }
+              : {}),
           }}
           currentUrl={currentUrl}
           // The currency this ledger last captured an apunte in (#1401), so a

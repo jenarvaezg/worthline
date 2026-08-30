@@ -578,3 +578,136 @@ describe("createInvestmentOperation — las reglas de la fila de traspaso (#1393
     expect(operation.transferCostMinor).toBe(50_000);
   });
 });
+
+describe("derivePosition — el grado del coste (#1505)", () => {
+  const opening = (
+    units: string,
+    price: string,
+    extra: Partial<InvestmentOperation> = {},
+  ) => buy(units, price, { source: "opening", ...extra });
+
+  test("una apertura sin coste declarado tiñe el coste de la posición", () => {
+    const position = derivePosition(
+      [opening("27", "217.25", { costBasisGrade: "value_only" })],
+      { assetId: "asset_inv", currency: "EUR", currentPricePerUnit: "217.25" },
+    );
+
+    expect(position.costBasisGrade).toBe("value_only");
+  });
+
+  test("una apertura con coste declarado se lee como declarada, no como movimiento", () => {
+    const position = derivePosition(
+      [opening("27", "185.18", { costBasisGrade: "declared_cost" })],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.costBasisGrade).toBe("declared_cost");
+  });
+
+  test("un ledger de compras reales no lleva grado", () => {
+    const position = derivePosition([buy("10", "20"), buy("5", "25")], {
+      assetId: "asset_inv",
+      currency: "EUR",
+    });
+
+    expect(position.costBasisGrade).toBeUndefined();
+  });
+
+  test("una compra real encima de una apertura sin coste NO limpia la mancha", () => {
+    // La media móvil no recuerda de qué fila viene cada euro: mientras quede la
+    // posición nacida sin coste, la media contra la que se mide la plusvalía sigue
+    // apoyada en un número que nadie declaró.
+    const position = derivePosition(
+      [
+        opening("27", "217.25", {
+          costBasisGrade: "value_only",
+          executedAt: "2026-01-01",
+        }),
+        buy("3", "220", { executedAt: "2026-02-01", id: "op_later_buy" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.costBasisGrade).toBe("value_only");
+  });
+
+  test("lo declarado no degrada a un movimiento real: gana lo menos honesto", () => {
+    const position = derivePosition(
+      [
+        opening("10", "100", {
+          costBasisGrade: "declared_cost",
+          executedAt: "2026-01-01",
+        }),
+        buy("10", "120", { executedAt: "2026-02-01", id: "op_later_buy" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.costBasisGrade).toBe("declared_cost");
+  });
+
+  test("vender la posición entera limpia el grado: lo que se compre después es nuevo", () => {
+    const position = derivePosition(
+      [
+        opening("27", "217.25", {
+          costBasisGrade: "value_only",
+          executedAt: "2026-01-01",
+        }),
+        sell("27", "230", { executedAt: "2026-02-01", id: "op_exit" }),
+        buy("10", "240", { executedAt: "2026-03-01", id: "op_reentry" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.costBasisGrade).toBeUndefined();
+  });
+
+  test("una venta parcial no limpia nada: la media sigue siendo la misma", () => {
+    const position = derivePosition(
+      [
+        opening("27", "217.25", {
+          costBasisGrade: "value_only",
+          executedAt: "2026-01-01",
+        }),
+        sell("7", "230", { executedAt: "2026-02-01", id: "op_partial" }),
+      ],
+      { assetId: "asset_inv", currency: "EUR" },
+    );
+
+    expect(position.costBasisGrade).toBe("value_only");
+  });
+});
+
+describe("createInvestmentOperation — quién puede llevar grado de coste (#1505)", () => {
+  const input = (extra: Partial<CreateInvestmentOperationInput>) =>
+    ({
+      assetId: "asset_inv",
+      currency: "EUR",
+      executedAt: "2026-01-01",
+      id: "op_1",
+      kind: "buy",
+      pricePerUnit: "10",
+      units: "1",
+      ...extra,
+    }) satisfies CreateInvestmentOperationInput;
+
+  test("la apertura lo lleva y sobrevive al constructor", () => {
+    expect(
+      createInvestmentOperation(
+        input({ costBasisGrade: "value_only", source: "opening" }),
+      ).costBasisGrade,
+    ).toBe("value_only");
+  });
+
+  test("una compra a mano no puede declararse «coste declarado»", () => {
+    expect(() =>
+      createInvestmentOperation(input({ costBasisGrade: "declared_cost" })),
+    ).toThrow(/costBasisGrade/);
+  });
+
+  test("una apertura sin grado sigue siendo válida: es toda fila anterior a #1505", () => {
+    expect(
+      createInvestmentOperation(input({ source: "opening" })).costBasisGrade,
+    ).toBeUndefined();
+  });
+});

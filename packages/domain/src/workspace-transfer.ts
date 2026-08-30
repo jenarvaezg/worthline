@@ -46,6 +46,7 @@ import type {
   IsoWeekday,
   PlannedContribution,
 } from "./contribution-plan";
+import type { CostBasisGrade } from "./cost-basis-grade";
 import { asInstant } from "./dates";
 import type { FireScopeConfig } from "./fire";
 import type { FireRetirementPlan } from "./fire-retirement-profile";
@@ -199,6 +200,10 @@ const operationKindSchema = vocabularyOf<OperationKind>()([
   "sell",
   "transfer_out",
   "transfer_in",
+]);
+const costBasisGradeSchema = vocabularyOf<CostBasisGrade>()([
+  "declared_cost",
+  "value_only",
 ]);
 const operationSourceSchema = vocabularyOf<OperationSource>()([
   "manual",
@@ -523,6 +528,12 @@ const operationSchema = reproduces<InvestmentOperation>()(
     transferId: nonEmptyString.optional(),
     /** The inherited acquisition cost, on the `transfer_in` half only (#1393). */
     transferCostMinor: z.number().int().nonnegative().optional(),
+    /**
+     * How honest this row's price is as a cost (#1505). Absent in every pre-#1505
+     * file and on every real movement — the import must not invent one, so there is
+     * no default: an absent mark reads as «nadie lo ha dicho», which is what it is.
+     */
+    costBasisGrade: costBasisGradeSchema.optional(),
   }),
 );
 

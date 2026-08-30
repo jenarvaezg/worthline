@@ -153,6 +153,9 @@ export async function persistHoldingCreation(
       pricePerUnit: plan.opening.pricePerUnit,
       source: "opening",
       units: plan.opening.units,
+      ...(plan.opening.costBasisGrade === undefined
+        ? {}
+        : { costBasisGrade: plan.opening.costBasisGrade }),
       ...(plan.opening.feesMinor === undefined
         ? {}
         : { feesMinor: plan.opening.feesMinor }),

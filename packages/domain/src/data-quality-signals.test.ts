@@ -1,14 +1,17 @@
 import { describe, expect, test } from "vitest";
 import type { SourcePosition } from "./connected-source";
 import {
+  COST_BASIS_VALUE_ONLY_CODE,
   type CollectDataQualitySignalsInput,
   collectDataQualitySignals,
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,
   type DataQualitySignal,
   type DataQualitySyncAttempt,
+  isOverrideableSignalCode,
   PERSISTENT_SYNC_FAILURE_CODE,
 } from "./data-quality-signals";
+import type { DecimalString } from "./decimal";
 import type { FireScopeConfig } from "./fire";
 import type { InvestmentOperation } from "./investment-types";
 import { formatMoneyMinor } from "./money";
@@ -1595,5 +1598,88 @@ describe("collectDataQualitySignals — TRANSFER_PAIR_BROKEN (#1519)", () => {
     // keeps a missing leg readable as an orphan); the scope decides only which
     // broken pairs it is told about.
     expect(collect([buy("inv_origin"), out("inv_origin")], { assets: [] })).toEqual([]);
+  });
+});
+
+describe("collectDataQualitySignals — COST_BASIS_VALUE_ONLY (#1505)", () => {
+  const { asset, input } = fixture();
+
+  const fund = () =>
+    asset({
+      id: "inv1",
+      instrument: "etf",
+      isin: "IE00B5BMR087",
+      name: "iShares Core S&P 500",
+      type: "investment",
+    });
+
+  const op = (
+    id: string,
+    overrides: Partial<InvestmentOperation> = {},
+  ): InvestmentOperation => ({
+    assetId: "inv1",
+    currency: "EUR",
+    executedAt: "2026-01-01",
+    feesMinor: 0,
+    id,
+    kind: "buy",
+    pricePerUnit: "217.25",
+    units: "27",
+    ...overrides,
+  });
+
+  const signalFor = (operations: readonly InvestmentOperation[], netUnits = "27") =>
+    collectDataQualitySignals(
+      input({
+        assets: [fund()],
+        investmentOperationsByAssetId: new Map([["inv1", operations]]),
+        netUnitsByAssetId: new Map([["inv1", netUnits as DecimalString]]),
+      }),
+    ).find((signal) => signal.code === COST_BASIS_VALUE_ONLY_CODE);
+
+  test("una apertura sin coste declarado es señalable, y por fin se puede pedir", () => {
+    expect(
+      signalFor([op("op1", { costBasisGrade: "value_only", source: "opening" })]),
+    ).toMatchObject({
+      affected: { id: "inv1", label: "iShares Core S&P 500", object: "holding" },
+      category: "missing_configuration",
+      fixable: true,
+      severity: "low",
+    });
+  });
+
+  test("un coste declarado no se señala: la pregunta ya tiene respuesta", () => {
+    expect(
+      signalFor([op("op1", { costBasisGrade: "declared_cost", source: "opening" })]),
+    ).toBeUndefined();
+  });
+
+  test("una compra real tampoco: su precio ES lo que se pagó", () => {
+    expect(signalFor([op("op1")])).toBeUndefined();
+  });
+
+  test("una posición cerrada calla, como en todas las demás familias (#1348)", () => {
+    expect(
+      signalFor([op("op1", { costBasisGrade: "value_only", source: "opening" })], "0"),
+    ).toBeUndefined();
+  });
+
+  test("vender entero y volver a entrar deja de señalar: manda el fold, no las filas", () => {
+    // La apertura sin coste sigue en el ledger, pero sus euros ya no respaldan
+    // nada: la posición de hoy la compró él, a un precio que sí es su coste.
+    expect(
+      signalFor(
+        [
+          op("op1", { costBasisGrade: "value_only", source: "opening" }),
+          op("op2", { executedAt: "2026-02-01", kind: "sell", pricePerUnit: "230" }),
+          op("op3", { executedAt: "2026-03-01", pricePerUnit: "240", units: "10" }),
+        ],
+        "10",
+      ),
+    ).toBeUndefined();
+  });
+
+  test("el usuario puede marcarlo como intencional: «no lo sé» es una respuesta", () => {
+    expect(isOverrideableSignalCode(COST_BASIS_VALUE_ONLY_CODE)).toBe(true);
   });
 });

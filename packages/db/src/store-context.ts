@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client, InStatement, Transaction } from "@libsql/client";
 import type {
   AssetProjectionContext,
+  CostBasisGrade,
   DecimalString,
   InvestmentOperation,
   Liability,
@@ -416,6 +417,18 @@ export function operationTransferColumns(operation: {
   };
 }
 
+/**
+ * The cost-grade column for a write (#1505), or NULL. Its own helper next to the
+ * capture and traspaso ones so every insert path — the single operation, the whole
+ * imported document — goes through the same line: an export → import round-trip that
+ * dropped this would silently re-affirm a plusvalía nobody declared.
+ */
+export function operationCostBasisColumns(operation: {
+  costBasisGrade?: CostBasisGrade;
+}): { costBasisGrade: CostBasisGrade | null } {
+  return { costBasisGrade: operation.costBasisGrade ?? null };
+}
+
 export function toOperation(
   row: typeof assetOperations.$inferSelect,
 ): InvestmentOperation {
@@ -424,6 +437,7 @@ export function toOperation(
   return {
     assetId: row.assetId,
     ...(capture === undefined ? {} : { capture }),
+    ...(row.costBasisGrade === null ? {} : { costBasisGrade: row.costBasisGrade }),
     currency: row.currency,
     executedAt: row.executedAt,
     feesMinor: row.feesMinor,
