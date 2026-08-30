@@ -240,3 +240,77 @@ taste, and both are deliberately narrow — the invented-mechanism check does no
 «revaloriza», because the ripple really does revalue the position at today's price. A
 grader that failed a model for saying something true would be the mirror image of the
 defect this ADR exists to prevent.
+
+## Amendment (#1466): a frontier against the model's invention must not close the door on what the user types
+
+The #1374 amendment above closed a real hole: handed a purchase confirmation, the model
+reached for the reconcile, filled its mandatory `value` with a snapshot of the portfolio
+and then explained the invented figure to the user as part of the plan. The lane it built
+therefore reads its fact off a validated document and treats the model's arguments as a
+claim about that document — checked, then discarded.
+
+What that reasoning never established is that a **document is the only admissible source**.
+It was aimed at the MODEL inventing figures. A real session made the difference visible:
+
+> He comprado ahora 6 participaciones de IE00B43VDT70 por un total de 312,55€. En total,
+> sumando esas 6, tengo 21 participaciones
+
+Four terms — instrument, quantity, amount, day — plus a witness the book can check against
+the 15 participaciones it already holds. The lane answered `operation_document_required`,
+and the model, which never called the tool, explained the refusal with prose of its own:
+that «worthline requiere este documento para validar y sellar la transacción de forma
+trazable». No such rule exists. The real message routes («si prefieres teclearla…») and
+was never produced, so the user was left in a dead end with a false explanation.
+
+The rule this adds is the one #1418 already demonstrated on the balance-series lane:
+
+> **A frontier raised against the model's invention must not close the door on the fact
+> the user writes. To let typed figures in, parse them.**
+
+Not a flag. A flag saying «the user said so» is worth nothing here — the model has the
+whole conversation in its context and could «remember» a figure and present it as typed.
+worthline reads the operation off the user's own message with no model in the loop
+(`typed-holding-event.ts`, sibling of `typed-balance-series.ts` and `typed-transfer.ts`),
+and the lane builds from THOSE figures.
+
+What the amendment fixes in code:
+
+- **The typed door opens only when there is no validated `holding_event`.** With a
+  document on the table the document wins and #1374's behaviour is byte-identical.
+- **The parser returns an `ExtractedHoldingEvent`**, which is why the change is surgical:
+  `operation-terms.ts` and its invariant (`importe = participaciones × precio + comisión`),
+  the card, and every guard in `operation-proposals.ts` — divisa, ISIN contradictorio,
+  duplicado, sobreventa, fecha futura, fuente conectada — apply to both doors unchanged.
+- **The date is required and never defaulted.** «Hoy», «ayer» and an explicit day count as
+  written; silence does not. A row dated with a day nobody wrote is exactly the invention
+  the frontier exists to stop, and `isIsoDay` still throws out a `30/02/2026`.
+- **The direction stays the model's call, and the message can VETO it** — the symmetric
+  twin of `DIRECTION_BY_EVENT_KIND`: «he comprado» with `kind: "sell"` fails the call.
+- **Everything ambiguous fails closed and names its gap**, never «no te he entendido».
+  A quantity with no money figure, two money figures that cannot be told apart, a missing
+  date: each answers with what to add. And crucially, never the «1 participación al
+  importe» encoding, which the next ripple revalues to ONE share's price (#1325).
+- **The declared total is a witness, not an input** (#1422): checked against
+  `unitsBefore ± units` and, when it does not hold, refused naming both figures. It is
+  never written and it is never required.
+- **An unmarked currency is READ, not assumed in silence.** It is taken from the holding
+  — the currency guard already refuses anything else — and the card says which one it was
+  (#1401 was the book adding dollars as euros).
+- **The card says which door the fact came through.** `caption` is a field, not a
+  constant: what worthline read is printed verbatim on its own line, before anything
+  derived, so a parser that read 312,55 € where the person wrote 312,05 € is caught there.
+  A card emitted before this change carries no caption and is read as the document's,
+  which is what it was — the only door there was.
+
+Two costs worth naming, because neither is invisible. The refusals shared by both doors
+lose the word «justificante» («La operación está en USD y «X» se lleva en EUR»): one
+family of sentences now serves two sources, and a sentence that names a document the user
+never uploaded is worse than a neutral one. And the turn floor grows by 520 characters —
+360 in the tool's description, 160 in the prompt, where the #1418 exception named a closed
+list of one thing and would have become an instruction to refuse a dictated compra. The
+schema does not move at all: there is no new field for a model to fill, which is the same
+shape `propose_transfer` has.
+
+The asymmetry this leaves — and it is deliberate — is that the model's own prose is still
+not a source. A figure it relays is checked against the reading and the call is refused
+when it disagrees (`operation_fact_not_in_message`), exactly as it is against a document.

@@ -203,7 +203,11 @@ export function holdingRestorationOutput(overrides: Payload = {}): Payload {
 export function operationOutput(overrides: Payload = {}): Payload {
   return build(
     {
-      document: { fact: "Compra de 3,2 participaciones", line: "14/08/2026 · COMPRA" },
+      document: {
+        caption: "En el documento",
+        fact: "Compra de 3,2 participaciones",
+        line: "14/08/2026 · COMPRA",
+      },
       draft: { proposalId: "wl_prp_1" },
       folio: "1 propuesta · 1 holding · 1 hecho fechado",
       holding: {

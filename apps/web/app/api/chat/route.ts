@@ -73,6 +73,7 @@ import {
   NO_TYPED_BALANCE_SERIES,
   typedBalanceSeriesInTurn,
 } from "@web/asistente/typed-balance-series";
+import { typedHoldingEventInTurn } from "@web/asistente/typed-holding-event";
 import { typedTransferInTurn } from "@web/asistente/typed-transfer";
 import { unvalidatedEvidenceGateApplies } from "@web/asistente/unvalidated-evidence-gate";
 import {
@@ -627,6 +628,12 @@ export async function POST(request: Request): Promise<Response> {
   // reason: what grounds the figures is what the person wrote, and a per-provider
   // truncation of their message must not change what worthline read in it.
   const typedTransfer = typedTransferInTurn(body.messages, chatAsOf(target));
+  // The operation dictated this turn (#1466). Read on every turn like the traspaso
+  // above, and for the same reason: it is not an escape from a gate but the second
+  // source the lane has, and the only one when no justificante was uploaded. From the
+  // RAW history too — what grounds the figures is what the person wrote, and a
+  // per-provider truncation of their message must not change what worthline read.
+  const typedHoldingEvent = typedHoldingEventInTurn(body.messages, chatAsOf(target));
   const buildTools = (history: UIMessage[]) =>
     createChatTools({
       ingestionAllowed,
@@ -649,6 +656,9 @@ export async function POST(request: Request): Promise<Response> {
       // The traspaso the user dictated this turn (#1482): the ONE source of its importe
       // and its date, so `propose_transfer` never builds from the model's arguments.
       typedTransfer,
+      // The operation the user dictated this turn (#1466): the second door of
+      // `propose_operation`, open only when no validated justificante is on the table.
+      typedHoldingEvent,
       // Holding-id provenance (#1263): the ids worthline itself put in the history the
       // model is about to read — a payload dropped by the tool ceiling (#1260) or a
       // turn dropped by the prose budget (#1408) is no longer in its context either,

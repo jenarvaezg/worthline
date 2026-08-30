@@ -21,8 +21,13 @@ export interface OperationProposal {
   folio: string;
   /** One-line description of the fact, for the card's title. */
   summary: string;
-  /** What the document literally says — printed apart from the destination. */
-  document: { line: string; fact: string };
+  /**
+   * The SOURCE of the fact, printed apart from the destination: what the document
+   * literally says, or — since #1466 — what worthline read in the user's own message.
+   * `caption` names which of the two doors it came through, so a dictated operation is
+   * never presented as something read off a paper.
+   */
+  document: { caption: string; line: string; fact: string };
   /** Where the operation lands, by NAME (an id is machinery, #1263). */
   holding: { id: string; name: string; destination: string };
   /** The position's participaciones before → after, es-ES. */

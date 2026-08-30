@@ -9,6 +9,12 @@
  * own text, and it described an effect on the position that the apply does not have.
  * Each of those is a sentence, and a sentence that matters is worth a test.
  *
+ * Since #1466 the same card serves a second door — an operation the user DICTATED —
+ * and the two lines that door adds are the ceremony of #1418: what worthline read is
+ * printed verbatim, on its own line, BEFORE anything derived, and the caption says
+ * which door it came through. A parser that read 312,55 € where the person wrote
+ * 312,05 € is caught there and nowhere else.
+ *
  * Pure and I/O-free (`docs/interaction-patterns.md`, ADR 0036).
  */
 
@@ -20,6 +26,7 @@ import {
 } from "./document-figures";
 import { formatIsoDayEs } from "./iso-day-es";
 import type { OperationKindClaim } from "./operation-document-frontier";
+import type { TypedHoldingEvent } from "./typed-holding-event";
 
 /**
  * How the operation's kind reads on the card — the DOCUMENT's word, not the ledger's.
@@ -113,3 +120,97 @@ export const OPERATION_IMPACT_CAPTION = "estimado sobre la operación";
 
 /** The atomic folio, sibling of the early repayment's. */
 export const OPERATION_FOLIO = "1 propuesta · 1 posición · 1 operación fechada";
+
+/**
+ * The caption above the source line. It names the DOOR, and it is a field rather than
+ * a constant in the component because since #1466 there are two: a card that says «En
+ * el documento» about a message the user typed would be the lane lying about its own
+ * provenance.
+ */
+export const OPERATION_DOCUMENT_CAPTION = "En el documento";
+export const OPERATION_DICTATED_CAPTION = "Lo que he leído en tu mensaje";
+
+/**
+ * The operation as WORTHLINE READ IT in the message — every figure the person wrote and
+ * nothing derived from them. The price the ledger records is not here: it is on the fact
+ * line below, where it belongs, and mixing the two would hide which of them was typed.
+ */
+export function operationDictatedLine(
+  dictated: TypedHoldingEvent,
+  currency: string,
+): string {
+  const parts = [formatIsoDayEs(dictated.executedAt)];
+  if (dictated.units !== undefined) {
+    parts.push(`${formatDocumentUnits(dictated.units)} part.`);
+  }
+  if (dictated.amount !== undefined) {
+    parts.push(formatDocumentMoney(Math.round(dictated.amount * 100), currency));
+  }
+  if (dictated.pricePerUnit !== undefined) {
+    parts.push(
+      `a ${formatDocumentUnitPrice(dictated.pricePerUnit)} ${currencyMark(currency)} por participación`,
+    );
+  }
+  if (dictated.fees !== undefined) {
+    parts.push(
+      `comisión ${formatDocumentMoney(Math.round(dictated.fees * 100), currency)}`,
+    );
+  }
+  if (dictated.declaredTotalUnits !== undefined) {
+    parts.push(
+      `total que dices tener ${formatDocumentUnits(dictated.declaredTotalUnits)}`,
+    );
+  }
+  if (dictated.isin !== undefined) parts.push(dictated.isin);
+  return parts.join(" · ");
+}
+
+/**
+ * The currency nobody wrote, said out loud. «Por 312,55» with no mark is read in the
+ * holding's own currency — the guard in the builder already refuses anything else — but
+ * it is READ, not assumed in silence: #1401 was the book adding dollars as euros.
+ */
+export function operationCurrencyAssumedNote(
+  currency: string,
+  holdingName: string,
+): string {
+  return (
+    `No has escrito la divisa, así que he interpretado el importe en ${currency}, la de ` +
+    `«${holdingName}». Si la operación fue en otra, dímelo antes de confirmar.`
+  );
+}
+
+/** The importe multiplied out of the two figures the person did write. */
+export function operationDerivedAmountNote(derived: {
+  units: string;
+  pricePerUnit: number;
+  amountMinor: number;
+  currency: string;
+}): string {
+  return (
+    `El importe no me lo has dicho, lo he calculado con tus dos cifras: ` +
+    `${formatDocumentUnits(derived.units)} × ${formatDocumentUnitPrice(derived.pricePerUnit)} ` +
+    `${currencyMark(derived.currency)} = ${formatDocumentMoney(derived.amountMinor, derived.currency)}.`
+  );
+}
+
+/**
+ * The witness that did not hold (#1422's rule). It names BOTH figures — the one the
+ * person declared and the one the book would end at — because a refusal that names
+ * neither is one the person cannot act on, and because the discrepancy is as likely to
+ * be an operation missing from the book as a typo in the message.
+ */
+export function operationDeclaredTotalMismatch(witness: {
+  holdingName: string;
+  declaredTotalUnits: string;
+  unitsBefore: string;
+  unitsAfter: string;
+}): string {
+  return (
+    `Dices que después de esta operación tienes ${formatDocumentUnits(witness.declaredTotalUnits)} ` +
+    `participaciones, pero «${witness.holdingName}» tiene ${formatDocumentUnits(witness.unitsBefore)} ` +
+    `y con ésta quedarían ${formatDocumentUnits(witness.unitsAfter)}: no anoto una operación cuyo ` +
+    "resultado no cuadra con lo que me cuentas. Comprueba la cantidad, o dime qué operación " +
+    "falta por registrar y la anotamos antes."
+  );
+}

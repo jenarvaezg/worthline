@@ -16,6 +16,14 @@
  * currencies must agree (no rate is ever invented), the document's ISIN may not
  * contradict the holding's, and the same operation is never written twice —
  * re-uploading the same receipt next week must not double the units.
+ *
+ * Since #1466 the fact reaches here through either of two doors — a validated document
+ * or the user's own message, read by worthline ({@link OperationFactSource}) — and every
+ * one of those frontiers applies unchanged to both, which is the whole reason the typed
+ * lane hands over an {@link ExtractedHoldingEvent}. Two things belong to the typed door
+ * alone: the currency, taken from the holding when the message marked none and SAID on
+ * the card, and the declared-total witness, checked against the book and never written
+ * (#1422).
  */
 
 import { createHash } from "node:crypto";
@@ -32,6 +40,7 @@ import {
   formatUnits,
   multiplyToMinor,
   netUnitsFromOperations,
+  normalizeDecimal,
   subtractUnits,
 } from "@worthline/domain";
 
@@ -44,9 +53,15 @@ import { formatIsoDayEs } from "./iso-day-es";
 import type { OperationKindClaim } from "./operation-document-frontier";
 import type { OperationProposal } from "./operation-proposal-contract";
 import {
+  OPERATION_DICTATED_CAPTION,
+  OPERATION_DOCUMENT_CAPTION,
   OPERATION_FOLIO,
   OPERATION_IMPACT_CAPTION,
+  operationCurrencyAssumedNote,
+  operationDeclaredTotalMismatch,
+  operationDerivedAmountNote,
   operationDestinationLine,
+  operationDictatedLine,
   operationDocumentLine,
   operationFactLine,
   operationKindLabel,
@@ -54,6 +69,11 @@ import {
 import { type OperationTerms, resolveOperationTerms } from "./operation-terms";
 import { readScopeNetWorthBeforeMinor } from "./proposal-net-worth";
 import { boundProposalSummary } from "./proposal-summary";
+import {
+  holdingEventFromTyped,
+  TYPED_OPERATION_DOCUMENT_NAME,
+  type TypedHoldingEvent,
+} from "./typed-holding-event";
 
 type OperationStore = OperationProjectionStore & {
   assistantProposals: AssistantProposalStore;
@@ -64,14 +84,22 @@ export type OperationProjectionStore = Pick<WorthlineStore, "assets" | "operatio
   agentView: WorthlineStore["agentView"];
 };
 
+/**
+ * Where the fact came from — the two doors of the lane, and never the model's prose.
+ * A validated extraction, or the operation worthline read in the user's own message.
+ */
+export type OperationFactSource =
+  | { from: "document"; event: ExtractedHoldingEvent }
+  | { from: "message"; typed: TypedHoldingEvent };
+
 export interface OperationArgs {
   /** Internal asset id, already resolved from the public `wl_hld_…`. */
   assetId: string;
   /** The `wl_hld_…` echoed back to the card. */
   publicHoldingId: string;
   kind: OperationKindClaim;
-  /** The validated fact the document frontier resolved. Never the model's prose. */
-  event: ExtractedHoldingEvent;
+  /** The fact one of the two frontiers resolved. Never the model's prose. */
+  source: OperationFactSource;
   summary?: string;
 }
 
@@ -142,7 +170,7 @@ export async function projectOperationWrite(
     return {
       ok: false as const,
       error:
-        `El justificante está en ${terms.currency} y «${holding.name}» se lleva en ` +
+        `La operación está en ${terms.currency} y «${holding.name}» se lleva en ` +
         `${holding.currency}: no convierto divisas por mi cuenta, así que no puedo anotar la ` +
         "operación aquí. Comprueba si es de otra posición.",
     };
@@ -158,7 +186,7 @@ export async function projectOperationWrite(
     return {
       ok: false as const,
       error:
-        `El documento es del ISIN ${write.documentIsin} y «${holding.name}» tiene registrado ` +
+        `La operación es del ISIN ${write.documentIsin} y «${holding.name}» tiene registrado ` +
         `${holding.isin}: son instrumentos distintos, así que no anoto la operación ahí. Busca ` +
         "la posición de ese ISIN en la cartera, y si no existe, dala de alta.",
     };
@@ -198,8 +226,8 @@ export async function projectOperationWrite(
     return {
       ok: false as const,
       error:
-        `«${holding.name}» tiene ${formatUnits(unitsBefore)} participaciones y el justificante ` +
-        `vende ${formatUnits(terms.units)}: no puedo anotar una venta que deje la posición en ` +
+        `«${holding.name}» tiene ${formatUnits(unitsBefore)} participaciones y esta venta saca ` +
+        `${formatUnits(terms.units)}: no puedo anotar una venta que deje la posición en ` +
         "negativo. Comprueba si falta registrar alguna compra anterior, o si la venta es de otra " +
         "posición.",
     };
@@ -256,7 +284,9 @@ export async function buildOperationProposal(
   args: OperationArgs,
   today: string,
 ): Promise<{ ok: true; proposal: OperationProposal } | { ok: false; error: string }> {
-  const resolved = resolveOperationTerms(args.event);
+  const fact = await resolveOperationFact(store, args);
+  const { dictated, event } = fact;
+  const resolved = resolveOperationTerms(event);
   if (!resolved.ok) return resolved;
   const terms = resolved.terms;
 
@@ -264,19 +294,42 @@ export async function buildOperationProposal(
     return {
       ok: false,
       error:
-        "Ese justificante lleva fecha futura, y una operación observada no puede estar por " +
-        "ocurrir. Comprueba la fecha del documento.",
+        dictated === null
+          ? "Ese justificante lleva fecha futura, y una operación observada no puede estar por " +
+            "ocurrir. Comprueba la fecha del documento."
+          : "Esa operación lleva fecha futura, y no anoto un hecho que aún no ha ocurrido. " +
+            "Comprueba el día que me has dicho.",
     };
   }
 
   const write: OperationWrite = {
     kind: args.kind,
     terms,
-    ...(args.event.isin === undefined ? {} : { documentIsin: args.event.isin }),
+    ...(event.isin === undefined ? {} : { documentIsin: event.isin }),
   };
   const projected = await projectOperationWrite(store, args.assetId, write);
   if (!projected.ok) return projected;
   const { holding } = projected;
+
+  // The witness (#1422): a total the user declared is CHECKED against the book and
+  // never written. It is optional — most messages state none — and when it does not
+  // hold, both figures are named, because the discrepancy is as likely to be an
+  // operation missing from the ledger as a typo in the message.
+  const declaredTotalUnits = dictated?.declaredTotalUnits;
+  if (
+    declaredTotalUnits !== undefined &&
+    compareUnits(normalizeDecimal(declaredTotalUnits), projected.unitsAfter) !== 0
+  ) {
+    return {
+      ok: false,
+      error: operationDeclaredTotalMismatch({
+        declaredTotalUnits,
+        holdingName: holding.name,
+        unitsAfter: projected.unitsAfter,
+        unitsBefore: projected.unitsBefore,
+      }),
+    };
+  }
 
   const plan: InvestmentOperationPlan = {
     amountMinor: terms.amountMinor,
@@ -288,7 +341,7 @@ export async function buildOperationProposal(
     pricePerUnit: terms.pricePerUnit,
     units: terms.units,
     ...(terms.feesMinor === undefined ? {} : { feesMinor: terms.feesMinor }),
-    ...(args.event.isin === undefined ? {} : { isin: args.event.isin }),
+    ...(event.isin === undefined ? {} : { isin: event.isin }),
   };
 
   const proposal = await store.assistantProposals.create({
@@ -296,10 +349,13 @@ export async function buildOperationProposal(
   });
   await store.assistantProposals.appendDocument(proposal.id, {
     document: {
-      // Provenance `agent`: the fact reaching the ledger was read by worthline from a
-      // document, not declared by the user, and that is the frontier this lane rests on.
-      name: "justificante-de-operación",
-      provenance: "agent",
+      // Provenance: `agent` when the fact was READ by worthline off a document, `user`
+      // when the person dictated it. The distinction is the frontier itself, so it is
+      // recorded rather than flattened — the traspaso's dictated lane marks it the same
+      // way (#1482).
+      name:
+        dictated === null ? "justificante-de-operación" : TYPED_OPERATION_DOCUMENT_NAME,
+      provenance: dictated === null ? "agent" : "user",
       sha256: createHash("sha256").update(JSON.stringify(plan)).digest("hex"),
     },
     facts: [{ kind: "investment_operation", row: plan }],
@@ -316,11 +372,16 @@ export async function buildOperationProposal(
     ok: true,
     proposal: {
       document: {
+        caption:
+          dictated === null ? OPERATION_DOCUMENT_CAPTION : OPERATION_DICTATED_CAPTION,
         fact: operationFactLine({ ...terms, kind: args.kind }),
-        line: operationDocumentLine({
-          label: args.event.label,
-          ...(args.event.isin === undefined ? {} : { isin: args.event.isin }),
-        }),
+        line:
+          dictated === null
+            ? operationDocumentLine({
+                label: event.label,
+                ...(event.isin === undefined ? {} : { isin: event.isin }),
+              })
+            : operationDictatedLine(dictated, terms.currency),
       },
       draft: { proposalId: proposal.id },
       folio: OPERATION_FOLIO,
@@ -337,7 +398,7 @@ export async function buildOperationProposal(
       },
       impactCaption: OPERATION_IMPACT_CAPTION,
       kind: args.kind,
-      notes: terms.notes,
+      notes: dictatedNotes(fact, terms, holding.name).concat(terms.notes),
       position: {
         unitsAfter: formatUnits(projected.unitsAfter),
         unitsBefore: formatUnits(projected.unitsBefore),
@@ -349,6 +410,99 @@ export async function buildOperationProposal(
       ),
     },
   };
+}
+
+/** The fact this build works from, with the typed door's own two answers alongside. */
+interface ResolvedOperationFact {
+  event: ExtractedHoldingEvent;
+  /** What the user typed, when the fact came through the message door. */
+  dictated: TypedHoldingEvent | null;
+  /** The currency taken from the HOLDING because the message marked none. */
+  assumedCurrency: string | null;
+}
+
+/**
+ * The event the chain builds from, whichever door the fact came through.
+ *
+ * The one asymmetry is the currency, and it is the reason this reads the holding before
+ * the projection does: «por 312,55» with no mark is read in the holding's own currency
+ * (the guard downstream already refuses anything else, and the card says which one it
+ * was), and a holding that does not exist yields no currency at all — the placeholder
+ * then reaches {@link projectOperationWrite}, which answers with the route for an id
+ * that names nothing rather than with a currency complaint.
+ */
+async function resolveOperationFact(
+  store: OperationProjectionStore,
+  args: OperationArgs,
+): Promise<ResolvedOperationFact> {
+  if (args.source.from === "document") {
+    return { assumedCurrency: null, dictated: null, event: args.source.event };
+  }
+  const typed = args.source.typed;
+  const currency =
+    typed.currency ?? (await holdingCurrency(store, args.assetId)) ?? FALLBACK_CURRENCY;
+  return {
+    assumedCurrency: typed.currency === null ? currency : null,
+    dictated: typed,
+    event: holdingEventFromTyped(typed, currency),
+  };
+}
+
+/**
+ * The currency used when the message marked none AND the holding has none to lend —
+ * which happens only when the id names nothing, because every investment holding is
+ * created with one. It is deliberately NOT «assume EUR» (#1401's sin): the placeholder
+ * exists so the call reaches {@link projectOperationWrite}, which answers with the route
+ * for an id that names no investment. A currency this value ever reached the ledger with
+ * would first have to pass that projection's own currency check against the holding.
+ */
+const FALLBACK_CURRENCY = "EUR";
+
+/**
+ * The currency of the holding the operation points at, or null when no investment has
+ * that id. Read only for a dictated operation, so the document lane costs exactly what
+ * it did before.
+ */
+async function holdingCurrency(
+  store: OperationProjectionStore,
+  assetId: string,
+): Promise<string | null> {
+  const investments = await store.assets.readInvestmentAssetsWithMeta();
+  return investments.find((item) => item.id === assetId)?.currency ?? null;
+}
+
+/**
+ * What the card has to say about a DICTATED operation before anything else: the importe
+ * that was multiplied out of two written figures, and the currency that came from the
+ * holding rather than from the message. Both are readings the person can only check if
+ * they are told (#1401, #1418).
+ */
+function dictatedNotes(
+  fact: ResolvedOperationFact,
+  terms: OperationTerms,
+  holdingName: string,
+): string[] {
+  const { assumedCurrency, dictated } = fact;
+  const notes: string[] = [];
+  if (
+    dictated !== null &&
+    dictated.amount === undefined &&
+    dictated.units !== undefined &&
+    dictated.pricePerUnit !== undefined
+  ) {
+    notes.push(
+      operationDerivedAmountNote({
+        amountMinor: terms.amountMinor,
+        currency: terms.currency,
+        pricePerUnit: dictated.pricePerUnit,
+        units: dictated.units,
+      }),
+    );
+  }
+  if (assumedCurrency !== null) {
+    notes.push(operationCurrencyAssumedNote(assumedCurrency, holdingName));
+  }
+  return notes;
 }
 
 function capitalize(value: string): string {

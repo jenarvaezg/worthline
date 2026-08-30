@@ -41,7 +41,12 @@
 import type { TransferPortion } from "@worthline/domain";
 import type { UIMessage } from "ai";
 
-import { isIsoDay, normalizeExtractedNumber } from "./attachment-extraction-contract";
+import { normalizeExtractedNumber } from "./attachment-extraction-contract";
+import {
+  dateInMessage,
+  joinRefusalGaps,
+  MAX_SCANNED_CHARS,
+} from "./typed-message-reading";
 
 /** One traspaso, as much of it as a message can state. */
 export interface TypedTransfer {
@@ -114,11 +119,10 @@ const GAP_MESSAGES: Record<TypedTransferGap, string> = {
  * asked three times for one traspaso has been asked to fill in a form badly.
  */
 export function typedTransferGapMessage(missing: readonly TypedTransferGap[]): string {
-  const gaps = missing.map((gap) => GAP_MESSAGES[gap]);
-  const listed =
-    gaps.length <= 1
-      ? (gaps[0] ?? GAP_MESSAGES.amount)
-      : `${gaps.slice(0, -1).join("; ")}; y ${gaps[gaps.length - 1]}`;
+  const listed = joinRefusalGaps(
+    missing.map((gap) => GAP_MESSAGES[gap]),
+    GAP_MESSAGES.amount,
+  );
   return (
     `Te preparo el traspaso, pero ${listed}. Lo leo de tu mensaje tal cual lo escribas: si ` +
     "me dices las participaciones que salieron («37,203 participaciones») junto al importe, " +
@@ -126,19 +130,6 @@ export function typedTransferGapMessage(missing: readonly TypedTransferGap[]): s
     "de cada posición y te digo de cuándo es."
   );
 }
-
-/** How far into one message the parser looks, so a pasted book is bounded work. */
-const MAX_SCANNED_CHARS = 20_000;
-
-/** `YYYY-MM-DD`, fenced by digit lookarounds exactly as the balance series is. */
-const ISO_DATE = /(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/u;
-
-/**
- * `D/M/YYYY`, `D-M-YYYY`, `D.M.YYYY`. DAY FIRST, with no attempt to detect the
- * American order — worthline is es-ES throughout and its number reader settles the
- * same ambiguity the same way (`normalizeExtractedNumber`).
- */
-const LOCAL_DATE = /(?<!\d)(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?!\d)/u;
 
 /**
  * A figure with money on it: «1.018,67 €», «1018,67 EUR», «500 euros».
@@ -174,10 +165,6 @@ const ALL_PORTION_WORDS =
 /** «el 100 %» — kept apart because `%` is not a word character and `\b` cannot end it. */
 const ALL_PORTION_PERCENT = /(?<!\d)100\s?%/u;
 
-/** Today, and the day before it — the only two relative days a message may name. */
-const TODAY_WORDS = /\b(hoy|ahora|ahora mismo|esta mañana|esta tarde)\b/iu;
-const YESTERDAY_WORDS = /\bayer\b/iu;
-
 /**
  * Read the traspaso written in `text`, against the clock the turn is being answered at.
  *
@@ -194,14 +181,14 @@ const YESTERDAY_WORDS = /\bayer\b/iu;
  */
 export function parseTypedTransfer(text: string, today: string): TypedTransferReading {
   const scanned = text.slice(0, MAX_SCANNED_CHARS);
-  const dated = dateIn(scanned, today);
+  const dated = dateInMessage(scanned, today);
   // The date is cut out before the figures are counted: `12/08/2026` is three numbers
   // to a scanner and would make every dated message ambiguous.
   const portion = portionIn(dated === null ? scanned : dated.rest);
 
   const missing: TypedTransferGap[] = [];
   if (!portion.ok) missing.push(portion.gap);
-  const executedAt = dated?.date ?? null;
+  const executedAt = dated?.day ?? null;
   if (executedAt === null) missing.push("date");
 
   if (!portion.ok || executedAt === null) return { missing, status: "incomplete" };
@@ -232,49 +219,6 @@ export function typedTransferInTurn(
     );
   }
   return { missing: ["amount", "date"], status: "incomplete" };
-}
-
-/** The message's date and the message with that date cut out of it. */
-interface DatedText {
-  /** `null` when a date-SHAPED token turned out not to be a day (#1395). */
-  date: string | null;
-  rest: string;
-}
-
-/**
- * The day this message names, explicit or relative.
- *
- * A date-shaped token that is not a real day (`30/02/2026`) is not «no date»: it is a
- * reading we got wrong, so it fails closed with the token cut out — the figures are
- * still read, so the refusal can name BOTH gaps at once instead of one per round trip.
- */
-function dateIn(text: string, today: string): DatedText | null {
-  const iso = ISO_DATE.exec(text);
-  if (iso) {
-    return { date: isIsoDay(iso[0]) ? iso[0] : null, rest: cut(text, iso) };
-  }
-
-  const local = LOCAL_DATE.exec(text);
-  if (local) {
-    const [, day, month, year] = local as unknown as [string, string, string, string];
-    const date = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-    return { date: isIsoDay(date) ? date : null, rest: cut(text, local) };
-  }
-
-  if (YESTERDAY_WORDS.test(text)) return { date: dayBefore(today), rest: text };
-  if (TODAY_WORDS.test(text)) return { date: today, rest: text };
-  return null;
-}
-
-function cut(text: string, match: RegExpExecArray): string {
-  return text.slice(0, match.index) + text.slice(match.index + match[0].length);
-}
-
-/** The calendar day before `day`, through UTC so no timezone can shift it. */
-function dayBefore(day: string): string {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - 1);
-  return date.toISOString().slice(0, 10);
 }
 
 type PortionReading =

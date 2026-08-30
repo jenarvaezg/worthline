@@ -51,7 +51,9 @@ export function OperationProposalCard({
       <ul>
         <li>
           <strong>{proposal.document.line}</strong>
-          <span>En el documento</span>
+          {/* Which door the fact came through (#1466): a validated justificante, or
+              the user's own message read by worthline. */}
+          <span>{proposal.document.caption}</span>
           {/* The fact, term by term: what confirm will write on this holding. */}
           <span className="assistantRowMovement">{proposal.document.fact}</span>
           <span>{proposal.holding.destination}</span>
