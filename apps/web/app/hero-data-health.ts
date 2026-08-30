@@ -132,6 +132,11 @@ const NON_FIGURE_CATEGORIES: ReadonlySet<DataQualityCategory> = new Set([
   // actually moves; here it would push a real doubt about today's figure off the
   // hero. The agent view keeps it in the shared inventory.
   "savings_coherence",
+  // A half-written traspaso (#1519) corrupts a COST BASIS, never a market value:
+  // today's headline is exactly the same figure with the pair broken or whole. It
+  // is a real corruption and it stays `high` in the shared inventory, where the
+  // consumer is whoever maintains the data — the hero is for doubts about today.
+  "transfer_integrity",
 ]);
 const NON_FIGURE_CODES: ReadonlySet<string> = new Set([
   "MISSING_FIRE_CONFIG",
@@ -240,6 +245,7 @@ function fixSurface(
       // figures it governs — that is where the gap gets settled.
       return { href: "/objetivos#supuestos", label: "Revisar ahorro" };
     case "history_coverage":
+    case "transfer_integrity":
       // Never surfaces (filtered upstream); handled for switch exhaustiveness.
       return null;
   }

@@ -154,6 +154,7 @@ export const DATA_QUALITY_SCHEMA = jsonSchema<{
         "missing_configuration",
         "savings_coherence",
         "portfolio_reconciliation",
+        "transfer_integrity",
         "history_coverage",
         "projection_gap",
       ],

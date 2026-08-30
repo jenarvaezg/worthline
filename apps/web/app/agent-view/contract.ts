@@ -700,6 +700,12 @@ export interface AgentViewFireSummary {
  *  - `missing_configuration`: a scope/holding missing the config it needs (FIRE
  *    config, an amortized liability's debt model, …).
  *  - `history_coverage`: sparse snapshots or a snapshot with no frozen holding rows.
+ *  - `transfer_integrity`: traspasos already in the ledger that no longer read as
+ *    a whole pair (#1519) — an outgoing half with no destination row, or an
+ *    incoming leg whose inherited cost is not the one the origin's fold removes.
+ *    A lone `transfer_in` is NOT one of them: that is the external entry, whose
+ *    other half lives in another institution. ONE signal per scope carrying every
+ *    broken pair, never one per pair.
  *  - `projection_gap`: a connected source's positions that could not be valued —
  *    ONE signal per source carrying the count and what is missing, never one per
  *    position (#1356); the per-position detail lives in the positions endpoint.
@@ -713,6 +719,7 @@ export type AgentViewDataQualityCategory =
   | "missing_configuration"
   | "savings_coherence"
   | "portfolio_reconciliation"
+  | "transfer_integrity"
   | "history_coverage"
   | "projection_gap";
 

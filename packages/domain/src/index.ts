@@ -1162,6 +1162,16 @@ export {
   statementHeaderMatches,
 } from "./statement-parse";
 export type {
+  AuditTransferPairsInput,
+  BrokenTransferPair,
+  TransferPairFault,
+} from "./transfer-pair-integrity";
+export {
+  auditTransferPairs,
+  describeBrokenTransferPairs,
+  TRANSFER_PAIR_BROKEN_CODE,
+} from "./transfer-pair-integrity";
+export type {
   ExternalTransferInIntent,
   TransferIntent,
   TransferOrigin,

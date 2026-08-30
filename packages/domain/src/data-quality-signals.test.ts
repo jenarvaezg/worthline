@@ -1467,3 +1467,133 @@ describe("portfolio reconciliation (#1550)", () => {
     expect(signals).toHaveLength(1);
   });
 });
+
+describe("collectDataQualitySignals — TRANSFER_PAIR_BROKEN (#1519)", () => {
+  const { asset, input, scopeOption } = fixture();
+
+  const fund = (id: string, overrides: Partial<CreateManualAssetInput> = {}) =>
+    asset({
+      id,
+      instrument: "fund",
+      name: `Fondo ${id}`,
+      type: "investment",
+      ...overrides,
+    });
+
+  const buy = (assetId: string): InvestmentOperation => ({
+    assetId,
+    currency: "EUR",
+    executedAt: "2026-01-10",
+    feesMinor: 0,
+    id: `op_buy_${assetId}`,
+    kind: "buy",
+    pricePerUnit: "10",
+    units: "100",
+  });
+
+  const out = (assetId: string): InvestmentOperation => ({
+    assetId,
+    currency: "EUR",
+    executedAt: "2026-03-01",
+    feesMinor: 0,
+    id: `op_out_${assetId}`,
+    kind: "transfer_out",
+    pricePerUnit: "12",
+    transferId: "trf_1",
+    units: "50",
+  });
+
+  const incoming = (assetId: string, transferCostMinor: number): InvestmentOperation => ({
+    assetId,
+    currency: "EUR",
+    executedAt: "2026-03-01",
+    feesMinor: 0,
+    id: `op_in_${assetId}`,
+    kind: "transfer_in",
+    pricePerUnit: "24",
+    transferCostMinor,
+    transferId: "trf_1",
+    units: "25",
+  });
+
+  const collect = (
+    operations: readonly InvestmentOperation[],
+    overrides: Partial<CollectDataQualitySignalsInput> = {},
+  ) => {
+    const byAsset = new Map<string, InvestmentOperation[]>();
+    for (const operation of operations) {
+      byAsset.set(operation.assetId, [
+        ...(byAsset.get(operation.assetId) ?? []),
+        operation,
+      ]);
+    }
+    return collectDataQualitySignals(
+      input({
+        assets: [fund("inv_origin"), fund("inv_dest")],
+        investmentOperationsByAssetId: byAsset,
+        netUnitsByAssetId: netUnitsByAsset(byAsset),
+        ...overrides,
+      }),
+    ).filter((signal) => signal.category === "transfer_integrity");
+  };
+
+  test("a whole pair whose inherited cost is the one the origin sheds is silent", () => {
+    expect(
+      collect([buy("inv_origin"), out("inv_origin"), incoming("inv_dest", 500_00)]),
+    ).toEqual([]);
+  });
+
+  test("an orphan leg raises ONE scope-level signal naming the transferId", () => {
+    const signals = collect([buy("inv_origin"), out("inv_origin")]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      affected: { id: scopeOption.id, label: scopeOption.label, object: "scope" },
+      category: "transfer_integrity",
+      code: "TRANSFER_PAIR_BROKEN",
+      fixable: false,
+      severity: "high",
+    });
+    expect(signals[0]?.label).toContain("trf_1");
+    expect(signals[0]?.label).toContain("sin su mitad de entrada");
+  });
+
+  test("a cost drift of one cent is reported: tolerance is zero (#1422)", () => {
+    const signals = collect([
+      buy("inv_origin"),
+      out("inv_origin"),
+      incoming("inv_dest", 500_01),
+    ]);
+
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.label).toContain("500,01");
+    expect(signals[0]?.label).toContain("500,00");
+  });
+
+  test("a transfer_in with no transferId is capital from outside the book, not a fault", () => {
+    const external: InvestmentOperation = {
+      assetId: "inv_dest",
+      currency: "EUR",
+      executedAt: "2026-03-01",
+      feesMinor: 0,
+      id: "op_external",
+      kind: "transfer_in",
+      pricePerUnit: "24",
+      transferCostMinor: 500_00,
+      units: "25",
+    };
+
+    expect(collect([external])).toEqual([]);
+  });
+
+  test("the external entry of #1541 — one incoming row with its own id — is silent", () => {
+    expect(collect([incoming("inv_dest", 500_00)])).toEqual([]);
+  });
+
+  test("a pair on holdings the scope does not own stays out of its inventory", () => {
+    // The ledger is the workspace's, so its rows are all COUNTED (that is what
+    // keeps a missing leg readable as an orphan); the scope decides only which
+    // broken pairs it is told about.
+    expect(collect([buy("inv_origin"), out("inv_origin")], { assets: [] })).toEqual([]);
+  });
+});
