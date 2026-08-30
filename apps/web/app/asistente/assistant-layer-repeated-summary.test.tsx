@@ -46,15 +46,13 @@ const HOLDING_CREATION_OUTPUT = {
   proposalType: "holding_creation",
   draft: { proposalId: "p1" },
   folio: HOLDING_CREATION_FOLIO,
-  family: "fund",
+  family: "investment",
   holding: {
     name: "Vanguard Global Stock",
     instrumentLabel: "Fondo",
     detail: "12.585 €",
   },
   impact: { beforeMinor: 100_000, afterMinor: 1_358_500, deltaMinor: 1_258_500 },
-  duplicate: null,
-  priceTrackingWarning: null,
 };
 
 function toolPart(

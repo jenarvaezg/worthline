@@ -118,6 +118,14 @@ const INSTRUMENT_DEFAULTS: Record<Instrument, InstrumentDefaults> = {
   },
 };
 
+/**
+ * Every instrument in the catalog, derived from the exhaustive defaults map so a new
+ * member of the union cannot leave a stale hand-written list behind. It is the
+ * vocabulary a stored `instrument` may carry, which is what a trust boundary reading
+ * one back off an untrusted payload has to check against (#1609).
+ */
+export const INSTRUMENTS = Object.keys(INSTRUMENT_DEFAULTS) as readonly Instrument[];
+
 /** The defaults for an instrument — its rung, valuation method and price provider. */
 export function defaultsFor(instrument: Instrument): InstrumentDefaults {
   return INSTRUMENT_DEFAULTS[instrument];
