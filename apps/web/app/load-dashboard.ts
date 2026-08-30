@@ -48,6 +48,7 @@ import {
   compareGrowthToBenchmark,
   deriveFramedSnapshotDeltas,
   listScopeOptions,
+  monthlyCloseValuesByHolding,
   monthsBetween,
   portfolioReturnsView,
   prepareDashboardState,
@@ -280,19 +281,43 @@ export async function loadDashboard(
   // per-class decomposition ride: the two halves of an internal traspaso net into
   // one residual instead of each counting as capital received, so the hero cannot
   // read as if the book had been funded twice (ADR 0040's amendment, #1422).
-  // No monthly closes are passed: the series would have to be the WHOLE book's,
-  // full history and gross, and the rows this page reads are the selected scope's
-  // and bounded to the offered range. So the hero states no TWR rather than one
-  // measured on a different basis than its flows; wiring that read is its own
-  // call on the home GET's budget (#1640).
   // ponytail: unscoped portfolio return; per-member-scope weighting is deferred
   // until a scoped consumer needs it (household member scopes are the edge case).
   // Recorded payouts (one-offs + derived occurrences up to today) enter the
   // hero's money-weighted return and realized gain so distributing holdings stop
   // understating (#657, ADR 0054). Keyed by holding id, as operationsByAsset is.
-  const [payoutRecords, payoutSchedules] = await Promise.all([
+  //
+  // The holdings the hero actually measures: the ones carrying a ledger. A
+  // stored/mirrored holding (precious metal, connected source) has no flows to
+  // weight, so it is neither measured nor read closes for.
+  const measuredHoldingIds = new Set(
+    [...projectionContext.operationsByAsset]
+      .filter(([, operations]) => operations.length > 0)
+      .map(([assetId]) => assetId),
+  );
+  const [payoutRecords, payoutSchedules, closeRows] = await Promise.all([
     store.payouts.readPayouts(),
     store.payouts.readPayoutSchedules(),
+    // The monthly closes the hero's TWR is measured over (#1640). They must sit
+    // on the SAME basis as the flows above — the whole book, gross, full history
+    // — or cierres and flujos describe different portfolios and the figure is
+    // false (ADR 0040). So this is deliberately NOT the windowed, scope-filtered
+    // read §4 does for the chart: it is the household read /patrimonio and the
+    // cartera ficha already ride, so all three surfaces measure one series.
+    // Parent rows only (`includePositions: false`, #1235): the closes come from
+    // the frozen parent values (ADR 0008), and the per-position children the
+    // default read attaches would be pure I/O here.
+    // It rides this existing wave rather than a serial await of its own, so the
+    // GET pays its latency only if it is the slowest read in the wave — and a
+    // book with no ledger to measure pays nothing at all (#783), the same
+    // short-circuit the cartera's return block makes.
+    measuredHoldingIds.size > 0
+      ? store.snapshots.readSnapshotHoldings({
+          includePositions: false,
+          kind: "asset",
+          scopeId: "household",
+        })
+      : Promise.resolve([]),
   ]);
   // Recorded payouts up to today, keyed by holding — shared by the return engine
   // (mapped to DatedPayout below) and the hero delta breakdown (used as-is).
@@ -303,10 +328,19 @@ export async function loadDashboard(
       rows.map((row) => ({ amountMinor: row.amountMinor, date: row.dateISO })),
     ]),
   );
+  // Each measured holding's monthly-close series, through the one aggregator
+  // every TWR surface shares (#1586).
+  //
+  // Today's synthesized rows (§3) are deliberately left out: they are the
+  // SELECTED scope's, so unioning them would splice a scope-weighted value onto
+  // a gross series. The hero's TWR therefore ends at the last persisted close,
+  // exactly as the board's and the cartera's do.
+  const monthlyClosesByAsset = monthlyCloseValuesByHolding(closeRows, measuredHoldingIds);
   const portfolioReturns = portfolioReturnsView({
     cachedPriceByAsset: projectionContext.cachedPriceByAsset,
     currency: workspace.baseCurrency,
     manualPriceByAsset: projectionContext.manualPriceByAsset,
+    monthlyClosesByAsset,
     operationsByAsset: projectionContext.operationsByAsset,
     payoutsByAsset,
     valuationDate: dateKey,

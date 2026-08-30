@@ -109,10 +109,11 @@ async function measure(
  * The cache-only dashboard GET path, mirrored from apps/web/app/load-dashboard.ts
  * after #895: reads only — NO snapshot writes and NO price-refresh/source-sync
  * network (both moved to the twice-daily cron). It reads the price cache, the
- * curve-valued holdings, the shared projection, the scope's snapshots and its
- * frozen holding rows, and synthesizes today's chart point IN MEMORY without
- * saving it (histórico = persisted snapshots ∪ today's live point). Returns the
- * scope count so the touched-count assertion stays anchored to the seed scale.
+ * curve-valued holdings, the shared projection, the scope's snapshots, its
+ * frozen holding rows and the whole book's frozen closes for the hero's TWR
+ * (#1640), and synthesizes today's chart point IN MEMORY without saving it
+ * (histórico = persisted snapshots ∪ today's live point). Returns the scope
+ * count so the touched-count assertion stays anchored to the seed scale.
  */
 async function runCacheOnlyLoad(
   store: Awaited<ReturnType<typeof createFileBackedStore>>,
@@ -141,6 +142,16 @@ async function runCacheOnlyLoad(
     workspace,
   });
 
+  // The hero's whole-book monthly closes (#1640): household, gross, full
+  // history, parent rows only. Production rides an existing parallel wave, so
+  // the GET pays this only when it is the wave's slowest read — here it is
+  // awaited SERIALLY on purpose, so the budget sees the read's full cost rather
+  // than whatever the wave hides.
+  await store.snapshots.readSnapshotHoldings({
+    includePositions: false,
+    kind: "asset",
+    scopeId: "household",
+  });
   await store.snapshots.readSnapshotHoldings({ scopeId: selectedScope.id });
   return scopes.length;
 }
