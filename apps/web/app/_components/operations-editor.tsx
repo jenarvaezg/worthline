@@ -39,6 +39,7 @@ import {
 } from "@web/operation-kind-copy";
 import type {
   CaptureCurrency,
+  CostBasisGrade,
   InvestmentOperation,
   PriceFreshnessState,
 } from "@worthline/domain";
@@ -46,11 +47,13 @@ import {
   BASE_CURRENCY,
   CAPTURE_CURRENCIES,
   compareInvestmentOperations,
+  costBasisGradeMark,
   formatMoneyMinorPrivacy,
   formatUnits,
   isCaptureCurrency,
   isTransferKind,
   maskMoneyString,
+  VALUE_ONLY_PNL_NOTICE,
 } from "@worthline/domain";
 import { type FormEvent, useOptimistic, useRef, useState, useTransition } from "react";
 
@@ -82,6 +85,13 @@ export interface OperationsEditorContext {
   marketValue?: { amountMinor: number; currency: string } | null;
   /** The unrealized profit/loss, when priced. */
   unrealizedPnl?: { amountMinor: number; currency: string } | null;
+  /**
+   * How honest the cost this position is measured against is (#1505). With
+   * `value_only` the latent P/L cell is REPLACED by the mark: a 0,00 € there only
+   * ever meant «the alta wrote today's price into the opening because nobody said
+   * what it cost», and printing it as a figure made that unknown look settled.
+   */
+  costBasisGrade?: CostBasisGrade | null;
   /**
    * The engine's currency warning for this ledger (#1401), when it has one: its
    * operations are not all in the currency the cost is labelled with, so the cost —
@@ -338,7 +348,14 @@ export default function OperationsEditor({
                 <span>{formatMoneyMinorPrivacy(context.marketValue, privacyMode)}</span>
               </>
             ) : null}
-            {context.unrealizedPnl ? (
+            {context.costBasisGrade === "value_only" ? (
+              <>
+                <span className="contextLabel">P/L latente</span>
+                <span className="contextUnknown">
+                  {costBasisGradeMark(context.costBasisGrade)}
+                </span>
+              </>
+            ) : context.unrealizedPnl ? (
               <>
                 <span className="contextLabel">P/L latente</span>
                 <span
@@ -366,6 +383,15 @@ export default function OperationsEditor({
         <p className="errorBand" role="alert">
           {context.currencyWarning}
         </p>
+      ) : null}
+
+      {/* The cost the position is measured against was never declared (#1505).
+          Said HERE, and not only on the returns panel, because this is the only
+          surface that can repair it: borrar la apertura y registrarla con lo que
+          de verdad costó. Informative, not a refusal — nothing above it is wrong,
+          it is un-knowable until somebody types the figure. */}
+      {context.costBasisGrade === "value_only" ? (
+        <p className="warningBand">{VALUE_ONLY_PNL_NOTICE}</p>
       ) : null}
 
       {oversellPending ? (

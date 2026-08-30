@@ -1,3 +1,4 @@
+import type { CostBasisGrade } from "./cost-basis-grade";
 import type { DecimalString } from "./decimal";
 import { isPositiveDecimal } from "./decimal";
 import type { DomainViolation } from "./domain-result";
@@ -111,6 +112,14 @@ export interface InvestmentValuation {
   priceSource: InvestmentPriceSource | undefined;
   /** Coded clamps raised during position derivation (e.g. oversell). */
   warnings: PositionWarning[];
+  /**
+   * How honest the cost this position is measured against is (#1505), straight
+   * off the fold. It rides here rather than being re-derived by each reader for
+   * the same reason the warnings do: this is the single authority for what an
+   * investment is worth, and «worth 5.865,75 €» and «that is also what it cost»
+   * are two claims that must not come from two engines (#1422).
+   */
+  costBasisGrade?: CostBasisGrade;
 }
 
 /**
@@ -138,6 +147,9 @@ export function deriveInvestmentValuation(
   });
 
   return {
+    ...(position.costBasisGrade === undefined
+      ? {}
+      : { costBasisGrade: position.costBasisGrade }),
     pricePerUnit: selected?.pricePerUnit,
     priceSource: selected?.source,
     valueMinor: position.marketValue?.amountMinor ?? position.costBasis.amountMinor,

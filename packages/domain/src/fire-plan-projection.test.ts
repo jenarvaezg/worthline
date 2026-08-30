@@ -53,6 +53,7 @@ describe("resolveHoldingAnnualReturnForProjection", () => {
       realizedPnl: null,
       unrealizedPnl: null,
       caveats: [],
+      costBasisGrade: null,
     };
     expect(resolveHoldingAnnualReturnForProjection(twrView, 0.05)).toBeCloseTo(0.08);
 

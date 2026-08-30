@@ -43,7 +43,7 @@ describe("schema migration v53 (early repayment source)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(64);
+    expect(SCHEMA_VERSION).toBe(65);
   });
 
   test("is idempotent over a DB that already carries the column", async () => {

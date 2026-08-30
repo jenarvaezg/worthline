@@ -22,6 +22,7 @@ function marketView(overrides: {
   return {
     annualized: true,
     caveats: ["No incluye dividendos ni cupones."],
+    costBasisGrade: null,
     cagr: 0.1,
     irr: {
       rate: overrides.irrRate,

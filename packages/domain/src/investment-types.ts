@@ -1,3 +1,4 @@
+import type { CostBasisGrade } from "./cost-basis-grade";
 import type { Instant } from "./dates";
 import type { DecimalString } from "./decimal";
 import type { CurrencyCode, MoneyMinor } from "./money";
@@ -75,6 +76,12 @@ export interface InvestmentOperation {
    * Same shape as the `capture` columns of #1401.
    */
   transferCostMinor?: number;
+  /**
+   * How honest this row's price is as a COST (#1505). Absent on a real dated
+   * movement, whose price IS its cost — and on every row written before #1505,
+   * aperturas included; see {@link CostBasisGrade} and the v65 migration.
+   */
+  costBasisGrade?: CostBasisGrade;
 }
 
 export interface CreateInvestmentOperationInput {
@@ -95,6 +102,11 @@ export interface CreateInvestmentOperationInput {
   transferId?: string;
   /** Inherited acquisition cost in minor units, on a `transfer_in` only (#1393). */
   transferCostMinor?: number;
+  /**
+   * The grade of the cost this row states (#1505) — written ONLY by a door that
+   * knows the answer, which today is the alta stamping `source: "opening"`.
+   */
+  costBasisGrade?: CostBasisGrade;
 }
 
 /** Machine code for a clamp in {@link derivePosition}: a sell or traspaso past what is held. */
@@ -132,6 +144,17 @@ export interface PositionSummary {
    * there would still be the wrong grade of news.
    */
   currencyWarning?: string;
+  /**
+   * The grade of the cost basis this fold arrived at (#1505): the LEAST honest
+   * grade among the operations still contributing to it, or absent when every
+   * contribution is a real movement.
+   *
+   * Its own field for the same reason {@link PositionSummary.currencyWarning} has
+   * one: `warnings` is a channel whose consumers read any entry as an over-sell
+   * (#1443), and a cost nobody declared is a different grade of news — the figures
+   * are not clamped, they are un-affirmable.
+   */
+  costBasisGrade?: CostBasisGrade;
   /** The price per unit used to derive the market value, when one was known. */
   currentPricePerUnit?: DecimalString;
   warnings: PositionWarning[];

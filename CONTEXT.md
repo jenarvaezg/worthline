@@ -336,6 +336,23 @@ the origin's own fold at ZERO tolerance, and reports the pairs that disagree alo
 with any `transfer_id` missing its outgoing half.
 _Avoid_: carried cost, transferred basis.
 
+**Cost grade** (grado del coste):
+How honest an **operation**'s price is *as a cost*, stored on the row: `declared_cost`
+(somebody stated it), `value_only` (nobody did — the price is what the position was
+WORTH that day), or absent, which is the ordinary case and means the row is a real
+dated movement whose price IS its cost. Same three grades, same es-ES words, as the
+extracto reconcile's fidelity mark (decisión #1090, ADR 0048): «coste declarado»,
+«sin coste real», «con movimientos». Only the **alta**'s synthetic apertura may carry
+one — a real buy stating a grade would downgrade an observed movement to a
+declaration. `derivePosition` folds it alongside the cost basis (worst grade wins, and
+the taint clears when the units reach zero), and a `value_only` position shows the
+mark WHERE its latent P/L would have gone rather than a `0,00 €` that reads as «ni
+gana ni pierde». Never backfilled onto rows written before it existed: an old apertura
+and a purchase made that day are the same row, and only the owner can tell them apart
+(ADR 0097).
+_Avoid_: fidelity (that word is the reconcile row's, for the same idea), cost
+confidence, unknown-cost flag.
+
 **Acquisition cost** (coste de adquisición):
 What the owner DISBURSED to acquire a property, stored once on the holding — the
 escritura price plus ITP/AJD, notaría, registro and gestoría. The housing twin of an

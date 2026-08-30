@@ -268,6 +268,12 @@ export {
   plannedMonthlyContributionsMinor,
   projectContributionReconciliation,
 } from "./contribution-plan";
+export type { CostBasisGrade } from "./cost-basis-grade";
+export {
+  costBasisGradeMark,
+  VALUE_ONLY_PNL_NOTICE,
+  worseCostBasisGrade,
+} from "./cost-basis-grade";
 export type {
   DashboardShell,
   DashboardState,
@@ -299,6 +305,7 @@ export type {
   DataQualityTrashedHolding,
 } from "./data-quality-signals";
 export {
+  COST_BASIS_VALUE_ONLY_CODE,
   collectDataQualitySignals,
   compareDataQualitySignals,
   DATA_QUALITY_CATEGORY_ORDER,

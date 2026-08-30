@@ -904,11 +904,45 @@ describe("createHoldingAction — investment drawer, saldo-de-hoy (#597)", () =>
     expect(ops[0]!.pricePerUnit).toBe("185.18");
     expect(ops[0]!.executedAt).toBe("2026-01-15");
     expect(ops[0]!.source).toBe("opening");
+    // And the ANSWER survives the submit (#1505): the row says the cost was
+    // declared, not merely that a price was written into it.
+    expect(ops[0]!.costBasisGrade).toBe("declared_cost");
 
     // Cost basis 4.999,86 € against a 5.865,75 € position: the 865,89 € of latent
     // gain that used to be erased by writing today's price as the cost.
     const asset = (await store.assets.readAssets()).find((a) => a.type === "investment");
     expect(asset?.currentValue.amountMinor).toBe(5_865_75);
+  });
+
+  test("sin coste, la fila lo DICE — deja de ser una compra de hoy (#1505)", async () => {
+    const store = await seedStore();
+
+    // La misma alta de Jorge sin la cifra que no tenía a mano. Antes de #1505 la
+    // fila salía byte a byte igual que una compra hecha hoy a 217,25, y la ficha
+    // afirmaba «P/L latente 0,00 €» como si fuera un hecho.
+    await runAction(
+      form({
+        simpleDrawer: "inversion",
+        instrument: "fund",
+        name_fund: "iShares Core S&P 500",
+        symbol_fund: "SXR1.DE",
+        price_fund: "217,25",
+        invMode_fund: "saldo",
+        saldo_fund: "5.865,75",
+        cost_fund: "",
+        costMode_fund: "total",
+        ownershipPreset: "scope",
+        scopeMemberId: "mJ",
+      }),
+      store,
+    );
+
+    const meta = (await store.assets.readInvestmentAssetsWithMeta())[0]!;
+    const ops = await store.operations.readOperations(meta.id);
+    // Las cifras no cambian — el statu quo elegido en #1490 sigue en pie…
+    expect(ops[0]!.pricePerUnit).toBe("217.25");
+    // …pero ya no es indistinguible de una compra real.
+    expect(ops[0]!.costBasisGrade).toBe("value_only");
   });
 
   test("un coste por participación se persiste tal cual (#1490)", async () => {

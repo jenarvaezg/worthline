@@ -18,6 +18,7 @@ import {
   managedPortfolioFichaHref,
 } from "@web/holding-route";
 import {
+  COST_BASIS_VALUE_ONLY_CODE,
   compareDataQualitySignals,
   type DataQualityCategory,
   type DataQualitySeverity,
@@ -146,6 +147,11 @@ const NON_FIGURE_CODES: ReadonlySet<string> = new Set([
   // the exposure profile that is never inherited — so it stays in the shared inventory
   // (the assistant reads it) and never pushes a real doubt about today off the hero.
   MISSING_INVESTMENT_ISIN_CODE,
+  // A cost nobody declared (#1505) is latent in exactly the same way: the holding
+  // is valued by its price, so today's headline is right to the cent. What is
+  // un-knowable is its RETURN, and the ficha already says so beside the figure it
+  // withholds — the hero is for doubts about today.
+  COST_BASIS_VALUE_ONLY_CODE,
 ]);
 
 function bearsOnTodaysFigure(signal: DataQualitySignal): boolean {

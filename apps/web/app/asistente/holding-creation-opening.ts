@@ -190,6 +190,10 @@ export function resolveHoldingCreationOpening(
     return {
       ok: true,
       opening: {
+        // A declared BALANCE, so nobody has said what it cost (#1505): the mark
+        // rides the operation, and the ficha stops printing a plusvalía of 0,00 €
+        // against a price that is simply today's value.
+        costBasisGrade: "value_only",
         pricePerUnit: valueAsPrice,
         units: "1",
         valueMinor: openingValueMinor,
@@ -258,6 +262,12 @@ export function resolveHoldingCreationOpening(
   return {
     ok: true,
     opening: {
+      // Same balance, priced by a live quote instead of standing in as one unit
+      // (#1329): still a value, still no declared cost (#1505). An ORDER's cash
+      // amount is not marked — that figure IS what was paid.
+      ...(options.valueIsBalance === true
+        ? { costBasisGrade: "value_only" as const }
+        : {}),
       pricePerUnit: derived.price,
       units: derived.units,
       // The value of the position the operation WRITES — units × price, from the

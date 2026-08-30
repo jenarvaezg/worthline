@@ -47,7 +47,7 @@ describe("schema migration v58 (contribution allowances)", () => {
     expect(
       Number((await client.execute("SELECT version FROM schema_meta")).rows[0]!.version),
     ).toBe(SCHEMA_VERSION);
-    expect(SCHEMA_VERSION).toBe(64);
+    expect(SCHEMA_VERSION).toBe(65);
   });
 
   test("stores no consumed total — it is derived from the ledger on every read", async () => {

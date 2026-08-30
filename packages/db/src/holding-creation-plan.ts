@@ -14,7 +14,12 @@
  * four persistence seams the confirm dispatches to.
  */
 
-import type { DebtModel, Instrument, OwnershipShare } from "@worthline/domain";
+import type {
+  CostBasisGrade,
+  DebtModel,
+  Instrument,
+  OwnershipShare,
+} from "@worthline/domain";
 
 /** Fields every family shares: the resolved identity + ownership split. */
 interface HoldingCreationPlanBase {
@@ -103,6 +108,14 @@ export interface InvestmentHoldingCreationPlan extends HoldingCreationPlanBase {
     pricePerUnit: string;
     valueMinor: number;
     feesMinor?: number;
+    /**
+     * How honest this opening's price is as a COST (#1505). Set to `value_only`
+     * when the declaration was a BALANCE — «tengo 574,48 € en este fondo» (#1325)
+     * — because then the price is what the position is worth today and nobody has
+     * said what it cost. Absent when the model read an order's terms off a
+     * document: those ARE what was paid.
+     */
+    costBasisGrade?: CostBasisGrade;
   };
 }
 

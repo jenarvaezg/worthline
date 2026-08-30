@@ -1,6 +1,7 @@
 import type {
   AssetType,
   ContributionOccurrenceState,
+  CostBasisGrade,
   DateKey,
   DebtModel,
   EarlyRepaymentMode,
@@ -350,6 +351,13 @@ export const assetOperations = sqliteTable(
     // over to another asset's ledger to learn it.
     transferId: text("transfer_id"),
     transferCostMinor: integer("transfer_cost_minor"),
+    /**
+     * How honest this row's price is as a COST (#1505, ADR 0048/0097). NULL is the
+     * third state and the default: a real dated movement, whose price IS its cost —
+     * and every row written before v65, aperturas included. Only the alta writes it,
+     * and only on the synthetic opening BUY it invents.
+     */
+    costBasisGrade: text("cost_basis_grade").$type<CostBasisGrade>(),
     batchId: text("batch_id").references(() => factBatches.id),
     createdAt: timestamp("created_at"),
   },

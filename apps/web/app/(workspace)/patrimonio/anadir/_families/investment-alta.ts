@@ -38,6 +38,7 @@ import {
 } from "@web/patrimonio/anadir/investment-units";
 import type { InvestmentHoldingEntry } from "@worthline/db";
 import type {
+  CostBasisGrade,
   InstrumentPriceProvider,
   InvestmentOperation,
   LiquidityTier,
@@ -122,7 +123,12 @@ function scopedInvestmentForm(ctx: AltaContext, spec: InvestmentAltaSpec): FormD
  */
 function resolveOpeningOperation(
   assetId: string,
-  opening: { units: string; price: string; executedAt: string },
+  opening: {
+    units: string;
+    price: string;
+    executedAt: string;
+    costBasisGrade: CostBasisGrade;
+  },
   seed: number,
   today: string,
 ): { ok: true; operation: InvestmentOperation } | { ok: false; error: string } {
@@ -138,7 +144,13 @@ function resolveOpeningOperation(
     return { ok: false, error: parsedOp.error };
   }
 
-  const safe = createInvestmentOperationSafe({ ...parsedOp.command, source: "opening" });
+  // The grade rides the row (#1505): «no sé lo que costó» is an answer the user
+  // gave, and the ledger is the only place it can survive the submit.
+  const safe = createInvestmentOperationSafe({
+    ...parsedOp.command,
+    costBasisGrade: opening.costBasisGrade,
+    source: "opening",
+  });
 
   if (!safe.ok) {
     return { ok: false, error: mapDomainViolation(safe.violations[0]) };

@@ -521,6 +521,10 @@ function annualReturnFromAgentViewReturns(
       realizedPnl: returns.simple.realizedGain ?? null,
       unrealizedPnl: returns.simple.unrealizedGain ?? null,
       caveats: [],
+      // The agent-view returns contract states no cost grade, and this adapter
+      // reads ONE number off the view (the annual rate for a projection): a grade
+      // invented here would be a claim nothing backs (#1505).
+      costBasisGrade: null,
     },
     assumedAnnualReturn,
   );

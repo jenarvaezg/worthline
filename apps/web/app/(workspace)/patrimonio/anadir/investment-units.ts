@@ -1,5 +1,6 @@
 import { normalizeNonNegativeDecimalString } from "@web/intake-primitives";
 import {
+  type CostBasisGrade,
   type DecimalString,
   divideUnits,
   formatMoneyMinorExact,
@@ -107,7 +108,19 @@ export interface OpeningCaptureInput {
 
 /** Everything the opening BUY needs, or the ONE message that refused the capture. */
 export type OpeningCaptureResult =
-  | { ok: true; units: DecimalString; price: DecimalString; executedAt: string }
+  | {
+      ok: true;
+      units: DecimalString;
+      price: DecimalString;
+      executedAt: string;
+      /**
+       * What the user answered about the cost (#1505), so the answer survives the
+       * submit. Before this the two branches were indistinguishable once written —
+       * an apertura at today's price IS a purchase made today — and the ficha went
+       * on printing «P/L latente 0,00 €» as if it were a fact.
+       */
+      costBasisGrade: CostBasisGrade;
+    }
   | { ok: false; error: string };
 
 const ISO_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
@@ -297,6 +310,7 @@ export function resolveOpeningCapture({
 
   return {
     ok: true,
+    costBasisGrade: cost.declared ? "declared_cost" : "value_only",
     executedAt: date.date,
     price: cost.declared ? cost.pricePerUnit : units.price,
     units: units.units,

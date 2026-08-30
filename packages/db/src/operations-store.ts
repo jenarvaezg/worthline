@@ -24,6 +24,7 @@ import {
 } from "./schema";
 import {
   operationCaptureColumns,
+  operationCostBasisColumns,
   operationTransferColumns,
   type StoreContext,
   toOperation,
@@ -194,6 +195,7 @@ function operationRow(
     assetId: operation.assetId,
     batchId: provenance?.batchId ?? null,
     ...operationCaptureColumns(operation.capture),
+    ...operationCostBasisColumns(operation),
     currency: operation.currency,
     executedAt: asDateKey(operation.executedAt.slice(0, 10)),
     feesMinor: operation.feesMinor,
@@ -491,6 +493,11 @@ async function updateOperation(
       // capture the previous import wrote, or the ficha would keep showing dollars
       // that no longer back the stored figure (#1401).
       ...operationCaptureColumns(input.capture),
+      // Cleared for the same reason the capture is (#1505): an overwrite hands the
+      // row a real statement order, whose price IS its cost. A `value_only` grade
+      // surviving here would keep marking «sin coste real» a figure the broker
+      // itself stated — the apertura is gone, and so is what was unknown about it.
+      costBasisGrade: null,
       currency: input.currency,
       feesMinor: input.feesMinor,
       kind: input.kind,

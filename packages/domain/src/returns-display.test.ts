@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { VALUE_ONLY_PNL_NOTICE } from "./cost-basis-grade";
 import type { InvestmentOperation, OperationKind } from "./index";
 import { money } from "./money";
 import type { IrrResult, SimpleGain, TwrResult } from "./returns";
@@ -116,6 +117,35 @@ describe("buildHoldingReturnsView", () => {
     expect(view!.realizedPnl).toEqual(money(200_00, "EUR"));
     expect(view!.unrealizedPnl).toEqual(money(4_839_00, "EUR"));
     expect(view!.caveats).toContain(MARKET_CAVEAT);
+  });
+
+  test("sin coste real: la plusvalía latente se RETIRA, no se anota al pie (#1505)", () => {
+    // Un «P/L latente 0,00 €» no es una limitación que avisar: es la afirmación
+    // de que la posición ni gana ni pierde, justo lo que nadie sabe.
+    const view = buildHoldingReturnsView({
+      costBasisGrade: "value_only",
+      instrument: "fund",
+      irr: okIrr,
+      simpleGain: gain(),
+      unrealizedPnl: money(0, "EUR"),
+    });
+
+    expect(view!.unrealizedPnl).toBeNull();
+    expect(view!.costBasisGrade).toBe("value_only");
+    expect(view!.caveats).toContain(VALUE_ONLY_PNL_NOTICE);
+  });
+
+  test("un coste declarado no retira nada: la reconciliación de los que sí lo tienen sigue", () => {
+    const view = buildHoldingReturnsView({
+      costBasisGrade: "declared_cost",
+      instrument: "fund",
+      irr: okIrr,
+      simpleGain: gain(),
+      unrealizedPnl: money(4_839_00, "EUR"),
+    });
+
+    expect(view!.unrealizedPnl).toEqual(money(4_839_00, "EUR"));
+    expect(view!.caveats).not.toContain(VALUE_ONLY_PNL_NOTICE);
   });
 
   test("appreciating: simple gain only — IRR/TWR forced there are null, not bogus", () => {
