@@ -10,6 +10,7 @@ import {
 } from "@web/intake";
 import { refreshPricesAction } from "@web/inversiones/refresh-prices-action";
 import { resolvePageShell } from "@web/page-shell";
+import { BOARD_FOLD_PARAM, readOpenPortfolios } from "@web/patrimonio/_board/board-fold";
 import { readExposureProfilesFromCatalog } from "@web/read-exposure-catalog";
 import {
   EXPOSURE_LENS_VIEW_PARAM,
@@ -21,7 +22,6 @@ import { systemClock } from "@worthline/domain";
 import Link from "next/link";
 import { Suspense } from "react";
 import BalanceBoard from "./balance-board";
-import { BOARD_FOLD_PARAM, readOpenPortfolios } from "./board-fold";
 import ExposureSection from "./exposure-section";
 import PatrimonioGroupControls from "./group-controls";
 import {
