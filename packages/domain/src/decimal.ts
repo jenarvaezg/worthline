@@ -183,15 +183,21 @@ export interface WeightedDestination {
  * is deterministic). When the weights sum to 1 the parts add back up to
  * `amountMinor` exactly — no cent is invented, none evaporates.
  *
- * The app's ONE cent split (#1610). «¿Cuánto de este holding es renta variable?»
- * has a single answer in céntimos, and two surfaces ask it: the exposure
- * look-through and the per-asset-class rentabilidad. A second spelling — the
+ * The app's ONE cent split (#1610, ADR 0096). «¿Cuánto de este holding es
+ * renta variable?» has a single answer in céntimos, and two surfaces ask it: the
+ * exposure look-through and the per-asset-class rentabilidad. A second spelling — the
  * weight rounded to basis points and multiplied part by part — answers the same
  * question a céntimo away, which is #1422 at the scale of the cent.
  *
  * Every destination comes back, zeros included: a bucket that rounds to nothing
  * is still a bucket the caller asked about (a class worth 0 € today is emitted
  * MARKED, never omitted). Callers that only want money filter afterwards.
+ *
+ * A negative total splits by the same rule, because each part FLOORS rather than
+ * truncating toward zero: the fraction lost is then in `[0, 1)` whichever way the
+ * sign points, so the leftover to hand out is always positive. Truncating would
+ * make a negative total quietly fail to reconcile — the one promise this function
+ * exists to keep.
  */
 export function splitMinorByWeights(
   amountMinor: number,
@@ -199,7 +205,7 @@ export function splitMinorByWeights(
 ): Array<[string, number]> {
   const parts = destinations.map(({ key, weight }) => {
     const raw = new Big(amountMinor).times(weight);
-    const floor = raw.round(0, Big.roundDown);
+    const floor = floorToInteger(raw);
     return { amountMinor: Number(floor.toString()), key, remainder: raw.minus(floor) };
   });
   let remainingMinor =
@@ -232,10 +238,20 @@ export function splitMinorByWeights(
  * partition does.
  */
 export function scaleMinorByWeight(amountMinor: number, weight: DecimalString): number {
-  const raw = new Big(amountMinor).times(weight).plus("0.5");
-  const truncated = raw.round(0, Big.roundDown);
+  return Number(
+    floorToInteger(new Big(amountMinor).times(weight).plus("0.5")).toString(),
+  );
+}
 
-  return Number((truncated.gt(raw) ? truncated.minus(1) : truncated).toString());
+/**
+ * The greatest integer not above `value`. big.js rounds toward zero and never
+ * toward −∞, so the floor the split and the scaling both need is spelled once
+ * here instead of approximated twice.
+ */
+function floorToInteger(value: Big): Big {
+  const truncated = value.round(0, Big.roundDown);
+
+  return truncated.gt(value) ? truncated.minus(1) : truncated;
 }
 
 /**

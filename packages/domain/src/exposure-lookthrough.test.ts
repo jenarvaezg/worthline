@@ -1255,3 +1255,47 @@ describe("lookThroughExposure sector dimension", () => {
     ).toThrow("Exposure profile sector breakdown cannot exceed 100%.");
   });
 });
+
+describe("el filtro por clase toma el mismo céntimo que su slice (#1610)", () => {
+  // Tres tercios que no caen en céntimos exactos: repartir por resto mayor da
+  // 34 a renta variable, multiplicar su peso a solas daba 33 — la misma
+  // pregunta, un céntimo distinto según por qué superficie se entrase.
+  const BREAKDOWN = { bond: "0.3333", commodity: "0.3333", equity: "0.3334" };
+  const VALUE_MINOR = 100;
+  const CATALOG_KEY = "TERCIOS";
+
+  function lookThrough(assetClassFilter?: "equity") {
+    return lookThroughExposure({
+      baseCurrency: "EUR",
+      ...(assetClassFilter ? { assetClassFilter } : {}),
+      dimensions: ["assetClass"],
+      grossAssets: { amountMinor: VALUE_MINOR, currency: "EUR" },
+      holdings: [
+        {
+          currency: "EUR",
+          id: "asset_tercios",
+          instrument: "fund",
+          providerSymbol: CATALOG_KEY,
+          valueMinor: VALUE_MINOR,
+        },
+      ],
+      profiles: new Map([
+        [
+          CATALOG_KEY,
+          fixtureProfile({ breakdowns: { assetClass: BREAKDOWN }, key: CATALOG_KEY }),
+        ],
+      ]),
+    });
+  }
+
+  test("la manga filtrada vale lo que el slice sin filtrar", () => {
+    const unfiltered = lookThrough().assetClass.slices.find(
+      (slice) => slice.key === "equity",
+    )!;
+    const filtered = lookThrough("equity").assetClass.slices;
+
+    expect(unfiltered.value.amountMinor).toBe(34);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.value.amountMinor).toBe(unfiltered.value.amountMinor);
+  });
+});

@@ -568,6 +568,16 @@ function sectorStyleFromSlices(
   return sectorStyleSplit(vector);
 }
 
+/**
+ * The sleeve of a holding a class filter leaves standing — the drill-down's
+ * «de esto, ¿cuánto es renta variable?».
+ *
+ * It is the SAME question the unfiltered `assetClass` slice answers, so it takes
+ * the same céntimo: the holding's whole value goes once through the canonical
+ * split and this bucket's part comes back (#1610). Multiplying the weight on its
+ * own was the third spelling of one answer, and it could hand the drill-down a
+ * céntimo the slice above it does not show.
+ */
 function filteredValueMinor(
   holding: ExposureLookthroughHolding,
   profile: ExposureProfile | null,
@@ -582,7 +592,12 @@ function filteredValueMinor(
     return 0;
   }
 
-  return multiplyMinorByWeight(holding.valueMinor, resolution.breakdown[filter] ?? "0");
+  const share = splitMinorByWeights(
+    holding.valueMinor,
+    breakdownDestinations(resolution.breakdown),
+  ).find(([key]) => key === filter);
+
+  return share?.[1] ?? 0;
 }
 
 function resolveDimension(
@@ -697,9 +712,9 @@ export const OTHER_BUCKET_KEY = "other";
  * The destinations a stored breakdown splits a holding across: its declared
  * buckets, plus whatever it leaves undeclared, in `other`.
  *
- * Exported because the per-asset-class rentabilidad (#1610) reads a holding's
- * class vector through this very function. «¿Cuánto de este holding es renta
- * variable?» is one question, so the two surfaces must agree on WHICH buckets
+ * Exported because the per-asset-class rentabilidad (#1610, ADR 0096) reads a
+ * holding's class vector through this very function. «¿Cuánto de este holding es
+ * renta variable?» is one question, so the two surfaces must agree on WHICH buckets
  * exist and what each weighs before {@link splitMinorByWeights} even turns the
  * weights into céntimos — a look-through that invents an `other` its sibling
  * does not is a disagreement no rounding rule can repair.
@@ -762,10 +777,6 @@ function allocateWeightedMinor(
   return splitMinorByWeights(valueMinor, destinations).filter(
     ([, amountMinor]) => amountMinor !== 0,
   );
-}
-
-function multiplyMinorByWeight(valueMinor: number, weight: DecimalString): number {
-  return Number(new Big(valueMinor).times(weight).round(0, Big.roundHalfUp).toString());
 }
 
 function slicesFromTotals(

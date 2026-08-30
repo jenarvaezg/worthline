@@ -115,6 +115,18 @@ describe("splitMinorByWeights (#1610)", () => {
     expect(Object.fromEntries(reversed)).toEqual(Object.fromEntries(ordered));
   });
 
+  test("un total negativo también cuadra: cada parte baja, no trunca hacia el cero", () => {
+    // Truncar hacia el cero dejaría el resto en el lado negativo y el reparto
+    // nunca volvería a sumar el total — la única promesa de esta función.
+    const parts = splitMinorByWeights(-101, [
+      { key: "alfa", weight: "0.5" },
+      { key: "beta", weight: "0.5" },
+    ]);
+
+    expect(Object.fromEntries(parts)).toEqual({ alfa: -50, beta: -51 });
+    expect(parts.reduce((sum, [, amountMinor]) => sum + amountMinor, 0)).toBe(-101);
+  });
+
   test("devuelve todos los destinos, también los que se quedan a cero", () => {
     // Un cubo que redondea a nada sigue siendo un cubo por el que preguntaron:
     // la clase que hoy no vale nada se emite MARCADA, nunca se omite.

@@ -127,7 +127,13 @@ export interface SubsetReturns {
 /** One slice's scaled monthly closes, plus whether it is still held. */
 interface HoldingCloseSeries {
   closes: readonly MonthlyCloseValue[];
-  /** A holding with value today is still in the subset even if its last close is missing. */
+  /**
+   * A holding with value today is still in the subset even if its last close is
+   * missing. Read off the ATTRIBUTED value (#1610), so it answers the question
+   * the series actually needs: does this slice still hold anything HERE. A class
+   * whose weight is too small to be worth a céntimo holds nothing in that class,
+   * and its carried-forward close was already rounding to zero.
+   */
   stillHeld: boolean;
 }
 

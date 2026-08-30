@@ -38,11 +38,21 @@ import { subsetReturns } from "./returns-subset";
  * Value allocation is the look-through's OWN split, not a parallel one: the class
  * destinations come from `breakdownDestinations` and the céntimos from
  * `splitMinorByWeights`, the same two functions `lookThroughExposure` calls
- * (#1610). So a class `value` reconciles with the matching `exposure.assetClass`
- * slice to the céntimo, not merely at display granularity — «¿cuánto de este
- * holding es renta variable?» has one answer, and the surface that asks it does
- * not change it. What the weight still cannot do is travel back in time: it is a
- * present-time lens applied uniformly across the history, declared above.
+ * (#1610, ADR 0096). Over the SAME holding value, a class `value` therefore
+ * equals the matching `exposure.assetClass` slice to the céntimo, not merely at
+ * display granularity — «¿cuánto de este holding es renta variable?» has one
+ * answer, and the surface that asks it does not change it.
+ *
+ * Over the same holding value: the two surfaces still choose their own INPUT.
+ * The patrimonio page feeds the look-through every asset row at its scope-weighted
+ * value, and feeds this engine the market instruments gross (`returnsByAssetClassView`
+ * — appreciating assets are excluded, an IRR would be forced there). So their
+ * totals differ by design, and by euros, not by a rounding. What #1610 removed is
+ * the divergence that had nothing to do with that choice: the same weight over the
+ * same value giving two answers.
+ *
+ * What the weight still cannot do is travel back in time: it is a present-time
+ * lens applied uniformly across the history, declared above.
  */
 
 /** The bucket that collects holdings whose asset class cannot be resolved. */
